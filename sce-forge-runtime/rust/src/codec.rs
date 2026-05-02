@@ -20,7 +20,13 @@
 
 /// Typed decode error. The enum is `#[non_exhaustive]` to keep
 /// additive variants from breaking downstream `match` arms before
-/// SCE 1.0. B1-β adds `UnknownVariantTag`.
+/// SCE 1.0.
+///
+/// The B1-β variant primitive intentionally does NOT need a typed
+/// `UnknownVariantTag` variant — RFC §5.B requires `<sce:default>` when
+/// arms don't exhaust the tag domain (`codec/variant-arm-unreachable`
+/// fires at build time otherwise), so the default arm catches every
+/// unmatched tag at runtime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum CodecError {
@@ -32,6 +38,15 @@ pub enum CodecError {
     /// than the declared type. Either the wire is corrupt or the
     /// author chose a too-narrow type. RFC §5.B `codec/vle-width-overflow`.
     VleWidthOverflow,
+    /// RFC §5.B B3 TLV chain primitive: the wire carried more entries
+    /// than the codec author declared (`max-depth=N` exhausted while
+    /// the cursor still had bytes) AND the codec declared
+    /// `on-overflow="reject"`. Truncate-mode codecs never raise this
+    /// — they silently drop the post-cap bytes. MCU-class symbol; the
+    /// other 4 backends never construct it (their codec emit is
+    /// rejected upfront by the codec-content MCU gate, RFC §5.B "MCU-
+    /// only codec sub-features").
+    TlvChainOverflow,
 }
 
 /// Read-only cursor over a borrowed input slice. Decode bodies use

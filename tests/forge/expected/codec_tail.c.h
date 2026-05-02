@@ -34,16 +34,22 @@ typedef struct {
  * declared minimum frame (RFC §5.B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t codec_tail_decode(sce_forge_cursor_t *cursor, codec_tail_t *out) {
-    /* Variable-length codec: tail / length-ref fields consume bytes
-     * beyond the fixed prefix. B1-prep treats the entire cursor
-     * remaining as one frame; stream-correct length-ref consumption
-     * lands with its first multi-frame consumer in a later B-stage. */
+    /* Variable-length codec. RFC §5.B B3 stream-correct shape:
+     * a codec without `<sce:field sce:bit-size="tail">` consumes only
+     * the bytes it actually decoded (`min_bytes + length_value`)
+     * rather than the entire cursor remaining. Codecs WITH a tail
+     * field still consume to end (tail's definition forces it). The
+     * prior "consume entire cursor" behaviour deferred to "the first
+     * multi-frame consumer" — TLV chain (B3-α) is that consumer, so
+     * length-ref entry codecs now decode-iterably from a shared
+     * cursor without each entry eating the next entry's bytes. */
     size_t _frame_len = sce_forge_cursor_remaining(cursor);
     if (_frame_len < CODEC_TAIL_MIN_BYTES) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     const uint8_t *raw = sce_forge_cursor_peek(cursor, _frame_len);
     if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-    size_t len = _frame_len;  /* alias for legacy tail decode_expr */
+    size_t len = _frame_len;  /* alias for tail decode_expr */
     (void)len;
+    size_t _consumed = _frame_len;
     out->msg_id = raw[0];
     out->status = raw[1];
     {
@@ -52,7 +58,7 @@ static inline sce_forge_codec_status_t codec_tail_decode(sce_forge_cursor_t *cur
         memcpy(out->payload, raw + 2, _n);
         out->payload_len = _n;
     }
-    if (!sce_forge_cursor_advance(cursor, _frame_len)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+    if (!sce_forge_cursor_advance(cursor, _consumed)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     return SCE_FORGE_CODEC_OK;
 }
 

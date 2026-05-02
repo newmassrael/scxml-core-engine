@@ -10,14 +10,14 @@ use sce_forge_runtime::codec::{CodecError, SceCursor};
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
 #[derive(Default)]
-pub struct CodecTail {
-    pub msg_id: u8,
-    pub status: u8,
-    pub payload: Vec<u8>,
+pub struct CodecTlvEntry {
+    pub entry_type: u8,
+    pub entry_len: u8,
+    pub entry_body: Vec<u8>,
 }
 
 #[allow(dead_code)]
-impl CodecTail {
+impl CodecTlvEntry {
     /// Construct an instance with every field zero-initialized via
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -47,19 +47,31 @@ impl CodecTail {
         }
         let raw = cursor.peek_slice(_frame_len)?;
         let value = Self {
-            msg_id: raw[0],
-            status: raw[1],
-            payload: raw[2..].to_vec(),
+            entry_type: raw[0],
+            entry_len: raw[1],
+            entry_body: raw[2..2 + raw[1] as usize].to_vec(),
         };
-        cursor.advance(_frame_len)?;
+        // Stream-correct: advance only the bytes actually decoded.
+        // For each length-ref field, end = byte_off + raw[byte_off-1]
+        // value (length-field byte is read just before). Take the max
+        // across all length-ref fields; min_bytes is the lower bound.
+        let mut _consumed: usize = 2;
+        {
+            let _end = 2usize + value.entry_body.len();
+            if _end > _consumed { _consumed = _end; }
+        }
+        if _consumed > _frame_len {
+            return Err(CodecError::NeedMoreBytes);
+        }
+        cursor.advance(_consumed)?;
         Ok(value)
     }
 
     pub fn encode(&self) -> Vec<u8> {
         let mut r: Vec<u8> = Vec::with_capacity(34);
-        r.push(self.msg_id);
-        r.push(self.status);
-        r.extend_from_slice(&self.payload);
+        r.push(self.entry_type);
+        r.push(self.entry_len);
+        r.extend_from_slice(&self.entry_body);
         r
     }
 }

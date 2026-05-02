@@ -31,12 +31,16 @@ impl CodecLengthRef {
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
     pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
-        // Variable-length codec: tail / length-ref fields consume bytes
-        // beyond the fixed prefix. B1-prep treats the entire cursor
-        // remaining as one frame (matches the harness "one frame per
-        // call" pattern). Stream-correct length-ref consumption (advance
-        // by `min_bytes + length_value` only) lands with its first
-        // multi-frame consumer in a later B-stage.
+        // Variable-length codec. RFC §5.B B3 stream-correct shape:
+        // a codec without `<sce:field sce:bit-size="tail">` consumes
+        // only `min_bytes + length_value` rather than the entire
+        // cursor remaining. Codecs WITH a tail field still consume
+        // to end (tail's definition forces it). The prior
+        // "consume entire cursor" behaviour deferred to "the first
+        // multi-frame consumer" — TLV chain (B3-α) is that consumer,
+        // so length-ref entry codecs now decode-iterably from a
+        // shared cursor without each entry eating the next entry's
+        // bytes.
         let _frame_len = cursor.remaining();
         if _frame_len < 2 {
             return Err(CodecError::NeedMoreBytes);
@@ -47,7 +51,19 @@ impl CodecLengthRef {
             len: raw[1],
             payload: raw[2..2 + raw[1] as usize].to_vec(),
         };
-        cursor.advance(_frame_len)?;
+        // Stream-correct: advance only the bytes actually decoded.
+        // For each length-ref field, end = byte_off + raw[byte_off-1]
+        // value (length-field byte is read just before). Take the max
+        // across all length-ref fields; min_bytes is the lower bound.
+        let mut _consumed: usize = 2;
+        {
+            let _end = 2usize + value.payload.len();
+            if _end > _consumed { _consumed = _end; }
+        }
+        if _consumed > _frame_len {
+            return Err(CodecError::NeedMoreBytes);
+        }
+        cursor.advance(_consumed)?;
         Ok(value)
     }
 

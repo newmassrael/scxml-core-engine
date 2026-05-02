@@ -60,6 +60,10 @@ typedef struct {
     /* RFC §5.B B2 repeat: fixed array of {{ field.repeat_body_type }} elements (max {{ field.max_count }}) */
     {{ field.repeat_body_type }} {{ field.id }}[{{ field.max_count }}];
     size_t  {{ field.id }}_len;
+{% elif field.is_tlv_chain %}
+    /* RFC §5.B B3 tlv-chain: fixed array of {{ field.tlv_chain_body_type }} entries (max-depth {{ field.max_depth }}, on-overflow={{ field.on_overflow }}) */
+    {{ field.tlv_chain_body_type }} {{ field.id }}[{{ field.max_depth }}];
+    size_t  {{ field.id }}_len;
 {% elif field.is_variable and not field.is_vle %}
     /* variable-length payload (sce:bit-size="{{ field.bit_size_kind }}", sce:max-size="{{ field.max_size }}") */
     uint8_t {{ field.id }}[{{ field.max_size }}];
@@ -125,12 +129,14 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
      * for absent bytes payloads); the carrier's flag bit is the
      * source of truth for presence. B2-β extends gating to Tail /
      * LengthRef / Vle bit-sizes via dispatch inside the helper.
-     * Per-field `is_repeat` routes Repeat fields to the dedicated
-     * helper. Branch fires before has_vle_fields so a codec mixing
+     * Per-field `is_repeat` / `is_tlv_chain` route to dedicated
+     * helpers. Branch fires before has_vle_fields so a codec mixing
      * VLE + present-if uses the unified streaming path. */
 {% for field in fields %}
 {% if field.is_repeat %}
     {{ field.repeat_decode_stmt }}
+{% elif field.is_tlv_chain %}
+    {{ field.tlv_chain_decode_stmt }}
 {% else %}
     {{ field.present_if_decode_stmt }}
 {% endif %}
@@ -144,34 +150,45 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
     out->{{ field.id }} = {{ field.id }};
 {% endfor %}
     return SCE_FORGE_CODEC_OK;
-{% elif has_repeat_fields %}
-    /* RFC §5.B B2 repeat primitive: streaming decode mixes plain
-     * fixed-width reads (per-field via the present-if helper's
-     * non-gated arm) with fixed-array repeat loops that iterate the
-     * imported codec's `<snake>_decode(cursor, &out-><id>[_i])`
-     * either `out-><len_field>` times (length-field) or until cursor
-     * exhaustion (until-eof). MAX_COUNT overflow surfaces as
-     * NEED_MORE_BYTES so the consumer treats it like cursor
-     * exhaustion (typed buffer-overflow lands in B7). */
+{% elif has_repeat_fields or has_tlv_chain_fields %}
+    /* RFC §5.B B2 repeat / B3 TLV chain primitives: streaming decode
+     * mixes plain fixed-width reads with bounded-iteration loops over
+     * imported codec entries. Repeat: bounded by `out-><len_field>`
+     * (length-field) or until cursor exhaustion (until-eof); MAX_COUNT
+     * overflow → NEED_MORE_BYTES. TLV chain: bounded by `max_depth`
+     * with on-overflow check (reject → SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW
+     * when residual bytes after cap; truncate → silent). */
 {% for field in fields %}
 {% if field.is_repeat %}
     {{ field.repeat_decode_stmt }}
+{% elif field.is_tlv_chain %}
+    {{ field.tlv_chain_decode_stmt }}
 {% else %}
     {{ field.present_if_decode_stmt }}
 {% endif %}
 {% endfor %}
     return SCE_FORGE_CODEC_OK;
 {% elif has_variable_fields %}
-    /* Variable-length codec: tail / length-ref fields consume bytes
-     * beyond the fixed prefix. B1-prep treats the entire cursor
-     * remaining as one frame; stream-correct length-ref consumption
-     * lands with its first multi-frame consumer in a later B-stage. */
+    /* Variable-length codec. RFC §5.B B3 stream-correct shape:
+     * a codec without `<sce:field sce:bit-size="tail">` consumes only
+     * the bytes it actually decoded (`min_bytes + length_value`)
+     * rather than the entire cursor remaining. Codecs WITH a tail
+     * field still consume to end (tail's definition forces it). The
+     * prior "consume entire cursor" behaviour deferred to "the first
+     * multi-frame consumer" — TLV chain (B3-α) is that consumer, so
+     * length-ref entry codecs now decode-iterably from a shared
+     * cursor without each entry eating the next entry's bytes. */
     size_t _frame_len = sce_forge_cursor_remaining(cursor);
     if (_frame_len < {{ c_min_bytes_macro }}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     const uint8_t *raw = sce_forge_cursor_peek(cursor, _frame_len);
     if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-    size_t len = _frame_len;  /* alias for legacy tail decode_expr */
+{% if has_tail_fields %}
+    size_t len = _frame_len;  /* alias for tail decode_expr */
     (void)len;
+    size_t _consumed = _frame_len;
+{% else %}
+    size_t _consumed = {{ c_min_bytes_macro }};
+{% endif %}
 {% for field in fields %}
 {% if field.is_variable %}
 {% if field.bit_size_kind == "tail" %}
@@ -187,13 +204,16 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
         if (_n > {{ field.max_size }} || {{ field.byte_off }} + _n > _frame_len) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         memcpy(out->{{ field.id }}, raw + {{ field.byte_off }}, _n);
         out->{{ field.id }}_len = _n;
+{% if not has_tail_fields %}
+        if ({{ field.byte_off }} + _n > _consumed) _consumed = {{ field.byte_off }} + _n;
+{% endif %}
     }
 {% endif %}
 {% else %}
     out->{{ field.id }} = {{ field.decode_expr }};
 {% endif %}
 {% endfor %}
-    if (!sce_forge_cursor_advance(cursor, _frame_len)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+    if (!sce_forge_cursor_advance(cursor, _consumed)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     return SCE_FORGE_CODEC_OK;
 {% else %}
     const uint8_t *raw = sce_forge_cursor_peek(cursor, {{ c_min_bytes_macro }});
@@ -243,13 +263,15 @@ static inline {{ c_encoded_typedef }} {{ c_encode_func }}(const {{ c_struct_type
 {% elif has_present_if_fields %}
     /* RFC §5.B B1-δ + B2-β present-if encode: per-field byte append.
      * Gated fields skip the append when the carrier's flag bit is
-     * clear. Per-field `is_repeat` routes Repeat fields to the
-     * dedicated helper. Branch fires before has_vle_fields so a
-     * codec mixing VLE + present-if uses the unified encode path. */
+     * clear. Per-field `is_repeat` / `is_tlv_chain` route to dedicated
+     * helpers. Branch fires before has_vle_fields so a codec mixing
+     * VLE + present-if uses the unified encode path. */
     r.len = 0;
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
+{% elif field.is_tlv_chain %}
+{{ field.tlv_chain_encode_block }}
 {% else %}
 {{ field.present_if_encode_block }}
 {% endif %}
@@ -259,15 +281,18 @@ static inline {{ c_encoded_typedef }} {{ c_encode_func }}(const {{ c_struct_type
 {% for field in fields %}
 {{ field.vle_encode_block }}
 {% endfor %}
-{% elif has_repeat_fields %}
-    /* RFC §5.B B2 encode: fixed prefix appends byte-by-byte; repeat
-     * fields walk the per-codec encoded_t splice loop, bounded by
-     * `sizeof(r.bytes)` (== MAX_BYTES). Author keeps count field ==
-     * `<id>_len` (trust contract). */
+{% elif has_repeat_fields or has_tlv_chain_fields %}
+    /* RFC §5.B B2 / B3 encode: fixed prefix appends byte-by-byte;
+     * list fields walk the per-codec encoded_t splice loop, bounded
+     * by `sizeof(r.bytes)` (== MAX_BYTES). Author keeps count field
+     * (repeat) / `<id>_len` ≤ max_depth (tlv-chain) consistent with
+     * the in-struct entry count (trust contract). */
     r.len = 0;
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
+{% elif field.is_tlv_chain %}
+{{ field.tlv_chain_encode_block }}
 {% else %}
 {{ field.present_if_encode_block }}
 {% endif %}

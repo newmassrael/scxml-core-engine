@@ -33,14 +33,13 @@ typedef struct {
  * declared minimum frame (RFC §5.B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t codec_until_eof_basic_decode(sce_forge_cursor_t *cursor, codec_until_eof_basic_t *out) {
-    /* RFC §5.B B2 repeat primitive: streaming decode mixes plain
-     * fixed-width reads (per-field via the present-if helper's
-     * non-gated arm) with fixed-array repeat loops that iterate the
-     * imported codec's `<snake>_decode(cursor, &out-><id>[_i])`
-     * either `out-><len_field>` times (length-field) or until cursor
-     * exhaustion (until-eof). MAX_COUNT overflow surfaces as
-     * NEED_MORE_BYTES so the consumer treats it like cursor
-     * exhaustion (typed buffer-overflow lands in B7). */
+    /* RFC §5.B B2 repeat / B3 TLV chain primitives: streaming decode
+     * mixes plain fixed-width reads with bounded-iteration loops over
+     * imported codec entries. Repeat: bounded by `out-><len_field>`
+     * (length-field) or until cursor exhaustion (until-eof); MAX_COUNT
+     * overflow → NEED_MORE_BYTES. TLV chain: bounded by `max_depth`
+     * with on-overflow check (reject → SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW
+     * when residual bytes after cap; truncate → silent). */
     {
         out->msgs_len = 0;
         while (sce_forge_cursor_remaining(cursor) > 0) {
@@ -55,10 +54,11 @@ static inline sce_forge_codec_status_t codec_until_eof_basic_decode(sce_forge_cu
 
 static inline codec_until_eof_basic_encoded_t codec_until_eof_basic_encode(const codec_until_eof_basic_t *self) {
     codec_until_eof_basic_encoded_t r;
-    /* RFC §5.B B2 encode: fixed prefix appends byte-by-byte; repeat
-     * fields walk the per-codec encoded_t splice loop, bounded by
-     * `sizeof(r.bytes)` (== MAX_BYTES). Author keeps count field ==
-     * `<id>_len` (trust contract). */
+    /* RFC §5.B B2 / B3 encode: fixed prefix appends byte-by-byte;
+     * list fields walk the per-codec encoded_t splice loop, bounded
+     * by `sizeof(r.bytes)` (== MAX_BYTES). Author keeps count field
+     * (repeat) / `<id>_len` ≤ max_depth (tlv-chain) consistent with
+     * the in-struct entry count (trust contract). */
     r.len = 0;
     for (size_t _ri = 0; _ri < self->msgs_len; ++_ri) {
         codec_repeat_elem_encoded_t _sub = codec_repeat_elem_encode(&self->msgs[_ri]);

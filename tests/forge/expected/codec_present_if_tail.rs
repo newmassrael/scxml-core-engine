@@ -36,8 +36,9 @@ impl CodecPresentIfTail {
         // block computed at codegen time from the carrier field's
         // flag bit. B2-β extends gated fields to Tail / LengthRef /
         // Vle bit-sizes via dispatch inside `present_if_decode_stmt`.
-        // Per-field `is_repeat` routes Repeat fields to the dedicated
-        // helper since present-if isn't allowed on `<sce:repeat>`.
+        // Per-field `is_repeat` / `is_tlv_chain` route Repeat / TLV
+        // chain fields to their dedicated helpers since present-if
+        // isn't allowed on `<sce:repeat>` / `<sce:tlv-chain>`.
         // Note: this branch fires before has_vle_fields so a codec
         // mixing VLE + present-if uses the unified streaming path.
         let flags = {
@@ -81,12 +82,13 @@ impl CodecPresentIfTail {
     pub fn encode(&self) -> Vec<u8> {
         // RFC §5.B B1-δ + B2-β present-if encode: every field appends
         // its bytes via a per-field block; gated fields skip the
-        // append when the optional is None. Per-field `is_repeat`
-        // routes Repeat fields to the dedicated helper. Author keeps
-        // the carrier's flag bit and the optional's truth value in
-        // sync (trust contract, mirrors the variant primitive).
-        // Note: this branch fires before has_vle_fields so a codec
-        // mixing VLE + present-if uses the unified encode path.
+        // append when the optional is None. Per-field `is_repeat` /
+        // `is_tlv_chain` route Repeat / TLV chain fields to their
+        // dedicated helpers. Author keeps the carrier's flag bit and
+        // the optional's truth value in sync (trust contract, mirrors
+        // the variant primitive). Note: this branch fires before
+        // has_vle_fields so a codec mixing VLE + present-if uses the
+        // unified encode path.
         let mut r: Vec<u8> = Vec::with_capacity(65);
         r.push(self.flags);
         if let Some(_v) = &self.payload {

@@ -32,11 +32,12 @@ impl CodecRepeatBasic {
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
     pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
-        // RFC §5.B B2 repeat primitive (trunk): streaming decode
-        // mixes plain fixed-width reads (per-field via the present-if
-        // helper's non-gated arm) with repeat loops that iterate the
-        // imported codec's `decode()` either `count_ref` times
-        // (length-field) or until cursor exhaustion (until-eof).
+        // RFC §5.B B2 repeat / B3 TLV chain primitives: streaming
+        // decode mixes plain fixed-width reads (per-field via the
+        // present-if helper's non-gated arm) with repeat loops that
+        // iterate the imported codec's `decode()`. Repeat: bounded by
+        // `count_ref` (length-field) or cursor exhaustion (until-eof).
+        // TLV chain: bounded by `max_depth` with on-overflow check.
         // Element bodies recurse into their own codec — each may
         // itself surface NeedMoreBytes, unwinding the partial frame.
         let num_frags = {
@@ -59,11 +60,12 @@ impl CodecRepeatBasic {
     }
 
     pub fn encode(&self) -> Vec<u8> {
-        // RFC §5.B B2 repeat encode: fixed prefix fields append byte-
-        // by-byte; repeat fields iterate the host-language list and
-        // splice each element's encode() into the parent buffer.
-        // Author keeps the count field's value consistent with the
-        // list length (same trust contract as variant tag/body).
+        // RFC §5.B B2 repeat / B3 TLV chain encode: fixed prefix
+        // fields append byte-by-byte; list fields iterate the host-
+        // language list and splice each element's encode() into the
+        // parent buffer. Author keeps the count field (repeat) /
+        // chain length (tlv-chain) consistent with the list length
+        // (same trust contract as variant tag/body).
         let mut r: Vec<u8> = Vec::with_capacity(65);
         r.push(self.num_frags);
         for _e in &self.frags {

@@ -520,6 +520,16 @@ pub enum DiagnosticCode {
     #[serde(rename = "algorithm/test-vector-unsupported-kind")]
     AlgorithmTestVectorUnsupportedKind,
 
+    // ── §5.B B3 TLV chain primitive (watching-zenoh RFC §5.B) ──
+    //    `<sce:tlv-chain>` is MCU-class and the runtime decoder needs a
+    //    build-time bound to size its working set; missing `max-depth`
+    //    is rejected here. RFC line 488 "max-depth MUST be specified
+    //    for MCU targets" + line 533 "Iterative parse only; max-depth
+    //    lowers to a max-iter on the chain traversal loop". Repair is
+    //    structural — add `max-depth="N"` (N > 0). Stage = Validation. ──
+    #[serde(rename = "codec/tlv-chain-depth-unspecified")]
+    CodecTlvChainDepthUnspecified,
+
     #[serde(rename = "io/filesystem")]
     IoFilesystem,
 
@@ -835,6 +845,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CodecRepeatCountRefsLaterField,
         // Algorithm §5.B test-vector primitive (watching-zenoh RFC §5.B, B2-test-vector)
         AlgorithmTestVectorUnsupportedKind,
+        // Codec §5.B B3 TLV chain primitive (watching-zenoh RFC §5.B)
+        CodecTlvChainDepthUnspecified,
         // Io
         IoFilesystem,
         // Cli
@@ -1038,11 +1050,12 @@ impl DiagnosticCode {
             | AlgorithmConstFoldBudgetExceeded
             | AlgorithmConstYieldTypeMismatch => Some("watching-zenoh RFC §5.F"),
 
-            // ── Codec §5.B variant + present-if + repeat primitives (B1-β/δ + B2) ─
+            // ── Codec §5.B variant + present-if + repeat + tlv-chain primitives (B1-β/δ + B2 + B3) ─
             CodecVariantArmUnreachable
             | CodecPresentIfRefsLaterField
             | CodecRepeatCountRefsLaterField
-            | AlgorithmTestVectorUnsupportedKind => Some("watching-zenoh RFC §5.B"),
+            | AlgorithmTestVectorUnsupportedKind
+            | CodecTlvChainDepthUnspecified => Some("watching-zenoh RFC §5.B"),
 
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
@@ -1305,6 +1318,7 @@ impl DiagnosticCode {
             CodecPresentIfRefsLaterField => "codec/present-if-refs-later-field",
             CodecRepeatCountRefsLaterField => "codec/repeat-count-refs-later-field",
             AlgorithmTestVectorUnsupportedKind => "algorithm/test-vector-unsupported-kind",
+            CodecTlvChainDepthUnspecified => "codec/tlv-chain-depth-unspecified",
             IoFilesystem => "io/filesystem",
             CliUnknownLanguage => "cli/unknown-language",
             CliUnsupportedLanguage => "cli/unsupported-language",
@@ -2165,6 +2179,19 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: Some(name.clone()),
             fix: None,
             key_fragments: vec![name.clone(), format!("{kind:?}")],
+        },
+        ValidationError::CodecTlvChainDepthUnspecified { codec, field } => DiagnosticPayload {
+            code: DiagnosticCode::CodecTlvChainDepthUnspecified,
+            stage: Stage::Validation,
+            // Repair is text-level (add `max-depth="N"`), but the
+            // candidate value is author-domain (depends on the protocol
+            // shape) so `fix` stays `None`. (codec, field) keys the
+            // violation across multiple <sce:tlv-chain> elements on the
+            // same codec.
+            expected: None,
+            actual: Some(field.clone()),
+            fix: None,
+            key_fragments: vec![codec.clone(), field.clone()],
         },
     }
 }
@@ -3476,6 +3503,16 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:7f83a6a6349e726e","code":"algorithm/test-vector-unsupported-kind","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"<sce:test-vector> is only supported on sce:kind=\"algorithm\" in v1, but 'session_envelope' declares sce:kind=\"Codec\" — multi-field codec test vectors defer to B5 (Zenoh msg-set authoring); use the numerical_reference.json oracle harness for codec round-trips until then","actual":"session_envelope"}"#,
             ),
+            // ── §5.B B3 TLV chain primitive (watching-zenoh RFC §5.B) ─
+            (
+                "forge/codec-tlv-chain-depth-unspecified",
+                ValidationError::CodecTlvChainDepthUnspecified {
+                    codec: "session_envelope".into(),
+                    field: "extensions".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:569cbc9e420b26e4","code":"codec/tlv-chain-depth-unspecified","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': tlv-chain field 'extensions' is missing the required `max-depth` attribute — TLV chains are MCU-class and the decoder needs a build-time bound to size its working set (RFC §5.B line 488); add `max-depth=\"N\"` for some N > 0","actual":"extensions"}"#,
+            ),
         ]
     }
 
@@ -4724,6 +4761,7 @@ mod tests {
             | CodecPresentIfRefsLaterField
             | CodecRepeatCountRefsLaterField
             | AlgorithmTestVectorUnsupportedKind
+            | CodecTlvChainDepthUnspecified
             | IoFilesystem
             | CliUnsupportedLanguage
             | CliReadInput
@@ -5065,6 +5103,7 @@ mod tests {
                 | CodecPresentIfRefsLaterField
                 | CodecRepeatCountRefsLaterField
                 | AlgorithmTestVectorUnsupportedKind
+                | CodecTlvChainDepthUnspecified
                 | IoFilesystem
                 | CliUnknownLanguage | CliUnsupportedLanguage | CliReadInput
                 | CliWriteOutput | CliCreateOutputDir | CliScxmlGenerate
@@ -5148,12 +5187,11 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            168,
+            169,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 168 distinct variants to match the DiagnosticCode \
-             enum (watching-zenoh RFC §5.B B2-test-vector added the \
-             algorithm-only v1 gate: \
-             AlgorithmTestVectorUnsupportedKind; 167 → 168).",
+             expected 169 distinct variants to match the DiagnosticCode \
+             enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
+             chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169).",
         );
     }
 

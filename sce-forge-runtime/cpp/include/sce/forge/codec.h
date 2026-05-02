@@ -21,7 +21,16 @@
 
 namespace SCE::Forge {
 
-/// Typed decode error. B1-β adds `UnknownVariantTag`.
+/// Typed decode error. The B1-β variant primitive intentionally does
+/// NOT need a typed `UnknownVariantTag` — RFC §5.B requires
+/// `<sce:default>` when arms don't exhaust the tag domain (build-time
+/// `codec/variant-arm-unreachable` otherwise), so the default arm
+/// catches every unmatched tag at runtime.
+///
+/// The B3 TLV-chain primitive is MCU-class — its `TlvChainOverflow`
+/// runtime symbol lives only in the Rust + C11 runtimes (cpp here is
+/// rejected upfront by the codec-content MCU gate before any TLV chain
+/// emit reaches this header).
 enum class CodecError : std::uint8_t {
     NeedMoreBytes = 1,
     /// A `vle_u<N>` field's continuation chain implies a value wider

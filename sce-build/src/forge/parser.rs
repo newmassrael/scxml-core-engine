@@ -568,6 +568,9 @@ fn parse_codec(
             "repeat" => {
                 fields.push(parse_codec_repeat_from_node(&child, label.diagnostic_label)?);
             }
+            "tlv-chain" => {
+                fields.push(parse_codec_tlv_chain_from_node(&child, label)?);
+            }
             _ => {}
         }
     }
@@ -1086,12 +1089,13 @@ pub fn parse_codec_field_from_node(
         length_field,
         flags: Vec::new(),
         present_if,
-        // RFC §5.B B2 repeat primitive: `<sce:field>` carriers never
-        // hold a repeat body — only the dedicated `<sce:repeat>`
-        // element (parsed via `parse_codec_repeat_from_node`) sets
-        // these. Plain fields keep both `None`.
+        // RFC §5.B B2/B3: `<sce:field>` carriers never hold a body
+        // alias — only the dedicated `<sce:repeat>` /
+        // `<sce:tlv-chain>` elements set these. Plain fields keep
+        // them None.
         repeat_body_alias: None,
         max_count: None,
+        tlv_chain_body_alias: None,
     })
 }
 
@@ -1438,6 +1442,173 @@ fn parse_codec_repeat_from_node(
         present_if: None,
         repeat_body_alias: Some(body_alias),
         max_count,
+        tlv_chain_body_alias: None,
+    })
+}
+
+/// RFC §5.B B3 TLV chain primitive — parse `<sce:tlv-chain id="..."
+/// sce:type="<imported_alias>" sce:byte="N" max-depth="N"
+/// [on-overflow="reject|truncate"]/>`.
+///
+/// MCU-class. `max-depth` is required at parse time (RFC line 488 "MUST
+/// be specified for MCU targets" + B3 v1 only emits to MCU backends);
+/// missing → typed `codec/tlv-chain-depth-unspecified` so the author
+/// gets a precise repair hint. `on-overflow` defaults to `reject` (RFC
+/// line 488 lists `reject` first; matches the safer interpretation
+/// — silent drop requires explicit opt-in).
+///
+/// Wire shape mirrors `<sce:repeat sce:until-eof="true">` — the chain
+/// iteratively decodes entries off the cursor; each entry's id+len+body
+/// shape is enforced inside the imported entry codec (RFC line 488
+/// "Bounded extension list, each has id+len+body"), not by the chain
+/// itself.
+fn parse_codec_tlv_chain_from_node(
+    node: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+) -> Result<CodecField, Located<ForgeError>> {
+    let doc_name = label.diagnostic_label;
+    let id = node
+        .attribute("id")
+        .ok_or_else(|| {
+            located(
+                node,
+                doc_name,
+                ValidationError::MissingAttribute {
+                    element: "<sce:tlv-chain>".into(),
+                    attr: "id".into(),
+                },
+            )
+        })?
+        .to_string();
+
+    // `type` carries the imported entry codec alias verbatim (mirrors
+    // `<sce:repeat type=...>`); resolution against `<sce:import>`
+    // aliases happens downstream at codegen time.
+    let body_alias = node
+        .attribute("type")
+        .ok_or_else(|| {
+            located(
+                node,
+                doc_name,
+                ValidationError::MissingAttribute {
+                    element: format!("<sce:tlv-chain id='{id}'>"),
+                    attr: "type".into(),
+                },
+            )
+        })?
+        .to_string();
+
+    let byte_offset_str = sce_attr(node, "byte").ok_or_else(|| {
+        located(
+            node,
+            doc_name,
+            ValidationError::MissingAttribute {
+                element: format!("<sce:tlv-chain id='{id}'>"),
+                attr: "sce:byte".into(),
+            },
+        )
+    })?;
+    let byte_offset = parse_int(&byte_offset_str).ok_or_else(|| {
+        located(
+            node,
+            doc_name,
+            ValidationError::NumericParse {
+                element: format!("<sce:tlv-chain id='{id}'>"),
+                attr: "sce:byte".into(),
+                value: byte_offset_str.clone(),
+                detail: "expected integer".into(),
+            },
+        )
+    })?;
+
+    // `max-depth` is mandatory (RFC line 488). Missing → typed
+    // tlv-chain-depth-unspecified so the author sees the MCU-class
+    // contract explicitly rather than the generic missing-attribute
+    // diagnostic.
+    let max_depth_raw = node.attribute("max-depth").ok_or_else(|| {
+        located(
+            node,
+            doc_name,
+            ValidationError::CodecTlvChainDepthUnspecified {
+                codec: label.identifier.to_string(),
+                field: id.clone(),
+            },
+        )
+    })?;
+    let max_depth = parse_int(max_depth_raw).ok_or_else(|| {
+        located(
+            node,
+            doc_name,
+            ValidationError::NumericParse {
+                element: format!("<sce:tlv-chain id='{id}'>"),
+                attr: "max-depth".into(),
+                value: max_depth_raw.to_string(),
+                detail: "expected positive integer".into(),
+            },
+        )
+    })?;
+    if max_depth == 0 {
+        return Err(located(
+            node,
+            doc_name,
+            ValidationError::InvalidAttribute {
+                element: format!("<sce:tlv-chain id='{id}'>"),
+                attr: "max-depth".into(),
+                value: max_depth_raw.to_string(),
+                expected: "positive integer (max-depth=\"0\" decodes nothing)".into(),
+            },
+        ));
+    }
+
+    let on_overflow = match node.attribute("on-overflow") {
+        None | Some("reject") => TlvOverflowPolicy::Reject,
+        Some("truncate") => TlvOverflowPolicy::Truncate,
+        Some("diagnostic-event") => {
+            return Err(located(
+                node,
+                doc_name,
+                ValidationError::InvalidAttribute {
+                    element: format!("<sce:tlv-chain id='{id}'>"),
+                    attr: "on-overflow".into(),
+                    value: "diagnostic-event".into(),
+                    expected:
+                        "\"reject\" or \"truncate\" — \"diagnostic-event\" defers to a later \
+                         B-stage when §5.A diagnostic-event runtime infrastructure ships"
+                            .into(),
+                },
+            ));
+        }
+        Some(other) => {
+            return Err(located(
+                node,
+                doc_name,
+                ValidationError::InvalidAttribute {
+                    element: format!("<sce:tlv-chain id='{id}'>"),
+                    attr: "on-overflow".into(),
+                    value: other.to_string(),
+                    expected: "\"reject\" or \"truncate\"".into(),
+                },
+            ));
+        }
+    };
+
+    Ok(CodecField {
+        id,
+        sce_type: SceType::Bytes,
+        byte_offset,
+        bit_offset: None,
+        bit_size: BitSize::TlvChain {
+            max_depth,
+            on_overflow,
+        },
+        endian: None,
+        max_size: None,
+        length_field: None,
+        flags: Vec::new(),
+        present_if: None,
+        repeat_body_alias: None,
+        max_count: None,
+        tlv_chain_body_alias: Some(body_alias),
     })
 }
 

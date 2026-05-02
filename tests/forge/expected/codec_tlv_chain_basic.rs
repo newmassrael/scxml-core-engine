@@ -4,7 +4,7 @@
 
 use sce_forge_runtime::codec::{CodecError, SceCursor};
 
-use super::codec_repeat_elem::CodecRepeatElem;
+use super::codec_tlv_entry::CodecTlvEntry;
 
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
 // §6 codec). The kind-agnostic conformance harness only references a
@@ -12,12 +12,13 @@ use super::codec_repeat_elem::CodecRepeatElem;
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
 #[derive(Default)]
-pub struct CodecUntilEofBasic {
-    pub msgs: Vec<CodecRepeatElem>,
+pub struct CodecTlvChainBasic {
+    pub header_flags: u8,
+    pub extensions: Vec<CodecTlvEntry>,
 }
 
 #[allow(dead_code)]
-impl CodecUntilEofBasic {
+impl CodecTlvChainBasic {
     /// Construct an instance with every field zero-initialized via
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -39,15 +40,26 @@ impl CodecUntilEofBasic {
         // TLV chain: bounded by `max_depth` with on-overflow check.
         // Element bodies recurse into their own codec — each may
         // itself surface NeedMoreBytes, unwinding the partial frame.
-        let msgs = {
-            let mut _vec: Vec<CodecRepeatElem> = Vec::new();
-            while cursor.remaining() > 0 {
-                _vec.push(CodecRepeatElem::decode(cursor)?);
+        let header_flags = {
+            let raw = cursor.peek_slice(1)?;
+            let _v = raw[0];
+            cursor.advance(1)?;
+            _v
+        };
+        let extensions = {
+            let mut _vec: Vec<CodecTlvEntry> = Vec::with_capacity(8 as usize);
+            for _ in 0..8u32 {
+                if cursor.remaining() == 0 { break; }
+                _vec.push(CodecTlvEntry::decode(cursor)?);
+            }
+            if cursor.remaining() > 0 {
+                return Err(CodecError::TlvChainOverflow);
             }
             _vec
         };
         Ok(Self {
-            msgs,
+            header_flags,
+            extensions,
         })
     }
 
@@ -58,8 +70,9 @@ impl CodecUntilEofBasic {
         // parent buffer. Author keeps the count field (repeat) /
         // chain length (tlv-chain) consistent with the list length
         // (same trust contract as variant tag/body).
-        let mut r: Vec<u8> = Vec::with_capacity(128);
-        for _e in &self.msgs {
+        let mut r: Vec<u8> = Vec::with_capacity(273);
+        r.push(self.header_flags);
+        for _e in &self.extensions {
             r.extend(_e.encode());
         }
         r

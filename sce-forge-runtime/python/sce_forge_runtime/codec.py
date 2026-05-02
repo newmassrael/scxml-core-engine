@@ -16,7 +16,19 @@ from __future__ import annotations
 
 
 class CodecError(Exception):
-    """Base class for typed codec decode errors."""
+    """Base class for typed codec decode errors.
+
+    The B1-β variant primitive intentionally does NOT need a typed
+    ``UnknownVariantTag`` — RFC §5.B requires ``<sce:default>`` when
+    arms don't exhaust the tag domain (build-time
+    ``codec/variant-arm-unreachable`` otherwise), so the default arm
+    catches every unmatched tag at runtime.
+
+    The B3 TLV-chain primitive is MCU-class — its ``TlvChainOverflow``
+    runtime symbol lives only in the Rust + C11 runtimes (python codecs
+    containing tlv-chain are rejected upfront by the codec-content MCU
+    gate before any emit reaches this module).
+    """
 
 
 class NeedMoreBytes(CodecError):

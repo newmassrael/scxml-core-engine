@@ -17,7 +17,16 @@ import "errors"
 // buffer is shorter than the codec's declared minimum frame. Caller
 // should resume after appending more bytes.
 //
-// B1-β adds ErrUnknownVariantTag.
+// The B1-β variant primitive intentionally does NOT need a typed
+// ErrUnknownVariantTag — RFC §5.B requires <sce:default> when arms
+// don't exhaust the tag domain (build-time
+// codec/variant-arm-unreachable otherwise), so the default arm catches
+// every unmatched tag at runtime.
+//
+// The B3 TLV-chain primitive is MCU-class — its TlvChainOverflow
+// runtime symbol lives only in the Rust + C11 runtimes (go codecs
+// containing tlv-chain are rejected upfront by the codec-content MCU
+// gate before any emit reaches this package).
 var ErrNeedMoreBytes = errors.New("sce/codec: need more bytes")
 
 // ErrVLEWidthOverflow is returned when a vle_u<N> field's continuation

@@ -453,6 +453,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `codec/present-if-refs-later-field` | Validation |
 | `codec/repeat-count-refs-later-field` | Validation |
 | `algorithm/test-vector-unsupported-kind` | Validation |
+| `codec/tlv-chain-depth-unspecified` | Validation |
 | `scxml/top-level-script-unloaded` | Validation |
 | `expression/empty` | Expression |
 | `expression/lex` | Expression |

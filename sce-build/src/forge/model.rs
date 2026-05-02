@@ -729,6 +729,26 @@ pub enum CountRef {
     UntilEof,
 }
 
+/// RFC §5.B B3 TLV chain on-overflow policy. Names what the decoder does
+/// when the cursor still has bytes after `max_depth` entries have been
+/// consumed (i.e. the wire carries more entries than the codec author
+/// declared).
+///
+/// v1 ships `Reject` + `Truncate`. `DiagnosticEvent` (RFC line 488) is
+/// deferred until §5.A diagnostic-event runtime infrastructure surfaces a
+/// reachable consumer — adding it now would be built-but-unconsumed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TlvOverflowPolicy {
+    /// Return [`crate::forge::limits`]-sized `TlvChainOverflow` typed
+    /// error. Caller treats the frame as corrupt.
+    Reject,
+    /// Silently drop the post-cap bytes from the decoded list. Cursor
+    /// is left advanced past whatever was consumed; the caller may
+    /// inspect `cursor.remaining()` for the residual.
+    Truncate,
+}
+
 /// Bit size specification for codec fields.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type")]
@@ -750,6 +770,21 @@ pub enum BitSize {
     /// `count_ref` selects the loop termination strategy
     /// (length-field vs until-eof).
     Repeat { count_ref: CountRef },
+    /// RFC §5.B B3 TLV chain primitive — bounded extension list
+    /// (Type-Length-Value). Iteratively decodes entries up to
+    /// `max_depth` (RFC: "iterative, never recursive"); residual bytes
+    /// after the cap are handled per [`TlvOverflowPolicy`]. Entry body
+    /// codec is resolved via [`CodecField::tlv_chain_body_alias`]
+    /// (mirrors `repeat_body_alias`). MCU-class — emits only on Rust +
+    /// C11; cpp/kotlin/go/python codecs containing this field type are
+    /// rejected at codegen via `codegen/mcu-class-kind-on-non-mcu-language`
+    /// (the existing kind-class diagnostic is repurposed at the
+    /// codec-content granularity, see RFC §5.B "MCU-only codec
+    /// sub-features").
+    TlvChain {
+        max_depth: u32,
+        on_overflow: TlvOverflowPolicy,
+    },
 }
 
 /// A single named bit on a `<sce:flags>` carrier field — RFC §5.B B1-γ.
@@ -830,6 +865,12 @@ pub struct CodecField {
     /// bytes).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_count: Option<u32>,
+    /// RFC §5.B B3 TLV chain primitive — imported codec alias whose
+    /// decode/encode handles each entry. `Some(alias)` only when
+    /// `bit_size = BitSize::TlvChain`. Resolved against `<sce:import>`
+    /// aliases at codegen time (mirrors `repeat_body_alias`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tlv_chain_body_alias: Option<String>,
 }
 
 impl CodecField {
@@ -842,7 +883,11 @@ impl CodecField {
     pub fn is_variable_length(&self) -> bool {
         matches!(
             self.bit_size,
-            BitSize::Tail | BitSize::LengthRef | BitSize::Vle { .. } | BitSize::Repeat { .. }
+            BitSize::Tail
+                | BitSize::LengthRef
+                | BitSize::Vle { .. }
+                | BitSize::Repeat { .. }
+                | BitSize::TlvChain { .. }
         )
     }
 
@@ -858,6 +903,15 @@ impl CodecField {
     /// to [`CountRef`].
     pub fn is_repeat(&self) -> bool {
         matches!(self.bit_size, BitSize::Repeat { .. })
+    }
+
+    /// Whether this field is a TLV chain (RFC §5.B B3). The host
+    /// language emits `Vec<T>` (Rust) / fixed-array + len pair (C11)
+    /// and the streaming codec iterates element decode/encode up to
+    /// `max_depth` then applies the [`TlvOverflowPolicy`]. MCU-class
+    /// — codecs containing this field type emit only on Rust + C11.
+    pub fn is_tlv_chain(&self) -> bool {
+        matches!(self.bit_size, BitSize::TlvChain { .. })
     }
 
     /// Whether this field carries a `<sce:flag>` set (RFC §5.B B1-γ).
@@ -957,6 +1011,9 @@ impl CodecModel {
     ///     is only available after import enrichment, so the generator
     ///     adds `max_count * imported_codec.max_frame_bytes()` itself
     ///     (mirrors the variant arm body sizing at codegen time).
+    ///   - `tlv-chain { max_depth, .. }` (RFC §5.B B3): contributes 0
+    ///     here for the same reason — generator adds `max_depth *
+    ///     imported_codec.max_frame_bytes()` post-enrichment.
     pub fn max_frame_bytes(&self) -> u32 {
         let var_max: u32 = self
             .fields
@@ -964,7 +1021,7 @@ impl CodecModel {
             .filter(|f| f.is_variable_length())
             .map(|f| match &f.bit_size {
                 BitSize::Vle { width_bits } => width_bits.div_ceil(7),
-                BitSize::Repeat { .. } => 0,
+                BitSize::Repeat { .. } | BitSize::TlvChain { .. } => 0,
                 _ => crate::forge::limits::resolve_bytes_max(f.max_size),
             })
             .sum();
@@ -992,6 +1049,41 @@ impl CodecModel {
     /// value, and per-language type wraps the field as an optional.
     pub fn has_present_if_fields(&self) -> bool {
         self.fields.iter().any(|f| f.present_if.is_some())
+    }
+
+    /// Whether the codec has any TLV chain field (RFC §5.B B3). Forces
+    /// the streaming decode/encode path (same machinery as repeat) and
+    /// classifies the codec as MCU-class.
+    pub fn has_tlv_chain_fields(&self) -> bool {
+        self.fields.iter().any(|f| f.is_tlv_chain())
+    }
+
+    /// Whether the codec has any tail-bytes field (`<sce:field
+    /// sce:bit-size="tail">`). A tail field by definition consumes
+    /// to the end of the frame, so the codec's decode cannot be
+    /// stream-correct (it must consume the entire cursor remaining).
+    /// Codecs WITHOUT tail can stream-correctly advance only the
+    /// bytes they actually decoded — used by RFC §5.B B3 to make
+    /// length-ref entry codecs decode-iterable inside a TLV chain
+    /// (the B1-prep "consume entire cursor" path was the deferred
+    /// "first multi-frame consumer" the comment references; B3 is
+    /// that consumer).
+    pub fn has_tail_fields(&self) -> bool {
+        self.fields
+            .iter()
+            .any(|f| matches!(f.bit_size, BitSize::Tail))
+    }
+
+    /// RFC §5.B "MCU-only codec sub-features" — whether the codec
+    /// contains any feature that emits only on Rust + C11. Drives the
+    /// codec-content classification used by `render_codec` to typed-
+    /// reject cpp/kotlin/go/python via the existing kind-class
+    /// diagnostic (`codegen/mcu-class-kind-on-non-mcu-language`,
+    /// repurposed at codec-content granularity).
+    ///
+    /// B3-α: TLV chain. B3-β extends with DMA alignment.
+    pub fn has_mcu_only_features(&self) -> bool {
+        self.has_tlv_chain_fields()
     }
 }
 

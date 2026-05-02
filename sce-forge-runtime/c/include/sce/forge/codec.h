@@ -29,13 +29,22 @@
 extern "C" {
 #endif
 
-/* Typed decode error. B1-β adds UnknownVariantTag. */
+/* Typed decode error. The B1-β variant primitive intentionally does
+ * NOT need a typed UnknownVariantTag — RFC §5.B requires <sce:default>
+ * when arms don't exhaust the tag domain (build-time
+ * codec/variant-arm-unreachable otherwise), so the default arm catches
+ * every unmatched tag at runtime. */
 typedef enum {
     SCE_FORGE_CODEC_OK = 0,
     SCE_FORGE_CODEC_NEED_MORE_BYTES = 1,
     /* A vle_u<N> field's continuation chain implies a value wider than
      * the declared type. RFC §5.B `codec/vle-width-overflow`. */
     SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW = 2,
+    /* RFC §5.B B3 TLV chain primitive: the wire carried more entries
+     * than the codec author declared (max-depth=N exhausted while the
+     * cursor still had bytes) AND the codec declared
+     * on-overflow="reject". Truncate-mode codecs never raise this. */
+    SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW = 3,
 } sce_forge_codec_status_t;
 
 /* Read-only cursor over a borrowed input buffer. Decode bodies bind a

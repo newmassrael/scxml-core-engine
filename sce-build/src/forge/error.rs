@@ -493,6 +493,22 @@ pub enum ValidationError {
         /// Actual kind that the test-vector was declared under.
         kind: ForgeKind,
     },
+
+    /// RFC §5.B B3 TLV chain primitive: `<sce:tlv-chain>` declared
+    /// without `max-depth`. The attribute is mandatory because the chain
+    /// is MCU-class — the runtime decoder needs a build-time bound to
+    /// size its working set and to enforce the iterative-only contract
+    /// (RFC line 488 "max-depth MUST be specified for MCU targets" +
+    /// line 533 "Iterative parse only; max-depth lowers to a max-iter on
+    /// the chain traversal loop"). Author resolves by adding the
+    /// attribute (e.g. `max-depth="8"`).
+    #[error(
+        "codec '{codec}': tlv-chain field '{field}' is missing the required `max-depth` attribute — TLV chains are MCU-class and the decoder needs a build-time bound to size its working set (RFC §5.B line 488); add `max-depth=\"N\"` for some N > 0"
+    )]
+    CodecTlvChainDepthUnspecified {
+        codec: String,
+        field: String,
+    },
 }
 
 // ── Stage 4: Expression transpilation ──────────────────────────

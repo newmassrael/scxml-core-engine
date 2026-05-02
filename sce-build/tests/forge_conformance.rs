@@ -938,6 +938,171 @@ fn forge_codec_until_eof_basic_cpp() {
     assert_standalone_forge("codec_until_eof_basic", "codec_until_eof_basic.h");
 }
 
+// ── RFC §5.B B3 TLV chain primitive (Cpp/Rust trunk) ────────
+// `codec_tlv_chain_basic` declares a TLV chain bounded at max-depth=8
+// with on-overflow="reject". MCU-class — Cpp/Kotlin/Go/Python all
+// typed-reject with codegen/mcu-class-kind-on-non-mcu-language.
+// The trunk's "Cpp/Rust trunk" naming is consistent with B1-β/δ +
+// B2-α: "trunk" = first emit pair to land. For B3 the pair is
+// **Rust + C11** (not Rust + Cpp) because the kind is MCU-class —
+// Cpp would never be a valid emit target. Cpp gets a rejection test
+// instead. The Rust-only `forge_codec_tlv_chain_basic_rust` lives
+// under the assert_standalone_forge_rust shape; the C11 counterpart
+// is `forge_c11_codec_tlv_chain_basic`.
+
+#[test]
+fn forge_codec_tlv_entry_cpp() {
+    // Plain entry codec (no MCU-only sub-features) — ships on all 6
+    // backends. The cpp golden anchors the entry shape; the Rust
+    // counterpart on the next test exercises the same fixture under
+    // the stream-correct length-ref shape introduced in B3-α.
+    assert_standalone_forge("codec_tlv_entry", "codec_tlv_entry.h");
+}
+
+#[test]
+fn forge_codec_tlv_entry_rust() {
+    assert_standalone_forge_rust("codec_tlv_entry", "codec_tlv_entry.rs");
+}
+
+#[test]
+fn forge_codec_tlv_chain_basic_rust() {
+    assert_standalone_forge_rust(
+        "codec_tlv_chain_basic",
+        "codec_tlv_chain_basic.rs",
+    );
+}
+
+/// RFC §5.B B3 MCU gate: a codec containing `<sce:tlv-chain>` rejects
+/// when targeting `cpp` (and the other 3 non-MCU langs by the same
+/// path). The diagnostic is the existing kind-class
+/// `codegen/mcu-class-kind-on-non-mcu-language`, repurposed at the
+/// codec-content granularity per RFC §5.B "MCU-only codec sub-features"
+/// (line 521-525). The `kind` field carries the codec name + the
+/// MCU-only-features marker so authors see exactly which codec hit the
+/// gate.
+#[test]
+fn forge_codec_tlv_chain_rejects_on_cpp() {
+    use sce_build::forge::error::{ForgeError, GenerateError};
+
+    let scxml_path = resource_dir().join("codec_tlv_chain_basic.scxml");
+    let content = std::fs::read_to_string(&scxml_path)
+        .expect("Cannot read codec_tlv_chain_basic.scxml");
+    let result = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("codec_tlv_chain_basic"),
+        sce_build::generator::Language::Cpp,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "MCU-class codec on Cpp must reject with \
+             codegen/mcu-class-kind-on-non-mcu-language"
+        ),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            &err.error,
+            ForgeError::Generate(GenerateError::CodegenMcuClassKindOnNonMcuLanguage {
+                ref language,
+                ..
+            }) if language == "cpp"
+        ),
+        "must surface CodegenMcuClassKindOnNonMcuLanguage targeting cpp; got: {:?}",
+        err.error
+    );
+}
+
+/// RFC §5.B B3: `<sce:tlv-chain>` without `max-depth` rejects with the
+/// dedicated `codec/tlv-chain-depth-unspecified` diagnostic so the
+/// MCU-class contract is explicit (the runtime decoder needs a build-
+/// time bound to size its working set; RFC line 488 + 533).
+#[test]
+fn forge_codec_tlv_chain_missing_depth_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="missing_depth">
+  <sce:import src="codec_tlv_entry.scxml" kind="codec" as="codec_tlv_entry"/>
+  <datamodel>
+    <sce:field id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:tlv-chain id="extensions" type="codec_tlv_entry" sce:byte="1"/>
+  </datamodel>
+</scxml>"#;
+    let result = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("missing_depth"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "<sce:tlv-chain> without max-depth must reject with \
+             codec/tlv-chain-depth-unspecified"
+        ),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            &err.error,
+            ForgeError::Validation(ValidationError::CodecTlvChainDepthUnspecified {
+                ref codec,
+                ref field,
+            }) if codec == "missing_depth" && field == "extensions"
+        ),
+        "must surface CodecTlvChainDepthUnspecified naming the codec + field; got: {:?}",
+        err.error
+    );
+}
+
+/// RFC §5.B B3: v1 rejects `on-overflow="diagnostic-event"` until the
+/// §5.A diagnostic-event runtime infrastructure ships a reachable
+/// consumer. `reject` and `truncate` are the v1 accept-set; anything
+/// else surfaces the generic `validation/invalid-attribute`.
+#[test]
+fn forge_codec_tlv_chain_diagnostic_event_overflow_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="diag_event_overflow">
+  <sce:import src="codec_tlv_entry.scxml" kind="codec" as="codec_tlv_entry"/>
+  <datamodel>
+    <sce:field id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:tlv-chain id="extensions" type="codec_tlv_entry" sce:byte="1"
+                   max-depth="4" on-overflow="diagnostic-event"/>
+  </datamodel>
+</scxml>"#;
+    let result = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("diag_event_overflow"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "on-overflow=\"diagnostic-event\" must reject with \
+             validation/invalid-attribute in v1"
+        ),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            &err.error,
+            ForgeError::Validation(ValidationError::InvalidAttribute { ref attr, ref value, .. })
+                if attr == "on-overflow" && value == "diagnostic-event"
+        ),
+        "must surface ValidationError::InvalidAttribute naming on-overflow + diagnostic-event; got: {:?}",
+        err.error
+    );
+}
+
 /// RFC §5.B B2: `codec/repeat-count-refs-later-field` build-time check —
 /// a `<sce:repeat sce:count="num_frags">` whose `num_frags` field is
 /// declared *after* the repeat must reject so the streaming decoder
@@ -2379,6 +2544,29 @@ fn forge_c11_codec_repeat_basic() {
 #[test]
 fn forge_c11_codec_until_eof_basic() {
     assert_standalone_forge_c("codec_until_eof_basic", "codec_until_eof_basic.c.h");
+}
+
+// ── RFC §5.B B3 TLV chain primitive (C11, trunk) ────────────
+// `codec_tlv_chain_basic` declares a uint8 header_flags then a TLV
+// chain bounded at max-depth=8 with on-overflow="reject". Each entry
+// is `codec_tlv_entry` (id+len+value, RFC line 488). MCU-class —
+// only Rust + C11 emit; cpp/kotlin/go/python typed-reject in
+// render_codec via the codec-content MCU gate. The entry body codec
+// `codec_tlv_entry` is plain (no MCU-only sub-features) so it ships
+// on all 6 backends — only the *parent* containing the tlv-chain
+// field is MCU-only.
+
+#[test]
+fn forge_c11_codec_tlv_entry() {
+    assert_standalone_forge_c("codec_tlv_entry", "codec_tlv_entry.c.h");
+}
+
+#[test]
+fn forge_c11_codec_tlv_chain_basic() {
+    assert_standalone_forge_c(
+        "codec_tlv_chain_basic",
+        "codec_tlv_chain_basic.c.h",
+    );
 }
 
 // ── Crossfile codec (C11) ───────────────────────────────────

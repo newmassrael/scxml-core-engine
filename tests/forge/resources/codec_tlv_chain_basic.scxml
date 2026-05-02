@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: TLV chain primitive (RFC §5.B B3).
+     Bounded extension list — uint8 `header_flags` byte first, then
+     a TLV chain bounded at 8 entries with on-overflow="reject".
+     Each entry is a `codec_tlv_entry` (id+len+value).
+
+     MCU-class — emits only on Rust + C11 per RFC §5.J.4 matrix
+     (the codec contains MCU-only sub-features, so cpp/kotlin/go/python
+     are rejected at codegen with codegen/mcu-class-kind-on-non-mcu-language).
+
+     Wire round-trip oracle (Rust runtime smoke):
+       header_flags=0x01, entries=[(type=0x10, body="ABC"), (type=0x20, body="X")]
+       → 0x01 0x10 0x03 0x41 0x42 0x43 0x20 0x01 0x58
+     A 9-entry frame would fit max_depth=8 entries then fail with
+     SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW (Reject policy). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_tlv_chain_basic">
+  <sce:import src="codec_tlv_entry.scxml" kind="codec" as="codec_tlv_entry"/>
+  <datamodel>
+    <sce:field id="header_flags" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:tlv-chain id="extensions" type="codec_tlv_entry" sce:byte="1"
+                   max-depth="8" on-overflow="reject"/>
+  </datamodel>
+</scxml>

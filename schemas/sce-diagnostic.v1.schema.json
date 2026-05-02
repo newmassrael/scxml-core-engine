@@ -97,6 +97,7 @@
         "codec/present-if-refs-later-field",
         "codec/repeat-count-refs-later-field",
         "algorithm/test-vector-unsupported-kind",
+        "codec/tlv-chain-depth-unspecified",
         "io/filesystem",
         "cli/unknown-language",
         "cli/unsupported-language",

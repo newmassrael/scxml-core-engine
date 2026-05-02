@@ -36,8 +36,8 @@ static inline sce_forge_codec_status_t codec_present_if_basic_decode(sce_forge_c
      * for absent bytes payloads); the carrier's flag bit is the
      * source of truth for presence. B2-β extends gating to Tail /
      * LengthRef / Vle bit-sizes via dispatch inside the helper.
-     * Per-field `is_repeat` routes Repeat fields to the dedicated
-     * helper. Branch fires before has_vle_fields so a codec mixing
+     * Per-field `is_repeat` / `is_tlv_chain` route to dedicated
+     * helpers. Branch fires before has_vle_fields so a codec mixing
      * VLE + present-if uses the unified streaming path. */
     {
         const uint8_t *raw = sce_forge_cursor_peek(cursor, 1);
@@ -60,9 +60,9 @@ static inline codec_present_if_basic_encoded_t codec_present_if_basic_encode(con
     codec_present_if_basic_encoded_t r;
     /* RFC §5.B B1-δ + B2-β present-if encode: per-field byte append.
      * Gated fields skip the append when the carrier's flag bit is
-     * clear. Per-field `is_repeat` routes Repeat fields to the
-     * dedicated helper. Branch fires before has_vle_fields so a
-     * codec mixing VLE + present-if uses the unified encode path. */
+     * clear. Per-field `is_repeat` / `is_tlv_chain` route to dedicated
+     * helpers. Branch fires before has_vle_fields so a codec mixing
+     * VLE + present-if uses the unified encode path. */
     r.len = 0;
     r.bytes[r.len++] = self->flags;
     if ((self->flags & 0x01) != 0) {

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: TLV chain entry body codec (RFC §5.B B3).
+     Each entry has the canonical id+len+value shape (RFC line 488):
+     uint8 entry_type, uint8 entry_len, then `entry_len` value bytes
+     (length-ref). Imported by codec_tlv_chain_basic.scxml as the
+     per-entry body codec for its <sce:tlv-chain> field. Plain codec
+     (no MCU-only sub-features), so it ships on all 6 backends —
+     only the *parent* codec containing the tlv-chain field is
+     MCU-only. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_tlv_entry">
+  <datamodel>
+    <sce:field id="entry_type" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="entry_len"  sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
+    <sce:field id="entry_body" sce:type="bytes" sce:byte="2"
+               sce:bit-size="length-ref" sce:length-field="entry_len"
+               sce:max-size="32"/>
+  </datamodel>
+</scxml>

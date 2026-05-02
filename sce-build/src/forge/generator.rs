@@ -987,6 +987,36 @@ fn render_codec(
     imports: &[ImportContext],
     lang: crate::generator::Language,
 ) -> Result<String, ForgeError> {
+    // RFC §5.B "MCU-only codec sub-features" — codec-content-level MCU
+    // classification. When the codec carries TLV chain (B3-α) or DMA
+    // alignment (B3-β) fields, only Rust + C11 emit; the other 4
+    // backends typed-reject through the existing kind-class diagnostic
+    // (`codegen/mcu-class-kind-on-non-mcu-language`, repurposed at
+    // codec-content granularity per RFC line 521-525).
+    if m.has_mcu_only_features() {
+        match lang {
+            crate::generator::Language::Rust | crate::generator::Language::C11 => { /* allowed */ }
+            crate::generator::Language::Cpp
+            | crate::generator::Language::Kotlin
+            | crate::generator::Language::Go
+            | crate::generator::Language::Python => {
+                return Err(ForgeError::Generate(
+                    crate::forge::error::GenerateError::CodegenMcuClassKindOnNonMcuLanguage {
+                        kind: format!("codec '{}' (MCU-only sub-features)", m.name),
+                        language: match lang {
+                            crate::generator::Language::Cpp => "cpp",
+                            crate::generator::Language::Kotlin => "kotlin",
+                            crate::generator::Language::Go => "go",
+                            crate::generator::Language::Python => "python",
+                            _ => unreachable!(),
+                        }
+                        .to_string(),
+                    },
+                ));
+            }
+        }
+    }
+
     let l = LangCtx::new(lang);
     let type_key = l.codec_type_key();
 
@@ -1035,6 +1065,10 @@ fn render_codec(
             obj.insert("is_variable".into(), serde_json::Value::Bool(f.is_variable_length()));
             obj.insert("is_vle".into(), serde_json::Value::Bool(f.is_vle()));
             obj.insert("is_repeat".into(), serde_json::Value::Bool(f.is_repeat()));
+            obj.insert(
+                "is_tlv_chain".into(),
+                serde_json::Value::Bool(f.is_tlv_chain()),
+            );
             obj.insert("byte_off".into(), f.byte_offset.into());
             if f.is_variable_length() {
                 if let BitSize::Vle { width_bits } = &f.bit_size {
@@ -1134,6 +1168,66 @@ fn render_codec(
                     if matches!(lang, crate::generator::Language::Kotlin) {
                         obj.insert("kt_default".into(), "mutableListOf()".into());
                     }
+                } else if let BitSize::TlvChain { max_depth, on_overflow } = &f.bit_size {
+                    // RFC §5.B B3 TLV chain primitive — populate the
+                    // per-field decode/encode statements + host-language
+                    // list type. Reuses the repeat machinery for body
+                    // type / decoder / encoder resolution (entry codec
+                    // is an imported alias same as repeat). The TLV
+                    // chain helpers add the bounded-iteration loop +
+                    // on-overflow check.
+                    //
+                    // MCU-class — render_codec rejects this codec on
+                    // cpp/kotlin/go/python at the top of the function,
+                    // so we only need the Rust + C11 emitter shapes
+                    // here. Non-MCU language hitting this branch is a
+                    // bug (gate not reached).
+                    obj.insert("bit_size_kind".into(), "tlv-chain".into());
+                    obj.insert("max_depth".into(), (*max_depth).into());
+                    obj.insert(
+                        "on_overflow".into(),
+                        match on_overflow {
+                            crate::forge::model::TlvOverflowPolicy::Reject => "reject",
+                            crate::forge::model::TlvOverflowPolicy::Truncate => "truncate",
+                        }
+                        .into(),
+                    );
+                    let alias = f
+                        .tlv_chain_body_alias
+                        .as_deref()
+                        .expect("parser sets tlv_chain_body_alias for every BitSize::TlvChain");
+                    let body_type = resolve_repeat_body_type(
+                        &m.name, alias, imports, lang,
+                    )?;
+                    let body_decoder = resolve_variant_arm_decoder(alias, lang);
+                    let body_encoder = resolve_variant_arm_encoder(alias, lang);
+                    obj.insert("tlv_chain_body_type".into(), body_type.clone().into());
+                    obj.insert("tlv_chain_body_decoder".into(), body_decoder.clone().into());
+                    obj.insert("tlv_chain_body_encoder".into(), body_encoder.clone().into());
+                    let wrapped = match lang {
+                        crate::generator::Language::Rust => format!("Vec<{body_type}>"),
+                        // C11 emits a fixed-buffer + length pair via the
+                        // codec template (mirrors repeat shape); the
+                        // single c_type slot holds the body_type for
+                        // shape symmetry.
+                        crate::generator::Language::C11 => body_type.clone(),
+                        _ => unreachable!(
+                            "TLV chain is MCU-class — render_codec rejects \
+                             non-MCU langs upfront (cpp/kotlin/go/python)"
+                        ),
+                    };
+                    obj.insert(type_key.into(), wrapped.into());
+                    obj.insert(
+                        "tlv_chain_decode_stmt".into(),
+                        tlv_chain_streaming_decode_stmt(
+                            f, &body_type, &body_decoder, *max_depth, *on_overflow, lang,
+                        )
+                        .into(),
+                    );
+                    obj.insert(
+                        "tlv_chain_encode_block".into(),
+                        tlv_chain_streaming_encode_block(f, &body_encoder, lang).into(),
+                    );
                 } else {
                     let resolved = crate::forge::limits::resolve_bytes_max(f.max_size);
                     obj.insert("max_size".into(), resolved.into());
@@ -1142,8 +1236,9 @@ fn render_codec(
                         BitSize::LengthRef => "length-ref",
                         BitSize::Fixed { .. }
                         | BitSize::Vle { .. }
-                        | BitSize::Repeat { .. } =>
-                            unreachable!("variable + non-vle + non-repeat path covers Tail/LengthRef only"),
+                        | BitSize::Repeat { .. }
+                        | BitSize::TlvChain { .. } =>
+                            unreachable!("variable + non-vle + non-repeat + non-tlv-chain path covers Tail/LengthRef only"),
                     };
                     obj.insert("bit_size_kind".into(), kind.into());
                     if matches!(f.bit_size, BitSize::LengthRef) {
@@ -1234,7 +1329,7 @@ fn render_codec(
                 "has_present_if".into(),
                 f.present_if.is_some().into(),
             );
-            if has_present_if_fields || has_repeat_fields {
+            if has_present_if_fields || has_repeat_fields || m.has_tlv_chain_fields() {
                 obj.insert(
                     "present_if_decode_stmt".into(),
                     present_if_streaming_decode_stmt(
@@ -1383,7 +1478,30 @@ fn render_codec(
                 Some(body_max.saturating_mul(count))
             })
             .sum();
-        m.max_frame_bytes() + repeat_body_max
+        // RFC §5.B B3 TLV chain primitive: each tlv-chain field
+        // contributes `max_depth * imported_codec.max_frame_bytes()`
+        // — same shape as repeat but bounded by `max_depth` instead
+        // of `max_count` (TLV chains are MCU-class so the bound is
+        // mandatory; resolve_max_count's fallback is not reachable
+        // here).
+        let tlv_chain_body_max: u32 = m
+            .fields
+            .iter()
+            .filter(|f| f.is_tlv_chain())
+            .filter_map(|f| {
+                let alias = f.tlv_chain_body_alias.as_deref()?;
+                let body_max = imports
+                    .iter()
+                    .find(|i| i.alias == alias)
+                    .and_then(|i| i.codec_max_bytes)?;
+                let max_depth = match &f.bit_size {
+                    BitSize::TlvChain { max_depth, .. } => *max_depth,
+                    _ => unreachable!("filter selected is_tlv_chain"),
+                };
+                Some(body_max.saturating_mul(max_depth))
+            })
+            .sum();
+        m.max_frame_bytes() + repeat_body_max + tlv_chain_body_max
     };
     ctx.insert("max_bytes".into(), max_bytes.into());
     ctx.insert("has_variable_fields".into(), m.has_variable_fields().into());
@@ -1393,6 +1511,8 @@ fn render_codec(
         has_present_if_fields.into(),
     );
     ctx.insert("has_repeat_fields".into(), has_repeat_fields.into());
+    ctx.insert("has_tlv_chain_fields".into(), m.has_tlv_chain_fields().into());
+    ctx.insert("has_tail_fields".into(), m.has_tail_fields().into());
     ctx.insert("encode_exprs".into(), serde_json::json!(encode_exprs));
 
     // RFC §5.B variant primitive (B1-β trunk): build per-arm rendering
@@ -2061,6 +2181,138 @@ fn repeat_streaming_encode_block(
     }
 }
 
+/// RFC §5.B B3 TLV chain primitive — pre-rendered streaming decode
+/// statement for one tlv-chain field. Iteratively decodes entries off
+/// the cursor up to `max_depth`; residual bytes after the cap are
+/// handled per [`TlvOverflowPolicy`]:
+///   - [`TlvOverflowPolicy::Reject`]   → return typed `TlvChainOverflow`
+///   - [`TlvOverflowPolicy::Truncate`] → silently drop the post-cap bytes
+///
+/// Loop bound is the literal `max_depth` (no max-iter helper needed —
+/// the for-loop is the max-iter contract). MCU-class — only Rust + C11
+/// arms are reachable; render_codec rejects cpp/kotlin/go/python upfront.
+fn tlv_chain_streaming_decode_stmt(
+    field: &CodecField,
+    body_type: &str,
+    body_decoder: &str,
+    max_depth: u32,
+    on_overflow: crate::forge::model::TlvOverflowPolicy,
+    lang: crate::generator::Language,
+) -> String {
+    use crate::forge::model::TlvOverflowPolicy;
+    use crate::generator::Language;
+    let id = &field.id;
+    match lang {
+        // Rust: bounded loop over `max_depth`; each iteration peeks at
+        // cursor.remaining() to break cleanly when the chain ends, then
+        // decodes the next entry. After the loop, on Reject we surface
+        // TlvChainOverflow if the cursor still has bytes (peer sent
+        // more entries than declared).
+        Language::Rust => {
+            let overflow_check = match on_overflow {
+                TlvOverflowPolicy::Reject => format!(
+                    "\n            if cursor.remaining() > 0 {{\n                \
+                         return Err(CodecError::TlvChainOverflow);\n            \
+                     }}"
+                ),
+                TlvOverflowPolicy::Truncate => String::new(),
+            };
+            format!(
+                "let {id} = {{\n            \
+                     let mut _vec: Vec<{body_type}> = Vec::with_capacity({max_depth} as usize);\n            \
+                     for _ in 0..{max_depth}u32 {{\n                \
+                         if cursor.remaining() == 0 {{ break; }}\n                \
+                         _vec.push({body_type}::decode(cursor)?);\n            \
+                     }}{overflow_check}\n            \
+                     _vec\n        \
+                 }};"
+            )
+        }
+        // C11: same shape as repeat (fixed-array `T elems[max_depth]`
+        // paired with `size_t elems_len`) but bounded by max_depth and
+        // with the on-overflow tail check. The post-loop reject path
+        // returns SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW; truncate skips
+        // it (peer's residual bytes stay in cursor for the caller to
+        // observe via sce_forge_cursor_remaining).
+        Language::C11 => {
+            let id_snake = filters::to_snake_case(id.to_string());
+            let overflow_check = match on_overflow {
+                TlvOverflowPolicy::Reject => format!(
+                    "\n        if (sce_forge_cursor_remaining(cursor) > 0) \
+                       return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;"
+                ),
+                TlvOverflowPolicy::Truncate => String::new(),
+            };
+            format!(
+                "{{\n        \
+                     out->{id_snake}_len = 0;\n        \
+                     for (size_t _i = 0; _i < {max_depth}; ++_i) {{\n            \
+                         if (sce_forge_cursor_remaining(cursor) == 0) break;\n            \
+                         sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]);\n            \
+                         if (_st != SCE_FORGE_CODEC_OK) return _st;\n            \
+                         out->{id_snake}_len++;\n        \
+                     }}{overflow_check}\n    \
+                 }}"
+            )
+        }
+        // MCU-class — render_codec gate already rejected these langs.
+        // Reaching here means the gate was bypassed (bug); panic with
+        // a precise message rather than emit silent wrong code.
+        Language::Cpp | Language::Kotlin | Language::Go | Language::Python => {
+            unreachable!(
+                "TLV chain decode helper called on non-MCU language {lang:?}; \
+                 render_codec MCU gate must reject codecs with TLV chain \
+                 fields on cpp/kotlin/go/python before this point"
+            )
+        }
+    }
+}
+
+/// RFC §5.B B3 TLV chain primitive — pre-rendered streaming encode
+/// block for one tlv-chain field. Walks the host-language list and
+/// appends each element's encoded bytes onto the parent's `r` buffer.
+/// Encode does not enforce `max_depth` — the contract is "encoder
+/// writes whatever the struct holds" (mirrors variant/repeat trust
+/// shape; author keeps len ≤ max_depth via the host language's
+/// list length).
+fn tlv_chain_streaming_encode_block(
+    field: &CodecField,
+    body_encoder: &str,
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    let id = &field.id;
+    match lang {
+        Language::Rust => format!(
+            "        for _e in &self.{id} {{\n            r.extend(_e.encode());\n        }}"
+        ),
+        Language::C11 => {
+            let id_snake = filters::to_snake_case(id.to_string());
+            let encoded_t = if let Some(stripped) = body_encoder.strip_suffix("_encode") {
+                format!("{stripped}_encoded_t")
+            } else {
+                format!("{body_encoder}_t")
+            };
+            format!(
+                "    for (size_t _ti = 0; _ti < self->{id_snake}_len; ++_ti) {{\n        \
+                     {encoded_t} _sub = {body_encoder}(&self->{id_snake}[_ti]);\n        \
+                     if (r.len + _sub.len <= sizeof(r.bytes)) {{\n            \
+                         for (size_t _tj = 0; _tj < _sub.len; ++_tj) r.bytes[r.len + _tj] = _sub.bytes[_tj];\n            \
+                         r.len += _sub.len;\n        \
+                     }}\n    \
+                 }}"
+            )
+        }
+        Language::Cpp | Language::Kotlin | Language::Go | Language::Python => {
+            unreachable!(
+                "TLV chain encode helper called on non-MCU language {lang:?}; \
+                 render_codec MCU gate must reject codecs with TLV chain \
+                 fields on cpp/kotlin/go/python before this point"
+            )
+        }
+    }
+}
+
 /// RFC §5.B B1-γ flags primitive — render the per-flag accessor context
 /// for one carrier field. Each entry carries the language-specific
 /// accessor / setter names alongside the precomputed bitmask literal so
@@ -2151,15 +2403,15 @@ fn present_if_streaming_decode_stmt(
         BitSize::Vle { width_bits } => {
             present_if_decode_vle(field, fields, lang, *width_bits)
         }
-        // Repeat fields are routed to `repeat_streaming_decode_stmt`
-        // by the template's per-field `is_repeat` dispatch — this
-        // helper is still called eagerly for every field in the obj-
-        // builder (so per-field obj keys stay uniform) but the
-        // template never reads the result for repeat fields. Returning
+        // Repeat / TLV-chain fields are routed to their dedicated
+        // streaming helpers by the template's per-field dispatch —
+        // this helper is still called eagerly for every field in the
+        // obj-builder (so per-field obj keys stay uniform) but the
+        // template never reads the result for these cases. Returning
         // an empty string keeps the JSON shape valid without
         // committing to a sentinel comment that might leak into a
         // golden if the dispatch ever drifts.
-        BitSize::Repeat { .. } => String::new(),
+        BitSize::Repeat { .. } | BitSize::TlvChain { .. } => String::new(),
     }
 }
 
@@ -2888,12 +3140,13 @@ fn present_if_streaming_encode_block(
         BitSize::Vle { width_bits } => {
             present_if_encode_vle(field, fields, lang, *width_bits)
         }
-        // Repeat fields render via `repeat_streaming_encode_block`
-        // through the template's per-field `is_repeat` dispatch; this
-        // helper is still called eagerly for every field in the obj-
-        // builder, so an empty-string return keeps the JSON shape
-        // valid without leaking a sentinel into a golden.
-        BitSize::Repeat { .. } => String::new(),
+        // Repeat / TLV-chain fields render via their dedicated
+        // streaming encode helpers through the template's per-field
+        // dispatch; this helper is still called eagerly for every
+        // field in the obj-builder, so an empty-string return keeps
+        // the JSON shape valid without leaking a sentinel into a
+        // golden.
+        BitSize::Repeat { .. } | BitSize::TlvChain { .. } => String::new(),
     }
 }
 
@@ -4177,11 +4430,13 @@ fn generate_decode_expr(
             // struct literal cannot accidentally render it.
             String::new()
         }
-        BitSize::Repeat { .. } => {
-            // RFC §5.B B2 repeat primitive — same convention as Vle:
-            // the streaming branch (`has_repeat_fields`) emits per-
-            // field decode statements via `repeat_streaming_decode_stmt`,
-            // so the positional branch never needs a single-expr form.
+        BitSize::Repeat { .. } | BitSize::TlvChain { .. } => {
+            // RFC §5.B B2 repeat / B3 TLV-chain primitives — same
+            // convention as Vle: the streaming branch
+            // (`has_repeat_fields` / `has_tlv_chain_fields`) emits
+            // per-field decode statements via the dedicated
+            // streaming helpers, so the positional branch never
+            // needs a single-expr form.
             String::new()
         }
     }

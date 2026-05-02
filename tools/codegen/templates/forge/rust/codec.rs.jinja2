@@ -119,13 +119,16 @@ impl {{ struct_name }} {
         // block computed at codegen time from the carrier field's
         // flag bit. B2-β extends gated fields to Tail / LengthRef /
         // Vle bit-sizes via dispatch inside `present_if_decode_stmt`.
-        // Per-field `is_repeat` routes Repeat fields to the dedicated
-        // helper since present-if isn't allowed on `<sce:repeat>`.
+        // Per-field `is_repeat` / `is_tlv_chain` route Repeat / TLV
+        // chain fields to their dedicated helpers since present-if
+        // isn't allowed on `<sce:repeat>` / `<sce:tlv-chain>`.
         // Note: this branch fires before has_vle_fields so a codec
         // mixing VLE + present-if uses the unified streaming path.
 {% for field in fields %}
 {% if field.is_repeat %}
         {{ field.repeat_decode_stmt }}
+{% elif field.is_tlv_chain %}
+        {{ field.tlv_chain_decode_stmt }}
 {% else %}
         {{ field.present_if_decode_stmt }}
 {% endif %}
@@ -147,17 +150,20 @@ impl {{ struct_name }} {
             {{ field.id }},
 {% endfor %}
         })
-{% elif has_repeat_fields %}
-        // RFC §5.B B2 repeat primitive (trunk): streaming decode
-        // mixes plain fixed-width reads (per-field via the present-if
-        // helper's non-gated arm) with repeat loops that iterate the
-        // imported codec's `decode()` either `count_ref` times
-        // (length-field) or until cursor exhaustion (until-eof).
+{% elif has_repeat_fields or has_tlv_chain_fields %}
+        // RFC §5.B B2 repeat / B3 TLV chain primitives: streaming
+        // decode mixes plain fixed-width reads (per-field via the
+        // present-if helper's non-gated arm) with repeat loops that
+        // iterate the imported codec's `decode()`. Repeat: bounded by
+        // `count_ref` (length-field) or cursor exhaustion (until-eof).
+        // TLV chain: bounded by `max_depth` with on-overflow check.
         // Element bodies recurse into their own codec — each may
         // itself surface NeedMoreBytes, unwinding the partial frame.
 {% for field in fields %}
 {% if field.is_repeat %}
         {{ field.repeat_decode_stmt }}
+{% elif field.is_tlv_chain %}
+        {{ field.tlv_chain_decode_stmt }}
 {% else %}
         {{ field.present_if_decode_stmt }}
 {% endif %}
@@ -168,12 +174,16 @@ impl {{ struct_name }} {
 {% endfor %}
         })
 {% elif has_variable_fields %}
-        // Variable-length codec: tail / length-ref fields consume bytes
-        // beyond the fixed prefix. B1-prep treats the entire cursor
-        // remaining as one frame (matches the harness "one frame per
-        // call" pattern). Stream-correct length-ref consumption (advance
-        // by `min_bytes + length_value` only) lands with its first
-        // multi-frame consumer in a later B-stage.
+        // Variable-length codec. RFC §5.B B3 stream-correct shape:
+        // a codec without `<sce:field sce:bit-size="tail">` consumes
+        // only `min_bytes + length_value` rather than the entire
+        // cursor remaining. Codecs WITH a tail field still consume
+        // to end (tail's definition forces it). The prior
+        // "consume entire cursor" behaviour deferred to "the first
+        // multi-frame consumer" — TLV chain (B3-α) is that consumer,
+        // so length-ref entry codecs now decode-iterably from a
+        // shared cursor without each entry eating the next entry's
+        // bytes.
         let _frame_len = cursor.remaining();
         if _frame_len < {{ min_bytes }} {
             return Err(CodecError::NeedMoreBytes);
@@ -184,7 +194,27 @@ impl {{ struct_name }} {
             {{ field.id }}: {{ field.decode_expr }},
 {% endfor %}
         };
+{% if has_tail_fields %}
         cursor.advance(_frame_len)?;
+{% else %}
+        // Stream-correct: advance only the bytes actually decoded.
+        // For each length-ref field, end = byte_off + raw[byte_off-1]
+        // value (length-field byte is read just before). Take the max
+        // across all length-ref fields; min_bytes is the lower bound.
+        let mut _consumed: usize = {{ min_bytes }};
+{% for field in fields %}
+{% if field.is_variable and field.bit_size_kind == "length-ref" %}
+        {
+            let _end = {{ field.byte_off }}usize + value.{{ field.id }}.len();
+            if _end > _consumed { _consumed = _end; }
+        }
+{% endif %}
+{% endfor %}
+        if _consumed > _frame_len {
+            return Err(CodecError::NeedMoreBytes);
+        }
+        cursor.advance(_consumed)?;
+{% endif %}
         Ok(value)
 {% else %}
         let raw = cursor.peek_slice({{ min_bytes }})?;
@@ -251,16 +281,19 @@ impl {{ struct_name }} {
 {% elif has_present_if_fields %}
         // RFC §5.B B1-δ + B2-β present-if encode: every field appends
         // its bytes via a per-field block; gated fields skip the
-        // append when the optional is None. Per-field `is_repeat`
-        // routes Repeat fields to the dedicated helper. Author keeps
-        // the carrier's flag bit and the optional's truth value in
-        // sync (trust contract, mirrors the variant primitive).
-        // Note: this branch fires before has_vle_fields so a codec
-        // mixing VLE + present-if uses the unified encode path.
+        // append when the optional is None. Per-field `is_repeat` /
+        // `is_tlv_chain` route Repeat / TLV chain fields to their
+        // dedicated helpers. Author keeps the carrier's flag bit and
+        // the optional's truth value in sync (trust contract, mirrors
+        // the variant primitive). Note: this branch fires before
+        // has_vle_fields so a codec mixing VLE + present-if uses the
+        // unified encode path.
         let mut r: Vec<u8> = Vec::with_capacity({{ max_bytes }});
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
+{% elif field.is_tlv_chain %}
+{{ field.tlv_chain_encode_block }}
 {% else %}
 {{ field.present_if_encode_block }}
 {% endif %}
@@ -272,16 +305,19 @@ impl {{ struct_name }} {
 {{ field.vle_encode_block }}
 {% endfor %}
         r
-{% elif has_repeat_fields %}
-        // RFC §5.B B2 repeat encode: fixed prefix fields append byte-
-        // by-byte; repeat fields iterate the host-language list and
-        // splice each element's encode() into the parent buffer.
-        // Author keeps the count field's value consistent with the
-        // list length (same trust contract as variant tag/body).
+{% elif has_repeat_fields or has_tlv_chain_fields %}
+        // RFC §5.B B2 repeat / B3 TLV chain encode: fixed prefix
+        // fields append byte-by-byte; list fields iterate the host-
+        // language list and splice each element's encode() into the
+        // parent buffer. Author keeps the count field (repeat) /
+        // chain length (tlv-chain) consistent with the list length
+        // (same trust contract as variant tag/body).
         let mut r: Vec<u8> = Vec::with_capacity({{ max_bytes }});
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
+{% elif field.is_tlv_chain %}
+{{ field.tlv_chain_encode_block }}
 {% else %}
 {{ field.present_if_encode_block }}
 {% endif %}

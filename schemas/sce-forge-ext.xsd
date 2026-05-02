@@ -428,6 +428,62 @@
   </xs:element>
 
   <!-- ═══════════════════════════════════════════════════════════════
+       TLV chain — RFC §5.B B3 "TLV chain"
+
+       Bounded extension list, each entry has id+len+body shape (the
+       entry shape lives inside the imported entry codec, not enforced
+       here). Iteratively decoded up to `max-depth`; residual bytes
+       handled per `on-overflow`:
+
+         <sce:tlv-chain id="extensions"
+                        sce:type="TlvEntry"
+                        sce:byte="2"
+                        max-depth="8"
+                        on-overflow="reject"/>
+
+       MCU-class — codecs containing this element emit only on
+       `(rust, *)` and `(c11, bare_metal)` per the §5.J.4 matrix; on
+       `{cpp, kotlin, go, python}` the codec is rejected with
+       `codegen/mcu-class-kind-on-non-mcu-language` (the existing
+       kind-class diagnostic, repurposed at codec-content granularity).
+
+       `max-depth` is required (RFC line 488 "MUST be specified for
+       MCU targets"); missing → typed
+       `codec/tlv-chain-depth-unspecified`. `on-overflow` defaults to
+       `reject`; `truncate` is the silent-drop opt-in. v1 rejects
+       `diagnostic-event` (defers to a later B-stage when §5.A
+       diagnostic-event runtime infrastructure ships).
+
+       Diagnostics:
+         - missing max-depth → codec/tlv-chain-depth-unspecified
+         - max-depth=0 → validation/invalid-attribute
+         - on-overflow="diagnostic-event" / unknown value →
+             validation/invalid-attribute
+         - codec containing tlv-chain on a non-MCU language →
+             codegen/mcu-class-kind-on-non-mcu-language
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <xs:element name="tlv-chain">
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <!-- Imported entry codec alias (matches an `<sce:import as=...>`
+           in the same document); resolved at codegen time. Mirrors
+           `<sce:repeat type=...>` / `<sce:arm type=...>` shape. -->
+      <xs:attribute name="type" type="xs:NCName" use="required"/>
+      <xs:attribute ref="sce:byte" use="required"/>
+      <!-- max-depth is required by spec but kept XSD-optional so the
+           dedicated `codec/tlv-chain-depth-unspecified` diagnostic
+           fires (with the RFC-specific repair hint) rather than the
+           generic `xml/schema-validation` "attribute required" form.
+           sce-build/src/forge/parser.rs::parse_codec_tlv_chain_from_node
+           rejects when missing. Mirrors the `<sce:repeat>` pattern
+           where `count` / `until-eof` mutex is parser-enforced. -->
+      <xs:attribute name="max-depth" type="xs:positiveInteger"/>
+      <xs:attribute name="on-overflow" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- ═══════════════════════════════════════════════════════════════
        Test vector — RFC §5.B "Test vector" (B2-test-vector)
 
        Inline reference oracle declared as a top-level child of an
