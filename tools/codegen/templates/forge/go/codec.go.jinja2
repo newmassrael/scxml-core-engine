@@ -16,11 +16,39 @@ import (
 {% endif %}
 )
 
+{% if has_variant %}
+{% if variant.default_arm %}
+// {{ struct_name }}{{ variant.default_arm.variant_name }} bundles the runtime
+// tag value with the catch-all body so encode can round-trip the
+// observed tag back onto the wire (RFC §5.B variant primitive B1-β).
+type {{ struct_name }}{{ variant.default_arm.variant_name }} struct {
+	Tag {{ variant.tag_native_type }}
+	Body {{ variant.default_arm.body_type }}
+}
+
+{% endif %}
+// {{ struct_name }}Body is a discriminated-union body for the codec's
+// tag-field suffix (RFC §5.B variant primitive B1-β). Exactly one of
+// the pointer fields is non-nil at a time; the active arm is the one
+// that matches the current tag value.
+type {{ struct_name }}Body struct {
+{% for arm in variant.arms %}
+	{{ arm.variant_name }} *{{ arm.body_type }}
+{% endfor %}
+{% if variant.default_arm %}
+	{{ variant.default_arm.variant_name }} *{{ struct_name }}{{ variant.default_arm.variant_name }}
+{% endif %}
+}
+
+{% endif %}
 // {{ struct_name }} represents the codec frame layout.
 type {{ struct_name }} struct {
 {% for field in fields %}
 	{{ field.id }} {{ field.go_type }}
 {% endfor %}
+{% if has_variant %}
+	Body {{ struct_name }}Body
+{% endif %}
 }
 
 // Decode{{ struct_name }} decodes the next frame from cursor.
@@ -29,7 +57,53 @@ type {{ struct_name }} struct {
 // is shorter than the declared minimum frame (RFC §5.B L494-519).
 // VLE codecs may also return `codec.ErrVLEWidthOverflow`.
 func Decode{{ struct_name }}(cursor *codec.SceCursor) (*{{ struct_name }}, error) {
-{% if has_vle_fields %}
+{% if has_variant %}
+	// Decode fixed prefix (RFC §5.B variant B1-β: fields before tag suffix).
+	raw, err := cursor.PeekSlice({{ min_bytes }})
+	if err != nil {
+		return nil, err
+	}
+{% for field in fields %}
+	{{ field.id }} := {{ field.decode_expr }}
+{% endfor %}
+	if err := cursor.Advance({{ min_bytes }}); err != nil {
+		return nil, err
+	}
+	// Dispatch on the tag field; each arm decodes its body codec from
+	// the cursor. The default arm (when declared) carries the runtime
+	// tag value so encode can round-trip it back onto the wire.
+	body := {{ struct_name }}Body{}
+	switch {{ variant.tag_field }} {
+{% for arm in variant.arms %}
+	case {{ arm.value_literal }}:
+		_arm, err := {{ arm.body_decoder }}(cursor)
+		if err != nil {
+			return nil, err
+		}
+		body.{{ arm.variant_name }} = _arm
+{% endfor %}
+	default:
+{% if variant.default_arm %}
+		_arm, err := {{ variant.default_arm.body_decoder }}(cursor)
+		if err != nil {
+			return nil, err
+		}
+		body.{{ variant.default_arm.variant_name }} = &{{ struct_name }}{{ variant.default_arm.variant_name }}{
+			Tag: {{ variant.tag_field }},
+			Body: *_arm,
+		}
+{% else %}
+		// codec/variant-arm-unreachable rejected this case at parse time.
+		return nil, codec.ErrNeedMoreBytes
+{% endif %}
+	}
+	return &{{ struct_name }}{
+{% for field in fields %}
+		{{ field.id }}: {{ field.id }},
+{% endfor %}
+		Body: body,
+	}, nil
+{% elif has_vle_fields %}
 	// Streaming codec: each field reads from cursor directly
 	// (VLE base-128 chain). Local var name reuses the Go-PascalCase
 	// `field.id` — the struct literal's `Foo: Foo` is unambiguous
@@ -79,7 +153,28 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor) (*{{ struct_name }}, error
 
 // Encode serializes the {{ struct_name }} into raw bytes.
 func (s *{{ struct_name }}) Encode() []byte {
-{% if has_vle_fields %}
+{% if has_variant %}
+	// Encode fixed prefix (tag field bytes are part of the prefix).
+	// The tag value is read from the struct field, NOT derived from
+	// the body discriminant — keeping author-set tag / body in sync
+	// is the caller's responsibility (v1 keeps the layout simple).
+	r := make([]byte, 0, {{ max_bytes }})
+{% for expr in encode_exprs %}
+	r = append(r, {{ expr }})
+{% endfor %}
+	// Append the active arm body's encoded bytes.
+	switch {
+{% for arm in variant.arms %}
+	case s.Body.{{ arm.variant_name }} != nil:
+		r = append(r, s.Body.{{ arm.variant_name }}.Encode()...)
+{% endfor %}
+{% if variant.default_arm %}
+	case s.Body.{{ variant.default_arm.variant_name }} != nil:
+		r = append(r, s.Body.{{ variant.default_arm.variant_name }}.Body.Encode()...)
+{% endif %}
+	}
+	return r
+{% elif has_vle_fields %}
 	r := make([]byte, 0, {{ max_bytes }})
 {% for field in fields %}
 {{ field.vle_encode_block }}

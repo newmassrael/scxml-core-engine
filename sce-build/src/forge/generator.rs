@@ -961,9 +961,9 @@ fn render_codec(
     let l = LangCtx::new(lang);
     let type_key = l.codec_type_key();
 
-    // RFC §5.B variant primitive (B1-β trunk + Kotlin closure): Rust,
-    // Cpp, Kotlin emit variant codecs. The remaining backends (Go /
-    // C11 / Python) gate here with a clear `generate/unsupported-feature`
+    // RFC §5.B variant primitive (B1-β trunk + Kotlin/Go closures):
+    // Rust, Cpp, Kotlin, Go emit variant codecs. The remaining backends
+    // (C11 / Python) gate here with a clear `generate/unsupported-feature`
     // until their per-language closure lands. Without this gate the
     // template would silently render a struct missing the variant body
     // — author would ship broken decode/encode against an apparently
@@ -974,12 +974,13 @@ fn render_codec(
             crate::generator::Language::Rust
                 | crate::generator::Language::Cpp
                 | crate::generator::Language::Kotlin
+                | crate::generator::Language::Go
         )
     {
         return Err(ForgeError::Generate(
             crate::forge::error::GenerateError::UnsupportedFeature(format!(
                 "codec '{name}': <sce:variant> emit is not implemented for language '{lang:?}' \
-                 (RFC §5.B B1-β trunk ships Rust + Cpp + Kotlin; Go / C11 / Python land in B1-β closures)",
+                 (RFC §5.B B1-β trunk ships Rust + Cpp + Kotlin + Go; C11 / Python land in B1-β closures)",
                 name = m.name,
             )),
         ));
@@ -1096,10 +1097,12 @@ fn render_codec(
                 let variant_name =
                     filters::to_pascal_case(arm.body_alias.clone());
                 let value_literal = format!("{}{}", arm.value, arm_value_suffix);
+                let body_decoder = resolve_variant_arm_decoder(&arm.body_alias, lang);
                 let mut obj = serde_json::Map::new();
                 obj.insert("value_literal".into(), value_literal.into());
                 obj.insert("variant_name".into(), variant_name.into());
                 obj.insert("body_type".into(), body_type.into());
+                obj.insert("body_decoder".into(), body_decoder.into());
                 Ok::<_, ForgeError>(serde_json::Value::Object(obj))
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -1113,12 +1116,14 @@ fn render_codec(
                     imports,
                     lang,
                 )?;
+                let body_decoder = resolve_variant_arm_decoder(&d.body_alias, lang);
                 let mut obj = serde_json::Map::new();
                 obj.insert(
                     "variant_name".into(),
                     "Default".to_string().into(),
                 );
                 obj.insert("body_type".into(), body_type.into());
+                obj.insert("body_decoder".into(), body_decoder.into());
                 Ok::<_, ForgeError>(serde_json::Value::Object(obj))
             })
             .transpose()?;
@@ -1221,6 +1226,7 @@ fn resolve_variant_arm_body_type(
     Ok(match lang {
         crate::generator::Language::Rust => imp.type_name.clone(),
         crate::generator::Language::Cpp => imp.member_type.clone(),
+        // (Kotlin / Go arms below; C11 / Python remain gated.)
         // Kotlin: each imported codec lives in its own sibling package
         // (`com.sce.generated.<snake>`). The codec template's own
         // `import com.sce.generated.<snake>.*` brings the class into
@@ -1234,10 +1240,40 @@ fn resolve_variant_arm_body_type(
             filters::to_snake_case(imp.type_name.clone()),
             imp.type_name
         ),
+        // Go: imports are package-qualified (`<snake>.<Pascal>`).
+        // `member_type` already holds that exact spelling — see the
+        // Go arm of `resolve_single_import` — so the variant body
+        // type, the decoded arm pointer type, and the imported codec's
+        // free decoder all line up against the same package alias.
+        crate::generator::Language::Go => imp.member_type.clone(),
         _ => unreachable!(
-            "variant emit gated to Rust + Cpp + Kotlin until Go / C11 / Python closures land"
+            "variant emit gated to Rust + Cpp + Kotlin + Go until C11 / Python closures land"
         ),
     })
+}
+
+/// RFC §5.B variant primitive (B1-β): per-language decoder reference
+/// for an arm body. Method-style backends (Rust / Cpp / Kotlin) produce
+/// `body_type::decode` or `body_type.decode`; the template appends
+/// `(cursor)` and the language-specific error wiring. Free-function
+/// backends (Go) use `<package>.Decode<Pascal>` because the imported
+/// codec exposes a top-level decoder, not a method on the struct.
+fn resolve_variant_arm_decoder(
+    body_alias: &str,
+    lang: crate::generator::Language,
+) -> String {
+    match lang {
+        crate::generator::Language::Go => {
+            let snake = filters::to_snake_case(body_alias.to_string());
+            let pascal = filters::to_pascal_case(body_alias.to_string());
+            format!("{snake}.Decode{pascal}")
+        }
+        // Rust / Cpp / Kotlin templates already build the call from
+        // `body_type` directly (e.g. `{{ body_type }}::decode`); they
+        // ignore this field. Returning empty keeps the JSON shape
+        // uniform without forcing a per-language template branch.
+        _ => String::new(),
+    }
 }
 
 // ── Codec expression generation (unified) ─────────────────────
