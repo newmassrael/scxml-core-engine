@@ -976,30 +976,10 @@ fn render_codec(
     let l = LangCtx::new(lang);
     let type_key = l.codec_type_key();
 
-    // RFC §5.B variant primitive (B1-β trunk + Kotlin/Go/C11 closures):
-    // Rust, Cpp, Kotlin, Go, C11 emit variant codecs. Python remains
-    // gated here with a clear `generate/unsupported-feature` until its
-    // per-language closure lands. Without this gate the template would
-    // silently render a struct missing the variant body — author would
-    // ship broken decode/encode against an apparently valid codec golden.
-    if m.variant.is_some()
-        && !matches!(
-            lang,
-            crate::generator::Language::Rust
-                | crate::generator::Language::Cpp
-                | crate::generator::Language::Kotlin
-                | crate::generator::Language::Go
-                | crate::generator::Language::C11
-        )
-    {
-        return Err(ForgeError::Generate(
-            crate::forge::error::GenerateError::UnsupportedFeature(format!(
-                "codec '{name}': <sce:variant> emit is not implemented for language '{lang:?}' \
-                 (RFC §5.B B1-β trunk ships Rust + Cpp + Kotlin + Go + C11; Python lands in B1-β closure)",
-                name = m.name,
-            )),
-        ));
-    }
+    // RFC §5.B variant primitive (B1-β closures complete): all six
+    // backends now emit variant codecs. The historical gate sat here
+    // until each per-language closure landed; the final closure
+    // (Python) deletes the gate entirely.
 
     let has_vle_fields = m.fields.iter().any(|f| f.is_vle());
 
@@ -1336,9 +1316,12 @@ fn resolve_variant_arm_body_type(
         // exactly what `member_type` already holds for the C11 arm of
         // `resolve_single_import`.
         crate::generator::Language::C11 => imp.member_type.clone(),
-        _ => unreachable!(
-            "variant emit gated to Rust + Cpp + Kotlin + Go + C11 until Python closure lands"
-        ),
+        // Python: `from .<snake> import <Pascal>` brings the imported
+        // class into top-level scope (`resolve_single_import` Python
+        // arm), so the dataclass field can reference the body type by
+        // its bare Pascal name. `imp.type_name` already holds that
+        // exact spelling.
+        crate::generator::Language::Python => imp.type_name.clone(),
     })
 }
 

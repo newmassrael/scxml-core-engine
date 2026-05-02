@@ -877,42 +877,6 @@ fn forge_codec_variant_missing_default_rejects() {
     );
 }
 
-/// RFC §5.B B1-β: post-C11-closure, only Python remains gated. The
-/// Python arm exercises the gate path so a future Python closure
-/// regression (forgetting to lift the gate AND add the
-/// `resolve_variant_arm_body_type` arm) lands a typed error instead
-/// of silently-broken codegen. C11 closure landed in this commit —
-/// the C11 arm of the gate self-deletes here.
-#[test]
-fn forge_codec_variant_python_gate_rejects_until_closure() {
-    use sce_build::forge::error::{ForgeError, GenerateError};
-
-    let scxml_path = resource_dir().join("codec_variant_dispatch.scxml");
-    let content = std::fs::read_to_string(&scxml_path).expect("read variant fixture");
-    let result = sce_build::compile_forge_with_imports(
-        &content,
-        sce_build::DocumentLabel::symmetric("codec_variant_dispatch"),
-        sce_build::generator::Language::Python,
-        scxml_path.parent().unwrap(),
-        &sce_build::ForgeCompileOptions::default(),
-    );
-    let err = match result {
-        Ok(_) => panic!(
-            "B1-β must gate <sce:variant> on Python until its closure lands; codegen would otherwise ship broken output"
-        ),
-        Err(e) => e,
-    };
-    let inner = err.error;
-    assert!(
-        matches!(
-            inner,
-            ForgeError::Generate(GenerateError::UnsupportedFeature(ref msg))
-                if msg.contains("codec_variant_dispatch") && msg.contains("Python")
-        ),
-        "must surface as GenerateError::UnsupportedFeature naming the codec and language; got: {inner:?}"
-    );
-}
-
 // ══════════════════════════════════════════════════════════════
 // ── Kotlin conformance tests ─────────────────────────────────
 // ══════════════════════════════════════════════════════════════
@@ -1471,6 +1435,32 @@ fn forge_python_codec_length_ref() {
 #[test]
 fn forge_python_codec_vle_zint_u64() {
     assert_standalone_forge_python("codec_vle_zint_u64", "codec_vle_zint_u64.py");
+}
+
+// ── RFC §5.B variant primitive (Python, B1-β closure) ────────
+
+#[test]
+fn forge_python_codec_variant_session_open() {
+    assert_standalone_forge_python(
+        "codec_variant_session_open",
+        "codec_variant_session_open.py",
+    );
+}
+
+#[test]
+fn forge_python_codec_variant_session_close() {
+    assert_standalone_forge_python(
+        "codec_variant_session_close",
+        "codec_variant_session_close.py",
+    );
+}
+
+#[test]
+fn forge_python_codec_variant_dispatch() {
+    assert_standalone_forge_python(
+        "codec_variant_dispatch",
+        "codec_variant_dispatch.py",
+    );
 }
 
 // ── Algorithm (Python, RFC §5.A — post-A6 matrix follow-up) ─
