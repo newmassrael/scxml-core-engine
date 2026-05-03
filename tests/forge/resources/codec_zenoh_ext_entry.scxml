@@ -1,29 +1,41 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Zenoh extension TLV entry — variant body
      keyed by the entry header's `enc` bit-range (RFC §5.B B5-ε,
-     surface G from the watching-zenoh authoring path).
+     surface G from the watching-zenoh authoring path; layout
+     refined to wire-fidelity in Wire RFC Phase B Y3).
 
      Mirrors zenoh-pico `_z_msg_ext_decode` + `_z_msg_ext_unknown_body_decode`
-     (src/protocol/codec/ext.c lines 84-128 + 130-142). The 1-byte
-     header packs three named bit-ranges:
+     (src/protocol/codec/ext.c lines 84-128 + 130-142) and the
+     extension header constants in `protocol/ext.h:55-65`. The 1-byte
+     header packs four named bit-ranges:
 
-         bits 0..4 : id   (5-bit extension identifier, `_Z_EXT_ID_MASK = 0x1F`)
-         bits 5..6 : enc  (2-bit body encoding kind, `_Z_EXT_ENC_*`)
-         bit  7    : reserved (upstream uses this for the chain
-                       continuation flag `_Z_MSG_EXT_FLAG_Z`; B5-ε
-                       leaves it unbound — the chain-continuation
-                       termination strategy ships in a later
-                       sub-phase. The TLV chain wrapper terminates
-                       on cursor exhaustion, mirroring B3-α.)
+         bits 0..3 : ext_id (4-bit extension identifier, mask 0x0f —
+                       upstream `_z_decl_ext_keyexpr_encode` uses 0x0f
+                       which fits the 4-bit width; older B5-ε comment
+                       claimed 5-bit but never had a consumer of bit 4
+                       as ext_id, and the wire spec is 4-bit).
+         bit  4    : M     (`_Z_MSG_EXT_FLAG_M = 0x10` — mandatory
+                       marker; the decoder MUST understand this ext or
+                       fail the frame via `_z_msg_ext_unknown_error`).
+         bits 5..6 : enc   (2-bit body encoding kind, `_Z_EXT_ENC_*`):
+                       00 (UNIT), 01 (ZINT), 10 (ZBUF), 11 (reserved)
+         bit  7    : Z     (`_Z_MSG_EXT_FLAG_Z = 0x80` — chain
+                       continuation flag set on every entry except the
+                       last; consumed by Y3 `<sce:tlv-chain
+                       sce:terminate-on="entry-flag" entry-flag-name="Z">`
+                       to drive multi-ext loop termination. Earlier
+                       B5-ε comment marked this bit "reserved /
+                       deferred" — Y3 closes that deferral.)
 
      The variant primitive (B1-β) dispatches the body codec on the
      `header.enc` dotted-path bit-range — the same B5-β multi-bit-flag
      dispatch already proven by `codec_transport_envelope`. Each arm
      references an imported codec whose decode/encode honors the
-     uniform `<codec>::decode(cursor)` / `<codec>_decode(cursor, *out)`
-     signature; B5-ε's surface-G freebie is that an imported codec is
-     allowed to *itself* be a variant (this entry codec) when used as
-     the body of `<sce:tlv-chain>` — see `codec_zenoh_ext_envelope`.
+     uniform `<codec>::decode(cursor)` / `<codec>_decode(cursor,
+     *out)` signature; B5-ε's surface-G freebie is that an imported
+     codec is allowed to *itself* be a variant (this entry codec) when
+     used as the body of `<sce:tlv-chain>` — see
+     `codec_zenoh_ext_envelope`.
 
      Arm coverage (mirrors `_Z_MSG_EXT_ENC_*`):
        0x00 → Unit  (codec_zenoh_ext_unit, empty body)
@@ -32,11 +44,11 @@
        <sce:default> → Unit (catch-all preserves runtime enc on round-trip;
                              upstream's "unknown encoding" log path)
 
-     MCU-class — variant body itself is plain (Cpp/Kotlin/Go/Python
-     would also accept it), but the `<sce:tlv-chain>` wrapper in
-     `codec_zenoh_ext_envelope` is MCU-only, so the envelope rejects on
-     non-MCU langs. This entry codec ships only on MCU backends in
-     practice (no consumer outside the chain). -->
+     Ships on all 6 backends (cpp/kotlin/go/python emit the variant
+     primitive natively; no MCU-only sub-features in this codec
+     itself). The `<sce:tlv-chain>` wrapper in
+     `codec_zenoh_ext_envelope` was historically MCU-only but B5-ε
+     closures lifted that — both ship on all 6 backends now. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="codec_zenoh_ext_entry">
@@ -45,8 +57,10 @@
   <sce:import src="codec_zenoh_ext_zbuf.scxml" kind="codec" as="codec_zenoh_ext_zbuf"/>
   <datamodel>
     <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
-      <sce:flag name="id"  bit="0" width="5"/>
-      <sce:flag name="enc" bit="5" width="2"/>
+      <sce:flag name="ext_id" bit="0" width="4"/>
+      <sce:flag name="M"      bit="4"/>
+      <sce:flag name="enc"    bit="5" width="2"/>
+      <sce:flag name="Z"      bit="7"/>
     </sce:flags>
     <sce:variant tag="header.enc">
       <sce:arm value="0x00" type="codec_zenoh_ext_unit"/>

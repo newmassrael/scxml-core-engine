@@ -1330,7 +1330,7 @@ fn render_codec(
                         };
                         obj.insert("kt_default".into(), kt_default.into());
                     }
-                } else if let BitSize::TlvChain { max_depth, on_overflow } = &f.bit_size {
+                } else if let BitSize::TlvChain { max_depth, on_overflow, terminate_on } = &f.bit_size {
                     // RFC §5.B B3 TLV chain primitive — populate the
                     // per-field decode/encode statements + host-language
                     // list type. Reuses the repeat machinery for body
@@ -1388,7 +1388,7 @@ fn render_codec(
                     obj.insert(
                         "tlv_chain_decode_stmt".into(),
                         tlv_chain_streaming_decode_stmt(
-                            f, &body_type, &body_decoder, *max_depth, *on_overflow, lang,
+                            f, &body_type, &body_decoder, *max_depth, *on_overflow, terminate_on, lang,
                         )
                         .into(),
                     );
@@ -4096,17 +4096,38 @@ fn tlv_chain_streaming_decode_stmt(
     body_decoder: &str,
     max_depth: u32,
     on_overflow: crate::forge::model::TlvOverflowPolicy,
+    terminate_on: &crate::forge::model::TlvTerminateStrategy,
     lang: crate::generator::Language,
 ) -> String {
     use crate::forge::model::TlvOverflowPolicy;
+    use crate::forge::model::TlvTerminateStrategy;
     use crate::generator::Language;
     let id = &field.id;
+    // RFC §5.B Y3 — entry-flag termination accessor, per-language. The
+    // body codec's flags-bearing carrier (typically the entry's outer
+    // header byte) exposes a per-flag accessor whose name mirrors
+    // `build_flag_ctx`'s `name_acc` rule (snake/pascal/camel by
+    // language). The chain decoder reads the accessor on the
+    // just-decoded entry and breaks the loop when the bit is clear.
+    let entry_flag_acc = match terminate_on {
+        TlvTerminateStrategy::ExhaustOrDepth => None,
+        TlvTerminateStrategy::EntryFlag { flag_name } => {
+            let acc = match lang {
+                Language::Go => filters::to_pascal_case(flag_name.clone()),
+                Language::Kotlin => filters::to_camel_case(flag_name.clone()),
+                _ => filters::to_snake_case(flag_name.clone()),
+            };
+            Some(acc)
+        }
+    };
     match lang {
         // Rust: bounded loop over `max_depth`; each iteration peeks at
         // cursor.remaining() to break cleanly when the chain ends, then
         // decodes the next entry. After the loop, on Reject we surface
         // TlvChainOverflow if the cursor still has bytes (peer sent
-        // more entries than declared).
+        // more entries than declared). Y3 entry-flag termination binds
+        // the entry to a temporary, reads the flag accessor BEFORE the
+        // push (push moves the value), and breaks the loop when clear.
         Language::Rust => {
             let overflow_check = match on_overflow {
                 TlvOverflowPolicy::Reject => format!(
@@ -4116,12 +4137,23 @@ fn tlv_chain_streaming_decode_stmt(
                 ),
                 TlvOverflowPolicy::Truncate => String::new(),
             };
+            let body = match &entry_flag_acc {
+                None => format!(
+                    "                if cursor.remaining() == 0 {{ break; }}\n                \
+                     _vec.push({body_type}::decode(cursor)?);\n            "
+                ),
+                Some(acc) => format!(
+                    "                if cursor.remaining() == 0 {{ break; }}\n                \
+                     let _entry = {body_type}::decode(cursor)?;\n                \
+                     let _continue = _entry.{acc}();\n                \
+                     _vec.push(_entry);\n                \
+                     if !_continue {{ break; }}\n            "
+                ),
+            };
             format!(
                 "let {id} = {{\n            \
                      let mut _vec: Vec<{body_type}> = Vec::with_capacity({max_depth} as usize);\n            \
-                     for _ in 0..{max_depth}u32 {{\n                \
-                         if cursor.remaining() == 0 {{ break; }}\n                \
-                         _vec.push({body_type}::decode(cursor)?);\n            \
+                     for _ in 0..{max_depth}u32 {{\n{body}\
                      }}{overflow_check}\n            \
                      _vec\n        \
                  }};"
@@ -4132,7 +4164,10 @@ fn tlv_chain_streaming_decode_stmt(
         // with the on-overflow tail check. The post-loop reject path
         // returns SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW; truncate skips
         // it (peer's residual bytes stay in cursor for the caller to
-        // observe via sce_forge_cursor_remaining).
+        // observe via sce_forge_cursor_remaining). Y3 entry-flag
+        // termination calls the body codec's `<entry_struct>_<flag>(&...)`
+        // free function on the just-decoded entry slot and breaks
+        // when the bit is clear.
         Language::C11 => {
             let id_snake = filters::to_snake_case(id.to_string());
             let overflow_check = match on_overflow {
@@ -4142,14 +4177,33 @@ fn tlv_chain_streaming_decode_stmt(
                 ),
                 TlvOverflowPolicy::Truncate => String::new(),
             };
+            // body_decoder shape: `<entry_struct>_decode`. Strip the
+            // `_decode` suffix to recover the entry's struct snake
+            // name (used as the accessor's free-function prefix per
+            // c/codec.h.jinja2 line 444 / 455).
+            let entry_struct_snake = body_decoder
+                .strip_suffix("_decode")
+                .unwrap_or(body_decoder);
+            let body = match &entry_flag_acc {
+                None => format!(
+                    "            if (sce_forge_cursor_remaining(cursor) == 0) break;\n            \
+                     sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]);\n            \
+                     if (_st != SCE_FORGE_CODEC_OK) return _st;\n            \
+                     out->{id_snake}_len++;\n        "
+                ),
+                Some(acc) => format!(
+                    "            if (sce_forge_cursor_remaining(cursor) == 0) break;\n            \
+                     sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]);\n            \
+                     if (_st != SCE_FORGE_CODEC_OK) return _st;\n            \
+                     size_t _just = out->{id_snake}_len;\n            \
+                     out->{id_snake}_len++;\n            \
+                     if (!{entry_struct_snake}_{acc}(&out->{id_snake}[_just])) break;\n        "
+                ),
+            };
             format!(
                 "{{\n        \
                      out->{id_snake}_len = 0;\n        \
-                     for (size_t _i = 0; _i < {max_depth}; ++_i) {{\n            \
-                         if (sce_forge_cursor_remaining(cursor) == 0) break;\n            \
-                         sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]);\n            \
-                         if (_st != SCE_FORGE_CODEC_OK) return _st;\n            \
-                         out->{id_snake}_len++;\n        \
+                     for (size_t _i = 0; _i < {max_depth}; ++_i) {{\n{body}\
                      }}{overflow_check}\n    \
                  }}"
             )
@@ -4160,7 +4214,8 @@ fn tlv_chain_streaming_decode_stmt(
         // from the parent codec's decode (mirrors the repeat / variant arm
         // shape). On Reject we collapse residual-bytes overflow to
         // std::nullopt (cpp doesn't construct a typed CodecError variant
-        // at runtime — same convention as VleWidthOverflow).
+        // at runtime — same convention as VleWidthOverflow). Y3 entry-
+        // flag termination reads the optional's value method then push.
         Language::Cpp => {
             let overflow_check = match on_overflow {
                 TlvOverflowPolicy::Reject => format!(
@@ -4168,14 +4223,26 @@ fn tlv_chain_streaming_decode_stmt(
                 ),
                 TlvOverflowPolicy::Truncate => String::new(),
             };
+            let body = match &entry_flag_acc {
+                None => format!(
+                    "            if (cursor.remaining() == 0) break;\n            \
+                     auto _elem = {body_type}::decode(cursor);\n            \
+                     if (!_elem.has_value()) return std::nullopt;\n            \
+                     {id}.push_back(*_elem);\n        "
+                ),
+                Some(acc) => format!(
+                    "            if (cursor.remaining() == 0) break;\n            \
+                     auto _elem = {body_type}::decode(cursor);\n            \
+                     if (!_elem.has_value()) return std::nullopt;\n            \
+                     bool _continue = _elem->{acc}();\n            \
+                     {id}.push_back(*_elem);\n            \
+                     if (!_continue) break;\n        "
+                ),
+            };
             format!(
                 "std::vector<{body_type}> {id};\n        \
                  {id}.reserve({max_depth});\n        \
-                 for (std::size_t _i = 0; _i < {max_depth}; ++_i) {{\n            \
-                     if (cursor.remaining() == 0) break;\n            \
-                     auto _elem = {body_type}::decode(cursor);\n            \
-                     if (!_elem.has_value()) return std::nullopt;\n            \
-                     {id}.push_back(*_elem);\n        \
+                 for (std::size_t _i = 0; _i < {max_depth}; ++_i) {{\n{body}\
                  }}{overflow_check}"
             )
         }
@@ -4185,7 +4252,9 @@ fn tlv_chain_streaming_decode_stmt(
         // Element decode returns `T?`; `?: return null` unwinds the
         // partial frame. On Reject, post-loop residual cursor bytes
         // collapse to `return null` (matches the cpp convention; Kotlin
-        // doesn't construct a typed CodecError variant at runtime).
+        // doesn't construct a typed CodecError variant at runtime). Y3
+        // entry-flag termination reads the entry accessor (camelCase)
+        // before adding to the list and breaks when clear.
         Language::Kotlin => {
             let overflow_check = match on_overflow {
                 TlvOverflowPolicy::Reject => format!(
@@ -4193,11 +4262,21 @@ fn tlv_chain_streaming_decode_stmt(
                 ),
                 TlvOverflowPolicy::Truncate => String::new(),
             };
+            let body = match &entry_flag_acc {
+                None => format!(
+                    "                    if (cursor.remaining() == 0) break\n                    \
+                     it.add({body_type}.decode(cursor) ?: return null)\n                "
+                ),
+                Some(acc) => format!(
+                    "                    if (cursor.remaining() == 0) break\n                    \
+                     val _entry = {body_type}.decode(cursor) ?: return null\n                    \
+                     it.add(_entry)\n                    \
+                     if (!_entry.{acc}()) break\n                "
+                ),
+            };
             format!(
                 "val {id}: MutableList<{body_type}> = mutableListOf<{body_type}>().also {{\n                \
-                     for (_i in 0 until {max_depth}) {{\n                    \
-                         if (cursor.remaining() == 0) break\n                    \
-                         it.add({body_type}.decode(cursor) ?: return null)\n                \
+                     for (_i in 0 until {max_depth}) {{\n{body}\
                      }}\n            \
                  }}{overflow_check}"
             )
@@ -4207,7 +4286,8 @@ fn tlv_chain_streaming_decode_stmt(
         // decoder returns `(*T, error)`; truncation propagates via
         // `return nil, err`. On Reject, post-loop residual cursor bytes
         // surface `codec.ErrTlvChainOverflow` (Go uses sentinel-error
-        // rather than typed enum variant).
+        // rather than typed enum variant). Y3 entry-flag termination
+        // reads the entry's PascalCase accessor and breaks when clear.
         Language::Go => {
             let go_id = filters::to_pascal_case(id.to_string());
             let overflow_check = match on_overflow {
@@ -4218,17 +4298,35 @@ fn tlv_chain_streaming_decode_stmt(
                 ),
                 TlvOverflowPolicy::Truncate => String::new(),
             };
-            format!(
-                "{go_id} := make([]{body_type}, 0, {max_depth})\n\t\
-                 for _i := 0; _i < int({max_depth}); _i++ {{\n\t\t\
-                     if cursor.Remaining() == 0 {{\n\t\t\t\
+            let body = match &entry_flag_acc {
+                None => format!(
+                    "\t\tif cursor.Remaining() == 0 {{\n\t\t\t\
                          break\n\t\t\
                      }}\n\t\t\
                      _elem, err := {body_decoder}(cursor)\n\t\t\
                      if err != nil {{\n\t\t\t\
                          return nil, err\n\t\t\
                      }}\n\t\t\
-                     {go_id} = append({go_id}, *_elem)\n\t\
+                     {go_id} = append({go_id}, *_elem)\n\t"
+                ),
+                Some(acc) => format!(
+                    "\t\tif cursor.Remaining() == 0 {{\n\t\t\t\
+                         break\n\t\t\
+                     }}\n\t\t\
+                     _elem, err := {body_decoder}(cursor)\n\t\t\
+                     if err != nil {{\n\t\t\t\
+                         return nil, err\n\t\t\
+                     }}\n\t\t\
+                     _continue := _elem.{acc}()\n\t\t\
+                     {go_id} = append({go_id}, *_elem)\n\t\t\
+                     if !_continue {{\n\t\t\t\
+                         break\n\t\t\
+                     }}\n\t"
+                ),
+            };
+            format!(
+                "{go_id} := make([]{body_type}, 0, {max_depth})\n\t\
+                 for _i := 0; _i < int({max_depth}); _i++ {{\n{body}\
                  }}{overflow_check}"
             )
         }
@@ -4238,6 +4336,9 @@ fn tlv_chain_streaming_decode_stmt(
         // `None` propagates via early `return None`. On Reject, post-
         // loop residual cursor bytes raise `TlvChainOverflow`. 12-space
         // indent context (class + method + try); body lines at 16.
+        // Y3 entry-flag termination reads the entry's snake_case
+        // accessor as a method (the codec_zenoh_ext_entry codec's
+        // flag accessor pattern in py_codec template).
         Language::Python => {
             let py_id = filters::to_snake_case(id.to_string());
             let overflow_check = match on_overflow {
@@ -4247,15 +4348,29 @@ fn tlv_chain_streaming_decode_stmt(
                 ),
                 TlvOverflowPolicy::Truncate => String::new(),
             };
-            format!(
-                "{py_id} = []\n            \
-                 for _ in range({max_depth}):\n                \
-                     if cursor.remaining() == 0:\n                    \
+            let body = match &entry_flag_acc {
+                None => format!(
+                    "                if cursor.remaining() == 0:\n                    \
                          break\n                \
                      _elem = {body_type}.decode(cursor)\n                \
                      if _elem is None:\n                    \
                          return None\n                \
-                     {py_id}.append(_elem){overflow_check}"
+                     {py_id}.append(_elem)"
+                ),
+                Some(acc) => format!(
+                    "                if cursor.remaining() == 0:\n                    \
+                         break\n                \
+                     _elem = {body_type}.decode(cursor)\n                \
+                     if _elem is None:\n                    \
+                         return None\n                \
+                     {py_id}.append(_elem)\n                \
+                     if not _elem.{acc}():\n                    \
+                         break"
+                ),
+            };
+            format!(
+                "{py_id} = []\n            \
+                 for _ in range({max_depth}):\n{body}{overflow_check}"
             )
         }
     }

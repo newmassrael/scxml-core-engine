@@ -96,14 +96,26 @@ func DecodeCodecZenohExtEntry(cursor *codec.SceCursor) (*CodecZenohExtEntry, err
 // mask + shift on the way in so out-of-range callers can't corrupt
 // sibling bits. Wire layout is unchanged — the carrier still occupies
 // its declared bytes.
-func (s *CodecZenohExtEntry) Id() uint8 {
-	return uint8((s.Header >> 0) & 0x1F)
+func (s *CodecZenohExtEntry) ExtId() uint8 {
+	return uint8((s.Header >> 0) & 0x0F)
 }
 
-func (s *CodecZenohExtEntry) SetId(v uint8) {
-	const _shiftedMask uint8 = 0x1F << 0
-	_val := (uint8(v) & 0x1F) << 0
+func (s *CodecZenohExtEntry) SetExtId(v uint8) {
+	const _shiftedMask uint8 = 0x0F << 0
+	_val := (uint8(v) & 0x0F) << 0
 	s.Header = (s.Header &^ _shiftedMask) | _val
+}
+
+func (s *CodecZenohExtEntry) M() bool {
+	return (s.Header & 0x10) != 0
+}
+
+func (s *CodecZenohExtEntry) SetM(v bool) {
+	if v {
+		s.Header |= 0x10
+	} else {
+		s.Header &^= 0x10
+	}
 }
 
 func (s *CodecZenohExtEntry) Enc() uint8 {
@@ -114,6 +126,18 @@ func (s *CodecZenohExtEntry) SetEnc(v uint8) {
 	const _shiftedMask uint8 = 0x03 << 5
 	_val := (uint8(v) & 0x03) << 5
 	s.Header = (s.Header &^ _shiftedMask) | _val
+}
+
+func (s *CodecZenohExtEntry) Z() bool {
+	return (s.Header & 0x80) != 0
+}
+
+func (s *CodecZenohExtEntry) SetZ(v bool) {
+	if v {
+		s.Header |= 0x80
+	} else {
+		s.Header &^= 0x80
+	}
 }
 
 // Encode serializes the CodecZenohExtEntry into raw bytes.

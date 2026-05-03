@@ -749,6 +749,49 @@ pub enum TlvOverflowPolicy {
     Truncate,
 }
 
+/// RFC §5.B Y3 — TLV chain termination strategy. Names how the chain
+/// decoder decides where the chain ends; pairs with the existing
+/// `max_depth` safety bound + `on_overflow` policy. v1 has two shapes:
+///
+///   - [`TlvTerminateStrategy::ExhaustOrDepth`] (B3 trunk default): the
+///     chain consumes entries until the cursor exhausts or `max_depth`
+///     is reached. Used by `codec_tlv_chain_basic` + (pre-Y3) the
+///     `codec_zenoh_ext_envelope` demo. Acceptable when nothing
+///     follows the chain on the wire — the trailing cursor IS the
+///     chain's tail.
+///
+///   - [`TlvTerminateStrategy::EntryFlag`] (Y3): each entry's outer
+///     header carries a "next-entry follows" boolean flag (zenoh-pico
+///     `_Z_FLAG_Z_Z = 0x80` at bit 7 in every ext_msg header). The
+///     chain decoder reads the flag *after* each entry and stops the
+///     loop when it's clear, leaving the cursor at the start of
+///     whatever follows the chain on the wire (e.g. zenoh-pico
+///     request body's query/put/del variant after the ext chain).
+///     Mirrors `_z_msg_ext_decode_iter` (ext.c:226-238) verbatim.
+///     `flag_name` references a flag declared on the entry codec's
+///     flags carrier (typically the entry's outer header byte). The
+///     codec author guarantees the entry codec exposes a flags-bearing
+///     carrier with that flag — codegen reads `entry.<flag_name>()`
+///     after each decode.
+///
+/// `max_depth` and `on_overflow` apply uniformly across both
+/// strategies — they bound the worst case where the wire stream lies
+/// about chain length.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(tag = "type")]
+pub enum TlvTerminateStrategy {
+    /// Trunk default: chain ends on cursor exhaustion or `max_depth`.
+    #[default]
+    ExhaustOrDepth,
+    /// Y3: chain ends when the last-decoded entry's named flag bit is
+    /// clear. Forward-compat with multi-ext zenoh wire format.
+    EntryFlag { flag_name: String },
+}
+
+fn is_exhaust_or_depth(s: &TlvTerminateStrategy) -> bool {
+    matches!(s, TlvTerminateStrategy::ExhaustOrDepth)
+}
+
 /// Bit size specification for codec fields.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type")]
@@ -784,6 +827,15 @@ pub enum BitSize {
     TlvChain {
         max_depth: u32,
         on_overflow: TlvOverflowPolicy,
+        /// RFC §5.B Y3 — termination strategy. Defaults to
+        /// `ExhaustOrDepth` for backward-compat with B3 trunk fixtures
+        /// (cursor-exhaust + max_depth). `EntryFlag(flag_name)` reads
+        /// the entry's named flag after each decode and terminates
+        /// the loop when the flag is clear — required when something
+        /// follows the chain on the wire (zenoh-pico ext chains
+        /// followed by message body variants).
+        #[serde(skip_serializing_if = "is_exhaust_or_depth", default)]
+        terminate_on: TlvTerminateStrategy,
     },
     /// RFC §5.B Y0c — single imported-codec field embedded inline.
     /// The host language emits a nested struct of the imported codec's

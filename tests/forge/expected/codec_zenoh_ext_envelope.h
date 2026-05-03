@@ -45,7 +45,9 @@ struct CodecZenohExtEnvelope {
             if (cursor.remaining() == 0) break;
             auto _elem = ::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry::decode(cursor);
             if (!_elem.has_value()) return std::nullopt;
+            bool _continue = _elem->z();
             extensions.push_back(*_elem);
+            if (!_continue) break;
         }
         if (cursor.remaining() > 0) return std::nullopt;
         return CodecZenohExtEnvelope{

@@ -51,7 +51,9 @@ data class CodecZenohExtEnvelope(
             val extensions: MutableList<CodecZenohExtEntry> = mutableListOf<CodecZenohExtEntry>().also {
                 for (_i in 0 until 8) {
                     if (cursor.remaining() == 0) break
-                    it.add(CodecZenohExtEntry.decode(cursor) ?: return null)
+                    val _entry = CodecZenohExtEntry.decode(cursor) ?: return null
+                    it.add(_entry)
+                    if (!_entry.Z()) break
                 }
             }
             if (cursor.remaining() > 0) return null

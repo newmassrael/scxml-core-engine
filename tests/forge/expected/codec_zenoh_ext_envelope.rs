@@ -50,7 +50,10 @@ impl CodecZenohExtEnvelope {
             let mut _vec: Vec<CodecZenohExtEntry> = Vec::with_capacity(8 as usize);
             for _ in 0..8u32 {
                 if cursor.remaining() == 0 { break; }
-                _vec.push(CodecZenohExtEntry::decode(cursor)?);
+                let _entry = CodecZenohExtEntry::decode(cursor)?;
+                let _continue = _entry.z();
+                _vec.push(_entry);
+                if !_continue { break; }
             }
             if cursor.remaining() > 0 {
                 return Err(CodecError::TlvChainOverflow);

@@ -515,6 +515,22 @@
              codegen/mcu-class-kind-on-non-mcu-language
        ═══════════════════════════════════════════════════════════════ -->
 
+  <!-- RFC §5.B Y3 — `<sce:tlv-chain>` termination strategies. Trunk
+       default `exhaust-or-depth` ends the chain on cursor-exhaust +
+       max-depth (used when nothing follows the chain on the wire).
+       `entry-flag` reads a named flag on each decoded entry's flags
+       carrier and stops the chain when the flag is clear — required
+       when the wire stream has payload after the chain (zenoh-pico
+       request body's query/put/del variant after the ext chain).
+       The `entry-flag-name` attribute names the flag (mandatory when
+       terminate-on="entry-flag"). -->
+  <xs:simpleType name="tlvTerminateOnType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="exhaust-or-depth"/>
+      <xs:enumeration value="entry-flag"/>
+    </xs:restriction>
+  </xs:simpleType>
+
   <xs:element name="tlv-chain">
     <xs:complexType>
       <xs:attribute name="id" type="xs:string" use="required"/>
@@ -532,6 +548,15 @@
            where `count` / `until-eof` mutex is parser-enforced. -->
       <xs:attribute name="max-depth" type="xs:positiveInteger"/>
       <xs:attribute name="on-overflow" type="xs:string"/>
+      <!-- RFC §5.B Y3 — termination strategy + flag-name attribute.
+           Default `exhaust-or-depth` matches B3 trunk shape (cursor-
+           exhaust + max-depth). `entry-flag` reads `entry-flag-name`
+           on each decoded entry's flags carrier and stops the chain
+           when the flag is clear; required when the wire stream
+           continues past the chain. Parser enforces flag-name
+           presence when terminate-on="entry-flag". -->
+      <xs:attribute name="terminate-on" type="sce:tlvTerminateOnType"/>
+      <xs:attribute name="entry-flag-name" type="xs:string"/>
     </xs:complexType>
   </xs:element>
 

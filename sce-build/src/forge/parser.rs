@@ -2237,6 +2237,43 @@ fn parse_codec_tlv_chain_from_node(
         }
     };
 
+    // RFC §5.B Y3 — `sce:terminate-on` selects chain termination.
+    // Default: cursor-exhaust + max_depth (B3 trunk shape — used when
+    // nothing follows the chain on the wire). `entry-flag` reads a
+    // named flag on each decoded entry's flags carrier; chain stops
+    // when the flag is clear. Required when the wire stream has
+    // payload after the chain (zenoh-pico request body, declare body,
+    // etc).
+    let terminate_on = match node.attribute("terminate-on") {
+        None | Some("exhaust-or-depth") => TlvTerminateStrategy::ExhaustOrDepth,
+        Some("entry-flag") => {
+            let flag_name = node.attribute("entry-flag-name").ok_or_else(|| {
+                located(
+                    node,
+                    doc_name,
+                    ValidationError::MissingAttribute {
+                        element: format!("<sce:tlv-chain id='{id}'>"),
+                        attr: "entry-flag-name".into(),
+                    },
+                )
+            })?
+            .to_string();
+            TlvTerminateStrategy::EntryFlag { flag_name }
+        }
+        Some(other) => {
+            return Err(located(
+                node,
+                doc_name,
+                ValidationError::InvalidAttribute {
+                    element: format!("<sce:tlv-chain id='{id}'>"),
+                    attr: "sce:terminate-on".into(),
+                    value: other.to_string(),
+                    expected: "\"exhaust-or-depth\" or \"entry-flag\"".into(),
+                },
+            ));
+        }
+    };
+
     Ok(CodecField {
         id,
         sce_type: SceType::Bytes,
@@ -2245,6 +2282,7 @@ fn parse_codec_tlv_chain_from_node(
         bit_size: BitSize::TlvChain {
             max_depth,
             on_overflow,
+            terminate_on,
         },
         endian: None,
         max_size: None,

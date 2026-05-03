@@ -49,7 +49,11 @@ func DecodeCodecZenohExtEnvelope(cursor *codec.SceCursor) (*CodecZenohExtEnvelop
 		if err != nil {
 			return nil, err
 		}
+		_continue := _elem.Z()
 		Extensions = append(Extensions, *_elem)
+		if !_continue {
+			break
+		}
 	}
 	if cursor.Remaining() > 0 {
 		return nil, codec.ErrTlvChainOverflow

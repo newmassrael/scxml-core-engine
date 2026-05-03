@@ -89,14 +89,26 @@ impl CodecZenohExtEntry {
     // range. Setters mask + shift on the way in so out-of-range
     // callers can't corrupt sibling bits. Wire layout is unchanged —
     // the carrier still occupies its declared bytes.
-    pub fn id(&self) -> u8 {
-        (((self.header >> 0) & (0x1F as u8))) as u8
+    pub fn ext_id(&self) -> u8 {
+        (((self.header >> 0) & (0x0F as u8))) as u8
     }
 
-    pub fn set_id(&mut self, v: u8) {
-        let _mask: u8 = (0x1F as u8) << 0;
-        let _val: u8 = ((v as u8) & (0x1F as u8)) << 0;
+    pub fn set_ext_id(&mut self, v: u8) {
+        let _mask: u8 = (0x0F as u8) << 0;
+        let _val: u8 = ((v as u8) & (0x0F as u8)) << 0;
         self.header = (self.header & !_mask) | _val;
+    }
+
+    pub fn m(&self) -> bool {
+        (self.header & 0x10) != 0
+    }
+
+    pub fn set_m(&mut self, v: bool) {
+        if v {
+            self.header |= 0x10;
+        } else {
+            self.header &= !0x10;
+        }
     }
 
     pub fn enc(&self) -> u8 {
@@ -107,6 +119,18 @@ impl CodecZenohExtEntry {
         let _mask: u8 = (0x03 as u8) << 5;
         let _val: u8 = ((v as u8) & (0x03 as u8)) << 5;
         self.header = (self.header & !_mask) | _val;
+    }
+
+    pub fn z(&self) -> bool {
+        (self.header & 0x80) != 0
+    }
+
+    pub fn set_z(&mut self, v: bool) {
+        if v {
+            self.header |= 0x80;
+        } else {
+            self.header &= !0x80;
+        }
     }
 
     pub fn encode(&self) -> Vec<u8> {

@@ -95,13 +95,22 @@ class CodecZenohExtEntry:
     # the way in so out-of-range callers can't corrupt sibling bits.
     # Plain methods (rather than @property) for API symmetry with
     # Rust / Cpp / Kotlin / Go / C11. Wire layout is unchanged.
-    def id(self) -> int:
-        return (self.header >> 0) & 0x1F
+    def ext_id(self) -> int:
+        return (self.header >> 0) & 0x0F
 
-    def set_id(self, v: int) -> None:
-        _shifted_mask = 0x1F << 0
-        _val = (v & 0x1F) << 0
+    def set_ext_id(self, v: int) -> None:
+        _shifted_mask = 0x0F << 0
+        _val = (v & 0x0F) << 0
         self.header = ((self.header & (0xFF ^ _shifted_mask)) | _val) & 0xFF
+
+    def m(self) -> bool:
+        return (self.header & 0x10) != 0
+
+    def set_m(self, v: bool) -> None:
+        if v:
+            self.header = (self.header | 0x10) & 0xFF
+        else:
+            self.header = self.header & (0xFF ^ 0x10)
 
     def enc(self) -> int:
         return (self.header >> 5) & 0x03
@@ -110,6 +119,15 @@ class CodecZenohExtEntry:
         _shifted_mask = 0x03 << 5
         _val = (v & 0x03) << 5
         self.header = ((self.header & (0xFF ^ _shifted_mask)) | _val) & 0xFF
+
+    def z(self) -> bool:
+        return (self.header & 0x80) != 0
+
+    def set_z(self, v: bool) -> None:
+        if v:
+            self.header = (self.header | 0x80) & 0xFF
+        else:
+            self.header = self.header & (0xFF ^ 0x80)
 
     def encode(self) -> bytes:
         # Encode fixed prefix (tag field bytes are part of the prefix).

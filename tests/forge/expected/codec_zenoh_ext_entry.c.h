@@ -146,16 +146,28 @@ static inline codec_zenoh_ext_entry_encoded_t codec_zenoh_ext_entry_encode(const
  * accessor name is `<struct_snake>_<flag_name>` so multiple codecs
  * carrying same-named flags coexist in a single translation unit. Wire
  * layout is unchanged — the carrier still occupies its declared bytes. */
-static inline uint8_t codec_zenoh_ext_entry_id(const codec_zenoh_ext_entry_t *self) {
-    return (uint8_t)((self->header >> 0) & (uint8_t)0x1F);
+static inline uint8_t codec_zenoh_ext_entry_ext_id(const codec_zenoh_ext_entry_t *self) {
+    return (uint8_t)((self->header >> 0) & (uint8_t)0x0F);
 }
 
-static inline void codec_zenoh_ext_entry_set_id(codec_zenoh_ext_entry_t *self, uint8_t v) {
-    const uint8_t _shifted_mask = (uint8_t)((uint8_t)0x1F << 0);
-    const uint8_t _val = (uint8_t)(((uint8_t)v & (uint8_t)0x1F) << 0);
+static inline void codec_zenoh_ext_entry_set_ext_id(codec_zenoh_ext_entry_t *self, uint8_t v) {
+    const uint8_t _shifted_mask = (uint8_t)((uint8_t)0x0F << 0);
+    const uint8_t _val = (uint8_t)(((uint8_t)v & (uint8_t)0x0F) << 0);
     self->header = (uint8_t)((self->header & (uint8_t)~_shifted_mask) | _val);
 }
 
+
+static inline bool codec_zenoh_ext_entry_m(const codec_zenoh_ext_entry_t *self) {
+    return (self->header & 0x10) != 0;
+}
+
+static inline void codec_zenoh_ext_entry_set_m(codec_zenoh_ext_entry_t *self, bool v) {
+    if (v) {
+        self->header = (uint8_t)(self->header | 0x10);
+    } else {
+        self->header = (uint8_t)(self->header & (uint8_t)(~(uint8_t)0x10));
+    }
+}
 
 static inline uint8_t codec_zenoh_ext_entry_enc(const codec_zenoh_ext_entry_t *self) {
     return (uint8_t)((self->header >> 5) & (uint8_t)0x03);
@@ -167,5 +179,17 @@ static inline void codec_zenoh_ext_entry_set_enc(codec_zenoh_ext_entry_t *self, 
     self->header = (uint8_t)((self->header & (uint8_t)~_shifted_mask) | _val);
 }
 
+
+static inline bool codec_zenoh_ext_entry_z(const codec_zenoh_ext_entry_t *self) {
+    return (self->header & 0x80) != 0;
+}
+
+static inline void codec_zenoh_ext_entry_set_z(codec_zenoh_ext_entry_t *self, bool v) {
+    if (v) {
+        self->header = (uint8_t)(self->header | 0x80);
+    } else {
+        self->header = (uint8_t)(self->header & (uint8_t)(~(uint8_t)0x80));
+    }
+}
 
 #endif  /* SCE_FORGE_CODEC_ZENOH_EXT_ENTRY_H */

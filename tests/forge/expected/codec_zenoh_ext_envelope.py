@@ -42,6 +42,8 @@ class CodecZenohExtEnvelope:
                 if _elem is None:
                     return None
                 extensions.append(_elem)
+                if not _elem.z():
+                    break
             if cursor.remaining() > 0:
                 raise TlvChainOverflow()
         except NeedMoreBytes:

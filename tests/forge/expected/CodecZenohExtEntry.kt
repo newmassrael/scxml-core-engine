@@ -36,16 +36,26 @@ data class CodecZenohExtEntry(
     // fits (UByte / UShort / UInt / ULong). UByte/UShort widen through
     // `.toInt()` and UInt/ULong through `.toLong()` for the bitwise
     // ops; the result narrows back via the carrier's `toU*` ctor.
-    fun id(): UByte {
+    fun extId(): UByte {
         val _carrier = this.header.toInt()
-        return ((_carrier shr 0) and 0x1F).toUByte()
+        return ((_carrier shr 0) and 0x0F).toUByte()
     }
 
-    fun setId(v: UByte) {
+    fun setExtId(v: UByte) {
         val _carrier = this.header.toInt()
-        val _shifted_mask = 0x1F shl 0
-        val _val = (v.toInt() and 0x1F) shl 0
+        val _shifted_mask = 0x0F shl 0
+        val _val = (v.toInt() and 0x0F) shl 0
         this.header = ((_carrier and _shifted_mask.inv()) or _val).toUByte()
+    }
+
+    fun M(): Boolean = (this.header.toInt() and 0x10) != 0
+
+    fun setM(v: Boolean) {
+        this.header = if (v) {
+            (this.header.toInt() or 0x10).toUByte()
+        } else {
+            (this.header.toInt() and 0x10.inv()).toUByte()
+        }
     }
 
     fun enc(): UByte {
@@ -58,6 +68,16 @@ data class CodecZenohExtEntry(
         val _shifted_mask = 0x03 shl 5
         val _val = (v.toInt() and 0x03) shl 5
         this.header = ((_carrier and _shifted_mask.inv()) or _val).toUByte()
+    }
+
+    fun Z(): Boolean = (this.header.toInt() and 0x80) != 0
+
+    fun setZ(v: Boolean) {
+        this.header = if (v) {
+            (this.header.toInt() or 0x80).toUByte()
+        } else {
+            (this.header.toInt() and 0x80.inv()).toUByte()
+        }
     }
 
     fun encode(): ByteArray {

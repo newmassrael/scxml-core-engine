@@ -92,24 +92,36 @@ struct CodecZenohExtEntry {
     // the smallest unsigned integer type that fits the range. Setters
     // mask + shift on the way in so out-of-range callers can't corrupt
     // sibling bits. Wire layout is unchanged.
-    uint8_t id() const noexcept {
+    uint8_t ext_id() const noexcept {
         return static_cast<uint8_t>(
-            (this->header >> 0) & static_cast<uint8_t>(0x1F)
+            (this->header >> 0) & static_cast<uint8_t>(0x0F)
         );
     }
 
-    void set_id(uint8_t v) noexcept {
+    void set_ext_id(uint8_t v) noexcept {
         const uint8_t _shifted_mask =
             static_cast<uint8_t>(
-                static_cast<uint8_t>(0x1F) << 0
+                static_cast<uint8_t>(0x0F) << 0
             );
         const uint8_t _val =
             static_cast<uint8_t>(
-                (static_cast<uint8_t>(v) & static_cast<uint8_t>(0x1F)) << 0
+                (static_cast<uint8_t>(v) & static_cast<uint8_t>(0x0F)) << 0
             );
         this->header = static_cast<uint8_t>(
             (this->header & static_cast<uint8_t>(~_shifted_mask)) | _val
         );
+    }
+
+    bool m() const noexcept {
+        return (this->header & 0x10) != 0;
+    }
+
+    void set_m(bool v) noexcept {
+        if (v) {
+            this->header = static_cast<uint8_t>(this->header | 0x10);
+        } else {
+            this->header = static_cast<uint8_t>(this->header & static_cast<uint8_t>(~0x10));
+        }
     }
 
     uint8_t enc() const noexcept {
@@ -130,6 +142,18 @@ struct CodecZenohExtEntry {
         this->header = static_cast<uint8_t>(
             (this->header & static_cast<uint8_t>(~_shifted_mask)) | _val
         );
+    }
+
+    bool z() const noexcept {
+        return (this->header & 0x80) != 0;
+    }
+
+    void set_z(bool v) noexcept {
+        if (v) {
+            this->header = static_cast<uint8_t>(this->header | 0x80);
+        } else {
+            this->header = static_cast<uint8_t>(this->header & static_cast<uint8_t>(~0x80));
+        }
     }
 
     std::vector<uint8_t> encode() const {
