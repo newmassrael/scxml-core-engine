@@ -209,9 +209,9 @@ pub fn expand(
     self_path: &str,
     base_dir: Option<&Path>,
     input_map: &PositionMap,
-) -> Result<(String, PositionMap), (TemplateError, TemplateLocation)> {
+) -> Result<(String, PositionMap, Vec<PathBuf>), (TemplateError, TemplateLocation)> {
     if !content.contains("sce:use") {
-        return Ok((content.to_string(), input_map.clone()));
+        return Ok((content.to_string(), input_map.clone(), Vec::new()));
     }
     let self_file = PathBuf::from(self_path);
     let mut stack: Vec<PathBuf> = Vec::new();
@@ -220,7 +220,16 @@ pub fn expand(
     } else {
         stack.push(self_file.clone());
     }
-    expand_impl(content, &self_file, base_dir, 0, &mut stack, input_map)
+    // Every `<sce:use template="...">` fragment we successfully open
+    // feeds this collector; the parse-boundary call site
+    // (`expand_preprocessors`) surfaces it to the depfile sink so
+    // CMake/Ninja invalidate generated `_sm.{h,inl}` artifacts when a
+    // fragment changes. Without this list the depfile only carries
+    // the SCE jinja2 templates and the host SCXML, leaving fragment
+    // edits as silent no-ops — see tc8-harness feedback report.
+    let mut deps: Vec<PathBuf> = Vec::new();
+    let (out, map) = expand_impl(content, &self_file, base_dir, 0, &mut stack, input_map, &mut deps)?;
+    Ok((out, map, deps))
 }
 
 fn expand_impl(
@@ -230,6 +239,7 @@ fn expand_impl(
     depth: u32,
     stack: &mut Vec<PathBuf>,
     input_map: &PositionMap,
+    deps: &mut Vec<PathBuf>,
 ) -> Result<(String, PositionMap), (TemplateError, TemplateLocation)> {
     if depth >= MAX_TEMPLATE_DEPTH {
         return Err((
@@ -320,6 +330,12 @@ fn expand_impl(
             )
         })?;
 
+        // Record the successful open *after* read_to_string returned
+        // bytes. Cycle/depth pre-checks above can short-circuit before
+        // the file is actually consumed, so pushing earlier would put
+        // unread paths into the depfile.
+        deps.push(canon.clone());
+
         let params_bound = collect_use_bindings(&node);
         // Substitute `{$name}` tokens inside the template body only —
         // the `<sce:template>` wrapper and `<sce:param>` declarations
@@ -356,6 +372,7 @@ fn expand_impl(
             depth + 1,
             stack,
             &intermediate_map,
+            deps,
         )
         .map_err(|(err, _)| (remap_nested(err, template_attr), loc))?;
         stack.pop();
@@ -959,7 +976,7 @@ mod tests {
     fn passthrough_when_no_sce_use_substring() {
         let src = "<root><state id=\"s1\"/></root>";
         let input_map = PositionMap::identity("inline", src);
-        let (out, map) = expand(src, "inline", None, &input_map).expect("no sce:use");
+        let (out, map, _deps) = expand(src, "inline", None, &input_map).expect("no sce:use");
         assert_eq!(out, src);
         // Short-circuit path must hand the upstream map through
         // untouched — no splices happened.
@@ -972,7 +989,7 @@ mod tests {
         // element exists — must parse to tell, and pass unchanged.
         let src = "<root description=\"how to sce:use this\"/>";
         let input_map = PositionMap::identity("inline", src);
-        let (out, map) = expand(src, "inline", None, &input_map)
+        let (out, map, _deps) = expand(src, "inline", None, &input_map)
             .expect("no sce:use elements");
         assert_eq!(out, src);
         assert!(map.is_identity());
@@ -996,7 +1013,7 @@ mod tests {
         let main_path = write(tmp.path(), "main.scxml", &main_src);
 
         let input_map = PositionMap::identity(main_path.to_str().unwrap(), &main_src);
-        let (out, map) = expand(
+        let (out, map, _deps) = expand(
             &main_src,
             main_path.to_str().unwrap(),
             Some(tmp.path()),
@@ -1029,7 +1046,7 @@ mod tests {
         );
         let main_path = write(tmp.path(), "main.xml", &main_src);
         let input_map = PositionMap::identity(main_path.to_str().unwrap(), &main_src);
-        let (out, _map) = expand(
+        let (out, _map, _deps) = expand(
             &main_src,
             main_path.to_str().unwrap(),
             Some(tmp.path()),
@@ -1059,7 +1076,7 @@ mod tests {
         );
         let main_path = write(tmp.path(), "main.xml", &main_src);
         let input_map = PositionMap::identity(main_path.to_str().unwrap(), &main_src);
-        let (out, _map) = expand(
+        let (out, _map, _deps) = expand(
             &main_src,
             main_path.to_str().unwrap(),
             Some(tmp.path()),
@@ -1280,7 +1297,7 @@ mod tests {
         let main_src = r#"<root xmlns:sce="http://sce.dev/ext"><sce:use template="outer.sce-template.xml"/></root>"#;
         let main_path = write(tmp.path(), "main.xml", main_src);
         let input_map = PositionMap::identity(main_path.to_str().unwrap(), main_src);
-        let (out, _map) = expand(
+        let (out, _map, _deps) = expand(
             main_src,
             main_path.to_str().unwrap(),
             Some(tmp.path()),
@@ -1309,7 +1326,7 @@ mod tests {
         let main_src = r#"<root xmlns:sce="http://sce.dev/ext"><sce:use template="g.sce-template.xml" a="HIT"/></root>"#;
         let main_path = write(tmp.path(), "main.xml", main_src);
         let input_map = PositionMap::identity(main_path.to_str().unwrap(), main_src);
-        let (out, _map) = expand(
+        let (out, _map, _deps) = expand(
             main_src,
             main_path.to_str().unwrap(),
             Some(tmp.path()),
@@ -1339,7 +1356,7 @@ mod tests {
         let main_src = r#"<root xmlns:sce="http://sce.dev/ext"><sce:use template="g.sce-template.xml" a="X"/></root>"#;
         let main_path = write(tmp.path(), "main.xml", main_src);
         let input_map = PositionMap::identity(main_path.to_str().unwrap(), main_src);
-        let (out, _map) = expand(
+        let (out, _map, _deps) = expand(
             main_src,
             main_path.to_str().unwrap(),
             Some(tmp.path()),
@@ -1435,7 +1452,7 @@ mod tests {
         let main_path = write(tmp.path(), "main.xml", &main_src);
         let input_map = PositionMap::identity(main_path.to_str().unwrap(), &main_src);
 
-        let (out, map) = expand(
+        let (out, map, _deps) = expand(
             &main_src,
             main_path.to_str().unwrap(),
             Some(tmp.path()),

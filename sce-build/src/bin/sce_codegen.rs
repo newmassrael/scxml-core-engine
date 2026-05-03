@@ -995,9 +995,22 @@ fn cmd_generate(
         }
     }
 
-    // Write DEPFILE for CMake incremental builds
+    // Write DEPFILE for CMake incremental builds. Preprocessor deps
+    // (xi:include targets, sce:use template fragments) come from the
+    // parser instance — they are the actual external files
+    // `parse_file` consumed during this invocation, so editing one
+    // correctly invalidates `<case>_sm.{h,inl}` artifacts on the next
+    // ninja/make run. tc8-harness's CMake glob workaround can be
+    // retired once consumers pick up this flag.
     if let Some(depfile) = depfile_path {
-        write_depfile(depfile, &output_paths, &template_dir, lang, Path::new(scxml_path));
+        write_depfile(
+            depfile,
+            &output_paths,
+            &template_dir,
+            lang,
+            Path::new(scxml_path),
+            parser.preprocessor_deps(),
+        );
     }
 
     emit_generate_manifest(&report);
@@ -1087,11 +1100,25 @@ fn generate_hybrid_child_scxmls(model: &SCXMLModel, output_dir: &Path) {
 }
 
 /// Write CMake DEPFILE (Makefile-format dependency file).
-fn write_depfile(depfile_path: &str, output_paths: &[PathBuf], template_dir: &Path, lang: Language, scxml_input: &Path) {
+fn write_depfile(
+    depfile_path: &str,
+    output_paths: &[PathBuf],
+    template_dir: &Path,
+    lang: Language,
+    scxml_input: &Path,
+    preprocessor_deps: &[PathBuf],
+) {
     let mut deps = Vec::new();
 
     // Add the SCXML input file itself as a dependency
     deps.push(scxml_input.to_path_buf());
+
+    // Add user-side preprocessor inputs (xi:include targets, sce:use
+    // template fragments) collected by the parser. Without this slice
+    // a fragment edit silently ships stale `_sm.{h,inl}` because
+    // CMake/Ninja have no prerequisite to invalidate. See tc8-harness
+    // feedback report.
+    deps.extend(preprocessor_deps.iter().cloned());
 
     // Add template dependencies (language-specific only)
     if let Ok(entries) = glob_jinja2_files(template_dir) {
@@ -1121,6 +1148,13 @@ fn write_depfile(depfile_path: &str, output_paths: &[PathBuf], template_dir: &Pa
             deps.push(exe.clone());
         }
     }
+
+    // Collapse duplicates while preserving first-seen order. The same
+    // canonical path can land in `deps` more than once (e.g. a fragment
+    // pulled in via both `<xi:include>` and `<sce:use>` — pipeline-level
+    // de-dup is the sink's responsibility per parser comment).
+    let mut seen = std::collections::HashSet::new();
+    deps.retain(|p| seen.insert(p.clone()));
 
     if !output_paths.is_empty() {
         // List all outputs as targets (e.g., C++ produces both .h and .inl)
@@ -2407,7 +2441,7 @@ fn cmd_expand(scxml_path: &str) {
         })
     });
     let base_dir = Path::new(scxml_path).parent();
-    let (expanded, _map) =
+    let (expanded, _map, _deps) =
         sce_build::parser::expand_preprocessors(&content, scxml_path, base_dir).unwrap_or_else(
             |err| current_error_format().emit_and_exit(&err, "Preprocessor error: "),
         );

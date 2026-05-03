@@ -176,12 +176,13 @@ pub fn expand(
     content: &str,
     self_path: &str,
     base_dir: Option<&Path>,
-) -> Result<(String, PositionMap), (XIncludeError, XIncludeLocation)> {
+) -> Result<(String, PositionMap, Vec<PathBuf>), (XIncludeError, XIncludeLocation)> {
     let self_file = PathBuf::from(self_path);
     if !content.contains("include") {
         return Ok((
             content.to_string(),
             PositionMap::identity(self_file, content),
+            Vec::new(),
         ));
     }
     let mut stack: Vec<PathBuf> = Vec::new();
@@ -190,7 +191,15 @@ pub fn expand(
     } else {
         stack.push(self_file.clone());
     }
-    expand_impl(content, &self_file, base_dir, 0, &mut stack)
+    // Every `<xi:include>` we successfully open feeds this collector,
+    // which the parse-boundary call site (`expand_preprocessors`)
+    // surfaces to the depfile sink. Without it, downstream build
+    // systems treat fragment edits as silent no-ops because the only
+    // prerequisites recorded in `--write-deps` output are the SCE
+    // jinja2 templates and the host SCXML — fragments are invisible.
+    let mut deps: Vec<PathBuf> = Vec::new();
+    let (out, map) = expand_impl(content, &self_file, base_dir, 0, &mut stack, &mut deps)?;
+    Ok((out, map, deps))
 }
 
 fn expand_impl(
@@ -199,6 +208,7 @@ fn expand_impl(
     base_dir: Option<&Path>,
     depth: u32,
     stack: &mut Vec<PathBuf>,
+    deps: &mut Vec<PathBuf>,
 ) -> Result<(String, PositionMap), (XIncludeError, XIncludeLocation)> {
     if depth >= MAX_XINCLUDE_DEPTH {
         return Err((
@@ -302,10 +312,16 @@ fn expand_impl(
             )
         })?;
 
+        // Record the successful open *after* read_to_string returned
+        // bytes. Cycle/depth pre-checks above can short-circuit before
+        // the file is actually consumed, so pushing earlier would put
+        // unread paths into the depfile.
+        deps.push(canon.clone());
+
         stack.push(canon);
         let nested_base = resolved.parent().map(|p| p.to_path_buf());
         let (expanded, nested_map) =
-            expand_impl(&raw, &resolved, nested_base.as_deref(), depth + 1, stack).map_err(
+            expand_impl(&raw, &resolved, nested_base.as_deref(), depth + 1, stack, deps).map_err(
                 |(err, nested_loc)| {
                     // The nested error's row/col references the
                     // included file, not the outer one. For the AOT
@@ -577,7 +593,7 @@ mod tests {
     #[test]
     fn passthrough_when_no_include_substring() {
         let src = "<root><state id=\"s1\"/></root>";
-        let (out, map) = expand(src, "inline", None).expect("no includes");
+        let (out, map, _deps) = expand(src, "inline", None).expect("no includes");
         assert_eq!(out, src);
         assert!(map.is_identity());
     }
@@ -589,7 +605,7 @@ mod tests {
         // the document to tell, and must pass it through
         // unchanged.
         let src = "<root description=\"please include docs\"/>";
-        let (out, map) = expand(src, "inline", None).expect("no include elements");
+        let (out, map, _deps) = expand(src, "inline", None).expect("no include elements");
         assert_eq!(out, src);
         assert!(map.is_identity());
     }
@@ -608,7 +624,7 @@ mod tests {
         );
         let main_path = write(tmp.path(), "main.xml", &main_src);
 
-        let (out, map) = expand(&main_src, main_path.to_str().unwrap(), Some(tmp.path()))
+        let (out, map, _deps) = expand(&main_src, main_path.to_str().unwrap(), Some(tmp.path()))
             .expect("expansion succeeds");
         // The children of `<fragment>` must be spliced in place
         // of the `<xi:include>` element, dropping the wrapper.
@@ -636,7 +652,7 @@ mod tests {
         );
         let main_path = write(tmp.path(), "main.xml", &main_src);
 
-        let (out, _map) =
+        let (out, _map, _deps) =
             expand(&main_src, main_path.to_str().unwrap(), Some(tmp.path())).unwrap();
         assert!(out.contains("<x/>"));
         assert!(!out.contains("<include"));
@@ -711,7 +727,7 @@ mod tests {
         );
         let main_path = write(tmp.path(), "main.xml", &main_src);
 
-        let (out, _map) =
+        let (out, _map, _deps) =
             expand(&main_src, main_path.to_str().unwrap(), Some(tmp.path())).unwrap();
         assert!(out.contains("<leaf/>"));
         assert!(!out.contains("<xi:include"));
@@ -735,7 +751,7 @@ mod tests {
         );
         let main_path = write(tmp.path(), "main.xml", &main_src);
 
-        let (out, _map) =
+        let (out, _map, _deps) =
             expand(&main_src, main_path.to_str().unwrap(), Some(tmp.path())).unwrap();
         // Both splice points must have been replaced.
         assert_eq!(out.matches("<x/>").count(), 2);

@@ -7,7 +7,7 @@
 use crate::model::*;
 use crate::DocumentLabel;
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
 /// Reserved `<sce:context id="...">` names, derived from the C++
@@ -86,6 +86,15 @@ pub struct SCXMLParser {
     /// followed by an idless invoke whose auto counter hits 0) is
     /// caught alongside plain author duplicates.
     invoke_ids_seen: BTreeSet<String>,
+    /// Canonical paths of every external file (xi:include target,
+    /// sce:use template fragment) consumed by the most recent
+    /// `parse_file` call. Populated by [`expand_preprocessors`] and
+    /// surfaced via [`SCXMLParser::preprocessor_deps`] so the codegen
+    /// CLI can extend the `--write-deps` depfile with the actual
+    /// fragment inputs. `parse_string` leaves it empty (no fs access).
+    /// Cleared at the start of every `parse_file` so successive parses
+    /// do not accumulate stale entries.
+    preprocessor_deps: Vec<PathBuf>,
 }
 
 /// Run the XInclude + `sce:template` preprocessors on raw SCXML
@@ -114,7 +123,7 @@ pub fn expand_preprocessors(
     scxml_path: &str,
     base_dir: Option<&Path>,
 ) -> Result<
-    (String, crate::position_map::PositionMap),
+    (String, crate::position_map::PositionMap, Vec<PathBuf>),
     crate::forge::error::Located<crate::forge::error::ForgeError>,
 > {
     // XInclude parity with `PugiXMLDocument::processXInclude`
@@ -133,8 +142,8 @@ pub fn expand_preprocessors(
     // Expander-internal errors (MissingHref, NotFound, ...)
     // already report positions in the pre-expansion outer file,
     // so they wrap directly without going through the map.
-    let (included, xinclude_map) = crate::xinclude::expand(content, scxml_path, base_dir)
-        .map_err(|(err, loc)| {
+    let (included, xinclude_map, xinclude_deps) =
+        crate::xinclude::expand(content, scxml_path, base_dir).map_err(|(err, loc)| {
             use crate::forge::error::{ForgeError, Located, XmlError};
             Located::new(
                 ForgeError::Xml(XmlError::XInclude(err)),
@@ -157,7 +166,7 @@ pub fn expand_preprocessors(
     // `xinclude_map` for post-expansion remapping — every
     // emitted byte, wherever it came from, traces back to a
     // source file the author can open.
-    let (expanded, final_map) =
+    let (expanded, final_map, template_deps) =
         crate::template::expand(&included, scxml_path, base_dir, &xinclude_map).map_err(
             |(err, loc)| {
                 use crate::forge::error::{ForgeError, Located, XmlError};
@@ -188,7 +197,17 @@ pub fn expand_preprocessors(
             },
         )?;
 
-    Ok((expanded, final_map))
+    // Concatenate xinclude → template open order so the depfile
+    // mirrors the actual preprocessor pipeline order. Both expanders
+    // already de-duplicate via canonicalisation at their own boundary
+    // (cycle detection's `stack`), but the same canon path can still
+    // appear in both lists if a `<xi:include>`'d fragment also
+    // arrives via `<sce:use>` in another document — `write_depfile`
+    // collapses duplicates at the sink, so order > uniqueness here.
+    let mut deps = xinclude_deps;
+    deps.extend(template_deps);
+
+    Ok((expanded, final_map, deps))
 }
 
 impl SCXMLParser {
@@ -199,7 +218,23 @@ impl SCXMLParser {
             hybrid_invoke_counter: 0,
             send_counter: 0,
             invoke_ids_seen: BTreeSet::new(),
+            preprocessor_deps: Vec::new(),
         }
+    }
+
+    /// Canonical paths of every external file consumed by the most
+    /// recent [`parse_file`] (xi:include targets, sce:use template
+    /// fragments). Empty after [`parse_string`] (no fs access) and
+    /// before the first [`parse_file`] succeeds.
+    ///
+    /// Consumed by `sce-codegen --write-deps` to extend the Make-style
+    /// depfile with fragment inputs so CMake/Ninja invalidate
+    /// generated artifacts when a fragment changes.
+    ///
+    /// [`parse_file`]: SCXMLParser::parse_file
+    /// [`parse_string`]: SCXMLParser::parse_string
+    pub fn preprocessor_deps(&self) -> &[PathBuf] {
+        &self.preprocessor_deps
     }
 
     /// Parse an SCXML file from disk.
@@ -259,7 +294,13 @@ impl SCXMLParser {
             .to_string();
         let base_dir = Path::new(scxml_path).parent().map(|p| p.to_path_buf());
 
-        let (expanded, final_map) = expand_preprocessors(&content, scxml_path, base_dir.as_deref())?;
+        // Clear any deps captured by a previous parse on this parser
+        // before driving the preprocessors — `preprocessor_deps`
+        // describes the *current* file's transitive inputs only.
+        self.preprocessor_deps.clear();
+        let (expanded, final_map, deps) =
+            expand_preprocessors(&content, scxml_path, base_dir.as_deref())?;
+        self.preprocessor_deps = deps;
 
         self.parse_impl(
             &expanded,
@@ -5122,7 +5163,7 @@ mod tests {
         fs::write(&main_path, &main_src).unwrap();
 
         let input_map = PositionMap::identity(main_path.to_str().unwrap(), &main_src);
-        let (expanded, map) = template::expand(
+        let (expanded, map, _deps) = template::expand(
             &main_src,
             main_path.to_str().unwrap(),
             Some(tmp.path()),
