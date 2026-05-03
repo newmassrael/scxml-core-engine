@@ -6,8 +6,13 @@ package codec_transport_envelope
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
-	"example.com/sce-forge/codec_zenoh_keep_alive"
+	"example.com/sce-forge/codec_zenoh_init_body"
+	"example.com/sce-forge/codec_zenoh_open_body"
 	"example.com/sce-forge/codec_zenoh_close"
+	"example.com/sce-forge/codec_zenoh_keep_alive"
+	"example.com/sce-forge/codec_zenoh_frame"
+	"example.com/sce-forge/codec_zenoh_fragment"
+	"example.com/sce-forge/codec_zenoh_join"
 )
 
 // CodecTransportEnvelopeDefault bundles the runtime
@@ -23,8 +28,13 @@ type CodecTransportEnvelopeDefault struct {
 // the pointer fields is non-nil at a time; the active arm is the one
 // that matches the current tag value.
 type CodecTransportEnvelopeVariant struct {
-	CodecZenohKeepAlive *codec_zenoh_keep_alive.CodecZenohKeepAlive
+	CodecZenohInitBody *codec_zenoh_init_body.CodecZenohInitBody
+	CodecZenohOpenBody *codec_zenoh_open_body.CodecZenohOpenBody
 	CodecZenohClose *codec_zenoh_close.CodecZenohClose
+	CodecZenohKeepAlive *codec_zenoh_keep_alive.CodecZenohKeepAlive
+	CodecZenohFrame *codec_zenoh_frame.CodecZenohFrame
+	CodecZenohFragment *codec_zenoh_fragment.CodecZenohFragment
+	CodecZenohJoin *codec_zenoh_join.CodecZenohJoin
 	Default *CodecTransportEnvelopeDefault
 }
 
@@ -54,18 +64,48 @@ func DecodeCodecTransportEnvelope(cursor *codec.SceCursor) (*CodecTransportEnvel
 	// tag value so encode can round-trip it back onto the wire.
 	body := CodecTransportEnvelopeVariant{}
 	switch uint8((Header >> 0) & 0x1F) {
-	case 4:
-		_arm, err := codec_zenoh_keep_alive.DecodeCodecZenohKeepAlive(cursor)
+	case 1:
+		_arm, err := codec_zenoh_init_body.DecodeCodecZenohInitBody(cursor, Header)
 		if err != nil {
 			return nil, err
 		}
-		body.CodecZenohKeepAlive = _arm
+		body.CodecZenohInitBody = _arm
+	case 2:
+		_arm, err := codec_zenoh_open_body.DecodeCodecZenohOpenBody(cursor, Header)
+		if err != nil {
+			return nil, err
+		}
+		body.CodecZenohOpenBody = _arm
 	case 3:
 		_arm, err := codec_zenoh_close.DecodeCodecZenohClose(cursor)
 		if err != nil {
 			return nil, err
 		}
 		body.CodecZenohClose = _arm
+	case 4:
+		_arm, err := codec_zenoh_keep_alive.DecodeCodecZenohKeepAlive(cursor)
+		if err != nil {
+			return nil, err
+		}
+		body.CodecZenohKeepAlive = _arm
+	case 5:
+		_arm, err := codec_zenoh_frame.DecodeCodecZenohFrame(cursor)
+		if err != nil {
+			return nil, err
+		}
+		body.CodecZenohFrame = _arm
+	case 6:
+		_arm, err := codec_zenoh_fragment.DecodeCodecZenohFragment(cursor)
+		if err != nil {
+			return nil, err
+		}
+		body.CodecZenohFragment = _arm
+	case 7:
+		_arm, err := codec_zenoh_join.DecodeCodecZenohJoin(cursor, Header)
+		if err != nil {
+			return nil, err
+		}
+		body.CodecZenohJoin = _arm
 	default:
 		_arm, err := codec_zenoh_close.DecodeCodecZenohClose(cursor)
 		if err != nil {
@@ -98,11 +138,11 @@ func (s *CodecTransportEnvelope) SetMid(v uint8) {
 	s.Header = (s.Header &^ _shiftedMask) | _val
 }
 
-func (s *CodecTransportEnvelope) FlagZ() bool {
+func (s *CodecTransportEnvelope) A() bool {
 	return (s.Header & 0x20) != 0
 }
 
-func (s *CodecTransportEnvelope) SetFlagZ(v bool) {
+func (s *CodecTransportEnvelope) SetA(v bool) {
 	if v {
 		s.Header |= 0x20
 	} else {
@@ -110,11 +150,11 @@ func (s *CodecTransportEnvelope) SetFlagZ(v bool) {
 	}
 }
 
-func (s *CodecTransportEnvelope) FlagX() bool {
+func (s *CodecTransportEnvelope) S() bool {
 	return (s.Header & 0x40) != 0
 }
 
-func (s *CodecTransportEnvelope) SetFlagX(v bool) {
+func (s *CodecTransportEnvelope) SetS(v bool) {
 	if v {
 		s.Header |= 0x40
 	} else {
@@ -122,11 +162,11 @@ func (s *CodecTransportEnvelope) SetFlagX(v bool) {
 	}
 }
 
-func (s *CodecTransportEnvelope) FlagW() bool {
+func (s *CodecTransportEnvelope) Z() bool {
 	return (s.Header & 0x80) != 0
 }
 
-func (s *CodecTransportEnvelope) SetFlagW(v bool) {
+func (s *CodecTransportEnvelope) SetZ(v bool) {
 	if v {
 		s.Header |= 0x80
 	} else {
@@ -140,14 +180,24 @@ func (s *CodecTransportEnvelope) Encode() []byte {
 	// The tag value is read from the struct field, NOT derived from
 	// the body discriminant — keeping author-set tag / body in sync
 	// is the caller's responsibility (v1 keeps the layout simple).
-	r := make([]byte, 0, 2)
+	r := make([]byte, 0, 65547)
 	r = append(r, byte(s.Header))
 	// Append the active arm body's encoded bytes.
 	switch {
-	case s.Body.CodecZenohKeepAlive != nil:
-		r = append(r, s.Body.CodecZenohKeepAlive.Encode()...)
+	case s.Body.CodecZenohInitBody != nil:
+		r = append(r, s.Body.CodecZenohInitBody.Encode(s.Header)...)
+	case s.Body.CodecZenohOpenBody != nil:
+		r = append(r, s.Body.CodecZenohOpenBody.Encode(s.Header)...)
 	case s.Body.CodecZenohClose != nil:
 		r = append(r, s.Body.CodecZenohClose.Encode()...)
+	case s.Body.CodecZenohKeepAlive != nil:
+		r = append(r, s.Body.CodecZenohKeepAlive.Encode()...)
+	case s.Body.CodecZenohFrame != nil:
+		r = append(r, s.Body.CodecZenohFrame.Encode()...)
+	case s.Body.CodecZenohFragment != nil:
+		r = append(r, s.Body.CodecZenohFragment.Encode()...)
+	case s.Body.CodecZenohJoin != nil:
+		r = append(r, s.Body.CodecZenohJoin.Encode(s.Header)...)
 	case s.Body.Default != nil:
 		r = append(r, s.Body.Default.Body.Encode()...)
 	}

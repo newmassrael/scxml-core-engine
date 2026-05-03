@@ -1,48 +1,96 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: codec multi-bit-flag variant dispatch (RFC §5.B B5-β,
-     surface B from the watching-zenoh authoring path).
+     surface B from the watching-zenoh authoring path) + RFC §5.B B5-ι Batch 1
+     full Zenoh transport envelope (Wire RFC Phase B X2c). Closes the final
+     missing piece of Batch 1 by composing all 7 body codecs landed across
+     B5-prep / B5-α / B5-ι atomic-3 / B5-ι Batch 1 unified bodies into a
+     single dispatcher fixture.
 
      Mirrors the upstream Zenoh transport-message envelope (zenoh-pico
-     src/protocol/codec/transport.c:_z_transport_message_decode lines 546-575
-     + include/zenoh-pico/protocol/definitions/core.h `#define _Z_MID_MASK 0x1f`):
+     src/protocol/codec/transport.c lines 504-540 `_z_transport_message_encode`
+     and 542-575 `_z_transport_message_decode` + `_Z_MID_MASK = 0x1f`):
      the leading 1-byte header packs a 5-bit message ID (bits 0..4, mirroring
      `_Z_MID_MASK = 0x1f`) plus three single-bit per-message flags (bits 5..7).
-     The decoder dispatches on the masked-and-shifted MID slice, NOT on the
-     full header byte — the per-message flags above bit 4 are consumed by the
-     selected arm body, not by the variant tag.
+     The decoder dispatches on the masked-and-shifted MID slice; the per-
+     message flags above bit 4 (S/A/T or per-MID specific names) are
+     consumed by the selected arm body via B5-γ `<sce:requires-parent-flags>`.
 
      B5-β extends `<sce:variant tag="...">` to accept the dotted-path form
      `tag="<carrier>.<flag>"` where `<carrier>` names a `<sce:flags>`-bearing
      field and `<flag>` names one of its `<sce:flag>` children. The dispatch
-     value is `(carrier >> bit) & ((1 << width) - 1)`. Whole-field dispatch
-     (B1-β bare `tag="<field>"`) stays the back-compat default.
+     value is `(carrier >> bit) & ((1 << width) - 1)`.
+
+     B5-γ `body_parent_flags_carrier` resolution (generator.rs:1934-2032)
+     threads the parent header into each arm body that declares
+     `<sce:requires-parent-flags>`: init_body needs S+A, join needs S,
+     open_body needs A, hello needs L; close/keep_alive/frame/fragment have
+     NO parent-flag dependency so the dispatcher emits their decode/encode
+     calls without the extra arg (per-arm conditional, validated by the
+     existing cross-codec validator).
 
      Wire shape (1 + body bytes):
-       byte 0: header  bits 0..4 = mid       (5 bits, 32-value domain)
-                       bit  5    = flag_z    (per-message flag, body-consumed)
-                       bit  6    = flag_x    (per-message flag, body-consumed)
-                       bit  7    = flag_w    (per-message flag, body-consumed)
-       bytes 1..N: arm body bytes (KeepAlive=0; Close=1 reason byte)
+       byte 0: header  bits 0..4 = mid  (5 bits, 32-value domain)
+                       bit  5    = A    (Init/Open ack flag; alias for
+                                         Frame/Fragment R reliability;
+                                         arms not declaring requires-
+                                         parent-flags ignore this bit)
+                       bit  6    = S    (Init/Join "scout" flag)
+                       bit  7    = Z    (extension-present flag; reserved
+                                         for future Z-flag-gated arm
+                                         bodies, no arm uses it yet)
+       bytes 1..N: arm body bytes per the selected MID's body codec
 
-     Arm coverage:
-       0x04 → KeepAlive (mirrors _Z_MID_T_KEEP_ALIVE = 0x04, empty body)
-       0x03 → Close     (mirrors _Z_MID_T_CLOSE      = 0x03, single uint8 reason)
-       <sce:default> → Close (catch-all; preserves runtime mid for round-trip) -->
+     The cross-codec parent-flags validator (B5-γ
+     `validate_cross_codec_parent_flags`, generator.rs:2511) confirms
+     every arm body's `<sce:requires-parent-flags>`-declared flag
+     name + bit position matches the envelope's `<sce:flags
+     id="header">` declaration. Bit 5 having two upstream names (A
+     for Init/Open ack vs R for Frame/Fragment reliability) is a
+     per-MID semantic alias on the wire — the SCE envelope picks
+     ONE canonical name (A) since R-using arms (frame/fragment) do
+     NOT declare requires-parent-flags so no name conflict surfaces
+     at validation. Hello/Scout L-flag at bit 5 belongs in a
+     separate scouting envelope (different MID enum); a single
+     envelope cannot declare both A and L at the same bit because
+     the validator checks names not just positions.
+
+     Arm coverage (mirrors zenoh-pico transport.h _Z_MID_T_* enum):
+       0x01 → Init      (codec_zenoh_init_body, parent.S + parent.A)
+       0x02 → Open      (codec_zenoh_open_body, parent.A)
+       0x03 → Close     (codec_zenoh_close, single uint8 reason)
+       0x04 → KeepAlive (codec_zenoh_keep_alive, empty body)
+       0x05 → Frame     (codec_zenoh_frame, VLE u64 sn + tail bytes)
+       0x06 → Fragment  (codec_zenoh_fragment, VLE u64 sn + tail bytes)
+       0x07 → Join      (codec_zenoh_join, parent.S)
+       <sce:default> → Close (catch-all for unknown MIDs incl. 0x00 OAM not
+                              yet authored; preserves runtime mid for
+                              round-trip via the default-arm tag-store
+                              shape established by B1-β trunk) -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="codec_transport_envelope">
-  <sce:import src="codec_zenoh_keep_alive.scxml" kind="codec" as="codec_zenoh_keep_alive"/>
+  <sce:import src="codec_zenoh_init_body.scxml" kind="codec" as="codec_zenoh_init_body"/>
+  <sce:import src="codec_zenoh_open_body.scxml" kind="codec" as="codec_zenoh_open_body"/>
   <sce:import src="codec_zenoh_close.scxml" kind="codec" as="codec_zenoh_close"/>
+  <sce:import src="codec_zenoh_keep_alive.scxml" kind="codec" as="codec_zenoh_keep_alive"/>
+  <sce:import src="codec_zenoh_frame.scxml" kind="codec" as="codec_zenoh_frame"/>
+  <sce:import src="codec_zenoh_fragment.scxml" kind="codec" as="codec_zenoh_fragment"/>
+  <sce:import src="codec_zenoh_join.scxml" kind="codec" as="codec_zenoh_join"/>
   <datamodel>
     <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
-      <sce:flag name="mid"    bit="0" width="5"/>
-      <sce:flag name="flag_z" bit="5"/>
-      <sce:flag name="flag_x" bit="6"/>
-      <sce:flag name="flag_w" bit="7"/>
+      <sce:flag name="mid" bit="0" width="5"/>
+      <sce:flag name="A"   bit="5"/>
+      <sce:flag name="S"   bit="6"/>
+      <sce:flag name="Z"   bit="7"/>
     </sce:flags>
     <sce:variant tag="header.mid">
-      <sce:arm value="0x04" type="codec_zenoh_keep_alive"/>
+      <sce:arm value="0x01" type="codec_zenoh_init_body"/>
+      <sce:arm value="0x02" type="codec_zenoh_open_body"/>
       <sce:arm value="0x03" type="codec_zenoh_close"/>
+      <sce:arm value="0x04" type="codec_zenoh_keep_alive"/>
+      <sce:arm value="0x05" type="codec_zenoh_frame"/>
+      <sce:arm value="0x06" type="codec_zenoh_fragment"/>
+      <sce:arm value="0x07" type="codec_zenoh_join"/>
       <sce:default type="codec_zenoh_close"/>
     </sce:variant>
   </datamodel>

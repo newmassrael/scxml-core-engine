@@ -4,8 +4,13 @@
 
 use sce_forge_runtime::codec::{CodecError, SceCursor};
 
-use super::codec_zenoh_keep_alive::CodecZenohKeepAlive;
+use super::codec_zenoh_init_body::CodecZenohInitBody;
+use super::codec_zenoh_open_body::CodecZenohOpenBody;
 use super::codec_zenoh_close::CodecZenohClose;
+use super::codec_zenoh_keep_alive::CodecZenohKeepAlive;
+use super::codec_zenoh_frame::CodecZenohFrame;
+use super::codec_zenoh_fragment::CodecZenohFragment;
+use super::codec_zenoh_join::CodecZenohJoin;
 
 // RFC §5.B variant primitive (B1-β): discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
@@ -13,8 +18,13 @@ use super::codec_zenoh_close::CodecZenohClose;
 // alongside its catch-all body.
 #[allow(dead_code)]
 pub enum CodecTransportEnvelopeVariant {
-    CodecZenohKeepAlive(CodecZenohKeepAlive),
+    CodecZenohInitBody(CodecZenohInitBody),
+    CodecZenohOpenBody(CodecZenohOpenBody),
     CodecZenohClose(CodecZenohClose),
+    CodecZenohKeepAlive(CodecZenohKeepAlive),
+    CodecZenohFrame(CodecZenohFrame),
+    CodecZenohFragment(CodecZenohFragment),
+    CodecZenohJoin(CodecZenohJoin),
     Default {
         tag: u8,
         body: CodecZenohClose,
@@ -27,7 +37,7 @@ impl Default for CodecTransportEnvelopeVariant {
         // codec is `#[derive(Default)]`, so this is infallible. A
         // freshly-constructed envelope is overwritten by `decode()` or
         // by an explicit user assignment before any `encode()` call.
-        Self::CodecZenohKeepAlive(CodecZenohKeepAlive::default())
+        Self::CodecZenohInitBody(CodecZenohInitBody::default())
     }
 }
 
@@ -67,8 +77,13 @@ impl CodecTransportEnvelope {
         // runtime tag value so encode can round-trip it back onto the
         // wire.
         let body = match (((header >> 0) & (0x1F as u8)) as u8) {
-            4u8 => CodecTransportEnvelopeVariant::CodecZenohKeepAlive(CodecZenohKeepAlive::decode(cursor)?),
+            1u8 => CodecTransportEnvelopeVariant::CodecZenohInitBody(CodecZenohInitBody::decode(cursor, header)?),
+            2u8 => CodecTransportEnvelopeVariant::CodecZenohOpenBody(CodecZenohOpenBody::decode(cursor, header)?),
             3u8 => CodecTransportEnvelopeVariant::CodecZenohClose(CodecZenohClose::decode(cursor)?),
+            4u8 => CodecTransportEnvelopeVariant::CodecZenohKeepAlive(CodecZenohKeepAlive::decode(cursor)?),
+            5u8 => CodecTransportEnvelopeVariant::CodecZenohFrame(CodecZenohFrame::decode(cursor)?),
+            6u8 => CodecTransportEnvelopeVariant::CodecZenohFragment(CodecZenohFragment::decode(cursor)?),
+            7u8 => CodecTransportEnvelopeVariant::CodecZenohJoin(CodecZenohJoin::decode(cursor, header)?),
             other => CodecTransportEnvelopeVariant::Default {
                 tag: other,
                 body: CodecZenohClose::decode(cursor)?,
@@ -96,11 +111,11 @@ impl CodecTransportEnvelope {
         self.header = (self.header & !_mask) | _val;
     }
 
-    pub fn flag_z(&self) -> bool {
+    pub fn a(&self) -> bool {
         (self.header & 0x20) != 0
     }
 
-    pub fn set_flag_z(&mut self, v: bool) {
+    pub fn set_a(&mut self, v: bool) {
         if v {
             self.header |= 0x20;
         } else {
@@ -108,11 +123,11 @@ impl CodecTransportEnvelope {
         }
     }
 
-    pub fn flag_x(&self) -> bool {
+    pub fn s(&self) -> bool {
         (self.header & 0x40) != 0
     }
 
-    pub fn set_flag_x(&mut self, v: bool) {
+    pub fn set_s(&mut self, v: bool) {
         if v {
             self.header |= 0x40;
         } else {
@@ -120,11 +135,11 @@ impl CodecTransportEnvelope {
         }
     }
 
-    pub fn flag_w(&self) -> bool {
+    pub fn z(&self) -> bool {
         (self.header & 0x80) != 0
     }
 
-    pub fn set_flag_w(&mut self, v: bool) {
+    pub fn set_z(&mut self, v: bool) {
         if v {
             self.header |= 0x80;
         } else {
@@ -138,15 +153,30 @@ impl CodecTransportEnvelope {
         // the body discriminant — keeping author-set msg_id / body in
         // sync is the caller's responsibility (v1 keeps the layout
         // simple; future extensions may auto-sync via a typed setter).
-        let mut r: Vec<u8> = Vec::with_capacity(2);
+        let mut r: Vec<u8> = Vec::with_capacity(65547);
         r.push(self.header);
         // Append the active arm's encoded bytes.
         match &self.body {
-            CodecTransportEnvelopeVariant::CodecZenohKeepAlive(b) => {
-                r.extend(b.encode());
+            CodecTransportEnvelopeVariant::CodecZenohInitBody(b) => {
+                r.extend(b.encode(self.header));
+            }
+            CodecTransportEnvelopeVariant::CodecZenohOpenBody(b) => {
+                r.extend(b.encode(self.header));
             }
             CodecTransportEnvelopeVariant::CodecZenohClose(b) => {
                 r.extend(b.encode());
+            }
+            CodecTransportEnvelopeVariant::CodecZenohKeepAlive(b) => {
+                r.extend(b.encode());
+            }
+            CodecTransportEnvelopeVariant::CodecZenohFrame(b) => {
+                r.extend(b.encode());
+            }
+            CodecTransportEnvelopeVariant::CodecZenohFragment(b) => {
+                r.extend(b.encode());
+            }
+            CodecTransportEnvelopeVariant::CodecZenohJoin(b) => {
+                r.extend(b.encode(self.header));
             }
             CodecTransportEnvelopeVariant::Default { body, .. } => {
                 r.extend(body.encode());
