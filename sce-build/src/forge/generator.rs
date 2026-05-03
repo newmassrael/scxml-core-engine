@@ -1006,11 +1006,17 @@ fn render_codec(
     lang: crate::generator::Language,
 ) -> Result<String, ForgeError> {
     // RFC §5.B "MCU-only codec sub-features" — codec-content-level MCU
-    // classification. When the codec carries TLV chain (B3-α) or DMA
-    // alignment (B3-β) fields, only Rust + C11 emit; the other 4
-    // backends typed-reject through the existing kind-class diagnostic
-    // (`codegen/mcu-class-kind-on-non-mcu-language`, repurposed at
-    // codec-content granularity per RFC line 521-525).
+    // classification. After B5-ε closures only DMA alignment (B3-β)
+    // genuinely needs MCU-class hardware (memory-mapped peripherals,
+    // DMA controllers, fixed-offset wire-layout invariants). TLV chain
+    // (B3-α) was originally bundled here as a conservative scope
+    // choice; it is in fact server-class-relevant too (Zenoh extension
+    // envelopes land on zenoh-rs / zenoh-cpp / zenoh-kotlin server
+    // peers, not just zenoh-pico MCU), so cpp/kotlin/go/python now
+    // emit TLV chain via the host-language list shape (std::vector /
+    // MutableList / []T / List). Only codecs carrying DMA alignment
+    // still typed-reject on those four backends through the existing
+    // kind-class diagnostic.
     if m.has_mcu_only_features() {
         match lang {
             crate::generator::Language::Rust | crate::generator::Language::C11 => { /* allowed */ }
@@ -1296,15 +1302,21 @@ fn render_codec(
                     obj.insert("tlv_chain_body_encoder".into(), body_encoder.clone().into());
                     let wrapped = match lang {
                         crate::generator::Language::Rust => format!("Vec<{body_type}>"),
+                        // RFC §5.B B5-ε closures: cpp/kotlin/go/python emit
+                        // TLV chain via the host-language list shape — Zenoh
+                        // ext envelopes ship on zenoh-rs / zenoh-cpp / zenoh-
+                        // kotlin server peers too, not just zenoh-pico MCU,
+                        // so the original "MCU-only" gate (now retracted)
+                        // wasn't a hardware constraint, just a v1 scope.
+                        crate::generator::Language::Cpp => format!("std::vector<{body_type}>"),
+                        crate::generator::Language::Kotlin => format!("MutableList<{body_type}>"),
+                        crate::generator::Language::Go => format!("[]{body_type}"),
+                        crate::generator::Language::Python => format!("List[{body_type}]"),
                         // C11 emits a fixed-buffer + length pair via the
                         // codec template (mirrors repeat shape); the
                         // single c_type slot holds the body_type for
                         // shape symmetry.
                         crate::generator::Language::C11 => body_type.clone(),
-                        _ => unreachable!(
-                            "TLV chain is MCU-class — render_codec rejects \
-                             non-MCU langs upfront (cpp/kotlin/go/python)"
-                        ),
                     };
                     obj.insert(type_key.into(), wrapped.into());
                     obj.insert(
@@ -1318,6 +1330,14 @@ fn render_codec(
                         "tlv_chain_encode_block".into(),
                         tlv_chain_streaming_encode_block(f, &body_encoder, lang).into(),
                     );
+                    // Kotlin's data-class primary constructor needs a
+                    // default value for every property; the trunk's
+                    // `0.toUByte()` family default would miscompile
+                    // against `MutableList<T>`. Mirrors the repeat
+                    // closure precedent.
+                    if matches!(lang, crate::generator::Language::Kotlin) {
+                        obj.insert("kt_default".into(), "mutableListOf()".into());
+                    }
                 } else {
                     let resolved = crate::forge::limits::resolve_bytes_max(f.max_size);
                     obj.insert("max_size".into(), resolved.into());
@@ -1370,10 +1390,10 @@ fn render_codec(
                 }
             }
             if matches!(lang, crate::generator::Language::Kotlin) {
-                // Repeat fields already set kt_default = "mutableListOf()"
-                // above; the carrier-typed default would miscompile
-                // against MutableList<T>.
-                if !f.is_repeat() {
+                // Repeat / TLV chain fields already set kt_default =
+                // "mutableListOf()" above; the carrier-typed default
+                // would miscompile against MutableList<T>.
+                if !f.is_repeat() && !f.is_tlv_chain() {
                     obj.insert("kt_default".into(), kotlin_default(&f.sce_type).into());
                 }
                 // RFC §5.B B1-γ flags primitive on Kotlin: bitwise ops on
@@ -1394,11 +1414,12 @@ fn render_codec(
                 obj.insert("kt_carrier_back".into(), back.into());
             }
             if matches!(lang, crate::generator::Language::Python) {
-                // Repeat fields default to `field(default_factory=list)` —
-                // a bare `[]` shared across instances would alias mutably
-                // through the dataclass primary constructor. Plain
-                // (non-repeat) fields keep the carrier-typed default.
-                let py_default = if f.is_repeat() {
+                // Repeat / TLV chain fields default to `field(default_
+                // factory=list)` — a bare `[]` shared across instances
+                // would alias mutably through the dataclass primary
+                // constructor. Plain (non-list) fields keep the
+                // carrier-typed default.
+                let py_default = if f.is_repeat() || f.is_tlv_chain() {
                     "field(default_factory=list)".to_string()
                 } else {
                     python_default(&f.sce_type).to_string()
@@ -1612,9 +1633,11 @@ fn render_codec(
         // RFC §5.B B3 TLV chain primitive: each tlv-chain field
         // contributes `max_depth * imported_codec.max_frame_bytes()`
         // — same shape as repeat but bounded by `max_depth` instead
-        // of `max_count` (TLV chains are MCU-class so the bound is
-        // mandatory; resolve_max_count's fallback is not reachable
-        // here).
+        // of `max_count`. `max_depth` is parser-mandatory (the
+        // dedicated `codec/tlv-chain-depth-unspecified` diagnostic
+        // rejects missing values), so resolve_max_count's fallback is
+        // not reachable here. Applies on all 6 backends after B5-ε
+        // closures lifted the cpp/kotlin/go/python gate.
         let tlv_chain_body_max: u32 = m
             .fields
             .iter()
@@ -2893,12 +2916,23 @@ fn repeat_streaming_encode_block(
 /// statement for one tlv-chain field. Iteratively decodes entries off
 /// the cursor up to `max_depth`; residual bytes after the cap are
 /// handled per [`TlvOverflowPolicy`]:
-///   - [`TlvOverflowPolicy::Reject`]   → return typed `TlvChainOverflow`
+///   - [`TlvOverflowPolicy::Reject`]   → typed overflow signal per language
+///                                       (Rust `CodecError::TlvChainOverflow`,
+///                                        C11 `SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW`,
+///                                        Go `codec.ErrTlvChainOverflow`,
+///                                        Python `TlvChainOverflow` exception;
+///                                        Cpp / Kotlin collapse to the
+///                                        truncation sentinel `std::nullopt` /
+///                                        `null`, matching the existing
+///                                        VleWidthOverflow declaration-only
+///                                        convention)
 ///   - [`TlvOverflowPolicy::Truncate`] → silently drop the post-cap bytes
 ///
 /// Loop bound is the literal `max_depth` (no max-iter helper needed —
-/// the for-loop is the max-iter contract). MCU-class — only Rust + C11
-/// arms are reachable; render_codec rejects cpp/kotlin/go/python upfront.
+/// the for-loop is the max-iter contract). RFC §5.B B5-ε closures land
+/// cpp/kotlin/go/python TLV chain emit; the prior MCU-only gate sat at
+/// the host-language wrapper choice (std::vector / MutableList / []T /
+/// List), not at any hardware constraint.
 fn tlv_chain_streaming_decode_stmt(
     field: &CodecField,
     body_type: &str,
@@ -2963,14 +2997,108 @@ fn tlv_chain_streaming_decode_stmt(
                  }}"
             )
         }
-        // MCU-class — render_codec gate already rejected these langs.
-        // Reaching here means the gate was bypassed (bug); panic with
-        // a precise message rather than emit silent wrong code.
-        Language::Cpp | Language::Kotlin | Language::Go | Language::Python => {
-            unreachable!(
-                "TLV chain decode helper called on non-MCU language {lang:?}; \
-                 render_codec MCU gate must reject codecs with TLV chain \
-                 fields on cpp/kotlin/go/python before this point"
+        // Cpp: bounded `std::vector<T>::reserve(max_depth)` then loop with
+        // early-break on cursor exhaustion. Element decode returns
+        // `std::optional<T>`; truncation propagates via `return std::nullopt`
+        // from the parent codec's decode (mirrors the repeat / variant arm
+        // shape). On Reject we collapse residual-bytes overflow to
+        // std::nullopt (cpp doesn't construct a typed CodecError variant
+        // at runtime — same convention as VleWidthOverflow).
+        Language::Cpp => {
+            let overflow_check = match on_overflow {
+                TlvOverflowPolicy::Reject => format!(
+                    "\n        if (cursor.remaining() > 0) return std::nullopt;"
+                ),
+                TlvOverflowPolicy::Truncate => String::new(),
+            };
+            format!(
+                "std::vector<{body_type}> {id};\n        \
+                 {id}.reserve({max_depth});\n        \
+                 for (std::size_t _i = 0; _i < {max_depth}; ++_i) {{\n            \
+                     if (cursor.remaining() == 0) break;\n            \
+                     auto _elem = {body_type}::decode(cursor);\n            \
+                     if (!_elem.has_value()) return std::nullopt;\n            \
+                     {id}.push_back(*_elem);\n        \
+                 }}{overflow_check}"
+            )
+        }
+        // Kotlin: `mutableListOf<T>().also { ... }` build-then-bind shape
+        // mirrors repeat. `for (_i in 0 until max_depth)` is the bounded
+        // count loop (avoids `repeat()` which doesn't allow `break`).
+        // Element decode returns `T?`; `?: return null` unwinds the
+        // partial frame. On Reject, post-loop residual cursor bytes
+        // collapse to `return null` (matches the cpp convention; Kotlin
+        // doesn't construct a typed CodecError variant at runtime).
+        Language::Kotlin => {
+            let overflow_check = match on_overflow {
+                TlvOverflowPolicy::Reject => format!(
+                    "\n            if (cursor.remaining() > 0) return null"
+                ),
+                TlvOverflowPolicy::Truncate => String::new(),
+            };
+            format!(
+                "val {id}: MutableList<{body_type}> = mutableListOf<{body_type}>().also {{\n                \
+                     for (_i in 0 until {max_depth}) {{\n                    \
+                         if (cursor.remaining() == 0) break\n                    \
+                         it.add({body_type}.decode(cursor) ?: return null)\n                \
+                     }}\n            \
+                 }}{overflow_check}"
+            )
+        }
+        // Go: PascalCase field id; `make([]T, 0, max_depth)` reserves
+        // capacity. `int(max_depth)` coerces the loop bound. Element
+        // decoder returns `(*T, error)`; truncation propagates via
+        // `return nil, err`. On Reject, post-loop residual cursor bytes
+        // surface `codec.ErrTlvChainOverflow` (Go uses sentinel-error
+        // rather than typed enum variant).
+        Language::Go => {
+            let go_id = filters::to_pascal_case(id.to_string());
+            let overflow_check = match on_overflow {
+                TlvOverflowPolicy::Reject => format!(
+                    "\n\tif cursor.Remaining() > 0 {{\n\t\t\
+                         return nil, codec.ErrTlvChainOverflow\n\t\
+                     }}"
+                ),
+                TlvOverflowPolicy::Truncate => String::new(),
+            };
+            format!(
+                "{go_id} := make([]{body_type}, 0, {max_depth})\n\t\
+                 for _i := 0; _i < int({max_depth}); _i++ {{\n\t\t\
+                     if cursor.Remaining() == 0 {{\n\t\t\t\
+                         break\n\t\t\
+                     }}\n\t\t\
+                     _elem, err := {body_decoder}(cursor)\n\t\t\
+                     if err != nil {{\n\t\t\t\
+                         return nil, err\n\t\t\
+                     }}\n\t\t\
+                     {go_id} = append({go_id}, *_elem)\n\t\
+                 }}{overflow_check}"
+            )
+        }
+        // Python: build the list inside the surrounding `try:` block
+        // (mirrors repeat shape). `for _ in range(max_depth)` is the
+        // bounded count loop. Element decode returns `Optional[T]`;
+        // `None` propagates via early `return None`. On Reject, post-
+        // loop residual cursor bytes raise `TlvChainOverflow`. 12-space
+        // indent context (class + method + try); body lines at 16.
+        Language::Python => {
+            let py_id = filters::to_snake_case(id.to_string());
+            let overflow_check = match on_overflow {
+                TlvOverflowPolicy::Reject => format!(
+                    "\n            if cursor.remaining() > 0:\n                \
+                         raise TlvChainOverflow()"
+                ),
+                TlvOverflowPolicy::Truncate => String::new(),
+            };
+            format!(
+                "{py_id} = []\n            \
+                 for _ in range({max_depth}):\n                \
+                     if cursor.remaining() == 0:\n                    \
+                         break\n                \
+                     _elem = {body_type}.decode(cursor)\n                \
+                     if _elem is None:\n                    \
+                         return None\n                \
+                     {py_id}.append(_elem){overflow_check}"
             )
         }
     }
@@ -3011,11 +3139,38 @@ fn tlv_chain_streaming_encode_block(
                  }}"
             )
         }
-        Language::Cpp | Language::Kotlin | Language::Go | Language::Python => {
-            unreachable!(
-                "TLV chain encode helper called on non-MCU language {lang:?}; \
-                 render_codec MCU gate must reject codecs with TLV chain \
-                 fields on cpp/kotlin/go/python before this point"
+        // Cpp / Kotlin / Go / Python encode is identical to repeat: walk
+        // the host-language list and append each element's encoded bytes
+        // onto the parent's `r` buffer. Repeat already extends to all 6
+        // backends (B2-α closures); TLV chain encode mirrors that shape
+        // with no overflow check (encoder writes whatever the struct
+        // holds; the author keeps `len ≤ max_depth` via the host
+        // language's list length, mirroring the variant tag/body trust
+        // contract).
+        Language::Cpp => format!(
+            "        for (const auto& _e : {id}) {{\n            \
+                 auto _sub = _e.encode();\n            \
+                 r.insert(r.end(), _sub.begin(), _sub.end());\n        \
+             }}"
+        ),
+        Language::Kotlin => format!(
+            "        for (_e in this.{id}) {{\n            \
+                 r.addAll(_e.encode().toList())\n        \
+             }}"
+        ),
+        Language::Go => {
+            let go_id = filters::to_pascal_case(id.to_string());
+            format!(
+                "\tfor _, _e := range s.{go_id} {{\n\t\t\
+                     r = append(r, _e.Encode()...)\n\t\
+                 }}"
+            )
+        }
+        Language::Python => {
+            let py_id = filters::to_snake_case(id.to_string());
+            format!(
+                "        for _e in self.{py_id}:\n            \
+                     r.extend(_e.encode())"
             )
         }
     }

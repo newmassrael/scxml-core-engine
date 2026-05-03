@@ -23,10 +23,6 @@ import "errors"
 // codec/variant-arm-unreachable otherwise), so the default arm catches
 // every unmatched tag at runtime.
 //
-// The B3 TLV-chain primitive is MCU-class — its TlvChainOverflow
-// runtime symbol lives only in the Rust + C11 runtimes (go codecs
-// containing tlv-chain are rejected upfront by the codec-content MCU
-// gate before any emit reaches this package).
 var ErrNeedMoreBytes = errors.New("sce/codec: need more bytes")
 
 // ErrVLEWidthOverflow is returned when a vle_u<N> field's continuation
@@ -42,6 +38,16 @@ var ErrVLEWidthOverflow = errors.New("sce/codec: vle width overflow")
 // Kotlin runtimes collapse this to their existing truncation sentinel
 // (mirrors the VleWidthOverflow declaration-only convention there).
 var ErrInvalidUTF8 = errors.New("sce/codec: invalid utf-8")
+
+// ErrTlvChainOverflow is returned by Decode when a `<sce:tlv-chain
+// on-overflow="reject">` field has residual cursor bytes after
+// `max_depth` entries have been consumed (RFC §5.B B3-α). Truncate
+// policy silently drops the residual bytes and never raises this
+// sentinel; the on-overflow attribute is parser-mandatory so the codec
+// emit always picks one of the two policies. Cpp + Kotlin runtimes
+// collapse this to their truncation sentinel (mirrors VleWidthOverflow
+// declaration-only convention).
+var ErrTlvChainOverflow = errors.New("sce/codec: tlv chain overflow")
 
 // SceCursor is a read-only cursor over a borrowed input slice. Decode
 // bodies use PeekSlice to bounds-check + read fixed-offset bytes

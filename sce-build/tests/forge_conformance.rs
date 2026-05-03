@@ -1071,45 +1071,152 @@ fn forge_codec_zenoh_ext_envelope_rust() {
     );
 }
 
-/// RFC §5.B B5-ε MCU gate: the envelope's `<sce:tlv-chain>` keeps the
-/// MCU-class contract — cpp/kotlin/go/python reject at codegen with
-/// `codegen/mcu-class-kind-on-non-mcu-language`, exactly mirroring
-/// `codec_tlv_chain_basic`'s rejection shape. Surface G adds variant
-/// body dispatch *inside* the chain entry; it does not relax the
-/// per-codec MCU gate.
-#[test]
-fn forge_codec_zenoh_ext_envelope_rejects_on_cpp() {
-    use sce_build::forge::error::{ForgeError, GenerateError};
+// RFC §5.B B5-ε closures: cpp/kotlin/go/python now emit TLV chain via
+// the host-language list shape (std::vector / MutableList / []T /
+// List). The previous gate-rejection test on `codec_zenoh_ext_envelope`
+// was retired alongside the analog on `codec_tlv_chain_basic` —
+// positive byte-golden tests cover all 6 backends below.
 
-    let scxml_path = resource_dir().join("codec_zenoh_ext_envelope.scxml");
-    let content = std::fs::read_to_string(&scxml_path)
-        .expect("Cannot read codec_zenoh_ext_envelope.scxml");
-    let result = sce_build::compile_forge_with_imports(
-        &content,
-        sce_build::DocumentLabel::symmetric("codec_zenoh_ext_envelope"),
-        sce_build::generator::Language::Cpp,
-        &resource_dir(),
-        &sce_build::ForgeCompileOptions::default(),
-    );
-    let err = match result {
-        Ok(_) => panic!(
-            "MCU-class codec on Cpp must reject with \
-             codegen/mcu-class-kind-on-non-mcu-language"
-        ),
-        Err(e) => e,
-    };
-    assert!(
-        matches!(
-            &err.error,
-            ForgeError::Generate(GenerateError::CodegenMcuClassKindOnNonMcuLanguage {
-                ref language,
-                ..
-            }) if language == "cpp"
-        ),
-        "must surface CodegenMcuClassKindOnNonMcuLanguage targeting cpp; got: {:?}",
-        err.error
-    );
+#[test]
+fn forge_codec_tlv_chain_basic_cpp() {
+    assert_standalone_forge("codec_tlv_chain_basic", "codec_tlv_chain_basic.h");
 }
+
+#[test]
+fn forge_codec_tlv_chain_basic_kotlin() {
+    assert_standalone_forge_kotlin("codec_tlv_chain_basic", "CodecTlvChainBasic.kt");
+}
+
+#[test]
+fn forge_codec_tlv_chain_basic_go() {
+    assert_standalone_forge_go("codec_tlv_chain_basic", "codec_tlv_chain_basic.go");
+}
+
+#[test]
+fn forge_codec_tlv_chain_basic_python() {
+    assert_standalone_forge_python("codec_tlv_chain_basic", "codec_tlv_chain_basic.py");
+}
+
+// `forge_codec_tlv_entry_cpp` already exists above (it predates B5-ε;
+// the entry codec ships on all 6 backends since it has no MCU-only
+// sub-features itself). The new B5-ε closures add the missing kotlin /
+// go / python entries below.
+
+#[test]
+fn forge_codec_tlv_entry_kotlin() {
+    assert_standalone_forge_kotlin("codec_tlv_entry", "CodecTlvEntry.kt");
+}
+
+#[test]
+fn forge_codec_tlv_entry_go() {
+    assert_standalone_forge_go("codec_tlv_entry", "codec_tlv_entry.go");
+}
+
+#[test]
+fn forge_codec_tlv_entry_python() {
+    assert_standalone_forge_python("codec_tlv_entry", "codec_tlv_entry.py");
+}
+
+#[test]
+fn forge_codec_zenoh_ext_unit_cpp() {
+    assert_standalone_forge("codec_zenoh_ext_unit", "codec_zenoh_ext_unit.h");
+}
+
+#[test]
+fn forge_codec_zenoh_ext_unit_kotlin() {
+    assert_standalone_forge_kotlin("codec_zenoh_ext_unit", "CodecZenohExtUnit.kt");
+}
+
+#[test]
+fn forge_codec_zenoh_ext_unit_go() {
+    assert_standalone_forge_go("codec_zenoh_ext_unit", "codec_zenoh_ext_unit.go");
+}
+
+#[test]
+fn forge_codec_zenoh_ext_unit_python() {
+    assert_standalone_forge_python("codec_zenoh_ext_unit", "codec_zenoh_ext_unit.py");
+}
+
+#[test]
+fn forge_codec_zenoh_ext_zint_cpp() {
+    assert_standalone_forge("codec_zenoh_ext_zint", "codec_zenoh_ext_zint.h");
+}
+
+#[test]
+fn forge_codec_zenoh_ext_zint_kotlin() {
+    assert_standalone_forge_kotlin("codec_zenoh_ext_zint", "CodecZenohExtZint.kt");
+}
+
+#[test]
+fn forge_codec_zenoh_ext_zint_go() {
+    assert_standalone_forge_go("codec_zenoh_ext_zint", "codec_zenoh_ext_zint.go");
+}
+
+#[test]
+fn forge_codec_zenoh_ext_zint_python() {
+    assert_standalone_forge_python("codec_zenoh_ext_zint", "codec_zenoh_ext_zint.py");
+}
+
+#[test]
+fn forge_codec_zenoh_ext_zbuf_cpp() {
+    assert_standalone_forge("codec_zenoh_ext_zbuf", "codec_zenoh_ext_zbuf.h");
+}
+
+#[test]
+fn forge_codec_zenoh_ext_zbuf_kotlin() {
+    assert_standalone_forge_kotlin("codec_zenoh_ext_zbuf", "CodecZenohExtZbuf.kt");
+}
+
+#[test]
+fn forge_codec_zenoh_ext_zbuf_go() {
+    assert_standalone_forge_go("codec_zenoh_ext_zbuf", "codec_zenoh_ext_zbuf.go");
+}
+
+#[test]
+fn forge_codec_zenoh_ext_zbuf_python() {
+    assert_standalone_forge_python("codec_zenoh_ext_zbuf", "codec_zenoh_ext_zbuf.py");
+}
+
+#[test]
+fn forge_codec_zenoh_ext_entry_cpp() {
+    assert_standalone_forge("codec_zenoh_ext_entry", "codec_zenoh_ext_entry.h");
+}
+
+#[test]
+fn forge_codec_zenoh_ext_entry_kotlin() {
+    assert_standalone_forge_kotlin("codec_zenoh_ext_entry", "CodecZenohExtEntry.kt");
+}
+
+#[test]
+fn forge_codec_zenoh_ext_entry_go() {
+    assert_standalone_forge_go("codec_zenoh_ext_entry", "codec_zenoh_ext_entry.go");
+}
+
+#[test]
+fn forge_codec_zenoh_ext_entry_python() {
+    assert_standalone_forge_python("codec_zenoh_ext_entry", "codec_zenoh_ext_entry.py");
+}
+
+#[test]
+fn forge_codec_zenoh_ext_envelope_cpp() {
+    assert_standalone_forge("codec_zenoh_ext_envelope", "codec_zenoh_ext_envelope.h");
+}
+
+#[test]
+fn forge_codec_zenoh_ext_envelope_kotlin() {
+    assert_standalone_forge_kotlin("codec_zenoh_ext_envelope", "CodecZenohExtEnvelope.kt");
+}
+
+#[test]
+fn forge_codec_zenoh_ext_envelope_go() {
+    assert_standalone_forge_go("codec_zenoh_ext_envelope", "codec_zenoh_ext_envelope.go");
+}
+
+#[test]
+fn forge_codec_zenoh_ext_envelope_python() {
+    assert_standalone_forge_python("codec_zenoh_ext_envelope", "codec_zenoh_ext_envelope.py");
+}
+
 
 // ── RFC §5.B B5-ζ Surface H — string-vs-bytes typing ─────────
 // `codec_zenoh_locator` is the first reachable consumer for
@@ -1387,47 +1494,14 @@ fn forge_python_codec_zenoh_push() {
     assert_standalone_forge_python("codec_zenoh_push", "codec_zenoh_push.py");
 }
 
-/// RFC §5.B B3 MCU gate: a codec containing `<sce:tlv-chain>` rejects
-/// when targeting `cpp` (and the other 3 non-MCU langs by the same
-/// path). The diagnostic is the existing kind-class
-/// `codegen/mcu-class-kind-on-non-mcu-language`, repurposed at the
-/// codec-content granularity per RFC §5.B "MCU-only codec sub-features"
-/// (line 521-525). The `kind` field carries the codec name + the
-/// MCU-only-features marker so authors see exactly which codec hit the
-/// gate.
-#[test]
-fn forge_codec_tlv_chain_rejects_on_cpp() {
-    use sce_build::forge::error::{ForgeError, GenerateError};
-
-    let scxml_path = resource_dir().join("codec_tlv_chain_basic.scxml");
-    let content = std::fs::read_to_string(&scxml_path)
-        .expect("Cannot read codec_tlv_chain_basic.scxml");
-    let result = sce_build::compile_forge_with_imports(
-        &content,
-        sce_build::DocumentLabel::symmetric("codec_tlv_chain_basic"),
-        sce_build::generator::Language::Cpp,
-        &resource_dir(),
-        &sce_build::ForgeCompileOptions::default(),
-    );
-    let err = match result {
-        Ok(_) => panic!(
-            "MCU-class codec on Cpp must reject with \
-             codegen/mcu-class-kind-on-non-mcu-language"
-        ),
-        Err(e) => e,
-    };
-    assert!(
-        matches!(
-            &err.error,
-            ForgeError::Generate(GenerateError::CodegenMcuClassKindOnNonMcuLanguage {
-                ref language,
-                ..
-            }) if language == "cpp"
-        ),
-        "must surface CodegenMcuClassKindOnNonMcuLanguage targeting cpp; got: {:?}",
-        err.error
-    );
-}
+// RFC §5.B B5-ε closures: TLV chain emit landed on cpp/kotlin/go/
+// python via the host-language list shape (std::vector / MutableList /
+// []T / List); the previous `forge_codec_tlv_chain_rejects_on_cpp`
+// gate-rejection test was retired in the same change. Positive byte-
+// golden tests for `codec_tlv_chain_basic` on the 4 newly supported
+// backends live alongside the existing Rust + C11 tests below. The DMA
+// alignment primitive (B3-β) stays MCU-only — its gate-rejection test
+// remains at `forge_codec_dma_aligned_basic_rejects_on_*`.
 
 /// RFC §5.B B3: `<sce:tlv-chain>` without `max-depth` rejects with the
 /// dedicated `codec/tlv-chain-depth-unspecified` diagnostic so the

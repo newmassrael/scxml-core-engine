@@ -24,10 +24,6 @@ class CodecError(Exception):
     ``codec/variant-arm-unreachable`` otherwise), so the default arm
     catches every unmatched tag at runtime.
 
-    The B3 TLV-chain primitive is MCU-class — its ``TlvChainOverflow``
-    runtime symbol lives only in the Rust + C11 runtimes (python codecs
-    containing tlv-chain are rejected upfront by the codec-content MCU
-    gate before any emit reaches this module).
     """
 
 
@@ -52,6 +48,17 @@ class InvalidUtf8(CodecError):
     Kotlin runtimes collapse this to their existing truncation
     sentinel (``std::nullopt`` / ``null``) instead, mirroring the
     VleWidthOverflow declaration-only convention there."""
+
+
+class TlvChainOverflow(CodecError):
+    """Raised when a ``<sce:tlv-chain on-overflow="reject">`` field has
+    residual cursor bytes after ``max_depth`` entries have been
+    consumed (RFC §5.B B3-α). Truncate policy silently drops the
+    residual bytes and never raises this exception; the on-overflow
+    attribute is parser-mandatory so the codec emit always picks one
+    of the two policies. The Cpp + Kotlin runtimes collapse this to
+    their truncation sentinel (mirrors VleWidthOverflow declaration-
+    only convention)."""
 
 
 class SceCursor:

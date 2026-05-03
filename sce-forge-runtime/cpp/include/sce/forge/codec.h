@@ -27,10 +27,14 @@ namespace SCE::Forge {
 /// `codec/variant-arm-unreachable` otherwise), so the default arm
 /// catches every unmatched tag at runtime.
 ///
-/// The B3 TLV-chain primitive is MCU-class — its `TlvChainOverflow`
-/// runtime symbol lives only in the Rust + C11 runtimes (cpp here is
-/// rejected upfront by the codec-content MCU gate before any TLV chain
-/// emit reaches this header).
+/// The B3-α TLV chain primitive emits on cpp after the B5-ε closures
+/// (it was originally MCU-only as a conservative scope choice; Zenoh
+/// extension envelopes need server-class peers too). On reject-policy
+/// overflow cpp collapses the failure to the truncation sentinel
+/// `std::nullopt` — same convention as `VleWidthOverflow` (see also
+/// the matching Kotlin runtime). The typed `TlvChainOverflow` enum
+/// variant lives only on Rust / C11 / Go / Python runtimes that
+/// construct it at the call site.
 enum class CodecError : std::uint8_t {
     NeedMoreBytes = 1,
     /// A `vle_u<N>` field's continuation chain implies a value wider

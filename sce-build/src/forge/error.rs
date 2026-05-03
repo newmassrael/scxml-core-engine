@@ -503,7 +503,7 @@ pub enum ValidationError {
     /// the chain traversal loop"). Author resolves by adding the
     /// attribute (e.g. `max-depth="8"`).
     #[error(
-        "codec '{codec}': tlv-chain field '{field}' is missing the required `max-depth` attribute — TLV chains are MCU-class and the decoder needs a build-time bound to size its working set (RFC §5.B line 488); add `max-depth=\"N\"` for some N > 0"
+        "codec '{codec}': tlv-chain field '{field}' is missing the required `max-depth` attribute — TLV chain decoders need a build-time bound to size their working set and enforce iterative-only parse (RFC §5.B line 488); add `max-depth=\"N\"` for some N > 0"
     )]
     CodecTlvChainDepthUnspecified {
         codec: String,

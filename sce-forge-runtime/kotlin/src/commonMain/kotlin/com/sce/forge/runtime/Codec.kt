@@ -18,10 +18,14 @@ package com.sce.forge.runtime
 /// codec/variant-arm-unreachable otherwise), so the default arm
 /// catches every unmatched tag at runtime.
 ///
-/// The B3 TLV-chain primitive is MCU-class — its TlvChainOverflow
-/// runtime symbol lives only in the Rust + C11 runtimes (kotlin codecs
-/// containing tlv-chain are rejected upfront by the codec-content MCU
-/// gate before any emit reaches this file).
+/// The B3-α TLV chain primitive emits on Kotlin after the B5-ε
+/// closures (it was originally MCU-only as a conservative scope choice;
+/// Zenoh extension envelopes need server-class peers too). On reject-
+/// policy overflow Kotlin collapses the failure to the truncation
+/// sentinel `null` returned from `decode()` — same convention as
+/// VleWidthOverflow (see also the matching Cpp runtime). The typed
+/// TlvChainOverflow enum variant lives only on Rust / C11 / Go /
+/// Python runtimes that construct it at the call site.
 sealed class CodecError {
     object NeedMoreBytes : CodecError()
     /// A `vle_u<N>` field's continuation chain implies a value wider

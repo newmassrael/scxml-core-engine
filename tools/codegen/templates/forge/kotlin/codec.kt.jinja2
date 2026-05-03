@@ -129,6 +129,8 @@ data class {{ struct_name }}(
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
+{% elif field.is_tlv_chain %}
+{{ field.tlv_chain_encode_block }}
 {% else %}
 {{ field.present_if_encode_block }}
 {% endif %}
@@ -143,12 +145,14 @@ data class {{ struct_name }}(
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
+{% elif field.is_tlv_chain %}
+{{ field.tlv_chain_encode_block }}
 {% else %}
 {{ field.present_if_encode_block }}
 {% endif %}
 {% endfor %}
         return r.toByteArray()
-{% elif has_repeat_fields or has_string_fields %}
+{% elif has_repeat_fields or has_tlv_chain_fields or has_string_fields %}
         // RFC §5.B B2 encode: fixed prefix appends byte-by-byte;
         // repeat fields iterate the host MutableList and splice each
         // element's encode().toList() into the parent buffer. Author
@@ -157,6 +161,8 @@ data class {{ struct_name }}(
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
+{% elif field.is_tlv_chain %}
+{{ field.tlv_chain_encode_block }}
 {% else %}
 {{ field.present_if_encode_block }}
 {% endif %}
@@ -240,6 +246,8 @@ data class {{ struct_name }}(
 {% for field in fields %}
 {% if field.is_repeat %}
             {{ field.repeat_decode_stmt }}
+{% elif field.is_tlv_chain %}
+            {{ field.tlv_chain_decode_stmt }}
 {% else %}
             {{ field.present_if_decode_stmt }}
 {% endif %}
@@ -258,6 +266,8 @@ data class {{ struct_name }}(
 {% for field in fields %}
 {% if field.is_repeat %}
             {{ field.repeat_decode_stmt }}
+{% elif field.is_tlv_chain %}
+            {{ field.tlv_chain_decode_stmt }}
 {% else %}
             {{ field.present_if_decode_stmt }}
 {% endif %}
@@ -267,7 +277,7 @@ data class {{ struct_name }}(
                 {{ field.id }} = {{ field.id }}{{ "," if not loop.last else "" }}
 {% endfor %}
             )
-{% elif has_repeat_fields or has_string_fields %}
+{% elif has_repeat_fields or has_tlv_chain_fields or has_string_fields %}
             // RFC §5.B B2 repeat primitive: streaming decode mixes
             // plain fixed-width reads (per-field via the present-if
             // helper's non-gated arm) with `mutableListOf<T>().also { ... }`
@@ -279,6 +289,8 @@ data class {{ struct_name }}(
 {% for field in fields %}
 {% if field.is_repeat %}
             {{ field.repeat_decode_stmt }}
+{% elif field.is_tlv_chain %}
+            {{ field.tlv_chain_decode_stmt }}
 {% else %}
             {{ field.present_if_decode_stmt }}
 {% endif %}

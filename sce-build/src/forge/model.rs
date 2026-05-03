@@ -956,8 +956,10 @@ pub struct CodecField {
     /// language-level alignment assertions (`_Static_assert` / `const _:
     /// () = assert!`) on the literal offset for drift protection.
     /// MCU-class — codecs containing this attribute emit only on Rust +
-    /// C11 (mirrors TLV chain gating per RFC line 521-525 "MCU-only
-    /// codec sub-features"). `None` when no alignment constraint.
+    /// C11. After B5-ε closures TLV chain is no longer MCU-only (Zenoh
+    /// extension envelopes ship on server-class peers too); DMA align
+    /// is the only remaining codec sub-feature gated to MCU backends.
+    /// `None` when no alignment constraint.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dma_burst_align: Option<u32>,
     /// RFC §5.B B5-δ Surface F — arithmetic offset on the
@@ -1246,9 +1248,16 @@ impl CodecModel {
     /// diagnostic (`codegen/mcu-class-kind-on-non-mcu-language`,
     /// repurposed at codec-content granularity).
     ///
-    /// B3-α: TLV chain. B3-β: DMA alignment.
+    /// B3-β: DMA alignment — the only sub-feature that genuinely needs
+    /// MCU-class hardware (DMA controllers, fixed-offset wire layout
+    /// invariants tied to memory-mapped peripherals). TLV chain (B3-α)
+    /// was originally bundled here as a conservative scope choice; it
+    /// is in fact server-class-relevant too (Zenoh extension envelopes
+    /// land on zenoh-rs / zenoh-cpp / zenoh-kotlin server peers, not
+    /// just zenoh-pico MCU). B5-ε closures (cpp/kotlin/go/python TLV
+    /// chain emit) lifted that gating; only DMA align stays MCU-only.
     pub fn has_mcu_only_features(&self) -> bool {
-        self.has_tlv_chain_fields() || self.has_dma_aligned_fields()
+        self.has_dma_aligned_fields()
     }
 
     /// Whether the codec declares a `<sce:requires-parent-flags>`
