@@ -725,23 +725,6 @@
       "fields": []
     },
     {
-      "name": "codec_zenoh_open_ack",
-      "kind": "codec",
-      "ref_section": "codecs",
-      "fields": [
-        {
-          "name": "lease",
-          "type": "u64",
-          "compare": "equality"
-        },
-        {
-          "name": "initial_sn",
-          "type": "u64",
-          "compare": "equality"
-        }
-      ]
-    },
-    {
       "name": "codec_zenoh_fragment",
       "kind": "codec",
       "ref_section": "codecs",

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh transport-layer Open body, unified
+     OpenSyn + OpenAck shape (RFC §5.B B5-ι Batch 1 with B5-λ negation
+     grammar landed in the prior atomic commit).
+
+     Mirrors zenoh-pico `_z_open_encode` (src/protocol/codec/transport.c
+     lines 288-305) verbatim. The transport message header carries
+     `_Z_FLAG_T_OPEN_A` (bit 5, value 0x20) which discriminates the two
+     wire instances of Open: A=1 is an acknowledgment (no cookie), A=0
+     is a synchronization request (cookie present, length-prefixed). The
+     parent envelope writes the 1-byte header before dispatching to
+     `_z_open_encode`, so the body codec scope is the two always-present
+     VLE u64 fields plus the gated cookie pair.
+
+     The cookie is gated on `!parent.A` (B5-λ negation): present when
+     the A flag is CLEAR, absent when A=1. Length-prefix uses zenoh's
+     standard `_z_slice_encode` pattern (codec.c:247) — VLE u64 length
+     followed by length-ref bytes. Both gated fields share the same
+     predicate so they're either both present or both absent.
+
+     This unified codec replaces the prior B5-ι atomic-3 specialized
+     `codec_zenoh_open_ack` (body-when-A=1, cookie carve-out via
+     omission). The carve-out was forced by the absence of negation
+     grammar; once `!parent.A` is expressible the unified form is the
+     1:1 mirror of the upstream encoder and avoids two-codec drift.
+
+     Wire shape (2 fields when parent.A=1, 4 fields when parent.A=0):
+       VLE u64 lease       (always)
+       VLE u64 initial_sn  (always)
+       VLE u64 cookie_len  (parent.A=0 only)
+       length-ref bytes cookie (parent.A=0 only, length=cookie_len, max=128)
+
+     The lease semantics (T-flag scaling lease/1000 vs lease, line
+     292-296) is a host-level concern and not wire-visible — both
+     branches encode the same VLE u64.
+
+     Round-trip oracles:
+       parent_flags=0x20 (A=1): lease=120 initial_sn=42 → 0x78 0x2A
+       parent_flags=0x00 (A=0): lease=120 initial_sn=42 cookie_len=4
+         cookie=[0xCA, 0xFE, 0xBA, 0xBE] → 0x78 0x2A 0x04 0xCA 0xFE 0xBA 0xBE -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_open_body">
+  <sce:requires-parent-flags carrier="header">
+    <sce:flag name="A" bit="5"/>
+  </sce:requires-parent-flags>
+  <datamodel>
+    <sce:field id="lease"      sce:type="uint64" sce:byte="0" sce:bit-size="vle"/>
+    <sce:field id="initial_sn" sce:type="uint64" sce:byte="1" sce:bit-size="vle"/>
+    <sce:field id="cookie_len" sce:type="uint64" sce:byte="2" sce:bit-size="vle"
+               sce:present-if="!parent.A"/>
+    <sce:field id="cookie" sce:type="bytes" sce:byte="3" sce:bit-size="length-ref"
+               sce:length-field="cookie_len" sce:max-size="128"
+               sce:present-if="!parent.A"/>
+  </datamodel>
+</scxml>

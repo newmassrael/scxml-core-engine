@@ -711,30 +711,14 @@ fn forge_codec_zenoh_locator_python_no_sidecar_until_closure() {
 
 // ── B5-ι sidecar emit (Rust + C11) + 4 backend gate ─────────────
 //
-// codec_zenoh_open_ack and codec_zenoh_fragment carry inline
-// `<sce:test-vector>` rows so the per-fixture sidecar `*_test.rs` /
-// `*_test.c.h` is emitted on Rust + C11. cpp/kotlin/go/python remain
-// gated until B5-θ closures land (mirrors the close/frame/locator
-// rotation pattern from B5-θ trunk). codec_decl_final has an empty
-// body and no test vectors, so it emits no sidecar on any backend.
-
-#[test]
-fn forge_rust_codec_zenoh_open_ack_test_vector_sidecar() {
-    assert_sidecar_forge_lang(
-        "codec_zenoh_open_ack",
-        "codec_zenoh_open_ack_test.rs",
-        sce_build::generator::Language::Rust,
-    );
-}
-
-#[test]
-fn forge_c11_codec_zenoh_open_ack_test_vector_sidecar() {
-    assert_sidecar_forge_lang(
-        "codec_zenoh_open_ack",
-        "codec_zenoh_open_ack_test.c.h",
-        sce_build::generator::Language::C11,
-    );
-}
+// codec_zenoh_fragment carries inline `<sce:test-vector>` rows so the
+// per-fixture sidecar `*_test.rs` / `*_test.c.h` is emitted on Rust +
+// C11. cpp/kotlin/go/python remain gated until B5-θ closures land
+// (mirrors the close/frame/locator rotation pattern from B5-θ trunk).
+// codec_decl_final has an empty body and no test vectors, so it emits
+// no sidecar on any backend. codec_zenoh_open_body's gated cookie
+// pair precludes inline `<sce:test-vector>` until B5-θ-optional lands
+// absent-vs-present markers (same constraint as codec_zenoh_scout).
 
 #[test]
 fn forge_rust_codec_zenoh_fragment_test_vector_sidecar() {
@@ -752,26 +736,6 @@ fn forge_c11_codec_zenoh_fragment_test_vector_sidecar() {
         "codec_zenoh_fragment_test.c.h",
         sce_build::generator::Language::C11,
     );
-}
-
-#[test]
-fn forge_codec_zenoh_open_ack_cpp_no_sidecar_until_closure() {
-    assert_no_codec_sidecar_until_closure("codec_zenoh_open_ack", sce_build::generator::Language::Cpp);
-}
-
-#[test]
-fn forge_codec_zenoh_open_ack_kotlin_no_sidecar_until_closure() {
-    assert_no_codec_sidecar_until_closure("codec_zenoh_open_ack", sce_build::generator::Language::Kotlin);
-}
-
-#[test]
-fn forge_codec_zenoh_open_ack_go_no_sidecar_until_closure() {
-    assert_no_codec_sidecar_until_closure("codec_zenoh_open_ack", sce_build::generator::Language::Go);
-}
-
-#[test]
-fn forge_codec_zenoh_open_ack_python_no_sidecar_until_closure() {
-    assert_no_codec_sidecar_until_closure("codec_zenoh_open_ack", sce_build::generator::Language::Python);
 }
 
 #[test]
@@ -1201,8 +1165,8 @@ fn forge_codec_zenoh_frame_cpp() {
 // zenoh-pico encoder; see the SCXML resource header for line refs.
 
 #[test]
-fn forge_codec_zenoh_open_ack_cpp() {
-    assert_standalone_forge("codec_zenoh_open_ack", "codec_zenoh_open_ack.h");
+fn forge_codec_zenoh_open_body_cpp() {
+    assert_standalone_forge("codec_zenoh_open_body", "codec_zenoh_open_body.h");
 }
 
 #[test]
@@ -3074,8 +3038,8 @@ fn forge_kotlin_codec_zenoh_frame() {
 // ── RFC §5.B B5-ι cross-codec composition (Kotlin) ───────────
 
 #[test]
-fn forge_kotlin_codec_zenoh_open_ack() {
-    assert_standalone_forge_kotlin("codec_zenoh_open_ack", "CodecZenohOpenAck.kt");
+fn forge_kotlin_codec_zenoh_open_body() {
+    assert_standalone_forge_kotlin("codec_zenoh_open_body", "CodecZenohOpenBody.kt");
 }
 
 #[test]
@@ -3487,8 +3451,8 @@ fn forge_rust_codec_zenoh_frame() {
 // ── RFC §5.B B5-ι cross-codec composition (Rust) ─────────────
 
 #[test]
-fn forge_rust_codec_zenoh_open_ack() {
-    assert_standalone_forge_rust("codec_zenoh_open_ack", "codec_zenoh_open_ack.rs");
+fn forge_rust_codec_zenoh_open_body() {
+    assert_standalone_forge_rust("codec_zenoh_open_body", "codec_zenoh_open_body.rs");
 }
 
 #[test]
@@ -3847,8 +3811,8 @@ fn forge_go_codec_zenoh_frame() {
 // ── RFC §5.B B5-ι cross-codec composition (Go) ───────────────
 
 #[test]
-fn forge_go_codec_zenoh_open_ack() {
-    assert_standalone_forge_go("codec_zenoh_open_ack", "codec_zenoh_open_ack.go");
+fn forge_go_codec_zenoh_open_body() {
+    assert_standalone_forge_go("codec_zenoh_open_body", "codec_zenoh_open_body.go");
 }
 
 #[test]
@@ -4179,8 +4143,8 @@ fn forge_python_codec_zenoh_frame() {
 // ── RFC §5.B B5-ι cross-codec composition (Python) ───────────
 
 #[test]
-fn forge_python_codec_zenoh_open_ack() {
-    assert_standalone_forge_python("codec_zenoh_open_ack", "codec_zenoh_open_ack.py");
+fn forge_python_codec_zenoh_open_body() {
+    assert_standalone_forge_python("codec_zenoh_open_body", "codec_zenoh_open_body.py");
 }
 
 #[test]
@@ -4444,8 +4408,8 @@ fn forge_c11_codec_zenoh_frame() {
 // ── RFC §5.B B5-ι cross-codec composition (C11) ──────────────
 
 #[test]
-fn forge_c11_codec_zenoh_open_ack() {
-    assert_standalone_forge_c("codec_zenoh_open_ack", "codec_zenoh_open_ack.c.h");
+fn forge_c11_codec_zenoh_open_body() {
+    assert_standalone_forge_c("codec_zenoh_open_body", "codec_zenoh_open_body.c.h");
 }
 
 #[test]

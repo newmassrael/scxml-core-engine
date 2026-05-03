@@ -2847,59 +2847,6 @@
         }
       ]
     },
-    "codec_zenoh_open_ack": {
-      "fixture": "CodecZenohOpenAck",
-      "signature": "(raw: &[u8]) <-> {lease: u64 VLE @ byte 0, initial_sn: u64 VLE @ byte 1}",
-      "description": "Zenoh transport-layer OpenAck body (RFC §5.B B5-ι). Two VLE u64 fields — lease followed by initial_sn — both always present on this branch. The 1-byte transport-message header (MID + A/T/Z flags) is written separately by `_z_transport_message_encode`; the OpenAck variant is selected when the A flag is set, which also tells `_z_open_encode` to skip the cookie field. Pure composition of B1-α VLE primitives. Upstream parity: `_z_open_encode` in zenoh-pico src/protocol/codec/transport.c:288-305 with the A-flag branch at line 300.",
-      "cases": [
-        {
-          "decoded": {
-            "lease": 0,
-            "initial_sn": 0
-          },
-          "encoded": [
-            0,
-            0
-          ],
-          "note": "both fields zero (1-byte VLE each)"
-        },
-        {
-          "decoded": {
-            "lease": 1,
-            "initial_sn": 100
-          },
-          "encoded": [
-            1,
-            100
-          ],
-          "note": "small values — both 1-byte VLE"
-        },
-        {
-          "decoded": {
-            "lease": 127,
-            "initial_sn": 1
-          },
-          "encoded": [
-            127,
-            1
-          ],
-          "note": "lease at max single-byte VLE boundary (127)"
-        },
-        {
-          "decoded": {
-            "lease": 128,
-            "initial_sn": 200
-          },
-          "encoded": [
-            128,
-            1,
-            200,
-            1
-          ],
-          "note": "lease=128 (first 2-byte VLE), initial_sn=200 (also 2-byte: 200>127)"
-        }
-      ]
-    },
     "codec_zenoh_fragment": {
       "fixture": "CodecZenohFragment",
       "signature": "(raw: &[u8]) <-> {sn: u64 VLE @ byte 0, payload: bytes tail @ byte 1 (max 65536)}",
