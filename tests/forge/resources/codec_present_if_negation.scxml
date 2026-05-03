@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: present-if negation primitive (RFC §5.B B5-λ).
+     One-byte uint8 carrier "flags" exposes a single named bit "absent_seq"
+     (bit 0). The trailing "seq" field is uint16 BE gated on
+     sce:present-if="!flags.absent_seq" — predicate fires when the bit is
+     CLEAR (textbook negation: "seq is present iff absent_seq=0"). The
+     `(carrier & mask) == 0` test is the polarity inverse of B1-δ Local
+     positive's `!= 0`. Closes the grammar gap that previously forced
+     specialized codec authoring (e.g. codec_zenoh_open_ack's "body when
+     A=1" form) when the wire layout's "set means absent" semantics did
+     not fit the positive-only grammar. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_present_if_negation">
+  <datamodel>
+    <sce:flags id="flags" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="absent_seq" bit="0"/>
+    </sce:flags>
+    <sce:field id="seq" sce:type="uint16" sce:byte="1" sce:bit-size="16"
+               sce:present-if="!flags.absent_seq"/>
+  </datamodel>
+</scxml>

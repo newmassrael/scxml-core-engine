@@ -1288,6 +1288,26 @@ fn forge_codec_present_if_basic() {
     );
 }
 
+// ── RFC §5.B B5-λ present-if negation primitive (Cpp) ───────
+// `codec_present_if_negation` mirrors `codec_present_if_basic`'s
+// shape but inverts the polarity: the trailing seq field is gated
+// on `!flags.absent_seq` so it's present iff the named bit is
+// CLEAR. Encode/decode emit `(carrier & mask) == 0` instead of
+// `!= 0`. Closes the grammar gap that previously forced
+// specialized codec authoring (e.g. body-when-A=0 carve-out for
+// codec_zenoh_open_ack) when wire layouts use "set means absent"
+// semantics. v1 trunk ships byte-stable goldens on all 6
+// backends in one commit (parser change is a single `op`
+// substitution per language; no per-language closure phasing).
+
+#[test]
+fn forge_codec_present_if_negation() {
+    assert_standalone_forge(
+        "codec_present_if_negation",
+        "codec_present_if_negation.h",
+    );
+}
+
 // ── RFC §5.B B2-β present-if + variable-length (Cpp) ─────────
 // B2-β lifts the v1 BitSize::Fixed-only restriction so present-if
 // can gate Tail / LengthRef / Vle bit-sizes. Each fixture pairs
@@ -3149,6 +3169,16 @@ fn forge_kotlin_codec_present_if_basic() {
     );
 }
 
+// ── RFC §5.B B5-λ present-if negation primitive (Kotlin) ────
+
+#[test]
+fn forge_kotlin_codec_present_if_negation() {
+    assert_standalone_forge_kotlin(
+        "codec_present_if_negation",
+        "CodecPresentIfNegation.kt",
+    );
+}
+
 // ── RFC §5.B B2-β present-if + variable-length (Kotlin) ─────
 
 #[test]
@@ -3515,6 +3545,16 @@ fn forge_rust_codec_present_if_basic() {
     assert_standalone_forge_rust(
         "codec_present_if_basic",
         "codec_present_if_basic.rs",
+    );
+}
+
+// ── RFC §5.B B5-λ present-if negation primitive (Rust) ──────
+
+#[test]
+fn forge_rust_codec_present_if_negation() {
+    assert_standalone_forge_rust(
+        "codec_present_if_negation",
+        "codec_present_if_negation.rs",
     );
 }
 
@@ -3902,6 +3942,16 @@ fn forge_go_codec_present_if_basic() {
     );
 }
 
+// ── RFC §5.B B5-λ present-if negation primitive (Go) ────────
+
+#[test]
+fn forge_go_codec_present_if_negation() {
+    assert_standalone_forge_go(
+        "codec_present_if_negation",
+        "codec_present_if_negation.go",
+    );
+}
+
 // ── RFC §5.B B2-β present-if + variable-length (Go) ─────────
 
 #[test]
@@ -4224,6 +4274,16 @@ fn forge_python_codec_present_if_basic() {
     );
 }
 
+// ── RFC §5.B B5-λ present-if negation primitive (Python) ────
+
+#[test]
+fn forge_python_codec_present_if_negation() {
+    assert_standalone_forge_python(
+        "codec_present_if_negation",
+        "codec_present_if_negation.py",
+    );
+}
+
 // ── RFC §5.B B2-β present-if + variable-length (Python) ─────
 
 #[test]
@@ -4505,6 +4565,16 @@ fn forge_c11_codec_present_if_basic() {
     assert_standalone_forge_c(
         "codec_present_if_basic",
         "codec_present_if_basic.c.h",
+    );
+}
+
+// ── RFC §5.B B5-λ present-if negation primitive (C11) ───────
+
+#[test]
+fn forge_c11_codec_present_if_negation() {
+    assert_standalone_forge_c(
+        "codec_present_if_negation",
+        "codec_present_if_negation.c.h",
     );
 }
 

@@ -1606,21 +1606,27 @@ pub fn parse_codec_field_from_node(
     })
 }
 
-/// RFC §5.B B1-δ + B5-γ present-if predicate grammar.
+/// RFC §5.B B1-δ + B5-γ + B5-λ present-if predicate grammar.
 ///
-/// Two forms in v1:
-///   - `<field_id>.<flag_name>` (B1-δ Local) — `field_id` names a
-///     flags-bearing sibling field declared earlier in the same
-///     codec.
-///   - `parent.<flag_name>` (B5-γ Parent) — the literal `parent`
-///     keyword references the codec's declared
-///     `<sce:requires-parent-flags>` block. `field_id` is empty in
-///     the resulting predicate (the carrier is implicit).
+/// Four forms in v1:
+///   - `<field_id>.<flag_name>` (B1-δ Local positive) — `field_id`
+///     names a flags-bearing sibling field declared earlier in the
+///     same codec; predicate fires when the bit is set.
+///   - `!<field_id>.<flag_name>` (B5-λ Local negative) — same
+///     carrier, predicate fires when the bit is *clear*.
+///   - `parent.<flag_name>` (B5-γ Parent positive) — the literal
+///     `parent` keyword references the codec's declared
+///     `<sce:requires-parent-flags>` block; predicate fires when the
+///     bit is set.
+///   - `!parent.<flag_name>` (B5-λ Parent negative) — fires when
+///     the parent flag bit is clear. Required for Zenoh OpenSyn body
+///     where cookie is present iff parent.A is NOT set.
+///
+/// `field_id` is empty when scope = Parent (carrier is implicit).
 ///
 /// Both halves match the SCE attribute name shape (alphanumeric +
-/// `_`, non-empty). Richer expressions (`!flag`, `flag1 && flag2`,
-/// `field == value`) defer to a later B-stage when downstream
-/// authoring surfaces a reachable consumer.
+/// `_`, non-empty). Conjunction (`flag1 && flag2`) and equality
+/// (`field == value`) defer to a later B-stage.
 fn parse_present_if_predicate(
     raw: &str,
     node: &roxmltree::Node,
@@ -1636,16 +1642,22 @@ fn parse_present_if_predicate(
                 element: format!("field '{field_id}'"),
                 attr: "sce:present-if".into(),
                 value: raw.to_string(),
-                expected: "exactly one '<field_id>.<flag_name>' bit-test \
-                           or 'parent.<flag_name>' parent-flags reference \
-                           (v1 grammar — both halves are non-empty \
-                           identifiers; richer predicates defer to a \
+                expected: "one of '<field_id>.<flag_name>' / \
+                           '!<field_id>.<flag_name>' / 'parent.<flag_name>' / \
+                           '!parent.<flag_name>' (v1 grammar — optional '!' \
+                           prefix for negation; both halves are non-empty \
+                           identifiers; conjunction and equality defer to a \
                            later RFC §5.B stage)"
                     .into(),
             },
         )
     };
-    let (lhs, rhs) = trimmed.split_once('.').ok_or_else(invalid)?;
+    // B5-λ: optional leading `!` for negation.
+    let (negate, body) = match trimmed.strip_prefix('!') {
+        Some(rest) => (true, rest.trim_start()),
+        None => (false, trimmed),
+    };
+    let (lhs, rhs) = body.split_once('.').ok_or_else(invalid)?;
     let lhs = lhs.trim();
     let rhs = rhs.trim();
     if lhs.is_empty() || rhs.is_empty() {
@@ -1673,12 +1685,14 @@ fn parse_present_if_predicate(
             scope: PresentIfScope::Parent,
             field_id: String::new(),
             flag_name: rhs.to_string(),
+            negate,
         })
     } else {
         Ok(PresentIfPredicate {
             scope: PresentIfScope::Local,
             field_id: lhs.to_string(),
             flag_name: rhs.to_string(),
+            negate,
         })
     }
 }

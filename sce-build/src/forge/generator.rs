@@ -4671,10 +4671,12 @@ fn present_if_encode_fixed(
         (Language::C11, true) => {
             // C11: presence is encoded by the carrier flag bit on the
             // struct member (no nullable wrapper), so the encode site
-            // tests `(self-><carrier> & mask) != 0` directly. Inner
+            // tests `(self-><carrier> & mask) <op> 0` directly. Inner
             // body emits the same byte appends as the non-gated form
             // — they read from `self-><id>` either way; the only
-            // difference is the surrounding gate.
+            // difference is the surrounding gate. B5-λ negation flips
+            // the comparison polarity to `== 0` while leaving the mask
+            // unchanged.
             let p = field.present_if.as_ref().expect("gated arm requires predicate");
             let (mask, hex_digits, carrier) = present_if_carrier_info(fields, parent_flags, p);
             // RFC §5.B B5-γ: C11 encode reads through `self->{carrier}`
@@ -4684,9 +4686,10 @@ fn present_if_encode_fixed(
                 PresentIfCarrier::Local(c) => format!("self->{}", filters::to_snake_case(c.id.clone())),
                 PresentIfCarrier::Parent => "parent_flags".to_string(),
             };
+            let op = if p.negate { "==" } else { "!=" };
             let inner = streaming_fixed_field_encode_c11_inner(field, default_endian, n);
             format!(
-                "    if (({carrier_snake} & 0x{mask:0width$X}) != 0) {{\n\
+                "    if (({carrier_snake} & 0x{mask:0width$X}) {op} 0) {{\n\
                  {inner}\
                  \n    }}",
                 width = hex_digits
@@ -4772,8 +4775,9 @@ fn present_if_encode_tail(
         (Language::C11, true) => {
             // C11 has no nullable wrapper — the carrier flag bit is
             // the source of truth for presence. Test `(self->carrier
-            // & mask) != 0` directly on the struct member; absent
-            // branch appends nothing.
+            // & mask) <op> 0` directly on the struct member; absent
+            // branch appends nothing. B5-λ negation toggles `op` to
+            // `==`.
             let id_snake = filters::to_snake_case(id.to_string());
             let p = field
                 .present_if
@@ -4787,8 +4791,9 @@ fn present_if_encode_tail(
                 PresentIfCarrier::Local(c) => format!("self->{}", filters::to_snake_case(c.id.clone())),
                 PresentIfCarrier::Parent => "parent_flags".to_string(),
             };
+            let op = if p.negate { "==" } else { "!=" };
             format!(
-                "    if (({carrier_snake} & 0x{mask:0width$X}) != 0) {{\n        \
+                "    if (({carrier_snake} & 0x{mask:0width$X}) {op} 0) {{\n        \
                      for (size_t _bi = 0; _bi < self->{id_snake}_len; ++_bi) \
                      r.bytes[r.len++] = self->{id_snake}[_bi];\n    \
                  }}",
@@ -4971,10 +4976,12 @@ fn present_if_encode_length_ref(
             };
             // RFC §5.B B5-δ Surface F: per-comment in the false arm,
             // length-arith adjusts the upper bound. Sibling-gated has
-            // no effect on C11 encode (no Optional wrapper).
+            // no effect on C11 encode (no Optional wrapper). B5-λ
+            // negation toggles `op` to `==`.
             let upper = compute_n_c11_encode(len_field, fields, field.length_arith.unwrap_or(0));
+            let op = if p.negate { "==" } else { "!=" };
             format!(
-                "    if (({carrier_snake} & 0x{mask:0width$X}) != 0) {{\n        \
+                "    if (({carrier_snake} & 0x{mask:0width$X}) {op} 0) {{\n        \
                      for (size_t _bi = 0; _bi < self->{id_snake}_len && _bi < {upper}; ++_bi) \
                      r.bytes[r.len++] = self->{id_snake}[_bi];\n    \
                  }}",
@@ -5083,6 +5090,7 @@ fn present_if_encode_vle(
             // C11 has no nullable wrapper — the carrier bit is the
             // presence source. The VLE encode loop reads the field
             // directly from `self-><id>` which is always present.
+            // B5-λ negation toggles `op` to `==`.
             let id_snake = filters::to_snake_case(id.to_string());
             let (mask, hex_digits, carrier) = present_if_carrier_info(fields, parent_flags, p);
             // RFC §5.B B5-γ: C11 encode reads through `self->{carrier}`
@@ -5092,13 +5100,14 @@ fn present_if_encode_vle(
                 PresentIfCarrier::Local(c) => format!("self->{}", filters::to_snake_case(c.id.clone())),
                 PresentIfCarrier::Parent => "parent_flags".to_string(),
             };
+            let op = if p.negate { "==" } else { "!=" };
             let inner = vle_encode_block(
                 &format!("self->{id_snake}"),
                 width_bits,
                 lang,
             );
             format!(
-                "    if (({carrier_snake} & 0x{mask:0width$X}) != 0) {{\n\
+                "    if (({carrier_snake} & 0x{mask:0width$X}) {op} 0) {{\n\
                  {inner}\n    \
                  }}",
                 width = hex_digits
@@ -5773,6 +5782,12 @@ fn present_if_test_literal(
         PresentIfCarrier::Parent => ("parent_flags".to_string(), SceType::Uint8),
     };
     let id = id_owned.as_str();
+    // B5-λ: negate flips the trailing `!= 0` test to `== 0`. The
+    // bit-mask itself is unchanged (still the single bit of interest);
+    // only the comparison polarity differs. All 6 backends use the
+    // same `(carrier & mask) <op> 0` shape, so the `op` literal is
+    // computed once here and substituted into per-language formats.
+    let op = if pred.negate { "==" } else { "!=" };
     match lang {
         Language::Rust => {
             let suffix = match &carrier_type {
@@ -5782,9 +5797,9 @@ fn present_if_test_literal(
                 SceType::Uint64 => "u64",
                 _ => "",
             };
-            format!("({id} & 0x{mask:0width$X}{suffix}) != 0", width = hex_digits)
+            format!("({id} & 0x{mask:0width$X}{suffix}) {op} 0", width = hex_digits)
         }
-        Language::Cpp => format!("({id} & 0x{mask:0width$X}) != 0", width = hex_digits),
+        Language::Cpp => format!("({id} & 0x{mask:0width$X}) {op} 0", width = hex_digits),
         // Go: bitwise `&` accepts the carrier type directly (no widening
         // gymnastics). Hex literal needs no suffix because Go infers
         // the type from the operand. For Local scope the carrier id
@@ -5799,7 +5814,7 @@ fn present_if_test_literal(
                 PresentIfCarrier::Parent => filters::to_camel_case(id.to_string()),
                 PresentIfCarrier::Local(_) => filters::to_pascal_case(id.to_string()),
             };
-            format!("({go_id} & 0x{mask:0width$X}) != 0", width = hex_digits)
+            format!("({go_id} & 0x{mask:0width$X}) {op} 0", width = hex_digits)
         }
         // C11: present-if has no nullable wrapper, so both decode and
         // encode test the carrier bit directly on the struct member.
@@ -5814,11 +5829,11 @@ fn present_if_test_literal(
             let c_id = filters::to_snake_case(id.to_string());
             match carrier {
                 PresentIfCarrier::Parent => format!(
-                    "({c_id} & 0x{mask:0width$X}) != 0",
+                    "({c_id} & 0x{mask:0width$X}) {op} 0",
                     width = hex_digits
                 ),
                 PresentIfCarrier::Local(_) => format!(
-                    "(out->{c_id} & 0x{mask:0width$X}) != 0",
+                    "(out->{c_id} & 0x{mask:0width$X}) {op} 0",
                     width = hex_digits
                 ),
             }
@@ -5832,7 +5847,7 @@ fn present_if_test_literal(
         Language::Python => {
             let py_id = filters::to_snake_case(id.to_string());
             format!(
-                "({py_id} & 0x{mask:0width$X}) != 0",
+                "({py_id} & 0x{mask:0width$X}) {op} 0",
                 width = hex_digits
             )
         }
@@ -5855,7 +5870,7 @@ fn present_if_test_literal(
                 id.to_string()
             };
             format!(
-                "({kt_id}{view} and 0x{mask:0width$X}{suffix}) != 0",
+                "({kt_id}{view} and 0x{mask:0width$X}{suffix}) {op} 0",
                 width = hex_digits
             )
         }

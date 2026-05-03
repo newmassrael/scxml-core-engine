@@ -821,27 +821,29 @@ pub enum PresentIfScope {
     Parent,
 }
 
-/// RFC §5.B B1-δ + B5-γ present-if predicate — a single bit-test
-/// on either a flags-bearing sibling field declared earlier in the
-/// same codec (B1-δ Local scope) or a flag declared in the codec's
-/// `<sce:requires-parent-flags>` block (B5-γ Parent scope).
+/// RFC §5.B B1-δ + B5-γ + B5-λ present-if predicate — a single
+/// bit-test on either a flags-bearing sibling field declared earlier
+/// in the same codec (B1-δ Local scope) or a flag declared in the
+/// codec's `<sce:requires-parent-flags>` block (B5-γ Parent scope).
 ///
-/// v1 grammar covers two forms:
-///   - `<field_id>.<flag_name>` (Local) — the predicate is true
+/// v1 grammar covers four forms:
+///   - `<field_id>.<flag_name>` (Local positive) — predicate is true
 ///     iff the named flag bit on the local carrier is set.
-///     Sufficient for the Zenoh optional-field shapes targeted by
-///     B4 (attachment, timestamp, encoding-info).
-///   - `parent.<flag_name>` (Parent) — the predicate is true iff
-///     the named flag bit is set on the value passed in by the
-///     parent variant dispatcher. `field_id` is empty when scope =
-///     Parent (the carrier is implicit — the codec's declared
-///     `requires_parent_flags.carrier`). Required for Zenoh
-///     transport-level Init/Hello body codecs whose body fields
-///     are gated by parent header flags (S-flag, A-flag, L-flag).
+///   - `!<field_id>.<flag_name>` (Local negative, B5-λ) — predicate
+///     is true iff the bit is clear. Required for Zenoh OpenSyn body
+///     where cookie is present iff parent.A is NOT set.
+///   - `parent.<flag_name>` (Parent positive) — true iff the named
+///     flag bit is set on the value passed in by the parent variant
+///     dispatcher.
+///   - `!parent.<flag_name>` (Parent negative, B5-λ) — true iff the
+///     bit is clear. Same Zenoh OpenSyn rationale at parent scope.
 ///
-/// Richer expressions (negation, conjunction, equality against a
-/// value) are deferred to a later B-stage when downstream authoring
-/// surfaces a reachable consumer.
+/// `field_id` is empty when scope = Parent (carrier is implicit —
+/// the codec's declared `requires_parent_flags.carrier`).
+///
+/// Conjunction (`flag1 && flag2`) and equality (`field == value`)
+/// remain deferred to later B-stages when a reachable consumer
+/// surfaces.
 #[derive(Debug, Clone, Serialize)]
 pub struct PresentIfPredicate {
     /// Predicate scope. Defaults to `Local` for back-compat with
@@ -854,6 +856,12 @@ pub struct PresentIfPredicate {
     /// `requires_parent_flags.carrier`).
     pub field_id: String,
     pub flag_name: String,
+    /// B5-λ negation: when true, predicate fires when the named flag
+    /// bit is *clear* (not set). Defaults to false to preserve
+    /// pre-B5-λ JSON shape byte-stable across all existing codec
+    /// goldens (skip_serializing_if elides the field).
+    #[serde(skip_serializing_if = "is_false", default)]
+    pub negate: bool,
 }
 
 fn is_local_scope(scope: &PresentIfScope) -> bool {
