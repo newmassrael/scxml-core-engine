@@ -445,6 +445,66 @@ endforeach()
 # pick it up automatically.
 include(${CMAKE_CURRENT_SOURCE_DIR}/sce/sce_codegen_assets.cmake)
 
+# License-text distribution is declared in sce/sce_licenses.cmake — the
+# single source of truth shared with scripts/package_embed.sh. LGPL-2.1
+# §1 (SCE itself) and MIT §1 (every vendored third_party dep with a
+# standalone LICENSE file) both require the licence text to ride along
+# with the distribution; a flat hardcoded list in either consumer
+# drifts the moment a new third_party dep lands. Each file is shipped
+# with the tier component that links the code it covers, so
+# `--component Core` does not pull Runtime-only licence files.
+include(${CMAKE_CURRENT_SOURCE_DIR}/sce/sce_licenses.cmake)
+
+# SCE-self covenant (always Core — SCE itself is the Core baseline).
+install(FILES ${SCE_LICENSE_FILES_SCE}
+    DESTINATION ${CMAKE_INSTALL_DOCDIR}
+    COMPONENT Core
+)
+# Third-party deps unconditionally linked into sce_base (Core tier).
+foreach(_sce_license_file IN LISTS SCE_LICENSE_FILES_THIRD_PARTY_CORE)
+    get_filename_component(_sce_license_subdir "${_sce_license_file}" DIRECTORY)
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/${_sce_license_file}"
+        DESTINATION "${CMAKE_INSTALL_DOCDIR}/${_sce_license_subdir}"
+        COMPONENT Core
+    )
+endforeach()
+if(SCE_ENABLE_MESH)
+    foreach(_sce_license_file IN LISTS SCE_LICENSE_FILES_THIRD_PARTY_MESH)
+        get_filename_component(_sce_license_subdir "${_sce_license_file}" DIRECTORY)
+        install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/${_sce_license_file}"
+            DESTINATION "${CMAKE_INSTALL_DOCDIR}/${_sce_license_subdir}"
+            COMPONENT Core
+        )
+    endforeach()
+endif()
+if(SCE_USE_SPDLOG)
+    foreach(_sce_license_file IN LISTS SCE_LICENSE_FILES_THIRD_PARTY_SPDLOG)
+        get_filename_component(_sce_license_subdir "${_sce_license_file}" DIRECTORY)
+        install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/${_sce_license_file}"
+            DESTINATION "${CMAKE_INSTALL_DOCDIR}/${_sce_license_subdir}"
+            COMPONENT Core
+        )
+    endforeach()
+endif()
+if(SCE_HAS_SCRIPTING)
+    foreach(_sce_license_file IN LISTS SCE_LICENSE_FILES_THIRD_PARTY_SCRIPTING)
+        get_filename_component(_sce_license_subdir "${_sce_license_file}" DIRECTORY)
+        install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/${_sce_license_file}"
+            DESTINATION "${CMAKE_INSTALL_DOCDIR}/${_sce_license_subdir}"
+            COMPONENT Scripting
+        )
+    endforeach()
+endif()
+if(SCE_ENABLE_HTTP AND NOT EMSCRIPTEN)
+    foreach(_sce_license_file IN LISTS SCE_LICENSE_FILES_THIRD_PARTY_RUNTIME)
+        get_filename_component(_sce_license_subdir "${_sce_license_file}" DIRECTORY)
+        install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/${_sce_license_file}"
+            DESTINATION "${CMAKE_INSTALL_DOCDIR}/${_sce_license_subdir}"
+            COMPONENT Runtime
+        )
+    endforeach()
+endif()
+
 # Install Jinja2 templates (used by sce-codegen at runtime via SCE_TEMPLATE_DIR)
 install(DIRECTORY ${SCE_CODEGEN_TEMPLATE_DIR}
     DESTINATION ${SCE_INSTALL_CODEGENDIR}
