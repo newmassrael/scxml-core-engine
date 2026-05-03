@@ -1111,6 +1111,191 @@ fn forge_codec_zenoh_ext_envelope_rejects_on_cpp() {
     );
 }
 
+// ── RFC §5.B B5-ζ Surface H — string-vs-bytes typing ─────────
+// `codec_zenoh_locator` is the first reachable consumer for
+// `sce:type="string"` codec emit. Wire shape mirrors zenoh-pico
+// `_z_string_encode`/`_z_string_decode` (codec.c:324-343) — VLE-
+// encoded length prefix + length-ref UTF-8 string payload — but the
+// host language emits `String` / `std::string` / `kotlin.String` /
+// `string` / `str` instead of the byte container (`Vec<u8>` /
+// `std::vector<uint8_t>` / `ByteArray` / `[]byte` / `bytes`). Decode
+// validates UTF-8 and surfaces typed `CodecError::InvalidUtf8` (Rust /
+// Go / Python) or the truncation sentinel (Cpp / Kotlin). Encode
+// trusts the host string invariant — codec API stays infallible
+// (encode-side validate would force `Result<Vec<u8>, EncodeError>` on
+// every String-bearing codec). Parser restricts String fields to
+// non-gated `BitSize::LengthRef` in v1; tail / fixed-bit / vle / gated
+// shapes defer until a consumer surfaces. C11 closure ships
+// separately (sce_forge_string_t storage shape parallel to
+// sce_forge_bytes_t) — this commit covers the 5 backends with uniform
+// `is_valid_utf8` / UTF-8 codec-helper paths.
+
+#[test]
+fn forge_codec_zenoh_locator_cpp() {
+    assert_standalone_forge("codec_zenoh_locator", "codec_zenoh_locator.h");
+}
+
+#[test]
+fn forge_rust_codec_zenoh_locator() {
+    assert_standalone_forge_rust(
+        "codec_zenoh_locator",
+        "codec_zenoh_locator.rs",
+    );
+}
+
+#[test]
+fn forge_kotlin_codec_zenoh_locator() {
+    assert_standalone_forge_kotlin(
+        "codec_zenoh_locator",
+        "CodecZenohLocator.kt",
+    );
+}
+
+#[test]
+fn forge_go_codec_zenoh_locator() {
+    assert_standalone_forge_go(
+        "codec_zenoh_locator",
+        "codec_zenoh_locator.go",
+    );
+}
+
+#[test]
+fn forge_python_codec_zenoh_locator() {
+    assert_standalone_forge_python(
+        "codec_zenoh_locator",
+        "codec_zenoh_locator.py",
+    );
+}
+
+/// RFC §5.B B5-ζ Surface H parser validation: `sce:type="string"`
+/// must pair with `sce:bit-size="length-ref"`. Tail / fixed-bit / vle
+/// shapes reject with `validation/invalid-attribute` reporting the
+/// legal combination so authors see the repair hint upfront. Mirror
+/// fixture: same SCXML as codec_zenoh_locator but with bit-size
+/// swapped to `tail` — the parser must surface InvalidAttribute
+/// before any codegen runs.
+#[test]
+fn forge_codec_string_with_tail_bit_size_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_string_tail_reject">
+  <datamodel>
+    <sce:field id="payload" sce:type="string" sce:byte="0" sce:bit-size="tail"/>
+  </datamodel>
+</scxml>"#;
+    let result = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("codec_string_tail_reject"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "sce:type=\"string\" + bit-size=\"tail\" must reject \
+             with validation/invalid-attribute"
+        ),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            &err.error,
+            ForgeError::Validation(ValidationError::InvalidAttribute { ref attr, .. })
+                if attr == "sce:bit-size"
+        ),
+        "must surface ValidationError::InvalidAttribute on sce:bit-size; got: {:?}",
+        err.error
+    );
+}
+
+/// RFC §5.B B5-ζ Surface H parser validation: `sce:type="string"`
+/// cannot carry `sce:present-if` in v1. Gated String defers until a
+/// consumer surfaces; the parser rejects with
+/// `validation/invalid-attribute` reporting the v1 restriction so
+/// authors don't author code that the codegen would silently misemit.
+#[test]
+fn forge_codec_string_with_present_if_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_string_gated_reject">
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="has_payload" bit="0"/>
+    </sce:flags>
+    <sce:field id="payload_size" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
+    <sce:field id="payload" sce:type="string" sce:byte="2" sce:bit-size="length-ref"
+               sce:length-field="payload_size" sce:present-if="header.has_payload"/>
+  </datamodel>
+</scxml>"#;
+    let result = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("codec_string_gated_reject"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "sce:type=\"string\" + present-if must reject with \
+             validation/invalid-attribute"
+        ),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            &err.error,
+            ForgeError::Validation(ValidationError::InvalidAttribute { ref attr, .. })
+                if attr == "sce:present-if"
+        ),
+        "must surface ValidationError::InvalidAttribute on sce:present-if; got: {:?}",
+        err.error
+    );
+}
+
+/// RFC §5.B B5-ζ Surface H C11 closure deferral: until the C11
+/// closure ships (sce_forge_string_t storage shape parallel to
+/// sce_forge_bytes_t), C11 codecs containing `sce:type="string"`
+/// fields reject at codegen with `generate/unsupported-feature`
+/// (mirrors the B1-β / B5-γ trunk-then-closures gate pattern). The
+/// String emit helper returns the empty string on C11 — the gate must
+/// fire upstream before that helper is reached.
+#[test]
+fn forge_codec_string_c11_gate_rejects() {
+    use sce_build::forge::error::{ForgeError, GenerateError};
+
+    let scxml_path = resource_dir().join("codec_zenoh_locator.scxml");
+    let content = std::fs::read_to_string(&scxml_path)
+        .expect("Cannot read codec_zenoh_locator.scxml");
+    let result = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("codec_zenoh_locator"),
+        sce_build::generator::Language::C11,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "codec with sce:type=\"string\" must reject on C11 \
+             until the B5-ζ closure ships"
+        ),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            &err.error,
+            ForgeError::Generate(GenerateError::UnsupportedFeature { .. })
+        ),
+        "must surface GenerateError::UnsupportedFeature on C11; got: {:?}",
+        err.error
+    );
+}
+
 /// RFC §5.B B3 MCU gate: a codec containing `<sce:tlv-chain>` rejects
 /// when targeting `cpp` (and the other 3 non-MCU langs by the same
 /// path). The diagnostic is the existing kind-class

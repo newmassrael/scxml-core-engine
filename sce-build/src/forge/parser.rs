@@ -1516,6 +1516,52 @@ pub fn parse_codec_field_from_node(
         }
     };
 
+    // RFC §5.B B5-ζ Surface H — `sce:type="string"` v1 surface:
+    // requires `sce:bit-size="length-ref"` (UTF-8 text is length-
+    // prefixed; tail / fixed-bit / vle defer until a consumer
+    // surfaces) AND cannot carry `sce:present-if` (gated String has
+    // no v1 consumer; defers to the same condition). The generic
+    // `validation/invalid-attribute` reports a precise repair hint
+    // so authors see the legal combination upfront. Mirror zenoh-
+    // pico `_z_string_encode/decode` (codec.c:324-343).
+    if matches!(sce_type, SceType::String) && !matches!(bit_size, BitSize::LengthRef) {
+        return Err(located(
+            node,
+            doc_name,
+            ValidationError::InvalidAttribute {
+                element: format!("Codec field '{id}'"),
+                attr: "sce:bit-size".into(),
+                value: match &bit_size {
+                    BitSize::Tail => "tail".into(),
+                    BitSize::Fixed { bits } => format!("{bits}"),
+                    BitSize::Vle { .. } => "vle".into(),
+                    BitSize::Repeat { .. } => "<repeat>".into(),
+                    BitSize::TlvChain { .. } => "<tlv-chain>".into(),
+                    BitSize::LengthRef => unreachable!("guarded by outer match"),
+                },
+                expected: "sce:type=\"string\" requires sce:bit-size=\"length-ref\" \
+                           (UTF-8 text is length-prefixed; tail / fixed-bit / vle \
+                           shapes defer until a consumer surfaces)"
+                    .into(),
+            },
+        ));
+    }
+    if matches!(sce_type, SceType::String) && present_if.is_some() {
+        return Err(located(
+            node,
+            doc_name,
+            ValidationError::InvalidAttribute {
+                element: format!("Codec field '{id}'"),
+                attr: "sce:present-if".into(),
+                value: "<predicate>".into(),
+                expected: "sce:type=\"string\" cannot carry sce:present-if in v1 \
+                           (gated String defers until a consumer surfaces; v1 String \
+                           fields are always present)"
+                    .into(),
+            },
+        ));
+    }
+
     Ok(CodecField {
         id,
         sce_type,

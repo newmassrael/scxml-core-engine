@@ -1035,6 +1035,28 @@ fn render_codec(
         }
     }
 
+    // RFC §5.B B5-ζ Surface H — `sce:type="string"` C11 closure
+    // deferral. Until the C11 closure ships (sce_forge_string_t storage
+    // shape parallel to sce_forge_bytes_t), C11 codecs containing any
+    // String field reject at codegen with `generate/unsupported-
+    // feature`. Trunk-then-closures pattern (mirrors B1-β / B5-γ).
+    // The cpp/rust/kotlin/go/python paths use the existing
+    // `present_if_decode_string_length_ref` / `present_if_encode_
+    // string_length_ref` helpers; C11 emit defers because the host
+    // type for a fixed-buffer codec member needs `char data[N];
+    // size_t len;` storage (parallel to `sce_forge_bytes_t`) that no
+    // current consumer drives.
+    if m.has_string_fields() && matches!(lang, crate::generator::Language::C11) {
+        return Err(ForgeError::Generate(
+            crate::forge::error::GenerateError::UnsupportedFeature(format!(
+                "sce:type=\"string\" codec field on c11 (codec '{}'); \
+                 B5-ζ closure pending — sce_forge_string_t storage shape \
+                 parallel to sce_forge_bytes_t",
+                m.name
+            )),
+        ));
+    }
+
     // RFC §5.B B5-γ: cross-codec parent-flags layout validation.
     // When THIS codec (the parent) has a `<sce:variant>` whose arm
     // bodies declare `<sce:requires-parent-flags carrier="X">`, the
@@ -1607,6 +1629,7 @@ fn render_codec(
     );
     ctx.insert("has_repeat_fields".into(), has_repeat_fields.into());
     ctx.insert("has_tlv_chain_fields".into(), m.has_tlv_chain_fields().into());
+    ctx.insert("has_string_fields".into(), m.has_string_fields().into());
     ctx.insert("has_tail_fields".into(), m.has_tail_fields().into());
     ctx.insert(
         "has_dma_aligned_fields".into(),
@@ -3588,6 +3611,16 @@ fn present_if_decode_length_ref(
         .find(|x| x.id == len_field)
         .is_some_and(|x| x.present_if.is_some());
     let arith = field.length_arith.unwrap_or(0);
+    // RFC §5.B B5-ζ Surface H — `sce:type="string"` UTF-8 decode.
+    // Wire shape is identical to a length-prefixed bytes field, but
+    // the host-language local is `String` / `std::string` / etc. and
+    // the byte slice is validated as UTF-8 before construction. Parser
+    // restricts String fields to non-gated LengthRef in v1, so this
+    // branch only handles the (lang, None) shape; gated String defers
+    // until a consumer surfaces.
+    if field.is_string() {
+        return present_if_decode_string_length_ref(field, len_field, sibling_gated, arith, lang);
+    }
     // Per-language sibling value expression (inside the gated if-branch
     // when payload is gated; outside otherwise). The non-gated arm
     // requires sibling to be non-gated too (parser doesn't enforce this
@@ -3760,6 +3793,128 @@ fn present_if_decode_length_ref(
                  else:\n                \
                      {py_id} = None"
             )
+        }
+    }
+}
+
+/// RFC §5.B B5-ζ Surface H — `sce:type="string"` length-ref decode.
+/// Per-language: peek_slice + UTF-8 validate + host-string ctor +
+/// advance. Mirrors the bytes shape but the host local is
+/// `String` / `std::string` / `kotlin.String` / `string` / `str`
+/// instead of the byte container. UTF-8 invalid surfaces as typed
+/// `CodecError::InvalidUtf8` (Rust / Go / Python) or the existing
+/// `nullopt` / `null` truncation sentinel (Cpp / Kotlin) — the latter
+/// two languages never construct CodecError variants at runtime
+/// (mirrors the VleWidthOverflow declaration-only convention).
+///
+/// Parser restricts String fields to non-gated LengthRef in v1, so
+/// only the (lang, None) shape ships here. `sibling_gated` may still
+/// be true (the length sibling carries present-if even though the
+/// String field itself does not — fixture-feasible) so the per-
+/// language `_n` computation goes through the existing `compute_n_*`
+/// helpers verbatim. `length-arith` is supported the same way.
+fn present_if_decode_string_length_ref(
+    field: &CodecField,
+    len_field: &str,
+    sibling_gated: bool,
+    arith: i32,
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    let id = field.id.as_str();
+    match lang {
+        Language::Rust => {
+            let n_rust = compute_n_rust(len_field, sibling_gated, arith);
+            format!(
+                "let {id} = {{\n            \
+                     let _n = {n_rust};\n            \
+                     let raw = cursor.peek_slice(_n)?;\n            \
+                     let _v = core::str::from_utf8(raw)\n                \
+                         .map_err(|_| CodecError::InvalidUtf8)?\n                \
+                         .to_string();\n            \
+                     cursor.advance(_n)?;\n            \
+                     _v\n        \
+                 }};"
+            )
+        }
+        Language::Cpp => {
+            let n_cpp = compute_n_cpp(len_field, sibling_gated, arith);
+            format!(
+                "std::string {id};\n        \
+                 {{\n            \
+                     std::size_t _n = {n_cpp};\n            \
+                     const std::uint8_t* raw = cursor.peek_slice(_n);\n            \
+                     if (raw == nullptr) return std::nullopt;\n            \
+                     if (!::SCE::Forge::is_valid_utf8(raw, _n)) return std::nullopt;\n            \
+                     {id}.assign(reinterpret_cast<const char*>(raw), _n);\n            \
+                     if (!cursor.advance(_n)) return std::nullopt;\n        \
+                 }}"
+            )
+        }
+        Language::Kotlin => {
+            let n_kotlin = compute_n_kotlin(len_field, sibling_gated, arith);
+            // Java's CharsetDecoder defaults to REPORT on malformed
+            // input — `Charsets.UTF_8.newDecoder().decode(...)` throws
+            // CharacterCodingException on invalid UTF-8 (lossy
+            // `String(bytes, charset)` would silently substitute
+            // replacement chars; we want forge-fail-fast). FQNs avoid
+            // touching the codec template's import block.
+            format!(
+                "val {id} = run {{\n                \
+                     val _n = {n_kotlin}\n                \
+                     val raw = cursor.peekSlice(_n) ?: return null\n                \
+                     val _v = try {{\n                    \
+                         java.nio.charset.StandardCharsets.UTF_8.newDecoder()\n                        \
+                             .decode(java.nio.ByteBuffer.wrap(raw)).toString()\n                \
+                     }} catch (_: java.nio.charset.CharacterCodingException) {{ return null }}\n                \
+                     if (!cursor.advance(_n)) return null\n                \
+                     _v\n            \
+                 }}"
+            )
+        }
+        Language::Go => {
+            let go_id = filters::to_pascal_case(id.to_string());
+            let n_go = compute_n_go(len_field, sibling_gated, arith);
+            format!(
+                "var {go_id} string\n\t\
+                 {{\n\t\t\
+                     _n := {n_go}\n\t\t\
+                     raw, err := cursor.PeekSlice(_n)\n\t\t\
+                     if err != nil {{\n\t\t\t\
+                         return nil, err\n\t\t\
+                     }}\n\t\t\
+                     if !utf8.Valid(raw) {{\n\t\t\t\
+                         return nil, codec.ErrInvalidUTF8\n\t\t\
+                     }}\n\t\t\
+                     {go_id} = string(raw)\n\t\t\
+                     if err := cursor.Advance(_n); err != nil {{\n\t\t\t\
+                         return nil, err\n\t\t\
+                     }}\n\t\
+                 }}"
+            )
+        }
+        Language::Python => {
+            let py_id = filters::to_snake_case(id.to_string());
+            let n_python = compute_n_python(len_field, sibling_gated, arith);
+            format!(
+                "_n = {n_python}\n            \
+                 raw = cursor.peek_slice(_n)\n            \
+                 try:\n                \
+                     {py_id} = bytes(raw).decode('utf-8')\n            \
+                 except UnicodeDecodeError as exc:\n                \
+                     raise InvalidUtf8() from exc\n            \
+                 cursor.advance(_n)"
+            )
+        }
+        Language::C11 => {
+            // C11 String emit defers to the B5-ζ closure (separate
+            // commit per cadence). Parser restriction (string requires
+            // length-ref) doesn't gate per-language emit; the codec
+            // template's `has_string_fields` C11 branch returns the
+            // `unsupported feature` typed error before this helper is
+            // reached. Returning the empty string here keeps the
+            // exhaustive match closed; the template never renders it.
+            String::new()
         }
     }
 }
@@ -4276,6 +4431,59 @@ fn present_if_encode_tail(
     }
 }
 
+/// RFC §5.B B5-ζ Surface H — `sce:type="string"` length-ref encode.
+/// Always non-gated in v1 (parser restriction). Per-language: append
+/// the host-string's UTF-8 byte representation to the encode buffer.
+/// Codec API stays infallible — encode-side UTF-8 invariant is a host-
+/// language contract, not a runtime check (see commit message for the
+/// API-shape rationale; encode-side validate would change every
+/// String-bearing codec's signature to `Result<...>`).
+fn present_if_encode_string_length_ref(
+    field: &CodecField,
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    let id = field.id.as_str();
+    match lang {
+        Language::Rust => format!(
+            "        r.extend_from_slice(self.{id}.as_bytes());"
+        ),
+        // Cpp `std::string::data()` returns `const char*`; reinterpret-
+        // cast to `const std::uint8_t*` is the textbook byte-aliasing
+        // pattern (allowed by [basic.lval]/11 — char and unsigned char
+        // alias any object representation). Avoids the narrowing-
+        // conversion warning that `r.insert(r.end(), str.begin(),
+        // str.end())` would emit on `char → uint8_t`.
+        Language::Cpp => format!(
+            "        r.insert(r.end(),\n            \
+                 reinterpret_cast<const std::uint8_t*>({id}.data()),\n            \
+                 reinterpret_cast<const std::uint8_t*>({id}.data()) + {id}.size());"
+        ),
+        // Kotlin `String.toByteArray(charset)` is the standard library
+        // call for charset-encoded byte serialization; UTF-8 is total
+        // on String (Kotlin's String is UTF-16 internally but
+        // toByteArray reencodes losslessly to UTF-8).
+        Language::Kotlin => format!(
+            "        r.addAll(this.{id}.toByteArray(Charsets.UTF_8).toList())"
+        ),
+        // Go `[]byte(s)` reinterprets the string's underlying bytes;
+        // for UTF-8 strings (Go's string invariant when constructed
+        // from UTF-8 source) this is a zero-copy encoding.
+        Language::Go => {
+            let go_id = filters::to_pascal_case(id.to_string());
+            format!("\tr = append(r, []byte(s.{go_id})...)")
+        }
+        // Python `str.encode('utf-8')` materializes a `bytes` object
+        // from the str's internal Unicode representation.
+        Language::Python => {
+            let py_id = filters::to_snake_case(id.to_string());
+            format!("        r.extend(self.{py_id}.encode('utf-8'))")
+        }
+        // C11 String encode defers to the B5-ζ closure.
+        Language::C11 => String::new(),
+    }
+}
+
 /// RFC §5.B B2-β present-if + LengthRef bit-size encode: append the
 /// payload bytes (clamped to the sibling length field's value) when
 /// the predicate / optional fires. Author-trust contract: `<id>_len`
@@ -4292,6 +4500,16 @@ fn present_if_encode_length_ref(
         .length_field
         .as_deref()
         .expect("LengthRef bit_size requires sce:length-field attribute");
+    // RFC §5.B B5-ζ Surface H — `sce:type="string"` UTF-8 encode.
+    // Parser restricts String fields to non-gated LengthRef in v1,
+    // so the gated arm is unreachable here. Encode trusts the host-
+    // language String invariant (Rust `String` guarantees UTF-8 by
+    // type; cpp `std::string` is the author's responsibility — codec
+    // API stays infallible to avoid `Result<Vec<u8>, EncodeError>`
+    // surfacing on every String-bearing codec).
+    if field.is_string() {
+        return present_if_encode_string_length_ref(field, lang);
+    }
     match (lang, field.present_if.is_some()) {
         (Language::Rust, false) => format!(
             "        r.extend_from_slice(&self.{id});"

@@ -2715,6 +2715,80 @@
         }
       ]
     },
+    "codec_zenoh_locator": {
+      "fixture": "CodecZenohLocator",
+      "signature": "(raw: &[u8]) <-> {locator_len: u64 VLE @ byte 0, locator: utf-8 string length-ref @ byte 1 (max 128)}",
+      "description": "Zenoh single-locator body (RFC §5.B B5-ζ Surface H). VLE-encoded length prefix + length-ref UTF-8 string payload. First reachable consumer for `sce:type=\"string\"` codec emit — wire shape mirrors zenoh-pico `_z_string_encode`/`_z_string_decode` (codec.c:324-343), but the host language emits `String` / `std::string` / `kotlin.String` / `string` / `str` instead of the byte container. Decode validates UTF-8 and surfaces typed `CodecError::InvalidUtf8` (Rust / Go / Python) or the truncation sentinel (Cpp / Kotlin). Encode trusts the host string invariant.",
+      "cases": [
+        {
+          "decoded": {
+            "locator_len": 0,
+            "locator": ""
+          },
+          "encoded": [
+            0
+          ],
+          "note": "empty string (locator_len=0, single-byte VLE prefix)"
+        },
+        {
+          "decoded": {
+            "locator_len": 3,
+            "locator": "abc"
+          },
+          "encoded": [
+            3,
+            97,
+            98,
+            99
+          ],
+          "note": "ASCII 3-byte string \"abc\""
+        },
+        {
+          "decoded": {
+            "locator_len": 18,
+            "locator": "tcp/127.0.0.1:7447"
+          },
+          "encoded": [
+            18,
+            116,
+            99,
+            112,
+            47,
+            49,
+            50,
+            55,
+            46,
+            48,
+            46,
+            48,
+            46,
+            49,
+            58,
+            55,
+            52,
+            52,
+            55
+          ],
+          "note": "ASCII Zenoh locator URL (18 bytes UTF-8)"
+        },
+        {
+          "decoded": {
+            "locator_len": 6,
+            "locator": "héllo"
+          },
+          "encoded": [
+            6,
+            104,
+            195,
+            169,
+            108,
+            108,
+            111
+          ],
+          "note": "Latin-1 é encoded as 2-byte UTF-8 0xC3 0xA9 (locator_len counts UTF-8 bytes, not codepoints)"
+        }
+      ]
+    },
     "codec_zenoh_keep_alive": {
       "fixture": "CodecZenohKeepAlive",
       "signature": "(raw: &[u8]) <-> {} (zero-byte body)",

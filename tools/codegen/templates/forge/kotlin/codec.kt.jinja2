@@ -148,7 +148,7 @@ data class {{ struct_name }}(
 {% endif %}
 {% endfor %}
         return r.toByteArray()
-{% elif has_repeat_fields %}
+{% elif has_repeat_fields or has_string_fields %}
         // RFC §5.B B2 encode: fixed prefix appends byte-by-byte;
         // repeat fields iterate the host MutableList and splice each
         // element's encode().toList() into the parent buffer. Author
@@ -267,7 +267,7 @@ data class {{ struct_name }}(
                 {{ field.id }} = {{ field.id }}{{ "," if not loop.last else "" }}
 {% endfor %}
             )
-{% elif has_repeat_fields %}
+{% elif has_repeat_fields or has_string_fields %}
             // RFC §5.B B2 repeat primitive: streaming decode mixes
             // plain fixed-width reads (per-field via the present-if
             // helper's non-gated arm) with `mutableListOf<T>().also { ... }`

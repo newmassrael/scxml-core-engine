@@ -36,6 +36,8 @@
 {% for field in f.fields %}
 {% if field.type == "bytes" %}
             {{ field.name | to_snake_case }}: input_{{ field.name | to_snake_case }}.clone(),
+{% elif field.type == "string" %}
+            {{ field.name | to_snake_case }}: input_{{ field.name | to_snake_case }}.to_string(),
 {% else %}
             {{ field.name | to_snake_case }}: input_{{ field.name | to_snake_case }},
 {% endif %}

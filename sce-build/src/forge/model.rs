@@ -1030,6 +1030,17 @@ impl CodecField {
         !self.flags.is_empty()
     }
 
+    /// Whether this field is a UTF-8 string (RFC §5.B B5-ζ Surface H).
+    /// Wire shape mirrors a length-prefixed bytes field; the host-
+    /// language type is `String` / `std::string` / `kotlin.String` /
+    /// `string` / `str`. Decode validates UTF-8 and emits typed
+    /// `CodecError::InvalidUtf8` (Rust / Go / Python) or returns the
+    /// truncation sentinel (Cpp / Kotlin) on malformed input. Parser
+    /// constrains String fields to `BitSize::LengthRef` only.
+    pub fn is_string(&self) -> bool {
+        matches!(self.sce_type, SceType::String)
+    }
+
     /// Fixed bit count, or None for variable-length.
     pub fn fixed_bits(&self) -> Option<u32> {
         match &self.bit_size {
@@ -1187,6 +1198,20 @@ impl CodecModel {
     /// classifies the codec as MCU-class.
     pub fn has_tlv_chain_fields(&self) -> bool {
         self.fields.iter().any(|f| f.is_tlv_chain())
+    }
+
+    /// Whether the codec has any UTF-8 string field (RFC §5.B B5-ζ
+    /// Surface H). Forces the streaming decode/encode path so the
+    /// String dispatch in `present_if_decode_length_ref` /
+    /// `present_if_encode_length_ref` always runs (any String field is
+    /// guaranteed `BitSize::LengthRef` by parser validation; a String-
+    /// bearing codec without VLE / present-if / repeat siblings would
+    /// otherwise route through `generate_decode_expr` and silently
+    /// emit bytes-shape into a String field). Bytes-only codecs stay
+    /// byte-stable — the rollup only flips when at least one field
+    /// declares `sce:type="string"`.
+    pub fn has_string_fields(&self) -> bool {
+        self.fields.iter().any(|f| f.is_string())
     }
 
     /// Whether the codec has any field with `sce:dma-burst-align` (RFC

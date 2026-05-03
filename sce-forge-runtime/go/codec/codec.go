@@ -34,6 +34,15 @@ var ErrNeedMoreBytes = errors.New("sce/codec: need more bytes")
 // `codec/vle-width-overflow`.
 var ErrVLEWidthOverflow = errors.New("sce/codec: vle width overflow")
 
+// ErrInvalidUTF8 is returned by Decode when a sce:type="string" field's
+// length-prefixed payload is not well-formed UTF-8 (RFC §5.B B5-ζ
+// Surface H). Forge-fail-fast contract — zenoh-pico itself aliases the
+// bytes without validating, but SCE-side codecs reject malformed text
+// early so downstream procedures never see a malformed string. Cpp +
+// Kotlin runtimes collapse this to their existing truncation sentinel
+// (mirrors the VleWidthOverflow declaration-only convention there).
+var ErrInvalidUTF8 = errors.New("sce/codec: invalid utf-8")
+
 // SceCursor is a read-only cursor over a borrowed input slice. Decode
 // bodies use PeekSlice to bounds-check + read fixed-offset bytes
 // positionally, then Advance after the construction succeeds.

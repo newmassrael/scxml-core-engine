@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh locator string body (RFC §5.B B5-ζ,
+     surface H from the watching-zenoh authoring path).
+
+     Mirrors zenoh-pico `_z_string_encode` / `_z_string_decode`
+     (src/protocol/codec.c lines 324-343) which the locator-list
+     encoder calls per element (src/protocol/codec/message.c:155 and
+     :174 — `_z_locators_encode` / `_z_locators_decode_na`). Wire shape
+     is identical to a length-prefixed bytes field (`_z_zsize_encode`
+     for the length VLE, then raw payload bytes), but the host-language
+     type is `String` / `std::string` / `kotlin.String` / `string` /
+     `str` instead of `Vec<u8>` / `std::vector<uint8_t>` / `ByteArray`
+     / `[]byte` / `bytes`. Decode validates UTF-8 and emits typed
+     `CodecError::InvalidUtf8` on malformed input (forge-fail-fast
+     contract — zenoh-pico itself aliases without validating, but
+     SCE-side codecs reject malformed text early).
+
+     Single locator (the locator LIST primitive defers to B5-η/B5-ι
+     repeat-count composition); this fixture pins the foundation
+     surface for `<sce:field sce:type="string">`.
+
+     Wire shape:
+       byte 0+ : locator_len  (VLE u64, 1..=10 bytes, max-size 128)
+       bytes   : locator      (UTF-8 string, length=locator_len, max 128) -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_locator">
+  <datamodel>
+    <sce:field id="locator_len" sce:type="uint64" sce:byte="0" sce:bit-size="vle"/>
+    <sce:field id="locator" sce:type="string" sce:byte="1" sce:bit-size="length-ref"
+               sce:length-field="locator_len" sce:max-size="128"/>
+  </datamodel>
+</scxml>

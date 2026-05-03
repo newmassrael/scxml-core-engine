@@ -952,8 +952,17 @@ pub fn c11_supported_kind(spec: &FixtureSpec) -> bool {
         FixtureSpec::Transform { .. }
         | FixtureSpec::Condition { .. }
         | FixtureSpec::Lookup { .. }
-        | FixtureSpec::Codec { .. }
         | FixtureSpec::Validator { .. } => true,
+        // RFC §5.B B5-ζ Surface H — codec containing `sce:type="string"`
+        // field defers to the C11 closure (sce_forge_string_t storage
+        // shape parallel to sce_forge_bytes_t). The `render_codec` C11
+        // gate raises `generate/unsupported-feature` if the harness
+        // tried; filter it out here so the harness never reaches the
+        // gate. cpp/kotlin/go/python pass through (they emit per
+        // their host string types directly).
+        FixtureSpec::Codec { fields } => {
+            !fields.iter().any(|f| matches!(f.ty, CanonicalType::String))
+        }
         // RFC §5.J.2 Phase D-3 closure: stateful imports (`<sce:import
         // kind="codec"/>` etc.) lower into the procedure state struct
         // via the C11 codegen import path + AST pre-pass

@@ -47,6 +47,10 @@
             CHECK(round_tripped->{{ field.name }} == input_{{ field.name }},
                   "{{ f.name }} case %d decode {{ field.name }}: actual_size=%zu expected_size=%zu",
                   i, round_tripped->{{ field.name }}.size(), input_{{ field.name }}.size());
+{% elif field.type == "string" %}
+            CHECK(round_tripped->{{ field.name }} == input_{{ field.name }},
+                  "{{ f.name }} case %d decode {{ field.name }}: actual=\"%s\" expected=\"%s\"",
+                  i, round_tripped->{{ field.name }}.c_str(), input_{{ field.name }}.c_str());
 {% else %}
             CHECK(round_tripped->{{ field.name }} == input_{{ field.name }},
                   "{{ f.name }} case %d decode {{ field.name }}: actual=%s expected=%s",

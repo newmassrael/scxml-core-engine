@@ -43,6 +43,17 @@ class VleWidthOverflow(CodecError):
     ``codec/vle-width-overflow``."""
 
 
+class InvalidUtf8(CodecError):
+    """Raised when a ``sce:type="string"`` field's length-prefixed
+    payload is not well-formed UTF-8. RFC §5.B B5-ζ Surface H. Forge-
+    fail-fast contract — zenoh-pico itself aliases the bytes without
+    validating, but SCE-side codecs reject malformed text early so
+    downstream procedures never see a malformed ``str``. The Cpp +
+    Kotlin runtimes collapse this to their existing truncation
+    sentinel (``std::nullopt`` / ``null``) instead, mirroring the
+    VleWidthOverflow declaration-only convention there."""
+
+
 class SceCursor:
     """Read-only cursor over a borrowed input ``bytes`` / ``memoryview``.
 

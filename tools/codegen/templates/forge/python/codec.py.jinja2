@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import CodecError, NeedMoreBytes, SceCursor
+from sce_forge_runtime.codec import CodecError, {{ "InvalidUtf8, " if has_string_fields else "" }}NeedMoreBytes, SceCursor
 {% if all_imports %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}
@@ -169,7 +169,7 @@ class {{ struct_name }}:
             {{ field.id }}={{ field.id }},
 {% endfor %}
         )
-{% elif has_repeat_fields %}
+{% elif has_repeat_fields or has_string_fields %}
         # RFC §5.B B2 repeat primitive: streaming decode mixes plain
         # fixed-width reads (per-field via the present-if helper's
         # non-gated arm) with `for _ in range(N)` / `while
@@ -318,7 +318,7 @@ class {{ struct_name }}:
 {% endif %}
 {% endfor %}
         return bytes(r)
-{% elif has_repeat_fields %}
+{% elif has_repeat_fields or has_string_fields %}
         # RFC §5.B B2 encode: fixed prefix appends byte-by-byte; repeat
         # fields iterate `self.<id>` and extend the bytearray with each
         # element's `encode()`. Author keeps count field == list length

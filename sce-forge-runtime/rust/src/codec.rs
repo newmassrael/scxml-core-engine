@@ -47,6 +47,17 @@ pub enum CodecError {
     /// rejected upfront by the codec-content MCU gate, RFC §5.B "MCU-
     /// only codec sub-features").
     TlvChainOverflow,
+    /// RFC §5.B B5-ζ Surface H: a `sce:type="string"` length-prefixed
+    /// field's payload bytes were not valid UTF-8. Forge-fail-fast
+    /// contract — zenoh-pico itself aliases the bytes without
+    /// validating, but SCE-side codecs reject malformed text early so
+    /// downstream procedures never see a malformed `String` /
+    /// `std::string`. The Rust + Go + Python runtimes construct this
+    /// at decode; Cpp + Kotlin collapse to the truncation sentinel
+    /// (`std::nullopt` / `null`) instead — those backends never
+    /// construct typed `CodecError` variants at runtime, mirroring the
+    /// existing VleWidthOverflow declaration-only convention.
+    InvalidUtf8,
 }
 
 /// Read-only cursor over a borrowed input slice. Decode bodies use
@@ -244,5 +255,20 @@ mod tests {
         let buf = [0x80];
         let mut c = SceCursor::new(&buf);
         assert_eq!(c.read_vle_u32(), Err(CodecError::NeedMoreBytes));
+    }
+
+    // ── RFC §5.B B5-ζ Surface H — InvalidUtf8 variant exists and is
+    // distinct from the other CodecError variants. The actual UTF-8
+    // validation lives at the codec emit site (`core::str::from_utf8`
+    // in `present_if_decode_string_length_ref`); this assertion just
+    // pins the runtime symbol so a future enum reorder cannot silently
+    // collapse it.
+
+    #[test]
+    fn invalid_utf8_is_distinct_codec_error() {
+        let e = CodecError::InvalidUtf8;
+        assert_ne!(e, CodecError::NeedMoreBytes);
+        assert_ne!(e, CodecError::VleWidthOverflow);
+        assert_ne!(e, CodecError::TlvChainOverflow);
     }
 }

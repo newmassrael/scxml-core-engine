@@ -191,7 +191,7 @@ impl {{ struct_name }} {
             {{ field.id }},
 {% endfor %}
         })
-{% elif has_repeat_fields or has_tlv_chain_fields %}
+{% elif has_repeat_fields or has_tlv_chain_fields or has_string_fields %}
         // RFC §5.B B2 repeat / B3 TLV chain primitives: streaming
         // decode mixes plain fixed-width reads (per-field via the
         // present-if helper's non-gated arm) with repeat loops that
@@ -380,7 +380,7 @@ impl {{ struct_name }} {
 {% endif %}
 {% endfor %}
         r
-{% elif has_repeat_fields or has_tlv_chain_fields %}
+{% elif has_repeat_fields or has_tlv_chain_fields or has_string_fields %}
         // RFC §5.B B2 repeat / B3 TLV chain encode: fixed prefix
         // fields append byte-by-byte; list fields iterate the host-
         // language list and splice each element's encode() into the
