@@ -140,6 +140,8 @@ class {{ struct_name }}:
             {{ field.repeat_decode_stmt }}
 {% elif field.is_tlv_chain %}
             {{ field.tlv_chain_decode_stmt }}
+{% elif field.is_embed %}
+            {{ field.embed_decode_stmt }}
 {% else %}
             {{ field.present_if_decode_stmt }}
 {% endif %}
@@ -162,6 +164,8 @@ class {{ struct_name }}:
             {{ field.repeat_decode_stmt }}
 {% elif field.is_tlv_chain %}
             {{ field.tlv_chain_decode_stmt }}
+{% elif field.is_embed %}
+            {{ field.embed_decode_stmt }}
 {% else %}
             {{ field.present_if_decode_stmt }}
 {% endif %}
@@ -173,7 +177,7 @@ class {{ struct_name }}:
             {{ field.id }}={{ field.id }},
 {% endfor %}
         )
-{% elif has_repeat_fields or has_tlv_chain_fields or has_string_fields %}
+{% elif has_repeat_fields or has_tlv_chain_fields or has_embed_fields or has_string_fields %}
         # RFC §5.B B2 repeat primitive: streaming decode mixes plain
         # fixed-width reads (per-field via the present-if helper's
         # non-gated arm) with `for _ in range(N)` / `while
@@ -187,6 +191,8 @@ class {{ struct_name }}:
             {{ field.repeat_decode_stmt }}
 {% elif field.is_tlv_chain %}
             {{ field.tlv_chain_decode_stmt }}
+{% elif field.is_embed %}
+            {{ field.embed_decode_stmt }}
 {% else %}
             {{ field.present_if_decode_stmt }}
 {% endif %}
@@ -307,6 +313,8 @@ class {{ struct_name }}:
 {{ field.repeat_encode_block }}
 {% elif field.is_tlv_chain %}
 {{ field.tlv_chain_encode_block }}
+{% elif field.is_embed %}
+{{ field.embed_encode_block }}
 {% else %}
 {{ field.present_if_encode_block }}
 {% endif %}
@@ -323,12 +331,14 @@ class {{ struct_name }}:
 {{ field.repeat_encode_block }}
 {% elif field.is_tlv_chain %}
 {{ field.tlv_chain_encode_block }}
+{% elif field.is_embed %}
+{{ field.embed_encode_block }}
 {% else %}
 {{ field.present_if_encode_block }}
 {% endif %}
 {% endfor %}
         return bytes(r)
-{% elif has_repeat_fields or has_tlv_chain_fields or has_string_fields %}
+{% elif has_repeat_fields or has_tlv_chain_fields or has_embed_fields or has_string_fields %}
         # RFC §5.B B2 encode: fixed prefix appends byte-by-byte; repeat
         # fields iterate `self.<id>` and extend the bytearray with each
         # element's `encode()`. Author keeps count field == list length
@@ -339,6 +349,8 @@ class {{ struct_name }}:
 {{ field.repeat_encode_block }}
 {% elif field.is_tlv_chain %}
 {{ field.tlv_chain_encode_block }}
+{% elif field.is_embed %}
+{{ field.embed_encode_block }}
 {% else %}
 {{ field.present_if_encode_block }}
 {% endif %}

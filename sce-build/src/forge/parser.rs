@@ -570,6 +570,9 @@ fn parse_codec(
             "tlv-chain" => {
                 fields.push(parse_codec_tlv_chain_from_node(&child, label)?);
             }
+            "embed" => {
+                fields.push(parse_codec_embed_from_node(&child, label.diagnostic_label)?);
+            }
             _ => {}
         }
     }
@@ -1577,6 +1580,7 @@ pub fn parse_codec_field_from_node(
                     BitSize::Vle { .. } => "vle".into(),
                     BitSize::Repeat { .. } => "<repeat>".into(),
                     BitSize::TlvChain { .. } => "<tlv-chain>".into(),
+                    BitSize::Embed => "<embed>".into(),
                     BitSize::LengthRef => unreachable!("guarded by outer match"),
                 },
                 expected: "sce:type=\"string\" requires sce:bit-size=\"length-ref\" \
@@ -1607,6 +1611,7 @@ pub fn parse_codec_field_from_node(
         tlv_chain_body_alias: None,
         dma_burst_align,
         length_arith,
+        embed_body_alias: None,
     })
 }
 
@@ -2072,6 +2077,7 @@ fn parse_codec_repeat_from_node(
         tlv_chain_body_alias: None,
         dma_burst_align: None,
         length_arith: None,
+        embed_body_alias: None,
     })
 }
 
@@ -2240,6 +2246,104 @@ fn parse_codec_tlv_chain_from_node(
         tlv_chain_body_alias: Some(body_alias),
         dma_burst_align: None,
         length_arith: None,
+        embed_body_alias: None,
+    })
+}
+
+/// RFC §5.B Y0c — parse `<sce:embed id="X" type="codec_Y" sce:byte="N"/>`
+/// for a single imported-codec field embedded inline (no wire-level
+/// boundary bytes). Mirrors the `<sce:repeat>` / `<sce:tlv-chain>`
+/// shape: `id` + `type` (alias) + `sce:byte` are the required tri-attr
+/// surface; the embedded codec's wire shape consumes/produces bytes
+/// directly via its own decode/encode methods. v1 grammar restricts
+/// to always-present embedding; `sce:present-if` defers to the first
+/// reachable consumer (zenoh-pico undecl_subscriber/queryable/token
+/// route their optional embedded keyexpr through TLV ext envelopes
+/// instead).
+///
+/// Resolution against `<sce:import>` aliases happens downstream at
+/// codegen time (mirrors `parse_codec_repeat_from_node` /
+/// `parse_codec_tlv_chain_from_node`).
+fn parse_codec_embed_from_node(
+    node: &roxmltree::Node,
+    doc_name: &str,
+) -> Result<CodecField, Located<ForgeError>> {
+    let id = node
+        .attribute("id")
+        .ok_or_else(|| {
+            located(
+                node,
+                doc_name,
+                ValidationError::MissingAttribute {
+                    element: "<sce:embed>".into(),
+                    attr: "id".into(),
+                },
+            )
+        })?
+        .to_string();
+
+    // `type` carries the imported codec alias (mirrors `<sce:repeat
+    // type=...>` and `<sce:tlv-chain type=...>`); kept unqualified
+    // since it names an SCE-level alias rather than a primitive
+    // sceType. Stored as `embed_body_alias`; the parsed CodecField's
+    // `sce_type` is a sentinel (SceType::Bytes) since the host-
+    // language type is the imported codec's struct, not a primitive.
+    let body_alias = node
+        .attribute("type")
+        .ok_or_else(|| {
+            located(
+                node,
+                doc_name,
+                ValidationError::MissingAttribute {
+                    element: format!("<sce:embed id='{id}'>"),
+                    attr: "type".into(),
+                },
+            )
+        })?
+        .to_string();
+
+    let byte_offset_str = sce_attr(node, "byte").ok_or_else(|| {
+        located(
+            node,
+            doc_name,
+            ValidationError::MissingAttribute {
+                element: format!("<sce:embed id='{id}'>"),
+                attr: "sce:byte".into(),
+            },
+        )
+    })?;
+    let byte_offset = parse_int(&byte_offset_str).ok_or_else(|| {
+        located(
+            node,
+            doc_name,
+            ValidationError::NumericParse {
+                element: format!("<sce:embed id='{id}'>"),
+                attr: "sce:byte".into(),
+                value: byte_offset_str.clone(),
+                detail: "expected integer".into(),
+            },
+        )
+    })?;
+
+    Ok(CodecField {
+        id,
+        // Wire-shape sentinel — host type is derived from
+        // embed_body_alias at codegen time.
+        sce_type: SceType::Bytes,
+        byte_offset,
+        bit_offset: None,
+        bit_size: BitSize::Embed,
+        endian: None,
+        max_size: None,
+        length_field: None,
+        flags: Vec::new(),
+        present_if: None,
+        repeat_body_alias: None,
+        max_count: None,
+        tlv_chain_body_alias: None,
+        dma_burst_align: None,
+        length_arith: None,
+        embed_body_alias: Some(body_alias),
     })
 }
 
@@ -2546,6 +2650,7 @@ fn validate_codec_dma_alignment(
                     BitSize::Vle { .. } => "vle",
                     BitSize::Repeat { .. } => "repeat",
                     BitSize::TlvChain { .. } => "tlv-chain",
+                    BitSize::Embed => "embed",
                     BitSize::Fixed { .. } => unreachable!("matches! guard"),
                 };
                 return Err(located(

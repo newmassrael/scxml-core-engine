@@ -159,6 +159,8 @@ impl {{ struct_name }} {
         {{ field.repeat_decode_stmt }}
 {% elif field.is_tlv_chain %}
         {{ field.tlv_chain_decode_stmt }}
+{% elif field.is_embed %}
+        {{ field.embed_decode_stmt }}
 {% else %}
         {{ field.present_if_decode_stmt }}
 {% endif %}
@@ -182,6 +184,8 @@ impl {{ struct_name }} {
         {{ field.repeat_decode_stmt }}
 {% elif field.is_tlv_chain %}
         {{ field.tlv_chain_decode_stmt }}
+{% elif field.is_embed %}
+        {{ field.embed_decode_stmt }}
 {% else %}
         {{ field.present_if_decode_stmt }}
 {% endif %}
@@ -191,7 +195,7 @@ impl {{ struct_name }} {
             {{ field.id }},
 {% endfor %}
         })
-{% elif has_repeat_fields or has_tlv_chain_fields or has_string_fields %}
+{% elif has_repeat_fields or has_tlv_chain_fields or has_embed_fields or has_string_fields %}
         // RFC §5.B B2 repeat / B3 TLV chain primitives: streaming
         // decode mixes plain fixed-width reads (per-field via the
         // present-if helper's non-gated arm) with repeat loops that
@@ -205,6 +209,8 @@ impl {{ struct_name }} {
         {{ field.repeat_decode_stmt }}
 {% elif field.is_tlv_chain %}
         {{ field.tlv_chain_decode_stmt }}
+{% elif field.is_embed %}
+        {{ field.embed_decode_stmt }}
 {% else %}
         {{ field.present_if_decode_stmt }}
 {% endif %}
@@ -357,6 +363,8 @@ impl {{ struct_name }} {
 {{ field.repeat_encode_block }}
 {% elif field.is_tlv_chain %}
 {{ field.tlv_chain_encode_block }}
+{% elif field.is_embed %}
+{{ field.embed_encode_block }}
 {% else %}
 {{ field.present_if_encode_block }}
 {% endif %}
@@ -375,12 +383,14 @@ impl {{ struct_name }} {
 {{ field.repeat_encode_block }}
 {% elif field.is_tlv_chain %}
 {{ field.tlv_chain_encode_block }}
+{% elif field.is_embed %}
+{{ field.embed_encode_block }}
 {% else %}
 {{ field.present_if_encode_block }}
 {% endif %}
 {% endfor %}
         r
-{% elif has_repeat_fields or has_tlv_chain_fields or has_string_fields %}
+{% elif has_repeat_fields or has_tlv_chain_fields or has_embed_fields or has_string_fields %}
         // RFC §5.B B2 repeat / B3 TLV chain encode: fixed prefix
         // fields append byte-by-byte; list fields iterate the host-
         // language list and splice each element's encode() into the
@@ -393,6 +403,8 @@ impl {{ struct_name }} {
 {{ field.repeat_encode_block }}
 {% elif field.is_tlv_chain %}
 {{ field.tlv_chain_encode_block }}
+{% elif field.is_embed %}
+{{ field.embed_encode_block }}
 {% else %}
 {{ field.present_if_encode_block }}
 {% endif %}

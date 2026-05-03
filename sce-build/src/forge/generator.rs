@@ -1168,6 +1168,7 @@ fn render_codec(
                 "is_tlv_chain".into(),
                 serde_json::Value::Bool(f.is_tlv_chain()),
             );
+            obj.insert("is_embed".into(), serde_json::Value::Bool(f.is_embed()));
             // RFC §5.B B3 DMA alignment: surface burst_align so the
             // template can emit a per-field language-level alignment
             // assertion (Rust `const _: () = assert!`, C11
@@ -1403,6 +1404,80 @@ fn render_codec(
                     if matches!(lang, crate::generator::Language::Kotlin) {
                         obj.insert("kt_default".into(), "mutableListOf()".into());
                     }
+                } else if matches!(f.bit_size, BitSize::Embed) {
+                    // RFC §5.B Y0c — single-codec embed primitive.
+                    // The host-language type is the imported codec's
+                    // struct directly (no list wrapping); the
+                    // streaming codec calls `<body>::decode(cursor)` /
+                    // `self.<id>.encode()` for one-shot consumption.
+                    // Parent-flag threading: when the embedded codec
+                    // declares `<sce:requires-parent-flags carrier="K">`,
+                    // the parent codec MUST satisfy K via either a
+                    // local `<sce:flags id="K">` (Case A — thread the
+                    // local carrier value) or its own
+                    // `<sce:requires-parent-flags carrier="K">`
+                    // (Case B — pass the codec's `parent_flags` arg
+                    // through). Validation lives in
+                    // `validate_cross_codec_embed_parent_flags`;
+                    // codegen here trusts that contract.
+                    obj.insert("bit_size_kind".into(), "embed".into());
+                    let alias = f
+                        .embed_body_alias
+                        .as_deref()
+                        .expect("parser sets embed_body_alias for every BitSize::Embed");
+                    let body_type = resolve_repeat_body_type(
+                        &m.name, alias, imports, lang,
+                    )?;
+                    let body_decoder = resolve_variant_arm_decoder(alias, lang);
+                    let body_encoder = resolve_variant_arm_encoder(alias, lang);
+                    obj.insert("embed_body_alias".into(), alias.into());
+                    obj.insert("embed_body_type".into(), body_type.clone().into());
+                    obj.insert("embed_body_decoder".into(), body_decoder.clone().into());
+                    obj.insert("embed_body_encoder".into(), body_encoder.clone().into());
+                    // Override the per-language host type slot with
+                    // the bare imported codec type (no Option/list
+                    // wrap — v1 always-present). The `c_type` /
+                    // equivalent slot was set earlier from the
+                    // SceType::Bytes sentinel, so we replace it here.
+                    obj.insert(type_key.into(), body_type.clone().into());
+                    let embed_thread = embed_parent_flags_thread_args(
+                        f, alias, imports, m, lang,
+                    );
+                    obj.insert(
+                        "embed_decode_stmt".into(),
+                        embed_streaming_decode_stmt(
+                            f,
+                            &body_type,
+                            &body_decoder,
+                            &embed_thread.decode_arg,
+                            lang,
+                        )
+                        .into(),
+                    );
+                    obj.insert(
+                        "embed_encode_block".into(),
+                        embed_streaming_encode_block(
+                            f,
+                            &body_type,
+                            &body_encoder,
+                            &embed_thread.encode_arg,
+                            lang,
+                        )
+                        .into(),
+                    );
+                    // Kotlin data-class primary-constructor default
+                    // for the nested struct field. `T()` is not always
+                    // valid (the imported codec's data-class may have
+                    // required parameters); mirror the existing v1
+                    // shape used by sub-struct fields elsewhere by
+                    // emitting `<Type>()` and trusting the imported
+                    // codec carries a no-arg constructor (Kotlin
+                    // `data class` with all-default params). For Y0c
+                    // v1 the embedded codecs (wireexpr) all have only
+                    // simple primitive fields with default values.
+                    if matches!(lang, crate::generator::Language::Kotlin) {
+                        obj.insert("kt_default".into(), format!("{body_type}()").into());
+                    }
                 } else {
                     let resolved = crate::forge::limits::resolve_bytes_max(f.max_size);
                     obj.insert("max_size".into(), resolved.into());
@@ -1412,8 +1487,9 @@ fn render_codec(
                         BitSize::Fixed { .. }
                         | BitSize::Vle { .. }
                         | BitSize::Repeat { .. }
-                        | BitSize::TlvChain { .. } =>
-                            unreachable!("variable + non-vle + non-repeat + non-tlv-chain path covers Tail/LengthRef only"),
+                        | BitSize::TlvChain { .. }
+                        | BitSize::Embed =>
+                            unreachable!("variable + non-vle + non-repeat + non-tlv-chain + non-embed path covers Tail/LengthRef only"),
                     };
                     obj.insert("bit_size_kind".into(), kind.into());
                     if matches!(f.bit_size, BitSize::LengthRef) {
@@ -1581,7 +1657,7 @@ fn render_codec(
                 "has_present_if".into(),
                 f.present_if.is_some().into(),
             );
-            if has_present_if_fields || has_repeat_fields || m.has_tlv_chain_fields() || has_vle_fields {
+            if has_present_if_fields || has_repeat_fields || m.has_tlv_chain_fields() || m.has_embed_fields() || has_vle_fields {
                 obj.insert(
                     "present_if_decode_stmt".into(),
                     present_if_streaming_decode_stmt(
@@ -1814,6 +1890,7 @@ fn render_codec(
     );
     ctx.insert("has_repeat_fields".into(), has_repeat_fields.into());
     ctx.insert("has_tlv_chain_fields".into(), m.has_tlv_chain_fields().into());
+    ctx.insert("has_embed_fields".into(), m.has_embed_fields().into());
     ctx.insert("has_string_fields".into(), m.has_string_fields().into());
     ctx.insert("has_tail_fields".into(), m.has_tail_fields().into());
     ctx.insert(
@@ -3066,6 +3143,232 @@ fn repeat_streaming_encode_block(
     }
 }
 
+/// RFC §5.B Y0c — pre-rendered streaming decode statement for one
+/// embed field. Calls the embedded codec's decode() once with optional
+/// parent-flag threading, binding the result to the field id (Rust /
+/// Kotlin / Go / Python local; Cpp local; C11 directly into
+/// `out-><id>`). Embedded codec's wire shape consumes bytes inline
+/// from the cursor — no length prefix, no boundary marker.
+fn embed_streaming_decode_stmt(
+    field: &CodecField,
+    body_type: &str,
+    body_decoder: &str,
+    thread_arg: &str,
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    let id = &field.id;
+    match lang {
+        Language::Rust => format!(
+            "let {id} = {body_type}::decode(cursor{thread_arg})?;"
+        ),
+        Language::Cpp => format!(
+            "auto _emb_{id} = {body_type}::decode(cursor{thread_arg});\n        \
+             if (!_emb_{id}.has_value()) return std::nullopt;\n        \
+             auto {id} = std::move(*_emb_{id});"
+        ),
+        Language::Kotlin => format!(
+            "val {id} = {body_type}.decode(cursor{thread_arg}) ?: return null"
+        ),
+        Language::Go => {
+            let go_id = filters::to_pascal_case(id.to_string());
+            format!(
+                "{go_id}, err := {body_decoder}(cursor{thread_arg})\n\t\
+                 if err != nil {{\n\t\t\
+                     return nil, err\n\t\
+                 }}"
+            )
+        }
+        Language::C11 => {
+            let id_snake = filters::to_snake_case(id.to_string());
+            format!(
+                "{{\n        \
+                     sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}{thread_arg});\n        \
+                     if (_st != SCE_FORGE_CODEC_OK) return _st;\n    \
+                 }}"
+            )
+        }
+        Language::Python => {
+            let py_id = filters::to_snake_case(id.to_string());
+            format!(
+                "{py_id} = {body_type}.decode(cursor{thread_arg})\n            \
+                 if {py_id} is None:\n                \
+                     return None"
+            )
+        }
+    }
+}
+
+/// RFC §5.B Y0c — pre-rendered streaming encode block for one embed
+/// field. Calls the embedded codec's encode() with optional parent-
+/// flag threading and splices the returned bytes into the parent's
+/// `r` buffer.
+fn embed_streaming_encode_block(
+    field: &CodecField,
+    body_type: &str,
+    body_encoder: &str,
+    thread_arg: &str,
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    let _ = body_type;
+    let id = &field.id;
+    match lang {
+        Language::Rust => format!(
+            "        r.extend(self.{id}.encode({thread_arg_norm}));",
+            thread_arg_norm = thread_arg.trim_start_matches(", "),
+        ),
+        Language::Cpp => format!(
+            "        {{\n            \
+                 auto _sub = {id}.encode({thread_arg_norm});\n            \
+                 r.insert(r.end(), _sub.begin(), _sub.end());\n        \
+             }}",
+            thread_arg_norm = thread_arg.trim_start_matches(", "),
+        ),
+        Language::Kotlin => format!(
+            "        r.addAll(this.{id}.encode({thread_arg_norm}).toList())",
+            thread_arg_norm = thread_arg.trim_start_matches(", "),
+        ),
+        Language::Go => {
+            let go_id = filters::to_pascal_case(id.to_string());
+            format!(
+                "\tr = append(r, s.{go_id}.Encode({thread_arg_norm})...)",
+                thread_arg_norm = thread_arg.trim_start_matches(", "),
+            )
+        }
+        Language::C11 => {
+            let id_snake = filters::to_snake_case(id.to_string());
+            // Imported codec encode returns `<snake>_encoded_t`. The
+            // body_encoder is `<snake>_encode`; strip the suffix to
+            // form the encoded-type name.
+            let encoded_t = if let Some(stripped) = body_encoder.strip_suffix("_encode") {
+                format!("{stripped}_encoded_t")
+            } else {
+                format!("{body_encoder}_t")
+            };
+            format!(
+                "    {{\n        \
+                     {encoded_t} _sub = {body_encoder}(&self->{id_snake}{thread_arg});\n        \
+                     if (r.len + _sub.len <= sizeof(r.bytes)) {{\n            \
+                         for (size_t _ej = 0; _ej < _sub.len; ++_ej) r.bytes[r.len + _ej] = _sub.bytes[_ej];\n            \
+                         r.len += _sub.len;\n        \
+                     }}\n    \
+                 }}"
+            )
+        }
+        Language::Python => {
+            let py_id = filters::to_snake_case(id.to_string());
+            format!(
+                "        r.extend(self.{py_id}.encode({thread_arg_norm}))",
+                thread_arg_norm = thread_arg.trim_start_matches(", "),
+            )
+        }
+    }
+}
+
+/// RFC §5.B Y0c — compute the per-language parent-flag thread argument
+/// for a single embed field. Returns decode-site and encode-site
+/// fragments (each leading with `, ` so the call site can splice
+/// them after `cursor` / first arg, or empty strings when the
+/// embedded codec doesn't require parent flags).
+///
+/// Two cases per the validator contract:
+///   - Case A: parent codec has a local `<sce:flags id="K">` matching
+///     the embedded codec's required carrier name. Thread the local
+///     carrier value (decode site reads `out-><K>` / Pascal-case Go /
+///     etc.; encode site reads `self.<K>` / Pascal-case Go / etc.).
+///   - Case B: parent codec has its own
+///     `<sce:requires-parent-flags carrier="K">`. Pass the
+///     `parent_flags` parameter through verbatim (same per-language
+///     name as the param: `parent_flags` / `parentFlags`).
+struct EmbedThreadArgs {
+    decode_arg: String,
+    encode_arg: String,
+}
+
+fn embed_parent_flags_thread_args(
+    _field: &CodecField,
+    embed_alias: &str,
+    imports: &[ImportContext],
+    parent: &CodecModel,
+    lang: crate::generator::Language,
+) -> EmbedThreadArgs {
+    use crate::generator::Language;
+    // What carrier does the embedded codec require?
+    let embedded_carrier = imports
+        .iter()
+        .find(|i| i.alias == embed_alias)
+        .and_then(|i| i.codec_requires_parent_flags.as_ref())
+        .map(|r| r.carrier.clone());
+
+    let Some(carrier) = embedded_carrier else {
+        // Embedded codec has no parent-flag dependency.
+        return EmbedThreadArgs {
+            decode_arg: String::new(),
+            encode_arg: String::new(),
+        };
+    };
+
+    // Case A: parent codec has a local `<sce:flags id="carrier">`.
+    let local_carrier = parent
+        .fields
+        .iter()
+        .find(|fld| fld.is_flags_carrier() && fld.id == carrier);
+
+    if local_carrier.is_some() {
+        // Read the just-decoded local (decode side) / self field
+        // (encode side). Per-language naming mirrors variant arm
+        // threading at lines ~2007-2080.
+        let decode = match lang {
+            Language::Rust | Language::Cpp | Language::Kotlin => {
+                format!(", {}", carrier)
+            }
+            Language::Go => format!(", {}", filters::to_pascal_case(carrier.clone())),
+            Language::C11 => format!(", out->{}", filters::to_snake_case(carrier.clone())),
+            Language::Python => format!(", {}", filters::to_snake_case(carrier.clone())),
+        };
+        let encode = match lang {
+            Language::Rust => format!(", self.{}", carrier),
+            Language::Cpp => format!(", {}", carrier),
+            Language::Kotlin => format!(", this.{}", carrier),
+            Language::Go => format!(", s.{}", filters::to_pascal_case(carrier.clone())),
+            Language::C11 => format!(", self->{}", filters::to_snake_case(carrier.clone())),
+            Language::Python => format!(", self.{}", filters::to_snake_case(carrier.clone())),
+        };
+        return EmbedThreadArgs { decode_arg: decode, encode_arg: encode };
+    }
+
+    // Case B: parent codec declares its own
+    // `<sce:requires-parent-flags carrier="K">`. Pass the codec's
+    // `parent_flags` parameter through verbatim. Validator guarantees
+    // carrier names match.
+    if parent
+        .requires_parent_flags
+        .as_ref()
+        .map(|r| r.carrier == carrier)
+        .unwrap_or(false)
+    {
+        let arg = match lang {
+            Language::Rust | Language::Cpp | Language::C11 | Language::Python => {
+                ", parent_flags"
+            }
+            Language::Kotlin | Language::Go => ", parentFlags",
+        };
+        return EmbedThreadArgs {
+            decode_arg: arg.to_string(),
+            encode_arg: arg.to_string(),
+        };
+    }
+
+    // Validator should have rejected this codec. Returning empty
+    // produces invalid code that fails compilation — surfaces the
+    // bug visibly rather than silently emitting the wrong thread arg.
+    EmbedThreadArgs {
+        decode_arg: String::new(),
+        encode_arg: String::new(),
+    }
+}
+
 /// RFC §5.B B5-μ — gated repeat decode (Wire RFC Phase B X1). Wraps
 /// `repeat_streaming_decode_stmt` body with a per-language predicate
 /// test so a `parent.L`-style flag toggles the entire count + repeat
@@ -3834,15 +4137,17 @@ fn present_if_streaming_decode_stmt(
         BitSize::Vle { width_bits } => {
             present_if_decode_vle(field, fields, parent_flags, lang, *width_bits)
         }
-        // Repeat / TLV-chain fields are routed to their dedicated
+        // Repeat / TLV-chain / Embed fields are routed to their dedicated
         // streaming helpers by the template's per-field dispatch —
         // this helper is still called eagerly for every field in the
         // obj-builder (so per-field obj keys stay uniform) but the
         // template never reads the result for these cases. Returning
         // an empty string keeps the JSON shape valid without
         // committing to a sentinel comment that might leak into a
-        // golden if the dispatch ever drifts.
-        BitSize::Repeat { .. } | BitSize::TlvChain { .. } => String::new(),
+        // golden if the dispatch ever drifts. Y0c v1 embed is always-
+        // present so present_if_streaming_decode_stmt is never reached
+        // with bit_size=Embed in practice.
+        BitSize::Repeat { .. } | BitSize::TlvChain { .. } | BitSize::Embed => String::new(),
     }
 }
 
@@ -5149,13 +5454,14 @@ fn present_if_streaming_encode_block(
         BitSize::Vle { width_bits } => {
             present_if_encode_vle(field, fields, parent_flags, lang, *width_bits)
         }
-        // Repeat / TLV-chain fields render via their dedicated
+        // Repeat / TLV-chain / Embed fields render via their dedicated
         // streaming encode helpers through the template's per-field
         // dispatch; this helper is still called eagerly for every
         // field in the obj-builder, so an empty-string return keeps
         // the JSON shape valid without leaking a sentinel into a
-        // golden.
-        BitSize::Repeat { .. } | BitSize::TlvChain { .. } => String::new(),
+        // golden. Y0c v1 embed is always-present so the present-if
+        // encode helper is never reached with bit_size=Embed.
+        BitSize::Repeat { .. } | BitSize::TlvChain { .. } | BitSize::Embed => String::new(),
     }
 }
 
@@ -6804,13 +7110,13 @@ fn generate_decode_expr(
             // struct literal cannot accidentally render it.
             String::new()
         }
-        BitSize::Repeat { .. } | BitSize::TlvChain { .. } => {
-            // RFC §5.B B2 repeat / B3 TLV-chain primitives — same
-            // convention as Vle: the streaming branch
-            // (`has_repeat_fields` / `has_tlv_chain_fields`) emits
-            // per-field decode statements via the dedicated
-            // streaming helpers, so the positional branch never
-            // needs a single-expr form.
+        BitSize::Repeat { .. } | BitSize::TlvChain { .. } | BitSize::Embed => {
+            // RFC §5.B B2 repeat / B3 TLV-chain / Y0c embed primitives
+            // — same convention as Vle: the streaming branch
+            // (`has_repeat_fields` / `has_tlv_chain_fields` /
+            // `has_embed_fields`) emits per-field decode statements via
+            // the dedicated streaming helpers, so the positional branch
+            // never needs a single-expr form.
             String::new()
         }
     }

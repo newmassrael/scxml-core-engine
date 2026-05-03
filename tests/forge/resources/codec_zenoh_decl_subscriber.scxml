@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh declare-subscriber body (RFC §5.B
+     Wire RFC Phase B Y1).
+
+     Mirrors zenoh-pico `_z_decl_subscriber_encode` (src/protocol/codec/
+     declarations.c lines 81-85) which delegates to
+     `_z_decl_commons_encode` (lines 65-80) with `has_extensions=false`.
+     The per-MID header byte writes MID=0x02 plus three flag bits:
+       - bit 5 (N, _Z_DECL_SUBSCRIBER_FLAG_N=0x20): wireexpr has suffix
+       - bit 6 (M, _Z_DECL_SUBSCRIBER_FLAG_M=0x40): wireexpr is local mapping
+       - bit 7 (Z, _Z_FLAG_Z_Z=0x80):              has extensions (always 0 for sub)
+     M is wire-bearing but the body codec does not gate any subsequent
+     field on it (zenoh-pico's receiver uses M only for host-level
+     mapping decision, declarations.c:244); SCE declares N + M + Z
+     in the parent-flags block for cross-codec validator alignment
+     against the future declaration envelope's `<sce:flags id="header">`,
+     so all three bits round-trip on the wire even when this body's
+     embedded wireexpr only reads N.
+
+     The 1-byte per-MID header (MID + N + M + Z) is written by the
+     OUTER declaration envelope, NOT by this body codec. Body scope
+     is the VLE u32 decl id followed by the embedded wireexpr.
+
+     Wire shape (1+ bytes):
+       VLE id      (uint32, declarations.c:78 zsize encode of decl id)
+       wireexpr    (Y0c embed; parent.N-gated suffix; wireexpr's
+                    parent_flags is the same byte threaded through
+                    this body's own parent_flags param)
+
+     Parent-flag threading (Case B): this body's `parent_flags` carries
+     the upstream MID header byte (with N at bit 5, M at bit 6, Z at
+     bit 7); wireexpr only reads N at bit 5. Pass-through threading
+     keeps the bytes identical between body and embedded codec.
+
+     Composition: B1-α VLE u32 id + Y0c embed (codec_zenoh_wireexpr) +
+     B5-γ Parent-scope parent_flags pass-through.
+
+     Wrap shape: identical to decl_keyexpr modulo id width (uint32 vs
+     uint16) — the wireexpr embed and parent-flag dependency match
+     verbatim. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_decl_subscriber">
+  <sce:import src="codec_zenoh_wireexpr.scxml" kind="codec" as="codec_zenoh_wireexpr"/>
+  <sce:requires-parent-flags carrier="header">
+    <sce:flag name="N" bit="5"/>
+    <sce:flag name="M" bit="6"/>
+    <sce:flag name="Z" bit="7"/>
+  </sce:requires-parent-flags>
+  <datamodel>
+    <sce:field id="id" sce:type="uint32" sce:byte="0" sce:bit-size="vle"/>
+    <sce:embed id="wireexpr" type="codec_zenoh_wireexpr" sce:byte="1"/>
+  </datamodel>
+</scxml>

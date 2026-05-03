@@ -526,6 +526,41 @@
   </xs:element>
 
   <!-- ═══════════════════════════════════════════════════════════════
+       RFC §5.B Y0c — single-codec embed primitive
+
+       Embeds an imported codec inline at the named byte position
+       with no wire-level boundary bytes. The embedded codec's own
+       decode/encode methods consume/produce bytes directly; the host
+       language emits a nested struct of the imported codec's type.
+       Mirrors `<sce:repeat>` / `<sce:tlv-chain>` tri-attr shape but
+       without count/depth/overflow knobs (single occurrence,
+       always-present in v1).
+
+       First reachable consumer: zenoh-pico declare bodies
+       (decl_keyexpr / decl_subscriber / decl_queryable / decl_token)
+       embedding `codec_zenoh_wireexpr` after the body's VLE id field
+       — Zenoh wire packs id + wireexpr inline with no length prefix
+       between them, so embed exactly mirrors that wire layout.
+
+       v1 grammar restricts to always-present embedding. `present-if`
+       defers to its first reachable consumer (zenoh-pico's optional
+       `_ext_keyexpr` chain in undecl_* uses TLV ext envelopes
+       instead — Y0b territory).
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <xs:element name="embed">
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <!-- Imported codec alias (matches an `<sce:import as=...>` in
+           the same document); resolved at codegen time. Mirrors
+           `<sce:repeat type=...>` / `<sce:tlv-chain type=...>` /
+           `<sce:arm type=...>` shape. -->
+      <xs:attribute name="type" type="xs:NCName" use="required"/>
+      <xs:attribute ref="sce:byte" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- ═══════════════════════════════════════════════════════════════
        RFC §5.B B5-γ parent-flags dependency
 
        Codec-level annotation declaring that a body codec's fields

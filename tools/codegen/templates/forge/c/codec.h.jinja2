@@ -85,6 +85,9 @@ typedef struct {
 {% if field.c_emit_len_member %}
     size_t  {{ field.id }}_len;
 {% endif %}
+{% elif field.is_embed %}
+    /* RFC §5.B Y0c embed: nested {{ field.embed_body_type }} struct (no length prefix on the wire) */
+    {{ field.embed_body_type }} {{ field.id }};
 {% elif field.is_string %}
     /* RFC §5.B B5-ζ Surface H sce:type="string" payload (sce:max-size="{{ field.max_size }}").
      * `char[N] + size_t len` parallels the bytes pair (uint8_t[N] + len)
@@ -195,6 +198,8 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
     {{ field.repeat_decode_stmt }}
 {% elif field.is_tlv_chain %}
     {{ field.tlv_chain_decode_stmt }}
+{% elif field.is_embed %}
+    {{ field.embed_decode_stmt }}
 {% else %}
     {{ field.present_if_decode_stmt }}
 {% endif %}
@@ -213,12 +218,14 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
     {{ field.repeat_decode_stmt }}
 {% elif field.is_tlv_chain %}
     {{ field.tlv_chain_decode_stmt }}
+{% elif field.is_embed %}
+    {{ field.embed_decode_stmt }}
 {% else %}
     {{ field.present_if_decode_stmt }}
 {% endif %}
 {% endfor %}
     return SCE_FORGE_CODEC_OK;
-{% elif has_repeat_fields or has_tlv_chain_fields %}
+{% elif has_repeat_fields or has_tlv_chain_fields or has_embed_fields %}
     /* RFC §5.B B2 repeat / B3 TLV chain primitives: streaming decode
      * mixes plain fixed-width reads with bounded-iteration loops over
      * imported codec entries. Repeat: bounded by `out-><len_field>`
@@ -231,6 +238,8 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
     {{ field.repeat_decode_stmt }}
 {% elif field.is_tlv_chain %}
     {{ field.tlv_chain_decode_stmt }}
+{% elif field.is_embed %}
+    {{ field.embed_decode_stmt }}
 {% else %}
     {{ field.present_if_decode_stmt }}
 {% endif %}
@@ -351,6 +360,8 @@ static inline {{ c_encoded_typedef }} {{ c_encode_func }}(const {{ c_struct_type
 {{ field.repeat_encode_block }}
 {% elif field.is_tlv_chain %}
 {{ field.tlv_chain_encode_block }}
+{% elif field.is_embed %}
+{{ field.embed_encode_block }}
 {% else %}
 {{ field.present_if_encode_block }}
 {% endif %}
@@ -366,11 +377,13 @@ static inline {{ c_encoded_typedef }} {{ c_encode_func }}(const {{ c_struct_type
 {{ field.repeat_encode_block }}
 {% elif field.is_tlv_chain %}
 {{ field.tlv_chain_encode_block }}
+{% elif field.is_embed %}
+{{ field.embed_encode_block }}
 {% else %}
 {{ field.present_if_encode_block }}
 {% endif %}
 {% endfor %}
-{% elif has_repeat_fields or has_tlv_chain_fields %}
+{% elif has_repeat_fields or has_tlv_chain_fields or has_embed_fields %}
     /* RFC §5.B B2 / B3 encode: fixed prefix appends byte-by-byte;
      * list fields walk the per-codec encoded_t splice loop, bounded
      * by `sizeof(r.bytes)` (== MAX_BYTES). Author keeps count field
@@ -382,6 +395,8 @@ static inline {{ c_encoded_typedef }} {{ c_encode_func }}(const {{ c_struct_type
 {{ field.repeat_encode_block }}
 {% elif field.is_tlv_chain %}
 {{ field.tlv_chain_encode_block }}
+{% elif field.is_embed %}
+{{ field.embed_encode_block }}
 {% else %}
 {{ field.present_if_encode_block }}
 {% endif %}

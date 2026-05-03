@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: single-codec embed primitive demo (RFC §5.B
+     Y0c). Locks the `<sce:embed type="codec_X">` grammar shape across
+     all 6 backends with the simplest possible wire layout: a uint8
+     prefix followed by an embedded `codec_zenoh_locator` (VLE u64
+     length + UTF-8 string).
+
+     Y0c lifts a Wire RFC Phase B prerequisite gap surfaced during Y1
+     entry: the codec DSL had no way to compose a single imported
+     codec as an inline field. Repeat / TLV-chain / variant arm all
+     use codecs as container element types; embed is the missing
+     "single occurrence, always present" composition primitive that
+     mirrors zenoh-pico's `_z_X_t` struct fields holding a sub-struct
+     of another typed codec (`_z_decl_kexpr_t._keyexpr` is the first
+     reachable consumer — Y1 ships 4 such consumers).
+
+     Wire shape (zero boundary bytes between fields — embed is
+     wire-transparent):
+       byte 0   : tag           (uint8)
+       byte 1+  : locator       (codec_zenoh_locator: VLE locator_len
+                                 + UTF-8 string max 128)
+
+     Composition: B1-α Fixed uint8 + Y0c embed. The embedded codec
+     itself uses B5-ζ Surface H string + B1-α VLE u64 + B2-β
+     present-if-style length-ref (here unconditional). The embed
+     primitive does NOT add length-prefix or boundary bytes — the
+     embedded codec's own decode/encode consumes/produces bytes
+     inline from the cursor exactly as if its fields were inlined
+     into the parent.
+
+     Y0c v1 grammar restricts embed to always-present (no
+     `sce:present-if`). The `_ext_keyexpr` chain in zenoh-pico
+     undecl_subscriber/queryable/token uses TLV ext envelopes
+     (Y0b territory) for optional embedded keyexpr; v1 embed
+     focuses on the always-present case which Y1 needs.
+
+     Embedded codec has NO `<sce:requires-parent-flags>`, so the
+     parent codec doesn't thread any parent_flags through to the
+     embed call site. Y0c's parent-flag threading machinery
+     (Case A: local carrier; Case B: pass-through parent_flags)
+     exercises in Y1's decl_keyexpr / decl_subscriber / etc.
+     fixtures where wireexpr's parent.N is threaded through. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_embed_basic">
+  <sce:import src="codec_zenoh_locator.scxml" kind="codec" as="codec_zenoh_locator"/>
+  <datamodel>
+    <sce:field id="tag" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:embed id="locator" type="codec_zenoh_locator" sce:byte="1"/>
+  </datamodel>
+</scxml>

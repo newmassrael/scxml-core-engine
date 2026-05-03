@@ -785,6 +785,21 @@ pub enum BitSize {
         max_depth: u32,
         on_overflow: TlvOverflowPolicy,
     },
+    /// RFC §5.B Y0c — single imported-codec field embedded inline.
+    /// The host language emits a nested struct of the imported codec's
+    /// type; the streaming codec calls the imported codec's
+    /// decode/encode for this position. No wire-level boundary bytes
+    /// (no length prefix, no tag) — the embedded codec's own field
+    /// layout consumes/produces bytes directly. Imported codec is
+    /// resolved via [`CodecField::embed_body_alias`] (mirrors
+    /// `repeat_body_alias`). RFC §5.B B5-γ parent-flag threading
+    /// applies when the embedded codec declares
+    /// `<sce:requires-parent-flags>`.
+    ///
+    /// First reachable consumer: zenoh-pico declare/undeclare bodies
+    /// (decl_keyexpr, decl_subscriber, decl_queryable, decl_token)
+    /// embed `codec_zenoh_wireexpr` after a VLE id field.
+    Embed,
 }
 
 /// A single named bit-range on a `<sce:flags>` carrier field — RFC §5.B
@@ -970,6 +985,13 @@ pub struct CodecField {
     /// `None` when no alignment constraint.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dma_burst_align: Option<u32>,
+    /// RFC §5.B Y0c — embedded imported-codec alias for
+    /// `BitSize::Embed` fields. `Some(alias)` only when bit_size is
+    /// Embed; mirrors `repeat_body_alias` / `tlv_chain_body_alias`
+    /// for the single-codec inline case. Resolved against
+    /// `<sce:import>` aliases at codegen time.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub embed_body_alias: Option<String>,
     /// RFC §5.B B5-δ Surface F — arithmetic offset on the
     /// `length-field` source value. Authored as `sce:length-arith="+1"`
     /// or `sce:length-arith="-1"` paired with `sce:bit-size="length-ref"`
@@ -1007,6 +1029,7 @@ impl CodecField {
                 | BitSize::Vle { .. }
                 | BitSize::Repeat { .. }
                 | BitSize::TlvChain { .. }
+                | BitSize::Embed
         )
     }
 
@@ -1031,6 +1054,14 @@ impl CodecField {
     /// — codecs containing this field type emit only on Rust + C11.
     pub fn is_tlv_chain(&self) -> bool {
         matches!(self.bit_size, BitSize::TlvChain { .. })
+    }
+
+    /// Whether this field is a Y0c single-codec embed (RFC §5.B Y0c).
+    /// The host language emits a nested struct of the imported codec's
+    /// type; the streaming codec calls the imported codec's
+    /// decode/encode for this position with no wire-level boundary.
+    pub fn is_embed(&self) -> bool {
+        matches!(self.bit_size, BitSize::Embed)
     }
 
     /// Whether this field carries a `<sce:flag>` set (RFC §5.B B1-γ).
@@ -1219,6 +1250,14 @@ impl CodecModel {
     /// classifies the codec as MCU-class.
     pub fn has_tlv_chain_fields(&self) -> bool {
         self.fields.iter().any(|f| f.is_tlv_chain())
+    }
+
+    /// Whether the codec has any single-codec embed field (RFC §5.B Y0c).
+    /// Forces the streaming decode/encode path (same machinery as
+    /// repeat / TLV chain). The streaming codec calls the embedded
+    /// codec's decode/encode with optional parent-flag threading.
+    pub fn has_embed_fields(&self) -> bool {
+        self.fields.iter().any(|f| f.is_embed())
     }
 
     /// Whether the codec has any UTF-8 string field (RFC §5.B B5-ζ

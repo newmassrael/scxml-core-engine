@@ -1388,6 +1388,66 @@ fn forge_codec_zenoh_wireexpr_cpp() {
     assert_standalone_forge("codec_zenoh_wireexpr", "codec_zenoh_wireexpr.h");
 }
 
+// ── RFC §5.B Y0c — single-codec embed primitive ─────────────────────
+// Closes the Y1 prerequisite gap surfaced before authoring Wire RFC
+// Phase B Y1: the codec DSL had no way to compose a single imported
+// codec as an inline field. Repeat / TLV-chain / variant arm all use
+// codecs as container element types; embed is the missing "single
+// occurrence, always present" composition primitive that mirrors
+// zenoh-pico's `_z_X_t` struct fields holding a sub-struct of another
+// typed codec (`_z_decl_kexpr_t._keyexpr` is the first reachable
+// consumer — Y1 ships 4 such consumers via this primitive).
+//
+// `codec_embed_basic` locks the wire-transparent emit shape across
+// 6 backends (`uint8 tag` + embedded `codec_zenoh_locator`). Y1's
+// realistic consumers compose this with B5-γ parent-flag threading
+// (Case B: pass-through `parent_flags`) for the wireexpr embed.
+
+#[test]
+fn forge_codec_embed_basic_cpp() {
+    assert_standalone_forge("codec_embed_basic", "codec_embed_basic.h");
+}
+
+// ── RFC §5.B Wire RFC Phase B Y1 — declare/undeclare family (4
+// wireexpr-bearing decls + 1 trivial undecl). All compose Y0a's
+// codec_zenoh_wireexpr through Y0c embed grammar. The four
+// wireexpr-bearing decls (decl_keyexpr / decl_subscriber /
+// decl_queryable / decl_token) declare matching
+// `<sce:requires-parent-flags carrier="header">` blocks so the body's
+// parent_flags param threads through to wireexpr verbatim (Case B
+// pass-through). decl_queryable additionally inlines a parent.Z-gated
+// queryable_info ext (ext_type uint8 + ext_value VLE u64 packed by
+// the host). undecl_keyexpr is a trivial single-VLE-id body.
+//
+// Y1 omits undecl_subscriber/queryable/token: they carry an optional
+// ext_keyexpr via TLV ext envelope (length-prefixed outer + inline-
+// suffix-by-implicit-length inner — new design surface scoped to Y0b).
+
+#[test]
+fn forge_codec_zenoh_decl_keyexpr_cpp() {
+    assert_standalone_forge("codec_zenoh_decl_keyexpr", "codec_zenoh_decl_keyexpr.h");
+}
+
+#[test]
+fn forge_codec_zenoh_decl_subscriber_cpp() {
+    assert_standalone_forge("codec_zenoh_decl_subscriber", "codec_zenoh_decl_subscriber.h");
+}
+
+#[test]
+fn forge_codec_zenoh_decl_queryable_cpp() {
+    assert_standalone_forge("codec_zenoh_decl_queryable", "codec_zenoh_decl_queryable.h");
+}
+
+#[test]
+fn forge_codec_zenoh_decl_token_cpp() {
+    assert_standalone_forge("codec_zenoh_decl_token", "codec_zenoh_decl_token.h");
+}
+
+#[test]
+fn forge_codec_zenoh_undecl_keyexpr_cpp() {
+    assert_standalone_forge("codec_zenoh_undecl_keyexpr", "codec_zenoh_undecl_keyexpr.h");
+}
+
 // ── RFC §5.B B3 TLV chain primitive (Cpp/Rust trunk) ────────
 // `codec_tlv_chain_basic` declares a TLV chain bounded at max-depth=8
 // with on-overflow="reject". MCU-class — Cpp/Kotlin/Go/Python all
@@ -3342,6 +3402,36 @@ fn forge_kotlin_codec_zenoh_wireexpr() {
 }
 
 #[test]
+fn forge_kotlin_codec_embed_basic() {
+    assert_standalone_forge_kotlin("codec_embed_basic", "CodecEmbedBasic.kt");
+}
+
+#[test]
+fn forge_kotlin_codec_zenoh_decl_keyexpr() {
+    assert_standalone_forge_kotlin("codec_zenoh_decl_keyexpr", "CodecZenohDeclKeyexpr.kt");
+}
+
+#[test]
+fn forge_kotlin_codec_zenoh_decl_subscriber() {
+    assert_standalone_forge_kotlin("codec_zenoh_decl_subscriber", "CodecZenohDeclSubscriber.kt");
+}
+
+#[test]
+fn forge_kotlin_codec_zenoh_decl_queryable() {
+    assert_standalone_forge_kotlin("codec_zenoh_decl_queryable", "CodecZenohDeclQueryable.kt");
+}
+
+#[test]
+fn forge_kotlin_codec_zenoh_decl_token() {
+    assert_standalone_forge_kotlin("codec_zenoh_decl_token", "CodecZenohDeclToken.kt");
+}
+
+#[test]
+fn forge_kotlin_codec_zenoh_undecl_keyexpr() {
+    assert_standalone_forge_kotlin("codec_zenoh_undecl_keyexpr", "CodecZenohUndeclKeyexpr.kt");
+}
+
+#[test]
 fn forge_kotlin_codec_until_eof_basic() {
     assert_standalone_forge_kotlin(
         "codec_until_eof_basic",
@@ -3760,6 +3850,36 @@ fn forge_rust_codec_present_if_string() {
 #[test]
 fn forge_rust_codec_zenoh_wireexpr() {
     assert_standalone_forge_rust("codec_zenoh_wireexpr", "codec_zenoh_wireexpr.rs");
+}
+
+#[test]
+fn forge_rust_codec_embed_basic() {
+    assert_standalone_forge_rust("codec_embed_basic", "codec_embed_basic.rs");
+}
+
+#[test]
+fn forge_rust_codec_zenoh_decl_keyexpr() {
+    assert_standalone_forge_rust("codec_zenoh_decl_keyexpr", "codec_zenoh_decl_keyexpr.rs");
+}
+
+#[test]
+fn forge_rust_codec_zenoh_decl_subscriber() {
+    assert_standalone_forge_rust("codec_zenoh_decl_subscriber", "codec_zenoh_decl_subscriber.rs");
+}
+
+#[test]
+fn forge_rust_codec_zenoh_decl_queryable() {
+    assert_standalone_forge_rust("codec_zenoh_decl_queryable", "codec_zenoh_decl_queryable.rs");
+}
+
+#[test]
+fn forge_rust_codec_zenoh_decl_token() {
+    assert_standalone_forge_rust("codec_zenoh_decl_token", "codec_zenoh_decl_token.rs");
+}
+
+#[test]
+fn forge_rust_codec_zenoh_undecl_keyexpr() {
+    assert_standalone_forge_rust("codec_zenoh_undecl_keyexpr", "codec_zenoh_undecl_keyexpr.rs");
 }
 
 // ── RFC §5.B B4 applied codec shapes (Rust) ─────────────────
@@ -4181,6 +4301,36 @@ fn forge_go_codec_zenoh_wireexpr() {
     assert_standalone_forge_go("codec_zenoh_wireexpr", "codec_zenoh_wireexpr.go");
 }
 
+#[test]
+fn forge_go_codec_embed_basic() {
+    assert_standalone_forge_go("codec_embed_basic", "codec_embed_basic.go");
+}
+
+#[test]
+fn forge_go_codec_zenoh_decl_keyexpr() {
+    assert_standalone_forge_go("codec_zenoh_decl_keyexpr", "codec_zenoh_decl_keyexpr.go");
+}
+
+#[test]
+fn forge_go_codec_zenoh_decl_subscriber() {
+    assert_standalone_forge_go("codec_zenoh_decl_subscriber", "codec_zenoh_decl_subscriber.go");
+}
+
+#[test]
+fn forge_go_codec_zenoh_decl_queryable() {
+    assert_standalone_forge_go("codec_zenoh_decl_queryable", "codec_zenoh_decl_queryable.go");
+}
+
+#[test]
+fn forge_go_codec_zenoh_decl_token() {
+    assert_standalone_forge_go("codec_zenoh_decl_token", "codec_zenoh_decl_token.go");
+}
+
+#[test]
+fn forge_go_codec_zenoh_undecl_keyexpr() {
+    assert_standalone_forge_go("codec_zenoh_undecl_keyexpr", "codec_zenoh_undecl_keyexpr.go");
+}
+
 // ── RFC §5.B B4 applied codec shapes (Go) ───────────────────
 
 #[test]
@@ -4547,6 +4697,36 @@ fn forge_python_codec_zenoh_wireexpr() {
     assert_standalone_forge_python("codec_zenoh_wireexpr", "codec_zenoh_wireexpr.py");
 }
 
+#[test]
+fn forge_python_codec_embed_basic() {
+    assert_standalone_forge_python("codec_embed_basic", "codec_embed_basic.py");
+}
+
+#[test]
+fn forge_python_codec_zenoh_decl_keyexpr() {
+    assert_standalone_forge_python("codec_zenoh_decl_keyexpr", "codec_zenoh_decl_keyexpr.py");
+}
+
+#[test]
+fn forge_python_codec_zenoh_decl_subscriber() {
+    assert_standalone_forge_python("codec_zenoh_decl_subscriber", "codec_zenoh_decl_subscriber.py");
+}
+
+#[test]
+fn forge_python_codec_zenoh_decl_queryable() {
+    assert_standalone_forge_python("codec_zenoh_decl_queryable", "codec_zenoh_decl_queryable.py");
+}
+
+#[test]
+fn forge_python_codec_zenoh_decl_token() {
+    assert_standalone_forge_python("codec_zenoh_decl_token", "codec_zenoh_decl_token.py");
+}
+
+#[test]
+fn forge_python_codec_zenoh_undecl_keyexpr() {
+    assert_standalone_forge_python("codec_zenoh_undecl_keyexpr", "codec_zenoh_undecl_keyexpr.py");
+}
+
 // ── RFC §5.B B4 applied codec shapes (Python) ───────────────
 
 #[test]
@@ -4873,6 +5053,36 @@ fn forge_c11_codec_present_if_string() {
 #[test]
 fn forge_c11_codec_zenoh_wireexpr() {
     assert_standalone_forge_c("codec_zenoh_wireexpr", "codec_zenoh_wireexpr.c.h");
+}
+
+#[test]
+fn forge_c11_codec_embed_basic() {
+    assert_standalone_forge_c("codec_embed_basic", "codec_embed_basic.c.h");
+}
+
+#[test]
+fn forge_c11_codec_zenoh_decl_keyexpr() {
+    assert_standalone_forge_c("codec_zenoh_decl_keyexpr", "codec_zenoh_decl_keyexpr.c.h");
+}
+
+#[test]
+fn forge_c11_codec_zenoh_decl_subscriber() {
+    assert_standalone_forge_c("codec_zenoh_decl_subscriber", "codec_zenoh_decl_subscriber.c.h");
+}
+
+#[test]
+fn forge_c11_codec_zenoh_decl_queryable() {
+    assert_standalone_forge_c("codec_zenoh_decl_queryable", "codec_zenoh_decl_queryable.c.h");
+}
+
+#[test]
+fn forge_c11_codec_zenoh_decl_token() {
+    assert_standalone_forge_c("codec_zenoh_decl_token", "codec_zenoh_decl_token.c.h");
+}
+
+#[test]
+fn forge_c11_codec_zenoh_undecl_keyexpr() {
+    assert_standalone_forge_c("codec_zenoh_undecl_keyexpr", "codec_zenoh_undecl_keyexpr.c.h");
 }
 
 // ── RFC §5.B B3 TLV chain primitive (C11, trunk) ────────────

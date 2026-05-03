@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh declare-queryable body (RFC §5.B
+     Wire RFC Phase B Y1). Adds an optional queryable_info ext on top
+     of the decl_subscriber/decl_token shape.
+
+     Mirrors zenoh-pico `_z_decl_queryable_encode` (src/protocol/codec/
+     declarations.c lines 105-119). Same `_z_decl_commons_encode`
+     prefix as decl_subscriber/decl_token (MID=0x04 +
+     `_Z_DECL_QUERYABLE_MID` declarations.h:32; VLE u32 id; embedded
+     wireexpr) — but `has_extensions` is computed from the
+     queryable_info contents (`_complete || _distance != 0`) and when
+     true an additional ext is appended:
+
+       byte k   : ext_type     (uint8 fixed value 0x21 =
+                                _Z_MSG_EXT_ENC_ZINT | 0x01)
+       VLE u64  : ext_value    (packed: complete:1 at bit 0,
+                                distance:15 at bits 8-23)
+
+     The host packs the (complete, distance) pair into the u64 before
+     encoding; SCE-side codec carries it as a single VLE u64 field
+     that the host author shifts/masks on either side of the wire
+     boundary. SCE does NOT decompose the packed layout — the byte
+     packing convention is documented in zenoh-pico `_z_decl_queryable_decode_extensions`
+     (declarations.c:273-287) and stays a host-level concern.
+
+     The queryable_info ext gate uses parent.Z (the per-MID header
+     byte's bit 7, set by the outer envelope when has_extensions).
+     B5-γ Parent-scope present-if drives the gate; both ext_type and
+     ext_value share `parent.Z` so they're emitted/skipped together.
+     This is the simplest possible TLV-style ext (no envelope-length
+     prefix, no inner header byte — just type + VLE value); the more
+     general TLV ext envelope shape (used by undecl_*'s ext_keyexpr)
+     defers to Y0b.
+
+     Wire shape (1+ bytes):
+       VLE id          (uint32, queryable id)
+       wireexpr        (Y0c embed; parent.N-gated suffix)
+       parent.Z       :
+         ext_type      (uint8, fixed value 0x21)
+         ext_value     (VLE u64, host-packed flags|distance<<8)
+
+     Parent-flag threading (Case B): same as decl_subscriber for the
+     wireexpr embed (carrier="header", N at bit 5). The
+     queryable_info gate uses parent.Z at bit 7 — same parent_flags
+     pass-through, just a different bit position. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_decl_queryable">
+  <sce:import src="codec_zenoh_wireexpr.scxml" kind="codec" as="codec_zenoh_wireexpr"/>
+  <sce:requires-parent-flags carrier="header">
+    <sce:flag name="N" bit="5"/>
+    <sce:flag name="M" bit="6"/>
+    <sce:flag name="Z" bit="7"/>
+  </sce:requires-parent-flags>
+  <datamodel>
+    <sce:field id="id" sce:type="uint32" sce:byte="0" sce:bit-size="vle"/>
+    <sce:embed id="wireexpr" type="codec_zenoh_wireexpr" sce:byte="1"/>
+    <sce:field id="ext_type" sce:type="uint8" sce:byte="2" sce:bit-size="8"
+               sce:present-if="parent.Z"/>
+    <sce:field id="ext_value" sce:type="uint64" sce:byte="3" sce:bit-size="vle"
+               sce:present-if="parent.Z"/>
+  </datamodel>
+</scxml>

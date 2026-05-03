@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh declare-token body (RFC §5.B Wire
+     RFC Phase B Y1). Liveliness-token declaration.
+
+     Mirrors zenoh-pico `_z_decl_token_encode` (src/protocol/codec/
+     declarations.c lines 123-126) which delegates to
+     `_z_decl_commons_encode` with `has_extensions=false` and
+     MID=0x06 (declarations.h:34 — `_Z_DECL_TOKEN_MID = 6`). Wire
+     shape is BYTE-IDENTICAL to codec_zenoh_decl_subscriber modulo
+     the outer envelope's MID byte; both declares share the same
+     `_z_decl_commons_encode` wire layout (VLE u32 id + wireexpr,
+     gated on the parent header's N/M/Z flag bits).
+
+     A unified `codec_zenoh_decl_commons` body could share the
+     identical generated code, but SCE keeps decl_subscriber and
+     decl_token as separate fixtures to mirror zenoh-pico's named
+     encoders 1:1 — the variant arm dispatcher (a future
+     codec_zenoh_declaration envelope) selects different bodies on
+     different MID values, and SCE-side codec naming follows the
+     upstream API. Future protocol evolution may diverge the bodies;
+     a unification refactor would be drift risk.
+
+     Wire shape (1+ bytes):
+       VLE id      (uint32, liveliness token id)
+       wireexpr    (Y0c embed; parent.N-gated suffix)
+
+     Parent-flag threading (Case B): identical to decl_subscriber. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_decl_token">
+  <sce:import src="codec_zenoh_wireexpr.scxml" kind="codec" as="codec_zenoh_wireexpr"/>
+  <sce:requires-parent-flags carrier="header">
+    <sce:flag name="N" bit="5"/>
+    <sce:flag name="M" bit="6"/>
+    <sce:flag name="Z" bit="7"/>
+  </sce:requires-parent-flags>
+  <datamodel>
+    <sce:field id="id" sce:type="uint32" sce:byte="0" sce:bit-size="vle"/>
+    <sce:embed id="wireexpr" type="codec_zenoh_wireexpr" sce:byte="1"/>
+  </datamodel>
+</scxml>
