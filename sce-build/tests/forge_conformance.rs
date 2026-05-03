@@ -1282,6 +1282,27 @@ fn forge_codec_present_if_negation() {
     );
 }
 
+// ── RFC §5.B Y3 atomic 2b-ii present-if disjunction primitive (Cpp) ──
+// `codec_present_if_disjunction` mirrors the basic / negation
+// fixtures' shape but uses an OR chain — the trailing seq field is
+// gated on `flags.wants_a || flags.wants_b`. Each clause contributes
+// its own `(carrier & MASK) != 0` test, joined by the per-language
+// logical-OR token (`||` for 5 backends, `or` for Python). Closes
+// the deferral comment on `PresentIfPredicate` ("Conjunction and
+// equality remain deferred to later B-stages when a reachable
+// consumer surfaces") for the disjunction half — zenoh-pico interest
+// is the surfaced consumer (`_Z_INTEREST_NOT_FINAL_MASK = (CURRENT
+// | FUTURE)`, interest.h:35), exercised at codec level by
+// codec_zenoh_interest in the same atomic.
+
+#[test]
+fn forge_codec_present_if_disjunction() {
+    assert_standalone_forge(
+        "codec_present_if_disjunction",
+        "codec_present_if_disjunction.h",
+    );
+}
+
 // ── RFC §5.B B2-β present-if + variable-length (Cpp) ─────────
 // B2-β lifts the v1 BitSize::Fixed-only restriction so present-if
 // can gate Tail / LengthRef / Vle bit-sizes. Each fixture pairs
@@ -3628,6 +3649,16 @@ fn forge_kotlin_codec_present_if_negation() {
     );
 }
 
+// ── RFC §5.B Y3 atomic 2b-ii present-if disjunction primitive (Kotlin) ──
+
+#[test]
+fn forge_kotlin_codec_present_if_disjunction() {
+    assert_standalone_forge_kotlin(
+        "codec_present_if_disjunction",
+        "CodecPresentIfDisjunction.kt",
+    );
+}
+
 // ── RFC §5.B B2-β present-if + variable-length (Kotlin) ─────
 
 #[test]
@@ -4109,6 +4140,16 @@ fn forge_rust_codec_present_if_negation() {
     assert_standalone_forge_rust(
         "codec_present_if_negation",
         "codec_present_if_negation.rs",
+    );
+}
+
+// ── RFC §5.B Y3 atomic 2b-ii present-if disjunction primitive (Rust) ──
+
+#[test]
+fn forge_rust_codec_present_if_disjunction() {
+    assert_standalone_forge_rust(
+        "codec_present_if_disjunction",
+        "codec_present_if_disjunction.rs",
     );
 }
 
@@ -4611,6 +4652,16 @@ fn forge_go_codec_present_if_negation() {
     );
 }
 
+// ── RFC §5.B Y3 atomic 2b-ii present-if disjunction primitive (Go) ──
+
+#[test]
+fn forge_go_codec_present_if_disjunction() {
+    assert_standalone_forge_go(
+        "codec_present_if_disjunction",
+        "codec_present_if_disjunction.go",
+    );
+}
+
 // ── RFC §5.B B2-β present-if + variable-length (Go) ─────────
 
 #[test]
@@ -5048,6 +5099,16 @@ fn forge_python_codec_present_if_negation() {
     );
 }
 
+// ── RFC §5.B Y3 atomic 2b-ii present-if disjunction primitive (Python) ──
+
+#[test]
+fn forge_python_codec_present_if_disjunction() {
+    assert_standalone_forge_python(
+        "codec_present_if_disjunction",
+        "codec_present_if_disjunction.py",
+    );
+}
+
 // ── RFC §5.B B2-β present-if + variable-length (Python) ─────
 
 #[test]
@@ -5444,6 +5505,16 @@ fn forge_c11_codec_present_if_negation() {
     assert_standalone_forge_c(
         "codec_present_if_negation",
         "codec_present_if_negation.c.h",
+    );
+}
+
+// ── RFC §5.B Y3 atomic 2b-ii present-if disjunction primitive (C11) ──
+
+#[test]
+fn forge_c11_codec_present_if_disjunction() {
+    assert_standalone_forge_c(
+        "codec_present_if_disjunction",
+        "codec_present_if_disjunction.c.h",
     );
 }
 

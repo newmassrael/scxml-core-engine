@@ -893,7 +893,7 @@ pub enum PresentIfScope {
 /// in the same codec (B1-δ Local scope) or a flag declared in the
 /// codec's `<sce:requires-parent-flags>` block (B5-γ Parent scope).
 ///
-/// v1 grammar covers four forms:
+/// v1 grammar covers six forms:
 ///   - `<field_id>.<flag_name>` (Local positive) — predicate is true
 ///     iff the named flag bit on the local carrier is set.
 ///   - `!<field_id>.<flag_name>` (Local negative, B5-λ) — predicate
@@ -904,6 +904,14 @@ pub enum PresentIfScope {
 ///     dispatcher.
 ///   - `!parent.<flag_name>` (Parent negative, B5-λ) — true iff the
 ///     bit is clear. Same Zenoh OpenSyn rationale at parent scope.
+///   - `<a> || <b> [|| <c> ...]` (Disjunction, Y3 atomic 2b-ii) —
+///     predicate is true iff ANY listed clause is true. Each clause
+///     is itself one of the four forms above (each can independently
+///     carry a leading `!`). Required for Zenoh interest where
+///     `not is_final` is `header.CURRENT || header.FUTURE` —
+///     `_Z_INTEREST_NOT_FINAL_MASK = (CURRENT | FUTURE)` per
+///     `interest.h:35`. Outer negation `!(a || b)` defers to a
+///     future RFC stage.
 ///
 /// `field_id` is empty when scope = Parent (carrier is implicit —
 /// the codec's declared `requires_parent_flags.carrier`).
@@ -929,6 +937,15 @@ pub struct PresentIfPredicate {
     /// goldens (skip_serializing_if elides the field).
     #[serde(skip_serializing_if = "is_false", default)]
     pub negate: bool,
+    /// RFC §5.B Y3 atomic 2b-ii disjunction tail — when `Some`, the
+    /// composite predicate is `<self> || <or_with>` (i.e. the named
+    /// flag tests on this struct OR'd with the recursive tail).
+    /// `or_with` is itself a `PresentIfPredicate`, so chains of
+    /// length ≥ 3 (`a || b || c || ...`) compose by recursion. None
+    /// for the v1 single-clause grammar (back-compat: existing
+    /// goldens omit this field via skip_serializing_if).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub or_with: Option<Box<PresentIfPredicate>>,
 }
 
 fn is_local_scope(scope: &PresentIfScope) -> bool {

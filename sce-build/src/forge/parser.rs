@@ -869,7 +869,13 @@ fn validate_codec_present_if_predicates(
     use std::collections::BTreeMap;
     let mut by_id_so_far: BTreeMap<&str, &CodecField> = BTreeMap::new();
     for field in fields {
-        if let Some(predicate) = &field.present_if {
+        // RFC §5.B Y3 atomic 2b-ii: validate every clause of the
+        // disjunction chain (`a.X || b.Y || ...`) — each clause
+        // independently must satisfy the same Local/Parent scope rules
+        // as the v1 single-clause grammar. Walk the chain via the
+        // `or_with` recursive tail; the head is `field.present_if`.
+        let mut clause_opt = field.present_if.as_ref();
+        while let Some(predicate) = clause_opt {
             // RFC §5.B B5-γ: parent-scope predicates resolve against
             // the codec's `<sce:requires-parent-flags>` block, not
             // against sibling fields. The cross-codec match against
@@ -926,80 +932,83 @@ fn validate_codec_present_if_predicates(
                         },
                     ));
                 }
-                // Parent predicate validated; advance the local
-                // by_id_so_far walker so subsequent fields still
-                // see this gated field's id (matches Local-scope
-                // semantics — gated fields ARE field-id-visible).
-                by_id_so_far.insert(field.id.as_str(), field);
-                continue;
-            }
-            match by_id_so_far.get(predicate.field_id.as_str()) {
-                None => {
-                    return Err(located(
-                        datamodel,
-                        label.diagnostic_label,
-                        ValidationError::CodecPresentIfRefsLaterField {
-                            codec: label.identifier.to_string(),
-                            field: field.id.clone(),
-                            refers_to: predicate.field_id.clone(),
-                        },
-                    ));
-                }
-                Some(carrier) => {
-                    if !carrier.is_flags_carrier() {
+                // Parent predicate validated. Fall through so the
+                // chain walker advances to the `or_with` tail; the
+                // outer for-loop's by_id_so_far insert (after the
+                // while-loop) handles field-id visibility for
+                // subsequent fields uniformly across both scopes.
+            } else {
+                match by_id_so_far.get(predicate.field_id.as_str()) {
+                    None => {
                         return Err(located(
                             datamodel,
                             label.diagnostic_label,
-                            ValidationError::InvalidAttribute {
-                                element: format!(
-                                    "field '{}' in codec '{}'",
-                                    field.id, label.identifier
-                                ),
-                                attr: "sce:present-if".into(),
-                                value: format!(
-                                    "{}.{}",
-                                    predicate.field_id, predicate.flag_name
-                                ),
-                                expected: format!(
-                                    "predicate LHS must reference a flags-bearing \
-                                     carrier (declared via <sce:flags>); '{}' is \
-                                     a plain field",
-                                    predicate.field_id
-                                ),
+                            ValidationError::CodecPresentIfRefsLaterField {
+                                codec: label.identifier.to_string(),
+                                field: field.id.clone(),
+                                refers_to: predicate.field_id.clone(),
                             },
                         ));
                     }
-                    if !carrier
-                        .flags
-                        .iter()
-                        .any(|f| f.name == predicate.flag_name)
-                    {
-                        let known: Vec<&str> =
-                            carrier.flags.iter().map(|f| f.name.as_str()).collect();
-                        return Err(located(
-                            datamodel,
-                            label.diagnostic_label,
-                            ValidationError::InvalidAttribute {
-                                element: format!(
-                                    "field '{}' in codec '{}'",
-                                    field.id, label.identifier
-                                ),
-                                attr: "sce:present-if".into(),
-                                value: format!(
-                                    "{}.{}",
-                                    predicate.field_id, predicate.flag_name
-                                ),
-                                expected: format!(
-                                    "flag name must be declared on carrier \
-                                     '{}': known flags = [{}]",
-                                    predicate.field_id,
-                                    known.join(", ")
-                                ),
-                            },
-                        ));
+                    Some(carrier) => {
+                        if !carrier.is_flags_carrier() {
+                            return Err(located(
+                                datamodel,
+                                label.diagnostic_label,
+                                ValidationError::InvalidAttribute {
+                                    element: format!(
+                                        "field '{}' in codec '{}'",
+                                        field.id, label.identifier
+                                    ),
+                                    attr: "sce:present-if".into(),
+                                    value: format!(
+                                        "{}.{}",
+                                        predicate.field_id, predicate.flag_name
+                                    ),
+                                    expected: format!(
+                                        "predicate LHS must reference a flags-bearing \
+                                         carrier (declared via <sce:flags>); '{}' is \
+                                         a plain field",
+                                        predicate.field_id
+                                    ),
+                                },
+                            ));
+                        }
+                        if !carrier
+                            .flags
+                            .iter()
+                            .any(|f| f.name == predicate.flag_name)
+                        {
+                            let known: Vec<&str> =
+                                carrier.flags.iter().map(|f| f.name.as_str()).collect();
+                            return Err(located(
+                                datamodel,
+                                label.diagnostic_label,
+                                ValidationError::InvalidAttribute {
+                                    element: format!(
+                                        "field '{}' in codec '{}'",
+                                        field.id, label.identifier
+                                    ),
+                                    attr: "sce:present-if".into(),
+                                    value: format!(
+                                        "{}.{}",
+                                        predicate.field_id, predicate.flag_name
+                                    ),
+                                    expected: format!(
+                                        "flag name must be declared on carrier \
+                                         '{}': known flags = [{}]",
+                                        predicate.field_id,
+                                        known.join(", ")
+                                    ),
+                                },
+                            ));
+                        }
                     }
                 }
             }
+            // Advance to the next clause in the disjunction chain (or
+            // exit the loop when the tail is None).
+            clause_opt = predicate.or_with.as_deref();
         }
         by_id_so_far.insert(field.id.as_str(), field);
     }
@@ -1644,7 +1653,11 @@ pub fn parse_codec_field_from_node(
 ///
 /// Both halves match the SCE attribute name shape (alphanumeric +
 /// `_`, non-empty). Conjunction (`flag1 && flag2`) and equality
-/// (`field == value`) defer to a later B-stage.
+/// (`field == value`) defer to a later B-stage. Disjunction
+/// (`a.X || b.Y || ...`) lifted at Y3 atomic 2b-ii — each `||`-
+/// separated clause is itself one of the four single-clause forms
+/// (each can independently carry a leading `!`). Outer negation
+/// `!(a || b)` defers to a future RFC stage.
 fn parse_present_if_predicate(
     raw: &str,
     node: &roxmltree::Node,
@@ -1662,18 +1675,35 @@ fn parse_present_if_predicate(
                 value: raw.to_string(),
                 expected: "one of '<field_id>.<flag_name>' / \
                            '!<field_id>.<flag_name>' / 'parent.<flag_name>' / \
-                           '!parent.<flag_name>' (v1 grammar — optional '!' \
-                           prefix for negation; both halves are non-empty \
-                           identifiers; conjunction and equality defer to a \
-                           later RFC §5.B stage)"
+                           '!parent.<flag_name>' / disjunction \
+                           '<clause> || <clause> [|| ...]' where each \
+                           clause is one of the four single forms (Y3 \
+                           atomic 2b-ii); both halves are non-empty \
+                           identifiers; conjunction and equality defer \
+                           to a later RFC §5.B stage; outer negation \
+                           '!(<chain>)' defers to a future stage"
                     .into(),
             },
         )
     };
-    // B5-λ: optional leading `!` for negation.
-    let (negate, body) = match trimmed.strip_prefix('!') {
+    // RFC §5.B Y3 atomic 2b-ii: split on `||` first so the leading-`!`
+    // negation applies to each clause independently. v1 disjunction
+    // grammar binds `||` looser than the per-clause `!` and `.` (matches
+    // C/Python/Rust precedence), so `!a.X || b.Y` parses as
+    // `(!a.X) || (b.Y)`. Recursion handles 3-clause chains (`a || b || c`)
+    // by parsing the head and re-entering on the remainder.
+    let (head_raw, tail_raw_opt) = match trimmed.split_once("||") {
+        Some((h, t)) => (h, Some(t)),
+        None => (trimmed, None),
+    };
+    let head_trim = head_raw.trim();
+    if head_trim.is_empty() {
+        return Err(invalid());
+    }
+    // B5-λ: optional leading `!` for negation (per-clause).
+    let (negate, body) = match head_trim.strip_prefix('!') {
         Some(rest) => (true, rest.trim_start()),
-        None => (false, trimmed),
+        None => (false, head_trim),
     };
     let (lhs, rhs) = body.split_once('.').ok_or_else(invalid)?;
     let lhs = lhs.trim();
@@ -1693,6 +1723,15 @@ fn parse_present_if_predicate(
     if !is_ident(lhs) || !is_ident(rhs) {
         return Err(invalid());
     }
+    // Recurse on the tail when present so 3+-clause chains compose
+    // (`a || b || c` parses as `a || (b || c)`).
+    let or_with = match tail_raw_opt {
+        Some(tail) => {
+            let tail_pred = parse_present_if_predicate(tail, node, doc_name, field_id)?;
+            Some(Box::new(tail_pred))
+        }
+        None => None,
+    };
     // RFC §5.B B5-γ: `parent` is a reserved LHS keyword that
     // references the codec's declared `<sce:requires-parent-flags>`
     // block. The cross-codec validator confirms the carrier and
@@ -1704,6 +1743,7 @@ fn parse_present_if_predicate(
             field_id: String::new(),
             flag_name: rhs.to_string(),
             negate,
+            or_with,
         })
     } else {
         Ok(PresentIfPredicate {
@@ -1711,6 +1751,7 @@ fn parse_present_if_predicate(
             field_id: lhs.to_string(),
             flag_name: rhs.to_string(),
             negate,
+            or_with,
         })
     }
 }
@@ -2732,12 +2773,17 @@ fn validate_codec_repeat_present_if_co_gating(
 
 /// Render a `PresentIfPredicate` back to its source-text form for
 /// diagnostic messages. Mirrors `parse_present_if_predicate` inverse
-/// so the repair hint reads as the author wrote it.
+/// so the repair hint reads as the author wrote it. Disjunction
+/// chains render as `<a> || <b> [|| ...]` (Y3 atomic 2b-ii).
 fn format_present_if_predicate_for_diag(p: &PresentIfPredicate) -> String {
     let prefix = if p.negate { "!" } else { "" };
-    match p.scope {
+    let head = match p.scope {
         PresentIfScope::Local => format!("{prefix}{}.{}", p.field_id, p.flag_name),
         PresentIfScope::Parent => format!("{prefix}parent.{}", p.flag_name),
+    };
+    match &p.or_with {
+        None => head,
+        Some(tail) => format!("{head} || {}", format_present_if_predicate_for_diag(tail)),
     }
 }
 

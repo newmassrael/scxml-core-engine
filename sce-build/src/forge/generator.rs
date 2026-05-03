@@ -6428,23 +6428,18 @@ fn present_if_encode_fixed(
             // — they read from `self-><id>` either way; the only
             // difference is the surrounding gate. B5-λ negation flips
             // the comparison polarity to `== 0` while leaving the mask
-            // unchanged.
+            // unchanged. Y3 atomic 2b-ii disjunction chains compose
+            // via `present_if_test_literal_encode` which walks the
+            // `or_with` tail and joins clauses with `||` (each clause
+            // reads through `self->` for Local scope, `parent_flags`
+            // for Parent scope — uniform with other 4 C11 encode arms).
             let p = field.present_if.as_ref().expect("gated arm requires predicate");
-            let (mask, hex_digits, carrier) = present_if_carrier_info(fields, parent_flags, p);
-            // RFC §5.B B5-γ: C11 encode reads through `self->{carrier}`
-            // for Local-scope carriers (struct member) and bare
-            // `parent_flags` for Parent-scope (function arg).
-            let carrier_snake = match &carrier {
-                PresentIfCarrier::Local(c) => format!("self->{}", filters::to_snake_case(c.id.clone())),
-                PresentIfCarrier::Parent => "parent_flags".to_string(),
-            };
-            let op = if p.negate { "==" } else { "!=" };
+            let test = present_if_test_literal_encode(fields, parent_flags, p, Language::C11);
             let inner = streaming_fixed_field_encode_c11_inner(field, default_endian, n);
             format!(
-                "    if (({carrier_snake} & 0x{mask:0width$X}) {op} 0) {{\n\
+                "    if ({test}) {{\n\
                  {inner}\
-                 \n    }}",
-                width = hex_digits
+                 \n    }}"
             )
         }
         (Language::Python, false) => streaming_fixed_field_encode_python(field, default_endian, n),
@@ -6526,30 +6521,23 @@ fn present_if_encode_tail(
         }
         (Language::C11, true) => {
             // C11 has no nullable wrapper — the carrier flag bit is
-            // the source of truth for presence. Test `(self->carrier
-            // & mask) <op> 0` directly on the struct member; absent
-            // branch appends nothing. B5-λ negation toggles `op` to
-            // `==`.
+            // the source of truth for presence. Test the predicate
+            // directly on the struct member via
+            // `present_if_test_literal_encode` which composes the
+            // disjunction chain (Y3 atomic 2b-ii) and post-processes
+            // C11 Local-scope `out->` → `self->`. B5-λ negation flips
+            // each clause's `!=` to `==` independently.
             let id_snake = filters::to_snake_case(id.to_string());
             let p = field
                 .present_if
                 .as_ref()
                 .expect("gated arm requires predicate");
-            let (mask, hex_digits, carrier) = present_if_carrier_info(fields, parent_flags, p);
-            // RFC §5.B B5-γ: C11 encode reads through `self->{carrier}`
-            // for Local-scope carriers (struct member) and bare
-            // `parent_flags` for Parent-scope (function arg).
-            let carrier_snake = match &carrier {
-                PresentIfCarrier::Local(c) => format!("self->{}", filters::to_snake_case(c.id.clone())),
-                PresentIfCarrier::Parent => "parent_flags".to_string(),
-            };
-            let op = if p.negate { "==" } else { "!=" };
+            let test = present_if_test_literal_encode(fields, parent_flags, p, Language::C11);
             format!(
-                "    if (({carrier_snake} & 0x{mask:0width$X}) {op} 0) {{\n        \
+                "    if ({test}) {{\n        \
                      for (size_t _bi = 0; _bi < self->{id_snake}_len; ++_bi) \
                      r.bytes[r.len++] = self->{id_snake}[_bi];\n    \
-                 }}",
-                width = hex_digits
+                 }}"
             )
         }
         (Language::Python, false) => {
@@ -6687,13 +6675,15 @@ fn present_if_encode_string_length_ref(
         // (carrier-bit-as-truth — no Optional wrapper). When the gate
         // fires off, `<id>_len` should already be 0 (decode side
         // clears it; author keeps it consistent on encode). Predicate
-        // resolves through `present_if_test_literal` which emits
-        // `(carrier & 0xMASK) != 0` for Local carriers and
+        // resolves through `present_if_test_literal_encode` which
+        // emits `(self->carrier & 0xMASK) != 0` for Local carriers and
         // `(parent_flags & 0xMASK) != 0` for Parent carriers, with
-        // `==` op when the predicate is negated (B5-λ).
+        // `==` op when the predicate is negated (B5-λ). Y3 atomic
+        // 2b-ii: disjunction chains compose via the wrapper (walks
+        // `or_with` tail; joins with `||`).
         (Language::C11, Some(p)) => {
             let id_snake = filters::to_snake_case(id.to_string());
-            let test = present_if_test_literal(fields, parent_flags, p, lang);
+            let test = present_if_test_literal_encode(fields, parent_flags, p, lang);
             format!(
                 "    if ({test}) {{\n        \
                      for (size_t _bi = 0; _bi < self->{id_snake}_len; ++_bi) \
@@ -6791,26 +6781,17 @@ fn present_if_encode_length_ref(
                 .present_if
                 .as_ref()
                 .expect("gated arm requires predicate");
-            let (mask, hex_digits, carrier) = present_if_carrier_info(fields, parent_flags, p);
-            // RFC §5.B B5-γ: C11 encode reads through `self->{carrier}`
-            // for Local-scope carriers (struct member) and bare
-            // `parent_flags` for Parent-scope (function arg).
-            let carrier_snake = match &carrier {
-                PresentIfCarrier::Local(c) => format!("self->{}", filters::to_snake_case(c.id.clone())),
-                PresentIfCarrier::Parent => "parent_flags".to_string(),
-            };
-            // RFC §5.B B5-δ Surface F: per-comment in the false arm,
-            // length-arith adjusts the upper bound. Sibling-gated has
-            // no effect on C11 encode (no Optional wrapper). B5-λ
-            // negation toggles `op` to `==`.
+            // RFC §5.B B5-δ Surface F: length-arith adjusts the upper
+            // bound. Sibling-gated has no effect on C11 encode (no
+            // Optional wrapper). Y3 atomic 2b-ii: disjunction chains
+            // compose via `present_if_test_literal_encode`.
             let upper = compute_n_c11_encode(len_field, fields, field.length_arith.unwrap_or(0));
-            let op = if p.negate { "==" } else { "!=" };
+            let test = present_if_test_literal_encode(fields, parent_flags, p, Language::C11);
             format!(
-                "    if (({carrier_snake} & 0x{mask:0width$X}) {op} 0) {{\n        \
+                "    if ({test}) {{\n        \
                      for (size_t _bi = 0; _bi < self->{id_snake}_len && _bi < {upper}; ++_bi) \
                      r.bytes[r.len++] = self->{id_snake}[_bi];\n    \
-                 }}",
-                width = hex_digits
+                 }}"
             )
         }
         (Language::Python, false) => {
@@ -6915,27 +6896,19 @@ fn present_if_encode_vle(
             // C11 has no nullable wrapper — the carrier bit is the
             // presence source. The VLE encode loop reads the field
             // directly from `self-><id>` which is always present.
-            // B5-λ negation toggles `op` to `==`.
+            // Y3 atomic 2b-ii: disjunction chains compose via
+            // `present_if_test_literal_encode`.
             let id_snake = filters::to_snake_case(id.to_string());
-            let (mask, hex_digits, carrier) = present_if_carrier_info(fields, parent_flags, p);
-            // RFC §5.B B5-γ: C11 encode reads through `self->{carrier}`
-            // for Local-scope carriers (struct member) and bare
-            // `parent_flags` for Parent-scope (function arg).
-            let carrier_snake = match &carrier {
-                PresentIfCarrier::Local(c) => format!("self->{}", filters::to_snake_case(c.id.clone())),
-                PresentIfCarrier::Parent => "parent_flags".to_string(),
-            };
-            let op = if p.negate { "==" } else { "!=" };
+            let test = present_if_test_literal_encode(fields, parent_flags, p, Language::C11);
             let inner = vle_encode_block(
                 &format!("self->{id_snake}"),
                 width_bits,
                 lang,
             );
             format!(
-                "    if (({carrier_snake} & 0x{mask:0width$X}) {op} 0) {{\n\
+                "    if ({test}) {{\n\
                  {inner}\n    \
-                 }}",
-                width = hex_digits
+                 }}"
             )
         }
         Language::Python => {
@@ -7604,6 +7577,42 @@ fn present_if_carrier_info<'a>(
 }
 
 fn present_if_test_literal(
+    fields: &[CodecField],
+    parent_flags: Option<&RequiresParentFlags>,
+    pred: &PresentIfPredicate,
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    // RFC §5.B Y3 atomic 2b-ii disjunction chain (`a.X || b.Y || ...`)
+    // — emit each clause's single-bit test recursively, joined by the
+    // per-language logical-OR token. Python uses the keyword `or`; all
+    // other 5 backends use `||` (Rust/Cpp/Kotlin/Go/C11). Each clause
+    // independently honors its own `negate` (B5-λ), so chains like
+    // `!a.X || b.Y` emit `(a & MASK_A) == 0 || (b & MASK_B) != 0`
+    // without bracketing — `&` binds tighter than `==`/`!=` in every
+    // backend, and `==`/`!=` binds tighter than `||`/`or` so the
+    // unparen'd shape parses exactly as written. Outer negation
+    // `!(a || b)` defers to a future RFC stage.
+    let head = present_if_test_literal_clause(fields, parent_flags, pred, lang);
+    match &pred.or_with {
+        None => head,
+        Some(tail) => {
+            let rest = present_if_test_literal(fields, parent_flags, tail, lang);
+            let join = match lang {
+                Language::Python => " or ",
+                _ => " || ",
+            };
+            format!("{head}{join}{rest}")
+        }
+    }
+}
+
+/// Emit the per-language single-clause bit test for one
+/// `PresentIfPredicate` (without walking the disjunction tail).
+/// `present_if_test_literal` calls this for the head clause and
+/// joins with the recursive tail; `present_if_test_literal_encode`
+/// post-processes the result for C11 Local-scope encode-site.
+fn present_if_test_literal_clause(
     fields: &[CodecField],
     parent_flags: Option<&RequiresParentFlags>,
     pred: &PresentIfPredicate,
