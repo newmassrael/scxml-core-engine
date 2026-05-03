@@ -49,7 +49,6 @@ struct CodecZenohExtEnvelope {
             extensions.push_back(*_elem);
             if (!_continue) break;
         }
-        if (cursor.remaining() > 0) return std::nullopt;
         return CodecZenohExtEnvelope{
             .header_flags = header_flags,
             .extensions = extensions,

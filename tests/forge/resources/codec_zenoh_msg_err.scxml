@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh ERR envelope (RFC §5.B Wire RFC
+     Phase B Y3 atomic 2b — sub-codec, response body variant arm).
+
+     Mirrors zenoh-pico `_z_err_encode` / `_z_err_decode`
+     (src/protocol/codec/message.c:545-595) at envelope-level wire
+     fidelity. The inline encoding_id is a Q1(b) simplification of
+     the upstream encoding wire: zenoh-pico encodes
+     `(id << 1) | has_schema_LSB` as a VLE u32 followed by a
+     has_schema-gated string. The LSB-as-flag VLE pattern is not yet
+     expressible in SCE primitives — a follow-up atomic that lifts
+     VLE-with-bit-carrier will replace this inline VLE u32 with a
+     proper codec_zenoh_encoding sub-codec. The schema-less subset
+     covered by this simplification is the production-common case
+     (z_encoding_id_t standardized identifiers without per-message
+     schema overrides).
+
+     Wire shape (1+ bytes):
+       byte 0   : header     (MID 0x05 in bits 0..4 + X@5 + E_E@6 + Z@7)
+                              — header.E gates the inline encoding_id
+                              VLE u32; header.Z signals the ext chain
+                              follows.
+       E_E-gated:
+         bytes  : encoding_id (VLE u32 — Q1(b) simplification of the
+                  upstream `(id << 1) | has_schema` packed VLE; full
+                  encoding wire deferred to a follow-up atomic that
+                  lifts SCE primitives for VLE-LSB-as-flag carriers)
+       Z-gated:
+         chain  : codec_zenoh_ext_entry tlv-chain (entry-flag
+                  termination on entry header.Z — Y3 atomic 1 grammar;
+                  chain is followed by the payload pair so the
+                  exhaust-or-depth termination would not detect the
+                  payload boundary. max-depth=4 covers err's actual
+                  ext slots — upstream defines source_info via
+                  `_Z_MSG_EXT_ENC_ZBUF | 0x01`).
+       always:
+         bytes  : payload_len (VLE u64) + payload (UTF-8/bytes,
+                                                    max 256)
+
+     Composition: B1-γ flags (header) + B1-δ present-if-on-fields
+     (E_E gate) + Y3 atomic 2a present-if-on-tlv-chain (header.Z gate)
+     + Y3 atomic 1 entry-flag termination (chain followed by payload
+     pair — second realistic consumer of entry-flag termination after
+     codec_zenoh_msg_reply) + B5-ε surface G (chain element =
+     codec_zenoh_ext_entry variant) + B1-α length-ref (payload_len /
+     payload pair, mirrors codec_zenoh_query's parameters_len /
+     parameters).
+
+     Body variant arm contract: invoked by codec_zenoh_response when
+     the inner-MID byte after the response header reads 0x05 (Z_ERR).
+     Wire byte 0 here IS the response body's dispatch header from the
+     response envelope's perspective.
+
+     stripped-down scope: payload max-size=256 (upstream is unbounded
+     zbuf). All other envelope-level fields match upstream wire 1:1
+     within the schema-less encoding subset. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_msg_err">
+  <sce:import src="codec_zenoh_ext_entry.scxml" kind="codec" as="codec_zenoh_ext_entry"/>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="mid" bit="0" width="5"/>
+      <sce:flag name="X"   bit="5"/>
+      <sce:flag name="E"   bit="6"/>
+      <sce:flag name="Z"   bit="7"/>
+    </sce:flags>
+    <sce:field id="encoding_id" sce:type="uint32" sce:byte="1" sce:bit-size="vle"
+               sce:present-if="header.E"/>
+    <sce:tlv-chain id="extensions" type="codec_zenoh_ext_entry" sce:byte="2"
+                   max-depth="4" on-overflow="reject"
+                   sce:present-if="header.Z"
+                   terminate-on="entry-flag" entry-flag-name="Z"/>
+    <sce:field id="payload_len" sce:type="uint64" sce:byte="3" sce:bit-size="vle"/>
+    <sce:field id="payload" sce:type="bytes" sce:byte="4" sce:bit-size="length-ref"
+               sce:length-field="payload_len" sce:max-size="256"/>
+  </datamodel>
+</scxml>

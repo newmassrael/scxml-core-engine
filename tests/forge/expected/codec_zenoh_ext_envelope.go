@@ -55,9 +55,6 @@ func DecodeCodecZenohExtEnvelope(cursor *codec.SceCursor) (*CodecZenohExtEnvelop
 			break
 		}
 	}
-	if cursor.Remaining() > 0 {
-		return nil, codec.ErrTlvChainOverflow
-	}
 	return &CodecZenohExtEnvelope{
 		HeaderFlags: HeaderFlags,
 		Extensions: Extensions,

@@ -57,7 +57,6 @@ static inline sce_forge_codec_status_t codec_zenoh_ext_envelope_decode(sce_forge
             out->extensions_len++;
             if (!codec_zenoh_ext_entry_z(&out->extensions[_just])) break;
         }
-        if (sce_forge_cursor_remaining(cursor) > 0) return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;
     }
     return SCE_FORGE_CODEC_OK;
 }

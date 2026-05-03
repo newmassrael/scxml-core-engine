@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh INTEREST body (RFC §5.B Wire RFC
+     Phase B Y3 atomic 2b — sub-codec, interest envelope embeddee).
+
+     Mirrors zenoh-pico `_z_interest_encode` / `_z_interest_decode`
+     (src/protocol/codec/interest.c:41-91) at envelope-level wire
+     fidelity. The body codec models the not-is_final case only —
+     when the outer envelope (codec_zenoh_interest) signals is_final
+     via its header bit, the body bytes are absent from the wire
+     entirely (envelope's header + VLE id, no body emit). Pulling
+     the is_final gate up into the outer envelope keeps this body
+     codec free of cross-message wire dependencies (matches Q3(a)
+     dispatch — separate sub-codec rather than inline nested logic
+     in codec_zenoh_interest).
+
+     Wire shape (not-is_final case, 2+ bytes):
+       byte 0      : id (VLE u32, interest.c:43)
+       byte 1      : flags     (zenoh-pico interest.c:62 — clear of
+                                 CURRENT/FUTURE per line 49-50;
+                                 retained bits per
+                                 _Z_INTEREST_FLAG_COPY_MASK = 0x9f):
+                       bit 0 : KEYEXPRS    (interest in keyexprs)
+                       bit 1 : SUBSCRIBERS (interest in subscribers)
+                       bit 2 : QUERYABLES  (interest in queryables)
+                       bit 3 : TOKENS      (interest in tokens)
+                       bit 4 : RESTRICTED  (gates the wireexpr embed)
+                       bit 5 : N           (wireexpr has_kesuffix —
+                                            occupies the cleared
+                                            CURRENT bit position so
+                                            the receiver re-derives
+                                            from the outer header)
+                       bit 6 : M           (wireexpr is_local mapping
+                                            — occupies the cleared
+                                            FUTURE bit position)
+                       bit 7 : AGGREGATE   (aggregation hint)
+       RESTRICTED-gated:
+         bytes     : codec_zenoh_wireexpr embed (parent_flags = the
+                     local 1B flags; wireexpr reads parent.N at
+                     bit 5 to gate its UTF-8 suffix per upstream
+                     contract).
+
+     The outer codec_zenoh_interest envelope's per-MID header writes
+     CURRENT (bit 5) + FUTURE (bit 6) for is_final detection — those
+     wire bits land in the outer envelope's bytes, not this body's
+     flags carrier. By the time this body runs, CURRENT/FUTURE are
+     conceptually consumed; SCE re-uses the same bit positions in
+     this body's own flags as N/M (the upstream encoder's bit-reuse
+     trick — see _Z_INTEREST_FLAG_COPY_MASK comment in interest.c).
+
+     Composition: B1-α VLE u32 id + B1-γ flags (8-bit local carrier) +
+     B1-δ present-if-on-embed (Y0b lift) + Y0c <sce:embed>
+     (codec_zenoh_wireexpr) + B5-γ parent-flag threading via local
+     `header` carrier matching wireexpr's `requires-parent-flags
+     carrier="header"`. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_interest_body">
+  <sce:import src="codec_zenoh_wireexpr.scxml" kind="codec" as="codec_zenoh_wireexpr"/>
+  <datamodel>
+    <sce:field id="id" sce:type="uint32" sce:byte="0" sce:bit-size="vle"/>
+    <sce:flags id="header" sce:type="uint8" sce:byte="1" sce:bit-size="8">
+      <sce:flag name="keyexprs"    bit="0"/>
+      <sce:flag name="subscribers" bit="1"/>
+      <sce:flag name="queryables"  bit="2"/>
+      <sce:flag name="tokens"      bit="3"/>
+      <sce:flag name="restricted"  bit="4"/>
+      <sce:flag name="N"           bit="5"/>
+      <sce:flag name="M"           bit="6"/>
+      <sce:flag name="aggregate"   bit="7"/>
+    </sce:flags>
+    <sce:embed id="keyexpr" type="codec_zenoh_wireexpr" sce:byte="2"
+               sce:present-if="header.restricted"/>
+  </datamodel>
+</scxml>

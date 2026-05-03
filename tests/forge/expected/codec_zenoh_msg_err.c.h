@@ -2,8 +2,8 @@
 /* Runtime: none */
 /* Do not edit — regenerate from the source SCXML file. */
 
-#ifndef SCE_FORGE_CODEC_ZENOH_QUERY_H
-#define SCE_FORGE_CODEC_ZENOH_QUERY_H
+#ifndef SCE_FORGE_CODEC_ZENOH_MSG_ERR_H
+#define SCE_FORGE_CODEC_ZENOH_MSG_ERR_H
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -13,31 +13,31 @@
 #include "sce/forge/codec.h"
 #include "codec_zenoh_ext_entry.h"
 
-#define CODEC_ZENOH_QUERY_MIN_BYTES 2
-#define CODEC_ZENOH_QUERY_MAX_BYTES 612
+#define CODEC_ZENOH_MSG_ERR_MIN_BYTES 1
+#define CODEC_ZENOH_MSG_ERR_MAX_BYTES 444
 
 typedef struct {
     uint8_t header;
-    uint8_t consolidation;
-    uint64_t parameters_len;
-    /* variable-length payload (sce:bit-size="length-ref", sce:max-size="256") */
-    uint8_t parameters[256];
-    /* RFC §5.B B3 tlv-chain: fixed array of codec_zenoh_ext_entry_t entries (max-depth 8, on-overflow=reject) */
-    codec_zenoh_ext_entry_t extensions[8];
+    uint32_t encoding_id;
+    /* RFC §5.B B3 tlv-chain: fixed array of codec_zenoh_ext_entry_t entries (max-depth 4, on-overflow=reject) */
+    codec_zenoh_ext_entry_t extensions[4];
     size_t  extensions_len;
-} codec_zenoh_query_t;
+    uint64_t payload_len;
+    /* variable-length payload (sce:bit-size="length-ref", sce:max-size="256") */
+    uint8_t payload[256];
+} codec_zenoh_msg_err_t;
 
 typedef struct {
-    uint8_t bytes[CODEC_ZENOH_QUERY_MAX_BYTES];
+    uint8_t bytes[CODEC_ZENOH_MSG_ERR_MAX_BYTES];
     size_t  len;
-} codec_zenoh_query_encoded_t;
+} codec_zenoh_msg_err_encoded_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
  * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
  * (without advancing) when the cursor's tail is shorter than the
  * declared minimum frame (RFC §5.B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
-static inline sce_forge_codec_status_t codec_zenoh_query_decode(sce_forge_cursor_t *cursor, codec_zenoh_query_t *out) {
+static inline sce_forge_codec_status_t codec_zenoh_msg_err_decode(sce_forge_cursor_t *cursor, codec_zenoh_msg_err_t *out) {
     /* RFC §5.B B1-δ + B2-β present-if primitive: streaming decode
      * advances the cursor per field. C11 has no nullable wrapper so
      * the gated field's storage stays as plain `T` (with `_len = 0`
@@ -53,50 +53,47 @@ static inline sce_forge_codec_status_t codec_zenoh_query_decode(sce_forge_cursor
         out->header = raw[0];
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     }
-    if ((out->header & 0x20) != 0) {
-        const uint8_t *raw = sce_forge_cursor_peek(cursor, 1);
-        if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        out->consolidation = (uint8_t)(raw[0]);
-        if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-    } else {
-        out->consolidation = 0;
-    }
     if ((out->header & 0x40) != 0) {
-        uint64_t _v;
+        uint32_t _v;
     {
-        sce_forge_codec_status_t _vle_st = sce_forge_cursor_read_vle_u64(cursor, &_v);
+        sce_forge_codec_status_t _vle_st = sce_forge_cursor_read_vle_u32(cursor, &_v);
         if (_vle_st != SCE_FORGE_CODEC_OK) return _vle_st;
     }
-        out->parameters_len = _v;
+        out->encoding_id = _v;
     } else {
-        out->parameters_len = 0;
-    }
-    if ((out->header & 0x40) != 0) {
-        size_t _n = (size_t)out->parameters_len;
-        if (_n > 256) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
-        if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        memcpy(out->parameters, raw, _n);
-        out->parameters_len = _n;
-        if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-    } else {
-        out->parameters_len = 0;
+        out->encoding_id = 0;
     }
     out->extensions_len = 0;
         if ((out->header & 0x80) != 0) {
-            for (size_t _i = 0; _i < 8; ++_i) {
+            for (size_t _i = 0; _i < 4; ++_i) {
                 if (sce_forge_cursor_remaining(cursor) == 0) break;
                 sce_forge_codec_status_t _st = codec_zenoh_ext_entry_decode(cursor, &out->extensions[out->extensions_len]);
                 if (_st != SCE_FORGE_CODEC_OK) return _st;
+                size_t _just = out->extensions_len;
                 out->extensions_len++;
+                if (!codec_zenoh_ext_entry_z(&out->extensions[_just])) break;
             }
-            if (sce_forge_cursor_remaining(cursor) > 0) return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;
         }
+    uint64_t payload_len;
+    {
+        sce_forge_codec_status_t _vle_st = sce_forge_cursor_read_vle_u64(cursor, &payload_len);
+        if (_vle_st != SCE_FORGE_CODEC_OK) return _vle_st;
+    }
+    out->payload_len = payload_len;
+    {
+        size_t _n = (size_t)out->payload_len;
+        if (_n > 256) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+        const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
+        if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+        memcpy(out->payload, raw, _n);
+        out->payload_len = _n;
+        if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+    }
     return SCE_FORGE_CODEC_OK;
 }
 
-static inline codec_zenoh_query_encoded_t codec_zenoh_query_encode(const codec_zenoh_query_t *self) {
-    codec_zenoh_query_encoded_t r;
+static inline codec_zenoh_msg_err_encoded_t codec_zenoh_msg_err_encode(const codec_zenoh_msg_err_t *self) {
+    codec_zenoh_msg_err_encoded_t r;
     /* RFC §5.B B1-δ + B2-β present-if encode: per-field byte append.
      * Gated fields skip the append when the carrier's flag bit is
      * clear. Per-field `is_repeat` / `is_tlv_chain` route to dedicated
@@ -104,21 +101,15 @@ static inline codec_zenoh_query_encoded_t codec_zenoh_query_encode(const codec_z
      * VLE + present-if uses the unified encode path. */
     r.len = 0;
     r.bytes[r.len++] = self->header;
-    if ((self->header & 0x20) != 0) {
-        r.bytes[r.len++] = self->consolidation;
-    }
     if ((self->header & 0x40) != 0) {
     {
-        uint64_t _w = (uint64_t)(self->parameters_len);
+        uint64_t _w = (uint64_t)(self->encoding_id);
         while (_w >= 0x80u) {
             r.bytes[r.len++] = (uint8_t)((_w & 0x7Fu) | 0x80u);
             _w >>= 7;
         }
         r.bytes[r.len++] = (uint8_t)_w;
     }
-    }
-    if ((self->header & 0x40) != 0) {
-        for (size_t _bi = 0; _bi < self->parameters_len && _bi < self->parameters_len; ++_bi) r.bytes[r.len++] = self->parameters[_bi];
     }
     if ((self->header & 0x80) != 0) {
         for (size_t _ti = 0; _ti < self->extensions_len; ++_ti) {
@@ -129,6 +120,15 @@ static inline codec_zenoh_query_encoded_t codec_zenoh_query_encode(const codec_z
             }
         }
     }
+    {
+        uint64_t _w = (uint64_t)(self->payload_len);
+        while (_w >= 0x80u) {
+            r.bytes[r.len++] = (uint8_t)((_w & 0x7Fu) | 0x80u);
+            _w >>= 7;
+        }
+        r.bytes[r.len++] = (uint8_t)_w;
+    }
+    for (size_t _bi = 0; _bi < self->payload_len && _bi < self->payload_len; ++_bi) r.bytes[r.len++] = self->payload[_bi];
     return r;
 }
 
@@ -140,22 +140,22 @@ static inline codec_zenoh_query_encoded_t codec_zenoh_query_encode(const codec_z
  * accessor name is `<struct_snake>_<flag_name>` so multiple codecs
  * carrying same-named flags coexist in a single translation unit. Wire
  * layout is unchanged — the carrier still occupies its declared bytes. */
-static inline uint8_t codec_zenoh_query_mid(const codec_zenoh_query_t *self) {
+static inline uint8_t codec_zenoh_msg_err_mid(const codec_zenoh_msg_err_t *self) {
     return (uint8_t)((self->header >> 0) & (uint8_t)0x1F);
 }
 
-static inline void codec_zenoh_query_set_mid(codec_zenoh_query_t *self, uint8_t v) {
+static inline void codec_zenoh_msg_err_set_mid(codec_zenoh_msg_err_t *self, uint8_t v) {
     const uint8_t _shifted_mask = (uint8_t)((uint8_t)0x1F << 0);
     const uint8_t _val = (uint8_t)(((uint8_t)v & (uint8_t)0x1F) << 0);
     self->header = (uint8_t)((self->header & (uint8_t)~_shifted_mask) | _val);
 }
 
 
-static inline bool codec_zenoh_query_c(const codec_zenoh_query_t *self) {
+static inline bool codec_zenoh_msg_err_x(const codec_zenoh_msg_err_t *self) {
     return (self->header & 0x20) != 0;
 }
 
-static inline void codec_zenoh_query_set_c(codec_zenoh_query_t *self, bool v) {
+static inline void codec_zenoh_msg_err_set_x(codec_zenoh_msg_err_t *self, bool v) {
     if (v) {
         self->header = (uint8_t)(self->header | 0x20);
     } else {
@@ -163,11 +163,11 @@ static inline void codec_zenoh_query_set_c(codec_zenoh_query_t *self, bool v) {
     }
 }
 
-static inline bool codec_zenoh_query_p(const codec_zenoh_query_t *self) {
+static inline bool codec_zenoh_msg_err_e(const codec_zenoh_msg_err_t *self) {
     return (self->header & 0x40) != 0;
 }
 
-static inline void codec_zenoh_query_set_p(codec_zenoh_query_t *self, bool v) {
+static inline void codec_zenoh_msg_err_set_e(codec_zenoh_msg_err_t *self, bool v) {
     if (v) {
         self->header = (uint8_t)(self->header | 0x40);
     } else {
@@ -175,11 +175,11 @@ static inline void codec_zenoh_query_set_p(codec_zenoh_query_t *self, bool v) {
     }
 }
 
-static inline bool codec_zenoh_query_z(const codec_zenoh_query_t *self) {
+static inline bool codec_zenoh_msg_err_z(const codec_zenoh_msg_err_t *self) {
     return (self->header & 0x80) != 0;
 }
 
-static inline void codec_zenoh_query_set_z(codec_zenoh_query_t *self, bool v) {
+static inline void codec_zenoh_msg_err_set_z(codec_zenoh_msg_err_t *self, bool v) {
     if (v) {
         self->header = (uint8_t)(self->header | 0x80);
     } else {
@@ -187,4 +187,4 @@ static inline void codec_zenoh_query_set_z(codec_zenoh_query_t *self, bool v) {
     }
 }
 
-#endif  /* SCE_FORGE_CODEC_ZENOH_QUERY_H */
+#endif  /* SCE_FORGE_CODEC_ZENOH_MSG_ERR_H */

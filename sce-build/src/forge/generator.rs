@@ -3549,7 +3549,7 @@ fn embed_streaming_encode_block(
     let test_lit = field
         .present_if
         .as_ref()
-        .map(|p| present_if_test_literal(fields, parent_flags, p, lang));
+        .map(|p| present_if_test_literal_encode(fields, parent_flags, p, lang));
     let thread_arg_norm = thread_arg.trim_start_matches(", ");
     match lang {
         Language::Rust => match &test_lit {
@@ -4154,13 +4154,25 @@ fn tlv_chain_streaming_decode_stmt(
         // the entry to a temporary, reads the flag accessor BEFORE the
         // push (push moves the value), and breaks the loop when clear.
         Language::Rust => {
-            let overflow_check = match on_overflow {
-                TlvOverflowPolicy::Reject => format!(
+            // RFC §5.B Y3 atomic 2b — overflow_check applies only when
+            // termination is exhaust-or-depth (the chain consumes the
+            // codec's remaining wire). With entry-flag termination the
+            // chain is followed by other fields whose bytes would
+            // remain in the cursor after a normal `_continue=false`
+            // break — comparing cursor.remaining() > 0 then would
+            // reject those bytes as overflow. Drop the check on the
+            // entry-flag path (peer overflow detection narrows to the
+            // ExhaustOrDepth case; max-depth saturation under
+            // entry-flag termination still surfaces as a downstream
+            // decode failure when the next field reads bytes meant
+            // for the chain).
+            let overflow_check = match (on_overflow, &entry_flag_acc) {
+                (TlvOverflowPolicy::Reject, None) => format!(
                     "\n            if cursor.remaining() > 0 {{\n                \
                          return Err(CodecError::TlvChainOverflow);\n            \
                      }}"
                 ),
-                TlvOverflowPolicy::Truncate => String::new(),
+                _ => String::new(),
             };
             let body = match &entry_flag_acc {
                 None => format!(
@@ -4195,12 +4207,14 @@ fn tlv_chain_streaming_decode_stmt(
         // when the bit is clear.
         Language::C11 => {
             let id_snake = filters::to_snake_case(id.to_string());
-            let overflow_check = match on_overflow {
-                TlvOverflowPolicy::Reject => format!(
+            // Y3 atomic 2b: same exhaust-or-depth-only overflow check
+            // as the Rust arm — see comment on the Rust branch above.
+            let overflow_check = match (on_overflow, &entry_flag_acc) {
+                (TlvOverflowPolicy::Reject, None) => format!(
                     "\n        if (sce_forge_cursor_remaining(cursor) > 0) \
                        return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;"
                 ),
-                TlvOverflowPolicy::Truncate => String::new(),
+                _ => String::new(),
             };
             // body_decoder shape: `<entry_struct>_decode`. Strip the
             // `_decode` suffix to recover the entry's struct snake
@@ -4242,11 +4256,12 @@ fn tlv_chain_streaming_decode_stmt(
         // at runtime — same convention as VleWidthOverflow). Y3 entry-
         // flag termination reads the optional's value method then push.
         Language::Cpp => {
-            let overflow_check = match on_overflow {
-                TlvOverflowPolicy::Reject => format!(
+            // Y3 atomic 2b: exhaust-or-depth-only overflow check.
+            let overflow_check = match (on_overflow, &entry_flag_acc) {
+                (TlvOverflowPolicy::Reject, None) => format!(
                     "\n        if (cursor.remaining() > 0) return std::nullopt;"
                 ),
-                TlvOverflowPolicy::Truncate => String::new(),
+                _ => String::new(),
             };
             let body = match &entry_flag_acc {
                 None => format!(
@@ -4281,11 +4296,12 @@ fn tlv_chain_streaming_decode_stmt(
         // entry-flag termination reads the entry accessor (camelCase)
         // before adding to the list and breaks when clear.
         Language::Kotlin => {
-            let overflow_check = match on_overflow {
-                TlvOverflowPolicy::Reject => format!(
+            // Y3 atomic 2b: exhaust-or-depth-only overflow check.
+            let overflow_check = match (on_overflow, &entry_flag_acc) {
+                (TlvOverflowPolicy::Reject, None) => format!(
                     "\n            if (cursor.remaining() > 0) return null"
                 ),
-                TlvOverflowPolicy::Truncate => String::new(),
+                _ => String::new(),
             };
             let body = match &entry_flag_acc {
                 None => format!(
@@ -4315,13 +4331,14 @@ fn tlv_chain_streaming_decode_stmt(
         // reads the entry's PascalCase accessor and breaks when clear.
         Language::Go => {
             let go_id = filters::to_pascal_case(id.to_string());
-            let overflow_check = match on_overflow {
-                TlvOverflowPolicy::Reject => format!(
+            // Y3 atomic 2b: exhaust-or-depth-only overflow check.
+            let overflow_check = match (on_overflow, &entry_flag_acc) {
+                (TlvOverflowPolicy::Reject, None) => format!(
                     "\n\tif cursor.Remaining() > 0 {{\n\t\t\
                          return nil, codec.ErrTlvChainOverflow\n\t\
                      }}"
                 ),
-                TlvOverflowPolicy::Truncate => String::new(),
+                _ => String::new(),
             };
             let body = match &entry_flag_acc {
                 None => format!(
@@ -4366,12 +4383,13 @@ fn tlv_chain_streaming_decode_stmt(
         // flag accessor pattern in py_codec template).
         Language::Python => {
             let py_id = filters::to_snake_case(id.to_string());
-            let overflow_check = match on_overflow {
-                TlvOverflowPolicy::Reject => format!(
+            // Y3 atomic 2b: exhaust-or-depth-only overflow check.
+            let overflow_check = match (on_overflow, &entry_flag_acc) {
+                (TlvOverflowPolicy::Reject, None) => format!(
                     "\n            if cursor.remaining() > 0:\n                \
                          raise TlvChainOverflow()"
                 ),
-                TlvOverflowPolicy::Truncate => String::new(),
+                _ => String::new(),
             };
             let body = match &entry_flag_acc {
                 None => format!(
@@ -4527,13 +4545,15 @@ fn tlv_chain_streaming_decode_stmt_gated(
 
     match lang {
         Language::Rust => {
-            let overflow_check = match on_overflow {
-                TlvOverflowPolicy::Reject => format!(
+            // Y3 atomic 2b: exhaust-or-depth-only overflow check (see
+            // tlv_chain_streaming_decode_stmt for the rationale).
+            let overflow_check = match (on_overflow, &entry_flag_acc) {
+                (TlvOverflowPolicy::Reject, None) => format!(
                     "\n                if cursor.remaining() > 0 {{\n                    \
                          return Err(CodecError::TlvChainOverflow);\n                \
                      }}"
                 ),
-                TlvOverflowPolicy::Truncate => String::new(),
+                _ => String::new(),
             };
             let body = match &entry_flag_acc {
                 None => format!(
@@ -4560,11 +4580,12 @@ fn tlv_chain_streaming_decode_stmt_gated(
             )
         }
         Language::Cpp => {
-            let overflow_check = match on_overflow {
-                TlvOverflowPolicy::Reject => format!(
+            // Y3 atomic 2b: exhaust-or-depth-only overflow check.
+            let overflow_check = match (on_overflow, &entry_flag_acc) {
+                (TlvOverflowPolicy::Reject, None) => format!(
                     "\n            if (cursor.remaining() > 0) return std::nullopt;"
                 ),
-                TlvOverflowPolicy::Truncate => String::new(),
+                _ => String::new(),
             };
             let body = match &entry_flag_acc {
                 None => format!(
@@ -4594,11 +4615,12 @@ fn tlv_chain_streaming_decode_stmt_gated(
             )
         }
         Language::Kotlin => {
-            let overflow_check = match on_overflow {
-                TlvOverflowPolicy::Reject => format!(
+            // Y3 atomic 2b: exhaust-or-depth-only overflow check.
+            let overflow_check = match (on_overflow, &entry_flag_acc) {
+                (TlvOverflowPolicy::Reject, None) => format!(
                     "\n                if (cursor.remaining() > 0) return null"
                 ),
-                TlvOverflowPolicy::Truncate => String::new(),
+                _ => String::new(),
             };
             let body = match &entry_flag_acc {
                 None => format!(
@@ -4625,13 +4647,14 @@ fn tlv_chain_streaming_decode_stmt_gated(
         }
         Language::Go => {
             let go_id = filters::to_pascal_case(id.to_string());
-            let overflow_check = match on_overflow {
-                TlvOverflowPolicy::Reject => format!(
+            // Y3 atomic 2b: exhaust-or-depth-only overflow check.
+            let overflow_check = match (on_overflow, &entry_flag_acc) {
+                (TlvOverflowPolicy::Reject, None) => format!(
                     "\n\t\tif cursor.Remaining() > 0 {{\n\t\t\t\
                          return nil, codec.ErrTlvChainOverflow\n\t\t\
                      }}"
                 ),
-                TlvOverflowPolicy::Truncate => String::new(),
+                _ => String::new(),
             };
             let body = match &entry_flag_acc {
                 None => format!(
@@ -4670,12 +4693,13 @@ fn tlv_chain_streaming_decode_stmt_gated(
         }
         Language::C11 => {
             let id_snake = filters::to_snake_case(id.to_string());
-            let overflow_check = match on_overflow {
-                TlvOverflowPolicy::Reject => format!(
+            // Y3 atomic 2b: exhaust-or-depth-only overflow check.
+            let overflow_check = match (on_overflow, &entry_flag_acc) {
+                (TlvOverflowPolicy::Reject, None) => format!(
                     "\n            if (sce_forge_cursor_remaining(cursor) > 0) \
                        return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;"
                 ),
-                TlvOverflowPolicy::Truncate => String::new(),
+                _ => String::new(),
             };
             let entry_struct_snake = body_decoder
                 .strip_suffix("_decode")
@@ -4706,12 +4730,13 @@ fn tlv_chain_streaming_decode_stmt_gated(
         }
         Language::Python => {
             let py_id = filters::to_snake_case(id.to_string());
-            let overflow_check = match on_overflow {
-                TlvOverflowPolicy::Reject => format!(
+            // Y3 atomic 2b: exhaust-or-depth-only overflow check.
+            let overflow_check = match (on_overflow, &entry_flag_acc) {
+                (TlvOverflowPolicy::Reject, None) => format!(
                     "\n                if cursor.remaining() > 0:\n                    \
                          raise TlvChainOverflow()"
                 ),
-                TlvOverflowPolicy::Truncate => String::new(),
+                _ => String::new(),
             };
             let body = match &entry_flag_acc {
                 None => format!(
@@ -4762,7 +4787,7 @@ fn tlv_chain_streaming_encode_block_gated(
         .present_if
         .as_ref()
         .expect("tlv_chain_streaming_encode_block_gated: caller guarantees present_if is Some");
-    let test = present_if_test_literal(fields, parent_flags, pred, lang);
+    let test = present_if_test_literal_encode(fields, parent_flags, pred, lang);
     match lang {
         Language::Rust => format!(
             "        if let Some(_list) = &self.{id} {{\n            \
@@ -7636,12 +7661,11 @@ fn present_if_test_literal(
         // C11: present-if has no nullable wrapper, so both decode and
         // encode test the carrier bit directly on the struct member.
         // The decode site reads through `out->`, the encode site through
-        // `self->` — `present_if_test_literal` is only called from the
-        // decode helper, so the `out->` prefix is hardcoded here. The
-        // C11 encode helper inlines its own `(self-> ...)` test for
-        // symmetry without needing a second helper variant. For parent-
-        // scope, the parent_flags param is a function arg (no struct
-        // prefix) — bare identifier.
+        // `self->`. This helper hardcodes the decode-site `out->` prefix;
+        // encode-site callers go through `present_if_test_literal_encode`
+        // which post-processes the Local-scope prefix to `self->`. For
+        // parent-scope, the parent_flags param is a function arg (no
+        // struct prefix) — bare identifier in both sites.
         Language::C11 => {
             let c_id = filters::to_snake_case(id.to_string());
             match carrier {
@@ -7691,6 +7715,30 @@ fn present_if_test_literal(
                 width = hex_digits
             )
         }
+    }
+}
+
+/// RFC §5.B Y3 atomic 2b — encode-site wrapper around
+/// `present_if_test_literal`. C11 hardcodes the decode-site `out->`
+/// prefix in the Local-scope arm; encode sites need `self->` to read
+/// from the struct passed by the encode helper. The post-process
+/// rewrites `out->` → `self->` only for C11 Local scope; all other
+/// languages and the C11 Parent scope (which uses the parent_flags
+/// function arg without a struct prefix) pass through unchanged.
+/// Substring is unambiguous because `present_if_test_literal` only
+/// emits `out->` on the C11 Local arm — no other language path produces
+/// that token.
+fn present_if_test_literal_encode(
+    fields: &[CodecField],
+    parent_flags: Option<&RequiresParentFlags>,
+    pred: &PresentIfPredicate,
+    lang: crate::generator::Language,
+) -> String {
+    let test = present_if_test_literal(fields, parent_flags, pred, lang);
+    if matches!(lang, crate::generator::Language::C11) {
+        test.replace("out->", "self->")
+    } else {
+        test
     }
 }
 

@@ -71,7 +71,7 @@ static inline codec_tlv_chain_present_if_basic_encoded_t codec_tlv_chain_present
      * VLE + present-if uses the unified encode path. */
     r.len = 0;
     r.bytes[r.len++] = self->carrier;
-    if ((out->carrier & 0x01) != 0) {
+    if ((self->carrier & 0x01) != 0) {
         for (size_t _ti = 0; _ti < self->entries_len; ++_ti) {
             codec_tlv_entry_encoded_t _sub = codec_tlv_entry_encode(&self->entries[_ti]);
             if (r.len + _sub.len <= sizeof(r.bytes)) {

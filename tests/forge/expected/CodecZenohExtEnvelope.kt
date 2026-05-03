@@ -56,7 +56,6 @@ data class CodecZenohExtEnvelope(
                     if (!_entry.Z()) break
                 }
             }
-            if (cursor.remaining() > 0) return null
             return CodecZenohExtEnvelope(
                 header_flags = header_flags,
                 extensions = extensions

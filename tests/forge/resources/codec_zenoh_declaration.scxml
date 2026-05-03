@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh DECLARATION 9-arm dispatcher (RFC §5.B
+     Wire RFC Phase B Y3 atomic 2b — sub-codec, declare envelope embeddee).
+
+     Mirrors zenoh-pico `_z_declaration_encode` / `_z_declaration_decode`
+     (src/protocol/codec/declarations.c:137-180) — pure dispatcher on
+     the per-MID 5-bit identifier in the first byte. Each arm references
+     an existing Y1 declaration body codec (decl/undecl × keyexpr /
+     subscriber / queryable / token + decl_final). The outer header
+     carrier (1B mid 5-bit + N/M/Z flag bits at bits 5/6/7) is shared
+     across all 9 arms — each arm's sub-codec consumes only the
+     parent-flag bits it requires (N for decl_keyexpr, N+M+Z for
+     decl_subscriber/queryable/token, none for undecl_keyexpr and
+     decl_final).
+
+     Wire shape:
+       byte 0   : header     (mid 5-bit + N@5 + M@6 + Z@7) — see
+                              declarations.h:25-36 for the per-MID
+                              constants. The `mid` bit-range dispatches
+                              the variant arm; N/M/Z reach through to
+                              the dispatched arm's body via parent-flag
+                              threading.
+       arm body : variant arm bytes (each arm's own VLE id +
+                  optional wireexpr embed + optional ext chain — per
+                  the existing Y1 sub-codec wire shapes, unchanged).
+
+     Arm coverage (mirrors `_Z_DECL_*_MID` / `_Z_UNDECL_*_MID`):
+       0x00 → codec_zenoh_decl_keyexpr      (Y1, parent.N)
+       0x01 → codec_zenoh_undecl_keyexpr    (Y1, no parent flags)
+       0x02 → codec_zenoh_decl_subscriber   (Y1, parent.N+M+Z)
+       0x03 → codec_zenoh_undecl_subscriber (Y1)
+       0x04 → codec_zenoh_decl_queryable    (Y1, parent.N+M+Z)
+       0x05 → codec_zenoh_undecl_queryable  (Y1)
+       0x06 → codec_zenoh_decl_token        (Y1, parent.N+M+Z)
+       0x07 → codec_zenoh_undecl_token      (Y1)
+       0x1a → codec_decl_final              (Y1, empty body)
+       <sce:default> → codec_decl_final     (catch-all preserves
+                                             runtime mid for round-trip)
+
+     Composition: B1-γ flags (header) + B5-β multi-bit-flag variant
+     dispatch + B5-γ Parent-scope parent-flag threading (each arm's
+     `<sce:requires-parent-flags carrier="header">` matches this
+     dispatcher's local `<sce:flags id="header">` — same upstream
+     bit-reuse pattern as codec_zenoh_interest_body where the local
+     flags carrier serves as the embed's parent_flags). No new
+     primitive surface beyond Y1's existing per-MID body codecs.
+
+     Body variant arm contract: invoked by codec_zenoh_declare when
+     the inner declaration body follows the declare envelope's chain.
+     The declare envelope's `<sce:embed type="codec_zenoh_declaration">`
+     consumes one declaration (mirroring zenoh-pico network.c:417's
+     `_z_declaration_encode(wbf, &decl->_decl)` after the per-network
+     header + ext chain). Ships on all 6 backends. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_declaration">
+  <sce:import src="codec_zenoh_decl_keyexpr.scxml"      kind="codec" as="codec_zenoh_decl_keyexpr"/>
+  <sce:import src="codec_zenoh_undecl_keyexpr.scxml"    kind="codec" as="codec_zenoh_undecl_keyexpr"/>
+  <sce:import src="codec_zenoh_decl_subscriber.scxml"   kind="codec" as="codec_zenoh_decl_subscriber"/>
+  <sce:import src="codec_zenoh_undecl_subscriber.scxml" kind="codec" as="codec_zenoh_undecl_subscriber"/>
+  <sce:import src="codec_zenoh_decl_queryable.scxml"    kind="codec" as="codec_zenoh_decl_queryable"/>
+  <sce:import src="codec_zenoh_undecl_queryable.scxml"  kind="codec" as="codec_zenoh_undecl_queryable"/>
+  <sce:import src="codec_zenoh_decl_token.scxml"        kind="codec" as="codec_zenoh_decl_token"/>
+  <sce:import src="codec_zenoh_undecl_token.scxml"      kind="codec" as="codec_zenoh_undecl_token"/>
+  <sce:import src="codec_decl_final.scxml"              kind="codec" as="codec_decl_final"/>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="mid" bit="0" width="5"/>
+      <sce:flag name="N"   bit="5"/>
+      <sce:flag name="M"   bit="6"/>
+      <sce:flag name="Z"   bit="7"/>
+    </sce:flags>
+    <sce:variant tag="header.mid">
+      <sce:arm value="0x00" type="codec_zenoh_decl_keyexpr"/>
+      <sce:arm value="0x01" type="codec_zenoh_undecl_keyexpr"/>
+      <sce:arm value="0x02" type="codec_zenoh_decl_subscriber"/>
+      <sce:arm value="0x03" type="codec_zenoh_undecl_subscriber"/>
+      <sce:arm value="0x04" type="codec_zenoh_decl_queryable"/>
+      <sce:arm value="0x05" type="codec_zenoh_undecl_queryable"/>
+      <sce:arm value="0x06" type="codec_zenoh_decl_token"/>
+      <sce:arm value="0x07" type="codec_zenoh_undecl_token"/>
+      <sce:arm value="0x1a" type="codec_decl_final"/>
+      <sce:default type="codec_decl_final"/>
+    </sce:variant>
+  </datamodel>
+</scxml>

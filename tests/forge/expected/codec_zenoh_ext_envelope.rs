@@ -55,9 +55,6 @@ impl CodecZenohExtEnvelope {
                 _vec.push(_entry);
                 if !_continue { break; }
             }
-            if cursor.remaining() > 0 {
-                return Err(CodecError::TlvChainOverflow);
-            }
             _vec
         };
         Ok(Self {

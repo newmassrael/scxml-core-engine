@@ -1707,6 +1707,157 @@ fn forge_c11_codec_zenoh_query() {
     assert_standalone_forge_c("codec_zenoh_query", "codec_zenoh_query.c.h");
 }
 
+// ── RFC §5.B Wire RFC Phase B Y3 atomic 2b — sub-codec atomic
+// `codec_zenoh_msg_reply` mirrors zenoh-pico `_z_reply_encode/decode`
+// (message.c:507-543) at envelope-level wire fidelity. Response body
+// variant arm for Z_REPLY (atomic 2b consumer codec_zenoh_response).
+// First realistic consumer of Y3 atomic 1's entry-flag chain
+// termination — chain is followed by the push_body embed so
+// exhaust-or-depth would not detect the body boundary.
+
+#[test]
+fn forge_codec_zenoh_msg_reply_cpp() {
+    assert_standalone_forge("codec_zenoh_msg_reply", "codec_zenoh_msg_reply.h");
+}
+
+#[test]
+fn forge_codec_zenoh_msg_reply_kotlin() {
+    assert_standalone_forge_kotlin("codec_zenoh_msg_reply", "CodecZenohMsgReply.kt");
+}
+
+#[test]
+fn forge_codec_zenoh_msg_reply_rust() {
+    assert_standalone_forge_rust("codec_zenoh_msg_reply", "codec_zenoh_msg_reply.rs");
+}
+
+#[test]
+fn forge_codec_zenoh_msg_reply_go() {
+    assert_standalone_forge_go("codec_zenoh_msg_reply", "codec_zenoh_msg_reply.go");
+}
+
+#[test]
+fn forge_codec_zenoh_msg_reply_python() {
+    assert_standalone_forge_python("codec_zenoh_msg_reply", "codec_zenoh_msg_reply.py");
+}
+
+#[test]
+fn forge_c11_codec_zenoh_msg_reply() {
+    assert_standalone_forge_c("codec_zenoh_msg_reply", "codec_zenoh_msg_reply.c.h");
+}
+
+// ── RFC §5.B Wire RFC Phase B Y3 atomic 2b — sub-codec atomic
+// `codec_zenoh_msg_err` mirrors zenoh-pico `_z_err_encode/decode`
+// (message.c:545-595) at envelope-level wire fidelity. Response body
+// variant arm for Z_ERR. Encoding wire is the Q1(b) simplification
+// (inline VLE u32 encoding_id, schema-less subset) — full encoding
+// wire (VLE-LSB-as-flag) deferred to a follow-up atomic.
+
+#[test]
+fn forge_codec_zenoh_msg_err_cpp() {
+    assert_standalone_forge("codec_zenoh_msg_err", "codec_zenoh_msg_err.h");
+}
+
+#[test]
+fn forge_codec_zenoh_msg_err_kotlin() {
+    assert_standalone_forge_kotlin("codec_zenoh_msg_err", "CodecZenohMsgErr.kt");
+}
+
+#[test]
+fn forge_codec_zenoh_msg_err_rust() {
+    assert_standalone_forge_rust("codec_zenoh_msg_err", "codec_zenoh_msg_err.rs");
+}
+
+#[test]
+fn forge_codec_zenoh_msg_err_go() {
+    assert_standalone_forge_go("codec_zenoh_msg_err", "codec_zenoh_msg_err.go");
+}
+
+#[test]
+fn forge_codec_zenoh_msg_err_python() {
+    assert_standalone_forge_python("codec_zenoh_msg_err", "codec_zenoh_msg_err.py");
+}
+
+#[test]
+fn forge_c11_codec_zenoh_msg_err() {
+    assert_standalone_forge_c("codec_zenoh_msg_err", "codec_zenoh_msg_err.c.h");
+}
+
+// ── RFC §5.B Wire RFC Phase B Y3 atomic 2b — sub-codec atomic
+// `codec_zenoh_interest_body` mirrors zenoh-pico `_z_interest_encode/
+// decode` (interest.c:41-91) at envelope-level wire fidelity (not-is_final
+// case only — is_final gate lives in the outer envelope codec_zenoh_interest).
+// First fixture where local 1B flags carrier serves as the parent_flags
+// for an embedded wireexpr (the upstream bit-reuse trick — N/M occupy
+// the cleared CURRENT/FUTURE positions per _Z_INTEREST_FLAG_COPY_MASK).
+
+#[test]
+fn forge_codec_zenoh_interest_body_cpp() {
+    assert_standalone_forge("codec_zenoh_interest_body", "codec_zenoh_interest_body.h");
+}
+
+#[test]
+fn forge_codec_zenoh_interest_body_kotlin() {
+    assert_standalone_forge_kotlin("codec_zenoh_interest_body", "CodecZenohInterestBody.kt");
+}
+
+#[test]
+fn forge_codec_zenoh_interest_body_rust() {
+    assert_standalone_forge_rust("codec_zenoh_interest_body", "codec_zenoh_interest_body.rs");
+}
+
+#[test]
+fn forge_codec_zenoh_interest_body_go() {
+    assert_standalone_forge_go("codec_zenoh_interest_body", "codec_zenoh_interest_body.go");
+}
+
+#[test]
+fn forge_codec_zenoh_interest_body_python() {
+    assert_standalone_forge_python("codec_zenoh_interest_body", "codec_zenoh_interest_body.py");
+}
+
+#[test]
+fn forge_c11_codec_zenoh_interest_body() {
+    assert_standalone_forge_c("codec_zenoh_interest_body", "codec_zenoh_interest_body.c.h");
+}
+
+// ── RFC §5.B Wire RFC Phase B Y3 atomic 2b — sub-codec atomic
+// `codec_zenoh_declaration` mirrors zenoh-pico `_z_declaration_encode/
+// decode` (declarations.c:137-180) — 9-arm dispatcher on first-byte
+// MID 5-bit. Used by codec_zenoh_declare as the body embed after the
+// network-level header + ext chain. Each arm wires up an existing Y1
+// per-MID body codec (decl/undecl × keyexpr/subscriber/queryable/token
+// + decl_final).
+
+#[test]
+fn forge_codec_zenoh_declaration_cpp() {
+    assert_standalone_forge("codec_zenoh_declaration", "codec_zenoh_declaration.h");
+}
+
+#[test]
+fn forge_codec_zenoh_declaration_kotlin() {
+    assert_standalone_forge_kotlin("codec_zenoh_declaration", "CodecZenohDeclaration.kt");
+}
+
+#[test]
+fn forge_codec_zenoh_declaration_rust() {
+    assert_standalone_forge_rust("codec_zenoh_declaration", "codec_zenoh_declaration.rs");
+}
+
+#[test]
+fn forge_codec_zenoh_declaration_go() {
+    assert_standalone_forge_go("codec_zenoh_declaration", "codec_zenoh_declaration.go");
+}
+
+#[test]
+fn forge_codec_zenoh_declaration_python() {
+    assert_standalone_forge_python("codec_zenoh_declaration", "codec_zenoh_declaration.py");
+}
+
+#[test]
+fn forge_c11_codec_zenoh_declaration() {
+    assert_standalone_forge_c("codec_zenoh_declaration", "codec_zenoh_declaration.c.h");
+}
+
 // `forge_codec_tlv_entry_cpp` already exists above (it predates B5-ε;
 // the entry codec ships on all 6 backends since it has no MCU-only
 // sub-features itself). The new B5-ε closures add the missing kotlin /
