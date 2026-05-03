@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: length-field dotted-path primitive (RFC §5.B
+     B5-κ Surface L). Author writes
+     `sce:length-field="<carrier>.<flag>"` to source the byte count of
+     a length-ref payload from a multi-bit flag subfield inside a
+     flags-bearing carrier — mirrors B1-δ present-if's dotted-path
+     grammar exactly (same `<carrier>.<flag>` syntax, different
+     operation: present-if = bit test, length-field = value extract).
+
+     First reachable consumer: zenoh-pico Scout/Hello/Init/Join messages
+     pack `zid_len_m1 = actual_zid_byte_count - 1` into the high nibble
+     of a `cbyte` byte that ALSO carries other flag bits (whatami / I /
+     etc.) — so the length-source field is not a separate byte but a
+     bit-range inside a shared carrier. See codec_zenoh_scout for the
+     actual upstream wire layout.
+
+     This fixture exercises Surface L in isolation. Wire shape:
+       byte 0  : carrier (uint8 flags)
+                   bit 0..3  width=4  hdr        (caller-chosen flag bits)
+                   bit 4..7  width=4  payload_len (length source for byte 1+)
+       byte 1+ : payload  (bytes, length = (carrier >> 4) & 0xF)
+
+     Round-trip oracles:
+       carrier=0x21 payload=[0xAA, 0xBB]            → 0x21 0xAA 0xBB (3 bytes; payload_len=2 in high nibble, hdr=1 in low nibble)
+       carrier=0x00 payload=[]                      → 0x00 (1 byte; payload_len=0)
+       carrier=0xF5 payload=[0..14]                 → 0xF5 0x00..0x0E (16 bytes; payload_len=15 max for 4-bit width) -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_length_ref_dotted_basic">
+  <datamodel>
+    <sce:flags id="carrier" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="hdr"         bit="0" width="4"/>
+      <sce:flag name="payload_len" bit="4" width="4"/>
+    </sce:flags>
+    <sce:field id="payload" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref"
+               sce:length-field="carrier.payload_len" sce:max-size="15"/>
+  </datamodel>
+  <!-- RFC §5.B B5-θ inline test vectors. Pinned at boundary widths
+       (0-byte, mid-range, 4-bit max) to exercise the shift+mask
+       extraction across the full subfield range. -->
+  <sce:test-vector hex="00">
+    <sce:decoded field="carrier" value="0x00"/>
+    <sce:decoded field="payload" hex=""/>
+  </sce:test-vector>
+  <sce:test-vector hex="21aabb">
+    <sce:decoded field="carrier" value="0x21"/>
+    <sce:decoded field="payload" hex="aabb"/>
+  </sce:test-vector>
+  <sce:test-vector hex="f5000102030405060708090a0b0c0d0e">
+    <sce:decoded field="carrier" value="0xF5"/>
+    <sce:decoded field="payload" hex="000102030405060708090a0b0c0d0e"/>
+  </sce:test-vector>
+</scxml>

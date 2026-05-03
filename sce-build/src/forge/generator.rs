@@ -1133,7 +1133,7 @@ fn render_codec(
             obj.insert(type_key.into(), l.type_name(&f.sce_type).into());
             obj.insert(
                 "decode_expr".into(),
-                generate_decode_expr(f, m.default_endian, lang, length_byte_off).into(),
+                generate_decode_expr(f, m.default_endian, lang, length_byte_off, &m.fields).into(),
             );
             obj.insert("is_variable".into(), serde_json::Value::Bool(f.is_variable_length()));
             obj.insert("is_vle".into(), serde_json::Value::Bool(f.is_vle()));
@@ -1368,35 +1368,76 @@ fn render_codec(
                     if matches!(f.bit_size, BitSize::LengthRef) {
                         if let Some(lf) = &f.length_field {
                             obj.insert("length_field".into(), l.codec_field_id(lf).into());
-                            // RFC §5.B B5-δ Surface F: positional-decode
-                            // `_n` expression honoring `length-arith`.
-                            // C11 template reads this verbatim into the
-                            // `(size_t)out->...` slot to apply the
-                            // additive offset (the bare `length_field`
-                            // entry stays available for callers that
-                            // never want arith — keeps the template
-                            // back-compat seam clean).
+                            // RFC §5.B B5-δ Surface F + B5-κ Surface L:
+                            // positional-decode `_n` expression honoring
+                            // `length-arith` and dotted-path subfield
+                            // extracts. C11 template reads this verbatim
+                            // into the `(size_t)...` slot. Plain bare-id
+                            // form keeps the historical
+                            // `(size_t)out->{len_id}` shape (no diff on
+                            // pre-B5-κ goldens). Dotted form
+                            // (`<carrier>.<flag>`) emits the shifted +
+                            // masked extract from the carrier byte.
                             let arith = f.length_arith.unwrap_or(0);
+                            let (base_decode, base_encode) =
+                                if let Some((c, fl)) = dotted_length_field(lf) {
+                                    let (shift, mask) = dotted_length_resolve(c, fl, &m.fields);
+                                    let c_id = l.codec_field_id(c);
+                                    (
+                                        format!(
+                                            "(size_t)((out->{c_id} >> {shift}) & 0x{mask:X})"
+                                        ),
+                                        format!(
+                                            "(size_t)((self->{c_id} >> {shift}) & 0x{mask:X})"
+                                        ),
+                                    )
+                                } else {
+                                    (
+                                        format!("(size_t)out->{}", l.codec_field_id(lf)),
+                                        format!("self->{}", l.codec_field_id(lf)),
+                                    )
+                                };
                             let n_expr = if arith == 0 {
-                                format!("(size_t)out->{}", l.codec_field_id(lf))
+                                base_decode.clone()
                             } else if arith > 0 {
-                                format!("(size_t)((int64_t)out->{} + {arith})", l.codec_field_id(lf))
+                                // Dotted form already carries the (size_t)
+                                // cast; adding `+ N` would type-error
+                                // without a fresh int64_t cast. Plain
+                                // form's int64_t fold stays the same.
+                                if dotted_length_field(lf).is_some() {
+                                    format!("(size_t)((int64_t){base_decode} + {arith})")
+                                } else {
+                                    format!("(size_t)((int64_t)out->{} + {arith})", l.codec_field_id(lf))
+                                }
                             } else {
-                                format!("(size_t)((int64_t)out->{} - {})", l.codec_field_id(lf), -arith)
+                                if dotted_length_field(lf).is_some() {
+                                    format!("(size_t)((int64_t){base_decode} - {})", -arith)
+                                } else {
+                                    format!("(size_t)((int64_t)out->{} - {})", l.codec_field_id(lf), -arith)
+                                }
                             };
                             obj.insert("length_n_expr".into(), n_expr.into());
                             // Encode-side mirror — symmetric upper bound
                             // for the C11 byte-copy loop. Stays
                             // byte-stable when arith == 0 by emitting
-                            // bare `self->...` (matches the historical
-                            // template form documented in
-                            // `compute_n_c11_encode`).
+                            // bare `self->...` for plain form (matches
+                            // the historical template form documented in
+                            // `compute_n_c11_encode`); dotted form
+                            // always uses the explicit (size_t) cast.
                             let n_expr_encode = if arith == 0 {
-                                format!("self->{}", l.codec_field_id(lf))
+                                base_encode.clone()
                             } else if arith > 0 {
-                                format!("(size_t)((int64_t)self->{} + {arith})", l.codec_field_id(lf))
+                                if dotted_length_field(lf).is_some() {
+                                    format!("(size_t)((int64_t){base_encode} + {arith})")
+                                } else {
+                                    format!("(size_t)((int64_t)self->{} + {arith})", l.codec_field_id(lf))
+                                }
                             } else {
-                                format!("(size_t)((int64_t)self->{} - {})", l.codec_field_id(lf), -arith)
+                                if dotted_length_field(lf).is_some() {
+                                    format!("(size_t)((int64_t){base_encode} - {})", -arith)
+                                } else {
+                                    format!("(size_t)((int64_t)self->{} - {})", l.codec_field_id(lf), -arith)
+                                }
                             };
                             obj.insert("length_n_expr_encode".into(), n_expr_encode.into());
                         }
@@ -3315,12 +3356,21 @@ fn build_flag_ctx(
 /// Resolve the byte offset of a field's `length_field` reference within
 /// the codec's own `fields` slice. Returns `None` when the field has no
 /// `length_field` attribute or when no peer matches the referenced id.
+///
+/// For B5-κ Surface L dotted-path form (`<carrier>.<flag>`), returns
+/// the CARRIER's byte offset — the codec emit at `generate_decode_expr`
+/// then composes the bit-extract (`(raw[off] >> shift) & mask`) on top
+/// of that offset using the per-language flag resolver.
 fn resolve_length_field_byte_off(
     fields: &[CodecField],
     field: &CodecField,
 ) -> Option<u32> {
     field.length_field.as_ref().and_then(|name| {
-        fields.iter().find(|x| x.id == *name).map(|x| x.byte_offset)
+        if let Some((carrier_id, _)) = dotted_length_field(name) {
+            fields.iter().find(|x| x.id == carrier_id).map(|x| x.byte_offset)
+        } else {
+            fields.iter().find(|x| x.id == *name).map(|x| x.byte_offset)
+        }
     })
 }
 
@@ -3822,7 +3872,7 @@ fn present_if_decode_length_ref(
     // branch only handles the (lang, None) shape; gated String defers
     // until a consumer surfaces.
     if field.is_string() {
-        return present_if_decode_string_length_ref(field, len_field, sibling_gated, arith, lang);
+        return present_if_decode_string_length_ref(field, fields, len_field, sibling_gated, arith, lang);
     }
     // Per-language sibling value expression (inside the gated if-branch
     // when payload is gated; outside otherwise). The non-gated arm
@@ -3830,12 +3880,12 @@ fn present_if_decode_length_ref(
     // — it's the author trust contract; gated sibling + non-gated
     // payload would emit code that reads the optional as if it were
     // unwrapped).
-    let n_rust = compute_n_rust(len_field, sibling_gated, arith);
-    let n_cpp = compute_n_cpp(len_field, sibling_gated, arith);
-    let n_kotlin = compute_n_kotlin(len_field, sibling_gated, arith);
-    let n_go = compute_n_go(len_field, sibling_gated, arith);
-    let n_python = compute_n_python(len_field, sibling_gated, arith);
-    let n_c11 = compute_n_c11(len_field, sibling_gated, arith);
+    let n_rust = compute_n_rust(len_field, fields, sibling_gated, arith);
+    let n_cpp = compute_n_cpp(len_field, fields, sibling_gated, arith);
+    let n_kotlin = compute_n_kotlin(len_field, fields, sibling_gated, arith);
+    let n_go = compute_n_go(len_field, fields, sibling_gated, arith);
+    let n_python = compute_n_python(len_field, fields, sibling_gated, arith);
+    let n_c11 = compute_n_c11(len_field, fields, sibling_gated, arith);
     match (lang, &field.present_if) {
         (Language::Rust, None) => format!(
             "let {id} = {{\n            \
@@ -4018,6 +4068,7 @@ fn present_if_decode_length_ref(
 /// helpers verbatim. `length-arith` is supported the same way.
 fn present_if_decode_string_length_ref(
     field: &CodecField,
+    fields: &[CodecField],
     len_field: &str,
     sibling_gated: bool,
     arith: i32,
@@ -4027,7 +4078,7 @@ fn present_if_decode_string_length_ref(
     let id = field.id.as_str();
     match lang {
         Language::Rust => {
-            let n_rust = compute_n_rust(len_field, sibling_gated, arith);
+            let n_rust = compute_n_rust(len_field, fields, sibling_gated, arith);
             format!(
                 "let {id} = {{\n            \
                      let _n = {n_rust};\n            \
@@ -4041,7 +4092,7 @@ fn present_if_decode_string_length_ref(
             )
         }
         Language::Cpp => {
-            let n_cpp = compute_n_cpp(len_field, sibling_gated, arith);
+            let n_cpp = compute_n_cpp(len_field, fields, sibling_gated, arith);
             format!(
                 "std::string {id};\n        \
                  {{\n            \
@@ -4055,7 +4106,7 @@ fn present_if_decode_string_length_ref(
             )
         }
         Language::Kotlin => {
-            let n_kotlin = compute_n_kotlin(len_field, sibling_gated, arith);
+            let n_kotlin = compute_n_kotlin(len_field, fields, sibling_gated, arith);
             // Java's CharsetDecoder defaults to REPORT on malformed
             // input — `Charsets.UTF_8.newDecoder().decode(...)` throws
             // CharacterCodingException on invalid UTF-8 (lossy
@@ -4077,7 +4128,7 @@ fn present_if_decode_string_length_ref(
         }
         Language::Go => {
             let go_id = filters::to_pascal_case(id.to_string());
-            let n_go = compute_n_go(len_field, sibling_gated, arith);
+            let n_go = compute_n_go(len_field, fields, sibling_gated, arith);
             format!(
                 "var {go_id} string\n\t\
                  {{\n\t\t\
@@ -4098,7 +4149,7 @@ fn present_if_decode_string_length_ref(
         }
         Language::Python => {
             let py_id = filters::to_snake_case(id.to_string());
-            let n_python = compute_n_python(len_field, sibling_gated, arith);
+            let n_python = compute_n_python(len_field, fields, sibling_gated, arith);
             format!(
                 "_n = {n_python}\n            \
                  raw = cursor.peek_slice(_n)\n            \
@@ -4124,7 +4175,7 @@ fn present_if_decode_string_length_ref(
             // sweep).
             let id_snake = filters::to_snake_case(id.to_string());
             let max_size = crate::forge::limits::resolve_bytes_max(field.max_size);
-            let n_c11 = compute_n_c11(len_field, sibling_gated, arith);
+            let n_c11 = compute_n_c11(len_field, fields, sibling_gated, arith);
             format!(
                 "{{\n        \
                      size_t _n = {n_c11};\n        \
@@ -4141,15 +4192,34 @@ fn present_if_decode_string_length_ref(
     }
 }
 
-/// RFC §5.B B5-δ helpers: per-language `_n` (byte count) computation
-/// for a `length-ref` field. Combines:
-/// - sibling-gated unwrap (Surface E)
-/// - arithmetic offset (Surface F)
+/// RFC §5.B B5-δ + B5-κ helpers: per-language `_n` (byte count)
+/// computation for a `length-ref` field. Combines:
+/// - sibling-gated unwrap (B5-δ Surface E)
+/// - arithmetic offset (B5-δ Surface F)
+/// - dotted-path subfield extract (B5-κ Surface L) — when `len_field`
+///   is `<carrier>.<flag>`, the source is the carrier's multi-bit
+///   flag value (shifted + masked from the carrier byte), not a sibling
+///   integer field. Author writes `sce:length-field="cbyte.zid_len_m1"`
+///   to express zenoh-style packed length; codegen emits
+///   `(carrier >> bit) & ((1<<width)-1)` per language.
+///
 /// Each language emits the smallest expression that compiles cleanly
 /// without auxiliary locals (so existing single-statement goldens stay
-/// byte-stable when both extensions are absent).
-fn compute_n_rust(len_field: &str, sibling_gated: bool, arith: i32) -> String {
-    let base = if sibling_gated {
+/// byte-stable when all three extensions are absent).
+///
+/// Parser (`validate_codec_length_field_refs`) guarantees the dotted
+/// form's carrier exists, is flags-bearing, and the named flag has
+/// width > 1 — so callers `.expect` the lookups.
+fn compute_n_rust(
+    len_field: &str,
+    fields: &[CodecField],
+    sibling_gated: bool,
+    arith: i32,
+) -> String {
+    let base = if let Some((c, f)) = dotted_length_field(len_field) {
+        let (shift, mask) = dotted_length_resolve(c, f, fields);
+        format!("(({c} >> {shift}) & 0x{mask:X}) as usize")
+    } else if sibling_gated {
         // Sibling Option<T> — unwrap inside the gated branch (trust
         // contract: payload's predicate matches sibling's predicate).
         format!("{len_field}.unwrap() as usize")
@@ -4170,8 +4240,16 @@ fn apply_arith_signed_rust(base: &str, arith: i32) -> String {
     }
 }
 
-fn compute_n_cpp(len_field: &str, sibling_gated: bool, arith: i32) -> String {
-    let base = if sibling_gated {
+fn compute_n_cpp(
+    len_field: &str,
+    fields: &[CodecField],
+    sibling_gated: bool,
+    arith: i32,
+) -> String {
+    let base = if let Some((c, f)) = dotted_length_field(len_field) {
+        let (shift, mask) = dotted_length_resolve(c, f, fields);
+        format!("static_cast<std::size_t>(({c} >> {shift}) & 0x{mask:X})")
+    } else if sibling_gated {
         // std::optional<T>::value() throws on empty — trust contract
         // says it's set inside the gated branch.
         format!("static_cast<std::size_t>({len_field}.value())")
@@ -4189,8 +4267,18 @@ fn apply_arith_cpp(base: &str, arith: i32) -> String {
     }
 }
 
-fn compute_n_kotlin(len_field: &str, sibling_gated: bool, arith: i32) -> String {
-    let base = if sibling_gated {
+fn compute_n_kotlin(
+    len_field: &str,
+    fields: &[CodecField],
+    sibling_gated: bool,
+    arith: i32,
+) -> String {
+    let base = if let Some((c, f)) = dotted_length_field(len_field) {
+        let (shift, mask) = dotted_length_resolve(c, f, fields);
+        // Kotlin UByte/UShort: bitwise ops require Int width — `.toInt()`
+        // first, then `shr`/`and` produce Int. Mask literal stays in hex.
+        format!("(({c}.toInt() shr {shift}) and 0x{mask:X})")
+    } else if sibling_gated {
         // Kotlin force-unwrap: !! throws NPE on null — trust contract
         // says the gated branch only runs when predicate holds and
         // sibling shares that predicate.
@@ -4209,58 +4297,94 @@ fn apply_arith_signed(base: &str, arith: i32) -> String {
     }
 }
 
-fn compute_n_go(len_field: &str, sibling_gated: bool, arith: i32) -> String {
-    let go_len = filters::to_pascal_case(len_field.to_string());
-    let base = if sibling_gated {
-        // Go *T deref panics on nil — trust contract.
-        format!("int(*{go_len})")
+fn compute_n_go(
+    len_field: &str,
+    fields: &[CodecField],
+    sibling_gated: bool,
+    arith: i32,
+) -> String {
+    let base = if let Some((c, f)) = dotted_length_field(len_field) {
+        let (shift, mask) = dotted_length_resolve(c, f, fields);
+        let go_c = filters::to_pascal_case(c.to_string());
+        format!("int(({go_c} >> {shift}) & 0x{mask:X})")
     } else {
-        format!("int({go_len})")
+        let go_len = filters::to_pascal_case(len_field.to_string());
+        if sibling_gated {
+            // Go *T deref panics on nil — trust contract.
+            format!("int(*{go_len})")
+        } else {
+            format!("int({go_len})")
+        }
     };
     apply_arith_signed(&base, arith)
 }
 
-fn compute_n_python(len_field: &str, sibling_gated: bool, arith: i32) -> String {
-    let py_len = filters::to_snake_case(len_field.to_string());
-    // Python: gated sibling is Optional[int]; inside the if-branch the
-    // local is guaranteed non-None by the same predicate. No unwrap
-    // syntax needed (int operations work transparently); but reading
-    // `int(py_len)` even when None would TypeError — defensive int()
-    // cast is safe here only when sibling_gated=False. When gated, just
-    // reference the local (guaranteed bound to int inside if-branch).
+fn compute_n_python(
+    len_field: &str,
+    fields: &[CodecField],
+    sibling_gated: bool,
+    arith: i32,
+) -> String {
     let _ = sibling_gated;
-    apply_arith_signed(&py_len, arith)
+    let base = if let Some((c, f)) = dotted_length_field(len_field) {
+        let (shift, mask) = dotted_length_resolve(c, f, fields);
+        let py_c = filters::to_snake_case(c.to_string());
+        format!("(({py_c} >> {shift}) & 0x{mask:X})")
+    } else {
+        // Python: gated sibling is Optional[int]; inside the if-branch
+        // the local is guaranteed non-None by the same predicate. No
+        // unwrap syntax needed (int operations work transparently).
+        filters::to_snake_case(len_field.to_string())
+    };
+    apply_arith_signed(&base, arith)
 }
 
-fn compute_n_c11(len_field: &str, sibling_gated: bool, arith: i32) -> String {
-    compute_n_c11_with_prefix(len_field, sibling_gated, arith, "out")
+fn compute_n_c11(
+    len_field: &str,
+    fields: &[CodecField],
+    sibling_gated: bool,
+    arith: i32,
+) -> String {
+    compute_n_c11_with_prefix(len_field, fields, sibling_gated, arith, "out")
 }
 
 /// Encode-side variant — same shape but reads through `self->...`
 /// instead of the decode-side `out->...`. The encode caller previously
-/// emitted a bare `self->{len_snake}` (no `(size_t)` cast), so to keep
-/// the no-arith goldens byte-stable we strip the cast when `arith == 0`.
-fn compute_n_c11_encode(len_field: &str, arith: i32) -> String {
-    let len_snake = filters::to_snake_case(len_field.to_string());
-    if arith == 0 {
+/// emitted a bare `self->{len_snake}` (no `(size_t)` cast) for the
+/// plain bare-id no-arith case, so to keep no-arith goldens byte-stable
+/// we strip the cast when `arith == 0` AND len_field is plain.
+fn compute_n_c11_encode(
+    len_field: &str,
+    fields: &[CodecField],
+    arith: i32,
+) -> String {
+    if arith == 0 && dotted_length_field(len_field).is_none() {
+        let len_snake = filters::to_snake_case(len_field.to_string());
         format!("self->{len_snake}")
     } else {
-        compute_n_c11_with_prefix(len_field, false, arith, "self")
+        compute_n_c11_with_prefix(len_field, fields, false, arith, "self")
     }
 }
 
 fn compute_n_c11_with_prefix(
     len_field: &str,
+    fields: &[CodecField],
     sibling_gated: bool,
     arith: i32,
     struct_prefix: &str,
 ) -> String {
-    let len_snake = filters::to_snake_case(len_field.to_string());
     // C11 has no Option wrapper — sibling field is always-bound on the
     // struct (gated absent branch zero-writes via the present-if-fixed
     // helper). Read through `<prefix>->...` regardless of sibling_gated.
     let _ = sibling_gated;
-    let base = format!("(size_t){struct_prefix}->{len_snake}");
+    let base = if let Some((c, f)) = dotted_length_field(len_field) {
+        let (shift, mask) = dotted_length_resolve(c, f, fields);
+        let c_id = filters::to_snake_case(c.to_string());
+        format!("(size_t)(({struct_prefix}->{c_id} >> {shift}) & 0x{mask:X})")
+    } else {
+        let len_snake = filters::to_snake_case(len_field.to_string());
+        format!("(size_t){struct_prefix}->{len_snake}")
+    };
     apply_arith_c11(&base, arith)
 }
 
@@ -4273,6 +4397,38 @@ fn apply_arith_c11(base: &str, arith: i32) -> String {
         n if n > 0 => format!("(size_t)((int64_t){base} + {n})"),
         n => format!("(size_t)((int64_t){base} - {})", -n),
     }
+}
+
+/// RFC §5.B B5-κ Surface L — split a length-field reference into
+/// (carrier_id, flag_name) when the dotted-path form
+/// `<carrier>.<flag>` is used. Returns `None` for the plain bare-id
+/// form. Mirrors B1-δ present-if's dotted-path split exactly.
+fn dotted_length_field(len_field: &str) -> Option<(&str, &str)> {
+    len_field.split_once('.').map(|(c, f)| (c.trim(), f.trim()))
+}
+
+/// RFC §5.B B5-κ Surface L — resolve dotted-path carrier + flag
+/// against the codec's field list, returning the bit position and
+/// value mask for the multi-bit subfield. Parser
+/// (`validate_codec_length_field_refs`) guarantees the carrier exists,
+/// is flags-bearing, contains the named flag, and the flag has
+/// `width > 1` — so the lookups `.expect` cleanly.
+fn dotted_length_resolve(
+    carrier_id: &str,
+    flag_name: &str,
+    fields: &[CodecField],
+) -> (u32, u64) {
+    let carrier = fields
+        .iter()
+        .find(|x| x.id == carrier_id)
+        .expect("dotted-path length-field carrier validated by parser");
+    let flag = carrier
+        .flags
+        .iter()
+        .find(|f| f.name == flag_name)
+        .expect("dotted-path length-field flag validated by parser");
+    let mask: u64 = (1u64 << flag.width) - 1;
+    (flag.bit, mask)
 }
 
 /// RFC §5.B B2-β present-if + Vle bit-size: streaming base-128 read
@@ -4793,7 +4949,7 @@ fn present_if_encode_length_ref(
             // RFC §5.B B5-δ Surface F: when `length-arith` is set, the
             // wire-correct upper bound is `sibling_value + arith`, so
             // reuse the same `_n` computation the decode side uses.
-            let upper = compute_n_c11_encode(len_field, field.length_arith.unwrap_or(0));
+            let upper = compute_n_c11_encode(len_field, fields, field.length_arith.unwrap_or(0));
             format!(
                 "    for (size_t _bi = 0; _bi < self->{id_snake}_len && _bi < {upper}; ++_bi) \
                  r.bytes[r.len++] = self->{id_snake}[_bi];"
@@ -4816,7 +4972,7 @@ fn present_if_encode_length_ref(
             // RFC §5.B B5-δ Surface F: per-comment in the false arm,
             // length-arith adjusts the upper bound. Sibling-gated has
             // no effect on C11 encode (no Optional wrapper).
-            let upper = compute_n_c11_encode(len_field, field.length_arith.unwrap_or(0));
+            let upper = compute_n_c11_encode(len_field, fields, field.length_arith.unwrap_or(0));
             format!(
                 "    if (({carrier_snake} & 0x{mask:0width$X}) != 0) {{\n        \
                      for (size_t _bi = 0; _bi < self->{id_snake}_len && _bi < {upper}; ++_bi) \
@@ -5841,11 +5997,19 @@ fn vle_encode_block(value_expr: &str, width_bits: u32, lang: crate::generator::L
 /// `raw[len_byte_off]` directly. C11 emits multi-statement decode and
 /// reads `out->{length_field}` after the prior assignment, so this
 /// parameter is unused there.
+///
+/// `fields` is consulted for `BitSize::LengthRef` only: when the field's
+/// `length_field` is the dotted-path form `<carrier>.<flag>` (RFC §5.B
+/// B5-κ Surface L), the byte count source is the carrier's multi-bit
+/// flag value (shifted + masked from the carrier byte) — `length_field_byte_off`
+/// names the carrier's byte offset and `fields` resolves the flag's
+/// bit position and width.
 fn generate_decode_expr(
     field: &CodecField,
     default_endian: Endian,
     lang: crate::generator::Language,
     length_field_byte_off: Option<u32>,
+    fields: &[CodecField],
 ) -> String {
     use crate::generator::Language;
     let byte_off = field.byte_offset;
@@ -5908,6 +6072,13 @@ fn generate_decode_expr(
             // term folds into the slice end expression with a literal
             // `+ N`/`- N` so per-language casts stay byte-stable when
             // `arith == 0` (no diff on existing length-ref goldens).
+            //
+            // RFC §5.B B5-κ Surface L: when the length_field is the
+            // dotted-path form `<carrier>.<flag>`, the source byte
+            // (`raw[carrier_byte_off]`) is shifted + masked to extract
+            // the multi-bit subfield value before slicing. Plain bare-id
+            // form keeps the existing `raw[len_off]` shape (no diff on
+            // pre-B5-κ goldens).
             let len_off = length_field_byte_off.unwrap_or(0);
             let arith = field.length_arith.unwrap_or(0);
             let suffix_signed = match arith {
@@ -5915,21 +6086,52 @@ fn generate_decode_expr(
                 n if n > 0 => format!(" + {n}"),
                 n => format!(" - {}", -n),
             };
-            // Languages without arithmetic-friendly casts on the slice
-            // index emit through a wider compute helper. For v1 (arith
-            // ∈ {-1, +1}) the suffix above is sufficient on every
-            // backend's natural integer arithmetic.
+            // Compute the per-language source-of-length expression. For
+            // plain form: `raw[len_off]`. For dotted form: a shifted +
+            // masked extract from `raw[carrier_byte_off]` whose shape
+            // varies slightly per language to honor each backend's
+            // natural integer cast convention.
+            let (shift_opt, mask_opt) = match field.length_field.as_deref() {
+                Some(s) => match dotted_length_field(s) {
+                    Some((c, f)) => {
+                        let (shift, mask) = dotted_length_resolve(c, f, fields);
+                        (Some(shift), Some(mask))
+                    }
+                    None => (None, None),
+                },
+                None => (None, None),
+            };
+            let len_value_cpp = match (shift_opt, mask_opt) {
+                (Some(shift), Some(mask)) => format!("((raw[{len_off}] >> {shift}) & 0x{mask:X})"),
+                _ => format!("raw[{len_off}]"),
+            };
+            let len_value_kotlin = match (shift_opt, mask_opt) {
+                (Some(shift), Some(mask)) => format!("((raw[{len_off}].toInt() ushr {shift}) and 0x{mask:X})"),
+                _ => format!("raw[{len_off}].toInt()"),
+            };
+            let len_value_rust = match (shift_opt, mask_opt) {
+                (Some(shift), Some(mask)) => format!("(((raw[{len_off}] >> {shift}) & 0x{mask:X}) as usize)"),
+                _ => format!("raw[{len_off}] as usize"),
+            };
+            let len_value_go = match (shift_opt, mask_opt) {
+                (Some(shift), Some(mask)) => format!("int((raw[{len_off}] >> {shift}) & 0x{mask:X})"),
+                _ => format!("int(raw[{len_off}])"),
+            };
+            let len_value_python = match (shift_opt, mask_opt) {
+                (Some(shift), Some(mask)) => format!("((raw[{len_off}] >> {shift}) & 0x{mask:X})"),
+                _ => format!("raw[{len_off}]"),
+            };
             match lang {
                 Language::Cpp =>
-                    format!("std::vector<uint8_t>(raw + {byte_off}, raw + {byte_off} + raw[{len_off}]{suffix_signed})"),
+                    format!("std::vector<uint8_t>(raw + {byte_off}, raw + {byte_off} + {len_value_cpp}{suffix_signed})"),
                 Language::Kotlin =>
-                    format!("raw.copyOfRange({byte_off}, {byte_off} + raw[{len_off}].toInt(){suffix_signed})"),
+                    format!("raw.copyOfRange({byte_off}, {byte_off} + {len_value_kotlin}{suffix_signed})"),
                 Language::Rust =>
-                    format!("raw[{byte_off}..{byte_off} + raw[{len_off}] as usize{suffix_signed}].to_vec()"),
+                    format!("raw[{byte_off}..{byte_off} + {len_value_rust}{suffix_signed}].to_vec()"),
                 Language::Go =>
-                    format!("raw[{byte_off}:{byte_off}+int(raw[{len_off}]){suffix_signed}]"),
+                    format!("raw[{byte_off}:{byte_off}+{len_value_go}{suffix_signed}]"),
                 Language::Python =>
-                    format!("raw[{byte_off}:{byte_off} + raw[{len_off}]{suffix_signed}]"),
+                    format!("raw[{byte_off}:{byte_off} + {len_value_python}{suffix_signed}]"),
                 Language::C11 => String::new(),
             }
         }
@@ -10174,7 +10376,7 @@ fn render_inline_codec_member(
                  \x20           {struct_name} value{{\n"
             ));
             for f in codec_fields {
-                let decode = generate_decode_expr(f, default_endian, Language::Cpp, resolve_length_field_byte_off(codec_fields, f));
+                let decode = generate_decode_expr(f, default_endian, Language::Cpp, resolve_length_field_byte_off(codec_fields, f), codec_fields);
                 code.push_str(&format!("                .{} = {},\n", f.id, decode));
             }
             code.push_str("            };\n");
@@ -10215,7 +10417,7 @@ fn render_inline_codec_member(
                  \x20               val value = {struct_name}(\n"
             ));
             for f in codec_fields {
-                let decode = generate_decode_expr(f, default_endian, Language::Kotlin, resolve_length_field_byte_off(codec_fields, f));
+                let decode = generate_decode_expr(f, default_endian, Language::Kotlin, resolve_length_field_byte_off(codec_fields, f), codec_fields);
                 code.push_str(&format!("                    {},\n", decode));
             }
             code.push_str("                )\n");
@@ -10256,7 +10458,7 @@ fn render_inline_codec_member(
                  \x20       let value = Self {{\n"
             ));
             for f in codec_fields {
-                let decode = generate_decode_expr(f, default_endian, Language::Rust, resolve_length_field_byte_off(codec_fields, f));
+                let decode = generate_decode_expr(f, default_endian, Language::Rust, resolve_length_field_byte_off(codec_fields, f), codec_fields);
                 let field_id = filters::to_snake_case(f.id.clone());
                 type_def.push_str(&format!("            {field_id}: {decode},\n"));
             }
@@ -10304,7 +10506,7 @@ fn render_inline_codec_member(
                  \tvalue := &{struct_name}{{\n"
             ));
             for f in codec_fields {
-                let decode = generate_decode_expr(f, default_endian, Language::Go, resolve_length_field_byte_off(codec_fields, f));
+                let decode = generate_decode_expr(f, default_endian, Language::Go, resolve_length_field_byte_off(codec_fields, f), codec_fields);
                 let field_id = filters::to_pascal_case(f.id.clone());
                 type_def.push_str(&format!("\t\t{field_id}: {decode},\n"));
             }
@@ -10350,7 +10552,7 @@ fn render_inline_codec_member(
                  \x20           value = {struct_name}(\n"
             ));
             for f in codec_fields {
-                let decode = generate_decode_expr(f, default_endian, Language::Python, resolve_length_field_byte_off(codec_fields, f));
+                let decode = generate_decode_expr(f, default_endian, Language::Python, resolve_length_field_byte_off(codec_fields, f), codec_fields);
                 code.push_str(&format!("                {decode},\n"));
             }
             code.push_str("            )\n");
@@ -10411,7 +10613,7 @@ fn render_inline_codec_member(
             ));
             for f in codec_fields {
                 let field_id = filters::to_snake_case(f.id.clone());
-                let decode = generate_decode_expr(f, default_endian, Language::C11, resolve_length_field_byte_off(codec_fields, f));
+                let decode = generate_decode_expr(f, default_endian, Language::C11, resolve_length_field_byte_off(codec_fields, f), codec_fields);
                 code.push_str(&format!("    out->{field_id} = {decode};\n"));
             }
             code.push_str(&format!(

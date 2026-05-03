@@ -765,6 +765,23 @@
       "fields": []
     },
     {
+      "name": "codec_length_ref_dotted_basic",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "fields": [
+        {
+          "name": "carrier",
+          "type": "u8",
+          "compare": "equality"
+        },
+        {
+          "name": "payload",
+          "type": "bytes",
+          "compare": "equality"
+        }
+      ]
+    },
+    {
       "name": "timer_diag_scheduler",
       "kind": "timer",
       "ref_section": "timers",

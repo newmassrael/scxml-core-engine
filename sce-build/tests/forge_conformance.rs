@@ -794,6 +794,66 @@ fn forge_codec_zenoh_fragment_python_no_sidecar_until_closure() {
     assert_no_codec_sidecar_until_closure("codec_zenoh_fragment", sce_build::generator::Language::Python);
 }
 
+// ── RFC §5.B B5-κ Surface L sidecar emit (primitive demo) ──────
+//
+// codec_length_ref_dotted_basic carries inline `<sce:test-vector>`
+// rows, so the per-fixture sidecar emits on Rust + C11. cpp/kotlin/
+// go/python remain gated until B5-θ closures land (rotating gate
+// pattern from B5-θ trunk). codec_zenoh_scout has no inline
+// test-vectors (B5-θ doesn't yet support absent-vs-present markers
+// for present-if codecs — `<sce:test-vector>` was rejected until that
+// closure), so its sidecar is uniformly empty across all 6 backends.
+
+#[test]
+fn forge_rust_codec_length_ref_dotted_basic_test_vector_sidecar() {
+    assert_sidecar_forge_lang(
+        "codec_length_ref_dotted_basic",
+        "codec_length_ref_dotted_basic_test.rs",
+        sce_build::generator::Language::Rust,
+    );
+}
+
+#[test]
+fn forge_c11_codec_length_ref_dotted_basic_test_vector_sidecar() {
+    assert_sidecar_forge_lang(
+        "codec_length_ref_dotted_basic",
+        "codec_length_ref_dotted_basic_test.c.h",
+        sce_build::generator::Language::C11,
+    );
+}
+
+#[test]
+fn forge_codec_length_ref_dotted_basic_cpp_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure(
+        "codec_length_ref_dotted_basic",
+        sce_build::generator::Language::Cpp,
+    );
+}
+
+#[test]
+fn forge_codec_length_ref_dotted_basic_kotlin_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure(
+        "codec_length_ref_dotted_basic",
+        sce_build::generator::Language::Kotlin,
+    );
+}
+
+#[test]
+fn forge_codec_length_ref_dotted_basic_go_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure(
+        "codec_length_ref_dotted_basic",
+        sce_build::generator::Language::Go,
+    );
+}
+
+#[test]
+fn forge_codec_length_ref_dotted_basic_python_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure(
+        "codec_length_ref_dotted_basic",
+        sce_build::generator::Language::Python,
+    );
+}
+
 // ── §5.F build-time const-fold (Phase A4-β — host interpreter) ──
 
 /// RFC §5.F α-residual contract: parser still produces the
@@ -1153,6 +1213,27 @@ fn forge_codec_zenoh_fragment_cpp() {
 #[test]
 fn forge_codec_decl_final_cpp() {
     assert_standalone_forge("codec_decl_final", "codec_decl_final.h");
+}
+
+// ── RFC §5.B B5-κ Surface L dotted-path length-field (cpp) ─────
+// Author writes `sce:length-field="<carrier>.<flag>"` to source the
+// byte count of a length-ref payload from a multi-bit flag subfield
+// inside a flags-bearing carrier — mirrors B1-δ present-if's
+// dotted-path grammar exactly. First reachable consumer:
+// codec_zenoh_scout where zenoh-pico packs zid_len_m1 into cbyte's
+// high nibble alongside what / I bits.
+
+#[test]
+fn forge_codec_length_ref_dotted_basic_cpp() {
+    assert_standalone_forge(
+        "codec_length_ref_dotted_basic",
+        "codec_length_ref_dotted_basic.h",
+    );
+}
+
+#[test]
+fn forge_codec_zenoh_scout_cpp() {
+    assert_standalone_forge("codec_zenoh_scout", "codec_zenoh_scout.h");
 }
 
 // ── RFC §5.B B5-α multi-bit flag accessor + empty-codec lift ──
@@ -2111,6 +2192,137 @@ fn forge_codec_repeat_forward_count_rejects() {
     );
 }
 
+// ── RFC §5.B B5-κ Surface L parser-validation reject tests ────
+//
+// Mirrors B1-δ present-if's reject coverage (forward-reference,
+// non-flags-bearing carrier, missing flag, single-bit flag rejected
+// for length-source semantics). Every failure folds into the
+// generic `validation/invalid-attribute` (no new diagnostic).
+
+/// Forward-reference: carrier declared AFTER the length-ref payload.
+/// Streaming decoder cannot read the carrier byte before reaching the
+/// payload, so codegen must reject at parse time.
+#[test]
+fn forge_codec_length_field_dotted_forward_ref_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="forward_ref">
+  <datamodel>
+    <sce:field id="payload" sce:type="bytes" sce:byte="0" sce:bit-size="length-ref"
+               sce:length-field="hdr.payload_len" sce:max-size="15"/>
+    <sce:flags id="hdr" sce:type="uint8" sce:byte="64" sce:bit-size="8">
+      <sce:flag name="payload_len" bit="4" width="4"/>
+    </sce:flags>
+  </datamodel>
+</scxml>"#;
+    let result = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("forward_ref"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "forward-reference of dotted-path length-field must reject with validation/invalid-attribute"
+        ),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            &err.error,
+            ForgeError::Validation(ValidationError::InvalidAttribute { attr, .. })
+                if attr == "sce:length-field"
+        ),
+        "must surface as InvalidAttribute on sce:length-field; got: {:?}",
+        err.error
+    );
+}
+
+/// Single-bit flag rejected: width=1 only ever carries 0 or 1, which is
+/// the present-if grammar's domain (bit-test), not the length-field
+/// grammar's (value-extract). Forces authors to declare a multi-bit
+/// flag when they want a length source.
+#[test]
+fn forge_codec_length_field_dotted_single_bit_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="single_bit_len">
+  <datamodel>
+    <sce:flags id="hdr" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="one_bit" bit="0"/>
+    </sce:flags>
+    <sce:field id="payload" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref"
+               sce:length-field="hdr.one_bit" sce:max-size="15"/>
+  </datamodel>
+</scxml>"#;
+    let result = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("single_bit_len"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "single-bit flag (width=1) must reject as length source; that's the present-if grammar's domain"
+        ),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            &err.error,
+            ForgeError::Validation(ValidationError::InvalidAttribute { attr, expected, .. })
+                if attr == "sce:length-field" && expected.contains("multi-bit")
+        ),
+        "must mention multi-bit requirement; got: {:?}",
+        err.error
+    );
+}
+
+/// Non-flags-bearing carrier: dotted-path LHS must be a `<sce:flags>`
+/// container, not a plain `<sce:field>`.
+#[test]
+fn forge_codec_length_field_dotted_non_flags_carrier_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="plain_carrier">
+  <datamodel>
+    <sce:field id="hdr" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="payload" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref"
+               sce:length-field="hdr.bogus" sce:max-size="15"/>
+  </datamodel>
+</scxml>"#;
+    let result = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("plain_carrier"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "dotted-path against a non-flags-bearing carrier must reject"
+        ),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            &err.error,
+            ForgeError::Validation(ValidationError::InvalidAttribute { attr, expected, .. })
+                if attr == "sce:length-field" && expected.contains("flags-bearing")
+        ),
+        "must mention flags-bearing requirement; got: {:?}",
+        err.error
+    );
+}
+
 // ── RFC §5.B B4 applied codec shapes (Cpp) ───────────────────
 // Three Zenoh wire-extension shapes built from existing B1/B2
 // primitives — no new IR/parser/codegen surface. See
@@ -2856,6 +3068,21 @@ fn forge_kotlin_codec_decl_final() {
     assert_standalone_forge_kotlin("codec_decl_final", "CodecDeclFinal.kt");
 }
 
+// ── RFC §5.B B5-κ Surface L dotted-path length-field (Kotlin) ──
+
+#[test]
+fn forge_kotlin_codec_length_ref_dotted_basic() {
+    assert_standalone_forge_kotlin(
+        "codec_length_ref_dotted_basic",
+        "CodecLengthRefDottedBasic.kt",
+    );
+}
+
+#[test]
+fn forge_kotlin_codec_zenoh_scout() {
+    assert_standalone_forge_kotlin("codec_zenoh_scout", "CodecZenohScout.kt");
+}
+
 // ── RFC §5.B B5-α multi-bit + empty-codec (Kotlin) ───────────
 
 #[test]
@@ -3244,6 +3471,21 @@ fn forge_rust_codec_decl_final() {
     assert_standalone_forge_rust("codec_decl_final", "codec_decl_final.rs");
 }
 
+// ── RFC §5.B B5-κ Surface L dotted-path length-field (Rust) ────
+
+#[test]
+fn forge_rust_codec_length_ref_dotted_basic() {
+    assert_standalone_forge_rust(
+        "codec_length_ref_dotted_basic",
+        "codec_length_ref_dotted_basic.rs",
+    );
+}
+
+#[test]
+fn forge_rust_codec_zenoh_scout() {
+    assert_standalone_forge_rust("codec_zenoh_scout", "codec_zenoh_scout.rs");
+}
+
 // ── RFC §5.B B5-α multi-bit + empty-codec (Rust) ─────────────
 
 #[test]
@@ -3579,6 +3821,21 @@ fn forge_go_codec_decl_final() {
     assert_standalone_forge_go("codec_decl_final", "codec_decl_final.go");
 }
 
+// ── RFC §5.B B5-κ Surface L dotted-path length-field (Go) ──────
+
+#[test]
+fn forge_go_codec_length_ref_dotted_basic() {
+    assert_standalone_forge_go(
+        "codec_length_ref_dotted_basic",
+        "codec_length_ref_dotted_basic.go",
+    );
+}
+
+#[test]
+fn forge_go_codec_zenoh_scout() {
+    assert_standalone_forge_go("codec_zenoh_scout", "codec_zenoh_scout.go");
+}
+
 // ── RFC §5.B B5-α multi-bit + empty-codec (Go) ───────────────
 
 #[test]
@@ -3886,6 +4143,21 @@ fn forge_python_codec_decl_final() {
     assert_standalone_forge_python("codec_decl_final", "codec_decl_final.py");
 }
 
+// ── RFC §5.B B5-κ Surface L dotted-path length-field (Python) ──
+
+#[test]
+fn forge_python_codec_length_ref_dotted_basic() {
+    assert_standalone_forge_python(
+        "codec_length_ref_dotted_basic",
+        "codec_length_ref_dotted_basic.py",
+    );
+}
+
+#[test]
+fn forge_python_codec_zenoh_scout() {
+    assert_standalone_forge_python("codec_zenoh_scout", "codec_zenoh_scout.py");
+}
+
 // ── RFC §5.B B5-α multi-bit + empty-codec (Python) ───────────
 
 #[test]
@@ -4124,6 +4396,21 @@ fn forge_c11_codec_zenoh_fragment() {
 #[test]
 fn forge_c11_codec_decl_final() {
     assert_standalone_forge_c("codec_decl_final", "codec_decl_final.c.h");
+}
+
+// ── RFC §5.B B5-κ Surface L dotted-path length-field (C11) ─────
+
+#[test]
+fn forge_c11_codec_length_ref_dotted_basic() {
+    assert_standalone_forge_c(
+        "codec_length_ref_dotted_basic",
+        "codec_length_ref_dotted_basic.c.h",
+    );
+}
+
+#[test]
+fn forge_c11_codec_zenoh_scout() {
+    assert_standalone_forge_c("codec_zenoh_scout", "codec_zenoh_scout.c.h");
 }
 
 // ── RFC §5.B B5-ζ Surface H string primitive (C11) ───────────

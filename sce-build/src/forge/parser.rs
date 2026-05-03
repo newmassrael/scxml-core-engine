@@ -627,6 +627,18 @@ fn parse_codec(
     // diagnostic naming the offending field.
     validate_codec_dma_alignment(&fields, label, &datamodel)?;
 
+    // RFC §5.B B5-κ Surface L — `sce:length-field="<carrier>.<flag>"`
+    // dotted-path form (length value sourced from a multi-bit flag
+    // subfield inside a flags-bearing carrier, mirroring the B1-δ
+    // present-if dotted-path grammar). Validation: carrier must be
+    // declared earlier in the same codec, must be flags-bearing, must
+    // contain a flag of that name, AND the flag must be multi-bit
+    // (width > 1) since a single-bit flag would only ever carry
+    // value 0 or 1 — that's the present-if grammar's purpose.
+    // Plain (non-dotted) length-field is left untouched here (existing
+    // codegen-time lookup).
+    validate_codec_length_field_refs(&fields, label, &datamodel)?;
+
     // RFC §5.B variant primitive (B1-β): optional <sce:variant> suffix
     // under <datamodel>. Resolves the tag field reference against the
     // codec's own field list; arm body aliases (resolved against
@@ -2204,6 +2216,92 @@ fn parse_codec_tlv_chain_from_node(
 
 /// RFC §5.B B2 repeat cross-field validation. Walks the field list
 /// in source order; every `BitSize::Repeat { LengthField(id) }` must
+/// RFC §5.B B5-κ Surface L — `sce:length-field` cross-field validation
+/// for the dotted-path form `<carrier>.<flag>`. The plain bare-id form
+/// is left untyped (codegen-time lookup at the use site, mirroring the
+/// pre-B5-κ behavior). Mirrors the B1-δ present-if validator on three
+/// axes: forward-reference, carrier-shape, flag existence — plus a
+/// fourth gate specific to length-field semantics: the referenced flag
+/// must be MULTI-BIT (`width > 1`), since a single-bit flag's value is
+/// only ever 0 or 1 — that's the present-if grammar's purpose, not
+/// length-source.
+///
+/// All four failure modes fold into `validation/invalid-attribute`
+/// because the repair is attribute-text-level (pick a different
+/// carrier, declare the missing flag, widen the flag, or reorder the
+/// declarations). No new diagnostic.
+fn validate_codec_length_field_refs(
+    fields: &[CodecField],
+    label: DocumentLabel<'_>,
+    datamodel: &roxmltree::Node,
+) -> Result<(), Located<ForgeError>> {
+    use std::collections::BTreeMap;
+    let mut by_id_so_far: BTreeMap<&str, &CodecField> = BTreeMap::new();
+    for field in fields {
+        if let Some(raw) = field.length_field.as_deref() {
+            if let Some((carrier_id, flag_name)) = raw.split_once('.') {
+                let carrier_id = carrier_id.trim();
+                let flag_name = flag_name.trim();
+                let invalid = |expected: String| {
+                    located(
+                        datamodel,
+                        label.diagnostic_label,
+                        ValidationError::InvalidAttribute {
+                            element: format!(
+                                "field '{}' in codec '{}'",
+                                field.id, label.identifier
+                            ),
+                            attr: "sce:length-field".into(),
+                            value: raw.to_string(),
+                            expected,
+                        },
+                    )
+                };
+                if carrier_id.is_empty() || flag_name.is_empty() {
+                    return Err(invalid(
+                        "dotted-path 'sce:length-field=\"<carrier>.<flag>\"' \
+                         requires non-empty carrier and flag identifiers"
+                            .into(),
+                    ));
+                }
+                let carrier = by_id_so_far.get(carrier_id).ok_or_else(|| {
+                    invalid(format!(
+                        "carrier '{carrier_id}' must be a flags-bearing field \
+                         declared earlier in the same codec (forward references \
+                         are rejected so the streaming decoder reads the carrier \
+                         before reaching the length-ref payload)"
+                    ))
+                })?;
+                if !carrier.is_flags_carrier() {
+                    return Err(invalid(format!(
+                        "dotted-path LHS must reference a flags-bearing carrier \
+                         (declared via <sce:flags>); '{carrier_id}' is a plain field"
+                    )));
+                }
+                let flag = carrier.flags.iter().find(|f| f.name == flag_name).ok_or_else(|| {
+                    let known: Vec<&str> = carrier.flags.iter().map(|f| f.name.as_str()).collect();
+                    invalid(format!(
+                        "flag name must be declared on carrier '{carrier_id}': \
+                         known flags = [{}]",
+                        known.join(", ")
+                    ))
+                })?;
+                if flag.width <= 1 {
+                    return Err(invalid(format!(
+                        "flag '{carrier_id}.{flag_name}' has width={} but \
+                         length-source semantics require multi-bit \
+                         (width > 1); single-bit flags are the domain of \
+                         sce:present-if, not sce:length-field",
+                        flag.width
+                    )));
+                }
+            }
+        }
+        by_id_so_far.insert(field.id.as_str(), field);
+    }
+    Ok(())
+}
+
 /// reference a previously-declared sibling field whose `sce_type` is
 /// integer (so the decoded value is a valid element count).
 ///

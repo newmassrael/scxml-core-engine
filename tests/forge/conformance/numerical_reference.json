@@ -2976,6 +2976,79 @@
           "note": "empty body — encode/decode round-trips zero bytes"
         }
       ]
+    },
+    "codec_length_ref_dotted_basic": {
+      "fixture": "CodecLengthRefDottedBasic",
+      "signature": "(raw: &[u8]) <-> {carrier: u8 flags @ byte 0 (hdr:4 + payload_len:4), payload: bytes length-ref @ byte 1 (length = carrier.payload_len, max 15)}",
+      "description": "RFC §5.B B5-κ Surface L primitive demo — `sce:length-field=\"<carrier>.<flag>\"` dotted-path. Length of the bytes payload is sourced from a multi-bit flag subfield (`carrier.payload_len`, width=4 at bit 4) inside the flags-bearing carrier rather than a separate sibling integer field. Mirrors B1-δ present-if's dotted-path grammar exactly (same syntax, different operation: length-extract instead of bit-test). First reachable consumer is codec_zenoh_scout where the upstream zenoh-pico wire packs `zid_len_m1` into `cbyte[4..7]`.",
+      "cases": [
+        {
+          "decoded": {
+            "carrier": 0,
+            "payload": []
+          },
+          "encoded": [
+            0
+          ],
+          "note": "carrier=0x00 (hdr=0, payload_len=0) — no payload bytes"
+        },
+        {
+          "decoded": {
+            "carrier": 33,
+            "payload": [
+              170,
+              187
+            ]
+          },
+          "encoded": [
+            33,
+            170,
+            187
+          ],
+          "note": "carrier=0x21 (hdr=1, payload_len=2 in high nibble) — 2-byte payload"
+        },
+        {
+          "decoded": {
+            "carrier": 245,
+            "payload": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14
+            ]
+          },
+          "encoded": [
+            245,
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14
+          ],
+          "note": "carrier=0xF5 (hdr=5, payload_len=15 = max for 4-bit width) — 15-byte payload"
+        }
+      ]
     }
   },
   "timers": {
