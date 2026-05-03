@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh transport-layer Fragment body (RFC
+     §5.B B5-ι — cross-codec composition fixture authoring the ~30
+     zenoh messages end-to-end on B1-B5 primitives).
+
+     Upstream zenoh-pico shape (`_z_fragment_encode` in
+     src/protocol/codec/transport.c:409-434 + the no-extension fast
+     path at line 429-431): VLE-encoded sequence number followed by
+     the fragment's raw payload bytes. The 1-byte transport-message
+     header (MID + R/M/Z flags) is written separately by
+     `_z_transport_message_encode` so the body codec scope is sn +
+     payload. With Z=0 (no extensions) the wire shape is a textbook
+     VLE-then-tail: same wire shape as codec_zenoh_frame but a distinct
+     MID (_Z_MID_T_FRAGMENT = 0x06 vs _Z_MID_T_FRAME = 0x05) and
+     different host-level semantics (M=more flag indicates more
+     fragments will follow; that's host state, not wire-visible inside
+     the body). The R-flag's reliable/best-effort semantics is also
+     host-level.
+
+     Applied composition: B1-α VLE primitive (sn) + B1 tail (payload).
+     max-size for payload is 65536 — same upper bound as codec_zenoh_frame
+     since fragment shares the per-batch link MTU constraint. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_fragment">
+  <datamodel>
+    <sce:field id="sn"      sce:type="uint64" sce:byte="0" sce:bit-size="vle"/>
+    <sce:field id="payload" sce:type="bytes"  sce:byte="1" sce:bit-size="tail"
+               sce:max-size="65536"/>
+  </datamodel>
+  <!-- RFC §5.B B5-θ inline test vectors. Mirrors the codec_zenoh_frame
+       4-case oracle (same VLE width boundaries on sn + tail-byte
+       payload composition); fragment and frame share an identical
+       body wire shape, differing only in the enclosing MID. -->
+  <sce:test-vector hex="00">
+    <sce:decoded field="sn" value="0"/>
+    <sce:decoded field="payload" hex=""/>
+  </sce:test-vector>
+  <sce:test-vector hex="01cafe">
+    <sce:decoded field="sn" value="1"/>
+    <sce:decoded field="payload" hex="cafe"/>
+  </sce:test-vector>
+  <sce:test-vector hex="7faabbcc">
+    <sce:decoded field="sn" value="127"/>
+    <sce:decoded field="payload" hex="aabbcc"/>
+  </sce:test-vector>
+  <sce:test-vector hex="8001dead">
+    <sce:decoded field="sn" value="128"/>
+    <sce:decoded field="payload" hex="dead"/>
+  </sce:test-vector>
+</scxml>
