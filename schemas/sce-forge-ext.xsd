@@ -457,6 +457,15 @@
       <xs:attribute name="count" type="xs:string"/>
       <xs:attribute name="until-eof" type="xs:boolean"/>
       <xs:attribute name="max-count" type="xs:nonNegativeInteger"/>
+      <!-- RFC §5.B B5-μ (Wire RFC Phase B X1): present-if on the
+           entire repeat block. When set, the count field MUST also
+           carry the IDENTICAL `sce:present-if` predicate (co-gating
+           contract enforced by `validate_codec_repeat_present_if_co_
+           gating` — wire bytes for both count and elements appear or
+           disappear atomically). Predicate grammar mirrors B1-δ
+           (`<carrier>.<flag>` Local) and B5-γ (`parent.<flag>`
+           Parent), with B5-λ optional `!` negation. -->
+      <xs:attribute ref="sce:present-if"/>
     </xs:complexType>
   </xs:element>
 

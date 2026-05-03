@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh transport-layer Hello body — final
+     remaining Batch 1 fixture for B5-ι (Wire RFC Phase B Batch 1).
+     First REALISTIC parent-scope consumer of B5-μ
+     `<sce:repeat sce:present-if="parent.<flag>"/>` (Wire RFC Phase B
+     X1). Pairs with `codec_repeat_present_if_basic` (the local-scope
+     primitive demo).
+
+     Mirrors zenoh-pico `_z_hello_encode` (src/protocol/codec/message.c
+     lines 646-664) + `_Z_FLAG_T_HELLO_L = 0x20` at bit 5
+     (include/zenoh-pico/protocol/definitions/transport.h:54). Upstream
+     packs the body's locator-list as parent-header-flag-gated VLE
+     count + per-locator length-prefixed UTF-8 string array; when the
+     parent's L flag is clear (HelloMin), neither the count byte(s)
+     nor the locator bodies appear on the wire. zid is unconditionally
+     present in the body (length sourced from cbyte.zid_len_m1 + 1
+     via B5-κ Surface L dotted-path + B5-δ Surface F arithmetic).
+
+     Wire shape (2+zidlen, or 2+zidlen+VLEcount+sum(locator)):
+       byte 0   : version    (uint8, always)
+       byte 1   : cbyte      (uint8 flags: whatami:2 + zid_len_m1:4)
+       byte 2.. : zid        (bytes, length = cbyte.zid_len_m1+1, max=16)
+       parent.L : num_locators  (VLE u64; absent if parent.L=0)
+                  locators       (repeat<codec_zenoh_locator>;
+                                  count = num_locators; absent if parent.L=0)
+
+     Co-gating contract: `num_locators` and the `locators` repeat
+     BOTH carry `sce:present-if="parent.L"`. The validator
+     (`validate_codec_repeat_present_if_co_gating`) enforces that the
+     count source field's predicate matches the repeat's predicate
+     EXACTLY — both fields' wire bytes appear/disappear together.
+
+     Wrap shape per language (B2-β tail/length-ref present-if precedent):
+       Rust:   `Option<u64>` num_locators + `Option<Vec<CodecZenohLocator>>` locators
+       Cpp:    `std::optional<uint64_t>` + `std::optional<std::vector<...>>`
+       Kotlin: `ULong?` + `MutableList<CodecZenohLocator>?`
+       Go:     `*uint64` + `[]CodecZenohLocator` (slice nilness)
+       Python: `Optional[int]` + `Optional[List[CodecZenohLocator]]`
+       C11:    `uint64_t num_locators` + `codec_zenoh_locator_t locators[max]; size_t locators_len`
+               (carrier-bit-as-truth — wire presence is parent.L) -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_hello">
+  <sce:import src="codec_zenoh_locator.scxml" kind="codec" as="codec_zenoh_locator"/>
+  <sce:requires-parent-flags carrier="header">
+    <sce:flag name="L" bit="5"/>
+  </sce:requires-parent-flags>
+  <datamodel>
+    <sce:field id="version" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:flags id="cbyte" sce:type="uint8" sce:byte="1" sce:bit-size="8">
+      <sce:flag name="whatami"    bit="0" width="2"/>
+      <sce:flag name="zid_len_m1" bit="4" width="4"/>
+    </sce:flags>
+    <sce:field id="zid" sce:type="bytes" sce:byte="2" sce:bit-size="length-ref"
+               sce:length-field="cbyte.zid_len_m1" sce:length-arith="+1"
+               sce:max-size="16"/>
+    <sce:field id="num_locators" sce:type="uint64" sce:byte="3" sce:bit-size="vle"
+               sce:present-if="parent.L"/>
+    <sce:repeat id="locators" type="codec_zenoh_locator" sce:byte="4"
+                count="num_locators" max-count="64"
+                sce:present-if="parent.L"/>
+  </datamodel>
+</scxml>

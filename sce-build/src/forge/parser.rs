@@ -619,6 +619,19 @@ fn parse_codec(
     // reuses the generic `validation/invalid-attribute`.
     validate_codec_repeat_count_refs(&fields, label, &datamodel)?;
 
+    // RFC §5.B B5-μ — co-gating constraint for repeat-with-present-if
+    // (Wire RFC Phase B X1). When a `<sce:repeat sce:count="X"
+    // sce:present-if="P"/>` field is gated, the count source field
+    // `X` MUST carry the IDENTICAL `sce:present-if="P"` predicate
+    // (same scope, same field_id, same flag_name, same negate). The
+    // semantic invariant: when the gate fires off, the count byte(s)
+    // are absent from the wire too — co-gating is the only authoring
+    // shape where the streaming decoder can safely read the count
+    // before emitting the repeat block. Folded into
+    // `validation/invalid-attribute` so the repair (align both
+    // attribute texts) reads off the diagnostic.
+    validate_codec_repeat_present_if_co_gating(&fields, label, &datamodel)?;
+
     // RFC §5.B B3 DMA alignment validation — `sce:dma-burst-align="N"`
     // requires (a) the field's authored `sce:byte` be divisible by N,
     // and (b) every preceding field is Fixed bit-size (so post-padding
@@ -2037,6 +2050,17 @@ fn parse_codec_repeat_from_node(
 
     let max_count = node.attribute("max-count").and_then(parse_int);
 
+    // RFC §5.B B5-μ — present-if on `<sce:repeat>` (Wire RFC Phase B
+    // X1). Parses the optional `sce:present-if` attribute identically
+    // to `<sce:field>` (`<carrier>.<flag>` Local, `parent.<flag>`
+    // Parent, optional `!` negation). Cross-field co-gating with the
+    // count source field runs in `validate_codec_repeat_present_if_
+    // co_gating` after the field list assembles.
+    let present_if = match sce_attr(node, "present-if") {
+        None => None,
+        Some(raw) => Some(parse_present_if_predicate(&raw, node, doc_name, &id)?),
+    };
+
     Ok(CodecField {
         id,
         // Wire-shape sentinel — the host-language type is derived
@@ -2051,7 +2075,7 @@ fn parse_codec_repeat_from_node(
         max_size: None,
         length_field: None,
         flags: Vec::new(),
-        present_if: None,
+        present_if,
         repeat_body_alias: Some(body_alias),
         max_count,
         tlv_chain_body_alias: None,
@@ -2377,6 +2401,100 @@ fn validate_codec_repeat_count_refs(
         by_id_so_far.insert(field.id.as_str(), field);
     }
     Ok(())
+}
+
+/// RFC §5.B B5-μ — repeat-with-present-if co-gating validator (Wire
+/// RFC Phase B X1). When `<sce:repeat sce:count="X" sce:present-if="P"/>`
+/// is gated, the count source field `X` MUST carry the IDENTICAL
+/// predicate `P`. Wire semantics: when the gate fires off the count
+/// bytes are absent, so the streaming decoder cannot read `X` to
+/// drive the repeat loop unless both share the same predicate. The
+/// True-arm of the repeat then reads `X.unwrap()` (or per-language
+/// equivalent) safely — the validator is the proof.
+///
+/// `CountRef::UntilEof` skips this check (no count target). Non-gated
+/// repeat skips (back-compat — B2-α trunk shape). Predicate identity
+/// compares all four fields of `PresentIfPredicate` (scope, field_id,
+/// flag_name, negate); any drift folds into `validation/invalid-
+/// attribute` with a precise repair hint naming both fields.
+fn validate_codec_repeat_present_if_co_gating(
+    fields: &[CodecField],
+    label: DocumentLabel<'_>,
+    datamodel: &roxmltree::Node,
+) -> Result<(), Located<ForgeError>> {
+    for field in fields {
+        let Some(repeat_pred) = &field.present_if else {
+            continue;
+        };
+        let BitSize::Repeat { count_ref: CountRef::LengthField(target) } = &field.bit_size else {
+            continue;
+        };
+        let count_field = fields
+            .iter()
+            .find(|f| f.id.as_str() == target.as_str())
+            .expect("validate_codec_repeat_count_refs ensured target exists");
+        let count_pred = match &count_field.present_if {
+            Some(p) => p,
+            None => {
+                return Err(located(
+                    datamodel,
+                    label.diagnostic_label,
+                    ValidationError::InvalidAttribute {
+                        element: format!(
+                            "<sce:repeat id='{}'> in codec '{}'",
+                            field.id, label.identifier
+                        ),
+                        attr: "sce:present-if".into(),
+                        value: format_present_if_predicate_for_diag(repeat_pred),
+                        expected: format!(
+                            "co-gating contract: count source field '{}' must \
+                             carry the IDENTICAL sce:present-if predicate so \
+                             the count byte(s) and repeat block share the same \
+                             wire-presence gate; '{}' currently has no \
+                             present-if",
+                            target, target
+                        ),
+                    },
+                ));
+            }
+        };
+        if count_pred != repeat_pred {
+            return Err(located(
+                datamodel,
+                label.diagnostic_label,
+                ValidationError::InvalidAttribute {
+                    element: format!(
+                        "<sce:repeat id='{}'> in codec '{}'",
+                        field.id, label.identifier
+                    ),
+                    attr: "sce:present-if".into(),
+                    value: format!(
+                        "repeat='{}' vs count='{}'",
+                        format_present_if_predicate_for_diag(repeat_pred),
+                        format_present_if_predicate_for_diag(count_pred)
+                    ),
+                    expected: format!(
+                        "co-gating contract: count source field '{}' MUST carry \
+                         the IDENTICAL sce:present-if predicate as the repeat — \
+                         scope, field_id, flag_name, and negate must match",
+                        target
+                    ),
+                },
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Render a `PresentIfPredicate` back to its source-text form for
+/// diagnostic messages. Mirrors `parse_present_if_predicate` inverse
+/// so the repair hint reads as the author wrote it.
+fn format_present_if_predicate_for_diag(p: &PresentIfPredicate) -> String {
+    let prefix = if p.negate { "!" } else { "" };
+    match p.scope {
+        PresentIfScope::Local => format!("{prefix}{}.{}", p.field_id, p.flag_name),
+        PresentIfScope::Parent => format!("{prefix}parent.{}", p.flag_name),
+    }
 }
 
 /// RFC §5.B B3 DMA alignment cross-field validation. For every field

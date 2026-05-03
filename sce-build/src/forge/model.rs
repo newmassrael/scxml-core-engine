@@ -844,7 +844,7 @@ pub enum PresentIfScope {
 /// Conjunction (`flag1 && flag2`) and equality (`field == value`)
 /// remain deferred to later B-stages when a reachable consumer
 /// surfaces.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PresentIfPredicate {
     /// Predicate scope. Defaults to `Local` for back-compat with
     /// pre-B5-γ goldens; serialized only when `Parent` to keep

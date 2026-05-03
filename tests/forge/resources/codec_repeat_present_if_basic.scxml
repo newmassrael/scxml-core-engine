@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: repeat-with-present-if primitive (RFC §5.B
+     B5-μ, Wire RFC Phase B X1). Mirrors B5-κ Surface L's two-fixture
+     trunk pattern — this codec is the LOCAL-scope primitive demo
+     (B1-δ-style `<carrier>.<flag>` predicate); codec_zenoh_hello is
+     the realistic PARENT-scope consumer (`parent.<flag>`).
+
+     Wire shape (1 or 2+(2*N) bytes):
+       byte 0: carrier  bit 0 = has_list (single-bit flag)
+       byte 1: num_elems  (uint8, present iff carrier.has_list)
+       bytes 2..: elements (uint16 BE seq each, count = num_elems,
+                            present iff carrier.has_list)
+
+     The co-gating contract (`validate_codec_repeat_present_if_co_
+     gating`) is what makes this layout decodable: when has_list=0
+     NEITHER the count byte NOR the element bytes appear on the wire,
+     so the streaming decoder skips both atomically. When has_list=1
+     the count is read first, then `num_elems` element bodies. The
+     count field's IDENTICAL `sce:present-if="carrier.has_list"`
+     predicate is what the validator enforces.
+
+     Wrap shape per language (mirrors B2-β tail/length-ref present-if):
+       Rust:   `Option<Vec<CodecRepeatElem>>`
+       Cpp:    `std::optional<std::vector<codec_repeat_elem>>`
+       Kotlin: `MutableList<CodecRepeatElem>?`
+       Go:     `[]CodecRepeatElem` (slice nilness encodes presence)
+       Python: `Optional[List[CodecRepeatElem]]`
+       C11:    `codec_repeat_elem_t elems[max]; size_t elems_len`
+               (carrier-bit-as-truth — wire presence is the carrier
+                flag, not the C-side `_len`)
+
+     Round-trip oracles:
+       has_list=0:    [0x00]
+       has_list=1+0:  [0x01, 0x00]                        (empty list)
+       has_list=1+1:  [0x01, 0x01, 0xCA, 0xFE]            (one elem)
+       has_list=1+2:  [0x01, 0x02, 0xBE, 0xEF, 0xFA, 0xCE] (two elems) -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_repeat_present_if_basic">
+  <sce:import src="codec_repeat_elem.scxml" kind="codec" as="codec_repeat_elem"/>
+  <datamodel>
+    <sce:flags id="carrier" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="has_list" bit="0"/>
+    </sce:flags>
+    <sce:field id="num_elems" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="carrier.has_list"/>
+    <sce:repeat id="elems" type="codec_repeat_elem" sce:byte="2"
+                count="num_elems" max-count="32"
+                sce:present-if="carrier.has_list"/>
+  </datamodel>
+</scxml>

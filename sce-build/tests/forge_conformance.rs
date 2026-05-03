@@ -1335,6 +1335,36 @@ fn forge_codec_until_eof_basic_cpp() {
     assert_standalone_forge("codec_until_eof_basic", "codec_until_eof_basic.h");
 }
 
+// ── RFC §5.B B5-μ repeat-with-present-if (Wire RFC Phase B X1) ─
+// `codec_repeat_present_if_basic` is the LOCAL-scope primitive demo
+// of `<sce:repeat sce:present-if="<carrier>.<flag>"/>`. Mirrors B5-κ
+// Surface L's two-fixture trunk pattern (primitive + realistic
+// consumer); the realistic consumer is `codec_zenoh_hello`.
+// Co-gating contract: the count field `num_elems` MUST carry the
+// IDENTICAL `sce:present-if="carrier.has_list"` predicate.
+// Wrap shape per language: Option<Vec> / std::optional<vector> /
+// MutableList? / Optional[List]; Go uses bare slice nilness; C11
+// keeps carrier-bit-as-truth.
+
+#[test]
+fn forge_codec_repeat_present_if_basic_cpp() {
+    assert_standalone_forge(
+        "codec_repeat_present_if_basic",
+        "codec_repeat_present_if_basic.h",
+    );
+}
+
+// `codec_zenoh_hello` is the realistic PARENT-scope consumer of B5-μ
+// — mirrors zenoh-pico `_z_hello_encode` (message.c:646-664) +
+// `_Z_FLAG_T_HELLO_L = 0x20` at bit 5. Body's locator-list (VLE
+// num_locators + repeat<codec_zenoh_locator>) co-gates on the parent
+// header's L flag. Closes the final remaining Batch 1 fixture.
+
+#[test]
+fn forge_codec_zenoh_hello_cpp() {
+    assert_standalone_forge("codec_zenoh_hello", "codec_zenoh_hello.h");
+}
+
 // ── RFC §5.B B3 TLV chain primitive (Cpp/Rust trunk) ────────
 // `codec_tlv_chain_basic` declares a TLV chain bounded at max-depth=8
 // with on-overflow="reject". MCU-class — Cpp/Kotlin/Go/Python all
@@ -2183,6 +2213,99 @@ fn forge_codec_repeat_forward_count_rejects() {
             }) if field == "frags" && refers_to == "num_frags"
         ),
         "must surface as ValidationError::CodecRepeatCountRefsLaterField with the offending repeat and count target; got: {inner:?}"
+    );
+}
+
+/// RFC §5.B B5-μ co-gating contract — repeat-with-present-if (Wire
+/// RFC Phase B X1). When `<sce:repeat sce:count="X"
+/// sce:present-if="P"/>` is gated, the count source field `X` MUST
+/// also carry the IDENTICAL predicate `P`. Wire semantics: when the
+/// gate fires off, the count byte(s) are absent — the streaming
+/// decoder cannot read `X` to drive the repeat loop. Validator emits
+/// `validation/invalid-attribute` with both predicate strings + the
+/// repair hint naming both fields.
+///
+/// Case 1: count field has NO present-if (predicate mismatch via
+/// missing predicate on count side).
+#[test]
+fn forge_codec_repeat_present_if_count_missing_predicate_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="cogating_missing">
+  <sce:import src="codec_repeat_elem.scxml" kind="codec" as="codec_repeat_elem"/>
+  <datamodel>
+    <sce:flags id="carrier" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="has_list" bit="0"/>
+    </sce:flags>
+    <sce:field id="num_elems" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
+    <sce:repeat id="elems" type="codec_repeat_elem" sce:byte="2"
+                count="num_elems" max-count="32"
+                sce:present-if="carrier.has_list"/>
+  </datamodel>
+</scxml>"#;
+    let err = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("cogating_missing"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .err()
+    .expect("must reject co-gating contract violation");
+    assert!(
+        matches!(
+            err.error,
+            ForgeError::Validation(ValidationError::InvalidAttribute { ref attr, .. })
+                if attr == "sce:present-if"
+        ),
+        "must surface as InvalidAttribute on sce:present-if; got: {:?}",
+        err.error
+    );
+}
+
+/// Case 2: count field has a DIFFERENT present-if predicate
+/// (predicate identity mismatch). Same gate vs. different gate is the
+/// most subtle authoring mistake — the wire would still parse but the
+/// presence semantics would diverge between count and repeat.
+#[test]
+fn forge_codec_repeat_present_if_count_predicate_mismatch_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="cogating_mismatch">
+  <sce:import src="codec_repeat_elem.scxml" kind="codec" as="codec_repeat_elem"/>
+  <datamodel>
+    <sce:flags id="carrier" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="has_list"  bit="0"/>
+      <sce:flag name="has_count" bit="1"/>
+    </sce:flags>
+    <sce:field id="num_elems" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="carrier.has_count"/>
+    <sce:repeat id="elems" type="codec_repeat_elem" sce:byte="2"
+                count="num_elems" max-count="32"
+                sce:present-if="carrier.has_list"/>
+  </datamodel>
+</scxml>"#;
+    let err = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("cogating_mismatch"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .err()
+    .expect("must reject co-gating contract violation");
+    assert!(
+        matches!(
+            err.error,
+            ForgeError::Validation(ValidationError::InvalidAttribute { ref attr, .. })
+                if attr == "sce:present-if"
+        ),
+        "must surface as InvalidAttribute on sce:present-if; got: {:?}",
+        err.error
     );
 }
 
@@ -3208,6 +3331,19 @@ fn forge_kotlin_codec_repeat_basic() {
 }
 
 #[test]
+fn forge_kotlin_codec_repeat_present_if_basic() {
+    assert_standalone_forge_kotlin(
+        "codec_repeat_present_if_basic",
+        "CodecRepeatPresentIfBasic.kt",
+    );
+}
+
+#[test]
+fn forge_kotlin_codec_zenoh_hello() {
+    assert_standalone_forge_kotlin("codec_zenoh_hello", "CodecZenohHello.kt");
+}
+
+#[test]
 fn forge_kotlin_codec_until_eof_basic() {
     assert_standalone_forge_kotlin(
         "codec_until_eof_basic",
@@ -3602,6 +3738,19 @@ fn forge_rust_codec_until_eof_basic() {
         "codec_until_eof_basic",
         "codec_until_eof_basic.rs",
     );
+}
+
+#[test]
+fn forge_rust_codec_repeat_present_if_basic() {
+    assert_standalone_forge_rust(
+        "codec_repeat_present_if_basic",
+        "codec_repeat_present_if_basic.rs",
+    );
+}
+
+#[test]
+fn forge_rust_codec_zenoh_hello() {
+    assert_standalone_forge_rust("codec_zenoh_hello", "codec_zenoh_hello.rs");
 }
 
 // ── RFC §5.B B4 applied codec shapes (Rust) ─────────────────
@@ -3999,6 +4148,19 @@ fn forge_go_codec_until_eof_basic() {
     assert_standalone_forge_go("codec_until_eof_basic", "codec_until_eof_basic.go");
 }
 
+#[test]
+fn forge_go_codec_repeat_present_if_basic() {
+    assert_standalone_forge_go(
+        "codec_repeat_present_if_basic",
+        "codec_repeat_present_if_basic.go",
+    );
+}
+
+#[test]
+fn forge_go_codec_zenoh_hello() {
+    assert_standalone_forge_go("codec_zenoh_hello", "codec_zenoh_hello.go");
+}
+
 // ── RFC §5.B B4 applied codec shapes (Go) ───────────────────
 
 #[test]
@@ -4341,6 +4503,19 @@ fn forge_python_codec_until_eof_basic() {
     assert_standalone_forge_python("codec_until_eof_basic", "codec_until_eof_basic.py");
 }
 
+#[test]
+fn forge_python_codec_repeat_present_if_basic() {
+    assert_standalone_forge_python(
+        "codec_repeat_present_if_basic",
+        "codec_repeat_present_if_basic.py",
+    );
+}
+
+#[test]
+fn forge_python_codec_zenoh_hello() {
+    assert_standalone_forge_python("codec_zenoh_hello", "codec_zenoh_hello.py");
+}
+
 // ── RFC §5.B B4 applied codec shapes (Python) ───────────────
 
 #[test]
@@ -4643,6 +4818,19 @@ fn forge_c11_codec_repeat_basic() {
 #[test]
 fn forge_c11_codec_until_eof_basic() {
     assert_standalone_forge_c("codec_until_eof_basic", "codec_until_eof_basic.c.h");
+}
+
+#[test]
+fn forge_c11_codec_repeat_present_if_basic() {
+    assert_standalone_forge_c(
+        "codec_repeat_present_if_basic",
+        "codec_repeat_present_if_basic.c.h",
+    );
+}
+
+#[test]
+fn forge_c11_codec_zenoh_hello() {
+    assert_standalone_forge_c("codec_zenoh_hello", "codec_zenoh_hello.c.h");
 }
 
 // ── RFC §5.B B3 TLV chain primitive (C11, trunk) ────────────

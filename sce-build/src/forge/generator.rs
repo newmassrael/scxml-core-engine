@@ -1221,7 +1221,17 @@ fn render_codec(
                     obj.insert("repeat_body_type".into(), body_type.clone().into());
                     obj.insert("repeat_body_decoder".into(), body_decoder.clone().into());
                     obj.insert("repeat_body_encoder".into(), body_encoder.clone().into());
-                    let wrapped = match lang {
+                    // RFC §5.B B5-μ — repeat-with-present-if (X1) wrap.
+                    // When the repeat carries `sce:present-if`, the
+                    // host-language list type wraps in the same shape
+                    // B2-β established for tail/length-ref present-if:
+                    // Option<Vec<T>> / std::optional<vector> / MutableList?
+                    // / Optional[List]; Go uses bare slice nilness; C11
+                    // keeps the carrier-bit-as-truth model (the elems
+                    // array stays plain — wire presence is the gate, not
+                    // the C-side `_len`). Predicate=None codecs keep the
+                    // bare list type for back-compat with B2-α goldens.
+                    let bare = match lang {
                         crate::generator::Language::Rust => format!("Vec<{body_type}>"),
                         crate::generator::Language::Cpp => format!("std::vector<{body_type}>"),
                         // Kotlin: `MutableList<T>` mirrors the codec's
@@ -1255,18 +1265,47 @@ fn render_codec(
                         // across instances.
                         crate::generator::Language::Python => format!("List[{body_type}]"),
                     };
+                    let wrapped = if f.present_if.is_some() {
+                        match lang {
+                            crate::generator::Language::Rust => format!("Option<{bare}>"),
+                            crate::generator::Language::Cpp => format!("std::optional<{bare}>"),
+                            crate::generator::Language::Kotlin => format!("{bare}?"),
+                            // Go bare slice already encodes nilness as
+                            // absent (matches B2-β tail/length-ref
+                            // present-if precedent — no pointer wrap).
+                            crate::generator::Language::Go => bare.clone(),
+                            crate::generator::Language::Python => format!("Optional[{bare}]"),
+                            // C11 carrier-bit-as-truth: wire presence is
+                            // the parent flag, not the C-side `_len`.
+                            // Bare body_type (template renders the
+                            // `T elems[MAX]; size_t elems_len;` pair).
+                            crate::generator::Language::C11 => bare.clone(),
+                        }
+                    } else {
+                        bare.clone()
+                    };
                     obj.insert(type_key.into(), wrapped.into());
                     obj.insert(
                         "repeat_decode_stmt".into(),
                         repeat_streaming_decode_stmt(
-                            f, &body_type, &body_decoder, max_count, lang,
+                            f,
+                            &m.fields,
+                            m.requires_parent_flags.as_ref(),
+                            &body_type,
+                            &body_decoder,
+                            max_count,
+                            lang,
                         )
                         .into(),
                     );
                     obj.insert(
                         "repeat_encode_block".into(),
                         repeat_streaming_encode_block(
-                            f, &body_encoder, lang,
+                            f,
+                            &m.fields,
+                            m.requires_parent_flags.as_ref(),
+                            &body_encoder,
+                            lang,
                         )
                         .into(),
                     );
@@ -1274,9 +1313,21 @@ fn render_codec(
                     // default value for every property; the trunk's
                     // `0.toUByte()` family default would miscompile
                     // against `MutableList<T>`. `mutableListOf()` is
-                    // type-inferred from the field type.
+                    // type-inferred from the field type. RFC §5.B B5-μ:
+                    // gated repeat (X1) wraps to `MutableList<T>?` so
+                    // the data-class default flips to `null`. Python's
+                    // dataclass default flips from
+                    // `field(default_factory=list)` to `None` for the
+                    // same reason — that branch lives in the centralised
+                    // Python `default_value` block below (single
+                    // ownership of the dataclass default literal).
                     if matches!(lang, crate::generator::Language::Kotlin) {
-                        obj.insert("kt_default".into(), "mutableListOf()".into());
+                        let kt_default = if f.present_if.is_some() {
+                            "null"
+                        } else {
+                            "mutableListOf()"
+                        };
+                        obj.insert("kt_default".into(), kt_default.into());
                     }
                 } else if let BitSize::TlvChain { max_depth, on_overflow } = &f.bit_size {
                     // RFC §5.B B3 TLV chain primitive — populate the
@@ -1473,9 +1524,13 @@ fn render_codec(
                 // factory=list)` — a bare `[]` shared across instances
                 // would alias mutably through the dataclass primary
                 // constructor. Plain (non-list) fields keep the
-                // carrier-typed default.
-                let py_default = if f.is_repeat() || f.is_tlv_chain() {
+                // carrier-typed default. RFC §5.B B5-μ: a gated repeat
+                // field's `Optional[List[T]]` storage flips to `None`
+                // default (the field is None when the gate fires off).
+                let py_default = if (f.is_repeat() || f.is_tlv_chain()) && f.present_if.is_none() {
                     "field(default_factory=list)".to_string()
+                } else if f.is_repeat() && f.present_if.is_some() {
+                    "None".to_string()
                 } else {
                     python_default(&f.sce_type).to_string()
                 };
@@ -1549,7 +1604,18 @@ fn render_codec(
                     )
                     .into(),
                 );
-                if f.present_if.is_some() {
+                // RFC §5.B B5-μ — Repeat-with-present-if fields wrap
+                // their imported-codec list type in the dedicated
+                // `is_repeat` branch above (Option<Vec<T>> /
+                // std::optional<vector> / etc.). The generic per-field
+                // wrap below assumes `f.sce_type` IS the host type
+                // (Fixed/Tail/LengthRef/Vle), but Repeat's
+                // `f.sce_type` is the `SceType::Bytes` sentinel — so
+                // applying this wrap would yield the wrong shape
+                // (`Option<Vec<u8>>` instead of `Option<Vec<Imported>>`).
+                // Skip Repeat fields here; the is_repeat branch
+                // already populated `<lang>_type` correctly.
+                if f.present_if.is_some() && !f.is_repeat() {
                     let inner = l.type_name(&f.sce_type);
                     let wrapped = match lang {
                         crate::generator::Language::Rust => {
@@ -2680,6 +2746,8 @@ fn resolve_repeat_body_type(
 /// vle / per-field statements without re-indentation.
 fn repeat_streaming_decode_stmt(
     field: &CodecField,
+    fields: &[CodecField],
+    parent_flags: Option<&RequiresParentFlags>,
     body_type: &str,
     body_decoder: &str,
     max_count: u32,
@@ -2691,6 +2759,19 @@ fn repeat_streaming_decode_stmt(
         BitSize::Repeat { count_ref } => count_ref,
         _ => unreachable!("repeat_streaming_decode_stmt called on non-repeat field"),
     };
+
+    // RFC §5.B B5-μ — when the repeat carries `sce:present-if`, the
+    // decode body wraps in a per-language `if predicate { Some(...) }
+    // else { None }` shape. The co-gating validator
+    // (`validate_codec_repeat_present_if_co_gating`) guarantees the
+    // count source field carries the IDENTICAL predicate, so reading
+    // its value via `.unwrap()` (or per-language equivalent) inside
+    // the True arm is sound.
+    if let Some(pred) = &field.present_if {
+        return repeat_streaming_decode_stmt_gated(
+            field, fields, parent_flags, pred, count_ref, body_type, body_decoder, max_count, lang,
+        );
+    }
 
     match (lang, count_ref) {
         // Rust: `Vec<T>::with_capacity(n)` for length-field counts —
@@ -2884,11 +2965,22 @@ fn repeat_streaming_decode_stmt(
 /// contract: the encoder writes whatever the struct holds).
 fn repeat_streaming_encode_block(
     field: &CodecField,
+    fields: &[CodecField],
+    parent_flags: Option<&RequiresParentFlags>,
     body_encoder: &str,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
     let id = &field.id;
+    // RFC §5.B B5-μ — when the repeat carries `sce:present-if`, the
+    // encode body wraps in a per-language predicate test that reads
+    // through the wrapped storage shape (Option<Vec> / std::optional
+    // / MutableList? / Optional[List] / Go nilness / C11 carrier-bit).
+    if let Some(pred) = &field.present_if {
+        return repeat_streaming_encode_block_gated(
+            field, fields, parent_flags, pred, body_encoder, lang,
+        );
+    }
     match lang {
         Language::Rust => format!(
             "        for _e in &self.{id} {{\n            r.extend(_e.encode());\n        }}"
@@ -2962,6 +3054,333 @@ fn repeat_streaming_encode_block(
             format!(
                 "        for _e in self.{py_id}:\n            \
                      r.extend(_e.encode())"
+            )
+        }
+    }
+}
+
+/// RFC §5.B B5-μ — gated repeat decode (Wire RFC Phase B X1). Wraps
+/// `repeat_streaming_decode_stmt` body with a per-language predicate
+/// test so a `parent.L`-style flag toggles the entire count + repeat
+/// block on/off the wire. The co-gating validator
+/// (`validate_codec_repeat_present_if_co_gating`) guarantees the
+/// count source field carries the IDENTICAL predicate, making
+/// `count.unwrap()` safe inside the True arm.
+///
+/// Per-language wrap shape:
+///   - Rust:    `let id = if test { Some(<built-vec>) } else { None };`
+///   - Cpp:     `std::optional<vector> id; if (test) { ...build... }`
+///   - Kotlin:  `val id: MutableList<T>? = if (test) { ... } else null`
+///   - Go:      bare slice — pre-decl `var Id []T`; populate inside `if test {}`
+///   - C11:     carrier-bit-as-truth — emit the same body unconditionally,
+///              but skip wire reads when `(out->carrier & mask) == 0`
+///              (encode mirrors via `(self->carrier & mask) == 0` skip)
+///   - Python:  `id = None`; populate inside `if test:` branch
+fn repeat_streaming_decode_stmt_gated(
+    field: &CodecField,
+    fields: &[CodecField],
+    parent_flags: Option<&RequiresParentFlags>,
+    pred: &PresentIfPredicate,
+    count_ref: &CountRef,
+    body_type: &str,
+    body_decoder: &str,
+    max_count: u32,
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    let id = &field.id;
+    let test = present_if_test_literal(fields, parent_flags, pred, lang);
+
+    match (lang, count_ref) {
+        // Rust: bind `_n` from `count.unwrap()` inside the True arm —
+        // single unwrap site keeps the loop bound and capacity hint in
+        // sync. UntilEof has no count field so the wrap reduces to
+        // `if test { Some(<until-eof body>) } else { None }`.
+        (Language::Rust, CountRef::LengthField(len_field)) => format!(
+            "let {id} = if {test} {{\n            \
+                 let _n = {len_field}.expect(\"co-gating: count present-if matches repeat\");\n            \
+                 let mut _vec: Vec<{body_type}> = Vec::with_capacity(_n as usize);\n            \
+                 for _ in 0.._n {{\n                \
+                     _vec.push({body_type}::decode(cursor)?);\n            \
+                 }}\n            \
+                 Some(_vec)\n        \
+             }} else {{\n            \
+                 None\n        \
+             }};"
+        ),
+        (Language::Rust, CountRef::UntilEof) => format!(
+            "let {id} = if {test} {{\n            \
+                 let mut _vec: Vec<{body_type}> = Vec::new();\n            \
+                 while cursor.remaining() > 0 {{\n                \
+                     _vec.push({body_type}::decode(cursor)?);\n            \
+                 }}\n            \
+                 Some(_vec)\n        \
+             }} else {{\n            \
+                 None\n        \
+             }};"
+        ),
+        // Cpp: pre-declare std::optional<vector>, populate inside the
+        // True arm. `count.value()` is the std::optional unwrap (sound
+        // by validator). `_elem.has_value()` early-returns std::nullopt
+        // on element decode truncation, mirroring the non-gated path.
+        (Language::Cpp, CountRef::LengthField(len_field)) => format!(
+            "std::optional<std::vector<{body_type}>> {id};\n        \
+             if ({test}) {{\n            \
+                 auto _n = {len_field}.value();\n            \
+                 std::vector<{body_type}> _list;\n            \
+                 _list.reserve(_n);\n            \
+                 for (auto _i = decltype(_n){{0}}; _i < _n; ++_i) {{\n                \
+                     auto _elem = {body_type}::decode(cursor);\n                \
+                     if (!_elem.has_value()) return std::nullopt;\n                \
+                     _list.push_back(*_elem);\n            \
+                 }}\n            \
+                 {id} = std::move(_list);\n        \
+             }}"
+        ),
+        (Language::Cpp, CountRef::UntilEof) => format!(
+            "std::optional<std::vector<{body_type}>> {id};\n        \
+             if ({test}) {{\n            \
+                 std::vector<{body_type}> _list;\n            \
+                 while (cursor.remaining() > 0) {{\n                \
+                     auto _elem = {body_type}::decode(cursor);\n                \
+                     if (!_elem.has_value()) return std::nullopt;\n                \
+                     _list.push_back(*_elem);\n            \
+                 }}\n            \
+                 {id} = std::move(_list);\n        \
+             }}"
+        ),
+        // Kotlin: nullable `MutableList<T>?` — `if test { build } else null`
+        // mirrors the non-gated build shape inside the True arm. The
+        // count field is `T?` (gated), `!!` is sound by validator.
+        // 12-space indent context (companion.decode body); inner lines
+        // render at 16 spaces, closing brace at 12.
+        (Language::Kotlin, CountRef::LengthField(len_field)) => format!(
+            "val {id}: MutableList<{body_type}>? = if ({test}) {{\n                \
+                 val _n = {len_field}!!\n                \
+                 mutableListOf<{body_type}>().also {{\n                    \
+                     repeat(_n.toInt()) {{\n                        \
+                         it.add({body_type}.decode(cursor) ?: return null)\n                    \
+                     }}\n                \
+                 }}\n            \
+             }} else null"
+        ),
+        (Language::Kotlin, CountRef::UntilEof) => format!(
+            "val {id}: MutableList<{body_type}>? = if ({test}) {{\n                \
+                 mutableListOf<{body_type}>().also {{\n                    \
+                     while (cursor.remaining() > 0) {{\n                        \
+                         it.add({body_type}.decode(cursor) ?: return null)\n                    \
+                     }}\n                \
+                 }}\n            \
+             }} else null"
+        ),
+        // Go: bare slice nilness as presence — pre-declare `var Id []T`,
+        // populate only inside the True arm. The count field is `*T`
+        // (gated), deref via `*<Pascal>` is sound by validator.
+        (Language::Go, CountRef::LengthField(len_field)) => {
+            let go_id = filters::to_pascal_case(id.to_string());
+            let go_len = filters::to_pascal_case(len_field.clone());
+            format!(
+                "var {go_id} []{body_type}\n\t\
+                 if {test} {{\n\t\t\
+                     _n := *{go_len}\n\t\t\
+                     {go_id} = make([]{body_type}, 0, _n)\n\t\t\
+                     for _i := 0; _i < int(_n); _i++ {{\n\t\t\t\
+                         _elem, err := {body_decoder}(cursor)\n\t\t\t\
+                         if err != nil {{\n\t\t\t\t\
+                             return nil, err\n\t\t\t\
+                         }}\n\t\t\t\
+                         {go_id} = append({go_id}, *_elem)\n\t\t\
+                     }}\n\t\
+                 }}"
+            )
+        }
+        (Language::Go, CountRef::UntilEof) => {
+            let go_id = filters::to_pascal_case(id.to_string());
+            format!(
+                "var {go_id} []{body_type}\n\t\
+                 if {test} {{\n\t\t\
+                     {go_id} = make([]{body_type}, 0)\n\t\t\
+                     for cursor.Remaining() > 0 {{\n\t\t\t\
+                         _elem, err := {body_decoder}(cursor)\n\t\t\t\
+                         if err != nil {{\n\t\t\t\t\
+                             return nil, err\n\t\t\t\
+                         }}\n\t\t\t\
+                         {go_id} = append({go_id}, *_elem)\n\t\t\
+                     }}\n\t\
+                 }}"
+            )
+        }
+        // C11: carrier-bit-as-truth — wrap the whole decode body in
+        // `if (test) { ... }` so wire bytes are consumed only when
+        // the gate is on. `out-><id>_len` initialises to 0 in the
+        // sub-block to keep the absent state observable as
+        // "elems_len == 0", matching the encode-side gate.
+        (Language::C11, CountRef::LengthField(len_field)) => {
+            let id_snake = filters::to_snake_case(id.to_string());
+            let len_snake = filters::to_snake_case(len_field.clone());
+            format!(
+                "if ({test}) {{\n        \
+                     size_t _n = (size_t)out->{len_snake};\n        \
+                     if (_n > {max_count}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
+                     for (size_t _i = 0; _i < _n; ++_i) {{\n            \
+                         sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[_i]);\n            \
+                         if (_st != SCE_FORGE_CODEC_OK) return _st;\n        \
+                     }}\n        \
+                     out->{id_snake}_len = _n;\n    \
+                 }} else {{\n        \
+                     out->{id_snake}_len = 0;\n    \
+                 }}"
+            )
+        }
+        (Language::C11, CountRef::UntilEof) => {
+            let id_snake = filters::to_snake_case(id.to_string());
+            format!(
+                "if ({test}) {{\n        \
+                     out->{id_snake}_len = 0;\n        \
+                     while (sce_forge_cursor_remaining(cursor) > 0) {{\n            \
+                         if (out->{id_snake}_len >= {max_count}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n            \
+                         sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]);\n            \
+                         if (_st != SCE_FORGE_CODEC_OK) return _st;\n            \
+                         out->{id_snake}_len++;\n        \
+                     }}\n    \
+                 }} else {{\n        \
+                     out->{id_snake}_len = 0;\n    \
+                 }}"
+            )
+        }
+        // Python: dataclass field defaults `None` (set above via
+        // default_value); populate inside the True arm. The count
+        // local is the just-decoded `Optional[T]`, sound to read
+        // unwrapped inside the True arm by validator.
+        (Language::Python, CountRef::LengthField(len_field)) => {
+            let py_id = filters::to_snake_case(id.to_string());
+            let py_len = filters::to_snake_case(len_field.clone());
+            format!(
+                "if {test}:\n                \
+                     {py_id} = []\n                \
+                     for _ in range({py_len}):\n                    \
+                         _elem = {body_type}.decode(cursor)\n                    \
+                         if _elem is None:\n                        \
+                             return None\n                    \
+                         {py_id}.append(_elem)\n            \
+                 else:\n                \
+                     {py_id} = None"
+            )
+        }
+        (Language::Python, CountRef::UntilEof) => {
+            let py_id = filters::to_snake_case(id.to_string());
+            format!(
+                "if {test}:\n                \
+                     {py_id} = []\n                \
+                     while cursor.remaining() > 0:\n                    \
+                         _elem = {body_type}.decode(cursor)\n                    \
+                         if _elem is None:\n                        \
+                             return None\n                    \
+                         {py_id}.append(_elem)\n            \
+                 else:\n                \
+                     {py_id} = None"
+            )
+        }
+    }
+}
+
+/// RFC §5.B B5-μ — gated repeat encode (Wire RFC Phase B X1). Mirrors
+/// the B2-β tail/length-ref present-if encode shape: 5 backends test
+/// the wrapped storage form (Option::is_some / has_value / ?.let /
+/// `is not None` / Go nil-slice) — author owns the carrier-flag-vs-
+/// storage trust contract. C11 has no nullable wrapper, so the
+/// carrier flag bit IS presence; encode tests `(self->carrier & mask)
+/// <op> 0` directly.
+fn repeat_streaming_encode_block_gated(
+    field: &CodecField,
+    fields: &[CodecField],
+    parent_flags: Option<&RequiresParentFlags>,
+    pred: &PresentIfPredicate,
+    body_encoder: &str,
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    let id = &field.id;
+    match lang {
+        // Rust: `if let Some(_list) = &self.<id>` mirrors B2-β tail
+        // present-if encode (line 5217). Carrier bit isn't tested —
+        // trust contract: author keeps Option::is_some() in sync with
+        // the carrier flag.
+        Language::Rust => format!(
+            "        if let Some(_list) = &self.{id} {{\n            \
+                 for _e in _list {{\n                \
+                     r.extend(_e.encode());\n            \
+                 }}\n        \
+             }}"
+        ),
+        Language::Cpp => format!(
+            "        if (this->{id}.has_value()) {{\n            \
+                 for (const auto& _e : *this->{id}) {{\n                \
+                     auto _sub = _e.encode();\n                \
+                     r.insert(r.end(), _sub.begin(), _sub.end());\n            \
+                 }}\n        \
+             }}"
+        ),
+        Language::Kotlin => format!(
+            "        this.{id}?.let {{ _list ->\n            \
+                 for (_e in _list) {{\n                \
+                     r.addAll(_e.encode().toList())\n            \
+                 }}\n        \
+             }}"
+        ),
+        // Go: `[]T` slice nilness encodes presence (matches B2-β
+        // tail's `if s.X != nil` shape, line 5250). `len(s.X) > 0`
+        // would conflate empty-present with absent; nilness is the
+        // only signal that round-trips a 0-element list distinctly
+        // from absent.
+        Language::Go => {
+            let go_id = filters::to_pascal_case(id.to_string());
+            format!(
+                "\tif s.{go_id} != nil {{\n\t\t\
+                     for _, _e := range s.{go_id} {{\n\t\t\t\
+                         r = append(r, _e.Encode()...)\n\t\t\
+                     }}\n\t\
+                 }}"
+            )
+        }
+        // C11: carrier-bit-as-truth (mirrors B2-β tail line 5262 +
+        // length-ref equivalent). Reads `self->carrier` for Local
+        // scope, bare `parent_flags` for Parent scope.
+        Language::C11 => {
+            let (mask, hex_digits, carrier) =
+                present_if_carrier_info(fields, parent_flags, pred);
+            let op = if pred.negate { "==" } else { "!=" };
+            let id_snake = filters::to_snake_case(id.to_string());
+            let test_id = match &carrier {
+                PresentIfCarrier::Local(c) => {
+                    format!("self->{}", filters::to_snake_case(c.id.clone()))
+                }
+                PresentIfCarrier::Parent => "parent_flags".to_string(),
+            };
+            let encoded_t = if let Some(stripped) = body_encoder.strip_suffix("_encode") {
+                format!("{stripped}_encoded_t")
+            } else {
+                format!("{body_encoder}_t")
+            };
+            format!(
+                "    if (({test_id} & 0x{mask:0width$X}) {op} 0) {{\n        \
+                     for (size_t _ri = 0; _ri < self->{id_snake}_len; ++_ri) {{\n            \
+                         {encoded_t} _sub = {body_encoder}(&self->{id_snake}[_ri]);\n            \
+                         if (r.len + _sub.len <= sizeof(r.bytes)) {{\n                \
+                             for (size_t _rj = 0; _rj < _sub.len; ++_rj) r.bytes[r.len + _rj] = _sub.bytes[_rj];\n                \
+                             r.len += _sub.len;\n            \
+                         }}\n        \
+                     }}\n    \
+                 }}",
+                width = hex_digits
+            )
+        }
+        Language::Python => {
+            let py_id = filters::to_snake_case(id.to_string());
+            format!(
+                "        if self.{py_id} is not None:\n            \
+                     for _e in self.{py_id}:\n                \
+                         r.extend(_e.encode())"
             )
         }
     }
