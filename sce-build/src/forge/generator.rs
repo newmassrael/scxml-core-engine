@@ -1435,11 +1435,33 @@ fn render_codec(
                     obj.insert("embed_body_decoder".into(), body_decoder.clone().into());
                     obj.insert("embed_body_encoder".into(), body_encoder.clone().into());
                     // Override the per-language host type slot with
-                    // the bare imported codec type (no Option/list
-                    // wrap — v1 always-present). The `c_type` /
-                    // equivalent slot was set earlier from the
-                    // SceType::Bytes sentinel, so we replace it here.
-                    obj.insert(type_key.into(), body_type.clone().into());
+                    // the embedded codec's struct type. Y0c plain
+                    // embed emits the bare type; Y0b's gated embed
+                    // (sce:present-if) wraps in a per-language
+                    // optional (Option<T> / std::optional<T> / T? /
+                    // *T / Optional[T]). C11 keeps the bare struct
+                    // member with carrier-bit-as-truth (no nullable
+                    // wrapper — see embed_streaming_decode_stmt /
+                    // embed_streaming_encode_block C11 arms). The
+                    // bounded shape (sce:length-from) does not
+                    // affect host type; the wire-shape change is
+                    // confined to decode/encode blocks. The
+                    // `c_type` / equivalent slot was set earlier
+                    // from the SceType::Bytes sentinel, so we
+                    // replace it here.
+                    let host_type = if f.present_if.is_some() {
+                        match lang {
+                            crate::generator::Language::Rust => format!("Option<{body_type}>"),
+                            crate::generator::Language::Cpp => format!("std::optional<{body_type}>"),
+                            crate::generator::Language::Kotlin => format!("{body_type}?"),
+                            crate::generator::Language::Go => format!("*{body_type}"),
+                            crate::generator::Language::Python => format!("Optional[{body_type}]"),
+                            crate::generator::Language::C11 => body_type.clone(),
+                        }
+                    } else {
+                        body_type.clone()
+                    };
+                    obj.insert(type_key.into(), host_type.clone().into());
                     let embed_thread = embed_parent_flags_thread_args(
                         f, alias, imports, m, lang,
                     );
@@ -1450,6 +1472,8 @@ fn render_codec(
                             &body_type,
                             &body_decoder,
                             &embed_thread.decode_arg,
+                            &m.fields,
+                            m.requires_parent_flags.as_ref(),
                             lang,
                         )
                         .into(),
@@ -1461,22 +1485,25 @@ fn render_codec(
                             &body_type,
                             &body_encoder,
                             &embed_thread.encode_arg,
+                            &m.fields,
+                            m.requires_parent_flags.as_ref(),
                             lang,
                         )
                         .into(),
                     );
-                    // Kotlin data-class primary-constructor default
-                    // for the nested struct field. `T()` is not always
-                    // valid (the imported codec's data-class may have
-                    // required parameters); mirror the existing v1
-                    // shape used by sub-struct fields elsewhere by
-                    // emitting `<Type>()` and trusting the imported
-                    // codec carries a no-arg constructor (Kotlin
-                    // `data class` with all-default params). For Y0c
-                    // v1 the embedded codecs (wireexpr) all have only
-                    // simple primitive fields with default values.
+                    // Kotlin data-class primary-constructor default.
+                    // Y0c plain embed: emits `<Type>()` (bare struct
+                    // member; trust contract — imported codec
+                    // exposes a no-arg constructor). Y0b gated
+                    // shape: the field is `T?`, default `null` so
+                    // absent-on-wire round-trips correctly.
                     if matches!(lang, crate::generator::Language::Kotlin) {
-                        obj.insert("kt_default".into(), format!("{body_type}()").into());
+                        let kt_default = if f.present_if.is_some() {
+                            "null".to_string()
+                        } else {
+                            format!("{body_type}()")
+                        };
+                        obj.insert("kt_default".into(), kt_default.into());
                     }
                 } else {
                     let resolved = crate::forge::limits::resolve_bytes_max(f.max_size);
@@ -1574,8 +1601,14 @@ fn render_codec(
             if matches!(lang, crate::generator::Language::Kotlin) {
                 // Repeat / TLV chain fields already set kt_default =
                 // "mutableListOf()" above; the carrier-typed default
-                // would miscompile against MutableList<T>.
-                if !f.is_repeat() && !f.is_tlv_chain() {
+                // would miscompile against MutableList<T>. Y0b gated
+                // embed fields already set kt_default = "null" above;
+                // overwriting would ship a `byteArrayOf()` default
+                // against the new `T?` host type, which doesn't
+                // typecheck.
+                let skip_default_overwrite =
+                    f.is_repeat() || f.is_tlv_chain() || (f.is_embed() && f.present_if.is_some());
+                if !skip_default_overwrite {
                     obj.insert("kt_default".into(), kotlin_default(&f.sce_type).into());
                 }
                 // RFC §5.B B1-γ flags primitive on Kotlin: bitwise ops on
@@ -1606,6 +1639,11 @@ fn render_codec(
                 let py_default = if (f.is_repeat() || f.is_tlv_chain()) && f.present_if.is_none() {
                     "field(default_factory=list)".to_string()
                 } else if f.is_repeat() && f.present_if.is_some() {
+                    "None".to_string()
+                } else if f.is_embed() && f.present_if.is_some() {
+                    // Y0b gated embed: `Optional[<EmbedType>]`
+                    // dataclass field defaults to None so the absent-
+                    // on-wire decode round-trips correctly.
                     "None".to_string()
                 } else {
                     python_default(&f.sce_type).to_string()
@@ -1690,8 +1728,13 @@ fn render_codec(
                 // applying this wrap would yield the wrong shape
                 // (`Option<Vec<u8>>` instead of `Option<Vec<Imported>>`).
                 // Skip Repeat fields here; the is_repeat branch
-                // already populated `<lang>_type` correctly.
-                if f.present_if.is_some() && !f.is_repeat() {
+                // already populated `<lang>_type` correctly. Y0b
+                // gated embed has the same sentinel shape — its
+                // dedicated branch above (`f.is_embed()`) already
+                // emits `Option<EmbeddedCodec>` / per-language
+                // equivalent; skipping here avoids overwriting with
+                // `Option<Vec<u8>>`.
+                if f.present_if.is_some() && !f.is_repeat() && !f.is_embed() {
                     let inner = l.type_name(&f.sce_type);
                     let wrapped = match lang {
                         crate::generator::Language::Rust => {
@@ -3143,98 +3186,401 @@ fn repeat_streaming_encode_block(
     }
 }
 
-/// RFC §5.B Y0c — pre-rendered streaming decode statement for one
-/// embed field. Calls the embedded codec's decode() once with optional
-/// parent-flag threading, binding the result to the field id (Rust /
-/// Kotlin / Go / Python local; Cpp local; C11 directly into
-/// `out-><id>`). Embedded codec's wire shape consumes bytes inline
-/// from the cursor — no length prefix, no boundary marker.
+/// RFC §5.B Y0c + Y0b — pre-rendered streaming decode statement for
+/// one embed field. Calls the embedded codec's decode() once with
+/// optional parent-flag threading, binding the result to the field id
+/// (Rust / Kotlin / Go / Python local; Cpp local; C11 directly into
+/// `out-><id>`). Y0c's plain shape consumes bytes inline from the
+/// cursor (no length prefix, no boundary marker). Y0b's gated shape
+/// wraps in a per-language Optional when `field.present_if.is_some()`,
+/// and Y0b's bounded shape splits a sub-cursor scoped to
+/// `self.<embed_length_from>` bytes when set (mirrors zenoh-pico
+/// `_z_slice_as_zbuf` inner-cursor pattern from declarations.c:206).
+/// Both attributes compose: gated+bounded wraps the bounded body in
+/// the predicate's True branch, and the optional is None when the
+/// gate is off.
 fn embed_streaming_decode_stmt(
     field: &CodecField,
     body_type: &str,
     body_decoder: &str,
     thread_arg: &str,
+    fields: &[CodecField],
+    parent_flags: Option<&RequiresParentFlags>,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
     let id = &field.id;
+    let len_from = field.embed_length_from.as_deref();
+    let test_lit = field
+        .present_if
+        .as_ref()
+        .map(|p| present_if_test_literal(fields, parent_flags, p, lang));
+
+    // Per-language sibling read for `embed_length_from`. The sibling
+    // is a prior integer field; its host-language name follows each
+    // language's identifier convention (snake-case for Rust/C11/
+    // Python, pascal-case for Go on the encoder struct, plain-case
+    // for Cpp/Kotlin locals decoded earlier in this same decode body).
+    // Validator (`validate_codec_embed_length_from`) guarantees the
+    // sibling exists, is integer-typed, and is declared earlier so
+    // the streaming decoder has already produced the local by this
+    // point.
+    let len_expr = |lang: Language| -> Option<String> {
+        len_from.map(|sibling| match lang {
+            Language::Rust | Language::Cpp | Language::Kotlin => sibling.to_string(),
+            Language::Go => filters::to_pascal_case(sibling.to_string()),
+            Language::C11 => format!("out->{}", filters::to_snake_case(sibling.to_string())),
+            Language::Python => filters::to_snake_case(sibling.to_string()),
+        })
+    };
+
     match lang {
-        Language::Rust => format!(
-            "let {id} = {body_type}::decode(cursor{thread_arg})?;"
-        ),
-        Language::Cpp => format!(
-            "auto _emb_{id} = {body_type}::decode(cursor{thread_arg});\n        \
-             if (!_emb_{id}.has_value()) return std::nullopt;\n        \
-             auto {id} = std::move(*_emb_{id});"
-        ),
-        Language::Kotlin => format!(
-            "val {id} = {body_type}.decode(cursor{thread_arg}) ?: return null"
-        ),
+        Language::Rust => match (&test_lit, len_expr(Language::Rust)) {
+            (None, None) => format!(
+                "let {id} = {body_type}::decode(cursor{thread_arg})?;"
+            ),
+            (Some(test), None) => format!(
+                "let {id} = if {test} {{\n            \
+                     Some({body_type}::decode(cursor{thread_arg})?)\n        \
+                 }} else {{\n            \
+                     None\n        \
+                 }};"
+            ),
+            (None, Some(sibling)) => format!(
+                "let {id} = {{\n            \
+                     let _len = {sibling} as usize;\n            \
+                     let _raw = cursor.peek_slice(_len)?;\n            \
+                     let mut _inner = SceCursor::new(_raw);\n            \
+                     let _v = {body_type}::decode(&mut _inner{thread_arg})?;\n            \
+                     cursor.advance(_len)?;\n            \
+                     _v\n        \
+                 }};"
+            ),
+            (Some(test), Some(sibling)) => format!(
+                "let {id} = if {test} {{\n            \
+                     let _len = {sibling} as usize;\n            \
+                     let _raw = cursor.peek_slice(_len)?;\n            \
+                     let mut _inner = SceCursor::new(_raw);\n            \
+                     let _v = {body_type}::decode(&mut _inner{thread_arg})?;\n            \
+                     cursor.advance(_len)?;\n            \
+                     Some(_v)\n        \
+                 }} else {{\n            \
+                     None\n        \
+                 }};"
+            ),
+        },
+        Language::Cpp => match (&test_lit, len_expr(Language::Cpp)) {
+            (None, None) => format!(
+                "auto _emb_{id} = {body_type}::decode(cursor{thread_arg});\n        \
+                 if (!_emb_{id}.has_value()) return std::nullopt;\n        \
+                 auto {id} = std::move(*_emb_{id});"
+            ),
+            (Some(test), None) => format!(
+                "std::optional<{body_type}> {id};\n        \
+                 if ({test}) {{\n            \
+                     auto _emb = {body_type}::decode(cursor{thread_arg});\n            \
+                     if (!_emb.has_value()) return std::nullopt;\n            \
+                     {id} = std::move(*_emb);\n        \
+                 }}"
+            ),
+            (None, Some(sibling)) => format!(
+                "{body_type} {id};\n        \
+                 {{\n            \
+                     std::size_t _len = static_cast<std::size_t>({sibling});\n            \
+                     const std::uint8_t* _raw = cursor.peek_slice(_len);\n            \
+                     if (_raw == nullptr) return std::nullopt;\n            \
+                     ::SCE::Forge::SceCursor _inner(_raw, _len);\n            \
+                     auto _emb = {body_type}::decode(_inner{thread_arg});\n            \
+                     if (!_emb.has_value()) return std::nullopt;\n            \
+                     if (!cursor.advance(_len)) return std::nullopt;\n            \
+                     {id} = std::move(*_emb);\n        \
+                 }}"
+            ),
+            (Some(test), Some(sibling)) => format!(
+                "std::optional<{body_type}> {id};\n        \
+                 if ({test}) {{\n            \
+                     std::size_t _len = static_cast<std::size_t>({sibling});\n            \
+                     const std::uint8_t* _raw = cursor.peek_slice(_len);\n            \
+                     if (_raw == nullptr) return std::nullopt;\n            \
+                     ::SCE::Forge::SceCursor _inner(_raw, _len);\n            \
+                     auto _emb = {body_type}::decode(_inner{thread_arg});\n            \
+                     if (!_emb.has_value()) return std::nullopt;\n            \
+                     if (!cursor.advance(_len)) return std::nullopt;\n            \
+                     {id} = std::move(*_emb);\n        \
+                 }}"
+            ),
+        },
+        Language::Kotlin => match (&test_lit, len_expr(Language::Kotlin)) {
+            (None, None) => format!(
+                "val {id} = {body_type}.decode(cursor{thread_arg}) ?: return null"
+            ),
+            (Some(test), None) => format!(
+                "val {id}: {body_type}? = if ({test}) {{\n                \
+                     {body_type}.decode(cursor{thread_arg}) ?: return null\n            \
+                 }} else {{\n                \
+                     null\n            \
+                 }}"
+            ),
+            (None, Some(sibling)) => format!(
+                "val {id} = run {{\n                \
+                     val _len = ({sibling}).toInt()\n                \
+                     val _raw = cursor.peekSlice(_len) ?: return null\n                \
+                     val _inner = SceCursor(_raw)\n                \
+                     val _v = {body_type}.decode(_inner{thread_arg}) ?: return null\n                \
+                     if (!cursor.advance(_len)) return null\n                \
+                     _v\n            \
+                 }}"
+            ),
+            (Some(test), Some(sibling)) => format!(
+                "val {id}: {body_type}? = if ({test}) {{\n                \
+                     val _len = ({sibling}).toInt()\n                \
+                     val _raw = cursor.peekSlice(_len) ?: return null\n                \
+                     val _inner = SceCursor(_raw)\n                \
+                     val _v = {body_type}.decode(_inner{thread_arg}) ?: return null\n                \
+                     if (!cursor.advance(_len)) return null\n                \
+                     _v\n            \
+                 }} else {{\n                \
+                     null\n            \
+                 }}"
+            ),
+        },
         Language::Go => {
             let go_id = filters::to_pascal_case(id.to_string());
-            format!(
-                "{go_id}, err := {body_decoder}(cursor{thread_arg})\n\t\
-                 if err != nil {{\n\t\t\
-                     return nil, err\n\t\
-                 }}"
-            )
+            match (&test_lit, len_expr(Language::Go)) {
+                (None, None) => format!(
+                    "{go_id}, err := {body_decoder}(cursor{thread_arg})\n\t\
+                     if err != nil {{\n\t\t\
+                         return nil, err\n\t\
+                     }}"
+                ),
+                (Some(test), None) => format!(
+                    "var {go_id} *{body_type}\n\t\
+                     if {test} {{\n\t\t\
+                         _emb, err := {body_decoder}(cursor{thread_arg})\n\t\t\
+                         if err != nil {{\n\t\t\t\
+                             return nil, err\n\t\t\
+                         }}\n\t\t\
+                         {go_id} = _emb\n\t\
+                     }}"
+                ),
+                (None, Some(sibling)) => format!(
+                    "var {go_id} *{body_type}\n\t\
+                     {{\n\t\t\
+                         _len := int({sibling})\n\t\t\
+                         _raw, err := cursor.PeekSlice(_len)\n\t\t\
+                         if err != nil {{\n\t\t\t\
+                             return nil, err\n\t\t\
+                         }}\n\t\t\
+                         _inner := codec.NewSceCursor(_raw)\n\t\t\
+                         _emb, err := {body_decoder}(&_inner{thread_arg})\n\t\t\
+                         if err != nil {{\n\t\t\t\
+                             return nil, err\n\t\t\
+                         }}\n\t\t\
+                         if err := cursor.Advance(_len); err != nil {{\n\t\t\t\
+                             return nil, err\n\t\t\
+                         }}\n\t\t\
+                         {go_id} = _emb\n\t\
+                     }}"
+                ),
+                (Some(test), Some(sibling)) => format!(
+                    "var {go_id} *{body_type}\n\t\
+                     if {test} {{\n\t\t\
+                         _len := int({sibling})\n\t\t\
+                         _raw, err := cursor.PeekSlice(_len)\n\t\t\
+                         if err != nil {{\n\t\t\t\
+                             return nil, err\n\t\t\
+                         }}\n\t\t\
+                         _inner := codec.NewSceCursor(_raw)\n\t\t\
+                         _emb, err := {body_decoder}(&_inner{thread_arg})\n\t\t\
+                         if err != nil {{\n\t\t\t\
+                             return nil, err\n\t\t\
+                         }}\n\t\t\
+                         if err := cursor.Advance(_len); err != nil {{\n\t\t\t\
+                             return nil, err\n\t\t\
+                         }}\n\t\t\
+                         {go_id} = _emb\n\t\
+                     }}"
+                ),
+            }
         }
         Language::C11 => {
             let id_snake = filters::to_snake_case(id.to_string());
-            format!(
-                "{{\n        \
-                     sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}{thread_arg});\n        \
-                     if (_st != SCE_FORGE_CODEC_OK) return _st;\n    \
-                 }}"
-            )
+            // C11 has no nullable wrapper for the embedded struct
+            // member (Y0c shape: bare nested struct in the parent
+            // codec's struct). Y0b's gated shape relies on the
+            // parent's carrier flag (present-if predicate target)
+            // for presence — when the gate is off, the embed's
+            // bytes are absent on the wire AND the host struct's
+            // member retains its zero-init value (caller-visible
+            // signal). The bounded shape splits an inner cursor
+            // via `sce_forge_cursor_init` over the peeked slice
+            // (mirrors zenoh-pico declarations.c:206). Codec
+            // helpers in the calling site zero-init the codec
+            // struct before decode (existing cpp/kt behaviour
+            // with the all-zeros default constructor).
+            match (&test_lit, len_expr(Language::C11)) {
+                (None, None) => format!(
+                    "{{\n        \
+                         sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}{thread_arg});\n        \
+                         if (_st != SCE_FORGE_CODEC_OK) return _st;\n    \
+                     }}"
+                ),
+                (Some(test), None) => format!(
+                    "if ({test}) {{\n        \
+                         sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}{thread_arg});\n        \
+                         if (_st != SCE_FORGE_CODEC_OK) return _st;\n    \
+                     }}"
+                ),
+                (None, Some(sibling)) => format!(
+                    "{{\n        \
+                         size_t _len = (size_t)({sibling});\n        \
+                         const uint8_t *_raw = sce_forge_cursor_peek(cursor, _len);\n        \
+                         if (_raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
+                         sce_forge_cursor_t _inner = sce_forge_cursor_init(_raw, _len);\n        \
+                         sce_forge_codec_status_t _st = {body_decoder}(&_inner, &out->{id_snake}{thread_arg});\n        \
+                         if (_st != SCE_FORGE_CODEC_OK) return _st;\n        \
+                         if (!sce_forge_cursor_advance(cursor, _len)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
+                     }}"
+                ),
+                (Some(test), Some(sibling)) => format!(
+                    "if ({test}) {{\n        \
+                         size_t _len = (size_t)({sibling});\n        \
+                         const uint8_t *_raw = sce_forge_cursor_peek(cursor, _len);\n        \
+                         if (_raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
+                         sce_forge_cursor_t _inner = sce_forge_cursor_init(_raw, _len);\n        \
+                         sce_forge_codec_status_t _st = {body_decoder}(&_inner, &out->{id_snake}{thread_arg});\n        \
+                         if (_st != SCE_FORGE_CODEC_OK) return _st;\n        \
+                         if (!sce_forge_cursor_advance(cursor, _len)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
+                     }}"
+                ),
+            }
         }
         Language::Python => {
             let py_id = filters::to_snake_case(id.to_string());
-            format!(
-                "{py_id} = {body_type}.decode(cursor{thread_arg})\n            \
-                 if {py_id} is None:\n                \
-                     return None"
-            )
+            match (&test_lit, len_expr(Language::Python)) {
+                (None, None) => format!(
+                    "{py_id} = {body_type}.decode(cursor{thread_arg})\n            \
+                     if {py_id} is None:\n                \
+                         return None"
+                ),
+                (Some(test), None) => format!(
+                    "if {test}:\n                \
+                         {py_id} = {body_type}.decode(cursor{thread_arg})\n                \
+                         if {py_id} is None:\n                    \
+                             return None\n            \
+                     else:\n                \
+                         {py_id} = None"
+                ),
+                (None, Some(sibling)) => format!(
+                    "_len = int({sibling})\n            \
+                     _raw = cursor.peek_slice(_len)\n            \
+                     if _raw is None:\n                \
+                         return None\n            \
+                     _inner = SceCursor(bytes(_raw))\n            \
+                     {py_id} = {body_type}.decode(_inner{thread_arg})\n            \
+                     if {py_id} is None:\n                \
+                         return None\n            \
+                     cursor.advance(_len)"
+                ),
+                (Some(test), Some(sibling)) => format!(
+                    "if {test}:\n                \
+                         _len = int({sibling})\n                \
+                         _raw = cursor.peek_slice(_len)\n                \
+                         if _raw is None:\n                    \
+                             return None\n                \
+                         _inner = SceCursor(bytes(_raw))\n                \
+                         {py_id} = {body_type}.decode(_inner{thread_arg})\n                \
+                         if {py_id} is None:\n                    \
+                             return None\n                \
+                         cursor.advance(_len)\n            \
+                     else:\n                \
+                         {py_id} = None"
+                ),
+            }
         }
     }
 }
 
-/// RFC §5.B Y0c — pre-rendered streaming encode block for one embed
-/// field. Calls the embedded codec's encode() with optional parent-
-/// flag threading and splices the returned bytes into the parent's
-/// `r` buffer.
+/// RFC §5.B Y0c + Y0b — pre-rendered streaming encode block for one
+/// embed field. Calls the embedded codec's encode() with optional
+/// parent-flag threading and splices the returned bytes into the
+/// parent's `r` buffer. Y0b's gated shape (present-if) wraps the
+/// splice in a per-language presence test; the bounded shape
+/// (length-from) requires no extra encode-side codegen — author keeps
+/// `self.<sibling>` consistent with the embedded codec's emitted byte
+/// count (LengthRef author-trust contract).
 fn embed_streaming_encode_block(
     field: &CodecField,
     body_type: &str,
     body_encoder: &str,
     thread_arg: &str,
+    fields: &[CodecField],
+    parent_flags: Option<&RequiresParentFlags>,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
     let _ = body_type;
     let id = &field.id;
+    let test_lit = field
+        .present_if
+        .as_ref()
+        .map(|p| present_if_test_literal(fields, parent_flags, p, lang));
+    let thread_arg_norm = thread_arg.trim_start_matches(", ");
     match lang {
-        Language::Rust => format!(
-            "        r.extend(self.{id}.encode({thread_arg_norm}));",
-            thread_arg_norm = thread_arg.trim_start_matches(", "),
-        ),
-        Language::Cpp => format!(
-            "        {{\n            \
-                 auto _sub = {id}.encode({thread_arg_norm});\n            \
-                 r.insert(r.end(), _sub.begin(), _sub.end());\n        \
-             }}",
-            thread_arg_norm = thread_arg.trim_start_matches(", "),
-        ),
-        Language::Kotlin => format!(
-            "        r.addAll(this.{id}.encode({thread_arg_norm}).toList())",
-            thread_arg_norm = thread_arg.trim_start_matches(", "),
-        ),
+        Language::Rust => match &test_lit {
+            None => format!(
+                "        r.extend(self.{id}.encode({thread_arg_norm}));"
+            ),
+            Some(test) => format!(
+                "        if {test} {{\n            \
+                     if let Some(_v) = &self.{id} {{\n                \
+                         r.extend(_v.encode({thread_arg_norm}));\n            \
+                     }}\n        \
+                 }}"
+            ),
+        },
+        Language::Cpp => match &test_lit {
+            None => format!(
+                "        {{\n            \
+                     auto _sub = {id}.encode({thread_arg_norm});\n            \
+                     r.insert(r.end(), _sub.begin(), _sub.end());\n        \
+                 }}"
+            ),
+            Some(test) => format!(
+                "        if ({test}) {{\n            \
+                     if (this->{id}.has_value()) {{\n                \
+                         auto _sub = this->{id}->encode({thread_arg_norm});\n                \
+                         r.insert(r.end(), _sub.begin(), _sub.end());\n            \
+                     }}\n        \
+                 }}"
+            ),
+        },
+        Language::Kotlin => match &test_lit {
+            None => format!(
+                "        r.addAll(this.{id}.encode({thread_arg_norm}).toList())"
+            ),
+            Some(test) => format!(
+                "        if ({test}) {{\n            \
+                     this.{id}?.let {{ _v ->\n                \
+                         r.addAll(_v.encode({thread_arg_norm}).toList())\n            \
+                     }}\n        \
+                 }}"
+            ),
+        },
         Language::Go => {
             let go_id = filters::to_pascal_case(id.to_string());
-            format!(
-                "\tr = append(r, s.{go_id}.Encode({thread_arg_norm})...)",
-                thread_arg_norm = thread_arg.trim_start_matches(", "),
-            )
+            match &test_lit {
+                None => format!(
+                    "\tr = append(r, s.{go_id}.Encode({thread_arg_norm})...)"
+                ),
+                Some(test) => format!(
+                    "\tif {test} {{\n\t\t\
+                         if s.{go_id} != nil {{\n\t\t\t\
+                             r = append(r, s.{go_id}.Encode({thread_arg_norm})...)\n\t\t\
+                         }}\n\t\
+                     }}"
+                ),
+            }
         }
         Language::C11 => {
             let id_snake = filters::to_snake_case(id.to_string());
@@ -3246,22 +3592,49 @@ fn embed_streaming_encode_block(
             } else {
                 format!("{body_encoder}_t")
             };
-            format!(
-                "    {{\n        \
-                     {encoded_t} _sub = {body_encoder}(&self->{id_snake}{thread_arg});\n        \
-                     if (r.len + _sub.len <= sizeof(r.bytes)) {{\n            \
-                         for (size_t _ej = 0; _ej < _sub.len; ++_ej) r.bytes[r.len + _ej] = _sub.bytes[_ej];\n            \
-                         r.len += _sub.len;\n        \
-                     }}\n    \
-                 }}"
-            )
+            // C11 has no nullable wrapper — Y0b gating reads the
+            // carrier flag bit directly (present_if_test_literal
+            // emits `(self-><carrier> & mask) != 0` for Local scope
+            // or `(parent_flags & mask) != 0` for Parent scope).
+            // When the gate is off, the splice is skipped; the
+            // embedded struct's bytes are absent from the wire and
+            // the parent struct's nested-struct member retains
+            // whatever value the caller initialised it to (typically
+            // zero — generated code zero-inits the parent struct
+            // before decode).
+            match &test_lit {
+                None => format!(
+                    "    {{\n        \
+                         {encoded_t} _sub = {body_encoder}(&self->{id_snake}{thread_arg});\n        \
+                         if (r.len + _sub.len <= sizeof(r.bytes)) {{\n            \
+                             for (size_t _ej = 0; _ej < _sub.len; ++_ej) r.bytes[r.len + _ej] = _sub.bytes[_ej];\n            \
+                             r.len += _sub.len;\n        \
+                         }}\n    \
+                     }}"
+                ),
+                Some(test) => format!(
+                    "    if ({test}) {{\n        \
+                         {encoded_t} _sub = {body_encoder}(&self->{id_snake}{thread_arg});\n        \
+                         if (r.len + _sub.len <= sizeof(r.bytes)) {{\n            \
+                             for (size_t _ej = 0; _ej < _sub.len; ++_ej) r.bytes[r.len + _ej] = _sub.bytes[_ej];\n            \
+                             r.len += _sub.len;\n        \
+                         }}\n    \
+                     }}"
+                ),
+            }
         }
         Language::Python => {
             let py_id = filters::to_snake_case(id.to_string());
-            format!(
-                "        r.extend(self.{py_id}.encode({thread_arg_norm}))",
-                thread_arg_norm = thread_arg.trim_start_matches(", "),
-            )
+            match &test_lit {
+                None => format!(
+                    "        r.extend(self.{py_id}.encode({thread_arg_norm}))"
+                ),
+                Some(test) => format!(
+                    "        if {test}:\n            \
+                         if self.{py_id} is not None:\n                \
+                             r.extend(self.{py_id}.encode({thread_arg_norm}))"
+                ),
+            }
         }
     }
 }

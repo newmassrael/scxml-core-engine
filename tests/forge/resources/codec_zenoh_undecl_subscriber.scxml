@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh undecl_subscriber body (RFC §5.B Y0b
+     — Wire RFC Phase B Y0b consumer). First reachable consumer of
+     Y0b's `<sce:embed sce:present-if="parent.Z">` lift.
+
+     Mirrors zenoh-pico `_z_undecl_subscriber_encode` →
+     `_z_undecl_encode` (declarations.c:90-104) verbatim. Decoder is
+     `_z_undecl_subscriber_decode` → `_z_undecl_trivial_decode`
+     (declarations.c:229-239 + 268-272). The 1-byte per-MID header
+     (MID + Z bit) is written by the OUTER declaration envelope (a
+     future codec_zenoh_declaration mirroring the Y0c/Y1 / outer-
+     envelope precedent set by codec_zenoh_decl_keyexpr); this body
+     codec carries only the post-header payload.
+
+     Wire shape (1+ bytes):
+       VLE u32 id     (decoder line 231 `_z_zint32_decode`; encoder
+                       line 96 `_z_zsize_encode` shared VLE shape)
+       parent.Z       : ext_keyexpr (Y0b length-bound TLV envelope —
+                                     codec_zenoh_decl_ext_keyexpr).
+                                     Present iff the outer per-MID
+                                     header's Z bit (bit 7) is set,
+                                     mirroring encoder line 92-94
+                                     `if has_keyexpr_ext: header |=
+                                     _Z_FLAG_Z_Z`.
+
+     Parent-flag dependency (Case B — pass-through): the body declares
+     `<sce:requires-parent-flags carrier="header"><sce:flag name="Z"
+     bit="7"/>` matching the outer envelope's per-MID header layout
+     (`_Z_FLAG_Z_Z = 0x80 = bit 7` per definitions/message.h:35). The
+     ext_keyexpr embed's `sce:present-if="parent.Z"` reads from the
+     threaded parent_flags value.
+
+     Composition: B1-α VLE u32 + Y0b present-if-on-embed (parent.Z
+     gate). The embedded codec_zenoh_decl_ext_keyexpr itself is the
+     Y0b length-bound envelope primitive demoed in
+     codec_zenoh_decl_ext_keyexpr.scxml.
+
+     Wrap shape per language:
+       Rust:   `u32` id + `Option<CodecZenohDeclExtKeyexpr>` ext_keyexpr
+       Cpp:    `uint32_t` + `std::optional<...>`
+       Kotlin: `UInt` + `CodecZenohDeclExtKeyexpr?`
+       Go:     `uint32` + `*CodecZenohDeclExtKeyexpr`
+       Python: `int` + `Optional[CodecZenohDeclExtKeyexpr]`
+       C11:    `uint32_t id` + `codec_zenoh_decl_ext_keyexpr_t ext_keyexpr`
+               (carrier-bit-as-truth — wire presence is parent.Z) -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_undecl_subscriber">
+  <sce:import src="codec_zenoh_decl_ext_keyexpr.scxml" kind="codec"
+              as="codec_zenoh_decl_ext_keyexpr"/>
+  <sce:requires-parent-flags carrier="header">
+    <sce:flag name="Z" bit="7"/>
+  </sce:requires-parent-flags>
+  <datamodel>
+    <sce:field id="id" sce:type="uint32" sce:byte="0" sce:bit-size="vle"/>
+    <sce:embed id="ext_keyexpr" type="codec_zenoh_decl_ext_keyexpr" sce:byte="1"
+               sce:present-if="parent.Z"/>
+  </datamodel>
+</scxml>

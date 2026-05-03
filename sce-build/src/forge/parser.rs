@@ -655,6 +655,14 @@ fn parse_codec(
     // codegen-time lookup).
     validate_codec_length_field_refs(&fields, label, &datamodel)?;
 
+    // RFC §5.B Y0b — `<sce:embed sce:length-from="<id>"/>` must
+    // reference a sibling field declared earlier in the same codec
+    // whose decoded value is an integer (so the inner cursor scope
+    // can be sized before invoking the embedded codec). Forward /
+    // unknown / non-integer references fold into
+    // `validation/invalid-attribute`.
+    validate_codec_embed_length_from(&fields, label, &datamodel)?;
+
     // RFC §5.B variant primitive (B1-β): optional <sce:variant> suffix
     // under <datamodel>. Resolves the tag field reference against the
     // codec's own field list; arm body aliases (resolved against
@@ -1612,6 +1620,7 @@ pub fn parse_codec_field_from_node(
         dma_burst_align,
         length_arith,
         embed_body_alias: None,
+        embed_length_from: None,
     })
 }
 
@@ -2078,6 +2087,7 @@ fn parse_codec_repeat_from_node(
         dma_burst_align: None,
         length_arith: None,
         embed_body_alias: None,
+        embed_length_from: None,
     })
 }
 
@@ -2247,19 +2257,34 @@ fn parse_codec_tlv_chain_from_node(
         dma_burst_align: None,
         length_arith: None,
         embed_body_alias: None,
+        embed_length_from: None,
     })
 }
 
-/// RFC §5.B Y0c — parse `<sce:embed id="X" type="codec_Y" sce:byte="N"/>`
-/// for a single imported-codec field embedded inline (no wire-level
-/// boundary bytes). Mirrors the `<sce:repeat>` / `<sce:tlv-chain>`
-/// shape: `id` + `type` (alias) + `sce:byte` are the required tri-attr
-/// surface; the embedded codec's wire shape consumes/produces bytes
-/// directly via its own decode/encode methods. v1 grammar restricts
-/// to always-present embedding; `sce:present-if` defers to the first
-/// reachable consumer (zenoh-pico undecl_subscriber/queryable/token
-/// route their optional embedded keyexpr through TLV ext envelopes
-/// instead).
+/// RFC §5.B Y0c + Y0b — parse `<sce:embed id="X" type="codec_Y"
+/// sce:byte="N" [sce:present-if="..."] [sce:length-from="<id>"]/>`
+/// for a single imported-codec field embedded inline. Mirrors the
+/// `<sce:repeat>` / `<sce:tlv-chain>` shape: `id` + `type` (alias) +
+/// `sce:byte` are the required tri-attr surface; the embedded codec's
+/// wire shape consumes/produces bytes directly via its own
+/// decode/encode methods.
+///
+/// Y0c v1 covered always-present + cursor-direct embedding. Y0b lifts
+/// two optional attributes:
+///   - `sce:present-if="<carrier>.<flag>" | "parent.<flag>" | "!..."`
+///     gates the embed on a predicate (mirrors the present-if grammar
+///     used by `<sce:field>` and `<sce:repeat>`). The host-language
+///     type wraps as `Option<T>` / `std::optional<T>` / `T?` / `*T` /
+///     `Optional[T]` (C11 keeps the bare struct + carrier-bit-as-truth
+///     contract for presence).
+///   - `sce:length-from="<sibling_field_id>"` bounds the embedded
+///     codec's decode-time cursor scope to the named earlier integer
+///     field's value (typical: a VLE total-length prefix). Encode
+///     side trusts the author to keep `self.<sibling> ==
+///     emitted_inner.len()` (mirrors `LengthRef`'s author-trust
+///     contract). First reachable consumer is zenoh-pico
+///     `_z_decl_ext_keyexpr_encode` whose outer envelope's VLE
+///     `total_length` prefix scopes the inner wireexpr-shaped body.
 ///
 /// Resolution against `<sce:import>` aliases happens downstream at
 /// codegen time (mirrors `parse_codec_repeat_from_node` /
@@ -2325,6 +2350,23 @@ fn parse_codec_embed_from_node(
         )
     })?;
 
+    // RFC §5.B Y0b — `sce:present-if` lifts the Y0c always-present
+    // restriction. Cross-field validation (carrier exists, predicate
+    // resolves, parent-flags scope) runs in
+    // `validate_codec_present_if_predicates` after field assembly,
+    // identical to <sce:field>/<sce:repeat>.
+    let present_if = match sce_attr(node, "present-if") {
+        None => None,
+        Some(raw) => Some(parse_present_if_predicate(&raw, node, doc_name, &id)?),
+    };
+
+    // RFC §5.B Y0b — `sce:length-from="<id>"` bounds the embedded
+    // codec's decode-time cursor scope. Cross-field validation
+    // (length-from references a prior integer-typed field with
+    // VLE/Fixed bit-size, no forward references) runs in
+    // `validate_codec_embed_length_from`.
+    let embed_length_from = sce_attr(node, "length-from").map(|s| s.to_string());
+
     Ok(CodecField {
         id,
         // Wire-shape sentinel — host type is derived from
@@ -2337,13 +2379,14 @@ fn parse_codec_embed_from_node(
         max_size: None,
         length_field: None,
         flags: Vec::new(),
-        present_if: None,
+        present_if,
         repeat_body_alias: None,
         max_count: None,
         tlv_chain_body_alias: None,
         dma_burst_align: None,
         length_arith: None,
         embed_body_alias: Some(body_alias),
+        embed_length_from,
     })
 }
 
@@ -2428,6 +2471,60 @@ fn validate_codec_length_field_refs(
                         flag.width
                     )));
                 }
+            }
+        }
+        by_id_so_far.insert(field.id.as_str(), field);
+    }
+    Ok(())
+}
+
+/// RFC §5.B Y0b — `<sce:embed sce:length-from="<id>"/>` cross-field
+/// validator. The named sibling MUST be declared earlier in the same
+/// codec (forward references are rejected so the streaming decoder
+/// reads the length value before reaching the embed payload) AND its
+/// host-language type must be integer (so the value drives an inner
+/// cursor scope size). Folds into `validation/invalid-attribute` —
+/// the repair text names the offending sibling so the author can
+/// reorder or retype directly.
+fn validate_codec_embed_length_from(
+    fields: &[CodecField],
+    label: DocumentLabel<'_>,
+    datamodel: &roxmltree::Node,
+) -> Result<(), Located<ForgeError>> {
+    use std::collections::BTreeMap;
+    let mut by_id_so_far: BTreeMap<&str, &CodecField> = BTreeMap::new();
+    for field in fields {
+        if let Some(target) = field.embed_length_from.as_deref() {
+            let invalid = |expected: String| {
+                located(
+                    datamodel,
+                    label.diagnostic_label,
+                    ValidationError::InvalidAttribute {
+                        element: format!(
+                            "<sce:embed id='{}'> in codec '{}'",
+                            field.id, label.identifier
+                        ),
+                        attr: "sce:length-from".into(),
+                        value: target.to_string(),
+                        expected,
+                    },
+                )
+            };
+            let carrier = by_id_so_far.get(target).ok_or_else(|| {
+                let known: Vec<&str> = by_id_so_far.keys().copied().collect();
+                invalid(format!(
+                    "length source '{target}' must be a sibling field declared \
+                     earlier in the same codec (known earlier fields: [{}])",
+                    known.join(", ")
+                ))
+            })?;
+            let is_int = carrier.sce_type.is_unsigned() || carrier.sce_type.is_signed();
+            if !is_int {
+                return Err(invalid(format!(
+                    "length source must be an integer field; \
+                     '{target}' is sce:type=\"{:?}\"",
+                    carrier.sce_type
+                )));
             }
         }
         by_id_so_far.insert(field.id.as_str(), field);

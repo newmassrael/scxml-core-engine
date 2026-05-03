@@ -992,6 +992,24 @@ pub struct CodecField {
     /// `<sce:import>` aliases at codegen time.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub embed_body_alias: Option<String>,
+    /// RFC §5.B Y0b — `sce:length-from="<id>"` on a `BitSize::Embed`
+    /// field bounds the embedded codec's decode-time cursor scope to
+    /// the named sibling field's decoded value (a prior-position
+    /// integer field — typically a VLE total-length prefix). The
+    /// embedded codec consumes exactly that many bytes via an
+    /// inner-cursor sub-window; encode side trusts the author to set
+    /// the length sibling consistently with the embedded codec's
+    /// emitted byte count (mirrors the `LengthRef` author-trust
+    /// contract — round-trip correctness is the author's
+    /// responsibility, not codec-derived).
+    ///
+    /// First reachable consumer: zenoh-pico
+    /// `_z_decl_ext_keyexpr_encode` (declarations.c:38-50) where the
+    /// outer envelope's VLE total-length prefix bounds the inner
+    /// `wireexpr`-shaped body (inner_header + VLE id + suffix-Tail).
+    /// `None` for the Y0c always-present always-cursor-direct shape.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub embed_length_from: Option<String>,
     /// RFC §5.B B5-δ Surface F — arithmetic offset on the
     /// `length-field` source value. Authored as `sce:length-arith="+1"`
     /// or `sce:length-arith="-1"` paired with `sce:bit-size="length-ref"`

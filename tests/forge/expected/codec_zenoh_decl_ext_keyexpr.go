@@ -1,0 +1,137 @@
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
+// Runtime: none
+// Do not edit — regenerate from the source SCXML file.
+
+package codec_zenoh_decl_ext_keyexpr
+
+import (
+	"github.com/newmassrael/sce-forge-runtime/codec"
+	"example.com/sce-forge/codec_zenoh_decl_ext_keyexpr_inner"
+)
+
+// CodecZenohDeclExtKeyexpr represents the codec frame layout.
+type CodecZenohDeclExtKeyexpr struct {
+	OuterHeader uint8
+	TotalLength uint64
+	Inner codec_zenoh_decl_ext_keyexpr_inner.CodecZenohDeclExtKeyexprInner
+}
+
+// DecodeCodecZenohDeclExtKeyexpr decodes the next frame from cursor.
+// On success the cursor advances past the consumed bytes; returns
+// `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail
+// is shorter than the declared minimum frame (RFC §5.B L494-519).
+// VLE codecs may also return `codec.ErrVLEWidthOverflow`.
+func DecodeCodecZenohDeclExtKeyexpr(cursor *codec.SceCursor) (*CodecZenohDeclExtKeyexpr, error) {
+	// Streaming codec: each field reads from cursor directly
+	// (VLE base-128 chain). Local var name reuses the Go-PascalCase
+	// `field.id` — the struct literal's `Foo: Foo` is unambiguous
+	// because the package owns both names. RFC §5.B B4: per-field
+	// bit-size dispatch routes Fixed / LengthRef siblings of VLE
+	// fields through `present_if_decode_stmt` (predicate=None arms).
+	// Pure-VLE codecs stay byte-stable.
+	var OuterHeader uint8
+	{
+		raw, err := cursor.PeekSlice(1)
+		if err != nil {
+			return nil, err
+		}
+		OuterHeader = raw[0]
+		if err := cursor.Advance(1); err != nil {
+			return nil, err
+		}
+	}
+	TotalLength, err := cursor.ReadVLEU64()
+	if err != nil { return nil, err }
+	var Inner *codec_zenoh_decl_ext_keyexpr_inner.CodecZenohDeclExtKeyexprInner
+	{
+		_len := int(TotalLength)
+		_raw, err := cursor.PeekSlice(_len)
+		if err != nil {
+			return nil, err
+		}
+		_inner := codec.NewSceCursor(_raw)
+		_emb, err := codec_zenoh_decl_ext_keyexpr_inner.DecodeCodecZenohDeclExtKeyexprInner(&_inner)
+		if err != nil {
+			return nil, err
+		}
+		if err := cursor.Advance(_len); err != nil {
+			return nil, err
+		}
+		Inner = _emb
+	}
+	return &CodecZenohDeclExtKeyexpr{
+		OuterHeader: OuterHeader,
+		TotalLength: TotalLength,
+		Inner: Inner,
+	}, nil
+}
+
+// RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
+// the carrier field. Single-bit (width=1) reads as bool; multi-bit
+// (width>=2) reads as the smallest unsigned int type that fits. Setters
+// mask + shift on the way in so out-of-range callers can't corrupt
+// sibling bits. Wire layout is unchanged — the carrier still occupies
+// its declared bytes.
+func (s *CodecZenohDeclExtKeyexpr) ExtId() uint8 {
+	return uint8((s.OuterHeader >> 0) & 0x0F)
+}
+
+func (s *CodecZenohDeclExtKeyexpr) SetExtId(v uint8) {
+	const _shiftedMask uint8 = 0x0F << 0
+	_val := (uint8(v) & 0x0F) << 0
+	s.OuterHeader = (s.OuterHeader &^ _shiftedMask) | _val
+}
+
+func (s *CodecZenohDeclExtKeyexpr) M() bool {
+	return (s.OuterHeader & 0x10) != 0
+}
+
+func (s *CodecZenohDeclExtKeyexpr) SetM(v bool) {
+	if v {
+		s.OuterHeader |= 0x10
+	} else {
+		s.OuterHeader &^= 0x10
+	}
+}
+
+func (s *CodecZenohDeclExtKeyexpr) Enc() uint8 {
+	return uint8((s.OuterHeader >> 5) & 0x03)
+}
+
+func (s *CodecZenohDeclExtKeyexpr) SetEnc(v uint8) {
+	const _shiftedMask uint8 = 0x03 << 5
+	_val := (uint8(v) & 0x03) << 5
+	s.OuterHeader = (s.OuterHeader &^ _shiftedMask) | _val
+}
+
+func (s *CodecZenohDeclExtKeyexpr) Z() bool {
+	return (s.OuterHeader & 0x80) != 0
+}
+
+func (s *CodecZenohDeclExtKeyexpr) SetZ(v bool) {
+	if v {
+		s.OuterHeader |= 0x80
+	} else {
+		s.OuterHeader &^= 0x80
+	}
+}
+
+// Encode serializes the CodecZenohDeclExtKeyexpr into raw bytes.
+func (s *CodecZenohDeclExtKeyexpr) Encode() []byte {
+	// RFC §5.B B4: per-field bit-size dispatch routes Fixed /
+	// LengthRef siblings of VLE fields through
+	// `present_if_encode_block` (predicate=None arms). Pure-VLE
+	// codecs stay byte-stable.
+	r := make([]byte, 0, 267)
+	r = append(r, s.OuterHeader)
+	{
+		_w := uint64(s.TotalLength)
+		for _w >= 0x80 {
+			r = append(r, byte(_w&0x7F)|0x80)
+			_w >>= 7
+		}
+		r = append(r, byte(_w))
+	}
+	r = append(r, s.Inner.Encode()...)
+	return r
+}

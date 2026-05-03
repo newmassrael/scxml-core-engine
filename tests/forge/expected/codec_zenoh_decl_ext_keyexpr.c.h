@@ -1,0 +1,147 @@
+/* SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec") */
+/* Runtime: none */
+/* Do not edit — regenerate from the source SCXML file. */
+
+#ifndef SCE_FORGE_CODEC_ZENOH_DECL_EXT_KEYEXPR_H
+#define SCE_FORGE_CODEC_ZENOH_DECL_EXT_KEYEXPR_H
+
+#include <stdint.h>
+#include <stdbool.h>
+#include <stddef.h>
+
+#include "sce/forge/codec.h"
+#include "codec_zenoh_decl_ext_keyexpr_inner.h"
+
+#define CODEC_ZENOH_DECL_EXT_KEYEXPR_MIN_BYTES 1
+#define CODEC_ZENOH_DECL_EXT_KEYEXPR_MAX_BYTES 267
+
+typedef struct {
+    uint8_t outer_header;
+    uint64_t total_length;
+    /* RFC §5.B Y0c embed: nested codec_zenoh_decl_ext_keyexpr_inner_t struct (no length prefix on the wire) */
+    codec_zenoh_decl_ext_keyexpr_inner_t inner;
+} codec_zenoh_decl_ext_keyexpr_t;
+
+typedef struct {
+    uint8_t bytes[CODEC_ZENOH_DECL_EXT_KEYEXPR_MAX_BYTES];
+    size_t  len;
+} codec_zenoh_decl_ext_keyexpr_encoded_t;
+
+/* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
+ * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
+ * (without advancing) when the cursor's tail is shorter than the
+ * declared minimum frame (RFC §5.B L494-519). VLE codecs may also
+ * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
+static inline sce_forge_codec_status_t codec_zenoh_decl_ext_keyexpr_decode(sce_forge_cursor_t *cursor, codec_zenoh_decl_ext_keyexpr_t *out) {
+    /* Streaming codec: each field reads from cursor directly (VLE
+     * base-128 chain, 1..=ceil(N/7) bytes per field). RFC §5.B B4:
+     * per-field bit-size dispatch routes Fixed / LengthRef siblings
+     * of VLE fields through `present_if_decode_stmt` (predicate=None
+     * arms — for VLE the helper emits the local-decl + `out->` assign
+     * fused; for Fixed / LengthRef it writes directly to `out->`).
+     * Pure-VLE codecs stay byte-stable. */
+    {
+        const uint8_t *raw = sce_forge_cursor_peek(cursor, 1);
+        if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+        out->outer_header = raw[0];
+        if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+    }
+    uint64_t total_length;
+    {
+        sce_forge_codec_status_t _vle_st = sce_forge_cursor_read_vle_u64(cursor, &total_length);
+        if (_vle_st != SCE_FORGE_CODEC_OK) return _vle_st;
+    }
+    out->total_length = total_length;
+    {
+        size_t _len = (size_t)(out->total_length);
+        const uint8_t *_raw = sce_forge_cursor_peek(cursor, _len);
+        if (_raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+        sce_forge_cursor_t _inner = sce_forge_cursor_init(_raw, _len);
+        sce_forge_codec_status_t _st = codec_zenoh_decl_ext_keyexpr_inner_decode(&_inner, &out->inner);
+        if (_st != SCE_FORGE_CODEC_OK) return _st;
+        if (!sce_forge_cursor_advance(cursor, _len)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+    }
+    return SCE_FORGE_CODEC_OK;
+}
+
+static inline codec_zenoh_decl_ext_keyexpr_encoded_t codec_zenoh_decl_ext_keyexpr_encode(const codec_zenoh_decl_ext_keyexpr_t *self) {
+    codec_zenoh_decl_ext_keyexpr_encoded_t r;
+    /* RFC §5.B B4: per-field bit-size dispatch routes Fixed /
+     * LengthRef / Tail siblings of VLE fields through
+     * `present_if_encode_block` (predicate=None arms). Pure-VLE
+     * codecs stay byte-stable. */
+    r.len = 0;
+    r.bytes[r.len++] = self->outer_header;
+    {
+        uint64_t _w = (uint64_t)(self->total_length);
+        while (_w >= 0x80u) {
+            r.bytes[r.len++] = (uint8_t)((_w & 0x7Fu) | 0x80u);
+            _w >>= 7;
+        }
+        r.bytes[r.len++] = (uint8_t)_w;
+    }
+    {
+        codec_zenoh_decl_ext_keyexpr_inner_encoded_t _sub = codec_zenoh_decl_ext_keyexpr_inner_encode(&self->inner);
+        if (r.len + _sub.len <= sizeof(r.bytes)) {
+            for (size_t _ej = 0; _ej < _sub.len; ++_ej) r.bytes[r.len + _ej] = _sub.bytes[_ej];
+            r.len += _sub.len;
+        }
+    }
+    return r;
+}
+
+/* RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
+ * the carrier field. Single-bit (width=1) reads as bool; multi-bit
+ * (width>=2) reads as the smallest unsigned C11 integer type that fits
+ * (uint8_t / uint16_t / uint32_t / uint64_t). Setters mask + shift on
+ * the way in so out-of-range callers can't corrupt sibling bits. The
+ * accessor name is `<struct_snake>_<flag_name>` so multiple codecs
+ * carrying same-named flags coexist in a single translation unit. Wire
+ * layout is unchanged — the carrier still occupies its declared bytes. */
+static inline uint8_t codec_zenoh_decl_ext_keyexpr_ext_id(const codec_zenoh_decl_ext_keyexpr_t *self) {
+    return (uint8_t)((self->outer_header >> 0) & (uint8_t)0x0F);
+}
+
+static inline void codec_zenoh_decl_ext_keyexpr_set_ext_id(codec_zenoh_decl_ext_keyexpr_t *self, uint8_t v) {
+    const uint8_t _shifted_mask = (uint8_t)((uint8_t)0x0F << 0);
+    const uint8_t _val = (uint8_t)(((uint8_t)v & (uint8_t)0x0F) << 0);
+    self->outer_header = (uint8_t)((self->outer_header & (uint8_t)~_shifted_mask) | _val);
+}
+
+
+static inline bool codec_zenoh_decl_ext_keyexpr_m(const codec_zenoh_decl_ext_keyexpr_t *self) {
+    return (self->outer_header & 0x10) != 0;
+}
+
+static inline void codec_zenoh_decl_ext_keyexpr_set_m(codec_zenoh_decl_ext_keyexpr_t *self, bool v) {
+    if (v) {
+        self->outer_header = (uint8_t)(self->outer_header | 0x10);
+    } else {
+        self->outer_header = (uint8_t)(self->outer_header & (uint8_t)(~(uint8_t)0x10));
+    }
+}
+
+static inline uint8_t codec_zenoh_decl_ext_keyexpr_enc(const codec_zenoh_decl_ext_keyexpr_t *self) {
+    return (uint8_t)((self->outer_header >> 5) & (uint8_t)0x03);
+}
+
+static inline void codec_zenoh_decl_ext_keyexpr_set_enc(codec_zenoh_decl_ext_keyexpr_t *self, uint8_t v) {
+    const uint8_t _shifted_mask = (uint8_t)((uint8_t)0x03 << 5);
+    const uint8_t _val = (uint8_t)(((uint8_t)v & (uint8_t)0x03) << 5);
+    self->outer_header = (uint8_t)((self->outer_header & (uint8_t)~_shifted_mask) | _val);
+}
+
+
+static inline bool codec_zenoh_decl_ext_keyexpr_z(const codec_zenoh_decl_ext_keyexpr_t *self) {
+    return (self->outer_header & 0x80) != 0;
+}
+
+static inline void codec_zenoh_decl_ext_keyexpr_set_z(codec_zenoh_decl_ext_keyexpr_t *self, bool v) {
+    if (v) {
+        self->outer_header = (uint8_t)(self->outer_header | 0x80);
+    } else {
+        self->outer_header = (uint8_t)(self->outer_header & (uint8_t)(~(uint8_t)0x80));
+    }
+}
+
+#endif  /* SCE_FORGE_CODEC_ZENOH_DECL_EXT_KEYEXPR_H */

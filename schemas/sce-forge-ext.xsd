@@ -212,6 +212,16 @@
        (zid_len_m1 = actual_len - 1, decode reconstructs actual_len). -->
   <xs:attribute name="length-arith" type="xs:integer"/>
 
+  <!-- RFC §5.B Y0b — `sce:length-from="<sibling_field_id>"` on
+       `<sce:embed>`. Bounds the embedded codec's decode-time cursor
+       scope to the named earlier integer field's value. Mirrors
+       zenoh-pico declarations.c:206 `_z_slice_as_zbuf` inner-cursor
+       pattern. Author-trust on encode (sibling's wire value must
+       match the embedded codec's emitted byte count). Validator
+       (`validate_codec_embed_length_from`) rejects forward / unknown
+       / non-integer references. -->
+  <xs:attribute name="length-from" type="xs:string"/>
+
   <!-- RFC §5.B B2 repeat primitive: <sce:repeat>-internal attributes
        (count / until-eof / max-count / type / id) live unqualified
        inside the <sce:repeat> element complexType — same convention
@@ -526,26 +536,47 @@
   </xs:element>
 
   <!-- ═══════════════════════════════════════════════════════════════
-       RFC §5.B Y0c — single-codec embed primitive
+       RFC §5.B Y0c + Y0b — single-codec embed primitive
 
-       Embeds an imported codec inline at the named byte position
-       with no wire-level boundary bytes. The embedded codec's own
-       decode/encode methods consume/produce bytes directly; the host
-       language emits a nested struct of the imported codec's type.
-       Mirrors `<sce:repeat>` / `<sce:tlv-chain>` tri-attr shape but
-       without count/depth/overflow knobs (single occurrence,
-       always-present in v1).
+       Embeds an imported codec inline at the named byte position.
+       The embedded codec's own decode/encode methods consume/produce
+       bytes directly; the host language emits a nested struct of the
+       imported codec's type. Mirrors `<sce:repeat>` / `<sce:tlv-chain>`
+       tri-attr shape (id + type + sce:byte) plus two optional Y0b
+       attributes that compose freely.
 
-       First reachable consumer: zenoh-pico declare bodies
+       First reachable consumer (Y0c): zenoh-pico declare bodies
        (decl_keyexpr / decl_subscriber / decl_queryable / decl_token)
        embedding `codec_zenoh_wireexpr` after the body's VLE id field
        — Zenoh wire packs id + wireexpr inline with no length prefix
-       between them, so embed exactly mirrors that wire layout.
+       between them, so the always-present cursor-direct shape exactly
+       mirrors that wire layout.
 
-       v1 grammar restricts to always-present embedding. `present-if`
-       defers to its first reachable consumer (zenoh-pico's optional
-       `_ext_keyexpr` chain in undecl_* uses TLV ext envelopes
-       instead — Y0b territory).
+       Y0b lifts two attributes:
+
+         - `sce:present-if="<carrier>.<flag>" | "parent.<flag>" | "!..."`
+           gates the embed on a runtime predicate (mirrors the
+           present-if grammar used by `<sce:field>` and `<sce:repeat>`).
+           When set the host-language type wraps in a per-language
+           optional (Option<T> / std::optional<T> / T? / *T /
+           Optional[T]). C11 keeps the bare struct member with
+           carrier-bit-as-truth for presence (no nullable wrapper).
+
+         - `sce:length-from="<sibling_field_id>"` bounds the embedded
+           codec's decode-time cursor scope to the named earlier
+           integer field's value (typical: a VLE total-length prefix).
+           Encode side trusts the author to keep `self.<sibling> ==
+           emitted_inner.len()` (mirrors the LengthRef author-trust
+           contract). First reachable consumer: zenoh-pico
+           `_z_decl_ext_keyexpr_encode` (declarations.c:38-50) where
+           the outer envelope's VLE total_length prefix scopes the
+           inner wireexpr-shaped body.
+
+       Diagnostics (folded into validation/invalid-attribute):
+         - sce:length-from references later/unknown sibling
+         - sce:length-from references non-integer sibling
+         - sce:present-if cross-field validation reuses the existing
+           B1-δ / B5-γ predicate validators
        ═══════════════════════════════════════════════════════════════ -->
 
   <xs:element name="embed">
@@ -557,6 +588,14 @@
            `<sce:arm type=...>` shape. -->
       <xs:attribute name="type" type="xs:NCName" use="required"/>
       <xs:attribute ref="sce:byte" use="required"/>
+      <!-- RFC §5.B Y0b — optional present-if predicate gating the
+           embed. Same grammar as `<sce:field sce:present-if>`. -->
+      <xs:attribute ref="sce:present-if"/>
+      <!-- RFC §5.B Y0b — optional `sce:length-from="<id>"` bounds
+           the embedded codec's decode-time cursor scope to the named
+           sibling integer field's value. Author-trust on encode
+           (sibling value must match emitted byte count). -->
+      <xs:attribute ref="sce:length-from"/>
     </xs:complexType>
   </xs:element>
 

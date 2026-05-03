@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh decl_ext_keyexpr outer envelope (RFC
+     §5.B Y0b — Wire RFC Phase B Y0b foundation, the load-bearing
+     primitive demo for Y0b's two embed-attribute lifts).
+
+     Mirrors `_z_decl_ext_keyexpr_encode` (declarations.c:38-50)
+     verbatim. The single-ext envelope wraps codec_zenoh_decl_ext_keyexpr_inner
+     in a TLV-style header + VLE total_length prefix:
+
+       byte 0    : outer_header  (uint8 carrier, see flag layout below)
+       byte 1+   : total_length  (VLE u64 — bytes consumed by the
+                                  inner body; mirrors zenoh-pico
+                                  line 43 `_z_zsize_encode(wbf, 1 +
+                                  kelen + zint_len(ke->_id))`)
+       byte ?+   : inner         (length-bound embed — outer strips
+                                  the VLE prefix and hands a sub-cursor
+                                  of exactly `total_length` bytes to
+                                  codec_zenoh_decl_ext_keyexpr_inner;
+                                  mirrors declarations.c:206
+                                  `_z_slice_as_zbuf`)
+
+     `outer_header` layout (zenoh-pico ext.h:46-64 verbatim):
+       bits 0..3 (ext_id, width=4)  : extension id, fixed at 0xf
+                                      for keyexpr ext (per
+                                      `_z_decl_ext_keyexpr_encode`
+                                      line 39's `0x0f` literal)
+       bit 4 (M, width=1)            : `_Z_MSG_EXT_FLAG_M = 0x10`
+                                      mandatory marker — the
+                                      decoder MUST understand this
+                                      ext or fail the frame
+                                      (`_z_msg_ext_unknown_error`).
+                                      Always set for ext_keyexpr per
+                                      encoder line 39.
+       bits 5..6 (enc, width=2)      : `_Z_MSG_EXT_ENC_*` 2-bit
+                                      encoding kind:
+                                        00 (UNIT)  — empty body
+                                        01 (ZINT)  — VLE u64 body
+                                        10 (ZBUF)  — VLE-len + bytes
+                                                     body (this is
+                                                     the ext_keyexpr
+                                                     case)
+                                        11         — reserved
+       bit 7 (Z, width=1)            : `_Z_MSG_EXT_FLAG_Z = 0x80`
+                                      chain-continuation flag — set
+                                      when another ext follows.
+                                      Single-ext usage (the only
+                                      shape `_z_decl_ext_keyexpr_encode`
+                                      emits, line 98 `has_next_ext=false`)
+                                      keeps this clear; the wire-
+                                      level chain-iter decoder
+                                      (`_z_msg_ext_decode_iter`)
+                                      naturally terminates on
+                                      cursor exhaustion when this
+                                      bit is clear, so encoder /
+                                      decoder remain interoperable.
+
+     Y0b's two attribute lifts — both exercised in this fixture:
+
+       (1) `<sce:embed sce:length-from="total_length">` bounds the
+           inner codec's decode-time cursor scope to `total_length`
+           bytes. Encode side trusts the author to keep `self.
+           total_length` consistent with `inner.encode().len()` —
+           same author-trust contract as `LengthRef`'s sibling
+           length field. v1 grammar: length sibling MUST be declared
+           earlier in the same codec and MUST be integer-typed
+           (`validate_codec_embed_length_from`).
+
+       (2) `<sce:embed>` itself is NOT gated here (single-ext outer
+           envelope is unconditional). The Y0b present-if-on-embed
+           lift exercises in the three undecl_* fixtures
+           (codec_zenoh_undecl_subscriber / queryable / token) where
+           the decl/undecl body's parent.Z flag gates this entire
+           outer envelope.
+
+     Composition: B1-γ flags (outer_header) + B1-α VLE (total_length)
+     + Y0b length-bound embed (inner). Plain — no parent-flag
+     dependency at this level.
+
+     Wire round-trip oracle:
+       Empty suffix (N=0):
+         inner_header=0x00, id=42 (VLE: 0x2A) → inner = 2 bytes
+         total_length = 2  (VLE: 0x02)
+         outer = 0x4f 0x02 0x00 0x2A
+       With suffix (N=1):
+         inner_header=0x01, id=42 (VLE: 0x2A), suffix="abc" → inner
+                = 1 + 1 + 3 = 5 bytes
+         total_length = 5  (VLE: 0x05)
+         outer = 0x4f 0x05 0x01 0x2A 0x61 0x62 0x63 -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_decl_ext_keyexpr">
+  <sce:import src="codec_zenoh_decl_ext_keyexpr_inner.scxml" kind="codec"
+              as="codec_zenoh_decl_ext_keyexpr_inner"/>
+  <datamodel>
+    <sce:flags id="outer_header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="ext_id" bit="0" width="4"/>
+      <sce:flag name="M" bit="4"/>
+      <sce:flag name="enc" bit="5" width="2"/>
+      <sce:flag name="Z" bit="7"/>
+    </sce:flags>
+    <sce:field id="total_length" sce:type="uint64" sce:byte="1" sce:bit-size="vle"/>
+    <sce:embed id="inner" type="codec_zenoh_decl_ext_keyexpr_inner" sce:byte="2"
+               sce:length-from="total_length"/>
+  </datamodel>
+</scxml>

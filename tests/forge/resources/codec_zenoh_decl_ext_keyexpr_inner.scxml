@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh decl_ext_keyexpr inner body codec
+     (RFC §5.B Y0b — Wire RFC Phase B Y0b foundation). The "inner
+     cursor" body codec consumed by codec_zenoh_decl_ext_keyexpr's
+     length-bound embed: outer envelope strips the VLE total_length
+     prefix and hands a bounded sub-cursor to this codec, mirroring
+     zenoh-pico declarations.c:206 `_z_slice_as_zbuf(extension->_body
+     ._zbuf._val)`.
+
+     Mirrors `_z_decl_ext_keyexpr_encode` (declarations.c:38-50) +
+     `_z_undecl_decode_extensions` (declarations.c:202-228) verbatim.
+     Three wire fields:
+
+       byte 0   : inner_header  (uint8 carrier — distinct from
+                                 codec_zenoh_wireexpr's per-MID header
+                                 carrier="header" since the bit
+                                 positions differ: inner has N@0 and
+                                 M@1, while per-MID header has N@5).
+                                 The carrier-name distinction satisfies
+                                 B5-γ cross-codec parent-flag validator
+                                 (validate_cross_codec_parent_flags is
+                                 by-name AND by-bit; this codec carries
+                                 its own local-scope `<sce:flags>`,
+                                 not requires-parent-flags, so it
+                                 doesn't need to share the carrier
+                                 name with codec_zenoh_wireexpr.)
+
+       byte 1+  : id            (VLE u64; zenoh-pico encodes via
+                                 `_z_zsize_encode` which is the
+                                 unsigned-int VLE shape)
+
+       byte ?+  : suffix        (bytes Tail, present-if
+                                 `inner_header.N`, max-size 128).
+                                 Wire length is whatever bytes remain
+                                 in the inner cursor after the inner
+                                 header + VLE id are consumed —
+                                 zenoh-pico computes this as
+                                 `_z_zbuf_len(zbf)` on the bounded
+                                 inner cursor. Tail naturally captures
+                                 this when the outer envelope length-
+                                 bounds the inner cursor scope (Y0b
+                                 sce:length-from primitive).
+
+     `inner_header` flag layout (declarations.c:42 verbatim):
+       bit 0 (N) : has_kesuffix — if set, the suffix Tail is present
+       bit 1 (M) : is_local_mapping — wire-bearing for the keyexpr
+                   mapping decision (host_remote vs local). NOT gated
+                   in SCE: the M bit affects neither the inner_header
+                   byte's wire layout nor any field's presence —
+                   declared here for round-trip coverage of the bit's
+                   value, but no `sce:present-if` consumer.
+
+     SceType=bytes for `suffix` (NOT `string`) defers UTF-8 host-
+     language typing to a future Y0b-extension atomic. Y0a's
+     codec_zenoh_wireexpr lifted gated-String only for length-ref
+     bit-size; gated-String + Tail awaits a separate consumer-driven
+     lift (the Y0b envelope surface and the string-tail surface are
+     orthogonal). Caller treats `suffix` as UTF-8 by zenoh contract.
+
+     Plain (no `<sce:requires-parent-flags>`) — this is a self-
+     contained codec consumed inside an outer envelope's bounded
+     sub-cursor; the outer (codec_zenoh_decl_ext_keyexpr) does NOT
+     thread parent flags through. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_decl_ext_keyexpr_inner">
+  <datamodel>
+    <sce:flags id="inner_header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="N" bit="0"/>
+      <sce:flag name="M" bit="1"/>
+    </sce:flags>
+    <sce:field id="id" sce:type="uint64" sce:byte="1" sce:bit-size="vle"/>
+    <sce:field id="suffix" sce:type="bytes" sce:byte="2" sce:bit-size="tail"
+               sce:max-size="128" sce:present-if="inner_header.N"/>
+  </datamodel>
+</scxml>

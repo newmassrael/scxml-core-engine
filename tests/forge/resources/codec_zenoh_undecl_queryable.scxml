@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh undecl_queryable body (RFC §5.B Y0b
+     — Wire RFC Phase B Y0b consumer). Wire-identical to
+     codec_zenoh_undecl_subscriber (zenoh-pico's `_z_undecl_encode`
+     dispatcher takes the per-MID header byte as a parameter and
+     emits the same VLE id + parent.Z-gated ext_keyexpr layout
+     regardless of MID); kept as a separate fixture to mirror
+     zenoh-pico's named encoder pair (`_z_undecl_subscriber_encode`
+     vs `_z_undecl_queryable_encode` — declarations.c:120-122)
+     and to provide independent round-trip coverage so a future
+     wire-shape divergence between the two MIDs surfaces here.
+
+     Mirrors `_z_undecl_queryable_encode` →
+     `_z_undecl_encode(_Z_UNDECL_QUERYABLE_MID=5, ...)` and
+     `_z_undecl_queryable_decode` → `_z_undecl_trivial_decode`
+     (declarations.c:120-122 + 297-300).
+
+     Wire shape (1+ bytes — outer envelope writes the per-MID header
+     byte; this body only carries the payload):
+       VLE u32 id
+       parent.Z : ext_keyexpr  (Y0b length-bound TLV envelope —
+                                codec_zenoh_decl_ext_keyexpr) -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_undecl_queryable">
+  <sce:import src="codec_zenoh_decl_ext_keyexpr.scxml" kind="codec"
+              as="codec_zenoh_decl_ext_keyexpr"/>
+  <sce:requires-parent-flags carrier="header">
+    <sce:flag name="Z" bit="7"/>
+  </sce:requires-parent-flags>
+  <datamodel>
+    <sce:field id="id" sce:type="uint32" sce:byte="0" sce:bit-size="vle"/>
+    <sce:embed id="ext_keyexpr" type="codec_zenoh_decl_ext_keyexpr" sce:byte="1"
+               sce:present-if="parent.Z"/>
+  </datamodel>
+</scxml>
