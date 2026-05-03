@@ -32,7 +32,7 @@ const _: () = assert!(
 // value; the optional Default arm preserves the runtime tag value
 // alongside its catch-all body.
 #[allow(dead_code)]
-pub enum {{ struct_name }}Body {
+pub enum {{ struct_name }}Variant {
 {% for arm in variant.arms %}
     {{ arm.variant_name }}({{ arm.body_type }}),
 {% endfor %}
@@ -44,7 +44,7 @@ pub enum {{ struct_name }}Body {
 {% endif %}
 }
 
-impl Default for {{ struct_name }}Body {
+impl Default for {{ struct_name }}Variant {
     fn default() -> Self {
         // Default to the first declared arm's body — every imported
         // codec is `#[derive(Default)]`, so this is infallible. A
@@ -73,7 +73,7 @@ pub struct {{ struct_name }} {
     pub {{ field.id }}: {{ field.rs_type }},
 {% endfor %}
 {% if has_variant %}
-    pub body: {{ struct_name }}Body,
+    pub body: {{ struct_name }}Variant,
 {% endif %}
 }
 
@@ -123,10 +123,10 @@ impl {{ struct_name }} {
         // wire.
         let body = match {{ variant.tag_match_expr }} {
 {% for arm in variant.arms %}
-            {{ arm.value_literal }} => {{ struct_name }}Body::{{ arm.variant_name }}({{ arm.body_type }}::decode(cursor{{ arm.body_parent_flags_arg }})?),
+            {{ arm.value_literal }} => {{ struct_name }}Variant::{{ arm.variant_name }}({{ arm.body_type }}::decode(cursor{{ arm.body_parent_flags_arg }})?),
 {% endfor %}
 {% if variant.default_arm %}
-            other => {{ struct_name }}Body::{{ variant.default_arm.variant_name }} {
+            other => {{ struct_name }}Variant::{{ variant.default_arm.variant_name }} {
                 tag: other,
                 body: {{ variant.default_arm.body_type }}::decode(cursor{{ variant.default_arm.body_parent_flags_arg }})?,
             },
@@ -330,12 +330,12 @@ impl {{ struct_name }} {
         // Append the active arm's encoded bytes.
         match &self.body {
 {% for arm in variant.arms %}
-            {{ struct_name }}Body::{{ arm.variant_name }}(b) => {
+            {{ struct_name }}Variant::{{ arm.variant_name }}(b) => {
                 r.extend(b.encode({{ arm.body_parent_flags_arg_first }}));
             }
 {% endfor %}
 {% if variant.default_arm %}
-            {{ struct_name }}Body::{{ variant.default_arm.variant_name }} { body, .. } => {
+            {{ struct_name }}Variant::{{ variant.default_arm.variant_name }} { body, .. } => {
                 r.extend(body.encode({{ variant.default_arm.body_parent_flags_arg_first }}));
             }
 {% endif %}

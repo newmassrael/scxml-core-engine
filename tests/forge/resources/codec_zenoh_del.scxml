@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: stripped-down Zenoh DEL body leaf (RFC §5.B
+     B5-η — Surface I, "recursive variant body"). Used as the DEL-arm
+     body inside the inner variant codec_zenoh_push_body. Empty body —
+     the inner variant's header byte (carrying the DEL MID) marks the
+     message and the body codec emits zero wire bytes, exactly the
+     pattern codec_zenoh_keep_alive (B5-α) established for the empty
+     body case. The DEL/empty + PUT/non-empty asymmetry on the inner
+     variant arms exercises both empty-body and non-empty-body branches
+     through the recursion path.
+
+     Upstream `_z_msg_del_t` carries timestamp + source_info both
+     flag-gated by the parent header — modelling that faithfully would
+     require B5-γ parent-flags. For B5-η's purpose (validating
+     recursion), an empty body is the textbook minimum. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_del">
+  <datamodel/>
+</scxml>

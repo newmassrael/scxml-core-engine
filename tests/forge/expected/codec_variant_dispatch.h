@@ -26,7 +26,7 @@ struct CodecVariantDispatchDefault {
     uint8_t tag;
     ::SCE::Generated::CodecVariantSessionClose::CodecVariantSessionClose body;
 };
-using CodecVariantDispatchBody = std::variant<
+using CodecVariantDispatchVariant = std::variant<
     ::SCE::Generated::CodecVariantSessionOpen::CodecVariantSessionOpen,
     ::SCE::Generated::CodecVariantSessionClose::CodecVariantSessionClose,
     CodecVariantDispatchDefault
@@ -34,7 +34,7 @@ using CodecVariantDispatchBody = std::variant<
 
 struct CodecVariantDispatch {
     uint8_t msg_id;
-    CodecVariantDispatchBody body;
+    CodecVariantDispatchVariant body;
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
@@ -49,7 +49,7 @@ struct CodecVariantDispatch {
         uint8_t msg_id = raw[0];
         if (!cursor.advance(1)) return std::nullopt;
         // Dispatch on tag value into the matching arm body.
-        CodecVariantDispatchBody body;
+        CodecVariantDispatchVariant body;
         switch (msg_id) {
             case 1: {
                 auto _arm = ::SCE::Generated::CodecVariantSessionOpen::CodecVariantSessionOpen::decode(cursor);

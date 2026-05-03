@@ -2800,6 +2800,52 @@
           "note": "empty body — encode/decode round-trips zero bytes"
         }
       ]
+    },
+    "codec_zenoh_put": {
+      "fixture": "CodecZenohPut",
+      "signature": "(raw: &[u8]) <-> {payload: u8 @ byte 0}",
+      "description": "Stripped-down Zenoh PUT body leaf (RFC §5.B B5-η Surface I, recursive variant body). Used as the PUT-arm body inside the inner variant codec_zenoh_push_body, which is in turn an arm body of the outer variant codec_zenoh_push — that nesting is what Surface I validates. Upstream `_z_msg_put_t` carries encoding + commons (timestamp + source_info) + attachment + payload, most flag-gated by the parent header (B5-γ parent-flags territory). The fixture keeps a single fixed-byte payload so the recursion focus is not blurred by orthogonal Surface C plumbing.",
+      "cases": [
+        {
+          "decoded": {
+            "payload": 0
+          },
+          "encoded": [
+            0
+          ],
+          "note": "zero payload byte"
+        },
+        {
+          "decoded": {
+            "payload": 202
+          },
+          "encoded": [
+            202
+          ],
+          "note": "0xCA payload byte"
+        },
+        {
+          "decoded": {
+            "payload": 255
+          },
+          "encoded": [
+            255
+          ],
+          "note": "max payload byte"
+        }
+      ]
+    },
+    "codec_zenoh_del": {
+      "fixture": "CodecZenohDel",
+      "signature": "(raw: &[u8]) <-> {} (zero-byte body)",
+      "description": "Stripped-down Zenoh DEL body leaf (RFC §5.B B5-η Surface I, recursive variant body). Used as the DEL-arm body inside the inner variant codec_zenoh_push_body. Empty body — the inner variant's header byte (carrying the DEL MID) marks the message and the body codec emits zero wire bytes, exactly the pattern codec_zenoh_keep_alive (B5-α) established. The DEL/empty + PUT/non-empty asymmetry on the inner variant arms exercises both empty-body and non-empty-body branches through the recursion path. Upstream `_z_msg_del_t` carries timestamp + source_info both flag-gated by the parent header — modelling that faithfully would require B5-γ parent-flags.",
+      "cases": [
+        {
+          "decoded": {},
+          "encoded": [],
+          "note": "empty body — encode/decode round-trips zero bytes"
+        }
+      ]
     }
   },
   "timers": {

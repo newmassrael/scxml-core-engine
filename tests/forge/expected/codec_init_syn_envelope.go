@@ -17,11 +17,11 @@ type CodecInitSynEnvelopeDefault struct {
 	Body codec_init_syn_body.CodecInitSynBody
 }
 
-// CodecInitSynEnvelopeBody is a discriminated-union body for the codec's
+// CodecInitSynEnvelopeVariant is a discriminated-union body for the codec's
 // tag-field suffix (RFC §5.B variant primitive B1-β). Exactly one of
 // the pointer fields is non-nil at a time; the active arm is the one
 // that matches the current tag value.
-type CodecInitSynEnvelopeBody struct {
+type CodecInitSynEnvelopeVariant struct {
 	CodecInitSynBody *codec_init_syn_body.CodecInitSynBody
 	Default *CodecInitSynEnvelopeDefault
 }
@@ -29,7 +29,7 @@ type CodecInitSynEnvelopeBody struct {
 // CodecInitSynEnvelope represents the codec frame layout.
 type CodecInitSynEnvelope struct {
 	Header uint8
-	Body CodecInitSynEnvelopeBody
+	Body CodecInitSynEnvelopeVariant
 }
 
 // DecodeCodecInitSynEnvelope decodes the next frame from cursor.
@@ -50,7 +50,7 @@ func DecodeCodecInitSynEnvelope(cursor *codec.SceCursor) (*CodecInitSynEnvelope,
 	// Dispatch on the tag field; each arm decodes its body codec from
 	// the cursor. The default arm (when declared) carries the runtime
 	// tag value so encode can round-trip it back onto the wire.
-	body := CodecInitSynEnvelopeBody{}
+	body := CodecInitSynEnvelopeVariant{}
 	switch uint8((Header >> 0) & 0x1F) {
 	case 1:
 		_arm, err := codec_init_syn_body.DecodeCodecInitSynBody(cursor, Header)

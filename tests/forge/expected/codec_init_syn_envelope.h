@@ -25,14 +25,14 @@ struct CodecInitSynEnvelopeDefault {
     uint8_t tag;
     ::SCE::Generated::CodecInitSynBody::CodecInitSynBody body;
 };
-using CodecInitSynEnvelopeBody = std::variant<
+using CodecInitSynEnvelopeVariant = std::variant<
     ::SCE::Generated::CodecInitSynBody::CodecInitSynBody,
     CodecInitSynEnvelopeDefault
 >;
 
 struct CodecInitSynEnvelope {
     uint8_t header;
-    CodecInitSynEnvelopeBody body;
+    CodecInitSynEnvelopeVariant body;
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
@@ -47,7 +47,7 @@ struct CodecInitSynEnvelope {
         uint8_t header = raw[0];
         if (!cursor.advance(1)) return std::nullopt;
         // Dispatch on tag value into the matching arm body.
-        CodecInitSynEnvelopeBody body;
+        CodecInitSynEnvelopeVariant body;
         switch (static_cast<uint8_t>((header >> 0) & static_cast<uint8_t>(0x1F))) {
             case 1: {
                 auto _arm = ::SCE::Generated::CodecInitSynBody::CodecInitSynBody::decode(cursor, header);

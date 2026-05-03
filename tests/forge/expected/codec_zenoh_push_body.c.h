@@ -2,18 +2,19 @@
 /* Runtime: none */
 /* Do not edit — regenerate from the source SCXML file. */
 
-#ifndef SCE_FORGE_CODEC_INIT_SYN_ENVELOPE_H
-#define SCE_FORGE_CODEC_INIT_SYN_ENVELOPE_H
+#ifndef SCE_FORGE_CODEC_ZENOH_PUSH_BODY_H
+#define SCE_FORGE_CODEC_ZENOH_PUSH_BODY_H
 
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
 
 #include "sce/forge/codec.h"
-#include "codec_init_syn_body.h"
+#include "codec_zenoh_put.h"
+#include "codec_zenoh_del.h"
 
-#define CODEC_INIT_SYN_ENVELOPE_MIN_BYTES 1
-#define CODEC_INIT_SYN_ENVELOPE_MAX_BYTES 5
+#define CODEC_ZENOH_PUSH_BODY_MIN_BYTES 1
+#define CODEC_ZENOH_PUSH_BODY_MAX_BYTES 2
 
 /* RFC §5.B variant primitive (B1-β): tagged-union body for the codec's
  * tag-field suffix. `kind` discriminates the active arm; `default_tag`
@@ -21,40 +22,42 @@
  * union holds one body slot per arm (per-arm fields keep the template
  * straight when two arms share a body type). */
 typedef enum {
-    CODEC_INIT_SYN_ENVELOPE_BODY_KIND_CODEC_INIT_SYN_BODY,
-    CODEC_INIT_SYN_ENVELOPE_BODY_KIND_DEFAULT,
-} codec_init_syn_envelope_body_kind_t;
+    CODEC_ZENOH_PUSH_BODY_BODY_KIND_CODEC_ZENOH_PUT,
+    CODEC_ZENOH_PUSH_BODY_BODY_KIND_CODEC_ZENOH_DEL,
+    CODEC_ZENOH_PUSH_BODY_BODY_KIND_DEFAULT,
+} codec_zenoh_push_body_body_kind_t;
 
 typedef struct {
-    codec_init_syn_envelope_body_kind_t kind;
+    codec_zenoh_push_body_body_kind_t kind;
     uint8_t default_tag;  /* valid only when kind == ..._DEFAULT */
     union {
-        codec_init_syn_body_t codec_init_syn_body;
-        codec_init_syn_body_t default_body;
+        codec_zenoh_put_t codec_zenoh_put;
+        codec_zenoh_del_t codec_zenoh_del;
+        codec_zenoh_put_t default_body;
     } arm;
-} codec_init_syn_envelope_variant_t;
+} codec_zenoh_push_body_variant_t;
 
 typedef struct {
     uint8_t header;
-    codec_init_syn_envelope_variant_t body;
-} codec_init_syn_envelope_t;
+    codec_zenoh_push_body_variant_t body;
+} codec_zenoh_push_body_t;
 
 typedef struct {
-    uint8_t bytes[CODEC_INIT_SYN_ENVELOPE_MAX_BYTES];
+    uint8_t bytes[CODEC_ZENOH_PUSH_BODY_MAX_BYTES];
     size_t  len;
-} codec_init_syn_envelope_encoded_t;
+} codec_zenoh_push_body_encoded_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
  * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
  * (without advancing) when the cursor's tail is shorter than the
  * declared minimum frame (RFC §5.B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
-static inline sce_forge_codec_status_t codec_init_syn_envelope_decode(sce_forge_cursor_t *cursor, codec_init_syn_envelope_t *out) {
+static inline sce_forge_codec_status_t codec_zenoh_push_body_decode(sce_forge_cursor_t *cursor, codec_zenoh_push_body_t *out) {
     /* Decode fixed prefix (RFC §5.B variant B1-β: fields before tag suffix). */
-    const uint8_t *raw = sce_forge_cursor_peek(cursor, CODEC_INIT_SYN_ENVELOPE_MIN_BYTES);
+    const uint8_t *raw = sce_forge_cursor_peek(cursor, CODEC_ZENOH_PUSH_BODY_MIN_BYTES);
     if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     out->header = raw[0];
-    if (!sce_forge_cursor_advance(cursor, CODEC_INIT_SYN_ENVELOPE_MIN_BYTES)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+    if (!sce_forge_cursor_advance(cursor, CODEC_ZENOH_PUSH_BODY_MIN_BYTES)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     /* Dispatch on the tag field; each arm decodes its body codec from
      * the cursor. The default arm (when declared) carries the runtime
      * tag value so encode can round-trip it back onto the wire. */
@@ -62,41 +65,54 @@ static inline sce_forge_codec_status_t codec_init_syn_envelope_decode(sce_forge_
     sce_forge_codec_status_t _arm_st;
     switch ((uint8_t)((out->header >> 0) & (uint8_t)0x1F)) {
         case 1:
-            out->body.kind = CODEC_INIT_SYN_ENVELOPE_BODY_KIND_CODEC_INIT_SYN_BODY;
-            _arm_st = codec_init_syn_body_decode(cursor, &out->body.arm.codec_init_syn_body, out->header);
+            out->body.kind = CODEC_ZENOH_PUSH_BODY_BODY_KIND_CODEC_ZENOH_PUT;
+            _arm_st = codec_zenoh_put_decode(cursor, &out->body.arm.codec_zenoh_put);
+            if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
+            break;
+        case 2:
+            out->body.kind = CODEC_ZENOH_PUSH_BODY_BODY_KIND_CODEC_ZENOH_DEL;
+            _arm_st = codec_zenoh_del_decode(cursor, &out->body.arm.codec_zenoh_del);
             if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
             break;
         default:
-            out->body.kind = CODEC_INIT_SYN_ENVELOPE_BODY_KIND_DEFAULT;
+            out->body.kind = CODEC_ZENOH_PUSH_BODY_BODY_KIND_DEFAULT;
             out->body.default_tag = (uint8_t)((out->header >> 0) & (uint8_t)0x1F);
-            _arm_st = codec_init_syn_body_decode(cursor, &out->body.arm.default_body, out->header);
+            _arm_st = codec_zenoh_put_decode(cursor, &out->body.arm.default_body);
             if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
             break;
     }
     return SCE_FORGE_CODEC_OK;
 }
 
-static inline codec_init_syn_envelope_encoded_t codec_init_syn_envelope_encode(const codec_init_syn_envelope_t *self) {
-    codec_init_syn_envelope_encoded_t r;
+static inline codec_zenoh_push_body_encoded_t codec_zenoh_push_body_encode(const codec_zenoh_push_body_t *self) {
+    codec_zenoh_push_body_encoded_t r;
     /* Encode fixed prefix (tag field bytes are part of the prefix).
      * The tag value is read from the struct field, NOT derived from
      * the body discriminant — keeping author-set tag / body in sync
      * is the caller's responsibility (v1 keeps the layout simple). */
-    r.len = CODEC_INIT_SYN_ENVELOPE_MIN_BYTES;
+    r.len = CODEC_ZENOH_PUSH_BODY_MIN_BYTES;
     r.bytes[0] = self->header;
     /* Append the active arm body's encoded bytes. */
     switch (self->body.kind) {
-        case CODEC_INIT_SYN_ENVELOPE_BODY_KIND_CODEC_INIT_SYN_BODY: {
-            codec_init_syn_body_encoded_t _sub = codec_init_syn_body_encode(&self->body.arm.codec_init_syn_body, self->header);
-            if (r.len + _sub.len <= CODEC_INIT_SYN_ENVELOPE_MAX_BYTES) {
+        case CODEC_ZENOH_PUSH_BODY_BODY_KIND_CODEC_ZENOH_PUT: {
+            codec_zenoh_put_encoded_t _sub = codec_zenoh_put_encode(&self->body.arm.codec_zenoh_put);
+            if (r.len + _sub.len <= CODEC_ZENOH_PUSH_BODY_MAX_BYTES) {
                 for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
                 r.len += _sub.len;
             }
             break;
         }
-        case CODEC_INIT_SYN_ENVELOPE_BODY_KIND_DEFAULT: {
-            codec_init_syn_body_encoded_t _sub = codec_init_syn_body_encode(&self->body.arm.default_body, self->header);
-            if (r.len + _sub.len <= CODEC_INIT_SYN_ENVELOPE_MAX_BYTES) {
+        case CODEC_ZENOH_PUSH_BODY_BODY_KIND_CODEC_ZENOH_DEL: {
+            codec_zenoh_del_encoded_t _sub = codec_zenoh_del_encode(&self->body.arm.codec_zenoh_del);
+            if (r.len + _sub.len <= CODEC_ZENOH_PUSH_BODY_MAX_BYTES) {
+                for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
+                r.len += _sub.len;
+            }
+            break;
+        }
+        case CODEC_ZENOH_PUSH_BODY_BODY_KIND_DEFAULT: {
+            codec_zenoh_put_encoded_t _sub = codec_zenoh_put_encode(&self->body.arm.default_body);
+            if (r.len + _sub.len <= CODEC_ZENOH_PUSH_BODY_MAX_BYTES) {
                 for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
                 r.len += _sub.len;
             }
@@ -114,27 +130,26 @@ static inline codec_init_syn_envelope_encoded_t codec_init_syn_envelope_encode(c
  * accessor name is `<struct_snake>_<flag_name>` so multiple codecs
  * carrying same-named flags coexist in a single translation unit. Wire
  * layout is unchanged — the carrier still occupies its declared bytes. */
-static inline uint8_t codec_init_syn_envelope_mid(const codec_init_syn_envelope_t *self) {
+static inline uint8_t codec_zenoh_push_body_mid(const codec_zenoh_push_body_t *self) {
     return (uint8_t)((self->header >> 0) & (uint8_t)0x1F);
 }
 
-static inline void codec_init_syn_envelope_set_mid(codec_init_syn_envelope_t *self, uint8_t v) {
+static inline void codec_zenoh_push_body_set_mid(codec_zenoh_push_body_t *self, uint8_t v) {
     const uint8_t _shifted_mask = (uint8_t)((uint8_t)0x1F << 0);
     const uint8_t _val = (uint8_t)(((uint8_t)v & (uint8_t)0x1F) << 0);
     self->header = (uint8_t)((self->header & (uint8_t)~_shifted_mask) | _val);
 }
 
 
-static inline bool codec_init_syn_envelope_s(const codec_init_syn_envelope_t *self) {
-    return (self->header & 0x40) != 0;
+static inline uint8_t codec_zenoh_push_body_rest(const codec_zenoh_push_body_t *self) {
+    return (uint8_t)((self->header >> 5) & (uint8_t)0x07);
 }
 
-static inline void codec_init_syn_envelope_set_s(codec_init_syn_envelope_t *self, bool v) {
-    if (v) {
-        self->header = (uint8_t)(self->header | 0x40);
-    } else {
-        self->header = (uint8_t)(self->header & (uint8_t)(~(uint8_t)0x40));
-    }
+static inline void codec_zenoh_push_body_set_rest(codec_zenoh_push_body_t *self, uint8_t v) {
+    const uint8_t _shifted_mask = (uint8_t)((uint8_t)0x07 << 5);
+    const uint8_t _val = (uint8_t)(((uint8_t)v & (uint8_t)0x07) << 5);
+    self->header = (uint8_t)((self->header & (uint8_t)~_shifted_mask) | _val);
 }
 
-#endif  /* SCE_FORGE_CODEC_INIT_SYN_ENVELOPE_H */
+
+#endif  /* SCE_FORGE_CODEC_ZENOH_PUSH_BODY_H */

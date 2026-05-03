@@ -1258,6 +1258,135 @@ fn forge_codec_string_with_present_if_rejects() {
     );
 }
 
+// ── RFC §5.B B5-η Surface I — recursive variant body ─────────
+// `codec_zenoh_push` is a variant codec whose 0x1d-arm body is
+// itself a variant codec (`codec_zenoh_push_body`, dispatching
+// PUT 0x01 / DEL 0x02). The per-language emit must therefore
+// produce a sum-type whose arm payload is another sum-type
+// (Rust `enum Push { Push(PushBodyEnum), ... }`, Cpp
+// `std::variant<PushBodyVariant, ...>`, Kotlin `sealed class Push`
+// holding `sealed class PushBody`, Go pointer-tagged struct of
+// pointer-tagged struct, C11 tagged-union-of-tagged-union, Python
+// kind-discriminated dataclass-of-dataclass). Surface I was
+// preflight-validated as an IR-level freebie:
+// `resolve_variant_arm_body_type` only checks `imp.kind ==
+// "codec"`, with no variant-bearing-import gate, and a smoke
+// fixture importing codec_variant_dispatch as an arm body produced
+// byte-stable C11 compiling under `-std=c11 -Wall -Wextra
+// -Wpedantic -Werror`. The atomic-6 commit lands the production
+// composition on all 6 backends with no IR change.
+//
+// Leaves: codec_zenoh_put (1-byte payload) and codec_zenoh_del
+// (empty body, mirrors B5-α empty-codec lift) — both stripped down
+// from upstream `_z_msg_put_t`/`_z_msg_del_t` to keep the recursion
+// surface focus and avoid pulling in B5-γ parent-flags. Inner
+// variant: codec_zenoh_push_body (mirrors zenoh-pico
+// `_z_push_body_decode` switch on `_Z_MID(header)` PUT/DEL/default).
+// Outer variant: codec_zenoh_push (mirrors a stripped `_z_n_msg_t`
+// dispatch on the network-MID 0x1d → push_body, default →
+// push_body — degenerate two-tag-domain by design; the recursion
+// is the test, not the variant cardinality at this layer).
+
+#[test]
+fn forge_codec_zenoh_put_cpp() {
+    assert_standalone_forge("codec_zenoh_put", "codec_zenoh_put.h");
+}
+
+#[test]
+fn forge_codec_zenoh_del_cpp() {
+    assert_standalone_forge("codec_zenoh_del", "codec_zenoh_del.h");
+}
+
+#[test]
+fn forge_codec_zenoh_push_body_cpp() {
+    assert_standalone_forge("codec_zenoh_push_body", "codec_zenoh_push_body.h");
+}
+
+#[test]
+fn forge_codec_zenoh_push_cpp() {
+    assert_standalone_forge("codec_zenoh_push", "codec_zenoh_push.h");
+}
+
+#[test]
+fn forge_rust_codec_zenoh_put() {
+    assert_standalone_forge_rust("codec_zenoh_put", "codec_zenoh_put.rs");
+}
+
+#[test]
+fn forge_rust_codec_zenoh_del() {
+    assert_standalone_forge_rust("codec_zenoh_del", "codec_zenoh_del.rs");
+}
+
+#[test]
+fn forge_rust_codec_zenoh_push_body() {
+    assert_standalone_forge_rust("codec_zenoh_push_body", "codec_zenoh_push_body.rs");
+}
+
+#[test]
+fn forge_rust_codec_zenoh_push() {
+    assert_standalone_forge_rust("codec_zenoh_push", "codec_zenoh_push.rs");
+}
+
+#[test]
+fn forge_kotlin_codec_zenoh_put() {
+    assert_standalone_forge_kotlin("codec_zenoh_put", "CodecZenohPut.kt");
+}
+
+#[test]
+fn forge_kotlin_codec_zenoh_del() {
+    assert_standalone_forge_kotlin("codec_zenoh_del", "CodecZenohDel.kt");
+}
+
+#[test]
+fn forge_kotlin_codec_zenoh_push_body() {
+    assert_standalone_forge_kotlin("codec_zenoh_push_body", "CodecZenohPushBody.kt");
+}
+
+#[test]
+fn forge_kotlin_codec_zenoh_push() {
+    assert_standalone_forge_kotlin("codec_zenoh_push", "CodecZenohPush.kt");
+}
+
+#[test]
+fn forge_go_codec_zenoh_put() {
+    assert_standalone_forge_go("codec_zenoh_put", "codec_zenoh_put.go");
+}
+
+#[test]
+fn forge_go_codec_zenoh_del() {
+    assert_standalone_forge_go("codec_zenoh_del", "codec_zenoh_del.go");
+}
+
+#[test]
+fn forge_go_codec_zenoh_push_body() {
+    assert_standalone_forge_go("codec_zenoh_push_body", "codec_zenoh_push_body.go");
+}
+
+#[test]
+fn forge_go_codec_zenoh_push() {
+    assert_standalone_forge_go("codec_zenoh_push", "codec_zenoh_push.go");
+}
+
+#[test]
+fn forge_python_codec_zenoh_put() {
+    assert_standalone_forge_python("codec_zenoh_put", "codec_zenoh_put.py");
+}
+
+#[test]
+fn forge_python_codec_zenoh_del() {
+    assert_standalone_forge_python("codec_zenoh_del", "codec_zenoh_del.py");
+}
+
+#[test]
+fn forge_python_codec_zenoh_push_body() {
+    assert_standalone_forge_python("codec_zenoh_push_body", "codec_zenoh_push_body.py");
+}
+
+#[test]
+fn forge_python_codec_zenoh_push() {
+    assert_standalone_forge_python("codec_zenoh_push", "codec_zenoh_push.py");
+}
+
 /// RFC §5.B B3 MCU gate: a codec containing `<sce:tlv-chain>` rejects
 /// when targeting `cpp` (and the other 3 non-MCU langs by the same
 /// path). The diagnostic is the existing kind-class
@@ -3472,6 +3601,28 @@ fn forge_c11_codec_zenoh_frame() {
 #[test]
 fn forge_c11_codec_zenoh_locator() {
     assert_standalone_forge_c("codec_zenoh_locator", "codec_zenoh_locator.c.h");
+}
+
+// ── RFC §5.B B5-η Surface I recursive variant body (C11) ─────
+
+#[test]
+fn forge_c11_codec_zenoh_put() {
+    assert_standalone_forge_c("codec_zenoh_put", "codec_zenoh_put.c.h");
+}
+
+#[test]
+fn forge_c11_codec_zenoh_del() {
+    assert_standalone_forge_c("codec_zenoh_del", "codec_zenoh_del.c.h");
+}
+
+#[test]
+fn forge_c11_codec_zenoh_push_body() {
+    assert_standalone_forge_c("codec_zenoh_push_body", "codec_zenoh_push_body.c.h");
+}
+
+#[test]
+fn forge_c11_codec_zenoh_push() {
+    assert_standalone_forge_c("codec_zenoh_push", "codec_zenoh_push.c.h");
 }
 
 // ── RFC §5.B B5-α multi-bit + empty-codec (C11) ──────────────

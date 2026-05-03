@@ -12,12 +12,12 @@ import com.sce.generated.codec_variant_session_close.*
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
 // alongside its catch-all body. Arm body types are referenced by FQN
-// to sidestep the lexical-name collision between the inner data class
-// and the imported class (both pascalize the body alias).
-sealed class CodecVariantDispatchBody {
-    data class CodecVariantSessionOpen(val body: com.sce.generated.codec_variant_session_open.CodecVariantSessionOpen) : CodecVariantDispatchBody()
-    data class CodecVariantSessionClose(val body: com.sce.generated.codec_variant_session_close.CodecVariantSessionClose) : CodecVariantDispatchBody()
-    data class Default(val tag: UByte, val body: com.sce.generated.codec_variant_session_close.CodecVariantSessionClose) : CodecVariantDispatchBody()
+// (defensive — wildcard imports could otherwise surface an ambiguity if
+// two imported codecs declare same-named inner classes).
+sealed class CodecVariantDispatchVariant {
+    data class CodecVariantSessionOpen(val body: com.sce.generated.codec_variant_session_open.CodecVariantSessionOpen) : CodecVariantDispatchVariant()
+    data class CodecVariantSessionClose(val body: com.sce.generated.codec_variant_session_close.CodecVariantSessionClose) : CodecVariantDispatchVariant()
+    data class Default(val tag: UByte, val body: com.sce.generated.codec_variant_session_close.CodecVariantSessionClose) : CodecVariantDispatchVariant()
 }
 
 // Default-valued primary constructor: the generated procedure_l2 code
@@ -26,7 +26,7 @@ sealed class CodecVariantDispatchBody {
 // mirror the zero-initialized shape that decode() fills in on success.
 data class CodecVariantDispatch(
     var msg_id: UByte = 0.toUByte(),
-    var body: CodecVariantDispatchBody = CodecVariantDispatchBody.CodecVariantSessionOpen(com.sce.generated.codec_variant_session_open.CodecVariantSessionOpen())
+    var body: CodecVariantDispatchVariant = CodecVariantDispatchVariant.CodecVariantSessionOpen(com.sce.generated.codec_variant_session_open.CodecVariantSessionOpen())
 ) {
     fun encode(): ByteArray {
         // Encode fixed prefix (tag field bytes are part of the prefix).
@@ -37,9 +37,9 @@ data class CodecVariantDispatch(
         r.add(msg_id.toByte())
         // Append the active arm body's encoded bytes.
         when (val _b = this.body) {
-            is CodecVariantDispatchBody.CodecVariantSessionOpen -> r.addAll(_b.body.encode().toList())
-            is CodecVariantDispatchBody.CodecVariantSessionClose -> r.addAll(_b.body.encode().toList())
-            is CodecVariantDispatchBody.Default -> r.addAll(_b.body.encode().toList())
+            is CodecVariantDispatchVariant.CodecVariantSessionOpen -> r.addAll(_b.body.encode().toList())
+            is CodecVariantDispatchVariant.CodecVariantSessionClose -> r.addAll(_b.body.encode().toList())
+            is CodecVariantDispatchVariant.Default -> r.addAll(_b.body.encode().toList())
         }
         return r.toByteArray()
     }
@@ -58,18 +58,18 @@ data class CodecVariantDispatch(
             // from the cursor. The default arm (when declared) carries
             // the runtime tag value so encode can round-trip it back
             // onto the wire.
-            val body: CodecVariantDispatchBody = when (msg_id.toInt()) {
+            val body: CodecVariantDispatchVariant = when (msg_id.toInt()) {
                 1 -> {
                     val _arm = com.sce.generated.codec_variant_session_open.CodecVariantSessionOpen.decode(cursor) ?: return null
-                    CodecVariantDispatchBody.CodecVariantSessionOpen(_arm)
+                    CodecVariantDispatchVariant.CodecVariantSessionOpen(_arm)
                 }
                 2 -> {
                     val _arm = com.sce.generated.codec_variant_session_close.CodecVariantSessionClose.decode(cursor) ?: return null
-                    CodecVariantDispatchBody.CodecVariantSessionClose(_arm)
+                    CodecVariantDispatchVariant.CodecVariantSessionClose(_arm)
                 }
                 else -> {
                     val _arm = com.sce.generated.codec_variant_session_close.CodecVariantSessionClose.decode(cursor) ?: return null
-                    CodecVariantDispatchBody.Default(tag = msg_id, body = _arm)
+                    CodecVariantDispatchVariant.Default(tag = msg_id, body = _arm)
                 }
             }
             return CodecVariantDispatch(

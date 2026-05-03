@@ -2217,7 +2217,7 @@ fn render_codec(
             );
             variant_obj.insert(
                 "c_body_typedef".into(),
-                format!("{snake}_body_t").into(),
+                format!("{snake}_variant_t").into(),
             );
         }
         // Kotlin only: zero-valued tag literal for the default-only

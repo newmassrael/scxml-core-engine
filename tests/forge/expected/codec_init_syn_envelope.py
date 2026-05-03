@@ -12,7 +12,7 @@ from typing import Optional
 
 
 @dataclass
-class CodecInitSynEnvelopeBody:
+class CodecInitSynEnvelopeVariant:
     """RFC §5.B variant primitive (B1-β): discriminated-union body for
     the codec's tag-field suffix. ``kind`` selects the active arm; the
     matching ``Optional`` field carries the decoded body. ``default_tag``
@@ -30,7 +30,7 @@ class CodecInitSynEnvelopeBody:
 @dataclass
 class CodecInitSynEnvelope:
     header: int = 0
-    body: CodecInitSynEnvelopeBody = field(default_factory=CodecInitSynEnvelopeBody)
+    body: CodecInitSynEnvelopeVariant = field(default_factory=CodecInitSynEnvelopeVariant)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> Optional[CodecInitSynEnvelope]:
@@ -53,7 +53,7 @@ class CodecInitSynEnvelope:
         # from the cursor. The default arm (when declared) carries the
         # runtime tag value so encode can round-trip it back onto the
         # wire.
-        body = CodecInitSynEnvelopeBody()
+        body = CodecInitSynEnvelopeVariant()
         if ((header >> 0) & 0x1F) == 1:
             body.kind = "CodecInitSynBody"
             _arm = CodecInitSynBody.decode(cursor, header)

@@ -35,11 +35,11 @@ typedef struct {
         codec_variant_session_close_t codec_variant_session_close;
         codec_variant_session_close_t default_body;
     } arm;
-} codec_variant_dispatch_body_t;
+} codec_variant_dispatch_variant_t;
 
 typedef struct {
     uint8_t msg_id;
-    codec_variant_dispatch_body_t body;
+    codec_variant_dispatch_variant_t body;
 } codec_variant_dispatch_t;
 
 typedef struct {

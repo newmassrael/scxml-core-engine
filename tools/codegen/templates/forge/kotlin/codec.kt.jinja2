@@ -19,14 +19,14 @@ import com.sce.forge.runtime.SceCursor
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
 // alongside its catch-all body. Arm body types are referenced by FQN
-// to sidestep the lexical-name collision between the inner data class
-// and the imported class (both pascalize the body alias).
-sealed class {{ struct_name }}Body {
+// (defensive — wildcard imports could otherwise surface an ambiguity if
+// two imported codecs declare same-named inner classes).
+sealed class {{ struct_name }}Variant {
 {% for arm in variant.arms %}
-    data class {{ arm.variant_name }}(val body: {{ arm.body_type }}) : {{ struct_name }}Body()
+    data class {{ arm.variant_name }}(val body: {{ arm.body_type }}) : {{ struct_name }}Variant()
 {% endfor %}
 {% if variant.default_arm %}
-    data class {{ variant.default_arm.variant_name }}(val tag: {{ variant.tag_native_type }}, val body: {{ variant.default_arm.body_type }}) : {{ struct_name }}Body()
+    data class {{ variant.default_arm.variant_name }}(val tag: {{ variant.tag_native_type }}, val body: {{ variant.default_arm.body_type }}) : {{ struct_name }}Variant()
 {% endif %}
 }
 
@@ -47,9 +47,9 @@ data class {{ struct_name }}(
 {% endfor %}
 {% if has_variant %}
 {% if variant.arms %}
-    var body: {{ struct_name }}Body = {{ struct_name }}Body.{{ variant.arms[0].variant_name }}({{ variant.arms[0].body_type }}())
+    var body: {{ struct_name }}Variant = {{ struct_name }}Variant.{{ variant.arms[0].variant_name }}({{ variant.arms[0].body_type }}())
 {% else %}
-    var body: {{ struct_name }}Body = {{ struct_name }}Body.{{ variant.default_arm.variant_name }}(tag = {{ variant.kt_zero_tag_literal }}, body = {{ variant.default_arm.body_type }}())
+    var body: {{ struct_name }}Variant = {{ struct_name }}Variant.{{ variant.default_arm.variant_name }}(tag = {{ variant.kt_zero_tag_literal }}, body = {{ variant.default_arm.body_type }}())
 {% endif %}
 {% endif %}
 ) {
@@ -112,10 +112,10 @@ data class {{ struct_name }}(
         // Append the active arm body's encoded bytes.
         when (val _b = this.body) {
 {% for arm in variant.arms %}
-            is {{ struct_name }}Body.{{ arm.variant_name }} -> r.addAll(_b.body.encode({{ arm.body_parent_flags_arg_first }}).toList())
+            is {{ struct_name }}Variant.{{ arm.variant_name }} -> r.addAll(_b.body.encode({{ arm.body_parent_flags_arg_first }}).toList())
 {% endfor %}
 {% if variant.default_arm %}
-            is {{ struct_name }}Body.{{ variant.default_arm.variant_name }} -> r.addAll(_b.body.encode({{ variant.default_arm.body_parent_flags_arg_first }}).toList())
+            is {{ struct_name }}Variant.{{ variant.default_arm.variant_name }} -> r.addAll(_b.body.encode({{ variant.default_arm.body_parent_flags_arg_first }}).toList())
 {% endif %}
         }
         return r.toByteArray()
@@ -205,17 +205,17 @@ data class {{ struct_name }}(
             // from the cursor. The default arm (when declared) carries
             // the runtime tag value so encode can round-trip it back
             // onto the wire.
-            val body: {{ struct_name }}Body = when ({{ variant.tag_match_expr }}) {
+            val body: {{ struct_name }}Variant = when ({{ variant.tag_match_expr }}) {
 {% for arm in variant.arms %}
                 {{ arm.value_literal }} -> {
                     val _arm = {{ arm.body_type }}.decode(cursor{{ arm.body_parent_flags_arg }}) ?: return null
-                    {{ struct_name }}Body.{{ arm.variant_name }}(_arm)
+                    {{ struct_name }}Variant.{{ arm.variant_name }}(_arm)
                 }
 {% endfor %}
                 else -> {
 {% if variant.default_arm %}
                     val _arm = {{ variant.default_arm.body_type }}.decode(cursor{{ variant.default_arm.body_parent_flags_arg }}) ?: return null
-                    {{ struct_name }}Body.{{ variant.default_arm.variant_name }}(tag = {{ variant.tag_store_expr }}, body = _arm)
+                    {{ struct_name }}Variant.{{ variant.default_arm.variant_name }}(tag = {{ variant.tag_store_expr }}, body = _arm)
 {% else %}
                     // codec/variant-arm-unreachable rejected this case at parse time.
                     return null

@@ -18,11 +18,11 @@ type CodecVariantDispatchDefault struct {
 	Body codec_variant_session_close.CodecVariantSessionClose
 }
 
-// CodecVariantDispatchBody is a discriminated-union body for the codec's
+// CodecVariantDispatchVariant is a discriminated-union body for the codec's
 // tag-field suffix (RFC §5.B variant primitive B1-β). Exactly one of
 // the pointer fields is non-nil at a time; the active arm is the one
 // that matches the current tag value.
-type CodecVariantDispatchBody struct {
+type CodecVariantDispatchVariant struct {
 	CodecVariantSessionOpen *codec_variant_session_open.CodecVariantSessionOpen
 	CodecVariantSessionClose *codec_variant_session_close.CodecVariantSessionClose
 	Default *CodecVariantDispatchDefault
@@ -31,7 +31,7 @@ type CodecVariantDispatchBody struct {
 // CodecVariantDispatch represents the codec frame layout.
 type CodecVariantDispatch struct {
 	MsgId uint8
-	Body CodecVariantDispatchBody
+	Body CodecVariantDispatchVariant
 }
 
 // DecodeCodecVariantDispatch decodes the next frame from cursor.
@@ -52,7 +52,7 @@ func DecodeCodecVariantDispatch(cursor *codec.SceCursor) (*CodecVariantDispatch,
 	// Dispatch on the tag field; each arm decodes its body codec from
 	// the cursor. The default arm (when declared) carries the runtime
 	// tag value so encode can round-trip it back onto the wire.
-	body := CodecVariantDispatchBody{}
+	body := CodecVariantDispatchVariant{}
 	switch MsgId {
 	case 1:
 		_arm, err := codec_variant_session_open.DecodeCodecVariantSessionOpen(cursor)

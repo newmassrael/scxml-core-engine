@@ -3,8 +3,8 @@
 // Do not edit — regenerate from the source SCXML file.
 
 #pragma once
-#ifndef SCE_FORGE_CODEC_TRANSPORT_ENVELOPE_H
-#define SCE_FORGE_CODEC_TRANSPORT_ENVELOPE_H
+#ifndef SCE_FORGE_CODEC_ZENOH_PUSH_BODY_H
+#define SCE_FORGE_CODEC_ZENOH_PUSH_BODY_H
 
 #include <cstdint>
 #include <cstring>
@@ -13,28 +13,28 @@
 #include <variant>
 
 #include "sce/forge/codec.h"
-#include "codec_zenoh_keep_alive.h"
-#include "codec_zenoh_close.h"
+#include "codec_zenoh_put.h"
+#include "codec_zenoh_del.h"
 
-namespace SCE::Generated::CodecTransportEnvelope {
+namespace SCE::Generated::CodecZenohPushBody {
 
 // RFC §5.B variant primitive (B1-β): discriminated-union body for the
 // codec's tag-field suffix. `std::variant` carries one of N arm bodies
 // (each an imported codec type); the optional Default arm is a small
 // struct that bundles the runtime tag value with the catch-all body.
-struct CodecTransportEnvelopeDefault {
+struct CodecZenohPushBodyDefault {
     uint8_t tag;
-    ::SCE::Generated::CodecZenohClose::CodecZenohClose body;
+    ::SCE::Generated::CodecZenohPut::CodecZenohPut body;
 };
-using CodecTransportEnvelopeVariant = std::variant<
-    ::SCE::Generated::CodecZenohKeepAlive::CodecZenohKeepAlive,
-    ::SCE::Generated::CodecZenohClose::CodecZenohClose,
-    CodecTransportEnvelopeDefault
+using CodecZenohPushBodyVariant = std::variant<
+    ::SCE::Generated::CodecZenohPut::CodecZenohPut,
+    ::SCE::Generated::CodecZenohDel::CodecZenohDel,
+    CodecZenohPushBodyDefault
 >;
 
-struct CodecTransportEnvelope {
+struct CodecZenohPushBody {
     uint8_t header;
-    CodecTransportEnvelopeVariant body;
+    CodecZenohPushBodyVariant body;
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
@@ -42,38 +42,38 @@ struct CodecTransportEnvelope {
     /// bytes (RFC §5.B L494-519). Returns `std::nullopt` on the
     /// `NeedMoreBytes` boundary; later phases attach a typed error via
     /// `cursor.last_error()`.
-    static std::optional<CodecTransportEnvelope> decode(::SCE::Forge::SceCursor& cursor) {
+    static std::optional<CodecZenohPushBody> decode(::SCE::Forge::SceCursor& cursor) {
         // Decode fixed prefix (RFC §5.B variant B1-β: fields before tag suffix).
         const std::uint8_t* raw = cursor.peek_slice(1);
         if (raw == nullptr) return std::nullopt;
         uint8_t header = raw[0];
         if (!cursor.advance(1)) return std::nullopt;
         // Dispatch on tag value into the matching arm body.
-        CodecTransportEnvelopeVariant body;
+        CodecZenohPushBodyVariant body;
         switch (static_cast<uint8_t>((header >> 0) & static_cast<uint8_t>(0x1F))) {
-            case 4: {
-                auto _arm = ::SCE::Generated::CodecZenohKeepAlive::CodecZenohKeepAlive::decode(cursor);
+            case 1: {
+                auto _arm = ::SCE::Generated::CodecZenohPut::CodecZenohPut::decode(cursor);
                 if (!_arm.has_value()) return std::nullopt;
                 body = *_arm;
                 break;
             }
-            case 3: {
-                auto _arm = ::SCE::Generated::CodecZenohClose::CodecZenohClose::decode(cursor);
+            case 2: {
+                auto _arm = ::SCE::Generated::CodecZenohDel::CodecZenohDel::decode(cursor);
                 if (!_arm.has_value()) return std::nullopt;
                 body = *_arm;
                 break;
             }
             default: {
-                auto _arm = ::SCE::Generated::CodecZenohClose::CodecZenohClose::decode(cursor);
+                auto _arm = ::SCE::Generated::CodecZenohPut::CodecZenohPut::decode(cursor);
                 if (!_arm.has_value()) return std::nullopt;
-                body = CodecTransportEnvelopeDefault{
+                body = CodecZenohPushBodyDefault{
                     .tag = static_cast<uint8_t>((header >> 0) & static_cast<uint8_t>(0x1F)),
                     .body = *_arm,
                 };
                 break;
             }
         }
-        return CodecTransportEnvelope{
+        return CodecZenohPushBody{
             .header = header,
             .body = body,
         };
@@ -104,40 +104,24 @@ struct CodecTransportEnvelope {
         );
     }
 
-    bool flag_z() const noexcept {
-        return (this->header & 0x20) != 0;
+    uint8_t rest() const noexcept {
+        return static_cast<uint8_t>(
+            (this->header >> 5) & static_cast<uint8_t>(0x07)
+        );
     }
 
-    void set_flag_z(bool v) noexcept {
-        if (v) {
-            this->header = static_cast<uint8_t>(this->header | 0x20);
-        } else {
-            this->header = static_cast<uint8_t>(this->header & static_cast<uint8_t>(~0x20));
-        }
-    }
-
-    bool flag_x() const noexcept {
-        return (this->header & 0x40) != 0;
-    }
-
-    void set_flag_x(bool v) noexcept {
-        if (v) {
-            this->header = static_cast<uint8_t>(this->header | 0x40);
-        } else {
-            this->header = static_cast<uint8_t>(this->header & static_cast<uint8_t>(~0x40));
-        }
-    }
-
-    bool flag_w() const noexcept {
-        return (this->header & 0x80) != 0;
-    }
-
-    void set_flag_w(bool v) noexcept {
-        if (v) {
-            this->header = static_cast<uint8_t>(this->header | 0x80);
-        } else {
-            this->header = static_cast<uint8_t>(this->header & static_cast<uint8_t>(~0x80));
-        }
+    void set_rest(uint8_t v) noexcept {
+        const uint8_t _shifted_mask =
+            static_cast<uint8_t>(
+                static_cast<uint8_t>(0x07) << 5
+            );
+        const uint8_t _val =
+            static_cast<uint8_t>(
+                (static_cast<uint8_t>(v) & static_cast<uint8_t>(0x07)) << 5
+            );
+        this->header = static_cast<uint8_t>(
+            (this->header & static_cast<uint8_t>(~_shifted_mask)) | _val
+        );
     }
 
     std::vector<uint8_t> encode() const {
@@ -146,15 +130,15 @@ struct CodecTransportEnvelope {
         r.reserve(2);
         r.push_back(header);
         // Append the active arm body's encoded bytes.
-        if (auto _p = std::get_if<::SCE::Generated::CodecZenohKeepAlive::CodecZenohKeepAlive>(&body)) {
+        if (auto _p = std::get_if<::SCE::Generated::CodecZenohPut::CodecZenohPut>(&body)) {
             auto _sub = _p->encode();
             r.insert(r.end(), _sub.begin(), _sub.end());
         }
-        if (auto _p = std::get_if<::SCE::Generated::CodecZenohClose::CodecZenohClose>(&body)) {
+        if (auto _p = std::get_if<::SCE::Generated::CodecZenohDel::CodecZenohDel>(&body)) {
             auto _sub = _p->encode();
             r.insert(r.end(), _sub.begin(), _sub.end());
         }
-        if (auto _p = std::get_if<CodecTransportEnvelopeDefault>(&body)) {
+        if (auto _p = std::get_if<CodecZenohPushBodyDefault>(&body)) {
             auto _sub = _p->body.encode();
             r.insert(r.end(), _sub.begin(), _sub.end());
         }
@@ -162,6 +146,6 @@ struct CodecTransportEnvelope {
     }
 };
 
-}  // namespace SCE::Generated::CodecTransportEnvelope
+}  // namespace SCE::Generated::CodecZenohPushBody
 
-#endif  // SCE_FORGE_CODEC_TRANSPORT_ENVELOPE_H
+#endif  // SCE_FORGE_CODEC_ZENOH_PUSH_BODY_H

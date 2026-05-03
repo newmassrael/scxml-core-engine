@@ -707,6 +707,24 @@
       ]
     },
     {
+      "name": "codec_zenoh_put",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "fields": [
+        {
+          "name": "payload",
+          "type": "u8",
+          "compare": "equality"
+        }
+      ]
+    },
+    {
+      "name": "codec_zenoh_del",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "fields": []
+    },
+    {
       "name": "timer_diag_scheduler",
       "kind": "timer",
       "ref_section": "timers",

@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: outer variant whose arm body is itself a
+     variant (RFC §5.B B5-η Surface I, "recursive variant body").
+     This is the canonical Surface I demonstrator: codec_zenoh_push is
+     a variant codec, and one of its arm bodies — codec_zenoh_push_body
+     — is itself a variant codec. The per-language emit must therefore
+     produce a sum-type whose arm payload is another sum-type
+     (Rust enum-of-enum, std::variant-of-std::variant, Kotlin sealed-of-
+     sealed, Go pointer-tagged struct of pointer-tagged struct, C11
+     tagged-union-of-tagged-union, Python kind-discriminated dataclass-
+     of-dataclass). That nesting was preflight-validated as an
+     IR-level freebie: `resolve_variant_arm_body_type` only checks
+     `imp.kind == "codec"`, with no variant-bearing-import gate, and a
+     smoke fixture importing codec_variant_dispatch as an arm body
+     produced byte-stable C11 compiling under `-std=c11 -Wall -Wextra
+     -Wpedantic -Werror`. This commit lands the production composition
+     on all 6 backends as atomic-6 (no IR change).
+
+     Upstream `_z_network_message_t` (zenoh-pico
+     include/zenoh-pico/protocol/definitions/network.h) is a tagged
+     union over the 5-bit MID with PUSH (0x1d), REQUEST (0x1c),
+     RESPONSE (0x1b), RESPONSE_FINAL (0x1a), DECLARE (0x1e), INTEREST
+     (0x19), OAM (0x1f). Authoring all seven would multiply the
+     surface unrelated to Surface I; the fixture covers only the PUSH
+     arm — that one is the recursion case (PUSH body is itself a
+     variant on z-mid). The `<sce:default>` arm reuses
+     codec_zenoh_push_body so unknown network MIDs preserve runtime
+     dispatch through the same recursive shape (matches
+     codec_transport_envelope's default-arm pattern from B5-β).
+
+     Wire shape (1 + push_body's 1 + arm body bytes):
+       byte 0: header  bits 0..4 = mid   (5-bit network MID)
+                       bits 5..7 = rest  (3 bits, body-consumed)
+       bytes 1..N: arm body bytes
+                     mid=0x1d → push_body envelope
+                                  byte 0: inner header (z-mid + rest)
+                                  bytes 1..M: leaf body (put: 1 byte;
+                                                         del: 0 bytes)
+
+     Arm coverage:
+       0x1d → codec_zenoh_push_body  (recursive — variant arm body)
+       <sce:default> → codec_zenoh_push_body (catch-all).
+     This is a degenerate two-tag-domain by design: the recursion is
+     the point, not the variant cardinality at this layer. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_push">
+  <sce:import src="codec_zenoh_push_body.scxml" kind="codec" as="codec_zenoh_push_body"/>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="mid"  bit="0" width="5"/>
+      <sce:flag name="rest" bit="5" width="3"/>
+    </sce:flags>
+    <sce:variant tag="header.mid">
+      <sce:arm value="0x1d" type="codec_zenoh_push_body"/>
+      <sce:default type="codec_zenoh_push_body"/>
+    </sce:variant>
+  </datamodel>
+</scxml>

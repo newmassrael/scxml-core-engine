@@ -30,11 +30,11 @@ type {{ struct_name }}{{ variant.default_arm.variant_name }} struct {
 }
 
 {% endif %}
-// {{ struct_name }}Body is a discriminated-union body for the codec's
+// {{ struct_name }}Variant is a discriminated-union body for the codec's
 // tag-field suffix (RFC §5.B variant primitive B1-β). Exactly one of
 // the pointer fields is non-nil at a time; the active arm is the one
 // that matches the current tag value.
-type {{ struct_name }}Body struct {
+type {{ struct_name }}Variant struct {
 {% for arm in variant.arms %}
 	{{ arm.variant_name }} *{{ arm.body_type }}
 {% endfor %}
@@ -50,7 +50,7 @@ type {{ struct_name }} struct {
 	{{ field.id }} {{ field.go_type }}
 {% endfor %}
 {% if has_variant %}
-	Body {{ struct_name }}Body
+	Body {{ struct_name }}Variant
 {% endif %}
 }
 
@@ -79,7 +79,7 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor{{ parent_flags_param_decl }
 	// Dispatch on the tag field; each arm decodes its body codec from
 	// the cursor. The default arm (when declared) carries the runtime
 	// tag value so encode can round-trip it back onto the wire.
-	body := {{ struct_name }}Body{}
+	body := {{ struct_name }}Variant{}
 	switch {{ variant.tag_match_expr }} {
 {% for arm in variant.arms %}
 	case {{ arm.value_literal }}:

@@ -5,15 +5,15 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import CodecError, NeedMoreBytes, SceCursor
-from .codec_zenoh_keep_alive import CodecZenohKeepAlive
-from .codec_zenoh_close import CodecZenohClose
+from .codec_zenoh_put import CodecZenohPut
+from .codec_zenoh_del import CodecZenohDel
 
 from dataclasses import dataclass, field
 from typing import Optional
 
 
 @dataclass
-class CodecTransportEnvelopeVariant:
+class CodecZenohPushBodyVariant:
     """RFC §5.B variant primitive (B1-β): discriminated-union body for
     the codec's tag-field suffix. ``kind`` selects the active arm; the
     matching ``Optional`` field carries the decoded body. ``default_tag``
@@ -22,20 +22,20 @@ class CodecTransportEnvelopeVariant:
     # Default to the first declared arm (or "Default" when arms is empty)
     # so a freshly-constructed envelope round-trips through encode without
     # needing the caller to populate the body explicitly.
-    kind: str = "CodecZenohKeepAlive"
-    codec_zenoh_keep_alive: Optional[CodecZenohKeepAlive] = None
-    codec_zenoh_close: Optional[CodecZenohClose] = None
-    default_body: Optional[CodecZenohClose] = None
+    kind: str = "CodecZenohPut"
+    codec_zenoh_put: Optional[CodecZenohPut] = None
+    codec_zenoh_del: Optional[CodecZenohDel] = None
+    default_body: Optional[CodecZenohPut] = None
     default_tag: int = 0
 
 
 @dataclass
-class CodecTransportEnvelope:
+class CodecZenohPushBody:
     header: int = 0
-    body: CodecTransportEnvelopeVariant = field(default_factory=CodecTransportEnvelopeVariant)
+    body: CodecZenohPushBodyVariant = field(default_factory=CodecZenohPushBodyVariant)
 
     @classmethod
-    def decode(cls, cursor: SceCursor) -> Optional[CodecTransportEnvelope]:
+    def decode(cls, cursor: SceCursor) -> Optional[CodecZenohPushBody]:
         """Decode the next frame from ``cursor``. Returns ``None`` when
         the cursor's tail is shorter than the declared minimum frame
         (RFC §5.B L494-519); on success the cursor advances past the
@@ -55,23 +55,23 @@ class CodecTransportEnvelope:
         # from the cursor. The default arm (when declared) carries the
         # runtime tag value so encode can round-trip it back onto the
         # wire.
-        body = CodecTransportEnvelopeVariant()
-        if ((header >> 0) & 0x1F) == 4:
-            body.kind = "CodecZenohKeepAlive"
-            _arm = CodecZenohKeepAlive.decode(cursor)
+        body = CodecZenohPushBodyVariant()
+        if ((header >> 0) & 0x1F) == 1:
+            body.kind = "CodecZenohPut"
+            _arm = CodecZenohPut.decode(cursor)
             if _arm is None:
                 return None
-            body.codec_zenoh_keep_alive = _arm
-        elif ((header >> 0) & 0x1F) == 3:
-            body.kind = "CodecZenohClose"
-            _arm = CodecZenohClose.decode(cursor)
+            body.codec_zenoh_put = _arm
+        elif ((header >> 0) & 0x1F) == 2:
+            body.kind = "CodecZenohDel"
+            _arm = CodecZenohDel.decode(cursor)
             if _arm is None:
                 return None
-            body.codec_zenoh_close = _arm
+            body.codec_zenoh_del = _arm
         else:
             body.kind = "Default"
             body.default_tag = ((header >> 0) & 0x1F)
-            _arm = CodecZenohClose.decode(cursor)
+            _arm = CodecZenohPut.decode(cursor)
             if _arm is None:
                 return None
             body.default_body = _arm
@@ -95,32 +95,13 @@ class CodecTransportEnvelope:
         _val = (v & 0x1F) << 0
         self.header = ((self.header & (0xFF ^ _shifted_mask)) | _val) & 0xFF
 
-    def flag_z(self) -> bool:
-        return (self.header & 0x20) != 0
+    def rest(self) -> int:
+        return (self.header >> 5) & 0x07
 
-    def set_flag_z(self, v: bool) -> None:
-        if v:
-            self.header = (self.header | 0x20) & 0xFF
-        else:
-            self.header = self.header & (0xFF ^ 0x20)
-
-    def flag_x(self) -> bool:
-        return (self.header & 0x40) != 0
-
-    def set_flag_x(self, v: bool) -> None:
-        if v:
-            self.header = (self.header | 0x40) & 0xFF
-        else:
-            self.header = self.header & (0xFF ^ 0x40)
-
-    def flag_w(self) -> bool:
-        return (self.header & 0x80) != 0
-
-    def set_flag_w(self, v: bool) -> None:
-        if v:
-            self.header = (self.header | 0x80) & 0xFF
-        else:
-            self.header = self.header & (0xFF ^ 0x80)
+    def set_rest(self, v: int) -> None:
+        _shifted_mask = 0x07 << 5
+        _val = (v & 0x07) << 5
+        self.header = ((self.header & (0xFF ^ _shifted_mask)) | _val) & 0xFF
 
     def encode(self) -> bytes:
         # Encode fixed prefix (tag field bytes are part of the prefix).
@@ -130,10 +111,10 @@ class CodecTransportEnvelope:
         r = bytearray()
         r.append(self.header & 0xFF)
         # Append the active arm body's encoded bytes.
-        if self.body.kind == "CodecZenohKeepAlive":
-            r.extend(self.body.codec_zenoh_keep_alive.encode())
-        elif self.body.kind == "CodecZenohClose":
-            r.extend(self.body.codec_zenoh_close.encode())
+        if self.body.kind == "CodecZenohPut":
+            r.extend(self.body.codec_zenoh_put.encode())
+        elif self.body.kind == "CodecZenohDel":
+            r.extend(self.body.codec_zenoh_del.encode())
         elif self.body.kind == "Default":
             r.extend(self.body.default_body.encode())
         return bytes(r)

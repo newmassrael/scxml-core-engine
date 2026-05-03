@@ -40,7 +40,7 @@ struct {{ struct_name }}{{ variant.default_arm.variant_name }} {
     {{ variant.default_arm.body_type }} body;
 };
 {% endif %}
-using {{ struct_name }}Body = std::variant<
+using {{ struct_name }}Variant = std::variant<
 {% for arm in variant.arms %}
     {{ arm.body_type }}{{ "," if not loop.last or variant.default_arm else "" }}
 {% endfor %}
@@ -55,7 +55,7 @@ struct {{ struct_name }} {
     {{ field.cpp_type }} {{ field.id }};
 {% endfor %}
 {% if has_variant %}
-    {{ struct_name }}Body body;
+    {{ struct_name }}Variant body;
 {% endif %}
 
     /// Decode the next frame from `cursor`. On success the cursor
@@ -87,7 +87,7 @@ struct {{ struct_name }} {
 {% endfor %}
         if (!cursor.advance({{ min_bytes }})) return std::nullopt;
         // Dispatch on tag value into the matching arm body.
-        {{ struct_name }}Body body;
+        {{ struct_name }}Variant body;
         switch ({{ variant.tag_match_expr }}) {
 {% for arm in variant.arms %}
             case {{ arm.value_literal }}: {

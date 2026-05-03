@@ -20,7 +20,7 @@ from typing import Optional{{ ", List" if has_repeat_fields else "" }}
 
 {% if has_variant %}
 @dataclass
-class {{ struct_name }}Body:
+class {{ struct_name }}Variant:
     """RFC §5.B variant primitive (B1-β): discriminated-union body for
     the codec's tag-field suffix. ``kind`` selects the active arm; the
     matching ``Optional`` field carries the decoded body. ``default_tag``
@@ -56,7 +56,7 @@ class {{ struct_name }}:
     {{ field.id }}: {{ field.py_type }} = {{ field.default_value }}
 {% endfor %}
 {% if has_variant %}
-    body: {{ struct_name }}Body = field(default_factory={{ struct_name }}Body)
+    body: {{ struct_name }}Variant = field(default_factory={{ struct_name }}Variant)
 {% endif %}
 {% endif %}
 
@@ -99,7 +99,7 @@ class {{ struct_name }}:
         # from the cursor. The default arm (when declared) carries the
         # runtime tag value so encode can round-trip it back onto the
         # wire.
-        body = {{ struct_name }}Body()
+        body = {{ struct_name }}Variant()
 {% for arm in variant.arms %}
         {{ "if" if loop.first else "elif" }} {{ variant.tag_match_expr }} == {{ arm.value_literal }}:
             body.kind = "{{ arm.variant_name }}"

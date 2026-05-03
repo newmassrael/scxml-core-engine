@@ -38,11 +38,11 @@ typedef struct {
         codec_zenoh_ext_zbuf_t codec_zenoh_ext_zbuf;
         codec_zenoh_ext_unit_t default_body;
     } arm;
-} codec_zenoh_ext_entry_body_t;
+} codec_zenoh_ext_entry_variant_t;
 
 typedef struct {
     uint8_t header;
-    codec_zenoh_ext_entry_body_t body;
+    codec_zenoh_ext_entry_variant_t body;
 } codec_zenoh_ext_entry_t;
 
 typedef struct {

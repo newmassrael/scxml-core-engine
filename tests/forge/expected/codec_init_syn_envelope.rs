@@ -11,7 +11,7 @@ use super::codec_init_syn_body::CodecInitSynBody;
 // value; the optional Default arm preserves the runtime tag value
 // alongside its catch-all body.
 #[allow(dead_code)]
-pub enum CodecInitSynEnvelopeBody {
+pub enum CodecInitSynEnvelopeVariant {
     CodecInitSynBody(CodecInitSynBody),
     Default {
         tag: u8,
@@ -19,7 +19,7 @@ pub enum CodecInitSynEnvelopeBody {
     },
 }
 
-impl Default for CodecInitSynEnvelopeBody {
+impl Default for CodecInitSynEnvelopeVariant {
     fn default() -> Self {
         // Default to the first declared arm's body — every imported
         // codec is `#[derive(Default)]`, so this is infallible. A
@@ -37,7 +37,7 @@ impl Default for CodecInitSynEnvelopeBody {
 #[derive(Default)]
 pub struct CodecInitSynEnvelope {
     pub header: u8,
-    pub body: CodecInitSynEnvelopeBody,
+    pub body: CodecInitSynEnvelopeVariant,
 }
 
 #[allow(dead_code)]
@@ -65,8 +65,8 @@ impl CodecInitSynEnvelope {
         // runtime tag value so encode can round-trip it back onto the
         // wire.
         let body = match (((header >> 0) & (0x1F as u8)) as u8) {
-            1u8 => CodecInitSynEnvelopeBody::CodecInitSynBody(CodecInitSynBody::decode(cursor, header)?),
-            other => CodecInitSynEnvelopeBody::Default {
+            1u8 => CodecInitSynEnvelopeVariant::CodecInitSynBody(CodecInitSynBody::decode(cursor, header)?),
+            other => CodecInitSynEnvelopeVariant::Default {
                 tag: other,
                 body: CodecInitSynBody::decode(cursor, header)?,
             },
@@ -115,10 +115,10 @@ impl CodecInitSynEnvelope {
         r.push(self.header);
         // Append the active arm's encoded bytes.
         match &self.body {
-            CodecInitSynEnvelopeBody::CodecInitSynBody(b) => {
+            CodecInitSynEnvelopeVariant::CodecInitSynBody(b) => {
                 r.extend(b.encode(self.header));
             }
-            CodecInitSynEnvelopeBody::Default { body, .. } => {
+            CodecInitSynEnvelopeVariant::Default { body, .. } => {
                 r.extend(body.encode(self.header));
             }
         }

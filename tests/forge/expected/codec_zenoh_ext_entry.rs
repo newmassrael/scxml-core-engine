@@ -13,7 +13,7 @@ use super::codec_zenoh_ext_zbuf::CodecZenohExtZbuf;
 // value; the optional Default arm preserves the runtime tag value
 // alongside its catch-all body.
 #[allow(dead_code)]
-pub enum CodecZenohExtEntryBody {
+pub enum CodecZenohExtEntryVariant {
     CodecZenohExtUnit(CodecZenohExtUnit),
     CodecZenohExtZint(CodecZenohExtZint),
     CodecZenohExtZbuf(CodecZenohExtZbuf),
@@ -23,7 +23,7 @@ pub enum CodecZenohExtEntryBody {
     },
 }
 
-impl Default for CodecZenohExtEntryBody {
+impl Default for CodecZenohExtEntryVariant {
     fn default() -> Self {
         // Default to the first declared arm's body — every imported
         // codec is `#[derive(Default)]`, so this is infallible. A
@@ -41,7 +41,7 @@ impl Default for CodecZenohExtEntryBody {
 #[derive(Default)]
 pub struct CodecZenohExtEntry {
     pub header: u8,
-    pub body: CodecZenohExtEntryBody,
+    pub body: CodecZenohExtEntryVariant,
 }
 
 #[allow(dead_code)]
@@ -69,10 +69,10 @@ impl CodecZenohExtEntry {
         // runtime tag value so encode can round-trip it back onto the
         // wire.
         let body = match (((header >> 5) & (0x03 as u8)) as u8) {
-            0u8 => CodecZenohExtEntryBody::CodecZenohExtUnit(CodecZenohExtUnit::decode(cursor)?),
-            1u8 => CodecZenohExtEntryBody::CodecZenohExtZint(CodecZenohExtZint::decode(cursor)?),
-            2u8 => CodecZenohExtEntryBody::CodecZenohExtZbuf(CodecZenohExtZbuf::decode(cursor)?),
-            other => CodecZenohExtEntryBody::Default {
+            0u8 => CodecZenohExtEntryVariant::CodecZenohExtUnit(CodecZenohExtUnit::decode(cursor)?),
+            1u8 => CodecZenohExtEntryVariant::CodecZenohExtZint(CodecZenohExtZint::decode(cursor)?),
+            2u8 => CodecZenohExtEntryVariant::CodecZenohExtZbuf(CodecZenohExtZbuf::decode(cursor)?),
+            other => CodecZenohExtEntryVariant::Default {
                 tag: other,
                 body: CodecZenohExtUnit::decode(cursor)?,
             },
@@ -119,16 +119,16 @@ impl CodecZenohExtEntry {
         r.push(self.header);
         // Append the active arm's encoded bytes.
         match &self.body {
-            CodecZenohExtEntryBody::CodecZenohExtUnit(b) => {
+            CodecZenohExtEntryVariant::CodecZenohExtUnit(b) => {
                 r.extend(b.encode());
             }
-            CodecZenohExtEntryBody::CodecZenohExtZint(b) => {
+            CodecZenohExtEntryVariant::CodecZenohExtZint(b) => {
                 r.extend(b.encode());
             }
-            CodecZenohExtEntryBody::CodecZenohExtZbuf(b) => {
+            CodecZenohExtEntryVariant::CodecZenohExtZbuf(b) => {
                 r.extend(b.encode());
             }
-            CodecZenohExtEntryBody::Default { body, .. } => {
+            CodecZenohExtEntryVariant::Default { body, .. } => {
                 r.extend(body.encode());
             }
         }

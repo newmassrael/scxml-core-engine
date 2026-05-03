@@ -12,7 +12,7 @@ use super::codec_zenoh_close::CodecZenohClose;
 // value; the optional Default arm preserves the runtime tag value
 // alongside its catch-all body.
 #[allow(dead_code)]
-pub enum CodecTransportEnvelopeBody {
+pub enum CodecTransportEnvelopeVariant {
     CodecZenohKeepAlive(CodecZenohKeepAlive),
     CodecZenohClose(CodecZenohClose),
     Default {
@@ -21,7 +21,7 @@ pub enum CodecTransportEnvelopeBody {
     },
 }
 
-impl Default for CodecTransportEnvelopeBody {
+impl Default for CodecTransportEnvelopeVariant {
     fn default() -> Self {
         // Default to the first declared arm's body — every imported
         // codec is `#[derive(Default)]`, so this is infallible. A
@@ -39,7 +39,7 @@ impl Default for CodecTransportEnvelopeBody {
 #[derive(Default)]
 pub struct CodecTransportEnvelope {
     pub header: u8,
-    pub body: CodecTransportEnvelopeBody,
+    pub body: CodecTransportEnvelopeVariant,
 }
 
 #[allow(dead_code)]
@@ -67,9 +67,9 @@ impl CodecTransportEnvelope {
         // runtime tag value so encode can round-trip it back onto the
         // wire.
         let body = match (((header >> 0) & (0x1F as u8)) as u8) {
-            4u8 => CodecTransportEnvelopeBody::CodecZenohKeepAlive(CodecZenohKeepAlive::decode(cursor)?),
-            3u8 => CodecTransportEnvelopeBody::CodecZenohClose(CodecZenohClose::decode(cursor)?),
-            other => CodecTransportEnvelopeBody::Default {
+            4u8 => CodecTransportEnvelopeVariant::CodecZenohKeepAlive(CodecZenohKeepAlive::decode(cursor)?),
+            3u8 => CodecTransportEnvelopeVariant::CodecZenohClose(CodecZenohClose::decode(cursor)?),
+            other => CodecTransportEnvelopeVariant::Default {
                 tag: other,
                 body: CodecZenohClose::decode(cursor)?,
             },
@@ -142,13 +142,13 @@ impl CodecTransportEnvelope {
         r.push(self.header);
         // Append the active arm's encoded bytes.
         match &self.body {
-            CodecTransportEnvelopeBody::CodecZenohKeepAlive(b) => {
+            CodecTransportEnvelopeVariant::CodecZenohKeepAlive(b) => {
                 r.extend(b.encode());
             }
-            CodecTransportEnvelopeBody::CodecZenohClose(b) => {
+            CodecTransportEnvelopeVariant::CodecZenohClose(b) => {
                 r.extend(b.encode());
             }
-            CodecTransportEnvelopeBody::Default { body, .. } => {
+            CodecTransportEnvelopeVariant::Default { body, .. } => {
                 r.extend(body.encode());
             }
         }

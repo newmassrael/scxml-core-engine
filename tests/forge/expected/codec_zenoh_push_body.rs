@@ -4,30 +4,30 @@
 
 use sce_forge_runtime::codec::{CodecError, SceCursor};
 
-use super::codec_variant_session_open::CodecVariantSessionOpen;
-use super::codec_variant_session_close::CodecVariantSessionClose;
+use super::codec_zenoh_put::CodecZenohPut;
+use super::codec_zenoh_del::CodecZenohDel;
 
 // RFC §5.B variant primitive (B1-β): discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
 // alongside its catch-all body.
 #[allow(dead_code)]
-pub enum CodecVariantDispatchVariant {
-    CodecVariantSessionOpen(CodecVariantSessionOpen),
-    CodecVariantSessionClose(CodecVariantSessionClose),
+pub enum CodecZenohPushBodyVariant {
+    CodecZenohPut(CodecZenohPut),
+    CodecZenohDel(CodecZenohDel),
     Default {
         tag: u8,
-        body: CodecVariantSessionClose,
+        body: CodecZenohPut,
     },
 }
 
-impl Default for CodecVariantDispatchVariant {
+impl Default for CodecZenohPushBodyVariant {
     fn default() -> Self {
         // Default to the first declared arm's body — every imported
         // codec is `#[derive(Default)]`, so this is infallible. A
         // freshly-constructed envelope is overwritten by `decode()` or
         // by an explicit user assignment before any `encode()` call.
-        Self::CodecVariantSessionOpen(CodecVariantSessionOpen::default())
+        Self::CodecZenohPut(CodecZenohPut::default())
     }
 }
 
@@ -37,13 +37,13 @@ impl Default for CodecVariantDispatchVariant {
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
 #[derive(Default)]
-pub struct CodecVariantDispatch {
-    pub msg_id: u8,
-    pub body: CodecVariantDispatchVariant,
+pub struct CodecZenohPushBody {
+    pub header: u8,
+    pub body: CodecZenohPushBodyVariant,
 }
 
 #[allow(dead_code)]
-impl CodecVariantDispatch {
+impl CodecZenohPushBody {
     /// Construct an instance with every field zero-initialized via
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -60,24 +60,50 @@ impl CodecVariantDispatch {
         // Decode fixed prefix (RFC §5.B variant primitive B1-β: fields
         // sit before the variant suffix on the wire).
         let raw = cursor.peek_slice(1)?;
-        let msg_id = raw[0];
+        let header = raw[0];
         cursor.advance(1)?;
         // Dispatch on the tag field; each arm decodes its body codec
         // from the cursor. The default arm (when declared) carries the
         // runtime tag value so encode can round-trip it back onto the
         // wire.
-        let body = match msg_id {
-            1u8 => CodecVariantDispatchVariant::CodecVariantSessionOpen(CodecVariantSessionOpen::decode(cursor)?),
-            2u8 => CodecVariantDispatchVariant::CodecVariantSessionClose(CodecVariantSessionClose::decode(cursor)?),
-            other => CodecVariantDispatchVariant::Default {
+        let body = match (((header >> 0) & (0x1F as u8)) as u8) {
+            1u8 => CodecZenohPushBodyVariant::CodecZenohPut(CodecZenohPut::decode(cursor)?),
+            2u8 => CodecZenohPushBodyVariant::CodecZenohDel(CodecZenohDel::decode(cursor)?),
+            other => CodecZenohPushBodyVariant::Default {
                 tag: other,
-                body: CodecVariantSessionClose::decode(cursor)?,
+                body: CodecZenohPut::decode(cursor)?,
             },
         };
         Ok(Self {
-            msg_id,
+            header,
             body,
         })
+    }
+
+    // RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
+    // the carrier field. Single-bit (width=1) reads as bool; multi-bit
+    // (width>=2) reads as the smallest unsigned integer that fits the
+    // range. Setters mask + shift on the way in so out-of-range
+    // callers can't corrupt sibling bits. Wire layout is unchanged —
+    // the carrier still occupies its declared bytes.
+    pub fn mid(&self) -> u8 {
+        (((self.header >> 0) & (0x1F as u8))) as u8
+    }
+
+    pub fn set_mid(&mut self, v: u8) {
+        let _mask: u8 = (0x1F as u8) << 0;
+        let _val: u8 = ((v as u8) & (0x1F as u8)) << 0;
+        self.header = (self.header & !_mask) | _val;
+    }
+
+    pub fn rest(&self) -> u8 {
+        (((self.header >> 5) & (0x07 as u8))) as u8
+    }
+
+    pub fn set_rest(&mut self, v: u8) {
+        let _mask: u8 = (0x07 as u8) << 5;
+        let _val: u8 = ((v as u8) & (0x07 as u8)) << 5;
+        self.header = (self.header & !_mask) | _val;
     }
 
     pub fn encode(&self) -> Vec<u8> {
@@ -86,17 +112,17 @@ impl CodecVariantDispatch {
         // the body discriminant — keeping author-set msg_id / body in
         // sync is the caller's responsibility (v1 keeps the layout
         // simple; future extensions may auto-sync via a typed setter).
-        let mut r: Vec<u8> = Vec::with_capacity(3);
-        r.push(self.msg_id);
+        let mut r: Vec<u8> = Vec::with_capacity(2);
+        r.push(self.header);
         // Append the active arm's encoded bytes.
         match &self.body {
-            CodecVariantDispatchVariant::CodecVariantSessionOpen(b) => {
+            CodecZenohPushBodyVariant::CodecZenohPut(b) => {
                 r.extend(b.encode());
             }
-            CodecVariantDispatchVariant::CodecVariantSessionClose(b) => {
+            CodecZenohPushBodyVariant::CodecZenohDel(b) => {
                 r.extend(b.encode());
             }
-            CodecVariantDispatchVariant::Default { body, .. } => {
+            CodecZenohPushBodyVariant::Default { body, .. } => {
                 r.extend(body.encode());
             }
         }

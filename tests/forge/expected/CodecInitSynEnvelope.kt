@@ -11,11 +11,11 @@ import com.sce.generated.codec_init_syn_body.*
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
 // alongside its catch-all body. Arm body types are referenced by FQN
-// to sidestep the lexical-name collision between the inner data class
-// and the imported class (both pascalize the body alias).
-sealed class CodecInitSynEnvelopeBody {
-    data class CodecInitSynBody(val body: com.sce.generated.codec_init_syn_body.CodecInitSynBody) : CodecInitSynEnvelopeBody()
-    data class Default(val tag: UByte, val body: com.sce.generated.codec_init_syn_body.CodecInitSynBody) : CodecInitSynEnvelopeBody()
+// (defensive — wildcard imports could otherwise surface an ambiguity if
+// two imported codecs declare same-named inner classes).
+sealed class CodecInitSynEnvelopeVariant {
+    data class CodecInitSynBody(val body: com.sce.generated.codec_init_syn_body.CodecInitSynBody) : CodecInitSynEnvelopeVariant()
+    data class Default(val tag: UByte, val body: com.sce.generated.codec_init_syn_body.CodecInitSynBody) : CodecInitSynEnvelopeVariant()
 }
 
 // Default-valued primary constructor: the generated procedure_l2 code
@@ -24,7 +24,7 @@ sealed class CodecInitSynEnvelopeBody {
 // mirror the zero-initialized shape that decode() fills in on success.
 data class CodecInitSynEnvelope(
     var header: UByte = 0.toUByte(),
-    var body: CodecInitSynEnvelopeBody = CodecInitSynEnvelopeBody.CodecInitSynBody(com.sce.generated.codec_init_syn_body.CodecInitSynBody())
+    var body: CodecInitSynEnvelopeVariant = CodecInitSynEnvelopeVariant.CodecInitSynBody(com.sce.generated.codec_init_syn_body.CodecInitSynBody())
 ) {
     // RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-
@@ -63,8 +63,8 @@ data class CodecInitSynEnvelope(
         r.add(header.toByte())
         // Append the active arm body's encoded bytes.
         when (val _b = this.body) {
-            is CodecInitSynEnvelopeBody.CodecInitSynBody -> r.addAll(_b.body.encode(this.header).toList())
-            is CodecInitSynEnvelopeBody.Default -> r.addAll(_b.body.encode(this.header).toList())
+            is CodecInitSynEnvelopeVariant.CodecInitSynBody -> r.addAll(_b.body.encode(this.header).toList())
+            is CodecInitSynEnvelopeVariant.Default -> r.addAll(_b.body.encode(this.header).toList())
         }
         return r.toByteArray()
     }
@@ -83,14 +83,14 @@ data class CodecInitSynEnvelope(
             // from the cursor. The default arm (when declared) carries
             // the runtime tag value so encode can round-trip it back
             // onto the wire.
-            val body: CodecInitSynEnvelopeBody = when (((header.toInt() shr 0) and 0x1F)) {
+            val body: CodecInitSynEnvelopeVariant = when (((header.toInt() shr 0) and 0x1F)) {
                 1 -> {
                     val _arm = com.sce.generated.codec_init_syn_body.CodecInitSynBody.decode(cursor, header) ?: return null
-                    CodecInitSynEnvelopeBody.CodecInitSynBody(_arm)
+                    CodecInitSynEnvelopeVariant.CodecInitSynBody(_arm)
                 }
                 else -> {
                     val _arm = com.sce.generated.codec_init_syn_body.CodecInitSynBody.decode(cursor, header) ?: return null
-                    CodecInitSynEnvelopeBody.Default(tag = ((header.toInt() shr 0) and 0x1F).toUByte(), body = _arm)
+                    CodecInitSynEnvelopeVariant.Default(tag = ((header.toInt() shr 0) and 0x1F).toUByte(), body = _arm)
                 }
             }
             return CodecInitSynEnvelope(

@@ -35,11 +35,11 @@ typedef struct {
         codec_zenoh_close_t codec_zenoh_close;
         codec_zenoh_close_t default_body;
     } arm;
-} codec_transport_envelope_body_t;
+} codec_transport_envelope_variant_t;
 
 typedef struct {
     uint8_t header;
-    codec_transport_envelope_body_t body;
+    codec_transport_envelope_variant_t body;
 } codec_transport_envelope_t;
 
 typedef struct {
