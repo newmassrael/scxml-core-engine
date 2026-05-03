@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <string.h>
 
 #include "sce/forge/codec.h"
 
@@ -18,7 +19,6 @@ typedef struct {
     uint64_t value_len;
     /* variable-length payload (sce:bit-size="length-ref", sce:max-size="32") */
     uint8_t value[32];
-    size_t  value_len;
 } codec_zenoh_ext_zbuf_t;
 
 typedef struct {

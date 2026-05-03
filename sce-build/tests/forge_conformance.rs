@@ -1258,44 +1258,6 @@ fn forge_codec_string_with_present_if_rejects() {
     );
 }
 
-/// RFC §5.B B5-ζ Surface H C11 closure deferral: until the C11
-/// closure ships (sce_forge_string_t storage shape parallel to
-/// sce_forge_bytes_t), C11 codecs containing `sce:type="string"`
-/// fields reject at codegen with `generate/unsupported-feature`
-/// (mirrors the B1-β / B5-γ trunk-then-closures gate pattern). The
-/// String emit helper returns the empty string on C11 — the gate must
-/// fire upstream before that helper is reached.
-#[test]
-fn forge_codec_string_c11_gate_rejects() {
-    use sce_build::forge::error::{ForgeError, GenerateError};
-
-    let scxml_path = resource_dir().join("codec_zenoh_locator.scxml");
-    let content = std::fs::read_to_string(&scxml_path)
-        .expect("Cannot read codec_zenoh_locator.scxml");
-    let result = sce_build::compile_forge_with_imports(
-        &content,
-        sce_build::DocumentLabel::symmetric("codec_zenoh_locator"),
-        sce_build::generator::Language::C11,
-        &resource_dir(),
-        &sce_build::ForgeCompileOptions::default(),
-    );
-    let err = match result {
-        Ok(_) => panic!(
-            "codec with sce:type=\"string\" must reject on C11 \
-             until the B5-ζ closure ships"
-        ),
-        Err(e) => e,
-    };
-    assert!(
-        matches!(
-            &err.error,
-            ForgeError::Generate(GenerateError::UnsupportedFeature { .. })
-        ),
-        "must surface GenerateError::UnsupportedFeature on C11; got: {:?}",
-        err.error
-    );
-}
-
 /// RFC §5.B B3 MCU gate: a codec containing `<sce:tlv-chain>` rejects
 /// when targeting `cpp` (and the other 3 non-MCU langs by the same
 /// path). The diagnostic is the existing kind-class
@@ -3503,6 +3465,13 @@ fn forge_c11_codec_zenoh_close() {
 #[test]
 fn forge_c11_codec_zenoh_frame() {
     assert_standalone_forge_c("codec_zenoh_frame", "codec_zenoh_frame.c.h");
+}
+
+// ── RFC §5.B B5-ζ Surface H string primitive (C11) ───────────
+
+#[test]
+fn forge_c11_codec_zenoh_locator() {
+    assert_standalone_forge_c("codec_zenoh_locator", "codec_zenoh_locator.c.h");
 }
 
 // ── RFC §5.B B5-α multi-bit + empty-codec (C11) ──────────────

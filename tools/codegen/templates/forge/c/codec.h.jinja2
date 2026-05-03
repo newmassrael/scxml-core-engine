@@ -11,7 +11,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
-{% if has_variable_fields and not has_vle_fields %}
+{% if has_memcpy_fields %}
 #include <string.h>
 {% endif %}
 
@@ -76,15 +76,31 @@ typedef struct {
 {% if field.is_repeat %}
     /* RFC §5.B B2 repeat: fixed array of {{ field.repeat_body_type }} elements (max {{ field.max_count }}) */
     {{ field.repeat_body_type }} {{ field.id }}[{{ field.max_count }}];
+{% if field.c_emit_len_member %}
     size_t  {{ field.id }}_len;
+{% endif %}
 {% elif field.is_tlv_chain %}
     /* RFC §5.B B3 tlv-chain: fixed array of {{ field.tlv_chain_body_type }} entries (max-depth {{ field.max_depth }}, on-overflow={{ field.on_overflow }}) */
     {{ field.tlv_chain_body_type }} {{ field.id }}[{{ field.max_depth }}];
+{% if field.c_emit_len_member %}
     size_t  {{ field.id }}_len;
+{% endif %}
+{% elif field.is_string %}
+    /* RFC §5.B B5-ζ Surface H sce:type="string" payload (sce:max-size="{{ field.max_size }}").
+     * `char[N] + size_t len` parallels the bytes pair (uint8_t[N] + len)
+     * but the host-language type signals UTF-8 text storage; the C
+     * string is NOT NUL-terminated — payloads of exactly `max_size`
+     * bytes are valid wire input. */
+    char    {{ field.id }}[{{ field.max_size }}];
+{% if field.c_emit_len_member %}
+    size_t  {{ field.id }}_len;
+{% endif %}
 {% elif field.is_variable and not field.is_vle %}
     /* variable-length payload (sce:bit-size="{{ field.bit_size_kind }}", sce:max-size="{{ field.max_size }}") */
     uint8_t {{ field.id }}[{{ field.max_size }}];
+{% if field.c_emit_len_member %}
     size_t  {{ field.id }}_len;
+{% endif %}
 {% else %}
     {{ field.c_type }} {{ field.id }};
 {% endif %}

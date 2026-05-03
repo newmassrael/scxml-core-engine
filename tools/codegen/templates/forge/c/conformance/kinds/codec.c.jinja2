@@ -5,17 +5,33 @@
    header's `<f.name>_t` struct + `<f.name>_encoded_t` β-shape return
    from encode() and cursor-based status decode() per RFC §5.B L494-519.
 
-   Bytes fields surface as a buffer + len pair on both the case struct
-   and the codec struct (V1β); they assign via `memcpy` and round-trip
-   via `memcmp` + length compare. Buffer width is fixed at the runtime
+   Bytes / String fields surface as a buffer + len pair on both the
+   case struct and the codec struct (V1β); they assign via `memcpy`
+   and round-trip via `memcmp` + length compare. Bytes uses
+   `uint8_t[256]`; String uses `char[256]` (matches the codec struct's
+   UTF-8 storage shape). Buffer width is fixed at the runtime
    `BYTES_DEFAULT_MAX` (256) so the case struct fits every codec
-   fixture without per-fixture resizing. #}
+   fixture without per-fixture resizing.
+
+   When a sibling scalar field's name matches `<payload>_len` (e.g. a
+   VLE prefix named `locator_len` in front of a string `locator`), the
+   case-struct `_len` companion is suppressed — the sibling already
+   owns that identifier (mirrors the codec product header's
+   `c_emit_len_member` collision-avoidance). #}
 static void test_{{ f.name }}(void) {
     typedef struct {
 {% for field in f.fields %}
+{% set sibling_owns_len = (f.fields | selectattr('name', 'equalto', field.name + '_len') | list | length) > 0 %}
 {% if field.type == "bytes" %}
         uint8_t input_{{ field.name | to_snake_case }}[256];
+{% if not sibling_owns_len %}
         size_t  input_{{ field.name | to_snake_case }}_len;
+{% endif %}
+{% elif field.type == "string" %}
+        char    input_{{ field.name | to_snake_case }}[256];
+{% if not sibling_owns_len %}
+        size_t  input_{{ field.name | to_snake_case }}_len;
+{% endif %}
 {% else %}
         {{ field.type | c_type }} input_{{ field.name | to_snake_case }};
 {% endif %}
@@ -27,9 +43,17 @@ static void test_{{ f.name }}(void) {
 {% for c in f.cases %}
         {
 {% for field in f.fields %}
+{% set sibling_owns_len = (f.fields | selectattr('name', 'equalto', field.name + '_len') | list | length) > 0 %}
 {% if field.type == "bytes" %}
             .input_{{ field.name | to_snake_case }} = {{ c.decoded[field.name] | c_literal(field.type) }},
+{% if not sibling_owns_len %}
             .input_{{ field.name | to_snake_case }}_len = {{ c.decoded[field.name] | length }},
+{% endif %}
+{% elif field.type == "string" %}
+            .input_{{ field.name | to_snake_case }} = {{ c.decoded[field.name] | c_literal(field.type) }},
+{% if not sibling_owns_len %}
+            .input_{{ field.name | to_snake_case }}_len = {{ c.decoded[field.name] | length }},
+{% endif %}
 {% else %}
             .input_{{ field.name | to_snake_case }} = {{ c.decoded[field.name] | c_literal(field.type) }},
 {% endif %}
@@ -43,9 +67,14 @@ static void test_{{ f.name }}(void) {
     for (size_t i = 0; i < n; ++i) {
         {{ f.name }}_t val;
 {% for field in f.fields %}
-{% if field.type == "bytes" %}
-        memcpy(val.{{ field.name | to_snake_case }}, cases[i].input_{{ field.name | to_snake_case }}, cases[i].input_{{ field.name | to_snake_case }}_len);
-        val.{{ field.name | to_snake_case }}_len = cases[i].input_{{ field.name | to_snake_case }}_len;
+{% set sibling_owns_len = (f.fields | selectattr('name', 'equalto', field.name + '_len') | list | length) > 0 %}
+{% if field.type in ("bytes", "string") %}
+{% set len_src = "cases[i].input_" + (field.name | to_snake_case) + "_len" %}
+{% if sibling_owns_len %}
+{% set len_src = "cases[i].input_" + field.name + "_len" %}
+{% endif %}
+        memcpy(val.{{ field.name | to_snake_case }}, cases[i].input_{{ field.name | to_snake_case }}, {{ len_src }});
+        val.{{ field.name | to_snake_case }}_len = {{ len_src }};
 {% else %}
         val.{{ field.name | to_snake_case }} = cases[i].input_{{ field.name | to_snake_case }};
 {% endif %}
@@ -67,12 +96,17 @@ static void test_{{ f.name }}(void) {
             continue;
         }
 {% for field in f.fields %}
-{% if field.type == "bytes" %}
-        if (round_tripped.{{ field.name | to_snake_case }}_len != cases[i].input_{{ field.name | to_snake_case }}_len ||
-            memcmp(round_tripped.{{ field.name | to_snake_case }}, cases[i].input_{{ field.name | to_snake_case }}, cases[i].input_{{ field.name | to_snake_case }}_len) != 0) {
+{% set sibling_owns_len = (f.fields | selectattr('name', 'equalto', field.name + '_len') | list | length) > 0 %}
+{% if field.type in ("bytes", "string") %}
+{% set len_src = "cases[i].input_" + (field.name | to_snake_case) + "_len" %}
+{% if sibling_owns_len %}
+{% set len_src = "cases[i].input_" + field.name + "_len" %}
+{% endif %}
+        if ((size_t)round_tripped.{{ field.name | to_snake_case }}_len != (size_t){{ len_src }} ||
+            memcmp(round_tripped.{{ field.name | to_snake_case }}, cases[i].input_{{ field.name | to_snake_case }}, {{ len_src }}) != 0) {
             fprintf(stderr,
                 "FAIL: {{ f.name }} case %zu decode field {{ field.name }}: actual_len=%zu expected_len=%zu\n",
-                i, round_tripped.{{ field.name | to_snake_case }}_len, cases[i].input_{{ field.name | to_snake_case }}_len);
+                i, (size_t)round_tripped.{{ field.name | to_snake_case }}_len, (size_t){{ len_src }});
             ++g_failures;
         }
 {% else %}

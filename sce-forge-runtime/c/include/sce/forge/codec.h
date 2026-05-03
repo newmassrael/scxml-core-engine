@@ -45,6 +45,14 @@ typedef enum {
      * cursor still had bytes) AND the codec declared
      * on-overflow="reject". Truncate-mode codecs never raise this. */
     SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW = 3,
+    /* RFC §5.B B5-ζ Surface H string primitive: the byte slice declared
+     * `sce:type="string"` was not well-formed UTF-8. Mirrors the typed
+     * `CodecError::InvalidUtf8` (Rust / Go / Python) — the C11 enum
+     * return is uniform across every codec so adding the variant does
+     * not change per-codec signatures (cpp / kotlin collapse to the
+     * `std::optional<T>` / `T?` truncation sentinel because their
+     * signatures are type-narrow). */
+    SCE_FORGE_CODEC_INVALID_UTF8 = 4,
 } sce_forge_codec_status_t;
 
 /* Read-only cursor over a borrowed input buffer. Decode bodies bind a
@@ -136,6 +144,58 @@ static inline sce_forge_codec_status_t sce_forge_cursor_read_vle_u32(sce_forge_c
 
 static inline sce_forge_codec_status_t sce_forge_cursor_read_vle_u64(sce_forge_cursor_t *c, uint64_t *out) {
     return sce_forge_cursor_read_vle_inner(c, 64, out);
+}
+
+/* RFC §5.B B5-ζ Surface H — validate that `[p, p + n)` is a well-formed
+ * UTF-8 byte sequence. Returns true for valid UTF-8 (including the
+ * empty range), false on any malformed sequence. Mirrors the cpp
+ * `is_valid_utf8` (sce-forge-runtime/cpp/include/sce/forge/codec.h)
+ * RFC 3629 §4 four-form table:
+ *   1-byte:  0x00..0x7F                      (ASCII)
+ *   2-byte:  0xC2..0xDF + cont                (overlong-rejecting)
+ *   3-byte:  0xE0..0xEF + 2*cont              (E0 overlong + ED surrogate guards)
+ *   4-byte:  0xF0..0xF4 + 3*cont              (F0 overlong + F4 U+10FFFF cap)
+ * Lead bytes 0x80..0xC1 (continuation in lead position + overlong
+ * 1-byte) and 0xF5..0xFF (above U+10FFFF) reject.
+ *
+ * Used by codec decode bodies emitted from `sce:type="string"` fields —
+ * malformed input surfaces as SCE_FORGE_CODEC_INVALID_UTF8. */
+static inline bool sce_forge_is_valid_utf8(const uint8_t *p, size_t n) {
+    size_t i = 0;
+    while (i < n) {
+        const uint8_t b0 = p[i];
+        if (b0 <= 0x7Fu) {
+            i += 1;
+        } else if (b0 >= 0xC2u && b0 <= 0xDFu) {
+            if (i + 1 >= n) return false;
+            const uint8_t b1 = p[i + 1];
+            if (b1 < 0x80u || b1 > 0xBFu) return false;
+            i += 2;
+        } else if (b0 >= 0xE0u && b0 <= 0xEFu) {
+            if (i + 2 >= n) return false;
+            const uint8_t b1 = p[i + 1];
+            const uint8_t b2 = p[i + 2];
+            const uint8_t b1_min = (b0 == 0xE0u) ? 0xA0u : 0x80u;
+            const uint8_t b1_max = (b0 == 0xEDu) ? 0x9Fu : 0xBFu;
+            if (b1 < b1_min || b1 > b1_max) return false;
+            if (b2 < 0x80u || b2 > 0xBFu) return false;
+            i += 3;
+        } else if (b0 >= 0xF0u && b0 <= 0xF4u) {
+            if (i + 3 >= n) return false;
+            const uint8_t b1 = p[i + 1];
+            const uint8_t b2 = p[i + 2];
+            const uint8_t b3 = p[i + 3];
+            const uint8_t b1_min = (b0 == 0xF0u) ? 0x90u : 0x80u;
+            const uint8_t b1_max = (b0 == 0xF4u) ? 0x8Fu : 0xBFu;
+            if (b1 < b1_min || b1 > b1_max) return false;
+            if (b2 < 0x80u || b2 > 0xBFu) return false;
+            if (b3 < 0x80u || b3 > 0xBFu) return false;
+            i += 4;
+        } else {
+            return false;
+        }
+    }
+    return true;
 }
 
 #ifdef __cplusplus

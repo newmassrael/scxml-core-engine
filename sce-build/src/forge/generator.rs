@@ -1035,27 +1035,15 @@ fn render_codec(
         }
     }
 
-    // RFC §5.B B5-ζ Surface H — `sce:type="string"` C11 closure
-    // deferral. Until the C11 closure ships (sce_forge_string_t storage
-    // shape parallel to sce_forge_bytes_t), C11 codecs containing any
-    // String field reject at codegen with `generate/unsupported-
-    // feature`. Trunk-then-closures pattern (mirrors B1-β / B5-γ).
-    // The cpp/rust/kotlin/go/python paths use the existing
+    // RFC §5.B B5-ζ Surface H closure: all six backends (Rust / Cpp /
+    // Kotlin / Go / Python / C11) emit `sce:type="string"` codec
+    // fields. The C11 closure shape is `char[N] + size_t len`
+    // (parallel to the bytes pair) with `sce_forge_is_valid_utf8`
+    // gating decode and SCE_FORGE_CODEC_INVALID_UTF8 surfacing
+    // malformed input as a typed enum return — see
     // `present_if_decode_string_length_ref` / `present_if_encode_
-    // string_length_ref` helpers; C11 emit defers because the host
-    // type for a fixed-buffer codec member needs `char data[N];
-    // size_t len;` storage (parallel to `sce_forge_bytes_t`) that no
-    // current consumer drives.
-    if m.has_string_fields() && matches!(lang, crate::generator::Language::C11) {
-        return Err(ForgeError::Generate(
-            crate::forge::error::GenerateError::UnsupportedFeature(format!(
-                "sce:type=\"string\" codec field on c11 (codec '{}'); \
-                 B5-ζ closure pending — sce_forge_string_t storage shape \
-                 parallel to sce_forge_bytes_t",
-                m.name
-            )),
-        ));
-    }
+    // string_length_ref` C11 arms and `c/codec.h.jinja2`'s
+    // `field.is_string` branch.
 
     // RFC §5.B B5-γ: cross-codec parent-flags layout validation.
     // When THIS codec (the parent) has a `<sce:variant>` whose arm
@@ -1129,6 +1117,32 @@ fn render_codec(
             );
             obj.insert("is_variable".into(), serde_json::Value::Bool(f.is_variable_length()));
             obj.insert("is_vle".into(), serde_json::Value::Bool(f.is_vle()));
+            // RFC §5.B B5-ζ Surface H — C11 codec.h.jinja2 switches the
+            // member storage shape from `uint8_t[N] + size_t len`
+            // (Bytes) to `char[N] + size_t len` (String) when this
+            // flag is set. The cpp/rust/kotlin/go/python codec
+            // templates use host-language string types directly and
+            // therefore do not inspect this flag.
+            obj.insert("is_string".into(), serde_json::Value::Bool(f.is_string()));
+            // C11 Bytes / String / Repeat / TLV-chain emit pairs the
+            // payload member with an implicit `<id>_len` byte/entry
+            // count. Suppress that emit when a sibling field already
+            // owns the same identifier (e.g. wire codecs whose VLE
+            // length prefix is named `<payload>_len` to mirror the
+            // peer header layout). Decode then writes the resolved
+            // length back to the sibling directly — semantically the
+            // sibling and the implicit count carry the same value, so
+            // collapsing them is loss-free. Without this suppression
+            // C11 surfaces a duplicate-member compile error that
+            // byte-only golden comparison cannot detect (per
+            // feedback_byte_goldens_not_compile.md).
+            let sibling_owns_len = m.fields.iter().any(|other| {
+                !std::ptr::eq(other, f) && other.id == format!("{}_len", f.id)
+            });
+            obj.insert(
+                "c_emit_len_member".into(),
+                serde_json::Value::Bool(!sibling_owns_len),
+            );
             obj.insert("is_repeat".into(), serde_json::Value::Bool(f.is_repeat()));
             obj.insert(
                 "is_tlv_chain".into(),
@@ -1623,6 +1637,26 @@ fn render_codec(
     ctx.insert("max_bytes".into(), max_bytes.into());
     ctx.insert("has_variable_fields".into(), m.has_variable_fields().into());
     ctx.insert("has_vle_fields".into(), has_vle_fields.into());
+    // C11 codec.h.jinja2 condition for `<string.h>` include: true when
+    // any field's decode/encode body uses `memcpy` — every variable
+    // bit-size emits a `memcpy` (Tail / LengthRef positional or
+    // streaming, Repeat / TlvChain inside their bounded loops). VLE
+    // and Fixed do not. The earlier `has_variable_fields and not
+    // has_vle_fields` condition silently skipped the include for
+    // mixed VLE+LengthRef codecs (e.g. zenoh wire codecs whose payload
+    // length is VLE-prefixed) where the conformance harness's own
+    // `#include <string.h>` masked the gap; standalone smoke compiles
+    // require the codec header to be self-contained.
+    let has_memcpy_fields = m.fields.iter().any(|f| {
+        matches!(
+            f.bit_size,
+            BitSize::Tail
+                | BitSize::LengthRef
+                | BitSize::Repeat { .. }
+                | BitSize::TlvChain { .. }
+        )
+    });
+    ctx.insert("has_memcpy_fields".into(), has_memcpy_fields.into());
     ctx.insert(
         "has_present_if_fields".into(),
         has_present_if_fields.into(),
@@ -3907,14 +3941,33 @@ fn present_if_decode_string_length_ref(
             )
         }
         Language::C11 => {
-            // C11 String emit defers to the B5-ζ closure (separate
-            // commit per cadence). Parser restriction (string requires
-            // length-ref) doesn't gate per-language emit; the codec
-            // template's `has_string_fields` C11 branch returns the
-            // `unsupported feature` typed error before this helper is
-            // reached. Returning the empty string here keeps the
-            // exhaustive match closed; the template never renders it.
-            String::new()
+            // RFC §5.B B5-ζ Surface H C11 closure: parallels the Bytes
+            // length-ref decode (`present_if_decode_length_ref` C11
+            // arm above) but the storage member is `char[N]` (declared
+            // by the codec.h.jinja2 `is_string` branch) and the byte
+            // slice is validated as UTF-8 before memcpy. Malformed
+            // input surfaces SCE_FORGE_CODEC_INVALID_UTF8 — the C11
+            // enum return is uniform across every codec so the new
+            // variant does not change per-codec signatures (mirrors
+            // Rust / Go / Python typed-variant emit; cpp / kotlin
+            // collapse to `nullopt` / `null` because their narrower
+            // signatures cannot grow a variant without a per-codec
+            // sweep).
+            let id_snake = filters::to_snake_case(id.to_string());
+            let max_size = crate::forge::limits::resolve_bytes_max(field.max_size);
+            let n_c11 = compute_n_c11(len_field, sibling_gated, arith);
+            format!(
+                "{{\n        \
+                     size_t _n = {n_c11};\n        \
+                     if (_n > {max_size}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
+                     const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
+                     if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
+                     if (!sce_forge_is_valid_utf8(raw, _n)) return SCE_FORGE_CODEC_INVALID_UTF8;\n        \
+                     memcpy(out->{id_snake}, raw, _n);\n        \
+                     out->{id_snake}_len = _n;\n        \
+                     if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
+                 }}"
+            )
         }
     }
 }
@@ -4479,8 +4532,24 @@ fn present_if_encode_string_length_ref(
             let py_id = filters::to_snake_case(id.to_string());
             format!("        r.extend(self.{py_id}.encode('utf-8'))")
         }
-        // C11 String encode defers to the B5-ζ closure.
-        Language::C11 => String::new(),
+        // RFC §5.B B5-ζ Surface H C11 closure: append the codec
+        // member's `<id>_len` bytes from `char[N]` storage to the
+        // encoded buffer. C11 does not distinguish `char` vs `uint8_t`
+        // at the byte-copy level (both alias the underlying object
+        // representation per C11 §6.5/7), so the cast is the textbook
+        // pattern for `char` array serialization. Mirrors the bytes
+        // encode shape (single-line `r.len++` post-increment loop) so
+        // String/Bytes encode byte-stable side by side. Author-trust
+        // contract: `<id>_len` is in sync with the sibling integer
+        // length field — codec API stays infallible to avoid surfacing
+        // a Result type on every String-bearing codec.
+        Language::C11 => {
+            let id_snake = filters::to_snake_case(id.to_string());
+            format!(
+                "    for (size_t _bi = 0; _bi < self->{id_snake}_len; ++_bi) \
+                 r.bytes[r.len++] = (uint8_t)self->{id_snake}[_bi];"
+            )
+        }
     }
 }
 
