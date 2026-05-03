@@ -1170,6 +1170,16 @@ fn forge_codec_zenoh_open_body_cpp() {
 }
 
 #[test]
+fn forge_codec_zenoh_init_body_cpp() {
+    assert_standalone_forge("codec_zenoh_init_body", "codec_zenoh_init_body.h");
+}
+
+#[test]
+fn forge_codec_zenoh_join_cpp() {
+    assert_standalone_forge("codec_zenoh_join", "codec_zenoh_join.h");
+}
+
+#[test]
 fn forge_codec_zenoh_fragment_cpp() {
     assert_standalone_forge("codec_zenoh_fragment", "codec_zenoh_fragment.h");
 }
@@ -3043,6 +3053,16 @@ fn forge_kotlin_codec_zenoh_open_body() {
 }
 
 #[test]
+fn forge_kotlin_codec_zenoh_init_body() {
+    assert_standalone_forge_kotlin("codec_zenoh_init_body", "CodecZenohInitBody.kt");
+}
+
+#[test]
+fn forge_kotlin_codec_zenoh_join() {
+    assert_standalone_forge_kotlin("codec_zenoh_join", "CodecZenohJoin.kt");
+}
+
+#[test]
 fn forge_kotlin_codec_zenoh_fragment() {
     assert_standalone_forge_kotlin("codec_zenoh_fragment", "CodecZenohFragment.kt");
 }
@@ -3456,6 +3476,16 @@ fn forge_rust_codec_zenoh_open_body() {
 }
 
 #[test]
+fn forge_rust_codec_zenoh_init_body() {
+    assert_standalone_forge_rust("codec_zenoh_init_body", "codec_zenoh_init_body.rs");
+}
+
+#[test]
+fn forge_rust_codec_zenoh_join() {
+    assert_standalone_forge_rust("codec_zenoh_join", "codec_zenoh_join.rs");
+}
+
+#[test]
 fn forge_rust_codec_zenoh_fragment() {
     assert_standalone_forge_rust("codec_zenoh_fragment", "codec_zenoh_fragment.rs");
 }
@@ -3816,6 +3846,16 @@ fn forge_go_codec_zenoh_open_body() {
 }
 
 #[test]
+fn forge_go_codec_zenoh_init_body() {
+    assert_standalone_forge_go("codec_zenoh_init_body", "codec_zenoh_init_body.go");
+}
+
+#[test]
+fn forge_go_codec_zenoh_join() {
+    assert_standalone_forge_go("codec_zenoh_join", "codec_zenoh_join.go");
+}
+
+#[test]
 fn forge_go_codec_zenoh_fragment() {
     assert_standalone_forge_go("codec_zenoh_fragment", "codec_zenoh_fragment.go");
 }
@@ -4148,6 +4188,16 @@ fn forge_python_codec_zenoh_open_body() {
 }
 
 #[test]
+fn forge_python_codec_zenoh_init_body() {
+    assert_standalone_forge_python("codec_zenoh_init_body", "codec_zenoh_init_body.py");
+}
+
+#[test]
+fn forge_python_codec_zenoh_join() {
+    assert_standalone_forge_python("codec_zenoh_join", "codec_zenoh_join.py");
+}
+
+#[test]
 fn forge_python_codec_zenoh_fragment() {
     assert_standalone_forge_python("codec_zenoh_fragment", "codec_zenoh_fragment.py");
 }
@@ -4410,6 +4460,16 @@ fn forge_c11_codec_zenoh_frame() {
 #[test]
 fn forge_c11_codec_zenoh_open_body() {
     assert_standalone_forge_c("codec_zenoh_open_body", "codec_zenoh_open_body.c.h");
+}
+
+#[test]
+fn forge_c11_codec_zenoh_init_body() {
+    assert_standalone_forge_c("codec_zenoh_init_body", "codec_zenoh_init_body.c.h");
+}
+
+#[test]
+fn forge_c11_codec_zenoh_join() {
+    assert_standalone_forge_c("codec_zenoh_join", "codec_zenoh_join.c.h");
 }
 
 #[test]

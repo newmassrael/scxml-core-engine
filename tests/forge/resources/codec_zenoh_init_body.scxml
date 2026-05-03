@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh transport-layer Init body, unified
+     InitSyn + InitAck shape (RFC §5.B B5-ι Batch 1).
+
+     Mirrors zenoh-pico `_z_init_encode` (src/protocol/codec/transport.c
+     lines 182-219) verbatim. The transport-message header carries
+     `_Z_FLAG_T_INIT_S` (bit 6, value 0x40) and `_Z_FLAG_T_INIT_A`
+     (bit 5, value 0x20) defined at definitions/transport.h:67-68:
+       - parent.S=1 → sn_res + batch_size present (size negotiation)
+       - parent.A=1 → cookie present (acknowledgment carrying cookie)
+     The version byte and cbyte+zid prefix are always present;
+     parent.S and parent.A independently gate two field pairs. Both
+     gates use "set means present" — the standard B5-γ Parent-scope
+     present-if grammar without negation.
+
+     This unified codec replaces the prior B5-γ Surface C demo
+     `codec_init_syn_body` (no-zid simplified form, kept for parser
+     trunk reference); the present codec is the realistic body for
+     all Init transport instances regardless of S/A combination.
+
+     Wire shape:
+       byte 0   : version    (uint8, always)
+       byte 1   : cbyte      (uint8 flags: whatami:2 + zid_len_m1:4)
+       byte 2+  : zid        (bytes, length=cbyte.zid_len_m1+1, max=16, always)
+       parent.S : sn_res     (uint8: bits 0-1 seq_num_res, bits 2-3 req_id_res — host decomposes)
+                  batch_size (uint16 BE)
+       parent.A : cookie_len (VLE u64)
+                  cookie     (length-ref bytes, length=cookie_len, max=128)
+
+     Composition: B5-α multi-bit flag (cbyte) + B5-κ Surface L
+     dotted-path length-field (`cbyte.zid_len_m1`) + B5-δ Surface F
+     length-arith (+1) + B5-γ Parent-scope present-if (parent.S /
+     parent.A) + B1-α VLE (cookie_len) + B2-β present-if + length-ref
+     (cookie). No new primitive surface.
+
+     Round-trip oracles:
+       parent.S=1 parent.A=1: version=0x05 cbyte=0x21 zid=[01 02 03]
+         sn_res=0x33 batch_size=0xCAFE cookie_len=4 cookie=[BA BE 11 22]
+       parent.S=0 parent.A=0: version=0x05 cbyte=0x21 zid=[01 02 03]
+         (no sn_res/batch_size/cookie) -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_init_body">
+  <sce:requires-parent-flags carrier="header">
+    <sce:flag name="S" bit="6"/>
+    <sce:flag name="A" bit="5"/>
+  </sce:requires-parent-flags>
+  <datamodel>
+    <sce:field id="version" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:flags id="cbyte" sce:type="uint8" sce:byte="1" sce:bit-size="8">
+      <sce:flag name="whatami"    bit="0" width="2"/>
+      <sce:flag name="zid_len_m1" bit="4" width="4"/>
+    </sce:flags>
+    <sce:field id="zid" sce:type="bytes" sce:byte="2" sce:bit-size="length-ref"
+               sce:length-field="cbyte.zid_len_m1" sce:length-arith="+1"
+               sce:max-size="16"/>
+    <sce:field id="sn_res" sce:type="uint8" sce:byte="3" sce:bit-size="8"
+               sce:present-if="parent.S"/>
+    <sce:field id="batch_size" sce:type="uint16" sce:byte="4" sce:bit-size="16"
+               sce:present-if="parent.S"/>
+    <sce:field id="cookie_len" sce:type="uint64" sce:byte="6" sce:bit-size="vle"
+               sce:present-if="parent.A"/>
+    <sce:field id="cookie" sce:type="bytes" sce:byte="7" sce:bit-size="length-ref"
+               sce:length-field="cookie_len" sce:max-size="128"
+               sce:present-if="parent.A"/>
+  </datamodel>
+</scxml>
