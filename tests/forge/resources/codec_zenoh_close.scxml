@@ -19,4 +19,21 @@
   <datamodel>
     <sce:field id="reason" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
   </datamodel>
+  <!-- RFC §5.B B5-θ inline test vectors. Each row pins one wire byte
+       sequence to the expected decoded form; the per-backend sidecar
+       (`<fixture>_test.{rs,h}`) generates a round-trip oracle. Same
+       4 reason codes as the numerical_reference.json oracle harness
+       so the inline anchor and the bulk JSON oracle stay in lockstep. -->
+  <sce:test-vector hex="00">
+    <sce:decoded field="reason" value="0"/>
+  </sce:test-vector>
+  <sce:test-vector hex="01">
+    <sce:decoded field="reason" value="1"/>
+  </sce:test-vector>
+  <sce:test-vector hex="02">
+    <sce:decoded field="reason" value="2"/>
+  </sce:test-vector>
+  <sce:test-vector hex="ff">
+    <sce:decoded field="reason" value="0xff"/>
+  </sce:test-vector>
 </scxml>

@@ -719,6 +719,20 @@ pub fn generate_cpp_with_imports(
             files.push(sidecar);
         }
     }
+    // RFC §5.B B5-θ codec sidecar — trunk lands on Rust + C11 only;
+    // the helper raises `UnsupportedFeature` for cpp/kotlin/go/python
+    // when codec test vectors are present, so authors get a precise
+    // gate error rather than a silent skip when targeting an
+    // un-closured backend.
+    if let ForgeDocument::Codec(m) = doc {
+        if let Some(sidecar) = render_codec_test_vector_sidecar(
+            &env,
+            m,
+            crate::generator::Language::Cpp,
+        )? {
+            files.push(sidecar);
+        }
+    }
     Ok(GeneratedOutput { files })
 }
 
@@ -6574,6 +6588,15 @@ pub fn generate_kotlin_with_imports(
             files.push(sidecar);
         }
     }
+    if let ForgeDocument::Codec(m) = doc {
+        if let Some(sidecar) = render_codec_test_vector_sidecar(
+            &env,
+            m,
+            crate::generator::Language::Kotlin,
+        )? {
+            files.push(sidecar);
+        }
+    }
     Ok(GeneratedOutput { files })
 }
 
@@ -6641,6 +6664,15 @@ pub fn generate_rust_with_imports(
     // distinct `#[test]`.
     if let ForgeDocument::Algorithm(m) = doc {
         if let Some(sidecar) = render_algorithm_test_vector_sidecar(
+            &env,
+            m,
+            crate::generator::Language::Rust,
+        )? {
+            files.push(sidecar);
+        }
+    }
+    if let ForgeDocument::Codec(m) = doc {
+        if let Some(sidecar) = render_codec_test_vector_sidecar(
             &env,
             m,
             crate::generator::Language::Rust,
@@ -6740,6 +6772,15 @@ pub fn generate_go_with_imports(
             files.push(sidecar);
         }
     }
+    if let ForgeDocument::Codec(m) = doc {
+        if let Some(sidecar) = render_codec_test_vector_sidecar(
+            &env,
+            m,
+            crate::generator::Language::Go,
+        )? {
+            files.push(sidecar);
+        }
+    }
     Ok(GeneratedOutput { files })
 }
 
@@ -6815,6 +6856,15 @@ pub fn generate_python_with_imports(
             files.push(sidecar);
         }
     }
+    if let ForgeDocument::Codec(m) = doc {
+        if let Some(sidecar) = render_codec_test_vector_sidecar(
+            &env,
+            m,
+            crate::generator::Language::Python,
+        )? {
+            files.push(sidecar);
+        }
+    }
     Ok(GeneratedOutput { files })
 }
 
@@ -6882,6 +6932,15 @@ pub fn generate_c11_with_imports(
     // `test_<fixture>` accounting in the kind-fragment templates).
     if let ForgeDocument::Algorithm(m) = doc {
         if let Some(sidecar) = render_algorithm_test_vector_sidecar(
+            &env,
+            m,
+            crate::generator::Language::C11,
+        )? {
+            files.push(sidecar);
+        }
+    }
+    if let ForgeDocument::Codec(m) = doc {
+        if let Some(sidecar) = render_codec_test_vector_sidecar(
             &env,
             m,
             crate::generator::Language::C11,
@@ -11959,6 +12018,309 @@ fn render_algorithm_test_vector_sidecar(
         ),
     };
     Ok(Some((filename, code)))
+}
+
+// ── RFC §5.B B5-θ codec test-vector sidecar ──────────────────
+//
+// Symmetric with the algorithm sidecar above. Each `<sce:test-vector>`
+// row on a `CodecModel` lowers to a per-language struct-construct
+// expression whose encode/decode round-trip is asserted against the
+// declared `hex` byte sequence. Trunk lands on Rust + C11 only; the
+// other 4 backends raise `UnsupportedFeature` until per-language
+// closures land (B1-β/B5-γ/B5-ε precedent for trunk-then-closures).
+//
+// Supported codec shapes in trunk: plain (no `<sce:variant>`,
+// no `<sce:tlv-chain>`, no `<sce:requires-parent-flags>`). The
+// downstream renderer rejects out-of-trunk shapes with a precise
+// `UnsupportedFeature` message naming the feature that closures
+// will lift, so authors get a clear repair hint rather than a
+// silent skip.
+fn render_codec_test_vector_sidecar(
+    env: &minijinja::Environment,
+    m: &CodecModel,
+    lang: crate::generator::Language,
+) -> Result<Option<(String, String)>, ForgeError> {
+    use crate::forge::error::GenerateError;
+    use crate::forge::model::{DecodedValue, SceType};
+    use crate::generator::Language;
+
+    if m.test_vectors.is_empty() {
+        return Ok(None);
+    }
+
+    // Trunk gate: Rust + C11 only emit a sidecar; Cpp/Kotlin/Go/
+    // Python return `Ok(None)` so the primary codec stays byte-
+    // stable across all 6 backends (the primary emit is independent
+    // of test_vectors). Per-backend closures later rotate their gate
+    // arm to the per-language sidecar template + golden — at which
+    // point the matching `forge_codec_..._<lang>_no_sidecar_until_closure`
+    // gate-rejection test rotates to a positive sidecar-emission test
+    // (mirrors B1-β / B5-γ / B5-ε / B5-ζ trunk-then-closures cadence,
+    // documented in `next_watching_zenoh_rfc_phase_b.md`).
+    if !matches!(lang, Language::Rust | Language::C11) {
+        return Ok(None);
+    }
+
+    // Trunk shape gate: plain codecs only. Variant / TLV-chain /
+    // parent-flags closures land alongside their first sidecar
+    // consumer following the trunk-then-closures cadence.
+    if m.variant.is_some() {
+        return Err(ForgeError::Generate(GenerateError::UnsupportedFeature(format!(
+            "codec '{name}': <sce:test-vector> on variant codec deferred to B5-θ-variant \
+             closure (decoded shape requires <sce:decoded-variant kind tag><body/></...> \
+             grammar; default-arm tag preservation contract pinned at that closure)",
+            name = m.name,
+        ))));
+    }
+    if m.has_tlv_chain_fields() {
+        return Err(ForgeError::Generate(GenerateError::UnsupportedFeature(format!(
+            "codec '{name}': <sce:test-vector> on TLV-chain codec deferred to B5-θ-tlv \
+             closure (decoded shape requires <sce:decoded-chain field><sce:decoded-entry/></...> \
+             grammar)",
+            name = m.name,
+        ))));
+    }
+    if m.has_parent_flags() {
+        return Err(ForgeError::Generate(GenerateError::UnsupportedFeature(format!(
+            "codec '{name}': <sce:test-vector> on parent-flags-bearing codec deferred to \
+             B5-θ-parent closure (round-trip oracle requires the codec be invoked as a \
+             variant-arm body; standalone test invocation has no parent_flags source)",
+            name = m.name,
+        ))));
+    }
+    if m.has_repeat_fields() {
+        return Err(ForgeError::Generate(GenerateError::UnsupportedFeature(format!(
+            "codec '{name}': <sce:test-vector> on repeat-bearing codec deferred to B5-θ-repeat \
+             closure (decoded shape requires nested <sce:decoded-repeat field><sce:decoded-entry/> \
+             grammar)",
+            name = m.name,
+        ))));
+    }
+    if m.has_present_if_fields() {
+        return Err(ForgeError::Generate(GenerateError::UnsupportedFeature(format!(
+            "codec '{name}': <sce:test-vector> on present-if codec deferred to B5-θ-optional \
+             closure (decoded shape needs absent-vs-present marker; trunk only lands on \
+             always-present field codecs)",
+            name = m.name,
+        ))));
+    }
+
+    let snake = filters::to_snake_case(m.name.clone());
+
+    // Build the per-row context. Field-by-field literal lowering
+    // happens here (declarative templates) so the per-language
+    // arithmetic / wrap / cast lives next to its sibling helpers.
+    let mut rows: Vec<serde_json::Value> = Vec::with_capacity(m.test_vectors.len());
+    for tv in &m.test_vectors {
+        let DecodedValue::Plain { fields: decoded_fields } = &tv.decoded;
+
+        // Hex byte literals — same per-language shape as the
+        // algorithm sidecar's `bytes_literal_*` rows.
+        let bytes_literal_rust = if tv.hex.is_empty() {
+            "&[]".to_string()
+        } else {
+            let parts: Vec<String> = tv.hex.iter().map(|b| format!("0x{b:02x}u8")).collect();
+            format!("&[{}]", parts.join(", "))
+        };
+        let hex_bytes_literal_c = if tv.hex.is_empty() {
+            String::new()
+        } else {
+            tv.hex
+                .iter()
+                .map(|b| format!("0x{b:02x}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let hex_str: String = tv.hex.iter().map(|b| format!("{b:02x}")).collect();
+
+        // Per-field decoded literals — paired with the model's
+        // `CodecField` so the value type is known at lowering time.
+        // Trunk fields are bool / Bytes / String / unsigned int / signed int.
+        let mut field_rows: Vec<serde_json::Value> = Vec::with_capacity(decoded_fields.len());
+        for df in decoded_fields {
+            let codec_field = m.fields.iter().find(|f| f.id == df.name).ok_or_else(|| {
+                ForgeError::Generate(GenerateError::UnsupportedFeature(format!(
+                    "codec '{name}': <sce:test-vector> at L{line}: field '{f}' missing from \
+                     codec model — parser invariant violated",
+                    name = m.name,
+                    line = tv.source_line,
+                    f = df.name,
+                )))
+            })?;
+
+            let (rust_lit, c_lit) = lower_decoded_field_value(&df.value, &codec_field.sce_type, &m.name)?;
+
+            field_rows.push(serde_json::json!({
+                "name_snake": filters::to_snake_case(df.name.clone()),
+                "value_literal_rust": rust_lit,
+                "value_literal_c": c_lit,
+                "is_bytes": matches!(codec_field.sce_type, SceType::Bytes),
+                "is_string": matches!(codec_field.sce_type, SceType::String),
+            }));
+        }
+
+        rows.push(serde_json::json!({
+            "source_line": tv.source_line,
+            "hex": hex_str,
+            "bytes_literal_rust": bytes_literal_rust,
+            "hex_bytes_literal_c": hex_bytes_literal_c,
+            "hex_bytes": !tv.hex.is_empty(),
+            "fields": field_rows,
+        }));
+    }
+
+    let mut ctx: std::collections::BTreeMap<String, minijinja::Value> = Default::default();
+    ctx.insert("name".into(), snake.clone().into());
+    ctx.insert(
+        "name_pascal".into(),
+        filters::to_pascal_case(m.name.clone()).into(),
+    );
+    ctx.insert(
+        "test_vectors".into(),
+        minijinja::Value::from_serialize(&rows),
+    );
+
+    if matches!(lang, Language::C11) {
+        let guard = format!("SCE_FORGE_{}_TEST_H", to_upper_snake(&m.name));
+        ctx.insert("guard".into(), guard.into());
+    }
+
+    let l = LangCtx::new(lang);
+    let template_name = format!("codec_test.{}.jinja2", l.template_ext());
+    let template = env.get_template(&template_name).map_err(|e| {
+        ForgeError::Generate(GenerateError::TemplateLoad(format!("{template_name}: {e}")))
+    })?;
+    let value = minijinja::Value::from_serialize(&ctx);
+    let code = template.render(value).map_err(|e| {
+        ForgeError::Generate(GenerateError::TemplateRender(format!("{template_name}: {e}")))
+    })?;
+    let filename = match lang {
+        Language::Rust => format!("{snake}_test.rs"),
+        Language::C11 => format!("{snake}_test.h"),
+        // The trunk gate above already rejected the other backends.
+        _ => unreachable!("trunk gate rejects non-Rust/C11 languages"),
+    };
+    Ok(Some((filename, code)))
+}
+
+/// Lower a `DecodedFieldValue` to the per-language literal expression
+/// that constructs the value at the test call site. Returns the Rust
+/// + C11 literal pair (other backends defer to closures).
+fn lower_decoded_field_value(
+    value: &crate::forge::model::DecodedFieldValue,
+    sce_type: &crate::forge::model::SceType,
+    codec_name: &str,
+) -> Result<(String, String), ForgeError> {
+    use crate::forge::error::GenerateError;
+    use crate::forge::model::{DecodedFieldValue, SceType};
+
+    match (value, sce_type) {
+        (DecodedFieldValue::Bool(b), SceType::Bool) => Ok((
+            (if *b { "true" } else { "false" }).to_string(),
+            (if *b { "true" } else { "false" }).to_string(),
+        )),
+        (DecodedFieldValue::Uint(u), ty) if ty.is_unsigned() => {
+            let suffix_rust = match ty {
+                SceType::Uint8 => "u8",
+                SceType::Uint16 => "u16",
+                SceType::Uint32 => "u32",
+                SceType::Uint64 => "u64",
+                _ => unreachable!("is_unsigned guard"),
+            };
+            let c_cast = match ty {
+                SceType::Uint8 => "uint8_t",
+                SceType::Uint16 => "uint16_t",
+                SceType::Uint32 => "uint32_t",
+                SceType::Uint64 => "uint64_t",
+                _ => unreachable!("is_unsigned guard"),
+            };
+            // C11 uses unsigned long long for u64 to keep literals
+            // lossless across platforms (uint64_t cast preserves the
+            // typed result).
+            let c_suffix = match ty {
+                SceType::Uint64 => "uLL",
+                _ => "u",
+            };
+            Ok((
+                format!("0x{u:x}{suffix_rust}"),
+                format!("({c_cast})0x{u:x}{c_suffix}"),
+            ))
+        }
+        (DecodedFieldValue::Int(i), ty) if ty.is_signed() => {
+            let suffix_rust = match ty {
+                SceType::Int8 => "i8",
+                SceType::Int16 => "i16",
+                SceType::Int32 => "i32",
+                SceType::Int64 => "i64",
+                _ => unreachable!("is_signed guard"),
+            };
+            let c_cast = match ty {
+                SceType::Int8 => "int8_t",
+                SceType::Int16 => "int16_t",
+                SceType::Int32 => "int32_t",
+                SceType::Int64 => "int64_t",
+                _ => unreachable!("is_signed guard"),
+            };
+            Ok((
+                format!("{i}{suffix_rust}"),
+                format!("({c_cast})({i})"),
+            ))
+        }
+        (DecodedFieldValue::Bytes(bs), SceType::Bytes) => {
+            // Rust: `vec![0xCA, 0xFE]` — owned because the codec
+            // struct field is `Vec<u8>` (decode emits owned bytes).
+            // C11: build a `sce_forge_bytes_t` at the call site by
+            // setting `data[i]` + `len` from a static const initializer
+            // — emitted at the template level, so we just hand the
+            // raw byte literal sequence.
+            let rust = if bs.is_empty() {
+                // Type annotation required so `assert_eq!(actual, expected)`
+                // can resolve the equality comparison without help from
+                // surrounding context — the test sidecar is included via
+                // `include!()` and has no struct-field hint at the
+                // assertion call site.
+                "Vec::<u8>::new()".to_string()
+            } else {
+                let parts: Vec<String> = bs.iter().map(|b| format!("0x{b:02x}")).collect();
+                format!("vec![{}]", parts.join(", "))
+            };
+            let c = if bs.is_empty() {
+                String::new()
+            } else {
+                bs.iter()
+                    .map(|b| format!("0x{b:02x}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            Ok((rust, c))
+        }
+        (DecodedFieldValue::String(s), SceType::String) => {
+            // Rust: `String::from("...")`. C11: bare string literal —
+            // template uses `strlen` + `memcpy` to load into the
+            // codec field's `char data[N]; size_t len;` pair.
+            // Both sides get the same JSON-escaped content so embedded
+            // quotes / backslashes round-trip safely.
+            let escaped = s
+                .chars()
+                .flat_map(|c| match c {
+                    '\\' => "\\\\".chars().collect::<Vec<_>>(),
+                    '"' => "\\\"".chars().collect(),
+                    '\n' => "\\n".chars().collect(),
+                    '\r' => "\\r".chars().collect(),
+                    '\t' => "\\t".chars().collect(),
+                    other => vec![other],
+                })
+                .collect::<String>();
+            Ok((
+                format!("String::from(\"{escaped}\")"),
+                format!("\"{escaped}\""),
+            ))
+        }
+        (val, ty) => Err(ForgeError::Generate(GenerateError::UnsupportedFeature(format!(
+            "codec '{codec_name}': <sce:test-vector> field value {val:?} does not match codec \
+             field SceType {ty:?} — parser invariant violated"
+        )))),
+    }
 }
 
 /// Lower every `<sce:const>` declaration in an `AlgorithmModel` to a

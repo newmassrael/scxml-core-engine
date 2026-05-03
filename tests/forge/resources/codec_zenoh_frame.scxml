@@ -30,4 +30,25 @@
     <sce:field id="payload" sce:type="bytes"  sce:byte="1" sce:bit-size="tail"
                sce:max-size="65536"/>
   </datamodel>
+  <!-- RFC §5.B B5-θ inline test vectors. Pinned VLE width boundaries
+       (1-byte: sn=0/127, 2-byte: sn=128) + per-row tail-bytes payload
+       to exercise the cursor-advance branch composition. Mirrors the
+       4-case set in numerical_reference.json so the inline anchor and
+       the bulk JSON oracle stay in lockstep. -->
+  <sce:test-vector hex="00">
+    <sce:decoded field="sn" value="0"/>
+    <sce:decoded field="payload" hex=""/>
+  </sce:test-vector>
+  <sce:test-vector hex="01cafe">
+    <sce:decoded field="sn" value="1"/>
+    <sce:decoded field="payload" hex="cafe"/>
+  </sce:test-vector>
+  <sce:test-vector hex="7faabbcc">
+    <sce:decoded field="sn" value="127"/>
+    <sce:decoded field="payload" hex="aabbcc"/>
+  </sce:test-vector>
+  <sce:test-vector hex="8001dead">
+    <sce:decoded field="sn" value="128"/>
+    <sce:decoded field="payload" hex="dead"/>
+  </sce:test-vector>
 </scxml>

@@ -1,0 +1,154 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+{# RFC §5.B B5-θ codec test-vector sidecar (C11). Aggregates every
+   `<sce:test-vector>` row into a single
+   `static inline int test_vector_<fixture>(void)` that returns the
+   row-failure count; the C11 conformance harness folds the return
+   value into its global `g_failures` counter (matches the
+   algorithm-side B2 contract verbatim). Trunk lands on plain codecs
+   only (variant / TLV-chain / parent-flags / repeat / present-if
+   reject upstream in `render_codec_test_vector_sidecar` so the
+   author sees a precise gate error rather than a broken sidecar).
+
+   Per-field assertion shapes:
+     - integer / bool : `actual.<f> != expected` numeric compare
+     - bytes (uint8_t[N] + size_t len): memcmp + length compare
+     - string (char[N] + size_t len): memcmp + length compare (the
+       wire field stores raw UTF-8 bytes — NOT NUL-terminated). #}
+
+/* SCE Forge: Auto-generated codec test-vector sidecar (RFC §5.B B5-θ) */
+/* Companion to {{ name }}.h — do not edit; regenerate from the source SCXML. */
+
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <stdio.h>
+#include <string.h>
+#include "{{ name }}.h"
+
+static inline int test_vector_{{ name }}(void) {
+    int failures = 0;
+{% for tv in test_vectors %}
+    {
+        {{ name }}_t actual = {0};
+{% for f in tv.fields %}
+{% if f.is_bytes %}
+        {
+{% if f.value_literal_c %}
+            static const uint8_t _bytes[] = {{ '{' }} {{ f.value_literal_c }} {{ '}' }};
+            memcpy(actual.{{ f.name_snake }}, _bytes, sizeof _bytes);
+            actual.{{ f.name_snake }}_len = sizeof _bytes;
+{% else %}
+            actual.{{ f.name_snake }}_len = 0;
+{% endif %}
+        }
+{% elif f.is_string %}
+        {
+            static const char _str[] = {{ f.value_literal_c }};
+            /* sizeof _str includes the implicit NUL terminator; the
+             * codec field stores raw UTF-8 bytes (no NUL) so subtract 1.
+             * The decoder writes the byte length into the codec's
+             * matching `<id>_len` companion (or directly to `len` for
+             * the locator-style pair where the VLE-prefix field IS the
+             * length sibling). */
+            size_t _str_len = sizeof _str - 1;
+            memcpy(actual.{{ f.name_snake }}, _str, _str_len);
+        }
+{% else %}
+        actual.{{ f.name_snake }} = {{ f.value_literal_c }};
+{% endif %}
+{% endfor %}
+        {{ name }}_encoded_t encoded = {{ name }}_encode(&actual);
+{% if tv.hex_bytes %}
+        static const uint8_t _expected[] = {{ '{' }} {{ tv.hex_bytes_literal_c }} {{ '}' }};
+        if (encoded.len != sizeof _expected
+            || memcmp(encoded.bytes, _expected, encoded.len) != 0) {
+            fprintf(stderr,
+                "FAIL: {{ name }} test_vector @SCXML L{{ tv.source_line }}: "
+                "encode length=%zu (expected %zu)\n",
+                encoded.len, sizeof _expected);
+            ++failures;
+        }
+        sce_forge_cursor_t _cursor = sce_forge_cursor_init(_expected, sizeof _expected);
+{% else %}
+        if (encoded.len != 0) {
+            fprintf(stderr,
+                "FAIL: {{ name }} test_vector @SCXML L{{ tv.source_line }}: "
+                "expected empty encode, got len=%zu\n",
+                encoded.len);
+            ++failures;
+        }
+        sce_forge_cursor_t _cursor = sce_forge_cursor_init(NULL, 0);
+{% endif %}
+        {{ name }}_t decoded = {0};
+        sce_forge_codec_status_t _st = {{ name }}_decode(&_cursor, &decoded);
+        if (_st != SCE_FORGE_CODEC_OK) {
+            fprintf(stderr,
+                "FAIL: {{ name }} test_vector @SCXML L{{ tv.source_line }}: "
+                "decode status=%d\n", (int)_st);
+            ++failures;
+        } else if (sce_forge_cursor_remaining(&_cursor) != 0) {
+            fprintf(stderr,
+                "FAIL: {{ name }} test_vector @SCXML L{{ tv.source_line }}: "
+                "decode left %zu bytes unconsumed\n",
+                sce_forge_cursor_remaining(&_cursor));
+            ++failures;
+        } else {
+{% for f in tv.fields %}
+{% if f.is_bytes %}
+            {
+{% if f.value_literal_c %}
+                static const uint8_t _expected_field[] = {{ '{' }} {{ f.value_literal_c }} {{ '}' }};
+                if (decoded.{{ f.name_snake }}_len != sizeof _expected_field
+                    || memcmp(decoded.{{ f.name_snake }},
+                              _expected_field,
+                              decoded.{{ f.name_snake }}_len) != 0) {
+                    fprintf(stderr,
+                        "FAIL: {{ name }} test_vector @SCXML L{{ tv.source_line }}: "
+                        "field `{{ f.name_snake }}` (bytes) mismatch\n");
+                    ++failures;
+                }
+{% else %}
+                if (decoded.{{ f.name_snake }}_len != 0) {
+                    fprintf(stderr,
+                        "FAIL: {{ name }} test_vector @SCXML L{{ tv.source_line }}: "
+                        "field `{{ f.name_snake }}` expected empty bytes, got len=%zu\n",
+                        decoded.{{ f.name_snake }}_len);
+                    ++failures;
+                }
+{% endif %}
+            }
+{% elif f.is_string %}
+            {
+                static const char _expected_str[] = {{ f.value_literal_c }};
+                size_t _expected_len = sizeof _expected_str - 1;
+                /* The string codec uses the VLE-prefix length sibling
+                 * (here `<id>_len`) as the byte count; the field
+                 * `decoded.<id>_len` is set by the decoder. We compare
+                 * raw bytes up to that authoritative length. */
+                if (memcmp(decoded.{{ f.name_snake }},
+                           _expected_str,
+                           _expected_len) != 0) {
+                    fprintf(stderr,
+                        "FAIL: {{ name }} test_vector @SCXML L{{ tv.source_line }}: "
+                        "field `{{ f.name_snake }}` (string) mismatch\n");
+                    ++failures;
+                }
+            }
+{% else %}
+            if (decoded.{{ f.name_snake }} != {{ f.value_literal_c }}) {
+                fprintf(stderr,
+                    "FAIL: {{ name }} test_vector @SCXML L{{ tv.source_line }}: "
+                    "field `{{ f.name_snake }}` mismatch\n");
+                ++failures;
+            }
+{% endif %}
+{% endfor %}
+        }
+    }
+{% endfor %}
+    return failures;
+}
+
+#endif  /* {{ guard }} */

@@ -584,10 +584,43 @@
          - malformed hex / value literal → validation/invalid-attribute
        ═══════════════════════════════════════════════════════════════ -->
 
+  <!-- Algorithm form (B2): attribute `value=` declares the scalar
+       expected return — content is empty.
+       Codec form (B5-θ): nested `<sce:decoded field=...>` rows
+       declare the field-by-field expected struct. The two forms are
+       union'd via choice on the schema; the parser dispatches on
+       `sce:kind` so an algorithm fixture with `<sce:decoded>` rows
+       (or vice versa) rejects with a precise validation error
+       upstream of XSD. -->
   <xs:element name="test-vector">
     <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="sce:decoded"/>
+      </xs:choice>
       <xs:attribute name="hex" type="xs:string" use="required"/>
-      <xs:attribute name="value" type="xs:string" use="required"/>
+      <!-- `value` is required for algorithm form (B2); codec form
+           (B5-θ) sets it via nested <sce:decoded> rows instead. The
+           parser enforces the per-kind requirement; making `value`
+           optional here keeps the XSD a structural surface and lets
+           the kind-aware parser return the precise diagnostic. -->
+      <xs:attribute name="value" type="xs:string" use="optional"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- RFC §5.B B5-θ codec test-vector field assignment. Trunk shape:
+       `<sce:decoded field="..." (value|hex|string)="..."/>`.
+       Variant / TLV-chain / repeat closures will add sibling element
+       names (`<sce:decoded-variant>`, `<sce:decoded-chain>`,
+       `<sce:decoded-entry>`); v1 only declares the leaf field form. -->
+  <xs:element name="decoded">
+    <xs:complexType>
+      <xs:attribute name="field" type="xs:string" use="required"/>
+      <!-- Exactly one of value / hex / string must be set (the parser
+           validates this — XSD's xs:choice across attributes is not
+           expressible without elaborate typing tricks). -->
+      <xs:attribute name="value" type="xs:string" use="optional"/>
+      <xs:attribute name="hex" type="xs:string" use="optional"/>
+      <xs:attribute name="string" type="xs:string" use="optional"/>
     </xs:complexType>
   </xs:element>
 

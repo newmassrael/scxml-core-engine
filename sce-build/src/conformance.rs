@@ -328,6 +328,18 @@ pub enum FixtureSpec {
     /// naming convention.
     Codec {
         fields: Vec<StructField>,
+        /// RFC §5.B B5-θ: derived at harness-rendering time from
+        /// SCXML — true iff at least one `<sce:test-vector>` element
+        /// appears under the codec root. Trunk emits the per-backend
+        /// sidecar (`<fixture>_test.{rs,h}`) on Rust + C11 only;
+        /// Cpp/Kotlin/Go/Python harnesses skip the codec sidecar
+        /// until B5-θ closures land (mirrors algorithm
+        /// `has_test_vectors` precedent). Empty in fixtures.json
+        /// (manifest-side override is rejected); computed by
+        /// `read_codec_has_test_vectors` so the SCXML stays the
+        /// single source of truth.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        has_test_vectors: bool,
     },
     /// Timer scheduler. Generated struct wraps N timer HAL instances and
     /// exposes `start<Timer>()` / `cancel<Timer>()` pairs. The conformance
@@ -365,7 +377,7 @@ pub enum FixtureSpec {
         /// Cpp/Kotlin/Go/Python harnesses until those closures land
         /// (mirrors B1-β codec_variant_dispatch's per-language gate).
         /// Empty in fixtures.json (manifest-side override is rejected);
-        /// computed by `read_algorithm_has_test_vectors` so the SCXML
+        /// computed by `has_test_vectors_in_file` so the SCXML
         /// stays the single source of truth.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         has_test_vectors: bool,
@@ -781,13 +793,21 @@ impl Manifest {
                         ));
                     }
                 }
-                FixtureSpec::Codec { fields: _, .. } => {
+                FixtureSpec::Codec { fields: _, has_test_vectors } => {
                     // RFC §5.B B5-α empty-codec lift: zero-field codecs
                     // (Zenoh KeepAlive et al.) are permitted. The
                     // round-trip test body still asserts encode →
                     // decode → encoded byte parity (an empty body
                     // round-trips an empty byte sequence), so the
                     // harness is not assertion-free.
+                    if *has_test_vectors {
+                        return Err(format!(
+                            "fixture {}: codec `has_test_vectors` is \
+                             derived from the SCXML (presence of \
+                             <sce:test-vector>); remove it from fixtures.json",
+                            f.name
+                        ));
+                    }
                 }
                 FixtureSpec::Procedure {
                     helpers_ordered,
@@ -1193,24 +1213,30 @@ fn read_lookup_enum_values(scxml_path: &Path) -> Result<Vec<String>, String> {
 /// stateless free-function call shape and the stateful struct + pointer
 /// pass shape (RFC §5.J.2 V2c). Other backends emit uniform method calls
 /// regardless of state and ignore the flag.
-/// RFC §5.B B2-test-vector: scan the algorithm SCXML root for any
+/// RFC §5.B B2/B5-θ test-vector: scan an SCXML root for any
 /// `<sce:test-vector>` child element. The forge parser already
-/// validates the attributes (hex even-length, value matches return
-/// type, kind == algorithm) and stores the parsed vectors on
-/// `AlgorithmModel.test_vectors`; this scan only needs to surface
-/// whether any are present so the harness filter can pick the right
-/// `(kind, language)` matrix arm. Returns false when the file contains
-/// zero `<sce:test-vector>` children, matching the no-sidecar default.
+/// validates the attributes and stores the parsed vectors on
+/// `AlgorithmModel.test_vectors` (B2) or `CodecModel.test_vectors`
+/// (B5-θ); this scan only needs to surface whether any are present
+/// so the harness filter can pick the right `(kind, language)`
+/// matrix arm. Returns false when the file contains zero
+/// `<sce:test-vector>` children, matching the no-sidecar default.
+/// The element is kind-agnostic — both algorithm and codec roots
+/// declare it, and the per-language sidecar emitter dispatches on
+/// the model kind.
 ///
 /// Exposed publicly under the `has_test_vectors` re-export so the
 /// `sce-codegen list-fixtures --has-test-vectors` CLI can drive the
 /// cmake harness's sidecar OUTPUT enumeration from the same SCXML
 /// scan as the harness renderer.
 pub fn has_test_vectors(scxml_path: &Path) -> Result<bool, String> {
-    read_algorithm_has_test_vectors(scxml_path)
+    has_test_vectors_in_file(scxml_path)
 }
 
-fn read_algorithm_has_test_vectors(scxml_path: &Path) -> Result<bool, String> {
+/// Internal helper used by `render_harness` enrichment so the
+/// destructured-field binding `has_test_vectors` (a `&mut bool`)
+/// does not shadow the kind-agnostic public scan function.
+fn has_test_vectors_in_file(scxml_path: &Path) -> Result<bool, String> {
     let text = std::fs::read_to_string(scxml_path)
         .map_err(|e| format!("cannot read {}: {e}", scxml_path.display()))?;
     let doc = roxmltree::Document::parse(&text)
@@ -1406,9 +1432,29 @@ pub fn render_harness(
                     }
                 }
             }
+            FixtureSpec::Codec { has_test_vectors, .. } => {
+                // RFC §5.B B5-θ: enrich the manifest with the SCXML-derived
+                // `<sce:test-vector>` flag so the per-language harness
+                // fragment can fold the per-fixture sidecar's failure
+                // count into the global accumulator without re-scanning
+                // the SCXML at every render site. Trunk lands on Rust +
+                // C11 only — for Cpp / Kotlin / Go / Python the
+                // `render_codec_test_vector_sidecar` gate returns
+                // `Ok(None)` so no sidecar file exists; the harness
+                // must therefore skip the `#include`. Force the flag
+                // false on those 4 backends until per-language B5-θ
+                // closures land (mirrors the rotating gate-rejection
+                // tests in `forge_conformance.rs`).
+                let scxml_path = resource_dir.join(format!("{}.scxml", fixture_name));
+                *has_test_vectors = if matches!(language, Language::Rust | Language::C11) {
+                    has_test_vectors_in_file(&scxml_path)?
+                } else {
+                    false
+                };
+            }
             FixtureSpec::Algorithm { function, has_test_vectors, .. } => {
                 let scxml_path = resource_dir.join(format!("{}.scxml", fixture_name));
-                *has_test_vectors = read_algorithm_has_test_vectors(&scxml_path)?;
+                *has_test_vectors = has_test_vectors_in_file(&scxml_path)?;
                 // RFC §7 A5/A6: C11 algorithm template emits a free function
                 // named exactly `<algorithm_snake>` (no fixture prefix because
                 // the algorithm name *is* the fixture stem in every shipped

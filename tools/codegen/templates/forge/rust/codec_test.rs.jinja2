@@ -1,0 +1,46 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+{# RFC §5.B B5-θ codec test-vector sidecar. Each row pins one wire
+   `hex` byte sequence to a flat `<sce:decoded>` field tree; the
+   emitted `#[test]` builds the codec struct, asserts encode → bytes
+   parity, then decodes the same bytes back and asserts every field
+   matches. Trunk lands on plain (non-variant, non-TLV-chain, non-
+   parent-flags, non-repeat, non-present-if) codecs only — those
+   shapes reject upstream in `render_codec_test_vector_sidecar` so
+   authors get a precise gate error rather than a broken sidecar. #}
+
+// SCE Forge: Auto-generated codec test-vector sidecar (RFC §5.B B5-θ)
+// Companion to {{ name }}.rs — do not edit; regenerate from the source SCXML.
+
+{% for tv in test_vectors %}
+#[test]
+fn test_vector_{{ name }}_l{{ tv.source_line }}() {
+    let actual = {{ name_pascal }} {
+{% for f in tv.fields %}
+        {{ f.name_snake }}: {{ f.value_literal_rust }},
+{% endfor %}
+    };
+    let encoded = actual.encode();
+    let expected: &[u8] = {{ tv.bytes_literal_rust }};
+    assert_eq!(
+        encoded.as_slice(), expected,
+        "<sce:test-vector> at SCXML L{{ tv.source_line }}: encode produced {:?}, expected {:?}",
+        encoded, expected
+    );
+    let mut cursor = SceCursor::new(expected);
+    let decoded = {{ name_pascal }}::decode(&mut cursor)
+        .expect("<sce:test-vector> at SCXML L{{ tv.source_line }}: decode failed");
+    assert_eq!(
+        cursor.remaining(), 0,
+        "<sce:test-vector> at SCXML L{{ tv.source_line }}: decode left {} bytes unconsumed",
+        cursor.remaining()
+    );
+{% for f in tv.fields %}
+    assert_eq!(
+        decoded.{{ f.name_snake }}, {{ f.value_literal_rust }},
+        "<sce:test-vector> at SCXML L{{ tv.source_line }}: field `{{ f.name_snake }}` mismatch"
+    );
+{% endfor %}
+}
+{% endfor %}

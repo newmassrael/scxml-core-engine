@@ -3568,15 +3568,15 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:f1e97717ebdba39a","code":"codec/repeat-count-refs-later-field","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'fragment_burst': repeat field 'frags' has sce:count=\"num_frags\" but 'num_frags' is not declared earlier in this codec — repeat count references must resolve to a sibling integer field that the streaming decoder has already consumed; reorder the fields so the count comes first, or correct the attribute","actual":"frags"}"#,
             ),
-            // ── §5.B test-vector primitive (watching-zenoh RFC §5.B, B2-test-vector) ─
+            // ── §5.B test-vector primitive (watching-zenoh RFC §5.B, B2 + B5-θ) ─
             (
                 "forge/algorithm-test-vector-unsupported-kind",
                 ValidationError::TestVectorUnsupportedKind {
-                    name: "session_envelope".into(),
-                    kind: ForgeKind::Codec,
+                    name: "session_filter".into(),
+                    kind: ForgeKind::Filter,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:7f83a6a6349e726e","code":"algorithm/test-vector-unsupported-kind","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"<sce:test-vector> is only supported on sce:kind=\"algorithm\" in v1, but 'session_envelope' declares sce:kind=\"Codec\" — multi-field codec test vectors defer to B5 (Zenoh msg-set authoring); use the numerical_reference.json oracle harness for codec round-trips until then","actual":"session_envelope"}"#,
+                r#"{"v":1,"id":"fnv1a:b10188077e684de4","code":"algorithm/test-vector-unsupported-kind","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"<sce:test-vector> is only supported on sce:kind=\"algorithm\" (B2) and sce:kind=\"codec\" (B5-θ), but 'session_filter' declares sce:kind=\"Filter\" — move the test vector to an algorithm/codec file or use the kind-specific harness oracle","actual":"session_filter"}"#,
             ),
             // ── §5.B B3 TLV chain primitive (watching-zenoh RFC §5.B) ─
             (

@@ -30,4 +30,25 @@
     <sce:field id="locator" sce:type="string" sce:byte="1" sce:bit-size="length-ref"
                sce:length-field="locator_len" sce:max-size="128"/>
   </datamodel>
+  <!-- RFC §5.B B5-θ inline test vectors. Pinned single-byte / multi-
+       byte UTF-8 round-trips so the byte-count semantics ("héllo" = 6
+       bytes for 5 codepoints — the é is 0xC3 0xA9) are exercised on
+       both encode and decode paths. The sidecar's UTF-8 validator
+       runs only on the decode side; encode trusts the host invariant. -->
+  <sce:test-vector hex="00">
+    <sce:decoded field="locator_len" value="0"/>
+    <sce:decoded field="locator" string=""/>
+  </sce:test-vector>
+  <sce:test-vector hex="03616263">
+    <sce:decoded field="locator_len" value="3"/>
+    <sce:decoded field="locator" string="abc"/>
+  </sce:test-vector>
+  <sce:test-vector hex="127463702f3132372e302e302e313a37343437">
+    <sce:decoded field="locator_len" value="18"/>
+    <sce:decoded field="locator" string="tcp/127.0.0.1:7447"/>
+  </sce:test-vector>
+  <sce:test-vector hex="0668c3a96c6c6f">
+    <sce:decoded field="locator_len" value="6"/>
+    <sce:decoded field="locator" string="héllo"/>
+  </sce:test-vector>
 </scxml>

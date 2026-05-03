@@ -173,6 +173,47 @@ fn assert_sidecar_forge_lang(
     );
 }
 
+/// RFC §5.B B5-θ codec test-vector trunk gate-rejection helper.
+/// Asserts that compiling the named codec SCXML for the given
+/// language yields exactly one output file (the primary codec
+/// header / module) — i.e. no sidecar emission. The 4 trunk-gated
+/// backends (Cpp / Kotlin / Go / Python) take this path until per-
+/// language B5-θ closures land; once a closure lifts the gate, the
+/// matching `forge_codec_..._<lang>_no_sidecar_until_closure` test
+/// rotates to a positive `assert_sidecar_forge_lang(...)` call.
+fn assert_no_codec_sidecar_until_closure(
+    scxml_name: &str,
+    language: sce_build::generator::Language,
+) {
+    let scxml_path = resource_dir().join(format!("{scxml_name}.scxml"));
+    let content = std::fs::read_to_string(&scxml_path)
+        .unwrap_or_else(|e| panic!("Cannot read {}: {e}", scxml_path.display()));
+    let stem = scxml_name;
+    let base_dir = scxml_path.parent().unwrap();
+    let options = golden_options(language);
+    let output = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric(stem),
+        language,
+        base_dir,
+        &options,
+    )
+    .unwrap_or_else(|e| {
+        panic!(
+            "Trunk gate expects primary codec to compile cleanly for \
+             {scxml_name} ({language:?}); got error: {e}"
+        )
+    });
+    assert_eq!(
+        output.files.len(),
+        1,
+        "B5-θ trunk gate: codec '{scxml_name}' on {language:?} must emit exactly one file \
+         (primary codec, no sidecar). Got {} files: {:?}",
+        output.files.len(),
+        output.files.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>()
+    );
+}
+
 /// Strip path-dependent comment lines for comparison.
 /// Handles `// From: ...` (C++/Rust/Go) and `// Source: ...` (Kotlin).
 fn normalize_for_comparison(code: &str) -> String {
@@ -535,6 +576,137 @@ fn forge_cpp_algorithm_crc16_test_vector_sidecar() {
         "algorithm_crc16_test.h",
         sce_build::generator::Language::Cpp,
     );
+}
+
+// ── RFC §5.B B5-θ codec test-vector sidecars (Rust + C11 trunk) ───
+//
+// 3 fixtures × 2 backends = 6 positive sidecar emissions; each row
+// builds the codec struct from declared `<sce:decoded>` field
+// values, encodes → asserts byte parity vs the row's `hex`, decodes
+// → asserts every field round-trips. Cpp / Kotlin / Go / Python
+// stay in the gate-rejection bucket (12 negative tests below) until
+// per-language B5-θ closures lift the trunk gate.
+
+#[test]
+fn forge_rust_codec_zenoh_close_test_vector_sidecar() {
+    assert_sidecar_forge_lang(
+        "codec_zenoh_close",
+        "codec_zenoh_close_test.rs",
+        sce_build::generator::Language::Rust,
+    );
+}
+
+#[test]
+fn forge_c11_codec_zenoh_close_test_vector_sidecar() {
+    assert_sidecar_forge_lang(
+        "codec_zenoh_close",
+        "codec_zenoh_close_test.c.h",
+        sce_build::generator::Language::C11,
+    );
+}
+
+#[test]
+fn forge_rust_codec_zenoh_frame_test_vector_sidecar() {
+    assert_sidecar_forge_lang(
+        "codec_zenoh_frame",
+        "codec_zenoh_frame_test.rs",
+        sce_build::generator::Language::Rust,
+    );
+}
+
+#[test]
+fn forge_c11_codec_zenoh_frame_test_vector_sidecar() {
+    assert_sidecar_forge_lang(
+        "codec_zenoh_frame",
+        "codec_zenoh_frame_test.c.h",
+        sce_build::generator::Language::C11,
+    );
+}
+
+#[test]
+fn forge_rust_codec_zenoh_locator_test_vector_sidecar() {
+    assert_sidecar_forge_lang(
+        "codec_zenoh_locator",
+        "codec_zenoh_locator_test.rs",
+        sce_build::generator::Language::Rust,
+    );
+}
+
+#[test]
+fn forge_c11_codec_zenoh_locator_test_vector_sidecar() {
+    assert_sidecar_forge_lang(
+        "codec_zenoh_locator",
+        "codec_zenoh_locator_test.c.h",
+        sce_build::generator::Language::C11,
+    );
+}
+
+// ── B5-θ trunk gate-rejection: 4 backends × 3 fixtures = 12 ────
+//
+// Each test asserts that the named codec compiles cleanly to its
+// primary file but emits NO sidecar on the targeted backend. When
+// per-language closures land, each test rotates to its matching
+// `assert_sidecar_forge_lang(...)` call (mirrors B1-β / B5-γ /
+// B5-ε / B5-ζ trunk-then-closures rotation pattern).
+
+#[test]
+fn forge_codec_zenoh_close_cpp_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure("codec_zenoh_close", sce_build::generator::Language::Cpp);
+}
+
+#[test]
+fn forge_codec_zenoh_close_kotlin_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure("codec_zenoh_close", sce_build::generator::Language::Kotlin);
+}
+
+#[test]
+fn forge_codec_zenoh_close_go_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure("codec_zenoh_close", sce_build::generator::Language::Go);
+}
+
+#[test]
+fn forge_codec_zenoh_close_python_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure("codec_zenoh_close", sce_build::generator::Language::Python);
+}
+
+#[test]
+fn forge_codec_zenoh_frame_cpp_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure("codec_zenoh_frame", sce_build::generator::Language::Cpp);
+}
+
+#[test]
+fn forge_codec_zenoh_frame_kotlin_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure("codec_zenoh_frame", sce_build::generator::Language::Kotlin);
+}
+
+#[test]
+fn forge_codec_zenoh_frame_go_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure("codec_zenoh_frame", sce_build::generator::Language::Go);
+}
+
+#[test]
+fn forge_codec_zenoh_frame_python_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure("codec_zenoh_frame", sce_build::generator::Language::Python);
+}
+
+#[test]
+fn forge_codec_zenoh_locator_cpp_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure("codec_zenoh_locator", sce_build::generator::Language::Cpp);
+}
+
+#[test]
+fn forge_codec_zenoh_locator_kotlin_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure("codec_zenoh_locator", sce_build::generator::Language::Kotlin);
+}
+
+#[test]
+fn forge_codec_zenoh_locator_go_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure("codec_zenoh_locator", sce_build::generator::Language::Go);
+}
+
+#[test]
+fn forge_codec_zenoh_locator_python_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure("codec_zenoh_locator", sce_build::generator::Language::Python);
 }
 
 // ── §5.F build-time const-fold (Phase A4-β — host interpreter) ──
@@ -1916,36 +2088,129 @@ fn forge_algorithm_test_vector_parses() {
     );
 }
 
+/// RFC §5.B B5-θ positive: a codec with multiple `<sce:test-vector>`
+/// rows parses cleanly into the IR. Pins the field-name resolution
+/// (must match a declared `<sce:field>`), the per-type literal
+/// dispatch (uint integer + bytes hex), and the source_line tracking.
+#[test]
+fn forge_codec_test_vector_parses() {
+    use sce_build::forge::model::{
+        DecodedFieldValue, DecodedValue, ForgeDocument,
+    };
+    use sce_build::forge::parser::parse_forge;
+    use sce_build::DocumentLabel;
+
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="frame_oracle">
+  <datamodel>
+    <sce:field id="sn" sce:type="uint64" sce:byte="0" sce:bit-size="vle"/>
+    <sce:field id="payload" sce:type="bytes" sce:byte="1" sce:bit-size="tail" sce:max-size="32"/>
+  </datamodel>
+  <sce:test-vector hex="01cafe">
+    <sce:decoded field="sn" value="1"/>
+    <sce:decoded field="payload" hex="cafe"/>
+  </sce:test-vector>
+</scxml>"#;
+
+    let doc = parse_forge(scxml, DocumentLabel::symmetric("frame_oracle"))
+        .expect("codec with <sce:test-vector> must parse cleanly")
+        .expect("fixture is sce:kind=\"codec\"");
+    let codec = match doc {
+        ForgeDocument::Codec(m) => m,
+        other => panic!("expected Codec doc, got {:?}", other.kind()),
+    };
+
+    assert_eq!(codec.test_vectors.len(), 1, "fixture declares one <sce:test-vector>");
+    let tv = &codec.test_vectors[0];
+    assert_eq!(tv.hex, vec![0x01, 0xCA, 0xFE]);
+    let DecodedValue::Plain { fields } = &tv.decoded;
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].name, "sn");
+    assert!(matches!(fields[0].value, DecodedFieldValue::Uint(1)));
+    assert_eq!(fields[1].name, "payload");
+    assert!(matches!(&fields[1].value, DecodedFieldValue::Bytes(bs) if bs == &vec![0xCA, 0xFE]));
+}
+
+/// RFC §5.B B5-θ negative: `<sce:decoded field="...">` referencing a
+/// field id that does not exist in the codec rejects with the
+/// generic `validation/invalid-attribute` slot — the repair stays
+/// attribute-text-level so no new diagnostic warranted.
+#[test]
+fn forge_codec_test_vector_unknown_field_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="frame_oracle">
+  <datamodel>
+    <sce:field id="reason" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+  </datamodel>
+  <sce:test-vector hex="01">
+    <sce:decoded field="bogus" value="1"/>
+  </sce:test-vector>
+</scxml>"#;
+
+    let result = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("frame_oracle"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!("<sce:decoded field=\"bogus\"> must reject — bogus is not a declared codec field"),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            err.error,
+            ForgeError::Validation(ValidationError::InvalidAttribute { ref attr, .. })
+                if attr == "field"
+        ),
+        "must surface as ValidationError::InvalidAttribute targeting `field`; got: {:?}",
+        err.error
+    );
+}
+
 /// Negative: `<sce:test-vector>` declared under `sce:kind="codec"` (or
 /// any non-algorithm kind) rejects with the typed
 /// `algorithm/test-vector-unsupported-kind` diagnostic so the v1
 /// algorithm-only restriction is explicit at parse time. Multi-field
-/// codec oracle grammar defers to B5 — until then, codec round-trips
-/// belong in the existing numerical_reference.json harness.
+/// non-supported kinds (filter / transform / lookup / etc.) cannot
+/// host a hex-bytes round-trip oracle in v1 — the parser-side gate
+/// keeps the rejection anchored at the offending element rather
+/// than letting it leak into codegen. B5-θ landed `<sce:test-vector>`
+/// support for codec; this test rotates from "codec rejects" to
+/// "filter still rejects" as the canary for the kind-allowlist gate.
 #[test]
-fn forge_test_vector_on_codec_rejects() {
+fn forge_test_vector_on_filter_rejects() {
     use sce_build::forge::error::{ForgeError, ValidationError};
     use sce_build::forge::model::ForgeKind;
 
     let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="frame_codec">
+       version="1.0" sce:kind="filter" name="session_filter">
   <datamodel>
-    <sce:field id="msg_id" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <data id="rawSignal" sce:type="float64" sce:direction="in"/>
+    <data id="smoothed" sce:type="float64" sce:direction="out"
+          sce:filter="low-pass" sce:alpha="0.1"/>
   </datamodel>
   <sce:test-vector hex="01" value="0x01"/>
 </scxml>"#;
     let result = sce_build::compile_forge_with_imports(
         scxml,
-        sce_build::DocumentLabel::symmetric("frame_codec"),
+        sce_build::DocumentLabel::symmetric("session_filter"),
         sce_build::generator::Language::Rust,
         &resource_dir(),
         &sce_build::ForgeCompileOptions::default(),
     );
     let err = match result {
         Ok(_) => panic!(
-            "<sce:test-vector> under sce:kind=\"codec\" must reject \
+            "<sce:test-vector> under sce:kind=\"filter\" must reject \
              with algorithm/test-vector-unsupported-kind"
         ),
         Err(e) => e,
@@ -1955,8 +2220,8 @@ fn forge_test_vector_on_codec_rejects() {
             err.error,
             ForgeError::Validation(ValidationError::TestVectorUnsupportedKind {
                 ref name,
-                kind: ForgeKind::Codec,
-            }) if name == "frame_codec"
+                kind: ForgeKind::Filter,
+            }) if name == "session_filter"
         ),
         "must surface as ValidationError::TestVectorUnsupportedKind naming the document and the rejected kind; got: {:?}",
         err.error

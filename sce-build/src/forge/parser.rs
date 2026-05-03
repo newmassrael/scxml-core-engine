@@ -140,12 +140,11 @@ fn parse_forge_from_node(
     label: DocumentLabel<'_>,
     kind: ForgeKind,
 ) -> Result<ForgeDocument, Located<ForgeError>> {
-    // RFC §5.B "Test vector": v1 supports algorithm kind only.
-    // Reject `<sce:test-vector>` elements declared under any other
-    // kind here so the rejection anchors at the offending element
-    // rather than at codegen time. Multi-field codec test vectors
-    // defer to B5 alongside the Zenoh msg-set authoring.
-    if !matches!(kind, ForgeKind::Algorithm) {
+    // RFC §5.B "Test vector": v1 supports algorithm kind (B2) and
+    // codec kind (B5-θ). Reject `<sce:test-vector>` elements
+    // declared under any other kind here so the rejection anchors at
+    // the offending element rather than at codegen time.
+    if !matches!(kind, ForgeKind::Algorithm | ForgeKind::Codec) {
         if let Some(tv_node) = find_sce_child(root, "test-vector") {
             return Err(located(
                 &tv_node,
@@ -635,6 +634,15 @@ fn parse_codec(
     // step which has the import set.
     let variant = parse_codec_variant(&datamodel, &fields, label)?;
 
+    // RFC §5.B B5-θ inline test vectors. Parsed against the field list
+    // so each `<sce:decoded field="..." value|hex|string="..."/>` row
+    // resolves to a typed value matching the field's `SceType`. Trunk
+    // accepts plain (non-variant, non-TLV-chain, non-parent-flags)
+    // codecs only — the per-language sidecar emitter rejects the
+    // out-of-trunk shapes through `render_codec_test_vector_sidecar`'s
+    // gate so the parser surface stays uniform across closures.
+    let test_vectors = parse_codec_test_vectors(root, &fields, label)?;
+
     Ok(CodecModel {
         name: label.identifier.to_string(),
         default_endian,
@@ -642,6 +650,7 @@ fn parse_codec(
         fields,
         variant,
         requires_parent_flags,
+        test_vectors,
     })
 }
 
@@ -2338,6 +2347,329 @@ fn validate_codec_dma_alignment(
         }
     }
     Ok(())
+}
+
+// ── RFC §5.B B5-θ codec test-vector parsing ────────────────────
+//
+// `<sce:test-vector hex="cafe">
+//    <sce:decoded field="sn" value="1"/>
+//    <sce:decoded field="payload" hex="ca fe"/>
+//  </sce:test-vector>`
+//
+// Trunk shape: each row binds one wire byte sequence to a flat
+// list of `<sce:decoded>` field assignments. Field name must
+// resolve to a `CodecField` declared in the same codec; the
+// value form (`value=` / `hex=` / `string=`) must match that
+// field's `SceType` (parser rejects mismatches via
+// `validation/invalid-attribute`). Variant / TLV-chain / parent-
+// flags codecs reject downstream at the per-language sidecar
+// emitter so the parser surface stays uniform.
+
+fn parse_codec_test_vectors(
+    root: &roxmltree::Node,
+    fields: &[CodecField],
+    label: DocumentLabel<'_>,
+) -> Result<Vec<CodecTestVector>, Located<ForgeError>> {
+    let mut vectors = Vec::new();
+    for child in root.children().filter(|n| n.is_element()) {
+        if child.tag_name().namespace() != Some(SCE_NAMESPACE)
+            || child.tag_name().name() != "test-vector"
+        {
+            continue;
+        }
+        vectors.push(parse_one_codec_test_vector(&child, fields, label)?);
+    }
+    Ok(vectors)
+}
+
+fn parse_one_codec_test_vector(
+    node: &roxmltree::Node,
+    fields: &[CodecField],
+    label: DocumentLabel<'_>,
+) -> Result<CodecTestVector, Located<ForgeError>> {
+    let hex_attr = node.attribute("hex").ok_or_else(|| {
+        located(
+            node,
+            label.diagnostic_label,
+            ValidationError::MissingAttribute {
+                element: "sce:test-vector".into(),
+                attr: "hex".into(),
+            },
+        )
+    })?;
+    let hex = decode_hex(&strip_hex_whitespace(hex_attr)).map_err(|reason| {
+        located(
+            node,
+            label.diagnostic_label,
+            ValidationError::InvalidAttribute {
+                element: "sce:test-vector".into(),
+                attr: "hex".into(),
+                value: hex_attr.to_string(),
+                expected: reason,
+            },
+        )
+    })?;
+
+    let mut decoded_fields = Vec::new();
+    for child in node.children().filter(|n| n.is_element()) {
+        if child.tag_name().namespace() != Some(SCE_NAMESPACE) {
+            continue;
+        }
+        match child.tag_name().name() {
+            "decoded" => {
+                decoded_fields.push(parse_one_decoded_field(&child, fields, label)?);
+            }
+            other => {
+                return Err(located(
+                    &child,
+                    label.diagnostic_label,
+                    ValidationError::InvalidAttribute {
+                        element: "sce:test-vector".into(),
+                        attr: "<child element>".into(),
+                        value: format!("sce:{other}"),
+                        expected: "B5-θ trunk only accepts <sce:decoded field=\"...\" \
+                                   value|hex|string=\"...\"/> children; \
+                                   <sce:decoded-variant>/<sce:decoded-chain>/<sce:decoded-entry> \
+                                   defer to B5-θ closures"
+                            .into(),
+                    },
+                ));
+            }
+        }
+    }
+
+    Ok(CodecTestVector {
+        hex,
+        decoded: DecodedValue::Plain { fields: decoded_fields },
+        source_line: node.document().text_pos_at(node.range().start).row as usize,
+    })
+}
+
+fn parse_one_decoded_field(
+    node: &roxmltree::Node,
+    fields: &[CodecField],
+    label: DocumentLabel<'_>,
+) -> Result<DecodedField, Located<ForgeError>> {
+    let name = node.attribute("field").ok_or_else(|| {
+        located(
+            node,
+            label.diagnostic_label,
+            ValidationError::MissingAttribute {
+                element: "sce:decoded".into(),
+                attr: "field".into(),
+            },
+        )
+    })?;
+    let codec_field = fields.iter().find(|f| f.id == name).ok_or_else(|| {
+        located(
+            node,
+            label.diagnostic_label,
+            ValidationError::InvalidAttribute {
+                element: "sce:decoded".into(),
+                attr: "field".into(),
+                value: name.to_string(),
+                expected: format!(
+                    "field name must resolve to a <sce:field>/<sce:flags> declared in this \
+                     codec; available: {}",
+                    fields
+                        .iter()
+                        .map(|f| f.id.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                ),
+            },
+        )
+    })?;
+
+    let value_attr = node.attribute("value");
+    let hex_attr = node.attribute("hex");
+    let string_attr = node.attribute("string");
+    let n_set =
+        usize::from(value_attr.is_some()) + usize::from(hex_attr.is_some()) + usize::from(string_attr.is_some());
+    if n_set != 1 {
+        return Err(located(
+            node,
+            label.diagnostic_label,
+            ValidationError::InvalidAttribute {
+                element: "sce:decoded".into(),
+                attr: "value|hex|string".into(),
+                value: format!("{n_set} of value/hex/string attributes set"),
+                expected: "exactly one of value=, hex=, or string= must be set per <sce:decoded> row"
+                    .into(),
+            },
+        ));
+    }
+
+    let typed = match &codec_field.sce_type {
+        SceType::Bytes => {
+            let raw = hex_attr.ok_or_else(|| located(
+                node,
+                label.diagnostic_label,
+                ValidationError::InvalidAttribute {
+                    element: "sce:decoded".into(),
+                    attr: "value-form".into(),
+                    value: "value= or string=".into(),
+                    expected: format!(
+                        "field '{}' has SceType::Bytes — must use hex=\"...\" form",
+                        codec_field.id
+                    ),
+                },
+            ))?;
+            let bytes = decode_hex(&strip_hex_whitespace(raw)).map_err(|reason| {
+                located(
+                    node,
+                    label.diagnostic_label,
+                    ValidationError::InvalidAttribute {
+                        element: "sce:decoded".into(),
+                        attr: "hex".into(),
+                        value: raw.to_string(),
+                        expected: reason,
+                    },
+                )
+            })?;
+            DecodedFieldValue::Bytes(bytes)
+        }
+        SceType::String => {
+            let s = string_attr.ok_or_else(|| located(
+                node,
+                label.diagnostic_label,
+                ValidationError::InvalidAttribute {
+                    element: "sce:decoded".into(),
+                    attr: "value-form".into(),
+                    value: "value= or hex=".into(),
+                    expected: format!(
+                        "field '{}' has SceType::String — must use string=\"...\" form",
+                        codec_field.id
+                    ),
+                },
+            ))?;
+            DecodedFieldValue::String(s.to_string())
+        }
+        SceType::Bool => {
+            let v = value_attr.ok_or_else(|| located(
+                node,
+                label.diagnostic_label,
+                ValidationError::InvalidAttribute {
+                    element: "sce:decoded".into(),
+                    attr: "value-form".into(),
+                    value: "hex= or string=".into(),
+                    expected: format!(
+                        "field '{}' has SceType::Bool — must use value=\"true|false\"",
+                        codec_field.id
+                    ),
+                },
+            ))?;
+            match v.trim() {
+                "true" => DecodedFieldValue::Bool(true),
+                "false" => DecodedFieldValue::Bool(false),
+                _ => {
+                    return Err(located(
+                        node,
+                        label.diagnostic_label,
+                        ValidationError::InvalidAttribute {
+                            element: "sce:decoded".into(),
+                            attr: "value".into(),
+                            value: v.to_string(),
+                            expected: "boolean literal 'true' or 'false'".into(),
+                        },
+                    ));
+                }
+            }
+        }
+        ty if ty.is_unsigned() || ty.is_signed() => {
+            let v = value_attr.ok_or_else(|| located(
+                node,
+                label.diagnostic_label,
+                ValidationError::InvalidAttribute {
+                    element: "sce:decoded".into(),
+                    attr: "value-form".into(),
+                    value: "hex= or string=".into(),
+                    expected: format!(
+                        "field '{}' has integer SceType — must use value=\"...\" form",
+                        codec_field.id
+                    ),
+                },
+            ))?;
+            parse_decoded_int_literal(v, ty).map_err(|reason| {
+                located(
+                    node,
+                    label.diagnostic_label,
+                    ValidationError::InvalidAttribute {
+                        element: "sce:decoded".into(),
+                        attr: "value".into(),
+                        value: v.to_string(),
+                        expected: reason,
+                    },
+                )
+            })?
+        }
+        other => {
+            return Err(located(
+                node,
+                label.diagnostic_label,
+                ValidationError::InvalidAttribute {
+                    element: "sce:decoded".into(),
+                    attr: "field".into(),
+                    value: name.to_string(),
+                    expected: format!(
+                        "field '{}' has SceType {other:?} which is not yet supported in B5-θ \
+                         test vectors (Bool/integer/Bytes/String only); float closures defer to \
+                         the first float-bearing codec consumer",
+                        codec_field.id
+                    ),
+                },
+            ));
+        }
+    };
+
+    Ok(DecodedField {
+        name: name.to_string(),
+        value: typed,
+    })
+}
+
+/// Strip ASCII whitespace from a hex string so authors can use
+/// space-separated nibbles for readability (`"01 02 03"` ≡ `"010203"`).
+fn strip_hex_whitespace(s: &str) -> String {
+    s.chars().filter(|c| !c.is_ascii_whitespace()).collect()
+}
+
+fn parse_decoded_int_literal(s: &str, return_type: &SceType) -> Result<DecodedFieldValue, String> {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return Err("value attribute is empty".into());
+    }
+    let (negative, digits) = if let Some(rest) = trimmed.strip_prefix('-') {
+        (true, rest.trim_start())
+    } else {
+        (false, trimmed)
+    };
+    let magnitude = if let Some(rest) = digits.strip_prefix("0x").or_else(|| digits.strip_prefix("0X")) {
+        u64::from_str_radix(rest, 16).map_err(|e| format!("invalid hex literal after '0x': {e}"))?
+    } else if let Some(rest) = digits.strip_prefix("0b").or_else(|| digits.strip_prefix("0B")) {
+        u64::from_str_radix(rest, 2).map_err(|e| format!("invalid binary literal after '0b': {e}"))?
+    } else {
+        digits
+            .parse::<u64>()
+            .map_err(|e| format!("invalid decimal integer literal: {e}"))?
+    };
+    if negative {
+        if !return_type.is_signed() {
+            return Err(format!(
+                "negative value not allowed for unsigned field type {return_type:?}"
+            ));
+        }
+        let signed = i64::try_from(magnitude)
+            .map(|n| -n)
+            .map_err(|_| format!("value '-{magnitude}' overflows i64"))?;
+        Ok(DecodedFieldValue::Int(signed))
+    } else if return_type.is_signed() {
+        let signed = i64::try_from(magnitude)
+            .map_err(|_| format!("value '{magnitude}' overflows i64"))?;
+        Ok(DecodedFieldValue::Int(signed))
+    } else {
+        Ok(DecodedFieldValue::Uint(magnitude))
+    }
 }
 
 // ── Validator parsing ──────────────────────────────────────

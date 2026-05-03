@@ -2473,15 +2473,50 @@ fn cmd_list_fixtures(
                     .unwrap_or_else(|| manifest_dir.join("resources"))
             }
         };
+        // Pre-resolve `--language` so the per-kind sidecar gate
+        // (B5-θ codec trunk = Rust + C11 only) can be applied
+        // alongside the SCXML scan in one pass. When `--language`
+        // is unset the per-kind gate stays open for every backend
+        // (matches the manifest-as-source-of-truth contract; the
+        // listing is then a superset that downstream cmake configs
+        // narrow with their own --language filter).
+        let lang_for_enrich: Option<sce_build::generator::Language> = language
+            .and_then(|s| s.parse::<sce_build::generator::Language>().ok());
         for f in manifest.fixtures.iter_mut() {
-            if let sce_build::conformance::FixtureSpec::Algorithm {
-                has_test_vectors, ..
-            } = &mut f.spec
-            {
+            let (has_tv_slot, kind_supports_sidecar) = match &mut f.spec {
+                sce_build::conformance::FixtureSpec::Algorithm {
+                    has_test_vectors, ..
+                } => (Some(has_test_vectors), true),
+                sce_build::conformance::FixtureSpec::Codec {
+                    has_test_vectors, ..
+                } => {
+                    // RFC §5.B B5-θ codec test-vector trunk: Rust +
+                    // C11 sidecar only. Force the flag false on the
+                    // 4 gated backends so the cmake `--has-test-
+                    // vectors` listing matches what `render_codec_
+                    // test_vector_sidecar` actually emits — otherwise
+                    // those backends would declare a sidecar OUTPUT
+                    // file that never gets generated. Per-language
+                    // closures will lift this gate alongside their
+                    // sidecar template + golden.
+                    let supports = match lang_for_enrich {
+                        Some(sce_build::generator::Language::Rust)
+                        | Some(sce_build::generator::Language::C11)
+                        | None => true,
+                        Some(_) => false,
+                    };
+                    (Some(has_test_vectors), supports)
+                }
+                _ => (None, false),
+            };
+            if let Some(slot) = has_tv_slot {
+                if !kind_supports_sidecar {
+                    *slot = false;
+                    continue;
+                }
                 let scxml_path = resource_root.join(format!("{}.scxml", f.name));
                 if scxml_path.exists() {
-                    *has_test_vectors =
-                        sce_build::conformance::has_test_vectors(&scxml_path).unwrap_or(false);
+                    *slot = sce_build::conformance::has_test_vectors(&scxml_path).unwrap_or(false);
                 }
             }
         }
@@ -2542,6 +2577,9 @@ fn cmd_list_fixtures(
             matches!(
                 &f.spec,
                 sce_build::conformance::FixtureSpec::Algorithm {
+                    has_test_vectors: true,
+                    ..
+                } | sce_build::conformance::FixtureSpec::Codec {
                     has_test_vectors: true,
                     ..
                 }

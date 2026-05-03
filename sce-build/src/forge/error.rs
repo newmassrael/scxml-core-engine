@@ -476,16 +476,16 @@ pub enum ValidationError {
         refers_to: String,
     },
 
-    /// RFC §5.B test-vector primitive (B2-test-vector): a
-    /// `<sce:test-vector>` element appears under a `sce:kind` other
-    /// than `algorithm`. v1 supports algorithm only — codec test-vector
-    /// (multi-field oracle grammar) defers to B5 alongside the Zenoh
-    /// msg-set authoring where the first cross-codec consumer lands.
-    /// Author resolves by either moving the test vector to an
-    /// algorithm file or, until B5, expressing the codec round-trip in
-    /// the existing `numerical_reference.json` oracle harness.
+    /// RFC §5.B test-vector primitive: a `<sce:test-vector>` element
+    /// appears under a `sce:kind` other than `algorithm` (B2) or
+    /// `codec` (B5-θ). Other kinds (transform / lookup / validator
+    /// / etc.) cannot host a hex-bytes round-trip oracle in v1 —
+    /// their wire shape is not byte-stable enough to anchor a single
+    /// reference vector. Author resolves by moving the test vector
+    /// onto a supported kind or expressing the round-trip in the
+    /// kind-specific harness oracle.
     #[error(
-        "<sce:test-vector> is only supported on sce:kind=\"algorithm\" in v1, but '{name}' declares sce:kind=\"{kind:?}\" — multi-field codec test vectors defer to B5 (Zenoh msg-set authoring); use the numerical_reference.json oracle harness for codec round-trips until then"
+        "<sce:test-vector> is only supported on sce:kind=\"algorithm\" (B2) and sce:kind=\"codec\" (B5-θ), but '{name}' declares sce:kind=\"{kind:?}\" — move the test vector to an algorithm/codec file or use the kind-specific harness oracle"
     )]
     TestVectorUnsupportedKind {
         /// Forge document name (root `name=` attribute).

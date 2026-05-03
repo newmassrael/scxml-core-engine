@@ -1129,6 +1129,17 @@ pub struct CodecModel {
     /// flag layout (name + bit).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub requires_parent_flags: Option<RequiresParentFlags>,
+    /// RFC §5.B B5-θ inline test vectors. Each row carries one wire
+    /// `hex` byte sequence + the expected decoded field-value tree.
+    /// Generates a per-backend round-trip sidecar (`<fixture>_test.{rs,h}`)
+    /// next to the codec header — symmetric with the algorithm
+    /// `<sce:test-vector>` machinery (RFC §5.B B2). Trunk lands on
+    /// Rust + C11 with plain (non-variant, non-TLV-chain, non-parent-
+    /// flags) codecs only; variant + recursive-variant + TLV-chain +
+    /// parent-flags codecs reject through the per-language gate in
+    /// `render_codec_test_vector_sidecar` until B5-θ closures land.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub test_vectors: Vec<CodecTestVector>,
 }
 
 impl CodecModel {
@@ -1268,6 +1279,76 @@ impl CodecModel {
     pub fn has_parent_flags(&self) -> bool {
         self.requires_parent_flags.is_some()
     }
+}
+
+// ── Codec test vectors (RFC §5.B B5-θ) ────────────────────────
+
+/// One `<sce:test-vector hex="...">` row on a codec. Captures the
+/// wire-byte form (`hex`) and the expected decoded field-value tree
+/// (`decoded`) so the per-backend sidecar can render a single
+/// round-trip oracle (encode → bytes parity, decode → field parity).
+///
+/// Trunk shape (`Plain` only) covers codecs whose decoded form is a
+/// flat list of named fields. Variant / recursive-variant / TLV-chain
+/// expansions reuse the same `CodecTestVector` envelope and only add
+/// new arms to `DecodedValue` — keeps the parser + codegen surface
+/// uniform across B5-θ closures.
+#[derive(Debug, Clone, Serialize)]
+pub struct CodecTestVector {
+    /// Decoded wire bytes (parsed from the `hex=` attribute).
+    pub hex: Vec<u8>,
+    /// Expected decoded value tree.
+    pub decoded: DecodedValue,
+    /// 1-based source line of the `<sce:test-vector>` element.
+    /// Round-tripped to per-backend test-function naming so a failing
+    /// row is locatable in the SCXML source from the test output.
+    pub source_line: usize,
+}
+
+/// Decoded value tree for a `<sce:test-vector>` row. Trunk only
+/// emits `Plain` (flat field list); variant / TLV-chain closures
+/// add `Variant` and `Chain` arms following the B1-β / B3-α
+/// trunk-then-closures cadence.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "shape", rename_all = "kebab-case")]
+pub enum DecodedValue {
+    /// Plain codec: ordered list of named field assignments. Field
+    /// names + value types validated against the codec's `fields`
+    /// list at parse time.
+    Plain { fields: Vec<DecodedField> },
+}
+
+/// One `<sce:decoded field="..." value|hex|string="..."/>` row inside
+/// a `<sce:test-vector>`. Field name is matched against
+/// `CodecModel.fields` at parse time; value carries the typed scalar
+/// / bytes / string literal compatible with that field's `sce_type`.
+#[derive(Debug, Clone, Serialize)]
+pub struct DecodedField {
+    pub name: String,
+    pub value: DecodedFieldValue,
+}
+
+/// Typed value literal for one `<sce:decoded>` row. Variant chosen
+/// at parse time from the matching codec field's `SceType`:
+/// integer types → `Uint` / `Int`, `Bool` → `Bool`, `Bytes` → `Bytes`,
+/// `String` → `String`. Float fields are not yet supported (no codec
+/// field uses them; closures land alongside the first consumer).
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type", content = "value", rename_all = "kebab-case")]
+pub enum DecodedFieldValue {
+    Bool(bool),
+    /// Unsigned integer literal — narrowed at codegen time against
+    /// the field's declared SceType (uint8/uint16/uint32/uint64).
+    Uint(u64),
+    /// Signed integer literal — narrowed at codegen time against
+    /// the field's declared SceType (int8/int16/int32/int64).
+    Int(i64),
+    /// Byte sequence (parsed from the `hex=` attribute).
+    Bytes(Vec<u8>),
+    /// UTF-8 string (parsed from the `string=` attribute). Decode
+    /// validates UTF-8 invariant per B5-ζ codec contract; the
+    /// test-vector value is stored as canonical Rust `String`.
+    String(String),
 }
 
 // ── Filter kind ───────────────────────────────────────────────

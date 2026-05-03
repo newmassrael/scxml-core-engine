@@ -367,6 +367,10 @@
                 "$ref": "#/definitions/StructField"
               }
             },
+            "has_test_vectors": {
+              "description": "RFC §5.B B5-θ: derived at harness-rendering time from SCXML — true iff at least one `<sce:test-vector>` element appears under the codec root. Trunk emits the per-backend sidecar (`<fixture>_test.{rs,h}`) on Rust + C11 only; Cpp/Kotlin/Go/Python harnesses skip the codec sidecar until B5-θ closures land (mirrors algorithm `has_test_vectors` precedent). Empty in fixtures.json (manifest-side override is rejected); computed by `read_codec_has_test_vectors` so the SCXML stays the single source of truth.",
+              "type": "boolean"
+            },
             "kind": {
               "type": "string",
               "enum": [
@@ -418,7 +422,7 @@
               "type": "string"
             },
             "has_test_vectors": {
-              "description": "Derived at harness-rendering time from SCXML — true iff at least one `<sce:test-vector>` element appears under the algorithm root. RFC §5.B B2-test-vector trunk emits a per-backend sidecar (`<fixture>_test.{rs,h}`) on Rust + C11 only; the conformance filter drops the fixture from Cpp/Kotlin/Go/Python harnesses until those closures land (mirrors B1-β codec_variant_dispatch's per-language gate). Empty in fixtures.json (manifest-side override is rejected); computed by `read_algorithm_has_test_vectors` so the SCXML stays the single source of truth.",
+              "description": "Derived at harness-rendering time from SCXML — true iff at least one `<sce:test-vector>` element appears under the algorithm root. RFC §5.B B2-test-vector trunk emits a per-backend sidecar (`<fixture>_test.{rs,h}`) on Rust + C11 only; the conformance filter drops the fixture from Cpp/Kotlin/Go/Python harnesses until those closures land (mirrors B1-β codec_variant_dispatch's per-language gate). Empty in fixtures.json (manifest-side override is rejected); computed by `has_test_vectors_in_file` so the SCXML stays the single source of truth.",
               "type": "boolean"
             },
             "kind": {
