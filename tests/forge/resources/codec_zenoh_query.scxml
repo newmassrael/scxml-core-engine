@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh query body codec — request body
+     variant arm "query" (RFC §5.B Wire RFC Phase B Y3 atomic 2a
+     zenoh-specific demo of the tlv-chain present-if lift).
+
+     Mirrors zenoh-pico `_z_query_encode` / `_z_query_decode`
+     (src/protocol/codec/message.c:394-505) verbatim wire shape; the
+     inner ext sub-codecs (source_info ext_id=0x01, value ext_id=0x03,
+     attachment ext_id=0x05) decode through codec_zenoh_ext_entry's
+     ZBuf arm — generic byte payloads with host-side interpretation
+     in the caller (mirrors zenoh-pico's `_z_query_decode_extensions`
+     callback pattern). Y3 atomic 2a chain is the codec's LAST field
+     (zenoh-pico decoder line 501-503: chain is the only thing after
+     the gated parameters), so `terminate-on="exhaust-or-depth"` is
+     sufficient — the entry-flag termination strategy is a Y3 atomic
+     2b consumer surface (request/response/declare/oam where the body
+     variant follows the chain).
+
+     Wire shape (1+ bytes):
+       byte 0   : header     (MID 0x03 in bits 0..4 + Q_C@5 + Q_P@6 +
+                              Z@7) — header.Q_C gates the inline
+                              consolidation byte; header.Q_P gates the
+                              parameters slice; header.Z signals the
+                              ext chain follows.
+       Q_C-gated:
+         byte 1 : consolidation (uint8 0..3)
+       Q_P-gated:
+         bytes  : parameters_len (VLE u64) + parameters (UTF-8 bytes,
+                                                          max 256)
+       Z-gated:
+         chain  : codec_zenoh_ext_entry tlv-chain (exhaust-or-depth
+                  termination — chain is codec's last field; max-
+                  depth=8 covers query's 3 ext slots with safety
+                  margin)
+
+     Composition: B1-γ flags (header) + B1-δ present-if-on-fields
+     (Q_C/Q_P gates) + Y3 atomic 2a present-if-on-tlv-chain (header.Z
+     gate) + B5-ε surface G (chain element = codec_zenoh_ext_entry
+     variant). No new primitives beyond the Y3 atomic 2a lift.
+
+     Body variant arm contract: invoked by codec_zenoh_request when
+     the inner-MID byte after the request header reads 0x03 (Z_QUERY).
+     The request envelope reads its own per-MID header before
+     dispatching, so codec_zenoh_query does NOT re-read the inner
+     dispatch header — the wire byte 0 here IS the request body's
+     dispatch header from the request envelope's perspective.
+
+     stripped-down scope: parameters max-size=256 (full upstream is
+     unbounded zbuf — caller-supplied length-prefix). All other
+     fields match upstream wire 1:1. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_query">
+  <sce:import src="codec_zenoh_ext_entry.scxml" kind="codec" as="codec_zenoh_ext_entry"/>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="mid" bit="0" width="5"/>
+      <sce:flag name="C"   bit="5"/>
+      <sce:flag name="P"   bit="6"/>
+      <sce:flag name="Z"   bit="7"/>
+    </sce:flags>
+    <sce:field id="consolidation" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="header.C"/>
+    <sce:field id="parameters_len" sce:type="uint64" sce:byte="2" sce:bit-size="vle"
+               sce:present-if="header.P"/>
+    <sce:field id="parameters" sce:type="bytes" sce:byte="3" sce:bit-size="length-ref"
+               sce:length-field="parameters_len" sce:max-size="256"
+               sce:present-if="header.P"/>
+    <sce:tlv-chain id="extensions" type="codec_zenoh_ext_entry" sce:byte="4"
+                   max-depth="8" on-overflow="reject"
+                   sce:present-if="header.Z"/>
+  </datamodel>
+</scxml>

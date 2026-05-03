@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: tlv-chain-with-present-if primitive demo
+     (RFC §5.B Wire RFC Phase B Y3 atomic 2a — minimal demo for the
+     `<sce:tlv-chain sce:present-if="P">` lift).
+
+     Mirrors codec_repeat_present_if_basic's role for B5-μ: the
+     simplest possible local-scope present-if predicate gating an
+     entire `<sce:tlv-chain>` field. Uses codec_tlv_entry (B3-α
+     existing) as the chain element so this fixture exercises only
+     the lift surface (gate wrap on the chain) without dragging in
+     the orthogonal ext_entry layout / Z-bit termination concerns
+     from codec_zenoh_ext_entry.
+
+     Wire shape (1+ bytes):
+       byte 0   : carrier (uint8 carrier with `has_chain` bit at 0)
+       carrier.has_chain-gated:
+         byte 1+ : tlv-chain (codec_tlv_entry entries, exhaust-or-
+                    depth termination since chain is the codec's
+                    last field)
+
+     Composition: B1-γ flags (single-bit local carrier) + B3-α
+     tlv-chain (entries via codec_tlv_entry) + Y3 atomic 2a
+     present-if-on-tlv-chain. No new IR/template surface beyond the
+     lift; the gated-list host wrap shape mirrors B5-μ's gated
+     repeat verbatim (Rust `Option<Vec<T>>` / Cpp `std::optional<
+     std::vector<T>>` / Kotlin `MutableList<T>?` / Go bare `[]T`
+     slice nilness / Python `Optional[List[T]]` / C11 carrier-bit-
+     as-truth + `_len = 0` on absent).
+
+     Round-trip oracle (Rust runtime smoke):
+       Empty chain (has_chain=0):
+         carrier=0x00 → wire = [0x00] (1 byte; chain absent)
+       Single-element chain (has_chain=1):
+         carrier=0x01, entries=[(entry_type=0x10, entry_len=2,
+         entry_body=[0xAA, 0xBB])] → wire = [0x01, 0x10, 0x02,
+         0xAA, 0xBB] (5 bytes) -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_tlv_chain_present_if_basic">
+  <sce:import src="codec_tlv_entry.scxml" kind="codec" as="codec_tlv_entry"/>
+  <datamodel>
+    <sce:flags id="carrier" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="has_chain" bit="0"/>
+    </sce:flags>
+    <sce:tlv-chain id="entries" type="codec_tlv_entry" sce:byte="1"
+                   max-depth="4" on-overflow="reject"
+                   sce:present-if="carrier.has_chain"/>
+  </datamodel>
+</scxml>

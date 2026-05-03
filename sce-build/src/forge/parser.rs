@@ -2274,6 +2274,20 @@ fn parse_codec_tlv_chain_from_node(
         }
     };
 
+    // RFC §5.B Y3 atomic 2a — `<sce:tlv-chain sce:present-if="P">`
+    // gates the entire chain field on a flag predicate, mirroring
+    // B5-μ's repeat-with-present-if (X1) lift. Required by zenoh
+    // network MID bodies (request/response/etc) whose ext chain is
+    // `Z`-bit-gated on the per-MID header — when Z=0 the chain is
+    // absent from the wire and any subsequent body fields start at
+    // the position the chain would have occupied. Without gating,
+    // an unconditional decode would mis-read the body's first byte
+    // as the chain's first entry header.
+    let present_if = match sce_attr(node, "present-if") {
+        None => None,
+        Some(raw) => Some(parse_present_if_predicate(&raw, node, doc_name, &id)?),
+    };
+
     Ok(CodecField {
         id,
         sce_type: SceType::Bytes,
@@ -2288,7 +2302,7 @@ fn parse_codec_tlv_chain_from_node(
         max_size: None,
         length_field: None,
         flags: Vec::new(),
-        present_if: None,
+        present_if,
         repeat_body_alias: None,
         max_count: None,
         tlv_chain_body_alias: Some(body_alias),

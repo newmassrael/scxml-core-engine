@@ -1366,43 +1366,68 @@ fn render_codec(
                     obj.insert("tlv_chain_body_type".into(), body_type.clone().into());
                     obj.insert("tlv_chain_body_decoder".into(), body_decoder.clone().into());
                     obj.insert("tlv_chain_body_encoder".into(), body_encoder.clone().into());
-                    let wrapped = match lang {
-                        crate::generator::Language::Rust => format!("Vec<{body_type}>"),
+                    // RFC §5.B Y3 atomic 2a — `<sce:tlv-chain
+                    // sce:present-if>` host-type wrap. Mirrors the
+                    // B5-μ repeat-with-present-if (X1) wrap pattern:
+                    // when the chain is gated, the host-language list
+                    // type wraps in a per-language optional. C11 keeps
+                    // the bare fixed-buffer + len pair (carrier-bit-
+                    // as-truth — `_len = 0` signals absent).
+                    let gated = f.present_if.is_some();
+                    let wrapped = match (lang, gated) {
+                        (crate::generator::Language::Rust, false) => format!("Vec<{body_type}>"),
+                        (crate::generator::Language::Rust, true) => format!("Option<Vec<{body_type}>>"),
                         // RFC §5.B B5-ε closures: cpp/kotlin/go/python emit
                         // TLV chain via the host-language list shape — Zenoh
                         // ext envelopes ship on zenoh-rs / zenoh-cpp / zenoh-
                         // kotlin server peers too, not just zenoh-pico MCU,
                         // so the original "MCU-only" gate (now retracted)
                         // wasn't a hardware constraint, just a v1 scope.
-                        crate::generator::Language::Cpp => format!("std::vector<{body_type}>"),
-                        crate::generator::Language::Kotlin => format!("MutableList<{body_type}>"),
-                        crate::generator::Language::Go => format!("[]{body_type}"),
-                        crate::generator::Language::Python => format!("List[{body_type}]"),
+                        (crate::generator::Language::Cpp, false) => format!("std::vector<{body_type}>"),
+                        (crate::generator::Language::Cpp, true) => format!("std::optional<std::vector<{body_type}>>"),
+                        (crate::generator::Language::Kotlin, false) => format!("MutableList<{body_type}>"),
+                        (crate::generator::Language::Kotlin, true) => format!("MutableList<{body_type}>?"),
+                        // Go: bare slice's nilness already carries
+                        // present-or-absent semantics — no pointer
+                        // wrap needed (mirrors B5-μ repeat). Plain
+                        // `[]T` accommodates both gated and non-gated.
+                        (crate::generator::Language::Go, _) => format!("[]{body_type}"),
+                        (crate::generator::Language::Python, false) => format!("List[{body_type}]"),
+                        (crate::generator::Language::Python, true) => format!("Optional[List[{body_type}]]"),
                         // C11 emits a fixed-buffer + length pair via the
                         // codec template (mirrors repeat shape); the
                         // single c_type slot holds the body_type for
-                        // shape symmetry.
-                        crate::generator::Language::C11 => body_type.clone(),
+                        // shape symmetry. Gated chains use `_len = 0`
+                        // on absent (carrier-bit-as-truth contract).
+                        (crate::generator::Language::C11, _) => body_type.clone(),
                     };
                     obj.insert(type_key.into(), wrapped.into());
-                    obj.insert(
-                        "tlv_chain_decode_stmt".into(),
+                    let decode_stmt = if f.present_if.is_some() {
+                        tlv_chain_streaming_decode_stmt_gated(
+                            f, &body_type, &body_decoder, *max_depth, *on_overflow, terminate_on,
+                            &m.fields, m.requires_parent_flags.as_ref(), lang,
+                        )
+                    } else {
                         tlv_chain_streaming_decode_stmt(
                             f, &body_type, &body_decoder, *max_depth, *on_overflow, terminate_on, lang,
                         )
-                        .into(),
-                    );
-                    obj.insert(
-                        "tlv_chain_encode_block".into(),
-                        tlv_chain_streaming_encode_block(f, &body_encoder, lang).into(),
-                    );
+                    };
+                    obj.insert("tlv_chain_decode_stmt".into(), decode_stmt.into());
+                    let encode_block = if f.present_if.is_some() {
+                        tlv_chain_streaming_encode_block_gated(
+                            f, &body_encoder, &m.fields, m.requires_parent_flags.as_ref(), lang,
+                        )
+                    } else {
+                        tlv_chain_streaming_encode_block(f, &body_encoder, lang)
+                    };
+                    obj.insert("tlv_chain_encode_block".into(), encode_block.into());
                     // Kotlin's data-class primary constructor needs a
-                    // default value for every property; the trunk's
-                    // `0.toUByte()` family default would miscompile
-                    // against `MutableList<T>`. Mirrors the repeat
-                    // closure precedent.
+                    // default value for every property. Plain chains
+                    // default to `mutableListOf()`; gated chains
+                    // default to `null` (mirrors B5-μ gated repeat).
                     if matches!(lang, crate::generator::Language::Kotlin) {
-                        obj.insert("kt_default".into(), "mutableListOf()".into());
+                        let kt_default = if gated { "null" } else { "mutableListOf()" };
+                        obj.insert("kt_default".into(), kt_default.into());
                     }
                 } else if matches!(f.bit_size, BitSize::Embed) {
                     // RFC §5.B Y0c — single-codec embed primitive.
@@ -1734,7 +1759,7 @@ fn render_codec(
                 // emits `Option<EmbeddedCodec>` / per-language
                 // equivalent; skipping here avoids overwriting with
                 // `Option<Vec<u8>>`.
-                if f.present_if.is_some() && !f.is_repeat() && !f.is_embed() {
+                if f.present_if.is_some() && !f.is_repeat() && !f.is_embed() && !f.is_tlv_chain() {
                     let inner = l.type_name(&f.sce_type);
                     let wrapped = match lang {
                         crate::generator::Language::Rust => {
@@ -4443,6 +4468,360 @@ fn tlv_chain_streaming_encode_block(
             format!(
                 "        for _e in self.{py_id}:\n            \
                      r.extend(_e.encode())"
+            )
+        }
+    }
+}
+
+/// RFC §5.B Y3 atomic 2a — gated tlv-chain decode. Wraps the body of
+/// `tlv_chain_streaming_decode_stmt` in a per-language presence test
+/// computed from the field's `present_if` predicate, mirroring B5-μ's
+/// `repeat_streaming_decode_stmt_gated`. Required by zenoh network
+/// MID bodies whose ext chain is `Z`-bit-gated on the per-MID header
+/// — without gating, the wire's "no chain" case (Z=0) would have the
+/// chain decoder mis-read the body's first byte as an entry header.
+///
+/// Per-language wrap shape (mirrors B5-μ repeat-with-present-if):
+///   - Rust:    `let id = if test { Some(<built-vec>) } else { None };`
+///   - Cpp:     `std::optional<vector> id; if (test) { ...build... }`
+///   - Kotlin:  `val id: MutableList<T>? = if (test) { ... } else null`
+///   - Go:      bare slice — pre-decl `var Id []T`; populate inside
+///              `if test {}` (slice nilness carries presence)
+///   - C11:     carrier-bit-as-truth — emit the same body unconditionally,
+///              but skip wire reads when `(out->carrier & mask) == 0`
+///              (encode mirrors via `(self->carrier & mask) == 0` skip)
+///   - Python:  `id = None`; populate inside `if test:` branch
+fn tlv_chain_streaming_decode_stmt_gated(
+    field: &CodecField,
+    body_type: &str,
+    body_decoder: &str,
+    max_depth: u32,
+    on_overflow: crate::forge::model::TlvOverflowPolicy,
+    terminate_on: &crate::forge::model::TlvTerminateStrategy,
+    fields: &[CodecField],
+    parent_flags: Option<&RequiresParentFlags>,
+    lang: crate::generator::Language,
+) -> String {
+    use crate::forge::model::TlvOverflowPolicy;
+    use crate::forge::model::TlvTerminateStrategy;
+    use crate::generator::Language;
+    let id = &field.id;
+    let pred = field
+        .present_if
+        .as_ref()
+        .expect("tlv_chain_streaming_decode_stmt_gated: caller guarantees present_if is Some");
+    let test = present_if_test_literal(fields, parent_flags, pred, lang);
+
+    // Y3 entry-flag termination accessor (per-language casing).
+    let entry_flag_acc = match terminate_on {
+        TlvTerminateStrategy::ExhaustOrDepth => None,
+        TlvTerminateStrategy::EntryFlag { flag_name } => {
+            let acc = match lang {
+                Language::Go => filters::to_pascal_case(flag_name.clone()),
+                Language::Kotlin => filters::to_camel_case(flag_name.clone()),
+                _ => filters::to_snake_case(flag_name.clone()),
+            };
+            Some(acc)
+        }
+    };
+
+    match lang {
+        Language::Rust => {
+            let overflow_check = match on_overflow {
+                TlvOverflowPolicy::Reject => format!(
+                    "\n                if cursor.remaining() > 0 {{\n                    \
+                         return Err(CodecError::TlvChainOverflow);\n                \
+                     }}"
+                ),
+                TlvOverflowPolicy::Truncate => String::new(),
+            };
+            let body = match &entry_flag_acc {
+                None => format!(
+                    "                    if cursor.remaining() == 0 {{ break; }}\n                    \
+                     _vec.push({body_type}::decode(cursor)?);\n                "
+                ),
+                Some(acc) => format!(
+                    "                    if cursor.remaining() == 0 {{ break; }}\n                    \
+                     let _entry = {body_type}::decode(cursor)?;\n                    \
+                     let _continue = _entry.{acc}();\n                    \
+                     _vec.push(_entry);\n                    \
+                     if !_continue {{ break; }}\n                "
+                ),
+            };
+            format!(
+                "let {id} = if {test} {{\n            \
+                     let mut _vec: Vec<{body_type}> = Vec::with_capacity({max_depth} as usize);\n            \
+                     for _ in 0..{max_depth}u32 {{\n{body}\
+                     }}{overflow_check}\n            \
+                     Some(_vec)\n        \
+                 }} else {{\n            \
+                     None\n        \
+                 }};"
+            )
+        }
+        Language::Cpp => {
+            let overflow_check = match on_overflow {
+                TlvOverflowPolicy::Reject => format!(
+                    "\n            if (cursor.remaining() > 0) return std::nullopt;"
+                ),
+                TlvOverflowPolicy::Truncate => String::new(),
+            };
+            let body = match &entry_flag_acc {
+                None => format!(
+                    "                if (cursor.remaining() == 0) break;\n                \
+                     auto _elem = {body_type}::decode(cursor);\n                \
+                     if (!_elem.has_value()) return std::nullopt;\n                \
+                     _list.push_back(*_elem);\n            "
+                ),
+                Some(acc) => format!(
+                    "                if (cursor.remaining() == 0) break;\n                \
+                     auto _elem = {body_type}::decode(cursor);\n                \
+                     if (!_elem.has_value()) return std::nullopt;\n                \
+                     bool _continue = _elem->{acc}();\n                \
+                     _list.push_back(*_elem);\n                \
+                     if (!_continue) break;\n            "
+                ),
+            };
+            format!(
+                "std::optional<std::vector<{body_type}>> {id};\n        \
+                 if ({test}) {{\n            \
+                     std::vector<{body_type}> _list;\n            \
+                     _list.reserve({max_depth});\n            \
+                     for (std::size_t _i = 0; _i < {max_depth}; ++_i) {{\n{body}\
+                     }}{overflow_check}\n            \
+                     {id} = std::move(_list);\n        \
+                 }}"
+            )
+        }
+        Language::Kotlin => {
+            let overflow_check = match on_overflow {
+                TlvOverflowPolicy::Reject => format!(
+                    "\n                if (cursor.remaining() > 0) return null"
+                ),
+                TlvOverflowPolicy::Truncate => String::new(),
+            };
+            let body = match &entry_flag_acc {
+                None => format!(
+                    "                    if (cursor.remaining() == 0) break\n                    \
+                     it.add({body_type}.decode(cursor) ?: return null)\n                "
+                ),
+                Some(acc) => format!(
+                    "                    if (cursor.remaining() == 0) break\n                    \
+                     val _entry = {body_type}.decode(cursor) ?: return null\n                    \
+                     it.add(_entry)\n                    \
+                     if (!_entry.{acc}()) break\n                "
+                ),
+            };
+            format!(
+                "val {id}: MutableList<{body_type}>? = if ({test}) {{\n            \
+                     mutableListOf<{body_type}>().also {{\n                \
+                         for (_i in 0 until {max_depth}) {{\n{body}\
+                         }}{overflow_check}\n            \
+                     }}\n        \
+                 }} else {{\n            \
+                     null\n        \
+                 }}"
+            )
+        }
+        Language::Go => {
+            let go_id = filters::to_pascal_case(id.to_string());
+            let overflow_check = match on_overflow {
+                TlvOverflowPolicy::Reject => format!(
+                    "\n\t\tif cursor.Remaining() > 0 {{\n\t\t\t\
+                         return nil, codec.ErrTlvChainOverflow\n\t\t\
+                     }}"
+                ),
+                TlvOverflowPolicy::Truncate => String::new(),
+            };
+            let body = match &entry_flag_acc {
+                None => format!(
+                    "\t\t\tif cursor.Remaining() == 0 {{\n\t\t\t\t\
+                         break\n\t\t\t\
+                     }}\n\t\t\t\
+                     _elem, err := {body_decoder}(cursor)\n\t\t\t\
+                     if err != nil {{\n\t\t\t\t\
+                         return nil, err\n\t\t\t\
+                     }}\n\t\t\t\
+                     {go_id} = append({go_id}, *_elem)\n\t\t"
+                ),
+                Some(acc) => format!(
+                    "\t\t\tif cursor.Remaining() == 0 {{\n\t\t\t\t\
+                         break\n\t\t\t\
+                     }}\n\t\t\t\
+                     _elem, err := {body_decoder}(cursor)\n\t\t\t\
+                     if err != nil {{\n\t\t\t\t\
+                         return nil, err\n\t\t\t\
+                     }}\n\t\t\t\
+                     _continue := _elem.{acc}()\n\t\t\t\
+                     {go_id} = append({go_id}, *_elem)\n\t\t\t\
+                     if !_continue {{\n\t\t\t\t\
+                         break\n\t\t\t\
+                     }}\n\t\t"
+                ),
+            };
+            format!(
+                "var {go_id} []{body_type}\n\t\
+                 if {test} {{\n\t\t\
+                     {go_id} = make([]{body_type}, 0, {max_depth})\n\t\t\
+                     for _i := 0; _i < int({max_depth}); _i++ {{\n{body}\
+                     }}{overflow_check}\n\t\
+                 }}"
+            )
+        }
+        Language::C11 => {
+            let id_snake = filters::to_snake_case(id.to_string());
+            let overflow_check = match on_overflow {
+                TlvOverflowPolicy::Reject => format!(
+                    "\n            if (sce_forge_cursor_remaining(cursor) > 0) \
+                       return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;"
+                ),
+                TlvOverflowPolicy::Truncate => String::new(),
+            };
+            let entry_struct_snake = body_decoder
+                .strip_suffix("_decode")
+                .unwrap_or(body_decoder);
+            let body = match &entry_flag_acc {
+                None => format!(
+                    "                if (sce_forge_cursor_remaining(cursor) == 0) break;\n                \
+                     sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]);\n                \
+                     if (_st != SCE_FORGE_CODEC_OK) return _st;\n                \
+                     out->{id_snake}_len++;\n            "
+                ),
+                Some(acc) => format!(
+                    "                if (sce_forge_cursor_remaining(cursor) == 0) break;\n                \
+                     sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]);\n                \
+                     if (_st != SCE_FORGE_CODEC_OK) return _st;\n                \
+                     size_t _just = out->{id_snake}_len;\n                \
+                     out->{id_snake}_len++;\n                \
+                     if (!{entry_struct_snake}_{acc}(&out->{id_snake}[_just])) break;\n            "
+                ),
+            };
+            format!(
+                "out->{id_snake}_len = 0;\n        \
+                 if ({test}) {{\n            \
+                     for (size_t _i = 0; _i < {max_depth}; ++_i) {{\n{body}\
+                     }}{overflow_check}\n        \
+                 }}"
+            )
+        }
+        Language::Python => {
+            let py_id = filters::to_snake_case(id.to_string());
+            let overflow_check = match on_overflow {
+                TlvOverflowPolicy::Reject => format!(
+                    "\n                if cursor.remaining() > 0:\n                    \
+                         raise TlvChainOverflow()"
+                ),
+                TlvOverflowPolicy::Truncate => String::new(),
+            };
+            let body = match &entry_flag_acc {
+                None => format!(
+                    "                    if cursor.remaining() == 0:\n                        \
+                         break\n                    \
+                     _elem = {body_type}.decode(cursor)\n                    \
+                     if _elem is None:\n                        \
+                         return None\n                    \
+                     {py_id}.append(_elem)"
+                ),
+                Some(acc) => format!(
+                    "                    if cursor.remaining() == 0:\n                        \
+                         break\n                    \
+                     _elem = {body_type}.decode(cursor)\n                    \
+                     if _elem is None:\n                        \
+                         return None\n                    \
+                     {py_id}.append(_elem)\n                    \
+                     if not _elem.{acc}():\n                        \
+                         break"
+                ),
+            };
+            format!(
+                "if {test}:\n                \
+                     {py_id} = []\n                \
+                     for _ in range({max_depth}):\n{body}{overflow_check}\n            \
+                 else:\n                \
+                     {py_id} = None"
+            )
+        }
+    }
+}
+
+/// RFC §5.B Y3 atomic 2a — gated tlv-chain encode block. Wraps the
+/// chain walk in a per-language presence test on the optional, mirroring
+/// the gated repeat encode shape (B5-μ). Plain (non-gated) chains use
+/// `tlv_chain_streaming_encode_block` which trusts the host list to
+/// always exist.
+fn tlv_chain_streaming_encode_block_gated(
+    field: &CodecField,
+    body_encoder: &str,
+    fields: &[CodecField],
+    parent_flags: Option<&RequiresParentFlags>,
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    let id = &field.id;
+    let pred = field
+        .present_if
+        .as_ref()
+        .expect("tlv_chain_streaming_encode_block_gated: caller guarantees present_if is Some");
+    let test = present_if_test_literal(fields, parent_flags, pred, lang);
+    match lang {
+        Language::Rust => format!(
+            "        if let Some(_list) = &self.{id} {{\n            \
+                 for _e in _list {{\n                \
+                     r.extend(_e.encode());\n            \
+                 }}\n        \
+             }}"
+        ),
+        Language::Cpp => format!(
+            "        if (this->{id}.has_value()) {{\n            \
+                 for (const auto& _e : *this->{id}) {{\n                \
+                     auto _sub = _e.encode();\n                \
+                     r.insert(r.end(), _sub.begin(), _sub.end());\n            \
+                 }}\n        \
+             }}"
+        ),
+        Language::Kotlin => format!(
+            "        this.{id}?.let {{ _list ->\n            \
+                 for (_e in _list) {{\n                \
+                     r.addAll(_e.encode().toList())\n            \
+                 }}\n        \
+             }}"
+        ),
+        Language::Go => {
+            let go_id = filters::to_pascal_case(id.to_string());
+            format!(
+                "\tfor _, _e := range s.{go_id} {{\n\t\t\
+                     r = append(r, _e.Encode()...)\n\t\
+                 }}"
+            )
+        }
+        Language::C11 => {
+            let id_snake = filters::to_snake_case(id.to_string());
+            // C11 carrier-bit-as-truth: same loop body as plain
+            // (walks `_len` entries), but wrap in a presence test
+            // so absent gates skip the write entirely.
+            let encoded_t = if let Some(stripped) = body_encoder.strip_suffix("_encode") {
+                format!("{stripped}_encoded_t")
+            } else {
+                format!("{body_encoder}_t")
+            };
+            format!(
+                "    if ({test}) {{\n        \
+                     for (size_t _ti = 0; _ti < self->{id_snake}_len; ++_ti) {{\n            \
+                         {encoded_t} _sub = {body_encoder}(&self->{id_snake}[_ti]);\n            \
+                         if (r.len + _sub.len <= sizeof(r.bytes)) {{\n                \
+                             for (size_t _tj = 0; _tj < _sub.len; ++_tj) r.bytes[r.len + _tj] = _sub.bytes[_tj];\n                \
+                             r.len += _sub.len;\n            \
+                         }}\n        \
+                     }}\n    \
+                 }}"
+            )
+        }
+        Language::Python => {
+            let py_id = filters::to_snake_case(id.to_string());
+            format!(
+                "        if self.{py_id} is not None:\n            \
+                     for _e in self.{py_id}:\n                \
+                         r.extend(_e.encode())"
             )
         }
     }

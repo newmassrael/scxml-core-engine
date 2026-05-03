@@ -1610,6 +1610,103 @@ fn forge_codec_tlv_chain_basic_python() {
     assert_standalone_forge_python("codec_tlv_chain_basic", "codec_tlv_chain_basic.py");
 }
 
+// ── RFC §5.B Wire RFC Phase B Y3 atomic 2a — tlv-chain-with-present-if
+// `codec_tlv_chain_present_if_basic` is the minimal demo for the
+// `<sce:tlv-chain sce:present-if="P">` lift (mirrors codec_repeat_
+// present_if_basic for B5-μ). Single-bit local carrier gates the
+// chain; entries decode via the existing codec_tlv_entry. Locks the
+// gated-list host wrap shape across all 6 backends (Option<Vec<T>> /
+// std::optional<vector> / MutableList<T>? / bare []T (Go slice
+// nilness) / Optional[List[T]] / C11 carrier-bit-as-truth +
+// `_len = 0`).
+
+#[test]
+fn forge_codec_tlv_chain_present_if_basic_cpp() {
+    assert_standalone_forge(
+        "codec_tlv_chain_present_if_basic",
+        "codec_tlv_chain_present_if_basic.h",
+    );
+}
+
+#[test]
+fn forge_codec_tlv_chain_present_if_basic_kotlin() {
+    assert_standalone_forge_kotlin(
+        "codec_tlv_chain_present_if_basic",
+        "CodecTlvChainPresentIfBasic.kt",
+    );
+}
+
+#[test]
+fn forge_codec_tlv_chain_present_if_basic_rust() {
+    assert_standalone_forge_rust(
+        "codec_tlv_chain_present_if_basic",
+        "codec_tlv_chain_present_if_basic.rs",
+    );
+}
+
+#[test]
+fn forge_codec_tlv_chain_present_if_basic_go() {
+    assert_standalone_forge_go(
+        "codec_tlv_chain_present_if_basic",
+        "codec_tlv_chain_present_if_basic.go",
+    );
+}
+
+#[test]
+fn forge_codec_tlv_chain_present_if_basic_python() {
+    assert_standalone_forge_python(
+        "codec_tlv_chain_present_if_basic",
+        "codec_tlv_chain_present_if_basic.py",
+    );
+}
+
+#[test]
+fn forge_c11_codec_tlv_chain_present_if_basic() {
+    assert_standalone_forge_c(
+        "codec_tlv_chain_present_if_basic",
+        "codec_tlv_chain_present_if_basic.c.h",
+    );
+}
+
+// ── RFC §5.B Wire RFC Phase B Y3 atomic 2a — zenoh-specific demo
+// `codec_zenoh_query` mirrors zenoh-pico `_z_query_encode/decode`
+// (message.c:394-505). Used as the request body variant arm for
+// Y_QUERY (atomic 2b). Y3 atomic 2a uses it as the first realistic
+// consumer of tlv-chain-with-present-if; the chain is the codec's
+// last field so terminate-on stays at exhaust-or-depth (entry-flag
+// termination exercises in Y3 atomic 2b consumers like
+// codec_zenoh_request whose body variant follows the chain).
+
+#[test]
+fn forge_codec_zenoh_query_cpp() {
+    assert_standalone_forge("codec_zenoh_query", "codec_zenoh_query.h");
+}
+
+#[test]
+fn forge_codec_zenoh_query_kotlin() {
+    assert_standalone_forge_kotlin("codec_zenoh_query", "CodecZenohQuery.kt");
+}
+
+#[test]
+fn forge_codec_zenoh_query_rust() {
+    assert_standalone_forge_rust("codec_zenoh_query", "codec_zenoh_query.rs");
+}
+
+#[test]
+fn forge_codec_zenoh_query_go() {
+    assert_standalone_forge_go("codec_zenoh_query", "codec_zenoh_query.go");
+}
+
+#[test]
+fn forge_codec_zenoh_query_python() {
+    assert_standalone_forge_python("codec_zenoh_query", "codec_zenoh_query.py");
+}
+
+#[test]
+fn forge_c11_codec_zenoh_query() {
+    assert_standalone_forge_c("codec_zenoh_query", "codec_zenoh_query.c.h");
+}
+
 // `forge_codec_tlv_entry_cpp` already exists above (it predates B5-ε;
 // the entry codec ships on all 6 backends since it has no MCU-only
 // sub-features itself). The new B5-ε closures add the missing kotlin /

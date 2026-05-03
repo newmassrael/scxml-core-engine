@@ -557,6 +557,17 @@
            presence when terminate-on="entry-flag". -->
       <xs:attribute name="terminate-on" type="sce:tlvTerminateOnType"/>
       <xs:attribute name="entry-flag-name" type="xs:string"/>
+      <!-- RFC §5.B Y3 atomic 2a — `<sce:tlv-chain sce:present-if="P">`
+           gates the entire chain on a flag predicate (mirrors B5-μ
+           repeat-with-present-if X1 lift). When the predicate is
+           false the chain field is absent from the wire; the
+           host-language type wraps as a per-language optional
+           (Option<Vec<T>> / std::optional<vector> / MutableList<T>?
+           / bare []T (Go slice nilness) / Optional[List[T]] / C11
+           carrier-bit-as-truth via _len=0). Required by zenoh-pico
+           network MID bodies whose ext chain is Z-bit-gated on the
+           per-MID header. -->
+      <xs:attribute ref="sce:present-if"/>
     </xs:complexType>
   </xs:element>
 
