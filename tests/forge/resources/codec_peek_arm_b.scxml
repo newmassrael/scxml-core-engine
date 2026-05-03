@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: peek-byte primitive demo arm body B (RFC §5.B
+     Y3 atomic 2b-ii peek-byte). Symmetric with codec_peek_arm_a but with
+     a wider trailing payload — proves the parent variant dispatches by
+     the peeked dispatch bit alone (each arm body's own width is its
+     own concern).
+
+     Wire shape:
+       byte 0   : header (kind:1 + reserved:7) — the peeked byte; arm B
+                  fires when bit 0 is set (kind=1).
+       bytes 1-2: payload uint16 BE.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_peek_arm_b">
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="kind" bit="0" width="1"/>
+    </sce:flags>
+    <sce:field id="payload" sce:type="uint16" sce:byte="1" sce:bit-size="16"/>
+  </datamodel>
+</scxml>

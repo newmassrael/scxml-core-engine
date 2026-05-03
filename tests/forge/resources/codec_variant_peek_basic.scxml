@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: peek-byte primitive demo (RFC §5.B Y3 atomic
+     2b-ii peek-byte). Surfaces `<sce:peek-byte>` as a child element of
+     `<sce:variant>` — the cursor's NEXT byte is read without advancing
+     and dispatched on a named bit-range. The arm body decoder then
+     reads that same byte as its own first wire byte (header).
+
+     Models the Zenoh response/request body MID dispatch shape per
+     `network.c:347-364` + `220-235` — `_z_uint8_decode(&inner_header, ...)`
+     consumed by outer decoder then passed by VALUE to arm body
+     decoder. SCE's peek-byte primitive collapses the upstream's
+     manual `peek-then-pass` dance into a structural attribute on the
+     variant.
+
+     Wire shape:
+       byte 0 (peeked) : header (kind:1 + reserved:7) — peek extracts
+                         bit 0 to dispatch; arm body decoder reads the
+                         SAME byte as its own header.
+       arm body bytes  : whatever the matched arm codec consumes.
+
+     Demo dispatches kind=0 to `codec_peek_arm_a` (uint8 payload, 2-byte
+     wire) and kind=1 to `codec_peek_arm_b` (uint16 payload, 3-byte
+     wire). Arm exhaustiveness comes from the 1-bit dispatch domain
+     (1<<1 = 2 values, both arms enumerated, no `<sce:default>` needed).
+
+     Cross-codec validator (RFC §5.B Y3 atomic 2b-ii peek-byte) confirms
+     each arm body's first `<sce:flags>` field at byte_offset=0
+     declares `kind` with bit=0 width=1 — same as this peek-byte. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_variant_peek_basic">
+  <sce:import src="codec_peek_arm_a.scxml" kind="codec" as="codec_peek_arm_a"/>
+  <sce:import src="codec_peek_arm_b.scxml" kind="codec" as="codec_peek_arm_b"/>
+  <datamodel>
+    <sce:variant tag="peek.kind">
+      <sce:peek-byte id="peek" sce:type="uint8">
+        <sce:flag name="kind" bit="0" width="1"/>
+      </sce:peek-byte>
+      <sce:arm value="0x00" type="codec_peek_arm_a"/>
+      <sce:arm value="0x01" type="codec_peek_arm_b"/>
+    </sce:variant>
+  </datamodel>
+</scxml>

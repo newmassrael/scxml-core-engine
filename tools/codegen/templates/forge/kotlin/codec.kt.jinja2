@@ -101,6 +101,23 @@ data class {{ struct_name }}(
         // RFC §5.B B5-α empty body — zero-byte payload.
         return ByteArray(0)
 {% elif has_variant %}
+{% if variant.has_peek_byte %}
+        // RFC §5.B Y3 atomic 2b-ii peek-byte — peek-byte mode: streaming
+        // prefix encode. Arm body's encode prepends its own header
+        // byte (which the decoder peeked); no separate tag byte here.
+        val r = mutableListOf<Byte>()
+{% for field in fields %}
+{% if field.is_repeat %}
+{{ field.repeat_encode_block }}
+{% elif field.is_tlv_chain %}
+{{ field.tlv_chain_encode_block }}
+{% elif field.is_embed %}
+{{ field.embed_encode_block }}
+{% else %}
+{{ field.present_if_encode_block }}
+{% endif %}
+{% endfor %}
+{% else %}
         // Encode fixed prefix (tag field bytes are part of the prefix).
         // The tag value is read from the struct field, NOT derived from
         // the body discriminant — keeping author-set tag / body in sync
@@ -109,6 +126,7 @@ data class {{ struct_name }}(
 {% for expr in encode_exprs %}
         r.add({{ expr }})
 {% endfor %}
+{% endif %}
         // Append the active arm body's encoded bytes.
         when (val _b = this.body) {
 {% for arm in variant.arms %}
@@ -207,12 +225,32 @@ data class {{ struct_name }}(
             // RFC §5.B B5-α empty body — zero-byte payload, no cursor work.
             return {{ struct_name }}()
 {% elif has_variant %}
+{% if variant.has_peek_byte %}
+            // RFC §5.B Y3 atomic 2b-ii peek-byte — peek-byte mode:
+            // streaming prefix decode (variable-length supported), then
+            // peek the cursor's next byte for variant tag without
+            // advancing. Arm body decoder reads peeked byte as own
+            // header.
+{% for field in fields %}
+{% if field.is_repeat %}
+            {{ field.repeat_decode_stmt }}
+{% elif field.is_tlv_chain %}
+            {{ field.tlv_chain_decode_stmt }}
+{% elif field.is_embed %}
+            {{ field.embed_decode_stmt }}
+{% else %}
+            {{ field.present_if_decode_stmt }}
+{% endif %}
+{% endfor %}
+            {{ variant.peek_byte_decode_stmt }}
+{% else %}
             // Decode fixed prefix (RFC §5.B variant B1-β: fields before tag suffix).
             val raw = cursor.peekSlice({{ min_bytes }}) ?: return null
 {% for field in fields %}
             val {{ field.id }} = {{ field.decode_expr }}
 {% endfor %}
             if (!cursor.advance({{ min_bytes }})) return null
+{% endif %}
             // Dispatch on the tag field; each arm decodes its body codec
             // from the cursor. The default arm (when declared) carries
             // the runtime tag value so encode can round-trip it back

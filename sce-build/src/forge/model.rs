@@ -1194,6 +1194,42 @@ pub struct VariantArm {
     pub body_alias: String,
 }
 
+/// RFC §5.B Y3 atomic 2b-ii peek-byte — peek-byte dispatch shape on a
+/// `<sce:variant>`. When `Some` on `CodecVariant.peek_byte`, the tag
+/// reads the cursor's NEXT byte without advancing; the arm body codec
+/// then reads that same byte as its own header. Models Zenoh
+/// response/request body dispatch where the next-byte MID identifies
+/// the inner body codec (per `network.c:347-364` + `220-235` —
+/// `_z_uint8_decode(&inner_header, ...)` consumed by outer decoder
+/// then passed by VALUE to arm body decoder).
+///
+/// `id` names the peek slot — referenced by the variant's
+/// `tag="<id>.<flag>"` dotted form (parser-enforced — peek mode tag
+/// MUST be dotted, MUST equal `peek_byte.id` for the carrier half).
+///
+/// `flags` mirrors `<sce:flags>`-style children: `<sce:flag name="X"
+/// bit="N" width="W"/>`. v1 fixes the peeked width at uint8 (Zenoh
+/// single-byte network dispatch); future widening to peek-multi-byte
+/// is a separate primitive (peek-bytes) when a reachable consumer
+/// surfaces, NOT a `sce:type` widening on this element.
+///
+/// Cross-codec validator confirms the dispatch flag (the one named
+/// in the variant's tag) matches every arm body codec's own first
+/// flag-bearing field's `<sce:flag>` declaration of the same
+/// (name, bit, width) — the peeked byte == arm body's own header
+/// byte, so the flag layout must agree on the dispatch bit-range.
+#[derive(Debug, Clone, Serialize)]
+pub struct PeekByteSpec {
+    /// Logical name for the peek slot. Used as the carrier half of
+    /// the variant's `tag="<id>.<flag>"` dotted form. Not a wire
+    /// field — the byte stays on the cursor for the arm body to read.
+    pub id: String,
+    /// Per-flag bit-range layout on the peeked byte. Mirrors
+    /// `<sce:flags>` semantics — unique flag names + non-overlapping
+    /// bit-ranges within `[0, 8)` (peek width is uint8).
+    pub flags: Vec<FlagDef>,
+}
+
 /// Discriminated-union suffix on a codec — RFC §5.B Codec DSL.
 ///
 /// Decode reads the named tag field (or named flag bit-range within it,
@@ -1208,6 +1244,13 @@ pub struct CodecVariant {
     /// value (or named bit-range, see `tag_flag`) selects an arm. Must
     /// reference an unsigned-int field (uint8/uint16/uint32/uint64) —
     /// enforced at parse time.
+    ///
+    /// RFC §5.B Y3 atomic 2b-ii peek-byte peek-byte mode: when
+    /// `peek_byte` is `Some`, `tag_field` equals `peek_byte.id` (the
+    /// peek slot's name, NOT a real codec field). The carrier value
+    /// is the cursor's next byte (read via `peek_slice(1)`, no
+    /// advance); arm body decoder reads the same byte as its own
+    /// header.
     pub tag_field: String,
     /// RFC §5.B B5-β multi-bit-flag dispatch: when `Some(name)`, the
     /// `tag_field` MUST be a `<sce:flags>`-bearing carrier and `name`
@@ -1224,6 +1267,15 @@ pub struct CodecVariant {
     /// tag domain isn't fully covered by `arms`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_arm: Option<VariantArm>,
+    /// RFC §5.B Y3 atomic 2b-ii peek-byte — peek-byte mode dispatch
+    /// (Zenoh response/request body MID). `Some` ⇒ variant tag reads
+    /// `peek_byte`'s next-byte view (carrier is the cursor's next
+    /// byte without advancing); arm body codec reads same byte as
+    /// own header. `None` ⇒ B1-β own-field mode (back-compat:
+    /// existing variant goldens omit this field via
+    /// skip_serializing_if).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peek_byte: Option<PeekByteSpec>,
 }
 
 /// Codec: byte-level encode/decode. Generates struct with decode/encode methods.

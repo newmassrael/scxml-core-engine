@@ -1303,6 +1303,56 @@ fn forge_codec_present_if_disjunction() {
     );
 }
 
+// ── RFC §5.B Y3 atomic 2b-ii peek-byte peek-byte primitive (Cpp) ──
+// `codec_variant_peek_basic` exercises `<sce:peek-byte>` as a child
+// of `<sce:variant>` — the cursor's NEXT byte is read without
+// advancing and dispatched on a named bit-range; the arm body
+// decoder reads that same byte as its own first wire byte. Models
+// the Zenoh response/request body MID dispatch shape per
+// `network.c:347-364`. The cross-codec validator (this atomic)
+// enforces that each arm body's first `<sce:flags>` field at
+// byte_offset=0 declares peek-byte's named flags identically. Arm
+// body codecs `codec_peek_arm_a` / `codec_peek_arm_b` ship as
+// standalone fixtures so each is byte-golden-pinned independently
+// (the demo composes them via `<sce:import>`).
+
+#[test]
+fn forge_codec_peek_arm_a() {
+    assert_standalone_forge("codec_peek_arm_a", "codec_peek_arm_a.h");
+}
+
+#[test]
+fn forge_codec_peek_arm_b() {
+    assert_standalone_forge("codec_peek_arm_b", "codec_peek_arm_b.h");
+}
+
+#[test]
+fn forge_codec_variant_peek_basic() {
+    assert_standalone_forge(
+        "codec_variant_peek_basic",
+        "codec_variant_peek_basic.h",
+    );
+}
+
+// ── RFC §5.B Y3 atomic 2b-ii peek-byte first realistic peek-byte
+// consumer: codec_zenoh_response (Cpp). Network-layer envelope
+// wrapping reply/err inner bodies — the inner body's own header
+// MID (Z_REPLY = 0x04 / Z_ERR = 0x05) identifies which arm body
+// codec consumes the trailing wire bytes. Mirrors zenoh-pico
+// `_z_response_encode/decode` (network.c). Composes Y3 atomic 2b-i
+// sub-codecs (msg_reply / msg_err) under the new peek-byte
+// primitive. Q4 envelope-only fidelity — inner wire detail strips
+// (VLE-LSB-as-flag, bit-shifted-length-prefix, source_info nested
+// ext) defer to follow-up atomic 2b-iii-{α,β,γ}.
+
+#[test]
+fn forge_codec_zenoh_response() {
+    assert_standalone_forge(
+        "codec_zenoh_response",
+        "codec_zenoh_response.h",
+    );
+}
+
 // ── RFC §5.B B2-β present-if + variable-length (Cpp) ─────────
 // B2-β lifts the v1 BitSize::Fixed-only restriction so present-if
 // can gate Tail / LengthRef / Vle bit-sizes. Each fixture pairs
@@ -3659,6 +3709,34 @@ fn forge_kotlin_codec_present_if_disjunction() {
     );
 }
 
+// ── RFC §5.B Y3 atomic 2b-ii peek-byte peek-byte primitive (Kotlin) ──
+
+#[test]
+fn forge_kotlin_codec_peek_arm_a() {
+    assert_standalone_forge_kotlin("codec_peek_arm_a", "CodecPeekArmA.kt");
+}
+
+#[test]
+fn forge_kotlin_codec_peek_arm_b() {
+    assert_standalone_forge_kotlin("codec_peek_arm_b", "CodecPeekArmB.kt");
+}
+
+#[test]
+fn forge_kotlin_codec_variant_peek_basic() {
+    assert_standalone_forge_kotlin(
+        "codec_variant_peek_basic",
+        "CodecVariantPeekBasic.kt",
+    );
+}
+
+#[test]
+fn forge_kotlin_codec_zenoh_response() {
+    assert_standalone_forge_kotlin(
+        "codec_zenoh_response",
+        "CodecZenohResponse.kt",
+    );
+}
+
 // ── RFC §5.B B2-β present-if + variable-length (Kotlin) ─────
 
 #[test]
@@ -4150,6 +4228,34 @@ fn forge_rust_codec_present_if_disjunction() {
     assert_standalone_forge_rust(
         "codec_present_if_disjunction",
         "codec_present_if_disjunction.rs",
+    );
+}
+
+// ── RFC §5.B Y3 atomic 2b-ii peek-byte peek-byte primitive (Rust) ──
+
+#[test]
+fn forge_rust_codec_peek_arm_a() {
+    assert_standalone_forge_rust("codec_peek_arm_a", "codec_peek_arm_a.rs");
+}
+
+#[test]
+fn forge_rust_codec_peek_arm_b() {
+    assert_standalone_forge_rust("codec_peek_arm_b", "codec_peek_arm_b.rs");
+}
+
+#[test]
+fn forge_rust_codec_variant_peek_basic() {
+    assert_standalone_forge_rust(
+        "codec_variant_peek_basic",
+        "codec_variant_peek_basic.rs",
+    );
+}
+
+#[test]
+fn forge_rust_codec_zenoh_response() {
+    assert_standalone_forge_rust(
+        "codec_zenoh_response",
+        "codec_zenoh_response.rs",
     );
 }
 
@@ -4662,6 +4768,34 @@ fn forge_go_codec_present_if_disjunction() {
     );
 }
 
+// ── RFC §5.B Y3 atomic 2b-ii peek-byte peek-byte primitive (Go) ──
+
+#[test]
+fn forge_go_codec_peek_arm_a() {
+    assert_standalone_forge_go("codec_peek_arm_a", "codec_peek_arm_a.go");
+}
+
+#[test]
+fn forge_go_codec_peek_arm_b() {
+    assert_standalone_forge_go("codec_peek_arm_b", "codec_peek_arm_b.go");
+}
+
+#[test]
+fn forge_go_codec_variant_peek_basic() {
+    assert_standalone_forge_go(
+        "codec_variant_peek_basic",
+        "codec_variant_peek_basic.go",
+    );
+}
+
+#[test]
+fn forge_go_codec_zenoh_response() {
+    assert_standalone_forge_go(
+        "codec_zenoh_response",
+        "codec_zenoh_response.go",
+    );
+}
+
 // ── RFC §5.B B2-β present-if + variable-length (Go) ─────────
 
 #[test]
@@ -5109,6 +5243,34 @@ fn forge_python_codec_present_if_disjunction() {
     );
 }
 
+// ── RFC §5.B Y3 atomic 2b-ii peek-byte peek-byte primitive (Python) ──
+
+#[test]
+fn forge_python_codec_peek_arm_a() {
+    assert_standalone_forge_python("codec_peek_arm_a", "codec_peek_arm_a.py");
+}
+
+#[test]
+fn forge_python_codec_peek_arm_b() {
+    assert_standalone_forge_python("codec_peek_arm_b", "codec_peek_arm_b.py");
+}
+
+#[test]
+fn forge_python_codec_variant_peek_basic() {
+    assert_standalone_forge_python(
+        "codec_variant_peek_basic",
+        "codec_variant_peek_basic.py",
+    );
+}
+
+#[test]
+fn forge_python_codec_zenoh_response() {
+    assert_standalone_forge_python(
+        "codec_zenoh_response",
+        "codec_zenoh_response.py",
+    );
+}
+
 // ── RFC §5.B B2-β present-if + variable-length (Python) ─────
 
 #[test]
@@ -5515,6 +5677,34 @@ fn forge_c11_codec_present_if_disjunction() {
     assert_standalone_forge_c(
         "codec_present_if_disjunction",
         "codec_present_if_disjunction.c.h",
+    );
+}
+
+// ── RFC §5.B Y3 atomic 2b-ii peek-byte peek-byte primitive (C11) ──
+
+#[test]
+fn forge_c11_codec_peek_arm_a() {
+    assert_standalone_forge_c("codec_peek_arm_a", "codec_peek_arm_a.c.h");
+}
+
+#[test]
+fn forge_c11_codec_peek_arm_b() {
+    assert_standalone_forge_c("codec_peek_arm_b", "codec_peek_arm_b.c.h");
+}
+
+#[test]
+fn forge_c11_codec_variant_peek_basic() {
+    assert_standalone_forge_c(
+        "codec_variant_peek_basic",
+        "codec_variant_peek_basic.c.h",
+    );
+}
+
+#[test]
+fn forge_c11_codec_zenoh_response() {
+    assert_standalone_forge_c(
+        "codec_zenoh_response",
+        "codec_zenoh_response.c.h",
     );
 }
 

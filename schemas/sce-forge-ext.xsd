@@ -37,7 +37,7 @@
       <xs:enumeration value="lookup"/>
       <xs:enumeration value="condition"/>
       <xs:enumeration value="codec"/>
-      <!-- Phase 2 -->
+      <!-- peek-byte mode dispatch (RFC §5.B Y3 atomic 2b-ii) -->
       <xs:enumeration value="procedure"/>
       <xs:enumeration value="validator"/>
       <!-- Phase 3 -->
@@ -361,6 +361,27 @@
   <xs:element name="variant">
     <xs:complexType>
       <xs:sequence>
+        <!-- RFC §5.B Y3 atomic 2b-ii peek-byte — peek-byte mode:
+             singleton `<sce:peek-byte>` child opts the variant into
+             dispatch on the cursor's NEXT byte (read without
+             advancing) instead of an own-codec field. Every arm
+             body codec then reads the SAME byte as its first wire
+             byte. When present, the variant's `tag` attribute MUST
+             be the dotted form `<peek_id>.<flag>` referencing this
+             element's `id` and one of its `<sce:flag>` children. -->
+        <xs:element name="peek-byte" minOccurs="0">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element ref="sce:flag" minOccurs="1" maxOccurs="unbounded"/>
+            </xs:sequence>
+            <xs:attribute name="id" type="xs:NCName" use="required"/>
+            <!-- v1 fixed at uint8 (Zenoh single-byte network dispatch
+                 pattern). Multi-byte peek surfaces as a separate
+                 `<sce:peek-bytes>` primitive when a reachable
+                 consumer surfaces. -->
+            <xs:attribute ref="sce:type" use="required"/>
+          </xs:complexType>
+        </xs:element>
         <xs:element ref="sce:arm" minOccurs="0" maxOccurs="unbounded"/>
         <!-- The local name `default` does not collide with the global
              <xs:attribute name="default"/> declared earlier; XSD

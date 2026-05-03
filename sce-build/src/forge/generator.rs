@@ -120,6 +120,19 @@ pub struct ImportContext {
     /// imports that don't declare a parent-flags dependency.
     #[serde(skip)]
     pub codec_requires_parent_flags: Option<crate::forge::model::RequiresParentFlags>,
+
+    /// For codec imports: the imported codec's FIRST `<sce:flags>`-
+    /// bearing field at `byte_offset = 0` — captured as `(field_id,
+    /// flag_layout)`. Used by the RFC §5.B Y3 atomic 2b-ii peek-byte
+    /// peek-byte cross-codec validator: when the parent variant
+    /// declares `<sce:peek-byte>`, every arm body codec must declare
+    /// each peek-byte flag identically (name + bit + width) on its
+    /// own header byte (the peeked byte == arm body's first wire
+    /// byte). `None` for non-codec imports, for codec imports whose
+    /// first field is not a flags carrier at offset 0, and for codec
+    /// imports whose model failed to parse during enrichment.
+    #[serde(skip)]
+    pub codec_first_flags: Option<(String, Vec<crate::forge::model::FlagDef>)>,
 }
 
 /// Resolve a list of `ForgeImport` into template-ready `ImportContext`.
@@ -249,6 +262,7 @@ fn resolve_single_import(
                 go_init_expr: String::new(),
                 codec_max_bytes: None,
                 codec_requires_parent_flags: None,
+                codec_first_flags: None,
             }
         }
         crate::generator::Language::Kotlin => {
@@ -278,6 +292,7 @@ fn resolve_single_import(
                 go_init_expr: String::new(),
                 codec_max_bytes: None,
                 codec_requires_parent_flags: None,
+                codec_first_flags: None,
             }
         }
         crate::generator::Language::Rust => {
@@ -309,6 +324,7 @@ fn resolve_single_import(
                 go_init_expr: String::new(),
                 codec_max_bytes: None,
                 codec_requires_parent_flags: None,
+                codec_first_flags: None,
             }
         }
         crate::generator::Language::Go => {
@@ -366,6 +382,7 @@ fn resolve_single_import(
                 go_init_expr,
                 codec_max_bytes: None,
                 codec_requires_parent_flags: None,
+                codec_first_flags: None,
             }
         }
         crate::generator::Language::Python => {
@@ -397,6 +414,7 @@ fn resolve_single_import(
                 go_init_expr: String::new(),
                 codec_max_bytes: None,
                 codec_requires_parent_flags: None,
+                codec_first_flags: None,
             }
         }
         crate::generator::Language::C11 => {
@@ -429,6 +447,7 @@ fn resolve_single_import(
                 go_init_expr: String::new(),
                 codec_max_bytes: None,
                 codec_requires_parent_flags: None,
+                codec_first_flags: None,
             }
         }
     }
@@ -1079,6 +1098,12 @@ fn render_codec(
     // confirm rides the FIRST parent that wires them up.
     if let Some(v) = &m.variant {
         validate_cross_codec_parent_flags(m, v, imports)?;
+        // RFC §5.B Y3 atomic 2b-ii peek-byte: peek-byte cross-codec
+        // contract — the peeked byte == arm body's own first wire
+        // byte, so the peek-byte's flag layout must agree (by name
+        // + bit + width) with every arm body codec's first
+        // `<sce:flags>`-bearing field at offset 0.
+        validate_cross_codec_peek_byte(m, v, imports)?;
     }
 
     // RFC §5.B B5-γ closures complete: all six backends (Rust / Cpp /
@@ -1849,7 +1874,16 @@ fn render_codec(
     // dedicated boolean keeps the template logic explicit (and
     // forward-compatible with future zero-byte shapes that aren't
     // strictly empty fields).
-    ctx.insert("has_no_fields".into(), m.fields.is_empty().into());
+    //
+    // Y3 atomic 2b-ii peek-byte — peek-byte variants may declare zero
+    // own fields (the variant suffix carries the entire wire body via
+    // the peeked next byte + arm body decoder). For those, the
+    // dedicated variant-decode template branch must take precedence
+    // over the trivial no-fields branch, hence the `&&` exclusion.
+    ctx.insert(
+        "has_no_fields".into(),
+        (m.fields.is_empty() && m.variant.is_none()).into(),
+    );
     if matches!(lang, crate::generator::Language::C11) {
         ctx.insert(
             "c_struct_snake".into(),
@@ -2050,15 +2084,52 @@ fn render_codec(
     // form (B1-β) `tag_flag` is `None` and the effective tag type is
     // the carrier's full type (whole-field dispatch — back-compat).
     if let Some(v) = &m.variant {
-        let carrier_field = m
-            .fields
-            .iter()
-            .find(|f| f.id == v.tag_field)
-            .expect("parser validated tag_field references an existing field");
-        let carrier_type = carrier_field.sce_type.clone();
-        let (tag_type, tag_flag_def) = match &v.tag_flag {
-            None => (carrier_type.clone(), None),
-            Some(flag_name) => {
+        // Y3 atomic 2b-ii peek-byte: peek-byte mode resolves the carrier
+        // from `<sce:peek-byte>` instead of a real codec field.
+        // `carrier_type` is fixed at uint8 (peek width is single-byte
+        // v1); `flag_def` is the named flag in `peek_byte.flags`.
+        let (carrier_type, peek_flag_def) = if let Some(peek) = &v.peek_byte {
+            let flag_name = v
+                .tag_flag
+                .as_ref()
+                .expect("parser enforces dotted tag in peek mode");
+            let flag_def = peek
+                .flags
+                .iter()
+                .find(|f| f.name == *flag_name)
+                .expect("parser validated tag_flag references a peek-byte flag");
+            (SceType::Uint8, Some(flag_def))
+        } else {
+            let carrier_field = m
+                .fields
+                .iter()
+                .find(|f| f.id == v.tag_field)
+                .expect("parser validated tag_field references an existing field");
+            (carrier_field.sce_type.clone(), None)
+        };
+        let (tag_type, tag_flag_def) = match (&v.peek_byte, &v.tag_flag) {
+            (Some(_), _) => {
+                let flag_def = peek_flag_def
+                    .expect("peek mode always carries a flag def per parser");
+                let width = flag_def.width.max(1);
+                let result_type = if width <= 8 {
+                    SceType::Uint8
+                } else if width <= 16 {
+                    SceType::Uint16
+                } else if width <= 32 {
+                    SceType::Uint32
+                } else {
+                    SceType::Uint64
+                };
+                (result_type, Some(flag_def))
+            }
+            (None, None) => (carrier_type.clone(), None),
+            (None, Some(flag_name)) => {
+                let carrier_field = m
+                    .fields
+                    .iter()
+                    .find(|f| f.id == v.tag_field)
+                    .expect("parser validated tag_field references an existing field");
                 let flag_def = carrier_field
                     .flags
                     .iter()
@@ -2383,7 +2454,21 @@ fn render_codec(
         // the literal text the templates emitted before B5-β so existing
         // variant goldens stay byte-stable; multi-bit-flag values
         // emit `(carrier >> bit) & ((1<<width)-1)` in per-language idiom.
-        let carrier_id = l.codec_field_id(&v.tag_field);
+        // Y3 atomic 2b-ii peek-byte: peek-byte mode reads from a local
+        // variable `_peek` (the cursor's peeked next byte) instead of
+        // `out->{field}` / `self.{field}` etc. The local-var name is
+        // shared across all 6 backends — templates emit
+        // `let _peek = cursor.peek_slice(1)?[0];` (per-language idiom)
+        // before the dispatch when `variant.peek_byte` is set.
+        let peek_mode = v.peek_byte.is_some();
+        let carrier_id = if peek_mode {
+            "_peek".to_string()
+        } else {
+            l.codec_field_id(&v.tag_field)
+        };
+        // C11 own-field mode reads from `out->{field}` (the codec's
+        // output struct member); peek mode reads from a bare local var.
+        let c11_carrier_qualifier = if peek_mode { "" } else { "out->" };
         let (tag_match_expr, tag_store_expr) = match (&tag_flag_def, lang) {
             // ── Whole-field (B1-β back-compat) ──────────────────────
             (None, crate::generator::Language::Rust) => {
@@ -2396,7 +2481,7 @@ fn render_codec(
                 (carrier_id.clone(), carrier_id.clone())
             }
             (None, crate::generator::Language::C11) => {
-                let qualified = format!("out->{carrier_id}");
+                let qualified = format!("{c11_carrier_qualifier}{carrier_id}");
                 (qualified.clone(), qualified)
             }
             (None, crate::generator::Language::Python) => {
@@ -2462,7 +2547,7 @@ fn render_codec(
                     crate::generator::Language::C11 => {
                         let result_ty = format!("uint{result_bits}_t");
                         let expr = format!(
-                            "({result_ty})((out->{carrier_id} >> {bit}) & ({result_ty}){value_mask_lit})"
+                            "({result_ty})(({c11_carrier_qualifier}{carrier_id} >> {bit}) & ({result_ty}){value_mask_lit})"
                         );
                         (expr.clone(), expr)
                     }
@@ -2541,6 +2626,55 @@ fn render_codec(
         if let Some(d) = default_ctx {
             variant_obj.insert("default_arm".into(), d);
         }
+        // Y3 atomic 2b-ii peek-byte: per-language `let _peek = ...`
+        // statement (and `has_peek_byte` flag) emitted into the
+        // template's variant decode prologue. The peeked byte stays
+        // on the cursor so the arm body decoder reads it as its own
+        // header byte. Empty string when the variant uses own-field
+        // mode (templates render the dispatch directly without the
+        // peek statement).
+        let peek_byte_decode_stmt = if peek_mode {
+            match lang {
+                crate::generator::Language::Rust => {
+                    "let _peek = cursor.peek_slice(1)?[0];".to_string()
+                }
+                crate::generator::Language::Cpp => {
+                    "const std::uint8_t* _peek_raw = cursor.peek_slice(1);\n        \
+                     if (_peek_raw == nullptr) return std::nullopt;\n        \
+                     const std::uint8_t _peek = _peek_raw[0];"
+                        .to_string()
+                }
+                crate::generator::Language::Kotlin => {
+                    "val _peekRaw = cursor.peekSlice(1) ?: return null\n        \
+                     val _peek: UByte = _peekRaw[0]"
+                        .to_string()
+                }
+                crate::generator::Language::Go => {
+                    "_peekSlice, err := cursor.PeekSlice(1)\n\t\
+                     if err != nil {\n\t\treturn nil, err\n\t}\n\t\
+                     _peek := _peekSlice[0]"
+                        .to_string()
+                }
+                crate::generator::Language::Python => {
+                    "_peek = cursor.peek_slice(1)[0]".to_string()
+                }
+                crate::generator::Language::C11 => {
+                    "const uint8_t *_peek_raw = sce_forge_cursor_peek(cursor, 1);\n    \
+                     if (_peek_raw == NULL) {\n        \
+                         return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
+                     }\n    \
+                     const uint8_t _peek = _peek_raw[0];"
+                        .to_string()
+                }
+            }
+        } else {
+            String::new()
+        };
+        variant_obj.insert("has_peek_byte".into(), peek_mode.into());
+        variant_obj.insert(
+            "peek_byte_decode_stmt".into(),
+            peek_byte_decode_stmt.into(),
+        );
         ctx.insert("has_variant".into(), true.into());
         ctx.insert("variant".into(), serde_json::Value::Object(variant_obj));
     } else {
@@ -2771,6 +2905,105 @@ fn validate_cross_codec_parent_flags(
             // width=1 in parse_requires_parent_flags); the parent
             // can have a wider declaration but the body's bit-test
             // still uses width=1, so width-mismatch is not an error.
+        }
+    }
+    Ok(())
+}
+
+/// RFC §5.B Y3 atomic 2b-ii peek-byte — peek-byte cross-codec validator.
+///
+/// When the parent variant declares `<sce:peek-byte>`, the cursor's
+/// next byte (read without advancing) is the dispatch byte; the arm
+/// body codec then reads that same byte as its own first wire byte.
+/// The peek-byte's declared flags MUST therefore agree — by name +
+/// bit position + width — with every arm body codec's first
+/// `<sce:flags>`-bearing field at byte_offset = 0. Mismatch surfaces
+/// as `codec/parent-flag-mismatch` (reused diagnostic — the failure
+/// mode is structurally identical to the B5-γ parent-flags variant:
+/// arm body header layout disagreeing with parent's declared shape).
+///
+/// Verification is one-directional: every flag declared on
+/// `<sce:peek-byte>` must appear identically on the arm body's
+/// header. Arm-body-specific flags that the peek-byte does NOT
+/// declare are allowed (the peek simply doesn't extract those bits).
+/// This matches the wire contract — the dispatch needs only the
+/// flags it reads, while arm bodies may carry additional bits in
+/// their own header for their own purposes.
+fn validate_cross_codec_peek_byte(
+    parent: &CodecModel,
+    variant: &CodecVariant,
+    imports: &[ImportContext],
+) -> Result<(), ForgeError> {
+    use crate::forge::error::ValidationError;
+
+    let peek = match &variant.peek_byte {
+        Some(p) => p,
+        None => return Ok(()),
+    };
+
+    let mut aliases: Vec<&str> = variant
+        .arms
+        .iter()
+        .map(|a| a.body_alias.as_str())
+        .collect();
+    if let Some(d) = &variant.default_arm {
+        aliases.push(d.body_alias.as_str());
+    }
+    aliases.sort();
+    aliases.dedup();
+
+    for alias in aliases {
+        let imp = match imports.iter().find(|i| i.alias == alias) {
+            Some(i) => i,
+            None => continue, // upstream variant body resolution will reject
+        };
+        // V1 contract: when the arm body has a `<sce:flags>` carrier
+        // at byte_offset = 0, every flag the peek-byte declares MUST
+        // agree (bit + width) with any same-named flag in that
+        // carrier. Mismatched bit/width on a same-named flag is a
+        // wire-correctness bug. The arm body is free to declare extra
+        // flags the peek-byte doesn't name (those bits aren't part of
+        // dispatch) and is also free to skip naming peek-byte's
+        // flags entirely (the arm body just doesn't expose those bits
+        // to its host code — peek-byte still extracts them for
+        // dispatch). When the arm body has no flags carrier at offset
+        // 0 (B5-η-style stripped leaves like codec_zenoh_put / del),
+        // there's no per-flag contract to verify — accept.
+        let (header_field_id, body_flags) = match &imp.codec_first_flags {
+            Some((id, flags)) => (id.as_str(), flags.as_slice()),
+            None => continue,
+        };
+
+        for peek_flag in &peek.flags {
+            let body_flag = match body_flags.iter().find(|f| f.name == peek_flag.name) {
+                Some(f) => f,
+                None => continue,
+            };
+            if body_flag.bit != peek_flag.bit || body_flag.width != peek_flag.width {
+                return Err(ForgeError::Validation(
+                    ValidationError::CodecParentFlagMismatch {
+                        body_codec: alias.to_string(),
+                        parent_codec: parent.name.clone(),
+                        reason: format!(
+                            "parent <sce:peek-byte id=\"{}\"> places flag \
+                             '{}' at bit={} width={} but arm body '{}' header \
+                             field '{}' places '{}' at bit={} width={} — fix \
+                             one side (the peeked byte and the arm body's \
+                             own first byte are the same wire byte, so the \
+                             two declarations MUST agree)",
+                            peek.id,
+                            peek_flag.name,
+                            peek_flag.bit,
+                            peek_flag.width,
+                            alias,
+                            header_field_id,
+                            peek_flag.name,
+                            body_flag.bit,
+                            body_flag.width
+                        ),
+                    },
+                ));
+            }
         }
     }
     Ok(())
@@ -15203,6 +15436,7 @@ mod tests {
                 go_init_expr: String::new(),
                 codec_max_bytes: None,
                 codec_requires_parent_flags: None,
+                codec_first_flags: None,
             },
             ImportContext {
                 alias: "c".to_string(),
@@ -15221,6 +15455,7 @@ mod tests {
                 go_init_expr: String::new(),
                 codec_max_bytes: None,
                 codec_requires_parent_flags: None,
+                codec_first_flags: None,
             },
         ];
         let (has, _all, _stateful) = build_template_imports(&imports);

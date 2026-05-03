@@ -767,6 +767,19 @@ fn validate_and_enrich_imports(
                 // and the cross-codec validator can confirm layout
                 // match against the parent's `<sce:flags id="X">`.
                 ctx.codec_requires_parent_flags = cm.requires_parent_flags.clone();
+                // RFC §5.B Y3 atomic 2b-ii peek-byte: capture the
+                // imported body codec's FIRST `<sce:flags>`-bearing
+                // field at byte_offset=0 so the parent variant's
+                // peek-byte cross-codec validator can confirm the
+                // arm body's own header flag layout matches the
+                // peek-byte's declaration. Only the first wire-zero
+                // flag-bearing field qualifies — that's the byte the
+                // peek would have observed.
+                ctx.codec_first_flags = cm
+                    .fields
+                    .iter()
+                    .find(|f| !f.flags.is_empty() && f.byte_offset == 0)
+                    .map(|f| (f.id.clone(), f.flags.clone()));
             }
             if !ctx.is_stateful {
                 if let Some(name) = discover_primary_function(&doc, language) {
