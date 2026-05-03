@@ -85,12 +85,11 @@ class CodecZenohOpenBody:
             _w >>= 7
         r.append(_w)
         if self.cookie_len is not None:
-            _v = self.cookie_len
-        _w = int(_v)
-        while _w >= 0x80:
-            r.append((_w & 0x7F) | 0x80)
-            _w >>= 7
-        r.append(_w)
+            _w = int(self.cookie_len)
+            while _w >= 0x80:
+                r.append((_w & 0x7F) | 0x80)
+                _w >>= 7
+            r.append(_w)
         if self.cookie is not None:
             r.extend(self.cookie)
         return bytes(r)

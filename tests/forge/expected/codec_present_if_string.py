@@ -4,19 +4,20 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import CodecError, NeedMoreBytes, SceCursor
+from sce_forge_runtime.codec import CodecError, InvalidUtf8, NeedMoreBytes, SceCursor
 
 from dataclasses import dataclass
 from typing import Optional
 
 
 @dataclass
-class CodecPresentIfVle:
-    flags: int = 0
-    optional_id: Optional[int] = None
+class CodecPresentIfString:
+    carrier: int = 0
+    text_len: Optional[int] = None
+    text: Optional[str] = None
 
     @classmethod
-    def decode(cls, cursor: SceCursor) -> Optional[CodecPresentIfVle]:
+    def decode(cls, cursor: SceCursor) -> Optional[CodecPresentIfString]:
         """Decode the next frame from ``cursor``. Returns ``None`` when
         the cursor's tail is shorter than the declared minimum frame
         (RFC §5.B L494-519); on success the cursor advances past the
@@ -31,18 +32,32 @@ class CodecPresentIfVle:
         # VLE + present-if uses the unified streaming path.
         try:
             raw = cursor.peek_slice(1)
-            flags = raw[0]
+            carrier = raw[0]
             cursor.advance(1)
-            if (flags & 0x01) != 0:
-                _v = cursor.read_vle_u64()
-                optional_id = _v
+            if (carrier & 0x01) != 0:
+                raw = cursor.peek_slice(1)
+                _v = raw[0]
+                cursor.advance(1)
+                text_len = _v
             else:
-                optional_id = None
+                text_len = None
+            if (carrier & 0x01) != 0:
+                _n = text_len
+                raw = cursor.peek_slice(_n)
+                try:
+                    _v = bytes(raw).decode('utf-8')
+                except UnicodeDecodeError as exc:
+                    raise InvalidUtf8() from exc
+                cursor.advance(_n)
+                text = _v
+            else:
+                text = None
         except NeedMoreBytes:
             return None
         return cls(
-            flags=flags,
-            optional_id=optional_id,
+            carrier=carrier,
+            text_len=text_len,
+            text=text,
         )
 
     # RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
@@ -52,14 +67,14 @@ class CodecPresentIfVle:
     # the way in so out-of-range callers can't corrupt sibling bits.
     # Plain methods (rather than @property) for API symmetry with
     # Rust / Cpp / Kotlin / Go / C11. Wire layout is unchanged.
-    def has_id(self) -> bool:
-        return (self.flags & 0x01) != 0
+    def has_text(self) -> bool:
+        return (self.carrier & 0x01) != 0
 
-    def set_has_id(self, v: bool) -> None:
+    def set_has_text(self, v: bool) -> None:
         if v:
-            self.flags = (self.flags | 0x01) & 0xFF
+            self.carrier = (self.carrier | 0x01) & 0xFF
         else:
-            self.flags = self.flags & (0xFF ^ 0x01)
+            self.carrier = self.carrier & (0xFF ^ 0x01)
 
     def encode(self) -> bytes:
         # RFC §5.B B1-δ + B2-β present-if encode: per-field byte
@@ -68,11 +83,9 @@ class CodecPresentIfVle:
         # dedicated helper. Branch fires before has_vle_fields so a
         # codec mixing VLE + present-if uses the unified encode path.
         r = bytearray()
-        r.append(self.flags & 0xFF)
-        if self.optional_id is not None:
-            _w = int(self.optional_id)
-            while _w >= 0x80:
-                r.append((_w & 0x7F) | 0x80)
-                _w >>= 7
-            r.append(_w)
+        r.append(self.carrier & 0xFF)
+        if self.text_len is not None:
+            r.append(self.text_len & 0xFF)
+        if self.text is not None:
+            r.extend(self.text.encode('utf-8'))
         return bytes(r)

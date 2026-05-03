@@ -4,20 +4,20 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import CodecError, NeedMoreBytes, SceCursor
+from sce_forge_runtime.codec import CodecError, InvalidUtf8, NeedMoreBytes, SceCursor
 
 from dataclasses import dataclass
 from typing import Optional
 
 
 @dataclass
-class CodecInitCookieBody:
-    version: int = 0
-    cookie_size: Optional[int] = None
-    cookie: Optional[bytes] = None
+class CodecZenohWireexpr:
+    id: int = 0
+    suffix_len: Optional[int] = None
+    suffix: Optional[str] = None
 
     @classmethod
-    def decode(cls, cursor: SceCursor, parent_flags: int) -> Optional[CodecInitCookieBody]:
+    def decode(cls, cursor: SceCursor, parent_flags: int) -> Optional[CodecZenohWireexpr]:
         """Decode the next frame from ``cursor``. Returns ``None`` when
         the cursor's tail is shorter than the declared minimum frame
         (RFC §5.B L494-519); on success the cursor advances past the
@@ -40,28 +40,29 @@ class CodecInitCookieBody:
         # helper. Branch fires before has_vle_fields so a codec mixing
         # VLE + present-if uses the unified streaming path.
         try:
-            raw = cursor.peek_slice(1)
-            version = raw[0]
-            cursor.advance(1)
+            id = cursor.read_vle_u64()
             if (parent_flags & 0x20) != 0:
-                _v = cursor.read_vle_u16()
-                cookie_size = _v
+                _v = cursor.read_vle_u64()
+                suffix_len = _v
             else:
-                cookie_size = None
+                suffix_len = None
             if (parent_flags & 0x20) != 0:
-                _n = cookie_size
+                _n = suffix_len
                 raw = cursor.peek_slice(_n)
-                _v = bytes(raw)
+                try:
+                    _v = bytes(raw).decode('utf-8')
+                except UnicodeDecodeError as exc:
+                    raise InvalidUtf8() from exc
                 cursor.advance(_n)
-                cookie = _v
+                suffix = _v
             else:
-                cookie = None
+                suffix = None
         except NeedMoreBytes:
             return None
         return cls(
-            version=version,
-            cookie_size=cookie_size,
-            cookie=cookie,
+            id=id,
+            suffix_len=suffix_len,
+            suffix=suffix,
         )
 
     def encode(self, parent_flags: int) -> bytes:
@@ -73,13 +74,17 @@ class CodecInitCookieBody:
         # dedicated helper. Branch fires before has_vle_fields so a
         # codec mixing VLE + present-if uses the unified encode path.
         r = bytearray()
-        r.append(self.version & 0xFF)
-        if self.cookie_size is not None:
-            _w = int(self.cookie_size)
+        _w = int(self.id)
+        while _w >= 0x80:
+            r.append((_w & 0x7F) | 0x80)
+            _w >>= 7
+        r.append(_w)
+        if self.suffix_len is not None:
+            _w = int(self.suffix_len)
             while _w >= 0x80:
                 r.append((_w & 0x7F) | 0x80)
                 _w >>= 7
             r.append(_w)
-        if self.cookie is not None:
-            r.extend(self.cookie)
+        if self.suffix is not None:
+            r.extend(self.suffix.encode('utf-8'))
         return bytes(r)

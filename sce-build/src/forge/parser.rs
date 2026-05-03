@@ -1553,11 +1553,17 @@ pub fn parse_codec_field_from_node(
     // RFC §5.B B5-ζ Surface H — `sce:type="string"` v1 surface:
     // requires `sce:bit-size="length-ref"` (UTF-8 text is length-
     // prefixed; tail / fixed-bit / vle defer until a consumer
-    // surfaces) AND cannot carry `sce:present-if` (gated String has
-    // no v1 consumer; defers to the same condition). The generic
-    // `validation/invalid-attribute` reports a precise repair hint
-    // so authors see the legal combination upfront. Mirror zenoh-
-    // pico `_z_string_encode/decode` (codec.c:324-343).
+    // surfaces). Wire RFC Phase B Y0a lifted the present-if ban —
+    // zenoh-pico `_z_wireexpr_encode` (message.c:115-125) gates the
+    // suffix UTF-8 string on the caller's per-MID header N flag
+    // (`has_suffix` external bool), and `codec_zenoh_wireexpr`
+    // (parent-scope body) + `codec_present_if_string` (local-scope
+    // primitive demo) author this surface. The codegen helpers
+    // `present_if_decode_string_length_ref` /
+    // `present_if_encode_string_length_ref` (generator.rs:4488 +
+    // 5243) already cover the gated-String emit path and dispatch
+    // automatically via `field.is_string()`. Mirror zenoh-pico
+    // `_z_string_encode/decode` (codec.c:324-343).
     if matches!(sce_type, SceType::String) && !matches!(bit_size, BitSize::LengthRef) {
         return Err(located(
             node,
@@ -1576,21 +1582,6 @@ pub fn parse_codec_field_from_node(
                 expected: "sce:type=\"string\" requires sce:bit-size=\"length-ref\" \
                            (UTF-8 text is length-prefixed; tail / fixed-bit / vle \
                            shapes defer until a consumer surfaces)"
-                    .into(),
-            },
-        ));
-    }
-    if matches!(sce_type, SceType::String) && present_if.is_some() {
-        return Err(located(
-            node,
-            doc_name,
-            ValidationError::InvalidAttribute {
-                element: format!("Codec field '{id}'"),
-                attr: "sce:present-if".into(),
-                value: "<predicate>".into(),
-                expected: "sce:type=\"string\" cannot carry sce:present-if in v1 \
-                           (gated String defers until a consumer surfaces; v1 String \
-                           fields are always present)"
                     .into(),
             },
         ));

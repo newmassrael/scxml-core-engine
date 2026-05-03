@@ -1365,6 +1365,29 @@ fn forge_codec_zenoh_hello_cpp() {
     assert_standalone_forge("codec_zenoh_hello", "codec_zenoh_hello.h");
 }
 
+// ── Wire RFC Phase B Y0a foundation: gated String + length-ref ─
+// Lifts the B5-ζ Surface H deferral on `sce:type="string"` +
+// `sce:present-if` (parser.rs:1583+ pre-Y0a) so zenoh-pico's
+// wireexpr (message.c:115-145 — VLE id + has_suffix-gated UTF-8
+// suffix) can be authored faithfully. Mirrors B5-μ X1's two-fixture
+// trunk pattern: `codec_present_if_string` is the LOCAL-scope
+// primitive demo (carrier.has_text gates uint8 text_len + UTF-8
+// text) and `codec_zenoh_wireexpr` is the PARENT-scope realistic
+// body codec (parent.N gates VLE suffix_len + UTF-8 suffix; N flag
+// at bit 5 mirrors `_Z_DECL_KEXPR_FLAG_N = 0x20` and equivalents
+// across all 8 declare sub-types). 15+ Y1/Y3/Y4 consumers will
+// embed wireexpr via cross-codec parent-flag composition (B5-γ).
+
+#[test]
+fn forge_codec_present_if_string_cpp() {
+    assert_standalone_forge("codec_present_if_string", "codec_present_if_string.h");
+}
+
+#[test]
+fn forge_codec_zenoh_wireexpr_cpp() {
+    assert_standalone_forge("codec_zenoh_wireexpr", "codec_zenoh_wireexpr.h");
+}
+
 // ── RFC §5.B B3 TLV chain primitive (Cpp/Rust trunk) ────────
 // `codec_tlv_chain_basic` declares a TLV chain bounded at max-depth=8
 // with on-overflow="reject". MCU-class — Cpp/Kotlin/Go/Python all
@@ -1701,52 +1724,16 @@ fn forge_codec_string_with_tail_bit_size_rejects() {
     );
 }
 
-/// RFC §5.B B5-ζ Surface H parser validation: `sce:type="string"`
-/// cannot carry `sce:present-if` in v1. Gated String defers until a
-/// consumer surfaces; the parser rejects with
-/// `validation/invalid-attribute` reporting the v1 restriction so
-/// authors don't author code that the codegen would silently misemit.
-#[test]
-fn forge_codec_string_with_present_if_rejects() {
-    use sce_build::forge::error::{ForgeError, ValidationError};
-
-    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="codec_string_gated_reject">
-  <datamodel>
-    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
-      <sce:flag name="has_payload" bit="0"/>
-    </sce:flags>
-    <sce:field id="payload_size" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
-    <sce:field id="payload" sce:type="string" sce:byte="2" sce:bit-size="length-ref"
-               sce:length-field="payload_size" sce:present-if="header.has_payload"/>
-  </datamodel>
-</scxml>"#;
-    let result = sce_build::compile_forge_with_imports(
-        scxml,
-        sce_build::DocumentLabel::symmetric("codec_string_gated_reject"),
-        sce_build::generator::Language::Rust,
-        &resource_dir(),
-        &sce_build::ForgeCompileOptions::default(),
-    );
-    let err = match result {
-        Ok(_) => panic!(
-            "sce:type=\"string\" + present-if must reject with \
-             validation/invalid-attribute"
-        ),
-        Err(e) => e,
-    };
-    assert!(
-        matches!(
-            &err.error,
-            ForgeError::Validation(ValidationError::InvalidAttribute { ref attr, .. })
-                if attr == "sce:present-if"
-        ),
-        "must surface ValidationError::InvalidAttribute on sce:present-if; got: {:?}",
-        err.error
-    );
-}
+// RFC §5.B B5-ζ Surface H + Wire RFC Phase B Y0a: the v1 deferral
+// (`sce:type="string"` + `sce:present-if` rejected as "no consumer
+// yet") was lifted on 2026-05-03 when zenoh-pico's wireexpr surfaced
+// as the realistic consumer (gated UTF-8 suffix per
+// `_z_wireexpr_encode` message.c:115-125). The corresponding reject
+// test (`forge_codec_string_with_present_if_rejects`) was removed at
+// the same time — `codec_present_if_string` (local-scope primitive)
+// + `codec_zenoh_wireexpr` (parent-scope realistic) byte-golden
+// tests positively exercise the lifted surface across all 6
+// backends.
 
 // ── RFC §5.B B5-η Surface I — recursive variant body ─────────
 // `codec_zenoh_push` is a variant codec whose 0x1d-arm body is
@@ -3343,6 +3330,17 @@ fn forge_kotlin_codec_zenoh_hello() {
     assert_standalone_forge_kotlin("codec_zenoh_hello", "CodecZenohHello.kt");
 }
 
+// Wire RFC Phase B Y0a — see cpp registrations above for context.
+#[test]
+fn forge_kotlin_codec_present_if_string() {
+    assert_standalone_forge_kotlin("codec_present_if_string", "CodecPresentIfString.kt");
+}
+
+#[test]
+fn forge_kotlin_codec_zenoh_wireexpr() {
+    assert_standalone_forge_kotlin("codec_zenoh_wireexpr", "CodecZenohWireexpr.kt");
+}
+
 #[test]
 fn forge_kotlin_codec_until_eof_basic() {
     assert_standalone_forge_kotlin(
@@ -3753,6 +3751,17 @@ fn forge_rust_codec_zenoh_hello() {
     assert_standalone_forge_rust("codec_zenoh_hello", "codec_zenoh_hello.rs");
 }
 
+// Wire RFC Phase B Y0a — see cpp registrations above for context.
+#[test]
+fn forge_rust_codec_present_if_string() {
+    assert_standalone_forge_rust("codec_present_if_string", "codec_present_if_string.rs");
+}
+
+#[test]
+fn forge_rust_codec_zenoh_wireexpr() {
+    assert_standalone_forge_rust("codec_zenoh_wireexpr", "codec_zenoh_wireexpr.rs");
+}
+
 // ── RFC §5.B B4 applied codec shapes (Rust) ─────────────────
 
 #[test]
@@ -4161,6 +4170,17 @@ fn forge_go_codec_zenoh_hello() {
     assert_standalone_forge_go("codec_zenoh_hello", "codec_zenoh_hello.go");
 }
 
+// Wire RFC Phase B Y0a — see cpp registrations above for context.
+#[test]
+fn forge_go_codec_present_if_string() {
+    assert_standalone_forge_go("codec_present_if_string", "codec_present_if_string.go");
+}
+
+#[test]
+fn forge_go_codec_zenoh_wireexpr() {
+    assert_standalone_forge_go("codec_zenoh_wireexpr", "codec_zenoh_wireexpr.go");
+}
+
 // ── RFC §5.B B4 applied codec shapes (Go) ───────────────────
 
 #[test]
@@ -4516,6 +4536,17 @@ fn forge_python_codec_zenoh_hello() {
     assert_standalone_forge_python("codec_zenoh_hello", "codec_zenoh_hello.py");
 }
 
+// Wire RFC Phase B Y0a — see cpp registrations above for context.
+#[test]
+fn forge_python_codec_present_if_string() {
+    assert_standalone_forge_python("codec_present_if_string", "codec_present_if_string.py");
+}
+
+#[test]
+fn forge_python_codec_zenoh_wireexpr() {
+    assert_standalone_forge_python("codec_zenoh_wireexpr", "codec_zenoh_wireexpr.py");
+}
+
 // ── RFC §5.B B4 applied codec shapes (Python) ───────────────
 
 #[test]
@@ -4831,6 +4862,17 @@ fn forge_c11_codec_repeat_present_if_basic() {
 #[test]
 fn forge_c11_codec_zenoh_hello() {
     assert_standalone_forge_c("codec_zenoh_hello", "codec_zenoh_hello.c.h");
+}
+
+// Wire RFC Phase B Y0a — see cpp registrations above for context.
+#[test]
+fn forge_c11_codec_present_if_string() {
+    assert_standalone_forge_c("codec_present_if_string", "codec_present_if_string.c.h");
+}
+
+#[test]
+fn forge_c11_codec_zenoh_wireexpr() {
+    assert_standalone_forge_c("codec_zenoh_wireexpr", "codec_zenoh_wireexpr.c.h");
 }
 
 // ── RFC §5.B B3 TLV chain primitive (C11, trunk) ────────────

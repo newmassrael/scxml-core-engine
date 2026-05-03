@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: present-if + length-ref STRING (RFC §5.B
+     Y0a — Wire RFC Phase B Y0a primitive demo). Mirrors B5-μ X1's
+     two-fixture trunk pattern (primitive + realistic consumer); the
+     realistic parent-scope consumer is `codec_zenoh_wireexpr`.
+
+     Closes the deferral noted in B5-ζ Surface H — the parser ban on
+     `sce:type="string" + sce:present-if` was deferred "until a
+     consumer surfaces" (parser.rs:1583-1597 pre-Y0a). zenoh-pico
+     `_z_wireexpr_encode` (codec/message.c:115-125) is that consumer:
+     the wireexpr's UTF-8 suffix is gated on the caller's per-MID
+     header N bit. Y0a lifts the ban with this primitive demo + the
+     realistic body codec.
+
+     Wire shape (1 or 2+N bytes):
+       byte 0   : carrier   bit 0 = has_text  (single-bit flag)
+       byte 1   : text_len  (uint8, present iff carrier.has_text)
+       bytes 2..: text      (UTF-8 string, length=text_len, max 32,
+                             present iff carrier.has_text)
+
+     Co-gating contract (author trust, mirrors B2-β bytes precedent):
+     when `text` carries `sce:present-if="carrier.has_text"`, the
+     length source `text_len` MUST also carry the IDENTICAL
+     predicate. The streaming decoder unwraps `text_len` only inside
+     the gated branch, so a non-gated `text_len` paired with a gated
+     `text` would emit code that reads the optional as if it were
+     unwrapped (same hazard as B2-β bytes — author keeps both gates
+     identical).
+
+     Wrap shape per language (mirrors B5-ζ string + B2-β present-if):
+       Rust:   `Option<u8>` text_len + `Option<String>` text
+       Cpp:    `std::optional<uint8_t>` + `std::optional<std::string>`
+       Kotlin: `UByte?` + `String?`
+       Go:     `*uint8` + `*string` (pointer nilness encodes presence)
+       Python: `Optional[int]` + `Optional[str]`
+       C11:    `uint8_t text_len` + `char text[33]; size_t text_len`
+               (carrier-bit-as-truth — wire presence is carrier.has_text)
+
+     Round-trip oracles (documentary; primitive demos do not yet ship
+     `<sce:test-vector>` rows per codec_repeat_present_if_basic +
+     codec_present_if_length_ref precedent):
+       has_text=0:        [0x00]
+       has_text=1+empty:  [0x01, 0x00]                            (empty string)
+       has_text=1+"abc":  [0x01, 0x03, 0x61, 0x62, 0x63]          ("abc")
+       has_text=1+"héllo":[0x01, 0x06, 0x68, 0xC3, 0xA9, 0x6C, 0x6C, 0x6F]
+                                                                  (UTF-8: é = 0xC3 0xA9) -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_present_if_string">
+  <datamodel>
+    <sce:flags id="carrier" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="has_text" bit="0"/>
+    </sce:flags>
+    <sce:field id="text_len" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="carrier.has_text"/>
+    <sce:field id="text" sce:type="string" sce:byte="2" sce:bit-size="length-ref"
+               sce:length-field="text_len" sce:max-size="32"
+               sce:present-if="carrier.has_text"/>
+  </datamodel>
+</scxml>

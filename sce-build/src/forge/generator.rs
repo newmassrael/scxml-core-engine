@@ -1630,18 +1630,25 @@ fn render_codec(
                         crate::generator::Language::Go => {
                             // Go has no native optional; the canonical
                             // shape for "value-or-absent" is a pointer
-                            // (`nil` ⇔ absent). For bytes-typed fields
-                            // (Tail / LengthRef) the slice itself is
-                            // nullable, so a bare `[]byte` carries the
-                            // same presence signal without a pointer
-                            // wrapper — see the helper's Tail/LengthRef
-                            // arms which decode via `append([]byte(nil), ...)`.
-                            // Fixed and Vle keep `*T` because their
-                            // value types have no nil distinction.
+                            // (`nil` ⇔ absent). For BYTES Tail / LengthRef
+                            // the slice itself is nullable, so a bare
+                            // `[]byte` carries the same presence signal
+                            // without a pointer wrapper — see the
+                            // helper's Tail/LengthRef arms which decode
+                            // via `append([]byte(nil), ...)`. Fixed and
+                            // Vle keep `*T` because their value types
+                            // have no nil distinction. STRING fields
+                            // (Wire RFC Phase B Y0a — gated String
+                            // landed for length-ref) are NOT nilable in
+                            // Go (`string` is a value type, no zero
+                            // value distinguishes empty-from-absent),
+                            // so they take the `*string` shape uniformly
+                            // with Fixed/Vle.
                             if matches!(
                                 f.bit_size,
                                 BitSize::Tail | BitSize::LengthRef
-                            ) {
+                            ) && !f.is_string()
+                            {
                                 inner.to_string()
                             } else {
                                 format!("*{inner}")
@@ -4286,12 +4293,21 @@ fn present_if_decode_length_ref(
     // RFC §5.B B5-ζ Surface H — `sce:type="string"` UTF-8 decode.
     // Wire shape is identical to a length-prefixed bytes field, but
     // the host-language local is `String` / `std::string` / etc. and
-    // the byte slice is validated as UTF-8 before construction. Parser
-    // restricts String fields to non-gated LengthRef in v1, so this
-    // branch only handles the (lang, None) shape; gated String defers
-    // until a consumer surfaces.
+    // the byte slice is validated as UTF-8 before construction.
+    // Wire RFC Phase B Y0a lifted the parser ban on gated String
+    // (parser.rs:1583+ pre-Y0a); gated form mirrors the gated Bytes
+    // shape (Option<String> / std::optional<std::string> / String? /
+    // *string / Optional[str]; C11 carrier-bit-as-truth).
     if field.is_string() {
-        return present_if_decode_string_length_ref(field, fields, len_field, sibling_gated, arith, lang);
+        return present_if_decode_string_length_ref(
+            field,
+            fields,
+            parent_flags,
+            len_field,
+            sibling_gated,
+            arith,
+            lang,
+        );
     }
     // Per-language sibling value expression (inside the gated if-branch
     // when payload is gated; outside otherwise). The non-gated arm
@@ -4479,15 +4495,18 @@ fn present_if_decode_length_ref(
 /// two languages never construct CodecError variants at runtime
 /// (mirrors the VleWidthOverflow declaration-only convention).
 ///
-/// Parser restricts String fields to non-gated LengthRef in v1, so
-/// only the (lang, None) shape ships here. `sibling_gated` may still
-/// be true (the length sibling carries present-if even though the
-/// String field itself does not — fixture-feasible) so the per-
-/// language `_n` computation goes through the existing `compute_n_*`
-/// helpers verbatim. `length-arith` is supported the same way.
+/// Wire RFC Phase B Y0a (2026-05-03) lifted the parser ban — gated
+/// arms now ship for every backend (`Option<String>` /
+/// `std::optional<std::string>` / `String?` / `*string` /
+/// `Optional[str]`; C11 keeps carrier-bit-as-truth). `sibling_gated`
+/// may still be true (the length sibling carries present-if) so the
+/// per-language `_n` computation goes through the existing
+/// `compute_n_*` helpers verbatim. `length-arith` is supported the
+/// same way.
 fn present_if_decode_string_length_ref(
     field: &CodecField,
     fields: &[CodecField],
+    parent_flags: Option<&RequiresParentFlags>,
     len_field: &str,
     sibling_gated: bool,
     arith: i32,
@@ -4495,8 +4514,8 @@ fn present_if_decode_string_length_ref(
 ) -> String {
     use crate::generator::Language;
     let id = field.id.as_str();
-    match lang {
-        Language::Rust => {
+    match (lang, &field.present_if) {
+        (Language::Rust, None) => {
             let n_rust = compute_n_rust(len_field, fields, sibling_gated, arith);
             format!(
                 "let {id} = {{\n            \
@@ -4510,7 +4529,24 @@ fn present_if_decode_string_length_ref(
                  }};"
             )
         }
-        Language::Cpp => {
+        (Language::Rust, Some(p)) => {
+            let n_rust = compute_n_rust(len_field, fields, sibling_gated, arith);
+            let test = present_if_test_literal(fields, parent_flags, p, lang);
+            format!(
+                "let {id} = if {test} {{\n            \
+                     let _n = {n_rust};\n            \
+                     let raw = cursor.peek_slice(_n)?;\n            \
+                     let _v = core::str::from_utf8(raw)\n                \
+                         .map_err(|_| CodecError::InvalidUtf8)?\n                \
+                         .to_string();\n            \
+                     cursor.advance(_n)?;\n            \
+                     Some(_v)\n        \
+                 }} else {{\n            \
+                     None\n        \
+                 }};"
+            )
+        }
+        (Language::Cpp, None) => {
             let n_cpp = compute_n_cpp(len_field, fields, sibling_gated, arith);
             format!(
                 "std::string {id};\n        \
@@ -4524,7 +4560,22 @@ fn present_if_decode_string_length_ref(
                  }}"
             )
         }
-        Language::Kotlin => {
+        (Language::Cpp, Some(p)) => {
+            let n_cpp = compute_n_cpp(len_field, fields, sibling_gated, arith);
+            let test = present_if_test_literal(fields, parent_flags, p, lang);
+            format!(
+                "std::optional<std::string> {id};\n        \
+                 if ({test}) {{\n            \
+                     std::size_t _n = {n_cpp};\n            \
+                     const std::uint8_t* raw = cursor.peek_slice(_n);\n            \
+                     if (raw == nullptr) return std::nullopt;\n            \
+                     if (!::SCE::Forge::is_valid_utf8(raw, _n)) return std::nullopt;\n            \
+                     {id}.emplace(reinterpret_cast<const char*>(raw), _n);\n            \
+                     if (!cursor.advance(_n)) return std::nullopt;\n        \
+                 }}"
+            )
+        }
+        (Language::Kotlin, None) => {
             let n_kotlin = compute_n_kotlin(len_field, fields, sibling_gated, arith);
             // Java's CharsetDecoder defaults to REPORT on malformed
             // input — `Charsets.UTF_8.newDecoder().decode(...)` throws
@@ -4545,7 +4596,25 @@ fn present_if_decode_string_length_ref(
                  }}"
             )
         }
-        Language::Go => {
+        (Language::Kotlin, Some(p)) => {
+            let n_kotlin = compute_n_kotlin(len_field, fields, sibling_gated, arith);
+            let test = present_if_test_literal(fields, parent_flags, p, lang);
+            format!(
+                "val {id} = if ({test}) {{\n                \
+                     val _n = {n_kotlin}\n                \
+                     val raw = cursor.peekSlice(_n) ?: return null\n                \
+                     val _v = try {{\n                    \
+                         java.nio.charset.StandardCharsets.UTF_8.newDecoder()\n                        \
+                             .decode(java.nio.ByteBuffer.wrap(raw)).toString()\n                \
+                     }} catch (_: java.nio.charset.CharacterCodingException) {{ return null }}\n                \
+                     if (!cursor.advance(_n)) return null\n                \
+                     _v\n            \
+                 }} else {{\n                \
+                     null\n            \
+                 }}"
+            )
+        }
+        (Language::Go, None) => {
             let go_id = filters::to_pascal_case(id.to_string());
             let n_go = compute_n_go(len_field, fields, sibling_gated, arith);
             format!(
@@ -4566,7 +4635,30 @@ fn present_if_decode_string_length_ref(
                  }}"
             )
         }
-        Language::Python => {
+        (Language::Go, Some(p)) => {
+            let go_id = filters::to_pascal_case(id.to_string());
+            let n_go = compute_n_go(len_field, fields, sibling_gated, arith);
+            let test = present_if_test_literal(fields, parent_flags, p, lang);
+            format!(
+                "var {go_id} *string\n\t\
+                 if {test} {{\n\t\t\
+                     _n := {n_go}\n\t\t\
+                     raw, err := cursor.PeekSlice(_n)\n\t\t\
+                     if err != nil {{\n\t\t\t\
+                         return nil, err\n\t\t\
+                     }}\n\t\t\
+                     if !utf8.Valid(raw) {{\n\t\t\t\
+                         return nil, codec.ErrInvalidUTF8\n\t\t\
+                     }}\n\t\t\
+                     _v := string(raw)\n\t\t\
+                     {go_id} = &_v\n\t\t\
+                     if err := cursor.Advance(_n); err != nil {{\n\t\t\t\
+                         return nil, err\n\t\t\
+                     }}\n\t\
+                 }}"
+            )
+        }
+        (Language::Python, None) => {
             let py_id = filters::to_snake_case(id.to_string());
             let n_python = compute_n_python(len_field, fields, sibling_gated, arith);
             format!(
@@ -4579,7 +4671,25 @@ fn present_if_decode_string_length_ref(
                  cursor.advance(_n)"
             )
         }
-        Language::C11 => {
+        (Language::Python, Some(p)) => {
+            let py_id = filters::to_snake_case(id.to_string());
+            let n_python = compute_n_python(len_field, fields, sibling_gated, arith);
+            let test = present_if_test_literal(fields, parent_flags, p, lang);
+            format!(
+                "if {test}:\n                \
+                     _n = {n_python}\n                \
+                     raw = cursor.peek_slice(_n)\n                \
+                     try:\n                    \
+                         _v = bytes(raw).decode('utf-8')\n                \
+                     except UnicodeDecodeError as exc:\n                    \
+                         raise InvalidUtf8() from exc\n                \
+                     cursor.advance(_n)\n                \
+                     {py_id} = _v\n            \
+                 else:\n                \
+                     {py_id} = None"
+            )
+        }
+        (Language::C11, None) => {
             // RFC §5.B B5-ζ Surface H C11 closure: parallels the Bytes
             // length-ref decode (`present_if_decode_length_ref` C11
             // arm above) but the storage member is `char[N]` (declared
@@ -4605,6 +4715,31 @@ fn present_if_decode_string_length_ref(
                      memcpy(out->{id_snake}, raw, _n);\n        \
                      out->{id_snake}_len = _n;\n        \
                      if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
+                 }}"
+            )
+        }
+        (Language::C11, Some(p)) => {
+            // Wire RFC Phase B Y0a — gated String C11 mirrors the gated
+            // Bytes C11 arm in `present_if_decode_length_ref`: carrier-
+            // bit-as-truth (no Optional wrapper around `char[N]`); when
+            // the predicate fires off the `<id>_len = 0` clamp marks
+            // the field absent uniformly with the bytes shape.
+            let id_snake = filters::to_snake_case(id.to_string());
+            let max_size = crate::forge::limits::resolve_bytes_max(field.max_size);
+            let n_c11 = compute_n_c11(len_field, fields, sibling_gated, arith);
+            let test = present_if_test_literal(fields, parent_flags, p, lang);
+            format!(
+                "if ({test}) {{\n        \
+                     size_t _n = {n_c11};\n        \
+                     if (_n > {max_size}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
+                     const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
+                     if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
+                     if (!sce_forge_is_valid_utf8(raw, _n)) return SCE_FORGE_CODEC_INVALID_UTF8;\n        \
+                     memcpy(out->{id_snake}, raw, _n);\n        \
+                     out->{id_snake}_len = _n;\n        \
+                     if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
+                 }} else {{\n        \
+                     out->{id_snake}_len = 0;\n    \
                  }}"
             )
         }
@@ -5242,13 +5377,24 @@ fn present_if_encode_tail(
 /// String-bearing codec's signature to `Result<...>`).
 fn present_if_encode_string_length_ref(
     field: &CodecField,
+    fields: &[CodecField],
+    parent_flags: Option<&RequiresParentFlags>,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
     let id = field.id.as_str();
-    match lang {
-        Language::Rust => format!(
+    match (lang, &field.present_if) {
+        (Language::Rust, None) => format!(
             "        r.extend_from_slice(self.{id}.as_bytes());"
+        ),
+        // Wire RFC Phase B Y0a — gated String encode on Rust:
+        // `Option<String>::as_ref()` borrows the inner String so
+        // `.as_bytes()` resolves; `if let Some(_v) = ...` mirrors the
+        // bytes shape exactly.
+        (Language::Rust, Some(_)) => format!(
+            "        if let Some(_v) = &self.{id} {{\n            \
+                 r.extend_from_slice(_v.as_bytes());\n        \
+             }}"
         ),
         // Cpp `std::string::data()` returns `const char*`; reinterpret-
         // cast to `const std::uint8_t*` is the textbook byte-aliasing
@@ -5256,30 +5402,69 @@ fn present_if_encode_string_length_ref(
         // alias any object representation). Avoids the narrowing-
         // conversion warning that `r.insert(r.end(), str.begin(),
         // str.end())` would emit on `char → uint8_t`.
-        Language::Cpp => format!(
+        (Language::Cpp, None) => format!(
             "        r.insert(r.end(),\n            \
                  reinterpret_cast<const std::uint8_t*>({id}.data()),\n            \
                  reinterpret_cast<const std::uint8_t*>({id}.data()) + {id}.size());"
+        ),
+        // Wire RFC Phase B Y0a — gated String encode on Cpp:
+        // `std::optional<std::string>::has_value()` + arrow access on
+        // the optional yields `const std::string*`; reinterpret-cast
+        // through `->data()` keeps the same byte-aliasing pattern.
+        (Language::Cpp, Some(_)) => format!(
+            "        if ({id}.has_value()) {{\n            \
+                 r.insert(r.end(),\n                \
+                     reinterpret_cast<const std::uint8_t*>({id}->data()),\n                \
+                     reinterpret_cast<const std::uint8_t*>({id}->data()) + {id}->size());\n        \
+             }}"
         ),
         // Kotlin `String.toByteArray(charset)` is the standard library
         // call for charset-encoded byte serialization; UTF-8 is total
         // on String (Kotlin's String is UTF-16 internally but
         // toByteArray reencodes losslessly to UTF-8).
-        Language::Kotlin => format!(
+        (Language::Kotlin, None) => format!(
             "        r.addAll(this.{id}.toByteArray(Charsets.UTF_8).toList())"
+        ),
+        // Wire RFC Phase B Y0a — gated String encode on Kotlin:
+        // `String?` + safe-call `?.let { _v -> ... }` mirrors the
+        // bytes encode arm.
+        (Language::Kotlin, Some(_)) => format!(
+            "        this.{id}?.let {{ _v ->\n            \
+                 r.addAll(_v.toByteArray(Charsets.UTF_8).toList())\n        \
+             }}"
         ),
         // Go `[]byte(s)` reinterprets the string's underlying bytes;
         // for UTF-8 strings (Go's string invariant when constructed
         // from UTF-8 source) this is a zero-copy encoding.
-        Language::Go => {
+        (Language::Go, None) => {
             let go_id = filters::to_pascal_case(id.to_string());
             format!("\tr = append(r, []byte(s.{go_id})...)")
         }
+        // Wire RFC Phase B Y0a — gated String encode on Go: pointer-
+        // wrap via `*string` (mirrors gated bytes' `[]byte` slice
+        // nilness pattern but Go strings are not zeroable).
+        (Language::Go, Some(_)) => {
+            let go_id = filters::to_pascal_case(id.to_string());
+            format!(
+                "\tif s.{go_id} != nil {{\n\t\t\
+                     r = append(r, []byte(*s.{go_id})...)\n\t\
+                 }}"
+            )
+        }
         // Python `str.encode('utf-8')` materializes a `bytes` object
         // from the str's internal Unicode representation.
-        Language::Python => {
+        (Language::Python, None) => {
             let py_id = filters::to_snake_case(id.to_string());
             format!("        r.extend(self.{py_id}.encode('utf-8'))")
+        }
+        // Wire RFC Phase B Y0a — gated String encode on Python:
+        // `Optional[str]` + `is not None` + same `.encode('utf-8')`.
+        (Language::Python, Some(_)) => {
+            let py_id = filters::to_snake_case(id.to_string());
+            format!(
+                "        if self.{py_id} is not None:\n            \
+                     r.extend(self.{py_id}.encode('utf-8'))"
+            )
         }
         // RFC §5.B B5-ζ Surface H C11 closure: append the codec
         // member's `<id>_len` bytes from `char[N]` storage to the
@@ -5292,11 +5477,30 @@ fn present_if_encode_string_length_ref(
         // contract: `<id>_len` is in sync with the sibling integer
         // length field — codec API stays infallible to avoid surfacing
         // a Result type on every String-bearing codec.
-        Language::C11 => {
+        (Language::C11, None) => {
             let id_snake = filters::to_snake_case(id.to_string());
             format!(
                 "    for (size_t _bi = 0; _bi < self->{id_snake}_len; ++_bi) \
                  r.bytes[r.len++] = (uint8_t)self->{id_snake}[_bi];"
+            )
+        }
+        // Wire RFC Phase B Y0a — gated String encode on C11: gate the
+        // memcpy loop on the same predicate the decode arm tests
+        // (carrier-bit-as-truth — no Optional wrapper). When the gate
+        // fires off, `<id>_len` should already be 0 (decode side
+        // clears it; author keeps it consistent on encode). Predicate
+        // resolves through `present_if_test_literal` which emits
+        // `(carrier & 0xMASK) != 0` for Local carriers and
+        // `(parent_flags & 0xMASK) != 0` for Parent carriers, with
+        // `==` op when the predicate is negated (B5-λ).
+        (Language::C11, Some(p)) => {
+            let id_snake = filters::to_snake_case(id.to_string());
+            let test = present_if_test_literal(fields, parent_flags, p, lang);
+            format!(
+                "    if ({test}) {{\n        \
+                     for (size_t _bi = 0; _bi < self->{id_snake}_len; ++_bi) \
+                     r.bytes[r.len++] = (uint8_t)self->{id_snake}[_bi];\n    \
+                 }}"
             )
         }
     }
@@ -5319,14 +5523,18 @@ fn present_if_encode_length_ref(
         .as_deref()
         .expect("LengthRef bit_size requires sce:length-field attribute");
     // RFC §5.B B5-ζ Surface H — `sce:type="string"` UTF-8 encode.
-    // Parser restricts String fields to non-gated LengthRef in v1,
-    // so the gated arm is unreachable here. Encode trusts the host-
-    // language String invariant (Rust `String` guarantees UTF-8 by
-    // type; cpp `std::string` is the author's responsibility — codec
-    // API stays infallible to avoid `Result<Vec<u8>, EncodeError>`
-    // surfacing on every String-bearing codec).
+    // Wire RFC Phase B Y0a lifted the parser ban (parser.rs:1583+
+    // pre-Y0a) so the gated arm now ships for every backend (mirrors
+    // the gated bytes shape: Option<String>::as_bytes via as_ref;
+    // std::optional<std::string>::has_value; String?.let; *string nil
+    // check; Optional[str] is-not-None; C11 carrier-bit test). Encode
+    // trusts the host-language String invariant (Rust `String`
+    // guarantees UTF-8 by type; cpp `std::string` is the author's
+    // responsibility — codec API stays infallible to avoid
+    // `Result<Vec<u8>, EncodeError>` surfacing on every String-bearing
+    // codec).
     if field.is_string() {
-        return present_if_encode_string_length_ref(field, lang);
+        return present_if_encode_string_length_ref(field, fields, parent_flags, lang);
     }
     match (lang, field.present_if.is_some()) {
         (Language::Rust, false) => format!(
@@ -5533,12 +5741,29 @@ fn present_if_encode_vle(
             )
         }
         Language::Python => {
+            // Wire RFC Phase B Y0a — the prior form delegated to
+            // `vle_encode_block` whose Python arm emits at 8-space
+            // indent (function-body level); when inserted inside an
+            // `if self.<id> is not None:` block (also at 8-space),
+            // the inner VLE loop ended up OUTSIDE the gate (Python
+            // is the only backend where indentation is structure —
+            // every other language's `vle_encode_block` wraps in
+            // `{ ... }` braces which are scope-bearing). The fix
+            // inlines the loop at 12-space indent so the gate
+            // genuinely scopes the encode. `width_bits` parameter
+            // unused here — Python's int has no width clamp; the
+            // VLE wire form self-terminates via the high-bit
+            // continuation marker so any `int` value encodes
+            // correctly without per-width truncation.
+            let _ = width_bits;
             let py_id = filters::to_snake_case(id.to_string());
-            let inner = vle_encode_block(&format!("_v"), width_bits, lang);
             format!(
                 "        if self.{py_id} is not None:\n            \
-                     _v = self.{py_id}\n\
-                 {inner}"
+                     _w = int(self.{py_id})\n            \
+                     while _w >= 0x80:\n                \
+                         r.append((_w & 0x7F) | 0x80)\n                \
+                         _w >>= 7\n            \
+                     r.append(_w)"
             )
         }
     }

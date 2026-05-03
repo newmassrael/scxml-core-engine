@@ -113,12 +113,11 @@ class CodecZenohHello:
         r.append(self.cbyte & 0xFF)
         r.extend(self.zid)
         if self.num_locators is not None:
-            _v = self.num_locators
-        _w = int(_v)
-        while _w >= 0x80:
-            r.append((_w & 0x7F) | 0x80)
-            _w >>= 7
-        r.append(_w)
+            _w = int(self.num_locators)
+            while _w >= 0x80:
+                r.append((_w & 0x7F) | 0x80)
+                _w >>= 7
+            r.append(_w)
         if self.locators is not None:
             for _e in self.locators:
                 r.extend(_e.encode())
