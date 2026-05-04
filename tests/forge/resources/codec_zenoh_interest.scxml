@@ -44,7 +44,7 @@
                               terminates at the last entry and
                               supports future composition).
 
-     Disjunction primitive (Y3 atomic 2b-ii Phase 1) consumer: the
+     Disjunction primitive (Y3 atomic 2b-ii) consumer: the
      `header.CURRENT || header.FUTURE` predicate on the body embed is
      the first realistic consumer of present_if's `||` chain grammar
      after the codec_present_if_disjunction demo fixture — matches
@@ -63,7 +63,7 @@
 
      Composition: B1-γ flags (header with CURRENT@5 + FUTURE@6 + Z@7
      subfields) + B1-α VLE u64 (always-present id) + B5-μ X1 present-
-     if-on-embed with Y3 atomic 2b-ii Phase 1 disjunction primitive
+     if-on-embed with Y3 atomic 2b-ii disjunction primitive
      (header.CURRENT || header.FUTURE gate on body embed) + Y3 atomic
      2a present-if-on-tlv-chain (header.Z gate) + Y3 atomic 1 entry-
      flag termination (chain-as-last-field branch) + B5-ε surface G
