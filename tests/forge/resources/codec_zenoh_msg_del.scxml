@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh DEL envelope (RFC §5.B Wire RFC
+     Phase B Y3 atomic 2b-iii — sub-codec, request body variant arm
+     for MID 0x02 = Z_DEL).
+
+     Mirrors zenoh-pico `_z_del_encode` / `_z_del_decode`
+     (src/protocol/codec/message.c:381-391) which delegates to the
+     shared `_z_push_body_encode` / `_z_push_body_decode` (lines
+     257-303 / 332-348). The DEL branch reads upstream as: T-gated
+     timestamp + Z-gated ext chain — NO encoding (DEL has no payload
+     to type) and NO payload bytes (lines 299-301 emit payload only
+     when `_is_put`).
+
+     Wire shape (1+ bytes):
+       byte 0   : header     (MID 0x02 in bits 0..4 + T@5 + X@6 + Z@7)
+                              — T = `_Z_FLAG_Z_D_T = 0x20` gates the
+                              timestamp embed; bit 6 is upstream-
+                              reserved (DEL has no encoding semantic,
+                              and `_z_push_body_encode` line 277-281
+                              never sets it in the `!_is_put` branch),
+                              declared as X following msg_reply X@6
+                              precedent for reserved-but-declared
+                              bits; Z = `_Z_FLAG_Z_Z = 0x80` signals
+                              the ext chain follows.
+       T-gated:
+         bytes  : timestamp  (codec_zenoh_timestamp embed — VLE u64
+                              time + length-prefixed zid bytes max=16)
+       Z-gated:
+         chain  : codec_zenoh_ext_entry tlv-chain (entry-flag
+                  termination on entry header.Z — Y3 atomic 1 grammar;
+                  chain is the codec's last field but the entry-flag
+                  termination remains for symmetry with msg_put and
+                  for wire-equivalence with upstream's
+                  `_z_push_body_decode_extensions` chain iterator
+                  which terminates on each entry's outer-header Z bit
+                  regardless of trailing fields).
+
+     Composition: B1-γ flags (header) + B1-δ present-if-on-embed
+     (T gate) + Y3 atomic 2a present-if-on-tlv-chain (header.Z gate)
+     + Y3 atomic 1 entry-flag termination + B5-ε surface G (chain
+     element = codec_zenoh_ext_entry variant) + Y0c <sce:embed>
+     (codec_zenoh_timestamp inner codec). No new primitives.
+
+     Body variant arm contract: invoked by codec_zenoh_request when
+     the inner-MID byte after the request header reads 0x02 (Z_DEL).
+     Wire byte 0 here IS the request body's dispatch header from the
+     request envelope's perspective.
+
+     Q1(b) envelope-only fidelity scoping: source_info nested ext
+     stays opaque through the codec_zenoh_ext_entry ZBuf arm — host-
+     side interpretation in the caller mirrors zenoh-pico's
+     `_z_push_body_decode_extensions` callback pattern. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_msg_del">
+  <sce:import src="codec_zenoh_timestamp.scxml" kind="codec" as="codec_zenoh_timestamp"/>
+  <sce:import src="codec_zenoh_ext_entry.scxml" kind="codec" as="codec_zenoh_ext_entry"/>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="mid" bit="0" width="5"/>
+      <sce:flag name="T"   bit="5"/>
+      <sce:flag name="X"   bit="6"/>
+      <sce:flag name="Z"   bit="7"/>
+    </sce:flags>
+    <sce:embed id="timestamp" type="codec_zenoh_timestamp" sce:byte="1"
+               sce:present-if="header.T"/>
+    <sce:tlv-chain id="extensions" type="codec_zenoh_ext_entry" sce:byte="2"
+                   max-depth="4" on-overflow="reject"
+                   sce:present-if="header.Z"
+                   terminate-on="entry-flag" entry-flag-name="Z"/>
+  </datamodel>
+</scxml>

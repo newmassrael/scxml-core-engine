@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh PUT envelope (RFC §5.B Wire RFC
+     Phase B Y3 atomic 2b-iii — sub-codec, request body variant arm
+     for MID 0x01 = Z_PUT).
+
+     Mirrors zenoh-pico `_z_put_encode` / `_z_put_decode`
+     (src/protocol/codec/message.c:369-379) which delegates to the
+     shared `_z_push_body_encode` / `_z_push_body_decode` (lines
+     257-303 / 332-348). The PUT branch reads upstream as: T-gated
+     timestamp + E-gated encoding + Z-gated ext chain + always-present
+     length-prefixed payload.
+
+     Wire shape (1+ bytes):
+       byte 0   : header     (MID 0x01 in bits 0..4 + T@5 + E@6 + Z@7)
+                              — T = `_Z_FLAG_Z_P_T = 0x20` gates the
+                              timestamp embed; E = `_Z_FLAG_Z_P_E = 0x40`
+                              gates the inline encoding placeholder;
+                              Z = `_Z_FLAG_Z_Z = 0x80` signals the ext
+                              chain follows.
+       T-gated:
+         bytes  : timestamp  (codec_zenoh_timestamp embed — VLE u64
+                              time + length-prefixed zid bytes max=16)
+       E-gated:
+         bytes  : encoding_id (VLE u32 — Q1(b) simplification of the
+                  upstream `(id << 1) | has_schema` packed VLE encoding
+                  wire per `_z_encoding_encode` codec.c:356-367; full
+                  encoding wire deferred to atomic 2b-iii-α which lifts
+                  the SCE primitive for VLE-LSB-as-flag carriers. The
+                  schema-less subset covered by this simplification is
+                  the production-common case; mirrors msg_err's
+                  identical encoding_id Q1(b) precedent verbatim).
+       Z-gated:
+         chain  : codec_zenoh_ext_entry tlv-chain (entry-flag
+                  termination on entry header.Z — Y3 atomic 1 grammar;
+                  chain is followed by the always-present payload pair
+                  so the exhaust-or-depth termination would not detect
+                  the payload boundary. max-depth=4 covers PUT's
+                  upstream ext slots — source_info via
+                  `_Z_MSG_EXT_ENC_ZBUF | 0x01` and attachment via
+                  `_Z_MSG_EXT_ENC_ZBUF | 0x03` per push_body_encode).
+       always:
+         bytes  : payload_len (VLE u64) + payload (bytes max=256;
+                              upstream is unbounded zbuf — caller-
+                              supplied length-prefix per
+                              `_z_bytes_encode` convention).
+
+     Composition: B1-γ flags (header) + B1-δ present-if-on-fields
+     (T / E gates) + Y3 atomic 2a present-if-on-tlv-chain (header.Z
+     gate) + Y3 atomic 1 entry-flag termination (chain followed by
+     payload pair) + B5-ε surface G (chain element = codec_zenoh_ext_
+     entry variant) + Y0c <sce:embed> (codec_zenoh_timestamp inner
+     codec) + B1-α length-ref (payload_len / payload pair). No new
+     primitives.
+
+     Body variant arm contract: invoked by codec_zenoh_request when
+     the inner-MID byte after the request header reads 0x01 (Z_PUT).
+     Wire byte 0 here IS the request body's dispatch header from the
+     request envelope's perspective.
+
+     Q1(b) envelope-only fidelity scoping: encoding_id stripped to
+     a placeholder VLE u32 (schema-less subset only) — atomic 2b-iii-α
+     follow-up will lift the VLE-LSB-as-flag SCE primitive and replace
+     this inline placeholder with a proper codec_zenoh_encoding sub-
+     codec. source_info nested ext stays opaque through the
+     codec_zenoh_ext_entry ZBuf arm — host-side interpretation in the
+     caller mirrors zenoh-pico's `_z_push_body_decode_extensions`
+     callback. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_msg_put">
+  <sce:import src="codec_zenoh_timestamp.scxml" kind="codec" as="codec_zenoh_timestamp"/>
+  <sce:import src="codec_zenoh_ext_entry.scxml" kind="codec" as="codec_zenoh_ext_entry"/>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="mid" bit="0" width="5"/>
+      <sce:flag name="T"   bit="5"/>
+      <sce:flag name="E"   bit="6"/>
+      <sce:flag name="Z"   bit="7"/>
+    </sce:flags>
+    <sce:embed id="timestamp" type="codec_zenoh_timestamp" sce:byte="1"
+               sce:present-if="header.T"/>
+    <sce:field id="encoding_id" sce:type="uint32" sce:byte="2" sce:bit-size="vle"
+               sce:present-if="header.E"/>
+    <sce:tlv-chain id="extensions" type="codec_zenoh_ext_entry" sce:byte="3"
+                   max-depth="4" on-overflow="reject"
+                   sce:present-if="header.Z"
+                   terminate-on="entry-flag" entry-flag-name="Z"/>
+    <sce:field id="payload_len" sce:type="uint64" sce:byte="4" sce:bit-size="vle"/>
+    <sce:field id="payload" sce:type="bytes" sce:byte="5" sce:bit-size="length-ref"
+               sce:length-field="payload_len" sce:max-size="256"/>
+  </datamodel>
+</scxml>

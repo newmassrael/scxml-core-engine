@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh request envelope (RFC §5.B Wire RFC
+     Phase B Y3 atomic 2b-iii — first realistic peek-byte primitive
+     consumer with msg_put / msg_del / query body arms).
+
+     Mirrors zenoh-pico `_z_request_encode` / `_z_request_decode`
+     (src/protocol/codec/network.c:113-238). Network-layer envelope
+     wrapping a query / put / del inner body — the inner body's own
+     header byte identifies which (Z_QUERY = 0x03, Z_PUT = 0x01, Z_DEL
+     = 0x02 per `include/zenoh-pico/protocol/definitions/message.h:
+     28-30`). SCE's `<sce:peek-byte>` primitive surfaces exactly that
+     dispatch shape: the cursor's NEXT byte is read without advancing,
+     the envelope dispatches on the named bit-range, and the matched
+     arm body decoder reads that same byte as its own first wire byte
+     (so msg_put / msg_del / query re-read the inner MID through their
+     own `<sce:flags>` header — no double-consumption, no host-level
+     plumbing).
+
+     Wire shape (per upstream network.c request_encode):
+       byte 0   : header     (MID Z_REQUEST 0x1c in bits 0..4 + N@5 +
+                              M@6 + Z@7) — N = `_Z_FLAG_N_REQUEST_N =
+                              0x20` (has_suffix on the wireexpr); M =
+                              `_Z_FLAG_N_REQUEST_M = 0x40` (is_local_
+                              mapping per network.h:70-71); Z =
+                              `_Z_FLAG_Z_Z = 0x80` (has extensions).
+       byte 1+  : rid        (VLE u64 — request id, identifies which
+                              request this is for response correlation).
+       embed    : keyexpr    (codec_zenoh_wireexpr — VLE id + N-gated
+                              UTF-8 suffix string; the embed declares
+                              `<sce:requires-parent-flags carrier=
+                              "header"><sce:flag name="N" bit="5"/>
+                              </sce:requires-parent-flags>` matching
+                              this envelope's header carrier verbatim
+                              per Y0a Case B parent-flag pass-through).
+       Z-gated  : extensions (codec_zenoh_ext_entry tlv-chain, max-
+                              depth=4 covers upstream's 5 ext slots
+                              with safety margin (qos / tstamp / target
+                              / budget / timeout_ms per network.c:126-
+                              155); entry-flag-Z termination since the
+                              body variant follows the chain — Y3
+                              atomic 1 grammar).
+       inner    : body       — peek-byte primitive dispatches on the
+                              cursor's next byte's MID bit-range; arm
+                              body codec re-reads same byte as own
+                              header.
+
+     Peek-byte arm coverage (per zenoh-pico message.h MIDs):
+       0x01 → codec_zenoh_msg_put (Z_PUT arm — atomic 2b-iii sub-codec)
+       0x02 → codec_zenoh_msg_del (Z_DEL arm — atomic 2b-iii sub-codec)
+       0x03 → codec_zenoh_query   (Z_QUERY arm — atomic 2a sub-codec)
+       <sce:default> → codec_zenoh_query (catch-all per response
+       precedent — in production a non-query / non-put / non-del MID
+       under Z_REQUEST is a wire-protocol violation per upstream
+       `_z_request_decode` line 233-235 _Z_ERR_MESSAGE_DESERIALIZATION_
+       FAILED, so default arm is a defensive recovery shape rather
+       than a routine path).
+
+     Cross-codec validator (RFC §5.B Y3 atomic 2b-ii peek-byte)
+     confirms: codec_zenoh_msg_put.header.mid + codec_zenoh_msg_del.
+     header.mid + codec_zenoh_query.header.mid (all bit=0 width=5)
+     match this peek-byte's mid declaration. Each arm body's
+     additional flag declarations (T / E / X / Z / C / P at bits 5/6/7)
+     sit outside the dispatch bit-range — peek-byte doesn't constrain
+     them.
+
+     Composition: B1-γ flags (header) + B5-μ X1 present-if + Y0a
+     gated-string (via wireexpr embed) + B5-ζ Surface H string-vs-
+     bytes + B5-κ Surface L dotted-path length-from + Y3 atomic 1
+     entry-flag termination + Y3 atomic 2a present-if-on-tlv-chain
+     + Y3 atomic 2b-i sub-codec embeds (msg_put / msg_del / query
+     arms) + Y3 atomic 2b-ii peek-byte primitive + Y0c <sce:embed>
+     (wireexpr inner codec). No new primitives. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_request">
+  <sce:import src="codec_zenoh_wireexpr.scxml" kind="codec" as="codec_zenoh_wireexpr"/>
+  <sce:import src="codec_zenoh_ext_entry.scxml" kind="codec" as="codec_zenoh_ext_entry"/>
+  <sce:import src="codec_zenoh_msg_put.scxml" kind="codec" as="codec_zenoh_msg_put"/>
+  <sce:import src="codec_zenoh_msg_del.scxml" kind="codec" as="codec_zenoh_msg_del"/>
+  <sce:import src="codec_zenoh_query.scxml"   kind="codec" as="codec_zenoh_query"/>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="mid" bit="0" width="5"/>
+      <sce:flag name="N"   bit="5"/>
+      <sce:flag name="M"   bit="6"/>
+      <sce:flag name="Z"   bit="7"/>
+    </sce:flags>
+    <sce:field id="rid" sce:type="uint64" sce:byte="1" sce:bit-size="vle"/>
+    <sce:embed id="keyexpr" type="codec_zenoh_wireexpr" sce:byte="2"/>
+    <sce:tlv-chain id="extensions" type="codec_zenoh_ext_entry" sce:byte="3"
+                   max-depth="4" on-overflow="reject"
+                   sce:present-if="header.Z"
+                   terminate-on="entry-flag" entry-flag-name="Z"/>
+    <sce:variant tag="peek.mid">
+      <sce:peek-byte id="peek" sce:type="uint8">
+        <sce:flag name="mid" bit="0" width="5"/>
+      </sce:peek-byte>
+      <sce:arm value="0x01" type="codec_zenoh_msg_put"/>
+      <sce:arm value="0x02" type="codec_zenoh_msg_del"/>
+      <sce:arm value="0x03" type="codec_zenoh_query"/>
+      <sce:default type="codec_zenoh_query"/>
+    </sce:variant>
+  </datamodel>
+</scxml>

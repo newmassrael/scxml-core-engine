@@ -1929,6 +1929,162 @@ fn forge_c11_codec_zenoh_declaration() {
     assert_standalone_forge_c("codec_zenoh_declaration", "codec_zenoh_declaration.c.h");
 }
 
+// ── RFC §5.B Wire RFC Phase B Y3 atomic 2b-iii — sub-codec atomic
+// `codec_zenoh_timestamp` mirrors zenoh-pico `_z_timestamp_encode/decode`
+// (message.c:86-112) verbatim: VLE u64 time + length-prefixed zid bytes
+// (max 16 per `ZENOH_ID_SIZE`). Foundational sub-codec for the T-gated
+// timestamp embed inside codec_zenoh_msg_put / codec_zenoh_msg_del. No
+// new SCE primitives — full upstream wire fidelity via existing
+// length-ref bytes pattern.
+
+#[test]
+fn forge_codec_zenoh_timestamp_cpp() {
+    assert_standalone_forge("codec_zenoh_timestamp", "codec_zenoh_timestamp.h");
+}
+
+#[test]
+fn forge_codec_zenoh_timestamp_kotlin() {
+    assert_standalone_forge_kotlin("codec_zenoh_timestamp", "CodecZenohTimestamp.kt");
+}
+
+#[test]
+fn forge_codec_zenoh_timestamp_rust() {
+    assert_standalone_forge_rust("codec_zenoh_timestamp", "codec_zenoh_timestamp.rs");
+}
+
+#[test]
+fn forge_codec_zenoh_timestamp_go() {
+    assert_standalone_forge_go("codec_zenoh_timestamp", "codec_zenoh_timestamp.go");
+}
+
+#[test]
+fn forge_codec_zenoh_timestamp_python() {
+    assert_standalone_forge_python("codec_zenoh_timestamp", "codec_zenoh_timestamp.py");
+}
+
+#[test]
+fn forge_c11_codec_zenoh_timestamp() {
+    assert_standalone_forge_c("codec_zenoh_timestamp", "codec_zenoh_timestamp.c.h");
+}
+
+// ── RFC §5.B Wire RFC Phase B Y3 atomic 2b-iii — sub-codec atomic
+// `codec_zenoh_msg_put` mirrors zenoh-pico `_z_put_encode/decode`
+// (message.c:369-379) which delegates to `_z_push_body_encode/decode`
+// (lines 257-348). Request body variant arm for Z_PUT (MID 0x01).
+// Encoding wire is the Q1(b) simplification (inline VLE u32
+// encoding_id placeholder, schema-less subset only) mirroring
+// codec_zenoh_msg_err verbatim — full encoding wire (VLE-LSB-as-flag
+// per `_z_encoding_encode` codec.c:356-367) deferred to atomic
+// 2b-iii-α follow-up.
+
+#[test]
+fn forge_codec_zenoh_msg_put_cpp() {
+    assert_standalone_forge("codec_zenoh_msg_put", "codec_zenoh_msg_put.h");
+}
+
+#[test]
+fn forge_codec_zenoh_msg_put_kotlin() {
+    assert_standalone_forge_kotlin("codec_zenoh_msg_put", "CodecZenohMsgPut.kt");
+}
+
+#[test]
+fn forge_codec_zenoh_msg_put_rust() {
+    assert_standalone_forge_rust("codec_zenoh_msg_put", "codec_zenoh_msg_put.rs");
+}
+
+#[test]
+fn forge_codec_zenoh_msg_put_go() {
+    assert_standalone_forge_go("codec_zenoh_msg_put", "codec_zenoh_msg_put.go");
+}
+
+#[test]
+fn forge_codec_zenoh_msg_put_python() {
+    assert_standalone_forge_python("codec_zenoh_msg_put", "codec_zenoh_msg_put.py");
+}
+
+#[test]
+fn forge_c11_codec_zenoh_msg_put() {
+    assert_standalone_forge_c("codec_zenoh_msg_put", "codec_zenoh_msg_put.c.h");
+}
+
+// ── RFC §5.B Wire RFC Phase B Y3 atomic 2b-iii — sub-codec atomic
+// `codec_zenoh_msg_del` mirrors zenoh-pico `_z_del_encode/decode`
+// (message.c:381-391) which delegates to `_z_push_body_encode/decode`
+// (lines 257-348, !_is_put branch). Request body variant arm for
+// Z_DEL (MID 0x02). DEL has no encoding (bit 6 truly upstream-
+// reserved, declared as X@6 mirroring msg_reply X@6 precedent) and
+// no payload (push_body_encode line 299-301 is `_is_put`-only).
+
+#[test]
+fn forge_codec_zenoh_msg_del_cpp() {
+    assert_standalone_forge("codec_zenoh_msg_del", "codec_zenoh_msg_del.h");
+}
+
+#[test]
+fn forge_codec_zenoh_msg_del_kotlin() {
+    assert_standalone_forge_kotlin("codec_zenoh_msg_del", "CodecZenohMsgDel.kt");
+}
+
+#[test]
+fn forge_codec_zenoh_msg_del_rust() {
+    assert_standalone_forge_rust("codec_zenoh_msg_del", "codec_zenoh_msg_del.rs");
+}
+
+#[test]
+fn forge_codec_zenoh_msg_del_go() {
+    assert_standalone_forge_go("codec_zenoh_msg_del", "codec_zenoh_msg_del.go");
+}
+
+#[test]
+fn forge_codec_zenoh_msg_del_python() {
+    assert_standalone_forge_python("codec_zenoh_msg_del", "codec_zenoh_msg_del.py");
+}
+
+#[test]
+fn forge_c11_codec_zenoh_msg_del() {
+    assert_standalone_forge_c("codec_zenoh_msg_del", "codec_zenoh_msg_del.c.h");
+}
+
+// ── RFC §5.B Wire RFC Phase B Y3 atomic 2b-iii — first realistic
+// peek-byte primitive consumer with msg_put / msg_del / query body
+// arms (atomic 2b-i sub-codecs + atomic 2a sub-codec composing through
+// atomic 2b-ii peek-byte primitive). Mirrors zenoh-pico
+// `_z_request_encode/decode` (network.c:113-238). Header carries N@5
+// + M@6 + Z@7 verbatim upstream (`_Z_FLAG_N_REQUEST_N=0x20` /
+// `_Z_FLAG_N_REQUEST_M=0x40` per network.h:70-71) — distinct from the
+// pre-fix codec_zenoh_response which had inverted N/M (corrected in
+// the preceding commit).
+
+#[test]
+fn forge_codec_zenoh_request_cpp() {
+    assert_standalone_forge("codec_zenoh_request", "codec_zenoh_request.h");
+}
+
+#[test]
+fn forge_codec_zenoh_request_kotlin() {
+    assert_standalone_forge_kotlin("codec_zenoh_request", "CodecZenohRequest.kt");
+}
+
+#[test]
+fn forge_codec_zenoh_request_rust() {
+    assert_standalone_forge_rust("codec_zenoh_request", "codec_zenoh_request.rs");
+}
+
+#[test]
+fn forge_codec_zenoh_request_go() {
+    assert_standalone_forge_go("codec_zenoh_request", "codec_zenoh_request.go");
+}
+
+#[test]
+fn forge_codec_zenoh_request_python() {
+    assert_standalone_forge_python("codec_zenoh_request", "codec_zenoh_request.py");
+}
+
+#[test]
+fn forge_c11_codec_zenoh_request() {
+    assert_standalone_forge_c("codec_zenoh_request", "codec_zenoh_request.c.h");
+}
+
 // `forge_codec_tlv_entry_cpp` already exists above (it predates B5-ε;
 // the entry codec ships on all 6 backends since it has no MCU-only
 // sub-features itself). The new B5-ε closures add the missing kotlin /

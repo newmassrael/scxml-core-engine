@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh timestamp body (RFC §5.B Wire RFC
+     Phase B Y3 atomic 2b-iii — sub-codec, foundational embed for the
+     T-gated timestamp slot inside codec_zenoh_msg_put / msg_del).
+
+     Mirrors zenoh-pico `_z_timestamp_encode` / `_z_timestamp_decode`
+     (src/protocol/codec/message.c:86-112) verbatim. The encoder writes
+     a VLE u64 hybrid logical clock value, then delegates to
+     `_z_id_encode_as_slice` (lines 58-71) which routes through
+     `_z_slice_encode` (src/protocol/codec.c:247-250 = VLE length +
+     raw bytes). The zid carrier is `_z_id_t` (16-byte fixed buffer per
+     `ZENOH_ID_SIZE` in include/zenoh-pico/protocol/core.h:59) but the
+     wire encoding is length-prefixed, NOT fixed-width — the prefix
+     captures `_z_id_len` (the active zid byte count) and the suffix
+     emits exactly that many bytes.
+
+     Wire shape:
+       byte 0+ : time     (VLE u64, hybrid logical clock value)
+       byte ~  : zid_len  (VLE u64; in practice 0..16 fits a single
+                           byte since ZENOH_ID_SIZE=16 < 128)
+       bytes   : zid      (raw bytes, length = zid_len, max = 16)
+
+     Composition: B1-α VLE primitive (time + zid_len) + B2-β / B5-ζ
+     length-ref bytes (zid). No new SCE primitives required —
+     `_z_timestamp_encode`'s wire shape is fully expressible via the
+     existing length-prefixed bytes pattern. spec-mirror parity
+     applies (full upstream wire fidelity, NO Q1(b) simplification).
+
+     Embed contract: codec_zenoh_msg_put / codec_zenoh_msg_del each
+     declare a T-gated `<sce:embed type="codec_zenoh_timestamp">` field;
+     since this codec carries no flag dependency on a parent header,
+     the embed declares no `<sce:requires-parent-flags>` (Case A — local
+     self-contained codec). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_timestamp">
+  <datamodel>
+    <sce:field id="time" sce:type="uint64" sce:byte="0" sce:bit-size="vle"/>
+    <sce:field id="zid_len" sce:type="uint64" sce:byte="1" sce:bit-size="vle"/>
+    <sce:field id="zid" sce:type="bytes" sce:byte="2" sce:bit-size="length-ref"
+               sce:length-field="zid_len" sce:max-size="16"/>
+  </datamodel>
+</scxml>
