@@ -2215,6 +2215,63 @@ fn forge_c11_codec_zenoh_response_final() {
     );
 }
 
+// ── RFC §5.B B5 strict closure — peer of codec_transport_envelope at
+// the network layer. `codec_zenoh_network_envelope` mirrors zenoh-pico
+// `_z_network_message_decode` (network.c:630-668). 7-arm peek-byte
+// dispatcher over MID bits 0..4 (0x19..0x1f); each arm body is a
+// standalone codec that reads byte 0 as its own header. The default
+// arm catches MIDs 0x00..0x18 unused by zenoh-pico's network namespace.
+// No new SCE primitives required — peek-byte + variant + import all
+// proven by `codec_zenoh_request`.
+
+#[test]
+fn forge_codec_zenoh_network_envelope_cpp() {
+    assert_standalone_forge(
+        "codec_zenoh_network_envelope",
+        "codec_zenoh_network_envelope.h",
+    );
+}
+
+#[test]
+fn forge_codec_zenoh_network_envelope_kotlin() {
+    assert_standalone_forge_kotlin(
+        "codec_zenoh_network_envelope",
+        "CodecZenohNetworkEnvelope.kt",
+    );
+}
+
+#[test]
+fn forge_codec_zenoh_network_envelope_rust() {
+    assert_standalone_forge_rust(
+        "codec_zenoh_network_envelope",
+        "codec_zenoh_network_envelope.rs",
+    );
+}
+
+#[test]
+fn forge_codec_zenoh_network_envelope_go() {
+    assert_standalone_forge_go(
+        "codec_zenoh_network_envelope",
+        "codec_zenoh_network_envelope.go",
+    );
+}
+
+#[test]
+fn forge_codec_zenoh_network_envelope_python() {
+    assert_standalone_forge_python(
+        "codec_zenoh_network_envelope",
+        "codec_zenoh_network_envelope.py",
+    );
+}
+
+#[test]
+fn forge_c11_codec_zenoh_network_envelope() {
+    assert_standalone_forge_c(
+        "codec_zenoh_network_envelope",
+        "codec_zenoh_network_envelope.c.h",
+    );
+}
+
 // ── RFC §5.B Wire RFC Phase B Y3 atomic 2b-iv — multi-arm own-field
 // variant on header ENC bits. `codec_zenoh_oam` mirrors zenoh-pico
 // `_z_oam_encode/decode` (network.c:488-579). Header carries MID 0x1f

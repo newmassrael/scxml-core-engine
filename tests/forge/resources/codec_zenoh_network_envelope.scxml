@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh network message envelope (RFC §5.B
+     B5 strict closure — peer to codec_transport_envelope at the
+     network layer). Closes the final SCE-side message-level gap
+     against zenoh-pico parity per claudedocs/b5-closure-coverage-matrix.md.
+
+     Mirrors zenoh-pico `_z_network_message_decode` (src/protocol/codec/
+     network.c:630-668) verbatim. The decoder reads the leading 1-byte
+     header and dispatches on the masked MID (`_Z_MID(header)`,
+     `_Z_MID_MASK = 0x1f`) to seven per-message decoders. Each per-
+     message decoder takes `*header` as input and re-uses its flag bits
+     internally — i.e. the byte is conceptually consumed once but its
+     value is threaded through the dispatch chain.
+
+     The seven SCE fixtures (codec_zenoh_push / _request / _response /
+     _response_final / _interest / _declare / _oam) all author their
+     own `<sce:flags id="header" sce:byte="0">` declaration — they are
+     standalone codecs that own byte 0. Wrapping them in a network
+     envelope therefore uses the `<sce:peek-byte>` primitive (Y3 atomic
+     2b-ii) so the envelope dispatches WITHOUT consuming, and each
+     network-body arm reads byte 0 as its own header — the same shape
+     proven in production by `codec_zenoh_request` (which uses
+     peek-byte to dispatch over Z_PUT/Z_DEL/Z_QUERY inner-body MIDs).
+
+     Wire shape (1 + body bytes):
+       byte 0   : header     (network MID at bits 0..4 — `_Z_MID_MASK
+                              = 0x1f`); per-message flag bits at 5..7
+                              are consumed by the matched body codec
+                              (peek-byte does not consume them).
+       byte 0+  : body       — the matched arm reads byte 0 as its own
+                              `<sce:flags id="header">` and continues
+                              through extensions / sub-bodies per its
+                              standalone author.
+
+     Arm coverage (mirrors zenoh-pico definitions/network.h:33-39):
+       0x19 → Interest        (codec_zenoh_interest)
+       0x1a → ResponseFinal   (codec_zenoh_response_final)
+       0x1b → Response        (codec_zenoh_response)
+       0x1c → Request         (codec_zenoh_request)
+       0x1d → Push            (codec_zenoh_push)
+       0x1e → Declare         (codec_zenoh_declare)
+       0x1f → OAM             (codec_zenoh_oam)
+       <sce:default> → OAM    (catch-all for MIDs 0x00..0x18 not used
+                              by zenoh-pico's network namespace; per
+                              upstream `_Z_ERR_MESSAGE_DESERIALIZATION_
+                              FAILED` at network.c:666 a non-{Push,
+                              Request,Response,ResponseFinal,Interest,
+                              Declare,OAM} MID is a wire-protocol
+                              violation — the catch-all preserves
+                              round-trip with the most-defensive arm
+                              shape per established envelope precedent
+                              (codec_transport_envelope catches MID
+                              0x00 as Close; codec_zenoh_request
+                              catches non-{put,del,query} as Query)).
+
+     Composition: B1-β `<sce:variant tag="peek.mid">` + Y3 atomic
+     2b-ii peek-byte primitive + Y3 atomic 2b-i sub-codec embeds (all
+     7 arms). NO new SCE primitives required — reuses primitives
+     already proven by the request/response/oam fixtures. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_network_envelope">
+  <sce:import src="codec_zenoh_interest.scxml"       kind="codec" as="codec_zenoh_interest"/>
+  <sce:import src="codec_zenoh_response_final.scxml" kind="codec" as="codec_zenoh_response_final"/>
+  <sce:import src="codec_zenoh_response.scxml"       kind="codec" as="codec_zenoh_response"/>
+  <sce:import src="codec_zenoh_request.scxml"        kind="codec" as="codec_zenoh_request"/>
+  <sce:import src="codec_zenoh_push.scxml"           kind="codec" as="codec_zenoh_push"/>
+  <sce:import src="codec_zenoh_declare.scxml"        kind="codec" as="codec_zenoh_declare"/>
+  <sce:import src="codec_zenoh_oam.scxml"            kind="codec" as="codec_zenoh_oam"/>
+  <datamodel>
+    <sce:variant tag="peek.mid">
+      <sce:peek-byte id="peek" sce:type="uint8">
+        <sce:flag name="mid" bit="0" width="5"/>
+      </sce:peek-byte>
+      <sce:arm value="0x19" type="codec_zenoh_interest"/>
+      <sce:arm value="0x1a" type="codec_zenoh_response_final"/>
+      <sce:arm value="0x1b" type="codec_zenoh_response"/>
+      <sce:arm value="0x1c" type="codec_zenoh_request"/>
+      <sce:arm value="0x1d" type="codec_zenoh_push"/>
+      <sce:arm value="0x1e" type="codec_zenoh_declare"/>
+      <sce:arm value="0x1f" type="codec_zenoh_oam"/>
+      <sce:default type="codec_zenoh_oam"/>
+    </sce:variant>
+  </datamodel>
+</scxml>
