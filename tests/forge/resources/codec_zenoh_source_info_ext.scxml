@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh source_info ext envelope (RFC §5.B Y2 —
+     Y0b length-bound embed of the codec_zenoh_source_info body).
+
+     Mirrors zenoh-pico `_z_source_info_encode_ext` (message.c:243-254)
+     verbatim:
+
+         z_result_t _z_source_info_encode_ext(_z_wbuf_t *wbf,
+                                              const _z_source_info_t *info) {
+             uint8_t zidlen = _z_id_len(info->_source_id.zid);
+             size_t ext_size = (size_t)(1u + zidlen
+                                        + _z_zint_len(info->_source_id.eid)
+                                        + _z_zint_len(info->_source_sn));
+             _Z_RETURN_IF_ERR(_z_zsize_encode(wbf, ext_size));
+             _Z_RETURN_IF_ERR(_z_uint8_encode(wbf, (uint8_t)((zidlen - 1) << 4)));
+             _z_slice_t zid = _z_slice_alias_buf(info->_source_id.zid.id, zidlen);
+             _Z_RETURN_IF_ERR(_z_slice_val_encode(wbf, &zid));
+             _Z_RETURN_IF_ERR(_z_zsize_encode(wbf, info->_source_id.eid));
+             _Z_RETURN_IF_ERR(_z_zsize_encode(wbf, info->_source_sn));
+             return ret;
+         }
+
+     Wire shape:
+       byte 0+ : ext_size  (VLE u64, total bytes consumed by inner)
+       byte ?+ : info      (length-bound embed of codec_zenoh_source_info;
+                            inner cursor scope = ext_size bytes)
+
+     Composition: B1-α VLE primitive (ext_size) + Y0b length-bound
+     embed (`5a2c8afa`). NO new SCE primitives required. Same shape
+     as codec_zenoh_decl_ext_keyexpr / codec_zenoh_timestamp_ext but
+     wrapping the source_info body. The embed declares no
+     `<sce:requires-parent-flags>` (Case A — body codec is self-
+     contained, no parent flag dependency).
+
+     Author trust contract: caller sets `self.ext_size` consistently
+     with `self.info.encode().len()` (mirrors LengthRef sibling-length
+     contract). Encoder does NOT re-derive ext_size from inner body
+     size — round-trip correctness is the author's responsibility.
+
+     Wire round-trip oracle:
+       zid=[0xAB], eid=42, sn=7:
+         inner = 0x00 0xAB 0x2A 0x07 (4 bytes)
+         ext_size = 4 (VLE: 0x04)
+         envelope = 0x04 0x00 0xAB 0x2A 0x07
+       zid=[16 bytes], eid=0, sn=0:
+         inner = 0xF0 + 16 zid bytes + 0x00 + 0x00 (19 bytes)
+         ext_size = 19 (VLE: 0x13)
+         envelope = 0x13 0xF0 ... 0x00 0x00 -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_source_info_ext">
+  <sce:import src="codec_zenoh_source_info.scxml" kind="codec"
+              as="codec_zenoh_source_info"/>
+  <datamodel>
+    <sce:field id="ext_size" sce:type="uint64" sce:byte="0" sce:bit-size="vle"/>
+    <sce:embed id="info" type="codec_zenoh_source_info" sce:byte="1"
+               sce:length-from="ext_size"/>
+  </datamodel>
+</scxml>

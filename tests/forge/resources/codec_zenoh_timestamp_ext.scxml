@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh timestamp ext envelope (RFC §5.B Y2 —
+     Y0b length-bound embed of the existing codec_zenoh_timestamp body).
+
+     Mirrors zenoh-pico `_z_timestamp_encode_ext` (message.c:95-100)
+     verbatim:
+
+         z_result_t _z_timestamp_encode_ext(_z_wbuf_t *wbf,
+                                            const _z_timestamp_t *ts) {
+             size_t ext_size = (size_t)(_z_zint_len(ts->time)
+                                        + 1 + _z_id_len(ts->id));
+             _Z_RETURN_IF_ERR(_z_zsize_encode(wbf, ext_size));
+             return _z_timestamp_encode(wbf, ts);
+         }
+
+     Wire shape:
+       byte 0+ : ext_size  (VLE u64, total bytes consumed by inner)
+       byte ?+ : ts        (length-bound embed of codec_zenoh_timestamp;
+                            inner cursor scope = ext_size bytes)
+
+     The inner body is the already-shipped codec_zenoh_timestamp
+     (resources/codec_zenoh_timestamp.scxml):
+       - VLE u64 time
+       - VLE u64 zid_len
+       - length-ref bytes zid (max=16, length=zid_len)
+
+     Composition: B1-α VLE primitive (ext_size) + Y0b length-bound
+     embed (`5a2c8afa`). NO new SCE primitives required. The embed
+     declares no `<sce:requires-parent-flags>` (Case A — body codec
+     is self-contained, no parent flag dependency).
+
+     Author trust contract: caller sets `self.ext_size` consistently
+     with `self.ts.encode().len()` (mirrors LengthRef sibling-length
+     contract). Encoder does NOT re-derive ext_size from inner body
+     size — round-trip correctness is the author's responsibility.
+
+     Wire round-trip oracle:
+       time=42, zid=[0x01,0x02,0x03,0x04]:
+         inner body = VLE(42)=0x2A + VLE(4)=0x04 + 0x01,0x02,0x03,0x04
+                    = 6 bytes
+         ext_size = 6  (VLE: 0x06)
+         envelope = 0x06 0x2A 0x04 0x01 0x02 0x03 0x04
+       time=0, zid=[]:
+         inner body = VLE(0)=0x00 + VLE(0)=0x00
+                    = 2 bytes
+         ext_size = 2  (VLE: 0x02)
+         envelope = 0x02 0x00 0x00 -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_timestamp_ext">
+  <sce:import src="codec_zenoh_timestamp.scxml" kind="codec"
+              as="codec_zenoh_timestamp"/>
+  <datamodel>
+    <sce:field id="ext_size" sce:type="uint64" sce:byte="0" sce:bit-size="vle"/>
+    <sce:embed id="ts" type="codec_zenoh_timestamp" sce:byte="1"
+               sce:length-from="ext_size"/>
+  </datamodel>
+</scxml>

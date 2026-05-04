@@ -1566,6 +1566,39 @@ fn forge_codec_zenoh_undecl_token_cpp() {
     );
 }
 
+// ── RFC §5.B Wire RFC Phase B Y2 — _encode_ext envelope family ──
+// `codec_zenoh_source_info` is the second realistic consumer of B5-κ
+// dotted-path length-field + B5-δ length-arith (after codec_zenoh_scout),
+// modelling `_z_source_info_encode/decode` (message.c:196-242). Its
+// `_encode_ext` envelope (message.c:243-254) and the bare timestamp's
+// `_z_timestamp_encode_ext` (message.c:95-100) are the only two
+// `_encode_ext` slots in upstream zenoh-pico — both compose the Y0b
+// length-bound embed (`5a2c8afa`) over an existing body codec.
+
+#[test]
+fn forge_codec_zenoh_source_info_cpp() {
+    assert_standalone_forge(
+        "codec_zenoh_source_info",
+        "codec_zenoh_source_info.h",
+    );
+}
+
+#[test]
+fn forge_codec_zenoh_source_info_ext_cpp() {
+    assert_standalone_forge(
+        "codec_zenoh_source_info_ext",
+        "codec_zenoh_source_info_ext.h",
+    );
+}
+
+#[test]
+fn forge_codec_zenoh_timestamp_ext_cpp() {
+    assert_standalone_forge(
+        "codec_zenoh_timestamp_ext",
+        "codec_zenoh_timestamp_ext.h",
+    );
+}
+
 // ── RFC §5.B B3 TLV chain primitive (Cpp/Rust trunk) ────────
 // `codec_tlv_chain_basic` declares a TLV chain bounded at max-depth=8
 // with on-overflow="reject". MCU-class — Cpp/Kotlin/Go/Python all
@@ -4253,6 +4286,30 @@ fn forge_kotlin_codec_zenoh_undecl_token() {
 }
 
 #[test]
+fn forge_kotlin_codec_zenoh_source_info() {
+    assert_standalone_forge_kotlin(
+        "codec_zenoh_source_info",
+        "CodecZenohSourceInfo.kt",
+    );
+}
+
+#[test]
+fn forge_kotlin_codec_zenoh_source_info_ext() {
+    assert_standalone_forge_kotlin(
+        "codec_zenoh_source_info_ext",
+        "CodecZenohSourceInfoExt.kt",
+    );
+}
+
+#[test]
+fn forge_kotlin_codec_zenoh_timestamp_ext() {
+    assert_standalone_forge_kotlin(
+        "codec_zenoh_timestamp_ext",
+        "CodecZenohTimestampExt.kt",
+    );
+}
+
+#[test]
 fn forge_kotlin_codec_until_eof_basic() {
     assert_standalone_forge_kotlin(
         "codec_until_eof_basic",
@@ -4779,6 +4836,30 @@ fn forge_rust_codec_zenoh_undecl_token() {
     assert_standalone_forge_rust(
         "codec_zenoh_undecl_token",
         "codec_zenoh_undecl_token.rs",
+    );
+}
+
+#[test]
+fn forge_rust_codec_zenoh_source_info() {
+    assert_standalone_forge_rust(
+        "codec_zenoh_source_info",
+        "codec_zenoh_source_info.rs",
+    );
+}
+
+#[test]
+fn forge_rust_codec_zenoh_source_info_ext() {
+    assert_standalone_forge_rust(
+        "codec_zenoh_source_info_ext",
+        "codec_zenoh_source_info_ext.rs",
+    );
+}
+
+#[test]
+fn forge_rust_codec_zenoh_timestamp_ext() {
+    assert_standalone_forge_rust(
+        "codec_zenoh_timestamp_ext",
+        "codec_zenoh_timestamp_ext.rs",
     );
 }
 
@@ -5310,6 +5391,30 @@ fn forge_go_codec_zenoh_undecl_token() {
     );
 }
 
+#[test]
+fn forge_go_codec_zenoh_source_info() {
+    assert_standalone_forge_go(
+        "codec_zenoh_source_info",
+        "codec_zenoh_source_info.go",
+    );
+}
+
+#[test]
+fn forge_go_codec_zenoh_source_info_ext() {
+    assert_standalone_forge_go(
+        "codec_zenoh_source_info_ext",
+        "codec_zenoh_source_info_ext.go",
+    );
+}
+
+#[test]
+fn forge_go_codec_zenoh_timestamp_ext() {
+    assert_standalone_forge_go(
+        "codec_zenoh_timestamp_ext",
+        "codec_zenoh_timestamp_ext.go",
+    );
+}
+
 // ── RFC §5.B B4 applied codec shapes (Go) ───────────────────
 
 #[test]
@@ -5785,6 +5890,30 @@ fn forge_python_codec_zenoh_undecl_token() {
     );
 }
 
+#[test]
+fn forge_python_codec_zenoh_source_info() {
+    assert_standalone_forge_python(
+        "codec_zenoh_source_info",
+        "codec_zenoh_source_info.py",
+    );
+}
+
+#[test]
+fn forge_python_codec_zenoh_source_info_ext() {
+    assert_standalone_forge_python(
+        "codec_zenoh_source_info_ext",
+        "codec_zenoh_source_info_ext.py",
+    );
+}
+
+#[test]
+fn forge_python_codec_zenoh_timestamp_ext() {
+    assert_standalone_forge_python(
+        "codec_zenoh_timestamp_ext",
+        "codec_zenoh_timestamp_ext.py",
+    );
+}
+
 // ── RFC §5.B B4 applied codec shapes (Python) ───────────────
 
 #[test]
@@ -6219,6 +6348,30 @@ fn forge_c11_codec_zenoh_undecl_token() {
     assert_standalone_forge_c(
         "codec_zenoh_undecl_token",
         "codec_zenoh_undecl_token.c.h",
+    );
+}
+
+#[test]
+fn forge_c11_codec_zenoh_source_info() {
+    assert_standalone_forge_c(
+        "codec_zenoh_source_info",
+        "codec_zenoh_source_info.c.h",
+    );
+}
+
+#[test]
+fn forge_c11_codec_zenoh_source_info_ext() {
+    assert_standalone_forge_c(
+        "codec_zenoh_source_info_ext",
+        "codec_zenoh_source_info_ext.c.h",
+    );
+}
+
+#[test]
+fn forge_c11_codec_zenoh_timestamp_ext() {
+    assert_standalone_forge_c(
+        "codec_zenoh_timestamp_ext",
+        "codec_zenoh_timestamp_ext.c.h",
     );
 }
 
