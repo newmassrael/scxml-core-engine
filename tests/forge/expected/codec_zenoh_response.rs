@@ -192,7 +192,7 @@ impl CodecZenohResponse {
         // tag byte is emitted here. Streaming-prefix mode (own-field
         // variant): the carrier is part of the prefix fields and emits
         // through the same per-field path.
-        let mut r: Vec<u8> = Vec::with_capacity(726);
+        let mut r: Vec<u8> = Vec::with_capacity(977);
         r.push(self.header);
         {
             let mut _w = self.request_id as u64;

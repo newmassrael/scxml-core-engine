@@ -4,25 +4,20 @@
 
 use sce_forge_runtime::codec::{CodecError, SceCursor};
 
-use super::codec_zenoh_encoding::CodecZenohEncoding;
-use super::codec_zenoh_ext_entry::CodecZenohExtEntry;
-
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
 // §6 codec). The kind-agnostic conformance harness only references a
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
 #[derive(Default)]
-pub struct CodecZenohMsgErr {
-    pub header: u8,
-    pub encoding: Option<CodecZenohEncoding>,
-    pub extensions: Option<Vec<CodecZenohExtEntry>>,
-    pub payload_len: u64,
-    pub payload: Vec<u8>,
+pub struct CodecZenohEncoding {
+    pub packed_id: u32,
+    pub schema_len: Option<u64>,
+    pub schema: Option<String>,
 }
 
 #[allow(dead_code)]
-impl CodecZenohMsgErr {
+impl CodecZenohEncoding {
     /// Construct an instance with every field zero-initialized via
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -47,44 +42,28 @@ impl CodecZenohMsgErr {
         // isn't allowed on `<sce:repeat>` / `<sce:tlv-chain>`.
         // Note: this branch fires before has_vle_fields so a codec
         // mixing VLE + present-if uses the unified streaming path.
-        let header = {
-            let raw = cursor.peek_slice(1)?;
-            let _v = raw[0];
-            cursor.advance(1)?;
-            _v
-        };
-        let encoding = if (header & 0x40u8) != 0 {
-            Some(CodecZenohEncoding::decode(cursor)?)
+        let packed_id = cursor.read_vle_u32()?;
+        let schema_len = if (packed_id & 0x00000001u32) != 0 {
+            let _v = cursor.read_vle_u64()?;
+            Some(_v)
         } else {
             None
         };
-        let extensions = if (header & 0x80u8) != 0 {
-            let mut _vec: Vec<CodecZenohExtEntry> = Vec::with_capacity(4 as usize);
-            for _ in 0..4u32 {
-                    if cursor.remaining() == 0 { break; }
-                    let _entry = CodecZenohExtEntry::decode(cursor)?;
-                    let _continue = _entry.z();
-                    _vec.push(_entry);
-                    if !_continue { break; }
-                }
-            Some(_vec)
-        } else {
-            None
-        };
-        let payload_len = cursor.read_vle_u64()?;
-        let payload = {
-            let _n = payload_len as usize;
+        let schema = if (packed_id & 0x00000001u32) != 0 {
+            let _n = schema_len.unwrap() as usize;
             let raw = cursor.peek_slice(_n)?;
-            let _v = raw.to_vec();
+            let _v = core::str::from_utf8(raw)
+                .map_err(|_| CodecError::InvalidUtf8)?
+                .to_string();
             cursor.advance(_n)?;
-            _v
+            Some(_v)
+        } else {
+            None
         };
         Ok(Self {
-            header,
-            encoding,
-            extensions,
-            payload_len,
-            payload,
+            packed_id,
+            schema_len,
+            schema,
         })
     }
 
@@ -94,49 +73,15 @@ impl CodecZenohMsgErr {
     // range. Setters mask + shift on the way in so out-of-range
     // callers can't corrupt sibling bits. Wire layout is unchanged —
     // the carrier still occupies its declared bytes.
-    pub fn mid(&self) -> u8 {
-        (((self.header >> 0) & (0x1F as u8))) as u8
+    pub fn has_schema(&self) -> bool {
+        (self.packed_id & 0x00000001) != 0
     }
 
-    pub fn set_mid(&mut self, v: u8) {
-        let _mask: u8 = (0x1F as u8) << 0;
-        let _val: u8 = ((v as u8) & (0x1F as u8)) << 0;
-        self.header = (self.header & !_mask) | _val;
-    }
-
-    pub fn x(&self) -> bool {
-        (self.header & 0x20) != 0
-    }
-
-    pub fn set_x(&mut self, v: bool) {
+    pub fn set_has_schema(&mut self, v: bool) {
         if v {
-            self.header |= 0x20;
+            self.packed_id |= 0x00000001;
         } else {
-            self.header &= !0x20;
-        }
-    }
-
-    pub fn e(&self) -> bool {
-        (self.header & 0x40) != 0
-    }
-
-    pub fn set_e(&mut self, v: bool) {
-        if v {
-            self.header |= 0x40;
-        } else {
-            self.header &= !0x40;
-        }
-    }
-
-    pub fn z(&self) -> bool {
-        (self.header & 0x80) != 0
-    }
-
-    pub fn set_z(&mut self, v: bool) {
-        if v {
-            self.header |= 0x80;
-        } else {
-            self.header &= !0x80;
+            self.packed_id &= !0x00000001;
         }
     }
 
@@ -150,27 +95,28 @@ impl CodecZenohMsgErr {
         // the variant primitive). Note: this branch fires before
         // has_vle_fields so a codec mixing VLE + present-if uses the
         // unified encode path.
-        let mut r: Vec<u8> = Vec::with_capacity(695);
-        r.push(self.header);
-        if (header & 0x40u8) != 0 {
-            if let Some(_v) = &self.encoding {
-                r.extend(_v.encode());
-            }
-        }
-        if let Some(_list) = &self.extensions {
-            for _e in _list {
-                r.extend(_e.encode());
-            }
-        }
+        let mut r: Vec<u8> = Vec::with_capacity(143);
         {
-            let mut _w = self.payload_len as u64;
+            let mut _w = self.packed_id as u64;
             while _w >= 0x80 {
                 r.push((_w as u8 & 0x7F) | 0x80);
                 _w >>= 7;
             }
             r.push(_w as u8);
         }
-        r.extend_from_slice(&self.payload);
+        if let Some(_v) = self.schema_len {
+        {
+            let mut _w = _v as u64;
+            while _w >= 0x80 {
+                r.push((_w as u8 & 0x7F) | 0x80);
+                _w >>= 7;
+            }
+            r.push(_w as u8);
+        }
+        }
+        if let Some(_v) = &self.schema {
+            r.extend_from_slice(_v.as_bytes());
+        }
         r
     }
 }

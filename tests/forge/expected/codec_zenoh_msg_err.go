@@ -6,13 +6,14 @@ package codec_zenoh_msg_err
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"example.com/sce-forge/codec_zenoh_encoding"
 	"example.com/sce-forge/codec_zenoh_ext_entry"
 )
 
 // CodecZenohMsgErr represents the codec frame layout.
 type CodecZenohMsgErr struct {
 	Header uint8
-	EncodingId *uint32
+	Encoding *codec_zenoh_encoding.CodecZenohEncoding
 	Extensions []codec_zenoh_ext_entry.CodecZenohExtEntry
 	PayloadLen uint64
 	Payload []byte
@@ -42,11 +43,13 @@ func DecodeCodecZenohMsgErr(cursor *codec.SceCursor) (*CodecZenohMsgErr, error) 
 			return nil, err
 		}
 	}
-	var EncodingId *uint32
+	var Encoding *codec_zenoh_encoding.CodecZenohEncoding
 	if (Header & 0x40) != 0 {
-		_v, err := cursor.ReadVLEU32()
-	if err != nil { return nil, err }
-		EncodingId = &_v
+		_emb, err := codec_zenoh_encoding.DecodeCodecZenohEncoding(cursor)
+		if err != nil {
+			return nil, err
+		}
+		Encoding = _emb
 	}
 	var Extensions []codec_zenoh_ext_entry.CodecZenohExtEntry
 	if (Header & 0x80) != 0 {
@@ -82,7 +85,7 @@ func DecodeCodecZenohMsgErr(cursor *codec.SceCursor) (*CodecZenohMsgErr, error) 
 	}
 	return &CodecZenohMsgErr{
 		Header: Header,
-		EncodingId: EncodingId,
+		Encoding: Encoding,
 		Extensions: Extensions,
 		PayloadLen: PayloadLen,
 		Payload: Payload,
@@ -148,18 +151,12 @@ func (s *CodecZenohMsgErr) Encode() []byte {
 	// field `is_repeat` routes Repeat fields to the dedicated helper.
 	// Branch fires before has_vle_fields so a codec mixing VLE +
 	// present-if uses the unified encode path.
-	r := make([]byte, 0, 444)
+	r := make([]byte, 0, 695)
 	r = append(r, s.Header)
-	if s.EncodingId != nil {
-		_v := *s.EncodingId
-	{
-		_w := uint64(_v)
-		for _w >= 0x80 {
-			r = append(r, byte(_w&0x7F)|0x80)
-			_w >>= 7
+	if (Header & 0x40) != 0 {
+		if s.Encoding != nil {
+			r = append(r, s.Encoding.Encode()...)
 		}
-		r = append(r, byte(_w))
-	}
 	}
 	for _, _e := range s.Extensions {
 		r = append(r, _e.Encode()...)

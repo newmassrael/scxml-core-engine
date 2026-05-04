@@ -14,21 +14,21 @@
        byte 0   : header     (MID 0x01 in bits 0..4 + T@5 + E@6 + Z@7)
                               — T = `_Z_FLAG_Z_P_T = 0x20` gates the
                               timestamp embed; E = `_Z_FLAG_Z_P_E = 0x40`
-                              gates the inline encoding placeholder;
+                              gates the encoding embed;
                               Z = `_Z_FLAG_Z_Z = 0x80` signals the ext
                               chain follows.
        T-gated:
          bytes  : timestamp  (codec_zenoh_timestamp embed — VLE u64
                               time + length-prefixed zid bytes max=16)
        E-gated:
-         bytes  : encoding_id (VLE u32 — Q1(b) simplification of the
-                  upstream `(id << 1) | has_schema` packed VLE encoding
-                  wire per `_z_encoding_encode` codec.c:356-367; full
-                  encoding wire deferred to atomic 2b-iii-α which lifts
-                  the SCE primitive for VLE-LSB-as-flag carriers. The
-                  schema-less subset covered by this simplification is
-                  the production-common case; mirrors msg_err's
-                  identical encoding_id Q1(b) precedent verbatim).
+         bytes  : encoding   (codec_zenoh_encoding embed — full
+                              upstream wire fidelity per
+                              `_z_encoding_encode` codec.c:356-381:
+                              VLE u32 packed_id with LSB has_schema
+                              flag + has_schema-gated VLE u64
+                              schema_len + UTF-8 schema bytes max=128).
+                              Replaces the prior Q1(b) inline VLE u32
+                              encoding_id field (atomic 2b-iii-α closure).
        Z-gated:
          chain  : codec_zenoh_ext_entry tlv-chain (entry-flag
                   termination on entry header.Z — Y3 atomic 1 grammar;
@@ -48,20 +48,16 @@
      (T / E gates) + Y3 atomic 2a present-if-on-tlv-chain (header.Z
      gate) + Y3 atomic 1 entry-flag termination (chain followed by
      payload pair) + B5-ε surface G (chain element = codec_zenoh_ext_
-     entry variant) + Y0c <sce:embed> (codec_zenoh_timestamp inner
-     codec) + B1-α length-ref (payload_len / payload pair). No new
-     primitives.
+     entry variant) + Y0c <sce:embed> (codec_zenoh_timestamp +
+     codec_zenoh_encoding inner codecs) + B1-α length-ref (payload_len
+     / payload pair). No new primitives.
 
      Body variant arm contract: invoked by codec_zenoh_request when
      the inner-MID byte after the request header reads 0x01 (Z_PUT).
      Wire byte 0 here IS the request body's dispatch header from the
      request envelope's perspective.
 
-     Q1(b) envelope-only fidelity scoping: encoding_id stripped to
-     a placeholder VLE u32 (schema-less subset only) — atomic 2b-iii-α
-     follow-up will lift the VLE-LSB-as-flag SCE primitive and replace
-     this inline placeholder with a proper codec_zenoh_encoding sub-
-     codec. source_info nested ext stays opaque through the
+     source_info nested ext stays opaque through the
      codec_zenoh_ext_entry ZBuf arm — host-side interpretation in the
      caller mirrors zenoh-pico's `_z_push_body_decode_extensions`
      callback. -->
@@ -69,6 +65,7 @@
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="codec_zenoh_msg_put">
   <sce:import src="codec_zenoh_timestamp.scxml" kind="codec" as="codec_zenoh_timestamp"/>
+  <sce:import src="codec_zenoh_encoding.scxml" kind="codec" as="codec_zenoh_encoding"/>
   <sce:import src="codec_zenoh_ext_entry.scxml" kind="codec" as="codec_zenoh_ext_entry"/>
   <datamodel>
     <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
@@ -79,7 +76,7 @@
     </sce:flags>
     <sce:embed id="timestamp" type="codec_zenoh_timestamp" sce:byte="1"
                sce:present-if="header.T"/>
-    <sce:field id="encoding_id" sce:type="uint32" sce:byte="2" sce:bit-size="vle"
+    <sce:embed id="encoding" type="codec_zenoh_encoding" sce:byte="2"
                sce:present-if="header.E"/>
     <sce:tlv-chain id="extensions" type="codec_zenoh_ext_entry" sce:byte="3"
                    max-depth="4" on-overflow="reject"

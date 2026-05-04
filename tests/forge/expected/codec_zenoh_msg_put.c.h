@@ -12,16 +12,18 @@
 
 #include "sce/forge/codec.h"
 #include "codec_zenoh_timestamp.h"
+#include "codec_zenoh_encoding.h"
 #include "codec_zenoh_ext_entry.h"
 
 #define CODEC_ZENOH_MSG_PUT_MIN_BYTES 1
-#define CODEC_ZENOH_MSG_PUT_MAX_BYTES 700
+#define CODEC_ZENOH_MSG_PUT_MAX_BYTES 951
 
 typedef struct {
     uint8_t header;
     /* RFC §5.B Y0c embed: nested codec_zenoh_timestamp_t struct (no length prefix on the wire) */
     codec_zenoh_timestamp_t timestamp;
-    uint32_t encoding_id;
+    /* RFC §5.B Y0c embed: nested codec_zenoh_encoding_t struct (no length prefix on the wire) */
+    codec_zenoh_encoding_t encoding;
     /* RFC §5.B B3 tlv-chain: fixed array of codec_zenoh_ext_entry_t entries (max-depth 4, on-overflow=reject) */
     codec_zenoh_ext_entry_t extensions[4];
     size_t  extensions_len;
@@ -61,14 +63,8 @@ static inline sce_forge_codec_status_t codec_zenoh_msg_put_decode(sce_forge_curs
         if (_st != SCE_FORGE_CODEC_OK) return _st;
     }
     if ((out->header & 0x40) != 0) {
-        uint32_t _v;
-    {
-        sce_forge_codec_status_t _vle_st = sce_forge_cursor_read_vle_u32(cursor, &_v);
-        if (_vle_st != SCE_FORGE_CODEC_OK) return _vle_st;
-    }
-        out->encoding_id = _v;
-    } else {
-        out->encoding_id = 0;
+        sce_forge_codec_status_t _st = codec_zenoh_encoding_decode(cursor, &out->encoding);
+        if (_st != SCE_FORGE_CODEC_OK) return _st;
     }
     out->extensions_len = 0;
         if ((out->header & 0x80) != 0) {
@@ -116,14 +112,11 @@ static inline codec_zenoh_msg_put_encoded_t codec_zenoh_msg_put_encode(const cod
         }
     }
     if ((self->header & 0x40) != 0) {
-    {
-        uint64_t _w = (uint64_t)(self->encoding_id);
-        while (_w >= 0x80u) {
-            r.bytes[r.len++] = (uint8_t)((_w & 0x7Fu) | 0x80u);
-            _w >>= 7;
+        codec_zenoh_encoding_encoded_t _sub = codec_zenoh_encoding_encode(&self->encoding);
+        if (r.len + _sub.len <= sizeof(r.bytes)) {
+            for (size_t _ej = 0; _ej < _sub.len; ++_ej) r.bytes[r.len + _ej] = _sub.bytes[_ej];
+            r.len += _sub.len;
         }
-        r.bytes[r.len++] = (uint8_t)_w;
-    }
     }
     if ((self->header & 0x80) != 0) {
         for (size_t _ti = 0; _ti < self->extensions_len; ++_ti) {

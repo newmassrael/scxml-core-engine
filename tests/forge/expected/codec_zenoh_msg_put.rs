@@ -5,6 +5,7 @@
 use sce_forge_runtime::codec::{CodecError, SceCursor};
 
 use super::codec_zenoh_timestamp::CodecZenohTimestamp;
+use super::codec_zenoh_encoding::CodecZenohEncoding;
 use super::codec_zenoh_ext_entry::CodecZenohExtEntry;
 
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
@@ -16,7 +17,7 @@ use super::codec_zenoh_ext_entry::CodecZenohExtEntry;
 pub struct CodecZenohMsgPut {
     pub header: u8,
     pub timestamp: Option<CodecZenohTimestamp>,
-    pub encoding_id: Option<u32>,
+    pub encoding: Option<CodecZenohEncoding>,
     pub extensions: Option<Vec<CodecZenohExtEntry>>,
     pub payload_len: u64,
     pub payload: Vec<u8>,
@@ -59,9 +60,8 @@ impl CodecZenohMsgPut {
         } else {
             None
         };
-        let encoding_id = if (header & 0x40u8) != 0 {
-            let _v = cursor.read_vle_u32()?;
-            Some(_v)
+        let encoding = if (header & 0x40u8) != 0 {
+            Some(CodecZenohEncoding::decode(cursor)?)
         } else {
             None
         };
@@ -89,7 +89,7 @@ impl CodecZenohMsgPut {
         Ok(Self {
             header,
             timestamp,
-            encoding_id,
+            encoding,
             extensions,
             payload_len,
             payload,
@@ -158,22 +158,17 @@ impl CodecZenohMsgPut {
         // the variant primitive). Note: this branch fires before
         // has_vle_fields so a codec mixing VLE + present-if uses the
         // unified encode path.
-        let mut r: Vec<u8> = Vec::with_capacity(700);
+        let mut r: Vec<u8> = Vec::with_capacity(951);
         r.push(self.header);
         if (header & 0x20u8) != 0 {
             if let Some(_v) = &self.timestamp {
                 r.extend(_v.encode());
             }
         }
-        if let Some(_v) = self.encoding_id {
-        {
-            let mut _w = _v as u64;
-            while _w >= 0x80 {
-                r.push((_w as u8 & 0x7F) | 0x80);
-                _w >>= 7;
+        if (header & 0x40u8) != 0 {
+            if let Some(_v) = &self.encoding {
+                r.extend(_v.encode());
             }
-            r.push(_w as u8);
-        }
         }
         if let Some(_list) = &self.extensions {
             for _e in _list {

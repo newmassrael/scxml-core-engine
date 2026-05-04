@@ -1967,6 +1967,51 @@ fn forge_c11_codec_zenoh_timestamp() {
     assert_standalone_forge_c("codec_zenoh_timestamp", "codec_zenoh_timestamp.c.h");
 }
 
+// ── RFC §5.B Wire RFC Phase B Y3 atomic 2b-iii-α — full upstream
+// wire fidelity for `_z_encoding_encode/decode` (codec.c:356-381).
+// `codec_zenoh_encoding` is the second consumer of the VLE+flags
+// composition primitive (first was codec_ext_encoding_info — the
+// composition has shipped goldens since B4). Closes 3 of the 4
+// deferrals listed in codec_ext_encoding_info's preamble: #2 VLE u64
+// schema_len (not u8), #3 gated schema_len (upstream-binary parity),
+// #4 string typing (not bytes). Deferral #1 (derived `id =
+// packed_id >> 1` accessor) stays — host derives the real id via
+// the same idiom every other Zenoh codec uses (raw carrier byte +
+// named bit accessors; see codec_zenoh_request.header u8 with N/M/Z
+// accessors). First reachable consumer = codec_zenoh_msg_put /
+// codec_zenoh_msg_err E-gated embed (replaces the prior Q1(b)
+// inline VLE u32 encoding_id field).
+
+#[test]
+fn forge_codec_zenoh_encoding_cpp() {
+    assert_standalone_forge("codec_zenoh_encoding", "codec_zenoh_encoding.h");
+}
+
+#[test]
+fn forge_codec_zenoh_encoding_kotlin() {
+    assert_standalone_forge_kotlin("codec_zenoh_encoding", "CodecZenohEncoding.kt");
+}
+
+#[test]
+fn forge_codec_zenoh_encoding_rust() {
+    assert_standalone_forge_rust("codec_zenoh_encoding", "codec_zenoh_encoding.rs");
+}
+
+#[test]
+fn forge_codec_zenoh_encoding_go() {
+    assert_standalone_forge_go("codec_zenoh_encoding", "codec_zenoh_encoding.go");
+}
+
+#[test]
+fn forge_codec_zenoh_encoding_python() {
+    assert_standalone_forge_python("codec_zenoh_encoding", "codec_zenoh_encoding.py");
+}
+
+#[test]
+fn forge_c11_codec_zenoh_encoding() {
+    assert_standalone_forge_c("codec_zenoh_encoding", "codec_zenoh_encoding.c.h");
+}
+
 // ── RFC §5.B Wire RFC Phase B Y3 atomic 2b-iii — sub-codec atomic
 // `codec_zenoh_msg_put` mirrors zenoh-pico `_z_put_encode/decode`
 // (message.c:369-379) which delegates to `_z_push_body_encode/decode`

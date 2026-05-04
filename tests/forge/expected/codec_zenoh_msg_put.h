@@ -13,6 +13,7 @@
 
 #include "sce/forge/codec.h"
 #include "codec_zenoh_timestamp.h"
+#include "codec_zenoh_encoding.h"
 #include "codec_zenoh_ext_entry.h"
 
 namespace SCE::Generated::CodecZenohMsgPut {
@@ -20,7 +21,7 @@ namespace SCE::Generated::CodecZenohMsgPut {
 struct CodecZenohMsgPut {
     uint8_t header;
     std::optional<::SCE::Generated::CodecZenohTimestamp::CodecZenohTimestamp> timestamp;
-    std::optional<uint32_t> encoding_id;
+    std::optional<::SCE::Generated::CodecZenohEncoding::CodecZenohEncoding> encoding;
     std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions;
     uint64_t payload_len;
     std::vector<uint8_t> payload;
@@ -52,12 +53,11 @@ struct CodecZenohMsgPut {
             if (!_emb.has_value()) return std::nullopt;
             timestamp = std::move(*_emb);
         }
-        std::optional<uint32_t> encoding_id;
+        std::optional<::SCE::Generated::CodecZenohEncoding::CodecZenohEncoding> encoding;
         if ((header & 0x40) != 0) {
-            auto _v_opt = cursor.read_vle_u32();
-        if (!_v_opt.has_value()) return std::nullopt;
-        auto _v = static_cast<std::uint32_t>(*_v_opt);
-            encoding_id = _v;
+            auto _emb = ::SCE::Generated::CodecZenohEncoding::CodecZenohEncoding::decode(cursor);
+            if (!_emb.has_value()) return std::nullopt;
+            encoding = std::move(*_emb);
         }
         std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions;
         if ((header & 0x80) != 0) {
@@ -87,7 +87,7 @@ struct CodecZenohMsgPut {
         return CodecZenohMsgPut{
             .header = header,
             .timestamp = timestamp,
-            .encoding_id = encoding_id,
+            .encoding = encoding,
             .extensions = extensions,
             .payload_len = payload_len,
             .payload = payload,
@@ -162,7 +162,7 @@ struct CodecZenohMsgPut {
         // dedicated helper. Branch fires before has_vle_fields so a
         // codec mixing VLE + present-if uses the unified encode path.
         std::vector<uint8_t> r;
-        r.reserve(700);
+        r.reserve(951);
         r.push_back(header);
         if ((header & 0x20) != 0) {
             if (this->timestamp.has_value()) {
@@ -170,16 +170,11 @@ struct CodecZenohMsgPut {
                 r.insert(r.end(), _sub.begin(), _sub.end());
             }
         }
-        if (encoding_id.has_value()) {
-            auto _v = *encoding_id;
-        {
-            std::uint64_t _w = static_cast<std::uint64_t>(_v);
-            while (_w >= 0x80) {
-                r.push_back(static_cast<std::uint8_t>((_w & 0x7F) | 0x80));
-                _w >>= 7;
+        if ((header & 0x40) != 0) {
+            if (this->encoding.has_value()) {
+                auto _sub = this->encoding->encode();
+                r.insert(r.end(), _sub.begin(), _sub.end());
             }
-            r.push_back(static_cast<std::uint8_t>(_w));
-        }
         }
         if (this->extensions.has_value()) {
             for (const auto& _e : *this->extensions) {

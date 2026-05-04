@@ -195,7 +195,7 @@ struct CodecZenohRequest {
         // carrier is part of the prefix fields and emits via the same
         // per-field path.
         std::vector<uint8_t> r;
-        r.reserve(967);
+        r.reserve(1218);
         r.push_back(header);
         {
             std::uint64_t _w = static_cast<std::uint64_t>(rid);

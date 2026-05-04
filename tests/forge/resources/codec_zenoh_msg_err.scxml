@@ -4,27 +4,24 @@
 
      Mirrors zenoh-pico `_z_err_encode` / `_z_err_decode`
      (src/protocol/codec/message.c:545-595) at envelope-level wire
-     fidelity. The inline encoding_id is a Q1(b) simplification of
-     the upstream encoding wire: zenoh-pico encodes
-     `(id << 1) | has_schema_LSB` as a VLE u32 followed by a
-     has_schema-gated string. The LSB-as-flag VLE pattern is not yet
-     expressible in SCE primitives — a follow-up atomic that lifts
-     VLE-with-bit-carrier will replace this inline VLE u32 with a
-     proper codec_zenoh_encoding sub-codec. The schema-less subset
-     covered by this simplification is the production-common case
-     (z_encoding_id_t standardized identifiers without per-message
-     schema overrides).
+     fidelity. The encoding embed is the full upstream wire per
+     `_z_encoding_encode` codec.c:356-381 — VLE u32 packed_id with
+     LSB has_schema flag + has_schema-gated VLE u64 schema_len +
+     UTF-8 schema bytes max=128 — landed at atomic 2b-iii-α as
+     codec_zenoh_encoding (replaces the prior Q1(b) inline VLE u32
+     encoding_id field).
 
      Wire shape (1+ bytes):
        byte 0   : header     (MID 0x05 in bits 0..4 + X@5 + E_E@6 + Z@7)
-                              — header.E gates the inline encoding_id
-                              VLE u32; header.Z signals the ext chain
-                              follows.
+                              — header.E gates the encoding embed;
+                              header.Z signals the ext chain follows.
        E_E-gated:
-         bytes  : encoding_id (VLE u32 — Q1(b) simplification of the
-                  upstream `(id << 1) | has_schema` packed VLE; full
-                  encoding wire deferred to a follow-up atomic that
-                  lifts SCE primitives for VLE-LSB-as-flag carriers)
+         bytes  : encoding   (codec_zenoh_encoding embed — full
+                              upstream wire fidelity per
+                              `_z_encoding_encode` codec.c:356-381;
+                              second consumer of the VLE+flags
+                              composition primitive after
+                              codec_ext_encoding_info).
        Z-gated:
          chain  : codec_zenoh_ext_entry tlv-chain (entry-flag
                   termination on entry header.Z — Y3 atomic 1 grammar;
@@ -41,7 +38,8 @@
      (E_E gate) + Y3 atomic 2a present-if-on-tlv-chain (header.Z gate)
      + Y3 atomic 1 entry-flag termination (chain followed by payload
      pair — second realistic consumer of entry-flag termination after
-     codec_zenoh_msg_reply) + B5-ε surface G (chain element =
+     codec_zenoh_msg_reply) + Y0c <sce:embed> (codec_zenoh_encoding
+     inner codec) + B5-ε surface G (chain element =
      codec_zenoh_ext_entry variant) + B1-α length-ref (payload_len /
      payload pair, mirrors codec_zenoh_query's parameters_len /
      parameters).
@@ -52,11 +50,11 @@
      response envelope's perspective.
 
      stripped-down scope: payload max-size=256 (upstream is unbounded
-     zbuf). All other envelope-level fields match upstream wire 1:1
-     within the schema-less encoding subset. -->
+     zbuf). All other envelope-level fields match upstream wire 1:1. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="codec_zenoh_msg_err">
+  <sce:import src="codec_zenoh_encoding.scxml" kind="codec" as="codec_zenoh_encoding"/>
   <sce:import src="codec_zenoh_ext_entry.scxml" kind="codec" as="codec_zenoh_ext_entry"/>
   <datamodel>
     <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
@@ -65,7 +63,7 @@
       <sce:flag name="E"   bit="6"/>
       <sce:flag name="Z"   bit="7"/>
     </sce:flags>
-    <sce:field id="encoding_id" sce:type="uint32" sce:byte="1" sce:bit-size="vle"
+    <sce:embed id="encoding" type="codec_zenoh_encoding" sce:byte="1"
                sce:present-if="header.E"/>
     <sce:tlv-chain id="extensions" type="codec_zenoh_ext_entry" sce:byte="2"
                    max-depth="4" on-overflow="reject"

@@ -5,6 +5,7 @@
 package com.sce.generated.codec_zenoh_msg_err
 
 import com.sce.forge.runtime.SceCursor
+import com.sce.generated.codec_zenoh_encoding.*
 import com.sce.generated.codec_zenoh_ext_entry.*
 
 // Default-valued primary constructor: the generated procedure_l2 code
@@ -13,7 +14,7 @@ import com.sce.generated.codec_zenoh_ext_entry.*
 // mirror the zero-initialized shape that decode() fills in on success.
 data class CodecZenohMsgErr(
     var header: UByte = 0.toUByte(),
-    var encoding_id: UInt? = null,
+    var encoding: CodecZenohEncoding? = null,
     var extensions: MutableList<CodecZenohExtEntry>? = null,
     var payload_len: ULong = 0uL,
     var payload: ByteArray = byteArrayOf()
@@ -74,15 +75,10 @@ data class CodecZenohMsgErr(
         // codec mixing VLE + present-if uses the unified encode path.
         val r = mutableListOf<Byte>()
         r.add(this.header.toByte())
-        this.encoding_id?.let { _v ->
-        run {
-            var _w: ULong = (_v).toULong()
-            while (_w >= 0x80UL) {
-                r.add((_w.toLong() and 0x7F or 0x80).toByte())
-                _w = _w shr 7
+        if ((header.toInt() and 0x40) != 0) {
+            this.encoding?.let { _v ->
+                r.addAll(_v.encode().toList())
             }
-            r.add(_w.toByte())
-        }
         }
         this.extensions?.let { _list ->
             for (_e in _list) {
@@ -121,9 +117,8 @@ data class CodecZenohMsgErr(
                 if (!cursor.advance(1)) return null
                 _v
             }
-            val encoding_id: UInt? = if ((header.toInt() and 0x40) != 0) {
-                val _v = cursor.readVleU32() ?: return null
-                _v
+            val encoding: CodecZenohEncoding? = if ((header.toInt() and 0x40) != 0) {
+                CodecZenohEncoding.decode(cursor) ?: return null
             } else {
                 null
             }
@@ -149,7 +144,7 @@ data class CodecZenohMsgErr(
             }
             return CodecZenohMsgErr(
                 header = header,
-                encoding_id = encoding_id,
+                encoding = encoding,
                 extensions = extensions,
                 payload_len = payload_len,
                 payload = payload

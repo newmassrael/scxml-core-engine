@@ -194,7 +194,7 @@ func (s *CodecZenohRequest) Encode() []byte {
 	// separate tag byte here. Streaming-prefix mode (own-field):
 	// carrier is part of the prefix fields and emits via the same
 	// per-field path.
-	r := make([]byte, 0, 967)
+	r := make([]byte, 0, 1218)
 	r = append(r, s.Header)
 	{
 		_w := uint64(s.Rid)

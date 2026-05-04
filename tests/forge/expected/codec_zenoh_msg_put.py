@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from sce_forge_runtime.codec import CodecError, NeedMoreBytes, SceCursor, TlvChainOverflow
 from .codec_zenoh_timestamp import CodecZenohTimestamp
+from .codec_zenoh_encoding import CodecZenohEncoding
 from .codec_zenoh_ext_entry import CodecZenohExtEntry
 
 from dataclasses import dataclass, field
@@ -16,7 +17,7 @@ from typing import Optional, List
 class CodecZenohMsgPut:
     header: int = 0
     timestamp: Optional[CodecZenohTimestamp] = None
-    encoding_id: Optional[int] = None
+    encoding: Optional[CodecZenohEncoding] = None
     extensions: Optional[List[CodecZenohExtEntry]] = b""
     payload_len: int = 0
     payload: bytes = b""
@@ -46,10 +47,11 @@ class CodecZenohMsgPut:
             else:
                 timestamp = None
             if (header & 0x40) != 0:
-                _v = cursor.read_vle_u32()
-                encoding_id = _v
+                encoding = CodecZenohEncoding.decode(cursor)
+                if encoding is None:
+                    return None
             else:
-                encoding_id = None
+                encoding = None
             if (header & 0x80) != 0:
                 extensions = []
                 for _ in range(4):
@@ -73,7 +75,7 @@ class CodecZenohMsgPut:
         return cls(
             header=header,
             timestamp=timestamp,
-            encoding_id=encoding_id,
+            encoding=encoding,
             extensions=extensions,
             payload_len=payload_len,
             payload=payload,
@@ -132,12 +134,9 @@ class CodecZenohMsgPut:
         if (header & 0x20) != 0:
             if self.timestamp is not None:
                 r.extend(self.timestamp.encode())
-        if self.encoding_id is not None:
-            _w = int(self.encoding_id)
-            while _w >= 0x80:
-                r.append((_w & 0x7F) | 0x80)
-                _w >>= 7
-            r.append(_w)
+        if (header & 0x40) != 0:
+            if self.encoding is not None:
+                r.extend(self.encoding.encode())
         if self.extensions is not None:
             for _e in self.extensions:
                 r.extend(_e.encode())

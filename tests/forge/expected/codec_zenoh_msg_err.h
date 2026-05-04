@@ -12,13 +12,14 @@
 #include <vector>
 
 #include "sce/forge/codec.h"
+#include "codec_zenoh_encoding.h"
 #include "codec_zenoh_ext_entry.h"
 
 namespace SCE::Generated::CodecZenohMsgErr {
 
 struct CodecZenohMsgErr {
     uint8_t header;
-    std::optional<uint32_t> encoding_id;
+    std::optional<::SCE::Generated::CodecZenohEncoding::CodecZenohEncoding> encoding;
     std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions;
     uint64_t payload_len;
     std::vector<uint8_t> payload;
@@ -44,12 +45,11 @@ struct CodecZenohMsgErr {
             header = static_cast<uint8_t>(raw[0]);
             if (!cursor.advance(1)) return std::nullopt;
         }
-        std::optional<uint32_t> encoding_id;
+        std::optional<::SCE::Generated::CodecZenohEncoding::CodecZenohEncoding> encoding;
         if ((header & 0x40) != 0) {
-            auto _v_opt = cursor.read_vle_u32();
-        if (!_v_opt.has_value()) return std::nullopt;
-        auto _v = static_cast<std::uint32_t>(*_v_opt);
-            encoding_id = _v;
+            auto _emb = ::SCE::Generated::CodecZenohEncoding::CodecZenohEncoding::decode(cursor);
+            if (!_emb.has_value()) return std::nullopt;
+            encoding = std::move(*_emb);
         }
         std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions;
         if ((header & 0x80) != 0) {
@@ -78,7 +78,7 @@ struct CodecZenohMsgErr {
         }
         return CodecZenohMsgErr{
             .header = header,
-            .encoding_id = encoding_id,
+            .encoding = encoding,
             .extensions = extensions,
             .payload_len = payload_len,
             .payload = payload,
@@ -153,18 +153,13 @@ struct CodecZenohMsgErr {
         // dedicated helper. Branch fires before has_vle_fields so a
         // codec mixing VLE + present-if uses the unified encode path.
         std::vector<uint8_t> r;
-        r.reserve(444);
+        r.reserve(695);
         r.push_back(header);
-        if (encoding_id.has_value()) {
-            auto _v = *encoding_id;
-        {
-            std::uint64_t _w = static_cast<std::uint64_t>(_v);
-            while (_w >= 0x80) {
-                r.push_back(static_cast<std::uint8_t>((_w & 0x7F) | 0x80));
-                _w >>= 7;
+        if ((header & 0x40) != 0) {
+            if (this->encoding.has_value()) {
+                auto _sub = this->encoding->encode();
+                r.insert(r.end(), _sub.begin(), _sub.end());
             }
-            r.push_back(static_cast<std::uint8_t>(_w));
-        }
         }
         if (this->extensions.has_value()) {
             for (const auto& _e : *this->extensions) {

@@ -16,7 +16,7 @@
 #include "codec_zenoh_msg_err.h"
 
 #define CODEC_ZENOH_RESPONSE_MIN_BYTES 1
-#define CODEC_ZENOH_RESPONSE_MAX_BYTES 726
+#define CODEC_ZENOH_RESPONSE_MAX_BYTES 977
 
 /* RFC §5.B variant primitive (B1-β): tagged-union body for the codec's
  * tag-field suffix. `kind` discriminates the active arm; `default_tag`
