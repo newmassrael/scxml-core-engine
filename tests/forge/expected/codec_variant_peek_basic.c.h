@@ -50,10 +50,11 @@ typedef struct {
  * declared minimum frame (RFC §5.B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t codec_variant_peek_basic_decode(sce_forge_cursor_t *cursor, codec_variant_peek_basic_t *out) {
-    /* RFC §5.B Y3 atomic 2b-ii peek-byte — peek-byte mode: streaming
-     * prefix decode (variable-length supported), then peek the cursor's
-     * next byte for variant tag without advancing. Arm body decoder
-     * reads peeked byte as own header. */
+    /* RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
+     * streaming prefix decode (variable-length fields supported via
+     * per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
+     * mode additionally peeks the cursor's next byte for variant tag
+     * without advancing — arm body decoder reads it as own header. */
     const uint8_t *_peek_raw = sce_forge_cursor_peek(cursor, 1);
     if (_peek_raw == NULL) {
         return SCE_FORGE_CODEC_NEED_MORE_BYTES;
@@ -84,9 +85,12 @@ static inline sce_forge_codec_status_t codec_variant_peek_basic_decode(sce_forge
 
 static inline codec_variant_peek_basic_encoded_t codec_variant_peek_basic_encode(const codec_variant_peek_basic_t *self) {
     codec_variant_peek_basic_encoded_t r;
-    /* RFC §5.B Y3 atomic 2b-ii peek-byte — peek-byte mode: streaming
-     * prefix encode. Arm body's encode prepends its own header byte
-     * (which the decoder peeked); no separate tag byte here. */
+    /* RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
+     * streaming prefix encode. Peek-byte mode: arm body's encode
+     * prepends its own header byte (which the decoder peeked); no
+     * separate tag byte here. Streaming-prefix mode (own-field):
+     * carrier is part of the prefix fields and emits via the same
+     * per-field path. */
     r.len = 0;
     /* Append the active arm body's encoded bytes. */
     switch (self->body.kind) {

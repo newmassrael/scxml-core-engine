@@ -4,34 +4,33 @@
 
 use sce_forge_runtime::codec::{CodecError, SceCursor};
 
-use super::codec_zenoh_wireexpr::CodecZenohWireexpr;
 use super::codec_zenoh_ext_entry::CodecZenohExtEntry;
-use super::codec_zenoh_msg_put::CodecZenohMsgPut;
-use super::codec_zenoh_msg_del::CodecZenohMsgDel;
-use super::codec_zenoh_query::CodecZenohQuery;
+use super::codec_zenoh_ext_unit::CodecZenohExtUnit;
+use super::codec_zenoh_ext_zint::CodecZenohExtZint;
+use super::codec_zenoh_ext_zbuf::CodecZenohExtZbuf;
 
 // RFC §5.B variant primitive (B1-β): discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
 // alongside its catch-all body.
 #[allow(dead_code)]
-pub enum CodecZenohRequestVariant {
-    CodecZenohMsgPut(CodecZenohMsgPut),
-    CodecZenohMsgDel(CodecZenohMsgDel),
-    CodecZenohQuery(CodecZenohQuery),
+pub enum CodecZenohOamVariant {
+    CodecZenohExtUnit(CodecZenohExtUnit),
+    CodecZenohExtZint(CodecZenohExtZint),
+    CodecZenohExtZbuf(CodecZenohExtZbuf),
     Default {
         tag: u8,
-        body: CodecZenohQuery,
+        body: CodecZenohExtUnit,
     },
 }
 
-impl Default for CodecZenohRequestVariant {
+impl Default for CodecZenohOamVariant {
     fn default() -> Self {
         // Default to the first declared arm's body — every imported
         // codec is `#[derive(Default)]`, so this is infallible. A
         // freshly-constructed envelope is overwritten by `decode()` or
         // by an explicit user assignment before any `encode()` call.
-        Self::CodecZenohMsgPut(CodecZenohMsgPut::default())
+        Self::CodecZenohExtUnit(CodecZenohExtUnit::default())
     }
 }
 
@@ -41,16 +40,15 @@ impl Default for CodecZenohRequestVariant {
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
 #[derive(Default)]
-pub struct CodecZenohRequest {
+pub struct CodecZenohOam {
     pub header: u8,
-    pub rid: u64,
-    pub keyexpr: CodecZenohWireexpr,
+    pub id: u16,
     pub extensions: Option<Vec<CodecZenohExtEntry>>,
-    pub body: CodecZenohRequestVariant,
+    pub body: CodecZenohOamVariant,
 }
 
 #[allow(dead_code)]
-impl CodecZenohRequest {
+impl CodecZenohOam {
     /// Construct an instance with every field zero-initialized via
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -77,8 +75,7 @@ impl CodecZenohRequest {
             cursor.advance(1)?;
             _v
         };
-        let rid = cursor.read_vle_u64()?;
-        let keyexpr = CodecZenohWireexpr::decode(cursor, header)?;
+        let id = cursor.read_vle_u16()?;
         let extensions = if (header & 0x80u8) != 0 {
             let mut _vec: Vec<CodecZenohExtEntry> = Vec::with_capacity(4 as usize);
             for _ in 0..4u32 {
@@ -92,24 +89,22 @@ impl CodecZenohRequest {
         } else {
             None
         };
-        let _peek = cursor.peek_slice(1)?[0];
         // Dispatch on the tag field; each arm decodes its body codec
         // from the cursor. The default arm (when declared) carries the
         // runtime tag value so encode can round-trip it back onto the
         // wire.
-        let body = match (((_peek >> 0) & (0x1F as u8)) as u8) {
-            1u8 => CodecZenohRequestVariant::CodecZenohMsgPut(CodecZenohMsgPut::decode(cursor)?),
-            2u8 => CodecZenohRequestVariant::CodecZenohMsgDel(CodecZenohMsgDel::decode(cursor)?),
-            3u8 => CodecZenohRequestVariant::CodecZenohQuery(CodecZenohQuery::decode(cursor)?),
-            other => CodecZenohRequestVariant::Default {
+        let body = match (((header >> 5) & (0x03 as u8)) as u8) {
+            0u8 => CodecZenohOamVariant::CodecZenohExtUnit(CodecZenohExtUnit::decode(cursor)?),
+            1u8 => CodecZenohOamVariant::CodecZenohExtZint(CodecZenohExtZint::decode(cursor)?),
+            2u8 => CodecZenohOamVariant::CodecZenohExtZbuf(CodecZenohExtZbuf::decode(cursor)?),
+            other => CodecZenohOamVariant::Default {
                 tag: other,
-                body: CodecZenohQuery::decode(cursor)?,
+                body: CodecZenohExtUnit::decode(cursor)?,
             },
         };
         Ok(Self {
             header,
-            rid,
-            keyexpr,
+            id,
             extensions,
             body,
         })
@@ -131,28 +126,14 @@ impl CodecZenohRequest {
         self.header = (self.header & !_mask) | _val;
     }
 
-    pub fn n(&self) -> bool {
-        (self.header & 0x20) != 0
+    pub fn enc(&self) -> u8 {
+        (((self.header >> 5) & (0x03 as u8))) as u8
     }
 
-    pub fn set_n(&mut self, v: bool) {
-        if v {
-            self.header |= 0x20;
-        } else {
-            self.header &= !0x20;
-        }
-    }
-
-    pub fn m(&self) -> bool {
-        (self.header & 0x40) != 0
-    }
-
-    pub fn set_m(&mut self, v: bool) {
-        if v {
-            self.header |= 0x40;
-        } else {
-            self.header &= !0x40;
-        }
+    pub fn set_enc(&mut self, v: u8) {
+        let _mask: u8 = (0x03 as u8) << 5;
+        let _val: u8 = ((v as u8) & (0x03 as u8)) << 5;
+        self.header = (self.header & !_mask) | _val;
     }
 
     pub fn z(&self) -> bool {
@@ -175,17 +156,16 @@ impl CodecZenohRequest {
         // tag byte is emitted here. Streaming-prefix mode (own-field
         // variant): the carrier is part of the prefix fields and emits
         // through the same per-field path.
-        let mut r: Vec<u8> = Vec::with_capacity(967);
+        let mut r: Vec<u8> = Vec::with_capacity(46);
         r.push(self.header);
         {
-            let mut _w = self.rid as u64;
+            let mut _w = self.id as u64;
             while _w >= 0x80 {
                 r.push((_w as u8 & 0x7F) | 0x80);
                 _w >>= 7;
             }
             r.push(_w as u8);
         }
-        r.extend(self.keyexpr.encode(self.header));
         if let Some(_list) = &self.extensions {
             for _e in _list {
                 r.extend(_e.encode());
@@ -193,16 +173,16 @@ impl CodecZenohRequest {
         }
         // Append the active arm's encoded bytes.
         match &self.body {
-            CodecZenohRequestVariant::CodecZenohMsgPut(b) => {
+            CodecZenohOamVariant::CodecZenohExtUnit(b) => {
                 r.extend(b.encode());
             }
-            CodecZenohRequestVariant::CodecZenohMsgDel(b) => {
+            CodecZenohOamVariant::CodecZenohExtZint(b) => {
                 r.extend(b.encode());
             }
-            CodecZenohRequestVariant::CodecZenohQuery(b) => {
+            CodecZenohOamVariant::CodecZenohExtZbuf(b) => {
                 r.extend(b.encode());
             }
-            CodecZenohRequestVariant::Default { body, .. } => {
+            CodecZenohOamVariant::Default { body, .. } => {
                 r.extend(body.encode());
             }
         }

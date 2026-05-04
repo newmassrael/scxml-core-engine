@@ -83,9 +83,12 @@ data class CodecZenohResponse(
     }
 
     fun encode(): ByteArray {
-        // RFC §5.B Y3 atomic 2b-ii peek-byte — peek-byte mode: streaming
-        // prefix encode. Arm body's encode prepends its own header
-        // byte (which the decoder peeked); no separate tag byte here.
+        // RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
+        // streaming prefix encode. Peek-byte mode: arm body's encode
+        // prepends its own header byte (which the decoder peeked); no
+        // separate tag byte here. Streaming-prefix mode (own-field):
+        // carrier is part of the prefix fields and emits via the same
+        // per-field path.
         val r = mutableListOf<Byte>()
         r.add(this.header.toByte())
         run {
@@ -137,11 +140,12 @@ data class CodecZenohResponse(
         /// cursor's tail is shorter than the declared minimum frame
         /// (RFC §5.B L494-519).
         fun decode(cursor: SceCursor): CodecZenohResponse? {
-            // RFC §5.B Y3 atomic 2b-ii peek-byte — peek-byte mode:
-            // streaming prefix decode (variable-length supported), then
-            // peek the cursor's next byte for variant tag without
-            // advancing. Arm body decoder reads peeked byte as own
-            // header.
+            // RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-
+            // prefix: streaming prefix decode (variable-length fields
+            // supported via per-field present_if/tlv-chain/embed/repeat
+            // helpers). Peek-byte mode additionally peeks the cursor's
+            // next byte for variant tag without advancing — arm body
+            // decoder reads it as own header.
             val header = run {
                 val raw = cursor.peekSlice(1) ?: return null
                 val _v = raw[0].toUByte()

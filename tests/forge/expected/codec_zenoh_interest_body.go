@@ -11,7 +11,6 @@ import (
 
 // CodecZenohInterestBody represents the codec frame layout.
 type CodecZenohInterestBody struct {
-	Id uint32
 	Header uint8
 	Keyexpr *codec_zenoh_wireexpr.CodecZenohWireexpr
 }
@@ -29,8 +28,6 @@ func DecodeCodecZenohInterestBody(cursor *codec.SceCursor) (*CodecZenohInterestB
 	// Repeat fields to the dedicated helper. Branch fires before
 	// has_vle_fields so a codec mixing VLE + present-if uses the
 	// unified streaming path.
-	Id, err := cursor.ReadVLEU32()
-	if err != nil { return nil, err }
 	var Header uint8
 	{
 		raw, err := cursor.PeekSlice(1)
@@ -51,7 +48,6 @@ func DecodeCodecZenohInterestBody(cursor *codec.SceCursor) (*CodecZenohInterestB
 		Keyexpr = _emb
 	}
 	return &CodecZenohInterestBody{
-		Id: Id,
 		Header: Header,
 		Keyexpr: Keyexpr,
 	}, nil
@@ -166,15 +162,7 @@ func (s *CodecZenohInterestBody) Encode() []byte {
 	// field `is_repeat` routes Repeat fields to the dedicated helper.
 	// Branch fires before has_vle_fields so a codec mixing VLE +
 	// present-if uses the unified encode path.
-	r := make([]byte, 0, 263)
-	{
-		_w := uint64(s.Id)
-		for _w >= 0x80 {
-			r = append(r, byte(_w&0x7F)|0x80)
-			_w >>= 7
-		}
-		r = append(r, byte(_w))
-	}
+	r := make([]byte, 0, 257)
 	r = append(r, s.Header)
 	if (Header & 0x10) != 0 {
 		if s.Keyexpr != nil {

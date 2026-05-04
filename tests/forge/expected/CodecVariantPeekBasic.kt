@@ -27,9 +27,12 @@ data class CodecVariantPeekBasic(
     var body: CodecVariantPeekBasicVariant = CodecVariantPeekBasicVariant.CodecPeekArmA(com.sce.generated.codec_peek_arm_a.CodecPeekArmA())
 ) {
     fun encode(): ByteArray {
-        // RFC §5.B Y3 atomic 2b-ii peek-byte — peek-byte mode: streaming
-        // prefix encode. Arm body's encode prepends its own header
-        // byte (which the decoder peeked); no separate tag byte here.
+        // RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
+        // streaming prefix encode. Peek-byte mode: arm body's encode
+        // prepends its own header byte (which the decoder peeked); no
+        // separate tag byte here. Streaming-prefix mode (own-field):
+        // carrier is part of the prefix fields and emits via the same
+        // per-field path.
         val r = mutableListOf<Byte>()
         // Append the active arm body's encoded bytes.
         when (val _b = this.body) {
@@ -45,11 +48,12 @@ data class CodecVariantPeekBasic(
         /// cursor's tail is shorter than the declared minimum frame
         /// (RFC §5.B L494-519).
         fun decode(cursor: SceCursor): CodecVariantPeekBasic? {
-            // RFC §5.B Y3 atomic 2b-ii peek-byte — peek-byte mode:
-            // streaming prefix decode (variable-length supported), then
-            // peek the cursor's next byte for variant tag without
-            // advancing. Arm body decoder reads peeked byte as own
-            // header.
+            // RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-
+            // prefix: streaming prefix decode (variable-length fields
+            // supported via per-field present_if/tlv-chain/embed/repeat
+            // helpers). Peek-byte mode additionally peeks the cursor's
+            // next byte for variant tag without advancing — arm body
+            // decoder reads it as own header.
             val _peekRaw = cursor.peekSlice(1) ?: return null
         val _peek: UByte = _peekRaw[0]
             // Dispatch on the tag field; each arm decodes its body codec

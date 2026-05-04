@@ -4,20 +4,23 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import CodecError, NeedMoreBytes, SceCursor
-from .codec_zenoh_wireexpr import CodecZenohWireexpr
+from sce_forge_runtime.codec import CodecError, NeedMoreBytes, SceCursor, TlvChainOverflow
+from .codec_zenoh_ext_entry import CodecZenohExtEntry
+from .codec_zenoh_interest_body import CodecZenohInterestBody
 
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Optional, List
 
 
 @dataclass
-class CodecZenohInterestBody:
+class CodecZenohInterest:
     header: int = 0
-    keyexpr: Optional[CodecZenohWireexpr] = None
+    id: int = 0
+    body: Optional[CodecZenohInterestBody] = None
+    extensions: Optional[List[CodecZenohExtEntry]] = b""
 
     @classmethod
-    def decode(cls, cursor: SceCursor) -> Optional[CodecZenohInterestBody]:
+    def decode(cls, cursor: SceCursor) -> Optional[CodecZenohInterest]:
         """Decode the next frame from ``cursor``. Returns ``None`` when
         the cursor's tail is shorter than the declared minimum frame
         (RFC §5.B L494-519); on success the cursor advances past the
@@ -34,17 +37,33 @@ class CodecZenohInterestBody:
             raw = cursor.peek_slice(1)
             header = raw[0]
             cursor.advance(1)
-            if (header & 0x10) != 0:
-                keyexpr = CodecZenohWireexpr.decode(cursor, header)
-                if keyexpr is None:
+            id = cursor.read_vle_u64()
+            if (header & 0x20) != 0 or (header & 0x40) != 0:
+                body = CodecZenohInterestBody.decode(cursor)
+                if body is None:
                     return None
             else:
-                keyexpr = None
+                body = None
+            if (header & 0x80) != 0:
+                extensions = []
+                for _ in range(4):
+                    if cursor.remaining() == 0:
+                        break
+                    _elem = CodecZenohExtEntry.decode(cursor)
+                    if _elem is None:
+                        return None
+                    extensions.append(_elem)
+                    if not _elem.z():
+                        break
+            else:
+                extensions = None
         except NeedMoreBytes:
             return None
         return cls(
             header=header,
-            keyexpr=keyexpr,
+            id=id,
+            body=body,
+            extensions=extensions,
         )
 
     # RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
@@ -54,73 +73,36 @@ class CodecZenohInterestBody:
     # the way in so out-of-range callers can't corrupt sibling bits.
     # Plain methods (rather than @property) for API symmetry with
     # Rust / Cpp / Kotlin / Go / C11. Wire layout is unchanged.
-    def keyexprs(self) -> bool:
-        return (self.header & 0x01) != 0
+    def mid(self) -> int:
+        return (self.header >> 0) & 0x1F
 
-    def set_keyexprs(self, v: bool) -> None:
-        if v:
-            self.header = (self.header | 0x01) & 0xFF
-        else:
-            self.header = self.header & (0xFF ^ 0x01)
+    def set_mid(self, v: int) -> None:
+        _shifted_mask = 0x1F << 0
+        _val = (v & 0x1F) << 0
+        self.header = ((self.header & (0xFF ^ _shifted_mask)) | _val) & 0xFF
 
-    def subscribers(self) -> bool:
-        return (self.header & 0x02) != 0
-
-    def set_subscribers(self, v: bool) -> None:
-        if v:
-            self.header = (self.header | 0x02) & 0xFF
-        else:
-            self.header = self.header & (0xFF ^ 0x02)
-
-    def queryables(self) -> bool:
-        return (self.header & 0x04) != 0
-
-    def set_queryables(self, v: bool) -> None:
-        if v:
-            self.header = (self.header | 0x04) & 0xFF
-        else:
-            self.header = self.header & (0xFF ^ 0x04)
-
-    def tokens(self) -> bool:
-        return (self.header & 0x08) != 0
-
-    def set_tokens(self, v: bool) -> None:
-        if v:
-            self.header = (self.header | 0x08) & 0xFF
-        else:
-            self.header = self.header & (0xFF ^ 0x08)
-
-    def restricted(self) -> bool:
-        return (self.header & 0x10) != 0
-
-    def set_restricted(self, v: bool) -> None:
-        if v:
-            self.header = (self.header | 0x10) & 0xFF
-        else:
-            self.header = self.header & (0xFF ^ 0x10)
-
-    def n(self) -> bool:
+    def current(self) -> bool:
         return (self.header & 0x20) != 0
 
-    def set_n(self, v: bool) -> None:
+    def set_current(self, v: bool) -> None:
         if v:
             self.header = (self.header | 0x20) & 0xFF
         else:
             self.header = self.header & (0xFF ^ 0x20)
 
-    def m(self) -> bool:
+    def future(self) -> bool:
         return (self.header & 0x40) != 0
 
-    def set_m(self, v: bool) -> None:
+    def set_future(self, v: bool) -> None:
         if v:
             self.header = (self.header | 0x40) & 0xFF
         else:
             self.header = self.header & (0xFF ^ 0x40)
 
-    def aggregate(self) -> bool:
+    def z(self) -> bool:
         return (self.header & 0x80) != 0
 
-    def set_aggregate(self, v: bool) -> None:
+    def set_z(self, v: bool) -> None:
         if v:
             self.header = (self.header | 0x80) & 0xFF
         else:
@@ -134,7 +116,15 @@ class CodecZenohInterestBody:
         # codec mixing VLE + present-if uses the unified encode path.
         r = bytearray()
         r.append(self.header & 0xFF)
-        if (header & 0x10) != 0:
-            if self.keyexpr is not None:
-                r.extend(self.keyexpr.encode(self.header))
+        _w = int(self.id)
+        while _w >= 0x80:
+            r.append((_w & 0x7F) | 0x80)
+            _w >>= 7
+        r.append(_w)
+        if (header & 0x20) != 0 or (header & 0x40) != 0:
+            if self.body is not None:
+                r.extend(self.body.encode())
+        if self.extensions is not None:
+            for _e in self.extensions:
+                r.extend(_e.encode())
         return bytes(r)

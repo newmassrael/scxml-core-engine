@@ -2085,6 +2085,181 @@ fn forge_c11_codec_zenoh_request() {
     assert_standalone_forge_c("codec_zenoh_request", "codec_zenoh_request.c.h");
 }
 
+// ── RFC §5.B Wire RFC Phase B Y3 atomic 2b-iv — minimal-shape consumer
+// `codec_zenoh_response_final` mirrors zenoh-pico
+// `_z_response_final_encode/decode` (network.c:368-386). Header is
+// MID 0x1a + Z@7 only (encoder writes Z=0 always; decoder accepts Z=1
+// and skips ext chain). Wire = header + VLE u64 request_id + Z-gated
+// chain.
+
+#[test]
+fn forge_codec_zenoh_response_final_cpp() {
+    assert_standalone_forge("codec_zenoh_response_final", "codec_zenoh_response_final.h");
+}
+
+#[test]
+fn forge_codec_zenoh_response_final_kotlin() {
+    assert_standalone_forge_kotlin(
+        "codec_zenoh_response_final",
+        "CodecZenohResponseFinal.kt",
+    );
+}
+
+#[test]
+fn forge_codec_zenoh_response_final_rust() {
+    assert_standalone_forge_rust(
+        "codec_zenoh_response_final",
+        "codec_zenoh_response_final.rs",
+    );
+}
+
+#[test]
+fn forge_codec_zenoh_response_final_go() {
+    assert_standalone_forge_go(
+        "codec_zenoh_response_final",
+        "codec_zenoh_response_final.go",
+    );
+}
+
+#[test]
+fn forge_codec_zenoh_response_final_python() {
+    assert_standalone_forge_python(
+        "codec_zenoh_response_final",
+        "codec_zenoh_response_final.py",
+    );
+}
+
+#[test]
+fn forge_c11_codec_zenoh_response_final() {
+    assert_standalone_forge_c(
+        "codec_zenoh_response_final",
+        "codec_zenoh_response_final.c.h",
+    );
+}
+
+// ── RFC §5.B Wire RFC Phase B Y3 atomic 2b-iv — multi-arm own-field
+// variant on header ENC bits. `codec_zenoh_oam` mirrors zenoh-pico
+// `_z_oam_encode/decode` (network.c:488-579). Header carries MID 0x1f
+// + ENC[5..7) 2-bit subfield + Z@7. Body variant on `header.enc`
+// reuses the existing codec_zenoh_ext_{unit,zint,zbuf} leaves —
+// 0x00→ext_unit (empty), 0x01→ext_zint (VLE u64), 0x02→ext_zbuf
+// (length-prefixed bytes), default→ext_unit (defensive recovery
+// matching upstream's _Z_ERR_GENERIC reject path at network.c:506-508
+// with most-benign zero-body shape).
+
+#[test]
+fn forge_codec_zenoh_oam_cpp() {
+    assert_standalone_forge("codec_zenoh_oam", "codec_zenoh_oam.h");
+}
+
+#[test]
+fn forge_codec_zenoh_oam_kotlin() {
+    assert_standalone_forge_kotlin("codec_zenoh_oam", "CodecZenohOam.kt");
+}
+
+#[test]
+fn forge_codec_zenoh_oam_rust() {
+    assert_standalone_forge_rust("codec_zenoh_oam", "codec_zenoh_oam.rs");
+}
+
+#[test]
+fn forge_codec_zenoh_oam_go() {
+    assert_standalone_forge_go("codec_zenoh_oam", "codec_zenoh_oam.go");
+}
+
+#[test]
+fn forge_codec_zenoh_oam_python() {
+    assert_standalone_forge_python("codec_zenoh_oam", "codec_zenoh_oam.py");
+}
+
+#[test]
+fn forge_c11_codec_zenoh_oam() {
+    assert_standalone_forge_c("codec_zenoh_oam", "codec_zenoh_oam.c.h");
+}
+
+// ── RFC §5.B Wire RFC Phase B Y3 atomic 2b-iv — single-embed consumer
+// of the 9-arm codec_zenoh_declaration dispatcher. `codec_zenoh_declare`
+// mirrors zenoh-pico `_z_declare_encode/decode` (network.c:388-450).
+// Header carries MID 0x1e + I@5 (gates VLE u32 interest_id) + Z@7
+// (gates ext chain). Inner body is codec_zenoh_declaration embed
+// (atomic 2b-i sub-codec, 9-arm dispatcher). interest_id type = u32
+// per upstream `_z_zint32_decode` at network.c:441.
+
+#[test]
+fn forge_codec_zenoh_declare_cpp() {
+    assert_standalone_forge("codec_zenoh_declare", "codec_zenoh_declare.h");
+}
+
+#[test]
+fn forge_codec_zenoh_declare_kotlin() {
+    assert_standalone_forge_kotlin("codec_zenoh_declare", "CodecZenohDeclare.kt");
+}
+
+#[test]
+fn forge_codec_zenoh_declare_rust() {
+    assert_standalone_forge_rust("codec_zenoh_declare", "codec_zenoh_declare.rs");
+}
+
+#[test]
+fn forge_codec_zenoh_declare_go() {
+    assert_standalone_forge_go("codec_zenoh_declare", "codec_zenoh_declare.go");
+}
+
+#[test]
+fn forge_codec_zenoh_declare_python() {
+    assert_standalone_forge_python("codec_zenoh_declare", "codec_zenoh_declare.py");
+}
+
+#[test]
+fn forge_c11_codec_zenoh_declare() {
+    assert_standalone_forge_c("codec_zenoh_declare", "codec_zenoh_declare.c.h");
+}
+
+// ── RFC §5.B Wire RFC Phase B Y3 atomic 2b-iv — first realistic
+// disjunction primitive consumer + parent-owns-id refactor pin.
+// `codec_zenoh_interest` mirrors zenoh-pico
+// `_z_n_interest_encode/decode` + `_z_interest_encode/decode`
+// (network.c:452-486 + interest.c:41-91). Header carries MID 0x19 +
+// CURRENT@5 + FUTURE@6 + Z@7. Wire = header + ALWAYS-present VLE u64
+// id + present-if-(`header.CURRENT || header.FUTURE`)-gated
+// codec_zenoh_interest_body embed + Z-gated chain. The body embed is
+// the first realistic consumer of the Y3 atomic 2b-ii disjunction
+// primitive — matches upstream
+// `_Z_INTEREST_NOT_FINAL_MASK = (CURRENT | FUTURE)` at interest.h:35.
+// Bundled refactor: codec_zenoh_interest_body drops the leading `id`
+// VLE field (parent-owns-id textbook composition) so its 6 byte
+// goldens regenerate alongside this atomic.
+
+#[test]
+fn forge_codec_zenoh_interest_cpp() {
+    assert_standalone_forge("codec_zenoh_interest", "codec_zenoh_interest.h");
+}
+
+#[test]
+fn forge_codec_zenoh_interest_kotlin() {
+    assert_standalone_forge_kotlin("codec_zenoh_interest", "CodecZenohInterest.kt");
+}
+
+#[test]
+fn forge_codec_zenoh_interest_rust() {
+    assert_standalone_forge_rust("codec_zenoh_interest", "codec_zenoh_interest.rs");
+}
+
+#[test]
+fn forge_codec_zenoh_interest_go() {
+    assert_standalone_forge_go("codec_zenoh_interest", "codec_zenoh_interest.go");
+}
+
+#[test]
+fn forge_codec_zenoh_interest_python() {
+    assert_standalone_forge_python("codec_zenoh_interest", "codec_zenoh_interest.py");
+}
+
+#[test]
+fn forge_c11_codec_zenoh_interest() {
+    assert_standalone_forge_c("codec_zenoh_interest", "codec_zenoh_interest.c.h");
+}
+
 // `forge_codec_tlv_entry_cpp` already exists above (it predates B5-ε;
 // the entry codec ships on all 6 backends since it has no MCU-only
 // sub-features itself). The new B5-ε closures add the missing kotlin /

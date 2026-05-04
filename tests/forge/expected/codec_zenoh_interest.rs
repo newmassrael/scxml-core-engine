@@ -4,7 +4,8 @@
 
 use sce_forge_runtime::codec::{CodecError, SceCursor};
 
-use super::codec_zenoh_wireexpr::CodecZenohWireexpr;
+use super::codec_zenoh_ext_entry::CodecZenohExtEntry;
+use super::codec_zenoh_interest_body::CodecZenohInterestBody;
 
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
 // §6 codec). The kind-agnostic conformance harness only references a
@@ -12,13 +13,15 @@ use super::codec_zenoh_wireexpr::CodecZenohWireexpr;
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
 #[derive(Default)]
-pub struct CodecZenohInterestBody {
+pub struct CodecZenohInterest {
     pub header: u8,
-    pub keyexpr: Option<CodecZenohWireexpr>,
+    pub id: u64,
+    pub body: Option<CodecZenohInterestBody>,
+    pub extensions: Option<Vec<CodecZenohExtEntry>>,
 }
 
 #[allow(dead_code)]
-impl CodecZenohInterestBody {
+impl CodecZenohInterest {
     /// Construct an instance with every field zero-initialized via
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -49,14 +52,30 @@ impl CodecZenohInterestBody {
             cursor.advance(1)?;
             _v
         };
-        let keyexpr = if (header & 0x10u8) != 0 {
-            Some(CodecZenohWireexpr::decode(cursor, header)?)
+        let id = cursor.read_vle_u64()?;
+        let body = if (header & 0x20u8) != 0 || (header & 0x40u8) != 0 {
+            Some(CodecZenohInterestBody::decode(cursor)?)
+        } else {
+            None
+        };
+        let extensions = if (header & 0x80u8) != 0 {
+            let mut _vec: Vec<CodecZenohExtEntry> = Vec::with_capacity(4 as usize);
+            for _ in 0..4u32 {
+                    if cursor.remaining() == 0 { break; }
+                    let _entry = CodecZenohExtEntry::decode(cursor)?;
+                    let _continue = _entry.z();
+                    _vec.push(_entry);
+                    if !_continue { break; }
+                }
+            Some(_vec)
         } else {
             None
         };
         Ok(Self {
             header,
-            keyexpr,
+            id,
+            body,
+            extensions,
         })
     }
 
@@ -66,71 +85,21 @@ impl CodecZenohInterestBody {
     // range. Setters mask + shift on the way in so out-of-range
     // callers can't corrupt sibling bits. Wire layout is unchanged —
     // the carrier still occupies its declared bytes.
-    pub fn keyexprs(&self) -> bool {
-        (self.header & 0x01) != 0
+    pub fn mid(&self) -> u8 {
+        (((self.header >> 0) & (0x1F as u8))) as u8
     }
 
-    pub fn set_keyexprs(&mut self, v: bool) {
-        if v {
-            self.header |= 0x01;
-        } else {
-            self.header &= !0x01;
-        }
+    pub fn set_mid(&mut self, v: u8) {
+        let _mask: u8 = (0x1F as u8) << 0;
+        let _val: u8 = ((v as u8) & (0x1F as u8)) << 0;
+        self.header = (self.header & !_mask) | _val;
     }
 
-    pub fn subscribers(&self) -> bool {
-        (self.header & 0x02) != 0
-    }
-
-    pub fn set_subscribers(&mut self, v: bool) {
-        if v {
-            self.header |= 0x02;
-        } else {
-            self.header &= !0x02;
-        }
-    }
-
-    pub fn queryables(&self) -> bool {
-        (self.header & 0x04) != 0
-    }
-
-    pub fn set_queryables(&mut self, v: bool) {
-        if v {
-            self.header |= 0x04;
-        } else {
-            self.header &= !0x04;
-        }
-    }
-
-    pub fn tokens(&self) -> bool {
-        (self.header & 0x08) != 0
-    }
-
-    pub fn set_tokens(&mut self, v: bool) {
-        if v {
-            self.header |= 0x08;
-        } else {
-            self.header &= !0x08;
-        }
-    }
-
-    pub fn restricted(&self) -> bool {
-        (self.header & 0x10) != 0
-    }
-
-    pub fn set_restricted(&mut self, v: bool) {
-        if v {
-            self.header |= 0x10;
-        } else {
-            self.header &= !0x10;
-        }
-    }
-
-    pub fn n(&self) -> bool {
+    pub fn current(&self) -> bool {
         (self.header & 0x20) != 0
     }
 
-    pub fn set_n(&mut self, v: bool) {
+    pub fn set_current(&mut self, v: bool) {
         if v {
             self.header |= 0x20;
         } else {
@@ -138,11 +107,11 @@ impl CodecZenohInterestBody {
         }
     }
 
-    pub fn m(&self) -> bool {
+    pub fn future(&self) -> bool {
         (self.header & 0x40) != 0
     }
 
-    pub fn set_m(&mut self, v: bool) {
+    pub fn set_future(&mut self, v: bool) {
         if v {
             self.header |= 0x40;
         } else {
@@ -150,11 +119,11 @@ impl CodecZenohInterestBody {
         }
     }
 
-    pub fn aggregate(&self) -> bool {
+    pub fn z(&self) -> bool {
         (self.header & 0x80) != 0
     }
 
-    pub fn set_aggregate(&mut self, v: bool) {
+    pub fn set_z(&mut self, v: bool) {
         if v {
             self.header |= 0x80;
         } else {
@@ -172,11 +141,24 @@ impl CodecZenohInterestBody {
         // the variant primitive). Note: this branch fires before
         // has_vle_fields so a codec mixing VLE + present-if uses the
         // unified encode path.
-        let mut r: Vec<u8> = Vec::with_capacity(257);
+        let mut r: Vec<u8> = Vec::with_capacity(439);
         r.push(self.header);
-        if (header & 0x10u8) != 0 {
-            if let Some(_v) = &self.keyexpr {
-                r.extend(_v.encode(self.header));
+        {
+            let mut _w = self.id as u64;
+            while _w >= 0x80 {
+                r.push((_w as u8 & 0x7F) | 0x80);
+                _w >>= 7;
+            }
+            r.push(_w as u8);
+        }
+        if (header & 0x20u8) != 0 || (header & 0x40u8) != 0 {
+            if let Some(_v) = &self.body {
+                r.extend(_v.encode());
+            }
+        }
+        if let Some(_list) = &self.extensions {
+            for _e in _list {
+                r.extend(_e.encode());
             }
         }
         r

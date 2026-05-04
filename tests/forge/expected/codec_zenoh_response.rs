@@ -63,12 +63,13 @@ impl CodecZenohResponse {
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
     pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
-        // RFC §5.B Y3 atomic 2b-ii peek-byte — peek-byte mode: streaming
-        // prefix decode (variable-length fields supported), then peek
-        // the cursor's next byte for the variant tag without advancing.
-        // The arm body decoder reads the peeked byte as its own header
-        // byte (Zenoh response/request body MID dispatch shape per
-        // network.c:347-364 + 220-235).
+        // RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
+        // streaming prefix decode (variable-length fields supported via
+        // per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
+        // mode additionally peeks the cursor's next byte for the variant
+        // tag without advancing — the arm body decoder reads the peeked
+        // byte as its own header byte (Zenoh response/request body MID
+        // dispatch shape per network.c:347-364 + 220-235).
         let header = {
             let raw = cursor.peek_slice(1)?;
             let _v = raw[0];
@@ -184,10 +185,13 @@ impl CodecZenohResponse {
     }
 
     pub fn encode(&self) -> Vec<u8> {
-        // RFC §5.B Y3 atomic 2b-ii peek-byte — peek-byte mode: streaming
-        // prefix encode. The arm body's encode prepends its own header
-        // byte (which the decoder peeked); no separate tag byte is
-        // emitted here.
+        // RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
+        // streaming prefix encode (per-field present_if/tlv-chain/embed/
+        // repeat helpers). Peek-byte mode: the arm body's encode prepends
+        // its own header byte (which the decoder peeked); no separate
+        // tag byte is emitted here. Streaming-prefix mode (own-field
+        // variant): the carrier is part of the prefix fields and emits
+        // through the same per-field path.
         let mut r: Vec<u8> = Vec::with_capacity(726);
         r.push(self.header);
         {

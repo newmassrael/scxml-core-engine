@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh OAM envelope (RFC §5.B Wire RFC
+     Phase B Y3 atomic 2b-iv — multi-arm own-field variant on header
+     ENC bits).
+
+     Mirrors zenoh-pico `_z_oam_encode` / `_z_oam_decode`
+     (src/protocol/codec/network.c:488-579) at envelope-level wire
+     fidelity. The OAM message carries a 16-bit ID + a Z-gated ext
+     chain + a body whose encoding is selected by a 2-bit ENC field
+     in the header (bits 5-6) — Unit (no body) / ZInt (VLE u64) /
+     ZBuf (length-prefixed bytes), exactly the same encoding palette
+     that codec_zenoh_ext_entry uses for its TLV bodies. Reuses the
+     existing codec_zenoh_ext_unit / ext_zint / ext_zbuf leaves as
+     variant arm types.
+
+     Wire shape (per upstream network.c oam_encode):
+       byte 0   : header     (MID Z_OAM 0x1f in bits 0..4 + ENC at
+                              bits 5..6 + Z@7) — ENC values mirror
+                              `_Z_MSG_EXT_ENC_*` in protocol/ext.h:
+                              0x00=UNIT (no body emit, ext.c:28-44),
+                              0x01=ZINT (VLE u64 body, ext.c:46-60),
+                              0x02=ZBUF (length-prefixed bytes,
+                              ext.c:62-76); 0x03 is unused upstream
+                              (encode returns _Z_ERR_GENERIC at
+                              network.c:506-508).
+       byte 1+  : id         (VLE u16 — OAM identifier).
+       Z-gated  : extensions (codec_zenoh_ext_entry tlv-chain, max-
+                              depth=4 covers OAM's upstream ext
+                              slots — qos via _Z_MSG_EXT_ENC_ZINT|0x01
+                              and timestamp via _Z_MSG_EXT_ENC_ZBUF|
+                              0x02 per oam_encode lines 512-521 with
+                              safety margin; entry-flag-Z termination
+                              since the variant body follows the
+                              chain — Y3 atomic 1 grammar).
+       inner    : body       — own-field variant on `header.enc`:
+                                0x00 → codec_zenoh_ext_unit (empty)
+                                0x01 → codec_zenoh_ext_zint (VLE u64)
+                                0x02 → codec_zenoh_ext_zbuf (length-
+                                       prefixed bytes)
+                                <sce:default> → codec_zenoh_ext_unit
+                                       (defensive recovery; per
+                                       upstream network.c:506-508 a
+                                       non-{Unit,ZInt,ZBuf} ENC value
+                                       is a wire-protocol violation,
+                                       so the catch-all preserves
+                                       round-trip with the most-
+                                       benign zero-body shape).
+
+     Composition: B1-γ flags (header with multi-bit ENC subfield) +
+     Y3 atomic 2a present-if-on-tlv-chain (header.Z gate) + Y3 atomic
+     1 entry-flag termination (chain followed by variant body) +
+     B5-ε surface G (chain element = codec_zenoh_ext_entry variant) +
+     B5-η Surface I (recursive variant body — ext_zint and ext_zbuf
+     as arm bodies) + B5-β multi-bit-flag own-field variant dispatch.
+     No new primitives. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_oam">
+  <sce:import src="codec_zenoh_ext_entry.scxml" kind="codec" as="codec_zenoh_ext_entry"/>
+  <sce:import src="codec_zenoh_ext_unit.scxml"  kind="codec" as="codec_zenoh_ext_unit"/>
+  <sce:import src="codec_zenoh_ext_zint.scxml"  kind="codec" as="codec_zenoh_ext_zint"/>
+  <sce:import src="codec_zenoh_ext_zbuf.scxml"  kind="codec" as="codec_zenoh_ext_zbuf"/>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="mid" bit="0" width="5"/>
+      <sce:flag name="enc" bit="5" width="2"/>
+      <sce:flag name="Z"   bit="7"/>
+    </sce:flags>
+    <sce:field id="id" sce:type="uint16" sce:byte="1" sce:bit-size="vle"/>
+    <sce:tlv-chain id="extensions" type="codec_zenoh_ext_entry" sce:byte="2"
+                   max-depth="4" on-overflow="reject"
+                   sce:present-if="header.Z"
+                   terminate-on="entry-flag" entry-flag-name="Z"/>
+    <sce:variant tag="header.enc">
+      <sce:arm value="0x00" type="codec_zenoh_ext_unit"/>
+      <sce:arm value="0x01" type="codec_zenoh_ext_zint"/>
+      <sce:arm value="0x02" type="codec_zenoh_ext_zbuf"/>
+      <sce:default type="codec_zenoh_ext_unit"/>
+    </sce:variant>
+  </datamodel>
+</scxml>

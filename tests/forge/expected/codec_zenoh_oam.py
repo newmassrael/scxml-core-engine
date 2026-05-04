@@ -5,18 +5,17 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import CodecError, NeedMoreBytes, SceCursor, TlvChainOverflow
-from .codec_zenoh_wireexpr import CodecZenohWireexpr
 from .codec_zenoh_ext_entry import CodecZenohExtEntry
-from .codec_zenoh_msg_put import CodecZenohMsgPut
-from .codec_zenoh_msg_del import CodecZenohMsgDel
-from .codec_zenoh_query import CodecZenohQuery
+from .codec_zenoh_ext_unit import CodecZenohExtUnit
+from .codec_zenoh_ext_zint import CodecZenohExtZint
+from .codec_zenoh_ext_zbuf import CodecZenohExtZbuf
 
 from dataclasses import dataclass, field
 from typing import Optional, List
 
 
 @dataclass
-class CodecZenohRequestVariant:
+class CodecZenohOamVariant:
     """RFC §5.B variant primitive (B1-β): discriminated-union body for
     the codec's tag-field suffix. ``kind`` selects the active arm; the
     matching ``Optional`` field carries the decoded body. ``default_tag``
@@ -25,24 +24,23 @@ class CodecZenohRequestVariant:
     # Default to the first declared arm (or "Default" when arms is empty)
     # so a freshly-constructed envelope round-trips through encode without
     # needing the caller to populate the body explicitly.
-    kind: str = "CodecZenohMsgPut"
-    codec_zenoh_msg_put: Optional[CodecZenohMsgPut] = None
-    codec_zenoh_msg_del: Optional[CodecZenohMsgDel] = None
-    codec_zenoh_query: Optional[CodecZenohQuery] = None
-    default_body: Optional[CodecZenohQuery] = None
+    kind: str = "CodecZenohExtUnit"
+    codec_zenoh_ext_unit: Optional[CodecZenohExtUnit] = None
+    codec_zenoh_ext_zint: Optional[CodecZenohExtZint] = None
+    codec_zenoh_ext_zbuf: Optional[CodecZenohExtZbuf] = None
+    default_body: Optional[CodecZenohExtUnit] = None
     default_tag: int = 0
 
 
 @dataclass
-class CodecZenohRequest:
+class CodecZenohOam:
     header: int = 0
-    rid: int = 0
-    keyexpr: CodecZenohWireexpr = b""
+    id: int = 0
     extensions: Optional[List[CodecZenohExtEntry]] = b""
-    body: CodecZenohRequestVariant = field(default_factory=CodecZenohRequestVariant)
+    body: CodecZenohOamVariant = field(default_factory=CodecZenohOamVariant)
 
     @classmethod
-    def decode(cls, cursor: SceCursor) -> Optional[CodecZenohRequest]:
+    def decode(cls, cursor: SceCursor) -> Optional[CodecZenohOam]:
         """Decode the next frame from ``cursor``. Returns ``None`` when
         the cursor's tail is shorter than the declared minimum frame
         (RFC §5.B L494-519); on success the cursor advances past the
@@ -57,10 +55,7 @@ class CodecZenohRequest:
             raw = cursor.peek_slice(1)
             header = raw[0]
             cursor.advance(1)
-            rid = cursor.read_vle_u64()
-            keyexpr = CodecZenohWireexpr.decode(cursor, header)
-            if keyexpr is None:
-                return None
+            id = cursor.read_vle_u16()
             if (header & 0x80) != 0:
                 extensions = []
                 for _ in range(4):
@@ -74,43 +69,41 @@ class CodecZenohRequest:
                         break
             else:
                 extensions = None
-            _peek = cursor.peek_slice(1)[0]
         except NeedMoreBytes:
             return None
         # Dispatch on the tag field; each arm decodes its body codec
         # from the cursor. The default arm (when declared) carries the
         # runtime tag value so encode can round-trip it back onto the
         # wire.
-        body = CodecZenohRequestVariant()
-        if ((_peek >> 0) & 0x1F) == 1:
-            body.kind = "CodecZenohMsgPut"
-            _arm = CodecZenohMsgPut.decode(cursor)
+        body = CodecZenohOamVariant()
+        if ((header >> 5) & 0x03) == 0:
+            body.kind = "CodecZenohExtUnit"
+            _arm = CodecZenohExtUnit.decode(cursor)
             if _arm is None:
                 return None
-            body.codec_zenoh_msg_put = _arm
-        elif ((_peek >> 0) & 0x1F) == 2:
-            body.kind = "CodecZenohMsgDel"
-            _arm = CodecZenohMsgDel.decode(cursor)
+            body.codec_zenoh_ext_unit = _arm
+        elif ((header >> 5) & 0x03) == 1:
+            body.kind = "CodecZenohExtZint"
+            _arm = CodecZenohExtZint.decode(cursor)
             if _arm is None:
                 return None
-            body.codec_zenoh_msg_del = _arm
-        elif ((_peek >> 0) & 0x1F) == 3:
-            body.kind = "CodecZenohQuery"
-            _arm = CodecZenohQuery.decode(cursor)
+            body.codec_zenoh_ext_zint = _arm
+        elif ((header >> 5) & 0x03) == 2:
+            body.kind = "CodecZenohExtZbuf"
+            _arm = CodecZenohExtZbuf.decode(cursor)
             if _arm is None:
                 return None
-            body.codec_zenoh_query = _arm
+            body.codec_zenoh_ext_zbuf = _arm
         else:
             body.kind = "Default"
-            body.default_tag = ((_peek >> 0) & 0x1F)
-            _arm = CodecZenohQuery.decode(cursor)
+            body.default_tag = ((header >> 5) & 0x03)
+            _arm = CodecZenohExtUnit.decode(cursor)
             if _arm is None:
                 return None
             body.default_body = _arm
         return cls(
             header=header,
-            rid=rid,
-            keyexpr=keyexpr,
+            id=id,
             extensions=extensions,
             body=body,
         )
@@ -130,23 +123,13 @@ class CodecZenohRequest:
         _val = (v & 0x1F) << 0
         self.header = ((self.header & (0xFF ^ _shifted_mask)) | _val) & 0xFF
 
-    def n(self) -> bool:
-        return (self.header & 0x20) != 0
+    def enc(self) -> int:
+        return (self.header >> 5) & 0x03
 
-    def set_n(self, v: bool) -> None:
-        if v:
-            self.header = (self.header | 0x20) & 0xFF
-        else:
-            self.header = self.header & (0xFF ^ 0x20)
-
-    def m(self) -> bool:
-        return (self.header & 0x40) != 0
-
-    def set_m(self, v: bool) -> None:
-        if v:
-            self.header = (self.header | 0x40) & 0xFF
-        else:
-            self.header = self.header & (0xFF ^ 0x40)
+    def set_enc(self, v: int) -> None:
+        _shifted_mask = 0x03 << 5
+        _val = (v & 0x03) << 5
+        self.header = ((self.header & (0xFF ^ _shifted_mask)) | _val) & 0xFF
 
     def z(self) -> bool:
         return (self.header & 0x80) != 0
@@ -166,22 +149,21 @@ class CodecZenohRequest:
         # per-field path.
         r = bytearray()
         r.append(self.header & 0xFF)
-        _w = int(self.rid)
+        _w = int(self.id)
         while _w >= 0x80:
             r.append((_w & 0x7F) | 0x80)
             _w >>= 7
         r.append(_w)
-        r.extend(self.keyexpr.encode(self.header))
         if self.extensions is not None:
             for _e in self.extensions:
                 r.extend(_e.encode())
         # Append the active arm body's encoded bytes.
-        if self.body.kind == "CodecZenohMsgPut":
-            r.extend(self.body.codec_zenoh_msg_put.encode())
-        elif self.body.kind == "CodecZenohMsgDel":
-            r.extend(self.body.codec_zenoh_msg_del.encode())
-        elif self.body.kind == "CodecZenohQuery":
-            r.extend(self.body.codec_zenoh_query.encode())
+        if self.body.kind == "CodecZenohExtUnit":
+            r.extend(self.body.codec_zenoh_ext_unit.encode())
+        elif self.body.kind == "CodecZenohExtZint":
+            r.extend(self.body.codec_zenoh_ext_zint.encode())
+        elif self.body.kind == "CodecZenohExtZbuf":
+            r.extend(self.body.codec_zenoh_ext_zbuf.encode())
         elif self.body.kind == "Default":
             r.extend(self.body.default_body.encode())
         return bytes(r)

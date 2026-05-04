@@ -2,51 +2,49 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
-package codec_zenoh_request
+package codec_zenoh_oam
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
-	"example.com/sce-forge/codec_zenoh_wireexpr"
 	"example.com/sce-forge/codec_zenoh_ext_entry"
-	"example.com/sce-forge/codec_zenoh_msg_put"
-	"example.com/sce-forge/codec_zenoh_msg_del"
-	"example.com/sce-forge/codec_zenoh_query"
+	"example.com/sce-forge/codec_zenoh_ext_unit"
+	"example.com/sce-forge/codec_zenoh_ext_zint"
+	"example.com/sce-forge/codec_zenoh_ext_zbuf"
 )
 
-// CodecZenohRequestDefault bundles the runtime
+// CodecZenohOamDefault bundles the runtime
 // tag value with the catch-all body so encode can round-trip the
 // observed tag back onto the wire (RFC §5.B variant primitive B1-β).
-type CodecZenohRequestDefault struct {
+type CodecZenohOamDefault struct {
 	Tag uint8
-	Body codec_zenoh_query.CodecZenohQuery
+	Body codec_zenoh_ext_unit.CodecZenohExtUnit
 }
 
-// CodecZenohRequestVariant is a discriminated-union body for the codec's
+// CodecZenohOamVariant is a discriminated-union body for the codec's
 // tag-field suffix (RFC §5.B variant primitive B1-β). Exactly one of
 // the pointer fields is non-nil at a time; the active arm is the one
 // that matches the current tag value.
-type CodecZenohRequestVariant struct {
-	CodecZenohMsgPut *codec_zenoh_msg_put.CodecZenohMsgPut
-	CodecZenohMsgDel *codec_zenoh_msg_del.CodecZenohMsgDel
-	CodecZenohQuery *codec_zenoh_query.CodecZenohQuery
-	Default *CodecZenohRequestDefault
+type CodecZenohOamVariant struct {
+	CodecZenohExtUnit *codec_zenoh_ext_unit.CodecZenohExtUnit
+	CodecZenohExtZint *codec_zenoh_ext_zint.CodecZenohExtZint
+	CodecZenohExtZbuf *codec_zenoh_ext_zbuf.CodecZenohExtZbuf
+	Default *CodecZenohOamDefault
 }
 
-// CodecZenohRequest represents the codec frame layout.
-type CodecZenohRequest struct {
+// CodecZenohOam represents the codec frame layout.
+type CodecZenohOam struct {
 	Header uint8
-	Rid uint64
-	Keyexpr codec_zenoh_wireexpr.CodecZenohWireexpr
+	Id uint16
 	Extensions []codec_zenoh_ext_entry.CodecZenohExtEntry
-	Body CodecZenohRequestVariant
+	Body CodecZenohOamVariant
 }
 
-// DecodeCodecZenohRequest decodes the next frame from cursor.
+// DecodeCodecZenohOam decodes the next frame from cursor.
 // On success the cursor advances past the consumed bytes; returns
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail
 // is shorter than the declared minimum frame (RFC §5.B L494-519).
 // VLE codecs may also return `codec.ErrVLEWidthOverflow`.
-func DecodeCodecZenohRequest(cursor *codec.SceCursor) (*CodecZenohRequest, error) {
+func DecodeCodecZenohOam(cursor *codec.SceCursor) (*CodecZenohOam, error) {
 	// RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
 	// streaming prefix decode (variable-length fields supported via
 	// per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
@@ -63,12 +61,8 @@ func DecodeCodecZenohRequest(cursor *codec.SceCursor) (*CodecZenohRequest, error
 			return nil, err
 		}
 	}
-	Rid, err := cursor.ReadVLEU64()
+	Id, err := cursor.ReadVLEU16()
 	if err != nil { return nil, err }
-	Keyexpr, err := codec_zenoh_wireexpr.DecodeCodecZenohWireexpr(cursor, Header)
-	if err != nil {
-		return nil, err
-	}
 	var Extensions []codec_zenoh_ext_entry.CodecZenohExtEntry
 	if (Header & 0x80) != 0 {
 		Extensions = make([]codec_zenoh_ext_entry.CodecZenohExtEntry, 0, 4)
@@ -87,48 +81,42 @@ func DecodeCodecZenohRequest(cursor *codec.SceCursor) (*CodecZenohRequest, error
 			}
 		}
 	}
-	_peekSlice, err := cursor.PeekSlice(1)
-	if err != nil {
-		return nil, err
-	}
-	_peek := _peekSlice[0]
 	// Dispatch on the tag field; each arm decodes its body codec from
 	// the cursor. The default arm (when declared) carries the runtime
 	// tag value so encode can round-trip it back onto the wire.
-	body := CodecZenohRequestVariant{}
-	switch uint8((_peek >> 0) & 0x1F) {
+	body := CodecZenohOamVariant{}
+	switch uint8((Header >> 5) & 0x03) {
+	case 0:
+		_arm, err := codec_zenoh_ext_unit.DecodeCodecZenohExtUnit(cursor)
+		if err != nil {
+			return nil, err
+		}
+		body.CodecZenohExtUnit = _arm
 	case 1:
-		_arm, err := codec_zenoh_msg_put.DecodeCodecZenohMsgPut(cursor)
+		_arm, err := codec_zenoh_ext_zint.DecodeCodecZenohExtZint(cursor)
 		if err != nil {
 			return nil, err
 		}
-		body.CodecZenohMsgPut = _arm
+		body.CodecZenohExtZint = _arm
 	case 2:
-		_arm, err := codec_zenoh_msg_del.DecodeCodecZenohMsgDel(cursor)
+		_arm, err := codec_zenoh_ext_zbuf.DecodeCodecZenohExtZbuf(cursor)
 		if err != nil {
 			return nil, err
 		}
-		body.CodecZenohMsgDel = _arm
-	case 3:
-		_arm, err := codec_zenoh_query.DecodeCodecZenohQuery(cursor)
-		if err != nil {
-			return nil, err
-		}
-		body.CodecZenohQuery = _arm
+		body.CodecZenohExtZbuf = _arm
 	default:
-		_arm, err := codec_zenoh_query.DecodeCodecZenohQuery(cursor)
+		_arm, err := codec_zenoh_ext_unit.DecodeCodecZenohExtUnit(cursor)
 		if err != nil {
 			return nil, err
 		}
-		body.Default = &CodecZenohRequestDefault{
-			Tag: uint8((_peek >> 0) & 0x1F),
+		body.Default = &CodecZenohOamDefault{
+			Tag: uint8((Header >> 5) & 0x03),
 			Body: *_arm,
 		}
 	}
-	return &CodecZenohRequest{
+	return &CodecZenohOam{
 		Header: Header,
-		Rid: Rid,
-		Keyexpr: Keyexpr,
+		Id: Id,
 		Extensions: Extensions,
 		Body: body,
 	}, nil
@@ -140,45 +128,31 @@ func DecodeCodecZenohRequest(cursor *codec.SceCursor) (*CodecZenohRequest, error
 // mask + shift on the way in so out-of-range callers can't corrupt
 // sibling bits. Wire layout is unchanged — the carrier still occupies
 // its declared bytes.
-func (s *CodecZenohRequest) Mid() uint8 {
+func (s *CodecZenohOam) Mid() uint8 {
 	return uint8((s.Header >> 0) & 0x1F)
 }
 
-func (s *CodecZenohRequest) SetMid(v uint8) {
+func (s *CodecZenohOam) SetMid(v uint8) {
 	const _shiftedMask uint8 = 0x1F << 0
 	_val := (uint8(v) & 0x1F) << 0
 	s.Header = (s.Header &^ _shiftedMask) | _val
 }
 
-func (s *CodecZenohRequest) N() bool {
-	return (s.Header & 0x20) != 0
+func (s *CodecZenohOam) Enc() uint8 {
+	return uint8((s.Header >> 5) & 0x03)
 }
 
-func (s *CodecZenohRequest) SetN(v bool) {
-	if v {
-		s.Header |= 0x20
-	} else {
-		s.Header &^= 0x20
-	}
+func (s *CodecZenohOam) SetEnc(v uint8) {
+	const _shiftedMask uint8 = 0x03 << 5
+	_val := (uint8(v) & 0x03) << 5
+	s.Header = (s.Header &^ _shiftedMask) | _val
 }
 
-func (s *CodecZenohRequest) M() bool {
-	return (s.Header & 0x40) != 0
-}
-
-func (s *CodecZenohRequest) SetM(v bool) {
-	if v {
-		s.Header |= 0x40
-	} else {
-		s.Header &^= 0x40
-	}
-}
-
-func (s *CodecZenohRequest) Z() bool {
+func (s *CodecZenohOam) Z() bool {
 	return (s.Header & 0x80) != 0
 }
 
-func (s *CodecZenohRequest) SetZ(v bool) {
+func (s *CodecZenohOam) SetZ(v bool) {
 	if v {
 		s.Header |= 0x80
 	} else {
@@ -186,36 +160,35 @@ func (s *CodecZenohRequest) SetZ(v bool) {
 	}
 }
 
-// Encode serializes the CodecZenohRequest into raw bytes.
-func (s *CodecZenohRequest) Encode() []byte {
+// Encode serializes the CodecZenohOam into raw bytes.
+func (s *CodecZenohOam) Encode() []byte {
 	// RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
 	// streaming prefix encode. Peek-byte mode: arm body's encode
 	// prepends its own header byte (which the decoder peeked); no
 	// separate tag byte here. Streaming-prefix mode (own-field):
 	// carrier is part of the prefix fields and emits via the same
 	// per-field path.
-	r := make([]byte, 0, 967)
+	r := make([]byte, 0, 46)
 	r = append(r, s.Header)
 	{
-		_w := uint64(s.Rid)
+		_w := uint64(s.Id)
 		for _w >= 0x80 {
 			r = append(r, byte(_w&0x7F)|0x80)
 			_w >>= 7
 		}
 		r = append(r, byte(_w))
 	}
-	r = append(r, s.Keyexpr.Encode(s.Header)...)
 	for _, _e := range s.Extensions {
 		r = append(r, _e.Encode()...)
 	}
 	// Append the active arm body's encoded bytes.
 	switch {
-	case s.Body.CodecZenohMsgPut != nil:
-		r = append(r, s.Body.CodecZenohMsgPut.Encode()...)
-	case s.Body.CodecZenohMsgDel != nil:
-		r = append(r, s.Body.CodecZenohMsgDel.Encode()...)
-	case s.Body.CodecZenohQuery != nil:
-		r = append(r, s.Body.CodecZenohQuery.Encode()...)
+	case s.Body.CodecZenohExtUnit != nil:
+		r = append(r, s.Body.CodecZenohExtUnit.Encode()...)
+	case s.Body.CodecZenohExtZint != nil:
+		r = append(r, s.Body.CodecZenohExtZint.Encode()...)
+	case s.Body.CodecZenohExtZbuf != nil:
+		r = append(r, s.Body.CodecZenohExtZbuf.Encode()...)
 	case s.Body.Default != nil:
 		r = append(r, s.Body.Default.Body.Encode()...)
 	}

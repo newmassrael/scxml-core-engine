@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh RESPONSE_FINAL envelope (RFC §5.B
+     Wire RFC Phase B Y3 atomic 2b-iv — minimal-shape consumer).
+
+     Mirrors zenoh-pico `_z_response_final_encode` /
+     `_z_response_final_decode` (src/protocol/codec/network.c:368-386)
+     verbatim. Simplest network-layer envelope: a one-byte header (the
+     RESPONSE_FINAL MID alone — the encoder ALWAYS writes Z=0; the
+     decoder accepts Z=1 and skips a non-mandatory ext chain) followed
+     by a single VLE u64 request_id correlating which request this is
+     a final response for.
+
+     Wire shape (per upstream network.c response_final_encode):
+       byte 0   : header     (MID Z_RESPONSE_FINAL 0x1a in bits 0..4 +
+                              Z@7 — encoder writes Z=0 always; decoder
+                              accepts Z=1 and skips a non-mandatory
+                              ext chain via _z_msg_ext_skip_non_
+                              mandatories at line 383).
+       byte 1+  : request_id (VLE u64 — request_id pairs with the
+                              correlated request's rid, identifying
+                              which request this final response
+                              terminates).
+       Z-gated  : extensions (codec_zenoh_ext_entry tlv-chain, max-
+                              depth=4 with safety margin for future
+                              ext additions; entry-flag-Z termination
+                              for compositional safety — chain is the
+                              last field on the wire but entry-flag-Z
+                              naturally terminates at the last entry
+                              and supports future composition).
+
+     Q1(b) envelope-only fidelity: encoder writes Z=0 always, so the
+     SCE round-trip with Z=1 + chain is symmetric for decoders — the
+     present-if-Z gate matches upstream's decode-only chain handling
+     verbatim.
+
+     Composition: B1-γ flags (header) + B1-α VLE u64 + Y3 atomic 2a
+     present-if-on-tlv-chain (header.Z gate) + Y3 atomic 1 entry-flag
+     termination (chain-as-last-field branch — atomic 1 covers the
+     overflow-check elision when entry_flag_acc is Some, so trailing-
+     chain consumers compose safely). No new primitives. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_response_final">
+  <sce:import src="codec_zenoh_ext_entry.scxml" kind="codec" as="codec_zenoh_ext_entry"/>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="mid" bit="0" width="5"/>
+      <sce:flag name="Z"   bit="7"/>
+    </sce:flags>
+    <sce:field id="request_id" sce:type="uint64" sce:byte="1" sce:bit-size="vle"/>
+    <sce:tlv-chain id="extensions" type="codec_zenoh_ext_entry" sce:byte="2"
+                   max-depth="4" on-overflow="reject"
+                   sce:present-if="header.Z"
+                   terminate-on="entry-flag" entry-flag-name="Z"/>
+  </datamodel>
+</scxml>

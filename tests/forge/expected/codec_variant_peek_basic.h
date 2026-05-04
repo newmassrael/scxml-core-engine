@@ -37,10 +37,12 @@ struct CodecVariantPeekBasic {
     /// `NeedMoreBytes` boundary; later phases attach a typed error via
     /// `cursor.last_error()`.
     static std::optional<CodecVariantPeekBasic> decode(::SCE::Forge::SceCursor& cursor) {
-        // RFC §5.B Y3 atomic 2b-ii peek-byte — peek-byte mode: streaming
-        // prefix decode (variable-length supported), then peek the
-        // cursor's next byte for variant tag without advancing. Arm
-        // body decoder reads the peeked byte as its own header byte.
+        // RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
+        // streaming prefix decode (variable-length fields supported via
+        // per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
+        // mode additionally peeks the cursor's next byte for variant tag
+        // without advancing — arm body decoder reads it as its own
+        // header byte.
         const std::uint8_t* _peek_raw = cursor.peek_slice(1);
         if (_peek_raw == nullptr) return std::nullopt;
         const std::uint8_t _peek = _peek_raw[0];
@@ -70,9 +72,12 @@ struct CodecVariantPeekBasic {
     }
 
     std::vector<uint8_t> encode() const {
-        // RFC §5.B Y3 atomic 2b-ii peek-byte — peek-byte mode: streaming
-        // prefix encode. Arm body's encode prepends its own header
-        // byte (which the decoder peeked); no separate tag byte here.
+        // RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
+        // streaming prefix encode. Peek-byte mode: arm body's encode
+        // prepends its own header byte (which the decoder peeked); no
+        // separate tag byte here. Streaming-prefix mode (own-field):
+        // carrier is part of the prefix fields and emits via the same
+        // per-field path.
         std::vector<uint8_t> r;
         r.reserve(3);
         // Append the active arm body's encoded bytes.

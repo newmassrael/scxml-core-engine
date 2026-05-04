@@ -150,11 +150,12 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
     out->_reserved = 0;
     return SCE_FORGE_CODEC_OK;
 {% elif has_variant %}
-{% if variant.has_peek_byte %}
-    /* RFC §5.B Y3 atomic 2b-ii peek-byte — peek-byte mode: streaming
-     * prefix decode (variable-length supported), then peek the cursor's
-     * next byte for variant tag without advancing. Arm body decoder
-     * reads peeked byte as own header. */
+{% if variant.has_streaming_prefix %}
+    /* RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
+     * streaming prefix decode (variable-length fields supported via
+     * per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
+     * mode additionally peeks the cursor's next byte for variant tag
+     * without advancing — arm body decoder reads it as own header. */
 {% for field in fields %}
 {% if field.is_repeat %}
     {{ field.repeat_decode_stmt }}
@@ -166,7 +167,9 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
     {{ field.present_if_decode_stmt }}
 {% endif %}
 {% endfor %}
+{% if variant.has_peek_byte %}
     {{ variant.peek_byte_decode_stmt }}
+{% endif %}
 {% else %}
     /* Decode fixed prefix (RFC §5.B variant B1-β: fields before tag suffix). */
     const uint8_t *raw = sce_forge_cursor_peek(cursor, {{ c_min_bytes_macro }});
@@ -336,10 +339,13 @@ static inline {{ c_encoded_typedef }} {{ c_encode_func }}(const {{ c_struct_type
     r.bytes[0] = 0;
     r.len = 0;
 {% elif has_variant %}
-{% if variant.has_peek_byte %}
-    /* RFC §5.B Y3 atomic 2b-ii peek-byte — peek-byte mode: streaming
-     * prefix encode. Arm body's encode prepends its own header byte
-     * (which the decoder peeked); no separate tag byte here. */
+{% if variant.has_streaming_prefix %}
+    /* RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
+     * streaming prefix encode. Peek-byte mode: arm body's encode
+     * prepends its own header byte (which the decoder peeked); no
+     * separate tag byte here. Streaming-prefix mode (own-field):
+     * carrier is part of the prefix fields and emits via the same
+     * per-field path. */
     r.len = 0;
 {% for field in fields %}
 {% if field.is_repeat %}

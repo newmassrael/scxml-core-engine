@@ -1,21 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Zenoh INTEREST body (RFC §5.B Wire RFC
-     Phase B Y3 atomic 2b — sub-codec, interest envelope embeddee).
+     Phase B Y3 atomic 2b-iv — sub-codec, interest envelope embeddee).
 
      Mirrors zenoh-pico `_z_interest_encode` / `_z_interest_decode`
-     (src/protocol/codec/interest.c:41-91) at envelope-level wire
-     fidelity. The body codec models the not-is_final case only —
-     when the outer envelope (codec_zenoh_interest) signals is_final
-     via its header bit, the body bytes are absent from the wire
-     entirely (envelope's header + VLE id, no body emit). Pulling
-     the is_final gate up into the outer envelope keeps this body
-     codec free of cross-message wire dependencies (matches Q3(a)
-     dispatch — separate sub-codec rather than inline nested logic
-     in codec_zenoh_interest).
+     (src/protocol/codec/interest.c:41-91) at the not-is_final body
+     fragment level. Models ONLY the per-message body fragment that
+     follows the outer envelope's `id` VLE — i.e. the bytes the
+     upstream encoder writes between the early-return at
+     interest.c:44-46 and the close at line 67. The outer
+     codec_zenoh_interest envelope owns the always-present `id` VLE
+     (writing it before this body, matching upstream) and gates this
+     body's presence via the present-if disjunction
+     `header.CURRENT || header.FUTURE` — when both bits are clear
+     (is_final on the wire), the outer envelope writes only `id`
+     plus the optional Z-gated chain, exactly mirroring the upstream
+     early-return path.
 
-     Wire shape (not-is_final case, 2+ bytes):
-       byte 0      : id (VLE u32, interest.c:43)
-       byte 1      : flags     (zenoh-pico interest.c:62 — clear of
+     Wire shape (not-is_final body fragment, 1+ bytes):
+       byte 0      : flags     (zenoh-pico interest.c:62 — clear of
                                  CURRENT/FUTURE per line 49-50;
                                  retained bits per
                                  _Z_INTEREST_FLAG_COPY_MASK = 0x9f):
@@ -47,18 +49,16 @@
      this body's own flags as N/M (the upstream encoder's bit-reuse
      trick — see _Z_INTEREST_FLAG_COPY_MASK comment in interest.c).
 
-     Composition: B1-α VLE u32 id + B1-γ flags (8-bit local carrier) +
-     B1-δ present-if-on-embed (Y0b lift) + Y0c <sce:embed>
-     (codec_zenoh_wireexpr) + B5-γ parent-flag threading via local
-     `header` carrier matching wireexpr's `requires-parent-flags
-     carrier="header"`. -->
+     Composition: B1-γ flags (8-bit local carrier) + B1-δ present-if-
+     on-embed + Y0c <sce:embed> (codec_zenoh_wireexpr) + B5-γ parent-
+     flag threading via local `header` carrier matching wireexpr's
+     `requires-parent-flags carrier="header"`. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="codec_zenoh_interest_body">
   <sce:import src="codec_zenoh_wireexpr.scxml" kind="codec" as="codec_zenoh_wireexpr"/>
   <datamodel>
-    <sce:field id="id" sce:type="uint32" sce:byte="0" sce:bit-size="vle"/>
-    <sce:flags id="header" sce:type="uint8" sce:byte="1" sce:bit-size="8">
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
       <sce:flag name="keyexprs"    bit="0"/>
       <sce:flag name="subscribers" bit="1"/>
       <sce:flag name="queryables"  bit="2"/>
@@ -68,7 +68,7 @@
       <sce:flag name="M"           bit="6"/>
       <sce:flag name="aggregate"   bit="7"/>
     </sce:flags>
-    <sce:embed id="keyexpr" type="codec_zenoh_wireexpr" sce:byte="2"
+    <sce:embed id="keyexpr" type="codec_zenoh_wireexpr" sce:byte="1"
                sce:present-if="header.restricted"/>
   </datamodel>
 </scxml>

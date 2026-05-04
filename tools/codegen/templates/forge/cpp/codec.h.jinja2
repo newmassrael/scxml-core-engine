@@ -79,11 +79,13 @@ struct {{ struct_name }} {
         (void)cursor;
         return {{ struct_name }}{};
 {% elif has_variant %}
-{% if variant.has_peek_byte %}
-        // RFC §5.B Y3 atomic 2b-ii peek-byte — peek-byte mode: streaming
-        // prefix decode (variable-length supported), then peek the
-        // cursor's next byte for variant tag without advancing. Arm
-        // body decoder reads the peeked byte as its own header byte.
+{% if variant.has_streaming_prefix %}
+        // RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
+        // streaming prefix decode (variable-length fields supported via
+        // per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
+        // mode additionally peeks the cursor's next byte for variant tag
+        // without advancing — arm body decoder reads it as its own
+        // header byte.
 {% for field in fields %}
 {% if field.is_repeat %}
         {{ field.repeat_decode_stmt }}
@@ -95,7 +97,9 @@ struct {{ struct_name }} {
         {{ field.present_if_decode_stmt }}
 {% endif %}
 {% endfor %}
+{% if variant.has_peek_byte %}
         {{ variant.peek_byte_decode_stmt }}
+{% endif %}
 {% else %}
         // Decode fixed prefix (RFC §5.B variant B1-β: fields before tag suffix).
         const std::uint8_t* raw = cursor.peek_slice({{ min_bytes }});
@@ -290,10 +294,13 @@ struct {{ struct_name }} {
         // RFC §5.B B5-α empty body — zero-byte payload.
         return {};
 {% elif has_variant %}
-{% if variant.has_peek_byte %}
-        // RFC §5.B Y3 atomic 2b-ii peek-byte — peek-byte mode: streaming
-        // prefix encode. Arm body's encode prepends its own header
-        // byte (which the decoder peeked); no separate tag byte here.
+{% if variant.has_streaming_prefix %}
+        // RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
+        // streaming prefix encode. Peek-byte mode: arm body's encode
+        // prepends its own header byte (which the decoder peeked); no
+        // separate tag byte here. Streaming-prefix mode (own-field):
+        // carrier is part of the prefix fields and emits via the same
+        // per-field path.
         std::vector<uint8_t> r;
         r.reserve({{ max_bytes }});
 {% for field in fields %}

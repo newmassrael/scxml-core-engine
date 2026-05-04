@@ -2675,6 +2675,28 @@ fn render_codec(
             "peek_byte_decode_stmt".into(),
             peek_byte_decode_stmt.into(),
         );
+        // Y3 atomic 2b-iv streaming-prefix variant: own-field variants
+        // whose prefix mixes the carrier byte with VLE / length-ref /
+        // present-if / tlv-chain / embed / repeat / string fields need
+        // the streaming decode path (per-field `present_if_decode_stmt`
+        // / `tlv_chain_decode_stmt` / etc.) instead of the fixed-prefix
+        // peek-then-advance shape. Peek-byte mode always uses the
+        // streaming path; own-field variants without streaming prefix
+        // fields stay on the fixed-prefix path so existing variant
+        // goldens (codec_zenoh_declaration / codec_zenoh_push /
+        // codec_zenoh_ext_entry / codec_init_syn_envelope /
+        // codec_transport_envelope / codec_variant_dispatch) remain
+        // byte-stable. First consumer = codec_zenoh_oam (header carrier
+        // + VLE u16 id + Z-gated tlv-chain + variant body on
+        // header.enc).
+        let has_streaming_prefix = peek_mode
+            || has_vle_fields
+            || has_present_if_fields
+            || has_repeat_fields
+            || m.has_tlv_chain_fields()
+            || m.has_embed_fields()
+            || m.has_string_fields();
+        variant_obj.insert("has_streaming_prefix".into(), has_streaming_prefix.into());
         ctx.insert("has_variant".into(), true.into());
         ctx.insert("variant".into(), serde_json::Value::Object(variant_obj));
     } else {

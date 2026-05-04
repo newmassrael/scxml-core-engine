@@ -17,7 +17,6 @@
 namespace SCE::Generated::CodecZenohInterestBody {
 
 struct CodecZenohInterestBody {
-    uint32_t id;
     uint8_t header;
     std::optional<::SCE::Generated::CodecZenohWireexpr::CodecZenohWireexpr> keyexpr;
 
@@ -35,9 +34,6 @@ struct CodecZenohInterestBody {
         // Repeat fields to the dedicated helper. Branch fires before
         // has_vle_fields so a codec mixing VLE + present-if uses the
         // unified streaming path.
-        auto id_opt = cursor.read_vle_u32();
-        if (!id_opt.has_value()) return std::nullopt;
-        auto id = static_cast<std::uint32_t>(*id_opt);
         uint8_t header;
         {
             const std::uint8_t* raw = cursor.peek_slice(1);
@@ -52,7 +48,6 @@ struct CodecZenohInterestBody {
             keyexpr = std::move(*_emb);
         }
         return CodecZenohInterestBody{
-            .id = id,
             .header = header,
             .keyexpr = keyexpr,
         };
@@ -166,15 +161,7 @@ struct CodecZenohInterestBody {
         // dedicated helper. Branch fires before has_vle_fields so a
         // codec mixing VLE + present-if uses the unified encode path.
         std::vector<uint8_t> r;
-        r.reserve(263);
-        {
-            std::uint64_t _w = static_cast<std::uint64_t>(id);
-            while (_w >= 0x80) {
-                r.push_back(static_cast<std::uint8_t>((_w & 0x7F) | 0x80));
-                _w >>= 7;
-            }
-            r.push_back(static_cast<std::uint8_t>(_w));
-        }
+        r.reserve(257);
         r.push_back(header);
         if ((header & 0x10) != 0) {
             if (this->keyexpr.has_value()) {

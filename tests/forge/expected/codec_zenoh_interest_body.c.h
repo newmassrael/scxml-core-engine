@@ -12,11 +12,10 @@
 #include "sce/forge/codec.h"
 #include "codec_zenoh_wireexpr.h"
 
-#define CODEC_ZENOH_INTEREST_BODY_MIN_BYTES 2
-#define CODEC_ZENOH_INTEREST_BODY_MAX_BYTES 263
+#define CODEC_ZENOH_INTEREST_BODY_MIN_BYTES 1
+#define CODEC_ZENOH_INTEREST_BODY_MAX_BYTES 257
 
 typedef struct {
-    uint32_t id;
     uint8_t header;
     /* RFC §5.B Y0c embed: nested codec_zenoh_wireexpr_t struct (no length prefix on the wire) */
     codec_zenoh_wireexpr_t keyexpr;
@@ -42,12 +41,6 @@ static inline sce_forge_codec_status_t codec_zenoh_interest_body_decode(sce_forg
      * Per-field `is_repeat` / `is_tlv_chain` route to dedicated
      * helpers. Branch fires before has_vle_fields so a codec mixing
      * VLE + present-if uses the unified streaming path. */
-    uint32_t id;
-    {
-        sce_forge_codec_status_t _vle_st = sce_forge_cursor_read_vle_u32(cursor, &id);
-        if (_vle_st != SCE_FORGE_CODEC_OK) return _vle_st;
-    }
-    out->id = id;
     {
         const uint8_t *raw = sce_forge_cursor_peek(cursor, 1);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
@@ -69,14 +62,6 @@ static inline codec_zenoh_interest_body_encoded_t codec_zenoh_interest_body_enco
      * helpers. Branch fires before has_vle_fields so a codec mixing
      * VLE + present-if uses the unified encode path. */
     r.len = 0;
-    {
-        uint64_t _w = (uint64_t)(self->id);
-        while (_w >= 0x80u) {
-            r.bytes[r.len++] = (uint8_t)((_w & 0x7Fu) | 0x80u);
-            _w >>= 7;
-        }
-        r.bytes[r.len++] = (uint8_t)_w;
-    }
     r.bytes[r.len++] = self->header;
     if ((self->header & 0x10) != 0) {
         codec_zenoh_wireexpr_encoded_t _sub = codec_zenoh_wireexpr_encode(&self->keyexpr, self->header);

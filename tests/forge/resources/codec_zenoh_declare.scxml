@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh DECLARE envelope (RFC §5.B Wire RFC
+     Phase B Y3 atomic 2b-iv — single-embed consumer of the 9-arm
+     codec_zenoh_declaration dispatcher).
+
+     Mirrors zenoh-pico `_z_declare_encode` / `_z_declare_decode`
+     (src/protocol/codec/network.c:388-450) at envelope-level wire
+     fidelity. Wraps a single declaration body (one of nine
+     decl/undecl × keyexpr/subscriber/queryable/token + decl_final
+     sub-types) inside a per-network header carrying I@5 (gates
+     interest_id) + Z@7 (gates ext chain).
+
+     Wire shape (per upstream network.c declare_encode):
+       byte 0   : header     (MID Z_DECLARE 0x1e in bits 0..4 + I@5 +
+                              Z@7) — I = `_Z_FLAG_N_DECLARE_I = 0x20`
+                              gates the interest_id VLE; Z =
+                              `_Z_FLAG_N_Z = 0x80` signals the ext
+                              chain follows.
+       I-gated:
+         bytes  : interest_id (VLE u32 — declaration belongs to the
+                              targeted interest; encoder uses
+                              `_z_zsize_encode` with size_t value,
+                              decoder uses `_z_zint32_decode` →
+                              wire-typed as u32 per network.c:441).
+       Z-gated:
+         chain  : extensions (codec_zenoh_ext_entry tlv-chain, max-
+                              depth=4 covers DECLARE's upstream ext
+                              slots — qos via _Z_MSG_EXT_ENC_ZINT|
+                              0x01 and timestamp via _Z_MSG_EXT_ENC_
+                              ZBUF|0x02 per declare_encode lines
+                              406-415 with safety margin for future
+                              additions; entry-flag-Z termination
+                              since the declaration body follows the
+                              chain — Y3 atomic 1 grammar).
+       inner    : declaration (codec_zenoh_declaration embed — 9-arm
+                              dispatcher on the inner declaration's
+                              own per-MID header byte; the inner
+                              header carries N/M/Z parent-flag bits
+                              that the dispatched arm body consumes
+                              via Case B parent-flag pass-through).
+
+     Composition: B1-γ flags (header with I@5 + Z@7 subfields) +
+     B1-α VLE u32 with present-if (interest_id, header.I gate) + Y3
+     atomic 2a present-if-on-tlv-chain (header.Z gate) + Y3 atomic 1
+     entry-flag termination (chain followed by declaration body) +
+     B5-ε surface G (chain element = codec_zenoh_ext_entry variant) +
+     Y0c <sce:embed> (codec_zenoh_declaration inner dispatcher). No
+     new primitives. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_declare">
+  <sce:import src="codec_zenoh_ext_entry.scxml"  kind="codec" as="codec_zenoh_ext_entry"/>
+  <sce:import src="codec_zenoh_declaration.scxml" kind="codec" as="codec_zenoh_declaration"/>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="mid" bit="0" width="5"/>
+      <sce:flag name="I"   bit="5"/>
+      <sce:flag name="Z"   bit="7"/>
+    </sce:flags>
+    <sce:field id="interest_id" sce:type="uint32" sce:byte="1" sce:bit-size="vle"
+               sce:present-if="header.I"/>
+    <sce:tlv-chain id="extensions" type="codec_zenoh_ext_entry" sce:byte="2"
+                   max-depth="4" on-overflow="reject"
+                   sce:present-if="header.Z"
+                   terminate-on="entry-flag" entry-flag-name="Z"/>
+    <sce:embed id="declaration" type="codec_zenoh_declaration" sce:byte="3"/>
+  </datamodel>
+</scxml>

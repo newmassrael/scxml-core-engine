@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh INTEREST envelope (RFC §5.B Wire RFC
+     Phase B Y3 atomic 2b-iv — first realistic disjunction primitive
+     consumer + parent-owns-id refactor pin).
+
+     Mirrors zenoh-pico `_z_n_interest_encode` /
+     `_z_n_interest_decode` (src/protocol/codec/network.c:452-486)
+     verbatim. The outer envelope writes the per-network header,
+     ALWAYS encodes the VLE id (mirroring the upstream
+     `_z_zsize_encode(wbf, interest->_id)` at interest.c:43 which
+     runs before the `if (is_final) return` early-out at lines 44-46),
+     embeds the not-is_final body fragment under a present-if
+     disjunction on the outer header's CURRENT/FUTURE bits, and
+     finishes with a Z-gated ext chain.
+
+     Wire shape (per upstream network.c n_interest_encode + interest.c
+     interest_encode):
+       byte 0   : header     (MID Z_INTEREST 0x19 in bits 0..4 +
+                              CURRENT@5 + FUTURE@6 + Z@7) — CURRENT =
+                              `_Z_FLAG_N_INTEREST_CURRENT = 0x20`,
+                              FUTURE = `_Z_FLAG_N_INTEREST_FUTURE =
+                              0x40` per network.h:56-57; both flags
+                              independently mark the message as
+                              not-final. Z = `_Z_FLAG_Z_Z = 0x80` per
+                              network.c:482-484 signals the ext
+                              chain.
+       byte 1+  : id         (VLE u64 — interest id; ALWAYS present
+                              per upstream interest.c:43 which writes
+                              before the is_final early-return).
+       (CURRENT||FUTURE)-gated:
+         bytes  : body       (codec_zenoh_interest_body embed —
+                              flags byte (RESTRICTED-gates wireexpr)
+                              + RESTRICTED-gated wireexpr; the embed
+                              is absent on the wire when both CURRENT
+                              and FUTURE are clear, exactly mirroring
+                              the upstream is_final early-return path
+                              at interest.c:44-46).
+       Z-gated:
+         chain  : extensions (codec_zenoh_ext_entry tlv-chain, max-
+                              depth=4 covers INTEREST's upstream ext
+                              slots with safety margin; entry-flag-Z
+                              termination — chain is the last field
+                              on the wire but entry-flag-Z naturally
+                              terminates at the last entry and
+                              supports future composition).
+
+     Disjunction primitive (Y3 atomic 2b-ii Phase 1) consumer: the
+     `header.CURRENT || header.FUTURE` predicate on the body embed is
+     the first realistic consumer of present_if's `||` chain grammar
+     after the codec_present_if_disjunction demo fixture — matches
+     upstream's `_Z_INTEREST_NOT_FINAL_MASK = (CURRENT | FUTURE)` at
+     interest.h:35 verbatim. When either flag is set on the wire, the
+     inner body fragment is read; when both are clear (is_final case),
+     only `id` plus the optional Z-gated chain remain.
+
+     Parent-owns-id refactor (atomic 2b-iv): the predecessor
+     codec_zenoh_interest_body fixture (atomic 2b-i) included an `id`
+     VLE field as its first wire byte. Atomic 2b-iv refactors that
+     body to drop `id` so the outer envelope owns it (parent-owns-id
+     textbook composition). The refactored body becomes "flags byte +
+     restricted-gated wireexpr" — exactly the upstream not-is_final
+     fragment after interest.c:43.
+
+     Composition: B1-γ flags (header with CURRENT@5 + FUTURE@6 + Z@7
+     subfields) + B1-α VLE u64 (always-present id) + B5-μ X1 present-
+     if-on-embed with Y3 atomic 2b-ii Phase 1 disjunction primitive
+     (header.CURRENT || header.FUTURE gate on body embed) + Y3 atomic
+     2a present-if-on-tlv-chain (header.Z gate) + Y3 atomic 1 entry-
+     flag termination (chain-as-last-field branch) + B5-ε surface G
+     (chain element = codec_zenoh_ext_entry variant) + Y0c <sce:embed>
+     (codec_zenoh_interest_body inner body fragment). No new
+     primitives. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_interest">
+  <sce:import src="codec_zenoh_ext_entry.scxml"      kind="codec" as="codec_zenoh_ext_entry"/>
+  <sce:import src="codec_zenoh_interest_body.scxml"  kind="codec" as="codec_zenoh_interest_body"/>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="mid"     bit="0" width="5"/>
+      <sce:flag name="CURRENT" bit="5"/>
+      <sce:flag name="FUTURE"  bit="6"/>
+      <sce:flag name="Z"       bit="7"/>
+    </sce:flags>
+    <sce:field id="id" sce:type="uint64" sce:byte="1" sce:bit-size="vle"/>
+    <sce:embed id="body" type="codec_zenoh_interest_body" sce:byte="2"
+               sce:present-if="header.CURRENT || header.FUTURE"/>
+    <sce:tlv-chain id="extensions" type="codec_zenoh_ext_entry" sce:byte="3"
+                   max-depth="4" on-overflow="reject"
+                   sce:present-if="header.Z"
+                   terminate-on="entry-flag" entry-flag-name="Z"/>
+  </datamodel>
+</scxml>
