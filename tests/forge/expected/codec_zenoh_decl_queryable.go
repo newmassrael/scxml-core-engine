@@ -32,9 +32,13 @@ func DecodeCodecZenohDeclQueryable(cursor *codec.SceCursor, parentFlags byte) (*
 	// unified streaming path.
 	Id, err := cursor.ReadVLEU32()
 	if err != nil { return nil, err }
-	Wireexpr, err := codec_zenoh_wireexpr.DecodeCodecZenohWireexpr(cursor, parentFlags)
-	if err != nil {
-		return nil, err
+	var Wireexpr codec_zenoh_wireexpr.CodecZenohWireexpr
+	{
+		_emb, err := codec_zenoh_wireexpr.DecodeCodecZenohWireexpr(cursor, parentFlags)
+		if err != nil {
+			return nil, err
+		}
+		Wireexpr = *_emb
 	}
 	var ExtType *uint8
 	if (parentFlags & 0x80) != 0 {

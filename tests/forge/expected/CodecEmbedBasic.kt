@@ -13,7 +13,7 @@ import com.sce.generated.codec_zenoh_locator.*
 // mirror the zero-initialized shape that decode() fills in on success.
 data class CodecEmbedBasic(
     var tag: UByte = 0.toUByte(),
-    var locator: CodecZenohLocator = byteArrayOf()
+    var locator: CodecZenohLocator = CodecZenohLocator()
 ) {
     fun encode(): ByteArray {
         // RFC §5.B B2 encode: fixed prefix appends byte-by-byte;

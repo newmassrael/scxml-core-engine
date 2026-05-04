@@ -13,7 +13,7 @@ import com.sce.generated.codec_zenoh_wireexpr.*
 // mirror the zero-initialized shape that decode() fills in on success.
 data class CodecZenohDeclSubscriber(
     var id: UInt = 0u,
-    var wireexpr: CodecZenohWireexpr = byteArrayOf()
+    var wireexpr: CodecZenohWireexpr = CodecZenohWireexpr()
 ) {
     @Suppress("UNUSED_PARAMETER")
     fun encode(parentFlags: UByte): ByteArray {

@@ -40,9 +40,13 @@ func DecodeCodecEmbedBasic(cursor *codec.SceCursor) (*CodecEmbedBasic, error) {
 			return nil, err
 		}
 	}
-	Locator, err := codec_zenoh_locator.DecodeCodecZenohLocator(cursor)
-	if err != nil {
-		return nil, err
+	var Locator codec_zenoh_locator.CodecZenohLocator
+	{
+		_emb, err := codec_zenoh_locator.DecodeCodecZenohLocator(cursor)
+		if err != nil {
+			return nil, err
+		}
+		Locator = *_emb
 	}
 	return &CodecEmbedBasic{
 		Tag: Tag,

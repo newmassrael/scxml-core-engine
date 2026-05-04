@@ -65,9 +65,13 @@ func DecodeCodecZenohRequest(cursor *codec.SceCursor) (*CodecZenohRequest, error
 	}
 	Rid, err := cursor.ReadVLEU64()
 	if err != nil { return nil, err }
-	Keyexpr, err := codec_zenoh_wireexpr.DecodeCodecZenohWireexpr(cursor, Header)
-	if err != nil {
-		return nil, err
+	var Keyexpr codec_zenoh_wireexpr.CodecZenohWireexpr
+	{
+		_emb, err := codec_zenoh_wireexpr.DecodeCodecZenohWireexpr(cursor, Header)
+		if err != nil {
+			return nil, err
+		}
+		Keyexpr = *_emb
 	}
 	var Extensions []codec_zenoh_ext_entry.CodecZenohExtEntry
 	if (Header & 0x80) != 0 {

@@ -1651,13 +1651,15 @@ fn render_codec(
             if matches!(lang, crate::generator::Language::Kotlin) {
                 // Repeat / TLV chain fields already set kt_default =
                 // "mutableListOf()" above; the carrier-typed default
-                // would miscompile against MutableList<T>. Y0b gated
-                // embed fields already set kt_default = "null" above;
+                // would miscompile against MutableList<T>. Embed
+                // fields (Y0c plain / Y0b gated / Y0b bounded /
+                // Y0b gated+bounded) already set kt_default to either
+                // `<EmbedType>()` (value) or `null` (gated) above;
                 // overwriting would ship a `byteArrayOf()` default
-                // against the new `T?` host type, which doesn't
-                // typecheck.
+                // (from the field's vestigial `sce_type=Bytes`) against
+                // the embed's struct host type, which doesn't typecheck.
                 let skip_default_overwrite =
-                    f.is_repeat() || f.is_tlv_chain() || (f.is_embed() && f.present_if.is_some());
+                    f.is_repeat() || f.is_tlv_chain() || f.is_embed();
                 if !skip_default_overwrite {
                     obj.insert("kt_default".into(), kotlin_default(&f.sce_type).into());
                 }
@@ -3626,11 +3628,23 @@ fn embed_streaming_decode_stmt(
         },
         Language::Go => {
             let go_id = filters::to_pascal_case(id.to_string());
+            // Go body decoders return `(*T, error)`. Non-gated host
+            // struct fields are value-typed `T` (cross-language parity
+            // with Cpp/Rust/Kotlin/Python); gated host fields are
+            // `*T` (Go-idiomatic nullable). The `(_, None|Some)`
+            // value-typed branches dereference the decoder's pointer
+            // result (`*_emb`) into a value local before assigning to
+            // the struct literal — assigning the pointer directly to
+            // a value-typed field would not compile.
             match (&test_lit, len_expr(Language::Go)) {
                 (None, None) => format!(
-                    "{go_id}, err := {body_decoder}(cursor{thread_arg})\n\t\
-                     if err != nil {{\n\t\t\
-                         return nil, err\n\t\
+                    "var {go_id} {body_type}\n\t\
+                     {{\n\t\t\
+                         _emb, err := {body_decoder}(cursor{thread_arg})\n\t\t\
+                         if err != nil {{\n\t\t\t\
+                             return nil, err\n\t\t\
+                         }}\n\t\t\
+                         {go_id} = *_emb\n\t\
                      }}"
                 ),
                 (Some(test), None) => format!(
@@ -3644,7 +3658,7 @@ fn embed_streaming_decode_stmt(
                      }}"
                 ),
                 (None, Some(sibling)) => format!(
-                    "var {go_id} *{body_type}\n\t\
+                    "var {go_id} {body_type}\n\t\
                      {{\n\t\t\
                          _len := int({sibling})\n\t\t\
                          _raw, err := cursor.PeekSlice(_len)\n\t\t\
@@ -3659,7 +3673,7 @@ fn embed_streaming_decode_stmt(
                          if err := cursor.Advance(_len); err != nil {{\n\t\t\t\
                              return nil, err\n\t\t\
                          }}\n\t\t\
-                         {go_id} = _emb\n\t\
+                         {go_id} = *_emb\n\t\
                      }}"
                 ),
                 (Some(test), Some(sibling)) => format!(

@@ -72,9 +72,13 @@ func DecodeCodecZenohMsgReply(cursor *codec.SceCursor) (*CodecZenohMsgReply, err
 			}
 		}
 	}
-	Body, err := codec_zenoh_push_body.DecodeCodecZenohPushBody(cursor)
-	if err != nil {
-		return nil, err
+	var Body codec_zenoh_push_body.CodecZenohPushBody
+	{
+		_emb, err := codec_zenoh_push_body.DecodeCodecZenohPushBody(cursor)
+		if err != nil {
+			return nil, err
+		}
+		Body = *_emb
 	}
 	return &CodecZenohMsgReply{
 		Header: Header,

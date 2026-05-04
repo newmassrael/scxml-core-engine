@@ -31,7 +31,7 @@ sealed class CodecZenohRequestVariant {
 data class CodecZenohRequest(
     var header: UByte = 0.toUByte(),
     var rid: ULong = 0uL,
-    var keyexpr: CodecZenohWireexpr = byteArrayOf(),
+    var keyexpr: CodecZenohWireexpr = CodecZenohWireexpr(),
     var extensions: MutableList<CodecZenohExtEntry>? = null,
     var body: CodecZenohRequestVariant = CodecZenohRequestVariant.CodecZenohMsgPut(com.sce.generated.codec_zenoh_msg_put.CodecZenohMsgPut())
 ) {

@@ -66,9 +66,13 @@ func DecodeCodecZenohDeclare(cursor *codec.SceCursor) (*CodecZenohDeclare, error
 			}
 		}
 	}
-	Declaration, err := codec_zenoh_declaration.DecodeCodecZenohDeclaration(cursor)
-	if err != nil {
-		return nil, err
+	var Declaration codec_zenoh_declaration.CodecZenohDeclaration
+	{
+		_emb, err := codec_zenoh_declaration.DecodeCodecZenohDeclaration(cursor)
+		if err != nil {
+			return nil, err
+		}
+		Declaration = *_emb
 	}
 	return &CodecZenohDeclare{
 		Header: Header,

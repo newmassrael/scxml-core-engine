@@ -14,7 +14,7 @@ import com.sce.generated.codec_zenoh_decl_ext_keyexpr_inner.*
 data class CodecZenohDeclExtKeyexpr(
     var outer_header: UByte = 0.toUByte(),
     var total_length: ULong = 0uL,
-    var inner: CodecZenohDeclExtKeyexprInner = byteArrayOf()
+    var inner: CodecZenohDeclExtKeyexprInner = CodecZenohDeclExtKeyexprInner()
 ) {
     // RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-

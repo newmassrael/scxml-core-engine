@@ -30,9 +30,13 @@ func DecodeCodecZenohDeclSubscriber(cursor *codec.SceCursor, parentFlags byte) (
 	// Pure-VLE codecs stay byte-stable.
 	Id, err := cursor.ReadVLEU32()
 	if err != nil { return nil, err }
-	Wireexpr, err := codec_zenoh_wireexpr.DecodeCodecZenohWireexpr(cursor, parentFlags)
-	if err != nil {
-		return nil, err
+	var Wireexpr codec_zenoh_wireexpr.CodecZenohWireexpr
+	{
+		_emb, err := codec_zenoh_wireexpr.DecodeCodecZenohWireexpr(cursor, parentFlags)
+		if err != nil {
+			return nil, err
+		}
+		Wireexpr = *_emb
 	}
 	return &CodecZenohDeclSubscriber{
 		Id: Id,

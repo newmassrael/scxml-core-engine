@@ -42,7 +42,7 @@ func DecodeCodecZenohDeclExtKeyexpr(cursor *codec.SceCursor) (*CodecZenohDeclExt
 	}
 	TotalLength, err := cursor.ReadVLEU64()
 	if err != nil { return nil, err }
-	var Inner *codec_zenoh_decl_ext_keyexpr_inner.CodecZenohDeclExtKeyexprInner
+	var Inner codec_zenoh_decl_ext_keyexpr_inner.CodecZenohDeclExtKeyexprInner
 	{
 		_len := int(TotalLength)
 		_raw, err := cursor.PeekSlice(_len)
@@ -57,7 +57,7 @@ func DecodeCodecZenohDeclExtKeyexpr(cursor *codec.SceCursor) (*CodecZenohDeclExt
 		if err := cursor.Advance(_len); err != nil {
 			return nil, err
 		}
-		Inner = _emb
+		Inner = *_emb
 	}
 	return &CodecZenohDeclExtKeyexpr{
 		OuterHeader: OuterHeader,

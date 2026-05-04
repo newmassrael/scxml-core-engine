@@ -16,7 +16,7 @@ data class CodecZenohDeclare(
     var header: UByte = 0.toUByte(),
     var interest_id: UInt? = null,
     var extensions: MutableList<CodecZenohExtEntry>? = null,
-    var declaration: CodecZenohDeclaration = byteArrayOf()
+    var declaration: CodecZenohDeclaration = CodecZenohDeclaration()
 ) {
     // RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-
