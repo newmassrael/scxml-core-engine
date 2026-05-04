@@ -94,6 +94,12 @@ pub enum ForgeKind {
     /// — watching-zenoh RFC §5.A (Phase A3). Free function emit on
     /// every backend (`#![no_std]`-clean on Rust when no bytes param).
     Algorithm,
+    /// Byte-stream link endpoint — watching-zenoh RFC §5.C. MCU-class
+    /// kind (RFC §5.J.4): emits only on `(rust, *)` and
+    /// `(c11, bare_metal)`. SCE owns the `Link` trait surface in
+    /// `sce-link-runtime`; per-OS impls (`sce_link_runtime_lwip`,
+    /// `_tokio`, `_qnx`) live downstream in watching-zenoh.
+    Link,
 }
 
 impl ForgeKind {
@@ -114,6 +120,7 @@ impl ForgeKind {
         "timer",
         "observer",
         "algorithm",
+        "link",
     ];
 
     /// Parse from `sce:kind` attribute value. Returns `None` for unknown kinds.
@@ -131,6 +138,7 @@ impl ForgeKind {
             "timer" => Some(Self::Timer),
             "observer" => Some(Self::Observer),
             "algorithm" => Some(Self::Algorithm),
+            "link" => Some(Self::Link),
             _ => None,
         }
     }
@@ -162,6 +170,11 @@ impl ForgeKind {
             Self::Statechart => false,
             // RFC §5.A: Algorithm is a free function — no instance state.
             Self::Algorithm => false,
+            // RFC §5.C: Link emits a struct that owns an `impl Link`
+            // driver and routes RX/TX through the framer codec. The
+            // generated module exposes a constructor that the consumer
+            // wires to a downstream `sce_link_runtime_<os>` impl.
+            Self::Link => true,
         }
     }
 
@@ -186,6 +199,12 @@ impl ForgeKind {
             // and locals, no helper crate. `#![no_std]`-clean on Rust
             // when no `bytes` parameter.
             Self::Algorithm => RuntimeDep::None,
+            // RFC §5.C: Link's generated code depends on the `Link`
+            // trait surface owned by SCE's `sce-link-runtime` crate.
+            // No SCE-side runtime dependency tier captures "downstream
+            // crate" — the trait surface is contract, the impl lives
+            // downstream. Tier `None` is honest at the SCE level.
+            Self::Link => RuntimeDep::None,
         }
     }
 
@@ -205,6 +224,7 @@ impl ForgeKind {
                 | Self::Timer
                 | Self::Observer
                 | Self::Algorithm
+                | Self::Link
         )
     }
 }
@@ -224,6 +244,7 @@ impl std::fmt::Display for ForgeKind {
             Self::Timer => write!(f, "timer"),
             Self::Observer => write!(f, "observer"),
             Self::Algorithm => write!(f, "algorithm"),
+            Self::Link => write!(f, "link"),
         }
     }
 }
@@ -2116,6 +2137,143 @@ pub struct TestVector {
     pub source_line: usize,
 }
 
+// ── Link kind (RFC §5.C) ───────────────────────────────────────
+
+/// `<sce:link-class>` enumeration — RFC §5.C "Link-class enumeration"
+/// table. Five strings shipped today; OS-specific classes (e.g.
+/// `unix_socket`, `qnx_msg`) land additively in later phases.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LinkClass {
+    /// Datagram, byte-stream framer (RFC §5.C row 1; A on MCU lwIP).
+    Udp,
+    /// Stream, byte-stream framer (RFC §5.C row 2; B on MCU).
+    Tcp,
+    /// UART (RFC §5.C row 3; C on MCU).
+    Serial,
+    /// TCP + WebSocket framing (RFC §5.C row 4; C on MCU).
+    Websocket,
+    /// L2 frames, target-plugin only (RFC §5.C row 5; C MCU plugin).
+    RawEth,
+}
+
+impl LinkClass {
+    /// Every legal `<sce:link-class>` value, in declaration order.
+    pub const ALL_NAMES: &'static [&'static str] = &[
+        "udp",
+        "tcp",
+        "serial",
+        "websocket",
+        "raw_eth",
+    ];
+
+    /// Parse from `<sce:link-class>` body text. Returns `None` for
+    /// unknown classes — the parser raises `link/link-class-unknown`.
+    pub fn from_attr(s: &str) -> Option<Self> {
+        match s {
+            "udp" => Some(Self::Udp),
+            "tcp" => Some(Self::Tcp),
+            "serial" => Some(Self::Serial),
+            "websocket" => Some(Self::Websocket),
+            "raw_eth" => Some(Self::RawEth),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for LinkClass {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Udp => write!(f, "udp"),
+            Self::Tcp => write!(f, "tcp"),
+            Self::Serial => write!(f, "serial"),
+            Self::Websocket => write!(f, "websocket"),
+            Self::RawEth => write!(f, "raw_eth"),
+        }
+    }
+}
+
+/// `<sce:backpressure>` policy — RFC §5.C body. Three policies; B6-α
+/// surfaces all three at parse time but the rust template lowers them
+/// uniformly (the policy threading into the runtime crate is an
+/// implementation concern of `sce-link-runtime`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BackpressurePolicy {
+    /// Drop incoming bytes when the consumer cannot keep up.
+    Drop,
+    /// Block the driver until the consumer drains.
+    Block,
+    /// Inject an `sce.link.<name>.overflow` event on the SCXML side.
+    SignalEvent,
+}
+
+impl BackpressurePolicy {
+    pub fn from_attr(s: &str) -> Option<Self> {
+        match s {
+            "drop" => Some(Self::Drop),
+            "block" => Some(Self::Block),
+            "signal-event" => Some(Self::SignalEvent),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for BackpressurePolicy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Drop => write!(f, "drop"),
+            Self::Block => write!(f, "block"),
+            Self::SignalEvent => write!(f, "signal-event"),
+        }
+    }
+}
+
+/// `<sce:inbound>` — RX byte-stream → SCXML event injection contract.
+#[derive(Debug, Clone, Serialize)]
+pub struct LinkInboundEvent {
+    /// SCXML event name to inject when the framer decode + `when`
+    /// predicate succeed.
+    pub event: String,
+    /// Optional decode-side predicate (`when="decoded.msg_id == 0x02"`).
+    /// `None` means inject every successful decode.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub when: Option<String>,
+}
+
+/// `<sce:outbound>` — SCXML event → framer encode + driver send contract.
+#[derive(Debug, Clone, Serialize)]
+pub struct LinkOutboundEvent {
+    /// SCXML event name that triggers TX.
+    pub event: String,
+    /// Encoder codec reference — same `<sce:framer ref>` namespace.
+    pub encode: String,
+}
+
+/// Link document — RFC §5.C byte-stream link endpoint.
+#[derive(Debug, Clone, Serialize)]
+pub struct LinkModel {
+    pub name: String,
+    /// `<sce:link-class>` body text, parsed into the closed enum.
+    pub class: LinkClass,
+    /// `<sce:framer ref="...">` — the §5.B codec that decodes/encodes
+    /// wire bytes. B6-α makes this required; absence raises
+    /// `link/framer-missing` (parser).
+    pub framer: String,
+    /// `<sce:backpressure>` policy. Required in B6-α; absence is the
+    /// `link/backpressure-undeclared` diagnostic that B6-γ formalizes.
+    /// For B6-α we accept the missing-element case as default `drop`
+    /// (parser-side fallback) — the dedicated diagnostic ships with
+    /// B6-γ's reject fixture.
+    pub backpressure: BackpressurePolicy,
+    /// `<sce:events><sce:inbound .../></sce:events>` rows.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub inbound: Vec<LinkInboundEvent>,
+    /// `<sce:events><sce:outbound .../></sce:events>` rows.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub outbound: Vec<LinkOutboundEvent>,
+}
+
 // ── Forge document ─────────────────────────────────────────────
 
 /// Top-level forge document — dispatched by `sce:kind` on `<scxml>` root.
@@ -2144,6 +2302,8 @@ pub enum ForgeDocument {
     Observer(ObserverModel),
     #[serde(rename = "algorithm")]
     Algorithm(AlgorithmModel),
+    #[serde(rename = "link")]
+    Link(LinkModel),
 }
 
 impl ForgeDocument {
@@ -2160,6 +2320,7 @@ impl ForgeDocument {
             Self::Timer(m) => &m.name,
             Self::Observer(m) => &m.name,
             Self::Algorithm(m) => &m.name,
+            Self::Link(m) => &m.name,
         }
     }
 
@@ -2176,6 +2337,7 @@ impl ForgeDocument {
             Self::Timer(_) => ForgeKind::Timer,
             Self::Observer(_) => ForgeKind::Observer,
             Self::Algorithm(_) => ForgeKind::Algorithm,
+            Self::Link(_) => ForgeKind::Link,
         }
     }
 
@@ -2201,6 +2363,9 @@ impl ForgeDocument {
             }
             // RFC §5.A: free function over language-native loops/locals.
             Self::Algorithm(_) => RuntimeDep::None,
+            // RFC §5.C: trait surface owned by SCE's `sce-link-runtime`;
+            // per-OS impls live downstream. SCE-side tier `None`.
+            Self::Link(_) => RuntimeDep::None,
         }
     }
 }

@@ -15,6 +15,7 @@ members = [
     "sce-rust-tests",
     "sce-build",
     "sce-forge-runtime/rust",
+    "sce-link-runtime",
 ]
 
 [workspace.package]

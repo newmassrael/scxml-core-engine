@@ -719,6 +719,13 @@ pub fn generate_cpp_with_imports(
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::Cpp)?,
         ForgeDocument::Observer(m) => render_observer(&env, m, imports, crate::generator::Language::Cpp)?,
         ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::Cpp, options)?,
+        // RFC §5.C / §5.J.4: Link is MCU-class — `codegen_matrix::check`
+        // raises `codegen/mcu-class-kind-on-non-mcu-language` before
+        // this match runs on cpp. The arm exists only to keep the
+        // exhaustive match honest; it must remain unreachable.
+        ForgeDocument::Link(_) => unreachable!(
+            "ForgeDocument::Link rejected by codegen_matrix::check on cpp"
+        ),
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -9030,6 +9037,10 @@ pub fn generate_kotlin_with_imports(
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::Kotlin)?,
         ForgeDocument::Observer(m) => render_observer(&env, m, imports, crate::generator::Language::Kotlin)?,
         ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::Kotlin, options)?,
+        // RFC §5.C / §5.J.4: rejected upstream by codegen_matrix::check.
+        ForgeDocument::Link(_) => unreachable!(
+            "ForgeDocument::Link rejected by codegen_matrix::check on kotlin"
+        ),
     };
 
     let filename = format!("{}.kt", filters::to_pascal_case(doc.name().to_string()));
@@ -9113,6 +9124,10 @@ pub fn generate_rust_with_imports(
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::Rust)?,
         ForgeDocument::Observer(m) => render_observer(&env, m, imports, crate::generator::Language::Rust)?,
         ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::Rust, options)?,
+        // RFC §5.C: byte-stream link emit. The template wires the
+        // §5.B framer into RX/TX paths and routes the result through
+        // the `Link` trait owned by `sce-link-runtime`.
+        ForgeDocument::Link(m) => render_link_rust(&env, m, imports)?,
     };
 
     let filename = format!("{}.rs", filters::to_snake_case(doc.name().to_string()));
@@ -9142,6 +9157,49 @@ pub fn generate_rust_with_imports(
         }
     }
     Ok(GeneratedOutput { files })
+}
+
+/// Render a `<sce:kind="link">` document for the Rust backend
+/// (watching-zenoh RFC §5.C, B6-α). The template wires the §5.B
+/// `<sce:framer ref>` codec into RX (decode) and TX (encode) paths
+/// and exposes a constructor that the consumer threads through to a
+/// downstream `sce_link_runtime_<os>` `impl Link`. SCE owns the trait
+/// surface in the workspace member `sce-link-runtime`; per-OS impls
+/// (lwip/tokio/qnx) live downstream in watching-zenoh.
+fn render_link_rust(
+    env: &minijinja::Environment<'_>,
+    m: &LinkModel,
+    _imports: &[ImportContext],
+) -> Result<String, ForgeError> {
+    let tmpl = env
+        .get_template("link.rs.jinja2")
+        .map_err(|e| ForgeError::Generate(GenerateError::TemplateLoad(format!(
+            "link.rs.jinja2 (rust): {e}"
+        ))))?;
+    let ctx = minijinja::context! {
+        name => &m.name,
+        pascal_name => filters::to_pascal_case(m.name.clone()),
+        snake_name => filters::to_snake_case(m.name.clone()),
+        class => m.class.to_string(),
+        framer => &m.framer,
+        framer_pascal => filters::to_pascal_case(m.framer.clone()),
+        framer_snake => filters::to_snake_case(m.framer.clone()),
+        backpressure => m.backpressure.to_string(),
+        inbound => m.inbound.iter().map(|e| minijinja::context! {
+            event => &e.event,
+            when => e.when.clone().unwrap_or_default(),
+            has_when => e.when.is_some(),
+        }).collect::<Vec<_>>(),
+        outbound => m.outbound.iter().map(|e| minijinja::context! {
+            event => &e.event,
+            encode => &e.encode,
+        }).collect::<Vec<_>>(),
+    };
+    tmpl.render(ctx).map_err(|e| {
+        ForgeError::Generate(GenerateError::TemplateRender(format!(
+            "link.rs.jinja2 (rust): {e}"
+        )))
+    })
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -9213,6 +9271,10 @@ pub fn generate_go_with_imports(
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::Go)?,
         ForgeDocument::Observer(m) => render_observer(&env, m, imports, crate::generator::Language::Go)?,
         ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::Go, options)?,
+        // RFC §5.C / §5.J.4: rejected upstream by codegen_matrix::check.
+        ForgeDocument::Link(_) => unreachable!(
+            "ForgeDocument::Link rejected by codegen_matrix::check on go"
+        ),
     };
 
     let filename = format!("{}.go", filters::to_snake_case(doc.name().to_string()));
@@ -9297,6 +9359,10 @@ pub fn generate_python_with_imports(
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::Python)?,
         ForgeDocument::Observer(m) => render_observer(&env, m, imports, crate::generator::Language::Python)?,
         ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::Python, options)?,
+        // RFC §5.C / §5.J.4: rejected upstream by codegen_matrix::check.
+        ForgeDocument::Link(_) => unreachable!(
+            "ForgeDocument::Link rejected by codegen_matrix::check on python"
+        ),
     };
 
     let filename = format!("{}.py", filters::to_snake_case(doc.name().to_string()));
@@ -9381,6 +9447,14 @@ pub fn generate_c11_with_imports(
         ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::C11)?,
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::C11)?,
         ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::C11, options)?,
+        // RFC §5.C: B6-α ships rust template only; B6-β closes c11
+        // parity. Until then `template_ships(Link, C11) == false`
+        // routes through `EmitOutcome::TemplateMissing` →
+        // `CodegenGenericKindBackendEmitMissing`, so this match arm
+        // remains unreachable on c11.
+        ForgeDocument::Link(_) => unreachable!(
+            "ForgeDocument::Link on c11 rejected by codegen_matrix::check (template not yet shipped — B6-β)"
+        ),
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));

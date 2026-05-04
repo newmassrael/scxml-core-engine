@@ -168,6 +168,7 @@ fn parse_forge_from_node(
         ForgeKind::Timer => parse_timer(root, label).map(ForgeDocument::Timer),
         ForgeKind::Observer => parse_observer(root, label).map(ForgeDocument::Observer),
         ForgeKind::Algorithm => parse_algorithm(root, label).map(ForgeDocument::Algorithm),
+        ForgeKind::Link => parse_link(root, label).map(ForgeDocument::Link),
         ForgeKind::Statechart => Err(located(
             root,
             label.diagnostic_label,
@@ -5789,6 +5790,126 @@ fn reject_param_assignment(
         }
     }
     Ok(())
+}
+
+// ── Link kind parser (RFC §5.C, B6-α) ─────────────────────────
+//
+// Byte-stream link endpoint surface. B6-α scope is the minimum
+// vertical slice that exercises the codegen path on `(rust, *)`:
+// `<sce:link-class>` enum + `<sce:framer ref="..."/>` (required) +
+// `<sce:backpressure>` (default `drop`) + `<sce:events>` rows. The
+// `<sce:rx-pool>` / `<sce:tx-pool>` elements defer to B7 with the
+// buffer-pool kind (RFC §5.E) — authors who write them today get the
+// generic schema-unknown-element diagnostic, not a transitional code
+// (§5.C / `claudedocs/rfc-b6-link-entry.md` §7 Q5 verbatim policy).
+fn parse_link(
+    root: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+) -> Result<LinkModel, Located<ForgeError>> {
+    let doc_name = label.identifier;
+
+    // `<sce:link-class>` body text — the closed enum at
+    // `LinkClass::ALL_NAMES`. Missing element raises
+    // `validation/missing-element`; unknown body text raises the
+    // generic `validation/invalid-attribute` (B6-γ adds the dedicated
+    // `link/link-class-unknown` diagnostic when the negative coverage
+    // fixtures land).
+    let class_node = find_sce_child(root, "link-class").ok_or_else(|| {
+        located(
+            root,
+            label.diagnostic_label,
+            ValidationError::MissingElement {
+                kind: ForgeKind::Link,
+                element: "sce:link-class".into(),
+            },
+        )
+    })?;
+    let class_text = class_node.text().unwrap_or("").trim().to_string();
+    let class = LinkClass::from_attr(&class_text).ok_or_else(|| {
+        located(
+            &class_node,
+            label.diagnostic_label,
+            ValidationError::InvalidAttribute {
+                element: "<sce:link-class>".into(),
+                attr: "body text".into(),
+                value: class_text.clone(),
+                expected: LinkClass::ALL_NAMES.join(", "),
+            },
+        )
+    })?;
+
+    // `<sce:framer ref="...">` is required on every link kind in
+    // B6-α (RFC §5.C). Absence raises the dedicated `link/framer-missing`
+    // diagnostic; presence without a `ref=` attribute raises the
+    // generic `validation/missing-attribute`.
+    let framer_node = find_sce_child(root, "framer").ok_or_else(|| {
+        located(
+            root,
+            label.diagnostic_label,
+            ValidationError::LinkFramerMissing {
+                name: doc_name.to_string(),
+            },
+        )
+    })?;
+    let framer = require_attr(&framer_node, "ref", "<sce:framer>", doc_name)?;
+
+    // `<sce:backpressure>` body text — defaults to `drop` when absent
+    // (a parser-level policy; the dedicated `link/backpressure-undeclared`
+    // diagnostic ships with B6-γ once a fixture exercises the
+    // missing-element negative path).
+    let backpressure = match find_sce_child(root, "backpressure") {
+        Some(node) => {
+            let text = node.text().unwrap_or("").trim().to_string();
+            BackpressurePolicy::from_attr(&text).ok_or_else(|| {
+                located(
+                    &node,
+                    label.diagnostic_label,
+                    ValidationError::InvalidAttribute {
+                        element: "<sce:backpressure>".into(),
+                        attr: "body text".into(),
+                        value: text,
+                        expected: "drop, block, signal-event".into(),
+                    },
+                )
+            })?
+        }
+        None => BackpressurePolicy::Drop,
+    };
+
+    // `<sce:events>` carries `<sce:inbound>` / `<sce:outbound>` rows.
+    // Both are optional; an empty events block is legal (B6-δ closes
+    // the listener-link sibling pairing for inbound-only rows).
+    let mut inbound: Vec<LinkInboundEvent> = Vec::new();
+    let mut outbound: Vec<LinkOutboundEvent> = Vec::new();
+    if let Some(events_node) = find_sce_child(root, "events") {
+        for child in events_node.children().filter(|c| c.is_element()) {
+            if child.tag_name().namespace() != Some(SCE_NAMESPACE) {
+                continue;
+            }
+            match child.tag_name().name() {
+                "inbound" => {
+                    let event = require_attr(&child, "event", "<sce:inbound>", doc_name)?;
+                    let when = child.attribute("when").map(|s| s.to_string());
+                    inbound.push(LinkInboundEvent { event, when });
+                }
+                "outbound" => {
+                    let event = require_attr(&child, "event", "<sce:outbound>", doc_name)?;
+                    let encode = require_attr(&child, "encode", "<sce:outbound>", doc_name)?;
+                    outbound.push(LinkOutboundEvent { event, encode });
+                }
+                _ => {} // forward-compatible: future event-rows ignored
+            }
+        }
+    }
+
+    Ok(LinkModel {
+        name: doc_name.to_string(),
+        class,
+        framer,
+        backpressure,
+        inbound,
+        outbound,
+    })
 }
 
 fn require_attr(

@@ -897,6 +897,14 @@ fn discover_stateful_member_fields(
             }
         }
         ForgeDocument::Timer(_) => {}
+        // RFC §5.C: Link is stateful (owns an `impl Link` driver) but
+        // exposes no SCXML-expression-visible typed fields — the rx /
+        // tx surface is method-only, and B6-α has no consumer that
+        // calls them from authored expressions. Empty Vec keeps the
+        // exhaustive match honest; a later atomic that exposes
+        // method-typed members will add the method discovery to
+        // `discover_stateful_member_methods`, not field discovery.
+        ForgeDocument::Link(_) => {}
         // Stateless kinds handled via stateless_signature path.
         // Algorithm (RFC §5.A) is a stateless free function; no member
         // fields exposed to user expressions.
@@ -943,10 +951,12 @@ fn discover_stateful_member_methods(
         // - Procedure: execute(handler, args) → ProcedureRunResult
         // - Observer:  update(args) → ()
         // - Timer:     fire() → ()
+        // - Link (RFC §5.C): rx() → Option<RxFrame>, tx(TxFrame) → Result<(), LinkError>
         ForgeDocument::Validator(_)
         | ForgeDocument::Procedure(_)
         | ForgeDocument::Observer(_)
-        | ForgeDocument::Timer(_) => Vec::new(),
+        | ForgeDocument::Timer(_)
+        | ForgeDocument::Link(_) => Vec::new(),
         // Stateless kinds: caller filters via `is_stateful` before reaching
         // here. Listed so the match stays exhaustive — adding a new
         // ForgeDocument variant forces a decision at this site.
@@ -1064,15 +1074,18 @@ fn discover_primary_function(
                 }
             })
         }
-        // Stateful kinds (Codec, Validator, Procedure, Filter, Observer, Timer)
+        // Stateful kinds (Codec, Validator, Procedure, Filter, Observer, Timer, Link)
         // use member access, not free function calls. They are handled by the
         // member rename mechanism in procedure and validator render functions.
+        // Link (RFC §5.C) is stateful (owns its `impl Link` driver) — it has
+        // no callsite-visible primary function name.
         forge::model::ForgeDocument::Codec(_)
         | forge::model::ForgeDocument::Validator(_)
         | forge::model::ForgeDocument::Procedure(_)
         | forge::model::ForgeDocument::Filter(_)
         | forge::model::ForgeDocument::Observer(_)
-        | forge::model::ForgeDocument::Timer(_) => None,
+        | forge::model::ForgeDocument::Timer(_)
+        | forge::model::ForgeDocument::Link(_) => None,
         // RFC §5.A Algorithm: free function whose name is the
         // SCXML-author-declared `name=` attribute, lowered to each
         // language's idiomatic identifier per RFC §5.J.5. The
@@ -2729,6 +2742,193 @@ mod tests {
         assert!(
             body.contains("self.seed = _scope_tmp"),
             "successful path must move into the slot; full source:\n{body}",
+        );
+    }
+
+    /// Watching-zenoh RFC §5.C B6-α: link kind happy path. A
+    /// well-formed `<sce:kind="link">` document with udp class +
+    /// framer ref + minimal events → Rust generator emits a
+    /// `<Pascal><L: Link>` wrapper struct that routes RX/TX through
+    /// the `sce-link-runtime::Link` trait. Asserts presence of the
+    /// load-bearing tokens (struct decl + impl block + trait import +
+    /// LINK_CLASS / FRAMER_REF / BACKPRESSURE constants) so codegen
+    /// drift fails the build.
+    #[test]
+    fn link_rust_happy_path_emits_wrapper_struct() {
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="link" name="udp_scout" version="1.0">
+  <sce:link-class>udp</sce:link-class>
+  <sce:framer ref="scout_frame_codec"/>
+  <sce:backpressure>drop</sce:backpressure>
+  <sce:events>
+    <sce:inbound event="scout.hello.received" when="decoded.msg_id == 0x02"/>
+    <sce:outbound event="scout.query.send" encode="scout_frame_codec"/>
+  </sce:events>
+</scxml>"##;
+        let label = DocumentLabel {
+            identifier: "udp_scout",
+            diagnostic_label: "udp_scout.scxml",
+        };
+        let out = compile_forge_from_string(scxml, label, generator::Language::Rust)
+            .expect("forge rust codegen must succeed for a well-formed link");
+        assert_eq!(out.files.len(), 1, "link emits a single .rs file");
+        let (filename, body) = &out.files[0];
+        assert_eq!(filename, "udp_scout.rs");
+
+        // `sce_link_runtime` import is the contract anchor — a drift
+        // here means the generated code lost its trait surface.
+        assert!(
+            body.contains("use sce_link_runtime::{Link, LinkError, RxFrame, TxFrame}"),
+            "generated link must import the trait surface; full source:\n{body}",
+        );
+
+        // Pascal-cased wrapper with `<L: Link>` parameterization.
+        assert!(
+            body.contains("pub struct UdpScout<L: Link>"),
+            "wrapper must be parameterized over an `impl Link`; full source:\n{body}",
+        );
+        assert!(
+            body.contains("impl<L: Link> UdpScout<L>"),
+            "wrapper must have an inherent impl block; full source:\n{body}",
+        );
+
+        // Author-declared static metadata round-trips into constants.
+        assert!(
+            body.contains("LINK_CLASS: &'static str = \"udp\""),
+            "link-class must round-trip as a const; full source:\n{body}",
+        );
+        assert!(
+            body.contains("FRAMER_REF: &'static str = \"scout_frame_codec\""),
+            "framer ref must round-trip as a const; full source:\n{body}",
+        );
+        assert!(
+            body.contains("BACKPRESSURE: &'static str = \"drop\""),
+            "backpressure policy must round-trip as a const; full source:\n{body}",
+        );
+
+        // RX / TX entry points threading through the trait.
+        assert!(
+            body.contains("self.driver.rx()"),
+            "rx() must delegate to the driver; full source:\n{body}",
+        );
+        assert!(
+            body.contains("self.driver.tx(TxFrame::new(bytes))"),
+            "tx() must wrap the slice in TxFrame; full source:\n{body}",
+        );
+    }
+
+    /// Watching-zenoh RFC §5.C B6-α: link kind reject — missing
+    /// `<sce:framer ref>` raises the dedicated `link/framer-missing`
+    /// diagnostic at parse time, not at codegen. Pairs with the
+    /// happy-path test above to verify the framer requirement is
+    /// load-bearing (RFC §5.C "Codegen contract" — RX/TX paths thread
+    /// through `framer.decode()` / `framer.encode()`).
+    #[test]
+    fn link_no_framer_rejects_via_link_framer_missing() {
+        use crate::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="link" name="udp_scout" version="1.0">
+  <sce:link-class>udp</sce:link-class>
+  <sce:backpressure>drop</sce:backpressure>
+  <sce:events>
+    <sce:inbound event="scout.hello.received"/>
+  </sce:events>
+</scxml>"##;
+        let label = DocumentLabel {
+            identifier: "udp_scout",
+            diagnostic_label: "udp_scout.scxml",
+        };
+        let err = compile_forge_from_string(scxml, label, generator::Language::Rust)
+            .err()
+            .expect("link without <sce:framer ref> must reject");
+        let diags = err.to_diagnostics();
+        assert_eq!(diags.len(), 1, "single diagnostic for missing framer");
+        let d = &diags[0];
+        assert!(
+            matches!(d.code, DiagnosticCode::LinkFramerMissing),
+            "must be DiagnosticCode::LinkFramerMissing; got {:?}",
+            d.code,
+        );
+        assert!(
+            d.message.contains("<sce:framer ref="),
+            "message must name the missing element; got {}",
+            d.message,
+        );
+    }
+
+    /// Watching-zenoh RFC §5.C / §5.J.4: link is the first
+    /// `KindClass::McuClass` kind. Authoring against cpp/kotlin/go/
+    /// python raises `codegen/mcu-class-kind-on-non-mcu-language` via
+    /// the existing A6 gate at `codegen_matrix::check`. Asserting on
+    /// each non-MCU backend so a future refactor cannot accidentally
+    /// flip a backend into the McuClass match arm.
+    #[test]
+    fn link_on_non_mcu_languages_rejects_via_codegen_matrix() {
+        use crate::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="link" name="udp_scout" version="1.0">
+  <sce:link-class>udp</sce:link-class>
+  <sce:framer ref="scout_frame_codec"/>
+  <sce:backpressure>drop</sce:backpressure>
+</scxml>"##;
+        for lang in [
+            generator::Language::Cpp,
+            generator::Language::Kotlin,
+            generator::Language::Go,
+            generator::Language::Python,
+        ] {
+            let label = DocumentLabel {
+                identifier: "udp_scout",
+                diagnostic_label: "udp_scout.scxml",
+            };
+            let err = compile_forge_from_string(scxml, label, lang)
+                .err()
+                .unwrap_or_else(|| panic!("link must reject on {lang:?}"));
+            let diags = err.to_diagnostics();
+            assert_eq!(diags.len(), 1);
+            assert!(
+                matches!(diags[0].code, DiagnosticCode::CodegenMcuClassKindOnNonMcuLanguage),
+                "{lang:?} link emit must raise mcu-class-kind-on-non-mcu-language; got {:?}",
+                diags[0].code,
+            );
+        }
+    }
+
+    /// Watching-zenoh RFC §5.C: c11 ships a Link template with B6-β.
+    /// Until then, `template_ships(Link, C11) == false` routes the
+    /// matrix walker through `EmitOutcome::TemplateMissing` →
+    /// `codegen/generic-kind-backend-emit-missing`. Pinning here so
+    /// B6-β's flip is a deliberate code change, not a silent default.
+    #[test]
+    fn link_on_c11_rejects_until_b6_beta() {
+        use crate::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="link" name="udp_scout" version="1.0">
+  <sce:link-class>udp</sce:link-class>
+  <sce:framer ref="scout_frame_codec"/>
+  <sce:backpressure>drop</sce:backpressure>
+</scxml>"##;
+        let label = DocumentLabel {
+            identifier: "udp_scout",
+            diagnostic_label: "udp_scout.scxml",
+        };
+        let err = compile_forge_from_string(scxml, label, generator::Language::C11)
+            .err()
+            .expect("link c11 emit deferred to B6-β");
+        let diags = err.to_diagnostics();
+        assert_eq!(diags.len(), 1);
+        assert!(
+            matches!(diags[0].code, DiagnosticCode::CodegenGenericKindBackendEmitMissing),
+            "c11 link emit must raise generic-kind-backend-emit-missing; got {:?}",
+            diags[0].code,
         );
     }
 

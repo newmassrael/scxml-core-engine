@@ -561,6 +561,21 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/parent-flag-mismatch")]
     CodecParentFlagMismatch,
 
+    // ── §5.C link kind (watching-zenoh RFC §5.C, B6-α). MCU-class
+    //    byte-stream link endpoint. The first of six §5.C diagnostic
+    //    codes; the others (`link/backpressure-undeclared`,
+    //    `link/class-unsupported-on-target`, `link/link-class-unknown`,
+    //    `link/link-class-incompatible-with-os`,
+    //    `link/listener-link-not-paired-with-established-sibling`)
+    //    land with B6-γ (negative coverage) and B6-δ (listener
+    //    sibling). `link/pool-slot-smaller-than-framer-max` defers to
+    //    B7 with the buffer-pool kind. Stage = Validation. ──
+    /// `<sce:framer ref="..."/>` is required on `sce:kind="link"`;
+    /// absence is rejected at parse time so the codegen never
+    /// reaches the missing-codec branch. Repair: add the framer ref.
+    #[serde(rename = "link/framer-missing")]
+    LinkFramerMissing,
+
     #[serde(rename = "io/filesystem")]
     IoFilesystem,
 
@@ -882,6 +897,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CodecDmaAlignmentUnsatisfiable,
         // Codec §5.B B5-γ parent-flags dependency (watching-zenoh RFC §5.B)
         CodecParentFlagMismatch,
+        // Link §5.C byte-stream link endpoint (watching-zenoh RFC §5.C, B6-α)
+        LinkFramerMissing,
         // Io
         IoFilesystem,
         // Cli
@@ -1093,6 +1110,9 @@ impl DiagnosticCode {
             | CodecTlvChainDepthUnspecified
             | CodecDmaAlignmentUnsatisfiable
             | CodecParentFlagMismatch => Some("watching-zenoh RFC §5.B"),
+
+            // ── Link §5.C byte-stream link endpoint (B6) ─────────
+            LinkFramerMissing => Some("watching-zenoh RFC §5.C"),
 
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
@@ -1358,6 +1378,7 @@ impl DiagnosticCode {
             CodecTlvChainDepthUnspecified => "codec/tlv-chain-depth-unspecified",
             CodecDmaAlignmentUnsatisfiable => "codec/dma-alignment-unsatisfiable",
             CodecParentFlagMismatch => "codec/parent-flag-mismatch",
+            LinkFramerMissing => "link/framer-missing",
             IoFilesystem => "io/filesystem",
             CliUnknownLanguage => "cli/unknown-language",
             CliUnsupportedLanguage => "cli/unsupported-language",
@@ -2268,6 +2289,22 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![body_codec.clone(), parent_codec.clone()],
         },
+        ValidationError::LinkFramerMissing { name } => DiagnosticPayload {
+            code: DiagnosticCode::LinkFramerMissing,
+            stage: Stage::Validation,
+            // Deterministic structural repair (add the framer child).
+            // The candidate codec name is open — every fixture's
+            // framer ref is fixture-specific — so the fix surface is
+            // an `AddElement` directive carrying the element shape,
+            // not a closed candidate list. v1 emits `fix: None` and
+            // relies on the message's prose to guide the author.
+            // (This matches the pattern for other Validation
+            // structural-repair codes whose targets are open.)
+            expected: None,
+            actual: Some(name.clone()),
+            fix: None,
+            key_fragments: vec![name.clone()],
+        },
     }
 }
 
@@ -3024,7 +3061,7 @@ mod tests {
             (
                 "forge/unsupported-kind",
                 ValidationError::UnsupportedKind("bogus".into()).into(),
-                r#"{"v":1,"id":"fnv1a:812898e1a23fda4d","code":"validation/unsupported-kind","stage":"validation","spec":"SCE Forge §3.2","message":"unsupported sce:kind value: 'bogus'","actual":"bogus","fix":{"kind":"replace_one_of","candidates":["statechart","transform","lookup","condition","codec","procedure","validator","filter","interpolation","timer","observer","algorithm"]}}"#,
+                r#"{"v":1,"id":"fnv1a:812898e1a23fda4d","code":"validation/unsupported-kind","stage":"validation","spec":"SCE Forge §3.2","message":"unsupported sce:kind value: 'bogus'","actual":"bogus","fix":{"kind":"replace_one_of","candidates":["statechart","transform","lookup","condition","codec","procedure","validator","filter","interpolation","timer","observer","algorithm","link"]}}"#,
             ),
             (
                 "forge/duplicate-id",
@@ -3610,6 +3647,15 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:a724cb80443a21ac","code":"codec/parent-flag-mismatch","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'codec_init_syn_body' (body): requires-parent-flags layout mismatch against parent codec 'codec_init_envelope' — body declares <sce:flag name=\"S\" bit=\"6\"/> but parent codec's <sce:flags id=\"header\"> has 'S' at bit=5 (Zenoh transport header layout: S-flag is bit 6 — fix one side to align)","actual":"codec_init_syn_body"}"#,
+            ),
+            // ── §5.C B6-α link kind (watching-zenoh RFC §5.C) ─
+            (
+                "forge/link-framer-missing",
+                ValidationError::LinkFramerMissing {
+                    name: "udp_scout".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:293d71926c63758a","code":"link/framer-missing","stage":"validation","spec":"watching-zenoh RFC §5.C","message":"link 'udp_scout': missing required <sce:framer ref=\"...\"/> child — `sce:kind=\"link\"` requires a framer codec reference so RX bytes can be decoded and TX events can be encoded; add a <sce:framer ref=\"<codec_name>\"/> child","actual":"udp_scout"}"#,
             ),
         ]
     }
@@ -4862,6 +4908,7 @@ mod tests {
             | CodecTlvChainDepthUnspecified
             | CodecDmaAlignmentUnsatisfiable
             | CodecParentFlagMismatch
+            | LinkFramerMissing
             | IoFilesystem
             | CliUnsupportedLanguage
             | CliReadInput
@@ -5206,6 +5253,7 @@ mod tests {
                 | CodecTlvChainDepthUnspecified
                 | CodecDmaAlignmentUnsatisfiable
                 | CodecParentFlagMismatch
+                | LinkFramerMissing
                 | IoFilesystem
                 | CliUnknownLanguage | CliUnsupportedLanguage | CliReadInput
                 | CliWriteOutput | CliCreateOutputDir | CliScxmlGenerate
@@ -5289,14 +5337,16 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            171,
+            172,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 171 distinct variants to match the DiagnosticCode \
+             expected 172 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
              169 → 170, then B5-γ parent-flags dependency: \
-             CodecParentFlagMismatch; 170 → 171).",
+             CodecParentFlagMismatch; 170 → 171; then watching-zenoh \
+             RFC §5.C B6-α first link kind diagnostic LinkFramerMissing; \
+             171 → 172).",
         );
     }
 

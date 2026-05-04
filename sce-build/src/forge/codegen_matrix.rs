@@ -74,6 +74,13 @@ pub const fn kind_class(kind: ForgeKind) -> KindClass {
         | ForgeKind::Timer
         | ForgeKind::Observer
         | ForgeKind::Algorithm => KindClass::Generic,
+        // RFC §5.C / §5.J.4: Link is the first MCU-class kind.
+        // Authoring it on cpp/kotlin/go/python raises
+        // `codegen/mcu-class-kind-on-non-mcu-language` (existing A6
+        // diagnostic). The (rust, *) and (c11, bare_metal) substrate
+        // is in `sce-link-runtime` (rust trait + per-OS downstream
+        // impls) and the c11 lower (deferred to B6-β).
+        ForgeKind::Link => KindClass::McuClass,
     }
 }
 
@@ -113,6 +120,17 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         ForgeKind::Algorithm => match lang {
             Language::Rust | Language::Cpp | Language::C11
             | Language::Go | Language::Kotlin | Language::Python => true,
+        },
+        // RFC §5.C Link: B6-α ships rust template only. B6-β closes
+        // c11 parity. cpp/kotlin/go/python are MCU-class-rejected by
+        // `kind_class` ahead of this lookup, so their `template_ships`
+        // value never enters the diagnostic flow — `false` here
+        // documents "no shipped template" without falsely claiming
+        // emission.
+        ForgeKind::Link => match lang {
+            Language::Rust => true,
+            Language::C11 => false,
+            Language::Cpp | Language::Kotlin | Language::Go | Language::Python => false,
         },
     }
 }

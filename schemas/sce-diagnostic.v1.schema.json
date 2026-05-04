@@ -100,6 +100,7 @@
         "codec/tlv-chain-depth-unspecified",
         "codec/dma-alignment-unsatisfiable",
         "codec/parent-flag-mismatch",
+        "link/framer-missing",
         "io/filesystem",
         "cli/unknown-language",
         "cli/unsupported-language",

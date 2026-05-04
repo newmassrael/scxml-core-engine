@@ -550,6 +550,21 @@ pub enum ValidationError {
         parent_codec: String,
         reason: String,
     },
+
+    /// RFC §5.C B6-α byte-stream link endpoint: `<sce:framer ref="..."/>`
+    /// is required on `sce:kind="link"` declarations. Without a framer
+    /// reference, the codegen cannot wire the §5.B codec into the RX/TX
+    /// path, so the parser rejects the document at authoring time. The
+    /// repair is structural — add a `<sce:framer ref="<codec_name>"/>`
+    /// child whose `ref` matches a `sce:kind="codec"` document imported
+    /// or declared inline.
+    #[error(
+        "link '{name}': missing required <sce:framer ref=\"...\"/> child — `sce:kind=\"link\"` requires a framer codec reference so RX bytes can be decoded and TX events can be encoded; add a <sce:framer ref=\"<codec_name>\"/> child"
+    )]
+    LinkFramerMissing {
+        /// Link document name (root `name=` attribute).
+        name: String,
+    },
 }
 
 // ── Stage 4: Expression transpilation ──────────────────────────

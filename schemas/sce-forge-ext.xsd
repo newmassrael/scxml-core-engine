@@ -47,6 +47,8 @@
       <xs:enumeration value="observer"/>
       <!-- watching-zenoh RFC §5.A (Phase A3) -->
       <xs:enumeration value="algorithm"/>
+      <!-- watching-zenoh RFC §5.C (Phase B6, MCU-class) -->
+      <xs:enumeration value="link"/>
     </xs:restriction>
   </xs:simpleType>
 
@@ -1003,6 +1005,84 @@
     <xs:complexType>
       <xs:attribute name="target" type="xs:NCName" use="required"/>
       <xs:attribute name="args" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!--
+    watching-zenoh RFC §5.C (Phase B6, MCU-class): byte-stream link
+    endpoint declared via `<scxml sce:kind="link">`. B6-α surface is
+    the minimum vertical slice that exercises the rust codegen path:
+    `<sce:link-class>` enum body + `<sce:framer ref="..."/>` (required) +
+    `<sce:backpressure>` + `<sce:events>` rows. `<sce:rx-pool>` /
+    `<sce:tx-pool>` defer to B7's buffer-pool kind.
+  -->
+
+  <!-- RFC §5.C link-class enumeration. Five strings shipped today;
+       OS-specific classes (e.g. `unix_socket`, `qnx_msg`) land
+       additively in later phases. -->
+  <xs:simpleType name="linkClassType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="udp"/>
+      <xs:enumeration value="tcp"/>
+      <xs:enumeration value="serial"/>
+      <xs:enumeration value="websocket"/>
+      <xs:enumeration value="raw_eth"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- RFC §5.C backpressure policy. -->
+  <xs:simpleType name="backpressureType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="drop"/>
+      <xs:enumeration value="block"/>
+      <xs:enumeration value="signal-event"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:element name="link-class">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="sce:linkClassType"/>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="framer">
+    <xs:complexType>
+      <xs:attribute name="ref" type="xs:NCName" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="backpressure">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="sce:backpressureType"/>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="inbound">
+    <xs:complexType>
+      <xs:attribute name="event" type="xs:string" use="required"/>
+      <xs:attribute name="when" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="outbound">
+    <xs:complexType>
+      <xs:attribute name="event" type="xs:string" use="required"/>
+      <xs:attribute name="encode" type="xs:NCName" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="events">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+          <xs:element ref="sce:inbound"/>
+          <xs:element ref="sce:outbound"/>
+        </xs:choice>
+      </xs:sequence>
     </xs:complexType>
   </xs:element>
 
