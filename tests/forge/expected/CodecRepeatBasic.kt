@@ -48,9 +48,9 @@ data class CodecRepeatBasic(
                 if (!cursor.advance(1)) return null
                 _v
             }
-            val frags: MutableList<CodecRepeatElem> = mutableListOf<CodecRepeatElem>().also {
+            val frags: MutableList<CodecRepeatElem> = mutableListOf<CodecRepeatElem>().apply {
                 repeat(num_frags.toInt()) {
-                    it.add(CodecRepeatElem.decode(cursor) ?: return null)
+                    add(CodecRepeatElem.decode(cursor) ?: return null)
                 }
             }
             return CodecRepeatBasic(

@@ -78,7 +78,7 @@ data class {{ struct_name }}(
     }
 
 {% else %}
-    fun {{ fl.name_acc }}(): Boolean = (this.{{ field.id }}.{{ field.kt_int_view }}() and {{ fl.mask_literal }}) != 0
+    fun {{ fl.name_acc }}(): Boolean = (this.{{ field.id }}.{{ field.kt_int_view }}() and {{ fl.mask_literal }}) != 0{{ field.kt_zero_suffix }}
 
     fun {{ fl.name_set }}(v: Boolean) {
         this.{{ field.id }} = if (v) {

@@ -119,9 +119,9 @@ data class CodecZenohHello(
             }
             val locators: MutableList<CodecZenohLocator>? = if ((parentFlags.toInt() and 0x20) != 0) {
                 val _n = num_locators!!
-                mutableListOf<CodecZenohLocator>().also {
+                mutableListOf<CodecZenohLocator>().apply {
                     repeat(_n.toInt()) {
-                        it.add(CodecZenohLocator.decode(cursor) ?: return null)
+                        add(CodecZenohLocator.decode(cursor) ?: return null)
                     }
                 }
             } else null

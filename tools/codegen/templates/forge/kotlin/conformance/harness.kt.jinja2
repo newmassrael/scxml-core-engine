@@ -35,9 +35,14 @@ import com.sce.generated.{{ f.name }}.{{ co.function | to_camel_case }}
 {% endfor %}
 {% endif %}
 {% endif %}
-{% if f.kind == "condition" or f.kind == "lookup" or f.kind == "algorithm" %}
+{% if f.kind == "condition" or f.kind == "algorithm" %}
 import com.sce.generated.{{ f.name }}.{{ f.function | to_camel_case }}
 {% endif %}
+{# Lookup kinds skip the unqualified import: two fixtures can share the
+   same `<data id>` (e.g. both `lookup_alarm_code` and
+   `lookup_severity_default` declare an `out` data named `severity`),
+   which would emit colliding `lookupSeverity` symbols at top-level.
+   The kind body emits the call as a FQN instead. #}
 {% endfor %}
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject

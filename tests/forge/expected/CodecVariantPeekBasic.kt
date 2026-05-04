@@ -55,7 +55,7 @@ data class CodecVariantPeekBasic(
             // next byte for variant tag without advancing — arm body
             // decoder reads it as own header.
             val _peekRaw = cursor.peekSlice(1) ?: return null
-        val _peek: UByte = _peekRaw[0]
+        val _peek: UByte = _peekRaw[0].toUByte()
             // Dispatch on the tag field; each arm decodes its body codec
             // from the cursor. The default arm (when declared) carries
             // the runtime tag value so encode can round-trip it back

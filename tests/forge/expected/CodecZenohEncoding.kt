@@ -21,7 +21,7 @@ data class CodecZenohEncoding(
     // fits (UByte / UShort / UInt / ULong). UByte/UShort widen through
     // `.toInt()` and UInt/ULong through `.toLong()` for the bitwise
     // ops; the result narrows back via the carrier's `toU*` ctor.
-    fun hasSchema(): Boolean = (this.packed_id.toLong() and 0x00000001) != 0
+    fun hasSchema(): Boolean = (this.packed_id.toLong() and 0x00000001) != 0L
 
     fun setHasSchema(v: Boolean) {
         this.packed_id = if (v) {
@@ -77,13 +77,13 @@ data class CodecZenohEncoding(
             // helper. Branch fires before has_vle_fields so a codec
             // mixing VLE + present-if uses the unified streaming path.
             val packed_id = cursor.readVleU32() ?: return null
-            val schema_len: ULong? = if ((packed_id.toLong() and 0x00000001L) != 0) {
+            val schema_len: ULong? = if ((packed_id.toLong() and 0x00000001L) != 0L) {
                 val _v = cursor.readVleU64() ?: return null
                 _v
             } else {
                 null
             }
-            val schema = if ((packed_id.toLong() and 0x00000001L) != 0) {
+            val schema = if ((packed_id.toLong() and 0x00000001L) != 0L) {
                 val _n = schema_len!!.toInt()
                 val raw = cursor.peekSlice(_n) ?: return null
                 val _v = try {

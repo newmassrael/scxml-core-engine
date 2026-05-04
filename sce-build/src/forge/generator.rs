@@ -1677,8 +1677,14 @@ fn render_codec(
                     SceType::Uint64 => ("toLong", "toULong"),
                     _ => ("toInt", "toUByte"),
                 };
+                // The bool-flag accessor compares `(carrier_view and mask) != 0`.
+                // Kotlin treats `0` as `Int`; comparing `Long != Int` is rejected
+                // even though the LHS auto-widened the mask literal. Emit `0L`
+                // when the carrier widens through `.toLong()`.
+                let zero_suffix = if view == "toLong" { "L" } else { "" };
                 obj.insert("kt_int_view".into(), view.into());
                 obj.insert("kt_carrier_back".into(), back.into());
+                obj.insert("kt_zero_suffix".into(), zero_suffix.into());
             }
             if matches!(lang, crate::generator::Language::Python) {
                 // Repeat / TLV chain fields default to `field(default_
@@ -2652,8 +2658,11 @@ fn render_codec(
                         .to_string()
                 }
                 crate::generator::Language::Kotlin => {
+                    // `peekSlice` returns `ByteArray`; element access yields
+                    // `Byte`. Variant-tag arithmetic uses `UByte` so the
+                    // shift/mask result stays in the unsigned domain.
                     "val _peekRaw = cursor.peekSlice(1) ?: return null\n        \
-                     val _peek: UByte = _peekRaw[0]"
+                     val _peek: UByte = _peekRaw[0].toUByte()"
                         .to_string()
                 }
                 crate::generator::Language::Go => {
@@ -3243,18 +3252,20 @@ fn repeat_streaming_decode_stmt(
         //
         // Length-field counts: `repeat(N) { ... }` is the Kotlin
         // idiomatic count loop; the carrier widens through `.toInt()`
-        // to satisfy the `Int`-typed loop bound.
+        // to satisfy the `Int`-typed loop bound. `apply` uses the
+        // outer list as `this`, so the inner `repeat` lambda's `it: Int`
+        // can't shadow the receiver — `add(...)` binds to MutableList.
         (Language::Kotlin, CountRef::LengthField(len_field)) => format!(
-            "val {id}: MutableList<{body_type}> = mutableListOf<{body_type}>().also {{\n                \
+            "val {id}: MutableList<{body_type}> = mutableListOf<{body_type}>().apply {{\n                \
                  repeat({len_field}.toInt()) {{\n                    \
-                     it.add({body_type}.decode(cursor) ?: return null)\n                \
+                     add({body_type}.decode(cursor) ?: return null)\n                \
                  }}\n            \
              }}"
         ),
         (Language::Kotlin, CountRef::UntilEof) => format!(
-            "val {id}: MutableList<{body_type}> = mutableListOf<{body_type}>().also {{\n                \
+            "val {id}: MutableList<{body_type}> = mutableListOf<{body_type}>().apply {{\n                \
                  while (cursor.remaining() > 0) {{\n                    \
-                     it.add({body_type}.decode(cursor) ?: return null)\n                \
+                     add({body_type}.decode(cursor) ?: return null)\n                \
                  }}\n            \
              }}"
         ),
@@ -4157,21 +4168,25 @@ fn repeat_streaming_decode_stmt_gated(
         // count field is `T?` (gated), `!!` is sound by validator.
         // 12-space indent context (companion.decode body); inner lines
         // render at 16 spaces, closing brace at 12.
+        // `apply` (not `also`) keeps the list as `this` across the
+        // inner `repeat`/`while` block — `it` would otherwise rebind to
+        // the iteration index inside `repeat(N) { ... }` and shadow the
+        // outer list reference.
         (Language::Kotlin, CountRef::LengthField(len_field)) => format!(
             "val {id}: MutableList<{body_type}>? = if ({test}) {{\n                \
                  val _n = {len_field}!!\n                \
-                 mutableListOf<{body_type}>().also {{\n                    \
+                 mutableListOf<{body_type}>().apply {{\n                    \
                      repeat(_n.toInt()) {{\n                        \
-                         it.add({body_type}.decode(cursor) ?: return null)\n                    \
+                         add({body_type}.decode(cursor) ?: return null)\n                    \
                      }}\n                \
                  }}\n            \
              }} else null"
         ),
         (Language::Kotlin, CountRef::UntilEof) => format!(
             "val {id}: MutableList<{body_type}>? = if ({test}) {{\n                \
-                 mutableListOf<{body_type}>().also {{\n                    \
+                 mutableListOf<{body_type}>().apply {{\n                    \
                      while (cursor.remaining() > 0) {{\n                        \
-                         it.add({body_type}.decode(cursor) ?: return null)\n                    \
+                         add({body_type}.decode(cursor) ?: return null)\n                    \
                      }}\n                \
                  }}\n            \
              }} else null"
@@ -8051,8 +8066,11 @@ fn present_if_test_literal_clause(
             } else {
                 id.to_string()
             };
+            // The trailing `0` literal needs the same `L` suffix as the
+            // mask when the view widens to `Long`; comparing `Long != Int`
+            // is rejected even when the mask side auto-widened.
             format!(
-                "({kt_id}{view} and 0x{mask:0width$X}{suffix}) {op} 0",
+                "({kt_id}{view} and 0x{mask:0width$X}{suffix}) {op} 0{suffix}",
                 width = hex_digits
             )
         }

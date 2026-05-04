@@ -656,8 +656,13 @@ pub fn kt_unmarshal_expr(raw: &str, ty: &str) -> String {
         "i32" => format!("{raw}.jsonPrimitive.int"),
         "u8" => format!("{raw}.jsonPrimitive.int.toUByte()"),
         "u16" => format!("{raw}.jsonPrimitive.int.toUShort()"),
-        "u32" => format!("{raw}.jsonPrimitive.int.toUInt()"),
-        "u64" => format!("{raw}.jsonPrimitive.long.toULong()"),
+        // `jsonPrimitive.int` rejects values > Int.MAX (~2.1B) so it
+        // can't carry the full unsigned 32-bit range; widen through Long.
+        "u32" => format!("{raw}.jsonPrimitive.long.toUInt()"),
+        // u64::MAX (18446744073709551615) overflows signed Long. Parse
+        // the JSON number's textual content directly so the full
+        // unsigned 64-bit range round-trips.
+        "u64" => format!("{raw}.jsonPrimitive.content.toULong()"),
         "string" => format!("{raw}.jsonPrimitive.content"),
         "bytes" => format!(
             "{raw}.jsonArray.map {{ it.jsonPrimitive.int.toByte() }}.toByteArray()"

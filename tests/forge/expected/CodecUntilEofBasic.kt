@@ -40,9 +40,9 @@ data class CodecUntilEofBasic(
             // until cursor exhaustion (until-eof). Element bodies
             // recurse into their own codec — each may itself surface
             // null, unwinding the partial frame via `?: return null`.
-            val msgs: MutableList<CodecRepeatElem> = mutableListOf<CodecRepeatElem>().also {
+            val msgs: MutableList<CodecRepeatElem> = mutableListOf<CodecRepeatElem>().apply {
                 while (cursor.remaining() > 0) {
-                    it.add(CodecRepeatElem.decode(cursor) ?: return null)
+                    add(CodecRepeatElem.decode(cursor) ?: return null)
                 }
             }
             return CodecUntilEofBasic(

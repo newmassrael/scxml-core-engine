@@ -21,7 +21,7 @@ data class CodecExtEncodingInfo(
     // fits (UByte / UShort / UInt / ULong). UByte/UShort widen through
     // `.toInt()` and UInt/ULong through `.toLong()` for the bitwise
     // ops; the result narrows back via the carrier's `toU*` ctor.
-    fun hasSchema(): Boolean = (this.combined_id.toLong() and 0x00000001) != 0
+    fun hasSchema(): Boolean = (this.combined_id.toLong() and 0x00000001) != 0L
 
     fun setHasSchema(v: Boolean) {
         this.combined_id = if (v) {
@@ -74,7 +74,7 @@ data class CodecExtEncodingInfo(
                 if (!cursor.advance(1)) return null
                 _v
             }
-            val schema = if ((combined_id.toLong() and 0x00000001L) != 0) {
+            val schema = if ((combined_id.toLong() and 0x00000001L) != 0L) {
                 val _n = schema_size.toInt()
                 val raw = cursor.peekSlice(_n) ?: return null
                 val _v = raw.copyOf()

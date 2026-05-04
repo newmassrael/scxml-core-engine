@@ -81,9 +81,9 @@ data class CodecRepeatPresentIfBasic(
             }
             val elems: MutableList<CodecRepeatElem>? = if ((carrier.toInt() and 0x01) != 0) {
                 val _n = num_elems!!
-                mutableListOf<CodecRepeatElem>().also {
+                mutableListOf<CodecRepeatElem>().apply {
                     repeat(_n.toInt()) {
-                        it.add(CodecRepeatElem.decode(cursor) ?: return null)
+                        add(CodecRepeatElem.decode(cursor) ?: return null)
                     }
                 }
             } else null
