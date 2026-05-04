@@ -32,7 +32,7 @@ struct CodecSimpleFrame {
         CodecSimpleFrame value{
             .msgId = raw[0],
             .length = raw[1],
-            .payload = (static_cast<uint16_t>(raw[2]) << 8) | raw[3],
+            .payload = static_cast<uint16_t>((static_cast<uint16_t>(raw[2]) << 8) | raw[3]),
         };
         if (!cursor.advance(4)) return std::nullopt;
         return value;

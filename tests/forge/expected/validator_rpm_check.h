@@ -20,7 +20,7 @@ struct ValidatorRpmCheck {
     uint16_t prevRpm_ = {};
 
     ValidationResult validate(uint16_t rpm, const std::string& engineState) {
-        if (rpm < 0 || rpm > 8000)
+        if (rpm > 8000)
             return {false, "rpm_out_of_range"};
         {
             uint16_t delta = (rpm > prevRpm_) ? (rpm - prevRpm_) : (prevRpm_ - rpm);

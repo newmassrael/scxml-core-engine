@@ -31,7 +31,7 @@ struct CodecLittleEndian {
         if (raw == nullptr) return std::nullopt;
         CodecLittleEndian value{
             .sensorId = raw[0],
-            .value = raw[1] | (static_cast<uint16_t>(raw[2]) << 8),
+            .value = static_cast<uint16_t>(raw[1] | (static_cast<uint16_t>(raw[2]) << 8)),
             .status = raw[3],
         };
         if (!cursor.advance(4)) return std::nullopt;

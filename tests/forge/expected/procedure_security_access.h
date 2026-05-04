@@ -276,7 +276,7 @@ private:
     // ── Helper DI closures (for <sce:helper> declarations) ───────
     // Default-initialised to fail-fast throwing lambdas; the user must call
     // the matching set*() setter before runToCompletion().
-    std::function<std::vector<uint8_t>(const std::vector<uint8_t>&)> computeKey_ = [](const std::vector<uint8_t>& _arg0) -> std::vector<uint8_t> { throw std::runtime_error("helper 'computeKey' not set — call setComputeKey() before runToCompletion()"); };
+    std::function<std::vector<uint8_t>(const std::vector<uint8_t>&)> computeKey_ = [](const std::vector<uint8_t>&) -> std::vector<uint8_t> { throw std::runtime_error("helper 'computeKey' not set — call setComputeKey() before runToCompletion()"); };
 
     // ── Done data storage ────────────────────────────────────────
     std::map<std::string, std::string> doneData_;

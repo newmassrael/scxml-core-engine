@@ -44,7 +44,7 @@ struct CodecPresentIfDisjunction {
         if ((flags & 0x01) != 0 || (flags & 0x02) != 0) {
             const std::uint8_t* raw = cursor.peek_slice(2);
             if (raw == nullptr) return std::nullopt;
-            seq = static_cast<uint16_t>((static_cast<uint16_t>(raw[0]) << 8) | raw[1]);
+            seq = static_cast<uint16_t>(static_cast<uint16_t>((static_cast<uint16_t>(raw[0]) << 8) | raw[1]));
             if (!cursor.advance(2)) return std::nullopt;
         }
         return CodecPresentIfDisjunction{

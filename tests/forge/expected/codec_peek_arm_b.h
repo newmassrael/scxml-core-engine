@@ -30,7 +30,7 @@ struct CodecPeekArmB {
         if (raw == nullptr) return std::nullopt;
         CodecPeekArmB value{
             .header = raw[0],
-            .payload = (static_cast<uint16_t>(raw[1]) << 8) | raw[2],
+            .payload = static_cast<uint16_t>((static_cast<uint16_t>(raw[1]) << 8) | raw[2]),
         };
         if (!cursor.advance(3)) return std::nullopt;
         return value;
