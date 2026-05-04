@@ -215,6 +215,20 @@ target_compile_definitions(numerical_conformance_test PRIVATE
 
 target_compile_options(numerical_conformance_test PRIVATE
     -Wall -Wextra -Wpedantic
+    # Promote three codegen-quality classes from warnings to errors so
+    # template drift cannot ship silently broken generated headers:
+    #   • narrowing — multi-byte BE/LE field unpack expressions must
+    #     wrap in static_cast<carrier_t>(...) (streaming_fixed_field_body
+    #     in sce-build/src/forge/generator.rs).
+    #   • unused-parameter — throwing default-impl lambdas in procedure
+    #     templates must use unnamed params (gcc does not honour
+    #     Rust-style underscore-prefix suppression here).
+    #   • type-limits — validator range checks must elide
+    #     `unsigned < 0` and `T > T_MAX` via `is_unsigned` /
+    #     `is_max_at_type_max` flags from range_rules data model.
+    -Werror=narrowing
+    -Werror=unused-parameter
+    -Werror=type-limits
 )
 
 enable_testing()

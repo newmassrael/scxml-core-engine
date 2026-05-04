@@ -38,15 +38,42 @@ struct {{ struct_name }} {
 
     ValidationResult validate({{ params }}) {
 {% for rule in range_rules %}
+{# Two tautology elisions for gcc -Wtype-limits — parity with the
+   C11 template (tools/codegen/templates/forge/c/validator.h.jinja2):
+     • `elide_lower`: unsigned + min "0" — `unsigned < 0` is
+       tautologically false. Domain-equivalent to keeping the term
+       since the unsigned type itself excludes negatives.
+     • `elide_upper`: rule.max equals the type's natural ceiling
+       (e.g. uint8 with max=255). `uint8 > 255` is tautologically
+       false; gcc rejects it. Generator-side computation in
+       `range_rules` (`is_max_at_type_max`) avoids per-template
+       string-table maintenance. #}
+{% set elide_lower = rule.is_unsigned and rule.min == "0" %}
+{% set elide_upper = rule.is_max_at_type_max %}
 {% if rule.has_min and rule.has_max %}
-        if ({{ rule.id }} < {{ rule.min }} || {{ rule.id }} > {{ rule.max }})
-            return {false, "{{ rule.reason_id }}_out_of_range"};
-{% elif rule.has_min %}
-        if ({{ rule.id }} < {{ rule.min }})
-            return {false, "{{ rule.reason_id }}_out_of_range"};
-{% elif rule.has_max %}
+{% if elide_lower and elide_upper %}
+{# Both bounds at the type's natural extremes — every value of the
+   type is in range, so emit no check at all. #}
+{% elif elide_lower %}
         if ({{ rule.id }} > {{ rule.max }})
             return {false, "{{ rule.reason_id }}_out_of_range"};
+{% elif elide_upper %}
+        if ({{ rule.id }} < {{ rule.min }})
+            return {false, "{{ rule.reason_id }}_out_of_range"};
+{% else %}
+        if ({{ rule.id }} < {{ rule.min }} || {{ rule.id }} > {{ rule.max }})
+            return {false, "{{ rule.reason_id }}_out_of_range"};
+{% endif %}
+{% elif rule.has_min %}
+{% if not elide_lower %}
+        if ({{ rule.id }} < {{ rule.min }})
+            return {false, "{{ rule.reason_id }}_out_of_range"};
+{% endif %}
+{% elif rule.has_max %}
+{% if not elide_upper %}
+        if ({{ rule.id }} > {{ rule.max }})
+            return {false, "{{ rule.reason_id }}_out_of_range"};
+{% endif %}
 {% endif %}
 {% endfor %}
 {% for rule in roc_rules %}

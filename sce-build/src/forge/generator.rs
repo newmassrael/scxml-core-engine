@@ -7343,7 +7343,21 @@ fn streaming_fixed_field_body(
             }
         })
         .collect();
-    shifts.join(" | ")
+    let joined = shifts.join(" | ");
+    // C++ integer promotion: even when each operand is `{target}_t`,
+    // `<<` and `|` promote operands narrower than `int` to `int`,
+    // so the resulting expression has type `int` and assignment
+    // back into a {target}_t carrier triggers `-Wnarrowing`. The
+    // single outer cast neutralises the warning without changing
+    // semantics (the value is already in range by construction —
+    // we only OR'd `n * 8` bits' worth of bytes). Other languages
+    // (Rust) preserve the operand type through `<<`/`|` so no
+    // outer cast is needed.
+    if matches!(lang, Language::Cpp) {
+        format!("static_cast<{target}>({joined})")
+    } else {
+        joined
+    }
 }
 
 /// Encode block for a non-gated fixed field — Rust. Reads `self.<id>`
@@ -8348,6 +8362,25 @@ fn decode_multibyte_unified(
             _ => "toULong",
         };
         format!("({joined}).{to_type}()")
+    } else if matches!(lang, Language::Cpp) {
+        // C++ integer promotion: `<<` and `|` promote operands narrower
+        // than `int` to `int`, so a 2-byte fold like
+        // `(static_cast<uint16_t>(raw[i]) << 8) | raw[j]` produces an
+        // `int`-typed expression that triggers `-Wnarrowing` when
+        // assigned to a `uint16_t` carrier. The single outer cast
+        // neutralises the warning without changing semantics — by
+        // construction the value fits in `byte_count * 8` bits.
+        // Rust/Go/C11/Python preserve the operand type through `<<`/`|`
+        // (Rust strict typing, Go explicit conversions, Python wide
+        // ints, C11 only emits this in contexts that already cast),
+        // so they don't need the wrap. Mirrors the parity fix in
+        // `streaming_fixed_field_body`.
+        let target = match byte_count {
+            2 => "uint16_t",
+            3 | 4 => "uint32_t",
+            _ => "uint64_t",
+        };
+        format!("static_cast<{target}>({joined})")
     } else {
         joined
     }
@@ -8635,13 +8668,14 @@ fn render_validator(
             obj.insert("max".into(), serde_json::json!(r.max));
             obj.insert("has_min".into(), r.min.is_some().into());
             obj.insert("has_max".into(), r.max.is_some().into());
-            // Unsigned typing flag — needed by the C template to elide
-            // lower-bound checks where `min == "0"` and the field type is
-            // unsigned, since `unsigned < 0` is tautologically false and
-            // gcc -Wtype-limits would surface a -Werror in the C11 build.
-            // cpp/Rust/Go/Kotlin/Python builds either don't run -Werror
-            // here or don't carry an equivalent diagnostic, so they emit
-            // the same redundant comparison as before.
+            // Unsigned typing flag — consumed by C11 + C++ templates
+            // to elide lower-bound checks where `min == "0"` and the
+            // field type is unsigned, since `unsigned < 0` is
+            // tautologically false and gcc -Wtype-limits surfaces it.
+            // Rust/Go/Kotlin/Python builds either don't carry an
+            // equivalent diagnostic or have it disabled by default,
+            // so their templates may still emit the redundant
+            // comparison without breaking the build.
             obj.insert("is_unsigned".into(), r.sce_type.is_unsigned().into());
             // Same -Werror=type-limits hazard at the upper bound: a
             // `uint8_t > 255` test is tautologically false. The C11
@@ -9378,13 +9412,17 @@ fn render_procedure_cpp(
                 params_ty.join(", "),
             );
             let setter_name = filters::to_pascal_case(h.name.clone());
-            // Typed lambda signature matching the function_type. Param names
-            // are generated _argN so unused-parameter warnings stay quiet.
+            // Typed lambda signature matching the function_type. The
+            // throwing default never reads its arguments, so omit
+            // parameter names entirely — `[](int, double) -> bool`
+            // is well-formed C++ and silences -Wunused-parameter
+            // (the previous `_arg0/_arg1` naming scheme assumed
+            // Rust-style underscore-prefix suppression, which gcc
+            // does not honour and -Wextra surfaced as warnings).
             let lambda_params: Vec<String> = h
                 .args
                 .iter()
-                .enumerate()
-                .map(|(i, a)| format!("{} _arg{i}", cpp_param_type(a)))
+                .map(|a| cpp_param_type(a))
                 .collect();
             let default_impl = format!(
                 "[]({}) -> {} {{ throw std::runtime_error(\"helper '{}' not set — call set{}() before runToCompletion()\"); }}",
