@@ -37,15 +37,59 @@ cd "$REPO_ROOT"
 log_step() { printf '\n==> pre-push: %s\n' "$1" >&2; }
 fail_step() { printf '\nERROR pre-push: %s FAILED — push aborted.\n  Fix the issue or bypass with SKIP_PREPUSH=1 for emergencies.\n' "$1" >&2; exit 1; }
 
+# Single composed cleanup so each resource added by a later stage
+# (HTTP server PID, scratch dirs) is reliably reclaimed even when
+# `set -e` aborts mid-stage. The two earlier inline `trap '...rm...' EXIT`
+# overwrites at Stage 4/5 leaked the HTTP server process when Stage 2
+# raced through them.
+HTTP_SERVER_PID=""
+HTTP_SERVER_LOG=""
+BUILD_DIR=""
+GEN_OUT=""
+cleanup() {
+    [[ -n "${HTTP_SERVER_PID}" ]] && kill "${HTTP_SERVER_PID}" 2>/dev/null || true
+    [[ -n "${HTTP_SERVER_LOG}" ]] && rm -f "${HTTP_SERVER_LOG}"
+    [[ -n "${BUILD_DIR}"      ]] && rm -rf "${BUILD_DIR}"
+    [[ -n "${GEN_OUT}"        ]] && rm -rf "${GEN_OUT}"
+}
+trap cleanup EXIT
+
 # ── Stage 1: sce-codegen build (baseline) ─────────────────────────
 log_step "Stage 1/5 — cargo build sce-codegen --release"
 cargo build --bin sce-codegen --features cli --release -p sce-build \
     || fail_step "Stage 1 (sce-codegen build)"
 
+# ── W3C HTTP test server (mirror w3c-tests.yml:379) ───────────────
+# Rust integration tests for W3C SCXML C.2 BasicHTTPEventProcessor
+# (test_201, test_509, test_513, test_518-520, test_532, test_534,
+# test_567) issue real HTTP POSTs to localhost:8080/test. Without the
+# server running they panic on connection-refused and Stage 2 fails;
+# CI starts the same server in `.github/workflows/w3c-tests.yml`
+# before its `cargo test` step, so the pre-push hook must mirror that
+# to stay symmetric with CI.
+log_step "Starting W3C HTTP test server on localhost:8080 (mirrors w3c-tests.yml)"
+if ! command -v node >/dev/null 2>&1; then
+    fail_step "node.js required for W3C HTTP test server (apt install nodejs)"
+fi
+HTTP_SERVER_LOG="$(mktemp)"
+node tests/w3c/standalone_http_server.js 8080 /test >"${HTTP_SERVER_LOG}" 2>&1 &
+HTTP_SERVER_PID=$!
+# Match the CI workflow's `sleep 1` settle window before issuing requests.
+sleep 1
+if ! kill -0 "${HTTP_SERVER_PID}" 2>/dev/null; then
+    cat "${HTTP_SERVER_LOG}" >&2
+    fail_step "W3C HTTP test server failed to start (port 8080 already in use?)"
+fi
+
 # ── Stage 2: Rust workspace tests ─────────────────────────────────
 log_step "Stage 2/5 — cargo test --workspace --release"
 cargo test --workspace --release \
     || fail_step "Stage 2 (cargo test --workspace)"
+
+# Stage 2 done — release the HTTP server before the heavier later
+# stages so a stuck node process cannot survive into Stages 3-5.
+kill "${HTTP_SERVER_PID}" 2>/dev/null || true
+HTTP_SERVER_PID=""
 
 # ── Stage 3: Go forge conformance ─────────────────────────────────
 # generate.sh already runs `go build ./conformance/...` as a smoke check,
@@ -61,7 +105,6 @@ log_step "Stage 3/5 — Go forge conformance regenerate + go build"
 # -DSCE_CODEGEN so CMake cannot quietly pick up a stale binary.
 log_step "Stage 4/5 — C++ forge conformance build"
 BUILD_DIR="$(mktemp -d)"
-trap 'rm -rf "$BUILD_DIR"' EXIT
 cmake -S sce-forge-runtime/cpp/tests/conformance \
       -B "$BUILD_DIR" \
       -DSCE_CODEGEN="$REPO_ROOT/target/release/sce-codegen" \
@@ -78,7 +121,6 @@ cmake --build "$BUILD_DIR" --parallel "$(nproc)" \
 # scratch output dir and abort push if any fail to produce artifacts.
 log_step "Stage 5/5 — Example SCXML codegen smoke"
 GEN_OUT="$(mktemp -d)"
-trap 'rm -rf "$BUILD_DIR" "$GEN_OUT"' EXIT
 example_failures=0
 for scxml in examples/doom_wasm/scxml/*.scxml examples/smart_light/smart_light.scxml; do
     [[ -f "$scxml" ]] || continue
