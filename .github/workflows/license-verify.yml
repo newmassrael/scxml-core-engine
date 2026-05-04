@@ -1,0 +1,54 @@
+name: License SSOT Verify
+
+# Drift guard for sce/sce_licenses.cmake — the SSOT shared by
+# find_package install rules and scripts/package_embed.sh. Catches a
+# vendored third_party dep added without its LICENSE entered into the
+# SSOT (silent LGPL §1 / MIT §1 compliance violation), an upstream
+# upgrade that moves an embedded SPDX/copyright notice out of the
+# registered grep target, and SSOT entries pointing at files renamed
+# or deleted on disk.
+#
+# Orthogonal to embed-vendor-smoke.yml: licenses cover *both*
+# distribution channels (find_package install + embed/), and most
+# license-relevant changes (a new third_party/<dep>/) do not match the
+# embed-vendor trigger paths. A separate workflow keeps the trigger
+# surface and the failure signal clean. Sub-second runtime, no
+# toolchain prerequisites beyond bash + grep + find + sed.
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'sce/sce_licenses.cmake'
+      - 'scripts/verify_licenses.sh'
+      - 'third_party/**'
+      - '.github/workflows/license-verify.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'sce/sce_licenses.cmake'
+      - 'scripts/verify_licenses.sh'
+      - 'third_party/**'
+      - '.github/workflows/license-verify.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-licenses:
+    name: Verify license SSOT
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Verify license SSOT
+      # 4 invariants: SSOT-stale, LICENSE-orphan, notice-drift,
+      # dep-uncovered. See scripts/verify_licenses.sh header for
+      # the contract each invariant pins.
+      run: ./scripts/verify_licenses.sh

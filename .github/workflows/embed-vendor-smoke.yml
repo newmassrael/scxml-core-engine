@@ -22,6 +22,7 @@ on:
       - 'scripts/package_embed.sh'
       - 'scripts/smoke_embed_consumer.sh'
       - 'scripts/verify_embed_manifest.sh'
+      - 'scripts/verify_embed_payload.sh'
       - 'scripts/embed_CMakeLists.txt'
       - 'embed/MANIFEST.json'
       - '.github/workflows/embed-vendor-smoke.yml'
@@ -34,6 +35,7 @@ on:
       - 'scripts/package_embed.sh'
       - 'scripts/smoke_embed_consumer.sh'
       - 'scripts/verify_embed_manifest.sh'
+      - 'scripts/verify_embed_payload.sh'
       - 'scripts/embed_CMakeLists.txt'
       - 'embed/MANIFEST.json'
       - '.github/workflows/embed-vendor-smoke.yml'
@@ -94,6 +96,19 @@ jobs:
       # Must run before smoke regenerates embed/ — verify_embed_manifest.sh
       # diffs the checked-in MANIFEST.json against a fresh emit.
       run: ./scripts/verify_embed_manifest.sh
+
+    - name: Verify embed payload (sce ↔ embed lag guard)
+      # Closes the upstream half: re-runs package_embed.sh end-to-end
+      # against the current sce/ source and compares the freshly
+      # emitted MANIFEST.json (filtering label-only fields
+      # embed_version + clang_version) against the committed copy.
+      # verify_embed_manifest.sh above only catches embed-internal
+      # self-consistency; this step catches drift introduced by a
+      # sce/ change that altered the public-header API surface
+      # without an accompanying chore: Regenerate commit. Cost ~7
+      # min on the runner; absorbs into the already-7-min manifest
+      # emit budget the workflow pays.
+      run: ./scripts/verify_embed_payload.sh
 
     - name: Run embed consumer smoke build
       # Regenerates embed/ in a scratch dir, checks SSOT-listed assets
