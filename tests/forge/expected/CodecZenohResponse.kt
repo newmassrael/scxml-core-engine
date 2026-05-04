@@ -52,9 +52,9 @@ data class CodecZenohResponse(
         this.header = ((_carrier and _shifted_mask.inv()) or _val).toUByte()
     }
 
-    fun M(): Boolean = (this.header.toInt() and 0x20) != 0
+    fun N(): Boolean = (this.header.toInt() and 0x20) != 0
 
-    fun setM(v: Boolean) {
+    fun setN(v: Boolean) {
         this.header = if (v) {
             (this.header.toInt() or 0x20).toUByte()
         } else {
@@ -62,9 +62,9 @@ data class CodecZenohResponse(
         }
     }
 
-    fun N(): Boolean = (this.header.toInt() and 0x40) != 0
+    fun M(): Boolean = (this.header.toInt() and 0x40) != 0
 
-    fun setN(v: Boolean) {
+    fun setM(v: Boolean) {
         this.header = if (v) {
             (this.header.toInt() or 0x40).toUByte()
         } else {
@@ -150,13 +150,13 @@ data class CodecZenohResponse(
             }
             val request_id = cursor.readVleU64() ?: return null
             val key_id = cursor.readVleU32() ?: return null
-            val suffix_len: ULong? = if ((header.toInt() and 0x40) != 0) {
+            val suffix_len: ULong? = if ((header.toInt() and 0x20) != 0) {
                 val _v = cursor.readVleU64() ?: return null
                 _v
             } else {
                 null
             }
-            val suffix = if ((header.toInt() and 0x40) != 0) {
+            val suffix = if ((header.toInt() and 0x20) != 0) {
                 val _n = suffix_len!!.toInt()
                 val raw = cursor.peekSlice(_n) ?: return null
                 val _v = try {

@@ -57,12 +57,12 @@ class CodecZenohResponse:
             cursor.advance(1)
             request_id = cursor.read_vle_u64()
             key_id = cursor.read_vle_u32()
-            if (header & 0x40) != 0:
+            if (header & 0x20) != 0:
                 _v = cursor.read_vle_u64()
                 suffix_len = _v
             else:
                 suffix_len = None
-            if (header & 0x40) != 0:
+            if (header & 0x20) != 0:
                 _n = suffix_len
                 raw = cursor.peek_slice(_n)
                 try:
@@ -138,19 +138,19 @@ class CodecZenohResponse:
         _val = (v & 0x1F) << 0
         self.header = ((self.header & (0xFF ^ _shifted_mask)) | _val) & 0xFF
 
-    def m(self) -> bool:
+    def n(self) -> bool:
         return (self.header & 0x20) != 0
 
-    def set_m(self, v: bool) -> None:
+    def set_n(self, v: bool) -> None:
         if v:
             self.header = (self.header | 0x20) & 0xFF
         else:
             self.header = self.header & (0xFF ^ 0x20)
 
-    def n(self) -> bool:
+    def m(self) -> bool:
         return (self.header & 0x40) != 0
 
-    def set_n(self, v: bool) -> None:
+    def set_m(self, v: bool) -> None:
         if v:
             self.header = (self.header | 0x40) & 0xFF
         else:

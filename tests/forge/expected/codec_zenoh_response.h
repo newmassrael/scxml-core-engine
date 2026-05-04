@@ -68,14 +68,14 @@ struct CodecZenohResponse {
         if (!key_id_opt.has_value()) return std::nullopt;
         auto key_id = static_cast<std::uint32_t>(*key_id_opt);
         std::optional<uint64_t> suffix_len;
-        if ((header & 0x40) != 0) {
+        if ((header & 0x20) != 0) {
             auto _v_opt = cursor.read_vle_u64();
         if (!_v_opt.has_value()) return std::nullopt;
         auto _v = static_cast<std::uint64_t>(*_v_opt);
             suffix_len = _v;
         }
         std::optional<std::string> suffix;
-        if ((header & 0x40) != 0) {
+        if ((header & 0x20) != 0) {
             std::size_t _n = static_cast<std::size_t>(suffix_len.value());
             const std::uint8_t* raw = cursor.peek_slice(_n);
             if (raw == nullptr) return std::nullopt;
@@ -161,11 +161,11 @@ struct CodecZenohResponse {
         );
     }
 
-    bool m() const noexcept {
+    bool n() const noexcept {
         return (this->header & 0x20) != 0;
     }
 
-    void set_m(bool v) noexcept {
+    void set_n(bool v) noexcept {
         if (v) {
             this->header = static_cast<uint8_t>(this->header | 0x20);
         } else {
@@ -173,11 +173,11 @@ struct CodecZenohResponse {
         }
     }
 
-    bool n() const noexcept {
+    bool m() const noexcept {
         return (this->header & 0x40) != 0;
     }
 
-    void set_n(bool v) noexcept {
+    void set_m(bool v) noexcept {
         if (v) {
             this->header = static_cast<uint8_t>(this->header | 0x40);
         } else {

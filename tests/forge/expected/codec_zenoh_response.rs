@@ -77,13 +77,13 @@ impl CodecZenohResponse {
         };
         let request_id = cursor.read_vle_u64()?;
         let key_id = cursor.read_vle_u32()?;
-        let suffix_len = if (header & 0x40u8) != 0 {
+        let suffix_len = if (header & 0x20u8) != 0 {
             let _v = cursor.read_vle_u64()?;
             Some(_v)
         } else {
             None
         };
-        let suffix = if (header & 0x40u8) != 0 {
+        let suffix = if (header & 0x20u8) != 0 {
             let _n = suffix_len.unwrap() as usize;
             let raw = cursor.peek_slice(_n)?;
             let _v = core::str::from_utf8(raw)
@@ -147,11 +147,11 @@ impl CodecZenohResponse {
         self.header = (self.header & !_mask) | _val;
     }
 
-    pub fn m(&self) -> bool {
+    pub fn n(&self) -> bool {
         (self.header & 0x20) != 0
     }
 
-    pub fn set_m(&mut self, v: bool) {
+    pub fn set_n(&mut self, v: bool) {
         if v {
             self.header |= 0x20;
         } else {
@@ -159,11 +159,11 @@ impl CodecZenohResponse {
         }
     }
 
-    pub fn n(&self) -> bool {
+    pub fn m(&self) -> bool {
         (self.header & 0x40) != 0
     }
 
-    pub fn set_n(&mut self, v: bool) {
+    pub fn set_m(&mut self, v: bool) {
         if v {
             self.header |= 0x40;
         } else {

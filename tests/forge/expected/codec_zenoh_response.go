@@ -67,13 +67,13 @@ func DecodeCodecZenohResponse(cursor *codec.SceCursor) (*CodecZenohResponse, err
 	KeyId, err := cursor.ReadVLEU32()
 	if err != nil { return nil, err }
 	var SuffixLen *uint64
-	if (Header & 0x40) != 0 {
+	if (Header & 0x20) != 0 {
 		_v, err := cursor.ReadVLEU64()
 	if err != nil { return nil, err }
 		SuffixLen = &_v
 	}
 	var Suffix *string
-	if (Header & 0x40) != 0 {
+	if (Header & 0x20) != 0 {
 		_n := int(*SuffixLen)
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
@@ -165,11 +165,11 @@ func (s *CodecZenohResponse) SetMid(v uint8) {
 	s.Header = (s.Header &^ _shiftedMask) | _val
 }
 
-func (s *CodecZenohResponse) M() bool {
+func (s *CodecZenohResponse) N() bool {
 	return (s.Header & 0x20) != 0
 }
 
-func (s *CodecZenohResponse) SetM(v bool) {
+func (s *CodecZenohResponse) SetN(v bool) {
 	if v {
 		s.Header |= 0x20
 	} else {
@@ -177,11 +177,11 @@ func (s *CodecZenohResponse) SetM(v bool) {
 	}
 }
 
-func (s *CodecZenohResponse) N() bool {
+func (s *CodecZenohResponse) M() bool {
 	return (s.Header & 0x40) != 0
 }
 
-func (s *CodecZenohResponse) SetN(v bool) {
+func (s *CodecZenohResponse) SetM(v bool) {
 	if v {
 		s.Header |= 0x40
 	} else {

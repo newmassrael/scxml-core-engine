@@ -89,7 +89,7 @@ static inline sce_forge_codec_status_t codec_zenoh_response_decode(sce_forge_cur
         if (_vle_st != SCE_FORGE_CODEC_OK) return _vle_st;
     }
     out->key_id = key_id;
-    if ((out->header & 0x40) != 0) {
+    if ((out->header & 0x20) != 0) {
         uint64_t _v;
     {
         sce_forge_codec_status_t _vle_st = sce_forge_cursor_read_vle_u64(cursor, &_v);
@@ -99,7 +99,7 @@ static inline sce_forge_codec_status_t codec_zenoh_response_decode(sce_forge_cur
     } else {
         out->suffix_len = 0;
     }
-    if ((out->header & 0x40) != 0) {
+    if ((out->header & 0x20) != 0) {
         size_t _n = (size_t)out->suffix_len;
         if (_n > 256) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
@@ -176,7 +176,7 @@ static inline codec_zenoh_response_encoded_t codec_zenoh_response_encode(const c
         }
         r.bytes[r.len++] = (uint8_t)_w;
     }
-    if ((self->header & 0x40) != 0) {
+    if ((self->header & 0x20) != 0) {
     {
         uint64_t _w = (uint64_t)(self->suffix_len);
         while (_w >= 0x80u) {
@@ -186,7 +186,7 @@ static inline codec_zenoh_response_encoded_t codec_zenoh_response_encode(const c
         r.bytes[r.len++] = (uint8_t)_w;
     }
     }
-    if ((self->header & 0x40) != 0) {
+    if ((self->header & 0x20) != 0) {
         for (size_t _bi = 0; _bi < self->suffix_len; ++_bi) r.bytes[r.len++] = (uint8_t)self->suffix[_bi];
     }
     if ((self->header & 0x80) != 0) {
@@ -247,11 +247,11 @@ static inline void codec_zenoh_response_set_mid(codec_zenoh_response_t *self, ui
 }
 
 
-static inline bool codec_zenoh_response_m(const codec_zenoh_response_t *self) {
+static inline bool codec_zenoh_response_n(const codec_zenoh_response_t *self) {
     return (self->header & 0x20) != 0;
 }
 
-static inline void codec_zenoh_response_set_m(codec_zenoh_response_t *self, bool v) {
+static inline void codec_zenoh_response_set_n(codec_zenoh_response_t *self, bool v) {
     if (v) {
         self->header = (uint8_t)(self->header | 0x20);
     } else {
@@ -259,11 +259,11 @@ static inline void codec_zenoh_response_set_m(codec_zenoh_response_t *self, bool
     }
 }
 
-static inline bool codec_zenoh_response_n(const codec_zenoh_response_t *self) {
+static inline bool codec_zenoh_response_m(const codec_zenoh_response_t *self) {
     return (self->header & 0x40) != 0;
 }
 
-static inline void codec_zenoh_response_set_n(codec_zenoh_response_t *self, bool v) {
+static inline void codec_zenoh_response_set_m(codec_zenoh_response_t *self, bool v) {
     if (v) {
         self->header = (uint8_t)(self->header | 0x40);
     } else {

@@ -16,7 +16,7 @@
      plumbing).
 
      Wire shape (per upstream network.c response_encode):
-       byte 0   : header     (MID Z_RESPONSE in bits 0..4 + M@5 + N@6 +
+       byte 0   : header     (MID Z_RESPONSE in bits 0..4 + N@5 + M@6 +
                               Z@7) — the request's inner header is the
                               outer envelope's ID for this network-
                               layer message; the dispatch byte for the
@@ -81,8 +81,8 @@
   <datamodel>
     <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
       <sce:flag name="mid" bit="0" width="5"/>
-      <sce:flag name="M"   bit="5"/>
-      <sce:flag name="N"   bit="6"/>
+      <sce:flag name="N"   bit="5"/>
+      <sce:flag name="M"   bit="6"/>
       <sce:flag name="Z"   bit="7"/>
     </sce:flags>
     <sce:field id="request_id" sce:type="uint64" sce:byte="1" sce:bit-size="vle"/>
