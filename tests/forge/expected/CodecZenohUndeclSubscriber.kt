@@ -31,10 +31,8 @@ data class CodecZenohUndeclSubscriber(
             }
             r.add(_w.toByte())
         }
-        if ((parentFlags.toInt() and 0x80) != 0) {
-            this.ext_keyexpr?.let { _v ->
-                r.addAll(_v.encode().toList())
-            }
+        this.ext_keyexpr?.let { _v ->
+            r.addAll(_v.encode().toList())
         }
         return r.toByteArray()
     }

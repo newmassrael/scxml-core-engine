@@ -135,10 +135,8 @@ func (s *CodecZenohMsgDel) Encode() []byte {
 	// present-if uses the unified encode path.
 	r := make([]byte, 0, 429)
 	r = append(r, s.Header)
-	if (Header & 0x20) != 0 {
-		if s.Timestamp != nil {
-			r = append(r, s.Timestamp.Encode()...)
-		}
+	if s.Timestamp != nil {
+		r = append(r, s.Timestamp.Encode()...)
 	}
 	for _, _e := range s.Extensions {
 		r = append(r, _e.Encode()...)

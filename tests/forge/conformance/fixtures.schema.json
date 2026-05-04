@@ -445,6 +445,11 @@
         "name": {
           "type": "string"
         },
+        "oracle_eligible": {
+          "description": "When false, the fixture is included in the per-language harness for **compile-verification** but no oracle round-trip assertions are emitted. The fixture's generated golden is still pulled into the harness translation unit (so the codegen pipeline catches a silently-broken `kotlinc` / `go build` / `cargo build` regression of the kind that motivated commit `91ae355a` — Kotlin embed default overwriting `<EmbedType>()` with `byteArrayOf()`, Go pointer/value mismatch in struct literals), and a minimal type-resolution probe (`Default::default()` instantiation in each language's idiom) is emitted so the `pub` API of the generated module reaches the type checker. This closes the systemic compile-check gap behind the historical \"byte-golden-only convention\" without requiring the `StructField` / `CanonicalType` schema to grow nested-codec or nullable variants — both extensions are deferred to a separate RFC per-fixture upgrade path.\n\nDefault true so existing manifest entries keep the historical oracle-driven behaviour without churn.",
+          "default": true,
+          "type": "boolean"
+        },
         "ref_section": {
           "type": "string"
         }

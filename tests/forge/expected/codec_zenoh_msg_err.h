@@ -155,11 +155,9 @@ struct CodecZenohMsgErr {
         std::vector<uint8_t> r;
         r.reserve(695);
         r.push_back(header);
-        if ((header & 0x40) != 0) {
-            if (this->encoding.has_value()) {
-                auto _sub = this->encoding->encode();
-                r.insert(r.end(), _sub.begin(), _sub.end());
-            }
+        if (this->encoding.has_value()) {
+            auto _sub = this->encoding->encode();
+            r.insert(r.end(), _sub.begin(), _sub.end());
         }
         if (this->extensions.has_value()) {
             for (const auto& _e : *this->extensions) {

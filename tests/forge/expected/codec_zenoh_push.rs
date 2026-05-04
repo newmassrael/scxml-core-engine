@@ -64,7 +64,7 @@ impl CodecZenohPush {
         // from the cursor. The default arm (when declared) carries the
         // runtime tag value so encode can round-trip it back onto the
         // wire.
-        let body = match (((header >> 0) & (0x1F as u8)) as u8) {
+        let body = match ((header >> 0) & (0x1F as u8)) as u8 {
             29u8 => CodecZenohPushVariant::CodecZenohPushBody(CodecZenohPushBody::decode(cursor)?),
             other => CodecZenohPushVariant::Default {
                 tag: other,

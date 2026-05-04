@@ -65,7 +65,16 @@ fi
 # Pull the fixture list from sce-codegen itself so this script needs neither
 # python3 nor jq — the Rust binary owns the manifest schema and prints a
 # plain newline-separated list.
-FIXTURES=$("$SCE_CODEGEN" list-fixtures --manifest "$MANIFEST" --format space)
+#
+# `--language go` applies the matrix-aware filter (kind ships per backend;
+# per-fixture MCU-only codecs like `sce:dma-burst-align` lower to Rust +
+# C11 only and would surface as a `MCU-class kind` error here without
+# pre-filtering — same gate the cmake/python/kotlin harnesses use).
+FIXTURES=$("$SCE_CODEGEN" list-fixtures \
+    --manifest "$MANIFEST" \
+    --language go \
+    --resource-dir "$RESOURCE_DIR" \
+    --format space)
 
 # Clean everything except the gitignore so stale fixtures cannot mask drift.
 find "$OUT_DIR" -mindepth 1 -not -name .gitignore -exec rm -rf {} +

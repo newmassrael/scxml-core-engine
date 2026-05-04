@@ -153,11 +153,9 @@ struct CodecZenohInterest {
             }
             r.push_back(static_cast<std::uint8_t>(_w));
         }
-        if ((header & 0x20) != 0 || (header & 0x40) != 0) {
-            if (this->body.has_value()) {
-                auto _sub = this->body->encode();
-                r.insert(r.end(), _sub.begin(), _sub.end());
-            }
+        if (this->body.has_value()) {
+            auto _sub = this->body->encode();
+            r.insert(r.end(), _sub.begin(), _sub.end());
         }
         if (this->extensions.has_value()) {
             for (const auto& _e : *this->extensions) {

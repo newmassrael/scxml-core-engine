@@ -82,12 +82,20 @@ abstract class GenerateForgeFixtures : DefaultTask() {
         // Pull the fixture name list from sce-codegen itself so this script
         // never has to parse JSON natively. The Rust binary owns the
         // manifest schema (see sce-build/src/conformance.rs).
+        //
+        // `--language kotlin` applies the matrix-aware filter (kind ships
+        // per backend; per-fixture MCU-only codecs like `sce:dma-burst-
+        // align` lower to Rust + C11 only and would surface as a
+        // `MCU-class kind` error here without pre-filtering — same gate
+        // the cmake/python harnesses use).
         val listOut = ByteArrayOutputStream()
         execOperations.exec {
             commandLine(
                 bin.absolutePath,
                 "list-fixtures",
                 "--manifest", manifestFile.absolutePath,
+                "--language", "kotlin",
+                "--resource-dir", res.absolutePath,
                 "--format", "plain",
             )
             standardOutput = listOut

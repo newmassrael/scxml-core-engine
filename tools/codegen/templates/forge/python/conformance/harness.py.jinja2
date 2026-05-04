@@ -49,7 +49,9 @@ class TestNumericalConformance(unittest.TestCase):
 {% for f in fixtures %}
     # ── {{ f.kind }}: {{ f.name }} ────────────────────────────
     def test_{{ f.name }}(self) -> None:
+{% if f.oracle_eligible %}
         spec = self.ref["{{ f.ref_section }}"]["{{ f.name }}"]
+{% endif %}
 {% set _kind_tmpl = "kinds/" ~ f.kind ~ ".py.jinja2" %}
 {% include _kind_tmpl %}
 

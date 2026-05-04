@@ -2526,9 +2526,14 @@ fn render_codec(
                         // Both halves of the bit-and need the same type, so the
                         // mask carries an `as <result_type>` after the carrier
                         // already shifted into result-type-fitting bits via the
-                        // narrowing cast on the outer expression.
+                        // narrowing cast on the outer expression. Outer parens
+                        // are deliberately omitted: Rust's `unused_parens` lint
+                        // (deny-by-default in newer toolchains) flags
+                        // `match (((... ) as u8))` because the trailing `as`
+                        // cast already binds tighter than the match scrutinee
+                        // boundary — wrapping it adds nothing semantically.
                         let expr = format!(
-                            "((({carrier_id} >> {bit}) & ({value_mask_lit} as {result_ty})) as {result_ty})"
+                            "(({carrier_id} >> {bit}) & ({value_mask_lit} as {result_ty})) as {result_ty}"
                         );
                         (expr.clone(), expr)
                     }
@@ -3815,65 +3820,86 @@ fn embed_streaming_encode_block(
     use crate::generator::Language;
     let _ = body_type;
     let id = &field.id;
-    let test_lit = field
-        .present_if
-        .as_ref()
-        .map(|p| present_if_test_literal_encode(fields, parent_flags, p, lang));
+    // Non-C11 backends discriminate Y0b gated presence via the host
+    // language's Optional / nullable / pointer wrapper. The carrier
+    // flag bit and the Optional are kept in sync by the author trust
+    // contract (mirroring `present_if_encode_fixed/tail/length_ref/
+    // vle` precedent — none of those four emit an outer carrier-flag
+    // gate at encode site, only the inner Optional discriminant).
+    // Earlier embed code had a redundant outer `if {test}` wrapper
+    // that referenced the carrier as a *bare* identifier (e.g.
+    // `header`) — correct at decode site (where `header` is a
+    // just-decoded local) but undefined at encode site (where the
+    // carrier lives on `self.header` / `this->header` / etc.),
+    // shipping silent-broken codegen for every embed-with-present-if
+    // fixture that was kept byte-golden-only. Dropping the outer
+    // wrapper matches the four other gated-field encoders and
+    // eliminates the bug class entirely.
+    //
+    // C11 keeps the carrier-flag test because it has no Optional
+    // wrapper; presence on the wire is encoded *purely* through
+    // the carrier flag bit (`out-><K>` at decode, `self-><K>` at
+    // encode) per RFC §5.B Y0b's C11 contract.
+    let test_lit_c11 = if matches!(lang, Language::C11) {
+        field
+            .present_if
+            .as_ref()
+            .map(|p| present_if_test_literal_encode(fields, parent_flags, p, lang))
+    } else {
+        None
+    };
+    let has_present_if = field.present_if.is_some();
     let thread_arg_norm = thread_arg.trim_start_matches(", ");
     match lang {
-        Language::Rust => match &test_lit {
-            None => format!(
+        Language::Rust => if !has_present_if {
+            format!(
                 "        r.extend(self.{id}.encode({thread_arg_norm}));"
-            ),
-            Some(test) => format!(
-                "        if {test} {{\n            \
-                     if let Some(_v) = &self.{id} {{\n                \
-                         r.extend(_v.encode({thread_arg_norm}));\n            \
-                     }}\n        \
+            )
+        } else {
+            format!(
+                "        if let Some(_v) = &self.{id} {{\n            \
+                     r.extend(_v.encode({thread_arg_norm}));\n        \
                  }}"
-            ),
+            )
         },
-        Language::Cpp => match &test_lit {
-            None => format!(
+        Language::Cpp => if !has_present_if {
+            format!(
                 "        {{\n            \
                      auto _sub = {id}.encode({thread_arg_norm});\n            \
                      r.insert(r.end(), _sub.begin(), _sub.end());\n        \
                  }}"
-            ),
-            Some(test) => format!(
-                "        if ({test}) {{\n            \
-                     if (this->{id}.has_value()) {{\n                \
-                         auto _sub = this->{id}->encode({thread_arg_norm});\n                \
-                         r.insert(r.end(), _sub.begin(), _sub.end());\n            \
-                     }}\n        \
+            )
+        } else {
+            format!(
+                "        if (this->{id}.has_value()) {{\n            \
+                     auto _sub = this->{id}->encode({thread_arg_norm});\n            \
+                     r.insert(r.end(), _sub.begin(), _sub.end());\n        \
                  }}"
-            ),
+            )
         },
-        Language::Kotlin => match &test_lit {
-            None => format!(
+        Language::Kotlin => if !has_present_if {
+            format!(
                 "        r.addAll(this.{id}.encode({thread_arg_norm}).toList())"
-            ),
-            Some(test) => format!(
-                "        if ({test}) {{\n            \
-                     this.{id}?.let {{ _v ->\n                \
-                         r.addAll(_v.encode({thread_arg_norm}).toList())\n            \
-                     }}\n        \
+            )
+        } else {
+            format!(
+                "        this.{id}?.let {{ _v ->\n            \
+                     r.addAll(_v.encode({thread_arg_norm}).toList())\n        \
                  }}"
-            ),
+            )
         },
         Language::Go => {
             let go_id = filters::to_pascal_case(id.to_string());
-            match &test_lit {
-                None => format!(
+            if !has_present_if {
+                format!(
                     "\tr = append(r, s.{go_id}.Encode({thread_arg_norm})...)"
-                ),
-                Some(test) => format!(
-                    "\tif {test} {{\n\t\t\
-                         if s.{go_id} != nil {{\n\t\t\t\
-                             r = append(r, s.{go_id}.Encode({thread_arg_norm})...)\n\t\t\
-                         }}\n\t\
+                )
+            } else {
+                format!(
+                    "\tif s.{go_id} != nil {{\n\t\t\
+                         r = append(r, s.{go_id}.Encode({thread_arg_norm})...)\n\t\
                      }}"
-                ),
+                )
             }
         }
         Language::C11 => {
@@ -3896,7 +3922,7 @@ fn embed_streaming_encode_block(
             // whatever value the caller initialised it to (typically
             // zero — generated code zero-inits the parent struct
             // before decode).
-            match &test_lit {
+            match &test_lit_c11 {
                 None => format!(
                     "    {{\n        \
                          {encoded_t} _sub = {body_encoder}(&self->{id_snake}{thread_arg});\n        \
@@ -3919,15 +3945,15 @@ fn embed_streaming_encode_block(
         }
         Language::Python => {
             let py_id = filters::to_snake_case(id.to_string());
-            match &test_lit {
-                None => format!(
+            if !has_present_if {
+                format!(
                     "        r.extend(self.{py_id}.encode({thread_arg_norm}))"
-                ),
-                Some(test) => format!(
-                    "        if {test}:\n            \
-                         if self.{py_id} is not None:\n                \
-                             r.extend(self.{py_id}.encode({thread_arg_norm}))"
-                ),
+                )
+            } else {
+                format!(
+                    "        if self.{py_id} is not None:\n            \
+                         r.extend(self.{py_id}.encode({thread_arg_norm}))"
+                )
             }
         }
     }
@@ -5194,6 +5220,29 @@ fn build_flag_ctx(
             let (name_acc, name_set) = match lang {
                 Language::Go => (pascal.clone(), format!("Set{pascal}")),
                 Language::Kotlin => (camel.clone(), format!("set{pascal}")),
+                Language::C11 => {
+                    // C11's flat scope can collide with the codec's own
+                    // typedef family: `<struct>_t` (the codec struct
+                    // itself) and `<struct>_encoded_t` (the encode-
+                    // result wrapper). When the flag's snake form is
+                    // `t` or `encoded_t` the templated accessor name
+                    // `<struct>_<flag>` would re-declare the typedef
+                    // identifier — hard compile error against
+                    // `-Werror=implicit-int`. Append `_flag` to the
+                    // getter only; the setter stays `set_<flag>`
+                    // because the `set_` prefix already disambiguates.
+                    // Single-letter flag names like `T`/`X`/`Z` are the
+                    // Zenoh upstream-idiomatic wire-bit nomenclature
+                    // (zenoh-pico `_Z_FLAG_Z_T` / `_Z_FLAG_Z_X` /
+                    // `_Z_FLAG_Z_Z`) — author can't rename them, so
+                    // codegen sanitizes.
+                    let acc_name = if snake == "t" || snake == "encoded_t" {
+                        format!("{snake}_flag")
+                    } else {
+                        snake.clone()
+                    };
+                    (acc_name, format!("set_{snake}"))
+                }
                 _ => (snake.clone(), format!("set_{snake}")),
             };
             // Per-language result type for multi-bit accessors.

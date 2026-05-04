@@ -75,10 +75,8 @@ data class CodecZenohMsgErr(
         // codec mixing VLE + present-if uses the unified encode path.
         val r = mutableListOf<Byte>()
         r.add(this.header.toByte())
-        if ((header.toInt() and 0x40) != 0) {
-            this.encoding?.let { _v ->
-                r.addAll(_v.encode().toList())
-            }
+        this.encoding?.let { _v ->
+            r.addAll(_v.encode().toList())
         }
         this.extensions?.let { _list ->
             for (_e in _list) {

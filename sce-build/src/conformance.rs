@@ -173,8 +173,32 @@ pub struct TimerFixtureEntry {
 pub struct Fixture {
     pub name: String,
     pub ref_section: String,
+    /// When false, the fixture is included in the per-language harness for
+    /// **compile-verification** but no oracle round-trip assertions are
+    /// emitted. The fixture's generated golden is still pulled into the
+    /// harness translation unit (so the codegen pipeline catches a
+    /// silently-broken `kotlinc` / `go build` / `cargo build` regression of
+    /// the kind that motivated commit `91ae355a` — Kotlin embed default
+    /// overwriting `<EmbedType>()` with `byteArrayOf()`, Go pointer/value
+    /// mismatch in struct literals), and a minimal type-resolution probe
+    /// (`Default::default()` instantiation in each language's idiom) is
+    /// emitted so the `pub` API of the generated module reaches the type
+    /// checker. This closes the systemic compile-check gap behind the
+    /// historical "byte-golden-only convention" without requiring the
+    /// `StructField` / `CanonicalType` schema to grow nested-codec or
+    /// nullable variants — both extensions are deferred to a separate RFC
+    /// per-fixture upgrade path.
+    ///
+    /// Default true so existing manifest entries keep the historical
+    /// oracle-driven behaviour without churn.
+    #[serde(default = "default_oracle_eligible")]
+    pub oracle_eligible: bool,
     #[serde(flatten)]
     pub spec: FixtureSpec,
+}
+
+fn default_oracle_eligible() -> bool {
+    true
 }
 
 /// Kind-specific fixture data. The `#[serde(tag = "kind")]` attribute makes
@@ -967,6 +991,66 @@ pub fn harness_filename(language: Language) -> &'static str {
 /// CLI can apply the same filter that `generate-conformance` uses,
 /// keeping the c11 cmake harness's fixture set auto-derived from the
 /// single manifest source of truth instead of hand-maintained.
+/// RFC §5.J.4 per-fixture matrix gate: combines the kind-level
+/// `template_ships` matrix with two per-fixture predicates that the
+/// matrix cannot express:
+///
+///   1. **C11 phase filter** (`c11_supported_kind`) — phase-driven
+///      kind subset that's already separately gated.
+///   2. **MCU-only fixture filter** (`codec_has_mcu_only_features`) —
+///      `<sce:dma-aligned>` codecs lower to Rust + C11 only; cpp /
+///      kotlin / go / python codegen rejects them with the typed
+///      `MCU-class kind` error. The kind-matrix can't express this
+///      because `kind=codec` ships everywhere — the per-fixture SCXML
+///      decides.
+///
+/// Used by both `render_harness` (the harness fragment renderer
+/// retains the matching subset) and `list-fixtures --language <X>`
+/// (cmake reads the same subset to schedule per-fixture
+/// add_custom_command). Single source of truth so `cmake --build` and
+/// `cargo test --test numerical_conformance` cannot drift on which
+/// fixtures the per-language harness compiles.
+///
+/// `resource_dir` is `tests/forge/resources` (the SCXML location);
+/// MCU detection requires reading the SCXML, which is why this needs
+/// the path. Passes `Ok(true)` through when the SCXML is missing —
+/// non-codec fixtures or test-only entries don't have a paired SCXML
+/// and aren't MCU candidates anyway.
+pub fn lang_supports_fixture(
+    fixture: &Fixture,
+    language: crate::generator::Language,
+    resource_dir: &Path,
+) -> Result<bool, String> {
+    let Some(kind) = crate::forge::model::ForgeKind::from_attr(fixture.spec.kind_str()) else {
+        return Ok(false);
+    };
+    if !crate::forge::codegen_matrix::template_ships(kind, language) {
+        return Ok(false);
+    }
+    if matches!(language, crate::generator::Language::C11)
+        && !c11_supported_kind(&fixture.spec)
+    {
+        return Ok(false);
+    }
+    // Per-fixture MCU-only gate: only the four non-MCU backends need
+    // the SCXML scan. Rust + C11 are the MCU substrate — every
+    // codec's product code lowers there; no need to filter.
+    let is_non_mcu = matches!(
+        language,
+        crate::generator::Language::Cpp
+            | crate::generator::Language::Kotlin
+            | crate::generator::Language::Go
+            | crate::generator::Language::Python
+    );
+    if is_non_mcu && matches!(fixture.spec, FixtureSpec::Codec { .. }) {
+        let scxml_path = resource_dir.join(format!("{}.scxml", fixture.name));
+        if scxml_path.exists() && codec_has_mcu_only_features(&scxml_path)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 pub fn c11_supported_kind(spec: &FixtureSpec) -> bool {
     match spec {
         FixtureSpec::Transform { .. }
@@ -1249,6 +1333,55 @@ fn has_test_vectors_in_file(scxml_path: &Path) -> Result<bool, String> {
     }))
 }
 
+/// RFC §5.J.4 per-fixture matrix gate: scan a codec SCXML for MCU-only
+/// features. Mirrors `CodecModel::has_mcu_only_features` (currently
+/// `has_dma_aligned_fields` — any `<sce:field>` carrying the
+/// `sce:dma-burst-align` attribute). Non-MCU backends (cpp / kotlin /
+/// go / python) reject these at codegen time with a hard
+/// `MCU-class kind` error, so the conformance harness must prefilter
+/// them before invoking sce-codegen — otherwise CMake's per-fixture
+/// `add_custom_command` schedules a generation that will fail.
+///
+/// The kind-level matrix (`template_ships`) doesn't help here because
+/// `kind=codec` ships on every backend; the MCU restriction is
+/// per-fixture (the SCXML's feature set decides). Mirrors
+/// `has_test_vectors_in_file`'s SCXML-scan approach so the conformance
+/// pipeline stays free of extra manifest fields the author would have
+/// to remember to flip.
+///
+/// Returns `Ok(false)` for non-codec SCXMLs and SCXMLs that exist but
+/// don't carry any MCU-only marker; returns the IO/parse error
+/// otherwise.
+pub fn codec_has_mcu_only_features(scxml_path: &Path) -> Result<bool, String> {
+    let text = std::fs::read_to_string(scxml_path)
+        .map_err(|e| format!("cannot read {}: {e}", scxml_path.display()))?;
+    let doc = roxmltree::Document::parse(&text)
+        .map_err(|e| format!("invalid SCXML at {}: {e}", scxml_path.display()))?;
+    let sce_ns = crate::forge::model::SCE_NAMESPACE;
+    // Walk every descendant. MCU-only markers today are attribute-only
+    // (`sce:dma-burst-align` on `<sce:field>`); the element-form check
+    // is preserved as a forward-compat hook for future MCU-only
+    // markers that surface as standalone elements.
+    fn walk(node: roxmltree::Node, sce_ns: &str) -> bool {
+        for child in node.children() {
+            if child.is_element() {
+                // Attribute marker: `sce:dma-burst-align` on any
+                // `<sce:field>` (mirrors `has_dma_aligned_fields`).
+                if child.attributes().any(|a| {
+                    a.namespace() == Some(sce_ns) && a.name() == "dma-burst-align"
+                }) {
+                    return true;
+                }
+                if walk(child, sce_ns) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+    Ok(walk(doc.root_element(), sce_ns))
+}
+
 fn read_validator_has_state(scxml_path: &Path) -> Result<bool, String> {
     let text = std::fs::read_to_string(scxml_path)
         .map_err(|e| format!("cannot read {}: {e}", scxml_path.display()))?;
@@ -1529,17 +1662,25 @@ pub fn render_harness(
     // on top via `c11_supported_kind` (kept as a separate function so
     // a future C11-internal subset stays expressible without polluting
     // the language-agnostic matrix).
+    // Single per-fixture gate (kind-matrix + C11 phase subset +
+    // MCU-only-on-non-MCU exclusion). Mirrors the same predicate
+    // applied by `sce-codegen list-fixtures --language <X>` so
+    // `cargo test` and `cmake --build` see identical fixture sets.
+    let mut filter_err: Option<String> = None;
     fixtures.retain(|f| {
-        let Some(kind) = crate::forge::model::ForgeKind::from_attr(f.spec.kind_str()) else {
-            // FixtureSpec::kind_str() returns canonical attr names that
-            // ForgeKind::from_attr always accepts; a None here would be
-            // an upstream inconsistency, so drop the fixture defensively.
+        if filter_err.is_some() {
             return false;
-        };
-        crate::forge::codegen_matrix::template_ships(kind, language)
+        }
+        match lang_supports_fixture(f, language, resource_dir) {
+            Ok(b) => b,
+            Err(e) => {
+                filter_err = Some(e);
+                false
+            }
+        }
     });
-    if matches!(language, Language::C11) {
-        fixtures.retain(|f| c11_supported_kind(&f.spec));
+    if let Some(e) = filter_err {
+        return Err(e);
     }
 
     // Per-kind presence flags let per-language harness scaffolds pull in
@@ -1586,6 +1727,14 @@ pub fn render_harness(
             for f in &fixtures {
                 let mut v = serde_json::to_value(f)
                     .map_err(|e| format!("serialize fixture {}: {e}", f.name))?;
+                // `oracle_eligible: false` fixtures don't have an oracle
+                // entry — they're compile-only. Skip the lookup + merge so
+                // the harness fragment renders the minimal probe block
+                // without any `cases` array.
+                if !f.oracle_eligible {
+                    enriched.push(v);
+                    continue;
+                }
                 // Fold every key of the oracle entry (e.g. `cases`, `sequence`,
                 // `tags`) into the fixture object so per-kind fragments can
                 // reference them as `f.<key>` regardless of which shape the
@@ -1803,6 +1952,13 @@ mod tests {
         let mut failures: Vec<String> = Vec::new();
 
         for fixture in &manifest.fixtures {
+            // `oracle_eligible: false` fixtures live in the harness purely
+            // for compile-verification (golden include + Default::default()
+            // probe) — they have no oracle entry by design. Skip them here
+            // so a missing oracle row is not flagged as drift.
+            if !fixture.oracle_eligible {
+                continue;
+            }
             let section_name = &fixture.ref_section;
             let fixture_name = &fixture.name;
 

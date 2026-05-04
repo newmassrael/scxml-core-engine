@@ -68,7 +68,6 @@ class CodecZenohUndeclSubscriber:
             r.append((_w & 0x7F) | 0x80)
             _w >>= 7
         r.append(_w)
-        if (parent_flags & 0x80) != 0:
-            if self.ext_keyexpr is not None:
-                r.extend(self.ext_keyexpr.encode())
+        if self.ext_keyexpr is not None:
+            r.extend(self.ext_keyexpr.encode())
         return bytes(r)

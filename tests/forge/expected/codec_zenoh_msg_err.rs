@@ -152,10 +152,8 @@ impl CodecZenohMsgErr {
         // unified encode path.
         let mut r: Vec<u8> = Vec::with_capacity(695);
         r.push(self.header);
-        if (header & 0x40u8) != 0 {
-            if let Some(_v) = &self.encoding {
-                r.extend(_v.encode());
-            }
+        if let Some(_v) = &self.encoding {
+            r.extend(_v.encode());
         }
         if let Some(_list) = &self.extensions {
             for _e in _list {

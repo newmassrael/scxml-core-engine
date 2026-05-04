@@ -134,7 +134,6 @@ class CodecZenohInterestBody:
         # codec mixing VLE + present-if uses the unified encode path.
         r = bytearray()
         r.append(self.header & 0xFF)
-        if (header & 0x10) != 0:
-            if self.keyexpr is not None:
-                r.extend(self.keyexpr.encode(self.header))
+        if self.keyexpr is not None:
+            r.extend(self.keyexpr.encode(self.header))
         return bytes(r)

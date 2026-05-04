@@ -113,9 +113,8 @@ class CodecZenohMsgDel:
         # codec mixing VLE + present-if uses the unified encode path.
         r = bytearray()
         r.append(self.header & 0xFF)
-        if (header & 0x20) != 0:
-            if self.timestamp is not None:
-                r.extend(self.timestamp.encode())
+        if self.timestamp is not None:
+            r.extend(self.timestamp.encode())
         if self.extensions is not None:
             for _e in self.extensions:
                 r.extend(_e.encode())

@@ -6,6 +6,23 @@
    use `{{ field.name }}` without a case filter. `decode` is on the
    companion object and takes a `com.sce.forge.runtime.SceCursor`;
    `encode` is an instance method returning ByteArray. #}
+{% if not f.oracle_eligible %}
+        // Compile-only probe: oracle_eligible=false because the fixture's
+        // field shape isn't expressible in the current StructField /
+        // CanonicalType schema (typed nested codec, nullable T?, or
+        // parent-flag-bearing carrier). The fixture's import was already
+        // resolved at module compile time; this no-arg constructor call
+        // drags the data class's primary-constructor defaults through
+        // kotlinc so the silently-broken-codegen regression class that
+        // landed in commit 91ae355a (Kotlin embed default overwriting
+        // <EmbedType>() with byteArrayOf()) surfaces here before
+        // reaching consumers.
+        run {
+            val _codecVal = {{ f.name | to_pascal_case }}()
+            @Suppress("UNUSED_VARIABLE")
+            val _unused = _codecVal
+        }
+{% else %}
         val spec = ref["{{ f.ref_section }}"]!!.jsonObject["{{ f.name }}"]!!.jsonObject
         spec["cases"]!!.jsonArray.forEachIndexed { i, caseEl ->
 {% if f.fields %}
@@ -47,3 +64,4 @@
 {% endif %}
 {% endfor %}
         }
+{% endif %}

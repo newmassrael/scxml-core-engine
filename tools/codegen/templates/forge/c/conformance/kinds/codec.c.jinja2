@@ -19,6 +19,20 @@
    owns that identifier (mirrors the codec product header's
    `c_emit_len_member` collision-avoidance). #}
 static void test_{{ f.name }}(void) {
+{% if not f.oracle_eligible %}
+    /* Compile-only probe: oracle_eligible=false because the fixture's
+     * field shape isn't expressible in the current StructField /
+     * CanonicalType schema (typed nested codec, length+ptr-pair
+     * optional, or parent-flag-bearing carrier). The fixture's #include
+     * in the harness scaffold already proved the header parses. This
+     * zero-init drags the per-field offsets and the encode/decode
+     * static-inline definitions through the C compiler so a silently-
+     * broken-codegen regression of commit 91ae355a's class surfaces
+     * here before reaching consumers. */
+    {{ f.name }}_t _codec_val;
+    memset(&_codec_val, 0, sizeof(_codec_val));
+    (void)_codec_val;
+{% else %}
     typedef struct {
 {% for field in f.fields %}
 {% set sibling_owns_len = (f.fields | selectattr('name', 'equalto', field.name + '_len') | list | length) > 0 %}
@@ -119,4 +133,5 @@ static void test_{{ f.name }}(void) {
 {% endif %}
 {% endfor %}
     }
+{% endif %}
 }

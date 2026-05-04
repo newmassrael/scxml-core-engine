@@ -82,10 +82,8 @@ data class CodecZenohInterest(
             }
             r.add(_w.toByte())
         }
-        if ((header.toInt() and 0x20) != 0 || (header.toInt() and 0x40) != 0) {
-            this.body?.let { _v ->
-                r.addAll(_v.encode().toList())
-            }
+        this.body?.let { _v ->
+            r.addAll(_v.encode().toList())
         }
         this.extensions?.let { _list ->
             for (_e in _list) {

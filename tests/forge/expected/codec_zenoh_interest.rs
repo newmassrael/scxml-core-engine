@@ -151,10 +151,8 @@ impl CodecZenohInterest {
             }
             r.push(_w as u8);
         }
-        if (header & 0x20u8) != 0 || (header & 0x40u8) != 0 {
-            if let Some(_v) = &self.body {
-                r.extend(_v.encode());
-            }
+        if let Some(_v) = &self.body {
+            r.extend(_v.encode());
         }
         if let Some(_list) = &self.extensions {
             for _e in _list {

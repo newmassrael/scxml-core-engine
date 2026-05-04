@@ -6,6 +6,20 @@
    (camelCase) name in fixtures.json is converted via `to_snake_case`.
    `encode()` returns `bytes`; `decode(cursor)` is a classmethod taking
    an `sce_forge_runtime.codec.SceCursor` and returning `Optional[...]`. #}
+{% if not f.oracle_eligible %}
+        # Compile-only probe: oracle_eligible=false because the fixture's
+        # field shape isn't expressible in the current StructField /
+        # CanonicalType schema (typed nested codec, Optional[T], or
+        # parent-flag-bearing carrier). The fixture's module import was
+        # already resolved at test load; this no-arg dataclass
+        # construction drags the @dataclass field defaults through the
+        # Python type checker (and through `__init__`'s required-arg
+        # check) so a silently-broken-codegen regression class —
+        # missing default, dataclass requiring positional args — fails
+        # at test time rather than waiting for a future round-trip.
+        _codec_val = {{ f.name }}.{{ f.name | to_pascal_case }}()
+        del _codec_val
+{% else %}
         for i, case in enumerate(spec["cases"]):
 {% if f.fields %}
             decoded = case["decoded"]
@@ -45,3 +59,4 @@
                 f"{{ f.name }} case {i} decode {{ field.name }}",
             )
 {% endfor %}
+{% endif %}

@@ -83,9 +83,25 @@ def _ensure_codegen() -> None:
 def _load_fixture_names() -> list[str]:
     """Pull the fixture list from sce-codegen itself so this script never
     has to know the manifest schema. The Rust binary owns the schema (see
-    sce-build/src/conformance.rs)."""
+    sce-build/src/conformance.rs).
+
+    `--language python` applies the matrix-aware filter (kind ships per
+    backend; MCU-only codecs like `sce:dma-burst-align` lower to Rust +
+    C11 only and would surface as a `MCU-class kind` error here without
+    pre-filtering — same gate the cmake harnesses use for cpp / c11)."""
     result = subprocess.run(
-        [str(SCE_CODEGEN), "list-fixtures", "--manifest", str(MANIFEST), "--format", "plain"],
+        [
+            str(SCE_CODEGEN),
+            "list-fixtures",
+            "--manifest",
+            str(MANIFEST),
+            "--language",
+            "python",
+            "--resource-dir",
+            str(RESOURCE_DIR),
+            "--format",
+            "plain",
+        ],
         check=True,
         capture_output=True,
         text=True,

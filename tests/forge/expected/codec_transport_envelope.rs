@@ -76,7 +76,7 @@ impl CodecTransportEnvelope {
         // from the cursor. The default arm (when declared) carries the
         // runtime tag value so encode can round-trip it back onto the
         // wire.
-        let body = match (((header >> 0) & (0x1F as u8)) as u8) {
+        let body = match ((header >> 0) & (0x1F as u8)) as u8 {
             1u8 => CodecTransportEnvelopeVariant::CodecZenohInitBody(CodecZenohInitBody::decode(cursor, header)?),
             2u8 => CodecTransportEnvelopeVariant::CodecZenohOpenBody(CodecZenohOpenBody::decode(cursor, header)?),
             3u8 => CodecTransportEnvelopeVariant::CodecZenohClose(CodecZenohClose::decode(cursor)?),

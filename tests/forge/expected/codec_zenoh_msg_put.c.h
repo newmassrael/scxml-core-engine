@@ -158,7 +158,7 @@ static inline void codec_zenoh_msg_put_set_mid(codec_zenoh_msg_put_t *self, uint
 }
 
 
-static inline bool codec_zenoh_msg_put_t(const codec_zenoh_msg_put_t *self) {
+static inline bool codec_zenoh_msg_put_t_flag(const codec_zenoh_msg_put_t *self) {
     return (self->header & 0x20) != 0;
 }
 

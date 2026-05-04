@@ -163,11 +163,9 @@ struct CodecZenohInterestBody {
         std::vector<uint8_t> r;
         r.reserve(257);
         r.push_back(header);
-        if ((header & 0x10) != 0) {
-            if (this->keyexpr.has_value()) {
-                auto _sub = this->keyexpr->encode(header);
-                r.insert(r.end(), _sub.begin(), _sub.end());
-            }
+        if (this->keyexpr.has_value()) {
+            auto _sub = this->keyexpr->encode(header);
+            r.insert(r.end(), _sub.begin(), _sub.end());
         }
         return r;
     }

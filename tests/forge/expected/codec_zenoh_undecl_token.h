@@ -73,11 +73,9 @@ struct CodecZenohUndeclToken {
             }
             r.push_back(static_cast<std::uint8_t>(_w));
         }
-        if ((parent_flags & 0x80) != 0) {
-            if (this->ext_keyexpr.has_value()) {
-                auto _sub = this->ext_keyexpr->encode();
-                r.insert(r.end(), _sub.begin(), _sub.end());
-            }
+        if (this->ext_keyexpr.has_value()) {
+            auto _sub = this->ext_keyexpr->encode();
+            r.insert(r.end(), _sub.begin(), _sub.end());
         }
         return r;
     }

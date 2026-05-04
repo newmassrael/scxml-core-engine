@@ -6,6 +6,19 @@
    and `func (s *<PascalName>) Encode() []byte`. SCXML source case (camelCase)
    is converted to PascalCase for Go struct fields via the `to_pascal_case`
    filter, matching the generator's naming convention. #}
+{% if not f.oracle_eligible %}
+	// Compile-only probe: oracle_eligible=false because the fixture's
+	// field shape isn't expressible in the current StructField /
+	// CanonicalType schema (typed nested codec, *T pointer, or
+	// parent-flag-bearing carrier). The package import resolved at
+	// build time, so a silently-broken kotlinc/go-build-class
+	// regression of commit 91ae355a's variety (Go pointer/value
+	// mismatch in struct literals) is already caught upstream by
+	// `go build`. This zero-value declaration additionally exercises
+	// the type's identity so the unused-import linter stays quiet.
+	var _codecVal {{ f.name }}.{{ f.name | to_pascal_case }}
+	_ = _codecVal
+{% else %}
 	cases := ref.codecCases(t, "{{ f.ref_section }}", "{{ f.name }}")
 	type decodedShape struct {
 {% for field in f.fields %}
@@ -72,3 +85,4 @@
 {% endif %}
 {% endfor %}
 	}
+{% endif %}

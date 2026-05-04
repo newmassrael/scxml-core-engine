@@ -109,10 +109,8 @@ data class CodecZenohInterestBody(
         // codec mixing VLE + present-if uses the unified encode path.
         val r = mutableListOf<Byte>()
         r.add(this.header.toByte())
-        if ((header.toInt() and 0x10) != 0) {
-            this.keyexpr?.let { _v ->
-                r.addAll(_v.encode(this.header).toList())
-            }
+        this.keyexpr?.let { _v ->
+            r.addAll(_v.encode(this.header).toList())
         }
         return r.toByteArray()
     }

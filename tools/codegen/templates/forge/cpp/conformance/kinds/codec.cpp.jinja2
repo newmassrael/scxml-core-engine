@@ -10,6 +10,24 @@
    Naming convention matches the Rust/Kotlin/Python codec fragments — any
    SCXML field name (including `value`, `data`, `result`, etc.) is safe
    because local bindings are all `input_<field>` and never bare. #}
+{% if not f.oracle_eligible %}
+    // Compile-only probe: oracle_eligible=false because the fixture's
+    // field shape isn't expressible in the current StructField /
+    // CanonicalType schema (typed nested codec, std::optional, or
+    // parent-flag-bearing carrier). The fixture's #include in the
+    // harness scaffold already proved the header parses; this default
+    // construction drags the type's pub API through the C++ type
+    // checker so a silently-broken-codegen regression of commit
+    // 91ae355a's class surfaces here before reaching consumers.
+    // The harness scaffold passes `ref` by reference to every
+    // per-fixture test function — silence -Werror=unused-parameter
+    // here since the compile-only path doesn't read the oracle.
+    (void)ref;
+    {
+        SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }} _codec_val{};
+        (void)_codec_val;
+    }
+{% else %}
     const auto &spec = ref["{{ f.ref_section }}"]["{{ f.name }}"];
     int i = 0;
     for (const auto &case_entry : spec["cases"]) {
@@ -60,3 +78,4 @@
         }
         ++i;
     }
+{% endif %}

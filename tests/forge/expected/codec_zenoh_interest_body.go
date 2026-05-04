@@ -164,10 +164,8 @@ func (s *CodecZenohInterestBody) Encode() []byte {
 	// present-if uses the unified encode path.
 	r := make([]byte, 0, 257)
 	r = append(r, s.Header)
-	if (Header & 0x10) != 0 {
-		if s.Keyexpr != nil {
-			r = append(r, s.Keyexpr.Encode(s.Header)...)
-		}
+	if s.Keyexpr != nil {
+		r = append(r, s.Keyexpr.Encode(s.Header)...)
 	}
 	return r
 }

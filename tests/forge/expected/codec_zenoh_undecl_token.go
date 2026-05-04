@@ -60,10 +60,8 @@ func (s *CodecZenohUndeclToken) Encode(parentFlags byte) []byte {
 		}
 		r = append(r, byte(_w))
 	}
-	if (parentFlags & 0x80) != 0 {
-		if s.ExtKeyexpr != nil {
-			r = append(r, s.ExtKeyexpr.Encode()...)
-		}
+	if s.ExtKeyexpr != nil {
+		r = append(r, s.ExtKeyexpr.Encode()...)
 	}
 	return r
 }

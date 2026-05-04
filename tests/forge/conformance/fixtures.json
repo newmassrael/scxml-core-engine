@@ -1,7 +1,7 @@
 {
   "$schema": "./fixtures.schema.json",
   "version": 1,
-  "description": "Cross-language conformance fixture catalog. NOTE: the $schema above is editor/IDE only \u2014 sce-build/src/conformance.rs hand-rolls runtime validation; the JSON schema is never consulted at codegen time. Each entry declares a fixture's structural metadata (kind, arg types, output shape) so sce-codegen can render per-language test harnesses from a single source. The oracle values \u2014 expected outputs \u2014 live in numerical_reference.json. Adding a new fixture requires (1) an SCXML file under tests/forge/resources/, (2) an entry here, and (3) an expected-value entry in numerical_reference.json. No language-specific test code should ever need to be hand-written.",
+  "description": "Cross-language conformance fixture catalog. NOTE: the $schema above is editor/IDE only — sce-build/src/conformance.rs hand-rolls runtime validation; the JSON schema is never consulted at codegen time. Each entry declares a fixture's structural metadata (kind, arg types, output shape) so sce-codegen can render per-language test harnesses from a single source. The oracle values — expected outputs — live in numerical_reference.json. Adding a new fixture requires (1) an SCXML file under tests/forge/resources/, (2) an entry here, and (3) an expected-value entry in numerical_reference.json. No language-specific test code should ever need to be hand-written.",
   "kinds": {
     "interpolation": "Pure lookup table with numeric interpolation. Struct::lookup(args) -> scalar. Reference section: pure_functions.",
     "transform": "Pure value transform. Free function(s) compute_*(args) -> scalar or multi-output. Reference section: pure_functions.",
@@ -9,11 +9,11 @@
     "filter": "Stateful signal filter. Instance::update(input) -> output, one output per sequence step. Reference section: stateful_filters.",
     "observer": "Stateful event observer. Instance::update(input) -> event queue, zero-or-more events per step. Reference section: observers.",
     "procedure": "Pure procedure result. Language-specific binding returns ProcedureResult{completed, final_state}. Reference section: pure_functions.",
-    "lookup": "Finite key\u2192value mapping. Free function lookup_<name>(key) -> V|Option<V>. Numeric outputs use direct comparison; string outputs return language-specific enums verified via oracle string matching. Reference section: pure_functions (numeric) or string_lookups (enum).",
+    "lookup": "Finite key→value mapping. Free function lookup_<name>(key) -> V|Option<V>. Numeric outputs use direct comparison; string outputs return language-specific enums verified via oracle string matching. Reference section: pure_functions (numeric) or string_lookups (enum).",
     "timer": "Timer scheduler. Generated struct wraps N timer HAL instances. Conformance verifies registration metadata (type, interval_ms) and callback dispatch via recording mocks. Reference section: timers.",
     "validator": "Stateful data validator. Instance::validate(args...) returns a struct whose layout is declared per fixture under `output` as a list of {name, type, compare} entries; the fragment iterates those fields to build per-field assertions, which keeps the forge product's return-struct shape (currently always {valid, reason}) out of the five per-language fragment templates. Internal sample memory (for rate-of-change checks) advances only on a successful validation, so oracle sequences exercise range / ROC / plausibility branches and the state-non-update rule. Reference section: validators.",
     "codec": "Byte-layout codec. Generated struct exposes `encode()` returning the raw byte vector and a static `decode(raw)` returning the typed struct (wrapped in the language's optional). Oracle cases are `{decoded, encoded}` pairs exercising round-trip symmetry in both directions. Field layout lives in SCXML (sce:byte, sce:bit-offset, sce:bit-size, sce:default-endian); the manifest entry only mirrors field names and canonical types so fragments can iterate them. Field names use SCXML source case (camelCase) as the canonical key across oracle and manifest; each per-language fragment applies its own case filter (Rust/Python snake_case, Go PascalCase, C++/Kotlin as-is camelCase). Reference section: codecs.",
-    "algorithm": "RFC \u00a75.A pure free function with bounded loops. Free function `<name>(args) -> scalar` with optional bytes parameters lowering to the language's native byte-stream view (`sce_forge_bytes_t` on C11, `&[u8]` on Rust). Cross-(Rust, C11) byte-equivalence is the \u00a7A6 acceptance gate; A6 wires the two CRC16-CCITT-FALSE fixtures (bit-by-bit + table-fold) through the conformance harness so any future codegen drift fails ctest. Reference section: pure_functions."
+    "algorithm": "RFC §5.A pure free function with bounded loops. Free function `<name>(args) -> scalar` with optional bytes parameters lowering to the language's native byte-stream view (`sce_forge_bytes_t` on C11, `&[u8]` on Rust). Cross-(Rust, C11) byte-equivalence is the §A6 acceptance gate; A6 wires the two CRC16-CCITT-FALSE fixtures (bit-by-bit + table-fold) through the conformance harness so any future codegen drift fails ctest. Reference section: pure_functions."
   },
   "canonical_types": {
     "description": "Canonical arg/input/output types. Each per-language template maps these to its own type system (e.g. u16 -> uint16 in Go, UShort in Kotlin, std::uint16_t in C++). `bytes` is the variable-length byte sequence; in args it represents a `sce_forge_bytes_t` view on C11 / `&[u8]` on Rust.",
@@ -827,6 +827,510 @@
         "type": "u16",
         "compare": "equality"
       }
+    },
+    {
+      "name": "codec_dma_aligned_basic",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_embed_basic",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_ext_attachment",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_ext_encoding_info",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_ext_timestamp",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_flags_basic",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_init_cookie_body",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_init_syn_body",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_init_syn_envelope",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_peek_arm_a",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_peek_arm_b",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_present_if_basic",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_present_if_disjunction",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_present_if_length_ref",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_present_if_negation",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_present_if_string",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_present_if_tail",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_present_if_vle",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_repeat_basic",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_repeat_elem",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_repeat_present_if_basic",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_scout_zid_body",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_tlv_chain_basic",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_tlv_chain_present_if_basic",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_tlv_entry",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_transport_envelope",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_until_eof_basic",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_variant_dispatch",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_variant_peek_basic",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_variant_session_close",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_variant_session_open",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_decl_ext_keyexpr",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_decl_ext_keyexpr_inner",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_decl_keyexpr",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_decl_queryable",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_decl_subscriber",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_decl_token",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_declaration",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_declare",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_encoding",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_ext_entry",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_ext_envelope",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_ext_unit",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_ext_zbuf",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_ext_zint",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_hello",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_init_body",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_interest",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_interest_body",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_join",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_msg_del",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_msg_err",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_msg_put",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_msg_reply",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_oam",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_open_body",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_push",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_push_body",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_query",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_request",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_response",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_response_final",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_scout",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_source_info",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_source_info_ext",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_timestamp",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_timestamp_ext",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_undecl_keyexpr",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_undecl_queryable",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_undecl_subscriber",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_undecl_token",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
+      "name": "codec_zenoh_wireexpr",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
     }
   ]
 }

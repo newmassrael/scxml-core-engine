@@ -11,7 +11,17 @@
    `input_<field>` for oracle-derived values, `round_tripped` for the
    decoded struct. A codec fixture may declare any field name (including
    common words like `value`, `data`, `result`) without risk of colliding
-   with the fragment's local bindings. #}
+   with the fragment's local bindings.
+
+   `oracle_eligible: false` fixtures (typed nested struct fields, Option<T>,
+   parent-flag-bearing carriers — shapes the StructField/CanonicalType
+   schema cannot express) take the `else` branch: the fixture's `pub mod`
+   above already pulled the golden into the translation unit, so this body
+   only needs a Default::default() probe to drag the type's pub API
+   (struct fields, encode, decode, new) through the type checker.
+   Catches the silently-broken-codegen class of bug that motivated
+   commit 91ae355a (Kotlin embed default + Go pointer/value mismatch). #}
+{% if f.oracle_eligible %}
     let spec = &reference["{{ f.ref_section }}"]["{{ f.name }}"];
     for (i, case) in spec["cases"]
         .as_array()
@@ -68,3 +78,18 @@
             .expect("{{ f.name }} decode must succeed");
 {% endif %}
     }
+{% else %}
+    // Compile-only probe: oracle_eligible=false because the fixture's
+    // field shape isn't expressible in the current StructField /
+    // CanonicalType schema (typed nested codec, Option<T>, or
+    // parent-flag-bearing carrier). The `include!` in the harness
+    // scaffold already proved the file parses + the module compiles.
+    // Default::default() additionally drags the struct + encode + new
+    // surface through the type checker so a future kotlinc/go-build
+    // -class regression of commit 91ae355a's variety surfaces here
+    // before reaching consumers.
+    let _ = &reference;
+    let _val: {{ f.name | to_pascal_case }} = {{ f.name | to_pascal_case }}::default();
+    let _val2: {{ f.name | to_pascal_case }} = {{ f.name | to_pascal_case }}::new();
+    let _ = (_val, _val2);
+{% endif %}

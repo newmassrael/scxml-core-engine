@@ -174,10 +174,8 @@ impl CodecZenohInterestBody {
         // unified encode path.
         let mut r: Vec<u8> = Vec::with_capacity(257);
         r.push(self.header);
-        if (header & 0x10u8) != 0 {
-            if let Some(_v) = &self.keyexpr {
-                r.extend(_v.encode(self.header));
-            }
+        if let Some(_v) = &self.keyexpr {
+            r.extend(_v.encode(self.header));
         }
         r
     }

@@ -93,7 +93,7 @@ impl CodecZenohOam {
         // from the cursor. The default arm (when declared) carries the
         // runtime tag value so encode can round-trip it back onto the
         // wire.
-        let body = match (((header >> 5) & (0x03 as u8)) as u8) {
+        let body = match ((header >> 5) & (0x03 as u8)) as u8 {
             0u8 => CodecZenohOamVariant::CodecZenohExtUnit(CodecZenohExtUnit::decode(cursor)?),
             1u8 => CodecZenohOamVariant::CodecZenohExtZint(CodecZenohExtZint::decode(cursor)?),
             2u8 => CodecZenohOamVariant::CodecZenohExtZbuf(CodecZenohExtZbuf::decode(cursor)?),

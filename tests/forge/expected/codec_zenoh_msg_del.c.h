@@ -117,7 +117,7 @@ static inline void codec_zenoh_msg_del_set_mid(codec_zenoh_msg_del_t *self, uint
 }
 
 
-static inline bool codec_zenoh_msg_del_t(const codec_zenoh_msg_del_t *self) {
+static inline bool codec_zenoh_msg_del_t_flag(const codec_zenoh_msg_del_t *self) {
     return (self->header & 0x20) != 0;
 }
 

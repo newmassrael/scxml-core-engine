@@ -97,7 +97,7 @@ impl CodecZenohRequest {
         // from the cursor. The default arm (when declared) carries the
         // runtime tag value so encode can round-trip it back onto the
         // wire.
-        let body = match (((_peek >> 0) & (0x1F as u8)) as u8) {
+        let body = match ((_peek >> 0) & (0x1F as u8)) as u8 {
             1u8 => CodecZenohRequestVariant::CodecZenohMsgPut(CodecZenohMsgPut::decode(cursor)?),
             2u8 => CodecZenohRequestVariant::CodecZenohMsgDel(CodecZenohMsgDel::decode(cursor)?),
             3u8 => CodecZenohRequestVariant::CodecZenohQuery(CodecZenohQuery::decode(cursor)?),

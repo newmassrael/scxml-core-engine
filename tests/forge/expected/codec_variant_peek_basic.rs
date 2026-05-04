@@ -64,7 +64,7 @@ impl CodecVariantPeekBasic {
         // from the cursor. The default arm (when declared) carries the
         // runtime tag value so encode can round-trip it back onto the
         // wire.
-        let body = match (((_peek >> 0) & (0x01 as u8)) as u8) {
+        let body = match ((_peek >> 0) & (0x01 as u8)) as u8 {
             0u8 => CodecVariantPeekBasicVariant::CodecPeekArmA(CodecPeekArmA::decode(cursor)?),
             1u8 => CodecVariantPeekBasicVariant::CodecPeekArmB(CodecPeekArmB::decode(cursor)?),
             // Build-time `codec/variant-arm-unreachable` proves the

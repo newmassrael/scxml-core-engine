@@ -84,10 +84,8 @@ impl CodecZenohUndeclSubscriber {
             }
             r.push(_w as u8);
         }
-        if (parent_flags & 0x80u8) != 0 {
-            if let Some(_v) = &self.ext_keyexpr {
-                r.extend(_v.encode());
-            }
+        if let Some(_v) = &self.ext_keyexpr {
+            r.extend(_v.encode());
         }
         r
     }

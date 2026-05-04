@@ -147,10 +147,8 @@ func (s *CodecZenohInterest) Encode() []byte {
 		}
 		r = append(r, byte(_w))
 	}
-	if (Header & 0x20) != 0 || (Header & 0x40) != 0 {
-		if s.Body != nil {
-			r = append(r, s.Body.Encode()...)
-		}
+	if s.Body != nil {
+		r = append(r, s.Body.Encode()...)
 	}
 	for _, _e := range s.Extensions {
 		r = append(r, _e.Encode()...)

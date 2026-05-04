@@ -122,9 +122,8 @@ class CodecZenohMsgErr:
         # codec mixing VLE + present-if uses the unified encode path.
         r = bytearray()
         r.append(self.header & 0xFF)
-        if (header & 0x40) != 0:
-            if self.encoding is not None:
-                r.extend(self.encoding.encode())
+        if self.encoding is not None:
+            r.extend(self.encoding.encode())
         if self.extensions is not None:
             for _e in self.extensions:
                 r.extend(_e.encode())

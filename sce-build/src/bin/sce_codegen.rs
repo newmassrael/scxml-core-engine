@@ -2576,32 +2576,40 @@ fn cmd_list_fixtures(
     // populated `has_test_vectors` on each algorithm fixture (using
     // `--resource-dir` or the in-repo fallback), so the filter below
     // can read the flag straight off the fixture spec.
+    // Resolve the resource-dir for the per-fixture MCU-only SCXML scan
+    // that `lang_supports_fixture` performs. Same fallback as the
+    // earlier sidecar enrichment block above.
+    let resource_root_for_filter: std::path::PathBuf = match resource_dir {
+        Some(rd) => std::path::PathBuf::from(rd),
+        None => {
+            let manifest_dir = Path::new(manifest_path)
+                .parent()
+                .unwrap_or(Path::new("."));
+            manifest_dir
+                .parent()
+                .map(|p| p.join("resources"))
+                .unwrap_or_else(|| manifest_dir.join("resources"))
+        }
+    };
     let names: Vec<&str> = manifest
         .fixtures
         .iter()
         .filter(|f| match lang_filter {
             // RFC §5.J.4 single-source-of-truth gate: skip any fixture
             // whose product template hasn't shipped on the requested
-            // language. Mirrors the matrix-aware filter that `render_harness`
-            // applies before invoking per-language conformance fragments,
-            // so cmake `list-fixtures` returns only the fixtures the
-            // harness actually compiles.
-            Some(lang) => {
-                let Some(kind) = sce_build::forge::model::ForgeKind::from_attr(
-                    f.spec.kind_str(),
-                ) else {
-                    return false;
-                };
-                if !sce_build::forge::codegen_matrix::template_ships(kind, lang) {
-                    return false;
-                }
-                if matches!(lang, Language::C11)
-                    && !sce_build::conformance::c11_supported_kind(&f.spec)
-                {
-                    return false;
-                }
-                true
-            }
+            // language, or whose SCXML carries MCU-only features
+            // (`<sce:dma-aligned>`) that the four non-MCU backends
+            // reject at codegen time. Both checks live in
+            // `lang_supports_fixture` so `cargo test` and `cmake --build`
+            // see identical fixture sets — drift here would silently
+            // schedule a per-fixture `add_custom_command` for a
+            // generation that fails with `MCU-class kind`.
+            Some(lang) => sce_build::conformance::lang_supports_fixture(
+                f,
+                lang,
+                &resource_root_for_filter,
+            )
+            .unwrap_or(false),
             None => true,
         })
         .filter(|f| {

@@ -80,7 +80,7 @@ impl CodecZenohDeclaration {
         // from the cursor. The default arm (when declared) carries the
         // runtime tag value so encode can round-trip it back onto the
         // wire.
-        let body = match (((header >> 0) & (0x1F as u8)) as u8) {
+        let body = match ((header >> 0) & (0x1F as u8)) as u8 {
             0u8 => CodecZenohDeclarationVariant::CodecZenohDeclKeyexpr(CodecZenohDeclKeyexpr::decode(cursor, header)?),
             1u8 => CodecZenohDeclarationVariant::CodecZenohUndeclKeyexpr(CodecZenohUndeclKeyexpr::decode(cursor)?),
             2u8 => CodecZenohDeclarationVariant::CodecZenohDeclSubscriber(CodecZenohDeclSubscriber::decode(cursor, header)?),

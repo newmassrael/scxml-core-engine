@@ -121,9 +121,8 @@ class CodecZenohInterest:
             r.append((_w & 0x7F) | 0x80)
             _w >>= 7
         r.append(_w)
-        if (header & 0x20) != 0 or (header & 0x40) != 0:
-            if self.body is not None:
-                r.extend(self.body.encode())
+        if self.body is not None:
+            r.extend(self.body.encode())
         if self.extensions is not None:
             for _e in self.extensions:
                 r.extend(_e.encode())
