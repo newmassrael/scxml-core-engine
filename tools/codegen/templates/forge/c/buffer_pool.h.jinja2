@@ -5,22 +5,21 @@
 /* Runtime: header-only, no SCE-side helper crate. */
 /* Do not edit — regenerate from the source SCXML file. */
 /*
- * watching-zenoh RFC §5.E B7-β: c11 parity for the rust slot table
- * landed in B7-α. Emits a file-scope storage table placed in the
- * SRAM section declared by `<sce:section>` via the canonical
- * `__attribute__((section, aligned))` shape, plus a per-slot
- * occupancy bitmap and `acquire`/`release` surface. The 7-state
- * lifecycle FSM (free/cpu-mut/dma-armed-{tx,rx}/dma-busy-{tx,rx}/
- * cpu-ref) defers to B7-γ. Cache maintenance pinning defers to
- * B7-δ. Layer 1 Clang typestate defers to B7-ε.
+ * watching-zenoh RFC §5.E DMA-aligned slot table with the seven-state
+ * lifecycle FSM and tag-checked `sce_slot_handle_t` author API per
+ * spec lines 1116-1180 + 1232-1242. C lacks Rust's lifetimes and
+ * Drop, so the per-slot state is enforced at runtime: every transition
+ * inspects the handle's `state` tag and refuses operations that the
+ * FSM does not allow (returns false / NULL and leaves the pool
+ * untouched). The eleven legal transitions are pinned in
+ * `sce-build/src/forge/buffer_pool_fsm.rs` and mirrored here as
+ * `STATE_COUNT` / `TRANSITION_COUNT` macros. Cache maintenance pinning
+ * defers to B7-δ (gated on §5.I `<sce:call>` intrinsic registry).
  *
  * A sidecar linker fragment (`{{ snake_name }}_pool.ld`) is emitted
  * alongside this header — it carries the SECTIONS{} entry with
  * explicit `ALIGN()` directives + inter-pool sentinel per §5.E lines
- * 1031-1086 (defense-in-depth: aligned() on the storage variable +
- * ALIGN() on the section + the inter-pool `. = ALIGN(..);` sentinel
- * + future `_Static_assert` on field layout enforce the same
- * alignment invariant at four layers).
+ * 1031-1086.
  *
  * Generated from `name="{{ name }}"` with section `{{ section }}`,
  * alignment `{{ alignment }}`, cache-policy `{{ cache_policy }}`.
@@ -54,13 +53,54 @@ extern "C" {
 #define {{ upper_name }}_ALIGNMENT ({{ alignment }}u)
 
 /* DMA channel binding (`<sce:dma-channel>`). Empty when the pool is
- * purely CPU-managed. Cross-resolution against deploy.yaml
- * `memory.dma_channels` defers to B7-γ. */
+ * purely CPU-managed. */
 #define {{ upper_name }}_DMA_CHANNEL "{{ dma_channel }}"
 
 /* Cache policy (`<sce:cache-policy>`) — `maintain` / `non-cacheable`
  * / `none`. Cache maintenance pinning defers to B7-δ. */
 #define {{ upper_name }}_CACHE_POLICY "{{ cache_policy }}"
+
+/* Number of declared lifecycle states. Mirrors
+ * `forge::buffer_pool_fsm::STATE_COUNT` — the seven states from
+ * spec §5.E lines 1129-1135. */
+#define {{ upper_name }}_STATE_COUNT ((size_t)7)
+
+/* Number of declared lifecycle transitions. Mirrors
+ * `forge::buffer_pool_fsm::TRANSITION_COUNT` — the eleven legal
+ * edges from spec §5.E lines 1141-1156. */
+#define {{ upper_name }}_TRANSITION_COUNT ((size_t)11)
+
+/* Slot lifecycle state tag (spec §5.E lines 1129-1135). The
+ * discriminants match the Rust backend's `SlotState` enum so a
+ * single binary representation is consistent across languages. The
+ * `SCE_SLOT_INVALID` sentinel marks consumed handles after the
+ * runtime tag check transfers ownership into the pool's internal
+ * state — re-using such a handle is rejected by the next operation. */
+typedef enum {
+    SCE_SLOT_FREE = 0,
+    SCE_SLOT_CPU_MUT = 1,
+    SCE_SLOT_DMA_ARMED_TX = 2,
+    SCE_SLOT_DMA_BUSY_TX = 3,
+    SCE_SLOT_DMA_ARMED_RX = 4,
+    SCE_SLOT_DMA_BUSY_RX = 5,
+    SCE_SLOT_CPU_REF = 6,
+    SCE_SLOT_INVALID = 0xFF
+} sce_slot_state_t;
+
+/* Tag-checked slot handle. `state` carries the runtime FSM tag;
+ * `idx` is the pool slot index. Spec §5.E lines 1239-1242: "the
+ * state parameter is a phantom type on the Rust side and a
+ * tag-checked handle on the C side". */
+typedef struct {
+    sce_slot_state_t state;
+    size_t idx;
+} sce_slot_handle_t;
+
+/* Sentinel returned by acquire / arm functions when no free slot
+ * is available. The caller checks `handle.state == SCE_SLOT_INVALID`
+ * (or equivalently `handle.idx == SIZE_MAX`). */
+#define {{ upper_name }}_INVALID_HANDLE \
+    ((sce_slot_handle_t){ .state = SCE_SLOT_INVALID, .idx = SIZE_MAX })
 
 /* Pool storage. Placed in the section declared by `<sce:section>` via
  * `__attribute__((section, aligned))`; the sidecar linker fragment
@@ -74,53 +114,117 @@ extern "C" {
 __attribute__((section(".{{ section }}_{{ snake_name }}"), aligned({{ alignment }})))
 static uint8_t {{ snake_name }}_storage[{{ slot_count }}][{{ slot_size }}];
 
-/* Per-slot occupancy bitmap (1 = in use, 0 = free). B7-γ promotes
- * this to a per-slot 7-state FSM with phantom-typed `Slot<state>`
- * handles per §5.E lines 1116-1180. */
-static bool {{ snake_name }}_in_use[{{ slot_count }}];
+/* Per-slot lifecycle state. Replaces the β-era `in_use[]` bitmap
+ * with the full seven-state FSM tracking. */
+static sce_slot_state_t {{ snake_name }}_slot_states[{{ slot_count }}] = { SCE_SLOT_FREE };
 
-/* Acquire a free slot for CPU-side mutation. Returns the slot index,
- * or `SIZE_MAX` when every slot is in use. B7-γ replaces this with a
- * tag-checked `sce_slot_handle_t` per §5.E lines 1229-1242; B7-β
- * exposes the index for testability. */
-static inline size_t {{ snake_name }}_acquire(void) {
+/* Acquire a free slot for CPU-side encoding. Spec §5.E line 1141:
+ * `free → cpu-mut`. Returns `INVALID_HANDLE` when every slot is
+ * in use. The returned handle's `state` is `SCE_SLOT_CPU_MUT`. */
+static inline sce_slot_handle_t {{ snake_name }}_pool_acquire_for_encode(void) {
     for (size_t i = 0; i < {{ upper_name }}_SLOT_COUNT; ++i) {
-        if (!{{ snake_name }}_in_use[i]) {
-            {{ snake_name }}_in_use[i] = true;
-            return i;
+        if ({{ snake_name }}_slot_states[i] == SCE_SLOT_FREE) {
+            {{ snake_name }}_slot_states[i] = SCE_SLOT_CPU_MUT;
+            sce_slot_handle_t h;
+            h.state = SCE_SLOT_CPU_MUT;
+            h.idx = i;
+            return h;
         }
     }
-    return SIZE_MAX;
+    return {{ upper_name }}_INVALID_HANDLE;
 }
 
-/* Return a slot to the freelist. Idempotent for already-free slots —
- * B7-γ promotes the double-release case to a typestate violation
- * (`pool/return-on-dma-state` + `pool/double-arm` family). */
-static inline void {{ snake_name }}_release(size_t slot) {
-    if (slot < {{ upper_name }}_SLOT_COUNT) {
-        {{ snake_name }}_in_use[slot] = false;
+/* Arm a free slot for peripheral RX. Spec §5.E line 1146:
+ * `free → dma-armed-rx`. Returns `INVALID_HANDLE` when every slot
+ * is in use. The cache-invalidate pre-arm is gated on
+ * `cache-policy: maintain && platform.has_speculative_prefetch` per
+ * spec lines 1190-1198 and defers to B7-δ. */
+static inline sce_slot_handle_t {{ snake_name }}_link_arm_rx(void) {
+    for (size_t i = 0; i < {{ upper_name }}_SLOT_COUNT; ++i) {
+        if ({{ snake_name }}_slot_states[i] == SCE_SLOT_FREE) {
+            {{ snake_name }}_slot_states[i] = SCE_SLOT_DMA_ARMED_RX;
+            sce_slot_handle_t h;
+            h.state = SCE_SLOT_DMA_ARMED_RX;
+            h.idx = i;
+            return h;
+        }
     }
+    return {{ upper_name }}_INVALID_HANDLE;
 }
 
-/* Read-only access to a slot's bytes. Bounds checking is the caller's
- * responsibility — B7-γ replaces this with a phantom-typed
- * `Slot<cpu-ref>` accessor that statically rules out out-of-range
- * indices. */
-static inline const uint8_t *{{ snake_name }}_slot(size_t idx) {
-    return {{ snake_name }}_storage[idx];
+/* Hand the slot off to the link's TX path. Spec §5.E line 1142:
+ * `cpu-mut → dma-armed-tx`. Tag check: handle must be in
+ * `SCE_SLOT_CPU_MUT`. On success the pool's internal state for the
+ * slot transitions to `SCE_SLOT_DMA_ARMED_TX` and the handle is
+ * marked `SCE_SLOT_INVALID` — re-use is rejected by subsequent
+ * operations. Returns `false` on tag mismatch (no state change). */
+static inline bool {{ snake_name }}_link_arm_tx(sce_slot_handle_t *handle) {
+    if (handle == NULL) return false;
+    if (handle->state != SCE_SLOT_CPU_MUT) return false;
+    if (handle->idx >= {{ upper_name }}_SLOT_COUNT) return false;
+    if ({{ snake_name }}_slot_states[handle->idx] != SCE_SLOT_CPU_MUT) return false;
+    {{ snake_name }}_slot_states[handle->idx] = SCE_SLOT_DMA_ARMED_TX;
+    handle->state = SCE_SLOT_INVALID;
+    handle->idx = SIZE_MAX;
+    return true;
 }
 
-/* Mutable access to a slot's bytes. B7-γ replaces this with a
- * phantom-typed `Slot<cpu-mut>` accessor. */
-static inline uint8_t *{{ snake_name }}_slot_mut(size_t idx) {
-    return {{ snake_name }}_storage[idx];
+/* Return the slot to the freelist. Spec §5.E lines 1152, 1155:
+ * `cpu-ref → free` ("handler complete; pool_return") and
+ * `cpu-mut → free` ("abort encode (error path)"). Tag check: handle
+ * must be in `SCE_SLOT_CPU_MUT` or `SCE_SLOT_CPU_REF`. On success
+ * the pool's internal state transitions to `SCE_SLOT_FREE` and the
+ * handle is marked `SCE_SLOT_INVALID`. Returns `false` on tag
+ * mismatch (no state change). */
+static inline bool {{ snake_name }}_pool_return(sce_slot_handle_t *handle) {
+    if (handle == NULL) return false;
+    if (handle->state != SCE_SLOT_CPU_MUT && handle->state != SCE_SLOT_CPU_REF) {
+        return false;
+    }
+    if (handle->idx >= {{ upper_name }}_SLOT_COUNT) return false;
+    if ({{ snake_name }}_slot_states[handle->idx] != handle->state) return false;
+    {{ snake_name }}_slot_states[handle->idx] = SCE_SLOT_FREE;
+    handle->state = SCE_SLOT_INVALID;
+    handle->idx = SIZE_MAX;
+    return true;
+}
+
+/* Read-only view of the slot's bytes. Tag check: handle must be in
+ * `SCE_SLOT_CPU_MUT` or `SCE_SLOT_CPU_REF`. Returns NULL on tag
+ * mismatch — DMA-armed and DMA-busy states must not expose their
+ * contents to author code while the descriptor or peripheral owns
+ * them. */
+static inline const uint8_t *{{ snake_name }}_slot_read(const sce_slot_handle_t *handle) {
+    if (handle == NULL) return NULL;
+    if (handle->state != SCE_SLOT_CPU_MUT && handle->state != SCE_SLOT_CPU_REF) {
+        return NULL;
+    }
+    if (handle->idx >= {{ upper_name }}_SLOT_COUNT) return NULL;
+    return {{ snake_name }}_storage[handle->idx];
+}
+
+/* Mutable view of the slot's bytes. Tag check: handle must be in
+ * `SCE_SLOT_CPU_MUT`. Returns NULL on tag mismatch — `cpu-ref` is a
+ * shared-read state per spec line 1135 and must not be mutated. */
+static inline uint8_t *{{ snake_name }}_slot_write(sce_slot_handle_t *handle) {
+    if (handle == NULL) return NULL;
+    if (handle->state != SCE_SLOT_CPU_MUT) return NULL;
+    if (handle->idx >= {{ upper_name }}_SLOT_COUNT) return NULL;
+    return {{ snake_name }}_storage[handle->idx];
+}
+
+/* Inspect a slot's current lifecycle state. Out-of-range index
+ * returns `SCE_SLOT_INVALID` so debug introspection cannot fault. */
+static inline sce_slot_state_t {{ snake_name }}_slot_state(size_t idx) {
+    if (idx >= {{ upper_name }}_SLOT_COUNT) return SCE_SLOT_INVALID;
+    return {{ snake_name }}_slot_states[idx];
 }
 
 /* Number of slots currently free. */
 static inline size_t {{ snake_name }}_free_count(void) {
     size_t n = 0;
     for (size_t i = 0; i < {{ upper_name }}_SLOT_COUNT; ++i) {
-        if (!{{ snake_name }}_in_use[i]) {
+        if ({{ snake_name }}_slot_states[i] == SCE_SLOT_FREE) {
             ++n;
         }
     }

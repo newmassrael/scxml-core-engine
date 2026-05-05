@@ -4897,10 +4897,11 @@ topology:
 
     // ── §5.E B7-α buffer-pool kind ─────────────────────────────
 
-    /// Watching-zenoh RFC §5.E B7-α: buffer-pool kind happy path.
+    /// Watching-zenoh RFC §5.E B7-γ: buffer-pool kind happy path.
     /// A well-formed `<sce:kind="buffer-pool">` document → Rust
     /// generator emits a `<Pascal>` struct owning a `[[u8; SLOT_SIZE];
-    /// SLOT_COUNT]` storage table + `acquire` / `release` methods +
+    /// SLOT_COUNT]` storage table + per-slot `slot_states` array +
+    /// phantom-typed `Slot<S>` API per spec §5.E lines 1232-1237 +
     /// SECTION / ALIGNMENT / CACHE_POLICY constants. Asserts the
     /// load-bearing tokens so codegen drift fails the build.
     #[test]
@@ -4949,21 +4950,119 @@ topology:
             body.contains("pub const CACHE_POLICY: &'static str = \"maintain\";"),
             "CACHE_POLICY constant must round-trip the policy enum; full source:\n{body}",
         );
+        // γ: STATE_COUNT / TRANSITION_COUNT mirror
+        // forge::buffer_pool_fsm constants (7 + 11 per §5.E lines
+        // 1129-1135 / 1141-1156). Drift between the IR table and
+        // the emitted constants would mean the generator and
+        // template disagree on the FSM contract.
+        assert!(
+            body.contains("pub const STATE_COUNT: usize = 7;"),
+            "STATE_COUNT must mirror forge::buffer_pool_fsm::STATE_COUNT; full source:\n{body}",
+        );
+        assert!(
+            body.contains("pub const TRANSITION_COUNT: usize = 11;"),
+            "TRANSITION_COUNT must mirror forge::buffer_pool_fsm::TRANSITION_COUNT; full source:\n{body}",
+        );
         assert!(
             body.contains("pub struct RxPoolSram1"),
             "must emit pascal-cased struct; full source:\n{body}",
         );
+        // γ: phantom-typed API replaces the α bare-`usize` surface.
         assert!(
-            body.contains("pub fn acquire(&mut self) -> Option<usize>"),
-            "must emit acquire surface; full source:\n{body}",
+            body.contains("pub fn pool_acquire_for_encode(&mut self) -> Option<Slot<CpuMut>>"),
+            "must emit phantom-typed acquire surface (spec §5.E line 1233); full source:\n{body}",
         );
         assert!(
-            body.contains("pub fn release(&mut self, slot: usize)"),
-            "must emit release surface; full source:\n{body}",
+            body.contains("pub fn link_arm_rx(&mut self) -> Option<Slot<DmaArmedRx>>"),
+            "must emit phantom-typed RX-arm surface (spec §5.E line 1236); full source:\n{body}",
+        );
+        assert!(
+            body.contains("impl Slot<CpuMut>"),
+            "must emit Slot<CpuMut> impl block; full source:\n{body}",
+        );
+        assert!(
+            body.contains("pub fn link_arm_tx(self, pool: &mut RxPoolSram1)"),
+            "must emit consuming link_arm_tx on Slot<CpuMut>; full source:\n{body}",
+        );
+        assert!(
+            body.contains("pub fn pool_return(self, pool: &mut RxPoolSram1)"),
+            "must emit consuming pool_return on Slot<CpuMut> (spec §5.E line 1234); full source:\n{body}",
+        );
+        assert!(
+            body.contains("impl Slot<CpuRef>"),
+            "must emit Slot<CpuRef> impl block; full source:\n{body}",
+        );
+        assert!(
+            body.contains("pub enum SlotState"),
+            "must emit SlotState enum mirroring C11 tag values; full source:\n{body}",
         );
         assert!(
             body.contains("storage: [[0u8; SLOT_SIZE]; SLOT_COUNT]"),
             "must initialize storage as fixed-size array of slot-sized chunks; full source:\n{body}",
+        );
+        assert!(
+            body.contains("slot_states: [SlotState::Free; SLOT_COUNT]"),
+            "γ replaces the α `in_use` bitmap with a per-slot SlotState array; full source:\n{body}",
+        );
+    }
+
+    /// Watching-zenoh RFC §5.E B7-γ: the emitted Rust buffer-pool
+    /// module must compile end-to-end as a real Rust source file —
+    /// byte assertions alone do not prove the phantom-typed `Slot<S>`
+    /// API is well-formed (per `feedback_byte_goldens_not_compile.md`).
+    /// Drives the generator output through `rustc --crate-type lib
+    /// --emit=metadata` so that any drift in the trait bounds,
+    /// PhantomData variance, or `#[must_use]` annotation surfaces
+    /// here rather than at integration time.
+    #[test]
+    fn buffer_pool_rust_emitted_module_compiles_under_rustc() {
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="rx_pool_sram1" version="1.0">
+  <sce:slot-count>4</sce:slot-count>
+  <sce:slot-size>64</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>16</sce:alignment>
+  <sce:dma-channel>DW0_CH3</sce:dma-channel>
+  <sce:cache-policy>maintain</sce:cache-policy>
+</scxml>"##;
+        let label = DocumentLabel {
+            identifier: "rx_pool_sram1",
+            diagnostic_label: "rx_pool_sram1.scxml",
+        };
+        let out = compile_forge_from_string(scxml, label, generator::Language::Rust)
+            .expect("forge rust codegen must succeed for a well-formed buffer-pool");
+        let (_, body) = &out.files[0];
+
+        let tmp = std::env::temp_dir().join(format!(
+            "sce-build-buffer-pool-gamma-rustc-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).expect("create tmp dir");
+        let src = tmp.join("rx_pool_sram1.rs");
+        std::fs::write(&src, body).expect("write generated source");
+
+        let status = std::process::Command::new("rustc")
+            .arg("--edition=2021")
+            .arg("--crate-type=lib")
+            .arg("--emit=metadata")
+            .arg("-o")
+            .arg(tmp.join("rx_pool_sram1.rmeta"))
+            .arg(&src)
+            .arg("--cap-lints").arg("allow")
+            .output()
+            .expect("rustc must be on PATH for the build environment");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+
+        assert!(
+            status.status.success(),
+            "generated Rust source must compile under rustc.\nstdout:\n{}\nstderr:\n{}\n--- source ---\n{}",
+            String::from_utf8_lossy(&status.stdout),
+            String::from_utf8_lossy(&status.stderr),
+            body,
         );
     }
 
@@ -5355,13 +5454,62 @@ topology:
             header.contains("static uint8_t rx_pool_sram1_storage[8][256];"),
             "storage shape must be [SLOT_COUNT][SLOT_SIZE]; full header:\n{header}",
         );
+        // γ: STATE_COUNT / TRANSITION_COUNT macros mirror the
+        // forge::buffer_pool_fsm IR module (7 + 11 per §5.E lines
+        // 1129-1135 / 1141-1156).
         assert!(
-            header.contains("static inline size_t rx_pool_sram1_acquire(void)"),
-            "must emit acquire surface; full header:\n{header}",
+            header.contains("#define RX_POOL_SRAM1_STATE_COUNT ((size_t)7)"),
+            "STATE_COUNT macro must mirror forge::buffer_pool_fsm::STATE_COUNT; full header:\n{header}",
         );
         assert!(
-            header.contains("static inline void rx_pool_sram1_release(size_t slot)"),
-            "must emit release surface; full header:\n{header}",
+            header.contains("#define RX_POOL_SRAM1_TRANSITION_COUNT ((size_t)11)"),
+            "TRANSITION_COUNT macro must mirror forge::buffer_pool_fsm::TRANSITION_COUNT; full header:\n{header}",
+        );
+        // γ: tag-checked handle types per spec §5.E lines 1239-1242.
+        assert!(
+            header.contains("typedef enum {"),
+            "must emit sce_slot_state_t enum; full header:\n{header}",
+        );
+        assert!(
+            header.contains("SCE_SLOT_FREE = 0,"),
+            "enum must declare SCE_SLOT_FREE = 0; full header:\n{header}",
+        );
+        assert!(
+            header.contains("SCE_SLOT_CPU_MUT = 1,"),
+            "enum must declare SCE_SLOT_CPU_MUT = 1; full header:\n{header}",
+        );
+        assert!(
+            header.contains("SCE_SLOT_INVALID = 0xFF"),
+            "enum must declare SCE_SLOT_INVALID sentinel for consumed handles; full header:\n{header}",
+        );
+        assert!(
+            header.contains("} sce_slot_state_t;"),
+            "enum typedef name must be `sce_slot_state_t`; full header:\n{header}",
+        );
+        assert!(
+            header.contains("} sce_slot_handle_t;"),
+            "must emit sce_slot_handle_t struct; full header:\n{header}",
+        );
+        assert!(
+            header.contains("static sce_slot_state_t rx_pool_sram1_slot_states["),
+            "γ replaces the β `in_use[]` bitmap with a slot_states array; full header:\n{header}",
+        );
+        // γ: tag-checked author API per spec §5.E lines 1232-1242.
+        assert!(
+            header.contains("static inline sce_slot_handle_t rx_pool_sram1_pool_acquire_for_encode(void)"),
+            "must emit pool_acquire_for_encode tag-checked surface (spec §5.E line 1233); full header:\n{header}",
+        );
+        assert!(
+            header.contains("static inline sce_slot_handle_t rx_pool_sram1_link_arm_rx(void)"),
+            "must emit link_arm_rx tag-checked surface (spec §5.E line 1236); full header:\n{header}",
+        );
+        assert!(
+            header.contains("static inline bool rx_pool_sram1_link_arm_tx(sce_slot_handle_t *handle)"),
+            "must emit tag-checked link_arm_tx (spec §5.E line 1235); full header:\n{header}",
+        );
+        assert!(
+            header.contains("static inline bool rx_pool_sram1_pool_return(sce_slot_handle_t *handle)"),
+            "must emit tag-checked pool_return (spec §5.E line 1234); full header:\n{header}",
         );
 
         // Linker fragment — RFC §5.E lines 1031-1086 contract.
@@ -5380,6 +5528,127 @@ topology:
         assert!(
             ld.contains(". = ALIGN(32);"),
             "inter-pool sentinel must follow the SECTIONS body per §5.E lines 1059-1064; full ld:\n{ld}",
+        );
+    }
+
+    /// Watching-zenoh RFC §5.E B7-γ: the emitted C11 buffer-pool
+    /// header must compile end-to-end as a real C source — byte
+    /// assertions alone do not prove the tag-checked handle API is
+    /// well-formed (per `feedback_byte_goldens_not_compile.md`).
+    /// Drives the generator output through `gcc -c -std=c11
+    /// -Wall -Wextra -Werror` so that any drift in the enum
+    /// initializer, struct layout, or `static inline` signatures
+    /// surfaces here rather than at integration time. The
+    /// `__attribute__((section, aligned))` storage variable is
+    /// MCU-firmware-targeted; the host gcc compile validates only
+    /// the C-language well-formedness, not the linker placement
+    /// (the sidecar `.ld` fragment carries that contract). The host
+    /// build is permitted to drop the section attribute via
+    /// `-D__attribute__(x)=` so unused-static warnings do not gate
+    /// the test.
+    #[test]
+    fn buffer_pool_c11_emitted_header_compiles_under_gcc() {
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="rx_pool_sram1" version="1.0">
+  <sce:slot-count>4</sce:slot-count>
+  <sce:slot-size>64</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>16</sce:alignment>
+  <sce:dma-channel>DW0_CH3</sce:dma-channel>
+  <sce:cache-policy>maintain</sce:cache-policy>
+</scxml>"##;
+        let label = DocumentLabel {
+            identifier: "rx_pool_sram1",
+            diagnostic_label: "rx_pool_sram1.scxml",
+        };
+        let out = compile_forge_from_string(scxml, label, generator::Language::C11)
+            .expect("forge c11 codegen must succeed for a well-formed buffer-pool");
+        let header = out.files.iter().find(|(n, _)| n == "rx_pool_sram1.h")
+            .map(|(_, body)| body.as_str())
+            .expect("header file must be `rx_pool_sram1.h`");
+
+        let tmp = std::env::temp_dir().join(format!(
+            "sce-build-buffer-pool-gamma-cc-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).expect("create tmp dir");
+        let header_path = tmp.join("rx_pool_sram1.h");
+        std::fs::write(&header_path, header).expect("write generated header");
+        // The header is `static`-only; #include it from a tiny
+        // translation unit so the compile drives every static
+        // function. `__used__` would suppress unused warnings on a
+        // hypothetical extension, but for B7-γ we just call each
+        // entry point so the storage / state arrays count as used.
+        let driver_path = tmp.join("driver.c");
+        std::fs::write(
+            &driver_path,
+            r#"#include "rx_pool_sram1.h"
+int main(void) {
+    sce_slot_handle_t h = rx_pool_sram1_pool_acquire_for_encode();
+    if (h.state == SCE_SLOT_INVALID) return 1;
+    uint8_t *w = rx_pool_sram1_slot_write(&h);
+    if (w == NULL) return 2;
+    w[0] = 0xAB;
+    if (!rx_pool_sram1_pool_return(&h)) return 3;
+
+    sce_slot_handle_t r = rx_pool_sram1_link_arm_rx();
+    if (r.state != SCE_SLOT_DMA_ARMED_RX) return 4;
+    /* Reading or writing a dma-armed-rx slot must be rejected
+     * by the runtime tag check. */
+    if (rx_pool_sram1_slot_read(&r) != NULL) return 5;
+    if (rx_pool_sram1_slot_write(&r) != NULL) return 6;
+
+    /* link_arm_tx on a non-cpu-mut handle is rejected. */
+    if (rx_pool_sram1_link_arm_tx(&r)) return 7;
+
+    if (rx_pool_sram1_free_count() != RX_POOL_SRAM1_SLOT_COUNT - 1) return 8;
+    return 0;
+}
+"#,
+        )
+        .expect("write driver.c");
+
+        let exec_path = tmp.join("driver");
+        let status = std::process::Command::new("gcc")
+            .arg("-std=c11")
+            .arg("-Wall")
+            .arg("-Wextra")
+            // The generated header places a `static` storage
+            // variable in a section that does not exist on the host
+            // toolchain (`.sram1_rx_pool_sram1`). Stripping the
+            // attribute keeps the host gcc compile honest about the
+            // C-level API surface; the linker placement contract is
+            // pinned by the sidecar `.ld` fragment golden test.
+            .arg("-D__attribute__(x)=")
+            .arg("-I").arg(&tmp)
+            .arg(&driver_path)
+            .arg("-o").arg(&exec_path)
+            .output()
+            .expect("gcc must be on PATH for the build environment");
+
+        if !status.status.success() {
+            let _ = std::fs::remove_dir_all(&tmp);
+            panic!(
+                "generated C header must compile under gcc.\nstdout:\n{}\nstderr:\n{}\n--- header ---\n{}",
+                String::from_utf8_lossy(&status.stdout),
+                String::from_utf8_lossy(&status.stderr),
+                header,
+            );
+        }
+        // Run the driver — every tag-check and state transition we
+        // assert through it is a runtime check on the emitted code.
+        let run = std::process::Command::new(&exec_path)
+            .output()
+            .expect("driver binary must execute");
+        let _ = std::fs::remove_dir_all(&tmp);
+        assert!(
+            run.status.success(),
+            "driver run failed: status={:?}, stderr={}",
+            run.status.code(),
+            String::from_utf8_lossy(&run.stderr),
         );
     }
 

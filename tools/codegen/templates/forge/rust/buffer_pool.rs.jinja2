@@ -5,14 +5,14 @@
 // Runtime: self-contained on (rust, std) — no SCE-side helper crate.
 // Do not edit — regenerate from the source SCXML file.
 //
-// watching-zenoh RFC §5.E DMA-aligned slot table. B7-α ships the
-// minimum slot table on (rust, std): a fixed-size `[[u8; SLOT_SIZE];
-// SLOT_COUNT]` storage + bitmap freelist + acquire/return surface.
-// The 7-state lifecycle FSM (free/cpu-mut/dma-armed-{tx,rx}/
-// dma-busy-{tx,rx}/cpu-ref) defers to B7-γ (codegen-time IR-level
-// borrow check + phantom-typed `Slot<state>` API). Cache maintenance
+// watching-zenoh RFC §5.E DMA-aligned slot table with the seven-state
+// lifecycle FSM (free/cpu-mut/dma-armed-{tx,rx}/dma-busy-{tx,rx}/
+// cpu-ref) and phantom-typed `Slot<S>` author API per spec lines
+// 1116-1180 + 1232-1237. The eleven legal transitions are pinned in
+// `sce-build/src/forge/buffer_pool_fsm.rs` and mirrored here as
+// `STATE_COUNT` / `TRANSITION_COUNT` constants. Cache-maintenance
 // pinning defers to B7-δ (gated on §5.I `<sce:call>` intrinsic
-// registry). Linker fragment emission defers to B7-β (c11 parity).
+// registry).
 //
 // Generated from `name="{{ name }}"` with section `{{ section }}`,
 // alignment `{{ alignment }}`, cache-policy `{{ cache_policy }}`.
@@ -21,6 +21,8 @@
 #![allow(unused_imports)]
 #![allow(unused_variables)]
 #![allow(dead_code)]
+
+use core::marker::PhantomData;
 
 /// Number of slots in the pool (`<sce:slot-count>`).
 pub const SLOT_COUNT: usize = {{ slot_count }};
@@ -39,26 +41,110 @@ pub const SECTION: &'static str = "{{ section }}";
 pub const ALIGNMENT: u32 = {{ alignment }};
 
 /// DMA channel binding (`<sce:dma-channel>`). Empty when the pool is
-/// purely CPU-managed. Cross-resolution against deploy.yaml
-/// `memory.dma_channels` defers to B7-γ.
+/// purely CPU-managed.
 pub const DMA_CHANNEL: &'static str = "{{ dma_channel }}";
 
 /// Cache policy (`<sce:cache-policy>`) — `maintain` / `non-cacheable`
 /// / `none`. Cache maintenance pinning defers to B7-δ.
 pub const CACHE_POLICY: &'static str = "{{ cache_policy }}";
 
-/// Generated buffer-pool. Owns a fixed-size storage table + bitmap
-/// freelist. B7-α exposes a minimum acquire/return surface; B7-γ
-/// will lift the bitmap into a 7-state per-slot FSM with phantom-
-/// typed `Slot<state>` handles.
+/// Number of declared lifecycle states. Mirrors
+/// `forge::buffer_pool_fsm::STATE_COUNT` — the seven states from
+/// spec §5.E lines 1129-1135.
+pub const STATE_COUNT: usize = 7;
+
+/// Number of declared lifecycle transitions. Mirrors
+/// `forge::buffer_pool_fsm::TRANSITION_COUNT` — the eleven legal
+/// edges from spec §5.E lines 1141-1156.
+pub const TRANSITION_COUNT: usize = 11;
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Slot lifecycle state — runtime tag value (mirrors C11 enum)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// One of the seven slot ownership states. Discriminants match the
+/// C11 backend's `sce_slot_state_t` enum so cross-language tracing
+/// over a single binary representation stays consistent.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[repr(u8)]
+pub enum SlotState {
+    Free = 0,
+    CpuMut = 1,
+    DmaArmedTx = 2,
+    DmaBusyTx = 3,
+    DmaArmedRx = 4,
+    DmaBusyRx = 5,
+    CpuRef = 6,
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Phantom-marker zero-sized types for `Slot<S>`.
+// Each marker corresponds to a SlotState. Authors cannot construct
+// `Slot<S>` directly because `Slot::idx` is private to this module;
+// the only ways to obtain one are through pool methods like
+// `pool_acquire_for_encode` (free → cpu-mut) and `link_arm_rx`
+// (free → dma-armed-rx).
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Phantom marker for `SlotState::CpuMut`. Held by author code while
+/// the slot is in exclusive CPU-write state.
+#[derive(Debug)]
+pub struct CpuMut;
+
+/// Phantom marker for `SlotState::CpuRef`. Held by author code while
+/// the slot is in shared CPU-read state (post-RX-IRQ).
+#[derive(Debug)]
+pub struct CpuRef;
+
+/// Phantom marker for `SlotState::DmaArmedRx`. Returned from
+/// `link_arm_rx` so the author can register the slot index with the
+/// peripheral's RX descriptor; the slot then progresses through
+/// `DmaBusyRx → CpuRef` via IRQ handlers (not exposed in this
+/// atomic).
+#[derive(Debug)]
+pub struct DmaArmedRx;
+
+/// Phantom-typed slot handle. The state parameter `S` is one of the
+/// marker types above. Since `idx` is private, code outside this
+/// generated module cannot fabricate a `Slot<S>`; every legal
+/// transition flows through methods that consume `self` (so the old
+/// state's handle is invalidated by Rust's move semantics) and
+/// return the new state's handle when the author retains it.
+///
+/// Silently dropping a `Slot<CpuMut>` or `Slot<CpuRef>` leaks the
+/// underlying slot — the `#[must_use]` attribute makes rustc warn
+/// when this happens at the lexical level.
+#[must_use = "Slot must be returned via pool_return or handed off via link_arm_tx; dropping silently leaks the slot per §5.E lines 1162-1164"]
+pub struct Slot<S> {
+    idx: usize,
+    _state: PhantomData<fn() -> S>,
+}
+
+impl<S> Slot<S> {
+    /// Pool index of this slot. Read-only; useful for tracing and
+    /// for writing a peripheral's DMA descriptor (e.g., for
+    /// `Slot<DmaArmedRx>`).
+    pub fn idx(&self) -> usize {
+        self.idx
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Pool struct — owns storage + per-slot state array
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Generated buffer-pool. Each slot's lifecycle state is tracked in
+/// `slot_states[]`; the phantom-typed `Slot<S>` API guarantees that
+/// at compile time, author code can only invoke the FSM transitions
+/// declared in spec §5.E lines 1141-1156. Calling, e.g.,
+/// `pool_return` on a `Slot<DmaArmedRx>` is a type error caught by
+/// rustc rather than a runtime check.
 pub struct {{ pascal_name }} {
-    /// Slot storage. Each slot is `[u8; SLOT_SIZE]`. The table is
-    /// CPU-managed in B7-α; B7-β will emit the c11 mirror under
-    /// `__attribute__((section, aligned))` for MCU placement.
+    /// Slot storage. Each slot is `[u8; SLOT_SIZE]`.
     storage: [[u8; SLOT_SIZE]; SLOT_COUNT],
-    /// Per-slot occupancy bitmap (1 = in use, 0 = free). B7-γ
-    /// upgrades this to per-slot FSM state.
-    in_use: [bool; SLOT_COUNT],
+    /// Per-slot lifecycle state. Replaces the α-era `in_use: [bool;
+    /// SLOT_COUNT]` bitmap with the full seven-state FSM tracking.
+    slot_states: [SlotState; SLOT_COUNT],
 }
 
 impl Default for {{ pascal_name }} {
@@ -68,51 +154,194 @@ impl Default for {{ pascal_name }} {
 }
 
 impl {{ pascal_name }} {
-    /// Construct an empty pool — all slots on the freelist.
+    /// Construct an empty pool — every slot starts on the freelist.
     pub fn new() -> Self {
         Self {
             storage: [[0u8; SLOT_SIZE]; SLOT_COUNT],
-            in_use: [false; SLOT_COUNT],
+            slot_states: [SlotState::Free; SLOT_COUNT],
         }
     }
 
-    /// Acquire a free slot for CPU-side mutation. Returns the slot
-    /// index, or `None` when every slot is in use. B7-γ will return
-    /// a `Slot<cpu-mut>` phantom-typed handle instead of a bare
-    /// index; B7-α exposes the index for testability.
-    pub fn acquire(&mut self) -> Option<usize> {
-        for (i, used) in self.in_use.iter_mut().enumerate() {
-            if !*used {
-                *used = true;
-                return Some(i);
+    /// Acquire a free slot for CPU-side encoding. Spec §5.E line
+    /// 1141: `free → cpu-mut`. Returns `None` when every slot is in
+    /// use, preserving the α-era full-pool semantics.
+    pub fn pool_acquire_for_encode(&mut self) -> Option<Slot<CpuMut>> {
+        for (i, st) in self.slot_states.iter_mut().enumerate() {
+            if *st == SlotState::Free {
+                *st = SlotState::CpuMut;
+                return Some(Slot { idx: i, _state: PhantomData });
             }
         }
         None
     }
 
-    /// Return a slot to the freelist. Idempotent on `release(i)` for
-    /// already-free `i` — B7-γ promotes this to a typestate violation.
-    pub fn release(&mut self, slot: usize) {
-        if slot < SLOT_COUNT {
-            self.in_use[slot] = false;
+    /// Arm a free slot for peripheral RX. Spec §5.E line 1146:
+    /// `free → dma-armed-rx`. The cache-invalidate pre-arm is gated
+    /// on `cache-policy: maintain && platform.has_speculative_prefetch`
+    /// per spec lines 1190-1198 and defers to B7-δ.
+    pub fn link_arm_rx(&mut self) -> Option<Slot<DmaArmedRx>> {
+        for (i, st) in self.slot_states.iter_mut().enumerate() {
+            if *st == SlotState::Free {
+                *st = SlotState::DmaArmedRx;
+                return Some(Slot { idx: i, _state: PhantomData });
+            }
         }
+        None
     }
 
-    /// Read access to a slot's bytes. Bounds-checked; panics on
-    /// out-of-range index. B7-γ replaces this with a phantom-typed
-    /// `Slot<cpu-ref>` accessor.
-    pub fn slot(&self, idx: usize) -> &[u8; SLOT_SIZE] {
-        &self.storage[idx]
-    }
-
-    /// Mutable access to a slot's bytes. B7-γ replaces this with a
-    /// phantom-typed `Slot<cpu-mut>` accessor.
-    pub fn slot_mut(&mut self, idx: usize) -> &mut [u8; SLOT_SIZE] {
-        &mut self.storage[idx]
+    /// Inspect a slot's current lifecycle state. Out-of-range index
+    /// is `None` so debug introspection cannot panic.
+    pub fn slot_state(&self, idx: usize) -> Option<SlotState> {
+        self.slot_states.get(idx).copied()
     }
 
     /// Number of slots currently on the freelist.
     pub fn free_count(&self) -> usize {
-        self.in_use.iter().filter(|u| !**u).count()
+        self.slot_states.iter().filter(|s| **s == SlotState::Free).count()
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Slot<CpuMut> — the FSM edges leaving cpu-mut that author code can
+// directly invoke: `cpu-mut → dma-armed-tx` (link_arm_tx) and
+// `cpu-mut → free` (pool_return / abort encode error path).
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+impl Slot<CpuMut> {
+    /// Hand the slot off to the link's TX path. Spec §5.E line 1142:
+    /// `cpu-mut → dma-armed-tx`. Consumes the handle — the slot
+    /// progresses through `DmaArmedTx → DmaBusyTx → Free` via DMA
+    /// controller and TX-complete IRQ; author code cannot observe
+    /// these intermediate states. Cache-clean pinning at this edge
+    /// defers to B7-δ.
+    pub fn link_arm_tx(self, pool: &mut {{ pascal_name }}) {
+        pool.slot_states[self.idx] = SlotState::DmaArmedTx;
+    }
+
+    /// Return the slot to the freelist. Spec §5.E line 1155:
+    /// `cpu-mut → free` ("abort encode" error path) and the
+    /// `cpu-mut|cpu-ref → free` author-visible API on lines
+    /// 1232-1237. Consumes the handle.
+    pub fn pool_return(self, pool: &mut {{ pascal_name }}) {
+        pool.slot_states[self.idx] = SlotState::Free;
+    }
+
+    /// Read-only borrow of the slot's bytes.
+    pub fn read<'a>(&'a self, pool: &'a {{ pascal_name }}) -> &'a [u8; SLOT_SIZE] {
+        &pool.storage[self.idx]
+    }
+
+    /// Mutable borrow of the slot's bytes.
+    pub fn write<'a>(&'a mut self, pool: &'a mut {{ pascal_name }}) -> &'a mut [u8; SLOT_SIZE] {
+        &mut pool.storage[self.idx]
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Slot<CpuRef> — the FSM edge leaving cpu-ref that author code
+// directly invokes: `cpu-ref → free` (pool_return). The
+// `cpu-ref → cpu-mut` in-place mutate edge (spec line 1153) requires
+// cache-clean pinning on the next hand-off (line 1154) and is
+// therefore gated on B7-δ.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+impl Slot<CpuRef> {
+    /// Return the slot to the freelist. Spec §5.E line 1152:
+    /// `cpu-ref → free` ("handler complete; pool_return(slot)").
+    /// Consumes the handle.
+    pub fn pool_return(self, pool: &mut {{ pascal_name }}) {
+        pool.slot_states[self.idx] = SlotState::Free;
+    }
+
+    /// Read-only borrow of the slot's bytes — `cpu-ref` is a shared
+    /// CPU-read state per spec line 1135.
+    pub fn read<'a>(&'a self, pool: &'a {{ pascal_name }}) -> &'a [u8; SLOT_SIZE] {
+        &pool.storage[self.idx]
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Slot<DmaArmedRx> — exposed for the author to register the slot
+// index against a peripheral RX descriptor. The IRQ-driven
+// progression `DmaArmedRx → DmaBusyRx → CpuRef` (spec lines
+// 1149-1150) is owned by the runtime and not directly invocable.
+// `Slot::idx()` is the only public method here.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+#[cfg(test)]
+mod generated_tests {
+    use super::*;
+
+    #[test]
+    fn pool_starts_with_all_slots_free() {
+        let pool = {{ pascal_name }}::new();
+        assert_eq!(pool.free_count(), SLOT_COUNT);
+    }
+
+    #[test]
+    fn acquire_promotes_free_to_cpu_mut() {
+        let mut pool = {{ pascal_name }}::new();
+        let slot = pool.pool_acquire_for_encode().expect("free slot available");
+        let idx = slot.idx();
+        assert_eq!(pool.slot_state(idx), Some(SlotState::CpuMut));
+        assert_eq!(pool.free_count(), SLOT_COUNT - 1);
+        slot.pool_return(&mut pool);
+        assert_eq!(pool.slot_state(idx), Some(SlotState::Free));
+        assert_eq!(pool.free_count(), SLOT_COUNT);
+    }
+
+    #[test]
+    fn arm_rx_promotes_free_to_dma_armed_rx() {
+        let mut pool = {{ pascal_name }}::new();
+        let slot = pool.link_arm_rx().expect("free slot available");
+        let idx = slot.idx();
+        assert_eq!(pool.slot_state(idx), Some(SlotState::DmaArmedRx));
+    }
+
+    #[test]
+    fn link_arm_tx_promotes_cpu_mut_to_dma_armed_tx_and_consumes_handle() {
+        let mut pool = {{ pascal_name }}::new();
+        let slot = pool.pool_acquire_for_encode().expect("free slot available");
+        let idx = slot.idx();
+        slot.link_arm_tx(&mut pool);
+        assert_eq!(pool.slot_state(idx), Some(SlotState::DmaArmedTx));
+        // The slot handle is moved here; the next line would be
+        // a compile error if uncommented:
+        //   slot.pool_return(&mut pool);
+    }
+
+    #[test]
+    fn full_pool_returns_none_from_acquire() {
+        let mut pool = {{ pascal_name }}::new();
+        let mut held: Vec<Slot<CpuMut>> = Vec::new();
+        for _ in 0..SLOT_COUNT {
+            held.push(pool.pool_acquire_for_encode().expect("slot available"));
+        }
+        assert!(pool.pool_acquire_for_encode().is_none(), "pool exhausted");
+        for s in held {
+            s.pool_return(&mut pool);
+        }
+        assert_eq!(pool.free_count(), SLOT_COUNT);
+    }
+
+    #[test]
+    fn cpu_mut_read_and_write_do_not_change_state() {
+        let mut pool = {{ pascal_name }}::new();
+        let mut slot = pool.pool_acquire_for_encode().expect("free slot available");
+        let idx = slot.idx();
+        {
+            let bytes = slot.write(&mut pool);
+            bytes[0] = 0xAB;
+        }
+        assert_eq!(pool.slot_state(idx), Some(SlotState::CpuMut));
+        assert_eq!(slot.read(&pool)[0], 0xAB);
+        slot.pool_return(&mut pool);
+    }
+
+    #[test]
+    fn slot_state_out_of_range_returns_none() {
+        let pool = {{ pascal_name }}::new();
+        assert!(pool.slot_state(SLOT_COUNT).is_none());
+        assert!(pool.slot_state(usize::MAX).is_none());
     }
 }
