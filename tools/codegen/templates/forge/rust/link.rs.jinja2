@@ -69,4 +69,17 @@ impl<L: Link> {{ pascal_name }}<L> {
     /// driver impl to decide between drop / block / signal-event
     /// when the outbound queue saturates.
     pub const BACKPRESSURE: &'static str = "{{ backpressure }}";
+{% if has_rx_pool %}
+    /// `<sce:rx-pool ref="{{ rx_pool }}"/>` — RX buffer-pool name
+    /// (RFC §5.E B7-α schema-only). Consumers resolve this against
+    /// the imported buffer-pool map. Cross-resolution validator
+    /// (`link/pool-slot-smaller-than-framer-max`) defers to a later
+    /// atomic that wires pool ↔ framer.
+    pub const RX_POOL: &'static str = "{{ rx_pool }}";
+{% endif %}
+{% if has_tx_pool %}
+    /// `<sce:tx-pool ref="{{ tx_pool }}"/>` — TX buffer-pool name
+    /// (RFC §5.E B7-α schema-only). Same shape as `RX_POOL`.
+    pub const TX_POOL: &'static str = "{{ tx_pool }}";
+{% endif %}
 }

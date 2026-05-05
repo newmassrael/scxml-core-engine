@@ -500,6 +500,34 @@ pub fn compile_forge_with_deploy(
                     }
                 }
             }
+            // RFC §5.E B7-α buffer-pool placement validation —
+            // η-second-consumer pattern. Validates `<sce:section>` body
+            // resolves against `machine.memory.sram_regions`. Skips
+            // silently when the machine has no `memory` block (Q-η5 (a)
+            // precedent). The candidates axis is the resolved machine's
+            // declared region names (sorted) — drives `Fix::ReplaceOneOf`
+            // so authors can pick a legal section or extend deploy.yaml.
+            if let forge::model::ForgeDocument::BufferPool(pool) = &doc {
+                if let Some(memory) = machine.memory.as_ref() {
+                    if !memory.sram_regions.contains_key(&pool.section) {
+                        let mut candidates: Vec<String> =
+                            memory.sram_regions.keys().cloned().collect();
+                        candidates.sort();
+                        return Err(Located::new(
+                            ValidationError::BufferPoolSectionConflict {
+                                name: pool.name.clone(),
+                                machine: machine_name.to_string(),
+                                section: pool.section.clone(),
+                                candidates,
+                            }
+                            .into(),
+                            label.diagnostic_label,
+                            None,
+                            None,
+                        ));
+                    }
+                }
+            }
         }
     }
 
@@ -1001,6 +1029,13 @@ fn discover_stateful_member_fields(
         // method-typed members will add the method discovery to
         // `discover_stateful_member_methods`, not field discovery.
         ForgeDocument::Link(_) => {}
+        // RFC §5.E: BufferPool is stateful (owns slot table + freelist)
+        // but exposes no SCXML-expression-visible typed fields in B7-α
+        // — acquire/release/slot/slot_mut/free_count are method-only.
+        // Member discovery defers to the first authored consumer that
+        // calls them via `<sce:call alias="..."/>` (analogous to Link's
+        // method-only stance).
+        ForgeDocument::BufferPool(_) => {}
         // Stateless kinds handled via stateless_signature path.
         // Algorithm (RFC §5.A) is a stateless free function; no member
         // fields exposed to user expressions.
@@ -1052,7 +1087,8 @@ fn discover_stateful_member_methods(
         | ForgeDocument::Procedure(_)
         | ForgeDocument::Observer(_)
         | ForgeDocument::Timer(_)
-        | ForgeDocument::Link(_) => Vec::new(),
+        | ForgeDocument::Link(_)
+        | ForgeDocument::BufferPool(_) => Vec::new(),
         // Stateless kinds: caller filters via `is_stateful` before reaching
         // here. Listed so the match stays exhaustive — adding a new
         // ForgeDocument variant forces a decision at this site.
@@ -1181,7 +1217,8 @@ fn discover_primary_function(
         | forge::model::ForgeDocument::Filter(_)
         | forge::model::ForgeDocument::Observer(_)
         | forge::model::ForgeDocument::Timer(_)
-        | forge::model::ForgeDocument::Link(_) => None,
+        | forge::model::ForgeDocument::Link(_)
+        | forge::model::ForgeDocument::BufferPool(_) => None,
         // RFC §5.A Algorithm: free function whose name is the
         // SCXML-author-declared `name=` attribute, lowered to each
         // language's idiomatic identifier per RFC §5.J.5. The
@@ -4828,5 +4865,445 @@ topology:
             ),
         }
         let _ = fs::remove_dir_all(&tmp);
+    }
+
+    // ── §5.E B7-α buffer-pool kind ─────────────────────────────
+
+    /// Watching-zenoh RFC §5.E B7-α: buffer-pool kind happy path.
+    /// A well-formed `<sce:kind="buffer-pool">` document → Rust
+    /// generator emits a `<Pascal>` struct owning a `[[u8; SLOT_SIZE];
+    /// SLOT_COUNT]` storage table + `acquire` / `release` methods +
+    /// SECTION / ALIGNMENT / CACHE_POLICY constants. Asserts the
+    /// load-bearing tokens so codegen drift fails the build.
+    #[test]
+    fn buffer_pool_rust_happy_path_emits_storage_struct() {
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="rx_pool_sram1" version="1.0">
+  <sce:slot-count>8</sce:slot-count>
+  <sce:slot-size>256</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>32</sce:alignment>
+  <sce:dma-channel>DW0_CH3</sce:dma-channel>
+  <sce:cache-policy>maintain</sce:cache-policy>
+</scxml>"##;
+        let label = DocumentLabel {
+            identifier: "rx_pool_sram1",
+            diagnostic_label: "rx_pool_sram1.scxml",
+        };
+        let out = compile_forge_from_string(scxml, label, generator::Language::Rust)
+            .expect("forge rust codegen must succeed for a well-formed buffer-pool");
+        assert_eq!(out.files.len(), 1, "buffer-pool emits a single .rs file");
+        let (filename, body) = &out.files[0];
+        assert_eq!(filename, "rx_pool_sram1.rs");
+        assert!(
+            body.contains("pub const SLOT_COUNT: usize = 8;"),
+            "SLOT_COUNT constant must lower the slot-count body; full source:\n{body}",
+        );
+        assert!(
+            body.contains("pub const SLOT_SIZE: usize = 256;"),
+            "SLOT_SIZE constant must lower the slot-size body; full source:\n{body}",
+        );
+        assert!(
+            body.contains("pub const SECTION: &'static str = \"sram1\";"),
+            "SECTION constant must round-trip the section name; full source:\n{body}",
+        );
+        assert!(
+            body.contains("pub const ALIGNMENT: u32 = 32;"),
+            "ALIGNMENT constant must lower the alignment body; full source:\n{body}",
+        );
+        assert!(
+            body.contains("pub const DMA_CHANNEL: &'static str = \"DW0_CH3\";"),
+            "DMA_CHANNEL constant must round-trip the channel binding; full source:\n{body}",
+        );
+        assert!(
+            body.contains("pub const CACHE_POLICY: &'static str = \"maintain\";"),
+            "CACHE_POLICY constant must round-trip the policy enum; full source:\n{body}",
+        );
+        assert!(
+            body.contains("pub struct RxPoolSram1"),
+            "must emit pascal-cased struct; full source:\n{body}",
+        );
+        assert!(
+            body.contains("pub fn acquire(&mut self) -> Option<usize>"),
+            "must emit acquire surface; full source:\n{body}",
+        );
+        assert!(
+            body.contains("pub fn release(&mut self, slot: usize)"),
+            "must emit release surface; full source:\n{body}",
+        );
+        assert!(
+            body.contains("storage: [[0u8; SLOT_SIZE]; SLOT_COUNT]"),
+            "must initialize storage as fixed-size array of slot-sized chunks; full source:\n{body}",
+        );
+    }
+
+    /// Watching-zenoh RFC §5.E / §5.J.4: buffer-pool is the second
+    /// `KindClass::McuClass` kind (after Link). Authoring against
+    /// cpp/kotlin/go/python raises `codegen/mcu-class-kind-on-non-mcu-language`
+    /// via the existing A6 gate. C11 raises
+    /// `codegen/generic-kind-backend-emit-missing` because B7-α only
+    /// ships the Rust template; B7-β closes c11 parity.
+    #[test]
+    fn buffer_pool_on_non_mcu_languages_rejects_via_codegen_matrix() {
+        use crate::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="rx_pool_sram1" version="1.0">
+  <sce:slot-count>8</sce:slot-count>
+  <sce:slot-size>256</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>32</sce:alignment>
+  <sce:cache-policy>none</sce:cache-policy>
+</scxml>"##;
+        for lang in [
+            generator::Language::Cpp,
+            generator::Language::Kotlin,
+            generator::Language::Go,
+            generator::Language::Python,
+        ] {
+            let label = DocumentLabel {
+                identifier: "rx_pool_sram1",
+                diagnostic_label: "rx_pool_sram1.scxml",
+            };
+            let err = compile_forge_from_string(scxml, label, lang)
+                .err()
+                .unwrap_or_else(|| panic!("buffer-pool on {lang:?} must reject"));
+            let diags = err.to_diagnostics();
+            assert_eq!(
+                diags.len(),
+                1,
+                "single diagnostic for MCU-class-on-non-MCU-language; lang={lang:?}",
+            );
+            let d = &diags[0];
+            assert!(
+                matches!(d.code, DiagnosticCode::CodegenMcuClassKindOnNonMcuLanguage),
+                "must be CodegenMcuClassKindOnNonMcuLanguage; got {:?} on {lang:?}",
+                d.code,
+            );
+        }
+        // C11 takes the `KindClass::McuClass` arm but template_ships
+        // returns false until B7-β — surfaces as
+        // `codegen/generic-kind-backend-emit-missing` (template absent).
+        let label = DocumentLabel {
+            identifier: "rx_pool_sram1",
+            diagnostic_label: "rx_pool_sram1.scxml",
+        };
+        let err = compile_forge_from_string(scxml, label, generator::Language::C11)
+            .err()
+            .expect("buffer-pool on c11 must reject until B7-β");
+        let diags = err.to_diagnostics();
+        let d = &diags[0];
+        assert!(
+            matches!(d.code, DiagnosticCode::CodegenGenericKindBackendEmitMissing),
+            "must be CodegenGenericKindBackendEmitMissing on c11; got {:?}",
+            d.code,
+        );
+    }
+
+    /// Watching-zenoh RFC §5.E B7-α: η-second-consumer pattern.
+    /// `<sce:section>` body must resolve against the deploy-resolved
+    /// machine's `memory.sram_regions` map. Compiling a buffer-pool
+    /// with `<sce:section>nonexistent</sce:section>` against a machine
+    /// declaring `sram1` + `dtcm` raises `mem/pool-section-conflict`
+    /// with `Fix::ReplaceOneOf` candidates listing the declared regions.
+    /// The new entry [`compile_forge_with_deploy`] is the only path that
+    /// fires this diagnostic (Q-η5 (a) precedent — silent skip when
+    /// deploy is unavailable).
+    #[test]
+    fn buffer_pool_section_not_in_deploy_memory_rejects_via_mem_pool_section_conflict() {
+        use crate::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
+        let deploy_yaml = r#"
+version: "1.0"
+topology:
+  mcu_device:
+    machines:
+      mcu_node:
+        source: pool_owner.scxml
+        platform:
+          class: mcu
+          os: bare_metal
+        memory:
+          sram_regions:
+            sram1:
+              base: 0x08000000
+              size: 524288
+            dtcm:
+              base: 0x20000000
+              size: 65536
+"#;
+        let deploy = mesh::deploy::parse_deploy_str(deploy_yaml)
+            .expect("deploy.yaml parses with memory.sram_regions");
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="rx_pool_phantom" version="1.0">
+  <sce:slot-count>4</sce:slot-count>
+  <sce:slot-size>128</sce:slot-size>
+  <sce:section>nonexistent</sce:section>
+  <sce:alignment>32</sce:alignment>
+  <sce:cache-policy>none</sce:cache-policy>
+</scxml>"##;
+        let label = DocumentLabel {
+            identifier: "rx_pool_phantom",
+            diagnostic_label: "rx_pool_phantom.scxml",
+        };
+        let err = compile_forge_with_deploy(
+            scxml,
+            label,
+            generator::Language::Rust,
+            Some(&deploy),
+            Some("mcu_node"),
+        )
+        .err()
+        .expect("section not in deploy memory must reject");
+        let diags = err.to_diagnostics();
+        assert_eq!(
+            diags.len(),
+            1,
+            "single diagnostic for mem-pool-section-conflict",
+        );
+        let d = &diags[0];
+        assert!(
+            matches!(d.code, DiagnosticCode::MemPoolSectionConflict),
+            "must be DiagnosticCode::MemPoolSectionConflict; got {:?}",
+            d.code,
+        );
+        assert!(
+            d.message.contains("nonexistent"),
+            "message must name the offending section; got {}",
+            d.message,
+        );
+        assert!(
+            d.message.contains("mcu_node"),
+            "message must name the target machine; got {}",
+            d.message,
+        );
+        assert!(
+            d.message.contains("dtcm") && d.message.contains("sram1"),
+            "message must enumerate the declared regions for repair; got {}",
+            d.message,
+        );
+
+        // Q-η5 (a) skip-when-no-deploy: same SCXML compiled via the
+        // deploy-unaware entry passes parse + validate (rust generates
+        // the slot table without section validation). Verifying η is
+        // layered on top of the existing pipeline rather than added
+        // to it.
+        let no_deploy_out = compile_forge_with_deploy(
+            scxml,
+            label,
+            generator::Language::Rust,
+            None,
+            None,
+        )
+        .expect("no-deploy path must skip section validation per Q-η5 (a)");
+        assert_eq!(no_deploy_out.files.len(), 1);
+    }
+
+    /// Watching-zenoh RFC §5.E B7-α: positive case for η-second-consumer.
+    /// A pool with `<sce:section>sram1</sce:section>` against a machine
+    /// declaring `sram1` in `memory.sram_regions` passes validation and
+    /// produces the same Rust output as the deploy-unaware entry. Pins
+    /// the validation-then-codegen ordering so a future refactor cannot
+    /// accidentally short-circuit the validate step.
+    #[test]
+    fn buffer_pool_section_in_deploy_memory_passes() {
+        let deploy_yaml = r#"
+version: "1.0"
+topology:
+  mcu_device:
+    machines:
+      mcu_node:
+        source: pool_owner.scxml
+        platform:
+          class: mcu
+          os: bare_metal
+        memory:
+          sram_regions:
+            sram1:
+              base: 0x08000000
+              size: 524288
+"#;
+        let deploy = mesh::deploy::parse_deploy_str(deploy_yaml)
+            .expect("deploy.yaml parses");
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="rx_pool_sram1" version="1.0">
+  <sce:slot-count>8</sce:slot-count>
+  <sce:slot-size>256</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>32</sce:alignment>
+  <sce:cache-policy>none</sce:cache-policy>
+</scxml>"##;
+        let label = DocumentLabel {
+            identifier: "rx_pool_sram1",
+            diagnostic_label: "rx_pool_sram1.scxml",
+        };
+        let out = compile_forge_with_deploy(
+            scxml,
+            label,
+            generator::Language::Rust,
+            Some(&deploy),
+            Some("mcu_node"),
+        )
+        .expect("pool section in deploy memory map must pass validation");
+        assert_eq!(out.files.len(), 1);
+        let (_, body) = &out.files[0];
+        assert!(
+            body.contains("pub const SECTION: &'static str = \"sram1\";"),
+            "must round-trip the validated section; full source:\n{body}",
+        );
+    }
+
+    /// Watching-zenoh RFC §5.E B7-α negative coverage. The XSD at
+    /// `schemas/sce-forge-ext.xsd` constrains `<sce:cache-policy>` to
+    /// the closed enumeration AND `<sce:slot-count>` / `<sce:slot-size>`
+    /// / `<sce:alignment>` to `xs:positiveInteger` — so bogus body text
+    /// and zero-valued integers are XSD-pre-empted in the default
+    /// pipeline (γ precedent: `LinkLinkClassUnknown` is XSD-pre-empted
+    /// likewise; the parser-side check is the schema-skipped fallback
+    /// pinned by the wire-format golden, not by a live default-pipeline
+    /// test). Required-element absence (`<sce:section>` etc.) is enforced
+    /// only by the parser because the XSD does not constrain
+    /// foreign-namespace `<scxml>` body composition for B7-α.
+    #[test]
+    fn buffer_pool_parser_negative_coverage() {
+        use crate::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
+        // Missing <sce:section> — parser-only check (XSD does not
+        // enforce required children of foreign-namespace `<scxml>`).
+        let no_section = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="bad_pool" version="1.0">
+  <sce:slot-count>4</sce:slot-count>
+  <sce:slot-size>128</sce:slot-size>
+  <sce:alignment>32</sce:alignment>
+  <sce:cache-policy>none</sce:cache-policy>
+</scxml>"##;
+        let label = DocumentLabel {
+            identifier: "bad_pool",
+            diagnostic_label: "bad_pool.scxml",
+        };
+        let err = compile_forge_from_string(no_section, label, generator::Language::Rust)
+            .err()
+            .expect("buffer-pool without <sce:section> must reject");
+        let diags = err.to_diagnostics();
+        assert!(
+            matches!(diags[0].code, DiagnosticCode::ValidationMissingElement),
+            "must be ValidationMissingElement for missing section; got {:?}",
+            diags[0].code,
+        );
+
+        // Bogus <sce:cache-policy> — XSD-pre-empted via cachePolicyType
+        // enumeration. γ precedent (LinkLinkClassUnknown) — wire-format
+        // for the parser-side InvalidAttribute fallback is locked by
+        // golden, not by a live default-pipeline test.
+        let bad_policy = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="bad_pool" version="1.0">
+  <sce:slot-count>4</sce:slot-count>
+  <sce:slot-size>128</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>32</sce:alignment>
+  <sce:cache-policy>maybe</sce:cache-policy>
+</scxml>"##;
+        let err = compile_forge_from_string(bad_policy, label, generator::Language::Rust)
+            .err()
+            .expect("buffer-pool with invalid cache-policy must reject");
+        let diags = err.to_diagnostics();
+        assert!(
+            matches!(diags[0].code, DiagnosticCode::XmlSchemaValidation),
+            "must be XmlSchemaValidation for bogus cache-policy (XSD-pre-empted); got {:?}",
+            diags[0].code,
+        );
+
+        // Zero-valued slot-size — XSD-pre-empted via xs:positiveInteger
+        // (excludes 0). Parser-side `if value == 0` check is the
+        // schema-skipped fallback.
+        let zero_slot_size = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="bad_pool" version="1.0">
+  <sce:slot-count>4</sce:slot-count>
+  <sce:slot-size>0</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>32</sce:alignment>
+  <sce:cache-policy>none</sce:cache-policy>
+</scxml>"##;
+        let err = compile_forge_from_string(zero_slot_size, label, generator::Language::Rust)
+            .err()
+            .expect("buffer-pool with zero slot-size must reject");
+        let diags = err.to_diagnostics();
+        assert!(
+            matches!(diags[0].code, DiagnosticCode::XmlSchemaValidation),
+            "must be XmlSchemaValidation for zero slot-size (XSD-pre-empted); got {:?}",
+            diags[0].code,
+        );
+    }
+
+    /// Watching-zenoh RFC §5.C body + §5.E B7-α schema-only: a link
+    /// document with `<sce:rx-pool ref="..."/>` / `<sce:tx-pool ref="..."/>`
+    /// children parses successfully and emits the pool refs as
+    /// `pub const RX_POOL` / `pub const TX_POOL` on the wrapper struct.
+    /// This is the B6-side schema-only co-landing — no cross-resolution
+    /// validator yet (`link/pool-slot-smaller-than-framer-max` defers
+    /// to a later atomic that wires pool ↔ framer through
+    /// `compile_forge_with_imports`).
+    #[test]
+    fn link_with_rx_pool_tx_pool_emits_constants() {
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="link" name="udp_scout" version="1.0">
+  <sce:link-class>udp</sce:link-class>
+  <sce:framer ref="scout_frame_codec"/>
+  <sce:backpressure>drop</sce:backpressure>
+  <sce:rx-pool ref="rx_pool_sram1"/>
+  <sce:tx-pool ref="tx_pool_sram1"/>
+</scxml>"##;
+        let label = DocumentLabel {
+            identifier: "udp_scout",
+            diagnostic_label: "udp_scout.scxml",
+        };
+        let out = compile_forge_from_string(scxml, label, generator::Language::Rust)
+            .expect("link with rx-pool/tx-pool must parse and emit");
+        assert_eq!(out.files.len(), 1);
+        let (_, body) = &out.files[0];
+        assert!(
+            body.contains("pub const RX_POOL: &'static str = \"rx_pool_sram1\";"),
+            "RX_POOL constant must lower the rx-pool ref; full source:\n{body}",
+        );
+        assert!(
+            body.contains("pub const TX_POOL: &'static str = \"tx_pool_sram1\";"),
+            "TX_POOL constant must lower the tx-pool ref; full source:\n{body}",
+        );
+
+        // Without <sce:rx-pool>, the constant must NOT emit (silent
+        // omission, not a default value). This pins the {% if %}
+        // guard on the template against drift.
+        let no_pools = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="link" name="udp_scout" version="1.0">
+  <sce:link-class>udp</sce:link-class>
+  <sce:framer ref="scout_frame_codec"/>
+  <sce:backpressure>drop</sce:backpressure>
+</scxml>"##;
+        let out = compile_forge_from_string(no_pools, label, generator::Language::Rust)
+            .expect("link without pools must still emit");
+        let (_, body) = &out.files[0];
+        assert!(
+            !body.contains("RX_POOL"),
+            "RX_POOL must NOT emit when no <sce:rx-pool> declared; full source:\n{body}",
+        );
+        assert!(
+            !body.contains("TX_POOL"),
+            "TX_POOL must NOT emit when no <sce:tx-pool> declared; full source:\n{body}",
+        );
     }
 }

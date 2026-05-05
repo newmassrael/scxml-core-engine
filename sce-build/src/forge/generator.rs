@@ -726,6 +726,11 @@ pub fn generate_cpp_with_imports(
         ForgeDocument::Link(_) => unreachable!(
             "ForgeDocument::Link rejected by codegen_matrix::check on cpp"
         ),
+        // RFC §5.E / §5.J.4: BufferPool is MCU-class — same matrix
+        // rejection precedes this match on cpp.
+        ForgeDocument::BufferPool(_) => unreachable!(
+            "ForgeDocument::BufferPool rejected by codegen_matrix::check on cpp"
+        ),
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -9041,6 +9046,9 @@ pub fn generate_kotlin_with_imports(
         ForgeDocument::Link(_) => unreachable!(
             "ForgeDocument::Link rejected by codegen_matrix::check on kotlin"
         ),
+        ForgeDocument::BufferPool(_) => unreachable!(
+            "ForgeDocument::BufferPool rejected by codegen_matrix::check on kotlin"
+        ),
     };
 
     let filename = format!("{}.kt", filters::to_pascal_case(doc.name().to_string()));
@@ -9128,6 +9136,12 @@ pub fn generate_rust_with_imports(
         // §5.B framer into RX/TX paths and routes the result through
         // the `Link` trait owned by `sce-link-runtime`.
         ForgeDocument::Link(m) => render_link_rust(&env, m, imports)?,
+        // RFC §5.E: DMA-aligned slot table emit. B7-α ships the
+        // minimum slot table on `(rust, std)` — fixed-size array of
+        // `[u8; SLOT_SIZE]`, bitmap freelist, acquire/return surface.
+        // Phantom-typed `Slot<state>` API + 7-state lifecycle FSM
+        // defer to B7-γ.
+        ForgeDocument::BufferPool(m) => render_buffer_pool_rust(&env, m, imports)?,
     };
 
     let filename = format!("{}.rs", filters::to_snake_case(doc.name().to_string()));
@@ -9194,10 +9208,51 @@ fn render_link_rust(
             event => &e.event,
             encode => &e.encode,
         }).collect::<Vec<_>>(),
+        rx_pool => m.rx_pool.clone().unwrap_or_default(),
+        tx_pool => m.tx_pool.clone().unwrap_or_default(),
+        has_rx_pool => m.rx_pool.is_some(),
+        has_tx_pool => m.tx_pool.is_some(),
     };
     tmpl.render(ctx).map_err(|e| {
         ForgeError::Generate(GenerateError::TemplateRender(format!(
             "link.rs.jinja2 (rust): {e}"
+        )))
+    })
+}
+
+/// Render a `<sce:kind="buffer-pool">` document for the Rust backend
+/// (watching-zenoh RFC §5.E, B7-α). Emits a struct owning a fixed-size
+/// `[[u8; SLOT_SIZE]; SLOT_COUNT]` slot table + bitmap freelist.
+/// Acquire/return surface is plain method calls; phantom-typed
+/// `Slot<state>` API + 7-state lifecycle FSM defer to B7-γ. Cache
+/// maintenance pinning defers to B7-δ (gated on §5.I `<sce:call>`
+/// intrinsic registry); linker fragment emission defers to B7-β
+/// `(c11, bare_metal)` parity.
+fn render_buffer_pool_rust(
+    env: &minijinja::Environment<'_>,
+    m: &BufferPoolModel,
+    _imports: &[ImportContext],
+) -> Result<String, ForgeError> {
+    let tmpl = env
+        .get_template("buffer_pool.rs.jinja2")
+        .map_err(|e| ForgeError::Generate(GenerateError::TemplateLoad(format!(
+            "buffer_pool.rs.jinja2 (rust): {e}"
+        ))))?;
+    let ctx = minijinja::context! {
+        name => &m.name,
+        pascal_name => filters::to_pascal_case(m.name.clone()),
+        snake_name => filters::to_snake_case(m.name.clone()),
+        slot_count => m.slot_count,
+        slot_size => m.slot_size,
+        section => &m.section,
+        alignment => m.alignment,
+        dma_channel => m.dma_channel.clone().unwrap_or_default(),
+        has_dma_channel => m.dma_channel.is_some(),
+        cache_policy => m.cache_policy.to_string(),
+    };
+    tmpl.render(ctx).map_err(|e| {
+        ForgeError::Generate(GenerateError::TemplateRender(format!(
+            "buffer_pool.rs.jinja2 (rust): {e}"
         )))
     })
 }
@@ -9321,6 +9376,9 @@ pub fn generate_go_with_imports(
         ForgeDocument::Link(_) => unreachable!(
             "ForgeDocument::Link rejected by codegen_matrix::check on go"
         ),
+        ForgeDocument::BufferPool(_) => unreachable!(
+            "ForgeDocument::BufferPool rejected by codegen_matrix::check on go"
+        ),
     };
 
     let filename = format!("{}.go", filters::to_snake_case(doc.name().to_string()));
@@ -9408,6 +9466,9 @@ pub fn generate_python_with_imports(
         // RFC §5.C / §5.J.4: rejected upstream by codegen_matrix::check.
         ForgeDocument::Link(_) => unreachable!(
             "ForgeDocument::Link rejected by codegen_matrix::check on python"
+        ),
+        ForgeDocument::BufferPool(_) => unreachable!(
+            "ForgeDocument::BufferPool rejected by codegen_matrix::check on python"
         ),
     };
 
@@ -9498,6 +9559,14 @@ pub fn generate_c11_with_imports(
         // kernel separate-vtable shape declared in
         // `sce-forge-runtime/c/include/sce/forge/link.h`.
         ForgeDocument::Link(m) => render_link_c(&env, m, imports)?,
+        // RFC §5.E B7-α ships rust only; B7-β closes c11 parity
+        // (linker fragment + section attributes). Today
+        // `template_ships(BufferPool, C11) == false`, so
+        // `codegen_matrix::check` raises `codegen/generic-kind-backend-emit-missing`
+        // before this match runs. The arm is kept for exhaustiveness.
+        ForgeDocument::BufferPool(_) => unreachable!(
+            "ForgeDocument::BufferPool rejected by codegen_matrix::check on c11 (B7-β)"
+        ),
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));

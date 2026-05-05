@@ -613,6 +613,19 @@ pub enum DiagnosticCode {
     #[serde(rename = "link/class-unsupported-on-target")]
     LinkClassUnsupportedOnTarget,
 
+    /// RFC §5.E B7-α buffer-pool placement validation: declared
+    /// `<sce:section>` body is not in deploy.yaml `machines.<m>.memory.
+    /// sram_regions`. Validate-time — fires only via
+    /// [`compile_forge_with_deploy`] when both `deploy` and
+    /// `target_machine` resolve and the machine has a `memory` block;
+    /// missing pieces skip silently per Q-η5 (a) precedent. Repair:
+    /// `Fix::ReplaceOneOf` carries the section-name axis (the list of
+    /// regions the resolved machine declares) so the author can rename
+    /// the pool's `<sce:section>` body or extend the deploy.yaml memory
+    /// map. RFC §5.E lines 1000-1023 + 1537 spec anchor.
+    #[serde(rename = "mem/pool-section-conflict")]
+    MemPoolSectionConflict,
+
     #[serde(rename = "io/filesystem")]
     IoFilesystem,
 
@@ -939,6 +952,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         LinkLinkClassUnknown,
         LinkBackpressureUndeclared,
         LinkClassUnsupportedOnTarget,
+        // BufferPool §5.E DMA-aligned slot table (watching-zenoh RFC §5.E, B7-α)
+        MemPoolSectionConflict,
         // Io
         IoFilesystem,
         // Cli
@@ -1156,6 +1171,9 @@ impl DiagnosticCode {
             | LinkLinkClassUnknown
             | LinkBackpressureUndeclared
             | LinkClassUnsupportedOnTarget => Some("watching-zenoh RFC §5.C"),
+
+            // ── BufferPool §5.E DMA-aligned slot table (B7-α) ────
+            MemPoolSectionConflict => Some("watching-zenoh RFC §5.E"),
 
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
@@ -1425,6 +1443,7 @@ impl DiagnosticCode {
             LinkLinkClassUnknown => "link/link-class-unknown",
             LinkBackpressureUndeclared => "link/backpressure-undeclared",
             LinkClassUnsupportedOnTarget => "link/class-unsupported-on-target",
+            MemPoolSectionConflict => "mem/pool-section-conflict",
             IoFilesystem => "io/filesystem",
             CliUnknownLanguage => "cli/unknown-language",
             CliUnsupportedLanguage => "cli/unsupported-language",
@@ -2406,6 +2425,27 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             }),
             key_fragments: vec![name.clone(), class.clone(), target_os.clone()],
         },
+        ValidationError::BufferPoolSectionConflict {
+            name,
+            machine,
+            section,
+            candidates,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MemPoolSectionConflict,
+            stage: Stage::Validation,
+            // Section-name candidate set (the list of regions the
+            // resolved machine declares in deploy.yaml) — `Fix::ReplaceOneOf`
+            // carries the region-name axis so agents can mechanically
+            // pick a legal section. The author can alternately extend
+            // the deploy.yaml memory map; the message prose names
+            // both repair surfaces. RFC §5.E lines 1000-1023 + 1537.
+            expected: None,
+            actual: Some(section.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![name.clone(), machine.clone(), section.clone()],
+        },
     }
 }
 
@@ -3162,7 +3202,7 @@ mod tests {
             (
                 "forge/unsupported-kind",
                 ValidationError::UnsupportedKind("bogus".into()).into(),
-                r#"{"v":1,"id":"fnv1a:812898e1a23fda4d","code":"validation/unsupported-kind","stage":"validation","spec":"SCE Forge §3.2","message":"unsupported sce:kind value: 'bogus'","actual":"bogus","fix":{"kind":"replace_one_of","candidates":["statechart","transform","lookup","condition","codec","procedure","validator","filter","interpolation","timer","observer","algorithm","link"]}}"#,
+                r#"{"v":1,"id":"fnv1a:812898e1a23fda4d","code":"validation/unsupported-kind","stage":"validation","spec":"SCE Forge §3.2","message":"unsupported sce:kind value: 'bogus'","actual":"bogus","fix":{"kind":"replace_one_of","candidates":["statechart","transform","lookup","condition","codec","procedure","validator","filter","interpolation","timer","observer","algorithm","link","buffer-pool"]}}"#,
             ),
             (
                 "forge/duplicate-id",
@@ -3787,6 +3827,18 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:5b4e6cb8ccacd634","code":"link/class-unsupported-on-target","stage":"validation","spec":"watching-zenoh RFC §5.C","message":"link 'udp_scout': link-class `serial` cannot run on target OS `linux` per RFC §5.C lines 765-771; the matrix admits `serial` on [\"bare_metal\"] only — change either the <sce:link-class> body or the deploy.yaml `machines.<id>.platform.os` for the target machine","actual":"linux","fix":{"kind":"replace_one_of","candidates":["bare_metal"]}}"#,
+            ),
+            // ── §5.E B7-α buffer-pool placement validate-time diagnostic ─
+            (
+                "forge/mem-pool-section-conflict",
+                ValidationError::BufferPoolSectionConflict {
+                    name: "rx_pool_sram1".into(),
+                    machine: "mcu_node".into(),
+                    section: "sram1".into(),
+                    candidates: vec!["dtcm".into(), "sram2".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:12ceca0bfb0b761a","code":"mem/pool-section-conflict","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"buffer-pool 'rx_pool_sram1': section `sram1` is not declared in deploy.yaml `machines.mcu_node.memory.sram_regions` — extend the memory map or rename the pool's <sce:section> body to one of [\"dtcm\", \"sram2\"]","actual":"sram1","fix":{"kind":"replace_one_of","candidates":["dtcm","sram2"]}}"#,
             ),
         ]
     }
@@ -4957,6 +5009,7 @@ mod tests {
             | ValidationInvalidDirection
             | LinkLinkClassUnknown
             | LinkClassUnsupportedOnTarget
+            | MemPoolSectionConflict
             | MeshDeployUnsupportedVersion
             | MeshTopologyMachineNotFound
             | MeshTopologySubscriptionSourceUnbound
@@ -5391,6 +5444,7 @@ mod tests {
                 | LinkLinkClassUnknown
                 | LinkBackpressureUndeclared
                 | LinkClassUnsupportedOnTarget
+                | MemPoolSectionConflict
                 | IoFilesystem
                 | CliUnknownLanguage | CliUnsupportedLanguage | CliReadInput
                 | CliWriteOutput | CliCreateOutputDir | CliScxmlGenerate
@@ -5474,9 +5528,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            175,
+            176,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 175 distinct variants to match the DiagnosticCode \
+             expected 176 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -5486,11 +5540,16 @@ mod tests {
              171 → 172; then B6-γ parse-time pair LinkLinkClassUnknown \
              + LinkBackpressureUndeclared; 172 → 174; then B6-η \
              OS-axis validate-time LinkClassUnsupportedOnTarget; \
-             174 → 175). The remaining §5.C codes defer to B6-δ \
-             (listener self-check, gated on §5.K + §5.M SCE-side \
-             prerequisites), D.2 (`link/link-class-incompatible-with-os` \
+             174 → 175; then watching-zenoh RFC §5.E B7-α first \
+             buffer-pool kind diagnostic MemPoolSectionConflict \
+             — η-second-consumer pattern on `compile_forge_with_deploy` \
+             section validation; 175 → 176). The remaining §5.C codes \
+             defer to B6-δ (listener self-check, gated on §5.K + §5.M \
+             SCE-side prerequisites), D.2 (`link/link-class-incompatible-with-os` \
              alongside OS-specific classes), and B7 \
-             (`link/pool-slot-smaller-than-framer-max`).",
+             (`link/pool-slot-smaller-than-framer-max`, B7-β c11 family, \
+             B7-γ FSM family, B7-δ cache-* family gated on §5.I, B7-ε \
+             Layer 1 typestate, B7-η' application-facing API).",
         );
     }
 

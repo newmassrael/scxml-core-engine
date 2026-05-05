@@ -49,6 +49,8 @@
       <xs:enumeration value="algorithm"/>
       <!-- watching-zenoh RFC §5.C (Phase B6, MCU-class) -->
       <xs:enumeration value="link"/>
+      <!-- watching-zenoh RFC §5.E (Phase B7, MCU-class) -->
+      <xs:enumeration value="buffer-pool"/>
     </xs:restriction>
   </xs:simpleType>
 
@@ -1083,6 +1085,90 @@
           <xs:element ref="sce:outbound"/>
         </xs:choice>
       </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <!--
+    watching-zenoh RFC §5.E B7-α schema-only: link-side `<sce:rx-pool>`
+    / `<sce:tx-pool>` reference a `<scxml sce:kind="buffer-pool">`
+    sibling document by name. Cross-resolution validator
+    (`link/pool-slot-smaller-than-framer-max`) defers to a later atomic
+    that wires pool ↔ framer through `compile_forge_with_imports`.
+  -->
+  <xs:element name="rx-pool">
+    <xs:complexType>
+      <xs:attribute name="ref" type="xs:NCName" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="tx-pool">
+    <xs:complexType>
+      <xs:attribute name="ref" type="xs:NCName" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!--
+    watching-zenoh RFC §5.E (Phase B7-α, MCU-class): SRAM-placed,
+    DMA-aligned slot table declared via `<scxml sce:kind="buffer-pool">`.
+    B7-α surface is the minimum schema vertical slice. The 7-state
+    lifecycle FSM (B7-γ) + cache maintenance pinning (B7-δ) defer to
+    later atomics; the schema itself is stable for what B7-α emits.
+  -->
+
+  <!-- RFC §5.E lines 948-957 cache-policy enumeration. -->
+  <xs:simpleType name="cachePolicyType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="maintain"/>
+      <xs:enumeration value="non-cacheable"/>
+      <xs:enumeration value="none"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:element name="slot-count">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:positiveInteger"/>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="slot-size">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:positiveInteger"/>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="section">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:string"/>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="alignment">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:positiveInteger"/>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="dma-channel">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:string"/>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="cache-policy">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="sce:cachePolicyType"/>
+      </xs:simpleContent>
     </xs:complexType>
   </xs:element>
 

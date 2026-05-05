@@ -624,6 +624,30 @@ pub enum ValidationError {
         /// The list of OS names this class DOES admit, for `Fix::ReplaceOneOf`.
         candidates: Vec<String>,
     },
+
+    /// RFC §5.E B7-α buffer-pool placement validation: the declared
+    /// `<sce:section>` is not in the resolved machine's
+    /// `memory.sram_regions` map. Fires only via
+    /// [`compile_forge_with_deploy`] when both `deploy` and
+    /// `target_machine` are present (Q-η5 (a) precedent — skip silently
+    /// when deploy.yaml is unavailable). The `candidates` axis is the
+    /// list of region names the resolved machine declares — drives
+    /// `Fix::ReplaceOneOf` so the author can either rename the pool's
+    /// `<sce:section>` body or extend deploy.yaml `memory.sram_regions`.
+    /// RFC §5.E lines 1000-1023 + 1537 spec anchor.
+    #[error(
+        "buffer-pool '{name}': section `{section}` is not declared in deploy.yaml `machines.{machine}.memory.sram_regions` — extend the memory map or rename the pool's <sce:section> body to one of {candidates:?}"
+    )]
+    BufferPoolSectionConflict {
+        /// Buffer-pool document name (root `name=` attribute).
+        name: String,
+        /// Target machine name (deploy.yaml top-level key).
+        machine: String,
+        /// The declared `<sce:section>` body (e.g. `sram1`).
+        section: String,
+        /// The list of section names the resolved machine declares, for `Fix::ReplaceOneOf`.
+        candidates: Vec<String>,
+    },
 }
 
 // ── Stage 4: Expression transpilation ──────────────────────────

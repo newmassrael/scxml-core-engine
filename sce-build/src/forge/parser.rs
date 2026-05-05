@@ -169,6 +169,7 @@ fn parse_forge_from_node(
         ForgeKind::Observer => parse_observer(root, label).map(ForgeDocument::Observer),
         ForgeKind::Algorithm => parse_algorithm(root, label).map(ForgeDocument::Algorithm),
         ForgeKind::Link => parse_link(root, label).map(ForgeDocument::Link),
+        ForgeKind::BufferPool => parse_buffer_pool(root, label).map(ForgeDocument::BufferPool),
         ForgeKind::Statechart => Err(located(
             root,
             label.diagnostic_label,
@@ -5911,6 +5912,22 @@ fn parse_link(
         }
     }
 
+    // RFC §5.C body + §5.E B7-α schema-only: `<sce:rx-pool ref="..."/>`
+    // / `<sce:tx-pool ref="..."/>` bind the link to a `sce:kind="buffer-pool"`
+    // sibling document. B7-α parser accepts the elements + validates
+    // ref-attribute presence; cross-resolution validator (link/pool-slot-
+    // smaller-than-framer-max) defers to a later atomic that wires the
+    // pool ↔ framer through `compile_forge_with_imports`. Absence is
+    // legal — pool binding is optional.
+    let rx_pool = match find_sce_child(root, "rx-pool") {
+        Some(node) => Some(require_attr(&node, "ref", "<sce:rx-pool>", doc_name)?),
+        None => None,
+    };
+    let tx_pool = match find_sce_child(root, "tx-pool") {
+        Some(node) => Some(require_attr(&node, "ref", "<sce:tx-pool>", doc_name)?),
+        None => None,
+    };
+
     Ok(LinkModel {
         name: doc_name.to_string(),
         class,
@@ -5918,6 +5935,154 @@ fn parse_link(
         backpressure,
         inbound,
         outbound,
+        rx_pool,
+        tx_pool,
+    })
+}
+
+// ── BufferPool kind parser (RFC §5.E, B7-α) ────────────────────
+//
+// SRAM-placed, DMA-aligned slot table. B7-α schema-only — minimum
+// shape covering 6 fields (`slot-count`, `slot-size`, `section`,
+// `alignment`, `dma-channel?`, `cache-policy`). The 7-state lifecycle
+// FSM defers to B7-γ (codegen-time IR-level borrow check); cache
+// maintenance pinning defers to B7-δ (gated on §5.I `<sce:call>`
+// intrinsic registry); burst absorption analysis defers to B7-ζ
+// (gated on §5.K deploy.yaml fields).
+//
+// Schema validation here is intentionally narrow: parser rejects only
+// the load-bearing absences (missing element, malformed body text,
+// zero-valued count/size/alignment). Cross-resolution checks
+// (`mem/pool-section-conflict`, `mem/dma-channel-collision`) live on
+// `compile_forge_with_deploy` (η second consumer pattern).
+fn parse_buffer_pool(
+    root: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+) -> Result<BufferPoolModel, Located<ForgeError>> {
+    let doc_name = label.identifier;
+
+    let slot_count = require_u32_body(root, label, "slot-count", doc_name)?;
+    let slot_size = require_u32_body(root, label, "slot-size", doc_name)?;
+    let alignment = require_u32_body(root, label, "alignment", doc_name)?;
+
+    // Reject zero-valued count/size/alignment at parse time (load-bearing
+    // for any subsequent layout / FSM logic). Power-of-2 alignment check
+    // defers to B7-β linker fragment emission where the constraint is
+    // observable through ALIGN(<n>) directives.
+    for (name, value) in [
+        ("slot-count", slot_count),
+        ("slot-size", slot_size),
+        ("alignment", alignment),
+    ] {
+        if value == 0 {
+            let node = find_sce_child(root, name).expect("required-element resolution above");
+            return Err(located(
+                &node,
+                label.diagnostic_label,
+                ValidationError::InvalidAttribute {
+                    element: format!("<sce:{name}>"),
+                    attr: "body text".into(),
+                    value: "0".into(),
+                    expected: "positive integer".into(),
+                },
+            ));
+        }
+    }
+
+    let section_node = find_sce_child(root, "section").ok_or_else(|| {
+        located(
+            root,
+            label.diagnostic_label,
+            ValidationError::MissingElement {
+                kind: ForgeKind::BufferPool,
+                element: "sce:section".into(),
+            },
+        )
+    })?;
+    let section = section_node.text().unwrap_or("").trim().to_string();
+    if section.is_empty() {
+        return Err(located(
+            &section_node,
+            label.diagnostic_label,
+            ValidationError::InvalidAttribute {
+                element: "<sce:section>".into(),
+                attr: "body text".into(),
+                value: "".into(),
+                expected: "non-empty SRAM region name".into(),
+            },
+        ));
+    }
+
+    // `<sce:dma-channel>` is optional — pure CPU-managed pools omit it.
+    let dma_channel = find_sce_child(root, "dma-channel").and_then(|node| {
+        let text = node.text().unwrap_or("").trim().to_string();
+        if text.is_empty() { None } else { Some(text) }
+    });
+
+    let cache_node = find_sce_child(root, "cache-policy").ok_or_else(|| {
+        located(
+            root,
+            label.diagnostic_label,
+            ValidationError::MissingElement {
+                kind: ForgeKind::BufferPool,
+                element: "sce:cache-policy".into(),
+            },
+        )
+    })?;
+    let cache_text = cache_node.text().unwrap_or("").trim().to_string();
+    let cache_policy = CachePolicy::from_attr(&cache_text).ok_or_else(|| {
+        located(
+            &cache_node,
+            label.diagnostic_label,
+            ValidationError::InvalidAttribute {
+                element: "<sce:cache-policy>".into(),
+                attr: "body text".into(),
+                value: cache_text,
+                expected: "maintain, non-cacheable, none".into(),
+            },
+        )
+    })?;
+
+    Ok(BufferPoolModel {
+        name: doc_name.to_string(),
+        slot_count,
+        slot_size,
+        section,
+        alignment,
+        dma_channel,
+        cache_policy,
+    })
+}
+
+fn require_u32_body(
+    root: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+    element: &str,
+    doc_name: &str,
+) -> Result<u32, Located<ForgeError>> {
+    let node = find_sce_child(root, element).ok_or_else(|| {
+        located(
+            root,
+            label.diagnostic_label,
+            ValidationError::MissingElement {
+                kind: ForgeKind::BufferPool,
+                element: format!("sce:{element}"),
+            },
+        )
+    })?;
+    let _ = doc_name; // documented context for future error elaboration
+    let text = node.text().unwrap_or("").trim().to_string();
+    text.parse::<u32>().map_err(|_| {
+        located(
+            &node,
+            label.diagnostic_label,
+            ValidationError::InvalidAttribute {
+                element: format!("<sce:{element}>"),
+                attr: "body text".into(),
+                value: text,
+                expected: "u32 integer".into(),
+            },
+        )
     })
 }
 

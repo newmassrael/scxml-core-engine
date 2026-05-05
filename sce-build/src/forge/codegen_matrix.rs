@@ -81,6 +81,11 @@ pub const fn kind_class(kind: ForgeKind) -> KindClass {
         // is in `sce-link-runtime` (rust trait + per-OS downstream
         // impls) and the c11 lower (deferred to B6-β).
         ForgeKind::Link => KindClass::McuClass,
+        // RFC §5.E / §5.J.4: BufferPool is the second MCU-class kind.
+        // Same matrix as Link: `(rust, *)` + `(c11, bare_metal)` only;
+        // cpp/kotlin/go/python rejected via A6 diagnostic. B7-α ships
+        // rust; B7-β closes c11 parity.
+        ForgeKind::BufferPool => KindClass::McuClass,
     }
 }
 
@@ -129,6 +134,17 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         ForgeKind::Link => match lang {
             Language::Rust | Language::C11 => true,
             Language::Cpp | Language::Kotlin | Language::Go | Language::Python => false,
+        },
+        // RFC §5.E BufferPool: B7-α ships rust only; B7-β closes c11
+        // parity (linker fragment + section attributes). cpp/kotlin/
+        // go/python are MCU-class-rejected by `kind_class` ahead of
+        // this lookup — `false` documents "no shipped template"
+        // without falsely claiming emission.
+        ForgeKind::BufferPool => match lang {
+            Language::Rust => true,
+            Language::C11 | Language::Cpp | Language::Kotlin | Language::Go | Language::Python => {
+                false
+            }
         },
     }
 }

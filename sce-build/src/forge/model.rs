@@ -100,6 +100,16 @@ pub enum ForgeKind {
     /// `sce-link-runtime`; per-OS impls (`sce_link_runtime_lwip`,
     /// `_tokio`, `_qnx`) live downstream in watching-zenoh.
     Link,
+    /// SRAM-placed, DMA-aligned slot table — watching-zenoh RFC §5.E.
+    /// Second MCU-class kind (RFC §5.J.4): emits only on `(rust, *)`
+    /// and `(c11, bare_metal)`. B7-α ships the minimum slot table on
+    /// `(rust, std)` with `<sce:slot-count>` / `<sce:slot-size>` /
+    /// `<sce:section>` / `<sce:alignment>` / `<sce:dma-channel>` /
+    /// `<sce:cache-policy>` schema. The 7-state lifecycle FSM
+    /// (`free` / `cpu-mut` / `dma-armed-{tx,rx}` / `dma-busy-{tx,rx}` /
+    /// `cpu-ref`) defers to B7-γ; cache maintenance pinning defers to
+    /// B7-δ (gated on §5.I `<sce:call>` intrinsic registry).
+    BufferPool,
 }
 
 impl ForgeKind {
@@ -121,6 +131,7 @@ impl ForgeKind {
         "observer",
         "algorithm",
         "link",
+        "buffer-pool",
     ];
 
     /// Parse from `sce:kind` attribute value. Returns `None` for unknown kinds.
@@ -139,6 +150,7 @@ impl ForgeKind {
             "observer" => Some(Self::Observer),
             "algorithm" => Some(Self::Algorithm),
             "link" => Some(Self::Link),
+            "buffer-pool" => Some(Self::BufferPool),
             _ => None,
         }
     }
@@ -175,6 +187,12 @@ impl ForgeKind {
             // generated module exposes a constructor that the consumer
             // wires to a downstream `sce_link_runtime_<os>` impl.
             Self::Link => true,
+            // RFC §5.E: BufferPool emits a struct owning a fixed-size
+            // slot table (B7-α `(rust, std)` initial shape; B7-γ adds
+            // the 7-state lifecycle FSM with phantom-typed `Slot<state>`
+            // API + IR-level borrow check). Acquire/return surface lives
+            // on the struct, not as free functions.
+            Self::BufferPool => true,
         }
     }
 
@@ -205,6 +223,13 @@ impl ForgeKind {
             // crate" — the trait surface is contract, the impl lives
             // downstream. Tier `None` is honest at the SCE level.
             Self::Link => RuntimeDep::None,
+            // RFC §5.E: BufferPool ships a self-contained slot table
+            // on `(rust, std)` in B7-α — no runtime helper crate
+            // dependency. B7-γ's IR-level borrow check is codegen-time;
+            // B7-δ's cache maintenance pinning routes through §5.I
+            // intrinsics, themselves contracts not runtime helpers.
+            // SCE-side tier `None` matches Link's stance.
+            Self::BufferPool => RuntimeDep::None,
         }
     }
 
@@ -225,6 +250,7 @@ impl ForgeKind {
                 | Self::Observer
                 | Self::Algorithm
                 | Self::Link
+                | Self::BufferPool
         )
     }
 }
@@ -245,6 +271,7 @@ impl std::fmt::Display for ForgeKind {
             Self::Observer => write!(f, "observer"),
             Self::Algorithm => write!(f, "algorithm"),
             Self::Link => write!(f, "link"),
+            Self::BufferPool => write!(f, "buffer-pool"),
         }
     }
 }
@@ -2318,6 +2345,105 @@ pub struct LinkModel {
     /// `<sce:events><sce:outbound .../></sce:events>` rows.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub outbound: Vec<LinkOutboundEvent>,
+    /// `<sce:rx-pool ref="...">` — RX buffer-pool name (RFC §5.C body
+    /// + §5.E B7-α schema-only). Authors who want zero-copy RX path
+    /// declare a `<scxml sce:kind="buffer-pool" name="...">` document
+    /// and bind it here. B7-α schema-only: parser accepts the element,
+    /// emits the ref as a `pub const` on the generated wrapper. Cross-
+    /// resolution validator (`link/pool-slot-smaller-than-framer-max`)
+    /// defers to a later atomic that wires pool ↔ framer at
+    /// `compile_forge_with_imports`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rx_pool: Option<String>,
+    /// `<sce:tx-pool ref="...">` — TX buffer-pool counterpart. Same
+    /// shape as `rx_pool`. Symmetric in B7-α; size validation defers
+    /// alongside the rx-pool case.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tx_pool: Option<String>,
+}
+
+/// `<sce:cache-policy>` enum — RFC §5.E lines 948-957. Three policies
+/// determine how codegen positions cache-maintenance ops on FSM edges:
+/// `maintain` emits clean/invalidate around DMA boundaries (B7-δ);
+/// `non-cacheable` declares MPU non-cacheable region (deploy.yaml
+/// `attr: [non_cacheable]`); `none` targets without D-cache.
+///
+/// B7-α parses the enum + carries it on `BufferPoolModel`. The cache-
+/// maintenance pinning that uses this field defers to B7-δ (gated on
+/// §5.I `<sce:call>` intrinsic registry).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CachePolicy {
+    /// Codegen inserts `cache_clean` before DMA TX, `cache_invalidate`
+    /// after DMA RX (B7-δ). Pool MUST live in a `cacheable` region.
+    Maintain,
+    /// Pool MUST live in a `non_cacheable` MPU region; no maintenance
+    /// ops emitted. CPU access pays the uncached-load penalty.
+    NonCacheable,
+    /// Target has no D-cache (e.g. Cortex-M0/M3/M4). No maintenance
+    /// ops, no MPU setup. `cache-policy: maintain` on a `has_dcache:
+    /// false` target raises `mem/cache-policy-unsupported-on-no-dcache-core`
+    /// (B7-δ family).
+    None,
+}
+
+impl CachePolicy {
+    pub const ALL_NAMES: &'static [&'static str] = &["maintain", "non-cacheable", "none"];
+
+    pub fn from_attr(s: &str) -> Option<Self> {
+        match s {
+            "maintain" => Some(Self::Maintain),
+            "non-cacheable" => Some(Self::NonCacheable),
+            "none" => Some(Self::None),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for CachePolicy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Maintain => write!(f, "maintain"),
+            Self::NonCacheable => write!(f, "non-cacheable"),
+            Self::None => write!(f, "none"),
+        }
+    }
+}
+
+/// Buffer-pool document — RFC §5.E SRAM-placed, DMA-aligned slot table.
+///
+/// B7-α schema (per `<scxml sce:kind="buffer-pool">` body):
+/// - `<sce:slot-count>` (u32, > 0) — number of slots in the pool
+/// - `<sce:slot-size>` (u32, > 0) — bytes per slot
+/// - `<sce:section>` (string) — SRAM region name (matches deploy.yaml
+///   `machines.<m>.memory.sram_regions.<name>`); η-second-consumer
+///   validator `mem/pool-section-conflict` fires when the section is
+///   declared but absent from the resolved machine's memory map
+/// - `<sce:alignment>` (u32, power of 2, > 0) — DMA alignment requirement
+/// - `<sce:dma-channel>` (string, optional) — DMA channel binding
+///   (matches deploy.yaml `machines.<m>.memory.dma_channels` entry);
+///   `mem/dma-channel-collision` deferred to B7-γ
+/// - `<sce:cache-policy>` ([`CachePolicy`]) — `maintain` /
+///   `non-cacheable` / `none`; cache-maintenance pinning defers to B7-δ
+#[derive(Debug, Clone, Serialize)]
+pub struct BufferPoolModel {
+    pub name: String,
+    /// `<sce:slot-count>` — slot count in the pool. Parser rejects 0.
+    pub slot_count: u32,
+    /// `<sce:slot-size>` — bytes per slot. Parser rejects 0.
+    pub slot_size: u32,
+    /// `<sce:section>` — SRAM region name. Validated against deploy.yaml
+    /// `memory.sram_regions` via [`compile_forge_with_deploy`] (B7-α).
+    pub section: String,
+    /// `<sce:alignment>` — DMA alignment. Parser rejects 0; power-of-2
+    /// check defers to B7-β linker fragment emission.
+    pub alignment: u32,
+    /// `<sce:dma-channel>` — DMA channel name (optional). Empty when
+    /// the pool is purely CPU-managed. Cross-resolution defers to B7-γ.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dma_channel: Option<String>,
+    /// `<sce:cache-policy>` — `maintain` / `non-cacheable` / `none`.
+    pub cache_policy: CachePolicy,
 }
 
 // ── Forge document ─────────────────────────────────────────────
@@ -2350,6 +2476,8 @@ pub enum ForgeDocument {
     Algorithm(AlgorithmModel),
     #[serde(rename = "link")]
     Link(LinkModel),
+    #[serde(rename = "buffer-pool")]
+    BufferPool(BufferPoolModel),
 }
 
 impl ForgeDocument {
@@ -2367,6 +2495,7 @@ impl ForgeDocument {
             Self::Observer(m) => &m.name,
             Self::Algorithm(m) => &m.name,
             Self::Link(m) => &m.name,
+            Self::BufferPool(m) => &m.name,
         }
     }
 
@@ -2384,6 +2513,7 @@ impl ForgeDocument {
             Self::Observer(_) => ForgeKind::Observer,
             Self::Algorithm(_) => ForgeKind::Algorithm,
             Self::Link(_) => ForgeKind::Link,
+            Self::BufferPool(_) => ForgeKind::BufferPool,
         }
     }
 
@@ -2412,6 +2542,10 @@ impl ForgeDocument {
             // RFC §5.C: trait surface owned by SCE's `sce-link-runtime`;
             // per-OS impls live downstream. SCE-side tier `None`.
             Self::Link(_) => RuntimeDep::None,
+            // RFC §5.E: B7-α self-contained slot table on `(rust, std)`
+            // — no SCE-side runtime helper crate. Cache maintenance ops
+            // (B7-δ) route through §5.I intrinsics; B7-α tier `None`.
+            Self::BufferPool(_) => RuntimeDep::None,
         }
     }
 }

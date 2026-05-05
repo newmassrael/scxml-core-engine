@@ -1,0 +1,118 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="buffer-pool")
+// Runtime: self-contained on (rust, std) — no SCE-side helper crate.
+// Do not edit — regenerate from the source SCXML file.
+//
+// watching-zenoh RFC §5.E DMA-aligned slot table. B7-α ships the
+// minimum slot table on (rust, std): a fixed-size `[[u8; SLOT_SIZE];
+// SLOT_COUNT]` storage + bitmap freelist + acquire/return surface.
+// The 7-state lifecycle FSM (free/cpu-mut/dma-armed-{tx,rx}/
+// dma-busy-{tx,rx}/cpu-ref) defers to B7-γ (codegen-time IR-level
+// borrow check + phantom-typed `Slot<state>` API). Cache maintenance
+// pinning defers to B7-δ (gated on §5.I `<sce:call>` intrinsic
+// registry). Linker fragment emission defers to B7-β (c11 parity).
+//
+// Generated from `name="{{ name }}"` with section `{{ section }}`,
+// alignment `{{ alignment }}`, cache-policy `{{ cache_policy }}`.
+
+#![allow(clippy::all)]
+#![allow(unused_imports)]
+#![allow(unused_variables)]
+#![allow(dead_code)]
+
+/// Number of slots in the pool (`<sce:slot-count>`).
+pub const SLOT_COUNT: usize = {{ slot_count }};
+
+/// Bytes per slot (`<sce:slot-size>`).
+pub const SLOT_SIZE: usize = {{ slot_size }};
+
+/// SRAM region name (`<sce:section>`). Round-tripped here so that
+/// downstream linker integration (B7-β c11 parity, B7-α (rust, mcu)
+/// extension) can read it without re-parsing the SCXML.
+pub const SECTION: &'static str = "{{ section }}";
+
+/// DMA alignment in bytes (`<sce:alignment>`). Power-of-2 check
+/// defers to B7-β linker fragment emission where the constraint is
+/// observable through `ALIGN(<n>)` directives.
+pub const ALIGNMENT: u32 = {{ alignment }};
+
+/// DMA channel binding (`<sce:dma-channel>`). Empty when the pool is
+/// purely CPU-managed. Cross-resolution against deploy.yaml
+/// `memory.dma_channels` defers to B7-γ.
+pub const DMA_CHANNEL: &'static str = "{{ dma_channel }}";
+
+/// Cache policy (`<sce:cache-policy>`) — `maintain` / `non-cacheable`
+/// / `none`. Cache maintenance pinning defers to B7-δ.
+pub const CACHE_POLICY: &'static str = "{{ cache_policy }}";
+
+/// Generated buffer-pool. Owns a fixed-size storage table + bitmap
+/// freelist. B7-α exposes a minimum acquire/return surface; B7-γ
+/// will lift the bitmap into a 7-state per-slot FSM with phantom-
+/// typed `Slot<state>` handles.
+pub struct {{ pascal_name }} {
+    /// Slot storage. Each slot is `[u8; SLOT_SIZE]`. The table is
+    /// CPU-managed in B7-α; B7-β will emit the c11 mirror under
+    /// `__attribute__((section, aligned))` for MCU placement.
+    storage: [[u8; SLOT_SIZE]; SLOT_COUNT],
+    /// Per-slot occupancy bitmap (1 = in use, 0 = free). B7-γ
+    /// upgrades this to per-slot FSM state.
+    in_use: [bool; SLOT_COUNT],
+}
+
+impl Default for {{ pascal_name }} {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl {{ pascal_name }} {
+    /// Construct an empty pool — all slots on the freelist.
+    pub fn new() -> Self {
+        Self {
+            storage: [[0u8; SLOT_SIZE]; SLOT_COUNT],
+            in_use: [false; SLOT_COUNT],
+        }
+    }
+
+    /// Acquire a free slot for CPU-side mutation. Returns the slot
+    /// index, or `None` when every slot is in use. B7-γ will return
+    /// a `Slot<cpu-mut>` phantom-typed handle instead of a bare
+    /// index; B7-α exposes the index for testability.
+    pub fn acquire(&mut self) -> Option<usize> {
+        for (i, used) in self.in_use.iter_mut().enumerate() {
+            if !*used {
+                *used = true;
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    /// Return a slot to the freelist. Idempotent on `release(i)` for
+    /// already-free `i` — B7-γ promotes this to a typestate violation.
+    pub fn release(&mut self, slot: usize) {
+        if slot < SLOT_COUNT {
+            self.in_use[slot] = false;
+        }
+    }
+
+    /// Read access to a slot's bytes. Bounds-checked; panics on
+    /// out-of-range index. B7-γ replaces this with a phantom-typed
+    /// `Slot<cpu-ref>` accessor.
+    pub fn slot(&self, idx: usize) -> &[u8; SLOT_SIZE] {
+        &self.storage[idx]
+    }
+
+    /// Mutable access to a slot's bytes. B7-γ replaces this with a
+    /// phantom-typed `Slot<cpu-mut>` accessor.
+    pub fn slot_mut(&mut self, idx: usize) -> &mut [u8; SLOT_SIZE] {
+        &mut self.storage[idx]
+    }
+
+    /// Number of slots currently on the freelist.
+    pub fn free_count(&self) -> usize {
+        self.in_use.iter().filter(|u| !**u).count()
+    }
+}
