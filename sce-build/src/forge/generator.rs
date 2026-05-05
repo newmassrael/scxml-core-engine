@@ -9202,6 +9202,52 @@ fn render_link_rust(
     })
 }
 
+/// Render a `<sce:kind="link">` document for the C11 backend
+/// (watching-zenoh RFC §5.C, B6-β). Mirrors `render_link_rust` but
+/// emits a header that composes a `sce_forge_link_t` driver handle
+/// from `sce-forge-runtime/c/include/sce/forge/link.h`. Per Q-β1=(b)
+/// the dispatch shape is the canonical Linux-kernel separate-vtable
+/// pattern (`const sce_forge_link_ops_t *ops` + `void *self`) so the
+/// ops table can live in flash/ROM on MCU targets.
+fn render_link_c(
+    env: &minijinja::Environment<'_>,
+    m: &LinkModel,
+    _imports: &[ImportContext],
+) -> Result<String, ForgeError> {
+    let tmpl = env
+        .get_template("link.h.jinja2")
+        .map_err(|e| ForgeError::Generate(GenerateError::TemplateLoad(format!(
+            "link.h.jinja2 (c11): {e}"
+        ))))?;
+    let snake_name = filters::to_snake_case(m.name.clone());
+    let upper_name = to_upper_snake(&m.name);
+    let guard = format!("SCE_FORGE_{}_H", &upper_name);
+    let ctx = minijinja::context! {
+        name => &m.name,
+        snake_name => snake_name,
+        upper_name => upper_name,
+        guard => guard,
+        class => m.class.to_string(),
+        framer => &m.framer,
+        framer_snake => filters::to_snake_case(m.framer.clone()),
+        backpressure => m.backpressure.to_string(),
+        inbound => m.inbound.iter().map(|e| minijinja::context! {
+            event => &e.event,
+            when => e.when.clone().unwrap_or_default(),
+            has_when => e.when.is_some(),
+        }).collect::<Vec<_>>(),
+        outbound => m.outbound.iter().map(|e| minijinja::context! {
+            event => &e.event,
+            encode => &e.encode,
+        }).collect::<Vec<_>>(),
+    };
+    tmpl.render(ctx).map_err(|e| {
+        ForgeError::Generate(GenerateError::TemplateRender(format!(
+            "link.h.jinja2 (c11): {e}"
+        )))
+    })
+}
+
 // ══════════════════════════════════════════════════════════════
 // ── Go code generation ───────────────────────────────────────
 // ══════════════════════════════════════════════════════════════
@@ -9447,14 +9493,11 @@ pub fn generate_c11_with_imports(
         ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::C11)?,
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::C11)?,
         ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::C11, options)?,
-        // RFC §5.C: B6-α ships rust template only; B6-β closes c11
-        // parity. Until then `template_ships(Link, C11) == false`
-        // routes through `EmitOutcome::TemplateMissing` →
-        // `CodegenGenericKindBackendEmitMissing`, so this match arm
-        // remains unreachable on c11.
-        ForgeDocument::Link(_) => unreachable!(
-            "ForgeDocument::Link on c11 rejected by codegen_matrix::check (template not yet shipped — B6-β)"
-        ),
+        // RFC §5.C: byte-stream link emit. The template wires the
+        // §5.B framer into RX/TX paths through the canonical Linux-
+        // kernel separate-vtable shape declared in
+        // `sce-forge-runtime/c/include/sce/forge/link.h`.
+        ForgeDocument::Link(m) => render_link_c(&env, m, imports)?,
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));

@@ -1,0 +1,90 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+/* SCE Forge: Auto-generated from Extended SCXML (sce:kind="link") */
+/* Runtime: sce_forge_runtime_c (header-only INTERFACE library) */
+/* Do not edit — regenerate from the source SCXML file. */
+/*
+ * watching-zenoh RFC §5.C byte-stream link endpoint. The wrapper
+ * composes a `sce_forge_link_t` driver handle (from
+ * `sce-c-runtime`-adjacent contract `sce/forge/link.h`) and routes
+ * RX bytes through the §5.B framer codec's decode + injects the
+ * configured SCXML event, while TX pulls bytes from the framer's
+ * encode and submits them through the driver's `tx`. B6-α emitted
+ * the rust-target slice; B6-β closes the c11 mirror with the
+ * canonical Linux-kernel separate-vtable shape.
+ *
+ * Generated from `name="{{ name }}"` with link-class `{{ class }}`,
+ * framer ref `{{ framer }}`, backpressure policy `{{ backpressure }}`.
+ */
+
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include "sce/forge/link.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Link-class declared in the source SCXML — `{{ class }}`.
+ * Round-tripped here so the SCXML's `<sce:link-class>` body can be
+ * inspected at runtime (e.g. for diagnostic logs). */
+#define {{ upper_name }}_LINK_CLASS "{{ class }}"
+
+/* Framer codec reference — `{{ framer }}`. Consumers resolve this
+ * against the imported codec map. */
+#define {{ upper_name }}_LINK_FRAMER_REF "{{ framer }}"
+
+/* Backpressure policy — `{{ backpressure }}`. Used by the driver
+ * impl to decide between drop / block / signal-event when the
+ * outbound queue saturates. */
+#define {{ upper_name }}_LINK_BACKPRESSURE "{{ backpressure }}"
+
+/* Generated wrapper around an `sce_forge_link_t` driver handle.
+ * The `framer_ref` is the `<sce:framer ref="{{ framer }}"/>` codec
+ * name — consumers thread it through to the framer's decode / encode
+ * entry points. B6-β treats the framer as opaque (no codegen-time
+ * codec import resolution) so the wrapper compiles standalone
+ * against any conforming driver. B6-γ adds the cross-file
+ * framer-codec resolution alongside the negative-coverage fixtures. */
+typedef struct {
+    sce_forge_link_t driver;
+} {{ snake_name }}_link_t;
+
+/* Build the link wrapper from a driver handle. The driver owns the
+ * OS-native I/O primitive (`tokio_udp` / `lwip_udp` / …); SCE-side
+ * code only sees the contract surface. */
+static inline void {{ snake_name }}_link_init(
+    {{ snake_name }}_link_t *self, sce_forge_link_t driver) {
+    self->driver = driver;
+}
+
+/* Pull the next RX frame from the driver. Returns `false` when no
+ * bytes are pending; the SCXML interpreter polls in the idle slot
+ * and dispatches the configured event when bytes arrive (event
+ * dispatch lands with B6-γ's events-side codegen). */
+static inline bool {{ snake_name }}_link_rx(
+    {{ snake_name }}_link_t *self, sce_forge_link_rx_frame_t *out) {
+    return self->driver.ops->rx(self->driver.self, out);
+}
+
+/* Submit `bytes` for TX. Honors the link's `<sce:backpressure>`
+ * policy via the driver's `tx` return value. */
+static inline sce_forge_link_status_t {{ snake_name }}_link_tx(
+    {{ snake_name }}_link_t *self, const uint8_t *bytes, size_t len) {
+    sce_forge_link_tx_frame_t frame;
+    frame.data = bytes;
+    frame.len = len;
+    return self->driver.ops->tx(self->driver.self, frame);
+}
+
+#ifdef __cplusplus
+}  /* extern "C" */
+#endif
+
+#endif /* {{ guard }} */

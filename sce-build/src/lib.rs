@@ -2900,14 +2900,21 @@ mod tests {
         }
     }
 
-    /// Watching-zenoh RFC §5.C: c11 ships a Link template with B6-β.
-    /// Until then, `template_ships(Link, C11) == false` routes the
-    /// matrix walker through `EmitOutcome::TemplateMissing` →
-    /// `codegen/generic-kind-backend-emit-missing`. Pinning here so
-    /// B6-β's flip is a deliberate code change, not a silent default.
+    /// Watching-zenoh RFC §5.C B6-β: link kind c11 happy path. Same
+    /// fixture as the rust happy test → C11 generator emits a header
+    /// composing a `sce_forge_link_t` driver via the canonical Linux-
+    /// kernel separate-vtable shape (`const sce_forge_link_ops_t *ops`
+    /// + `void *self`). Asserts presence of the load-bearing tokens
+    /// (contract include + wrapper struct + init/rx/tx static-inline
+    /// helpers + LINK_CLASS / LINK_FRAMER_REF / LINK_BACKPRESSURE
+    /// macros + ops-pointer dispatch) so codegen drift fails the
+    /// build. Per Q-β1=(b) the dispatch goes through
+    /// `self->driver.ops->rx(self->driver.self, out)` — pattern (a)
+    /// inline-vtable would route through `self->driver.rx(...)` with
+    /// no `ops` indirection, so this assertion is what locks the
+    /// shape.
     #[test]
-    fn link_on_c11_rejects_until_b6_beta() {
-        use crate::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
+    fn link_c11_happy_path_emits_struct_of_fnptrs() {
         let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -2915,20 +2922,84 @@ mod tests {
   <sce:link-class>udp</sce:link-class>
   <sce:framer ref="scout_frame_codec"/>
   <sce:backpressure>drop</sce:backpressure>
+  <sce:events>
+    <sce:inbound event="scout.hello.received" when="decoded.msg_id == 0x02"/>
+    <sce:outbound event="scout.query.send" encode="scout_frame_codec"/>
+  </sce:events>
 </scxml>"##;
         let label = DocumentLabel {
             identifier: "udp_scout",
             diagnostic_label: "udp_scout.scxml",
         };
-        let err = compile_forge_from_string(scxml, label, generator::Language::C11)
-            .err()
-            .expect("link c11 emit deferred to B6-β");
-        let diags = err.to_diagnostics();
-        assert_eq!(diags.len(), 1);
+        let out = compile_forge_from_string(scxml, label, generator::Language::C11)
+            .expect("forge c11 codegen must succeed for a well-formed link");
+        assert_eq!(out.files.len(), 1, "link emits a single .h file");
+        let (filename, body) = &out.files[0];
+        assert_eq!(filename, "udp_scout.h");
+
+        // Header guard pin (mirrors `algorithm.h` / `codec.h` shape).
         assert!(
-            matches!(diags[0].code, DiagnosticCode::CodegenGenericKindBackendEmitMissing),
-            "c11 link emit must raise generic-kind-backend-emit-missing; got {:?}",
-            diags[0].code,
+            body.contains("#ifndef SCE_FORGE_UDP_SCOUT_H"),
+            "header must declare the SCE_FORGE_UDP_SCOUT_H guard; full source:\n{body}",
+        );
+
+        // `sce/forge/link.h` is the contract anchor — a drift here
+        // means the generated code lost its driver-handle surface.
+        assert!(
+            body.contains("#include \"sce/forge/link.h\""),
+            "generated link must include the contract header; full source:\n{body}",
+        );
+
+        // Wrapper struct composes a `sce_forge_link_t` by value.
+        assert!(
+            body.contains("sce_forge_link_t driver;"),
+            "wrapper must compose a sce_forge_link_t driver; full source:\n{body}",
+        );
+        assert!(
+            body.contains("} udp_scout_link_t;"),
+            "wrapper struct must be typedef'd as udp_scout_link_t; full source:\n{body}",
+        );
+
+        // Init/rx/tx are static-inline helpers (header-only).
+        assert!(
+            body.contains("static inline void udp_scout_link_init("),
+            "init helper must be emitted; full source:\n{body}",
+        );
+        assert!(
+            body.contains("static inline bool udp_scout_link_rx("),
+            "rx helper must be emitted; full source:\n{body}",
+        );
+        assert!(
+            body.contains("static inline sce_forge_link_status_t udp_scout_link_tx("),
+            "tx helper must return sce_forge_link_status_t; full source:\n{body}",
+        );
+
+        // Separate-vtable dispatch (Q-β1=(b)): the indirection goes
+        // through `ops` rather than per-instance function pointers.
+        // This assertion is the load-bearing pin for the textbook
+        // Linux-kernel pattern decision.
+        assert!(
+            body.contains("self->driver.ops->rx(self->driver.self, out)"),
+            "rx dispatch must route through `ops` (Q-β1=(b) separate vtable); full source:\n{body}",
+        );
+        assert!(
+            body.contains("self->driver.ops->tx(self->driver.self, frame)"),
+            "tx dispatch must route through `ops` (Q-β1=(b) separate vtable); full source:\n{body}",
+        );
+
+        // Author-declared static metadata round-trips into #defines
+        // (C11 idiom; rust mirror uses `pub const`).
+        assert!(
+            body.contains("#define UDP_SCOUT_LINK_CLASS \"udp\""),
+            "link-class must round-trip as a #define; full source:\n{body}",
+        );
+        assert!(
+            body.contains("#define UDP_SCOUT_LINK_FRAMER_REF \"scout_frame_codec\""),
+            "framer ref must round-trip as a #define; full source:\n{body}",
+        );
+        assert!(
+            body.contains("#define UDP_SCOUT_LINK_BACKPRESSURE \"drop\""),
+            "backpressure policy must round-trip as a #define; full source:\n{body}",
         );
     }
 

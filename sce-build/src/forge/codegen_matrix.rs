@@ -121,15 +121,13 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
             Language::Rust | Language::Cpp | Language::C11
             | Language::Go | Language::Kotlin | Language::Python => true,
         },
-        // RFC §5.C Link: B6-α ships rust template only. B6-β closes
-        // c11 parity. cpp/kotlin/go/python are MCU-class-rejected by
-        // `kind_class` ahead of this lookup, so their `template_ships`
-        // value never enters the diagnostic flow — `false` here
-        // documents "no shipped template" without falsely claiming
-        // emission.
+        // RFC §5.C Link: B6-α shipped rust; B6-β closes c11 parity.
+        // cpp/kotlin/go/python are MCU-class-rejected by `kind_class`
+        // ahead of this lookup, so their `template_ships` value never
+        // enters the diagnostic flow — `false` here documents "no
+        // shipped template" without falsely claiming emission.
         ForgeKind::Link => match lang {
-            Language::Rust => true,
-            Language::C11 => false,
+            Language::Rust | Language::C11 => true,
             Language::Cpp | Language::Kotlin | Language::Go | Language::Python => false,
         },
     }
