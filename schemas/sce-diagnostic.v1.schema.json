@@ -103,6 +103,7 @@
         "link/framer-missing",
         "link/link-class-unknown",
         "link/backpressure-undeclared",
+        "link/class-unsupported-on-target",
         "io/filesystem",
         "cli/unknown-language",
         "cli/unsupported-language",

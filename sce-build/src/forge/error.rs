@@ -597,6 +597,33 @@ pub enum ValidationError {
         /// Link document name (root `name=` attribute).
         name: String,
     },
+
+    /// RFC §5.C B6-η OS-axis negative coverage: the declared
+    /// `<sce:link-class>` cannot run on the deploy-resolved
+    /// `platform.os`. RFC §5.C lines 838 names this code; the
+    /// admissibility matrix lives in [`LinkClass::admits_os`] mirroring
+    /// the table at RFC §5.C lines 765-771 strict-literal:
+    /// `udp` / `tcp` admit `bare_metal | linux | qnx`; `serial` /
+    /// `websocket` / `raw_eth` admit `bare_metal` only. Anything off
+    /// the table fires this diagnostic. The `candidates` axis is the
+    /// list of OS names the class admits — drives `Fix::ReplaceOneOf`
+    /// repair surface so the author can either change the class
+    /// (`<sce:link-class>` body) or the deployment target
+    /// (deploy.yaml `machines.<id>.platform.os`).
+    #[error(
+        "link '{name}': link-class `{class}` cannot run on target OS `{target_os}` per RFC §5.C lines 765-771; the matrix admits `{class}` on {candidates:?} only — change either the <sce:link-class> body or the deploy.yaml `machines.<id>.platform.os` for the target machine"
+    )]
+    LinkClassUnsupportedOnTarget {
+        /// Link document name (root `name=` attribute).
+        name: String,
+        /// The declared `<sce:link-class>` body (e.g. `serial`).
+        class: String,
+        /// The deploy-resolved `platform.os` for the target machine
+        /// (e.g. `linux`).
+        target_os: String,
+        /// The list of OS names this class DOES admit, for `Fix::ReplaceOneOf`.
+        candidates: Vec<String>,
+    },
 }
 
 // ── Stage 4: Expression transpilation ──────────────────────────

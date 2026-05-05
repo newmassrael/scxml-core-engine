@@ -599,6 +599,20 @@ pub enum DiagnosticCode {
     #[serde(rename = "link/backpressure-undeclared")]
     LinkBackpressureUndeclared,
 
+    /// Declared `<sce:link-class>` cannot run on the deploy-resolved
+    /// `platform.os` per RFC §5.C lines 765-771 / 838. The matrix
+    /// (single source of truth: [`forge::model::LinkClass::admits_os`])
+    /// admits `udp`/`tcp` on `bare_metal|linux|qnx`; `serial`/
+    /// `websocket`/`raw_eth` on `bare_metal` only. Validate-time —
+    /// the diagnostic only reaches the consumer when the new
+    /// `compile_forge_with_deploy` entry is invoked with a deploy
+    /// context AND the target machine declares `platform.os`. Repair:
+    /// `Fix::ReplaceOneOf` carries the OS axis (the list of OSes the
+    /// class admits) so the author can change either the class or
+    /// the deployment target.
+    #[serde(rename = "link/class-unsupported-on-target")]
+    LinkClassUnsupportedOnTarget,
+
     #[serde(rename = "io/filesystem")]
     IoFilesystem,
 
@@ -924,6 +938,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         LinkFramerMissing,
         LinkLinkClassUnknown,
         LinkBackpressureUndeclared,
+        LinkClassUnsupportedOnTarget,
         // Io
         IoFilesystem,
         // Cli
@@ -1139,7 +1154,8 @@ impl DiagnosticCode {
             // ── Link §5.C byte-stream link endpoint (B6) ─────────
             LinkFramerMissing
             | LinkLinkClassUnknown
-            | LinkBackpressureUndeclared => Some("watching-zenoh RFC §5.C"),
+            | LinkBackpressureUndeclared
+            | LinkClassUnsupportedOnTarget => Some("watching-zenoh RFC §5.C"),
 
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
@@ -1408,6 +1424,7 @@ impl DiagnosticCode {
             LinkFramerMissing => "link/framer-missing",
             LinkLinkClassUnknown => "link/link-class-unknown",
             LinkBackpressureUndeclared => "link/backpressure-undeclared",
+            LinkClassUnsupportedOnTarget => "link/class-unsupported-on-target",
             IoFilesystem => "io/filesystem",
             CliUnknownLanguage => "cli/unknown-language",
             CliUnsupportedLanguage => "cli/unsupported-language",
@@ -2366,6 +2383,28 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: Some(name.clone()),
             fix: None,
             key_fragments: vec![name.clone()],
+        },
+        ValidationError::LinkClassUnsupportedOnTarget {
+            name,
+            class,
+            target_os,
+            candidates,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::LinkClassUnsupportedOnTarget,
+            stage: Stage::Validation,
+            // OS-axis candidate set (the list of OSes the declared
+            // class admits per RFC §5.C lines 765-771) — emit
+            // `Fix::ReplaceOneOf` so agents can mechanically pick a
+            // legal target deployment OS. The author can also change
+            // the class via the prose; both are valid repair surfaces
+            // but the structured fix carries only the OS axis (one
+            // axis per ReplaceOneOf entry per non-overlap shape).
+            expected: None,
+            actual: Some(target_os.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![name.clone(), class.clone(), target_os.clone()],
         },
     }
 }
@@ -3737,6 +3776,18 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:d9cf8dea54e29a00","code":"link/backpressure-undeclared","stage":"validation","spec":"watching-zenoh RFC §5.C","message":"link 'udp_scout': missing required <sce:backpressure> child — `sce:kind=\"link\"` requires an explicit backpressure policy declaration per RFC §5.C; add a <sce:backpressure>drop|block|signal-event</sce:backpressure> child","actual":"udp_scout"}"#,
             ),
+            // ── §5.C B6-η OS-axis validate-time diagnostic ───────
+            (
+                "forge/link-class-unsupported-on-target",
+                ValidationError::LinkClassUnsupportedOnTarget {
+                    name: "udp_scout".into(),
+                    class: "serial".into(),
+                    target_os: "linux".into(),
+                    candidates: vec!["bare_metal".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:5b4e6cb8ccacd634","code":"link/class-unsupported-on-target","stage":"validation","spec":"watching-zenoh RFC §5.C","message":"link 'udp_scout': link-class `serial` cannot run on target OS `linux` per RFC §5.C lines 765-771; the matrix admits `serial` on [\"bare_metal\"] only — change either the <sce:link-class> body or the deploy.yaml `machines.<id>.platform.os` for the target machine","actual":"linux","fix":{"kind":"replace_one_of","candidates":["bare_metal"]}}"#,
+            ),
         ]
     }
 
@@ -4905,6 +4956,7 @@ mod tests {
             | ValidationUnsupportedKind
             | ValidationInvalidDirection
             | LinkLinkClassUnknown
+            | LinkClassUnsupportedOnTarget
             | MeshDeployUnsupportedVersion
             | MeshTopologyMachineNotFound
             | MeshTopologySubscriptionSourceUnbound
@@ -5338,6 +5390,7 @@ mod tests {
                 | LinkFramerMissing
                 | LinkLinkClassUnknown
                 | LinkBackpressureUndeclared
+                | LinkClassUnsupportedOnTarget
                 | IoFilesystem
                 | CliUnknownLanguage | CliUnsupportedLanguage | CliReadInput
                 | CliWriteOutput | CliCreateOutputDir | CliScxmlGenerate
@@ -5421,9 +5474,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            174,
+            175,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 174 distinct variants to match the DiagnosticCode \
+             expected 175 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -5431,10 +5484,13 @@ mod tests {
              CodecParentFlagMismatch; 170 → 171; then watching-zenoh \
              RFC §5.C B6-α first link kind diagnostic LinkFramerMissing; \
              171 → 172; then B6-γ parse-time pair LinkLinkClassUnknown \
-             + LinkBackpressureUndeclared; 172 → 174). The remaining \
-             §5.C codes defer to η (forge × deploy.yaml integration \
-             for the OS-axis pair), B6-δ (listener self-check), and \
-             B7 (`link/pool-slot-smaller-than-framer-max`).",
+             + LinkBackpressureUndeclared; 172 → 174; then B6-η \
+             OS-axis validate-time LinkClassUnsupportedOnTarget; \
+             174 → 175). The remaining §5.C codes defer to B6-δ \
+             (listener self-check, gated on §5.K + §5.M SCE-side \
+             prerequisites), D.2 (`link/link-class-incompatible-with-os` \
+             alongside OS-specific classes), and B7 \
+             (`link/pool-slot-smaller-than-framer-max`).",
         );
     }
 

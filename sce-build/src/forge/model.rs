@@ -2179,6 +2179,52 @@ impl LinkClass {
             _ => None,
         }
     }
+
+    /// Returns `true` iff this link class admits the given target OS
+    /// per RFC §5.C "Link-class enumeration" table (lines 765-771).
+    /// Strict-literal reading per RFC §5.C lines 776-782 "additive"
+    /// policy: classes are added when wired, not pre-reserved as
+    /// namespace placeholder. Anything off the table fires
+    /// `link/class-unsupported-on-target` at validate-time.
+    ///
+    /// Single source of truth for [`forge::validate`]'s η check.
+    /// Future OS-specific classes (e.g. `unix_socket`, `qnx_msg`) land
+    /// additively as new enum rows alongside their phase opening.
+    pub fn admits_os(self, os: crate::mesh::deploy::OsKind) -> bool {
+        use crate::mesh::deploy::OsKind;
+        match self {
+            // RFC §5.C row 1: A (MCU lwIP) | D.1 (AP linux) | D.2 (AP qnx).
+            Self::Udp | Self::Tcp => {
+                matches!(os, OsKind::BareMetal | OsKind::Linux | OsKind::Qnx)
+            }
+            // RFC §5.C rows 3-5: C (MCU) only.
+            Self::Serial | Self::Websocket | Self::RawEth => {
+                matches!(os, OsKind::BareMetal)
+            }
+        }
+    }
+
+    /// Lists every `OsKind` variant this class admits — used by the
+    /// `link/class-unsupported-on-target` diagnostic to populate the
+    /// `Fix::ReplaceOneOf` candidate axis (author can change either
+    /// the class or the deployment target).
+    pub fn admitted_os_names(self) -> Vec<&'static str> {
+        use crate::mesh::deploy::OsKind;
+        const ALL: &[OsKind] = &[
+            OsKind::BareMetal,
+            OsKind::Rtos,
+            OsKind::Linux,
+            OsKind::Qnx,
+            OsKind::Macos,
+            OsKind::Freebsd,
+            OsKind::Windows,
+        ];
+        ALL.iter()
+            .copied()
+            .filter(|&os| self.admits_os(os))
+            .map(|os| os.as_str())
+            .collect()
+    }
 }
 
 impl std::fmt::Display for LinkClass {

@@ -421,6 +421,102 @@ pub fn compile_forge_from_string(
     Ok(output)
 }
 
+/// Forge codegen entry that consumes deploy.yaml machine context for
+/// validate-time OS-axis checks — RFC §5.C B6-η.
+///
+/// Layered on top of [`compile_forge_from_string`]: parses, then runs
+/// per-kind deploy-aware validators, then generates. Today the only
+/// validator wired here is the §5.C link-class × `platform.os` matrix
+/// ([`forge::model::LinkClass::admits_os`]); future forge kinds opt
+/// into deploy-aware validation by adding their own arms here without
+/// affecting this entry's signature.
+///
+/// Both `deploy` and `target_machine` are `Option`-typed so the entry
+/// stays usable in early-stage development where deploy.yaml is not
+/// yet authored. When either is `None`, OR the resolved machine has
+/// no `platform` block, the validate-time deploy checks are skipped
+/// silently — matching the `validate_or_skip` convention used by
+/// `xsd_validator.rs`. Authors who want strict OS-axis checking pass
+/// `Some(&deploy)` + `Some("machine_name")` from their CLI/build
+/// glue.
+///
+/// `compile_forge_from_string` remains the deploy-unaware entry; the
+/// 6 existing link tests continue to use it and observe no behavioral
+/// change from this addition.
+pub fn compile_forge_with_deploy(
+    content: &str,
+    label: DocumentLabel<'_>,
+    language: generator::Language,
+    deploy: Option<&mesh::deploy::DeployConfig>,
+    target_machine: Option<&str>,
+) -> Result<generator::GeneratedOutput, forge::error::Located<forge::error::ForgeError>> {
+    use forge::error::{Located, ValidationError};
+
+    let doc = forge::parser::parse_forge(content, label)?
+        .ok_or_else(|| Located::new(
+            ValidationError::WrongPipeline {
+                kind: forge::model::ForgeKind::Statechart,
+            }
+            .into(),
+            label.diagnostic_label,
+            None,
+            None,
+        ))?;
+
+    // η deploy-aware validation. Resolved target_os is the
+    // intersection of deploy + target_machine + machine.platform —
+    // any missing piece skips silently per Q-η5 (a). When all three
+    // are present, the per-kind validator fires on Link documents.
+    //
+    // `DeployConfig` nests machines under devices (`topology.<device>.
+    // machines.<machine>`), so the lookup is two-step: device_for_machine
+    // returns the owning `DeviceConfig`, then `.machines.get(name)` lands
+    // on the `MachineConfig` whose `platform.os: OsKind` is the η axis.
+    if let (Some(cfg), Some(machine_name)) = (deploy, target_machine) {
+        let machine = cfg
+            .device_for_machine(machine_name)
+            .and_then(|d| d.machines.get(machine_name));
+        if let Some(machine) = machine {
+            if let Some(platform) = machine.platform.as_ref() {
+                if let forge::model::ForgeDocument::Link(link) = &doc {
+                    if !link.class.admits_os(platform.os) {
+                        return Err(Located::new(
+                            ValidationError::LinkClassUnsupportedOnTarget {
+                                name: link.name.clone(),
+                                class: link.class.to_string(),
+                                target_os: platform.os.as_str().to_string(),
+                                candidates: link
+                                    .class
+                                    .admitted_os_names()
+                                    .into_iter()
+                                    .map(|s| s.to_string())
+                                    .collect(),
+                            }
+                            .into(),
+                            label.diagnostic_label,
+                            None,
+                            None,
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    let template_base = find_template_base();
+
+    let output = match language {
+        generator::Language::Cpp => forge::generator::generate_cpp(&doc, &template_base),
+        generator::Language::Kotlin => forge::generator::generate_kotlin(&doc, &template_base),
+        generator::Language::Rust => forge::generator::generate_rust(&doc, &template_base),
+        generator::Language::Go => forge::generator::generate_go(&doc, &template_base),
+        generator::Language::Python => forge::generator::generate_python(&doc, &template_base),
+        generator::Language::C11 => forge::generator::generate_c11(&doc, &template_base),
+    }
+    .map_err(|e| Located::new(e, label.diagnostic_label, None, None))?;
+    Ok(output)
+}
+
 /// Options that steer forge cross-file codegen beyond the plain
 /// `(content, name, language, base_dir)` tuple. New language-specific
 /// knobs get added as fields here so `compile_forge_with_imports`
@@ -2958,6 +3054,110 @@ mod tests {
             "message must enumerate the three legal policies; got {}",
             d.message,
         );
+    }
+
+    /// Watching-zenoh RFC §5.C B6-η: `<sce:link-class>` must be admitted by
+    /// the deploy-resolved `platform.os`. The strict-literal matrix at
+    /// [`forge::model::LinkClass::admits_os`] mirrors RFC §5.C lines 765-771
+    /// — `serial` admits `bare_metal` only. Compiling an `udp_scout`-style
+    /// link with `<sce:link-class>serial</sce:link-class>` against a
+    /// `platform: { class: ap, os: linux }` machine raises
+    /// `link/class-unsupported-on-target`. The new entry
+    /// [`compile_forge_with_deploy`] is the only path that fires this
+    /// diagnostic; the deploy-unaware [`compile_forge_from_string`] path
+    /// stays silent (Q-η5 (a)) so the 6 existing link tests are unaffected.
+    #[test]
+    fn link_serial_on_linux_target_rejects_via_link_class_unsupported_on_target() {
+        use crate::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
+        // Minimal deploy.yaml authoring `linux_node` with platform.os=linux.
+        // `DeployConfig` nests machines under devices via `topology.<device>.
+        // machines.<machine>` per `mesh::deploy::DeployConfig`'s shape.
+        let deploy_yaml = r#"
+version: "1.0"
+topology:
+  ap_device:
+    machines:
+      linux_node:
+        source: serial_console.scxml
+        platform:
+          class: ap
+          os: linux
+"#;
+        let deploy = mesh::deploy::parse_deploy_str(deploy_yaml)
+            .expect("deploy.yaml parses");
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="link" name="serial_console" version="1.0">
+  <sce:link-class>serial</sce:link-class>
+  <sce:framer ref="serial_frame_codec"/>
+  <sce:backpressure>drop</sce:backpressure>
+</scxml>"##;
+        let label = DocumentLabel {
+            identifier: "serial_console",
+            diagnostic_label: "serial_console.scxml",
+        };
+        let err = compile_forge_with_deploy(
+            scxml,
+            label,
+            generator::Language::Rust,
+            Some(&deploy),
+            Some("linux_node"),
+        )
+        .err()
+        .expect("serial link on linux target must reject");
+        let diags = err.to_diagnostics();
+        assert_eq!(
+            diags.len(),
+            1,
+            "single diagnostic for class-unsupported-on-target"
+        );
+        let d = &diags[0];
+        assert!(
+            matches!(d.code, DiagnosticCode::LinkClassUnsupportedOnTarget),
+            "must be DiagnosticCode::LinkClassUnsupportedOnTarget; got {:?}",
+            d.code,
+        );
+        assert!(
+            d.message.contains("`serial`"),
+            "message must name the offending class; got {}",
+            d.message,
+        );
+        assert!(
+            d.message.contains("`linux`"),
+            "message must name the target os; got {}",
+            d.message,
+        );
+        assert!(
+            d.message.contains("bare_metal"),
+            "message must enumerate the admitted OS axis; got {}",
+            d.message,
+        );
+
+        // Q-η5 (a) skip-when-no-deploy: the same SCXML compiled via the
+        // deploy-unaware entry passes parse + validate (it only fails
+        // later at codegen-on-non-MCU which is a different diagnostic).
+        // Verifying the η check is layered on top of the existing
+        // pipeline rather than added to it.
+        let no_deploy_err = compile_forge_with_deploy(
+            scxml,
+            label,
+            generator::Language::Rust,
+            None,
+            None,
+        );
+        // Either succeeds (rust accepts MCU-class kinds on AP code path
+        // via the codegen-matrix) or fails for codegen reasons unrelated
+        // to η — what matters is η does NOT fire.
+        if let Err(e) = no_deploy_err {
+            for d in e.to_diagnostics() {
+                assert!(
+                    !matches!(d.code, DiagnosticCode::LinkClassUnsupportedOnTarget),
+                    "η must not fire when deploy is None; got {:?}",
+                    d.code,
+                );
+            }
+        }
     }
 
     /// Watching-zenoh RFC §5.C / §5.J.4: link is the first
