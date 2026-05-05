@@ -9303,6 +9303,105 @@ fn render_link_c(
     })
 }
 
+/// Render a `<sce:kind="buffer-pool">` document for the C11 backend
+/// (watching-zenoh RFC §5.E, B7-β). Mirrors `render_buffer_pool_rust`
+/// but emits a header that places the slot storage table in the
+/// section declared by `<sce:section>` via `__attribute__((section,
+/// aligned))`. The sidecar linker fragment that pairs with this
+/// header is rendered separately via [`render_buffer_pool_linker_fragment`]
+/// and pushed onto `GeneratedOutput.files` by the dispatcher.
+fn render_buffer_pool_c(
+    env: &minijinja::Environment<'_>,
+    m: &BufferPoolModel,
+    _imports: &[ImportContext],
+) -> Result<String, ForgeError> {
+    let tmpl = env
+        .get_template("buffer_pool.h.jinja2")
+        .map_err(|e| ForgeError::Generate(GenerateError::TemplateLoad(format!(
+            "buffer_pool.h.jinja2 (c11): {e}"
+        ))))?;
+    let snake_name = filters::to_snake_case(m.name.clone());
+    let upper_name = to_upper_snake(&m.name);
+    let guard = format!("SCE_FORGE_{}_H", &upper_name);
+    let ctx = minijinja::context! {
+        name => &m.name,
+        snake_name => snake_name,
+        upper_name => upper_name,
+        guard => guard,
+        slot_count => m.slot_count,
+        slot_size => m.slot_size,
+        section => &m.section,
+        section_upper => m.section.to_uppercase(),
+        alignment => m.alignment,
+        dma_channel => m.dma_channel.clone().unwrap_or_default(),
+        has_dma_channel => m.dma_channel.is_some(),
+        cache_policy => m.cache_policy.to_string(),
+    };
+    tmpl.render(ctx).map_err(|e| {
+        ForgeError::Generate(GenerateError::TemplateRender(format!(
+            "buffer_pool.h.jinja2 (c11): {e}"
+        )))
+    })
+}
+
+/// Render the sidecar linker fragment that pairs with the buffer-pool
+/// .h emitted by [`render_buffer_pool_c`] (RFC §5.E lines 1031-1086).
+/// Returns `(filename, content)` so the dispatcher can push the pair
+/// onto `GeneratedOutput.files`.
+///
+/// Carries a codegen self-check that fires `mem/inter-pool-padding-not-emitted`
+/// when the rendered fragment is missing the inter-pool `. = ALIGN(..);`
+/// sentinel — the artifact §5.E lines 1059-1064 mandates as the
+/// audible diff trace for any PR that drops it.
+fn render_buffer_pool_linker_fragment(
+    env: &minijinja::Environment<'_>,
+    m: &BufferPoolModel,
+) -> Result<(String, String), ForgeError> {
+    let tmpl = env
+        .get_template("buffer_pool.ld.jinja2")
+        .map_err(|e| ForgeError::Generate(GenerateError::TemplateLoad(format!(
+            "buffer_pool.ld.jinja2 (c11): {e}"
+        ))))?;
+    let snake_name = filters::to_snake_case(m.name.clone());
+    let ctx = minijinja::context! {
+        name => &m.name,
+        snake_name => snake_name.clone(),
+        section => &m.section,
+        section_upper => m.section.to_uppercase(),
+        alignment => m.alignment,
+    };
+    let body = tmpl.render(ctx).map_err(|e| {
+        ForgeError::Generate(GenerateError::TemplateRender(format!(
+            "buffer_pool.ld.jinja2 (c11): {e}"
+        )))
+    })?;
+    check_inter_pool_padding_invariant(&m.name, &body)?;
+    let filename = format!("{}_pool.ld", snake_name);
+    Ok((filename, body))
+}
+
+/// Codegen self-check for the §5.E inter-pool padding invariant
+/// (lines 1059-1064). The buffer-pool linker fragment must carry an
+/// explicit `. = ALIGN(<n>);` sentinel after the SECTIONS{} body so
+/// the post-pool boundary stays alignment-pinned even if a downstream
+/// master script splices another section in via INCLUDE. If the
+/// rendered fragment is missing that artifact, emit
+/// `mem/inter-pool-padding-not-emitted` (codegen invariant violation,
+/// not an authoring mistake — fires only when the template itself
+/// drops the sentinel).
+fn check_inter_pool_padding_invariant(
+    pool_name: &str,
+    rendered_ld: &str,
+) -> Result<(), ForgeError> {
+    if rendered_ld.contains(". = ALIGN(") {
+        Ok(())
+    } else {
+        Err(ForgeError::Validation(crate::forge::error::ValidationError::BufferPoolInterPoolPaddingNotEmitted {
+            name: pool_name.to_string(),
+        }))
+    }
+}
+
 // ══════════════════════════════════════════════════════════════
 // ── Go code generation ───────────────────────────────────────
 // ══════════════════════════════════════════════════════════════
@@ -9559,14 +9658,12 @@ pub fn generate_c11_with_imports(
         // kernel separate-vtable shape declared in
         // `sce-forge-runtime/c/include/sce/forge/link.h`.
         ForgeDocument::Link(m) => render_link_c(&env, m, imports)?,
-        // RFC §5.E B7-α ships rust only; B7-β closes c11 parity
-        // (linker fragment + section attributes). Today
-        // `template_ships(BufferPool, C11) == false`, so
-        // `codegen_matrix::check` raises `codegen/generic-kind-backend-emit-missing`
-        // before this match runs. The arm is kept for exhaustiveness.
-        ForgeDocument::BufferPool(_) => unreachable!(
-            "ForgeDocument::BufferPool rejected by codegen_matrix::check on c11 (B7-β)"
-        ),
+        // RFC §5.E B7-β: c11 parity for the rust slot table landed
+        // in B7-α. Emits a `__attribute__((section, aligned))` storage
+        // table + occupancy bitmap + acquire/release surface; the
+        // sidecar linker fragment is appended to `files` after this
+        // match per §5.E lines 1031-1086.
+        ForgeDocument::BufferPool(m) => render_buffer_pool_c(&env, m, imports)?,
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -9594,6 +9691,15 @@ pub fn generate_c11_with_imports(
         )? {
             files.push(sidecar);
         }
+    }
+    // RFC §5.E lines 1031-1086 — buffer-pool ships a sidecar linker
+    // fragment (`<snake_name>_pool.ld`) alongside the .h header. The
+    // fragment carries the SECTIONS{} entry with explicit ALIGN()
+    // and the inter-pool sentinel that `mem/inter-pool-padding-not-emitted`
+    // inspects. Multi-file emission rides the same `files` vector
+    // pattern used by algorithm/codec test-vector sidecars above.
+    if let ForgeDocument::BufferPool(m) = doc {
+        files.push(render_buffer_pool_linker_fragment(&env, m)?);
     }
     Ok(GeneratedOutput { files })
 }

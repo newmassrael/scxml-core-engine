@@ -626,6 +626,28 @@ pub enum DiagnosticCode {
     #[serde(rename = "mem/pool-section-conflict")]
     MemPoolSectionConflict,
 
+    /// RFC §5.E B7-β buffer-pool size validation: storage footprint
+    /// (`slot_count × slot_size`) does not fit inside the resolved
+    /// region's `size` field. Validate-time — fires only via
+    /// [`compile_forge_with_deploy`] after `mem/pool-section-conflict`
+    /// passes (the section must resolve before its size matters); same
+    /// Q-η5 (a) silent-skip when deploy.yaml is unavailable. No
+    /// candidate set — the repair is to raise the region size in
+    /// deploy.yaml or shrink `slot_count` / `slot_size`, both of which
+    /// are author choices. RFC §5.E lines 1031-1086 spec anchor.
+    #[serde(rename = "mem/pool-too-large")]
+    MemPoolTooLarge,
+
+    /// RFC §5.E B7-β codegen self-check: the rendered linker fragment
+    /// is missing the explicit `. = ALIGN(<n>);` inter-pool sentinel.
+    /// Codegen-invariant violation, not an authoring mistake — fires
+    /// only when the buffer-pool linker fragment template itself drops
+    /// the sentinel. The artifact makes the inter-pool boundary
+    /// diff-visible and protects the post-pool boundary from
+    /// master-script INCLUDE re-ordering. RFC §5.E lines 1059-1064.
+    #[serde(rename = "mem/inter-pool-padding-not-emitted")]
+    MemInterPoolPaddingNotEmitted,
+
     #[serde(rename = "io/filesystem")]
     IoFilesystem,
 
@@ -952,8 +974,10 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         LinkLinkClassUnknown,
         LinkBackpressureUndeclared,
         LinkClassUnsupportedOnTarget,
-        // BufferPool §5.E DMA-aligned slot table (watching-zenoh RFC §5.E, B7-α)
+        // BufferPool §5.E DMA-aligned slot table (watching-zenoh RFC §5.E, B7-α/β)
         MemPoolSectionConflict,
+        MemPoolTooLarge,
+        MemInterPoolPaddingNotEmitted,
         // Io
         IoFilesystem,
         // Cli
@@ -1172,8 +1196,10 @@ impl DiagnosticCode {
             | LinkBackpressureUndeclared
             | LinkClassUnsupportedOnTarget => Some("watching-zenoh RFC §5.C"),
 
-            // ── BufferPool §5.E DMA-aligned slot table (B7-α) ────
-            MemPoolSectionConflict => Some("watching-zenoh RFC §5.E"),
+            // ── BufferPool §5.E DMA-aligned slot table (B7-α/β) ──
+            MemPoolSectionConflict
+            | MemPoolTooLarge
+            | MemInterPoolPaddingNotEmitted => Some("watching-zenoh RFC §5.E"),
 
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
@@ -1444,6 +1470,8 @@ impl DiagnosticCode {
             LinkBackpressureUndeclared => "link/backpressure-undeclared",
             LinkClassUnsupportedOnTarget => "link/class-unsupported-on-target",
             MemPoolSectionConflict => "mem/pool-section-conflict",
+            MemPoolTooLarge => "mem/pool-too-large",
+            MemInterPoolPaddingNotEmitted => "mem/inter-pool-padding-not-emitted",
             IoFilesystem => "io/filesystem",
             CliUnknownLanguage => "cli/unknown-language",
             CliUnsupportedLanguage => "cli/unsupported-language",
@@ -2445,6 +2473,47 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 candidates: candidates.clone(),
             }),
             key_fragments: vec![name.clone(), machine.clone(), section.clone()],
+        },
+        ValidationError::BufferPoolTooLarge {
+            name,
+            machine,
+            section,
+            slot_count,
+            slot_size,
+            bytes_required,
+            region_size,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MemPoolTooLarge,
+            stage: Stage::Validation,
+            // Two-axis repair (raise region size OR shrink slot dims) —
+            // both are author choices, neither machine-decidable from
+            // a closed candidate list, so the structured fix is
+            // `Fix::None` and the message prose names both axes. The
+            // `actual` carries the bytes_required value so the wire
+            // record makes the violation magnitude inspectable without
+            // re-parsing the message.
+            expected: None,
+            actual: Some(bytes_required.to_string()),
+            fix: None,
+            key_fragments: vec![
+                name.clone(),
+                machine.clone(),
+                section.clone(),
+                slot_count.to_string(),
+                slot_size.to_string(),
+                region_size.to_string(),
+            ],
+        },
+        ValidationError::BufferPoolInterPoolPaddingNotEmitted { name } => DiagnosticPayload {
+            code: DiagnosticCode::MemInterPoolPaddingNotEmitted,
+            stage: Stage::Validation,
+            // Codegen-invariant violation — no authoring repair surface
+            // exists. `Fix::None` because the user cannot fix this
+            // from the SCXML side; the prose links to the issue tracker.
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![name.clone()],
         },
     }
 }
@@ -3840,6 +3909,30 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:12ceca0bfb0b761a","code":"mem/pool-section-conflict","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"buffer-pool 'rx_pool_sram1': section `sram1` is not declared in deploy.yaml `machines.mcu_node.memory.sram_regions` — extend the memory map or rename the pool's <sce:section> body to one of [\"dtcm\", \"sram2\"]","actual":"sram1","fix":{"kind":"replace_one_of","candidates":["dtcm","sram2"]}}"#,
             ),
+            // ── §5.E B7-β buffer-pool size validate-time diagnostic ──
+            (
+                "forge/mem-pool-too-large",
+                ValidationError::BufferPoolTooLarge {
+                    name: "rx_pool_sram1".into(),
+                    machine: "mcu_node".into(),
+                    section: "sram1".into(),
+                    slot_count: 32,
+                    slot_size: 4096,
+                    bytes_required: 131072,
+                    region_size: 65536,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:8eb07e1d20f16ce2","code":"mem/pool-too-large","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"buffer-pool 'rx_pool_sram1': storage footprint 131072 bytes (32 × 4096) does not fit in deploy.yaml `machines.mcu_node.memory.sram_regions.sram1` of size 65536 bytes — raise the region size or shrink slot-count/slot-size","actual":"131072"}"#,
+            ),
+            // ── §5.E B7-β linker fragment codegen self-check ─────
+            (
+                "forge/mem-inter-pool-padding-not-emitted",
+                ValidationError::BufferPoolInterPoolPaddingNotEmitted {
+                    name: "rx_pool_sram1".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:f3d92b158c62567b","code":"mem/inter-pool-padding-not-emitted","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"buffer-pool 'rx_pool_sram1': linker fragment is missing the inter-pool `. = ALIGN(N);` sentinel — codegen invariant violation per RFC §5.E lines 1059-1064; report at https://github.com/newmassrael/scxml-core-engine/issues"}"#,
+            ),
         ]
     }
 
@@ -5060,6 +5153,8 @@ mod tests {
             | ValidationMeshRpcDuplicateTarget
             | ValidationRemovedAttribute
             | ValidationBytesMaxSizeViolation
+            | MemPoolTooLarge
+            | MemInterPoolPaddingNotEmitted
             | AlgorithmLocalShadowsParam
             | AlgorithmLvalueUnsupported
             | AlgorithmReturnMissing
@@ -5445,6 +5540,8 @@ mod tests {
                 | LinkBackpressureUndeclared
                 | LinkClassUnsupportedOnTarget
                 | MemPoolSectionConflict
+                | MemPoolTooLarge
+                | MemInterPoolPaddingNotEmitted
                 | IoFilesystem
                 | CliUnknownLanguage | CliUnsupportedLanguage | CliReadInput
                 | CliWriteOutput | CliCreateOutputDir | CliScxmlGenerate
@@ -5528,9 +5625,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            176,
+            178,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 176 distinct variants to match the DiagnosticCode \
+             expected 178 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -5543,13 +5640,21 @@ mod tests {
              174 → 175; then watching-zenoh RFC §5.E B7-α first \
              buffer-pool kind diagnostic MemPoolSectionConflict \
              — η-second-consumer pattern on `compile_forge_with_deploy` \
-             section validation; 175 → 176). The remaining §5.C codes \
+             section validation; 175 → 176; then B7-β c11 parity \
+             pair: MemPoolTooLarge — η-third-consumer extension that \
+             checks `slot_count × slot_size` fits the resolved region's \
+             `size` after section validation; and \
+             MemInterPoolPaddingNotEmitted — codegen self-check for \
+             the §5.E lines 1059-1064 inter-pool `. = ALIGN(N);` \
+             sentinel artifact; 176 → 178). The remaining §5.C codes \
              defer to B6-δ (listener self-check, gated on §5.K + §5.M \
              SCE-side prerequisites), D.2 (`link/link-class-incompatible-with-os` \
              alongside OS-specific classes), and B7 \
-             (`link/pool-slot-smaller-than-framer-max`, B7-β c11 family, \
-             B7-γ FSM family, B7-δ cache-* family gated on §5.I, B7-ε \
-             Layer 1 typestate, B7-η' application-facing API).",
+             (`link/pool-slot-smaller-than-framer-max`, B7-β \
+             `mem/alignment-violation` deferred until codec field \
+             placement lands a consumer surface, B7-γ FSM family, \
+             B7-δ cache-* family gated on §5.I, B7-ε Layer 1 \
+             typestate, B7-η' application-facing API).",
         );
     }
 

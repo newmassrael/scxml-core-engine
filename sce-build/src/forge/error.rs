@@ -648,6 +648,54 @@ pub enum ValidationError {
         /// The list of section names the resolved machine declares, for `Fix::ReplaceOneOf`.
         candidates: Vec<String>,
     },
+
+    /// RFC §5.E B7-β buffer-pool size validation: the pool's storage
+    /// footprint (`slot_count × slot_size`) does not fit inside the
+    /// resolved SRAM region's `size` field. Fires only via
+    /// [`compile_forge_with_deploy`] when section validation already
+    /// passed (Q-η5 (a) precedent: skip silently when deploy.yaml is
+    /// unavailable; `mem/pool-section-conflict` is the prerequisite
+    /// gate). No `candidates` axis — the repair is to raise the
+    /// region size in deploy.yaml or shrink `slot_count`/`slot_size`;
+    /// emitted as `Fix::None` because both axes are author choices.
+    /// RFC §5.E lines 1031-1086 spec anchor (linker-fragment-side
+    /// SECTIONS{} entry constrains the same byte budget).
+    #[error(
+        "buffer-pool '{name}': storage footprint {bytes_required} bytes ({slot_count} × {slot_size}) does not fit in deploy.yaml `machines.{machine}.memory.sram_regions.{section}` of size {region_size} bytes — raise the region size or shrink slot-count/slot-size"
+    )]
+    BufferPoolTooLarge {
+        /// Buffer-pool document name (root `name=` attribute).
+        name: String,
+        /// Target machine name (deploy.yaml top-level key).
+        machine: String,
+        /// The declared `<sce:section>` body (e.g. `sram1`).
+        section: String,
+        /// `<sce:slot-count>` body.
+        slot_count: u32,
+        /// `<sce:slot-size>` body.
+        slot_size: u32,
+        /// Computed `slot_count × slot_size` in bytes.
+        bytes_required: u64,
+        /// Declared region size in bytes (deploy.yaml `size` field).
+        region_size: u64,
+    },
+
+    /// RFC §5.E B7-β codegen self-check: the rendered linker fragment
+    /// is missing the explicit `. = ALIGN(<n>);` inter-pool sentinel
+    /// (§5.E lines 1059-1064). This is a codegen invariant violation,
+    /// not an authoring mistake — fires only when the template itself
+    /// drops the sentinel. The artifact is what makes the inter-pool
+    /// boundary diff-visible (any PR that drops it shows up in the
+    /// linker fragment) and what protects the post-pool boundary from
+    /// master-script INCLUDE re-ordering. RFC §5.E lines 1059-1064 +
+    /// 1537 spec anchor.
+    #[error(
+        "buffer-pool '{name}': linker fragment is missing the inter-pool `. = ALIGN(N);` sentinel — codegen invariant violation per RFC §5.E lines 1059-1064; report at https://github.com/newmassrael/scxml-core-engine/issues"
+    )]
+    BufferPoolInterPoolPaddingNotEmitted {
+        /// Buffer-pool document name (root `name=` attribute).
+        name: String,
+    },
 }
 
 // ── Stage 4: Expression transpilation ──────────────────────────

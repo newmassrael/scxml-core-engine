@@ -507,9 +507,37 @@ pub fn compile_forge_with_deploy(
             // precedent). The candidates axis is the resolved machine's
             // declared region names (sorted) — drives `Fix::ReplaceOneOf`
             // so authors can pick a legal section or extend deploy.yaml.
+            //
+            // RFC §5.E B7-β layered size check — once the section has
+            // resolved, verify the storage footprint (`slot_count ×
+            // slot_size`) fits the resolved region's `size`. Section
+            // resolution is the prerequisite: it makes no sense to
+            // emit a size diagnostic against an unresolved section.
+            // η-third-consumer pattern (B7-β second extension after
+            // B7-α's placement check).
             if let forge::model::ForgeDocument::BufferPool(pool) = &doc {
                 if let Some(memory) = machine.memory.as_ref() {
-                    if !memory.sram_regions.contains_key(&pool.section) {
+                    if let Some(region) = memory.sram_regions.get(&pool.section) {
+                        let bytes_required: u64 =
+                            (pool.slot_count as u64) * (pool.slot_size as u64);
+                        if bytes_required > region.size {
+                            return Err(Located::new(
+                                ValidationError::BufferPoolTooLarge {
+                                    name: pool.name.clone(),
+                                    machine: machine_name.to_string(),
+                                    section: pool.section.clone(),
+                                    slot_count: pool.slot_count,
+                                    slot_size: pool.slot_size,
+                                    bytes_required,
+                                    region_size: region.size,
+                                }
+                                .into(),
+                                label.diagnostic_label,
+                                None,
+                                None,
+                            ));
+                        }
+                    } else {
                         let mut candidates: Vec<String> =
                             memory.sram_regions.keys().cloned().collect();
                         candidates.sort();
@@ -4942,9 +4970,10 @@ topology:
     /// Watching-zenoh RFC §5.E / §5.J.4: buffer-pool is the second
     /// `KindClass::McuClass` kind (after Link). Authoring against
     /// cpp/kotlin/go/python raises `codegen/mcu-class-kind-on-non-mcu-language`
-    /// via the existing A6 gate. C11 raises
-    /// `codegen/generic-kind-backend-emit-missing` because B7-α only
-    /// ships the Rust template; B7-β closes c11 parity.
+    /// via the existing A6 gate. C11 succeeds since B7-β landed the
+    /// c11 template (`__attribute__((section, aligned))` storage table
+    /// + sidecar linker fragment); the c11 happy-path emission is
+    /// pinned by `buffer_pool_c11_happy_path_emits_storage_struct_and_linker_fragment`.
     #[test]
     fn buffer_pool_on_non_mcu_languages_rejects_via_codegen_matrix() {
         use crate::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
@@ -4984,22 +5013,23 @@ topology:
                 d.code,
             );
         }
-        // C11 takes the `KindClass::McuClass` arm but template_ships
-        // returns false until B7-β — surfaces as
-        // `codegen/generic-kind-backend-emit-missing` (template absent).
+        // C11 takes the `KindClass::McuClass` arm and `template_ships`
+        // returns true now that B7-β landed the c11 buffer-pool
+        // template + linker fragment sidecar — emission succeeds. The
+        // load-bearing tokens are asserted in the c11 happy-path test
+        // (`buffer_pool_c11_happy_path_emits_storage_struct_and_linker_fragment`);
+        // here we only pin that the dispatch reaches `EmitOutcome::Emit`
+        // rather than the previous `TemplateMissing` arm.
         let label = DocumentLabel {
             identifier: "rx_pool_sram1",
             diagnostic_label: "rx_pool_sram1.scxml",
         };
-        let err = compile_forge_from_string(scxml, label, generator::Language::C11)
-            .err()
-            .expect("buffer-pool on c11 must reject until B7-β");
-        let diags = err.to_diagnostics();
-        let d = &diags[0];
-        assert!(
-            matches!(d.code, DiagnosticCode::CodegenGenericKindBackendEmitMissing),
-            "must be CodegenGenericKindBackendEmitMissing on c11; got {:?}",
-            d.code,
+        let out = compile_forge_from_string(scxml, label, generator::Language::C11)
+            .expect("buffer-pool on c11 must succeed since B7-β landed");
+        assert_eq!(
+            out.files.len(),
+            2,
+            "c11 emits header + linker fragment per B7-β contract",
         );
     }
 
@@ -5245,6 +5275,294 @@ topology:
             diags[0].code,
         );
     }
+
+    // ── §5.E B7-β buffer-pool kind c11 parity + linker fragment ─
+
+    /// Watching-zenoh RFC §5.E B7-β: c11 parity for the rust slot
+    /// table landed in B7-α. Compiling a well-formed buffer-pool to
+    /// `Language::C11` emits a header that places the storage table
+    /// in `__attribute__((section(".sram1_<name>"), aligned(32)))` and
+    /// pairs it with a sidecar linker fragment carrying the matching
+    /// `SECTIONS{}` block. Asserts the load-bearing tokens on both
+    /// files so codegen drift fails the build.
+    #[test]
+    fn buffer_pool_c11_happy_path_emits_storage_struct_and_linker_fragment() {
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="rx_pool_sram1" version="1.0">
+  <sce:slot-count>8</sce:slot-count>
+  <sce:slot-size>256</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>32</sce:alignment>
+  <sce:dma-channel>DW0_CH3</sce:dma-channel>
+  <sce:cache-policy>maintain</sce:cache-policy>
+</scxml>"##;
+        let label = DocumentLabel {
+            identifier: "rx_pool_sram1",
+            diagnostic_label: "rx_pool_sram1.scxml",
+        };
+        let out = compile_forge_from_string(scxml, label, generator::Language::C11)
+            .expect("forge c11 codegen must succeed for a well-formed buffer-pool");
+        // β emits a (.h, .ld) pair — header first, linker fragment
+        // second — per `render_buffer_pool_linker_fragment` push order
+        // in `generate_c11_with_imports`.
+        assert_eq!(
+            out.files.len(),
+            2,
+            "buffer-pool c11 emits a (.h, .ld) pair; full file list:\n{:?}",
+            out.files.iter().map(|(n, _)| n).collect::<Vec<_>>(),
+        );
+        let header = out.files.iter().find(|(n, _)| n == "rx_pool_sram1.h")
+            .map(|(_, body)| body.as_str())
+            .expect("header file must be `rx_pool_sram1.h`");
+        let ld = out.files.iter().find(|(n, _)| n == "rx_pool_sram1_pool.ld")
+            .map(|(_, body)| body.as_str())
+            .expect("linker fragment must be `rx_pool_sram1_pool.ld`");
+
+        // Header — round-trip macros + storage attribute.
+        assert!(
+            header.contains("#define RX_POOL_SRAM1_SLOT_COUNT ((size_t)8)"),
+            "SLOT_COUNT macro must lower the slot-count body; full header:\n{header}",
+        );
+        assert!(
+            header.contains("#define RX_POOL_SRAM1_SLOT_SIZE ((size_t)256)"),
+            "SLOT_SIZE macro must lower the slot-size body; full header:\n{header}",
+        );
+        assert!(
+            header.contains("#define RX_POOL_SRAM1_SECTION \"sram1\""),
+            "SECTION macro must round-trip the section name; full header:\n{header}",
+        );
+        assert!(
+            header.contains("#define RX_POOL_SRAM1_ALIGNMENT (32u)"),
+            "ALIGNMENT macro must lower the alignment body; full header:\n{header}",
+        );
+        assert!(
+            header.contains("#define RX_POOL_SRAM1_DMA_CHANNEL \"DW0_CH3\""),
+            "DMA_CHANNEL macro must round-trip the channel binding; full header:\n{header}",
+        );
+        assert!(
+            header.contains("#define RX_POOL_SRAM1_CACHE_POLICY \"maintain\""),
+            "CACHE_POLICY macro must round-trip the policy enum; full header:\n{header}",
+        );
+        assert!(
+            header.contains(
+                "__attribute__((section(\".sram1_rx_pool_sram1\"), aligned(32)))"
+            ),
+            "storage variable must carry section+aligned attribute; full header:\n{header}",
+        );
+        assert!(
+            header.contains("static uint8_t rx_pool_sram1_storage[8][256];"),
+            "storage shape must be [SLOT_COUNT][SLOT_SIZE]; full header:\n{header}",
+        );
+        assert!(
+            header.contains("static inline size_t rx_pool_sram1_acquire(void)"),
+            "must emit acquire surface; full header:\n{header}",
+        );
+        assert!(
+            header.contains("static inline void rx_pool_sram1_release(size_t slot)"),
+            "must emit release surface; full header:\n{header}",
+        );
+
+        // Linker fragment — RFC §5.E lines 1031-1086 contract.
+        assert!(
+            ld.contains(".sram1_rx_pool_sram1 (NOLOAD) : ALIGN(32)"),
+            "SECTIONS entry must carry explicit ALIGN(N) per §5.E lines 1031-1086; full ld:\n{ld}",
+        );
+        assert!(
+            ld.contains("KEEP(*(.sram1_rx_pool_sram1*))"),
+            "KEEP must wildcard-pattern the section; full ld:\n{ld}",
+        );
+        assert!(
+            ld.contains("> SRAM1"),
+            "MEMORY region directive must uppercase the section name; full ld:\n{ld}",
+        );
+        assert!(
+            ld.contains(". = ALIGN(32);"),
+            "inter-pool sentinel must follow the SECTIONS body per §5.E lines 1059-1064; full ld:\n{ld}",
+        );
+    }
+
+    /// Watching-zenoh RFC §5.E B7-β: η-third-consumer extension on
+    /// [`compile_forge_with_deploy`]. After section validation passes
+    /// (B7-α prerequisite gate), the storage footprint must fit the
+    /// resolved region's `size`. A pool declaring `slot_count=32` ×
+    /// `slot_size=4096` (= 128 KiB) against a region of 64 KiB raises
+    /// `mem/pool-too-large` with the bytes_required / region_size
+    /// values reflected in the message.
+    #[test]
+    fn buffer_pool_storage_exceeds_region_size_rejects_via_mem_pool_too_large() {
+        use crate::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
+        let deploy_yaml = r#"
+version: "1.0"
+topology:
+  mcu_device:
+    machines:
+      mcu_node:
+        source: pool_owner.scxml
+        platform:
+          class: mcu
+          os: bare_metal
+        memory:
+          sram_regions:
+            sram1:
+              base: 0x08000000
+              size: 65536
+"#;
+        let deploy = mesh::deploy::parse_deploy_str(deploy_yaml)
+            .expect("deploy.yaml parses with sized sram region");
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="rx_pool_sram1" version="1.0">
+  <sce:slot-count>32</sce:slot-count>
+  <sce:slot-size>4096</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>32</sce:alignment>
+  <sce:cache-policy>none</sce:cache-policy>
+</scxml>"##;
+        let label = DocumentLabel {
+            identifier: "rx_pool_sram1",
+            diagnostic_label: "rx_pool_sram1.scxml",
+        };
+        let err = compile_forge_with_deploy(
+            scxml,
+            label,
+            generator::Language::Rust,
+            Some(&deploy),
+            Some("mcu_node"),
+        )
+        .err()
+        .expect("storage footprint exceeding region size must reject");
+        let diags = err.to_diagnostics();
+        assert_eq!(diags.len(), 1, "single diagnostic for mem-pool-too-large");
+        let d = &diags[0];
+        assert!(
+            matches!(d.code, DiagnosticCode::MemPoolTooLarge),
+            "must be DiagnosticCode::MemPoolTooLarge; got {:?}",
+            d.code,
+        );
+        assert!(
+            d.message.contains("131072"),
+            "message must name the bytes_required figure; got {}",
+            d.message,
+        );
+        assert!(
+            d.message.contains("65536"),
+            "message must name the region_size figure; got {}",
+            d.message,
+        );
+        assert!(
+            d.message.contains("rx_pool_sram1") && d.message.contains("sram1"),
+            "message must name pool + section for repair; got {}",
+            d.message,
+        );
+    }
+
+    /// Watching-zenoh RFC §5.E B7-β positive path: a pool whose
+    /// storage footprint fits the resolved region size passes
+    /// validation under [`compile_forge_with_deploy`] and produces
+    /// the same (.h, .ld) pair as the deploy-unaware c11 entry.
+    /// 8 × 256 = 2 KiB ≤ 64 KiB → pass.
+    #[test]
+    fn buffer_pool_storage_fits_region_size_passes() {
+        let deploy_yaml = r#"
+version: "1.0"
+topology:
+  mcu_device:
+    machines:
+      mcu_node:
+        source: pool_owner.scxml
+        platform:
+          class: mcu
+          os: bare_metal
+        memory:
+          sram_regions:
+            sram1:
+              base: 0x08000000
+              size: 65536
+"#;
+        let deploy = mesh::deploy::parse_deploy_str(deploy_yaml)
+            .expect("deploy.yaml parses");
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="rx_pool_sram1" version="1.0">
+  <sce:slot-count>8</sce:slot-count>
+  <sce:slot-size>256</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>32</sce:alignment>
+  <sce:cache-policy>none</sce:cache-policy>
+</scxml>"##;
+        let label = DocumentLabel {
+            identifier: "rx_pool_sram1",
+            diagnostic_label: "rx_pool_sram1.scxml",
+        };
+        let out = compile_forge_with_deploy(
+            scxml,
+            label,
+            generator::Language::C11,
+            Some(&deploy),
+            Some("mcu_node"),
+        )
+        .expect("pool footprint fitting region must pass and emit c11 (.h, .ld) pair");
+        assert_eq!(out.files.len(), 2, "c11 emits header + linker fragment");
+    }
+
+    /// Watching-zenoh RFC §5.E B7-β codegen-invariant force-fixture.
+    /// The `mem/inter-pool-padding-not-emitted` self-check inspects
+    /// the rendered linker fragment for the `. = ALIGN(N);` sentinel
+    /// (§5.E lines 1059-1064). In normal use the template always
+    /// emits the sentinel — the diagnostic exists to catch a future
+    /// template edit that drops it. This force-fixture drives the
+    /// invariant check directly with a synthesized broken fragment
+    /// so the diagnostic has a live consumer per
+    /// `feedback_silently_broken_hooks.md`. The convert path is
+    /// validated end-to-end (ValidationError → Diagnostic →
+    /// DiagnosticCode), keeping the normal-render path
+    /// performance-free.
+    #[test]
+    fn buffer_pool_inter_pool_padding_self_check_force_fixture() {
+        use crate::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
+        use forge::error::{ForgeError, Located, ValidationError};
+        // Synthesize the codegen-invariant violation through the
+        // ValidationError → diagnostic conversion pipeline rather
+        // than through a live render call. The render path always
+        // emits the sentinel by template construction; this fixture
+        // forces the diagnostic so the wire format and convert path
+        // stay byte-stable.
+        let err: ForgeError = ValidationError::BufferPoolInterPoolPaddingNotEmitted {
+            name: "rx_pool_sram1".into(),
+        }
+        .into();
+        let located: Located<ForgeError> =
+            Located::new(err, "rx_pool_sram1.scxml", None, None);
+        let diags = located.to_diagnostics();
+        assert_eq!(diags.len(), 1);
+        let d = &diags[0];
+        assert!(
+            matches!(d.code, DiagnosticCode::MemInterPoolPaddingNotEmitted),
+            "must be DiagnosticCode::MemInterPoolPaddingNotEmitted; got {:?}",
+            d.code,
+        );
+        assert!(
+            d.message.contains("rx_pool_sram1"),
+            "message must name the offending pool; got {}",
+            d.message,
+        );
+        assert!(
+            d.message.contains(". = ALIGN(N);"),
+            "message must name the missing artifact; got {}",
+            d.message,
+        );
+        assert!(
+            d.message.contains("§5.E lines 1059-1064"),
+            "message must cite the spec anchor; got {}",
+            d.message,
+        );
+    }
+
+    // ── §5.C / §5.E B6-side schema co-landing ──────────────────
 
     /// Watching-zenoh RFC §5.C body + §5.E B7-α schema-only: a link
     /// document with `<sce:rx-pool ref="..."/>` / `<sce:tx-pool ref="..."/>`

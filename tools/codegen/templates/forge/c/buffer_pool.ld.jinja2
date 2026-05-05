@@ -1,0 +1,30 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+/* SCE Forge: Auto-generated linker fragment for buffer-pool '{{ name }}'. */
+/* watching-zenoh RFC §5.E lines 1031-1086. Do not edit. */
+/*
+ * INCLUDE this from your master linker script alongside a MEMORY
+ * block that names the region (`{{ section_upper }}` by convention,
+ * matching the deploy.yaml `memory.sram_regions.{{ section }}` entry).
+ *
+ * The defense-in-depth contract: the section's explicit `ALIGN({{ alignment }})`
+ * directive constrains the section base; the inter-pool
+ * `. = ALIGN({{ alignment }});` sentinel constrains the byte distance
+ * from this pool's tail to whatever section follows in the same
+ * region. Together with `__attribute__((aligned({{ alignment }})))` on
+ * the storage variable in the matching `.h`, the alignment invariant
+ * holds even if a downstream master script re-orders the INCLUDEs or
+ * a toolchain quirk drops the storage variable's `aligned()` attribute.
+ */
+
+SECTIONS {
+  .{{ section }}_{{ snake_name }} (NOLOAD) : ALIGN({{ alignment }}) {
+    KEEP(*(.{{ section }}_{{ snake_name }}*))
+  } > {{ section_upper }}
+  /* Inter-pool sentinel — explicit alignment so the post-pool
+   * boundary survives master-script INCLUDE re-ordering. The
+   * `mem/inter-pool-padding-not-emitted` codegen self-check
+   * inspects this artifact. */
+  . = ALIGN({{ alignment }});
+}

@@ -135,16 +135,15 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
             Language::Rust | Language::C11 => true,
             Language::Cpp | Language::Kotlin | Language::Go | Language::Python => false,
         },
-        // RFC §5.E BufferPool: B7-α ships rust only; B7-β closes c11
-        // parity (linker fragment + section attributes). cpp/kotlin/
-        // go/python are MCU-class-rejected by `kind_class` ahead of
-        // this lookup — `false` documents "no shipped template"
-        // without falsely claiming emission.
+        // RFC §5.E BufferPool: B7-α shipped rust; B7-β closes c11
+        // parity (`__attribute__((section, aligned))` storage table +
+        // sidecar linker fragment + section attribute round-trip).
+        // cpp/kotlin/go/python are MCU-class-rejected by `kind_class`
+        // ahead of this lookup — `false` documents "no shipped
+        // template" without falsely claiming emission.
         ForgeKind::BufferPool => match lang {
-            Language::Rust => true,
-            Language::C11 | Language::Cpp | Language::Kotlin | Language::Go | Language::Python => {
-                false
-            }
+            Language::Rust | Language::C11 => true,
+            Language::Cpp | Language::Kotlin | Language::Go | Language::Python => false,
         },
     }
 }

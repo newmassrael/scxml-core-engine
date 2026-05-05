@@ -1,0 +1,134 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+/* SCE Forge: Auto-generated from Extended SCXML (sce:kind="buffer-pool") */
+/* Runtime: header-only, no SCE-side helper crate. */
+/* Do not edit — regenerate from the source SCXML file. */
+/*
+ * watching-zenoh RFC §5.E B7-β: c11 parity for the rust slot table
+ * landed in B7-α. Emits a file-scope storage table placed in the
+ * SRAM section declared by `<sce:section>` via the canonical
+ * `__attribute__((section, aligned))` shape, plus a per-slot
+ * occupancy bitmap and `acquire`/`release` surface. The 7-state
+ * lifecycle FSM (free/cpu-mut/dma-armed-{tx,rx}/dma-busy-{tx,rx}/
+ * cpu-ref) defers to B7-γ. Cache maintenance pinning defers to
+ * B7-δ. Layer 1 Clang typestate defers to B7-ε.
+ *
+ * A sidecar linker fragment (`{{ snake_name }}_pool.ld`) is emitted
+ * alongside this header — it carries the SECTIONS{} entry with
+ * explicit `ALIGN()` directives + inter-pool sentinel per §5.E lines
+ * 1031-1086 (defense-in-depth: aligned() on the storage variable +
+ * ALIGN() on the section + the inter-pool `. = ALIGN(..);` sentinel
+ * + future `_Static_assert` on field layout enforce the same
+ * alignment invariant at four layers).
+ *
+ * Generated from `name="{{ name }}"` with section `{{ section }}`,
+ * alignment `{{ alignment }}`, cache-policy `{{ cache_policy }}`.
+ */
+
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Number of slots in the pool (`<sce:slot-count>`). */
+#define {{ upper_name }}_SLOT_COUNT ((size_t){{ slot_count }})
+
+/* Bytes per slot (`<sce:slot-size>`). */
+#define {{ upper_name }}_SLOT_SIZE ((size_t){{ slot_size }})
+
+/* SRAM region name (`<sce:section>`). Round-tripped here so that the
+ * sidecar linker fragment and any downstream tooling can read it
+ * without re-parsing the SCXML. */
+#define {{ upper_name }}_SECTION "{{ section }}"
+
+/* DMA alignment in bytes (`<sce:alignment>`). The same value drives
+ * `aligned()` on the storage variable below and `ALIGN()` in the
+ * sidecar linker fragment. */
+#define {{ upper_name }}_ALIGNMENT ({{ alignment }}u)
+
+/* DMA channel binding (`<sce:dma-channel>`). Empty when the pool is
+ * purely CPU-managed. Cross-resolution against deploy.yaml
+ * `memory.dma_channels` defers to B7-γ. */
+#define {{ upper_name }}_DMA_CHANNEL "{{ dma_channel }}"
+
+/* Cache policy (`<sce:cache-policy>`) — `maintain` / `non-cacheable`
+ * / `none`. Cache maintenance pinning defers to B7-δ. */
+#define {{ upper_name }}_CACHE_POLICY "{{ cache_policy }}"
+
+/* Pool storage. Placed in the section declared by `<sce:section>` via
+ * `__attribute__((section, aligned))`; the sidecar linker fragment
+ * provides the matching SECTIONS{} entry. The §5.E defense-in-depth
+ * contract (lines 1066-1073): `aligned(N)` here + `ALIGN(N)` in the
+ * fragment + inter-pool ALIGN sentinel + future `_Static_assert` on
+ * field layout enforce the same invariant at four layers, so a
+ * single failure mode (toolchain bug, custom linker script override,
+ * manual edit, master-script INCLUDE re-ordering) cannot silently
+ * corrupt DMA or cause cross-pool cache-maintenance contamination. */
+__attribute__((section(".{{ section }}_{{ snake_name }}"), aligned({{ alignment }})))
+static uint8_t {{ snake_name }}_storage[{{ slot_count }}][{{ slot_size }}];
+
+/* Per-slot occupancy bitmap (1 = in use, 0 = free). B7-γ promotes
+ * this to a per-slot 7-state FSM with phantom-typed `Slot<state>`
+ * handles per §5.E lines 1116-1180. */
+static bool {{ snake_name }}_in_use[{{ slot_count }}];
+
+/* Acquire a free slot for CPU-side mutation. Returns the slot index,
+ * or `SIZE_MAX` when every slot is in use. B7-γ replaces this with a
+ * tag-checked `sce_slot_handle_t` per §5.E lines 1229-1242; B7-β
+ * exposes the index for testability. */
+static inline size_t {{ snake_name }}_acquire(void) {
+    for (size_t i = 0; i < {{ upper_name }}_SLOT_COUNT; ++i) {
+        if (!{{ snake_name }}_in_use[i]) {
+            {{ snake_name }}_in_use[i] = true;
+            return i;
+        }
+    }
+    return SIZE_MAX;
+}
+
+/* Return a slot to the freelist. Idempotent for already-free slots —
+ * B7-γ promotes the double-release case to a typestate violation
+ * (`pool/return-on-dma-state` + `pool/double-arm` family). */
+static inline void {{ snake_name }}_release(size_t slot) {
+    if (slot < {{ upper_name }}_SLOT_COUNT) {
+        {{ snake_name }}_in_use[slot] = false;
+    }
+}
+
+/* Read-only access to a slot's bytes. Bounds checking is the caller's
+ * responsibility — B7-γ replaces this with a phantom-typed
+ * `Slot<cpu-ref>` accessor that statically rules out out-of-range
+ * indices. */
+static inline const uint8_t *{{ snake_name }}_slot(size_t idx) {
+    return {{ snake_name }}_storage[idx];
+}
+
+/* Mutable access to a slot's bytes. B7-γ replaces this with a
+ * phantom-typed `Slot<cpu-mut>` accessor. */
+static inline uint8_t *{{ snake_name }}_slot_mut(size_t idx) {
+    return {{ snake_name }}_storage[idx];
+}
+
+/* Number of slots currently free. */
+static inline size_t {{ snake_name }}_free_count(void) {
+    size_t n = 0;
+    for (size_t i = 0; i < {{ upper_name }}_SLOT_COUNT; ++i) {
+        if (!{{ snake_name }}_in_use[i]) {
+            ++n;
+        }
+    }
+    return n;
+}
+
+#ifdef __cplusplus
+}  /* extern "C" */
+#endif
+
+#endif /* {{ guard }} */
