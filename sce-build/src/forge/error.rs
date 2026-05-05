@@ -565,6 +565,38 @@ pub enum ValidationError {
         /// Link document name (root `name=` attribute).
         name: String,
     },
+
+    /// RFC §5.C B6-γ negative coverage: `<sce:link-class>` body text is
+    /// not in the closed enumeration (RFC §5.C lines 765-771 — `udp` /
+    /// `tcp` / `serial` / `websocket` / `raw_eth`). Promotes the
+    /// generic `validation/invalid-attribute` raised by B6-α to a
+    /// dedicated link-kind code so downstream agents can pattern-match
+    /// on link-class violations without inspecting the message prose.
+    /// Repair: replace `value` with one of the listed candidates.
+    #[error(
+        "link '{name}': <sce:link-class> body text {value:?} is not in the closed enum {{`udp`, `tcp`, `serial`, `websocket`, `raw_eth`}} per RFC §5.C lines 765-771; replace with one of the listed candidates (OS-specific classes such as `unix_socket` or `qnx_msg` land additively in later phases)"
+    )]
+    LinkLinkClassUnknown {
+        /// Link document name (root `name=` attribute).
+        name: String,
+        /// The body text the author wrote that did not match the enum.
+        value: String,
+    },
+
+    /// RFC §5.C B6-γ negative coverage: `<sce:backpressure>` element
+    /// is required on `sce:kind="link"` declarations — the policy is
+    /// load-bearing for the runtime crate's RX queue behavior under
+    /// load. B6-α tolerated the missing element by parser-side
+    /// defaulting to `drop`; γ promotes the absence to a hard error
+    /// so authors must declare `drop` / `block` / `signal-event`
+    /// intentionally rather than inheriting an implicit default.
+    #[error(
+        "link '{name}': missing required <sce:backpressure> child — `sce:kind=\"link\"` requires an explicit backpressure policy declaration per RFC §5.C; add a <sce:backpressure>drop|block|signal-event</sce:backpressure> child"
+    )]
+    LinkBackpressureUndeclared {
+        /// Link document name (root `name=` attribute).
+        name: String,
+    },
 }
 
 // ── Stage 4: Expression transpilation ──────────────────────────

@@ -5792,16 +5792,23 @@ fn reject_param_assignment(
     Ok(())
 }
 
-// ── Link kind parser (RFC §5.C, B6-α) ─────────────────────────
+// ── Link kind parser (RFC §5.C, B6-α/γ) ───────────────────────
 //
-// Byte-stream link endpoint surface. B6-α scope is the minimum
-// vertical slice that exercises the codegen path on `(rust, *)`:
-// `<sce:link-class>` enum + `<sce:framer ref="..."/>` (required) +
-// `<sce:backpressure>` (default `drop`) + `<sce:events>` rows. The
-// `<sce:rx-pool>` / `<sce:tx-pool>` elements defer to B7 with the
-// buffer-pool kind (RFC §5.E) — authors who write them today get the
-// generic schema-unknown-element diagnostic, not a transitional code
-// (§5.C / `claudedocs/rfc-b6-link-entry.md` §7 Q5 verbatim policy).
+// Byte-stream link endpoint surface. B6-α shipped the minimum
+// vertical slice on `(rust, *)`; B6-γ adds the parse-time pair of
+// the §5.C negative-coverage diagnostics (the OS-axis pair waits on
+// the forge × deploy.yaml integration atomic — `platform.os` lives
+// per-machine in deploy.yaml per RFC §5.C lines 702-704).
+// Surface today: `<sce:link-class>` enum (5 classes; unknown values
+// raise dedicated `link/link-class-unknown` since γ) +
+// `<sce:framer ref="..."/>` required (`link/framer-missing` if
+// absent) + `<sce:backpressure>` required since γ
+// (`link/backpressure-undeclared` if absent — α tolerated absence
+// with a parser-side default-to-`drop`, γ promotes it to a hard
+// error so the policy is declared intentionally) + `<sce:events>`
+// rows. The `<sce:rx-pool>` / `<sce:tx-pool>` elements defer to B7
+// with the buffer-pool kind (RFC §5.E) — authors who write them
+// today get the generic schema-unknown-element diagnostic.
 fn parse_link(
     root: &roxmltree::Node,
     label: DocumentLabel<'_>,
@@ -5811,9 +5818,8 @@ fn parse_link(
     // `<sce:link-class>` body text — the closed enum at
     // `LinkClass::ALL_NAMES`. Missing element raises
     // `validation/missing-element`; unknown body text raises the
-    // generic `validation/invalid-attribute` (B6-γ adds the dedicated
-    // `link/link-class-unknown` diagnostic when the negative coverage
-    // fixtures land).
+    // dedicated `link/link-class-unknown` diagnostic (B6-γ — RFC
+    // §5.C lines 765-771 5-class enum).
     let class_node = find_sce_child(root, "link-class").ok_or_else(|| {
         located(
             root,
@@ -5829,11 +5835,9 @@ fn parse_link(
         located(
             &class_node,
             label.diagnostic_label,
-            ValidationError::InvalidAttribute {
-                element: "<sce:link-class>".into(),
-                attr: "body text".into(),
+            ValidationError::LinkLinkClassUnknown {
+                name: doc_name.to_string(),
                 value: class_text.clone(),
-                expected: LinkClass::ALL_NAMES.join(", "),
             },
         )
     })?;
@@ -5853,28 +5857,33 @@ fn parse_link(
     })?;
     let framer = require_attr(&framer_node, "ref", "<sce:framer>", doc_name)?;
 
-    // `<sce:backpressure>` body text — defaults to `drop` when absent
-    // (a parser-level policy; the dedicated `link/backpressure-undeclared`
-    // diagnostic ships with B6-γ once a fixture exercises the
-    // missing-element negative path).
-    let backpressure = match find_sce_child(root, "backpressure") {
-        Some(node) => {
-            let text = node.text().unwrap_or("").trim().to_string();
-            BackpressurePolicy::from_attr(&text).ok_or_else(|| {
-                located(
-                    &node,
-                    label.diagnostic_label,
-                    ValidationError::InvalidAttribute {
-                        element: "<sce:backpressure>".into(),
-                        attr: "body text".into(),
-                        value: text,
-                        expected: "drop, block, signal-event".into(),
-                    },
-                )
-            })?
-        }
-        None => BackpressurePolicy::Drop,
-    };
+    // `<sce:backpressure>` body text — required per RFC §5.C body.
+    // B6-α tolerated absence with a parser-side default-to-`drop`;
+    // B6-γ promotes the missing element to a hard error
+    // (`link/backpressure-undeclared`) so authors must declare the
+    // policy intentionally rather than inheriting an implicit default.
+    let backpressure_node = find_sce_child(root, "backpressure").ok_or_else(|| {
+        located(
+            root,
+            label.diagnostic_label,
+            ValidationError::LinkBackpressureUndeclared {
+                name: doc_name.to_string(),
+            },
+        )
+    })?;
+    let backpressure_text = backpressure_node.text().unwrap_or("").trim().to_string();
+    let backpressure = BackpressurePolicy::from_attr(&backpressure_text).ok_or_else(|| {
+        located(
+            &backpressure_node,
+            label.diagnostic_label,
+            ValidationError::InvalidAttribute {
+                element: "<sce:backpressure>".into(),
+                attr: "body text".into(),
+                value: backpressure_text,
+                expected: "drop, block, signal-event".into(),
+            },
+        )
+    })?;
 
     // `<sce:events>` carries `<sce:inbound>` / `<sce:outbound>` rows.
     // Both are optional; an empty events block is legal (B6-δ closes

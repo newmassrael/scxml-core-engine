@@ -101,6 +101,8 @@
         "codec/dma-alignment-unsatisfiable",
         "codec/parent-flag-mismatch",
         "link/framer-missing",
+        "link/link-class-unknown",
+        "link/backpressure-undeclared",
         "io/filesystem",
         "cli/unknown-language",
         "cli/unsupported-language",

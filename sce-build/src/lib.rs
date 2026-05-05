@@ -2860,6 +2860,106 @@ mod tests {
         );
     }
 
+    /// Watching-zenoh RFC §5.C B6-γ: `<sce:link-class>` body text
+    /// outside the closed enum (RFC §5.C lines 765-771 — `udp` /
+    /// `tcp` / `serial` / `websocket` / `raw_eth`) is caught by the
+    /// XSD `linkClassType` enumeration in the default pipeline,
+    /// surfacing as `xml/schema-validation` to the author. The
+    /// dedicated `link/link-class-unknown` parser arm exists as a
+    /// schema-skipped fallback (vendored builds without the
+    /// `schemas/` directory) — exactly the same dual-path shape as
+    /// `validation/unsupported-kind` for `sce:kind="bogus"`. The
+    /// wire-format of the parser-arm diagnostic is locked by the
+    /// `forge/link-link-class-unknown` golden in
+    /// `forge_golden_entries`; this test pins the user-visible
+    /// behavior in the standard XSD-validated pipeline.
+    #[test]
+    fn link_unknown_class_in_default_pipeline_routes_via_xsd() {
+        use crate::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="link" name="udp_scout" version="1.0">
+  <sce:link-class>udpx</sce:link-class>
+  <sce:framer ref="scout_frame_codec"/>
+  <sce:backpressure>drop</sce:backpressure>
+  <sce:events>
+    <sce:inbound event="scout.hello.received"/>
+  </sce:events>
+</scxml>"##;
+        let label = DocumentLabel {
+            identifier: "udp_scout",
+            diagnostic_label: "udp_scout.scxml",
+        };
+        let err = compile_forge_from_string(scxml, label, generator::Language::Rust)
+            .err()
+            .expect("link with unknown <sce:link-class> body must reject");
+        let diags = err.to_diagnostics();
+        assert!(!diags.is_empty(), "at least one diagnostic for unknown class");
+        let d = &diags[0];
+        assert!(
+            matches!(d.code, DiagnosticCode::XmlSchemaValidation),
+            "default pipeline must surface XmlSchemaValidation \
+             (XSD enum); got {:?}. The dedicated LinkLinkClassUnknown \
+             arm fires only when XSD is skipped (sce-build vendored \
+             without schemas/) — see the wire-format golden \
+             `forge/link-link-class-unknown` for the parser-arm shape.",
+            d.code,
+        );
+    }
+
+    /// Watching-zenoh RFC §5.C B6-γ: `<sce:backpressure>` element is
+    /// required on every link kind. B6-α tolerated the missing
+    /// element by parser-side defaulting to `drop`; γ promotes the
+    /// absence to a hard error (`link/backpressure-undeclared`) so
+    /// authors must declare `drop` / `block` / `signal-event`
+    /// intentionally. The repair is structural element-add, so the
+    /// fix surface is None and the message prose enumerates the
+    /// three legal bodies.
+    #[test]
+    fn link_missing_backpressure_rejects_via_link_backpressure_undeclared() {
+        use crate::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="link" name="udp_scout" version="1.0">
+  <sce:link-class>udp</sce:link-class>
+  <sce:framer ref="scout_frame_codec"/>
+  <sce:events>
+    <sce:inbound event="scout.hello.received"/>
+  </sce:events>
+</scxml>"##;
+        let label = DocumentLabel {
+            identifier: "udp_scout",
+            diagnostic_label: "udp_scout.scxml",
+        };
+        let err = compile_forge_from_string(scxml, label, generator::Language::Rust)
+            .err()
+            .expect("link without <sce:backpressure> must reject");
+        let diags = err.to_diagnostics();
+        assert_eq!(
+            diags.len(),
+            1,
+            "single diagnostic for missing backpressure"
+        );
+        let d = &diags[0];
+        assert!(
+            matches!(d.code, DiagnosticCode::LinkBackpressureUndeclared),
+            "must be DiagnosticCode::LinkBackpressureUndeclared; got {:?}",
+            d.code,
+        );
+        assert!(
+            d.message.contains("<sce:backpressure>"),
+            "message must name the missing element; got {}",
+            d.message,
+        );
+        assert!(
+            d.message.contains("drop|block|signal-event"),
+            "message must enumerate the three legal policies; got {}",
+            d.message,
+        );
+    }
+
     /// Watching-zenoh RFC §5.C / §5.J.4: link is the first
     /// `KindClass::McuClass` kind. Authoring against cpp/kotlin/go/
     /// python raises `codegen/mcu-class-kind-on-non-mcu-language` via

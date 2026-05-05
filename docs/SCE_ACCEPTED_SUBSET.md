@@ -457,6 +457,8 @@ Codes that the author can avoid by writing a better SCXML /
 | `codec/dma-alignment-unsatisfiable` | Validation |
 | `codec/parent-flag-mismatch` | Validation |
 | `link/framer-missing` | Validation |
+| `link/link-class-unknown` | Validation |
+| `link/backpressure-undeclared` | Validation |
 | `scxml/top-level-script-unloaded` | Validation |
 | `expression/empty` | Expression |
 | `expression/lex` | Expression |

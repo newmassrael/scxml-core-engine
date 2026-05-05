@@ -561,20 +561,43 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/parent-flag-mismatch")]
     CodecParentFlagMismatch,
 
-    // ── §5.C link kind (watching-zenoh RFC §5.C, B6-α). MCU-class
-    //    byte-stream link endpoint. The first of six §5.C diagnostic
-    //    codes; the others (`link/backpressure-undeclared`,
-    //    `link/class-unsupported-on-target`, `link/link-class-unknown`,
+    // ── §5.C link kind (watching-zenoh RFC §5.C, B6-α/γ). MCU-class
+    //    byte-stream link endpoint. Three of seven §5.C diagnostic
+    //    codes ship at γ landing — the parse-time pair grew the count
+    //    from 172 to 174. The remaining codes
+    //    (`link/class-unsupported-on-target`,
     //    `link/link-class-incompatible-with-os`,
     //    `link/listener-link-not-paired-with-established-sibling`)
-    //    land with B6-γ (negative coverage) and B6-δ (listener
-    //    sibling). `link/pool-slot-smaller-than-framer-max` defers to
-    //    B7 with the buffer-pool kind. Stage = Validation. ──
+    //    defer: the OS-axis pair waits on the forge × deploy.yaml
+    //    integration atomic (η; `platform.os` lives per-machine in
+    //    deploy.yaml per RFC §5.C lines 702-704), the listener self-
+    //    check waits on B6-δ, and `link/pool-slot-smaller-than-framer-
+    //    max` defers to B7 with the buffer-pool kind. Stage = Validation. ──
     /// `<sce:framer ref="..."/>` is required on `sce:kind="link"`;
     /// absence is rejected at parse time so the codegen never
     /// reaches the missing-codec branch. Repair: add the framer ref.
     #[serde(rename = "link/framer-missing")]
     LinkFramerMissing,
+
+    /// `<sce:link-class>` body text is not in the closed enum
+    /// (`udp` / `tcp` / `serial` / `websocket` / `raw_eth` per RFC
+    /// §5.C lines 765-771). Promotes the generic
+    /// `validation/invalid-attribute` to a dedicated link-kind code so
+    /// authors and downstream agents key on the link-class violation
+    /// directly. Repair: replace the value with one of the listed
+    /// candidates (`fix: ReplaceOneOf`).
+    #[serde(rename = "link/link-class-unknown")]
+    LinkLinkClassUnknown,
+
+    /// `<sce:backpressure>` element is required on `sce:kind="link"`
+    /// declarations — the policy is load-bearing for the runtime
+    /// crate's RX queue behavior under load (RFC §5.C body). B6-α
+    /// shipped a parser-side `default-to-drop` for the missing case;
+    /// γ promotes the absence to a hard error so authors must declare
+    /// the policy intentionally. Repair: add a `<sce:backpressure>`
+    /// child whose body is `drop`, `block`, or `signal-event`.
+    #[serde(rename = "link/backpressure-undeclared")]
+    LinkBackpressureUndeclared,
 
     #[serde(rename = "io/filesystem")]
     IoFilesystem,
@@ -897,8 +920,10 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CodecDmaAlignmentUnsatisfiable,
         // Codec §5.B B5-γ parent-flags dependency (watching-zenoh RFC §5.B)
         CodecParentFlagMismatch,
-        // Link §5.C byte-stream link endpoint (watching-zenoh RFC §5.C, B6-α)
+        // Link §5.C byte-stream link endpoint (watching-zenoh RFC §5.C, B6-α/γ)
         LinkFramerMissing,
+        LinkLinkClassUnknown,
+        LinkBackpressureUndeclared,
         // Io
         IoFilesystem,
         // Cli
@@ -1112,7 +1137,9 @@ impl DiagnosticCode {
             | CodecParentFlagMismatch => Some("watching-zenoh RFC §5.B"),
 
             // ── Link §5.C byte-stream link endpoint (B6) ─────────
-            LinkFramerMissing => Some("watching-zenoh RFC §5.C"),
+            LinkFramerMissing
+            | LinkLinkClassUnknown
+            | LinkBackpressureUndeclared => Some("watching-zenoh RFC §5.C"),
 
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
@@ -1379,6 +1406,8 @@ impl DiagnosticCode {
             CodecDmaAlignmentUnsatisfiable => "codec/dma-alignment-unsatisfiable",
             CodecParentFlagMismatch => "codec/parent-flag-mismatch",
             LinkFramerMissing => "link/framer-missing",
+            LinkLinkClassUnknown => "link/link-class-unknown",
+            LinkBackpressureUndeclared => "link/backpressure-undeclared",
             IoFilesystem => "io/filesystem",
             CliUnknownLanguage => "cli/unknown-language",
             CliUnsupportedLanguage => "cli/unsupported-language",
@@ -2300,6 +2329,39 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             // relies on the message's prose to guide the author.
             // (This matches the pattern for other Validation
             // structural-repair codes whose targets are open.)
+            expected: None,
+            actual: Some(name.clone()),
+            fix: None,
+            key_fragments: vec![name.clone()],
+        },
+        ValidationError::LinkLinkClassUnknown { name, value } => DiagnosticPayload {
+            code: DiagnosticCode::LinkLinkClassUnknown,
+            stage: Stage::Validation,
+            // Closed-enum candidate set (RFC §5.C lines 765-771) —
+            // emit `Fix::ReplaceOneOf` so agents can mechanically
+            // pick a legal class. Per the non-overlap invariant
+            // (`FixCarriesCandidates` bucket) `expected` stays
+            // `None`; the candidate list rides `fix`.
+            expected: None,
+            actual: Some(value.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: crate::forge::model::LinkClass::ALL_NAMES
+                    .iter()
+                    .map(|s| (*s).to_string())
+                    .collect(),
+            }),
+            key_fragments: vec![name.clone(), value.clone()],
+        },
+        ValidationError::LinkBackpressureUndeclared { name } => DiagnosticPayload {
+            code: DiagnosticCode::LinkBackpressureUndeclared,
+            stage: Stage::Validation,
+            // Structural element-add repair; like LinkFramerMissing
+            // there is no closed candidate set for the element shape
+            // (the body text picks one of three policies, but the
+            // missing-element repair is "add the element with one of
+            // those bodies", not "replace this value"). v1 emits
+            // `fix: None` and relies on the message prose enumerating
+            // the three legal bodies.
             expected: None,
             actual: Some(name.clone()),
             fix: None,
@@ -3657,6 +3719,24 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:293d71926c63758a","code":"link/framer-missing","stage":"validation","spec":"watching-zenoh RFC §5.C","message":"link 'udp_scout': missing required <sce:framer ref=\"...\"/> child — `sce:kind=\"link\"` requires a framer codec reference so RX bytes can be decoded and TX events can be encoded; add a <sce:framer ref=\"<codec_name>\"/> child","actual":"udp_scout"}"#,
             ),
+            // ── §5.C B6-γ link kind negative coverage parse-time pair ─
+            (
+                "forge/link-link-class-unknown",
+                ValidationError::LinkLinkClassUnknown {
+                    name: "udp_scout".into(),
+                    value: "udpx".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:cb784501438f471c","code":"link/link-class-unknown","stage":"validation","spec":"watching-zenoh RFC §5.C","message":"link 'udp_scout': <sce:link-class> body text \"udpx\" is not in the closed enum {`udp`, `tcp`, `serial`, `websocket`, `raw_eth`} per RFC §5.C lines 765-771; replace with one of the listed candidates (OS-specific classes such as `unix_socket` or `qnx_msg` land additively in later phases)","actual":"udpx","fix":{"kind":"replace_one_of","candidates":["udp","tcp","serial","websocket","raw_eth"]}}"#,
+            ),
+            (
+                "forge/link-backpressure-undeclared",
+                ValidationError::LinkBackpressureUndeclared {
+                    name: "udp_scout".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:d9cf8dea54e29a00","code":"link/backpressure-undeclared","stage":"validation","spec":"watching-zenoh RFC §5.C","message":"link 'udp_scout': missing required <sce:backpressure> child — `sce:kind=\"link\"` requires an explicit backpressure policy declaration per RFC §5.C; add a <sce:backpressure>drop|block|signal-event</sce:backpressure> child","actual":"udp_scout"}"#,
+            ),
         ]
     }
 
@@ -4824,6 +4904,7 @@ mod tests {
             | ValidationRequireEither
             | ValidationUnsupportedKind
             | ValidationInvalidDirection
+            | LinkLinkClassUnknown
             | MeshDeployUnsupportedVersion
             | MeshTopologyMachineNotFound
             | MeshTopologySubscriptionSourceUnbound
@@ -4909,6 +4990,7 @@ mod tests {
             | CodecDmaAlignmentUnsatisfiable
             | CodecParentFlagMismatch
             | LinkFramerMissing
+            | LinkBackpressureUndeclared
             | IoFilesystem
             | CliUnsupportedLanguage
             | CliReadInput
@@ -5254,6 +5336,8 @@ mod tests {
                 | CodecDmaAlignmentUnsatisfiable
                 | CodecParentFlagMismatch
                 | LinkFramerMissing
+                | LinkLinkClassUnknown
+                | LinkBackpressureUndeclared
                 | IoFilesystem
                 | CliUnknownLanguage | CliUnsupportedLanguage | CliReadInput
                 | CliWriteOutput | CliCreateOutputDir | CliScxmlGenerate
@@ -5337,16 +5421,20 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            172,
+            174,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 172 distinct variants to match the DiagnosticCode \
+             expected 174 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
              169 → 170, then B5-γ parent-flags dependency: \
              CodecParentFlagMismatch; 170 → 171; then watching-zenoh \
              RFC §5.C B6-α first link kind diagnostic LinkFramerMissing; \
-             171 → 172).",
+             171 → 172; then B6-γ parse-time pair LinkLinkClassUnknown \
+             + LinkBackpressureUndeclared; 172 → 174). The remaining \
+             §5.C codes defer to η (forge × deploy.yaml integration \
+             for the OS-axis pair), B6-δ (listener self-check), and \
+             B7 (`link/pool-slot-smaller-than-framer-max`).",
         );
     }
 
