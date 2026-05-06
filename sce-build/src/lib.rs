@@ -6177,6 +6177,112 @@ topology:
         }
     }
 
+    /// Smoke check that the new B7-ε prereq runtime header
+    /// `sce-c-runtime/include/sce/sample.h` is well-formed C11. Drives
+    /// gcc under `-std=c11 -Wall -Wextra -Werror` against a tiny
+    /// translation unit that `#include`s the header and exercises the
+    /// `_Static_assert` invariants + macro expansions. The clang-axis
+    /// Layer 1 typestate verification (`-Wconsumed -Wthread-safety`
+    /// rejecting use-after-take + double-take + callback-leak) is the
+    /// B7-ε atomic's responsibility — gated on §5.E codegen integration
+    /// landing the `sce_sample_t` consumer surface. This smoke test is
+    /// the runtime-header-side prereq's silent-broken-hook guard:
+    /// without it, a typo in the macro family or the `_Static_assert`
+    /// list would land unobserved until ε's clang test catches it
+    /// sessions later.
+    #[test]
+    fn sce_c_runtime_sample_h_compiles_under_gcc_c11() {
+        let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let include_dir = crate_dir.join("../sce-c-runtime/include");
+        assert!(
+            include_dir.join("sce/sample.h").exists(),
+            "expected sce-c-runtime/include/sce/sample.h to exist; \
+             searched at {}",
+            include_dir.display(),
+        );
+
+        let tmp = std::env::temp_dir().join(format!(
+            "sce-build-sample-h-smoke-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).expect("create tmp dir");
+
+        // The opaque forward-declared structs (`sce_keyexpr_t` /
+        // `sce_timestamp_t`) need a complete definition before we can
+        // store *pointers* to them in `sce_sample_t` — pointer-to-
+        // incomplete is fine for storage, but inspection (e.g. taking
+        // the address of an instance) requires a body. Provide trivial
+        // bodies in the driver TU so the header's borrow shape is
+        // exercised end-to-end.
+        let driver_path = tmp.join("driver.c");
+        std::fs::write(
+            &driver_path,
+            r#"#include <sce/sample.h>
+
+struct sce_keyexpr_t { int dummy; };
+struct sce_timestamp_t { uint64_t lo, hi; };
+
+/* Drive the macro family + struct definition + function declarations.
+ * No call to sce_sample_take / sce_sample_payload — they are extern
+ * decls; this TU compiles to .o without a link. */
+static const sce_sub_callback_t cb = (sce_sub_callback_t)0;
+
+int main(void) {
+    sce_sample_t s = (sce_sample_t){ 0 };
+    /* Touch every field so a typo in sample.h's struct lowering would
+     * surface as a missing-member error. */
+    (void)s.key_expr;
+    (void)s.payload;
+    (void)s.payload_len;
+    (void)s.timestamp;
+    (void)s._slot.state;
+    (void)s._slot.idx;
+    (void)cb;
+    /* SCE_OWNERSHIP_ATTRS_AVAILABLE evaluates to a literal 0 or 1 at
+     * preprocess time on every supported toolchain; assert it's
+     * one of those two so a malformed detection block surfaces. */
+    _Static_assert(SCE_OWNERSHIP_ATTRS_AVAILABLE == 0
+                   || SCE_OWNERSHIP_ATTRS_AVAILABLE == 1,
+                   "SCE_OWNERSHIP_ATTRS_AVAILABLE must be 0 or 1");
+    return 0;
+}
+"#,
+        )
+        .expect("write driver.c");
+
+        let exec_path = tmp.join("driver");
+        let mut cmd = std::process::Command::new("gcc");
+        cmd.arg("-std=c11")
+            .arg("-Wall")
+            .arg("-Wextra")
+            .arg("-Werror")
+            // `__has_attribute(consumable)` is false on host gcc; the
+            // header's Q-ε4 `#warning` (Clang-detected + attributes
+            // unavailable) only fires under Clang, so gcc compiles
+            // cleanly. The empty-macro path is the silently-inert
+            // Layer 1 surface the spec calls out at lines 1444-1453.
+            .arg("-I")
+            .arg(&include_dir)
+            .arg(&driver_path)
+            .arg("-o")
+            .arg(&exec_path);
+        let status = cmd
+            .output()
+            .expect("gcc must be on PATH for the build environment");
+
+        if !status.status.success() {
+            let _ = std::fs::remove_dir_all(&tmp);
+            panic!(
+                "sce/sample.h must compile cleanly under gcc -std=c11 \
+                 -Wall -Wextra -Werror.\nstdout:\n{}\nstderr:\n{}",
+                String::from_utf8_lossy(&status.stdout),
+                String::from_utf8_lossy(&status.stderr),
+            );
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
     #[test]
     fn link_with_sufficient_pool_slots_passes_cross_resolution() {
         use tempfile::TempDir;
