@@ -240,18 +240,15 @@ impl<'pool, M: SampleMeta + 'pool> Sample<'pool, M> {
     /// guard drops and the pool's RX task can re-arm the slot, the
     /// `M::Owned` already holds an independent payload `Vec`.
     ///
-    /// **Spec deviation (flagged for upstream coordination).**
-    /// `watching-zenoh/docs/rfc-sce-protocol-synthesis.md` line 1268
-    /// ("returns slot to pool before owned copy is constructed") prescribes
-    /// drop-guard-first ordering. SCE-side selects stage-copy-first because
-    /// drop-guard-first creates a textbook UB race window under Q-Sample-5 (a)
-    /// `Send + Sync` cross-thread callback dispatch (cross-thread callback +
-    /// pool RX task `arm_rx` reuse + driver write into the freed slot →
-    /// stage-copy reads the new bytes as if they were the original payload).
-    /// Re-entry of the η' codegen extension blocks until either upstream
-    /// spec amendment authorises stage-copy-first OR Q-Sample-5 flips to
-    /// `!Send` and accepts the single-thread callback constraint. See
-    /// `claudedocs/rfc-sce-link-runtime-sample-machinery.md` §7 item 2.
+    /// The intra-`take()` ordering choice is consistent with
+    /// `watching-zenoh/docs/rfc-sce-protocol-synthesis.md` lines 1262-1274,
+    /// which describe `take()` as "releases the underlying slot immediately"
+    /// (an API-timing contract: slot is released synchronously by the time
+    /// `take()` returns) without pinning intra-method ordering. The
+    /// alternative drop-guard-first ordering would open a textbook UB race
+    /// window under Q-Sample-5 (a) `Send + Sync` cross-thread callback
+    /// dispatch (callback + pool RX task `arm_rx` reuse + driver write into
+    /// freed slot → stage-copy reads new bytes as original payload).
     pub fn take(self) -> M::Owned {
         let owned_payload = self.hook.stage_copy(self.payload);
         let owned = M::into_owned(self.meta, owned_payload);
