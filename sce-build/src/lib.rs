@@ -5581,30 +5581,20 @@ topology:
             header.contains("#define RX_POOL_SRAM1_TRANSITION_COUNT ((size_t)11)"),
             "TRANSITION_COUNT macro must mirror forge::buffer_pool_fsm::TRANSITION_COUNT; full header:\n{header}",
         );
-        // γ: tag-checked handle types per spec §5.E lines 1239-1242.
+        // ε: the seven-state FSM enum + tag-checked handle struct
+        // (spec §5.E lines 1129-1135 / 1239-1242) now live in
+        // `<sce/sample.h>` (sce-c-runtime Tier 1 INTERFACE). The
+        // per-pool emit pulls them in transitively so downstream code
+        // compiling against just `<pool>.h` still sees the canonical
+        // typedefs. The runtime header pins the discriminants via
+        // `_Static_assert` against this template's spec anchors —
+        // anonymous-tag typedef redeclaration is not portable, hence
+        // the move to a single source of truth.
         assert!(
-            header.contains("typedef enum {"),
-            "must emit sce_slot_state_t enum; full header:\n{header}",
-        );
-        assert!(
-            header.contains("SCE_SLOT_FREE = 0,"),
-            "enum must declare SCE_SLOT_FREE = 0; full header:\n{header}",
-        );
-        assert!(
-            header.contains("SCE_SLOT_CPU_MUT = 1,"),
-            "enum must declare SCE_SLOT_CPU_MUT = 1; full header:\n{header}",
-        );
-        assert!(
-            header.contains("SCE_SLOT_INVALID = 0xFF"),
-            "enum must declare SCE_SLOT_INVALID sentinel for consumed handles; full header:\n{header}",
-        );
-        assert!(
-            header.contains("} sce_slot_state_t;"),
-            "enum typedef name must be `sce_slot_state_t`; full header:\n{header}",
-        );
-        assert!(
-            header.contains("} sce_slot_handle_t;"),
-            "must emit sce_slot_handle_t struct; full header:\n{header}",
+            header.contains("#include <sce/sample.h>"),
+            "B7-ε integration: pool header must `#include <sce/sample.h>` so \
+             the runtime header's seven-state FSM + tag-checked handle + \
+             Layer 1 typestate family reach consumer builds; full header:\n{header}",
         );
         assert!(
             header.contains("static sce_slot_state_t rx_pool_sram1_slot_states["),
@@ -5728,6 +5718,12 @@ int main(void) {
         .expect("write driver.c");
 
         let exec_path = tmp.join("driver");
+        // B7-ε integration: the generated pool header pulls in
+        // `<sce/sample.h>` from `sce-c-runtime/include/`, so the host
+        // gcc compile must see that include path alongside the temp
+        // dir holding the generated header.
+        let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let runtime_include = crate_dir.join("../sce-c-runtime/include");
         let status = std::process::Command::new("gcc")
             .arg("-std=c11")
             .arg("-Wall")
@@ -5737,9 +5733,14 @@ int main(void) {
             // toolchain (`.sram1_rx_pool_sram1`). Stripping the
             // attribute keeps the host gcc compile honest about the
             // C-level API surface; the linker placement contract is
-            // pinned by the sidecar `.ld` fragment golden test.
+            // pinned by the sidecar `.ld` fragment golden test. The
+            // same suppression neutralises the `SCE_CONSUMABLE`
+            // whole-struct attribute on `sce_sample_t` from
+            // `<sce/sample.h>` — the typestate family is silently-
+            // inert on host gcc per §5.E lines 1444-1453.
             .arg("-D__attribute__(x)=")
             .arg("-I").arg(&tmp)
+            .arg("-I").arg(&runtime_include)
             .arg(&driver_path)
             .arg("-o").arg(&exec_path)
             .output()
@@ -5944,6 +5945,356 @@ topology:
             d.message.contains("§5.E lines 1059-1064"),
             "message must cite the spec anchor; got {}",
             d.message,
+        );
+    }
+
+    /// Watching-zenoh RFC §5.E B7-ε codegen-invariant force-fixture.
+    /// The `pool/sample-typestate-attributes-disabled` self-check
+    /// guards the `#include <sce/sample.h>` directive in
+    /// `tools/codegen/templates/forge/c/buffer_pool.h.jinja2`. The
+    /// runtime header is the producer of the Layer 1 typestate macro
+    /// family (`SCE_CONSUMABLE` / `SCE_CALLABLE_WHEN` /
+    /// `SCE_SET_TYPESTATE` / `SCE_PARAM_TYPESTATE` / `SCE_WARN_UNUSED`)
+    /// + the `sce_sample_t` borrow type; consumer builds compiling
+    /// against just the per-pool header inherit those decls only when
+    /// the include is present. In normal use the template emits the
+    /// include unconditionally — this fixture drives the
+    /// ValidationError → Diagnostic → DiagnosticCode pipeline directly
+    /// against a synthesized broken-emit scenario so the diagnostic has
+    /// a live consumer per `feedback_silently_broken_hooks.md` and the
+    /// wire format / convert path stays byte-stable. Mirrors the β
+    /// `mem/inter-pool-padding-not-emitted` codegen self-check shape.
+    #[test]
+    fn buffer_pool_sample_typestate_pull_through_self_check_force_fixture() {
+        use crate::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
+        use forge::error::{ForgeError, Located, ValidationError};
+        let err: ForgeError = ValidationError::BufferPoolSampleTypestateAttributesDisabled {
+            name: "rx_pool_sram1".into(),
+        }
+        .into();
+        let located: Located<ForgeError> =
+            Located::new(err, "rx_pool_sram1.scxml", None, None);
+        let diags = located.to_diagnostics();
+        assert_eq!(diags.len(), 1);
+        let d = &diags[0];
+        assert!(
+            matches!(d.code, DiagnosticCode::PoolSampleTypestateAttributesDisabled),
+            "must be DiagnosticCode::PoolSampleTypestateAttributesDisabled; got {:?}",
+            d.code,
+        );
+        assert!(
+            d.message.contains("rx_pool_sram1"),
+            "message must name the offending pool; got {}",
+            d.message,
+        );
+        assert!(
+            d.message.contains("#include <sce/sample.h>"),
+            "message must name the missing artifact; got {}",
+            d.message,
+        );
+        assert!(
+            d.message.contains("§5.E lines 1276-1346"),
+            "message must cite the spec anchor; got {}",
+            d.message,
+        );
+    }
+
+    /// Locate a Clang ≥ 9 binary on PATH. Layer 1 typestate analysis
+    /// requires Clang's `consumable` / `callable_when` /
+    /// `param_typestate` / `set_typestate` / `warn_unused_result`
+    /// attribute family which GCC does not implement. Returns `None`
+    /// when no clang binary is on PATH so build environments without
+    /// Clang skip the typestate-axis tests informatively rather than
+    /// failing — the gcc compile-check above already covers the
+    /// silently-inert path mandated by spec lines 1444-1453.
+    #[cfg(test)]
+    fn locate_clang_binary() -> Option<String> {
+        // `clang` is the canonical name; distros often install only a
+        // versioned binary (`clang-19` etc). Try unversioned first then
+        // descend through the version range that supports the
+        // consumable family (Clang 3.4+, but only Clang 9+ ships both
+        // the warn_unused_result combination + thread-safety analysis
+        // we depend on per Q-ε1).
+        let candidates: &[&str] = &[
+            "clang",
+            "clang-19", "clang-18", "clang-17", "clang-16",
+            "clang-15", "clang-14", "clang-13", "clang-12",
+            "clang-11", "clang-10", "clang-9",
+        ];
+        for name in candidates {
+            if std::process::Command::new(name)
+                .arg("--version")
+                .output()
+                .ok()
+                .map(|out| out.status.success())
+                .unwrap_or(false)
+            {
+                return Some((*name).to_string());
+            }
+        }
+        None
+    }
+
+    /// Watching-zenoh RFC §5.E B7-ε Q-ε7: Clang `-Wconsumed`
+    /// `-Wthread-safety` rejects three Layer 1 typestate misuse
+    /// patterns against the runtime header
+    /// `sce-c-runtime/include/sce/sample.h`:
+    ///
+    /// 1. **use-after-take** — `sce_sample_payload` (callable_when
+    ///    "unconsumed") on a sample whose typestate has already
+    ///    transitioned to "consumed" by a prior `sce_sample_take`.
+    /// 2. **double-take** — `sce_sample_take` (param_typestate
+    ///    "unconsumed") on a sample whose typestate has already been
+    ///    consumed by a prior take.
+    /// 3. **warn_unused_result ignored** — `sce_sample_take` carries
+    ///    `__attribute__((warn_unused_result))`; discarding the
+    ///    `sce_result_t` return surfaces under `-Werror=unused-result`.
+    ///
+    /// All three drivers are compiled with `-Werror=consumed
+    /// -Werror=unused-result` so each diagnostic flips to a hard
+    /// failure. The test asserts each compilation FAILS — the
+    /// diagnostic firing IS the success signal. Skips informatively
+    /// on build environments without Clang.
+    #[test]
+    fn sample_h_layer1_typestate_clang_rejects_misuse() {
+        let Some(clang) = locate_clang_binary() else {
+            eprintln!(
+                "sample_h_layer1_typestate_clang_rejects_misuse: skipped — \
+                 no clang binary on PATH; Layer 1 typestate analysis \
+                 requires Clang ≥ 9. Spec lines 1444-1453 document the \
+                 silently-inert path on non-Clang toolchains; this test \
+                 only enforces Clang's rejection contract.",
+            );
+            return;
+        };
+
+        let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let runtime_include = crate_dir.join("../sce-c-runtime/include");
+
+        // Each entry: (case-name, driver source, substring stderr must
+        // contain so a diagnostic regression on the wrong axis is
+        // visible). All three drivers share the same prologue + struct
+        // bodies so `sce_sample_t` can be instantiated locally without
+        // a runtime crate link.
+        let prologue = r#"#include <sce/sample.h>
+struct sce_keyexpr_t { int dummy; };
+struct sce_timestamp_t { uint64_t lo, hi; };
+"#;
+        let cases: &[(&str, &str, &str)] = &[
+            (
+                "use-after-take",
+                r#"
+int main(void) {
+    sce_sample_t s = (sce_sample_t){ 0 };
+    uint8_t buf[16];
+    size_t n = 0;
+    (void)sce_sample_take(&s, buf, sizeof buf, &n);
+    /* Layer 1 violation: payload accessor is callable_when("unconsumed")
+     * but the prior take transitioned the sample to "consumed". */
+    const uint8_t *p = sce_sample_payload(&s);
+    (void)p;
+    return 0;
+}
+"#,
+                "consumed",
+            ),
+            (
+                "double-take",
+                r#"
+int main(void) {
+    sce_sample_t s = (sce_sample_t){ 0 };
+    uint8_t buf[16];
+    size_t n = 0;
+    (void)sce_sample_take(&s, buf, sizeof buf, &n);
+    /* Layer 1 violation: param_typestate("unconsumed") but the prior
+     * take has already transitioned the sample to "consumed". */
+    (void)sce_sample_take(&s, buf, sizeof buf, &n);
+    return 0;
+}
+"#,
+                "consumed",
+            ),
+            (
+                "warn-unused-result-ignored",
+                r#"
+int main(void) {
+    sce_sample_t s = (sce_sample_t){ 0 };
+    uint8_t buf[16];
+    size_t n = 0;
+    /* warn_unused_result violation: sce_sample_take returns
+     * sce_result_t; discarding it forfeits the OK / ERR signal
+     * the spec mandates the caller inspect. */
+    sce_sample_take(&s, buf, sizeof buf, &n);
+    return 0;
+}
+"#,
+                "unused",
+            ),
+        ];
+
+        for (case, body, stderr_substr) in cases {
+            let tmp = std::env::temp_dir().join(format!(
+                "sce-build-eps-clang-reject-{}-{}",
+                std::process::id(),
+                case,
+            ));
+            let _ = std::fs::remove_dir_all(&tmp);
+            std::fs::create_dir_all(&tmp).expect("create tmp dir");
+            let driver = tmp.join("driver.c");
+            std::fs::write(&driver, format!("{}{}", prologue, body))
+                .expect("write driver.c");
+
+            let out = std::process::Command::new(&clang)
+                .arg("-std=c11")
+                .arg("-Wall")
+                .arg("-Wextra")
+                .arg("-Wconsumed")
+                .arg("-Wthread-safety")
+                .arg("-Werror=consumed")
+                .arg("-Werror=unused-result")
+                .arg("-c")
+                .arg("-I").arg(&runtime_include)
+                .arg(&driver)
+                .arg("-o").arg(tmp.join("driver.o"))
+                .output()
+                .expect("clang must execute");
+
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            let _ = std::fs::remove_dir_all(&tmp);
+
+            assert!(
+                !out.status.success(),
+                "clang must REJECT the {case} misuse pattern under \
+                 `-Werror=consumed -Werror=unused-result`; compilation \
+                 succeeded which means Layer 1 typestate is silently \
+                 inert. stderr:\n{stderr}",
+            );
+            assert!(
+                stderr.to_lowercase().contains(stderr_substr),
+                "clang's diagnostic for {case} must mention `{stderr_substr}` \
+                 so a future regression on the wrong axis is visible. \
+                 stderr:\n{stderr}",
+            );
+        }
+    }
+
+    /// Watching-zenoh RFC §5.E B7-ε Q-ε7: the silently-inert axis.
+    /// On non-Clang toolchains the Layer 1 attribute family (per
+    /// `<sce/sample.h>`) expands to empty per spec lines 1444-1453;
+    /// the emitted pool header + transitively pulled-in sample.h must
+    /// still compile under host gcc with strict flags including
+    /// `-Werror` so a hypothetical extension that emits a stray
+    /// warning surfaces. This test pairs with the Clang-axis reject
+    /// test above — Clang catches the typestate violations, gcc
+    /// merely confirms the host build is clean despite the
+    /// silently-inert macros.
+    #[test]
+    fn buffer_pool_emitted_header_with_sample_pull_through_compiles_silently_under_gcc() {
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="rx_pool_sram1" version="1.0">
+  <sce:slot-count>4</sce:slot-count>
+  <sce:slot-size>64</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>16</sce:alignment>
+  <sce:cache-policy>none</sce:cache-policy>
+</scxml>"##;
+        let label = DocumentLabel {
+            identifier: "rx_pool_sram1",
+            diagnostic_label: "rx_pool_sram1.scxml",
+        };
+        let out = compile_forge_from_string(scxml, label, generator::Language::C11)
+            .expect("forge c11 codegen must succeed for a well-formed buffer-pool");
+        let header = out.files.iter().find(|(n, _)| n == "rx_pool_sram1.h")
+            .map(|(_, body)| body.as_str())
+            .expect("header file must be `rx_pool_sram1.h`");
+
+        let tmp = std::env::temp_dir().join(format!(
+            "sce-build-eps-gcc-silent-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).expect("create tmp dir");
+        std::fs::write(tmp.join("rx_pool_sram1.h"), header)
+            .expect("write generated header");
+        // Minimal driver — just `#include "<pool>.h"` to drive the
+        // include chain through `<sce/sample.h>`. The `(void)0`
+        // statement keeps `main` well-formed; we are not exercising
+        // pool functions here (the γ functional test already does).
+        std::fs::write(
+            tmp.join("driver.c"),
+            r#"#include "rx_pool_sram1.h"
+struct sce_keyexpr_t { int dummy; };
+struct sce_timestamp_t { uint64_t lo, hi; };
+int main(void) { (void)0; return 0; }
+"#,
+        )
+        .expect("write driver.c");
+
+        let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let runtime_include = crate_dir.join("../sce-c-runtime/include");
+        let out = std::process::Command::new("gcc")
+            .arg("-std=c11")
+            .arg("-Wall")
+            .arg("-Wextra")
+            .arg("-Werror")
+            // Strip the host-incompatible section attribute on the
+            // pool storage table (`.sram1_rx_pool_sram1` does not exist
+            // on the host toolchain). The same suppression neutralises
+            // any `__attribute__` payload elsewhere in the include
+            // chain — Layer 1 attributes are already empty under gcc
+            // per the silently-inert path.
+            .arg("-D__attribute__(x)=")
+            .arg("-I").arg(&tmp)
+            .arg("-I").arg(&runtime_include)
+            .arg("-c")
+            .arg(tmp.join("driver.c"))
+            .arg("-o").arg(tmp.join("driver.o"))
+            .output()
+            .expect("gcc must be on PATH");
+        let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        let success = out.status.success();
+        let _ = std::fs::remove_dir_all(&tmp);
+
+        assert!(
+            success,
+            "buffer_pool.h emission with #include <sce/sample.h> must \
+             compile under host gcc -std=c11 -Wall -Wextra -Werror; the \
+             silently-inert path means 0 warnings AND clean exit. \
+             stdout:\n{stdout}\nstderr:\n{stderr}",
+        );
+    }
+
+    /// Drift guard: the `tools/codegen/templates/forge/c/
+    /// buffer_pool.h.jinja2` template must contain the
+    /// `#include <sce/sample.h>` directive that the force-fixture
+    /// above's diagnostic guards against. The presence of the include
+    /// in the template is the *real* enforcement — the diagnostic only
+    /// fires if it goes missing. This test reads the template directly
+    /// so a future edit removing the include surfaces here even before
+    /// any pool render runs. Pairs with
+    /// `buffer_pool_sample_typestate_pull_through_self_check_force_fixture`
+    /// which exercises the diagnostic wire format.
+    #[test]
+    fn buffer_pool_template_pulls_in_sce_sample_h() {
+        let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let template_path = crate_dir
+            .join("../tools/codegen/templates/forge/c/buffer_pool.h.jinja2");
+        let body = std::fs::read_to_string(&template_path).unwrap_or_else(|e| {
+            panic!(
+                "template {} must exist for B7-ε integration: {e}",
+                template_path.display(),
+            )
+        });
+        assert!(
+            body.contains("#include <sce/sample.h>"),
+            "buffer_pool.h.jinja2 must `#include <sce/sample.h>` so consumer \
+             builds inherit the Layer 1 typestate attribute family + \
+             sce_sample_t; missing this is the codegen-invariant violation \
+             pool/sample-typestate-attributes-disabled guards against \
+             (RFC §5.E lines 1276-1346)",
         );
     }
 

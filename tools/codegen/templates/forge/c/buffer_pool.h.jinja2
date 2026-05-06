@@ -32,6 +32,18 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* B7-ε Layer 1 ownership pull-through. `sce-c-runtime/include/sce/
+ * sample.h` provides the `SCE_CONSUMABLE` / `SCE_CALLABLE_WHEN` /
+ * `SCE_SET_TYPESTATE` / `SCE_PARAM_TYPESTATE` / `SCE_WARN_UNUSED`
+ * attribute family + `sce_sample_t` borrow type + 3 function decls
+ * downstream subscriber callbacks build against. Removing this
+ * include silently disables Layer 1 typestate analysis on consumer
+ * builds (Clang ≥ 9 with `-Wconsumed -Wthread-safety`); the
+ * `pool/sample-typestate-attributes-disabled` codegen-invariant
+ * diagnostic guards against template regression. RFC §5.E lines
+ * 1276-1346 + 1520-1525. */
+#include <sce/sample.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -70,31 +82,14 @@ extern "C" {
  * edges from spec §5.E lines 1141-1156. */
 #define {{ upper_name }}_TRANSITION_COUNT ((size_t)11)
 
-/* Slot lifecycle state tag (spec §5.E lines 1129-1135). The
- * discriminants match the Rust backend's `SlotState` enum so a
- * single binary representation is consistent across languages. The
- * `SCE_SLOT_INVALID` sentinel marks consumed handles after the
- * runtime tag check transfers ownership into the pool's internal
- * state — re-using such a handle is rejected by the next operation. */
-typedef enum {
-    SCE_SLOT_FREE = 0,
-    SCE_SLOT_CPU_MUT = 1,
-    SCE_SLOT_DMA_ARMED_TX = 2,
-    SCE_SLOT_DMA_BUSY_TX = 3,
-    SCE_SLOT_DMA_ARMED_RX = 4,
-    SCE_SLOT_DMA_BUSY_RX = 5,
-    SCE_SLOT_CPU_REF = 6,
-    SCE_SLOT_INVALID = 0xFF
-} sce_slot_state_t;
-
-/* Tag-checked slot handle. `state` carries the runtime FSM tag;
- * `idx` is the pool slot index. Spec §5.E lines 1239-1242: "the
- * state parameter is a phantom type on the Rust side and a
- * tag-checked handle on the C side". */
-typedef struct {
-    sce_slot_state_t state;
-    size_t idx;
-} sce_slot_handle_t;
+/* `sce_slot_state_t` (the seven-state FSM enum + `SCE_SLOT_INVALID`
+ * sentinel, spec §5.E lines 1129-1135) and `sce_slot_handle_t` (the
+ * tag-checked handle, spec §5.E lines 1239-1242) are provided by
+ * `<sce/sample.h>` above. Anonymous-tag typedefs are not redeclarable
+ * across translation units — declaring them per pool would shadow the
+ * runtime header's symbols, so the per-pool emit reuses the runtime
+ * types directly. The runtime header pins the discriminants via
+ * `_Static_assert` against this template's spec anchors. */
 
 /* Sentinel returned by acquire / arm functions when no free slot
  * is available. The caller checks `handle.state == SCE_SLOT_INVALID`

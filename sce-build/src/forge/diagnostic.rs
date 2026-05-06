@@ -662,6 +662,38 @@ pub enum DiagnosticCode {
     #[serde(rename = "mem/inter-pool-padding-not-emitted")]
     MemInterPoolPaddingNotEmitted,
 
+    // ── §5.E pool kind Layer 1 ownership (watching-zenoh RFC §5.E,
+    //    B7-ε). Layer 1 typestate-attribute family is exposed to
+    //    consumer builds through `sce-c-runtime/include/sce/sample.h`,
+    //    pulled in by the generated pool header. The diagnostic catches
+    //    a future template edit that drops the `#include` — Layer 1
+    //    coverage would silently disappear without it. Stage =
+    //    Validation. The remaining `pool/...` codes
+    //    (`pool/sample-take-without-stage-pool`,
+    //    `pool/sample-callback-signature-non-borrow`,
+    //    `pool/clang-tidy-not-configured`,
+    //    `pool/ownership-violation`,
+    //    `pool/cache-maintenance-misplaced`,
+    //    `pool/slot-leak-on-error-path`) defer to later atomics gated on
+    //    deploy.yaml `stage_pool` field, SCXML `<sce:on-sample>`
+    //    extension, and §5.I `<sce:call>` intrinsic registry — see
+    //    `claudedocs/rfc-b7-eta-prime-sample-runtime.md` /
+    //    `rfc-sce-call-intrinsic-registry.md`. ──
+    /// `<sce/sample.h>` runtime header pull-through (the producer of
+    /// the Layer 1 `SCE_CONSUMABLE` / `SCE_CALLABLE_WHEN` /
+    /// `SCE_SET_TYPESTATE` / `SCE_PARAM_TYPESTATE` /
+    /// `SCE_WARN_UNUSED` family) is missing from the generated C11
+    /// pool header. Codegen-invariant violation — fires only when the
+    /// `tools/codegen/templates/forge/c/buffer_pool.h.jinja2` template
+    /// itself drops the `#include` directive. The runtime header
+    /// further self-checks at consumer compile time via `#warning`
+    /// when `__clang__ && !__has_attribute(consumable)`; this SCE-side
+    /// diagnostic is the build-time peer that catches the include
+    /// itself going missing rather than the attribute family being
+    /// unavailable on the operator's compiler.
+    #[serde(rename = "pool/sample-typestate-attributes-disabled")]
+    PoolSampleTypestateAttributesDisabled,
+
     #[serde(rename = "io/filesystem")]
     IoFilesystem,
 
@@ -993,6 +1025,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MemPoolSectionConflict,
         MemPoolTooLarge,
         MemInterPoolPaddingNotEmitted,
+        // BufferPool §5.E Layer 1 ownership pull-through (watching-zenoh RFC §5.E, B7-ε)
+        PoolSampleTypestateAttributesDisabled,
         // Io
         IoFilesystem,
         // Cli
@@ -1212,10 +1246,12 @@ impl DiagnosticCode {
             | LinkClassUnsupportedOnTarget
             | LinkPoolSlotSmallerThanFramerMax => Some("watching-zenoh RFC §5.C"),
 
-            // ── BufferPool §5.E DMA-aligned slot table (B7-α/β) ──
+            // ── BufferPool §5.E DMA-aligned slot table + Layer 1
+            //    ownership pull-through (B7-α/β/ε) ────────────────
             MemPoolSectionConflict
             | MemPoolTooLarge
-            | MemInterPoolPaddingNotEmitted => Some("watching-zenoh RFC §5.E"),
+            | MemInterPoolPaddingNotEmitted
+            | PoolSampleTypestateAttributesDisabled => Some("watching-zenoh RFC §5.E"),
 
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
@@ -1489,6 +1525,7 @@ impl DiagnosticCode {
             MemPoolSectionConflict => "mem/pool-section-conflict",
             MemPoolTooLarge => "mem/pool-too-large",
             MemInterPoolPaddingNotEmitted => "mem/inter-pool-padding-not-emitted",
+            PoolSampleTypestateAttributesDisabled => "pool/sample-typestate-attributes-disabled",
             IoFilesystem => "io/filesystem",
             CliUnknownLanguage => "cli/unknown-language",
             CliUnsupportedLanguage => "cli/unsupported-language",
@@ -2564,6 +2601,20 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![name.clone()],
         },
+        ValidationError::BufferPoolSampleTypestateAttributesDisabled { name } => {
+            DiagnosticPayload {
+                code: DiagnosticCode::PoolSampleTypestateAttributesDisabled,
+                stage: Stage::Validation,
+                // Codegen-invariant violation — no authoring repair
+                // surface exists. β `mem/inter-pool-padding-not-emitted`
+                // precedent: `Fix::None`; the prose links to the issue
+                // tracker so a regression report finds the right team.
+                expected: None,
+                actual: None,
+                fix: None,
+                key_fragments: vec![name.clone()],
+            }
+        }
     }
 }
 
@@ -3996,6 +4047,15 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:f3d92b158c62567b","code":"mem/inter-pool-padding-not-emitted","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"buffer-pool 'rx_pool_sram1': linker fragment is missing the inter-pool `. = ALIGN(N);` sentinel — codegen invariant violation per RFC §5.E lines 1059-1064; report at https://github.com/newmassrael/scxml-core-engine/issues"}"#,
             ),
+            // ── §5.E B7-ε pool header Layer 1 ownership pull-through self-check ─
+            (
+                "forge/pool-sample-typestate-attributes-disabled",
+                ValidationError::BufferPoolSampleTypestateAttributesDisabled {
+                    name: "rx_pool_sram1".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:43b2c0bb267f73f5","code":"pool/sample-typestate-attributes-disabled","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"buffer-pool 'rx_pool_sram1': generated C11 header is missing the `#include <sce/sample.h>` directive — Layer 1 typestate attributes will be unavailable on consumer builds, codegen invariant violation per RFC §5.E lines 1276-1346; report at https://github.com/newmassrael/scxml-core-engine/issues"}"#,
+            ),
         ]
     }
 
@@ -5218,6 +5278,7 @@ mod tests {
             | ValidationBytesMaxSizeViolation
             | MemPoolTooLarge
             | MemInterPoolPaddingNotEmitted
+            | PoolSampleTypestateAttributesDisabled
             | AlgorithmLocalShadowsParam
             | AlgorithmLvalueUnsupported
             | AlgorithmReturnMissing
@@ -5607,6 +5668,7 @@ mod tests {
                 | MemPoolSectionConflict
                 | MemPoolTooLarge
                 | MemInterPoolPaddingNotEmitted
+                | PoolSampleTypestateAttributesDisabled
                 | IoFilesystem
                 | CliUnknownLanguage | CliUnsupportedLanguage | CliReadInput
                 | CliWriteOutput | CliCreateOutputDir | CliScxmlGenerate
@@ -5690,9 +5752,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            179,
+            180,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 179 distinct variants to match the DiagnosticCode \
+             expected 180 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -5719,14 +5781,23 @@ mod tests {
              first_flags consumers), pairing the B6-side \
              `<sce:rx-pool>` / `<sce:tx-pool>` schema (B7-α) with the \
              B7-side slot-size against the framer codec's recursive \
-             worst-case bytes; 178 → 179). The remaining §5.C codes \
+             worst-case bytes; 178 → 179; then watching-zenoh RFC §5.E \
+             B7-ε Layer 1 ownership pull-through codegen self-check \
+             PoolSampleTypestateAttributesDisabled — buffer-pool C11 \
+             header must `#include <sce/sample.h>` so the runtime \
+             header's `SCE_CONSUMABLE` / `SCE_CALLABLE_WHEN` / \
+             `SCE_SET_TYPESTATE` / `SCE_PARAM_TYPESTATE` / \
+             `SCE_WARN_UNUSED` family reaches downstream consumer builds; \
+             β `mem/inter-pool-padding-not-emitted` codegen-invariant \
+             precedent — diagnostic exists so a future template edit \
+             that drops the include surfaces; 179 → 180). The remaining §5.C codes \
              defer to B6-δ (listener self-check, gated on §5.K + §5.M \
              SCE-side prerequisites), D.2 (`link/link-class-incompatible-with-os` \
              alongside OS-specific classes), and B7 (`mem/alignment-\
              violation` deferred until codec field placement lands a \
              consumer surface, B7-γ FSM family, B7-δ cache-* family \
-             gated on §5.I, B7-ε Layer 1 typestate, B7-η' application-\
-             facing API).",
+             gated on §5.I, B7-η' application-facing API gated on \
+             `sce-link-runtime` Sample machinery).",
         );
     }
 
