@@ -133,6 +133,20 @@ pub struct ImportContext {
     /// imports whose model failed to parse during enrichment.
     #[serde(skip)]
     pub codec_first_flags: Option<(String, Vec<crate::forge::model::FlagDef>)>,
+
+    /// For buffer-pool imports: the imported pool's `<sce:slot-size>`
+    /// body (bytes), captured at enrichment time from the parsed
+    /// [`BufferPoolModel`]. Consumed by the §5.C B6-α' cross-resolver
+    /// in `lib.rs::validate_link_pool_framer_resolution` so a link's
+    /// `<sce:rx-pool>` / `<sce:tx-pool>` reference can confirm the bound
+    /// pool's slot is large enough to hold the framer codec's recursive
+    /// worst-case encoded byte count (`ImportContext::codec_max_bytes`).
+    /// `None` for non-buffer-pool imports and for buffer-pool imports
+    /// whose model failed to parse during enrichment.
+    ///
+    /// [`BufferPoolModel`]: crate::forge::model::BufferPoolModel
+    #[serde(skip)]
+    pub buffer_pool_slot_size: Option<u32>,
 }
 
 /// Resolve a list of `ForgeImport` into template-ready `ImportContext`.
@@ -263,6 +277,7 @@ fn resolve_single_import(
                 codec_max_bytes: None,
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
+                buffer_pool_slot_size: None,
             }
         }
         crate::generator::Language::Kotlin => {
@@ -293,6 +308,7 @@ fn resolve_single_import(
                 codec_max_bytes: None,
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
+                buffer_pool_slot_size: None,
             }
         }
         crate::generator::Language::Rust => {
@@ -325,6 +341,7 @@ fn resolve_single_import(
                 codec_max_bytes: None,
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
+                buffer_pool_slot_size: None,
             }
         }
         crate::generator::Language::Go => {
@@ -383,6 +400,7 @@ fn resolve_single_import(
                 codec_max_bytes: None,
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
+                buffer_pool_slot_size: None,
             }
         }
         crate::generator::Language::Python => {
@@ -415,6 +433,7 @@ fn resolve_single_import(
                 codec_max_bytes: None,
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
+                buffer_pool_slot_size: None,
             }
         }
         crate::generator::Language::C11 => {
@@ -448,6 +467,7 @@ fn resolve_single_import(
                 codec_max_bytes: None,
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
+                buffer_pool_slot_size: None,
             }
         }
     }
@@ -15870,6 +15890,7 @@ mod tests {
                 codec_max_bytes: None,
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
+                buffer_pool_slot_size: None,
             },
             ImportContext {
                 alias: "c".to_string(),
@@ -15889,6 +15910,7 @@ mod tests {
                 codec_max_bytes: None,
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
+                buffer_pool_slot_size: None,
             },
         ];
         let (has, _all, _stateful) = build_template_imports(&imports);

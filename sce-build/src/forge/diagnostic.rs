@@ -613,6 +613,20 @@ pub enum DiagnosticCode {
     #[serde(rename = "link/class-unsupported-on-target")]
     LinkClassUnsupportedOnTarget,
 
+    /// `<sce:rx-pool>` / `<sce:tx-pool>` reference binds a buffer-pool
+    /// whose `<sce:slot-size>` is smaller than the framer codec's
+    /// recursive worst-case encoded byte count. Cross-resolution —
+    /// fires from `compile_forge_with_imports` after enrichment
+    /// populates both `ImportContext::codec_max_bytes` (framer side)
+    /// and `ImportContext::buffer_pool_slot_size` (pool side). Skips
+    /// silently when either axis fails to enrich (partial topology).
+    /// No candidate set — repair is to raise `<sce:slot-size>` on the
+    /// bound pool or shrink the codec body, both author choices, so
+    /// `Fix::None`. RFC §5.C lines 793-794 (rx-pool / tx-pool inherit
+    /// the §5.E pool model on both sides of the byte-stream link).
+    #[serde(rename = "link/pool-slot-smaller-than-framer-max")]
+    LinkPoolSlotSmallerThanFramerMax,
+
     /// RFC §5.E B7-α buffer-pool placement validation: declared
     /// `<sce:section>` body is not in deploy.yaml `machines.<m>.memory.
     /// sram_regions`. Validate-time — fires only via
@@ -969,11 +983,12 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CodecDmaAlignmentUnsatisfiable,
         // Codec §5.B B5-γ parent-flags dependency (watching-zenoh RFC §5.B)
         CodecParentFlagMismatch,
-        // Link §5.C byte-stream link endpoint (watching-zenoh RFC §5.C, B6-α/γ)
+        // Link §5.C byte-stream link endpoint (watching-zenoh RFC §5.C, B6-α/γ/η + B6-α')
         LinkFramerMissing,
         LinkLinkClassUnknown,
         LinkBackpressureUndeclared,
         LinkClassUnsupportedOnTarget,
+        LinkPoolSlotSmallerThanFramerMax,
         // BufferPool §5.E DMA-aligned slot table (watching-zenoh RFC §5.E, B7-α/β)
         MemPoolSectionConflict,
         MemPoolTooLarge,
@@ -1194,7 +1209,8 @@ impl DiagnosticCode {
             LinkFramerMissing
             | LinkLinkClassUnknown
             | LinkBackpressureUndeclared
-            | LinkClassUnsupportedOnTarget => Some("watching-zenoh RFC §5.C"),
+            | LinkClassUnsupportedOnTarget
+            | LinkPoolSlotSmallerThanFramerMax => Some("watching-zenoh RFC §5.C"),
 
             // ── BufferPool §5.E DMA-aligned slot table (B7-α/β) ──
             MemPoolSectionConflict
@@ -1469,6 +1485,7 @@ impl DiagnosticCode {
             LinkLinkClassUnknown => "link/link-class-unknown",
             LinkBackpressureUndeclared => "link/backpressure-undeclared",
             LinkClassUnsupportedOnTarget => "link/class-unsupported-on-target",
+            LinkPoolSlotSmallerThanFramerMax => "link/pool-slot-smaller-than-framer-max",
             MemPoolSectionConflict => "mem/pool-section-conflict",
             MemPoolTooLarge => "mem/pool-too-large",
             MemInterPoolPaddingNotEmitted => "mem/inter-pool-padding-not-emitted",
@@ -2452,6 +2469,38 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 candidates: candidates.clone(),
             }),
             key_fragments: vec![name.clone(), class.clone(), target_os.clone()],
+        },
+        ValidationError::LinkPoolSlotSmallerThanFramerMax {
+            link_name,
+            pool_side,
+            pool_alias,
+            pool_slot_size,
+            framer_alias,
+            framer_max_bytes,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::LinkPoolSlotSmallerThanFramerMax,
+            stage: Stage::Validation,
+            // Two-axis repair (raise pool slot-size OR shrink codec
+            // worst-case body) — both author choices, neither machine-
+            // decidable from a closed candidate list, so `Fix::None`
+            // and the message prose names both axes. The `actual`
+            // carries the pool's declared slot-size so the wire record
+            // makes the violation magnitude inspectable without
+            // re-parsing the message; the framer's max-bytes rides
+            // on `key_fragments` so the diagnostic id stays stable
+            // under message rewording but distinct across different
+            // mismatch magnitudes.
+            expected: None,
+            actual: Some(pool_slot_size.to_string()),
+            fix: None,
+            key_fragments: vec![
+                link_name.clone(),
+                (*pool_side).to_string(),
+                pool_alias.clone(),
+                pool_slot_size.to_string(),
+                framer_alias.clone(),
+                framer_max_bytes.to_string(),
+            ],
         },
         ValidationError::BufferPoolSectionConflict {
             name,
@@ -3897,6 +3946,20 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:5b4e6cb8ccacd634","code":"link/class-unsupported-on-target","stage":"validation","spec":"watching-zenoh RFC §5.C","message":"link 'udp_scout': link-class `serial` cannot run on target OS `linux` per RFC §5.C lines 765-771; the matrix admits `serial` on [\"bare_metal\"] only — change either the <sce:link-class> body or the deploy.yaml `machines.<id>.platform.os` for the target machine","actual":"linux","fix":{"kind":"replace_one_of","candidates":["bare_metal"]}}"#,
             ),
+            // ── §5.C B6-α' link↔pool cross-resolution diagnostic ─
+            (
+                "forge/link-pool-slot-smaller-than-framer-max",
+                ValidationError::LinkPoolSlotSmallerThanFramerMax {
+                    link_name: "udp_scout".into(),
+                    pool_side: "rx",
+                    pool_alias: "rx_pool_sram1".into(),
+                    pool_slot_size: 64,
+                    framer_alias: "scout_frame_codec".into(),
+                    framer_max_bytes: 256,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:b02945fcd497fac4","code":"link/pool-slot-smaller-than-framer-max","stage":"validation","spec":"watching-zenoh RFC §5.C","message":"link 'udp_scout': rx-pool 'rx_pool_sram1' slot-size 64 bytes is smaller than framer 'scout_frame_codec' worst-case encoded size 256 bytes — raise <sce:slot-size> on the bound pool or shrink the codec's worst-case body","actual":"64"}"#,
+            ),
             // ── §5.E B7-α buffer-pool placement validate-time diagnostic ─
             (
                 "forge/mem-pool-section-conflict",
@@ -5191,6 +5254,7 @@ mod tests {
             | CodecParentFlagMismatch
             | LinkFramerMissing
             | LinkBackpressureUndeclared
+            | LinkPoolSlotSmallerThanFramerMax
             | IoFilesystem
             | CliUnsupportedLanguage
             | CliReadInput
@@ -5539,6 +5603,7 @@ mod tests {
                 | LinkLinkClassUnknown
                 | LinkBackpressureUndeclared
                 | LinkClassUnsupportedOnTarget
+                | LinkPoolSlotSmallerThanFramerMax
                 | MemPoolSectionConflict
                 | MemPoolTooLarge
                 | MemInterPoolPaddingNotEmitted
@@ -5625,9 +5690,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            178,
+            179,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 178 distinct variants to match the DiagnosticCode \
+             expected 179 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -5646,15 +5711,22 @@ mod tests {
              `size` after section validation; and \
              MemInterPoolPaddingNotEmitted — codegen self-check for \
              the §5.E lines 1059-1064 inter-pool `. = ALIGN(N);` \
-             sentinel artifact; 176 → 178). The remaining §5.C codes \
+             sentinel artifact; 176 → 178; then watching-zenoh RFC \
+             §5.C B6-α' link↔pool cross-resolution \
+             LinkPoolSlotSmallerThanFramerMax — fourth consumer of the \
+             `compile_forge_with_imports` enrichment infra (after the \
+             three codec-side codec_max_bytes / requires_parent_flags / \
+             first_flags consumers), pairing the B6-side \
+             `<sce:rx-pool>` / `<sce:tx-pool>` schema (B7-α) with the \
+             B7-side slot-size against the framer codec's recursive \
+             worst-case bytes; 178 → 179). The remaining §5.C codes \
              defer to B6-δ (listener self-check, gated on §5.K + §5.M \
              SCE-side prerequisites), D.2 (`link/link-class-incompatible-with-os` \
-             alongside OS-specific classes), and B7 \
-             (`link/pool-slot-smaller-than-framer-max`, B7-β \
-             `mem/alignment-violation` deferred until codec field \
-             placement lands a consumer surface, B7-γ FSM family, \
-             B7-δ cache-* family gated on §5.I, B7-ε Layer 1 \
-             typestate, B7-η' application-facing API).",
+             alongside OS-specific classes), and B7 (`mem/alignment-\
+             violation` deferred until codec field placement lands a \
+             consumer surface, B7-γ FSM family, B7-δ cache-* family \
+             gated on §5.I, B7-ε Layer 1 typestate, B7-η' application-\
+             facing API).",
         );
     }
 

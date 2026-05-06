@@ -625,6 +625,52 @@ pub enum ValidationError {
         candidates: Vec<String>,
     },
 
+    /// RFC §5.C B6-α' cross-resolution: the `<sce:rx-pool>` or
+    /// `<sce:tx-pool>` reference resolves to a buffer-pool whose
+    /// `<sce:slot-size>` is smaller than the framer codec's
+    /// recursive worst-case encoded byte count. The TX path
+    /// `event extract -> framer.encode() -> pool slot -> driver.send()`
+    /// (RFC §5.C lines 786-789) cannot honor zero-copy when the slot
+    /// cannot hold a full encoded frame; the link would silently
+    /// stage-copy on every TX, defeating the whole point of pinning
+    /// pool to framer in the schema. Fires only via
+    /// [`compile_forge_with_imports`] post-enrichment, when both the
+    /// `<sce:rx-pool>`/`<sce:tx-pool>` ref and the `<sce:framer>` ref
+    /// resolve to imported documents whose [`ImportContext`] carries
+    /// `buffer_pool_slot_size` and `codec_max_bytes` respectively.
+    /// Skipped silently when either side fails to enrich (matches the
+    /// other cross-file diagnostics' tolerance for partial topologies).
+    /// No `candidates` axis — the repair is to raise `<sce:slot-size>`
+    /// on the bound pool or shrink the codec's worst-case body, both
+    /// author choices; emitted as `Fix::None`.
+    /// RFC §5.C lines 793-794 spec anchor (rx-pool/tx-pool inherit the
+    /// §5.E pool model on both sides of the byte-stream).
+    ///
+    /// [`ImportContext`]: crate::forge::generator::ImportContext
+    /// [`compile_forge_with_imports`]: crate::compile_forge_with_imports
+    #[error(
+        "link '{link_name}': {pool_side}-pool '{pool_alias}' slot-size {pool_slot_size} bytes is smaller than framer '{framer_alias}' worst-case encoded size {framer_max_bytes} bytes — raise <sce:slot-size> on the bound pool or shrink the codec's worst-case body"
+    )]
+    LinkPoolSlotSmallerThanFramerMax {
+        /// Link document name (root `name=` attribute).
+        link_name: String,
+        /// `"rx"` or `"tx"` — which `<sce:*-pool>` reference triggered.
+        pool_side: &'static str,
+        /// Imported buffer-pool's alias / document name (matches the
+        /// `<sce:rx-pool ref>` / `<sce:tx-pool ref>` value).
+        pool_alias: String,
+        /// `<sce:slot-size>` body of the resolved buffer-pool.
+        pool_slot_size: u32,
+        /// Imported codec's alias / document name (matches the
+        /// `<sce:framer ref>` value).
+        framer_alias: String,
+        /// Recursive worst-case encoded byte count of the resolved
+        /// codec (matches `ImportContext::codec_max_bytes`, which
+        /// already folds variant arm bodies / repeat / TLV chain
+        /// per RFC §5.B).
+        framer_max_bytes: u32,
+    },
+
     /// RFC §5.E B7-α buffer-pool placement validation: the declared
     /// `<sce:section>` is not in the resolved machine's
     /// `memory.sram_regions` map. Fires only via

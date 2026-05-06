@@ -636,6 +636,20 @@ pub fn compile_forge_with_imports(
         label.diagnostic_label,
     )?;
 
+    // RFC §5.C B6-α' link-side cross-resolution. Runs after enrichment
+    // populates `ImportContext::codec_max_bytes` (framer side) and
+    // `ImportContext::buffer_pool_slot_size` (pool side); both axes
+    // need to be present on the same `import_ctx` slice for the
+    // comparison to fire. Cross-resolver is post-enrichment / pre-
+    // codegen so a slot-size mismatch surfaces as `link/pool-slot-
+    // smaller-than-framer-max` rather than as a silently-truncated
+    // emit (or a silently-stage-copying TX path).
+    validate_link_pool_framer_resolution(
+        &parsed.document,
+        &import_ctx,
+        label.diagnostic_label,
+    )?;
+
     let output = match language {
         generator::Language::Cpp => {
             forge::generator::generate_cpp_with_imports(&parsed.document, &template_base, &import_ctx, options)
@@ -933,6 +947,17 @@ fn validate_and_enrich_imports(
                     .find(|f| !f.flags.is_empty() && f.byte_offset == 0)
                     .map(|f| (f.id.clone(), f.flags.clone()));
             }
+            // RFC §5.C B6-α' cross-resolution: the link kind's
+            // `<sce:rx-pool>` / `<sce:tx-pool>` cross-validator
+            // (`validate_link_pool_framer_resolution`) needs the
+            // imported pool's slot capacity at resolve time. Captured
+            // here under the same enrichment pass that already populated
+            // `codec_max_bytes` for the framer side, so the cross-
+            // resolver finds both axes on the same `ImportContext`
+            // slice without re-walking the imports.
+            if let forge::model::ForgeDocument::BufferPool(pm) = &doc {
+                ctx.buffer_pool_slot_size = Some(pm.slot_size);
+            }
             if !ctx.is_stateful {
                 if let Some(name) = discover_primary_function(&doc, language) {
                     ctx.qualified_call = build_qualified_call(&name, &ctx.namespace, language);
@@ -957,6 +982,97 @@ fn validate_and_enrich_imports(
                     .map(|(method, params, ret)| (format!("{}.{}", ctx.alias, method), params, ret))
                     .collect();
             }
+        }
+    }
+    Ok(())
+}
+
+/// RFC §5.C B6-α' cross-resolution: validate that every `<sce:rx-pool>`
+/// / `<sce:tx-pool>` reference on a link kind binds to a buffer-pool
+/// whose `<sce:slot-size>` is >= the framer codec's recursive
+/// worst-case encoded byte count.
+///
+/// Runs **after** [`validate_and_enrich_imports`] populates the
+/// `ImportContext` slice with the per-import `codec_max_bytes`
+/// (codec arm) and `buffer_pool_slot_size` (buffer-pool arm). Skips
+/// silently when:
+///   * the root document is not a `LinkModel` — other kinds carry no
+///     pool/framer pair to cross-check;
+///   * the framer alias does not resolve to an enriched codec import
+///     (e.g. inline-only framer, partial topology) — the existing
+///     `link/framer-missing` parser-stage gate already rejects pure
+///     absence; here we tolerate enrichment gaps the way the rest of
+///     the cross-file pipeline does;
+///   * the link's `<sce:rx-pool>` / `<sce:tx-pool>` alias does not
+///     resolve to an enriched buffer-pool import — same tolerance.
+///
+/// The diagnostic locator anchors at `importing_doc` (the link's own
+/// file) — same convention as `validate_and_enrich_imports` for kind
+/// mismatches, since the offending element (`<sce:rx-pool>` /
+/// `<sce:tx-pool>` ref) lives in the importing document.
+fn validate_link_pool_framer_resolution(
+    doc: &forge::model::ForgeDocument,
+    import_ctx: &[forge::generator::ImportContext],
+    importing_doc: &str,
+) -> Result<(), forge::error::Located<forge::error::ForgeError>> {
+    use forge::error::{Located, ValidationError};
+    use forge::model::ForgeDocument;
+
+    let link = match doc {
+        ForgeDocument::Link(l) => l,
+        _ => return Ok(()),
+    };
+
+    // Resolve the framer codec's recursive worst-case bytes via the
+    // same `ImportContext` slice the codegen consumes for the variant
+    // / repeat / tlv-chain max-bytes folding. `None` here means the
+    // framer alias is not a cross-file codec import (or enrichment
+    // gave up on it) — the cross-validator has nothing to compare
+    // against and falls back to silent-skip.
+    let framer_max_bytes = match import_ctx
+        .iter()
+        .find(|c| c.alias == link.framer)
+        .and_then(|c| c.codec_max_bytes)
+    {
+        Some(n) => n,
+        None => return Ok(()),
+    };
+
+    // Compare each declared pool side independently. Both can be
+    // present, only one, or neither (the `None` arms are normal — a
+    // link without zero-copy pools is a valid v1 shape, the framer-
+    // only path).
+    for (side, pool_ref) in [("rx", &link.rx_pool), ("tx", &link.tx_pool)] {
+        let pool_alias = match pool_ref.as_deref() {
+            Some(s) => s,
+            None => continue,
+        };
+        let pool_slot_size = match import_ctx
+            .iter()
+            .find(|c| c.alias == pool_alias)
+            .and_then(|c| c.buffer_pool_slot_size)
+        {
+            Some(n) => n,
+            // Pool ref present but not resolvable as an enriched
+            // buffer-pool import — same tolerance as the framer
+            // branch above.
+            None => continue,
+        };
+        if pool_slot_size < framer_max_bytes {
+            return Err(Located::new(
+                ValidationError::LinkPoolSlotSmallerThanFramerMax {
+                    link_name: link.name.clone(),
+                    pool_side: side,
+                    pool_alias: pool_alias.to_string(),
+                    pool_slot_size,
+                    framer_alias: link.framer.clone(),
+                    framer_max_bytes,
+                }
+                .into(),
+                importing_doc,
+                None,
+                None,
+            ));
         }
     }
     Ok(())
@@ -5891,6 +6007,204 @@ topology:
         assert!(
             !body.contains("TX_POOL"),
             "TX_POOL must NOT emit when no <sce:tx-pool> declared; full source:\n{body}",
+        );
+    }
+
+    /// RFC §5.C B6-α' cross-resolution fixtures. Three sibling files in
+    /// a tempdir — link.scxml + scout_frame_codec.scxml + a buffer-pool —
+    /// drive `compile_forge_with_imports` through enrichment so the
+    /// link's `<sce:rx-pool>` / `<sce:tx-pool>` ref can be cross-checked
+    /// against the framer codec's `codec_max_bytes`.
+    fn write_link_pool_fixture_files(
+        dir: &std::path::Path,
+        framer_byte_count: u32,
+        rx_slot_size: u32,
+        tx_slot_size: u32,
+    ) -> (std::path::PathBuf, &'static str) {
+        // Codec body: a single fixed-byte payload field whose width is
+        // controlled by `framer_byte_count`. `max_frame_bytes()` lowers
+        // to exactly that width — no variant/repeat/tlv-chain bodies in
+        // play, so `ImportContext::codec_max_bytes` matches `framer_byte_count`.
+        let codec_scxml = format!(
+            r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="scout_frame_codec">
+  <datamodel>
+    <sce:field id="payload" sce:type="bytes" sce:byte="0" sce:bit-size="tail" sce:max-size="{framer_byte_count}"/>
+  </datamodel>
+</scxml>"##
+        );
+        std::fs::write(dir.join("scout_frame_codec.scxml"), codec_scxml).unwrap();
+
+        // Two distinct pools so the rx/tx axes can carry different
+        // slot-sizes — driver tests parameterise the side under test.
+        let rx_pool_scxml = format!(
+            r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="rx_pool_sram1">
+  <sce:slot-count>4</sce:slot-count>
+  <sce:slot-size>{rx_slot_size}</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>32</sce:alignment>
+  <sce:cache-policy>none</sce:cache-policy>
+</scxml>"##
+        );
+        std::fs::write(dir.join("rx_pool_sram1.scxml"), rx_pool_scxml).unwrap();
+
+        let tx_pool_scxml = format!(
+            r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="tx_pool_sram1">
+  <sce:slot-count>4</sce:slot-count>
+  <sce:slot-size>{tx_slot_size}</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>32</sce:alignment>
+  <sce:cache-policy>none</sce:cache-policy>
+</scxml>"##
+        );
+        std::fs::write(dir.join("tx_pool_sram1.scxml"), tx_pool_scxml).unwrap();
+
+        let link_path = dir.join("udp_scout.scxml");
+        let link_body = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="link" name="udp_scout" version="1.0">
+  <sce:import as="scout_frame_codec" kind="codec" src="scout_frame_codec.scxml"/>
+  <sce:import as="rx_pool_sram1" kind="buffer-pool" src="rx_pool_sram1.scxml"/>
+  <sce:import as="tx_pool_sram1" kind="buffer-pool" src="tx_pool_sram1.scxml"/>
+  <sce:link-class>udp</sce:link-class>
+  <sce:framer ref="scout_frame_codec"/>
+  <sce:backpressure>drop</sce:backpressure>
+  <sce:rx-pool ref="rx_pool_sram1"/>
+  <sce:tx-pool ref="tx_pool_sram1"/>
+</scxml>"##;
+        std::fs::write(&link_path, link_body).unwrap();
+        (link_path, "udp_scout.scxml")
+    }
+
+    #[test]
+    fn link_with_undersized_rx_pool_rejects_via_link_pool_slot_smaller_than_framer_max() {
+        use crate::forge::error::{ForgeError, ValidationError};
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().expect("tempdir");
+        // framer worst-case = 32 bytes, rx slot = 16 bytes (undersized),
+        // tx slot = 64 bytes (sufficient). The cross-resolver must
+        // surface the rx-axis violation first per the iteration order
+        // (rx, tx).
+        let (link_path, link_label) =
+            write_link_pool_fixture_files(tmp.path(), 32, 16, 64);
+        let content = std::fs::read_to_string(&link_path).unwrap();
+        let label = DocumentLabel {
+            identifier: "udp_scout",
+            diagnostic_label: link_label,
+        };
+        let result = compile_forge_with_imports(
+            &content,
+            label,
+            generator::Language::Rust,
+            tmp.path(),
+            &ForgeCompileOptions::default(),
+        );
+        let err = match result {
+            Ok(_) => panic!("undersized rx-pool must be rejected at cross-resolution"),
+            Err(e) => e,
+        };
+        match &err.error {
+            ForgeError::Validation(ValidationError::LinkPoolSlotSmallerThanFramerMax {
+                link_name,
+                pool_side,
+                pool_alias,
+                pool_slot_size,
+                framer_alias,
+                framer_max_bytes,
+            }) => {
+                assert_eq!(link_name, "udp_scout");
+                assert_eq!(*pool_side, "rx");
+                assert_eq!(pool_alias, "rx_pool_sram1");
+                assert_eq!(*pool_slot_size, 16);
+                assert_eq!(framer_alias, "scout_frame_codec");
+                assert_eq!(*framer_max_bytes, 32);
+            }
+            other => panic!("expected LinkPoolSlotSmallerThanFramerMax, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn link_with_undersized_tx_pool_rejects_via_link_pool_slot_smaller_than_framer_max() {
+        use crate::forge::error::{ForgeError, ValidationError};
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().expect("tempdir");
+        // framer worst-case = 32 bytes, rx slot = 64 bytes (sufficient),
+        // tx slot = 8 bytes (undersized). Cross-resolver must reach the
+        // tx axis after rx passes.
+        let (link_path, link_label) =
+            write_link_pool_fixture_files(tmp.path(), 32, 64, 8);
+        let content = std::fs::read_to_string(&link_path).unwrap();
+        let label = DocumentLabel {
+            identifier: "udp_scout",
+            diagnostic_label: link_label,
+        };
+        let result = compile_forge_with_imports(
+            &content,
+            label,
+            generator::Language::Rust,
+            tmp.path(),
+            &ForgeCompileOptions::default(),
+        );
+        let err = match result {
+            Ok(_) => panic!("undersized tx-pool must be rejected at cross-resolution"),
+            Err(e) => e,
+        };
+        match &err.error {
+            ForgeError::Validation(ValidationError::LinkPoolSlotSmallerThanFramerMax {
+                pool_side,
+                pool_alias,
+                pool_slot_size,
+                framer_max_bytes,
+                ..
+            }) => {
+                assert_eq!(*pool_side, "tx");
+                assert_eq!(pool_alias, "tx_pool_sram1");
+                assert_eq!(*pool_slot_size, 8);
+                assert_eq!(*framer_max_bytes, 32);
+            }
+            other => panic!("expected LinkPoolSlotSmallerThanFramerMax, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn link_with_sufficient_pool_slots_passes_cross_resolution() {
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().expect("tempdir");
+        // framer worst-case = 32 bytes, both pools >= 32 bytes — the
+        // boundary case (slot_size == framer_max_bytes) must pass.
+        let (link_path, link_label) =
+            write_link_pool_fixture_files(tmp.path(), 32, 32, 64);
+        let content = std::fs::read_to_string(&link_path).unwrap();
+        let label = DocumentLabel {
+            identifier: "udp_scout",
+            diagnostic_label: link_label,
+        };
+        let out = compile_forge_with_imports(
+            &content,
+            label,
+            generator::Language::Rust,
+            tmp.path(),
+            &ForgeCompileOptions::default(),
+        )
+        .expect("sufficient pools must pass cross-resolution and emit");
+        // udp_scout.rs is the link's own emit; the codec/pool imports
+        // each emit as siblings via cross-file generation.
+        let names: Vec<&str> = out.files.iter().map(|(n, _)| n.as_str()).collect();
+        assert!(
+            names.iter().any(|n| n.contains("udp_scout")),
+            "link emit missing from cross-file output: {names:?}",
         );
     }
 }
