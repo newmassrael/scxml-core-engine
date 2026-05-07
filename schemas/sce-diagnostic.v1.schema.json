@@ -115,6 +115,7 @@
         "mem/inter-pool-padding-not-emitted",
         "pool/sample-typestate-attributes-disabled",
         "pool/sample-take-without-stage-pool",
+        "pool/sample-callback-signature-non-borrow",
         "io/filesystem",
         "cli/unknown-language",
         "cli/unsupported-language",

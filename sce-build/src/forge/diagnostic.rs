@@ -737,6 +737,20 @@ pub enum DiagnosticCode {
     #[serde(rename = "pool/sample-take-without-stage-pool")]
     PoolSampleTakeWithoutStagePool,
 
+    /// watching-zenoh RFC §5.E B7-η' Atomic A2 application-layer
+    /// ownership diagnostic (spec lines 1516-1519): an
+    /// `<sce:on-sample callback="rust:...">` attribute carries an
+    /// authoring path that fails the Q-Callback-3 Rust path subset.
+    /// SCE-side reachable arms today are path-syntax (unknown
+    /// language prefix, leading/trailing `::`, malformed segment,
+    /// empty path); future signature inspection (β-extension on top
+    /// of α) extends the same code with shape-mismatch arms.
+    /// Diagnostic name preserves spec wording verbatim per
+    /// `feedback_spec_mirror_parity.md`; the per-instance message's
+    /// reason clause names the specific path-syntax mistake.
+    #[serde(rename = "pool/sample-callback-signature-non-borrow")]
+    PoolSampleCallbackSignatureNonBorrow,
+
     #[serde(rename = "io/filesystem")]
     IoFilesystem,
 
@@ -1090,6 +1104,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         PoolSampleTypestateAttributesDisabled,
         // Sample API §5.E B7-η' Atomic A1 application-layer ownership (watching-zenoh RFC §5.E)
         PoolSampleTakeWithoutStagePool,
+        // Sample API §5.E B7-η' Atomic A2 callback-path syntax (watching-zenoh RFC §5.E)
+        PoolSampleCallbackSignatureNonBorrow,
         // Io
         IoFilesystem,
         // Cli
@@ -1320,6 +1336,7 @@ impl DiagnosticCode {
             | MemInterPoolPaddingNotEmitted
             | PoolSampleTypestateAttributesDisabled
             | PoolSampleTakeWithoutStagePool
+            | PoolSampleCallbackSignatureNonBorrow
             | MeshDeployStagePoolNotDeclared
             | MeshDeployStagePoolWrongKind
             | MeshDeployStagePoolTransportMismatch
@@ -1608,6 +1625,7 @@ impl DiagnosticCode {
             MemInterPoolPaddingNotEmitted => "mem/inter-pool-padding-not-emitted",
             PoolSampleTypestateAttributesDisabled => "pool/sample-typestate-attributes-disabled",
             PoolSampleTakeWithoutStagePool => "pool/sample-take-without-stage-pool",
+            PoolSampleCallbackSignatureNonBorrow => "pool/sample-callback-signature-non-borrow",
             IoFilesystem => "io/filesystem",
             CliUnknownLanguage => "cli/unknown-language",
             CliUnsupportedLanguage => "cli/unsupported-language",
@@ -2795,6 +2813,48 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             }),
             key_fragments: vec![state_id.clone(), link.clone()],
         },
+        ValidationError::PoolSampleCallbackSignatureNonBorrow {
+            state_id,
+            link,
+            callback,
+            reason,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::PoolSampleCallbackSignatureNonBorrow,
+            stage: Stage::Validation,
+            // `actual` carries the offending callback verbatim so
+            // consumers can quote it without parsing the message. No
+            // closed-set fix surface today — the path is free-form
+            // and the author repair depends on which `reason` arm
+            // fired (NeutralOrDeterministic non_overlap_class).
+            // `key_fragments` includes a stable token of the reason
+            // arm so duplicate-detection across multiple bad paths
+            // doesn't collapse them into one wire id.
+            expected: None,
+            actual: Some(callback.clone()),
+            fix: None,
+            key_fragments: vec![
+                state_id.clone(),
+                link.clone(),
+                callback.clone(),
+                callback_reason_tag(reason).to_string(),
+            ],
+        },
+    }
+}
+
+/// Stable wire-form tag for a [`CallbackPathReason`] arm. Used as a
+/// `key_fragments` discriminator so two bad paths with the same
+/// `state_id` + `link` + `callback` triple but different reason arms
+/// hash to distinct wire ids. (Theoretical — same callback string
+/// can only fail one way today — but the discipline keeps id
+/// stability robust against future reason-arm growth.)
+fn callback_reason_tag(reason: &crate::forge::error::CallbackPathReason) -> &'static str {
+    use crate::forge::error::CallbackPathReason;
+    match reason {
+        CallbackPathReason::EmptyPath => "empty-path",
+        CallbackPathReason::UnknownLanguagePrefix { .. } => "unknown-language-prefix",
+        CallbackPathReason::MalformedPath => "malformed-path",
+        CallbackPathReason::MalformedSegment { .. } => "malformed-segment",
     }
 }
 
@@ -3453,7 +3513,9 @@ mod tests {
     /// Update the JSON string deliberately alongside a `SCHEMA_VERSION`
     /// bump when the wire shape changes.
     fn forge_golden_entries() -> Vec<(&'static str, ForgeError, &'static str)> {
-        use crate::forge::error::{ExprError, GenerateError, ImportError, ManifestError, XmlError};
+        use crate::forge::error::{
+            CallbackPathReason, ExprError, GenerateError, ImportError, ManifestError, XmlError,
+        };
         vec![
             (
                 "forge/xml-parse",
@@ -3798,6 +3860,28 @@ mod tests {
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
                 r#"{"v":1,"id":"fnv1a:1c55aabc0ddc8d36","code":"pool/sample-take-without-stage-pool","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"state 'running': <sce:on-sample link=\"scout_link\"> targets a link kind whose forge document does not declare a `<sce:stage-pool>` element. Subscriber callbacks on this link cannot escape the borrow lifetime via `Sample::take()` because there is no stage-copy destination. Add `<sce:stage-pool ref=\"...\">` to the link's `.forge` document or restrict callbacks to borrow-only access. See watching-zenoh RFC §5.E.","actual":"scout_link","fix":{"kind":"replace_one_of","candidates":["scout_stage_pool"]}}"#,
+            ),
+            (
+                // RFC §5.E B7-η' Atomic A2 callback-path syntax: an
+                // `<sce:on-sample callback="rust:...">` value fails the
+                // Q-Callback-3 Rust path subset. Today's reachable arms
+                // are syntax failures (UnknownLanguagePrefix shown here);
+                // future signature inspection extends the same code with
+                // shape-mismatch arms. NeutralOrDeterministic non_overlap
+                // class — no `Fix::ReplaceOneOf` surface (free-form
+                // path; closed candidate set doesn't apply).
+                "forge/pool-sample-callback-signature-non-borrow",
+                ValidationError::PoolSampleCallbackSignatureNonBorrow {
+                    state_id: "running".into(),
+                    link: "scout_link".into(),
+                    callback: "cpp:my_app::on_scout".into(),
+                    reason: CallbackPathReason::UnknownLanguagePrefix {
+                        prefix: "cpp".into(),
+                    },
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:c1db04cc9e2b921b","code":"pool/sample-callback-signature-non-borrow","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"state 'running': <sce:on-sample link=\"scout_link\" callback=\"cpp:my_app::on_scout\"> uses an unsupported language prefix `cpp` (only `rust:` is accepted today). The `callback` value must match `rust:crate::module::fn` (Q-Callback-3 Rust path subset). The borrow-mode contract is enforced at the dispatch site; rustc rejects owned-mode signatures at user-crate compile time. See watching-zenoh RFC §5.E.","actual":"cpp:my_app::on_scout"}"#,
             ),
             (
                 "forge/expression-empty",
@@ -5580,6 +5664,7 @@ mod tests {
             | MemPoolTooLarge
             | MemInterPoolPaddingNotEmitted
             | PoolSampleTypestateAttributesDisabled
+            | PoolSampleCallbackSignatureNonBorrow
             | AlgorithmLocalShadowsParam
             | AlgorithmLvalueUnsupported
             | AlgorithmReturnMissing
@@ -5983,6 +6068,7 @@ mod tests {
                 | MemInterPoolPaddingNotEmitted
                 | PoolSampleTypestateAttributesDisabled
                 | PoolSampleTakeWithoutStagePool
+                | PoolSampleCallbackSignatureNonBorrow
                 | IoFilesystem
                 | CliUnknownLanguage | CliUnsupportedLanguage | CliReadInput
                 | CliWriteOutput | CliCreateOutputDir | CliScxmlGenerate
@@ -6069,9 +6155,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            189,
+            190,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 189 distinct variants to match the DiagnosticCode \
+             expected 190 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -6144,12 +6230,22 @@ mod tests {
              pattern, single source of truth on the link kind). Diagnostic \
              rides `Fix::ReplaceOneOf` over the `ForgePoolRegistry` \
              buffer-pool kind candidates so authors picking a stage pool \
-             reference see legal options at hand; 188 → 189. The remaining \
-             §5.C codes defer to B6-δ (listener self-check, gated on §5.K \
-             + §5.M SCE-side prerequisites), D.2 (`link/link-class-\
-             incompatible-with-os` alongside OS-specific classes), and \
-             B7 (`mem/alignment-violation` deferred until codec field \
-             placement lands a consumer surface, B7-γ FSM family, B7-δ \
+             reference see legal options at hand; 188 → 189; then watching-zenoh \
+             RFC §5.E B7-η' Atomic A2 callback-path syntax — \
+             `pool/sample-callback-signature-non-borrow` surfaces the gap \
+             when `<sce:on-sample callback=\"rust:...\">` carries an \
+             authoring path that fails the Q-Callback-3 Rust path subset \
+             (unknown language prefix, leading/trailing `::`, malformed \
+             segment, empty path). Diagnostic name preserves spec wording \
+             verbatim per `feedback_spec_mirror_parity.md`; the per-instance \
+             reason field disambiguates the specific path-syntax mistake. \
+             Forward-compat for future signature inspection (β-extension on \
+             top of α) extending the same code with shape-mismatch arms; \
+             189 → 190. The remaining §5.C codes defer to B6-δ (listener \
+             self-check, gated on §5.K + §5.M SCE-side prerequisites), D.2 \
+             (`link/link-class-incompatible-with-os` alongside OS-specific \
+             classes), and B7 (`mem/alignment-violation` deferred until codec \
+             field placement lands a consumer surface, B7-γ FSM family, B7-δ \
              cache-* family gated on §5.I).",
         );
     }

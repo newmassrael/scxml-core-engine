@@ -603,7 +603,9 @@ impl std::ops::DerefMut for HybridInvokeInfo {
 /// Q-OnSample-1 (Y) parser-AST extension; Q-OnSample-2 (a) valid only
 /// inside `<state>` and `<parallel>`; Q-OnSample-3 v1 attributes are
 /// `link` (forge link kind artifact name) + `event` (SCXML event name
-/// dispatched on Sample arrival), both required.
+/// dispatched on Sample arrival), both required. B7-η' Atomic A2 adds
+/// optional `callback` attribute (Q-Callback-1 Option α + Q-Callback-2
+/// `rust:` prefix-typed reference into the user's symbol space).
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct OnSampleNode {
     /// `link="X"` — forge link kind artifact name. Cross-reference
@@ -616,6 +618,19 @@ pub struct OnSampleNode {
     /// per W3C SCXML §5.10, with `_event.data` carrying the borrowed
     /// `&Sample<'_>` reference.
     pub event: String,
+    /// `callback="rust:crate::path::fn"` — optional extern reference
+    /// into the user's symbol space (Q-Callback-1 Option α). When
+    /// present, codegen emits `path(&sample)` at the dispatch site,
+    /// forcing borrow-mode at the call boundary; rustc enforces the
+    /// user's signature shape against the borrow contract. The
+    /// language prefix today is `rust:` only; future axes (`c:`,
+    /// `kotlin:`, …) reuse the same attribute via Q-Callback-2's
+    /// language-typed parsing. Absence (`None`) means codegen
+    /// synthesizes a default dispatch shim — backwards-compat with
+    /// the landed Atomic A/B `<sce:on-sample link/event>` shape
+    /// (Q-Callback-5).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub callback: Option<String>,
     /// 0-based document order within this state's `<sce:on-sample>`
     /// blocks. Lets diagnostics quote a stable per-state index even
     /// when the source file lacks reliable line numbers.

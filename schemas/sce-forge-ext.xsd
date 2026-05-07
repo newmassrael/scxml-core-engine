@@ -1194,12 +1194,20 @@
        `<sce:on-sample link="X" event="E"/>` extension. Q-OnSample-1
        (Y) parser-AST extension; Q-OnSample-3 v1 attributes are link +
        event (both required). Cross-reference resolution against the
-       forge link kind registry is the Atomic B follow-on; XSD
-       validation here only enforces attribute shape. -->
+       forge link kind registry is the Atomic B follow-on. Atomic A2
+       adds optional `callback="rust:crate::path::fn"` extern reference
+       attribute (Q-Callback-1 Option α): codegen wires the path into
+       the dispatch shim with a borrow-mode call site. XSD enforces
+       attribute presence shape only; the language-prefixed Rust path
+       subset (Q-Callback-3) is checked by the Rust validator
+       `validate_on_sample_callback_paths` so the diagnostic message
+       can name specific path-syntax mistakes per
+       `pool/sample-callback-signature-non-borrow`. -->
   <xs:element name="on-sample">
     <xs:complexType>
       <xs:attribute name="link" type="xs:string" use="required"/>
       <xs:attribute name="event" type="xs:string" use="required"/>
+      <xs:attribute name="callback" type="xs:string"/>
     </xs:complexType>
   </xs:element>
 

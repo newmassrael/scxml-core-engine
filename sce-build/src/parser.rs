@@ -448,6 +448,7 @@ impl SCXMLParser {
         validate_on_sample_placement(&root, diag_label)?;
         validate_on_sample_uniqueness(&model, diag_label)?;
         validate_on_sample_event_names(&model, diag_label)?;
+        validate_on_sample_callback_paths(&model, diag_label)?;
 
         // Feature detection
         self.detect_features(&mut model);
@@ -2857,10 +2858,18 @@ fn collect_on_sample_blocks(
         }
         let link = child.attribute("link").unwrap_or("").to_string();
         let event = child.attribute("event").unwrap_or("").to_string();
+        // Q-Callback-1 (Option α) + Q-Callback-5: the `callback`
+        // attribute is optional. When absent, codegen synthesizes a
+        // default dispatch shim (backwards-compat with Atomic A/B's
+        // landed shape). When present, [`validate_on_sample_callback_paths`]
+        // enforces the language-prefixed Rust path subset
+        // (Q-Callback-3) before any downstream consumer sees it.
+        let callback = child.attribute("callback").map(|s| s.to_string());
         let document_order = out.len() as u32;
         out.push(crate::model::OnSampleNode {
             link,
             event,
+            callback,
             document_order,
         });
     }
@@ -3010,6 +3019,140 @@ fn validate_on_sample_event_names(
         }
     }
     Ok(())
+}
+
+/// watching-zenoh RFC §5.E B7-η' Atomic A2 callback path validator
+/// (`pool/sample-callback-signature-non-borrow`, spec lines 1516-1519).
+/// When `<sce:on-sample callback="...">` is present (Q-Callback-1
+/// Option α extern reference), enforce the language-prefixed Rust
+/// path subset before any downstream consumer ever sees the value:
+///
+/// ```text
+/// callback ::= "rust:" segment ("::" segment)*
+/// segment  ::= NCName-equivalent ("crate" | "self" | "super" | identifier)
+/// ```
+///
+/// SCE-side detection at A2 entry is path syntax (Q-Callback-3); the
+/// signature-shape check (borrow vs owned) flows through rustc at
+/// user-crate compile time per Q-Callback-6. Both shapes raise the
+/// same spec-verbatim diagnostic code; today only the path-syntax arm
+/// is reachable. Future signature-inspection atomic (β-extension on
+/// top of α) extends the same diagnostic with richer messages.
+///
+/// `feedback_silently_broken_hooks.md` compliance: every variant of
+/// the syntax check is reachable from authoring inputs (an unknown
+/// `cpp:` prefix, a leading `::`, a malformed segment, an empty
+/// path), so the diagnostic is real today. Forward-compat hook for
+/// future signature inspection layers on top of A2's surface
+/// without renaming the code.
+fn validate_on_sample_callback_paths(
+    model: &crate::model::SCXMLModel,
+    diag_label: &str,
+) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
+    use crate::forge::error::{Located, ValidationError};
+    let mut state_ids: Vec<&String> = model.states.keys().collect();
+    state_ids.sort();
+    for state_id in state_ids {
+        let state = &model.states[state_id];
+        for block in &state.on_sample_blocks {
+            let Some(callback) = block.callback.as_deref() else {
+                continue;
+            };
+            if let Some(reason) = classify_on_sample_callback_path(callback) {
+                return Err(Located::new(
+                    ValidationError::PoolSampleCallbackSignatureNonBorrow {
+                        state_id: state_id.clone(),
+                        link: block.link.clone(),
+                        callback: callback.to_string(),
+                        reason,
+                    }
+                    .into(),
+                    diag_label,
+                    None,
+                    None,
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Classify an `<sce:on-sample callback="...">` value against the
+/// Q-Callback-3 path subset. Returns `None` for accepted inputs;
+/// returns `Some(reason)` keyed by the failure mode so the diagnostic
+/// message can name the specific authoring mistake.
+///
+/// Checks (first failure wins, in order):
+/// 1. Empty value → `EmptyPath`.
+/// 2. Missing language prefix or unknown prefix → `UnknownLanguagePrefix`.
+///    Today only `rust:` is accepted (Q-Callback-2: future axes are
+///    forward-compat schema slots). The `prefix` field carries the
+///    parsed prefix (or `""` when the colon is absent).
+/// 3. Path body empty after prefix (`rust:`) → `EmptyPath`.
+/// 4. Path body has a leading `::`, trailing `::`, or empty segment
+///    → `MalformedPath`.
+/// 5. Any segment fails `is_rust_path_segment` → `MalformedSegment`.
+fn classify_on_sample_callback_path(
+    raw: &str,
+) -> Option<crate::forge::error::CallbackPathReason> {
+    use crate::forge::error::CallbackPathReason;
+    if raw.is_empty() {
+        return Some(CallbackPathReason::EmptyPath);
+    }
+    let (prefix, body) = match raw.split_once(':') {
+        Some(t) => t,
+        None => {
+            return Some(CallbackPathReason::UnknownLanguagePrefix {
+                prefix: String::new(),
+            });
+        }
+    };
+    if prefix != "rust" {
+        return Some(CallbackPathReason::UnknownLanguagePrefix {
+            prefix: prefix.to_string(),
+        });
+    }
+    if body.is_empty() {
+        return Some(CallbackPathReason::EmptyPath);
+    }
+    if body.starts_with("::") || body.ends_with("::") {
+        return Some(CallbackPathReason::MalformedPath);
+    }
+    let segments: Vec<&str> = body.split("::").collect();
+    for segment in &segments {
+        if segment.is_empty() {
+            // `a::::b` — split between two `::` produces an empty arm.
+            return Some(CallbackPathReason::MalformedPath);
+        }
+        if !is_rust_path_segment(segment) {
+            return Some(CallbackPathReason::MalformedSegment {
+                segment: (*segment).to_string(),
+            });
+        }
+    }
+    None
+}
+
+/// True iff `seg` is a valid Rust path segment per the Q-Callback-3
+/// subset: either one of the path keywords (`crate` / `self` /
+/// `super`) or an NCName-equivalent identifier (ASCII letter or `_`,
+/// then letters / digits / `_`). The Rust language admits `r#`-raw
+/// identifiers and Unicode identifiers; A2 keeps the subset narrow
+/// because `<sce:on-sample callback>` author input rarely needs them
+/// and the wider grammar amplifies the validator's surface for no
+/// observed authoring benefit.
+fn is_rust_path_segment(seg: &str) -> bool {
+    if matches!(seg, "crate" | "self" | "super") {
+        return true;
+    }
+    let mut chars = seg.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !(first.is_ascii_alphabetic() || first == '_') {
+        return false;
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 /// watching-zenoh RFC §5.E B7-η' Atomic B Q-OnSample-3 cross-ref
@@ -6217,5 +6360,190 @@ mod tests {
             "cross_ref_test",
         )
         .expect("link with stage_pool resolves regardless of pool registry contents");
+    }
+
+    // ── watching-zenoh RFC §5.E B7-η' Atomic A2 — `callback="rust:..."` ──
+    //
+    // A2 adds optional `<sce:on-sample callback="rust:crate::path::fn">`
+    // attribute (Q-Callback-1 Option α) + `validate_on_sample_callback_paths`
+    // structural validator that enforces the Q-Callback-3 Rust path subset.
+    // Tests below pin: AST round-trip, happy path, four reachable failure
+    // arms (empty, unknown prefix, malformed `::`, malformed segment).
+
+    fn parse_running_with_callback(callback: Option<&str>) -> crate::model::SCXMLModel {
+        let inner = match callback {
+            Some(cb) => format!(
+                r##"  <state id="running">
+    <sce:on-sample link="scout_link" event="scout.tick" callback="{cb}"/>
+    <transition event="scout.tick" target="running"/>
+  </state>"##
+            ),
+            None => r##"  <state id="running">
+    <sce:on-sample link="scout_link" event="scout.tick"/>
+    <transition event="scout.tick" target="running"/>
+  </state>"##
+                .to_string(),
+        };
+        let xml = on_sample_test_doc(&inner);
+        SCXMLParser::new()
+            .parse_string(&xml, "callback_test")
+            .expect("parse + structural validation")
+    }
+
+    #[test]
+    fn callback_attr_absent_round_trips_as_none() {
+        // Q-Callback-5: absence of `callback=` is a backwards-compat
+        // shape with the landed Atomic A/B `<sce:on-sample link/event>`
+        // — the AST field carries `None` and downstream codegen
+        // synthesizes a default dispatch shim.
+        let model = parse_running_with_callback(None);
+        let state = &model.states["running"];
+        assert_eq!(state.on_sample_blocks.len(), 1);
+        assert!(state.on_sample_blocks[0].callback.is_none());
+    }
+
+    #[test]
+    fn callback_attr_present_round_trips_to_ast_field() {
+        // Q-Callback-1 Option α: well-formed `rust:crate::module::fn`
+        // path lands on the AST field verbatim and clears the
+        // structural validator.
+        let model = parse_running_with_callback(Some("rust:my_app::on_scout_sample"));
+        let state = &model.states["running"];
+        assert_eq!(
+            state.on_sample_blocks[0].callback.as_deref(),
+            Some("rust:my_app::on_scout_sample"),
+        );
+    }
+
+    #[test]
+    fn callback_unknown_language_prefix_rejects() {
+        // Q-Callback-2: today only `rust:` is accepted. `cpp:` raises
+        // `pool/sample-callback-signature-non-borrow` with the
+        // UnknownLanguagePrefix arm.
+        let xml = on_sample_test_doc(
+            r##"  <state id="running">
+    <sce:on-sample link="scout_link" event="scout.tick" callback="cpp:my_app::on_scout"/>
+    <transition event="scout.tick" target="running"/>
+  </state>"##,
+        );
+        let err = SCXMLParser::new()
+            .parse_string(&xml, "callback_test")
+            .expect_err("non-rust prefix must be rejected");
+        let err_str = format!("{:?}", err);
+        assert!(
+            err_str.contains("PoolSampleCallbackSignatureNonBorrow"),
+            "expected PoolSampleCallbackSignatureNonBorrow, got: {err_str}",
+        );
+        assert!(
+            err_str.contains("UnknownLanguagePrefix")
+                && err_str.contains("\"cpp\""),
+            "diagnostic should carry the unknown-prefix reason: {err_str}",
+        );
+    }
+
+    #[test]
+    fn callback_missing_colon_rejects_as_unknown_prefix() {
+        // No `:` separator at all — the parser surfaces this through
+        // the same UnknownLanguagePrefix arm with an empty `prefix`
+        // field. Authors typically arrive here by writing the path
+        // without the language prefix, which today is required.
+        let xml = on_sample_test_doc(
+            r##"  <state id="running">
+    <sce:on-sample link="scout_link" event="scout.tick" callback="my_app::on_scout"/>
+    <transition event="scout.tick" target="running"/>
+  </state>"##,
+        );
+        let err = SCXMLParser::new()
+            .parse_string(&xml, "callback_test")
+            .expect_err("missing language prefix must be rejected");
+        let err_str = format!("{:?}", err);
+        assert!(
+            err_str.contains("UnknownLanguagePrefix"),
+            "expected UnknownLanguagePrefix arm: {err_str}",
+        );
+    }
+
+    #[test]
+    fn callback_leading_double_colon_rejects_as_malformed_path() {
+        let xml = on_sample_test_doc(
+            r##"  <state id="running">
+    <sce:on-sample link="scout_link" event="scout.tick" callback="rust:::on_scout"/>
+    <transition event="scout.tick" target="running"/>
+  </state>"##,
+        );
+        let err = SCXMLParser::new()
+            .parse_string(&xml, "callback_test")
+            .expect_err("leading `::` must be rejected");
+        let err_str = format!("{:?}", err);
+        assert!(
+            err_str.contains("MalformedPath"),
+            "expected MalformedPath arm: {err_str}",
+        );
+    }
+
+    #[test]
+    fn callback_invalid_segment_rejects_as_malformed_segment() {
+        // Segment with shell metacharacter — caught by the
+        // `is_rust_path_segment` ASCII identifier subset.
+        let xml = on_sample_test_doc(
+            r##"  <state id="running">
+    <sce:on-sample link="scout_link" event="scout.tick" callback="rust:my_app::on-scout"/>
+    <transition event="scout.tick" target="running"/>
+  </state>"##,
+        );
+        let err = SCXMLParser::new()
+            .parse_string(&xml, "callback_test")
+            .expect_err("non-identifier segment must be rejected");
+        let err_str = format!("{:?}", err);
+        assert!(
+            err_str.contains("MalformedSegment"),
+            "expected MalformedSegment arm: {err_str}",
+        );
+        assert!(
+            err_str.contains("on-scout"),
+            "diagnostic should name the offending segment: {err_str}",
+        );
+    }
+
+    #[test]
+    fn callback_empty_value_rejects_as_empty_path() {
+        let xml = on_sample_test_doc(
+            r##"  <state id="running">
+    <sce:on-sample link="scout_link" event="scout.tick" callback=""/>
+    <transition event="scout.tick" target="running"/>
+  </state>"##,
+        );
+        let err = SCXMLParser::new()
+            .parse_string(&xml, "callback_test")
+            .expect_err("empty callback must be rejected");
+        let err_str = format!("{:?}", err);
+        assert!(
+            err_str.contains("EmptyPath"),
+            "expected EmptyPath arm: {err_str}",
+        );
+    }
+
+    #[test]
+    fn callback_path_keyword_segments_accepted() {
+        // `crate::`, `self::`, `super::` are valid Rust path keywords
+        // per Q-Callback-3 — the validator must accept them as legal
+        // segment shapes (not rejected as non-identifiers).
+        for callback in &[
+            "rust:crate::on_scout",
+            "rust:self::callbacks::on_scout",
+            "rust:super::on_scout",
+        ] {
+            let xml = on_sample_test_doc(&format!(
+                r##"  <state id="running">
+    <sce:on-sample link="scout_link" event="scout.tick" callback="{callback}"/>
+    <transition event="scout.tick" target="running"/>
+  </state>"##
+            ));
+            SCXMLParser::new()
+                .parse_string(&xml, "callback_test")
+                .unwrap_or_else(|e| {
+                    panic!("path keyword `{callback}` should parse cleanly; got: {e:?}")
+                });
+        }
     }
 }

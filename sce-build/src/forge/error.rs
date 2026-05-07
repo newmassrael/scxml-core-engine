@@ -906,6 +906,88 @@ pub enum ValidationError {
         /// `<scxml sce:kind="buffer-pool">` document first).
         candidates: Vec<String>,
     },
+
+    /// watching-zenoh RFC §5.E B7-η' Atomic A2 application-layer
+    /// ownership diagnostic (spec lines 1516-1519): an
+    /// `<sce:on-sample callback="rust:crate::path::fn">` attribute
+    /// carries an authoring path that fails the Q-Callback-3 Rust
+    /// path subset. Today's reachable arms are path-syntax failures
+    /// (unknown language prefix, leading/trailing/double `::`,
+    /// non-NCName segment, empty path); future signature inspection
+    /// extends the same diagnostic code with shape-mismatch arms
+    /// (owned-mode first parameter rejected at SCE-side parser when
+    /// β-extension lands).
+    ///
+    /// Diagnostic name preserves spec wording verbatim
+    /// (`feedback_spec_mirror_parity.md`); the `reason` field
+    /// disambiguates the per-instance message so authors see the
+    /// exact path-syntax mistake rather than generic
+    /// "callback-signature-non-borrow" wording.
+    #[error(
+        "state '{state_id}': <sce:on-sample link=\"{link}\" callback=\"{callback}\"> {reason}. \
+         The `callback` value must match `rust:crate::module::fn` (Q-Callback-3 Rust path \
+         subset). The borrow-mode contract is enforced at the dispatch site; rustc rejects \
+         owned-mode signatures at user-crate compile time. See watching-zenoh RFC §5.E."
+    )]
+    PoolSampleCallbackSignatureNonBorrow {
+        /// State id whose `<sce:on-sample callback>` triggers the
+        /// path-syntax violation.
+        state_id: String,
+        /// Link name as authored — surfaces in the message so a
+        /// reader can locate the offending element without grepping
+        /// for the callback string alone (which may not be unique).
+        link: String,
+        /// `callback` attribute value verbatim. Carried through to
+        /// the wire format's `actual` field so consumers see exactly
+        /// what was authored.
+        callback: String,
+        /// Path-classification result. Drives the message body's
+        /// "reason" clause so authors see the specific mistake (vs
+        /// generic "malformed callback").
+        reason: CallbackPathReason,
+    },
+}
+
+/// watching-zenoh RFC §5.E B7-η' Atomic A2 callback-path failure
+/// classification. Attached to
+/// [`ValidationError::PoolSampleCallbackSignatureNonBorrow`] so the
+/// per-instance message names the exact path-syntax mistake; the
+/// outer code stays spec-verbatim
+/// (`pool/sample-callback-signature-non-borrow`) per
+/// `feedback_spec_mirror_parity.md`.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum CallbackPathReason {
+    /// Empty `callback=""` attribute or empty body after the language
+    /// prefix (`rust:` with nothing after). Authors typically arrive
+    /// here by removing a path mid-edit and forgetting to delete the
+    /// attribute itself.
+    #[error("declares an empty callback path")]
+    EmptyPath,
+    /// Unknown or missing language prefix. Today the only legal
+    /// prefix is `rust:` (Q-Callback-2 future axes are forward-compat
+    /// schema slots). The empty `prefix` carries the missing-colon
+    /// case; non-empty prefixes carry the unknown-prefix case.
+    #[error("uses an unsupported language prefix `{prefix}` (only `rust:` is accepted today)")]
+    UnknownLanguagePrefix {
+        /// Prefix as authored, or `""` when no `:` separator was
+        /// present in the original value.
+        prefix: String,
+    },
+    /// Leading `::`, trailing `::`, or `::::` between two segments.
+    /// Captured separately from `MalformedSegment` so the message
+    /// can name the structural mistake rather than echoing a
+    /// suspicious-looking empty token.
+    #[error("contains a malformed `::` separator")]
+    MalformedPath,
+    /// A path segment failed the
+    /// `(crate|self|super|<NCName-identifier>)` subset. The
+    /// `segment` field carries the offending substring so the
+    /// message can quote it for the author.
+    #[error("contains a non-identifier segment `{segment}`")]
+    MalformedSegment {
+        /// Offending segment verbatim.
+        segment: String,
+    },
 }
 
 // ── Stage 4: Expression transpilation ──────────────────────────
