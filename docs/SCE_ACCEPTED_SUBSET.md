@@ -499,6 +499,9 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/deploy-pool-empty-instance-list` | Mesh Deploy |
 | `mesh/deploy-pool-invalid-placeholder` | Mesh Deploy |
 | `mesh/deploy-server-pool-not-supported` | Mesh Deploy |
+| `mesh/deploy-stage-pool-not-declared` | Mesh Deploy |
+| `mesh/deploy-stage-pool-wrong-kind` | Mesh Deploy |
+| `mesh/deploy-stage-pool-transport-mismatch` | Mesh Deploy |
 | `mesh/deploy-scxml-invoke-target-conflict` | Mesh Deploy |
 | `mesh/deploy-partition-duplicate-name` | Mesh Deploy |
 | `mesh/deploy-partition-multi-device` | Mesh Deploy |

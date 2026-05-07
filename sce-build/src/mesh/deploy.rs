@@ -1425,6 +1425,32 @@ pub struct BindingConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instance_from: Option<String>,
 
+    /// watching-zenoh RFC §5.E B7-η' — name reference into the forge
+    /// pool registry naming the buffer-pool kind artifact whose slots
+    /// the link's RX-side `Sample::take()` copies into. Resolved
+    /// against [`forge::pool_registry::ForgePoolRegistry`] (built by
+    /// walking every parsed `.forge` file in the build) and validated
+    /// at parse time:
+    ///
+    /// * absent ⇒ `LinkConfig::stage_copy_hook = PanicOnTakeHook`
+    ///   (sce-link-runtime default; subscriber callbacks that never
+    ///   call `take()` are unaffected, callbacks that do call `take()`
+    ///   panic with a clear message);
+    /// * present + name unknown ⇒
+    ///   `mesh/deploy-stage-pool-not-declared`;
+    /// * present + name resolves to a non-buffer-pool kind ⇒
+    ///   `mesh/deploy-stage-pool-wrong-kind`;
+    /// * present on a transport that has no buffer-pool RX staging
+    ///   surface ⇒ `mesh/deploy-stage-pool-transport-mismatch`.
+    ///
+    /// Single source of truth: the pool *template* (slot count, slot
+    /// size, section, alignment, DMA channel, cache policy) lives in
+    /// the `.forge` file (B7-α/β/γ landed). deploy.yaml only adds the
+    /// per-binding name reference; duplicating the template fields
+    /// here would split authoring across two files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stage_pool: Option<String>,
+
     /// Per-target transport-native settings passed through to templates
     /// (zenoh `key:`, someip `protocol:`, shm `shm_arena_bytes:`, etc.).
     /// Reserved SOME/IP ID key names are collected here at parse time but
@@ -1495,6 +1521,7 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_server_query_timeout(&cfg)?;
     validate_server_pool_rejection(&cfg)?;
     validate_pool_capability(&cfg)?;
+    validate_stage_pool_transport(&cfg)?;
     validate_outbound_buffer(&cfg)?;
     validate_discovery_not_supported(&cfg)?;
     validate_synth_invoke_infix(&cfg)?;
@@ -2263,6 +2290,149 @@ fn validate_pool_capability(cfg: &DeployConfig) -> Result<(), DeployError> {
                     Some(_) => {}
                 }
             }
+        }
+    }
+    Ok(())
+}
+
+/// Transports whose RX path supports buffer-pool kind staging
+/// (watching-zenoh RFC §5.E B7-η' Q-StagePool-3 (a)). A binding may
+/// declare `stage_pool: <name>` only on a transport in this list; any
+/// other transport raises `mesh/deploy-stage-pool-transport-mismatch`.
+///
+/// Currently empty. The mesh RPC transports SCE knows today (zenoh,
+/// someip, dds, shm, local, custom_tcp) route logical events rather
+/// than allocating from a slot table — none of them actually surface
+/// `Sample::take()` semantics. Entries land here as concrete
+/// transport-side wiring grows: η' codegen for forge link kind on a
+/// future deploy.yaml `links:` section is the first expected
+/// contributor. Empty-list MVP keeps the diagnostic strict — every
+/// `stage_pool` declaration today fails loud, matching the
+/// `feedback_silently_broken_hooks.md` invariant. See watching-zenoh
+/// RFC §5.E.
+const TRANSPORTS_SUPPORTING_STAGE_POOL: &[&str] = &[];
+
+/// Validate that every `binding.stage_pool` declaration sits on a
+/// transport whose RX path supports buffer-pool kind staging
+/// (watching-zenoh RFC §5.E B7-η' Q-StagePool-3 (a)). Runs as part of
+/// [`parse_deploy_str`] so the diagnostic fires at parse time —
+/// independent of forge-side cross-reference resolution, which lives
+/// in [`validate_stage_pool_references`] (a separate post-parse pass
+/// gated on the build's [`ForgePoolRegistry`] being available).
+fn validate_stage_pool_transport(cfg: &DeployConfig) -> Result<(), DeployError> {
+    use std::collections::BTreeMap;
+    let mut by_machine: BTreeMap<&str, &MachineConfig> = BTreeMap::new();
+    for device in cfg.topology.values() {
+        for (machine_name, machine) in &device.machines {
+            by_machine.insert(machine_name.as_str(), machine);
+        }
+    }
+    for (machine_name, machine) in by_machine {
+        let mut sorted_bindings: Vec<(&TargetId, &BindingConfig)> =
+            machine.bindings.iter().collect();
+        sorted_bindings.sort_by_key(|(k, _)| k.as_str());
+        for (binding_key, binding) in sorted_bindings {
+            let Some(stage_pool) = binding.stage_pool.as_deref() else {
+                continue;
+            };
+            if !TRANSPORTS_SUPPORTING_STAGE_POOL.contains(&binding.transport.as_str()) {
+                return Err(DeployError::StagePoolTransportMismatch {
+                    machine: machine_name.to_string(),
+                    binding: binding_key.as_str().to_string(),
+                    stage_pool: stage_pool.to_string(),
+                    transport: binding.transport.clone(),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Validate that every `binding.stage_pool` reference resolves to a
+/// declared forge buffer-pool kind name (watching-zenoh RFC §5.E
+/// B7-η' Q-StagePool-1 (Y) cross-schema reference resolution). Runs
+/// as a post-parse pass — `parse_deploy_str` produces the
+/// `DeployConfig` first, the build pipeline assembles the
+/// [`crate::forge::pool_registry::ForgePoolRegistry`] from every
+/// parsed `.forge` file, then this validator checks each declared
+/// reference against the registry.
+///
+/// Two diagnostics emerge from this pass:
+///
+/// * `mesh/deploy-stage-pool-not-declared` — name not present in any
+///   `.forge` file in the build. The candidate list rides
+///   `Fix::ReplaceOneOf` over the registry's declared buffer-pool
+///   names (sorted) so authors can pick a legal pool or extend the
+///   build with the missing forge file.
+/// * `mesh/deploy-stage-pool-wrong-kind` — name resolves to a forge
+///   artifact whose kind is not `buffer-pool` (today the only kind
+///   that backs the `Sample::take()` slot contract).
+///
+/// Transport-mismatch is **not** checked here — `parse_deploy_str`
+/// already rejected those bindings via [`validate_stage_pool_transport`];
+/// any binding that reaches this validator has already cleared the
+/// transport gate.
+pub fn validate_stage_pool_references(
+    cfg: &DeployConfig,
+    pool_registry: &crate::forge::pool_registry::ForgePoolRegistry,
+) -> Result<(), DeployError> {
+    validate_stage_pool_references_with(cfg, pool_registry, TRANSPORTS_SUPPORTING_STAGE_POOL)
+}
+
+/// Inner form of [`validate_stage_pool_references`] that takes the
+/// supported-transports list as a parameter. The public API plumbs
+/// the production `TRANSPORTS_SUPPORTING_STAGE_POOL` const; tests
+/// pass a synthetic list to exercise the cross-ref arms while the
+/// production list is still empty (every entry is forward-looking
+/// infrastructure consumed by future atomics, see
+/// `TRANSPORTS_SUPPORTING_STAGE_POOL` doc-comment).
+fn validate_stage_pool_references_with(
+    cfg: &DeployConfig,
+    pool_registry: &crate::forge::pool_registry::ForgePoolRegistry,
+    supported_transports: &[&str],
+) -> Result<(), DeployError> {
+    use crate::forge::pool_registry::ForgePoolKind;
+    use std::collections::BTreeMap;
+    let mut by_machine: BTreeMap<&str, &MachineConfig> = BTreeMap::new();
+    for device in cfg.topology.values() {
+        for (machine_name, machine) in &device.machines {
+            by_machine.insert(machine_name.as_str(), machine);
+        }
+    }
+    for (machine_name, machine) in by_machine {
+        let mut sorted_bindings: Vec<(&TargetId, &BindingConfig)> =
+            machine.bindings.iter().collect();
+        sorted_bindings.sort_by_key(|(k, _)| k.as_str());
+        for (binding_key, binding) in sorted_bindings {
+            let Some(stage_pool) = binding.stage_pool.as_deref() else {
+                continue;
+            };
+            // Skip bindings whose transport doesn't support stage
+            // pool — `validate_stage_pool_transport` is the canonical
+            // gate; reaching this validator implies that gate already
+            // passed. Defensively skip rather than re-raise so the
+            // two passes can run in either order without producing a
+            // duplicate diagnostic.
+            if !supported_transports.contains(&binding.transport.as_str()) {
+                continue;
+            }
+            match pool_registry.lookup(stage_pool) {
+                Some(ForgePoolKind::BufferPool) => {} // canonical case
+                None => {
+                    let candidates = pool_registry.names_of_kind(ForgePoolKind::BufferPool);
+                    return Err(DeployError::StagePoolNotDeclared {
+                        machine: machine_name.to_string(),
+                        binding: binding_key.as_str().to_string(),
+                        stage_pool: stage_pool.to_string(),
+                        candidates,
+                    });
+                }
+            }
+            // future: when the registry classifies more pool kinds,
+            // a `Some(other_kind)` arm raises `StagePoolWrongKind`.
+            // The diagnostic is already wired through DeployError +
+            // DiagnosticPayload + golden — this match is the only
+            // place to grow when that day comes.
         }
     }
     Ok(())
@@ -5716,5 +5886,198 @@ topology:
         assert!(machine.platform.is_none());
         assert!(machine.scheduler.is_none());
         assert!(machine.memory.is_none());
+    }
+
+    // ── watching-zenoh RFC §5.E B7-η' stage_pool field ──────────────
+    //
+    // These cover the deploy.yaml side of the cross-schema reference
+    // surface. The transport-mismatch path is exercised at parse time
+    // through `parse_deploy_str`; the cross-ref paths
+    // (`StagePoolNotDeclared`, `StagePoolWrongKind`) live in
+    // [`validate_stage_pool_references`] which is invoked separately
+    // by callers that have already assembled the
+    // `ForgePoolRegistry`. Both surfaces are unit-tested here so the
+    // diagnostic plumbing stays exercised even before the η' codegen
+    // atomic begins consuming the field.
+
+    #[test]
+    fn stage_pool_field_default_absent() {
+        // An ordinary mesh RPC binding without `stage_pool:` parses
+        // unchanged; the field defaults to `None` and the diagnostic
+        // plumbing stays inert.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: custom_tcp
+            connect: "127.0.0.1:9001"
+"##;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        let brake = &cfg.topology["ecu1"].machines["brake"];
+        let binding = &brake.bindings[&TargetId::new("#motor").unwrap()];
+        assert!(binding.stage_pool.is_none());
+    }
+
+    #[test]
+    fn stage_pool_on_unsupported_transport_rejected() {
+        // Today no mesh RPC transport is in
+        // `TRANSPORTS_SUPPORTING_STAGE_POOL`, so any present
+        // `stage_pool:` raises `StagePoolTransportMismatch` — this is
+        // the canonical fail-loud rejection per Q-StagePool-3 (a).
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      mcu_node:
+        source: mcu.scxml
+        bindings:
+          "#sub":
+            transport: zenoh
+            stage_pool: rx_pool_sram1
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::StagePoolTransportMismatch {
+                machine,
+                binding,
+                stage_pool,
+                transport,
+            }) => {
+                assert_eq!(machine, "mcu_node");
+                assert_eq!(binding, "#sub");
+                assert_eq!(stage_pool, "rx_pool_sram1");
+                assert_eq!(transport, "zenoh");
+            }
+            other => panic!("expected StagePoolTransportMismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn stage_pool_field_parses_when_unused() {
+        // The `stage_pool:` rejection happens in
+        // `validate_stage_pool_transport`; if no binding declares it,
+        // the validator is a no-op even with the empty supported list.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+"##;
+        parse_deploy_str(yaml).expect("absent stage_pool ⇒ pass");
+    }
+
+    #[test]
+    fn stage_pool_cross_ref_not_declared_emits_candidates() {
+        // Cross-ref happy/sad: with a synthetic supported-transport
+        // list (production const is currently empty until η' codegen
+        // wires real transports) and an empty registry, the
+        // unresolved name surfaces as
+        // `StagePoolNotDeclared`. The candidate list rides
+        // `Fix::ReplaceOneOf` and is sorted (registry contract).
+        use crate::forge::pool_registry::{ForgePoolKind, ForgePoolRegistry};
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      mcu_node:
+        source: mcu.scxml
+        bindings:
+          "#sub":
+            transport: zenoh
+            stage_pool: rx_pool_sram1
+"##;
+        let cfg: DeployConfig = serde_yaml_ng::from_str(yaml).expect("YAML parses");
+        // Registry seeded with one alternate name so `Fix::ReplaceOneOf`
+        // candidate list is non-trivial.
+        let mut registry = ForgePoolRegistry::new();
+        registry
+            .record("scout_rx_pool", ForgePoolKind::BufferPool)
+            .unwrap();
+        match validate_stage_pool_references_with(&cfg, &registry, &["zenoh"]) {
+            Err(DeployError::StagePoolNotDeclared {
+                machine,
+                binding,
+                stage_pool,
+                candidates,
+            }) => {
+                assert_eq!(machine, "mcu_node");
+                assert_eq!(binding, "#sub");
+                assert_eq!(stage_pool, "rx_pool_sram1");
+                assert_eq!(candidates, vec!["scout_rx_pool".to_string()]);
+            }
+            other => panic!("expected StagePoolNotDeclared, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn stage_pool_cross_ref_resolves_when_registered() {
+        // Happy path: registry has the referenced buffer-pool name,
+        // validator returns Ok(()).
+        use crate::forge::pool_registry::{ForgePoolKind, ForgePoolRegistry};
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      mcu_node:
+        source: mcu.scxml
+        bindings:
+          "#sub":
+            transport: zenoh
+            stage_pool: rx_pool_sram1
+"##;
+        let cfg: DeployConfig = serde_yaml_ng::from_str(yaml).expect("YAML parses");
+        let mut registry = ForgePoolRegistry::new();
+        registry
+            .record("rx_pool_sram1", ForgePoolKind::BufferPool)
+            .unwrap();
+        validate_stage_pool_references_with(&cfg, &registry, &["zenoh"])
+            .expect("registered name resolves cleanly");
+    }
+
+    #[test]
+    fn stage_pool_references_validator_skips_unsupported_transport() {
+        // The cross-ref validator defensively skips bindings whose
+        // transport is not in the supported list — those are already
+        // rejected by `validate_stage_pool_transport`, and re-raising
+        // here would produce a duplicate diagnostic. The skip is the
+        // co-pass invariant: the two validators run in either order
+        // without colliding.
+        //
+        // Construction path: deserialize the deploy YAML directly via
+        // serde_yaml_ng (bypasses `parse_deploy_str` and its
+        // transport-gate validator), then call the cross-ref
+        // validator in isolation. This is the only way to reach the
+        // skip arm today — every supported transport entry is
+        // forward-looking until the η' codegen atomic populates the
+        // list.
+        use crate::forge::pool_registry::ForgePoolRegistry;
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      mcu_node:
+        source: mcu.scxml
+        bindings:
+          "#sub":
+            transport: zenoh
+            stage_pool: rx_pool_sram1
+"##;
+        let cfg: DeployConfig =
+            serde_yaml_ng::from_str(yaml).expect("YAML parses without invoking validators");
+        let registry = ForgePoolRegistry::new();
+        // Empty registry + unsupported transport ⇒ defensive skip,
+        // not a duplicate diagnostic.
+        validate_stage_pool_references(&cfg, &registry)
+            .expect("co-pass invariant: cross-ref skips when transport gate already rejected");
     }
 }

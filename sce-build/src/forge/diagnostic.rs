@@ -755,6 +755,19 @@ pub enum DiagnosticCode {
     MeshDeployPoolInvalidPlaceholder,
     #[serde(rename = "mesh/deploy-server-pool-not-supported")]
     MeshDeployServerPoolNotSupported,
+    // ── watching-zenoh RFC §5.E B7-η' deploy.yaml stage_pool family ──
+    // These diagnostics validate the deploy.yaml `binding.stage_pool:`
+    // cross-reference into the forge buffer-pool registry. Distinct
+    // family from the `mesh/deploy-pool-*` SOME/IP-instance-routing
+    // diagnostics above: those concern routing-pool placeholders for
+    // RPC bindings, while these concern buffer-pool kind references
+    // for `Sample::take()` stage copies (§5.E Sample API contract).
+    #[serde(rename = "mesh/deploy-stage-pool-not-declared")]
+    MeshDeployStagePoolNotDeclared,
+    #[serde(rename = "mesh/deploy-stage-pool-wrong-kind")]
+    MeshDeployStagePoolWrongKind,
+    #[serde(rename = "mesh/deploy-stage-pool-transport-mismatch")]
+    MeshDeployStagePoolTransportMismatch,
     #[serde(rename = "mesh/deploy-scxml-invoke-target-conflict")]
     MeshDeployScxmlInvokeTargetConflict,
     #[serde(rename = "mesh/deploy-partition-duplicate-name")]
@@ -1058,6 +1071,9 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployPoolEmptyInstanceList,
         MeshDeployPoolInvalidPlaceholder,
         MeshDeployServerPoolNotSupported,
+        MeshDeployStagePoolNotDeclared,
+        MeshDeployStagePoolWrongKind,
+        MeshDeployStagePoolTransportMismatch,
         MeshDeployScxmlInvokeTargetConflict,
         MeshDeployPartitionDuplicateName,
         MeshDeployPartitionMultiDevice,
@@ -1251,7 +1267,10 @@ impl DiagnosticCode {
             MemPoolSectionConflict
             | MemPoolTooLarge
             | MemInterPoolPaddingNotEmitted
-            | PoolSampleTypestateAttributesDisabled => Some("watching-zenoh RFC §5.E"),
+            | PoolSampleTypestateAttributesDisabled
+            | MeshDeployStagePoolNotDeclared
+            | MeshDeployStagePoolWrongKind
+            | MeshDeployStagePoolTransportMismatch => Some("watching-zenoh RFC §5.E"),
 
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
@@ -1554,6 +1573,9 @@ impl DiagnosticCode {
             MeshDeployPoolEmptyInstanceList => "mesh/deploy-pool-empty-instance-list",
             MeshDeployPoolInvalidPlaceholder => "mesh/deploy-pool-invalid-placeholder",
             MeshDeployServerPoolNotSupported => "mesh/deploy-server-pool-not-supported",
+            MeshDeployStagePoolNotDeclared => "mesh/deploy-stage-pool-not-declared",
+            MeshDeployStagePoolWrongKind => "mesh/deploy-stage-pool-wrong-kind",
+            MeshDeployStagePoolTransportMismatch => "mesh/deploy-stage-pool-transport-mismatch",
             MeshDeployScxmlInvokeTargetConflict => "mesh/deploy-scxml-invoke-target-conflict",
             MeshDeployPartitionDuplicateName => "mesh/deploy-partition-duplicate-name",
             MeshDeployPartitionMultiDevice => "mesh/deploy-partition-multi-device",
@@ -4236,6 +4258,44 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:5f473bdda8049652","code":"mesh/deploy-server-pool-not-supported","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'motor': `server.instances:` is not supported on transport 'zenoh' — only transports with a peer-identifying inbound distinguisher (SOME/IP today) can host a multi-instance server pool. Drop `instances:` from the server section, switch the server transport to one that supports pools, or run N processes each hosting a single-instance server. See SCE_MESH.md §14.4.","actual":"motor","fix":{"kind":"remove_fields","location":"topology.*.machines.motor.server","fields":["instances"]}}"#,
             ),
             (
+                "mesh/deploy-stage-pool-not-declared",
+                DeployError::StagePoolNotDeclared {
+                    machine: "mcu_node".into(),
+                    binding: "#sub".into(),
+                    stage_pool: "rx_pool_sram1".into(),
+                    candidates: vec!["scout_rx_pool".into()],
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion
+                // on first run. Shape + message are the contract.
+                r#"{"v":1,"id":"fnv1a:43c3861fc17b431c","code":"mesh/deploy-stage-pool-not-declared","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.E","message":"machine 'mcu_node': binding '#sub' references stage_pool 'rx_pool_sram1' but no `.forge` file in the build declares a pool by that name. Add a forge `<scxml sce:kind=\"buffer-pool\" name=\"rx_pool_sram1\">` document or fix the reference. See watching-zenoh RFC §5.E.","actual":"rx_pool_sram1","fix":{"kind":"replace_one_of","candidates":["scout_rx_pool"]}}"#,
+            ),
+            (
+                "mesh/deploy-stage-pool-wrong-kind",
+                DeployError::StagePoolWrongKind {
+                    machine: "mcu_node".into(),
+                    binding: "#sub".into(),
+                    stage_pool: "scout_codec".into(),
+                    actual_kind: "codec".into(),
+                    candidates: vec!["scout_rx_pool".into()],
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:e05f280783ac494b","code":"mesh/deploy-stage-pool-wrong-kind","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.E","message":"machine 'mcu_node': binding '#sub' references stage_pool 'scout_codec' which resolves to a forge 'codec' kind, not 'buffer-pool'. Only buffer-pool kind documents back the `Sample::take()` slot contract. Repoint the reference at one of the build's buffer-pool kind names. See watching-zenoh RFC §5.E.","actual":"codec","fix":{"kind":"replace_one_of","candidates":["scout_rx_pool"]}}"#,
+            ),
+            (
+                "mesh/deploy-stage-pool-transport-mismatch",
+                DeployError::StagePoolTransportMismatch {
+                    machine: "mcu_node".into(),
+                    binding: "#sub".into(),
+                    stage_pool: "scout_rx_pool".into(),
+                    transport: "zenoh".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:5e3fe77a13dd48d3","code":"mesh/deploy-stage-pool-transport-mismatch","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.E","message":"machine 'mcu_node': binding '#sub' declares stage_pool 'scout_rx_pool' on transport 'zenoh', which has no buffer-pool RX staging surface. The `stage_pool` field is meaningful only for transports that bind a forge buffer-pool kind on their RX path. Drop the field or change the transport. See watching-zenoh RFC §5.E.","actual":"zenoh","fix":{"kind":"remove_fields","location":"topology.*.machines.mcu_node.bindings.#sub","fields":["stage_pool"]}}"#,
+            ),
+            (
                 "mesh/deploy-scxml-invoke-target-conflict",
                 DeployError::ScxmlInvokeTargetConflict {
                     machine: "worker".into(),
@@ -5226,6 +5286,8 @@ mod tests {
             | LinkLinkClassUnknown
             | LinkClassUnsupportedOnTarget
             | MemPoolSectionConflict
+            | MeshDeployStagePoolNotDeclared
+            | MeshDeployStagePoolWrongKind
             | MeshDeployUnsupportedVersion
             | MeshTopologyMachineNotFound
             | MeshTopologySubscriptionSourceUnbound
@@ -5341,6 +5403,7 @@ mod tests {
             | MeshDeployPoolEmptyInstanceList
             | MeshDeployPoolInvalidPlaceholder
             | MeshDeployServerPoolNotSupported
+            | MeshDeployStagePoolTransportMismatch
             | MeshDeployScxmlInvokeTargetConflict
             | MeshDeployPartitionDuplicateName
             | MeshDeployPartitionMultiDevice
@@ -5686,6 +5749,9 @@ mod tests {
                 | MeshDeployPoolEmptyInstanceList
                 | MeshDeployPoolInvalidPlaceholder
                 | MeshDeployServerPoolNotSupported
+                | MeshDeployStagePoolNotDeclared
+                | MeshDeployStagePoolWrongKind
+                | MeshDeployStagePoolTransportMismatch
                 | MeshDeployScxmlInvokeTargetConflict
                 | MeshDeployPartitionDuplicateName
                 | MeshDeployPartitionMultiDevice
@@ -5752,9 +5818,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            180,
+            183,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 180 distinct variants to match the DiagnosticCode \
+             expected 183 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -5790,7 +5856,17 @@ mod tests {
              `SCE_WARN_UNUSED` family reaches downstream consumer builds; \
              β `mem/inter-pool-padding-not-emitted` codegen-invariant \
              precedent — diagnostic exists so a future template edit \
-             that drops the include surfaces; 179 → 180). The remaining §5.C codes \
+             that drops the include surfaces; 179 → 180; then watching-zenoh \
+             RFC §5.E B7-η' deploy.yaml `binding.stage_pool:` cross-reference \
+             into the forge pool registry — three companion diagnostics \
+             (`mesh/deploy-stage-pool-not-declared`, \
+             `mesh/deploy-stage-pool-wrong-kind`, \
+             `mesh/deploy-stage-pool-transport-mismatch`) opening the \
+             cross-schema reference resolution surface for `Sample::take()` \
+             stage destinations. The first two ride `Fix::ReplaceOneOf` over \
+             the `ForgePoolRegistry` declared-name candidate set; the third \
+             rides `Fix::RemoveFields` to drop the misapplied field on a \
+             non-staging-capable transport; 180 → 183). The remaining §5.C codes \
              defer to B6-δ (listener self-check, gated on §5.K + §5.M \
              SCE-side prerequisites), D.2 (`link/link-class-incompatible-with-os` \
              alongside OS-specific classes), and B7 (`mem/alignment-\

@@ -14,6 +14,7 @@ pub mod error;
 pub mod limits;
 pub mod model;
 pub mod parser;
+pub mod pool_registry;
 pub mod types;
 pub mod type_ctx;
 pub mod expr;

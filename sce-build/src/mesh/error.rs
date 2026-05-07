@@ -324,6 +324,67 @@ pub enum DeployError {
         transport: String,
     },
 
+    /// A `binding.stage_pool: <name>` reference points at a forge pool
+    /// that no `.forge` file in the build declares (watching-zenoh RFC
+    /// §5.E B7-η'). The wire form keys on the missing name so duplicate
+    /// references coalesce in the diagnostic stream;
+    /// [`Fix::ReplaceOneOf`] carries the registry's declared
+    /// buffer-pool names, sorted for determinism. An empty
+    /// `candidates` list means no buffer-pool kind is declared anywhere
+    /// in the build — likely a missing `.forge` file rather than a
+    /// typo.
+    #[error("machine '{machine}': binding '{binding}' references stage_pool '{stage_pool}' but \
+             no `.forge` file in the build declares a pool by that name. Add a forge \
+             `<scxml sce:kind=\"buffer-pool\" name=\"{stage_pool}\">` document or fix the \
+             reference. See watching-zenoh RFC §5.E.")]
+    StagePoolNotDeclared {
+        machine: String,
+        binding: String,
+        stage_pool: String,
+        candidates: Vec<String>,
+    },
+
+    /// A `binding.stage_pool: <name>` reference resolves to a forge
+    /// artifact that exists but is not a buffer-pool kind
+    /// (watching-zenoh RFC §5.E B7-η'). Today only buffer-pool kind
+    /// satisfies the `Sample::take()` slot contract; algorithm /
+    /// codec / link kinds cannot back a stage copy because they have
+    /// no slot table. The repair is to point the reference at one of
+    /// the build's actual buffer-pool kind names.
+    #[error("machine '{machine}': binding '{binding}' references stage_pool '{stage_pool}' which \
+             resolves to a forge '{actual_kind}' kind, not 'buffer-pool'. Only buffer-pool kind \
+             documents back the `Sample::take()` slot contract. Repoint the reference at one of \
+             the build's buffer-pool kind names. See watching-zenoh RFC §5.E.")]
+    StagePoolWrongKind {
+        machine: String,
+        binding: String,
+        stage_pool: String,
+        actual_kind: String,
+        candidates: Vec<String>,
+    },
+
+    /// A `binding.stage_pool` field was declared on a binding whose
+    /// transport has no buffer-pool RX staging surface (watching-zenoh
+    /// RFC §5.E B7-η' Q-StagePool-3 (a)). Today only RX paths
+    /// integrated with the forge buffer-pool kind support
+    /// `Sample::take()`; mesh RPC transports (`zenoh`, `someip`,
+    /// `shm`, `local`, `dds`, `custom_tcp`) route logical events
+    /// rather than allocating from a slot table. The repair is to
+    /// drop the `stage_pool` field on the binding (its presence is
+    /// otherwise inert and would silently mislead a future reader
+    /// into thinking RX staging applied here).
+    #[error("machine '{machine}': binding '{binding}' declares stage_pool '{stage_pool}' on \
+             transport '{transport}', which has no buffer-pool RX staging surface. The \
+             `stage_pool` field is meaningful only for transports that bind a forge buffer-pool \
+             kind on their RX path. Drop the field or change the transport. See watching-zenoh \
+             RFC §5.E.")]
+    StagePoolTransportMismatch {
+        machine: String,
+        binding: String,
+        stage_pool: String,
+        transport: String,
+    },
+
     /// A single machine is used as both a remote `<invoke type="scxml"
     /// src="#<M>">` target (mesh peer) and a local `<invoke src="<M's
     /// source path>">` target (direct file reference) within the same
@@ -1631,6 +1692,65 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 fields: vec!["instances".to_string()],
             }),
             key_fragments: vec![machine.clone(), transport.clone()],
+        },
+        DeployError::StagePoolNotDeclared {
+            machine,
+            binding,
+            stage_pool,
+            candidates,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployStagePoolNotDeclared,
+            stage: Stage::MeshDeploy,
+            // `actual` surfaces the missing name so CLI consumers can
+            // spot the typo without parsing the message body. The
+            // candidate list rides `Fix::ReplaceOneOf` per the
+            // FixCarriesCandidates non-overlap class.
+            actual: Some(stage_pool.clone()),
+            expected: None,
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![machine.clone(), binding.clone(), stage_pool.clone()],
+        },
+        DeployError::StagePoolWrongKind {
+            machine,
+            binding,
+            stage_pool,
+            actual_kind,
+            candidates,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployStagePoolWrongKind,
+            stage: Stage::MeshDeploy,
+            actual: Some(actual_kind.clone()),
+            expected: None,
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![machine.clone(), binding.clone(), stage_pool.clone()],
+        },
+        DeployError::StagePoolTransportMismatch {
+            machine,
+            binding,
+            stage_pool,
+            transport,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployStagePoolTransportMismatch,
+            stage: Stage::MeshDeploy,
+            actual: Some(transport.clone()),
+            expected: None,
+            // The deterministic repair drops the field; switching
+            // transport is a deployment-topology decision left to
+            // operator judgment.
+            fix: Some(Fix::RemoveFields {
+                location: format!("topology.*.machines.{machine}.bindings.{binding}"),
+                fields: vec!["stage_pool".to_string()],
+            }),
+            key_fragments: vec![
+                machine.clone(),
+                binding.clone(),
+                stage_pool.clone(),
+                transport.clone(),
+            ],
         },
         DeployError::ScxmlInvokeTargetConflict {
             machine,
