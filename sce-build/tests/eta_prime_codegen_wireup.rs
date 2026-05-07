@@ -150,6 +150,62 @@ fn w1_3_multi_state_same_link_emits_arms_per_state() {
 }
 
 #[test]
+fn w1_4_emits_callback_dispatch_with_stripped_prefix() {
+    // W1.4 contract: when `<sce:on-sample callback="rust:...">`
+    // is present, the per-state match arm body emits
+    // `<bare-rust-path>(&sample);` — the `rust:` language prefix
+    // is stripped (Q-Callback-2 v1) so rustc resolves the user's
+    // module path directly. Q-Callback-3's signature enforcement
+    // flows through rustc at the consumer crate's compile time;
+    // this test pins the codegen surface only.
+    const WITH_CALLBACK: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       initial="running"
+       datamodel="ecmascript"
+       sce:kind="statechart"
+       name="watcher">
+  <state id="running">
+    <sce:on-sample link="scout_link" event="scout.tick"
+                   callback="rust:my_app::on_scout"/>
+    <transition event="scout.tick" target="running"/>
+  </state>
+</scxml>
+"##;
+    let code = render_rust(WITH_CALLBACK);
+
+    // The bare path appears as a function call site, with `&sample`.
+    assert!(
+        code.contains("my_app::on_scout(&sample);"),
+        "missing callback dispatch line:\n{code}"
+    );
+    // The `rust:` language prefix MUST be stripped at the call site.
+    // Doc-comments (e.g. `callback="rust:..."`) are allowed; what
+    // matters is that the actual emitted Rust expression is the bare
+    // path, not `rust:my_app::on_scout(&sample)` which would not
+    // compile.
+    assert!(
+        !code.contains("rust:my_app::on_scout"),
+        "language prefix leaked into call-site path:\n{code}"
+    );
+    syn::parse_file(&code)
+        .unwrap_or_else(|e| panic!("W1.4 callback emission fails syn parse: {e}\n{code}"));
+}
+
+#[test]
+fn w1_4_no_callback_emits_no_call_site() {
+    // Negative case: `<sce:on-sample link="X" event="Y">` without a
+    // callback attribute must not emit any function-call line in the
+    // arm body — only the W1.5 event-raise placeholder remains.
+    let code = render_rust(FIXTURE);
+    assert!(
+        !code.contains("(&sample);"),
+        "fixture without callback must not emit call site:\n{code}"
+    );
+}
+
+#[test]
 fn w1_2_skipped_when_no_on_sample_blocks() {
     // Templates must elide the LinkRx surface entirely when no state
     // declares `<sce:on-sample>`. Negative case: rendering must not

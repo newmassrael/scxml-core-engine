@@ -67,6 +67,7 @@ pub fn register_filters(env: &mut minijinja::Environment) {
     // Cross-engine compatibility filters (replace Python-specific string methods)
     env.add_filter("split", filter_split);
     env.add_filter("slice_from", filter_slice_from);
+    env.add_filter("extern_callback_path", filter_extern_callback_path);
 }
 
 /// Convert identifier to snake_case for Rust function/variable/module names.
@@ -436,6 +437,22 @@ fn filter_slice_from(s: String, n: usize) -> String {
     s.chars().skip(n).collect()
 }
 
+/// watching-zenoh RFC §5.E B7-η' Atomic A2 + W1.4 — strip the
+/// language prefix from `<sce:on-sample callback="...">` to produce
+/// the bare path the codegen emits at the call site. Today only
+/// `rust:` (Q-Callback-2 v1) is valid; the validator
+/// (`validate_on_sample_callback_paths`) rejects every other
+/// shape before this filter ever runs, so the prefix is always
+/// `rust:` here. Future language axes (`c:`, `kotlin:`, …) extend
+/// the same filter via the same pattern — they will arrive with
+/// their own per-backend dispatch sites and won't share this one.
+fn filter_extern_callback_path(s: String) -> String {
+    if let Some(rest) = s.strip_prefix("rust:") {
+        return rest.to_string();
+    }
+    s
+}
+
 /// Strip the SCXML auto-id leading underscore so an invoke id can be embedded
 /// directly in a generated field/variable name without producing a double
 /// underscore (`child_` + `_invoke_0` → `child__invoke_0`). Mirrors the
@@ -478,6 +495,7 @@ pub fn register_go_filters(env: &mut minijinja::Environment) {
     // Cross-engine compatibility filters
     env.add_filter("split", filter_split);
     env.add_filter("slice_from", filter_slice_from);
+    env.add_filter("extern_callback_path", filter_extern_callback_path);
 }
 
 /// Map SCXML variable type to Go type.
@@ -564,6 +582,7 @@ pub fn register_cpp_filters(env: &mut minijinja::Environment) {
     env.add_filter("escape_cpp", escape_cpp);
     env.add_filter("split", filter_split);
     env.add_filter("slice_from", filter_slice_from);
+    env.add_filter("extern_callback_path", filter_extern_callback_path);
 }
 
 /// Capitalize state/event names for C++ enums.
@@ -607,6 +626,7 @@ pub fn register_c11_filters(env: &mut minijinja::Environment) {
     env.add_filter("read_data_src", read_data_src);
     env.add_filter("split", filter_split);
     env.add_filter("slice_from", filter_slice_from);
+    env.add_filter("extern_callback_path", filter_extern_callback_path);
 }
 
 /// Escape C string literals (identical escaping rules to Rust/C++).
@@ -687,6 +707,7 @@ pub fn register_kotlin_filters(env: &mut minijinja::Environment) {
     env.add_filter("to_state_class_name", to_state_class_name);
     env.add_filter("split", filter_split);
     env.add_filter("slice_from", filter_slice_from);
+    env.add_filter("extern_callback_path", filter_extern_callback_path);
 }
 
 /// Convert identifier to camelCase for Kotlin property names.

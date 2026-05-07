@@ -1006,8 +1006,14 @@ impl {{ machine_name }}LinkRx for ::sce_rust_runtime::Engine<{{ machine_name }}P
 {% for block in state.on_sample_blocks %}
 {% if block.link == link %}
                 {{ machine_name }}State::{{ state_id | to_state_variant }} => {
-                    // W1.3 active match for state `{{ state_id }}` —
-                    // body filled in W1.4/W1.5.
+{% if block.callback %}
+                    // W1.4 callback dispatch — synchronous extern
+                    // call. rustc enforces the user's callback
+                    // signature against the borrow contract per
+                    // Q-Callback-3 (A2 spec lines 1513-1519).
+                    {{ block.callback | extern_callback_path }}(&sample);
+{% endif %}
+                    // W1.5 event raise — body filled in W1.5.
                 }
 {% endif %}
 {% endfor %}
