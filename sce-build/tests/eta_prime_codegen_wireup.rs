@@ -90,6 +90,66 @@ fn w1_2_emits_link_rx_trait_and_impl() {
 }
 
 #[test]
+fn w1_3_emits_active_state_filter_match_arm() {
+    // W1.3 contract: the body iterates the engine's active configuration
+    // and dispatches a per-state match arm for every state whose
+    // `<sce:on-sample link="X">` matches this link. W1.4/1.5 fill the
+    // arm bodies; W1.3 just pins the structural surface.
+    let code = render_rust(FIXTURE);
+
+    assert!(
+        code.contains("self.get_active_states()"),
+        "missing active configuration iteration:\n{code}"
+    );
+    assert!(
+        code.contains("WatcherState::Running =>"),
+        "missing per-state match arm for Running:\n{code}"
+    );
+    assert!(
+        code.contains("_ => {}"),
+        "missing default match arm:\n{code}"
+    );
+    syn::parse_file(&code)
+        .unwrap_or_else(|e| panic!("W1.3 body fails syn parse: {e}\n{code}"));
+}
+
+#[test]
+fn w1_3_multi_state_same_link_emits_arms_per_state() {
+    // Q-OnSample-5 (a) allows multiple states to subscribe to the same
+    // link (uniqueness is per-state-per-link, not per-link). The deliver
+    // method must emit a match arm for EACH such state.
+    const MULTI_STATE: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       initial="watching"
+       datamodel="ecmascript"
+       sce:kind="statechart"
+       name="watcher">
+  <state id="watching">
+    <sce:on-sample link="scout_link" event="scout.tick"/>
+    <transition event="scout.tick" target="settling"/>
+  </state>
+  <state id="settling">
+    <sce:on-sample link="scout_link" event="settle.tick"/>
+    <transition event="settle.tick" target="watching"/>
+  </state>
+</scxml>
+"##;
+    let code = render_rust(MULTI_STATE);
+    assert!(
+        code.contains("WatcherState::Watching =>"),
+        "missing arm for Watching:\n{code}"
+    );
+    assert!(
+        code.contains("WatcherState::Settling =>"),
+        "missing arm for Settling:\n{code}"
+    );
+    syn::parse_file(&code)
+        .unwrap_or_else(|e| panic!("multi-state body fails syn parse: {e}\n{code}"));
+}
+
+#[test]
 fn w1_2_skipped_when_no_on_sample_blocks() {
     // Templates must elide the LinkRx surface entirely when no state
     // declares `<sce:on-sample>`. Negative case: rendering must not

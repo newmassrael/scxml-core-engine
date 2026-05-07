@@ -992,9 +992,29 @@ impl {{ machine_name }}LinkRx for ::sce_rust_runtime::Engine<{{ machine_name }}P
     where
         M: ::sce_link_runtime::SampleMeta,
     {
-        // W1.2 skeleton — body filled in W1.3 (config filter),
-        // W1.4 (callback dispatch), W1.5 (event raise).
-        let _ = sample;
+        // W1.3 active-state filter: iterate the engine's current
+        // configuration; for every active state that declares
+        // `<sce:on-sample link="{{ link }}">`, dispatch into its
+        // per-state arm. Arms are empty in W1.3; W1.4 (callback)
+        // and W1.5 (event raise) fill the bodies. Sample drops
+        // at method exit, returning the slot to its pool via the
+        // embedded `SlotGuard`.
+        let _ = &sample;
+        for active in self.get_active_states() {
+            match active {
+{% for state_id, state in model.states | dictsort %}
+{% for block in state.on_sample_blocks %}
+{% if block.link == link %}
+                {{ machine_name }}State::{{ state_id | to_state_variant }} => {
+                    // W1.3 active match for state `{{ state_id }}` —
+                    // body filled in W1.4/W1.5.
+                }
+{% endif %}
+{% endfor %}
+{% endfor %}
+                _ => {}
+            }
+        }
     }
 {% endfor %}
 }
