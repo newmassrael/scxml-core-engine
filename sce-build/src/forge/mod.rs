@@ -12,6 +12,7 @@ pub mod const_fold;
 pub mod diagnostic;
 pub mod error;
 pub mod limits;
+pub mod link_registry;
 pub mod model;
 pub mod parser;
 pub mod pool_registry;

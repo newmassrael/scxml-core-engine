@@ -417,6 +417,17 @@ pub enum DiagnosticCode {
     ScxmlOnSampleLinkDuplicateInState,
     #[serde(rename = "scxml/on-sample-event-name-conflict")]
     ScxmlOnSampleEventNameConflict,
+    // ── watching-zenoh RFC §5.E B7-η' Atomic B cross-ref family ──
+    // Cross-reference resolution surface for `<sce:on-sample link="X">`
+    // against the build's `ForgeLinkRegistry`. Atomic A landed the
+    // structural codes above; Atomic B opens the cross-ref pair.
+    // `link-wrong-kind` is wired forward-compat — today
+    // `ForgeLinkKind` has the `Link` variant only, so the validator's
+    // match never reaches the `Some(non-Link)` arm in production.
+    #[serde(rename = "scxml/on-sample-link-not-declared")]
+    ScxmlOnSampleLinkNotDeclared,
+    #[serde(rename = "scxml/on-sample-link-wrong-kind")]
+    ScxmlOnSampleLinkWrongKind,
 
     #[serde(rename = "expression/empty")]
     ExpressionEmpty,
@@ -998,6 +1009,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ScxmlOnSampleInvalidParent,
         ScxmlOnSampleLinkDuplicateInState,
         ScxmlOnSampleEventNameConflict,
+        ScxmlOnSampleLinkNotDeclared,
+        ScxmlOnSampleLinkWrongKind,
         // Expression
         ExpressionEmpty,
         ExpressionLex,
@@ -1287,7 +1300,9 @@ impl DiagnosticCode {
             | MeshDeployStagePoolTransportMismatch
             | ScxmlOnSampleInvalidParent
             | ScxmlOnSampleLinkDuplicateInState
-            | ScxmlOnSampleEventNameConflict => Some("watching-zenoh RFC §5.E"),
+            | ScxmlOnSampleEventNameConflict
+            | ScxmlOnSampleLinkNotDeclared
+            | ScxmlOnSampleLinkWrongKind => Some("watching-zenoh RFC §5.E"),
 
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
@@ -1525,6 +1540,8 @@ impl DiagnosticCode {
             ScxmlOnSampleInvalidParent => "scxml/on-sample-invalid-parent",
             ScxmlOnSampleLinkDuplicateInState => "scxml/on-sample-link-duplicate-in-state",
             ScxmlOnSampleEventNameConflict => "scxml/on-sample-event-name-conflict",
+            ScxmlOnSampleLinkNotDeclared => "scxml/on-sample-link-not-declared",
+            ScxmlOnSampleLinkWrongKind => "scxml/on-sample-link-wrong-kind",
             ExpressionEmpty => "expression/empty",
             ExpressionLex => "expression/lex",
             ExpressionUnsupportedConstruct => "expression/unsupported-construct",
@@ -2696,6 +2713,42 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![event.clone(), reserved_prefix.clone()],
         },
+        ValidationError::OnSampleLinkNotDeclared {
+            state_id,
+            link,
+            candidates,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ScxmlOnSampleLinkNotDeclared,
+            stage: Stage::Validation,
+            // Candidate list rides `Fix::ReplaceOneOf` per the
+            // FixCarriesCandidates non-overlap class — `expected` is
+            // None to keep the contract's fix/expected separation.
+            expected: None,
+            actual: Some(link.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![state_id.clone(), link.clone()],
+        },
+        ValidationError::OnSampleLinkWrongKind {
+            state_id,
+            link,
+            actual_kind,
+            candidates,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ScxmlOnSampleLinkWrongKind,
+            stage: Stage::Validation,
+            // `actual` carries the resolved-but-wrong forge kind
+            // label so consumers see what was found without parsing
+            // the message body; the candidate list rides `fix` for
+            // the legal alternatives.
+            expected: None,
+            actual: Some(actual_kind.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![state_id.clone(), link.clone(), actual_kind.clone()],
+        },
     }
 }
 
@@ -3654,6 +3707,35 @@ mod tests {
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
                 r#"{"v":1,"id":"fnv1a:3b804e5f18b5b65a","code":"scxml/on-sample-event-name-conflict","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"<sce:on-sample event=\"error.io\"> collides with the reserved W3C SCXML internal event prefix 'error.'. Pick an event name outside that family (e.g. 'sample.error.io') so dispatched samples stay distinct from built-in lifecycle events.","actual":"error.io"}"#,
+            ),
+            (
+                // watching-zenoh RFC §5.E B7-η' Atomic B Q-OnSample-3
+                // cross-ref pair — `not-declared` is reachable today.
+                "forge/scxml-on-sample-link-not-declared",
+                ValidationError::OnSampleLinkNotDeclared {
+                    state_id: "running".into(),
+                    link: "scout_link".into(),
+                    candidates: vec!["status_link".into()],
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:b635927d2fa69152","code":"scxml/on-sample-link-not-declared","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"state 'running': <sce:on-sample link=\"scout_link\"> references a name that no `.forge` file in the build declares as a link kind. Add a forge `<scxml sce:kind=\"link\" name=\"scout_link\">` document or fix the reference. See watching-zenoh RFC §5.E.","actual":"scout_link","fix":{"kind":"replace_one_of","candidates":["status_link"]}}"#,
+            ),
+            (
+                // `wrong-kind` — forward-compat per stage_pool precedent.
+                // Wired through full sync; unreachable in production
+                // until a future cross-registry generalization grows
+                // `ForgeLinkKind` with non-Link variants.
+                "forge/scxml-on-sample-link-wrong-kind",
+                ValidationError::OnSampleLinkWrongKind {
+                    state_id: "running".into(),
+                    link: "scout_codec".into(),
+                    actual_kind: "codec".into(),
+                    candidates: vec!["scout_link".into()],
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:38b424712554fe91","code":"scxml/on-sample-link-wrong-kind","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"state 'running': <sce:on-sample link=\"scout_codec\"> resolves to a forge 'codec' kind, not 'link'. Only link kind documents back the on-sample subscriber contract. Repoint the reference at one of the build's link kind names. See watching-zenoh RFC §5.E.","actual":"codec","fix":{"kind":"replace_one_of","candidates":["scout_link"]}}"#,
             ),
             (
                 "forge/expression-empty",
@@ -5380,6 +5462,8 @@ mod tests {
             | MemPoolSectionConflict
             | MeshDeployStagePoolNotDeclared
             | MeshDeployStagePoolWrongKind
+            | ScxmlOnSampleLinkNotDeclared
+            | ScxmlOnSampleLinkWrongKind
             | MeshDeployUnsupportedVersion
             | MeshTopologyMachineNotFound
             | MeshTopologySubscriptionSourceUnbound
@@ -5440,6 +5524,9 @@ mod tests {
             | ScxmlOnSampleInvalidParent
             | ScxmlOnSampleLinkDuplicateInState
             | ScxmlOnSampleEventNameConflict
+            // ScxmlOnSampleLinkNotDeclared + ScxmlOnSampleLinkWrongKind
+            // sit in FixCarriesCandidates above (cross-ref ride
+            // `Fix::ReplaceOneOf` with the registry's name list).
             | ExpressionEmpty
             | ExpressionLex
             | ExpressionUnsupportedConstruct
@@ -5800,6 +5887,8 @@ mod tests {
                 | ScxmlOnSampleInvalidParent
                 | ScxmlOnSampleLinkDuplicateInState
                 | ScxmlOnSampleEventNameConflict
+                | ScxmlOnSampleLinkNotDeclared
+                | ScxmlOnSampleLinkWrongKind
                 | ExpressionEmpty | ExpressionLex
                 | ExpressionUnsupportedConstruct | ExpressionStrictEquality
                 | ExpressionParseMismatch | ExpressionUnexpectedToken
@@ -5916,9 +6005,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            186,
+            188,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 186 distinct variants to match the DiagnosticCode \
+             expected 188 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -5971,9 +6060,19 @@ mod tests {
              `scxml/on-sample-link-duplicate-in-state`, \
              `scxml/on-sample-event-name-conflict`) gating placement, \
              per-state link uniqueness, and W3C internal-event-prefix \
-             collision. Cross-ref diagnostics (`scxml/on-sample-link-not-declared`, \
-             `scxml/on-sample-link-wrong-kind`) gated on Atomic B's \
-             `ForgeLinkRegistry`; 183 → 186). The remaining §5.C codes \
+             collision; 183 → 186; then watching-zenoh RFC §5.E B7-η' \
+             Q-OnSample atomic B — `<sce:on-sample link=\"X\">` cross-reference \
+             into the forge link registry pair \
+             (`scxml/on-sample-link-not-declared`, \
+             `scxml/on-sample-link-wrong-kind`) closing the η' codegen \
+             prereq chain. Both ride `Fix::ReplaceOneOf` over the \
+             `ForgeLinkRegistry`-declared link-name candidate set; \
+             `wrong-kind` is wired forward-compat per the stage_pool \
+             `wrong-kind` precedent — the single-variant `ForgeLinkKind` \
+             registry today only stores Link kinds, so the validator's \
+             match never reaches the `Some(non-Link)` arm in \
+             production until a future cross-registry generalization; \
+             186 → 188). The remaining §5.C codes \
              defer to B6-δ (listener self-check, gated on §5.K + §5.M \
              SCE-side prerequisites), D.2 (`link/link-class-incompatible-with-os` \
              alongside OS-specific classes), and B7 (`mem/alignment-\

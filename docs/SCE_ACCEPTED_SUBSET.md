@@ -469,6 +469,8 @@ Codes that the author can avoid by writing a better SCXML /
 | `scxml/on-sample-invalid-parent` | Validation |
 | `scxml/on-sample-link-duplicate-in-state` | Validation |
 | `scxml/on-sample-event-name-conflict` | Validation |
+| `scxml/on-sample-link-not-declared` | Validation |
+| `scxml/on-sample-link-wrong-kind` | Validation |
 | `expression/empty` | Expression |
 | `expression/lex` | Expression |
 | `expression/unsupported-construct` | Expression |

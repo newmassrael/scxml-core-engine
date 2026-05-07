@@ -3012,6 +3012,76 @@ fn validate_on_sample_event_names(
     Ok(())
 }
 
+/// watching-zenoh RFC §5.E B7-η' Atomic B Q-OnSample-3 cross-ref
+/// validator. Walks every state's `on_sample_blocks` and looks each
+/// `link=` reference up in the supplied [`ForgeLinkRegistry`]
+/// (built once per build by walking every parsed `.forge` file).
+/// Two diagnostics emerge:
+///
+/// * `scxml/on-sample-link-not-declared` — name not present in any
+///   `.forge` file in the build. The candidate list rides
+///   `Fix::ReplaceOneOf` over the registry's declared link kind
+///   names (sorted) so authors can pick a legal link or extend the
+///   build with the missing forge file.
+/// * `scxml/on-sample-link-wrong-kind` — name resolves to a forge
+///   artifact whose kind is not `link` (today the only kind that
+///   backs the on-sample subscriber contract). Wired
+///   forward-compat: the single-variant `ForgeLinkKind` registry
+///   only ever stores `Link`, so the validator's match never reaches
+///   the `Some(non-Link)` arm in production until a future
+///   cross-registry generalization grows the enum. Forward-compat
+///   wiring mirrors the stage_pool `mesh/deploy-stage-pool-wrong-kind`
+///   precedent.
+///
+/// Runs as a post-parse pass — `parse_string` produces the
+/// `SCXMLModel` first, the build pipeline assembles the
+/// [`ForgeLinkRegistry`] from every parsed `.forge` file, then this
+/// validator checks each declared reference against the registry.
+/// Structural validators
+/// (`validate_on_sample_placement` / `_uniqueness` / `_event_names`)
+/// already gated the reference set; any block that reaches this
+/// validator has cleared the structural gates.
+pub fn validate_on_sample_link_references(
+    model: &crate::model::SCXMLModel,
+    link_registry: &crate::forge::link_registry::ForgeLinkRegistry,
+    diag_label: &str,
+) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
+    use crate::forge::error::{Located, ValidationError};
+    use crate::forge::link_registry::ForgeLinkKind;
+    let mut state_ids: Vec<&String> = model.states.keys().collect();
+    state_ids.sort();
+    for state_id in state_ids {
+        let state = &model.states[state_id];
+        for block in &state.on_sample_blocks {
+            match link_registry.lookup(&block.link) {
+                Some(ForgeLinkKind::Link) => {} // canonical case
+                None => {
+                    let candidates = link_registry.names_of_kind(ForgeLinkKind::Link);
+                    return Err(Located::new(
+                        ValidationError::OnSampleLinkNotDeclared {
+                            state_id: state_id.clone(),
+                            link: block.link.clone(),
+                            candidates,
+                        }
+                        .into(),
+                        diag_label,
+                        None,
+                        None,
+                    ));
+                }
+            }
+            // future: when `ForgeLinkKind` (or a generalised forge
+            // artifact registry) classifies more kinds, a
+            // `Some(other_kind)` arm raises `OnSampleLinkWrongKind`
+            // with the actual kind label. The diagnostic is already
+            // wired through ValidationError + DiagnosticPayload +
+            // golden — this match is the only place to grow when
+            // that day comes.
+        }
+    }
+    Ok(())
+}
+
 /// XML node serialization matching Python lxml etree.tostring(method='xml').
 /// Includes namespace declarations and uses self-closing for empty elements.
 fn serialize_node(node: &roxmltree::Node) -> String {
@@ -5879,5 +5949,110 @@ mod tests {
             err_str.contains("OnSampleEventNameConflict"),
             "expected OnSampleEventNameConflict, got: {err_str}"
         );
+    }
+
+    // ── watching-zenoh RFC §5.E B7-η' Atomic B — cross-ref ──────────
+    //
+    // Cross-ref validator integrates with the build's
+    // ForgeLinkRegistry (populated by walking every parsed `.forge`
+    // file). Tests below construct a synthetic SCXMLModel via
+    // `parse_string` (so all of Atomic A's structural validators
+    // fire) and then invoke `validate_on_sample_link_references`
+    // with various registry shapes.
+
+    fn parse_running_with_link(link: &str) -> crate::model::SCXMLModel {
+        let xml = on_sample_test_doc(&format!(
+            r##"  <state id="running">
+    <sce:on-sample link="{link}" event="scout.tick"/>
+    <transition event="scout.tick" target="running"/>
+  </state>"##
+        ));
+        SCXMLParser::new()
+            .parse_string(&xml, "cross_ref_test")
+            .expect("parse + structural validation")
+    }
+
+    #[test]
+    fn cross_ref_link_resolves_when_registered() {
+        // Happy path: the registry knows the link by name → no
+        // diagnostic.
+        use crate::forge::link_registry::{ForgeLinkKind, ForgeLinkRegistry};
+        let model = parse_running_with_link("scout_link");
+        let mut registry = ForgeLinkRegistry::new();
+        registry
+            .record("scout_link", ForgeLinkKind::Link)
+            .unwrap();
+        validate_on_sample_link_references(&model, &registry, "cross_ref_test")
+            .expect("registered link resolves cleanly");
+    }
+
+    #[test]
+    fn cross_ref_link_not_declared_emits_candidates() {
+        // Sad path: the registry holds a different name → the
+        // unresolved reference surfaces as
+        // `OnSampleLinkNotDeclared` with the registry's actual
+        // link names (sorted) as `Fix::ReplaceOneOf` candidates.
+        use crate::forge::link_registry::{ForgeLinkKind, ForgeLinkRegistry};
+        let model = parse_running_with_link("scout_link");
+        let mut registry = ForgeLinkRegistry::new();
+        registry
+            .record("status_link", ForgeLinkKind::Link)
+            .unwrap();
+        let err = validate_on_sample_link_references(&model, &registry, "cross_ref_test")
+            .expect_err("unregistered link must be rejected");
+        let err_str = format!("{:?}", err);
+        assert!(
+            err_str.contains("OnSampleLinkNotDeclared"),
+            "expected OnSampleLinkNotDeclared, got: {err_str}"
+        );
+        assert!(
+            err_str.contains("scout_link"),
+            "diagnostic should name the unresolved link: {err_str}"
+        );
+        assert!(
+            err_str.contains("status_link"),
+            "diagnostic should carry candidates: {err_str}"
+        );
+    }
+
+    #[test]
+    fn cross_ref_empty_registry_yields_empty_candidates() {
+        // Edge case: no link kinds registered anywhere in the
+        // build → diagnostic still fires (NotDeclared) with an
+        // empty candidate list, signalling "likely missing
+        // .forge file" to the author.
+        use crate::forge::link_registry::ForgeLinkRegistry;
+        let model = parse_running_with_link("scout_link");
+        let registry = ForgeLinkRegistry::new();
+        let err = validate_on_sample_link_references(&model, &registry, "cross_ref_test")
+            .expect_err("empty registry → reference must be rejected");
+        let err_str = format!("{:?}", err);
+        assert!(
+            err_str.contains("OnSampleLinkNotDeclared"),
+            "expected OnSampleLinkNotDeclared, got: {err_str}"
+        );
+        // Candidates vec should be empty in the printed Debug form.
+        assert!(
+            err_str.contains("candidates: []"),
+            "empty registry should yield empty candidates list: {err_str}"
+        );
+    }
+
+    #[test]
+    fn cross_ref_no_on_sample_blocks_is_noop() {
+        // States without `<sce:on-sample>` produce no validator
+        // surface — empty registry is fine.
+        use crate::forge::link_registry::ForgeLinkRegistry;
+        let xml = on_sample_test_doc(
+            r##"  <state id="running">
+    <transition event="external" target="running"/>
+  </state>"##,
+        );
+        let model = SCXMLParser::new()
+            .parse_string(&xml, "cross_ref_noop")
+            .expect("parse");
+        let registry = ForgeLinkRegistry::new();
+        validate_on_sample_link_references(&model, &registry, "cross_ref_noop")
+            .expect("states without on-sample blocks need no registry entries");
     }
 }

@@ -813,6 +813,63 @@ pub enum ValidationError {
         /// (`error.` or `done.`).
         reserved_prefix: String,
     },
+
+    /// watching-zenoh RFC §5.E B7-η' Atomic B Q-OnSample-3 cross-ref:
+    /// a `<sce:on-sample link="X">` reference points at a name that
+    /// no `.forge` file in the build declares as a link kind. The
+    /// `Fix::ReplaceOneOf` candidate list is sourced from the
+    /// build's `ForgeLinkRegistry` (sorted) so authors see legal
+    /// alternatives without scraping the message body. An empty
+    /// `candidates` list means no link kind is declared anywhere in
+    /// the build — likely a missing `.forge` file rather than a
+    /// typo. State id surfaces in the message for source navigation.
+    #[error("state '{state_id}': <sce:on-sample link=\"{link}\"> references a name that no `.forge` file in the build declares as a link kind. Add a forge `<scxml sce:kind=\"link\" name=\"{link}\">` document or fix the reference. See watching-zenoh RFC §5.E.")]
+    OnSampleLinkNotDeclared {
+        /// State id whose `<sce:on-sample>` carries the unresolved
+        /// reference.
+        state_id: String,
+        /// Link name as authored.
+        link: String,
+        /// Sorted list of every link kind name registered in the
+        /// build. Drives `Fix::ReplaceOneOf` so authors can repoint
+        /// the reference to one of the legal alternatives. Empty
+        /// when no link kind has been registered.
+        candidates: Vec<String>,
+    },
+
+    /// watching-zenoh RFC §5.E B7-η' Atomic B Q-OnSample-3 cross-ref:
+    /// a `<sce:on-sample link="X">` reference resolves to a forge
+    /// artifact that exists but is not a link kind. Today only link
+    /// kind documents satisfy the on-sample subscriber contract;
+    /// algorithm / codec / buffer-pool / etc. kinds cannot back a
+    /// callback registration because they have no RX path. The
+    /// repair is to point the reference at one of the build's
+    /// actual link kind names.
+    ///
+    /// Production reachability: forward-compat. The single-variant
+    /// `ForgeLinkKind` registry today only stores Link kinds, so
+    /// the validator's match never reaches the `Some(non-Link)`
+    /// arm. Wired through the full 11-place sync (enum,
+    /// `ALL_DIAGNOSTIC_CODES`, schema, acceptance, golden, payload)
+    /// so a future cross-registry generalization (or new
+    /// `ForgeLinkKind` variant) can fire it without re-plumbing.
+    #[error("state '{state_id}': <sce:on-sample link=\"{link}\"> resolves to a forge '{actual_kind}' kind, not 'link'. Only link kind documents back the on-sample subscriber contract. Repoint the reference at one of the build's link kind names. See watching-zenoh RFC §5.E.")]
+    OnSampleLinkWrongKind {
+        /// State id whose `<sce:on-sample>` carries the
+        /// wrongly-kinded reference.
+        state_id: String,
+        /// Link name as authored.
+        link: String,
+        /// Forge kind label of the resolved artifact (e.g.
+        /// "buffer-pool", "codec"). Slash-path-free wire form to
+        /// match the spec-line-1515 family of `Fix::ReplaceOneOf`
+        /// diagnostics.
+        actual_kind: String,
+        /// Sorted list of every link kind name registered in the
+        /// build. Drives `Fix::ReplaceOneOf` so authors can repoint
+        /// at a legal link kind.
+        candidates: Vec<String>,
+    },
 }
 
 // ── Stage 4: Expression transpilation ──────────────────────────

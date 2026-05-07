@@ -72,6 +72,8 @@
         "scxml/on-sample-invalid-parent",
         "scxml/on-sample-link-duplicate-in-state",
         "scxml/on-sample-event-name-conflict",
+        "scxml/on-sample-link-not-declared",
+        "scxml/on-sample-link-wrong-kind",
         "expression/empty",
         "expression/lex",
         "expression/unsupported-construct",
