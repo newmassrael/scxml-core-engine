@@ -114,6 +114,7 @@
         "mem/pool-too-large",
         "mem/inter-pool-padding-not-emitted",
         "pool/sample-typestate-attributes-disabled",
+        "pool/sample-take-without-stage-pool",
         "io/filesystem",
         "cli/unknown-language",
         "cli/unsupported-language",

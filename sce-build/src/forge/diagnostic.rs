@@ -716,6 +716,27 @@ pub enum DiagnosticCode {
     #[serde(rename = "pool/sample-typestate-attributes-disabled")]
     PoolSampleTypestateAttributesDisabled,
 
+    /// watching-zenoh RFC §5.E B7-η' Atomic A1 application-layer
+    /// ownership diagnostic (spec lines 1513-1515): a state declares
+    /// `<sce:on-sample link="X">` and link X is registered, but the
+    /// link's forge document does not declare a `<sce:stage-pool>`
+    /// element. Without a stage pool, generated `Sample::take()` has
+    /// no destination for stage-copy and the link's runtime-side
+    /// `LinkConfig::stage_copy_hook` falls back to `PanicOnTakeHook`
+    /// (sce-link-runtime default) — silently turning callbacks that
+    /// call `take()` into runtime panics. Surfaced at codegen time
+    /// so authors decide consciously between adding
+    /// `<sce:stage-pool>` to the link or restricting the callback to
+    /// borrow-only access.
+    ///
+    /// Schema-locality choice (Atomic A1): the stage pool is a *link*
+    /// property co-located with rx_pool/tx_pool on the link kind
+    /// document, not a deploy-yaml binding property. The Q-StagePool
+    /// `BindingConfig.stage_pool` field (already landed) becomes a
+    /// deploy-time override mechanism — orthogonal to this diagnostic.
+    #[serde(rename = "pool/sample-take-without-stage-pool")]
+    PoolSampleTakeWithoutStagePool,
+
     #[serde(rename = "io/filesystem")]
     IoFilesystem,
 
@@ -1067,6 +1088,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MemInterPoolPaddingNotEmitted,
         // BufferPool §5.E Layer 1 ownership pull-through (watching-zenoh RFC §5.E, B7-ε)
         PoolSampleTypestateAttributesDisabled,
+        // Sample API §5.E B7-η' Atomic A1 application-layer ownership (watching-zenoh RFC §5.E)
+        PoolSampleTakeWithoutStagePool,
         // Io
         IoFilesystem,
         // Cli
@@ -1290,11 +1313,13 @@ impl DiagnosticCode {
             | LinkPoolSlotSmallerThanFramerMax => Some("watching-zenoh RFC §5.C"),
 
             // ── BufferPool §5.E DMA-aligned slot table + Layer 1
-            //    ownership pull-through (B7-α/β/ε) ────────────────
+            //    ownership pull-through (B7-α/β/ε) + B7-η' Sample API
+            //    application-layer ownership ────────────────────────
             MemPoolSectionConflict
             | MemPoolTooLarge
             | MemInterPoolPaddingNotEmitted
             | PoolSampleTypestateAttributesDisabled
+            | PoolSampleTakeWithoutStagePool
             | MeshDeployStagePoolNotDeclared
             | MeshDeployStagePoolWrongKind
             | MeshDeployStagePoolTransportMismatch
@@ -1582,6 +1607,7 @@ impl DiagnosticCode {
             MemPoolTooLarge => "mem/pool-too-large",
             MemInterPoolPaddingNotEmitted => "mem/inter-pool-padding-not-emitted",
             PoolSampleTypestateAttributesDisabled => "pool/sample-typestate-attributes-disabled",
+            PoolSampleTakeWithoutStagePool => "pool/sample-take-without-stage-pool",
             IoFilesystem => "io/filesystem",
             CliUnknownLanguage => "cli/unknown-language",
             CliUnsupportedLanguage => "cli/unsupported-language",
@@ -2749,6 +2775,26 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             }),
             key_fragments: vec![state_id.clone(), link.clone(), actual_kind.clone()],
         },
+        ValidationError::PoolSampleTakeWithoutStagePool {
+            state_id,
+            link,
+            candidates,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::PoolSampleTakeWithoutStagePool,
+            stage: Stage::Validation,
+            // `actual` carries the link name — same shape as the
+            // OnSampleLink* sister diagnostics so consumers see "which
+            // link triggered this" without parsing the message. The
+            // candidate list rides `Fix::ReplaceOneOf` over the build's
+            // declared buffer-pool kind names so authors picking a
+            // `<sce:stage-pool ref="...">` value see legal pools at hand.
+            expected: None,
+            actual: Some(link.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![state_id.clone(), link.clone()],
+        },
     }
 }
 
@@ -3736,6 +3782,22 @@ mod tests {
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
                 r#"{"v":1,"id":"fnv1a:38b424712554fe91","code":"scxml/on-sample-link-wrong-kind","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"state 'running': <sce:on-sample link=\"scout_codec\"> resolves to a forge 'codec' kind, not 'link'. Only link kind documents back the on-sample subscriber contract. Repoint the reference at one of the build's link kind names. See watching-zenoh RFC §5.E.","actual":"codec","fix":{"kind":"replace_one_of","candidates":["scout_link"]}}"#,
+            ),
+            (
+                // RFC §5.E B7-η' Atomic A1: on-sample subscriber on a
+                // link whose forge document has no `<sce:stage-pool>` —
+                // `Sample::take()` would route to the runtime's
+                // `PanicOnTakeHook` default. Candidates pull from the
+                // build's `ForgePoolRegistry` buffer-pool kind names.
+                "forge/pool-sample-take-without-stage-pool",
+                ValidationError::PoolSampleTakeWithoutStagePool {
+                    state_id: "running".into(),
+                    link: "scout_link".into(),
+                    candidates: vec!["scout_stage_pool".into()],
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:1c55aabc0ddc8d36","code":"pool/sample-take-without-stage-pool","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"state 'running': <sce:on-sample link=\"scout_link\"> targets a link kind whose forge document does not declare a `<sce:stage-pool>` element. Subscriber callbacks on this link cannot escape the borrow lifetime via `Sample::take()` because there is no stage-copy destination. Add `<sce:stage-pool ref=\"...\">` to the link's `.forge` document or restrict callbacks to borrow-only access. See watching-zenoh RFC §5.E.","actual":"scout_link","fix":{"kind":"replace_one_of","candidates":["scout_stage_pool"]}}"#,
             ),
             (
                 "forge/expression-empty",
@@ -5462,6 +5524,7 @@ mod tests {
             | MemPoolSectionConflict
             | MeshDeployStagePoolNotDeclared
             | MeshDeployStagePoolWrongKind
+            | PoolSampleTakeWithoutStagePool
             | ScxmlOnSampleLinkNotDeclared
             | ScxmlOnSampleLinkWrongKind
             | MeshDeployUnsupportedVersion
@@ -5919,6 +5982,7 @@ mod tests {
                 | MemPoolTooLarge
                 | MemInterPoolPaddingNotEmitted
                 | PoolSampleTypestateAttributesDisabled
+                | PoolSampleTakeWithoutStagePool
                 | IoFilesystem
                 | CliUnknownLanguage | CliUnsupportedLanguage | CliReadInput
                 | CliWriteOutput | CliCreateOutputDir | CliScxmlGenerate
@@ -6005,9 +6069,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            188,
+            189,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 188 distinct variants to match the DiagnosticCode \
+             expected 189 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -6072,14 +6136,21 @@ mod tests {
              registry today only stores Link kinds, so the validator's \
              match never reaches the `Some(non-Link)` arm in \
              production until a future cross-registry generalization; \
-             186 → 188). The remaining §5.C codes \
-             defer to B6-δ (listener self-check, gated on §5.K + §5.M \
-             SCE-side prerequisites), D.2 (`link/link-class-incompatible-with-os` \
-             alongside OS-specific classes), and B7 (`mem/alignment-\
-             violation` deferred until codec field placement lands a \
-             consumer surface, B7-γ FSM family, B7-δ cache-* family \
-             gated on §5.I, B7-η' application-facing API gated on \
-             `sce-link-runtime` Sample machinery).",
+             186 → 188); then watching-zenoh RFC §5.E B7-η' Atomic A1 \
+             schema-locality fix — `pool/sample-take-without-stage-pool` \
+             surfaces the gap when SCXML `<sce:on-sample link=\"X\">` \
+             targets a registered link kind whose forge document does \
+             not declare a `<sce:stage-pool>` (rx_pool/tx_pool sibling \
+             pattern, single source of truth on the link kind). Diagnostic \
+             rides `Fix::ReplaceOneOf` over the `ForgePoolRegistry` \
+             buffer-pool kind candidates so authors picking a stage pool \
+             reference see legal options at hand; 188 → 189. The remaining \
+             §5.C codes defer to B6-δ (listener self-check, gated on §5.K \
+             + §5.M SCE-side prerequisites), D.2 (`link/link-class-\
+             incompatible-with-os` alongside OS-specific classes), and \
+             B7 (`mem/alignment-violation` deferred until codec field \
+             placement lands a consumer surface, B7-γ FSM family, B7-δ \
+             cache-* family gated on §5.I).",
         );
     }
 

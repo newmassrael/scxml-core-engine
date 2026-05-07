@@ -45,6 +45,18 @@ extern "C" {
  * outbound queue saturates. */
 #define {{ upper_name }}_LINK_BACKPRESSURE "{{ backpressure }}"
 
+{% if has_stage_pool %}
+/* `<sce:stage-pool ref="{{ stage_pool }}"/>` — stage-copy
+ * destination pool (RFC §5.E B7-η' Atomic A1). Names the
+ * `<scxml sce:kind="buffer-pool">` artifact whose slots back
+ * `sce_sample_take()`'s owned-copy destination. SCXML on-sample
+ * validators look this macro up at SCXML compile time via
+ * `ForgeLinkRegistry::lookup_stage_pool({{ name }})`. Absence
+ * (no macro emitted) leaves the link's take() wired to the
+ * panic-on-take default; borrow-only consumers are unaffected. */
+#define {{ upper_name }}_LINK_STAGE_POOL "{{ stage_pool }}"
+{% endif %}
+
 /* Generated wrapper around an `sce_forge_link_t` driver handle.
  * The `framer_ref` is the `<sce:framer ref="{{ framer }}"/>` codec
  * name — consumers thread it through to the framer's decode / encode

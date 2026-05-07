@@ -1108,6 +1108,22 @@
   </xs:element>
 
   <!--
+    watching-zenoh RFC §5.E B7-η' Atomic A1: link-side `<sce:stage-pool>`
+    references a `<scxml sce:kind="buffer-pool">` sibling document by
+    name. Single source of truth for `Sample::take()`'s stage-copy
+    destination, co-located with `<sce:rx-pool>` / `<sce:tx-pool>` on
+    the link kind. SCXML on-sample validators
+    (`validate_on_sample_link_references`) consult the build's
+    `ForgeLinkRegistry` to decide whether `pool/sample-take-without-
+    stage-pool` fires for a state's `<sce:on-sample link="X">`.
+  -->
+  <xs:element name="stage-pool">
+    <xs:complexType>
+      <xs:attribute name="ref" type="xs:NCName" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!--
     watching-zenoh RFC §5.E (Phase B7-α, MCU-class): SRAM-placed,
     DMA-aligned slot table declared via `<scxml sce:kind="buffer-pool">`.
     B7-α surface is the minimum schema vertical slice. The 7-state

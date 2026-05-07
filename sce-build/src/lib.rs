@@ -6361,6 +6361,78 @@ int main(void) { (void)0; return 0; }
         );
     }
 
+    /// watching-zenoh RFC §5.E B7-η' Atomic A1: link-side
+    /// `<sce:stage-pool ref="X"/>` lowers to a `STAGE_POOL` const on
+    /// the Rust side and a `_LINK_STAGE_POOL` macro on the C11 side,
+    /// mirroring the `<sce:rx-pool>` / `<sce:tx-pool>` precedent. The
+    /// `{% if has_stage_pool %}` guard means absence emits nothing —
+    /// the field is link-declared, not link-required, so borrow-only
+    /// callbacks (`<sce:on-sample link="X">` consumers that never
+    /// call `Sample::take()`) remain valid without any stage-copy
+    /// destination.
+    #[test]
+    fn link_with_stage_pool_emits_constant() {
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="link" name="udp_scout" version="1.0">
+  <sce:link-class>udp</sce:link-class>
+  <sce:framer ref="scout_frame_codec"/>
+  <sce:backpressure>drop</sce:backpressure>
+  <sce:stage-pool ref="scout_stage_pool"/>
+</scxml>"##;
+        let label = DocumentLabel {
+            identifier: "udp_scout",
+            diagnostic_label: "udp_scout.scxml",
+        };
+        let out = compile_forge_from_string(scxml, label, generator::Language::Rust)
+            .expect("link with stage-pool must parse and emit");
+        let (_, body) = &out.files[0];
+        assert!(
+            body.contains("pub const STAGE_POOL: &'static str = \"scout_stage_pool\";"),
+            "STAGE_POOL constant must lower the stage-pool ref; full source:\n{body}",
+        );
+
+        // C11 backend emits the same field as a `_LINK_STAGE_POOL`
+        // preprocessor macro — round-tripping via the
+        // `link.h.jinja2` template's `{% if has_stage_pool %}` guard.
+        let out_c = compile_forge_from_string(scxml, label, generator::Language::C11)
+            .expect("c11 backend must accept the same link");
+        let (_, body_c) = &out_c.files[0];
+        assert!(
+            body_c.contains("#define UDP_SCOUT_LINK_STAGE_POOL \"scout_stage_pool\""),
+            "C11 backend must emit the STAGE_POOL macro; full source:\n{body_c}",
+        );
+
+        // Absence path: no `<sce:stage-pool>` ⇒ no STAGE_POOL anywhere
+        // in the generated output. Pins the `{% if %}` guard against
+        // template drift that would inject an empty default.
+        let no_stage = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="link" name="udp_scout" version="1.0">
+  <sce:link-class>udp</sce:link-class>
+  <sce:framer ref="scout_frame_codec"/>
+  <sce:backpressure>drop</sce:backpressure>
+</scxml>"##;
+        let out_none = compile_forge_from_string(no_stage, label, generator::Language::Rust)
+            .expect("link without stage-pool must still emit");
+        let (_, body_none) = &out_none.files[0];
+        assert!(
+            !body_none.contains("STAGE_POOL"),
+            "STAGE_POOL must NOT emit when no <sce:stage-pool>; full source:\n{body_none}",
+        );
+        let out_c_none =
+            compile_forge_from_string(no_stage, label, generator::Language::C11)
+                .expect("c11 backend without stage-pool must still emit");
+        let (_, body_c_none) = &out_c_none.files[0];
+        assert!(
+            !body_c_none.contains("LINK_STAGE_POOL"),
+            "C11 LINK_STAGE_POOL must NOT emit absent <sce:stage-pool>; \
+             full source:\n{body_c_none}",
+        );
+    }
+
     /// RFC §5.C B6-α' cross-resolution fixtures. Three sibling files in
     /// a tempdir — link.scxml + scout_frame_codec.scxml + a buffer-pool —
     /// drive `compile_forge_with_imports` through enrichment so the

@@ -2360,6 +2360,24 @@ pub struct LinkModel {
     /// alongside the rx-pool case.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tx_pool: Option<String>,
+    /// `<sce:stage-pool ref="...">` — stage-copy destination pool.
+    /// Single source of truth for `Sample::take()`'s copy target,
+    /// per watching-zenoh RFC §5.E (B7-η' Atomic A1: schema locality
+    /// belongs on the link kind, not on the deploy.yaml binding —
+    /// rx_pool/tx_pool precedent). When a SCXML state declares
+    /// `<sce:on-sample link="X">`, the η' validator looks up link X
+    /// in the [`super::link_registry::ForgeLinkRegistry`]; the link's
+    /// `stage_pool` field decides whether `take()` is wired (resolves
+    /// to a buffer-pool kind whose slots back the owned-copy
+    /// destination) or whether `take()` will panic at runtime
+    /// (`PanicOnTakeHook` default — Q-η'-5). Absence is legal for
+    /// borrow-only callbacks that never call `take()`; presence + a
+    /// missing on-sample subscriber is fine too (the field is link-
+    /// declared, not on-sample-coupled). The SCXML-side enforcement
+    /// raises `pool/sample-take-without-stage-pool` only when an
+    /// on-sample subscriber exists for a link without `stage_pool`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stage_pool: Option<String>,
 }
 
 /// `<sce:cache-policy>` enum — RFC §5.E lines 948-957. Three policies

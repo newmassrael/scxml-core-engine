@@ -82,4 +82,16 @@ impl<L: Link> {{ pascal_name }}<L> {
     /// (RFC §5.E B7-α schema-only). Same shape as `RX_POOL`.
     pub const TX_POOL: &'static str = "{{ tx_pool }}";
 {% endif %}
+{% if has_stage_pool %}
+    /// `<sce:stage-pool ref="{{ stage_pool }}"/>` — stage-copy
+    /// destination pool (RFC §5.E B7-η' Atomic A1). Names the
+    /// `<scxml sce:kind="buffer-pool">` artifact whose slots back
+    /// `Sample::take()`'s owned-copy destination. SCXML on-sample
+    /// validators look this constant up at SCXML compile time via
+    /// `ForgeLinkRegistry::lookup_stage_pool({{ name }})`; absence
+    /// (`has_stage_pool=false`) leaves the link's `take()` wired to
+    /// the `PanicOnTakeHook` default per `sce-link-runtime`'s
+    /// `LinkConfig`. Borrow-only callbacks are unaffected.
+    pub const STAGE_POOL: &'static str = "{{ stage_pool }}";
+{% endif %}
 }

@@ -3044,10 +3044,12 @@ fn validate_on_sample_event_names(
 pub fn validate_on_sample_link_references(
     model: &crate::model::SCXMLModel,
     link_registry: &crate::forge::link_registry::ForgeLinkRegistry,
+    pool_registry: &crate::forge::pool_registry::ForgePoolRegistry,
     diag_label: &str,
 ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
     use crate::forge::error::{Located, ValidationError};
     use crate::forge::link_registry::ForgeLinkKind;
+    use crate::forge::pool_registry::ForgePoolKind;
     let mut state_ids: Vec<&String> = model.states.keys().collect();
     state_ids.sort();
     for state_id in state_ids {
@@ -3077,6 +3079,34 @@ pub fn validate_on_sample_link_references(
             // wired through ValidationError + DiagnosticPayload +
             // golden — this match is the only place to grow when
             // that day comes.
+
+            // RFC §5.E B7-η' Atomic A1: `pool/sample-take-without-
+            // stage-pool`. Every state that subscribes to a link
+            // (`<sce:on-sample link="X">`) MUST be backed by a link
+            // whose `<sce:stage-pool>` declares where `Sample::take()`
+            // copies into. Absence is the canonical reason for the
+            // sce-link-runtime `LinkConfig` to wire the
+            // `PanicOnTakeHook` default — the diagnostic surfaces
+            // that mismatch at codegen time so callbacks that ever
+            // call `take()` aren't silently routed to a panic.
+            // Borrow-only callbacks remain perfectly legal: they
+            // just never trigger this check (they don't write
+            // `<sce:on-sample>`-driven subscribers that escape the
+            // borrow lifetime).
+            if link_registry.lookup_stage_pool(&block.link).is_none() {
+                let candidates = pool_registry.names_of_kind(ForgePoolKind::BufferPool);
+                return Err(Located::new(
+                    ValidationError::PoolSampleTakeWithoutStagePool {
+                        state_id: state_id.clone(),
+                        link: block.link.clone(),
+                        candidates,
+                    }
+                    .into(),
+                    diag_label,
+                    None,
+                    None,
+                ));
+            }
         }
     }
     Ok(())
@@ -5972,18 +6002,50 @@ mod tests {
             .expect("parse + structural validation")
     }
 
+    /// Build a synthetic forge link document for cross-ref tests. Any
+    /// stage-pool reference passed via `stage_pool` lands on the
+    /// `LinkModel.stage_pool` field, which `record_document` then
+    /// captures into the registry's sparse `stage_pools` map.
+    fn make_link_doc(
+        name: &str,
+        stage_pool: Option<&str>,
+    ) -> crate::forge::model::ForgeDocument {
+        use crate::forge::model::{
+            BackpressurePolicy, ForgeDocument, LinkClass, LinkModel,
+        };
+        ForgeDocument::Link(LinkModel {
+            name: name.to_string(),
+            class: LinkClass::Udp,
+            framer: "scout_frame_codec".to_string(),
+            backpressure: BackpressurePolicy::Drop,
+            inbound: vec![],
+            outbound: vec![],
+            rx_pool: None,
+            tx_pool: None,
+            stage_pool: stage_pool.map(String::from),
+        })
+    }
+
     #[test]
     fn cross_ref_link_resolves_when_registered() {
-        // Happy path: the registry knows the link by name → no
-        // diagnostic.
-        use crate::forge::link_registry::{ForgeLinkKind, ForgeLinkRegistry};
+        // Happy path: the registry knows the link by name AND records
+        // a `<sce:stage-pool>` for it (RFC §5.E B7-η' Atomic A1) →
+        // both checks pass, no diagnostic.
+        use crate::forge::link_registry::ForgeLinkRegistry;
+        use crate::forge::pool_registry::ForgePoolRegistry;
         let model = parse_running_with_link("scout_link");
         let mut registry = ForgeLinkRegistry::new();
         registry
-            .record("scout_link", ForgeLinkKind::Link)
+            .record_document(&make_link_doc("scout_link", Some("scout_stage_pool")))
             .unwrap();
-        validate_on_sample_link_references(&model, &registry, "cross_ref_test")
-            .expect("registered link resolves cleanly");
+        let pool_registry = ForgePoolRegistry::new();
+        validate_on_sample_link_references(
+            &model,
+            &registry,
+            &pool_registry,
+            "cross_ref_test",
+        )
+        .expect("registered link with stage_pool resolves cleanly");
     }
 
     #[test]
@@ -5993,13 +6055,20 @@ mod tests {
         // `OnSampleLinkNotDeclared` with the registry's actual
         // link names (sorted) as `Fix::ReplaceOneOf` candidates.
         use crate::forge::link_registry::{ForgeLinkKind, ForgeLinkRegistry};
+        use crate::forge::pool_registry::ForgePoolRegistry;
         let model = parse_running_with_link("scout_link");
         let mut registry = ForgeLinkRegistry::new();
         registry
             .record("status_link", ForgeLinkKind::Link)
             .unwrap();
-        let err = validate_on_sample_link_references(&model, &registry, "cross_ref_test")
-            .expect_err("unregistered link must be rejected");
+        let pool_registry = ForgePoolRegistry::new();
+        let err = validate_on_sample_link_references(
+            &model,
+            &registry,
+            &pool_registry,
+            "cross_ref_test",
+        )
+        .expect_err("unregistered link must be rejected");
         let err_str = format!("{:?}", err);
         assert!(
             err_str.contains("OnSampleLinkNotDeclared"),
@@ -6022,10 +6091,17 @@ mod tests {
         // empty candidate list, signalling "likely missing
         // .forge file" to the author.
         use crate::forge::link_registry::ForgeLinkRegistry;
+        use crate::forge::pool_registry::ForgePoolRegistry;
         let model = parse_running_with_link("scout_link");
         let registry = ForgeLinkRegistry::new();
-        let err = validate_on_sample_link_references(&model, &registry, "cross_ref_test")
-            .expect_err("empty registry → reference must be rejected");
+        let pool_registry = ForgePoolRegistry::new();
+        let err = validate_on_sample_link_references(
+            &model,
+            &registry,
+            &pool_registry,
+            "cross_ref_test",
+        )
+        .expect_err("empty registry → reference must be rejected");
         let err_str = format!("{:?}", err);
         assert!(
             err_str.contains("OnSampleLinkNotDeclared"),
@@ -6043,6 +6119,7 @@ mod tests {
         // States without `<sce:on-sample>` produce no validator
         // surface — empty registry is fine.
         use crate::forge::link_registry::ForgeLinkRegistry;
+        use crate::forge::pool_registry::ForgePoolRegistry;
         let xml = on_sample_test_doc(
             r##"  <state id="running">
     <transition event="external" target="running"/>
@@ -6052,7 +6129,93 @@ mod tests {
             .parse_string(&xml, "cross_ref_noop")
             .expect("parse");
         let registry = ForgeLinkRegistry::new();
-        validate_on_sample_link_references(&model, &registry, "cross_ref_noop")
-            .expect("states without on-sample blocks need no registry entries");
+        let pool_registry = ForgePoolRegistry::new();
+        validate_on_sample_link_references(
+            &model,
+            &registry,
+            &pool_registry,
+            "cross_ref_noop",
+        )
+        .expect("states without on-sample blocks need no registry entries");
+    }
+
+    // ── watching-zenoh RFC §5.E B7-η' Atomic A1 — stage-pool gate ──
+    //
+    // A1 adds a third validator gate after the kind-resolution gates:
+    // a registered link without `<sce:stage-pool>` cannot back an
+    // `<sce:on-sample>` subscriber that ever reaches `Sample::take()`.
+    // Tests below pin both arms (resolves on stage_pool present,
+    // rejects on stage_pool absent) plus the candidate list shape.
+
+    #[test]
+    fn cross_ref_link_without_stage_pool_emits_take_diagnostic() {
+        use crate::forge::link_registry::ForgeLinkRegistry;
+        use crate::forge::pool_registry::{ForgePoolKind, ForgePoolRegistry};
+        let model = parse_running_with_link("scout_link");
+        let mut registry = ForgeLinkRegistry::new();
+        // Link is registered (kind matches) BUT has no `<sce:stage-pool>`
+        // — the η' gate fires `pool/sample-take-without-stage-pool`.
+        registry
+            .record_document(&make_link_doc("scout_link", None))
+            .unwrap();
+        let mut pool_registry = ForgePoolRegistry::new();
+        pool_registry
+            .record("scout_stage_pool", ForgePoolKind::BufferPool)
+            .unwrap();
+        pool_registry
+            .record("alt_stage_pool", ForgePoolKind::BufferPool)
+            .unwrap();
+        let err = validate_on_sample_link_references(
+            &model,
+            &registry,
+            &pool_registry,
+            "cross_ref_test",
+        )
+        .expect_err("on-sample on link without stage_pool must be rejected");
+        let err_str = format!("{:?}", err);
+        assert!(
+            err_str.contains("PoolSampleTakeWithoutStagePool"),
+            "expected PoolSampleTakeWithoutStagePool, got: {err_str}"
+        );
+        assert!(
+            err_str.contains("scout_link"),
+            "diagnostic should name the link: {err_str}"
+        );
+        // Candidate list pulls from the pool registry's buffer-pool kind
+        // names so authors see a concrete `<sce:stage-pool>` `ref` target.
+        assert!(
+            err_str.contains("alt_stage_pool"),
+            "diagnostic should carry pool-registry candidates: {err_str}"
+        );
+        assert!(
+            err_str.contains("scout_stage_pool"),
+            "diagnostic should carry pool-registry candidates: {err_str}"
+        );
+    }
+
+    #[test]
+    fn cross_ref_link_with_stage_pool_no_pool_registry_still_passes() {
+        // A1 only inspects the link's stage_pool *presence* — it does
+        // not cross-resolve the named pool against the build's pool
+        // registry (that's the rx_pool / tx_pool slot-size validator's
+        // territory; for stage_pool the pool kind validation defers to
+        // the deploy-side `mesh/deploy-stage-pool-*` family). So a
+        // link that declares `<sce:stage-pool>` resolves cleanly even
+        // when the pool registry is empty.
+        use crate::forge::link_registry::ForgeLinkRegistry;
+        use crate::forge::pool_registry::ForgePoolRegistry;
+        let model = parse_running_with_link("scout_link");
+        let mut registry = ForgeLinkRegistry::new();
+        registry
+            .record_document(&make_link_doc("scout_link", Some("scout_stage_pool")))
+            .unwrap();
+        let pool_registry = ForgePoolRegistry::new();
+        validate_on_sample_link_references(
+            &model,
+            &registry,
+            &pool_registry,
+            "cross_ref_test",
+        )
+        .expect("link with stage_pool resolves regardless of pool registry contents");
     }
 }

@@ -5927,6 +5927,20 @@ fn parse_link(
         Some(node) => Some(require_attr(&node, "ref", "<sce:tx-pool>", doc_name)?),
         None => None,
     };
+    // RFC §5.E B7-η' Atomic A1: link-side `<sce:stage-pool ref="X"/>`
+    // names the buffer-pool kind whose slots back `Sample::take()`'s
+    // owned-copy destination. Schema locality on the link kind (not
+    // on deploy.yaml) puts the source of truth alongside rx_pool/
+    // tx_pool — the link is the unit that owns the RX-side buffer
+    // pipeline. Absence is legal (borrow-only callbacks never call
+    // `take()`); the SCXML on-sample validator
+    // (`validate_on_sample_link_references`) raises
+    // `pool/sample-take-without-stage-pool` when a state declares
+    // `<sce:on-sample link="X">` but link X's `stage_pool` is None.
+    let stage_pool = match find_sce_child(root, "stage-pool") {
+        Some(node) => Some(require_attr(&node, "ref", "<sce:stage-pool>", doc_name)?),
+        None => None,
+    };
 
     Ok(LinkModel {
         name: doc_name.to_string(),
@@ -5937,6 +5951,7 @@ fn parse_link(
         outbound,
         rx_pool,
         tx_pool,
+        stage_pool,
     })
 }
 

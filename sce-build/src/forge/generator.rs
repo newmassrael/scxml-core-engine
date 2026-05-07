@@ -9230,8 +9230,10 @@ fn render_link_rust(
         }).collect::<Vec<_>>(),
         rx_pool => m.rx_pool.clone().unwrap_or_default(),
         tx_pool => m.tx_pool.clone().unwrap_or_default(),
+        stage_pool => m.stage_pool.clone().unwrap_or_default(),
         has_rx_pool => m.rx_pool.is_some(),
         has_tx_pool => m.tx_pool.is_some(),
+        has_stage_pool => m.stage_pool.is_some(),
     };
     tmpl.render(ctx).map_err(|e| {
         ForgeError::Generate(GenerateError::TemplateRender(format!(
@@ -9315,6 +9317,8 @@ fn render_link_c(
             event => &e.event,
             encode => &e.encode,
         }).collect::<Vec<_>>(),
+        stage_pool => m.stage_pool.clone().unwrap_or_default(),
+        has_stage_pool => m.stage_pool.is_some(),
     };
     tmpl.render(ctx).map_err(|e| {
         ForgeError::Generate(GenerateError::TemplateRender(format!(

@@ -870,6 +870,42 @@ pub enum ValidationError {
         /// at a legal link kind.
         candidates: Vec<String>,
     },
+
+    /// watching-zenoh RFC §5.E B7-η' Atomic A1 application-layer
+    /// ownership diagnostic (spec lines 1513-1515): a state declares
+    /// `<sce:on-sample link="X">` and link `X` is registered, but the
+    /// link's forge document does not declare a `<sce:stage-pool>`
+    /// element. Without a stage pool the generated `Sample::take()`
+    /// has no destination to copy into and the link's
+    /// `LinkConfig::stage_copy_hook` falls back to `PanicOnTakeHook`
+    /// (sce-link-runtime default) — silently pushing the failure to
+    /// runtime callbacks. The diagnostic surfaces the gap at codegen
+    /// time so authors decide consciously: either add
+    /// `<sce:stage-pool ref="...">` to the link kind, or accept that
+    /// callbacks on this link must be borrow-only (no `.take()`
+    /// across the callback boundary).
+    ///
+    /// Schema locality choice (Atomic A1 vs prior interpretation): the
+    /// stage pool is a *link* property, co-located with rx_pool /
+    /// tx_pool on the `<scxml sce:kind="link">` document, not a
+    /// deploy-yaml binding property. The B7-η' Q-StagePool field on
+    /// `BindingConfig.stage_pool` (already landed) becomes a
+    /// deploy-time override mechanism — orthogonal to this diagnostic.
+    #[error("state '{state_id}': <sce:on-sample link=\"{link}\"> targets a link kind whose forge document does not declare a `<sce:stage-pool>` element. Subscriber callbacks on this link cannot escape the borrow lifetime via `Sample::take()` because there is no stage-copy destination. Add `<sce:stage-pool ref=\"...\">` to the link's `.forge` document or restrict callbacks to borrow-only access. See watching-zenoh RFC §5.E.")]
+    PoolSampleTakeWithoutStagePool {
+        /// State id whose `<sce:on-sample>` triggers the gap.
+        state_id: String,
+        /// Link name as authored. Cross-references the link kind
+        /// document that lacks a `<sce:stage-pool>`.
+        link: String,
+        /// Sorted list of every buffer-pool kind name registered in
+        /// the build. Drives `Fix::ReplaceOneOf` so authors picking
+        /// a `<sce:stage-pool ref="...">` value see legal pool names
+        /// at hand. Empty when no buffer-pool kind has been declared
+        /// anywhere in the build (then the fix is to add a
+        /// `<scxml sce:kind="buffer-pool">` document first).
+        candidates: Vec<String>,
+    },
 }
 
 // ── Stage 4: Expression transpilation ──────────────────────────

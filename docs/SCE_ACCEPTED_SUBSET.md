@@ -380,7 +380,7 @@ no typed interpretation or are explicitly excluded:
 
 ---
 
-## Appendix — `DiagnosticCode` index (180 codes)
+## Appendix — `DiagnosticCode` index (189 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -465,6 +465,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `mem/pool-too-large` | Validation |
 | `mem/inter-pool-padding-not-emitted` | Validation |
 | `pool/sample-typestate-attributes-disabled` | Validation |
+| `pool/sample-take-without-stage-pool` | Validation |
 | `scxml/top-level-script-unloaded` | Validation |
 | `scxml/on-sample-invalid-parent` | Validation |
 | `scxml/on-sample-link-duplicate-in-state` | Validation |

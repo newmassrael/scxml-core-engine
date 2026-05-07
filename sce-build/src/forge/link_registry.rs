@@ -65,9 +65,21 @@ impl ForgeLinkKind {
 /// Forge itself already enforces unique artifact names within a
 /// build, so duplicates surfacing here would indicate a producer
 /// bug; the assert in `record` is a defensive belt-and-braces.
+///
+/// `stage_pools` is a sparse parallel map keyed by the same link
+/// names — populated only for links that declare
+/// `<sce:stage-pool ref="X"/>` (RFC §5.E B7-η' Atomic A1). The
+/// keys are a strict subset of `links` (every stage_pool entry
+/// names a registered link, never the reverse). Consumers query
+/// it via [`Self::lookup_stage_pool`] to wire the SCXML on-sample
+/// validator's `pool/sample-take-without-stage-pool` diagnostic.
 #[derive(Debug, Default)]
 pub struct ForgeLinkRegistry {
     links: HashMap<String, ForgeLinkKind>,
+    /// Sparse: only links with a declared `<sce:stage-pool>` element
+    /// have an entry. Absence == None == link's `Sample::take()`
+    /// resolves to the runtime's `PanicOnTakeHook` default.
+    stage_pools: HashMap<String, String>,
 }
 
 impl ForgeLinkRegistry {
@@ -76,13 +88,17 @@ impl ForgeLinkRegistry {
     pub fn new() -> Self {
         Self {
             links: HashMap::new(),
+            stage_pools: HashMap::new(),
         }
     }
 
-    /// Register one link artifact. Returns `Err` with the existing
-    /// kind if the name is already registered with a different kind;
-    /// no-op if the same name + same kind is re-registered
-    /// (idempotent for repeat calls during incremental builds).
+    /// Register one link artifact without per-link metadata. Returns
+    /// `Err` with the existing kind if the name is already registered
+    /// with a different kind; no-op if the same name + same kind is
+    /// re-registered (idempotent for repeat calls during incremental
+    /// builds). Use [`Self::record_document`] for production code —
+    /// this entry point is convenience for tests that only exercise
+    /// the kind-resolution surface.
     pub fn record(
         &mut self,
         name: impl Into<String>,
@@ -102,10 +118,23 @@ impl ForgeLinkRegistry {
     /// Register a forge document if its kind is a link kind. No-op
     /// for non-link documents — matches the "register every parsed
     /// forge document" call-site pattern without the caller having
-    /// to filter.
+    /// to filter. For link documents, also captures
+    /// [`super::model::LinkModel::stage_pool`] when present so
+    /// downstream SCXML validators (`validate_on_sample_link_references`)
+    /// can decide whether a state's `<sce:on-sample link="X">`
+    /// subscriber has a stage pool wired up.
     pub fn record_document(&mut self, doc: &ForgeDocument) -> Result<(), ForgeLinkKind> {
         if let ForgeDocument::Link(link) = doc {
-            self.record(link.name.clone(), ForgeLinkKind::Link)
+            self.record(link.name.clone(), ForgeLinkKind::Link)?;
+            if let Some(stage_pool) = link.stage_pool.as_ref() {
+                // First registration wins — duplicate links are
+                // already rejected by `record` above, so we never
+                // reach this branch with conflicting stage_pool refs.
+                self.stage_pools
+                    .entry(link.name.clone())
+                    .or_insert_with(|| stage_pool.clone());
+            }
+            Ok(())
         } else {
             Ok(())
         }
@@ -116,6 +145,16 @@ impl ForgeLinkRegistry {
     /// `scxml/on-sample-link-not-declared` diagnostic.
     pub fn lookup(&self, name: &str) -> Option<ForgeLinkKind> {
         self.links.get(name).copied()
+    }
+
+    /// Resolve the stage-copy pool reference for a registered link.
+    /// `None` means the link has no `<sce:stage-pool>` element OR
+    /// the link itself is not registered. Callers must verify link
+    /// registration via [`Self::lookup`] separately when distinguishing
+    /// "unregistered link" from "registered link without stage pool"
+    /// (the latter raises `pool/sample-take-without-stage-pool`).
+    pub fn lookup_stage_pool(&self, name: &str) -> Option<&str> {
+        self.stage_pools.get(name).map(String::as_str)
     }
 
     /// Sorted list of registered link names of a given kind.
@@ -183,6 +222,63 @@ mod tests {
                 "zeta_link".to_string()
             ]
         );
+    }
+
+    #[test]
+    fn record_via_record_only_has_no_stage_pool() {
+        // The convenience `record` API (used by tests of the kind-only
+        // resolution surface) leaves `stage_pools` empty — only
+        // `record_document` extracts it from a parsed `LinkModel`.
+        let mut reg = ForgeLinkRegistry::new();
+        reg.record("scout_link", ForgeLinkKind::Link).unwrap();
+        assert_eq!(reg.lookup_stage_pool("scout_link"), None);
+    }
+
+    #[test]
+    fn record_document_captures_stage_pool() {
+        use super::super::model::{
+            BackpressurePolicy, ForgeDocument, LinkClass, LinkModel,
+        };
+        let mut reg = ForgeLinkRegistry::new();
+        let doc = ForgeDocument::Link(LinkModel {
+            name: "scout_link".to_string(),
+            class: LinkClass::Udp,
+            framer: "scout_frame_codec".to_string(),
+            backpressure: BackpressurePolicy::Drop,
+            inbound: vec![],
+            outbound: vec![],
+            rx_pool: None,
+            tx_pool: None,
+            stage_pool: Some("scout_stage_pool".to_string()),
+        });
+        reg.record_document(&doc).unwrap();
+        assert_eq!(reg.lookup("scout_link"), Some(ForgeLinkKind::Link));
+        assert_eq!(reg.lookup_stage_pool("scout_link"), Some("scout_stage_pool"));
+    }
+
+    #[test]
+    fn record_document_without_stage_pool_leaves_lookup_none() {
+        // A link kind without `<sce:stage-pool>` registers normally,
+        // but `lookup_stage_pool` returns None — that's the trigger
+        // for the η' `pool/sample-take-without-stage-pool` diagnostic.
+        use super::super::model::{
+            BackpressurePolicy, ForgeDocument, LinkClass, LinkModel,
+        };
+        let mut reg = ForgeLinkRegistry::new();
+        let doc = ForgeDocument::Link(LinkModel {
+            name: "borrow_only_link".to_string(),
+            class: LinkClass::Udp,
+            framer: "scout_frame_codec".to_string(),
+            backpressure: BackpressurePolicy::Drop,
+            inbound: vec![],
+            outbound: vec![],
+            rx_pool: None,
+            tx_pool: None,
+            stage_pool: None,
+        });
+        reg.record_document(&doc).unwrap();
+        assert_eq!(reg.lookup("borrow_only_link"), Some(ForgeLinkKind::Link));
+        assert_eq!(reg.lookup_stage_pool("borrow_only_link"), None);
     }
 
     #[test]
