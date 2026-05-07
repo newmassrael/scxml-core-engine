@@ -206,6 +206,64 @@ fn w1_4_no_callback_emits_no_call_site() {
 }
 
 #[test]
+fn w1_5_emits_event_raise_always() {
+    // W1.5 contract: per Q-Wire-3 lock, every per-state arm emits
+    // `self.raise_external_by_name("<event>", "")` regardless of
+    // whether a callback is present. Event-data is empty per
+    // Q-Wire-4 (typed payload flows through callback path; event
+    // path is for SCXML transition reaction only).
+
+    // Case A: no callback — only event raise in arm body.
+    let no_cb_code = render_rust(FIXTURE);
+    assert!(
+        no_cb_code.contains("self.raise_external_by_name(\"scout.tick\", \"\");"),
+        "missing event-raise call site in callback-absent fixture:\n{no_cb_code}"
+    );
+
+    // Case B: with callback — both callback and event raise present
+    // (Q-Wire-3: callback fires synchronously first, then event).
+    const WITH_CALLBACK: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       initial="running"
+       datamodel="ecmascript"
+       sce:kind="statechart"
+       name="watcher">
+  <state id="running">
+    <sce:on-sample link="scout_link" event="scout.tick"
+                   callback="rust:my_app::on_scout"/>
+    <transition event="scout.tick" target="running"/>
+  </state>
+</scxml>
+"##;
+    let with_cb_code = render_rust(WITH_CALLBACK);
+    assert!(
+        with_cb_code.contains("my_app::on_scout(&sample);"),
+        "missing callback line in callback-present fixture:\n{with_cb_code}"
+    );
+    assert!(
+        with_cb_code.contains("self.raise_external_by_name(\"scout.tick\", \"\");"),
+        "missing event-raise line in callback-present fixture:\n{with_cb_code}"
+    );
+
+    // Drift gate: order in source is callback before event.
+    let cb_pos = with_cb_code
+        .find("my_app::on_scout(&sample);")
+        .expect("callback position");
+    let raise_pos = with_cb_code
+        .find("self.raise_external_by_name(\"scout.tick\", \"\");")
+        .expect("event-raise position");
+    assert!(
+        cb_pos < raise_pos,
+        "callback must precede event raise per Q-Wire-3 (callback synchronously, then event)"
+    );
+
+    syn::parse_file(&with_cb_code)
+        .unwrap_or_else(|e| panic!("W1.5 emission fails syn parse: {e}\n{with_cb_code}"));
+}
+
+#[test]
 fn w1_2_skipped_when_no_on_sample_blocks() {
     // Templates must elide the LinkRx surface entirely when no state
     // declares `<sce:on-sample>`. Negative case: rendering must not

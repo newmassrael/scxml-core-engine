@@ -1013,7 +1013,15 @@ impl {{ machine_name }}LinkRx for ::sce_rust_runtime::Engine<{{ machine_name }}P
                     // Q-Callback-3 (A2 spec lines 1513-1519).
                     {{ block.callback | extern_callback_path }}(&sample);
 {% endif %}
-                    // W1.5 event raise — body filled in W1.5.
+                    // W1.5 event raise — Q-Wire-3 lock: when a
+                    // callback was present it fired synchronously
+                    // above; this raise still happens so SCXML
+                    // transitions react to the sample arrival.
+                    // Q-Wire-4 lock: event_data is the empty string
+                    // (typed payload flows through the callback
+                    // path; the event path is purely for state-
+                    // machine reaction).
+                    self.raise_external_by_name("{{ block.event | escape_rust }}", "");
                 }
 {% endif %}
 {% endfor %}
