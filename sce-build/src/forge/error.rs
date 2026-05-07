@@ -761,6 +761,58 @@ pub enum ValidationError {
         /// Buffer-pool document name (root `name=` attribute).
         name: String,
     },
+
+    /// watching-zenoh RFC §5.E B7-η' Q-OnSample-2 (a): a `<sce:on-sample>`
+    /// element appears outside a `<state>` or `<parallel>` parent.
+    /// Q-OnSample-1 (Y) parser-AST extension means the validator can
+    /// see the actual parent at parse time and quote the offending
+    /// XML path so authors do not have to guess. Reachable via
+    /// document tree walk (the well-formed-placement parser collects
+    /// children of `<state>` / `<parallel>` only — strays remain
+    /// unparented in the AST and are surfaced here).
+    #[error("<sce:on-sample> at {path}: must appear directly inside a <state> or <parallel>; found inside <{actual_parent}>. Move the element under a state or parallel ancestor.")]
+    OnSampleInvalidParent {
+        /// XML path describing where the stray element was found,
+        /// e.g. "scxml > onentry" or "scxml > final > onentry". The
+        /// path is descriptive prose, not a machine-parseable
+        /// XPath, because authoring-time tooling reads the message.
+        path: String,
+        /// Tag name of the immediate parent (`scxml`, `onentry`,
+        /// `final`, etc.) so the diagnostic surfaces the boundary
+        /// without forcing the author to expand the path.
+        actual_parent: String,
+    },
+
+    /// watching-zenoh RFC §5.E B7-η' Q-OnSample-5 (a): two or more
+    /// `<sce:on-sample>` blocks in the same state declare the same
+    /// `link=`. Multiple blocks per state are explicitly allowed
+    /// (fan-in across links) but each link must appear at most once
+    /// per state — duplicate registrations would compete for the
+    /// same RX callback slot at runtime, producing undefined
+    /// dispatch order.
+    #[error("state '{state_id}': duplicate <sce:on-sample link=\"{link}\"> declarations. Each link is allowed at most one on-sample block per state; merge the duplicates or rename one of the link references.")]
+    OnSampleLinkDuplicateInState {
+        /// State id whose body contains the duplicates.
+        state_id: String,
+        /// Link name that appears more than once.
+        link: String,
+    },
+
+    /// watching-zenoh RFC §5.E B7-η' Q-OnSample-7: a `<sce:on-sample>`
+    /// declares an `event=` whose name collides with a built-in W3C
+    /// SCXML event prefix (`error.*`, `done.*`). The W3C SCXML §5.10
+    /// internal event family carries fixed semantics — letting an
+    /// author overload `done.state.foo` (raised when state foo
+    /// reaches `<final>`) by an on-sample dispatch would silently
+    /// crosstalk completions with sample arrivals. Author safety net.
+    #[error("<sce:on-sample event=\"{event}\"> collides with the reserved W3C SCXML internal event prefix '{reserved_prefix}'. Pick an event name outside that family (e.g. 'sample.{event}') so dispatched samples stay distinct from built-in lifecycle events.")]
+    OnSampleEventNameConflict {
+        /// Event name as authored.
+        event: String,
+        /// Reserved prefix that the event name collides with
+        /// (`error.` or `done.`).
+        reserved_prefix: String,
+    },
 }
 
 // ── Stage 4: Expression transpilation ──────────────────────────

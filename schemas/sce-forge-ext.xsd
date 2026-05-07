@@ -1172,4 +1172,19 @@
     </xs:complexType>
   </xs:element>
 
+  <!-- watching-zenoh RFC §5.E B7-η': SCXML state-level subscriber
+       declaration. Lifts the spec line 1269 callback contract ("the
+       subscriber callback receives `&Sample<'_>`") into a state-scoped
+       `<sce:on-sample link="X" event="E"/>` extension. Q-OnSample-1
+       (Y) parser-AST extension; Q-OnSample-3 v1 attributes are link +
+       event (both required). Cross-reference resolution against the
+       forge link kind registry is the Atomic B follow-on; XSD
+       validation here only enforces attribute shape. -->
+  <xs:element name="on-sample">
+    <xs:complexType>
+      <xs:attribute name="link" type="xs:string" use="required"/>
+      <xs:attribute name="event" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
 </xs:schema>

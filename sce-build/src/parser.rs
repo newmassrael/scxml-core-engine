@@ -433,6 +433,22 @@ impl SCXMLParser {
         // Parse states recursively
         self.parse_states(&root, None, &mut model, base_dir, diag_label)?;
 
+        // watching-zenoh RFC §5.E B7-η' Atomic A — `<sce:on-sample>`
+        // structural validators run immediately after the states pass
+        // so the diagnostic surfaces before any downstream derivation
+        // (feature detection, parallel-region computation, etc.) can
+        // mis-interpret a malformed extension. Three checks in fixed
+        // order:
+        //   1. placement (parent must be `<state>` or `<parallel>`),
+        //   2. per-state link uniqueness,
+        //   3. event-name vs W3C internal-event-prefix collision.
+        // First failure short-circuits — the early author-facing
+        // signal beats accumulating multiple structural diagnostics
+        // for the same well-known authoring mistake.
+        validate_on_sample_placement(&root, diag_label)?;
+        validate_on_sample_uniqueness(&model, diag_label)?;
+        validate_on_sample_event_names(&model, diag_label)?;
+
         // Feature detection
         self.detect_features(&mut model);
 
@@ -946,6 +962,13 @@ impl SCXMLParser {
                 }
             }
 
+            // watching-zenoh RFC §5.E B7-η' Q-OnSample-2 (a):
+            // `<sce:on-sample>` is valid inside `<state>` and `<parallel>` only.
+            // Atomic A collects the AST nodes here; a separate placement
+            // validator (`validate_on_sample_placement`) walks the rest of
+            // the document for stray nodes outside these two parents.
+            collect_on_sample_blocks(&child, &mut state.on_sample_blocks);
+
             model.states.insert(state_id.clone(), state);
 
             // Recurse into child states
@@ -1047,6 +1070,13 @@ impl SCXMLParser {
                     state.on_exit_blocks.push(block);
                 }
             }
+
+            // watching-zenoh RFC §5.E B7-η' Q-OnSample-2 (a):
+            // `<sce:on-sample>` valid inside `<parallel>` symmetric to
+            // `<state>` above. The single helper keeps the two arms in
+            // lockstep so a future placement-rule extension touches one
+            // call site, not two.
+            collect_on_sample_blocks(&child, &mut state.on_sample_blocks);
 
             model.states.insert(parallel_id.clone(), state);
             model.has_parallel_states = true;
@@ -2795,6 +2825,191 @@ fn scxml_child<'a>(parent: &'a roxmltree::Node<'a, 'a>, tag: &str) -> Option<rox
     parent
         .children()
         .find(|c| c.is_element() && c.tag_name().name() == tag)
+}
+
+/// watching-zenoh RFC §5.E B7-η' helper: collect all `<sce:on-sample>`
+/// children of a `<state>` or `<parallel>` element into the supplied
+/// vector, in document order. The namespace check (`SCE_NAMESPACE`)
+/// distinguishes `<sce:on-sample>` from a hypothetical W3C-namespace
+/// `<on-sample>` (the latter is not an SCXML element today, but
+/// future spec work may collide).
+///
+/// Required attributes (`link`, `event`) are recorded as authored;
+/// missing values land as empty strings and are caught by the
+/// downstream structural validators (`validate_on_sample_*` in
+/// [`crate::scxml_semantic`]). Document order is the per-state index
+/// inside `on_sample_blocks`, used as a stable diagnostic key when
+/// source line numbers aren't available.
+fn collect_on_sample_blocks(
+    parent: &roxmltree::Node,
+    out: &mut Vec<crate::model::OnSampleNode>,
+) {
+    use crate::forge::model::SCE_NAMESPACE;
+    for child in parent.children() {
+        if !child.is_element() {
+            continue;
+        }
+        if child.tag_name().namespace() != Some(SCE_NAMESPACE) {
+            continue;
+        }
+        if child.tag_name().name() != "on-sample" {
+            continue;
+        }
+        let link = child.attribute("link").unwrap_or("").to_string();
+        let event = child.attribute("event").unwrap_or("").to_string();
+        let document_order = out.len() as u32;
+        out.push(crate::model::OnSampleNode {
+            link,
+            event,
+            document_order,
+        });
+    }
+}
+
+/// watching-zenoh RFC §5.E B7-η' Q-OnSample-2 (a) placement validator.
+/// Walks the entire document looking for `<sce:on-sample>` elements
+/// whose immediate parent is **not** `<state>` or `<parallel>`. Such
+/// strays are silently ignored by [`collect_on_sample_blocks`] (it
+/// only inspects children of the two valid parents); without this
+/// validator they would land as unrecorded SCXML noise. The
+/// diagnostic carries a descriptive XML path so authors see exactly
+/// which boundary was crossed.
+fn validate_on_sample_placement(
+    root: &roxmltree::Node,
+    diag_label: &str,
+) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
+    use crate::forge::error::{Located, ValidationError};
+    use crate::forge::model::SCE_NAMESPACE;
+    for desc in root.document().descendants() {
+        if !desc.is_element() {
+            continue;
+        }
+        if desc.tag_name().namespace() != Some(SCE_NAMESPACE) {
+            continue;
+        }
+        if desc.tag_name().name() != "on-sample" {
+            continue;
+        }
+        // The parent is the element directly enclosing this node;
+        // root document nodes have no parent (this branch never fires
+        // for the root, but guard explicitly so the helper is safe to
+        // call on any subtree).
+        let parent = match desc.parent_element() {
+            Some(p) => p,
+            None => continue,
+        };
+        let parent_name = parent.tag_name().name();
+        if parent_name == "state" || parent_name == "parallel" {
+            continue;
+        }
+        // Build a descriptive path by climbing parents — each step
+        // emits the local tag name. The walk stops at the document
+        // root so the path stays bounded even for deeply nested trees.
+        let mut chain: Vec<&str> = Vec::new();
+        let mut cursor = Some(parent);
+        while let Some(node) = cursor {
+            chain.push(node.tag_name().name());
+            cursor = node.parent_element();
+        }
+        chain.reverse();
+        let path = if chain.is_empty() {
+            "<root>".to_string()
+        } else {
+            chain.join(" > ")
+        };
+        return Err(Located::new(
+            ValidationError::OnSampleInvalidParent {
+                path,
+                actual_parent: parent_name.to_string(),
+            }
+            .into(),
+            diag_label,
+            None,
+            None,
+        ));
+    }
+    Ok(())
+}
+
+/// watching-zenoh RFC §5.E B7-η' Q-OnSample-5 (a) uniqueness validator.
+/// Each `<sce:on-sample link="X">` block must appear at most once per
+/// state — duplicate registrations on the same link compete for the
+/// same RX callback slot at runtime, producing undefined dispatch
+/// order. The check is per-state; the same link may appear in
+/// multiple distinct states (different subscriptions per state is
+/// the canonical fan-out pattern).
+fn validate_on_sample_uniqueness(
+    model: &crate::model::SCXMLModel,
+    diag_label: &str,
+) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
+    use crate::forge::error::{Located, ValidationError};
+    use std::collections::BTreeSet;
+    // Iterate states in deterministic order so the diagnostic surface
+    // for parallel duplicate-finding matches across runs.
+    let mut state_ids: Vec<&String> = model.states.keys().collect();
+    state_ids.sort();
+    for state_id in state_ids {
+        let state = &model.states[state_id];
+        let mut seen: BTreeSet<&str> = BTreeSet::new();
+        for block in &state.on_sample_blocks {
+            if !seen.insert(block.link.as_str()) {
+                return Err(Located::new(
+                    ValidationError::OnSampleLinkDuplicateInState {
+                        state_id: state_id.clone(),
+                        link: block.link.clone(),
+                    }
+                    .into(),
+                    diag_label,
+                    None,
+                    None,
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// watching-zenoh RFC §5.E B7-η' Q-OnSample-7 event-name conflict
+/// validator. W3C SCXML §5.10 reserves the `error.*` and `done.*`
+/// event-name families for built-in lifecycle events; an author
+/// dispatching a sample-arrival event into one of these families
+/// would silently crosstalk the W3C-prescribed semantics. The check
+/// is conservative — the prefix match (`event` either equals
+/// `error`/`done` or starts with `error.`/`done.`) covers both
+/// bare-name use ("error") and dotted descendants ("error.io.foo").
+fn validate_on_sample_event_names(
+    model: &crate::model::SCXMLModel,
+    diag_label: &str,
+) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
+    use crate::forge::error::{Located, ValidationError};
+    let mut state_ids: Vec<&String> = model.states.keys().collect();
+    state_ids.sort();
+    for state_id in state_ids {
+        let state = &model.states[state_id];
+        for block in &state.on_sample_blocks {
+            let event = block.event.as_str();
+            let reserved_prefix = if event == "error" || event.starts_with("error.") {
+                Some("error.")
+            } else if event == "done" || event.starts_with("done.") {
+                Some("done.")
+            } else {
+                None
+            };
+            if let Some(reserved) = reserved_prefix {
+                return Err(Located::new(
+                    ValidationError::OnSampleEventNameConflict {
+                        event: event.to_string(),
+                        reserved_prefix: reserved.to_string(),
+                    }
+                    .into(),
+                    diag_label,
+                    None,
+                    None,
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// XML node serialization matching Python lxml etree.tostring(method='xml').
@@ -5468,6 +5683,201 @@ mod tests {
              ParseError.h (1 pure-virtual on ParseError + 5 subtype \
              overrides); found {}",
             override_count
+        );
+    }
+
+    // ── watching-zenoh RFC §5.E B7-η' Atomic A — `<sce:on-sample>` ──
+    //
+    // These cover the SCXML extension's parser-AST + 3 structural
+    // validator surfaces. Cross-ref behaviour (link-not-declared,
+    // link-wrong-kind) is gated on Atomic B's `ForgeLinkRegistry` and
+    // is not exercised here.
+
+    fn on_sample_test_doc(states_body: &str) -> String {
+        format!(
+            r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       initial="running"
+       datamodel="ecmascript"
+       sce:kind="statechart">
+{states_body}
+</scxml>"##
+        )
+    }
+
+    #[test]
+    fn on_sample_basic_parses() {
+        // Q-OnSample-1 (Y): the AST node is collected from a valid
+        // <state> parent, with link/event recorded verbatim.
+        let xml = on_sample_test_doc(
+            r##"  <state id="running">
+    <sce:on-sample link="scout_link" event="scout.tick"/>
+    <transition event="scout.tick" target="running"/>
+  </state>"##,
+        );
+        let model = SCXMLParser::new()
+            .parse_string(&xml, "on_sample_basic")
+            .expect("parse");
+        let running = &model.states["running"];
+        assert_eq!(running.on_sample_blocks.len(), 1);
+        let block = &running.on_sample_blocks[0];
+        assert_eq!(block.link, "scout_link");
+        assert_eq!(block.event, "scout.tick");
+        assert_eq!(block.document_order, 0);
+    }
+
+    #[test]
+    fn on_sample_multi_link_per_state_parses() {
+        // Q-OnSample-5 (a): multiple distinct links allowed in one
+        // state. Document-order indices are 0-based.
+        let xml = on_sample_test_doc(
+            r##"  <state id="running">
+    <sce:on-sample link="scout_link"  event="scout.tick"/>
+    <sce:on-sample link="status_link" event="status.tick"/>
+    <transition event="scout.tick"  target="running"/>
+    <transition event="status.tick" target="running"/>
+  </state>"##,
+        );
+        let model = SCXMLParser::new()
+            .parse_string(&xml, "on_sample_multi_link")
+            .expect("parse");
+        let running = &model.states["running"];
+        assert_eq!(running.on_sample_blocks.len(), 2);
+        assert_eq!(running.on_sample_blocks[0].link, "scout_link");
+        assert_eq!(running.on_sample_blocks[1].link, "status_link");
+        assert_eq!(running.on_sample_blocks[0].document_order, 0);
+        assert_eq!(running.on_sample_blocks[1].document_order, 1);
+    }
+
+    #[test]
+    fn on_sample_invalid_parent_at_root_rejected() {
+        // Q-OnSample-2 (a): placement rule rejects on-sample blocks
+        // outside <state>/<parallel>. Root-level placement is the
+        // canonical author-mistake — the diagnostic surfaces the
+        // crossing parent name verbatim.
+        let xml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       initial="running"
+       datamodel="ecmascript"
+       sce:kind="statechart">
+  <sce:on-sample link="scout_link" event="scout.tick"/>
+  <state id="running">
+    <transition event="scout.tick" target="running"/>
+  </state>
+</scxml>"##;
+        let err = SCXMLParser::new()
+            .parse_string(xml, "on_sample_root_reject")
+            .expect_err("root-level <sce:on-sample> must be rejected");
+        let err_str = format!("{:?}", err);
+        assert!(
+            err_str.contains("OnSampleInvalidParent"),
+            "expected OnSampleInvalidParent, got: {err_str}"
+        );
+        assert!(
+            err_str.contains("scxml"),
+            "diagnostic should name the crossing parent: {err_str}"
+        );
+    }
+
+    #[test]
+    fn on_sample_invalid_parent_inside_onentry_rejected() {
+        // <onentry> inside <state> looks plausible but is not one of
+        // the two valid parents — the placement rule is parent-tag
+        // exact (Q-OnSample-2 (a)), not ancestor-loose.
+        let xml = on_sample_test_doc(
+            r##"  <state id="running">
+    <onentry>
+      <sce:on-sample link="scout_link" event="scout.tick"/>
+    </onentry>
+    <transition event="scout.tick" target="running"/>
+  </state>"##,
+        );
+        let err = SCXMLParser::new()
+            .parse_string(&xml, "on_sample_onentry_reject")
+            .expect_err("<sce:on-sample> inside <onentry> must be rejected");
+        let err_str = format!("{:?}", err);
+        assert!(
+            err_str.contains("OnSampleInvalidParent"),
+            "expected OnSampleInvalidParent, got: {err_str}"
+        );
+        assert!(
+            err_str.contains("onentry"),
+            "diagnostic should name <onentry> as the crossing parent: {err_str}"
+        );
+    }
+
+    #[test]
+    fn on_sample_duplicate_link_rejected() {
+        // Q-OnSample-5 (a) uniqueness: same link declared twice in
+        // one state is rejected even though multi-link fan-in is
+        // allowed.
+        let xml = on_sample_test_doc(
+            r##"  <state id="running">
+    <sce:on-sample link="scout_link" event="scout.tick"/>
+    <sce:on-sample link="scout_link" event="scout.refresh"/>
+    <transition event="scout.tick" target="running"/>
+  </state>"##,
+        );
+        let err = SCXMLParser::new()
+            .parse_string(&xml, "on_sample_dup_reject")
+            .expect_err("duplicate link must be rejected");
+        let err_str = format!("{:?}", err);
+        assert!(
+            err_str.contains("OnSampleLinkDuplicateInState"),
+            "expected OnSampleLinkDuplicateInState, got: {err_str}"
+        );
+        assert!(
+            err_str.contains("scout_link"),
+            "diagnostic should name the duplicated link: {err_str}"
+        );
+    }
+
+    #[test]
+    fn on_sample_event_name_conflict_with_error_prefix_rejected() {
+        // Q-OnSample-7: event names colliding with the W3C SCXML
+        // §5.10 internal-event prefix family (error.*, done.*) are
+        // rejected. `error.io` is the canonical regression case.
+        let xml = on_sample_test_doc(
+            r##"  <state id="running">
+    <sce:on-sample link="scout_link" event="error.io"/>
+    <transition event="error.io" target="running"/>
+  </state>"##,
+        );
+        let err = SCXMLParser::new()
+            .parse_string(&xml, "on_sample_event_conflict")
+            .expect_err("event name colliding with error.* must be rejected");
+        let err_str = format!("{:?}", err);
+        assert!(
+            err_str.contains("OnSampleEventNameConflict"),
+            "expected OnSampleEventNameConflict, got: {err_str}"
+        );
+        assert!(
+            err_str.contains("error."),
+            "diagnostic should quote the reserved prefix: {err_str}"
+        );
+    }
+
+    #[test]
+    fn on_sample_event_name_done_prefix_rejected() {
+        // Symmetric coverage for the done.* prefix — both halves of
+        // the W3C internal-event family must reject.
+        let xml = on_sample_test_doc(
+            r##"  <state id="running">
+    <sce:on-sample link="scout_link" event="done.state.foo"/>
+    <transition event="done.state.foo" target="running"/>
+  </state>"##,
+        );
+        let err = SCXMLParser::new()
+            .parse_string(&xml, "on_sample_done_conflict")
+            .expect_err("event name colliding with done.* must be rejected");
+        let err_str = format!("{:?}", err);
+        assert!(
+            err_str.contains("OnSampleEventNameConflict"),
+            "expected OnSampleEventNameConflict, got: {err_str}"
         );
     }
 }

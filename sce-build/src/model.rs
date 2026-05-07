@@ -593,6 +593,35 @@ impl std::ops::DerefMut for HybridInvokeInfo {
     }
 }
 
+/// watching-zenoh RFC §5.E B7-η' — `<sce:on-sample>` SCXML extension.
+/// Wraps the spec line 1269 subscriber callback contract ("the
+/// subscriber callback receives `&Sample<'_>`; the slot returns to the
+/// pool when the callback returns") into a state-level declaration
+/// that the η' codegen template lowers to a per-state callback
+/// registration on the link's RX path.
+///
+/// Q-OnSample-1 (Y) parser-AST extension; Q-OnSample-2 (a) valid only
+/// inside `<state>` and `<parallel>`; Q-OnSample-3 v1 attributes are
+/// `link` (forge link kind artifact name) + `event` (SCXML event name
+/// dispatched on Sample arrival), both required.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct OnSampleNode {
+    /// `link="X"` — forge link kind artifact name. Cross-reference
+    /// resolution against the build's [`crate::forge::pool_registry`]-style
+    /// `ForgeLinkRegistry` is the Atomic B follow-on; structural
+    /// validators in this atomic do not consult the registry.
+    pub link: String,
+    /// `event="X"` — SCXML event name raised when a Sample arrives.
+    /// State-level `<transition event="X">` blocks dispatch normally
+    /// per W3C SCXML §5.10, with `_event.data` carrying the borrowed
+    /// `&Sample<'_>` reference.
+    pub event: String,
+    /// 0-based document order within this state's `<sce:on-sample>`
+    /// blocks. Lets diagnostics quote a stable per-state index even
+    /// when the source file lacks reliable line numbers.
+    pub document_order: u32,
+}
+
 /// W3C SCXML 3.3: State element
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct State {
@@ -611,6 +640,12 @@ pub struct State {
     /// ([`Invoke::Scxml`] / [`Invoke::Hybrid`] / [`Invoke::MeshRpc`]).
     /// Templates dispatch on `invoke.kind`; Rust consumers pattern-match.
     pub invokes: Vec<Invoke>,
+    /// `<sce:on-sample>` declarations on this state, in document order.
+    /// Empty for states without sample subscriptions. Q-OnSample-5 (a)
+    /// allows multiple blocks (one per link) per state with a
+    /// uniqueness validator on the `link` attribute.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub on_sample_blocks: Vec<OnSampleNode>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub donedata: Option<DoneData>,
     pub document_order: u32,

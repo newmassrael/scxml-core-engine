@@ -466,6 +466,9 @@ Codes that the author can avoid by writing a better SCXML /
 | `mem/inter-pool-padding-not-emitted` | Validation |
 | `pool/sample-typestate-attributes-disabled` | Validation |
 | `scxml/top-level-script-unloaded` | Validation |
+| `scxml/on-sample-invalid-parent` | Validation |
+| `scxml/on-sample-link-duplicate-in-state` | Validation |
+| `scxml/on-sample-event-name-conflict` | Validation |
 | `expression/empty` | Expression |
 | `expression/lex` | Expression |
 | `expression/unsupported-construct` | Expression |

@@ -406,6 +406,17 @@ pub enum DiagnosticCode {
     //    `<script>` rejection per §5.8 has no forge analog). ──
     #[serde(rename = "scxml/top-level-script-unloaded")]
     ScxmlTopLevelScriptUnloaded,
+    // ── watching-zenoh RFC §5.E B7-η' SCXML on-sample family ──
+    // Author-facing rules for `<sce:on-sample>` SCE extension. Atomic A
+    // ships the structural diagnostics (placement, uniqueness,
+    // event-name-conflict); cross-ref diagnostics (link-not-declared,
+    // link-wrong-kind) are gated on Atomic B's ForgeLinkRegistry.
+    #[serde(rename = "scxml/on-sample-invalid-parent")]
+    ScxmlOnSampleInvalidParent,
+    #[serde(rename = "scxml/on-sample-link-duplicate-in-state")]
+    ScxmlOnSampleLinkDuplicateInState,
+    #[serde(rename = "scxml/on-sample-event-name-conflict")]
+    ScxmlOnSampleEventNameConflict,
 
     #[serde(rename = "expression/empty")]
     ExpressionEmpty,
@@ -984,6 +995,9 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         AlgorithmReturnMissing,
         // SCXML semantic (RFC §W5)
         ScxmlTopLevelScriptUnloaded,
+        ScxmlOnSampleInvalidParent,
+        ScxmlOnSampleLinkDuplicateInState,
+        ScxmlOnSampleEventNameConflict,
         // Expression
         ExpressionEmpty,
         ExpressionLex,
@@ -1270,7 +1284,10 @@ impl DiagnosticCode {
             | PoolSampleTypestateAttributesDisabled
             | MeshDeployStagePoolNotDeclared
             | MeshDeployStagePoolWrongKind
-            | MeshDeployStagePoolTransportMismatch => Some("watching-zenoh RFC §5.E"),
+            | MeshDeployStagePoolTransportMismatch
+            | ScxmlOnSampleInvalidParent
+            | ScxmlOnSampleLinkDuplicateInState
+            | ScxmlOnSampleEventNameConflict => Some("watching-zenoh RFC §5.E"),
 
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
@@ -1505,6 +1522,9 @@ impl DiagnosticCode {
             AlgorithmLvalueUnsupported => "algorithm/lvalue-unsupported",
             AlgorithmReturnMissing => "algorithm/return-missing",
             ScxmlTopLevelScriptUnloaded => "scxml/top-level-script-unloaded",
+            ScxmlOnSampleInvalidParent => "scxml/on-sample-invalid-parent",
+            ScxmlOnSampleLinkDuplicateInState => "scxml/on-sample-link-duplicate-in-state",
+            ScxmlOnSampleEventNameConflict => "scxml/on-sample-event-name-conflict",
             ExpressionEmpty => "expression/empty",
             ExpressionLex => "expression/lex",
             ExpressionUnsupportedConstruct => "expression/unsupported-construct",
@@ -2637,6 +2657,45 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 key_fragments: vec![name.clone()],
             }
         }
+        ValidationError::OnSampleInvalidParent {
+            path,
+            actual_parent,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ScxmlOnSampleInvalidParent,
+            stage: Stage::Validation,
+            // The repair is "move the element under a state/parallel"
+            // — too contextual to express as a structured fix. Author
+            // reads the message and resolves at the source.
+            expected: None,
+            actual: Some(actual_parent.clone()),
+            fix: None,
+            key_fragments: vec![path.clone(), actual_parent.clone()],
+        },
+        ValidationError::OnSampleLinkDuplicateInState { state_id, link } => DiagnosticPayload {
+            code: DiagnosticCode::ScxmlOnSampleLinkDuplicateInState,
+            stage: Stage::Validation,
+            // No structured fix — author chooses which duplicate to
+            // keep. `actual` surfaces the offending link name so CLI
+            // consumers see it without parsing the message body.
+            expected: None,
+            actual: Some(link.clone()),
+            fix: None,
+            key_fragments: vec![state_id.clone(), link.clone()],
+        },
+        ValidationError::OnSampleEventNameConflict {
+            event,
+            reserved_prefix,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ScxmlOnSampleEventNameConflict,
+            stage: Stage::Validation,
+            // No structured fix — the suggested replacement
+            // `sample.<event>` is one of many valid choices. Prose
+            // makes the recommendation; author picks the final name.
+            expected: None,
+            actual: Some(event.clone()),
+            fix: None,
+            key_fragments: vec![event.clone(), reserved_prefix.clone()],
+        },
     }
 }
 
@@ -3562,6 +3621,39 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:60cc8f4eef6d11ca","code":"scxml/top-level-script-unloaded","stage":"validation","spec":"W3C SCXML §5.8","message":"Top-level <script> rejected per W3C SCXML 5.8","actual":"init.js"}"#,
+            ),
+            (
+                // watching-zenoh RFC §5.E B7-η' Q-OnSample-2 (a)
+                "forge/scxml-on-sample-invalid-parent",
+                ValidationError::OnSampleInvalidParent {
+                    path: "scxml > onentry".into(),
+                    actual_parent: "onentry".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:90051ac7a8571e3a","code":"scxml/on-sample-invalid-parent","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"<sce:on-sample> at scxml > onentry: must appear directly inside a <state> or <parallel>; found inside <onentry>. Move the element under a state or parallel ancestor.","actual":"onentry"}"#,
+            ),
+            (
+                // watching-zenoh RFC §5.E B7-η' Q-OnSample-5 (a)
+                "forge/scxml-on-sample-link-duplicate-in-state",
+                ValidationError::OnSampleLinkDuplicateInState {
+                    state_id: "running".into(),
+                    link: "scout_link".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:ab4ec9e9ef9663b9","code":"scxml/on-sample-link-duplicate-in-state","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"state 'running': duplicate <sce:on-sample link=\"scout_link\"> declarations. Each link is allowed at most one on-sample block per state; merge the duplicates or rename one of the link references.","actual":"scout_link"}"#,
+            ),
+            (
+                // watching-zenoh RFC §5.E B7-η' Q-OnSample-7
+                "forge/scxml-on-sample-event-name-conflict",
+                ValidationError::OnSampleEventNameConflict {
+                    event: "error.io".into(),
+                    reserved_prefix: "error.".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:3b804e5f18b5b65a","code":"scxml/on-sample-event-name-conflict","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"<sce:on-sample event=\"error.io\"> collides with the reserved W3C SCXML internal event prefix 'error.'. Pick an event name outside that family (e.g. 'sample.error.io') so dispatched samples stay distinct from built-in lifecycle events.","actual":"error.io"}"#,
             ),
             (
                 "forge/expression-empty",
@@ -5345,6 +5437,9 @@ mod tests {
             | AlgorithmLvalueUnsupported
             | AlgorithmReturnMissing
             | ScxmlTopLevelScriptUnloaded
+            | ScxmlOnSampleInvalidParent
+            | ScxmlOnSampleLinkDuplicateInState
+            | ScxmlOnSampleEventNameConflict
             | ExpressionEmpty
             | ExpressionLex
             | ExpressionUnsupportedConstruct
@@ -5702,6 +5797,9 @@ mod tests {
                 | AlgorithmLvalueUnsupported
                 | AlgorithmReturnMissing
                 | ScxmlTopLevelScriptUnloaded
+                | ScxmlOnSampleInvalidParent
+                | ScxmlOnSampleLinkDuplicateInState
+                | ScxmlOnSampleEventNameConflict
                 | ExpressionEmpty | ExpressionLex
                 | ExpressionUnsupportedConstruct | ExpressionStrictEquality
                 | ExpressionParseMismatch | ExpressionUnexpectedToken
@@ -5818,9 +5916,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            183,
+            186,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 183 distinct variants to match the DiagnosticCode \
+             expected 186 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -5866,7 +5964,16 @@ mod tests {
              stage destinations. The first two ride `Fix::ReplaceOneOf` over \
              the `ForgePoolRegistry` declared-name candidate set; the third \
              rides `Fix::RemoveFields` to drop the misapplied field on a \
-             non-staging-capable transport; 180 → 183). The remaining §5.C codes \
+             non-staging-capable transport; 180 → 183; then watching-zenoh \
+             RFC §5.E B7-η' Q-OnSample atomic A — the SCXML `<sce:on-sample>` \
+             extension's three structural diagnostics \
+             (`scxml/on-sample-invalid-parent`, \
+             `scxml/on-sample-link-duplicate-in-state`, \
+             `scxml/on-sample-event-name-conflict`) gating placement, \
+             per-state link uniqueness, and W3C internal-event-prefix \
+             collision. Cross-ref diagnostics (`scxml/on-sample-link-not-declared`, \
+             `scxml/on-sample-link-wrong-kind`) gated on Atomic B's \
+             `ForgeLinkRegistry`; 183 → 186). The remaining §5.C codes \
              defer to B6-δ (listener self-check, gated on §5.K + §5.M \
              SCE-side prerequisites), D.2 (`link/link-class-incompatible-with-os` \
              alongside OS-specific classes), and B7 (`mem/alignment-\
