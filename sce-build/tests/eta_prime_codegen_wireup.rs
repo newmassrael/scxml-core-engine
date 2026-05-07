@@ -56,6 +56,31 @@ fn render_rust(scxml: &str) -> String {
     out.files.into_iter().next().expect("at least one file").1
 }
 
+fn render_c11(scxml: &str) -> (String, String) {
+    let tmp = tempdir().expect("tempdir");
+    let path = tmp.path().join("watcher.scxml");
+    fs::write(&path, scxml).expect("write fixture");
+
+    let tdir: PathBuf = sce_build::find_template_dir_for(sce_build::generator::Language::C11);
+    let out = sce_build::compile_scxml_lang(
+        path.to_str().unwrap(),
+        &tdir,
+        sce_build::generator::Language::C11,
+    )
+    .expect("c11 codegen");
+
+    let mut header = None;
+    let mut source = None;
+    for (name, content) in out.files {
+        if name.ends_with(".h") {
+            header = Some(content);
+        } else if name.ends_with(".c") {
+            source = Some(content);
+        }
+    }
+    (header.expect("missing .h"), source.expect("missing .c"))
+}
+
 #[test]
 fn w1_2_emits_link_rx_trait_and_impl() {
     // W1.2 contract: when any state has `<sce:on-sample link="X">`, the
@@ -261,6 +286,80 @@ fn w1_5_emits_event_raise_always() {
 
     syn::parse_file(&with_cb_code)
         .unwrap_or_else(|e| panic!("W1.5 emission fails syn parse: {e}\n{with_cb_code}"));
+}
+
+// ── W2: C11 mirror ──────────────────────────────────────────────
+
+#[test]
+fn w2_c11_emits_per_link_deliver_function() {
+    // W2 contract: C11 1:1 mirror of W1.2-1.5. The header
+    // declares one `<machine>_deliver_link_<x>_sample(sm, sample)`
+    // per `<sce:on-sample link>` and gates the `<sce/sample.h>`
+    // include on the same condition. The .c file emits the
+    // definition with active-state filter (`_in_state` predicate)
+    // + event raise via `_raise_external` + `event_with_meta_t`
+    // setup. Q-Wire-3 lock: event always raised. Callback path
+    // is Rust-only on Q-Callback-2 v1; the C11 backend ignores
+    // `<sce:on-sample callback="rust:...">` for now.
+    let (header, source) = render_c11(FIXTURE);
+
+    // Header
+    assert!(
+        header.contains("#include \"sce/sample.h\""),
+        "missing sample.h include in header:\n{header}"
+    );
+    assert!(
+        header.contains("_deliver_link_scout_link_sample("),
+        "missing per-link function declaration:\n{header}"
+    );
+    assert!(
+        header.contains("const sce_sample_t *sample"),
+        "missing sce_sample_t borrow parameter:\n{header}"
+    );
+
+    // Source
+    assert!(
+        source.contains("_deliver_link_scout_link_sample("),
+        "missing per-link function definition:\n{source}"
+    );
+    assert!(
+        source.contains("_in_state(sm, ") && source.contains("_STATE_RUNNING)"),
+        "missing active-state filter via _in_state predicate:\n{source}"
+    );
+    assert!(
+        source.contains("_raise_external(sm, &_on_sample_evt);"),
+        "missing event raise call:\n{source}"
+    );
+    assert!(
+        source.contains("_EVENT_SCOUT_TICK"),
+        "missing event enum value (analyzer must register on-sample events into model.events):\n{source}"
+    );
+}
+
+#[test]
+fn w2_c11_skipped_when_no_on_sample_blocks() {
+    // Negative case: documents without `<sce:on-sample>` must not
+    // include `<sce/sample.h>` (header-include hygiene) and must
+    // not declare any deliver function. This pins the elision
+    // contract symmetric to the Rust w1_2 negative test.
+    const NO_ON_SAMPLE: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       initial="running"
+       datamodel="ecmascript"
+       name="quiet">
+  <state id="running"/>
+</scxml>
+"##;
+    let (header, source) = render_c11(NO_ON_SAMPLE);
+    assert!(
+        !header.contains("sce/sample.h"),
+        "sample.h must elide for documents without <sce:on-sample>:\n{header}"
+    );
+    assert!(
+        !header.contains("deliver_link_") && !source.contains("deliver_link_"),
+        "deliver_link_* must elide for documents without <sce:on-sample>"
+    );
 }
 
 #[test]

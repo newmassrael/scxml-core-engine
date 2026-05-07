@@ -627,6 +627,11 @@ pub fn register_c11_filters(env: &mut minijinja::Environment) {
     env.add_filter("split", filter_split);
     env.add_filter("slice_from", filter_slice_from);
     env.add_filter("extern_callback_path", filter_extern_callback_path);
+    // watching-zenoh RFC §5.E B7-η' W2: per-link function names
+    // (`<machine>_deliver_link_<X>_sample`) snake-case the link
+    // name to keep the C identifier stable when the SCXML link
+    // attribute uses kebab-case or mixedCase.
+    env.add_filter("to_snake_case", to_snake_case);
 }
 
 /// Escape C string literals (identical escaping rules to Rust/C++).

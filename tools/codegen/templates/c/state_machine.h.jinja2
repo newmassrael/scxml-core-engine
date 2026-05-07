@@ -21,6 +21,14 @@
 
 #include "sce/types.h"
 
+{% if model.on_sample_links %}
+/* watching-zenoh RFC §5.E B7-η' codegen wire-up. `sce_sample_t`
+   borrow type + `sce_sub_callback_t` typedef live in the runtime
+   header; the per-link `_deliver_link_<X>_sample` declarations
+   below take a `const sce_sample_t *sample` borrow. */
+#include "sce/sample.h"
+{% endif %}
+
 {% if (model.invokes | scxml_family) %}
 /* W3C SCXML 6.4: invoke types + helpers (sce-c-runtime/include/sce/invoke.h).
    Header-only — types and `static inline` helpers per c11_design_decisions.md
@@ -441,6 +449,26 @@ bool {{ model.name }}_is_in_final_state(const {{ model.name }}_t *sm);
 {{ model.name }}_state_t {{ model.name }}_initial_state(void);
 bool {{ model.name }}_is_final_state({{ model.name }}_state_t s);
 
+{% if model.on_sample_links %}
+/* watching-zenoh RFC §5.E B7-η' codegen wire-up — per-link Sample
+   delivery surface. Host's link RX path (zenoh-pico subscriber,
+   custom_tcp dispatch loop, …) calls the matching function for
+   every Sample arriving on the named link. The body iterates the
+   active configuration, fires the user-supplied callback (when
+   `<sce:on-sample callback>` is declared with a future c:-prefix
+   axis — Q-Callback-2 v1 is `rust:` only and is silently ignored
+   on the C11 backend today), then enqueues `event="..."` onto the
+   external queue (Q-Wire-3 lock: event always raised). Sample
+   borrow drops at function exit; slot return is the host's
+   responsibility per the `sce_sub_callback_t` contract in
+   `<sce/sample.h>`. */
+{% for link in model.on_sample_links %}
+void {{ model.name }}_deliver_link_{{ link | to_snake_case }}_sample(
+    {{ model.name }}_t *sm,
+    const sce_sample_t *sample);
+{% endfor %}
+
+{% endif %}
 /* ── Compile-time invariants ──────────────────────────────────────── */
 _Static_assert(SCE_MAX_EVENTS >= 1u, "SCE_MAX_EVENTS must be >= 1");
 _Static_assert(SCE_MAX_ID_LEN >= 16u, "SCE_MAX_ID_LEN too small for W3C event names");

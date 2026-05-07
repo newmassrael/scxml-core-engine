@@ -178,9 +178,22 @@ fn analyze_model_features(model: &mut SCXMLModel) {
     // drives the Rust state_machine template's per-link delivery
     // method emission. Sorted via BTreeSet so codegen output is
     // deterministic across runs.
+    //
+    // The event-name side of the same iteration registers each
+    // `<sce:on-sample event="Y">` value into `model.events` so
+    // backends emitting an enum + per-name dispatch (C11
+    // `<machine>_event_t`) include the on-sample-only events
+    // even when the SCXML lacks a `<transition event="Y">`
+    // declaration locally — without this, the W2 C11 codegen's
+    // `WATCHER_EVENT_SCOUT_TICK` reference would fail to compile
+    // for documents that subscribe but don't react in the same
+    // file. Rust's by-name lookup tolerates absence (silent
+    // drop), but registering uniformly keeps the two backends
+    // semantically aligned.
     for state in model.states.values() {
         for block in &state.on_sample_blocks {
             model.on_sample_links.insert(block.link.clone());
+            model.events.insert(block.event.clone());
         }
     }
 
