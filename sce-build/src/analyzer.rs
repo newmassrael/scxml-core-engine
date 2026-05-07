@@ -171,6 +171,19 @@ fn analyze_model_features(model: &mut SCXMLModel) {
         }
     }
 
+    // watching-zenoh RFC §5.E B7-η' codegen wire-up: collect the
+    // unique set of forge link names referenced by any
+    // `<sce:on-sample link="X" .../>` block across all states.
+    // Empty for documents without sample subscriptions; non-empty
+    // drives the Rust state_machine template's per-link delivery
+    // method emission. Sorted via BTreeSet so codegen output is
+    // deterministic across runs.
+    for state in model.states.values() {
+        for block in &state.on_sample_blocks {
+            model.on_sample_links.insert(block.link.clone());
+        }
+    }
+
     // W3C SCXML B.2 (test557): inline `<data>` content whose first
     // non-whitespace character is `<` triggers the host-side XML DOM
     // helper. Mirrors cpp `DataModelInitHelper::initializeVariable`

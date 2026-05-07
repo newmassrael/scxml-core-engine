@@ -698,6 +698,18 @@ pub struct SCXMLModel {
     pub has_history_states: bool,
     pub has_event_metadata: bool,
     pub has_parent_communication: bool,
+    /// watching-zenoh RFC §5.E B7-η' codegen wire-up — sorted set of
+    /// every `link` name referenced by any state's
+    /// `<sce:on-sample link="X" .../>` block. Derived in
+    /// [`crate::analyzer::analyze_model_features`] as the union over
+    /// `state.on_sample_blocks`. Empty when the machine has no sample
+    /// subscriptions (the common case); non-empty drives the Rust
+    /// state_machine template's `deliver_link_X_sample` method
+    /// emission per Q-Wire-9 (host-driven delivery, generic over `M:
+    /// SampleMeta` so the codegen does not need to know the link's
+    /// concrete metadata type at template-render time).
+    #[serde(skip_serializing_if = "BTreeSet::is_empty", default)]
+    pub on_sample_links: BTreeSet<String>,
     /// W3C SCXML 6.4 / test229: `true` iff any `<invoke>` in the document
     /// carries `autoforward="true"`. Drives codegen of the
     /// `forward_to_autoforward_children` helper + its call site in the

@@ -942,3 +942,60 @@ impl {{ machine_name }}Policy {
 
 {% include 'conflict_resolution.rs.jinja2' %}
 }
+{% if model.on_sample_links %}
+
+// ======================================================================
+// watching-zenoh RFC §5.E B7-η' codegen wire-up
+// ======================================================================
+//
+// Per-link Sample delivery surface. The host's link RX task (e.g. a
+// Tokio task draining a Zenoh subscriber, an `arm_rx`-style poll
+// loop, or the QNX `dispatch_create()` reactor) calls
+// `engine.deliver_link_<X>_sample(sample)` for every Sample arriving
+// on the named link. The generated method:
+//
+//   1. Iterates active states whose `<sce:on-sample link="X">` block
+//      matches the link.
+//   2. For each match: invokes the user-supplied `callback="rust:..."`
+//      synchronously with `&sample` (when present), then raises the
+//      `event="..."` external event so SCXML transitions react.
+//   3. Drops the Sample at method exit, returning the slot to the pool
+//      via the embedded `SlotGuard`.
+//
+// Generic over `M: SampleMeta` so the codegen does not need to learn
+// the link's concrete metadata type (Q-Wire-9 lock 2026-05-07). The
+// user's call site instantiates `M` from their link driver's
+// `Sample<'pool, MyMeta>` value; rustc enforces the user-callback
+// signature against the borrow contract per Q-Callback-3 / A2.
+//
+// W1.2 emits the trait + impl skeleton with empty bodies; W1.3
+// (config-filter), W1.4 (callback dispatch), W1.5 (event raise) fill
+// the bodies in successive atomics.
+pub trait {{ machine_name }}LinkRx {
+{% for link in model.on_sample_links %}
+    /// Deliver a Sample arriving on link `{{ link }}`.
+    fn deliver_link_{{ link | to_snake_case }}_sample<M>(
+        &mut self,
+        sample: ::sce_link_runtime::Sample<'_, M>,
+    )
+    where
+        M: ::sce_link_runtime::SampleMeta;
+{% endfor %}
+}
+
+impl {{ machine_name }}LinkRx for ::sce_rust_runtime::Engine<{{ machine_name }}Policy> {
+{% for link in model.on_sample_links %}
+    fn deliver_link_{{ link | to_snake_case }}_sample<M>(
+        &mut self,
+        sample: ::sce_link_runtime::Sample<'_, M>,
+    )
+    where
+        M: ::sce_link_runtime::SampleMeta,
+    {
+        // W1.2 skeleton — body filled in W1.3 (config filter),
+        // W1.4 (callback dispatch), W1.5 (event raise).
+        let _ = sample;
+    }
+{% endfor %}
+}
+{% endif %}
