@@ -946,6 +946,82 @@ pub enum ValidationError {
         /// generic "malformed callback").
         reason: CallbackPathReason,
     },
+
+    /// watching-zenoh RFC §5.I `<sce:extern>` whitelist rejection
+    /// (spec line 1847): `<sce:extern name="...">` references a
+    /// symbol absent from the §5.I baseline registry. `candidates`
+    /// rides `Fix::ReplaceOneOf` so authors see closest-match
+    /// suggestions without paging through 101 baseline entries.
+    /// Q-Call-4 (a) lock: parse-time rejection; closed-set membership
+    /// follows the `LinkLinkClassUnknown` (B6-γ) precedent.
+    #[error(
+        "<sce:extern name=\"{name}\"> references a symbol that is not on the §5.I baseline whitelist. \
+         Choose a registry-listed name (closest matches: {candidates_list}) or extend the whitelist via a target plugin (deploy.yaml `extern_symbols.target_plugin`)."
+    )]
+    ExternSymbolNotInWhitelist {
+        /// Symbol name as authored — guaranteed absent from the
+        /// registry.
+        name: String,
+        /// Closest baseline-name candidates, sorted by shared-prefix
+        /// length. Bounded at 8 for wire-payload bound.
+        candidates: Vec<String>,
+        /// Joined `candidates` for the message body. Filled at
+        /// raise-site so the user-visible string lists names without
+        /// the consumer needing to format them itself.
+        candidates_list: String,
+    },
+
+    /// watching-zenoh RFC §5.I `<sce:extern abi="...">` mismatch
+    /// (spec line 1848): the authored ABI does not match the
+    /// registry entry's canonical ABI. Closed two-element repair set
+    /// `[c, rust]` rides `Fix::ReplaceOneOf`.
+    #[error(
+        "<sce:extern name=\"{name}\" abi=\"{actual}\"> uses a non-canonical ABI; the registry entry requires `abi=\"{expected}\"`. The accepted set is [\"c\", \"rust\"]."
+    )]
+    ExternAbiMismatch {
+        /// Symbol name (registry-resolved).
+        name: String,
+        /// Registry's canonical ABI (`c` or `rust`).
+        expected: String,
+        /// What the author wrote.
+        actual: String,
+    },
+
+    /// watching-zenoh RFC §5.I `<sce:extern sig="...">` mismatch
+    /// (spec line 1849): the authored signature does not byte-match
+    /// the registry entry's canonical signature. `Fix::Replace`
+    /// carries the canonical sig.
+    #[error(
+        "<sce:extern name=\"{name}\" sig=\"{actual}\"> declares a signature that does not match the registry entry. Replace with `sig=\"{expected}\"`."
+    )]
+    ExternSignatureMismatch {
+        /// Symbol name (registry-resolved).
+        name: String,
+        /// Registry's canonical signature.
+        expected: String,
+        /// What the author wrote.
+        actual: String,
+    },
+
+    /// watching-zenoh RFC §5.I atomic-family ordering-suffix omission
+    /// (spec line 1850): the authored `name` is an atomic-family base
+    /// (`sce_atomic_load`, `sce_atomic_cas_weak`, …) without the
+    /// required `_<ordering>_<width>` suffix. `Fix::ReplaceOneOf`
+    /// carries the legal completions.
+    #[error(
+        "<sce:extern name=\"{base}\"> is an atomic-family base without an explicit ordering + width suffix. Pick one of: {candidates_list}."
+    )]
+    ExternOrderingUnspecified {
+        /// Atomic-family base as authored
+        /// (e.g. `sce_atomic_load`, `sce_atomic_fence`).
+        base: String,
+        /// Suffix-bearing legal completions
+        /// (e.g. `sce_atomic_load_acquire_u32`, …). 10 entries for
+        /// load/store/fetch_*; 15 for cas_*; 4 for fences.
+        candidates: Vec<String>,
+        /// Joined `candidates` for the message body.
+        candidates_list: String,
+    },
 }
 
 /// watching-zenoh RFC §5.E B7-η' Atomic A2 callback-path failure

@@ -308,6 +308,31 @@
     </xs:complexType>
   </xs:element>
 
+  <!-- §5.I `<sce:extern>` whitelisted intrinsic registry (Atomic A).
+       Bounded escape hatch for platform-specific intrinsics
+       (atomic CAS / fences / cache maintenance / IRQ control).
+       The `name` is closed-set checked at parse time against the
+       SCE-shipped baseline registry; `sig` and `abi` must match the
+       registry entry's canonical values. The 4-code rejection family
+       (`extern/symbol-not-in-whitelist`, `extern/abi-mismatch`,
+       `extern/signature-mismatch`, `extern/ordering-unspecified`)
+       fires through `crate::forge::extern_validator::validate_extern`. -->
+  <xs:element name="extern">
+    <xs:complexType>
+      <xs:attribute name="name" type="xs:string" use="required"/>
+      <xs:attribute name="sig" type="xs:string" use="required"/>
+      <xs:attribute name="abi" use="required">
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:enumeration value="c"/>
+            <xs:enumeration value="rust"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="crate" type="xs:string" use="optional"/>
+    </xs:complexType>
+  </xs:element>
+
   <!-- Section 4.3: Lookup key-value mapping entry -->
   <xs:element name="entry">
     <xs:complexType>

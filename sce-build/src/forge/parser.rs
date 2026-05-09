@@ -118,8 +118,181 @@ pub fn parse_forge_with_imports(
     }
 
     let imports = parse_imports(&root, diag)?;
+    let extern_declarations = parse_extern_declarations(&root, diag)?;
     let document = parse_forge_from_node(&root, label, kind)?;
-    Ok(Some(ParsedForge { document, imports }))
+    Ok(Some(ParsedForge {
+        document,
+        imports,
+        extern_declarations,
+    }))
+}
+
+/// Scan `<sce:extern>` children of the document root and validate
+/// each against the §5.I baseline registry (watching-zenoh RFC §5.I,
+/// Atomic A). Mirrors `parse_imports` shape — Q-Call-4 (a) parse-time
+/// rejection lock — but raises one of four distinct `ValidationError`
+/// variants per failure axis (`ExternSymbolNotInWhitelist` /
+/// `ExternAbiMismatch` / `ExternSignatureMismatch` /
+/// `ExternOrderingUnspecified`).
+///
+/// The author signals an extern declaration with:
+/// ```xml
+/// <sce:extern name="sce_atomic_load_acquire_u32"
+///             sig="(*const u32) -> u32"
+///             abi="c"
+///             crate="sce_intrinsics_runtime"/>
+/// ```
+/// The `crate` attribute is optional — when absent the registry
+/// entry's canonical `crate_name` (today, `sce_intrinsics_runtime`)
+/// is used. `name`, `sig`, `abi` are required; an absent attribute
+/// raises through the shared `MissingAttribute` validator (mirrors
+/// `<sce:import>` precedent).
+///
+/// Returns the parsed declarations in document order so downstream
+/// codegen consumers can emit `extern "..." {}` blocks deterministically.
+fn parse_extern_declarations(
+    root: &roxmltree::Node,
+    doc_name: &str,
+) -> Result<Vec<crate::forge::model::ExternDeclaration>, Located<ForgeError>> {
+    use crate::forge::extern_validator::{validate_extern, ExternFailure};
+    use crate::forge::intrinsic_registry::lookup_symbol;
+    use crate::forge::model::ExternDeclaration;
+
+    let mut declarations = Vec::new();
+
+    for child in root.children().filter(|n| n.is_element()) {
+        if child.tag_name().name() != "extern"
+            || child.tag_name().namespace() != Some(SCE_NAMESPACE)
+        {
+            continue;
+        }
+
+        let name = child
+            .attribute("name")
+            .ok_or_else(|| {
+                located(
+                    &child,
+                    doc_name,
+                    ValidationError::MissingAttribute {
+                        element: "<sce:extern>".into(),
+                        attr: "name".into(),
+                    },
+                )
+            })?
+            .to_string();
+
+        let sig = child
+            .attribute("sig")
+            .ok_or_else(|| {
+                located(
+                    &child,
+                    doc_name,
+                    ValidationError::MissingAttribute {
+                        element: "<sce:extern>".into(),
+                        attr: "sig".into(),
+                    },
+                )
+            })?
+            .to_string();
+
+        let abi = child
+            .attribute("abi")
+            .ok_or_else(|| {
+                located(
+                    &child,
+                    doc_name,
+                    ValidationError::MissingAttribute {
+                        element: "<sce:extern>".into(),
+                        attr: "abi".into(),
+                    },
+                )
+            })?
+            .to_string();
+
+        // Closed-set lookup + abi/sig match per §5.I lines 1846-1850.
+        // Map each ExternFailure variant 1:1 onto its spec-verbatim
+        // ValidationError variant (per `feedback_spec_mirror_parity.md`).
+        match validate_extern(&name, &sig, &abi) {
+            Ok(_) => {}
+            Err(ExternFailure::NotInWhitelist { candidates }) => {
+                let candidates_vec: Vec<String> =
+                    candidates.iter().map(|s| s.to_string()).collect();
+                let candidates_list = if candidates_vec.is_empty() {
+                    "<no close matches>".to_string()
+                } else {
+                    candidates_vec.join(", ")
+                };
+                return Err(located(
+                    &child,
+                    doc_name,
+                    ValidationError::ExternSymbolNotInWhitelist {
+                        name,
+                        candidates: candidates_vec,
+                        candidates_list,
+                    },
+                ));
+            }
+            Err(ExternFailure::AbiMismatch { expected, actual }) => {
+                return Err(located(
+                    &child,
+                    doc_name,
+                    ValidationError::ExternAbiMismatch {
+                        name,
+                        expected: expected.as_attr().to_string(),
+                        actual,
+                    },
+                ));
+            }
+            Err(ExternFailure::SignatureMismatch { expected, actual }) => {
+                return Err(located(
+                    &child,
+                    doc_name,
+                    ValidationError::ExternSignatureMismatch {
+                        name,
+                        expected: expected.to_string(),
+                        actual,
+                    },
+                ));
+            }
+            Err(ExternFailure::OrderingUnspecified { base, candidates }) => {
+                let candidates_vec: Vec<String> =
+                    candidates.iter().map(|s| s.to_string()).collect();
+                let candidates_list = candidates_vec.join(", ");
+                return Err(located(
+                    &child,
+                    doc_name,
+                    ValidationError::ExternOrderingUnspecified {
+                        base,
+                        candidates: candidates_vec,
+                        candidates_list,
+                    },
+                ));
+            }
+        }
+
+        // `crate` attribute is optional — fall back to the registry
+        // entry's canonical crate_name when absent. (Atomic A: only
+        // sce_intrinsics_runtime is shipped; plugin overrides land
+        // in Atomic B with the target-plugin loader.)
+        let crate_name = match child.attribute("crate") {
+            Some(c) => c.to_string(),
+            None => lookup_symbol(&name)
+                .expect("validate_extern returned Ok ⇒ symbol is in registry")
+                .crate_name
+                .to_string(),
+        };
+
+        let line = Some(child.document().text_pos_at(child.range().start).row);
+        declarations.push(ExternDeclaration {
+            name,
+            sig,
+            abi,
+            crate_name,
+            line,
+        });
+    }
+
+    Ok(declarations)
 }
 
 // ── Internal: kind detection from parsed node ──────────────────

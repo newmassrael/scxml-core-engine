@@ -2574,6 +2574,47 @@ impl ForgeDocument {
 pub struct ParsedForge {
     pub document: ForgeDocument,
     pub imports: Vec<ForgeImport>,
+    /// `<sce:extern>` declarations parsed from the document root
+    /// (watching-zenoh RFC §5.I, Atomic A). Empty for documents that
+    /// do not declare any externs. Each entry has already been
+    /// validated against the §5.I baseline registry — wire-format
+    /// rejection (4-code family `extern/symbol-not-in-whitelist` /
+    /// `extern/abi-mismatch` / `extern/signature-mismatch` /
+    /// `extern/ordering-unspecified`) raises during parsing, so a
+    /// `ParsedForge` carrying any externs is guaranteed registry-clean.
+    /// Atomic A produces this list; downstream codegen consumption
+    /// (per-language `extern "..." {}` emission) lands with a future
+    /// atomic gated on a published `sce_intrinsics_runtime` crate.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extern_declarations: Vec<ExternDeclaration>,
+}
+
+/// One `<sce:extern>` declaration after parse-time validation has
+/// matched it against the §5.I baseline registry. Carried through
+/// `ParsedForge` so future codegen atomics can emit per-language
+/// `extern "C" { fn ... }` blocks without re-walking the XML.
+#[derive(Debug, Clone, Serialize)]
+pub struct ExternDeclaration {
+    /// Symbol name as authored — guaranteed to exactly match a
+    /// registry entry's `name` (closed-set lookup at parse time).
+    pub name: String,
+    /// Signature as authored — guaranteed to byte-match the registry
+    /// entry's `sig`.
+    pub sig: String,
+    /// ABI as authored, normalized to lowercase. One of `c` / `rust`.
+    pub abi: String,
+    /// `crate=` attribute value. Defaults to the registry entry's
+    /// `crate_name` (today, `sce_intrinsics_runtime`) when the
+    /// author omits the attribute. Stored rather than always-defaulted
+    /// so a future plugin extension that overrides `crate` per-symbol
+    /// surfaces here directly.
+    pub crate_name: String,
+    /// Source line of the `<sce:extern>` element, captured for
+    /// downstream diagnostics that anchor on the declaration site.
+    /// `#[serde(skip)]` for byte-stable wire format (mirrors
+    /// `ForgeImport.line`).
+    #[serde(skip)]
+    pub line: Option<u32>,
 }
 
 #[cfg(test)]

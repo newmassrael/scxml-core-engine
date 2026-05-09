@@ -751,6 +751,47 @@ pub enum DiagnosticCode {
     #[serde(rename = "pool/sample-callback-signature-non-borrow")]
     PoolSampleCallbackSignatureNonBorrow,
 
+    // ── §5.I `<sce:extern>` whitelisted intrinsic registry
+    //    (watching-zenoh RFC §5.I, Atomic A). Four spec-verbatim
+    //    codes (lines 1847-1850) that fire at parse-time on
+    //    `<sce:extern>` declarations. The 101-symbol baseline lives
+    //    in `crate::forge::intrinsic_registry::BASELINE_SYMBOLS`;
+    //    closed-set lookup is in `extern_validator::validate_extern`.
+    //    Diagnostic names are spec verbatim per
+    //    `feedback_spec_mirror_parity.md`. Plugin-extension axes
+    //    (`extern/target-plugin-*`, `extern/linker-flavor-*`) defer
+    //    to Atomic B/C of `rfc-sce-call-intrinsic-registry.md`. ──
+    /// `<sce:extern name>` references a symbol absent from the
+    /// §5.I baseline registry. Repair surface = `Fix::ReplaceOneOf`
+    /// over closest baseline names (bounded top-8). Q-Call-4 (a)
+    /// parse-time lock; mirrors `LinkLinkClassUnknown` (B6-γ)
+    /// closed-enum precedent.
+    #[serde(rename = "extern/symbol-not-in-whitelist")]
+    ExternSymbolNotInWhitelist,
+
+    /// `<sce:extern abi>` does not match the registry entry's
+    /// canonical ABI. Repair surface = `Fix::ReplaceOneOf` from
+    /// the closed two-element set `["c", "rust"]`.
+    #[serde(rename = "extern/abi-mismatch")]
+    ExternAbiMismatch,
+
+    /// `<sce:extern sig>` does not byte-match the registry entry's
+    /// canonical signature. Repair surface = `Fix::Replace` with the
+    /// canonical sig (registry is the source of truth).
+    #[serde(rename = "extern/signature-mismatch")]
+    ExternSignatureMismatch,
+
+    /// `<sce:extern name>` is an atomic-family base
+    /// (`sce_atomic_load`, `sce_atomic_cas_weak`, `sce_atomic_fence`,
+    /// …) written without the required `_<ordering>_<width>` (or
+    /// `_<ordering>` for fences) suffix. Repair surface =
+    /// `Fix::ReplaceOneOf` over the legal completions for that
+    /// family. Distinct from `ExternSymbolNotInWhitelist` because the
+    /// repair shape is "pick a suffix" rather than "pick a different
+    /// symbol entirely".
+    #[serde(rename = "extern/ordering-unspecified")]
+    ExternOrderingUnspecified,
+
     #[serde(rename = "io/filesystem")]
     IoFilesystem,
 
@@ -1106,6 +1147,11 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         PoolSampleTakeWithoutStagePool,
         // Sample API §5.E B7-η' Atomic A2 callback-path syntax (watching-zenoh RFC §5.E)
         PoolSampleCallbackSignatureNonBorrow,
+        // `<sce:extern>` whitelisted intrinsic registry (watching-zenoh RFC §5.I, Atomic A)
+        ExternSymbolNotInWhitelist,
+        ExternAbiMismatch,
+        ExternSignatureMismatch,
+        ExternOrderingUnspecified,
         // Io
         IoFilesystem,
         // Cli
@@ -1345,6 +1391,12 @@ impl DiagnosticCode {
             | ScxmlOnSampleEventNameConflict
             | ScxmlOnSampleLinkNotDeclared
             | ScxmlOnSampleLinkWrongKind => Some("watching-zenoh RFC §5.E"),
+
+            // ── §5.I `<sce:extern>` whitelisted intrinsic registry (Atomic A) ──
+            ExternSymbolNotInWhitelist
+            | ExternAbiMismatch
+            | ExternSignatureMismatch
+            | ExternOrderingUnspecified => Some("watching-zenoh RFC §5.I"),
 
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
@@ -1626,6 +1678,10 @@ impl DiagnosticCode {
             PoolSampleTypestateAttributesDisabled => "pool/sample-typestate-attributes-disabled",
             PoolSampleTakeWithoutStagePool => "pool/sample-take-without-stage-pool",
             PoolSampleCallbackSignatureNonBorrow => "pool/sample-callback-signature-non-borrow",
+            ExternSymbolNotInWhitelist => "extern/symbol-not-in-whitelist",
+            ExternAbiMismatch => "extern/abi-mismatch",
+            ExternSignatureMismatch => "extern/signature-mismatch",
+            ExternOrderingUnspecified => "extern/ordering-unspecified",
             IoFilesystem => "io/filesystem",
             CliUnknownLanguage => "cli/unknown-language",
             CliUnsupportedLanguage => "cli/unsupported-language",
@@ -2839,6 +2895,77 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 callback_reason_tag(reason).to_string(),
             ],
         },
+        // ── §5.I `<sce:extern>` whitelist rejection (Atomic A) ──
+        ValidationError::ExternSymbolNotInWhitelist {
+            name,
+            candidates,
+            candidates_list: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ExternSymbolNotInWhitelist,
+            stage: Stage::Validation,
+            // `actual` carries the offending symbol name; closed-set
+            // candidates ride `Fix::ReplaceOneOf` so consumers see
+            // closest-match suggestions without paging through 101
+            // baseline entries.
+            expected: None,
+            actual: Some(name.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![name.clone()],
+        },
+        ValidationError::ExternAbiMismatch {
+            name,
+            expected,
+            actual,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ExternAbiMismatch,
+            stage: Stage::Validation,
+            // `expected` carries the registry's canonical ABI; the
+            // closed two-element repair set rides `Fix::ReplaceOneOf`
+            // so consumers picking via the wire format see both
+            // legal values (`["c", "rust"]`) regardless of which one
+            // the registry entry expected.
+            expected: Some(vec![expected.clone()]),
+            actual: Some(actual.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: vec!["c".to_string(), "rust".to_string()],
+            }),
+            key_fragments: vec![name.clone(), actual.clone()],
+        },
+        ValidationError::ExternSignatureMismatch {
+            name,
+            expected,
+            actual,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ExternSignatureMismatch,
+            stage: Stage::Validation,
+            // Deterministic fix — the registry holds the canonical
+            // sig; `Fix::ReplaceWith` carries it verbatim.
+            // NeutralOrDeterministic non_overlap_class.
+            expected: Some(vec![expected.clone()]),
+            actual: Some(actual.clone()),
+            fix: Some(Fix::ReplaceWith {
+                to: expected.clone(),
+            }),
+            key_fragments: vec![name.clone(), actual.clone()],
+        },
+        ValidationError::ExternOrderingUnspecified {
+            base,
+            candidates,
+            candidates_list: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ExternOrderingUnspecified,
+            stage: Stage::Validation,
+            // `actual` carries the suffix-less base name; suffix-
+            // bearing completions ride `Fix::ReplaceOneOf`.
+            expected: None,
+            actual: Some(base.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![base.clone()],
+        },
     }
 }
 
@@ -3882,6 +4009,70 @@ mod tests {
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
                 r#"{"v":1,"id":"fnv1a:c1db04cc9e2b921b","code":"pool/sample-callback-signature-non-borrow","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"state 'running': <sce:on-sample link=\"scout_link\" callback=\"cpp:my_app::on_scout\"> uses an unsupported language prefix `cpp` (only `rust:` is accepted today). The `callback` value must match `rust:crate::module::fn` (Q-Callback-3 Rust path subset). The borrow-mode contract is enforced at the dispatch site; rustc rejects owned-mode signatures at user-crate compile time. See watching-zenoh RFC §5.E.","actual":"cpp:my_app::on_scout"}"#,
+            ),
+            // ── §5.I `<sce:extern>` whitelisted intrinsic registry (Atomic A) ──
+            (
+                // RFC §5.I line 1847: symbol absent from the §5.I baseline
+                // registry. Closest-match candidates ride `Fix::ReplaceOneOf`
+                // so authors see suggestions without paging through the
+                // 101-symbol baseline.
+                "forge/extern-symbol-not-in-whitelist",
+                ValidationError::ExternSymbolNotInWhitelist {
+                    name: "sce_atomic_compare_exchange_u32".into(),
+                    candidates: vec![
+                        "sce_atomic_cas_strong_acq_rel_u32".into(),
+                        "sce_atomic_cas_weak_acq_rel_u32".into(),
+                    ],
+                    candidates_list:
+                        "sce_atomic_cas_strong_acq_rel_u32, sce_atomic_cas_weak_acq_rel_u32".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:173e706863ec82de","code":"extern/symbol-not-in-whitelist","stage":"validation","spec":"watching-zenoh RFC §5.I","message":"<sce:extern name=\"sce_atomic_compare_exchange_u32\"> references a symbol that is not on the §5.I baseline whitelist. Choose a registry-listed name (closest matches: sce_atomic_cas_strong_acq_rel_u32, sce_atomic_cas_weak_acq_rel_u32) or extend the whitelist via a target plugin (deploy.yaml `extern_symbols.target_plugin`).","actual":"sce_atomic_compare_exchange_u32","fix":{"kind":"replace_one_of","candidates":["sce_atomic_cas_strong_acq_rel_u32","sce_atomic_cas_weak_acq_rel_u32"]}}"#,
+            ),
+            (
+                // RFC §5.I line 1848: ABI mismatch — closed two-element
+                // repair set [`c`, `rust`] rides `Fix::ReplaceOneOf`.
+                "forge/extern-abi-mismatch",
+                ValidationError::ExternAbiMismatch {
+                    name: "sce_atomic_load_acquire_u32".into(),
+                    expected: "c".into(),
+                    actual: "rust".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:c41d4f3a5258039c","code":"extern/abi-mismatch","stage":"validation","spec":"watching-zenoh RFC §5.I","message":"<sce:extern name=\"sce_atomic_load_acquire_u32\" abi=\"rust\"> uses a non-canonical ABI; the registry entry requires `abi=\"c\"`. The accepted set is [\"c\", \"rust\"].","expected":["c"],"actual":"rust","fix":{"kind":"replace_one_of","candidates":["c","rust"]}}"#,
+            ),
+            (
+                // RFC §5.I line 1849: signature mismatch — `Fix::ReplaceWith`
+                // carries the canonical sig (registry is source of truth).
+                "forge/extern-signature-mismatch",
+                ValidationError::ExternSignatureMismatch {
+                    name: "sce_atomic_load_acquire_u32".into(),
+                    expected: "(*const u32) -> u32".into(),
+                    actual: "(*const u32) -> u64".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:36a8a1a0fbe59da6","code":"extern/signature-mismatch","stage":"validation","spec":"watching-zenoh RFC §5.I","message":"<sce:extern name=\"sce_atomic_load_acquire_u32\" sig=\"(*const u32) -> u64\"> declares a signature that does not match the registry entry. Replace with `sig=\"(*const u32) -> u32\"`.","expected":["(*const u32) -> u32"],"actual":"(*const u32) -> u64","fix":{"kind":"replace_with","to":"(*const u32) -> u32"}}"#,
+            ),
+            (
+                // RFC §5.I line 1850: atomic-family base without ordering
+                // suffix (e.g. `sce_atomic_load`). Suffix-bearing
+                // completions ride `Fix::ReplaceOneOf`.
+                "forge/extern-ordering-unspecified",
+                ValidationError::ExternOrderingUnspecified {
+                    base: "sce_atomic_load".into(),
+                    candidates: vec![
+                        "sce_atomic_load_acquire_u32".into(),
+                        "sce_atomic_load_relaxed_u32".into(),
+                    ],
+                    candidates_list:
+                        "sce_atomic_load_acquire_u32, sce_atomic_load_relaxed_u32".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:4e511900e9aed2c8","code":"extern/ordering-unspecified","stage":"validation","spec":"watching-zenoh RFC §5.I","message":"<sce:extern name=\"sce_atomic_load\"> is an atomic-family base without an explicit ordering + width suffix. Pick one of: sce_atomic_load_acquire_u32, sce_atomic_load_relaxed_u32.","actual":"sce_atomic_load","fix":{"kind":"replace_one_of","candidates":["sce_atomic_load_acquire_u32","sce_atomic_load_relaxed_u32"]}}"#,
             ),
             (
                 "forge/expression-empty",
@@ -5617,7 +5808,16 @@ mod tests {
             | MeshCodegenUnsupportedLanguage
             | MeshCodegenUnsupportedTransport
             | CliUnknownLanguage
-            | CliInvalidFormatOption => FixCarriesCandidates,
+            | CliInvalidFormatOption
+            // `<sce:extern>` whitelist rejection: 3 of the 4 codes
+            // ride `Fix::ReplaceOneOf` (NotInWhitelist closest names,
+            // AbiMismatch closed `[c, rust]` set, OrderingUnspecified
+            // suffix-bearing completions). SignatureMismatch sits in
+            // NeutralOrDeterministic below — it carries the canonical
+            // sig as a single `Fix::Replace` value, not a candidate list.
+            | ExternSymbolNotInWhitelist
+            | ExternAbiMismatch
+            | ExternOrderingUnspecified => FixCarriesCandidates,
 
             // ── `expected` carries non-repair metadata ────────
             ExpressionParseMismatch | MeshExternalAmbiguousEventGroup => ExpectedIsMetadata,
@@ -5665,6 +5865,10 @@ mod tests {
             | MemInterPoolPaddingNotEmitted
             | PoolSampleTypestateAttributesDisabled
             | PoolSampleCallbackSignatureNonBorrow
+            // `<sce:extern>` signature mismatch: deterministic
+            // `Fix::Replace` with the canonical sig. The other three
+            // codes sit in FixCarriesCandidates above.
+            | ExternSignatureMismatch
             | AlgorithmLocalShadowsParam
             | AlgorithmLvalueUnsupported
             | AlgorithmReturnMissing
@@ -6069,6 +6273,10 @@ mod tests {
                 | PoolSampleTypestateAttributesDisabled
                 | PoolSampleTakeWithoutStagePool
                 | PoolSampleCallbackSignatureNonBorrow
+                | ExternSymbolNotInWhitelist
+                | ExternAbiMismatch
+                | ExternSignatureMismatch
+                | ExternOrderingUnspecified
                 | IoFilesystem
                 | CliUnknownLanguage | CliUnsupportedLanguage | CliReadInput
                 | CliWriteOutput | CliCreateOutputDir | CliScxmlGenerate
@@ -6155,9 +6363,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            190,
+            194,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 190 distinct variants to match the DiagnosticCode \
+             expected 194 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -6241,12 +6449,26 @@ mod tests {
              reason field disambiguates the specific path-syntax mistake. \
              Forward-compat for future signature inspection (β-extension on \
              top of α) extending the same code with shape-mismatch arms; \
-             189 → 190. The remaining §5.C codes defer to B6-δ (listener \
-             self-check, gated on §5.K + §5.M SCE-side prerequisites), D.2 \
-             (`link/link-class-incompatible-with-os` alongside OS-specific \
-             classes), and B7 (`mem/alignment-violation` deferred until codec \
-             field placement lands a consumer surface, B7-γ FSM family, B7-δ \
-             cache-* family gated on §5.I).",
+             189 → 190; then watching-zenoh RFC §5.I `<sce:extern>` \
+             whitelisted intrinsic registry Atomic A — four spec-verbatim \
+             rejection codes (`extern/symbol-not-in-whitelist`, \
+             `extern/abi-mismatch`, `extern/signature-mismatch`, \
+             `extern/ordering-unspecified`) firing at parse-time on \
+             `<sce:extern>` declarations against the 101-symbol baseline \
+             registry (atomics × per-width × per-ordering + fences + cache \
+             maintenance + IRQ control); 190 → 194. The remaining §5.C codes \
+             defer to B6-δ (listener self-check, gated on §5.K + §5.M \
+             SCE-side prerequisites), D.2 (`link/link-class-incompatible-with-os` \
+             alongside OS-specific classes), and B7 (`mem/alignment-violation` \
+             deferred until codec field placement lands a consumer surface, \
+             B7-γ FSM family). The §5.I plugin-extension axes \
+             (`extern/target-plugin-not-loaded`, \
+             `extern/target-plugin-symbol-conflict`, \
+             `extern/target-plugin-shadows-baseline`, \
+             `extern/linker-flavor-unsupported`, \
+             `extern/linker-flavor-os-managed-without-cmake-import`, \
+             `extern/ordering-insufficient-for-cross-core`) defer to Atomic \
+             B/C of `rfc-sce-call-intrinsic-registry.md`.",
         );
     }
 
