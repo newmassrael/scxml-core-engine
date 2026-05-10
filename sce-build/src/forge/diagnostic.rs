@@ -824,6 +824,35 @@ pub enum DiagnosticCode {
     #[serde(rename = "pool/sample-callback-signature-non-borrow")]
     PoolSampleCallbackSignatureNonBorrow,
 
+    // ── §5.D Worker kind (watching-zenoh RFC §5.D, C2-α). The
+    //    worker primitive is a concurrent execution context driven
+    //    by a `<sce:link-rx>` source; it owns an SPSC inbox and
+    //    communicates only through that channel + an optional outbox.
+    //    Spec line 911 enforces encapsulation: "any non-inbox access
+    //    to another worker's state" is a diagnostic. C2-α implements
+    //    static recognition layers (sibling `<sce:import kind="worker">`
+    //    + body SCXML data-refs); C4-composition hardening for the
+    //    `<sce:extern>` non-inbox-symbol path is a tracked follow-up
+    //    atomic. Diagnostic names are spec verbatim per
+    //    `feedback_spec_mirror_parity.md`. ──
+    /// `<sce:body>` or sibling-document scope reaches another
+    /// worker's state through a path other than its own inbox + a
+    /// recipient's inbox (via `<sce:outbox ref>`). Per Q-C2-7 (a)
+    /// lock 2026-05-10: C2-α covers `<sce:import kind="worker">`
+    /// rejection (layer 1) and body SCXML cross-namespace data-ref
+    /// rejection (layer 2). Layer 3 (`<sce:extern>` non-inbox
+    /// symbol use in body) defers to a tracked follow-up atomic
+    /// gated on C4 intrinsic-registry composition surface.
+    ///
+    /// Diagnostic name preserves spec wording verbatim
+    /// (`worker/shared-mutable-state`) per
+    /// `feedback_spec_mirror_parity.md`; the per-instance message's
+    /// reason clause names the specific path that crossed the
+    /// encapsulation boundary so authors can locate the offending
+    /// declaration without grepping. RFC §5.D line 911 spec anchor.
+    #[serde(rename = "worker/shared-mutable-state")]
+    WorkerSharedMutableState,
+
     // ── §5.I `<sce:extern>` whitelisted intrinsic registry
     //    (watching-zenoh RFC §5.I, Atomic A). Four spec-verbatim
     //    codes (lines 1847-1850) that fire at parse-time on
@@ -1238,6 +1267,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         PoolSampleTakeWithoutStagePool,
         // Sample API §5.E B7-η' Atomic A2 callback-path syntax (watching-zenoh RFC §5.E)
         PoolSampleCallbackSignatureNonBorrow,
+        // Worker kind shared-state encapsulation (watching-zenoh RFC §5.D, C2-α)
+        WorkerSharedMutableState,
         // `<sce:extern>` whitelisted intrinsic registry (watching-zenoh RFC §5.I, Atomic A)
         ExternSymbolNotInWhitelist,
         ExternAbiMismatch,
@@ -1498,6 +1529,9 @@ impl DiagnosticCode {
             | ExternSignatureMismatch
             | ExternOrderingUnspecified
             | ExternTargetPluginSymbolConflict => Some("watching-zenoh RFC §5.I"),
+
+            // ── §5.D Worker kind encapsulation (C2-α) ───────────────
+            WorkerSharedMutableState => Some("watching-zenoh RFC §5.D"),
 
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
@@ -1785,6 +1819,7 @@ impl DiagnosticCode {
             PoolSampleTypestateAttributesDisabled => "pool/sample-typestate-attributes-disabled",
             PoolSampleTakeWithoutStagePool => "pool/sample-take-without-stage-pool",
             PoolSampleCallbackSignatureNonBorrow => "pool/sample-callback-signature-non-borrow",
+            WorkerSharedMutableState => "worker/shared-mutable-state",
             ExternSymbolNotInWhitelist => "extern/symbol-not-in-whitelist",
             ExternAbiMismatch => "extern/abi-mismatch",
             ExternSignatureMismatch => "extern/signature-mismatch",
@@ -3117,6 +3152,32 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 callback_reason_tag(reason).to_string(),
             ],
         },
+        ValidationError::WorkerSharedMutableState {
+            worker_name,
+            reason,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::WorkerSharedMutableState,
+            stage: Stage::Validation,
+            // `actual` carries a stable wire token derived from the
+            // layer that fired, plus the offending fragment for that
+            // layer (alias name + src for layer 1; element + attr +
+            // foreign prefix for layer 2). Closed-set repair surface
+            // is empty — the offending path may be removed, refactored
+            // through the inbox, or replaced with a `<sce:outbox>` ref;
+            // SCE cannot synthesize the choice. `fix: None` per the
+            // NeutralOrDeterministic non_overlap_class.
+            // `key_fragments` includes the layer tag so duplicate
+            // detection across multiple layer-1 + layer-2 violations
+            // in the same worker doesn't collapse them.
+            expected: None,
+            actual: Some(worker_shared_state_actual(reason)),
+            fix: None,
+            key_fragments: vec![
+                worker_name.clone(),
+                worker_shared_state_layer_tag(reason).to_string(),
+                worker_shared_state_actual(reason),
+            ],
+        },
         // ── §5.I `<sce:extern>` whitelist rejection (Atomic A) ──
         ValidationError::ExternSymbolNotInWhitelist {
             name,
@@ -3222,6 +3283,47 @@ fn callback_reason_tag(reason: &crate::forge::error::CallbackPathReason) -> &'st
         CallbackPathReason::UnknownLanguagePrefix { .. } => "unknown-language-prefix",
         CallbackPathReason::MalformedPath => "malformed-path",
         CallbackPathReason::MalformedSegment { .. } => "malformed-segment",
+    }
+}
+
+/// Stable layer-tag string for [`WorkerSharedStateReason`] used in the
+/// `worker/shared-mutable-state` payload's `key_fragments`. Identical
+/// rationale to [`callback_reason_tag`]: keeps wire ids distinct when
+/// the same worker carries violations from multiple layers, and lets
+/// downstream test fixtures key on the layer without parsing the
+/// per-instance message. (C2-α has two reachable layers; future C4-
+/// composition hardening grows the enum without disturbing existing
+/// ids.)
+fn worker_shared_state_layer_tag(
+    reason: &crate::forge::error::WorkerSharedStateReason,
+) -> &'static str {
+    use crate::forge::error::WorkerSharedStateReason;
+    match reason {
+        WorkerSharedStateReason::WorkerImportForbidden { .. } => "worker-import-forbidden",
+        WorkerSharedStateReason::BodyForeignNamespace { .. } => "body-foreign-namespace",
+    }
+}
+
+/// Stable `actual`-field synthesis for [`WorkerSharedStateReason`]:
+/// layer 1 surfaces the offending `<sce:import as="X" src="Y" kind="worker"/>`
+/// pair; layer 2 surfaces the `element.attr="value"` triple. Used by
+/// the payload builder so the wire format carries the most specific
+/// fragment the diagnostic could quote.
+fn worker_shared_state_actual(
+    reason: &crate::forge::error::WorkerSharedStateReason,
+) -> String {
+    use crate::forge::error::WorkerSharedStateReason;
+    match reason {
+        WorkerSharedStateReason::WorkerImportForbidden {
+            imported_alias,
+            imported_src,
+        } => format!("<sce:import as=\"{imported_alias}\" src=\"{imported_src}\" kind=\"worker\"/>"),
+        WorkerSharedStateReason::BodyForeignNamespace {
+            element,
+            attr,
+            value,
+            foreign_prefix: _,
+        } => format!("<{element} {attr}=\"{value}\"/>"),
     }
 }
 
@@ -3881,7 +3983,8 @@ mod tests {
     /// bump when the wire shape changes.
     fn forge_golden_entries() -> Vec<(&'static str, ForgeError, &'static str)> {
         use crate::forge::error::{
-            CallbackPathReason, ExprError, GenerateError, ImportError, ManifestError, XmlError,
+            CallbackPathReason, ExprError, GenerateError, ImportError, ManifestError,
+            WorkerSharedStateReason, XmlError,
         };
         vec![
             (
@@ -3980,7 +4083,7 @@ mod tests {
             (
                 "forge/unsupported-kind",
                 ValidationError::UnsupportedKind("bogus".into()).into(),
-                r#"{"v":1,"id":"fnv1a:812898e1a23fda4d","code":"validation/unsupported-kind","stage":"validation","spec":"SCE Forge §3.2","message":"unsupported sce:kind value: 'bogus'","actual":"bogus","fix":{"kind":"replace_one_of","candidates":["statechart","transform","lookup","condition","codec","procedure","validator","filter","interpolation","timer","observer","algorithm","link","buffer-pool"]}}"#,
+                r#"{"v":1,"id":"fnv1a:812898e1a23fda4d","code":"validation/unsupported-kind","stage":"validation","spec":"SCE Forge §3.2","message":"unsupported sce:kind value: 'bogus'","actual":"bogus","fix":{"kind":"replace_one_of","candidates":["statechart","transform","lookup","condition","codec","procedure","validator","filter","interpolation","timer","observer","algorithm","link","buffer-pool","worker"]}}"#,
             ),
             (
                 "forge/duplicate-id",
@@ -4249,6 +4352,31 @@ mod tests {
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
                 r#"{"v":1,"id":"fnv1a:c1db04cc9e2b921b","code":"pool/sample-callback-signature-non-borrow","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"state 'running': <sce:on-sample link=\"scout_link\" callback=\"cpp:my_app::on_scout\"> uses an unsupported language prefix `cpp` (only `rust:` is accepted today). The `callback` value must match `rust:crate::module::fn` (Q-Callback-3 Rust path subset). The borrow-mode contract is enforced at the dispatch site; rustc rejects owned-mode signatures at user-crate compile time. See watching-zenoh RFC §5.E.","actual":"cpp:my_app::on_scout"}"#,
+            ),
+            (
+                // RFC §5.D line 911 C2-α: worker shared-state encapsulation.
+                // Layer 1 reachable today (`<sce:import kind="worker">` is
+                // the structural author error a parse-time guard catches).
+                // Layer 2 (body SCXML cross-namespace data-refs) lands with
+                // the same code in this atomic. Layer 3 (`<sce:extern>`
+                // non-inbox symbol use in body) defers to a tracked
+                // follow-up atomic gated on C4 intrinsic-registry
+                // composition surface. NeutralOrDeterministic non_overlap
+                // class — no `Fix::ReplaceOneOf` surface (the offending
+                // path may be removed, refactored through the inbox, or
+                // replaced with an `<sce:outbox>` ref; SCE cannot
+                // synthesize the choice).
+                "forge/worker-shared-mutable-state",
+                ValidationError::WorkerSharedMutableState {
+                    worker_name: "rx_loop".into(),
+                    reason: WorkerSharedStateReason::WorkerImportForbidden {
+                        imported_alias: "tx_loop".into(),
+                        imported_src: "tx_loop.scxml".into(),
+                    },
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:f054d112eea16560","code":"worker/shared-mutable-state","stage":"validation","spec":"watching-zenoh RFC §5.D","message":"worker 'rx_loop': declares <sce:import as=\"tx_loop\" src=\"tx_loop.scxml\" kind=\"worker\"/>; workers cannot import other worker kinds. Workers must communicate with other workers only through their own inbox (consume) and the recipient's inbox via <sce:outbox ref=\"...\"> (produce); all other paths to another worker's state are forbidden per RFC §5.D line 911 (\"any non-inbox access to another worker's state\").","actual":"<sce:import as=\"tx_loop\" src=\"tx_loop.scxml\" kind=\"worker\"/>"}"#,
             ),
             // ── §5.I `<sce:extern>` whitelisted intrinsic registry (Atomic A) ──
             (
@@ -6212,6 +6340,12 @@ mod tests {
             | PoolCachePreArmInvalidateMissingOnSpeculativeCore
             | PoolSampleTypestateAttributesDisabled
             | PoolSampleCallbackSignatureNonBorrow
+            // Worker kind shared-state encapsulation (RFC §5.D line 911,
+            // C2-α): author repair is "remove the offending
+            // `<sce:import>` or refactor body XML to inbox-only access".
+            // No closed candidate set — the foreign-namespace path is
+            // arbitrary, so `fix: None` ⇒ NeutralOrDeterministic.
+            | WorkerSharedMutableState
             // `<sce:extern>` signature mismatch: deterministic
             // `Fix::Replace` with the canonical sig. The other three
             // codes sit in FixCarriesCandidates above.
@@ -6631,6 +6765,7 @@ mod tests {
                 | PoolSampleTypestateAttributesDisabled
                 | PoolSampleTakeWithoutStagePool
                 | PoolSampleCallbackSignatureNonBorrow
+                | WorkerSharedMutableState
                 | ExternSymbolNotInWhitelist
                 | ExternAbiMismatch
                 | ExternSignatureMismatch
@@ -6722,9 +6857,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            201,
+            202,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 201 distinct variants to match the DiagnosticCode \
+             expected 202 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -6864,7 +6999,21 @@ mod tests {
              regression that would silently drop the pre-arm \
              cache-invalidate edge on M7+ cores). Auto-injects 3 \
              cache extern declarations at parse time (atomic C \
-             sidecar emit picks them up automatically); 195 → 201.",
+             sidecar emit picks them up automatically); 195 → 201. \
+             Then watching-zenoh RFC §5.D Worker kind C2-α — one \
+             spec-named code `worker/shared-mutable-state` from RFC \
+             §5.D line 911 covering the worker encapsulation surface: \
+             layer 1 rejects `<sce:import kind=\"worker\">` siblings \
+             inside a worker document (workers cannot import other \
+             worker kinds); layer 2 rejects body SCXML data-refs whose \
+             namespace prefix names a foreign owner (not in the inbox-\
+             only allowlist of `[<self-name>, _event, _data, _name, \
+             _iolocation, <outbox-target>]`). Layer 3 (`<sce:extern>` \
+             non-inbox symbol use in worker body) defers to a tracked \
+             follow-up atomic gated on C4 intrinsic-registry composition \
+             surface per Q-C2-7 (a)+(b) lock; spec line 911 phrasing \
+             \"any non-inbox access to another worker's state\" covers \
+             all three layers together; 201 → 202.",
         );
     }
 

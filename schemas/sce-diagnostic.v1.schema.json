@@ -122,6 +122,7 @@
         "pool/sample-typestate-attributes-disabled",
         "pool/sample-take-without-stage-pool",
         "pool/sample-callback-signature-non-borrow",
+        "worker/shared-mutable-state",
         "extern/symbol-not-in-whitelist",
         "extern/abi-mismatch",
         "extern/signature-mismatch",

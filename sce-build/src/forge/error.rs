@@ -1201,6 +1201,41 @@ pub enum ValidationError {
         /// location surfacing in diagnostic.
         plugin_path: String,
     },
+
+    /// watching-zenoh RFC §5.D line 911 — worker kind cannot reach
+    /// other workers' state through any path other than its own inbox.
+    /// C2-α implements the static recognition layers: layer 1 rejects
+    /// `<sce:import kind="worker">` siblings inside a worker document
+    /// (workers must not import other workers' kinds — encapsulation
+    /// boundary); layer 2 rejects SCXML body data-refs whose namespace
+    /// prefix names a foreign owner (not the worker's own name, not
+    /// `_event` / `_data` / `_name` / `_iolocation`, not the declared
+    /// `<sce:outbox ref="...">` target). Layer 3 — `<sce:extern>`
+    /// non-inbox symbol use in the body — couples to C4 intrinsic
+    /// registry composition and lands in a tracked follow-up atomic;
+    /// spec line 911 phrasing "any non-inbox access" covers all three
+    /// layers together.
+    ///
+    /// Per Q-C2-7 (a) lock 2026-05-10. Fires at parse time; the
+    /// per-instance payload carries which layer detected the
+    /// violation so the diagnostic message can name the exact path-
+    /// syntax mistake. RFC §5.D line 911 spec anchor.
+    #[error(
+        "worker '{worker_name}': {reason}. \
+         Workers must communicate with other workers only through their \
+         own inbox (consume) and the recipient's inbox via <sce:outbox \
+         ref=\"...\"> (produce); all other paths to another worker's \
+         state are forbidden per RFC §5.D line 911 (\"any non-inbox \
+         access to another worker's state\")."
+    )]
+    WorkerSharedMutableState {
+        /// The worker document whose body / sibling imports triggered
+        /// the diagnostic. Anchored at the offending DOM node by
+        /// `located()` at the call site.
+        worker_name: String,
+        /// Layered classification — see [`WorkerSharedStateReason`].
+        reason: WorkerSharedStateReason,
+    },
 }
 
 /// watching-zenoh RFC §5.E B7-η' Atomic A2 callback-path failure
@@ -1242,6 +1277,60 @@ pub enum CallbackPathReason {
     MalformedSegment {
         /// Offending segment verbatim.
         segment: String,
+    },
+}
+
+/// watching-zenoh RFC §5.D line 911 — worker shared-mutable-state
+/// failure classification. Attached to
+/// [`ValidationError::WorkerSharedMutableState`] so the outer code
+/// stays spec-verbatim (`worker/shared-mutable-state`) per
+/// `feedback_spec_mirror_parity.md` while each per-instance message
+/// names the exact path that crossed the encapsulation boundary.
+///
+/// C2-α implements layers 1 + 2; layer 3 (C4-composition hardening
+/// against `<sce:extern>` non-inbox symbol use in worker bodies)
+/// lands in a tracked follow-up atomic per Q-C2-7 (a)+(b) lock.
+/// Each future layer extends this enum with additional variants
+/// without changing the outer code.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum WorkerSharedStateReason {
+    /// Layer 1: `<sce:import kind="worker">` sibling declared inside
+    /// (or alongside) the worker document. Cross-worker direct imports
+    /// would expose the imported worker's data model as a named alias
+    /// (`<alias>.field`), which is exactly the non-inbox access path
+    /// spec line 911 forbids. The empty `imported_src` value carries
+    /// the case where the offending `<sce:import>` has no `src=` (a
+    /// shape that fails earlier validation but reaches this enum on
+    /// malformed authoring).
+    #[error("declares <sce:import as=\"{imported_alias}\" src=\"{imported_src}\" kind=\"worker\"/>; workers cannot import other worker kinds")]
+    WorkerImportForbidden {
+        /// `<sce:import as="X">` value as authored — surfaces the
+        /// alias name in the message so authors can locate the
+        /// offending declaration without grepping the kind attribute.
+        imported_alias: String,
+        /// `<sce:import src="...">` value as authored.
+        imported_src: String,
+    },
+    /// Layer 2: a body SCXML element carries a `location`, `target`,
+    /// `id`, `expr`, or similar attribute whose value names a foreign
+    /// owner — a namespace prefix not in the allowlist `[<self-name>,
+    /// "_event", "_data", "_name", "_iolocation", <outbox-target>]`.
+    /// The `foreign_prefix` captures the offending namespace owner so
+    /// the message can quote what was crossed.
+    #[error("body element <{element} {attr}=\"{value}\"/> reaches into namespace `{foreign_prefix}`, which is outside the inbox-only access surface")]
+    BodyForeignNamespace {
+        /// XML element local name where the foreign attribute appeared
+        /// (`assign` / `send` / `data` / `param` etc.).
+        element: String,
+        /// Attribute name that carried the foreign reference
+        /// (`location` / `target` / `id` / `expr` etc.).
+        attr: String,
+        /// Attribute value verbatim — surfaces the offending dotted
+        /// expression so authors locate the exact ref.
+        value: String,
+        /// Foreign owner prefix extracted from the value (i.e. the
+        /// text before the first `.`).
+        foreign_prefix: String,
     },
 }
 

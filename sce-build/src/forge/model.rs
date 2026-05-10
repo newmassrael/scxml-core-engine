@@ -110,6 +110,17 @@ pub enum ForgeKind {
     /// `cpu-ref`) defers to B7-γ; cache maintenance pinning defers to
     /// B7-δ (gated on §5.I `<sce:call>` intrinsic registry).
     BufferPool,
+    /// Concurrent execution context driven by a `<sce:link-rx>` source —
+    /// watching-zenoh RFC §5.D lines 858-913. Third MCU-class kind (RFC
+    /// §5.J.4): emits only on `(rust, *)` (tokio::spawn on AP, cooperative-
+    /// scheduler slot on MCU) and `(c11, bare_metal)` (cooperative-
+    /// scheduler slot, fixed ring-buffer inbox). C2-α ships the schema +
+    /// parse-time author guard for `worker/shared-mutable-state`; codegen
+    /// (Rust + C11 dual-emit using heapless::spsc / opaque sce_inbox_*
+    /// types) lands in C2-β alongside cross-resolution + ordering codes;
+    /// deploy-aware `MachineSchedulerConfig` + worker-count validation
+    /// lands in C2-γ.
+    Worker,
 }
 
 impl ForgeKind {
@@ -132,6 +143,7 @@ impl ForgeKind {
         "algorithm",
         "link",
         "buffer-pool",
+        "worker",
     ];
 
     /// Parse from `sce:kind` attribute value. Returns `None` for unknown kinds.
@@ -151,6 +163,7 @@ impl ForgeKind {
             "algorithm" => Some(Self::Algorithm),
             "link" => Some(Self::Link),
             "buffer-pool" => Some(Self::BufferPool),
+            "worker" => Some(Self::Worker),
             _ => None,
         }
     }
@@ -193,6 +206,11 @@ impl ForgeKind {
             // API + IR-level borrow check). Acquire/return surface lives
             // on the struct, not as free functions.
             Self::BufferPool => true,
+            // RFC §5.D: Worker emits a struct owning an SPSC inbox
+            // (heapless::spsc on Rust; opaque sce_inbox_{producer,
+            // consumer}_t handle pair on C11). The inbox storage + head/
+            // tail indices are instance state of the generated struct.
+            Self::Worker => true,
         }
     }
 
@@ -230,6 +248,12 @@ impl ForgeKind {
             // intrinsics, themselves contracts not runtime helpers.
             // SCE-side tier `None` matches Link's stance.
             Self::BufferPool => RuntimeDep::None,
+            // RFC §5.D: Worker uses `heapless::spsc` on Rust (third-party
+            // crate, not SCE-side helper) and bare ring-buffer + atomics
+            // intrinsics on C11. The atomic ordering intrinsics come
+            // through §5.I `<sce:extern>` whitelist (`sce_intrinsics_runtime`
+            // baseline); the SCE-side helper-crate tier is `None`.
+            Self::Worker => RuntimeDep::None,
         }
     }
 
@@ -251,6 +275,7 @@ impl ForgeKind {
                 | Self::Algorithm
                 | Self::Link
                 | Self::BufferPool
+                | Self::Worker
         )
     }
 }
@@ -272,6 +297,7 @@ impl std::fmt::Display for ForgeKind {
             Self::Algorithm => write!(f, "algorithm"),
             Self::Link => write!(f, "link"),
             Self::BufferPool => write!(f, "buffer-pool"),
+            Self::Worker => write!(f, "worker"),
         }
     }
 }
@@ -2464,6 +2490,64 @@ pub struct BufferPoolModel {
     pub cache_policy: CachePolicy,
 }
 
+// ── Worker kind ────────────────────────────────────────────────
+
+/// `<sce:inbox>` configuration — RFC §5.D line 894. SPSC ring-buffer
+/// inbox shape; per Q-C2-8 lock, the producer/consumer split is the
+/// type-level FSM (`heapless::spsc::{Producer,Consumer}` on Rust;
+/// opaque `sce_inbox_{producer,consumer}_t` family on C11). No
+/// separate FSM IR module — slot lifecycle is 2-state (free/in-use),
+/// degenerate compared to BufferPool's 7-state DMA lifecycle.
+///
+/// C2-α schema: only `depth` attribute (spec verbatim). Ordering
+/// choice + cross-core placement codes land in C2-β codegen atomic.
+/// MPSC variant deferred until consumer signal (RFC §6 tracked).
+#[derive(Debug, Clone, Serialize)]
+pub struct InboxConfig {
+    /// `<sce:inbox depth="N"/>` attribute body — fixed ring-buffer
+    /// depth. Parser rejects 0. Spec line 894 verbatim attribute form.
+    pub depth: u32,
+}
+
+/// Worker document — RFC §5.D concurrent execution context driven
+/// by a `<sce:link-rx>` source.
+///
+/// C2-α schema (per `<scxml sce:kind="worker">` body):
+/// - `<sce:link-rx ref="...">` (required) — `<scxml sce:kind="link">`
+///   document that drives this worker. Cross-resolution validator
+///   `worker/link-rx-ref-unknown` defers to C2-β (consumer-co-landed
+///   with codegen needing the resolved Link).
+/// - `<sce:inbox depth="N"/>` (required) — SPSC ring-buffer inbox.
+///   Producer/consumer pair drawn from `heapless::spsc::split()` on
+///   Rust; opaque `sce_inbox_{producer,consumer}_t` on C11.
+/// - `<sce:outbox ref="...">` (optional) — recipient worker/state-
+///   machine inbox for emitted events. Cross-resolution validator
+///   `worker/outbox-ref-unknown` defers to C2-β.
+/// - `<sce:body>` (optional, usually empty per spec line 897) — SCXML
+///   actions. C2-α scans for `worker/shared-mutable-state` violations
+///   (any `<sce:import kind="worker">` in the document, plus body
+///   SCXML data-refs to foreign namespaces).
+///
+/// MCU-class kind (RFC §5.J.4): Rust + C11 emitters only. cpp/kotlin/
+/// go/python rejection via existing `codegen/mcu-class-kind-on-non-
+/// mcu-language` family (lands in C2-β alongside codegen).
+#[derive(Debug, Clone, Serialize)]
+pub struct WorkerModel {
+    pub name: String,
+    /// `<sce:link-rx ref="...">` — required driver source. Spec line
+    /// 893 phrasing "drives this worker" → required. Empty-ref parse
+    /// rejects; cross-ref resolution against `ForgeLinkRegistry`
+    /// defers to C2-β.
+    pub link_rx: String,
+    /// `<sce:inbox depth="N"/>` — required typed event queue.
+    pub inbox: InboxConfig,
+    /// `<sce:outbox ref="...">` — optional recipient inbox. When
+    /// absent, the worker only injects events into the parent state
+    /// machine via `<sce:link-rx>`-driven event mapping.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub outbox: Option<String>,
+}
+
 // ── Forge document ─────────────────────────────────────────────
 
 /// Top-level forge document — dispatched by `sce:kind` on `<scxml>` root.
@@ -2496,6 +2580,8 @@ pub enum ForgeDocument {
     Link(LinkModel),
     #[serde(rename = "buffer-pool")]
     BufferPool(BufferPoolModel),
+    #[serde(rename = "worker")]
+    Worker(WorkerModel),
 }
 
 impl ForgeDocument {
@@ -2514,6 +2600,7 @@ impl ForgeDocument {
             Self::Algorithm(m) => &m.name,
             Self::Link(m) => &m.name,
             Self::BufferPool(m) => &m.name,
+            Self::Worker(m) => &m.name,
         }
     }
 
@@ -2532,6 +2619,7 @@ impl ForgeDocument {
             Self::Algorithm(_) => ForgeKind::Algorithm,
             Self::Link(_) => ForgeKind::Link,
             Self::BufferPool(_) => ForgeKind::BufferPool,
+            Self::Worker(_) => ForgeKind::Worker,
         }
     }
 
@@ -2564,6 +2652,9 @@ impl ForgeDocument {
             // — no SCE-side runtime helper crate. Cache maintenance ops
             // (B7-δ) route through §5.I intrinsics; B7-α tier `None`.
             Self::BufferPool(_) => RuntimeDep::None,
+            // RFC §5.D: heapless::spsc on Rust + bare ring-buffer on C11
+            // with §5.I atomic intrinsics. No SCE-side runtime helper.
+            Self::Worker(_) => RuntimeDep::None,
         }
     }
 }

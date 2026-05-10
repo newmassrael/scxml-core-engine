@@ -86,6 +86,11 @@ pub const fn kind_class(kind: ForgeKind) -> KindClass {
         // cpp/kotlin/go/python rejected via A6 diagnostic. B7-α ships
         // rust; B7-β closes c11 parity.
         ForgeKind::BufferPool => KindClass::McuClass,
+        // RFC §5.D / §5.J.4: Worker is the third MCU-class kind.
+        // Same matrix as Link + BufferPool: `(rust, *)` + `(c11, bare_metal)`
+        // only; cpp/kotlin/go/python rejected via A6 diagnostic. C2-α
+        // schema-only; C2-β dual-emits rust + c11 codegen.
+        ForgeKind::Worker => KindClass::McuClass,
     }
 }
 
@@ -143,6 +148,18 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         // template" without falsely claiming emission.
         ForgeKind::BufferPool => match lang {
             Language::Rust | Language::C11 => true,
+            Language::Cpp | Language::Kotlin | Language::Go | Language::Python => false,
+        },
+        // RFC §5.D Worker: C2-α is schema-only (parser + parse-time
+        // author guard `worker/shared-mutable-state`); codegen
+        // templates (Rust `worker.rs.jinja2` + C11 `worker.{h,c}.jinja2`)
+        // ship in C2-β as a dual-emit atomic per Q-C2-1 (a) lock.
+        // `false` on both Rust + C11 today documents "no shipped
+        // template" without falsely claiming emission; `kind_class`
+        // ahead of this lookup keeps cpp/kotlin/go/python MCU-class-
+        // rejected regardless.
+        ForgeKind::Worker => match lang {
+            Language::Rust | Language::C11 => false,
             Language::Cpp | Language::Kotlin | Language::Go | Language::Python => false,
         },
     }

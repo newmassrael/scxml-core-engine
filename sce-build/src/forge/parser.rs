@@ -6,7 +6,7 @@
 // Reads `sce:kind` on <scxml> root and dispatches to kind-specific parsing.
 // Also handles inline kinds on <data> elements within statechart documents.
 
-use crate::forge::error::{ForgeError, Located, ValidationError, XmlError};
+use crate::forge::error::{ForgeError, Located, ValidationError, WorkerSharedStateReason, XmlError};
 use crate::forge::model::*;
 use crate::DocumentLabel;
 
@@ -447,6 +447,7 @@ fn parse_forge_from_node(
         ForgeKind::Algorithm => parse_algorithm(root, label).map(ForgeDocument::Algorithm),
         ForgeKind::Link => parse_link(root, label).map(ForgeDocument::Link),
         ForgeKind::BufferPool => parse_buffer_pool(root, label).map(ForgeDocument::BufferPool),
+        ForgeKind::Worker => parse_worker(root, label).map(ForgeDocument::Worker),
         ForgeKind::Statechart => Err(located(
             root,
             label.diagnostic_label,
@@ -6344,6 +6345,238 @@ fn parse_buffer_pool(
         dma_channel,
         cache_policy,
     })
+}
+
+/// Parse `<scxml sce:kind="worker">` per RFC §5.D lines 858-913.
+///
+/// **Schema (C2-α).**
+/// - `<sce:link-rx ref="...">` (required) — driving link kind name.
+///   Cross-resolution validator (`worker/link-rx-ref-unknown`) defers
+///   to C2-β co-landed with codegen.
+/// - `<sce:inbox depth="N"/>` (required) — SPSC ring-buffer depth.
+///   Spec line 894 verbatim attribute form per Q-C2-4 (a) lock.
+/// - `<sce:outbox ref="...">` (optional) — recipient inbox path.
+///   Cross-resolution validator (`worker/outbox-ref-unknown`) defers
+///   to C2-β co-landed with codegen.
+/// - `<sce:body>` (optional) — SCXML actions; usually empty per
+///   spec line 897 ("link-rx drives event injection automatically").
+///
+/// **Parse-time author guard (C2-α, spec line 911 layers 1 + 2).**
+/// `worker/shared-mutable-state` fires when:
+///   1. A sibling `<sce:import kind="worker">` declares the document
+///      imports another worker (workers cannot import other workers'
+///      kinds — encapsulation boundary).
+///   2. The `<sce:body>` contains an SCXML descendant whose
+///      `location` / `target` / `expr` attribute carries a dotted
+///      ref whose prefix names a foreign owner (not in the allowlist
+///      `[<self-name>, _event, _data, _name, _iolocation, <outbox-
+///      target>]`). Pure non-identifier prefixes (numeric literals,
+///      keywords) are skipped — only valid SCXML namespace prefixes
+///      reach the foreign check.
+///
+/// Layer 3 (`<sce:extern>` non-inbox symbol use in body) defers to
+/// a tracked follow-up atomic gated on C4 intrinsic-registry
+/// composition surface per Q-C2-7 (a)+(b) lock.
+///
+/// Cross-resolution (`worker/link-rx-ref-unknown` +
+/// `worker/outbox-ref-unknown`), MachineSchedulerConfig deploy-aware
+/// validation (`worker/scheduler-unsupported` +
+/// `deploy/scheduler-config-missing`), and inbox-ordering codegen
+/// invariants (`worker/inbox-ordering-relaxed-across-cores` +
+/// `worker/inbox-ordering-unspecified`) all defer to C2-β/γ.
+fn parse_worker(
+    root: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+) -> Result<WorkerModel, Located<ForgeError>> {
+    let doc_name = label.identifier;
+
+    // ── Layer 1 guard: `<sce:import kind="worker">` siblings forbidden ──
+    //
+    // Workers communicate with other workers only through their own
+    // inbox (consume) and the recipient's inbox via `<sce:outbox
+    // ref="...">` (produce). Importing another worker as an alias
+    // would expose the imported worker's data model under a named
+    // namespace (`<alias>.field`), which is exactly the non-inbox
+    // access path spec line 911 forbids. Detected at parse-time
+    // before the full `<sce:import>` parser runs (which would
+    // otherwise succeed and produce a stage-valid AST).
+    for child in root.children().filter(|n| n.is_element()) {
+        if child.tag_name().namespace() == Some(SCE_NAMESPACE)
+            && child.tag_name().name() == "import"
+            && child.attribute("kind") == Some("worker")
+        {
+            let imported_alias = child.attribute("as").unwrap_or("").to_string();
+            let imported_src = child.attribute("src").unwrap_or("").to_string();
+            return Err(located(
+                &child,
+                label.diagnostic_label,
+                ValidationError::WorkerSharedMutableState {
+                    worker_name: doc_name.to_string(),
+                    reason: WorkerSharedStateReason::WorkerImportForbidden {
+                        imported_alias,
+                        imported_src,
+                    },
+                },
+            ));
+        }
+    }
+
+    // ── Required: <sce:link-rx ref="..."/> ──
+    let link_rx_node = find_sce_child(root, "link-rx").ok_or_else(|| {
+        located(
+            root,
+            label.diagnostic_label,
+            ValidationError::MissingElement {
+                kind: ForgeKind::Worker,
+                element: "sce:link-rx".into(),
+            },
+        )
+    })?;
+    let link_rx = require_attr(
+        &link_rx_node,
+        "ref",
+        "<sce:link-rx>",
+        label.diagnostic_label,
+    )?;
+    if link_rx.is_empty() {
+        return Err(located(
+            &link_rx_node,
+            label.diagnostic_label,
+            ValidationError::InvalidAttribute {
+                element: "<sce:link-rx>".into(),
+                attr: "ref".into(),
+                value: link_rx,
+                expected: "non-empty link kind name".into(),
+            },
+        ));
+    }
+
+    // ── Required: <sce:inbox depth="N"/> ──
+    //
+    // Spec line 894 verbatim attribute form (Q-C2-4 (a) lock). Reject
+    // depth=0 at parse time (load-bearing for any subsequent ring-
+    // buffer layout / codegen logic; an empty inbox cannot service
+    // even a single in-flight event).
+    let inbox_node = find_sce_child(root, "inbox").ok_or_else(|| {
+        located(
+            root,
+            label.diagnostic_label,
+            ValidationError::MissingElement {
+                kind: ForgeKind::Worker,
+                element: "sce:inbox".into(),
+            },
+        )
+    })?;
+    let depth_str = require_attr(
+        &inbox_node,
+        "depth",
+        "<sce:inbox>",
+        label.diagnostic_label,
+    )?;
+    let depth: u32 = depth_str.parse().map_err(|_| {
+        located(
+            &inbox_node,
+            label.diagnostic_label,
+            ValidationError::InvalidAttribute {
+                element: "<sce:inbox>".into(),
+                attr: "depth".into(),
+                value: depth_str.clone(),
+                expected: "positive u32 integer".into(),
+            },
+        )
+    })?;
+    if depth == 0 {
+        return Err(located(
+            &inbox_node,
+            label.diagnostic_label,
+            ValidationError::InvalidAttribute {
+                element: "<sce:inbox>".into(),
+                attr: "depth".into(),
+                value: depth_str,
+                expected: "positive integer (depth > 0)".into(),
+            },
+        ));
+    }
+
+    // ── Optional: <sce:outbox ref="..."/> ──
+    let outbox = find_sce_child(root, "outbox").and_then(|node| {
+        node.attribute("ref")
+            .map(|s| s.to_string())
+            .filter(|s| !s.is_empty())
+    });
+
+    // Outbox target prefix for layer-2 allowlist. Spec line 895 example
+    // `session_fsm.inbox` → prefix `session_fsm` (the recipient's name).
+    // Sending to a recipient is the *one* legitimate cross-namespace
+    // access; layer 2 must not reject the outbox-target's own ref.
+    let outbox_target_prefix: Option<String> = outbox
+        .as_ref()
+        .map(|s| s.split('.').next().unwrap_or(s).to_string());
+
+    // ── Layer 2 guard: <sce:body> SCXML data-refs to foreign namespaces ──
+    if let Some(body) = find_sce_child(root, "body") {
+        let mut allowlist: Vec<String> = vec![
+            doc_name.to_string(),
+            "_event".to_string(),
+            "_data".to_string(),
+            "_name".to_string(),
+            "_iolocation".to_string(),
+        ];
+        if let Some(t) = outbox_target_prefix.as_ref() {
+            allowlist.push(t.clone());
+        }
+        for descendant in body.descendants().filter(|n| n.is_element()) {
+            for attr_name in ["location", "target", "expr"] {
+                if let Some(v) = descendant.attribute(attr_name) {
+                    if let Some(prefix) = extract_namespace_prefix(v) {
+                        if !allowlist.iter().any(|a| a == &prefix) {
+                            return Err(located(
+                                &descendant,
+                                label.diagnostic_label,
+                                ValidationError::WorkerSharedMutableState {
+                                    worker_name: doc_name.to_string(),
+                                    reason: WorkerSharedStateReason::BodyForeignNamespace {
+                                        element: descendant.tag_name().name().to_string(),
+                                        attr: attr_name.to_string(),
+                                        value: v.to_string(),
+                                        foreign_prefix: prefix,
+                                    },
+                                },
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(WorkerModel {
+        name: doc_name.to_string(),
+        link_rx,
+        inbox: InboxConfig { depth },
+        outbox,
+    })
+}
+
+/// Extract a leading namespace identifier from an SCXML attribute
+/// value if the value begins with `<NCName>.<rest>`. Returns `None`
+/// when the value has no `.`, when the prefix is non-NCName (starts
+/// with a digit, contains punctuation other than `_`), or when the
+/// `.` is part of a numeric literal (`3.14`). Used by `parse_worker`'s
+/// layer-2 shared-state guard to detect foreign-namespace data-refs
+/// without flagging legitimate numeric expressions.
+fn extract_namespace_prefix(value: &str) -> Option<String> {
+    let dot_pos = value.find('.')?;
+    let prefix = &value[..dot_pos];
+    let mut chars = prefix.chars();
+    let first = chars.next()?;
+    if !(first.is_alphabetic() || first == '_') {
+        return None;
+    }
+    if !chars.all(|c| c.is_alphanumeric() || c == '_') {
+        return None;
+    }
+    Some(prefix.to_string())
 }
 
 fn require_u32_body(

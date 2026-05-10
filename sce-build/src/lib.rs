@@ -1585,6 +1585,13 @@ fn discover_stateful_member_fields(
         // calls them via `<sce:call alias="..."/>` (analogous to Link's
         // method-only stance).
         ForgeDocument::BufferPool(_) => {}
+        // RFC §5.D: Worker owns SPSC inbox state but exposes no
+        // SCXML-expression-visible typed fields in C2-α — inbox
+        // producer/consumer pair, optional outbox, link-rx binding
+        // are all instance state but only addressable through methods
+        // emitted at C2-β codegen time. Member discovery defers to
+        // the first authored `<sce:call alias="..."/>` consumer.
+        ForgeDocument::Worker(_) => {}
         // Stateless kinds handled via stateless_signature path.
         // Algorithm (RFC §5.A) is a stateless free function; no member
         // fields exposed to user expressions.
@@ -1632,12 +1639,17 @@ fn discover_stateful_member_methods(
         // - Observer:  update(args) → ()
         // - Timer:     fire() → ()
         // - Link (RFC §5.C): rx() → Option<RxFrame>, tx(TxFrame) → Result<(), LinkError>
+        // - Worker (RFC §5.D): inbox.try_push(T) → bool, inbox.try_pop() → Option<T>
+        //   (C2-β codegen emits the producer/consumer split; method names
+        //   firm up alongside the template's `Producer<T,N>`/`Consumer<T,N>`
+        //   API surface).
         ForgeDocument::Validator(_)
         | ForgeDocument::Procedure(_)
         | ForgeDocument::Observer(_)
         | ForgeDocument::Timer(_)
         | ForgeDocument::Link(_)
-        | ForgeDocument::BufferPool(_) => Vec::new(),
+        | ForgeDocument::BufferPool(_)
+        | ForgeDocument::Worker(_) => Vec::new(),
         // Stateless kinds: caller filters via `is_stateful` before reaching
         // here. Listed so the match stays exhaustive — adding a new
         // ForgeDocument variant forces a decision at this site.
@@ -1767,7 +1779,8 @@ fn discover_primary_function(
         | forge::model::ForgeDocument::Observer(_)
         | forge::model::ForgeDocument::Timer(_)
         | forge::model::ForgeDocument::Link(_)
-        | forge::model::ForgeDocument::BufferPool(_) => None,
+        | forge::model::ForgeDocument::BufferPool(_)
+        | forge::model::ForgeDocument::Worker(_) => None,
         // RFC §5.A Algorithm: free function whose name is the
         // SCXML-author-declared `name=` attribute, lowered to each
         // language's idiomatic identifier per RFC §5.J.5. The

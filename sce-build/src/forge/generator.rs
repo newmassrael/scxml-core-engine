@@ -764,6 +764,11 @@ pub fn generate_cpp_with_imports_and_externs(
         ForgeDocument::BufferPool(_) => unreachable!(
             "ForgeDocument::BufferPool rejected by codegen_matrix::check on cpp"
         ),
+        // RFC §5.D / §5.J.4: Worker is MCU-class — same matrix
+        // rejection precedes this match on cpp.
+        ForgeDocument::Worker(_) => unreachable!(
+            "ForgeDocument::Worker rejected by codegen_matrix::check on cpp"
+        ),
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -9091,6 +9096,10 @@ pub fn generate_kotlin_with_imports(
         ForgeDocument::BufferPool(_) => unreachable!(
             "ForgeDocument::BufferPool rejected by codegen_matrix::check on kotlin"
         ),
+        // RFC §5.D / §5.J.4: rejected upstream by codegen_matrix::check.
+        ForgeDocument::Worker(_) => unreachable!(
+            "ForgeDocument::Worker rejected by codegen_matrix::check on kotlin"
+        ),
     };
 
     let filename = format!("{}.kt", filters::to_pascal_case(doc.name().to_string()));
@@ -9200,6 +9209,19 @@ pub fn generate_rust_with_imports_and_externs(
         // Phantom-typed `Slot<state>` API + 7-state lifecycle FSM
         // defer to B7-γ.
         ForgeDocument::BufferPool(m) => render_buffer_pool_rust(&env, m, imports, options)?,
+        // RFC §5.D Worker: C2-α is schema-only (parse-time author guard
+        // for `worker/shared-mutable-state` is the lone consumer of the
+        // parsed model). Codegen ships in C2-β as a dual-emit atomic
+        // (Rust `worker.rs.jinja2` using `heapless::spsc::{Producer,
+        // Consumer}` + C11 `worker.{h,c}.jinja2` opaque `sce_inbox_*`
+        // pair). `codegen_matrix::template_ships` returns `false` for
+        // Worker on every backend today, so `codegen_matrix::check`
+        // raises `codegen/generic-kind-backend-emit-missing` ahead of
+        // this match; the arm exists only to keep the exhaustive match
+        // honest.
+        ForgeDocument::Worker(_) => unreachable!(
+            "ForgeDocument::Worker rejected by codegen_matrix::check on rust (template ships in C2-β)"
+        ),
     };
 
     let filename = format!("{}.rs", filters::to_snake_case(doc.name().to_string()));
@@ -9582,6 +9604,10 @@ pub fn generate_go_with_imports(
         ForgeDocument::BufferPool(_) => unreachable!(
             "ForgeDocument::BufferPool rejected by codegen_matrix::check on go"
         ),
+        // RFC §5.D / §5.J.4: rejected upstream by codegen_matrix::check.
+        ForgeDocument::Worker(_) => unreachable!(
+            "ForgeDocument::Worker rejected by codegen_matrix::check on go"
+        ),
     };
 
     let filename = format!("{}.go", filters::to_snake_case(doc.name().to_string()));
@@ -9672,6 +9698,10 @@ pub fn generate_python_with_imports(
         ),
         ForgeDocument::BufferPool(_) => unreachable!(
             "ForgeDocument::BufferPool rejected by codegen_matrix::check on python"
+        ),
+        // RFC §5.D / §5.J.4: rejected upstream by codegen_matrix::check.
+        ForgeDocument::Worker(_) => unreachable!(
+            "ForgeDocument::Worker rejected by codegen_matrix::check on python"
         ),
     };
 
@@ -9781,6 +9811,15 @@ pub fn generate_c11_with_imports_and_externs(
         // sidecar linker fragment is appended to `files` after this
         // match per §5.E lines 1031-1086.
         ForgeDocument::BufferPool(m) => render_buffer_pool_c(&env, m, imports, options)?,
+        // RFC §5.D Worker: C2-α is schema-only; codegen ships in C2-β
+        // as a dual-emit atomic. `codegen_matrix::template_ships`
+        // returns `false` for Worker today, so `codegen_matrix::check`
+        // raises `codegen/generic-kind-backend-emit-missing` ahead of
+        // this match; the arm exists only to keep the exhaustive
+        // match honest.
+        ForgeDocument::Worker(_) => unreachable!(
+            "ForgeDocument::Worker rejected by codegen_matrix::check on c11 (template ships in C2-β)"
+        ),
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
