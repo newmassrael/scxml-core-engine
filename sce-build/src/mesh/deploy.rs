@@ -71,6 +71,35 @@ pub struct DeployConfig {
     /// absent key means "permissive".
     #[serde(default)]
     pub distributability: Option<DistributabilityMode>,
+    /// watching-zenoh RFC §5.I lines 1761-1764 — target-plugin path
+    /// pointer for `<sce:extern>` whitelist extension. Q-Call-2 (a)
+    /// lock: path-pointed YAML file (loaded via
+    /// [`crate::forge::target_plugin::parse_target_plugin_yaml`]),
+    /// single plugin per deploy. Q-Call-6 (a) lock: plugin entries
+    /// extend the §5.I baseline registry; baseline-shadowing
+    /// surfaces as `extern/target-plugin-symbol-conflict` at plugin
+    /// load time.
+    ///
+    /// Absent ⇒ baseline-only registry (the deploy-unaware default).
+    /// Plugin-extension axes ride later atomics through the same
+    /// field's reserved keys (`linker_flavor`,
+    /// `fuzz_coverage_transport`); the plugin file itself accepts
+    /// these forward-compat slots so a v1 sce-build can load a
+    /// plugin authored for a future Atomic C without a schema bump.
+    #[serde(default)]
+    pub extern_symbols: Option<ExternSymbolsConfig>,
+}
+
+/// `extern_symbols:` block in deploy.yaml. Atomic B carries one
+/// field; Atomic C will lift `ordering_default` (spec line 1851 and
+/// the cross-core inbox companion `worker/inbox-ordering-*` family).
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExternSymbolsConfig {
+    /// Path (deploy-relative or absolute) to the target plugin YAML
+    /// file extending the §5.I whitelist. Spec line 1761-1762
+    /// verbatim: `extern_symbols.target_plugin: <path>`.
+    pub target_plugin: Option<PathBuf>,
 }
 
 /// SCE_MESH.md §16.3 strict/permissive toggle. Default is

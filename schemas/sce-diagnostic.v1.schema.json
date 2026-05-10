@@ -120,6 +120,7 @@
         "extern/abi-mismatch",
         "extern/signature-mismatch",
         "extern/ordering-unspecified",
+        "extern/target-plugin-symbol-conflict",
         "io/filesystem",
         "cli/unknown-language",
         "cli/unsupported-language",

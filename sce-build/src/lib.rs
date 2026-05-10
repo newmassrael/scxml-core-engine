@@ -452,7 +452,19 @@ pub fn compile_forge_with_deploy(
 ) -> Result<generator::GeneratedOutput, forge::error::Located<forge::error::ForgeError>> {
     use forge::error::{Located, ValidationError};
 
-    let doc = forge::parser::parse_forge(content, label)?
+    // watching-zenoh RFC §5.I Atomic B — load target plugin from
+    // deploy.yaml `extern_symbols.target_plugin: <path>` (Q-Call-2 (a)
+    // path-pointed YAML). Q-Call-6 (a) lock: plugin entries extend
+    // the §5.I baseline registry; baseline-shadowing surfaces as
+    // `extern/target-plugin-symbol-conflict` (spec line 1852 verbatim).
+    // Absent deploy or absent extern_symbols ⇒ baseline-only registry,
+    // matching atomic A semantics.
+    let plugin_symbols = match deploy {
+        Some(cfg) => load_target_plugin_for_compile(cfg, label.diagnostic_label)?,
+        None => Vec::new(),
+    };
+
+    let doc = forge::parser::parse_forge_with_imports_and_plugin(content, label, &plugin_symbols)?
         .ok_or_else(|| Located::new(
             ValidationError::WrongPipeline {
                 kind: forge::model::ForgeKind::Statechart,
@@ -461,7 +473,8 @@ pub fn compile_forge_with_deploy(
             label.diagnostic_label,
             None,
             None,
-        ))?;
+        ))?
+        .document;
 
     // η deploy-aware validation. Resolved target_os is the
     // intersection of deploy + target_machine + machine.platform —
@@ -571,6 +584,85 @@ pub fn compile_forge_with_deploy(
     }
     .map_err(|e| Located::new(e, label.diagnostic_label, None, None))?;
     Ok(output)
+}
+
+/// Resolve the deploy.yaml `extern_symbols.target_plugin` field into
+/// a [`forge::target_plugin::PluginSymbol`] vector for the
+/// plugin-aware parser (Atomic B consumer wiring).
+///
+/// Failure mapping (Atomic B scope = 1 new spec-verbatim code):
+///
+/// - `BaselineConflict` → [`forge::error::ValidationError::ExternTargetPluginSymbolConflict`]
+///   (spec line 1852 verbatim, the new Atomic B code).
+/// - `ReadFile` / `Yaml` / `UnknownAbi` → [`forge::error::ForgeError::Io`]
+///   (existing `io/filesystem` code). The plugin file lives outside
+///   the SCXML pipeline; treating its load failures as I/O on the
+///   pipeline's input set keeps atomic B's wire-code surface bounded
+///   to the spec-verbatim conflict axis. A future Atomic C may
+///   promote these to a dedicated `extern/target-plugin-load`
+///   family if UX feedback warrants the split.
+fn load_target_plugin_for_compile(
+    cfg: &mesh::deploy::DeployConfig,
+    diag_label: &str,
+) -> Result<Vec<forge::target_plugin::PluginSymbol>, forge::error::Located<forge::error::ForgeError>>
+{
+    use forge::error::{ForgeError, Located, ValidationError};
+    use forge::target_plugin::{parse_target_plugin_yaml, TargetPluginLoadError};
+
+    let plugin_path = match cfg
+        .extern_symbols
+        .as_ref()
+        .and_then(|es| es.target_plugin.as_ref())
+    {
+        Some(p) => p,
+        None => return Ok(Vec::new()),
+    };
+
+    match parse_target_plugin_yaml(plugin_path) {
+        Ok(symbols) => Ok(symbols),
+        Err(TargetPluginLoadError::ReadFile { path, source }) => Err(Located::new(
+            ForgeError::Io {
+                path: std::path::PathBuf::from(path),
+                source,
+            },
+            diag_label,
+            None,
+            None,
+        )),
+        Err(TargetPluginLoadError::Yaml { path, source }) => Err(Located::new(
+            ForgeError::Io {
+                path: std::path::PathBuf::from(path),
+                source: std::io::Error::new(std::io::ErrorKind::InvalidData, source.to_string()),
+            },
+            diag_label,
+            None,
+            None,
+        )),
+        Err(TargetPluginLoadError::UnknownAbi { path, name, abi }) => Err(Located::new(
+            ForgeError::Io {
+                path: std::path::PathBuf::from(path),
+                source: std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!(
+                        "plugin symbol `{name}` declares unknown ABI `{abi}`; only `c` and `rust` are accepted (Q-Call-3 closed set)"
+                    ),
+                ),
+            },
+            diag_label,
+            None,
+            None,
+        )),
+        Err(TargetPluginLoadError::BaselineConflict { path, name }) => Err(Located::new(
+            ValidationError::ExternTargetPluginSymbolConflict {
+                name,
+                plugin_path: path,
+            }
+            .into(),
+            diag_label,
+            None,
+            None,
+        )),
+    }
 }
 
 /// Options that steer forge cross-file codegen beyond the plain

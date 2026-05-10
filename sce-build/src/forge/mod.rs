@@ -18,6 +18,7 @@ pub mod link_registry;
 pub mod model;
 pub mod parser;
 pub mod pool_registry;
+pub mod target_plugin;
 pub mod types;
 pub mod type_ctx;
 pub mod expr;

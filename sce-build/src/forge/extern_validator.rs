@@ -23,24 +23,33 @@
 use crate::forge::intrinsic_registry::{
     lookup_symbol, ordering_suffix_completions, Abi, Symbol, BASELINE_SYMBOLS,
 };
+use crate::forge::target_plugin::PluginSymbol;
 
 /// Validation outcome for one `<sce:extern name sig abi/>` triple.
 /// The caller (parser hook in `parse_forge_with_imports`) maps each
 /// arm onto a distinct [`crate::forge::error::ValidationError`]
 /// variant so the wire-format `code` field carries the spec-verbatim
 /// `extern/<axis>` slug.
+///
+/// String fields are owned so plugin-loaded entries
+/// (Atomic B [`crate::forge::target_plugin::PluginSymbol`]) can
+/// surface through the same failure axes as baseline entries —
+/// the registry source is hidden from the wire format, only the
+/// failure axis matters.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExternFailure {
-    /// `<sce:extern name="...">` not present in the registry. The
-    /// `candidates` list rides `Fix::ReplaceOneOf` so authors get a
-    /// closest-match top-N hint without the validator iterating the
-    /// entire 101-symbol baseline at parse time.
+    /// `<sce:extern name="...">` not present in the registry
+    /// (baseline + optional plugin). The `candidates` list rides
+    /// `Fix::ReplaceOneOf` so authors get a closest-match top-N hint
+    /// without the validator iterating the entire 101-symbol baseline
+    /// at parse time.
     NotInWhitelist {
-        /// Top-N closest baseline symbols to the authored name
-        /// (Levenshtein-prefix sorted; clamped to 8 to keep wire
-        /// payload bounded). Empty when no name in the baseline
+        /// Top-N closest registry symbols to the authored name
+        /// (shared-prefix sorted; clamped to 8 to keep wire payload
+        /// bounded). Spans baseline + plugin entries when the plugin-
+        /// aware variant is invoked. Empty when no registry name
         /// shares a substring with the input.
-        candidates: Vec<&'static str>,
+        candidates: Vec<String>,
     },
     /// `<sce:extern abi="...">` does not match the registry entry's
     /// canonical ABI. `Fix::ReplaceOneOf` picks from the closed
@@ -58,7 +67,7 @@ pub enum ExternFailure {
     /// shape (matches the `feedback_spec_mirror_parity.md` pattern).
     SignatureMismatch {
         /// Registry entry's canonical signature.
-        expected: &'static str,
+        expected: String,
         /// What the author wrote.
         actual: String,
     },
@@ -68,6 +77,8 @@ pub enum ExternFailure {
     /// the diagnostic's `Fix::ReplaceOneOf` can list them. Distinct
     /// from `NotInWhitelist` because the repair shape is "pick a
     /// suffix" rather than "pick a different symbol entirely".
+    /// Baseline-only (plugin entries do not participate in atomic-
+    /// family suffix expansion).
     OrderingUnspecified {
         /// Name as written (e.g. `sce_atomic_load`).
         base: String,
@@ -105,7 +116,10 @@ pub fn validate_extern(
                     candidates,
                 });
             }
-            let candidates = closest_baseline_names(name);
+            let candidates = closest_baseline_names(name)
+                .into_iter()
+                .map(|s| s.to_string())
+                .collect();
             return Err(ExternFailure::NotInWhitelist { candidates });
         }
     };
@@ -122,7 +136,7 @@ pub fn validate_extern(
     }
     if sig != symbol.sig {
         return Err(ExternFailure::SignatureMismatch {
-            expected: symbol.sig,
+            expected: symbol.sig.to_string(),
             actual: sig.to_string(),
         });
     }
@@ -144,6 +158,102 @@ fn closest_baseline_names(target: &str) -> Vec<&'static str> {
     scored.into_iter().take(8).map(|(_, name)| name).collect()
 }
 
+/// Closest-name candidates spanning baseline + plugin. Used by
+/// [`validate_extern_with_plugin`] when the authored name misses
+/// both registries. Plugin entries surface alongside baseline names
+/// so an author who typed `sce_hw_smm_take` but loaded a plugin
+/// declaring `sce_hw_sem_take` sees the plugin's name in the
+/// repair list.
+fn closest_baseline_or_plugin_names(target: &str, plugin: &[PluginSymbol]) -> Vec<String> {
+    let mut scored: Vec<(usize, String)> = BASELINE_SYMBOLS
+        .iter()
+        .map(|s| (shared_prefix_len(target, s.name), s.name.to_string()))
+        .filter(|(score, _)| *score > 0)
+        .collect();
+    for p in plugin {
+        let score = shared_prefix_len(target, &p.name);
+        if score > 0 {
+            scored.push((score, p.name.clone()));
+        }
+    }
+    scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    scored.into_iter().take(8).map(|(_, name)| name).collect()
+}
+
+/// Plugin-aware counterpart to [`validate_extern`] (Atomic B
+/// consumer). Lookup order: baseline → plugin (Q-Call-6 (a) additive
+/// composition; baseline shadowing already ruled out at plugin LOAD
+/// time per [`crate::forge::target_plugin::parse_target_plugin_yaml`]'s
+/// `BaselineConflict` check, so a name match here is unambiguous).
+///
+/// Returns `Ok(())` for a valid triple regardless of source. Error
+/// arms reuse [`ExternFailure`] verbatim — plugin-source failures
+/// still surface as `extern/abi-mismatch` / `extern/signature-mismatch`
+/// because the diagnostic axes are identical (the registry source is
+/// hidden from the wire format; the `actual` field carries author
+/// input either way).
+///
+/// Unknown-name failure wraps [`ExternFailure::NotInWhitelist`]
+/// candidates with both baseline and plugin names so authors typing a
+/// vendor-symbol typo see the correct top-N list. Atomic-family base
+/// detection ([`ExternFailure::OrderingUnspecified`]) stays baseline-
+/// only — plugin entries are vendor-specific and do not participate
+/// in atomic-suffix expansion.
+pub fn validate_extern_with_plugin(
+    name: &str,
+    sig: &str,
+    abi_attr: &str,
+    plugin: &[PluginSymbol],
+) -> Result<(), ExternFailure> {
+    if let Some(symbol) = lookup_symbol(name) {
+        // Baseline hit — same checks as `validate_extern`.
+        let parsed_abi = Abi::from_attr(abi_attr);
+        if parsed_abi != Some(symbol.abi) {
+            return Err(ExternFailure::AbiMismatch {
+                expected: symbol.abi,
+                actual: abi_attr.to_string(),
+            });
+        }
+        if sig != symbol.sig {
+            return Err(ExternFailure::SignatureMismatch {
+                expected: symbol.sig.to_string(),
+                actual: sig.to_string(),
+            });
+        }
+        return Ok(());
+    }
+    if let Some(p) = plugin.iter().find(|p| p.name == name) {
+        // Plugin hit — same axis checks, owned-string sources.
+        let parsed_abi = Abi::from_attr(abi_attr);
+        if parsed_abi != Some(p.abi) {
+            return Err(ExternFailure::AbiMismatch {
+                expected: p.abi,
+                actual: abi_attr.to_string(),
+            });
+        }
+        if sig != p.sig {
+            return Err(ExternFailure::SignatureMismatch {
+                expected: p.sig.clone(),
+                actual: sig.to_string(),
+            });
+        }
+        return Ok(());
+    }
+    // Miss in both → atomic-family base detection runs against the
+    // baseline (plugin entries do not participate in atomic-suffix
+    // expansion); otherwise emit NotInWhitelist with the merged
+    // candidate list.
+    if let Some(candidates) = ordering_suffix_completions(name) {
+        return Err(ExternFailure::OrderingUnspecified {
+            base: name.to_string(),
+            candidates,
+        });
+    }
+    Err(ExternFailure::NotInWhitelist {
+        candidates: closest_baseline_or_plugin_names(name, plugin),
+    })
+}
+
 fn shared_prefix_len(a: &str, b: &str) -> usize {
     a.chars().zip(b.chars()).take_while(|(x, y)| x == y).count()
 }
@@ -154,23 +264,15 @@ mod tests {
 
     #[test]
     fn happy_path_atomic_load_acquire_u32() {
-        let s = validate_extern(
-            "sce_atomic_load_acquire_u32",
-            "(*const u32) -> u32",
-            "c",
-        )
-        .expect("happy path");
+        let s = validate_extern("sce_atomic_load_acquire_u32", "(*const u32) -> u32", "c")
+            .expect("happy path");
         assert_eq!(s.name, "sce_atomic_load_acquire_u32");
     }
 
     #[test]
     fn happy_path_cache_clean() {
-        validate_extern(
-            "sce_dcache_clean_by_addr",
-            "(*const c_void, usize)",
-            "c",
-        )
-        .expect("happy path");
+        validate_extern("sce_dcache_clean_by_addr", "(*const c_void, usize)", "c")
+            .expect("happy path");
     }
 
     #[test]
@@ -209,12 +311,8 @@ mod tests {
 
     #[test]
     fn wrong_abi_yields_abi_mismatch() {
-        let err = validate_extern(
-            "sce_atomic_load_acquire_u32",
-            "(*const u32) -> u32",
-            "rust",
-        )
-        .unwrap_err();
+        let err = validate_extern("sce_atomic_load_acquire_u32", "(*const u32) -> u32", "rust")
+            .unwrap_err();
         match err {
             ExternFailure::AbiMismatch { expected, actual } => {
                 assert_eq!(expected, Abi::C);
@@ -261,6 +359,104 @@ mod tests {
     fn closest_baseline_names_returns_relevant_candidates() {
         let hits = closest_baseline_names("sce_atomic_load_acquir_u32"); // typo
         assert!(!hits.is_empty());
-        assert!(hits.iter().any(|n| n.starts_with("sce_atomic_load_acquire_")));
+        assert!(hits
+            .iter()
+            .any(|n| n.starts_with("sce_atomic_load_acquire_")));
+    }
+
+    // ── Atomic B (plugin-aware) tests ─────────────────────────
+
+    fn vendor_plugin() -> Vec<PluginSymbol> {
+        vec![PluginSymbol {
+            name: "sce_hw_sem_take".to_string(),
+            sig: "(u32) -> bool".to_string(),
+            abi: Abi::C,
+            purpose: Some("cross-core-mutex".to_string()),
+            crate_name: None,
+        }]
+    }
+
+    #[test]
+    fn plugin_aware_baseline_happy_path() {
+        // Baseline-listed symbol still validates with empty plugin.
+        validate_extern_with_plugin(
+            "sce_atomic_load_acquire_u32",
+            "(*const u32) -> u32",
+            "c",
+            &[],
+        )
+        .expect("baseline lookup fires before plugin");
+    }
+
+    #[test]
+    fn plugin_aware_plugin_happy_path() {
+        // Vendor symbol resolves through plugin slice.
+        let plugin = vendor_plugin();
+        validate_extern_with_plugin("sce_hw_sem_take", "(u32) -> bool", "c", &plugin)
+            .expect("plugin lookup happy path");
+    }
+
+    #[test]
+    fn plugin_aware_plugin_sig_mismatch() {
+        let plugin = vendor_plugin();
+        let err = validate_extern_with_plugin(
+            "sce_hw_sem_take",
+            "(u32, *mut bool)", // wrong shape
+            "c",
+            &plugin,
+        )
+        .unwrap_err();
+        match err {
+            ExternFailure::SignatureMismatch { expected, actual } => {
+                assert_eq!(expected, "(u32) -> bool");
+                assert_eq!(actual, "(u32, *mut bool)");
+            }
+            other => panic!("expected SignatureMismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn plugin_aware_plugin_abi_mismatch() {
+        let plugin = vendor_plugin();
+        let err = validate_extern_with_plugin("sce_hw_sem_take", "(u32) -> bool", "rust", &plugin)
+            .unwrap_err();
+        match err {
+            ExternFailure::AbiMismatch { expected, actual } => {
+                assert_eq!(expected, Abi::C);
+                assert_eq!(actual, "rust");
+            }
+            other => panic!("expected AbiMismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn plugin_aware_unknown_symbol_includes_plugin_in_candidates() {
+        // Author types a typo of the plugin's symbol — closest-name
+        // candidates must include the plugin entry alongside any
+        // nearby baseline entries.
+        let plugin = vendor_plugin();
+        let err = validate_extern_with_plugin("sce_hw_sm_take", "()", "c", &plugin).unwrap_err();
+        match err {
+            ExternFailure::NotInWhitelist { candidates } => {
+                assert!(
+                    candidates.iter().any(|n| n == "sce_hw_sem_take"),
+                    "expected vendor symbol in candidates: {candidates:?}",
+                );
+            }
+            other => panic!("expected NotInWhitelist, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn plugin_aware_atomic_base_still_yields_ordering_unspecified() {
+        // Plugin slice does not alter atomic-suffix detection — base
+        // names like `sce_atomic_load` still surface as
+        // OrderingUnspecified so authors get suffix completions
+        // rather than a generic NotInWhitelist.
+        let plugin = vendor_plugin();
+        let err =
+            validate_extern_with_plugin("sce_atomic_load", "(*const u32) -> u32", "c", &plugin)
+                .unwrap_err();
+        assert!(matches!(err, ExternFailure::OrderingUnspecified { .. }));
     }
 }

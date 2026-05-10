@@ -1022,6 +1022,27 @@ pub enum ValidationError {
         /// Joined `candidates` for the message body.
         candidates_list: String,
     },
+
+    /// watching-zenoh RFC §5.I target-plugin baseline-shadowing
+    /// (spec line 1852 verbatim): a target plugin YAML
+    /// (`extern_symbols.target_plugin: <path>`) declares a `name` that
+    /// already appears in the §5.I baseline registry. Q-Call-6 (a)
+    /// additive-composition lock: plugins extend, never override; a
+    /// platform-specific impl plugs in via the registry entry's
+    /// `crate` field on a differently-named symbol. Repair is
+    /// non-algorithmic — the plugin author renames the conflicting
+    /// entry to a non-baseline name; SCE cannot synthesize a
+    /// candidate. `fix: None` per the wire contract.
+    #[error(
+        "target plugin {plugin_path} redefines core whitelist symbol `{name}`. Plugin entries extend the §5.I baseline registry but cannot override it (Q-Call-6 additive-composition lock). Rename the plugin entry to a name not already in the §5.I baseline; for a platform-specific impl, declare the entry under a vendor-prefixed name (e.g. `sce_hw_<symbol>`) and route through the registry entry's `crate` field."
+    )]
+    ExternTargetPluginSymbolConflict {
+        /// Symbol name declared by both the plugin and the baseline.
+        name: String,
+        /// Plugin file path (deploy-relative or absolute) for source
+        /// location surfacing in diagnostic.
+        plugin_path: String,
+    },
 }
 
 /// watching-zenoh RFC §5.E B7-η' Atomic A2 callback-path failure

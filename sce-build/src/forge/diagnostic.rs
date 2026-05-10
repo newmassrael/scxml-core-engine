@@ -792,6 +792,17 @@ pub enum DiagnosticCode {
     #[serde(rename = "extern/ordering-unspecified")]
     ExternOrderingUnspecified,
 
+    /// Target plugin YAML (`extern_symbols.target_plugin: <path>`)
+    /// declares a symbol whose `name` already exists in the §5.I
+    /// baseline registry. Spec line 1852 verbatim semantic: "target
+    /// plugin redefines a core whitelist symbol". Q-Call-6 (a)
+    /// additive-composition lock — plugin entries extend, never
+    /// override. Repair surface is non-algorithmic (`fix: None`):
+    /// the plugin author must rename the conflicting entry to a
+    /// non-baseline name; SCE cannot synthesize a candidate name.
+    #[serde(rename = "extern/target-plugin-symbol-conflict")]
+    ExternTargetPluginSymbolConflict,
+
     #[serde(rename = "io/filesystem")]
     IoFilesystem,
 
@@ -1152,6 +1163,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ExternAbiMismatch,
         ExternSignatureMismatch,
         ExternOrderingUnspecified,
+        // `<sce:extern>` target-plugin extension (watching-zenoh RFC §5.I, Atomic B)
+        ExternTargetPluginSymbolConflict,
         // Io
         IoFilesystem,
         // Cli
@@ -1392,11 +1405,13 @@ impl DiagnosticCode {
             | ScxmlOnSampleLinkNotDeclared
             | ScxmlOnSampleLinkWrongKind => Some("watching-zenoh RFC §5.E"),
 
-            // ── §5.I `<sce:extern>` whitelisted intrinsic registry (Atomic A) ──
+            // ── §5.I `<sce:extern>` whitelisted intrinsic registry
+            //    (Atomic A baseline + Atomic B target-plugin extension) ──
             ExternSymbolNotInWhitelist
             | ExternAbiMismatch
             | ExternSignatureMismatch
-            | ExternOrderingUnspecified => Some("watching-zenoh RFC §5.I"),
+            | ExternOrderingUnspecified
+            | ExternTargetPluginSymbolConflict => Some("watching-zenoh RFC §5.I"),
 
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
@@ -1682,6 +1697,7 @@ impl DiagnosticCode {
             ExternAbiMismatch => "extern/abi-mismatch",
             ExternSignatureMismatch => "extern/signature-mismatch",
             ExternOrderingUnspecified => "extern/ordering-unspecified",
+            ExternTargetPluginSymbolConflict => "extern/target-plugin-symbol-conflict",
             IoFilesystem => "io/filesystem",
             CliUnknownLanguage => "cli/unknown-language",
             CliUnsupportedLanguage => "cli/unsupported-language",
@@ -2966,6 +2982,24 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             }),
             key_fragments: vec![base.clone()],
         },
+        // ── §5.I target-plugin baseline-shadowing (Atomic B) ──
+        ValidationError::ExternTargetPluginSymbolConflict { name, plugin_path } => {
+            DiagnosticPayload {
+                code: DiagnosticCode::ExternTargetPluginSymbolConflict,
+                stage: Stage::Validation,
+                // `actual` carries the conflicting symbol name; the
+                // wire payload also exposes the plugin path through
+                // the message body so consumers can surface both
+                // axes without parsing the message text.
+                expected: None,
+                actual: Some(name.clone()),
+                // Q-Call-6 (a): repair is "rename the plugin entry";
+                // SCE cannot synthesize a non-baseline name. The
+                // diagnostic stays advisory (`fix: None`).
+                fix: None,
+                key_fragments: vec![name.clone(), plugin_path.clone()],
+            }
+        }
     }
 }
 
@@ -4073,6 +4107,21 @@ mod tests {
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
                 r#"{"v":1,"id":"fnv1a:4e511900e9aed2c8","code":"extern/ordering-unspecified","stage":"validation","spec":"watching-zenoh RFC §5.I","message":"<sce:extern name=\"sce_atomic_load\"> is an atomic-family base without an explicit ordering + width suffix. Pick one of: sce_atomic_load_acquire_u32, sce_atomic_load_relaxed_u32.","actual":"sce_atomic_load","fix":{"kind":"replace_one_of","candidates":["sce_atomic_load_acquire_u32","sce_atomic_load_relaxed_u32"]}}"#,
+            ),
+            (
+                // RFC §5.I line 1852 (Atomic B): target plugin redefines
+                // a baseline whitelist symbol. Q-Call-6 (a) additive
+                // composition lock — plugins extend, never override.
+                // Repair is non-algorithmic (`fix: None`); plugin author
+                // renames to a non-baseline name.
+                "forge/extern-target-plugin-symbol-conflict",
+                ValidationError::ExternTargetPluginSymbolConflict {
+                    name: "sce_atomic_load_acquire_u32".into(),
+                    plugin_path: "configs/target_extensions_stm32h7.yaml".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:0133c811a527ab82","code":"extern/target-plugin-symbol-conflict","stage":"validation","spec":"watching-zenoh RFC §5.I","message":"target plugin configs/target_extensions_stm32h7.yaml redefines core whitelist symbol `sce_atomic_load_acquire_u32`. Plugin entries extend the §5.I baseline registry but cannot override it (Q-Call-6 additive-composition lock). Rename the plugin entry to a name not already in the §5.I baseline; for a platform-specific impl, declare the entry under a vendor-prefixed name (e.g. `sce_hw_<symbol>`) and route through the registry entry's `crate` field.","actual":"sce_atomic_load_acquire_u32"}"#,
             ),
             (
                 "forge/expression-empty",
@@ -5869,6 +5918,11 @@ mod tests {
             // `Fix::Replace` with the canonical sig. The other three
             // codes sit in FixCarriesCandidates above.
             | ExternSignatureMismatch
+            // `<sce:extern>` target-plugin baseline-shadowing (Atomic B,
+            // spec line 1852): plugin author must rename the conflicting
+            // entry; SCE cannot synthesize a candidate name. `fix: None`
+            // ⇒ NeutralOrDeterministic non_overlap_class.
+            | ExternTargetPluginSymbolConflict
             | AlgorithmLocalShadowsParam
             | AlgorithmLvalueUnsupported
             | AlgorithmReturnMissing
@@ -6277,6 +6331,7 @@ mod tests {
                 | ExternAbiMismatch
                 | ExternSignatureMismatch
                 | ExternOrderingUnspecified
+                | ExternTargetPluginSymbolConflict
                 | IoFilesystem
                 | CliUnknownLanguage | CliUnsupportedLanguage | CliReadInput
                 | CliWriteOutput | CliCreateOutputDir | CliScxmlGenerate
@@ -6363,9 +6418,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            194,
+            195,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 194 distinct variants to match the DiagnosticCode \
+             expected 195 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -6456,19 +6511,32 @@ mod tests {
              `extern/ordering-unspecified`) firing at parse-time on \
              `<sce:extern>` declarations against the 101-symbol baseline \
              registry (atomics × per-width × per-ordering + fences + cache \
-             maintenance + IRQ control); 190 → 194. The remaining §5.C codes \
+             maintenance + IRQ control); 190 → 194. Atomic B then adds \
+             `extern/target-plugin-symbol-conflict` (spec line 1852 \
+             verbatim: 'target plugin redefines a core whitelist symbol'), \
+             firing at plugin-load time when a target_plugin YAML \
+             (`extern_symbols.target_plugin: <path>`) tries to redeclare \
+             a baseline symbol. Q-Call-6 (a) lock: plugin entries are \
+             additive — same name = conflict, regardless of sig parity, \
+             because SCE-shipped baseline is canonical and platform-specific \
+             impls plug in via the entry's `crate` field on a \
+             differently-named symbol; 194 → 195. The remaining §5.C codes \
              defer to B6-δ (listener self-check, gated on §5.K + §5.M \
              SCE-side prerequisites), D.2 (`link/link-class-incompatible-with-os` \
              alongside OS-specific classes), and B7 (`mem/alignment-violation` \
              deferred until codec field placement lands a consumer surface, \
-             B7-γ FSM family). The §5.I plugin-extension axes \
-             (`extern/target-plugin-not-loaded`, \
-             `extern/target-plugin-symbol-conflict`, \
-             `extern/target-plugin-shadows-baseline`, \
+             B7-γ FSM family). The §5.I plugin-extension axes superseded \
+             by Atomic B's spec-verbatim reduction \
+             (`extern/target-plugin-not-loaded` is subsumed by Atomic A's \
+             `extern/symbol-not-in-whitelist` since a non-loaded plugin \
+             leaves missing symbols outside the registry; \
+             `extern/target-plugin-shadows-baseline` is the same semantic \
+             as the spec-verbatim `extern/target-plugin-symbol-conflict` \
+             above). Plugin-axis codes still deferred to Atomic C of \
+             `rfc-sce-call-intrinsic-registry.md`: \
              `extern/linker-flavor-unsupported`, \
              `extern/linker-flavor-os-managed-without-cmake-import`, \
-             `extern/ordering-insufficient-for-cross-core`) defer to Atomic \
-             B/C of `rfc-sce-call-intrinsic-registry.md`.",
+             `extern/ordering-insufficient-for-cross-core`.",
         );
     }
 

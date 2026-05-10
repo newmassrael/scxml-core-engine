@@ -86,6 +86,26 @@ pub fn parse_forge_with_imports(
     content: &str,
     label: DocumentLabel<'_>,
 ) -> Result<Option<ParsedForge>, Located<ForgeError>> {
+    parse_forge_with_imports_and_plugin(content, label, &[])
+}
+
+/// Plugin-aware variant of [`parse_forge_with_imports`] (Atomic B
+/// consumer). Validates `<sce:extern>` declarations against the
+/// composed registry view (baseline + caller-supplied plugin
+/// extensions). Q-Call-6 (a) lock: plugin entries extend the baseline;
+/// any baseline-shadowing was already rejected at plugin LOAD time
+/// per [`crate::forge::target_plugin::parse_target_plugin_yaml`]'s
+/// `BaselineConflict` arm, so the plugin slice arriving here is
+/// guaranteed conflict-free.
+///
+/// Atomic A's [`parse_forge_with_imports`] now delegates here with an
+/// empty plugin slice — deploy-unaware callers (`parse_forge`,
+/// `compile_forge_with_imports`) preserve baseline-only validation.
+pub fn parse_forge_with_imports_and_plugin(
+    content: &str,
+    label: DocumentLabel<'_>,
+    plugin: &[crate::forge::target_plugin::PluginSymbol],
+) -> Result<Option<ParsedForge>, Located<ForgeError>> {
     // Diagnostic label surfaces in `XsdErrors.source_label` and every
     // `Located<ForgeError>::file`. The identifier only kicks in when
     // a kind-specific parser writes it into a model `name` field
@@ -118,7 +138,7 @@ pub fn parse_forge_with_imports(
     }
 
     let imports = parse_imports(&root, diag)?;
-    let extern_declarations = parse_extern_declarations(&root, diag)?;
+    let extern_declarations = parse_extern_declarations(&root, diag, plugin)?;
     let document = parse_forge_from_node(&root, label, kind)?;
     Ok(Some(ParsedForge {
         document,
@@ -153,8 +173,9 @@ pub fn parse_forge_with_imports(
 fn parse_extern_declarations(
     root: &roxmltree::Node,
     doc_name: &str,
+    plugin: &[crate::forge::target_plugin::PluginSymbol],
 ) -> Result<Vec<crate::forge::model::ExternDeclaration>, Located<ForgeError>> {
-    use crate::forge::extern_validator::{validate_extern, ExternFailure};
+    use crate::forge::extern_validator::{validate_extern_with_plugin, ExternFailure};
     use crate::forge::intrinsic_registry::lookup_symbol;
     use crate::forge::model::ExternDeclaration;
 
@@ -212,22 +233,23 @@ fn parse_extern_declarations(
         // Closed-set lookup + abi/sig match per §5.I lines 1846-1850.
         // Map each ExternFailure variant 1:1 onto its spec-verbatim
         // ValidationError variant (per `feedback_spec_mirror_parity.md`).
-        match validate_extern(&name, &sig, &abi) {
-            Ok(_) => {}
+        // Plugin slice extends the lookup per Atomic B
+        // (Q-Call-6 (a) additive composition); empty for deploy-unaware
+        // entry points so atomic A semantics are preserved unchanged.
+        match validate_extern_with_plugin(&name, &sig, &abi, plugin) {
+            Ok(()) => {}
             Err(ExternFailure::NotInWhitelist { candidates }) => {
-                let candidates_vec: Vec<String> =
-                    candidates.iter().map(|s| s.to_string()).collect();
-                let candidates_list = if candidates_vec.is_empty() {
+                let candidates_list = if candidates.is_empty() {
                     "<no close matches>".to_string()
                 } else {
-                    candidates_vec.join(", ")
+                    candidates.join(", ")
                 };
                 return Err(located(
                     &child,
                     doc_name,
                     ValidationError::ExternSymbolNotInWhitelist {
                         name,
-                        candidates: candidates_vec,
+                        candidates,
                         candidates_list,
                     },
                 ));
@@ -249,7 +271,7 @@ fn parse_extern_declarations(
                     doc_name,
                     ValidationError::ExternSignatureMismatch {
                         name,
-                        expected: expected.to_string(),
+                        expected,
                         actual,
                     },
                 ));
@@ -271,15 +293,25 @@ fn parse_extern_declarations(
         }
 
         // `crate` attribute is optional — fall back to the registry
-        // entry's canonical crate_name when absent. (Atomic A: only
-        // sce_intrinsics_runtime is shipped; plugin overrides land
-        // in Atomic B with the target-plugin loader.)
+        // entry's canonical `crate_name`. Baseline-source resolves to
+        // the §5.I baseline's canonical crate (`sce_intrinsics_runtime`
+        // today). Plugin-source resolves to the plugin entry's optional
+        // `crate` field, falling through to an empty string when the
+        // plugin author left it unset (vendor crate already in the
+        // deploy's downstream `Cargo.toml`; spec lines 1772-1787 example
+        // plugin file omits `crate` on every entry). Empty string here
+        // surfaces to downstream codegen consumers as "use the deploy's
+        // ambient resolution".
         let crate_name = match child.attribute("crate") {
             Some(c) => c.to_string(),
-            None => lookup_symbol(&name)
-                .expect("validate_extern returned Ok ⇒ symbol is in registry")
-                .crate_name
-                .to_string(),
+            None => match lookup_symbol(&name) {
+                Some(s) => s.crate_name.to_string(),
+                None => plugin
+                    .iter()
+                    .find(|p| p.name == name)
+                    .and_then(|p| p.crate_name.clone())
+                    .unwrap_or_default(),
+            },
         };
 
         let line = Some(child.document().text_pos_at(child.range().start).row);
