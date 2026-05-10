@@ -721,6 +721,19 @@ pub fn generate_cpp_with_imports(
     imports: &[ImportContext],
     options: &crate::ForgeCompileOptions,
 ) -> Result<GeneratedOutput, ForgeError> {
+    generate_cpp_with_imports_and_externs(doc, template_dir, imports, &[], options)
+}
+
+/// Plugin-aware variant of [`generate_cpp_with_imports`]
+/// (Atomic C consumer wiring). Adds an `extern_decls` slice that
+/// triggers the `<snake>_externs.h` sidecar emit when non-empty.
+pub fn generate_cpp_with_imports_and_externs(
+    doc: &ForgeDocument,
+    template_dir: &Path,
+    imports: &[ImportContext],
+    extern_decls: &[crate::forge::model::ExternDeclaration],
+    options: &crate::ForgeCompileOptions,
+) -> Result<GeneratedOutput, ForgeError> {
     crate::forge::codegen_matrix::check(doc.kind(), crate::generator::Language::Cpp)?;
     let forge_dir = template_dir.join("forge/cpp");
     let mut env = generator::new_env();
@@ -783,6 +796,15 @@ pub fn generate_cpp_with_imports(
         )? {
             files.push(sidecar);
         }
+    }
+    // RFC §5.I Atomic C — `<sce:extern>` sidecar (Q-Call-7 Cpp shape).
+    if let Some(sidecar) = render_externs_sidecar(
+        &env,
+        doc.name(),
+        extern_decls,
+        crate::generator::Language::Cpp,
+    )? {
+        files.push(sidecar);
     }
     Ok(GeneratedOutput { files })
 }
@@ -9134,6 +9156,22 @@ pub fn generate_rust_with_imports(
     imports: &[ImportContext],
     options: &crate::ForgeCompileOptions,
 ) -> Result<GeneratedOutput, ForgeError> {
+    generate_rust_with_imports_and_externs(doc, template_dir, imports, &[], options)
+}
+
+/// Plugin-aware variant of [`generate_rust_with_imports`]
+/// (Atomic C consumer wiring). Adds an `extern_decls` slice that
+/// triggers the `<snake>_externs.rs` sidecar emit when non-empty.
+/// Existing entry preserved as a 0-extern delegate so deploy-unaware
+/// callers (`generate_rust`, downstream test harnesses) keep their
+/// signature unchanged.
+pub fn generate_rust_with_imports_and_externs(
+    doc: &ForgeDocument,
+    template_dir: &Path,
+    imports: &[ImportContext],
+    extern_decls: &[crate::forge::model::ExternDeclaration],
+    options: &crate::ForgeCompileOptions,
+) -> Result<GeneratedOutput, ForgeError> {
     crate::forge::codegen_matrix::check(doc.kind(), crate::generator::Language::Rust)?;
     let forge_dir = template_dir.join("forge/rust");
     let mut env = generator::new_env();
@@ -9189,6 +9227,15 @@ pub fn generate_rust_with_imports(
         )? {
             files.push(sidecar);
         }
+    }
+    // RFC §5.I Atomic C — `<sce:extern>` sidecar (Q-Call-7 Rust shape).
+    if let Some(sidecar) = render_externs_sidecar(
+        &env,
+        doc.name(),
+        extern_decls,
+        crate::generator::Language::Rust,
+    )? {
+        files.push(sidecar);
     }
     Ok(GeneratedOutput { files })
 }
@@ -9653,6 +9700,19 @@ pub fn generate_c11_with_imports(
     imports: &[ImportContext],
     options: &crate::ForgeCompileOptions,
 ) -> Result<GeneratedOutput, ForgeError> {
+    generate_c11_with_imports_and_externs(doc, template_dir, imports, &[], options)
+}
+
+/// Plugin-aware variant of [`generate_c11_with_imports`]
+/// (Atomic C consumer wiring). Adds an `extern_decls` slice that
+/// triggers the `<snake>_externs.h` sidecar emit when non-empty.
+pub fn generate_c11_with_imports_and_externs(
+    doc: &ForgeDocument,
+    template_dir: &Path,
+    imports: &[ImportContext],
+    extern_decls: &[crate::forge::model::ExternDeclaration],
+    options: &crate::ForgeCompileOptions,
+) -> Result<GeneratedOutput, ForgeError> {
     crate::forge::codegen_matrix::check(doc.kind(), crate::generator::Language::C11)?;
     let forge_dir = template_dir.join("forge/c");
     let mut env = generator::new_env();
@@ -9724,6 +9784,15 @@ pub fn generate_c11_with_imports(
     // pattern used by algorithm/codec test-vector sidecars above.
     if let ForgeDocument::BufferPool(m) = doc {
         files.push(render_buffer_pool_linker_fragment(&env, m)?);
+    }
+    // RFC §5.I Atomic C — `<sce:extern>` sidecar (Q-Call-7 C11 shape).
+    if let Some(sidecar) = render_externs_sidecar(
+        &env,
+        doc.name(),
+        extern_decls,
+        crate::generator::Language::C11,
+    )? {
+        files.push(sidecar);
     }
     Ok(GeneratedOutput { files })
 }
@@ -14427,6 +14496,79 @@ fn render_algorithm(
 /// `<sce:test-vector hex value/>` row maps unambiguously only to a
 /// single-bytes-input shape (multi-field oracle grammar defers to
 /// B5 alongside the Zenoh msg-set authoring).
+/// watching-zenoh RFC §5.I Atomic C — `<sce:extern>` sidecar emit.
+/// Q-Call-7 lock: 3-language scope (Rust + C11 + Cpp). Renders the
+/// per-document declaration block to a sidecar file alongside the
+/// kind's primary output (`<snake>_externs.{rs,h}`) so the kind
+/// templates stay extern-blind and the shared sig translator
+/// ([`crate::forge::extern_emit::build_extern_emit_list`]) runs in
+/// exactly one place.
+///
+/// Returns `Ok(None)` when:
+/// - `extern_decls` is empty (no `<sce:extern>` in the source).
+/// - `lang` is Kotlin/Go/Python (Q-Call-7 non-MCU rejection lives
+///   at [`crate::compile_forge_with_imports`] instead — by the time
+///   this helper runs on those backends, `extern_decls` is `&[]`
+///   per the gate above; a defensive `None` here avoids a
+///   built-but-unconsumed risk if the gate is reordered).
+fn render_externs_sidecar(
+    env: &minijinja::Environment,
+    parent_module: &str,
+    extern_decls: &[crate::forge::model::ExternDeclaration],
+    lang: crate::generator::Language,
+) -> Result<Option<(String, String)>, ForgeError> {
+    use crate::forge::error::GenerateError;
+    use crate::forge::extern_emit::build_extern_emit_list;
+    use crate::generator::Language;
+
+    if extern_decls.is_empty() {
+        return Ok(None);
+    }
+    if !matches!(lang, Language::Rust | Language::C11 | Language::Cpp) {
+        // Q-Call-7 non-MCU rejection — defensive only; the
+        // lib.rs gate fires first.
+        return Ok(None);
+    }
+
+    let emits = build_extern_emit_list(extern_decls).map_err(|e| {
+        ForgeError::Generate(GenerateError::UnsupportedFeature(e.to_string()))
+    })?;
+
+    let parent_snake = filters::to_snake_case(parent_module.to_string());
+    let (template_name, filename, guard) = match lang {
+        Language::Rust => (
+            "externs.rs.jinja2",
+            format!("{parent_snake}_externs.rs"),
+            String::new(),
+        ),
+        Language::C11 => (
+            "externs.h.jinja2",
+            format!("{parent_snake}_externs.h"),
+            format!("SCE_FORGE_{}_EXTERNS_H", parent_snake.to_uppercase()),
+        ),
+        Language::Cpp => (
+            "externs.h.jinja2",
+            format!("{parent_snake}_externs.h"),
+            String::new(),
+        ),
+        // Defensive — already filtered above.
+        Language::Kotlin | Language::Go | Language::Python => return Ok(None),
+    };
+
+    let template = env
+        .get_template(template_name)
+        .map_err(|e| ForgeError::Generate(GenerateError::TemplateRender(e.to_string())))?;
+    let context = minijinja::context! {
+        parent_module => parent_snake,
+        guard => guard,
+        extern_emits => emits,
+    };
+    let code = template
+        .render(context)
+        .map_err(|e| ForgeError::Generate(GenerateError::TemplateRender(e.to_string())))?;
+    Ok(Some((filename, code)))
+}
+
 fn render_algorithm_test_vector_sidecar(
     env: &minijinja::Environment,
     m: &AlgorithmModel,

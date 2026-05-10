@@ -464,7 +464,7 @@ pub fn compile_forge_with_deploy(
         None => Vec::new(),
     };
 
-    let doc = forge::parser::parse_forge_with_imports_and_plugin(content, label, &plugin_symbols)?
+    let parsed = forge::parser::parse_forge_with_imports_and_plugin(content, label, &plugin_symbols)?
         .ok_or_else(|| Located::new(
             ValidationError::WrongPipeline {
                 kind: forge::model::ForgeKind::Statechart,
@@ -473,8 +473,9 @@ pub fn compile_forge_with_deploy(
             label.diagnostic_label,
             None,
             None,
-        ))?
-        .document;
+        ))?;
+    let extern_decls = parsed.extern_declarations.clone();
+    let doc = parsed.document;
 
     // η deploy-aware validation. Resolved target_os is the
     // intersection of deploy + target_machine + machine.platform —
@@ -574,13 +575,60 @@ pub fn compile_forge_with_deploy(
 
     let template_base = find_template_base();
 
+    // RFC §5.I Atomic C / Q-Call-7 — `<sce:extern>` rejected on
+    // non-MCU backends. Mirrors the gate in
+    // [`compile_forge_with_imports`]; the deploy-aware path catches
+    // the rejection one stage later (after potential plugin loading)
+    // because plugin entries also count as `<sce:extern>` declarations
+    // through `parsed.extern_declarations`. Reuses the existing
+    // `codegen/mcu-class-kind-on-non-mcu-language` family per Q-Call-7
+    // prose, with `kind = "<sce:extern>"` to disambiguate from kind-
+    // axis rejection on the same code.
+    if !extern_decls.is_empty()
+        && matches!(
+            language,
+            generator::Language::Kotlin
+                | generator::Language::Go
+                | generator::Language::Python
+        )
+    {
+        return Err(Located::new(
+            forge::error::GenerateError::CodegenMcuClassKindOnNonMcuLanguage {
+                kind: "<sce:extern>".to_string(),
+                language: language_wire_name(language).to_string(),
+            }
+            .into(),
+            label.diagnostic_label,
+            None,
+            None,
+        ));
+    }
+
     let output = match language {
-        generator::Language::Cpp => forge::generator::generate_cpp(&doc, &template_base),
+        generator::Language::Cpp => forge::generator::generate_cpp_with_imports_and_externs(
+            &doc,
+            &template_base,
+            &[],
+            &extern_decls,
+            &ForgeCompileOptions::default(),
+        ),
         generator::Language::Kotlin => forge::generator::generate_kotlin(&doc, &template_base),
-        generator::Language::Rust => forge::generator::generate_rust(&doc, &template_base),
+        generator::Language::Rust => forge::generator::generate_rust_with_imports_and_externs(
+            &doc,
+            &template_base,
+            &[],
+            &extern_decls,
+            &ForgeCompileOptions::default(),
+        ),
         generator::Language::Go => forge::generator::generate_go(&doc, &template_base),
         generator::Language::Python => forge::generator::generate_python(&doc, &template_base),
-        generator::Language::C11 => forge::generator::generate_c11(&doc, &template_base),
+        generator::Language::C11 => forge::generator::generate_c11_with_imports_and_externs(
+            &doc,
+            &template_base,
+            &[],
+            &extern_decls,
+            &ForgeCompileOptions::default(),
+        ),
     }
     .map_err(|e| Located::new(e, label.diagnostic_label, None, None))?;
     Ok(output)
@@ -742,15 +790,57 @@ pub fn compile_forge_with_imports(
         label.diagnostic_label,
     )?;
 
+    // RFC §5.I Atomic C / Q-Call-7 — `<sce:extern>` rejected on non-MCU
+    // backends (Kotlin/Go/Python). The wire-format diagnostic reuses
+    // the existing `codegen/mcu-class-kind-on-non-mcu-language` family
+    // per Q-Call-7 prose ("rejected via codegen/mcu-class-kind-on-non-
+    // mcu-language family"); the `kind` field carries the literal
+    // string `<sce:extern>` to disambiguate from an MCU-class-kind
+    // rejection on the same code (kind-axis rejection puts a kind name
+    // there). Atomics A/B build the `parsed.extern_declarations` slice;
+    // this gate is the consumer that closes the built-but-unconsumed
+    // path on non-MCU backends.
+    if !parsed.extern_declarations.is_empty()
+        && matches!(
+            language,
+            generator::Language::Kotlin
+                | generator::Language::Go
+                | generator::Language::Python
+        )
+    {
+        return Err(Located::new(
+            forge::error::GenerateError::CodegenMcuClassKindOnNonMcuLanguage {
+                kind: "<sce:extern>".to_string(),
+                language: language_wire_name(language).to_string(),
+            }
+            .into(),
+            label.diagnostic_label,
+            None,
+            None,
+        ));
+    }
+
     let output = match language {
         generator::Language::Cpp => {
-            forge::generator::generate_cpp_with_imports(&parsed.document, &template_base, &import_ctx, options)
+            forge::generator::generate_cpp_with_imports_and_externs(
+                &parsed.document,
+                &template_base,
+                &import_ctx,
+                &parsed.extern_declarations,
+                options,
+            )
         }
         generator::Language::Kotlin => {
             forge::generator::generate_kotlin_with_imports(&parsed.document, &template_base, &import_ctx, options)
         }
         generator::Language::Rust => {
-            forge::generator::generate_rust_with_imports(&parsed.document, &template_base, &import_ctx, options)
+            forge::generator::generate_rust_with_imports_and_externs(
+                &parsed.document,
+                &template_base,
+                &import_ctx,
+                &parsed.extern_declarations,
+                options,
+            )
         }
         generator::Language::Go => {
             forge::generator::generate_go_with_imports(&parsed.document, &template_base, &import_ctx, options)
@@ -759,11 +849,34 @@ pub fn compile_forge_with_imports(
             forge::generator::generate_python_with_imports(&parsed.document, &template_base, &import_ctx, options)
         }
         generator::Language::C11 => {
-            forge::generator::generate_c11_with_imports(&parsed.document, &template_base, &import_ctx, options)
+            forge::generator::generate_c11_with_imports_and_externs(
+                &parsed.document,
+                &template_base,
+                &import_ctx,
+                &parsed.extern_declarations,
+                options,
+            )
         }
     }
     .map_err(|e| Located::new(e, label.diagnostic_label, None, None))?;
     Ok(output)
+}
+
+/// Wire-format name for a [`generator::Language`] — mirrors
+/// [`forge::codegen_matrix::language_wire_name`] but accessible from
+/// `lib.rs` without crossing the matrix module boundary. Kept private;
+/// callers go through this function so the lowercase lock matches the
+/// `codegen/mcu-class-kind-on-non-mcu-language` `actual` field's
+/// existing case convention.
+fn language_wire_name(lang: generator::Language) -> &'static str {
+    match lang {
+        generator::Language::Cpp => "cpp",
+        generator::Language::Kotlin => "kotlin",
+        generator::Language::Rust => "rust",
+        generator::Language::Go => "go",
+        generator::Language::Python => "python",
+        generator::Language::C11 => "c11",
+    }
 }
 
 /// Recursively resolve a codec's full encode-buffer max bytes — RFC §5.B

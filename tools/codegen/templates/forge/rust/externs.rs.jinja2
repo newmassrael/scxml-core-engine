@@ -1,0 +1,31 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+// SCE Forge: Auto-generated `<sce:extern>` declarations
+// (watching-zenoh RFC §5.I, Atomic C — Q-Call-7 Rust emit).
+// Sidecar to `{{ parent_module }}.rs` — `pub use` from the consumer
+// module to access the declared intrinsics. Do not edit — regenerate
+// from the source SCXML file.
+//
+// `<sce:extern>` declarations passed parse-time validation against the
+// §5.I baseline registry (and any deploy-loaded target plugin). The
+// blocks below mirror the registry sigs verbatim; ABI is `extern "C"`
+// per Q-Call-3 baseline (every v1 entry rides the C ABI for stable
+// cross-language linkage on MCU targets).
+
+#![allow(dead_code, non_snake_case)]
+
+#[allow(unused_imports)]
+use core::ffi::c_void;
+{% for entry in extern_emits %}
+{% if loop.first or extern_emits[loop.index0 - 1].crate_name != entry.crate_name %}
+{% if not loop.first %}
+}
+{% endif %}
+
+// Crate: {{ entry.crate_name or "(downstream-resolved)" }}
+unsafe extern "C" {
+{% endif %}
+    pub fn {{ entry.name }}({{ entry.rust_params }}){{ entry.rust_ret }};
+{% endfor %}
+}

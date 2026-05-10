@@ -11,6 +11,7 @@ pub mod codegen_matrix;
 pub mod const_fold;
 pub mod diagnostic;
 pub mod error;
+pub mod extern_emit;
 pub mod extern_validator;
 pub mod intrinsic_registry;
 pub mod limits;

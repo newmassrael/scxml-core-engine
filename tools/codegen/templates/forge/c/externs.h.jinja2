@@ -1,0 +1,35 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+/* SCE Forge: Auto-generated `<sce:extern>` declarations */
+/* (watching-zenoh RFC §5.I, Atomic C — Q-Call-7 C11 emit). */
+/* Sidecar to `{{ parent_module }}.h` — include from the consumer */
+/* header to access the declared intrinsics. Do not edit — */
+/* regenerate from the source SCXML file. */
+/* */
+/* `<sce:extern>` declarations passed parse-time validation against the */
+/* §5.I baseline registry (and any deploy-loaded target plugin). The */
+/* forward declarations below translate Rust-style signatures from the */
+/* registry to C11 prototype form via the closed translator in */
+/* `forge/extern_emit.rs`. */
+
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+{% for entry in extern_emits %}
+
+extern {{ entry.c_ret }} {{ entry.name }}({{ entry.c_params }});
+{% endfor %}
+
+#ifdef __cplusplus
+}  /* extern "C" */
+#endif
+
+#endif  /* {{ guard }} */
