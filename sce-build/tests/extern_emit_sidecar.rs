@@ -71,9 +71,17 @@ fn find_sidecar<'a>(
 
 #[test]
 fn rust_emits_extern_c_block_for_baseline_symbols() {
+    // C5 (spec §5.E line 1548): the cache-maintenance trio
+    // (`sce_dcache_*_by_addr`) is rejected at parse time when authored
+    // via `<sce:extern>` because cache calls are FSM-driven from the
+    // buffer-pool kind. To exercise the Rust emit shape for a multi-
+    // param symbol, this fixture authors `sce_atomic_fetch_add_acq_rel_u32`
+    // (signature `(*mut u32, u32) -> u32`) — non-cache, multi-param,
+    // covers the same Rust→C type translator code paths the original
+    // `sce_dcache_clean_by_addr` exercised.
     let scxml = fixture_transform_with_externs(
         r##"<sce:extern name="sce_atomic_load_acquire_u32" sig="(*const u32) -> u32" abi="c"/>
-  <sce:extern name="sce_dcache_clean_by_addr" sig="(*const c_void, usize)" abi="c"/>"##,
+  <sce:extern name="sce_atomic_fetch_add_acq_rel_u32" sig="(*mut u32, u32) -> u32" abi="c"/>"##,
     );
     let output = compile(&scxml, Language::Rust).expect("must compile with externs");
     let sidecar = find_sidecar(&output, "_externs.rs").expect("rust sidecar emitted");
@@ -88,8 +96,8 @@ fn rust_emits_extern_c_block_for_baseline_symbols() {
         "expected atomic_load decl in sidecar:\n{sidecar}",
     );
     assert!(
-        sidecar.contains("pub fn sce_dcache_clean_by_addr(p0: *const c_void, p1: usize);"),
-        "expected dcache_clean decl in sidecar:\n{sidecar}",
+        sidecar.contains("pub fn sce_atomic_fetch_add_acq_rel_u32(p0: *mut u32, p1: u32) -> u32;"),
+        "expected atomic_fetch_add decl in sidecar:\n{sidecar}",
     );
 }
 

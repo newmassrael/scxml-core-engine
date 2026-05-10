@@ -464,6 +464,12 @@ Codes that the author can avoid by writing a better SCXML /
 | `mem/pool-section-conflict` | Validation |
 | `mem/pool-too-large` | Validation |
 | `mem/inter-pool-padding-not-emitted` | Validation |
+| `mem/cache-line-alignment` | Validation |
+| `mem/slot-size-not-cache-line-multiple` | Validation |
+| `mem/cache-policy-unsupported-on-no-dcache-core` | Validation |
+| `pool/cache-maintenance-misplaced` | Validation |
+| `pool/speculative-prefetch-flag-missing` | Validation |
+| `pool/cache-pre-arm-invalidate-missing-on-speculative-core` | Validation |
 | `pool/sample-typestate-attributes-disabled` | Validation |
 | `pool/sample-take-without-stage-pool` | Validation |
 | `pool/sample-callback-signature-non-borrow` | Validation |

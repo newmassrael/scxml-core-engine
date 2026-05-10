@@ -162,18 +162,23 @@ symbols:
 fn reject_baseline_shadow_irrespective_of_signature_match() {
     // Q-Call-6 (a) lock: even when the plugin's sig matches baseline
     // exactly, redefinition is disallowed (spec line 1852 trigger is
-    // "redefines", not "redefines incompatibly").
+    // "redefines", not "redefines incompatibly"). C5 (spec §5.E line
+    // 1548) makes the cache-maintenance trio FSM-driven and rejects
+    // its author authoring at parse time before this check could
+    // fire. Substitute `sce_atomic_load_acquire_u32` so the atomic B
+    // shadow-rejection semantic remains exercised on a baseline
+    // symbol that authors are actually allowed to write.
     let plugin_yaml = r#"
 symbols:
-  - name: sce_dcache_clean_by_addr
-    sig: "(*const c_void, usize)"
+  - name: sce_atomic_load_acquire_u32
+    sig: "(*const u32) -> u32"
     abi: c
 "#;
     let plugin = temp_plugin_file(plugin_yaml);
     let cfg = deploy_with_plugin(plugin.path().to_path_buf());
 
     let scxml = fixture_transform_with_externs(
-        r##"<sce:extern name="sce_dcache_clean_by_addr" sig="(*const c_void, usize)" abi="c"/>"##,
+        r##"<sce:extern name="sce_atomic_load_acquire_u32" sig="(*const u32) -> u32" abi="c"/>"##,
     );
     let err = match sce_build::compile_forge_with_deploy(
         &scxml,

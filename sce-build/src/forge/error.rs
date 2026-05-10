@@ -743,6 +743,164 @@ pub enum ValidationError {
         name: String,
     },
 
+    /// watching-zenoh RFC §5.E C5 cache-maintenance validation
+    /// (spec line 1544): pool `alignment` is smaller than the resolved
+    /// target's `platform.dcache_line_size` while `cache-policy:
+    /// maintain` is in effect. The cache-line alignment violation
+    /// matters because partial-line `cache_invalidate_by_addr` calls
+    /// corrupt adjacent data on the start side — the unaligned head
+    /// crosses into the previous slot's last cache line, which the
+    /// invalidate then evicts together with the slot's own bytes.
+    /// Fires only via [`compile_forge_with_deploy`] after section
+    /// validation passes (Q-η5 (a) silent-skip when deploy.yaml is
+    /// unavailable). Author resolution: raise `<sce:alignment>` to at
+    /// least the platform's `dcache_line_size`. RFC §5.E line 1544 +
+    /// §5.I line 1742-1744 spec anchor.
+    #[error(
+        "buffer-pool '{name}': alignment {pool_alignment} is smaller than target platform's `dcache_line_size` {dcache_line_size} on machine '{machine}' under `cache-policy: maintain`. Partial-line cache_invalidate_by_addr corrupts adjacent slot data on the start side. Raise <sce:alignment> to at least {dcache_line_size}."
+    )]
+    BufferPoolCacheLineAlignment {
+        /// Buffer-pool document name (root `name=` attribute).
+        name: String,
+        /// Target machine name (deploy.yaml top-level key).
+        machine: String,
+        /// `<sce:alignment>` body as authored.
+        pool_alignment: u32,
+        /// `platform.dcache_line_size` from deploy.yaml.
+        dcache_line_size: u32,
+    },
+
+    /// watching-zenoh RFC §5.E C5 cache-maintenance validation
+    /// (spec line 1545): `<sce:slot-size>` is not a whole-number
+    /// multiple of `platform.dcache_line_size` while `cache-policy:
+    /// maintain` is in effect. Each slot must occupy a whole number
+    /// of cache lines so that `cache_invalidate_by_addr(slot, len)`
+    /// after RX cannot touch the bytes of the adjacent slot that
+    /// share the boundary cache line. Fires only via
+    /// [`compile_forge_with_deploy`] after section validation passes
+    /// (Q-η5 (a) silent-skip when deploy.yaml is unavailable). Author
+    /// resolution: round `slot_size` up to the next cache-line
+    /// multiple and continue using the original logical size from
+    /// within each slot. RFC §5.E line 1545 + §5.I line 1742-1744
+    /// spec anchor.
+    #[error(
+        "buffer-pool '{name}': slot-size {slot_size} is not a whole-number multiple of target platform's `dcache_line_size` {dcache_line_size} on machine '{machine}' (remainder {remainder}) under `cache-policy: maintain`. The boundary cache line is shared with the adjacent slot — cache_invalidate_by_addr after RX would corrupt it. Round slot-size up to {next_multiple} (next cache-line multiple)."
+    )]
+    BufferPoolSlotSizeNotCacheLineMultiple {
+        /// Buffer-pool document name (root `name=` attribute).
+        name: String,
+        /// Target machine name (deploy.yaml top-level key).
+        machine: String,
+        /// `<sce:slot-size>` body as authored.
+        slot_size: u32,
+        /// `platform.dcache_line_size` from deploy.yaml.
+        dcache_line_size: u32,
+        /// `slot_size % dcache_line_size` — the over-the-line excess.
+        remainder: u32,
+        /// `slot_size + (dcache_line_size - remainder)` — repair target.
+        next_multiple: u32,
+    },
+
+    /// watching-zenoh RFC §5.E C5 cache-maintenance validation
+    /// (spec line 1543): pool declares `cache-policy: maintain` or
+    /// `cache-policy: non-cacheable` while the resolved target
+    /// platform has `has_dcache: false`. The maintenance call sites
+    /// would be no-ops at best, MPU configuration request at worst —
+    /// neither is meaningful on a core without a data cache. Fires
+    /// only via [`compile_forge_with_deploy`] after section
+    /// validation passes (Q-η5 (a) silent-skip when deploy.yaml is
+    /// unavailable). Author resolution: switch the pool to
+    /// `cache-policy: none`. RFC §5.E line 1543 spec anchor.
+    #[error(
+        "buffer-pool '{name}': `cache-policy: {declared_policy}` declared on machine '{machine}' which has `platform.has_dcache: false`. Cache maintenance is meaningless on a core without a data cache. Switch to `cache-policy: none`."
+    )]
+    BufferPoolCachePolicyUnsupportedOnNoDcacheCore {
+        /// Buffer-pool document name (root `name=` attribute).
+        name: String,
+        /// Target machine name (deploy.yaml top-level key).
+        machine: String,
+        /// The declared `<sce:cache-policy>` body — `maintain` or
+        /// `non-cacheable`. (`none` does not trigger.)
+        declared_policy: String,
+    },
+
+    /// watching-zenoh RFC §5.E C5 cache-maintenance + §5.I author-
+    /// guard (spec line 1548): an `<sce:extern>` declaration in the
+    /// build attempts to author one of the cache-maintenance trio
+    /// (`sce_dcache_clean_by_addr`, `sce_dcache_invalidate_by_addr`,
+    /// `sce_dcache_clean_invalidate_by_addr`). Per spec lines
+    /// 1222-1227, cache maintenance is **FSM-driven**: codegen
+    /// auto-injects the externs and emits the calls on the buffer-
+    /// pool lifecycle edges. Author authoring would silently allow
+    /// duplicate declarations and the class of bugs ("the maintenance
+    /// call sits in the wrong place") that the FSM-driven design
+    /// prevents. Fires at parse time, before atomic A's whitelist
+    /// validator. Author resolution: remove the offending
+    /// `<sce:extern>`; the buffer-pool kind handles cache calls
+    /// automatically when `cache-policy: maintain`. RFC §5.E line
+    /// 1548 + lines 1222-1227 spec anchor.
+    #[error(
+        "<sce:extern name=\"{attempted_symbol}\">: cache-maintenance intrinsics are FSM-driven and authored automatically by the buffer-pool kind under `cache-policy: maintain` (RFC §5.E lines 1222-1227). Author <sce:extern> for the cache trio is forbidden — remove the declaration; codegen emits the calls on lifecycle edges."
+    )]
+    PoolCacheMaintenanceMisplaced {
+        /// The cache trio symbol the author tried to declare.
+        attempted_symbol: String,
+    },
+
+    /// watching-zenoh RFC §5.E C5 cache-maintenance config-
+    /// completeness diagnostic (spec line 1553): a target machine
+    /// declares `platform.has_dcache: true` without setting
+    /// `platform.has_speculative_prefetch`. Codegen cannot decide
+    /// whether to emit the `free → dma-armed-rx` pre-arm cache-
+    /// invalidate edge — silently emitting it on M0/M3/M4 wastes
+    /// cycles, silently omitting it on M7+/A-class cores leads to
+    /// documented packet corruption (RFC §5.E lines 1199-1212).
+    /// Fires only via [`compile_forge_with_deploy`] when at least
+    /// one buffer-pool with `cache-policy: maintain` exists in the
+    /// build (silent skip when no maintain-policy pool is reachable
+    /// — the field has no consumer to require it). Author
+    /// resolution: declare `has_speculative_prefetch` per the SoC
+    /// datasheet (M7+/A-class = true, M3/M4 = false). RFC §5.E
+    /// line 1553 spec anchor.
+    #[error(
+        "machine '{machine}': `platform.has_dcache: true` is set but `platform.has_speculative_prefetch` is not. Buffer-pool '{pool_name}' uses `cache-policy: maintain` and codegen cannot decide whether to emit the pre-DMA-RX invalidate edge. Declare `has_speculative_prefetch` per the SoC datasheet (M7+/A-class = true, M3/M4 = false)."
+    )]
+    PoolSpeculativePrefetchFlagMissing {
+        /// Target machine name (deploy.yaml top-level key) whose
+        /// platform block lacks the field.
+        machine: String,
+        /// Name of one buffer-pool that triggered the requirement
+        /// — surfaces a concrete consumer in the message so the
+        /// author can localize "why does my deploy.yaml suddenly
+        /// require this field?".
+        pool_name: String,
+    },
+
+    /// watching-zenoh RFC §5.E C5 cache-maintenance codegen self-
+    /// check (spec line 1552): `cache-policy: maintain` +
+    /// `platform.has_speculative_prefetch: true` resolved, but the
+    /// rendered buffer-pool template did not emit a
+    /// `sce_dcache_invalidate_by_addr` call inside the
+    /// `link_arm_rx` body. Codegen-invariant violation — fires only
+    /// when the `tools/codegen/templates/forge/{rust,c}/buffer_pool`
+    /// template itself drops the pre-arm invalidate edge. The
+    /// diagnostic guards against template regression that would
+    /// silently corrupt RX data on M7+ cores. Authors cannot fix
+    /// this from the SCXML side; the prose links to the issue
+    /// tracker so a regression report finds the right team. RFC
+    /// §5.E line 1552 spec anchor.
+    #[error(
+        "buffer-pool '{name}': generated source for backend `{backend}` is missing the `sce_dcache_invalidate_by_addr` call on the `free → dma-armed-rx` edge despite `cache-policy: maintain` + `platform.has_speculative_prefetch: true` — codegen invariant violation per RFC §5.E lines 1186-1198 + 1552; report at https://github.com/newmassrael/scxml-core-engine/issues"
+    )]
+    PoolCachePreArmInvalidateMissingOnSpeculativeCore {
+        /// Buffer-pool document name (root `name=` attribute).
+        name: String,
+        /// Backend label whose template skipped the call (e.g.
+        /// "rust", "c11"). Surfaces which template needs repair
+        /// in the regression report.
+        backend: String,
+    },
+
     /// RFC §5.E B7-ε codegen self-check: the rendered C11 buffer-pool
     /// header is missing the `#include <sce/sample.h>` directive. The
     /// generated pool header surfaces the runtime Sample API

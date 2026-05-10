@@ -9199,7 +9199,7 @@ pub fn generate_rust_with_imports_and_externs(
         // `[u8; SLOT_SIZE]`, bitmap freelist, acquire/return surface.
         // Phantom-typed `Slot<state>` API + 7-state lifecycle FSM
         // defer to B7-γ.
-        ForgeDocument::BufferPool(m) => render_buffer_pool_rust(&env, m, imports)?,
+        ForgeDocument::BufferPool(m) => render_buffer_pool_rust(&env, m, imports, options)?,
     };
 
     let filename = format!("{}.rs", filters::to_snake_case(doc.name().to_string()));
@@ -9290,23 +9290,36 @@ fn render_link_rust(
 }
 
 /// Render a `<sce:kind="buffer-pool">` document for the Rust backend
-/// (watching-zenoh RFC §5.E, B7-α). Emits a struct owning a fixed-size
-/// `[[u8; SLOT_SIZE]; SLOT_COUNT]` slot table + bitmap freelist.
-/// Acquire/return surface is plain method calls; phantom-typed
-/// `Slot<state>` API + 7-state lifecycle FSM defer to B7-γ. Cache
-/// maintenance pinning defers to B7-δ (gated on §5.I `<sce:call>`
-/// intrinsic registry); linker fragment emission defers to B7-β
-/// `(c11, bare_metal)` parity.
+/// (watching-zenoh RFC §5.E, B7-α + C5). Emits a struct owning a
+/// fixed-size `[[u8; SLOT_SIZE]; SLOT_COUNT]` slot table + per-slot
+/// state array. C5 wires §5.I cache-maintenance intrinsics into the
+/// FSM lifecycle edges per spec lines 1182-1197: cache-clean before
+/// TX hand-off (`link_arm_tx`) and pre-arm cache-invalidate on RX
+/// arming (`link_arm_rx`, gated on `platform.has_speculative_prefetch`
+/// per RFC §5.E lines 1189-1198 + 1199-1212).
 fn render_buffer_pool_rust(
     env: &minijinja::Environment<'_>,
     m: &BufferPoolModel,
     _imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
     let tmpl = env
         .get_template("buffer_pool.rs.jinja2")
         .map_err(|e| ForgeError::Generate(GenerateError::TemplateLoad(format!(
             "buffer_pool.rs.jinja2 (rust): {e}"
         ))))?;
+    // C5: deploy-aware cache-maintenance gating. `None` (deploy-
+    // unaware path) → conservative `false` default; the only effect
+    // is to skip the pre-arm RX invalidate edge, which is correct
+    // for non-`maintain` cache policies and for non-speculative cores.
+    // The compile_forge_with_deploy validator path ensures this is
+    // `Some(true|false)` whenever a `cache-policy: maintain` pool
+    // co-resolves with a `has_dcache: true` machine.
+    let has_speculative_prefetch = options
+        .cache_platform
+        .as_ref()
+        .map(|p| p.has_speculative_prefetch)
+        .unwrap_or(false);
     let ctx = minijinja::context! {
         name => &m.name,
         pascal_name => filters::to_pascal_case(m.name.clone()),
@@ -9318,6 +9331,10 @@ fn render_buffer_pool_rust(
         dma_channel => m.dma_channel.clone().unwrap_or_default(),
         has_dma_channel => m.dma_channel.is_some(),
         cache_policy => m.cache_policy.to_string(),
+        // C5 cache-maintenance: template emits cache_clean +
+        // (conditionally) cache_invalidate when cache_policy=maintain.
+        cache_maintain => m.cache_policy == crate::forge::model::CachePolicy::Maintain,
+        has_speculative_prefetch => has_speculative_prefetch,
     };
     tmpl.render(ctx).map_err(|e| {
         ForgeError::Generate(GenerateError::TemplateRender(format!(
@@ -9375,16 +9392,20 @@ fn render_link_c(
 }
 
 /// Render a `<sce:kind="buffer-pool">` document for the C11 backend
-/// (watching-zenoh RFC §5.E, B7-β). Mirrors `render_buffer_pool_rust`
+/// (watching-zenoh RFC §5.E, B7-β + C5). Mirrors `render_buffer_pool_rust`
 /// but emits a header that places the slot storage table in the
 /// section declared by `<sce:section>` via `__attribute__((section,
 /// aligned))`. The sidecar linker fragment that pairs with this
 /// header is rendered separately via [`render_buffer_pool_linker_fragment`]
 /// and pushed onto `GeneratedOutput.files` by the dispatcher.
+/// C5 wires §5.I cache-maintenance intrinsic calls into the FSM
+/// edges per spec lines 1182-1197 with the same gating semantics as
+/// the Rust template.
 fn render_buffer_pool_c(
     env: &minijinja::Environment<'_>,
     m: &BufferPoolModel,
     _imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
     let tmpl = env
         .get_template("buffer_pool.h.jinja2")
@@ -9394,6 +9415,13 @@ fn render_buffer_pool_c(
     let snake_name = filters::to_snake_case(m.name.clone());
     let upper_name = to_upper_snake(&m.name);
     let guard = format!("SCE_FORGE_{}_H", &upper_name);
+    // C5: deploy-aware cache-maintenance gating; mirror the Rust
+    // template's `has_speculative_prefetch` derivation.
+    let has_speculative_prefetch = options
+        .cache_platform
+        .as_ref()
+        .map(|p| p.has_speculative_prefetch)
+        .unwrap_or(false);
     let ctx = minijinja::context! {
         name => &m.name,
         snake_name => snake_name,
@@ -9407,6 +9435,11 @@ fn render_buffer_pool_c(
         dma_channel => m.dma_channel.clone().unwrap_or_default(),
         has_dma_channel => m.dma_channel.is_some(),
         cache_policy => m.cache_policy.to_string(),
+        // C5 cache-maintenance gating; mirror of Rust template
+        // context shape so per-backend template authors can reach for
+        // the same names without per-backend wiring guesswork.
+        cache_maintain => m.cache_policy == crate::forge::model::CachePolicy::Maintain,
+        has_speculative_prefetch => has_speculative_prefetch,
     };
     tmpl.render(ctx).map_err(|e| {
         ForgeError::Generate(GenerateError::TemplateRender(format!(
@@ -9747,7 +9780,7 @@ pub fn generate_c11_with_imports_and_externs(
         // table + occupancy bitmap + acquire/release surface; the
         // sidecar linker fragment is appended to `files` after this
         // match per §5.E lines 1031-1086.
-        ForgeDocument::BufferPool(m) => render_buffer_pool_c(&env, m, imports)?,
+        ForgeDocument::BufferPool(m) => render_buffer_pool_c(&env, m, imports, options)?,
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));

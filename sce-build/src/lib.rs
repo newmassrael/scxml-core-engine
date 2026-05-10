@@ -569,9 +569,138 @@ pub fn compile_forge_with_deploy(
                         ));
                     }
                 }
+
+                // ── C5 cache-policy validators (RFC §5.E lines 1543-1545 + 1553) ──
+                //
+                // Four deploy-aware diagnostics keyed off `platform.has_dcache`
+                // / `platform.dcache_line_size` / `platform.has_speculative_prefetch`
+                // and the pool's `cache_policy`. Q-η5 (a) silent-skip when
+                // the platform block is missing fields (the deploy.yaml-side
+                // codes `deploy/has-dcache-missing` + `deploy/dcache-line-size-missing`
+                // sit in §5.K / C13 scope — not C5's reach). One exception:
+                // `pool/speculative-prefetch-flag-missing` fires even when
+                // the field is unset, because the pool's `cache-policy:
+                // maintain` makes the field a per-pool requirement, not a
+                // schema-shape question.
+                if let Some(platform) = machine.platform.as_ref() {
+                    let policy_label = match pool.cache_policy {
+                        forge::model::CachePolicy::Maintain => Some("maintain"),
+                        forge::model::CachePolicy::NonCacheable => Some("non-cacheable"),
+                        forge::model::CachePolicy::None => None,
+                    };
+
+                    // (1) cache-policy: maintain | non-cacheable on a core
+                    //     declared `has_dcache: false` (spec line 1543).
+                    if matches!(platform.has_dcache, Some(false)) {
+                        if let Some(label_str) = policy_label {
+                            return Err(Located::new(
+                                ValidationError::BufferPoolCachePolicyUnsupportedOnNoDcacheCore {
+                                    name: pool.name.clone(),
+                                    machine: machine_name.to_string(),
+                                    declared_policy: label_str.to_string(),
+                                }
+                                .into(),
+                                label.diagnostic_label,
+                                None,
+                                None,
+                            ));
+                        }
+                    }
+
+                    if pool.cache_policy == forge::model::CachePolicy::Maintain {
+                        // (2) alignment vs dcache_line_size (spec line 1544)
+                        //     and (3) slot_size vs dcache_line_size (spec
+                        //     line 1545) — both fire only when the deploy
+                        //     declares `dcache_line_size`. Per Q-η5 (a),
+                        //     missing field skips silently (it's a §5.K
+                        //     completeness rule).
+                        if let Some(line_size) = platform.dcache_line_size {
+                            if pool.alignment < line_size {
+                                return Err(Located::new(
+                                    ValidationError::BufferPoolCacheLineAlignment {
+                                        name: pool.name.clone(),
+                                        machine: machine_name.to_string(),
+                                        pool_alignment: pool.alignment,
+                                        dcache_line_size: line_size,
+                                    }
+                                    .into(),
+                                    label.diagnostic_label,
+                                    None,
+                                    None,
+                                ));
+                            }
+                            let remainder = pool.slot_size % line_size;
+                            if remainder != 0 {
+                                let next_multiple =
+                                    pool.slot_size + (line_size - remainder);
+                                return Err(Located::new(
+                                    ValidationError::BufferPoolSlotSizeNotCacheLineMultiple {
+                                        name: pool.name.clone(),
+                                        machine: machine_name.to_string(),
+                                        slot_size: pool.slot_size,
+                                        dcache_line_size: line_size,
+                                        remainder,
+                                        next_multiple,
+                                    }
+                                    .into(),
+                                    label.diagnostic_label,
+                                    None,
+                                    None,
+                                ));
+                            }
+                        }
+
+                        // (4) `has_speculative_prefetch` REQUIRED when
+                        //     `cache-policy: maintain` reaches a machine
+                        //     with `has_dcache: true` (spec line 1553).
+                        //     The field's value materially changes
+                        //     correctness on M7+ cores; silent default
+                        //     in either direction would violate
+                        //     `feedback_silently_broken_hooks.md`.
+                        if matches!(platform.has_dcache, Some(true))
+                            && platform.has_speculative_prefetch.is_none()
+                        {
+                            return Err(Located::new(
+                                ValidationError::PoolSpeculativePrefetchFlagMissing {
+                                    machine: machine_name.to_string(),
+                                    pool_name: pool.name.clone(),
+                                }
+                                .into(),
+                                label.diagnostic_label,
+                                None,
+                                None,
+                            ));
+                        }
+                    }
+                }
             }
         }
     }
+
+    // C5: build the cache_platform options threading from the resolved
+    // machine's platform block. Fires only on the deploy-aware path
+    // (deploy + target_machine + machine.platform all resolved). When
+    // any piece is missing, `cache_platform` stays `None` and the
+    // generator falls back to conservative defaults — but the
+    // validators above guarantee the field IS resolved whenever a
+    // `cache-policy: maintain` pool reaches the codegen layer with
+    // `has_dcache: true`.
+    let cache_platform = (|| -> Option<CachePlatformInfo> {
+        let cfg = deploy?;
+        let machine_name = target_machine?;
+        let device = cfg.device_for_machine(machine_name)?;
+        let machine = device.machines.get(machine_name)?;
+        let platform = machine.platform.as_ref()?;
+        Some(CachePlatformInfo {
+            has_speculative_prefetch: platform
+                .has_speculative_prefetch
+                .unwrap_or(false),
+        })
+    })();
+    let options = ForgeCompileOptions {
+        cache_platform,
+        ..Default::default()
+    };
 
     let template_base = find_template_base();
 
@@ -610,7 +739,7 @@ pub fn compile_forge_with_deploy(
             &template_base,
             &[],
             &extern_decls,
-            &ForgeCompileOptions::default(),
+            &options,
         ),
         generator::Language::Kotlin => forge::generator::generate_kotlin(&doc, &template_base),
         generator::Language::Rust => forge::generator::generate_rust_with_imports_and_externs(
@@ -618,7 +747,7 @@ pub fn compile_forge_with_deploy(
             &template_base,
             &[],
             &extern_decls,
-            &ForgeCompileOptions::default(),
+            &options,
         ),
         generator::Language::Go => forge::generator::generate_go(&doc, &template_base),
         generator::Language::Python => forge::generator::generate_python(&doc, &template_base),
@@ -627,10 +756,54 @@ pub fn compile_forge_with_deploy(
             &template_base,
             &[],
             &extern_decls,
-            &ForgeCompileOptions::default(),
+            &options,
         ),
     }
     .map_err(|e| Located::new(e, label.diagnostic_label, None, None))?;
+
+    // C5 codegen-invariant guard: `pool/cache-pre-arm-invalidate-missing-on-speculative-core`
+    // (spec line 1552). When the resolved platform has
+    // `has_speculative_prefetch: true` AND the pool declares
+    // `cache-policy: maintain`, the rendered source MUST contain a
+    // `sce_dcache_invalidate_by_addr` call. The post-render scan
+    // catches a future template edit that drops the pre-arm RX
+    // invalidate edge, surfacing the regression as a typed
+    // diagnostic rather than silently corrupting RX data on M7+
+    // cores. Only meaningful for Rust + C11 (the two backends that
+    // emit buffer-pool); Cpp/Go/Kotlin/Python don't produce
+    // buffer-pool output and skip silently.
+    if matches!(
+        language,
+        generator::Language::Rust | generator::Language::C11
+    ) {
+        if let forge::model::ForgeDocument::BufferPool(pool) = &doc {
+            if pool.cache_policy == forge::model::CachePolicy::Maintain {
+                if let Some(plat) = options.cache_platform.as_ref() {
+                    if plat.has_speculative_prefetch {
+                        let backend = match language {
+                            generator::Language::Rust => "rust",
+                            generator::Language::C11 => "c11",
+                            _ => unreachable!(),
+                        };
+                        let primary = output.files.first().map(|(_, src)| src.as_str()).unwrap_or("");
+                        if !primary.contains("sce_dcache_invalidate_by_addr") {
+                            return Err(Located::new(
+                                ValidationError::PoolCachePreArmInvalidateMissingOnSpeculativeCore {
+                                    name: pool.name.clone(),
+                                    backend: backend.to_string(),
+                                }
+                                .into(),
+                                label.diagnostic_label,
+                                None,
+                                None,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     Ok(output)
 }
 
@@ -733,6 +906,33 @@ pub struct ForgeCompileOptions {
     /// matching the RFC's "default 1M" wording. The CLI surfaces this
     /// as `--const-fold-budget=N` on the `generate` subcommand.
     pub const_fold_budget: Option<u64>,
+    /// RFC §5.E C5 cache-maintenance platform info. Populated by
+    /// [`compile_forge_with_deploy`] from the resolved
+    /// [`mesh::deploy::PlatformConfig`]; left `None` by deploy-unaware
+    /// callers (`compile_forge_with_imports`, `sce_codegen` CLI, in-
+    /// process test harnesses). When `None`, the buffer-pool template
+    /// uses conservative defaults (no pre-arm cache-invalidate edge),
+    /// which is correct for non-`maintain` cache policies and for
+    /// targets without speculative prefetch. The deploy-aware path's
+    /// validators ensure the field is always `Some` when at least one
+    /// `cache-policy: maintain` pool exists.
+    pub cache_platform: Option<CachePlatformInfo>,
+}
+
+/// RFC §5.E C5 cache-maintenance codegen-relevant platform invariants.
+/// Aggregated from [`mesh::deploy::PlatformConfig`] at
+/// [`compile_forge_with_deploy`] time and threaded to the buffer-pool
+/// generator via [`ForgeCompileOptions::cache_platform`].
+#[derive(Clone, Debug)]
+pub struct CachePlatformInfo {
+    /// `true` for cores with speculative load / hardware prefetcher
+    /// (Cortex-M7+, Cortex-A series). Drives the `free → dma-armed-rx`
+    /// pre-arm cache-invalidate edge per spec §5.E lines 1189-1198 +
+    /// 1199-1212. Validation in `compile_forge_with_deploy` enforces
+    /// the field is set when `has_dcache=true` AND at least one
+    /// `cache-policy: maintain` pool exists; missing config raises
+    /// `pool/speculative-prefetch-flag-missing` (spec line 1553).
+    pub has_speculative_prefetch: bool,
 }
 
 /// Compile a forge SCXML with cross-file import resolution, validation,
@@ -5897,6 +6097,18 @@ topology:
         std::fs::write(
             &driver_path,
             r#"#include "rx_pool_sram1.h"
+
+/* C5: cache-policy: maintain emits sce_dcache_*_by_addr calls in
+ * link_arm_tx + link_arm_rx. Provide host-side no-op stubs so the
+ * gcc link finds the symbols. On bare-metal targets these come from
+ * sce_intrinsics_runtime per spec §5.I lines 1707-1711. */
+void sce_dcache_clean_by_addr(const void *start, size_t len) {
+    (void)start; (void)len;
+}
+void sce_dcache_invalidate_by_addr(void *start, size_t len) {
+    (void)start; (void)len;
+}
+
 int main(void) {
     sce_slot_handle_t h = rx_pool_sram1_pool_acquire_for_encode();
     if (h.state == SCE_SLOT_INVALID) return 1;

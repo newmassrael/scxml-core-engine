@@ -13,8 +13,19 @@
  * FSM does not allow (returns false / NULL and leaves the pool
  * untouched). The eleven legal transitions are pinned in
  * `sce-build/src/forge/buffer_pool_fsm.rs` and mirrored here as
- * `STATE_COUNT` / `TRANSITION_COUNT` macros. Cache maintenance pinning
- * defers to B7-δ (gated on §5.I `<sce:call>` intrinsic registry).
+ * `STATE_COUNT` / `TRANSITION_COUNT` macros.
+ *
+ * C5 cache-maintenance pinning (cache-policy: maintain): emits
+ * `sce_dcache_clean_by_addr` before `link_arm_tx` (spec lines
+ * 1186-1188) and `sce_dcache_invalidate_by_addr` on `link_arm_rx`
+ * gated on `platform.has_speculative_prefetch` (spec lines
+ * 1189-1198 + 1199-1212). Per spec lines 1222-1227, these calls
+ * are FSM-driven; author authoring of the cache trio via
+ * `<sce:extern>` is rejected at parse time
+ * (`pool/cache-maintenance-misplaced`). The 3 cache extern
+ * declarations also auto-flow into the `<snake>_externs.h`
+ * sidecar via the parser's auto-inject hook so deploy reviewers
+ * see the dependency surface in one place.
  *
  * A sidecar linker fragment (`{{ snake_name }}_pool.ld`) is emitted
  * alongside this header — it carries the SECTIONS{} entry with
@@ -69,8 +80,23 @@ extern "C" {
 #define {{ upper_name }}_DMA_CHANNEL "{{ dma_channel }}"
 
 /* Cache policy (`<sce:cache-policy>`) — `maintain` / `non-cacheable`
- * / `none`. Cache maintenance pinning defers to B7-δ. */
+ * / `none`. C5 wires the maintenance calls below when this is
+ * `maintain`; the other two policies emit no maintenance calls. */
 #define {{ upper_name }}_CACHE_POLICY "{{ cache_policy }}"
+
+{%- if cache_maintain %}
+
+/* C5 cache-maintenance externs (spec §5.I lines 1736-1740). The
+ * implementations live in `sce_intrinsics_runtime` (or a target
+ * plugin's vendor crate per RFC §5.I lines 1760-1787). Forward
+ * declarations also appear in the sidecar `{{ snake_name }}_externs.h`
+ * for deploy-review transparency; both forward declarations are
+ * legal and unify at link time because the symbols are identical. */
+extern void sce_dcache_clean_by_addr(const void *start, size_t len);
+{%- if has_speculative_prefetch %}
+extern void sce_dcache_invalidate_by_addr(void *start, size_t len);
+{%- endif %}
+{%- endif %}
 
 /* Number of declared lifecycle states. Mirrors
  * `forge::buffer_pool_fsm::STATE_COUNT` — the seven states from
@@ -131,12 +157,21 @@ static inline sce_slot_handle_t {{ snake_name }}_pool_acquire_for_encode(void) {
 
 /* Arm a free slot for peripheral RX. Spec §5.E line 1146:
  * `free → dma-armed-rx`. Returns `INVALID_HANDLE` when every slot
- * is in use. The cache-invalidate pre-arm is gated on
- * `cache-policy: maintain && platform.has_speculative_prefetch` per
- * spec lines 1190-1198 and defers to B7-δ. */
+ * is in use. C5: pre-arm `sce_dcache_invalidate_by_addr` is emitted
+ * here when `cache-policy: maintain && platform.has_speculative_prefetch`
+ * per spec lines 1189-1198 — evicts any cache lines the CPU's
+ * prefetcher / speculative load may have populated for this slot
+ * region while it sat on the freelist. Without the pre-arm
+ * invalidate, those stale lines would shadow DMA writes even after
+ * the post-RX invalidate (RFC §5.E lines 1199-1212). */
 static inline sce_slot_handle_t {{ snake_name }}_link_arm_rx(void) {
     for (size_t i = 0; i < {{ upper_name }}_SLOT_COUNT; ++i) {
         if ({{ snake_name }}_slot_states[i] == SCE_SLOT_FREE) {
+{% if cache_maintain and has_speculative_prefetch %}
+            /* C5 pre-arm cache-invalidate (spec lines 1189-1198). */
+            sce_dcache_invalidate_by_addr({{ snake_name }}_storage[i],
+                                          {{ upper_name }}_SLOT_SIZE);
+{% endif %}
             {{ snake_name }}_slot_states[i] = SCE_SLOT_DMA_ARMED_RX;
             sce_slot_handle_t h;
             h.state = SCE_SLOT_DMA_ARMED_RX;
@@ -152,12 +187,20 @@ static inline sce_slot_handle_t {{ snake_name }}_link_arm_rx(void) {
  * `SCE_SLOT_CPU_MUT`. On success the pool's internal state for the
  * slot transitions to `SCE_SLOT_DMA_ARMED_TX` and the handle is
  * marked `SCE_SLOT_INVALID` — re-use is rejected by subsequent
- * operations. Returns `false` on tag mismatch (no state change). */
+ * operations. Returns `false` on tag mismatch (no state change).
+ * C5: when `cache-policy: maintain`, emits `sce_dcache_clean_by_addr`
+ * before the state transition (spec lines 1186-1188) so the DMA
+ * controller reads the latest CPU writes from main memory. */
 static inline bool {{ snake_name }}_link_arm_tx(sce_slot_handle_t *handle) {
     if (handle == NULL) return false;
     if (handle->state != SCE_SLOT_CPU_MUT) return false;
     if (handle->idx >= {{ upper_name }}_SLOT_COUNT) return false;
     if ({{ snake_name }}_slot_states[handle->idx] != SCE_SLOT_CPU_MUT) return false;
+{% if cache_maintain %}
+    /* C5 cache-clean before TX descriptor publish (spec lines 1186-1188). */
+    sce_dcache_clean_by_addr({{ snake_name }}_storage[handle->idx],
+                             {{ upper_name }}_SLOT_SIZE);
+{% endif %}
     {{ snake_name }}_slot_states[handle->idx] = SCE_SLOT_DMA_ARMED_TX;
     handle->state = SCE_SLOT_INVALID;
     handle->idx = SIZE_MAX;

@@ -68,15 +68,20 @@ fn happy_path_atomic_load_acquire_u32_roundtrips() {
 
 #[test]
 fn happy_path_multiple_externs_preserve_order() {
+    // C5 (spec §5.E line 1548): the cache-maintenance trio is
+    // FSM-driven and rejected at parse time when authored via
+    // `<sce:extern>`. Substitute `sce_atomic_fence_seq_cst` (a
+    // non-cache fence symbol) so the order-preservation contract
+    // stays exercised on three baseline-clean entries.
     let scxml = fixture_transform_with_externs(
         r##"<sce:extern name="sce_atomic_load_acquire_u32" sig="(*const u32) -> u32" abi="c"/>
-  <sce:extern name="sce_dcache_clean_by_addr" sig="(*const c_void, usize)" abi="c"/>
+  <sce:extern name="sce_atomic_fence_seq_cst" sig="()" abi="c"/>
   <sce:extern name="sce_irq_save" sig="() -> irq_state_t" abi="c" crate="custom_crate"/>"##,
     );
     let parsed = parse_fixture(&scxml).expect("3 registry-clean declarations");
     assert_eq!(parsed.extern_declarations.len(), 3);
     assert_eq!(parsed.extern_declarations[0].name, "sce_atomic_load_acquire_u32");
-    assert_eq!(parsed.extern_declarations[1].name, "sce_dcache_clean_by_addr");
+    assert_eq!(parsed.extern_declarations[1].name, "sce_atomic_fence_seq_cst");
     assert_eq!(parsed.extern_declarations[2].name, "sce_irq_save");
     // Explicit `crate` attribute overrides the registry's canonical
     // crate (atomic-A storage of plugin-extension future axis).

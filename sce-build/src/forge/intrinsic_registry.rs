@@ -378,6 +378,26 @@ pub fn lookup_symbol(name: &str) -> Option<&'static Symbol> {
     BASELINE_SYMBOLS.iter().find(|s| s.name == name)
 }
 
+/// Names of the three FSM-driven cache-maintenance intrinsics per
+/// spec §5.I lines 1736-1740. C5 uses this list to (a) reject
+/// author authoring of the cache trio in `<sce:extern>` declarations
+/// per spec lines 1222-1227 author-must-not, and (b) auto-inject the
+/// 3 entries into `ParsedForge.extern_declarations` when a buffer-
+/// pool with `cache-policy: maintain` is parsed so atomic C's sidecar
+/// emit picks them up automatically.
+pub const CACHE_MAINTENANCE_TRIO: &[&str] = &[
+    "sce_dcache_clean_by_addr",
+    "sce_dcache_invalidate_by_addr",
+    "sce_dcache_clean_invalidate_by_addr",
+];
+
+/// `true` when `name` is one of the §5.I FSM-driven cache-maintenance
+/// trio. Drives the `pool/cache-maintenance-misplaced` parse-time
+/// rejection (spec line 1548).
+pub fn is_cache_maintenance_trio(name: &str) -> bool {
+    CACHE_MAINTENANCE_TRIO.iter().any(|&n| n == name)
+}
+
 /// Suffix-aware lookup hint for `extern/ordering-unspecified`. When
 /// the author writes a base-name without an ordering suffix (e.g.
 /// `sce_atomic_load`), this helper returns the list of legal

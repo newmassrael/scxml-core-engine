@@ -138,13 +138,65 @@ pub fn parse_forge_with_imports_and_plugin(
     }
 
     let imports = parse_imports(&root, diag)?;
-    let extern_declarations = parse_extern_declarations(&root, diag, plugin)?;
+    let mut extern_declarations = parse_extern_declarations(&root, diag, plugin)?;
     let document = parse_forge_from_node(&root, label, kind)?;
+
+    // C5 auto-inject (spec §5.E lines 1222-1227 + lines 1736-1740):
+    // a buffer-pool with `cache-policy: maintain` triggers FSM-driven
+    // cache call sites in the buffer-pool template (link_arm_tx +
+    // link_arm_rx). To keep `<sce:extern>` author-required for
+    // discoverability and to preserve atomic C's sidecar emit invariant
+    // ("every extern that reached the build pipeline is visible in
+    // `<snake>_externs.{rs,h}`"), the parser appends 3 synthetic
+    // ExternDeclaration entries here. Author authoring of the cache
+    // trio is forbidden per `pool/cache-maintenance-misplaced`
+    // (rejected in `parse_extern_declarations` above), so no
+    // duplicates are possible at this point.
+    if let crate::forge::model::ForgeDocument::BufferPool(ref bp) = document {
+        if bp.cache_policy == crate::forge::model::CachePolicy::Maintain {
+            extern_declarations.extend(synthesize_cache_extern_declarations());
+        }
+    }
+
     Ok(Some(ParsedForge {
         document,
         imports,
         extern_declarations,
     }))
+}
+
+/// C5 helper: build the 3 cache-maintenance ExternDeclaration entries
+/// from `BASELINE_SYMBOLS`. Called when a buffer-pool with
+/// `cache-policy: maintain` is parsed, before `ParsedForge` is
+/// returned. Sourcing the sig/abi from the registry avoids drift
+/// against `BASELINE_SYMBOLS` — a future spec edit that reshapes
+/// the cache trio's signature flows through automatically.
+///
+/// The synthesized entries carry `line: None` because they are not
+/// authored at any source line — the build pipeline is the author.
+/// Downstream sidecar emit (atomic C) treats `line: None` no
+/// differently from author-supplied entries.
+fn synthesize_cache_extern_declarations() -> Vec<crate::forge::model::ExternDeclaration> {
+    use crate::forge::intrinsic_registry::{lookup_symbol, CACHE_MAINTENANCE_TRIO};
+    use crate::forge::model::ExternDeclaration;
+
+    CACHE_MAINTENANCE_TRIO
+        .iter()
+        .map(|&name| {
+            let s = lookup_symbol(name).expect(
+                "CACHE_MAINTENANCE_TRIO must reference BASELINE_SYMBOLS entries — \
+                 a future spec edit that drops one of the cache trio symbols from \
+                 BASELINE_SYMBOLS must also drop it here, or this expect() fires.",
+            );
+            ExternDeclaration {
+                name: s.name.to_string(),
+                sig: s.sig.to_string(),
+                abi: s.abi.as_attr().to_string(),
+                crate_name: s.crate_name.to_string(),
+                line: None,
+            }
+        })
+        .collect()
 }
 
 /// Scan `<sce:extern>` children of the document root and validate
@@ -229,6 +281,26 @@ fn parse_extern_declarations(
                 )
             })?
             .to_string();
+
+        // C5 (spec §5.E line 1548 + lines 1222-1227): author authoring
+        // of the cache-maintenance trio is forbidden. The cache calls
+        // are FSM-driven and emitted by the buffer-pool kind on
+        // lifecycle edges; a duplicate author declaration would
+        // silently invite the class of bugs ("the maintenance call
+        // sits in the wrong place") that the FSM-driven design
+        // prevents. Fires BEFORE atomic A's whitelist validator so
+        // that even though the cache trio IS in the whitelist (so a
+        // naive author would think the declaration is legal), the
+        // author-guard rejects it with a more specific repair message.
+        if crate::forge::intrinsic_registry::is_cache_maintenance_trio(&name) {
+            return Err(located(
+                &child,
+                doc_name,
+                ValidationError::PoolCacheMaintenanceMisplaced {
+                    attempted_symbol: name,
+                },
+            ));
+        }
 
         // Closed-set lookup + abi/sig match per §5.I lines 1846-1850.
         // Map each ExternFailure variant 1:1 onto its spec-verbatim

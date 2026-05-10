@@ -10,9 +10,19 @@
 // cpu-ref) and phantom-typed `Slot<S>` author API per spec lines
 // 1116-1180 + 1232-1237. The eleven legal transitions are pinned in
 // `sce-build/src/forge/buffer_pool_fsm.rs` and mirrored here as
-// `STATE_COUNT` / `TRANSITION_COUNT` constants. Cache-maintenance
-// pinning defers to B7-δ (gated on §5.I `<sce:call>` intrinsic
-// registry).
+// `STATE_COUNT` / `TRANSITION_COUNT` constants.
+//
+// C5 cache-maintenance pinning (cache-policy: maintain): emits
+// `sce_dcache_clean_by_addr` before `link_arm_tx` (spec lines
+// 1186-1188) and `sce_dcache_invalidate_by_addr` on `link_arm_rx`
+// gated on `platform.has_speculative_prefetch` (spec lines
+// 1189-1198 + 1199-1212). Per spec lines 1222-1227, these calls
+// are FSM-driven; author authoring of the cache trio via
+// `<sce:extern>` is rejected at parse time
+// (`pool/cache-maintenance-misplaced`). The 3 cache extern
+// declarations also auto-flow into the `<snake>_externs.rs`
+// sidecar via the parser's auto-inject hook so deploy reviewers
+// see the dependency surface in one place.
 //
 // Generated from `name="{{ name }}"` with section `{{ section }}`,
 // alignment `{{ alignment }}`, cache-policy `{{ cache_policy }}`.
@@ -45,8 +55,28 @@ pub const ALIGNMENT: u32 = {{ alignment }};
 pub const DMA_CHANNEL: &'static str = "{{ dma_channel }}";
 
 /// Cache policy (`<sce:cache-policy>`) — `maintain` / `non-cacheable`
-/// / `none`. Cache maintenance pinning defers to B7-δ.
+/// / `none`. C5 wires the maintenance calls below when this is
+/// `maintain`; the other two policies emit no maintenance calls.
 pub const CACHE_POLICY: &'static str = "{{ cache_policy }}";
+
+{%- if cache_maintain %}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// C5 cache-maintenance externs (spec §5.I lines 1736-1740). The
+// implementations live in `sce_intrinsics_runtime` (or a target
+// plugin's vendor crate per RFC §5.I lines 1760-1787). Forward
+// declarations also appear in the sidecar `{{ snake_name }}_externs.rs`
+// for deploy-review transparency; both forward declarations are
+// legal and unify at link time because the symbols are identical.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+unsafe extern "C" {
+    fn sce_dcache_clean_by_addr(start: *const core::ffi::c_void, len: usize);
+{%- if has_speculative_prefetch %}
+    fn sce_dcache_invalidate_by_addr(start: *mut core::ffi::c_void, len: usize);
+{%- endif %}
+}
+{%- endif %}
 
 /// Number of declared lifecycle states. Mirrors
 /// `forge::buffer_pool_fsm::STATE_COUNT` — the seven states from
@@ -176,12 +206,27 @@ impl {{ pascal_name }} {
     }
 
     /// Arm a free slot for peripheral RX. Spec §5.E line 1146:
-    /// `free → dma-armed-rx`. The cache-invalidate pre-arm is gated
-    /// on `cache-policy: maintain && platform.has_speculative_prefetch`
-    /// per spec lines 1190-1198 and defers to B7-δ.
+    /// `free → dma-armed-rx`. C5: pre-arm
+    /// `sce_dcache_invalidate_by_addr` is emitted here when
+    /// `cache-policy: maintain && platform.has_speculative_prefetch`
+    /// per spec lines 1189-1198 — evicts any cache lines the CPU's
+    /// prefetcher / speculative load may have populated for this
+    /// slot region while it sat on the freelist. Without the
+    /// pre-arm invalidate, those stale lines would shadow DMA
+    /// writes even after the post-RX invalidate (RFC §5.E lines
+    /// 1199-1212).
     pub fn link_arm_rx(&mut self) -> Option<Slot<DmaArmedRx>> {
         for (i, st) in self.slot_states.iter_mut().enumerate() {
             if *st == SlotState::Free {
+                {% if cache_maintain and has_speculative_prefetch %}
+                // C5 pre-arm cache-invalidate (spec lines 1189-1198).
+                unsafe {
+                    sce_dcache_invalidate_by_addr(
+                        self.storage[i].as_mut_ptr() as *mut core::ffi::c_void,
+                        SLOT_SIZE,
+                    );
+                }
+                {% endif %}
                 *st = SlotState::DmaArmedRx;
                 return Some(Slot { idx: i, _state: PhantomData });
             }
@@ -212,9 +257,20 @@ impl Slot<CpuMut> {
     /// `cpu-mut → dma-armed-tx`. Consumes the handle — the slot
     /// progresses through `DmaArmedTx → DmaBusyTx → Free` via DMA
     /// controller and TX-complete IRQ; author code cannot observe
-    /// these intermediate states. Cache-clean pinning at this edge
-    /// defers to B7-δ.
+    /// these intermediate states. C5: when `cache-policy: maintain`,
+    /// emits `sce_dcache_clean_by_addr` before the state transition
+    /// (spec lines 1186-1188) so the DMA controller reads the
+    /// latest CPU writes from main memory.
     pub fn link_arm_tx(self, pool: &mut {{ pascal_name }}) {
+        {% if cache_maintain %}
+        // C5 cache-clean before TX descriptor publish (spec lines 1186-1188).
+        unsafe {
+            sce_dcache_clean_by_addr(
+                pool.storage[self.idx].as_ptr() as *const core::ffi::c_void,
+                SLOT_SIZE,
+            );
+        }
+        {% endif %}
         pool.slot_states[self.idx] = SlotState::DmaArmedTx;
     }
 

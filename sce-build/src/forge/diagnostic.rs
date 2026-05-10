@@ -684,6 +684,79 @@ pub enum DiagnosticCode {
     #[serde(rename = "mem/inter-pool-padding-not-emitted")]
     MemInterPoolPaddingNotEmitted,
 
+    /// RFC §5.E C5 cache-maintenance validation: pool `<sce:alignment>`
+    /// is smaller than the resolved target's `platform.dcache_line_size`
+    /// while `cache-policy: maintain` is in effect. Validate-time —
+    /// fires only via [`compile_forge_with_deploy`] after section
+    /// validation passes (Q-η5 (a) silent-skip when deploy.yaml is
+    /// unavailable). Partial-line cache_invalidate_by_addr corrupts
+    /// adjacent slot data on the start side. RFC §5.E line 1544 +
+    /// §5.I lines 1742-1744 spec anchor.
+    #[serde(rename = "mem/cache-line-alignment")]
+    MemCacheLineAlignment,
+
+    /// RFC §5.E C5 cache-maintenance validation: `<sce:slot-size>` is
+    /// not a whole-number multiple of the resolved target's
+    /// `platform.dcache_line_size` while `cache-policy: maintain` is
+    /// in effect. Validate-time — fires only via
+    /// [`compile_forge_with_deploy`]. The boundary cache line is
+    /// shared with the adjacent slot; cache_invalidate_by_addr after
+    /// RX would corrupt it. RFC §5.E line 1545 + §5.I lines 1742-1744
+    /// spec anchor.
+    #[serde(rename = "mem/slot-size-not-cache-line-multiple")]
+    MemSlotSizeNotCacheLineMultiple,
+
+    /// RFC §5.E C5 cache-maintenance validation: pool declares
+    /// `cache-policy: maintain` (or `non-cacheable`) while the
+    /// resolved target platform has `has_dcache: false`. Cache
+    /// maintenance call sites are meaningless on a core without a
+    /// data cache. Validate-time — fires only via
+    /// [`compile_forge_with_deploy`]. Repair: `Fix::ReplaceOneOf`
+    /// candidates = `["none"]`. RFC §5.E line 1543 spec anchor.
+    #[serde(rename = "mem/cache-policy-unsupported-on-no-dcache-core")]
+    MemCachePolicyUnsupportedOnNoDcacheCore,
+
+    /// RFC §5.E C5 cache-maintenance + §5.I author-guard: an
+    /// `<sce:extern>` declaration tries to author one of the cache-
+    /// maintenance trio (`sce_dcache_clean_by_addr`,
+    /// `sce_dcache_invalidate_by_addr`,
+    /// `sce_dcache_clean_invalidate_by_addr`). Per spec lines
+    /// 1222-1227, cache maintenance is FSM-driven; codegen auto-
+    /// injects the externs and emits the calls on the buffer-pool
+    /// lifecycle edges. Author authoring is forbidden because it
+    /// silently invites the class of bugs ("the maintenance call
+    /// sits in the wrong place") the FSM-driven design prevents.
+    /// Parse-time — fires before the §5.I baseline whitelist
+    /// validator. RFC §5.E line 1548 + lines 1222-1227 spec anchor.
+    #[serde(rename = "pool/cache-maintenance-misplaced")]
+    PoolCacheMaintenanceMisplaced,
+
+    /// RFC §5.E C5 cache-maintenance config-completeness diagnostic:
+    /// a target machine declares `platform.has_dcache: true` without
+    /// setting `platform.has_speculative_prefetch`. Validate-time —
+    /// fires only via [`compile_forge_with_deploy`] when at least
+    /// one buffer-pool with `cache-policy: maintain` exists in the
+    /// build. Codegen cannot decide whether to emit the
+    /// `free → dma-armed-rx` pre-arm cache-invalidate edge. Author
+    /// resolution: declare `has_speculative_prefetch` per the SoC
+    /// datasheet (M7+/A-class = true, M3/M4 = false). RFC §5.E line
+    /// 1553 spec anchor.
+    #[serde(rename = "pool/speculative-prefetch-flag-missing")]
+    PoolSpeculativePrefetchFlagMissing,
+
+    /// RFC §5.E C5 cache-maintenance codegen self-check:
+    /// `cache-policy: maintain` + `platform.has_speculative_prefetch:
+    /// true` resolved, but the rendered buffer-pool template did not
+    /// emit a `sce_dcache_invalidate_by_addr` call inside the
+    /// `link_arm_rx` body. Codegen-invariant violation, not an
+    /// authoring mistake — fires only when the
+    /// `tools/codegen/templates/forge/{rust,c}/buffer_pool` template
+    /// itself drops the pre-arm invalidate edge. The diagnostic
+    /// guards against template regression that would silently
+    /// corrupt RX data on M7+ cores. RFC §5.E line 1552 spec anchor.
+    #[serde(rename = "pool/cache-pre-arm-invalidate-missing-on-speculative-core")]
+    PoolCachePreArmInvalidateMissingOnSpeculativeCore,
+
     // ── §5.E pool kind Layer 1 ownership (watching-zenoh RFC §5.E,
     //    B7-ε). Layer 1 typestate-attribute family is exposed to
     //    consumer builds through `sce-c-runtime/include/sce/sample.h`,
@@ -1152,6 +1225,13 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MemPoolSectionConflict,
         MemPoolTooLarge,
         MemInterPoolPaddingNotEmitted,
+        // BufferPool §5.E C5 cache-maintenance validation + codegen self-checks (watching-zenoh RFC §5.E + §5.I)
+        MemCacheLineAlignment,
+        MemSlotSizeNotCacheLineMultiple,
+        MemCachePolicyUnsupportedOnNoDcacheCore,
+        PoolCacheMaintenanceMisplaced,
+        PoolSpeculativePrefetchFlagMissing,
+        PoolCachePreArmInvalidateMissingOnSpeculativeCore,
         // BufferPool §5.E Layer 1 ownership pull-through (watching-zenoh RFC §5.E, B7-ε)
         PoolSampleTypestateAttributesDisabled,
         // Sample API §5.E B7-η' Atomic A1 application-layer ownership (watching-zenoh RFC §5.E)
@@ -1393,6 +1473,12 @@ impl DiagnosticCode {
             MemPoolSectionConflict
             | MemPoolTooLarge
             | MemInterPoolPaddingNotEmitted
+            | MemCacheLineAlignment
+            | MemSlotSizeNotCacheLineMultiple
+            | MemCachePolicyUnsupportedOnNoDcacheCore
+            | PoolCacheMaintenanceMisplaced
+            | PoolSpeculativePrefetchFlagMissing
+            | PoolCachePreArmInvalidateMissingOnSpeculativeCore
             | PoolSampleTypestateAttributesDisabled
             | PoolSampleTakeWithoutStagePool
             | PoolSampleCallbackSignatureNonBorrow
@@ -1690,6 +1776,12 @@ impl DiagnosticCode {
             MemPoolSectionConflict => "mem/pool-section-conflict",
             MemPoolTooLarge => "mem/pool-too-large",
             MemInterPoolPaddingNotEmitted => "mem/inter-pool-padding-not-emitted",
+            MemCacheLineAlignment => "mem/cache-line-alignment",
+            MemSlotSizeNotCacheLineMultiple => "mem/slot-size-not-cache-line-multiple",
+            MemCachePolicyUnsupportedOnNoDcacheCore => "mem/cache-policy-unsupported-on-no-dcache-core",
+            PoolCacheMaintenanceMisplaced => "pool/cache-maintenance-misplaced",
+            PoolSpeculativePrefetchFlagMissing => "pool/speculative-prefetch-flag-missing",
+            PoolCachePreArmInvalidateMissingOnSpeculativeCore => "pool/cache-pre-arm-invalidate-missing-on-speculative-core",
             PoolSampleTypestateAttributesDisabled => "pool/sample-typestate-attributes-disabled",
             PoolSampleTakeWithoutStagePool => "pool/sample-take-without-stage-pool",
             PoolSampleCallbackSignatureNonBorrow => "pool/sample-callback-signature-non-borrow",
@@ -2776,6 +2868,120 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![name.clone()],
         },
+        ValidationError::BufferPoolCacheLineAlignment {
+            name,
+            machine,
+            pool_alignment,
+            dcache_line_size,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MemCacheLineAlignment,
+            stage: Stage::Validation,
+            // Multi-axis repair (raise alignment OR adjust deploy
+            // dcache_line_size) — `MemPoolTooLarge` precedent
+            // (NeutralOrDeterministic, `Fix::None`). The `actual`
+            // carries the pool's alignment value so the wire record
+            // makes the violation magnitude inspectable without
+            // re-parsing the message.
+            expected: None,
+            actual: Some(pool_alignment.to_string()),
+            fix: None,
+            key_fragments: vec![
+                name.clone(),
+                machine.clone(),
+                pool_alignment.to_string(),
+                dcache_line_size.to_string(),
+            ],
+        },
+        ValidationError::BufferPoolSlotSizeNotCacheLineMultiple {
+            name,
+            machine,
+            slot_size,
+            dcache_line_size,
+            remainder,
+            next_multiple,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MemSlotSizeNotCacheLineMultiple,
+            stage: Stage::Validation,
+            // `Fix::None` per `MemPoolTooLarge` precedent — the
+            // repair (round slot_size up to next_multiple) is named
+            // in message prose; multi-axis interpretation lets the
+            // author choose between rounding the slot or shrinking
+            // the dcache_line_size assumption in deploy.yaml.
+            expected: None,
+            actual: Some(slot_size.to_string()),
+            fix: None,
+            key_fragments: vec![
+                name.clone(),
+                machine.clone(),
+                slot_size.to_string(),
+                dcache_line_size.to_string(),
+                remainder.to_string(),
+                next_multiple.to_string(),
+            ],
+        },
+        ValidationError::BufferPoolCachePolicyUnsupportedOnNoDcacheCore {
+            name,
+            machine,
+            declared_policy,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MemCachePolicyUnsupportedOnNoDcacheCore,
+            stage: Stage::Validation,
+            // Closed candidate set = `["none"]` — the only legal
+            // cache-policy on a core without D-cache. `Fix::ReplaceOneOf`
+            // mirrors the `MemPoolSectionConflict` repair pattern.
+            expected: None,
+            actual: Some(declared_policy.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: vec!["none".to_string()],
+            }),
+            key_fragments: vec![
+                name.clone(),
+                machine.clone(),
+                declared_policy.clone(),
+            ],
+        },
+        ValidationError::PoolCacheMaintenanceMisplaced { attempted_symbol } => DiagnosticPayload {
+            code: DiagnosticCode::PoolCacheMaintenanceMisplaced,
+            stage: Stage::Validation,
+            // Author guard — repair is to remove the offending
+            // `<sce:extern>`. `Fix::None` because there is no
+            // alternate symbol to suggest; the buffer-pool kind
+            // handles cache calls automatically when
+            // `cache-policy: maintain`.
+            expected: None,
+            actual: Some(attempted_symbol.clone()),
+            fix: None,
+            key_fragments: vec![attempted_symbol.clone()],
+        },
+        ValidationError::PoolSpeculativePrefetchFlagMissing { machine, pool_name } => {
+            DiagnosticPayload {
+                code: DiagnosticCode::PoolSpeculativePrefetchFlagMissing,
+                stage: Stage::Validation,
+                // `Fix::None` — author choice between two opposite
+                // boolean values driven by the SoC datasheet (M7+/A-class
+                // = true, M3/M4 = false). Message prose names both axes
+                // so the author can pick without consulting external
+                // documentation.
+                expected: None,
+                actual: None,
+                fix: None,
+                key_fragments: vec![machine.clone(), pool_name.clone()],
+            }
+        }
+        ValidationError::PoolCachePreArmInvalidateMissingOnSpeculativeCore { name, backend } => {
+            DiagnosticPayload {
+                code: DiagnosticCode::PoolCachePreArmInvalidateMissingOnSpeculativeCore,
+                stage: Stage::Validation,
+                // Codegen-invariant violation — no authoring repair
+                // surface exists. β `mem/inter-pool-padding-not-emitted`
+                // precedent: `Fix::None`; the prose links to the issue
+                // tracker so a regression report finds the right team.
+                expected: None,
+                actual: None,
+                fix: None,
+                key_fragments: vec![name.clone(), backend.clone()],
+            }
+        }
         ValidationError::BufferPoolSampleTypestateAttributesDisabled { name } => {
             DiagnosticPayload {
                 code: DiagnosticCode::PoolSampleTypestateAttributesDisabled,
@@ -4638,6 +4844,72 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:43b2c0bb267f73f5","code":"pool/sample-typestate-attributes-disabled","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"buffer-pool 'rx_pool_sram1': generated C11 header is missing the `#include <sce/sample.h>` directive — Layer 1 typestate attributes will be unavailable on consumer builds, codegen invariant violation per RFC §5.E lines 1276-1346; report at https://github.com/newmassrael/scxml-core-engine/issues"}"#,
             ),
+            // ── §5.E C5 cache-maintenance validation: alignment vs platform.dcache_line_size ─
+            (
+                "forge/mem-cache-line-alignment",
+                ValidationError::BufferPoolCacheLineAlignment {
+                    name: "rx_pool_sram1".into(),
+                    machine: "mcu_node".into(),
+                    pool_alignment: 16,
+                    dcache_line_size: 32,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:9871be15958d973d","code":"mem/cache-line-alignment","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"buffer-pool 'rx_pool_sram1': alignment 16 is smaller than target platform's `dcache_line_size` 32 on machine 'mcu_node' under `cache-policy: maintain`. Partial-line cache_invalidate_by_addr corrupts adjacent slot data on the start side. Raise <sce:alignment> to at least 32.","actual":"16"}"#,
+            ),
+            // ── §5.E C5 cache-maintenance validation: slot_size vs platform.dcache_line_size ─
+            (
+                "forge/mem-slot-size-not-cache-line-multiple",
+                ValidationError::BufferPoolSlotSizeNotCacheLineMultiple {
+                    name: "rx_pool_sram1".into(),
+                    machine: "mcu_node".into(),
+                    slot_size: 100,
+                    dcache_line_size: 32,
+                    remainder: 4,
+                    next_multiple: 128,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:ad64c9aa97912ef0","code":"mem/slot-size-not-cache-line-multiple","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"buffer-pool 'rx_pool_sram1': slot-size 100 is not a whole-number multiple of target platform's `dcache_line_size` 32 on machine 'mcu_node' (remainder 4) under `cache-policy: maintain`. The boundary cache line is shared with the adjacent slot — cache_invalidate_by_addr after RX would corrupt it. Round slot-size up to 128 (next cache-line multiple).","actual":"100"}"#,
+            ),
+            // ── §5.E C5 cache-policy on no-dcache core (Fix::ReplaceOneOf [\"none\"]) ─
+            (
+                "forge/mem-cache-policy-unsupported-on-no-dcache-core",
+                ValidationError::BufferPoolCachePolicyUnsupportedOnNoDcacheCore {
+                    name: "rx_pool_sram1".into(),
+                    machine: "mcu_node".into(),
+                    declared_policy: "maintain".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:3144879193ab848a","code":"mem/cache-policy-unsupported-on-no-dcache-core","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"buffer-pool 'rx_pool_sram1': `cache-policy: maintain` declared on machine 'mcu_node' which has `platform.has_dcache: false`. Cache maintenance is meaningless on a core without a data cache. Switch to `cache-policy: none`.","actual":"maintain","fix":{"kind":"replace_one_of","candidates":["none"]}}"#,
+            ),
+            // ── §5.E C5 author guard: <sce:extern> for cache trio rejected per spec lines 1222-1227 ─
+            (
+                "forge/pool-cache-maintenance-misplaced",
+                ValidationError::PoolCacheMaintenanceMisplaced {
+                    attempted_symbol: "sce_dcache_clean_by_addr".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:dd94b2147bfbcdf3","code":"pool/cache-maintenance-misplaced","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"<sce:extern name=\"sce_dcache_clean_by_addr\">: cache-maintenance intrinsics are FSM-driven and authored automatically by the buffer-pool kind under `cache-policy: maintain` (RFC §5.E lines 1222-1227). Author <sce:extern> for the cache trio is forbidden — remove the declaration; codegen emits the calls on lifecycle edges.","actual":"sce_dcache_clean_by_addr"}"#,
+            ),
+            // ── §5.E C5 config-completeness: has_dcache=true requires has_speculative_prefetch ─
+            (
+                "forge/pool-speculative-prefetch-flag-missing",
+                ValidationError::PoolSpeculativePrefetchFlagMissing {
+                    machine: "mcu_node".into(),
+                    pool_name: "rx_pool_sram1".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:101a5c631d3b5278","code":"pool/speculative-prefetch-flag-missing","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"machine 'mcu_node': `platform.has_dcache: true` is set but `platform.has_speculative_prefetch` is not. Buffer-pool 'rx_pool_sram1' uses `cache-policy: maintain` and codegen cannot decide whether to emit the pre-DMA-RX invalidate edge. Declare `has_speculative_prefetch` per the SoC datasheet (M7+/A-class = true, M3/M4 = false)."}"#,
+            ),
+            // ── §5.E C5 codegen self-check: pre-arm cache-invalidate edge missing on speculative core ─
+            (
+                "forge/pool-cache-pre-arm-invalidate-missing-on-speculative-core",
+                ValidationError::PoolCachePreArmInvalidateMissingOnSpeculativeCore {
+                    name: "rx_pool_sram1".into(),
+                    backend: "rust".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:e043d4876ee880bd","code":"pool/cache-pre-arm-invalidate-missing-on-speculative-core","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"buffer-pool 'rx_pool_sram1': generated source for backend `rust` is missing the `sce_dcache_invalidate_by_addr` call on the `free → dma-armed-rx` edge despite `cache-policy: maintain` + `platform.has_speculative_prefetch: true` — codegen invariant violation per RFC §5.E lines 1186-1198 + 1552; report at https://github.com/newmassrael/scxml-core-engine/issues"}"#,
+            ),
         ]
     }
 
@@ -5866,7 +6138,14 @@ mod tests {
             // sig as a single `Fix::Replace` value, not a candidate list.
             | ExternSymbolNotInWhitelist
             | ExternAbiMismatch
-            | ExternOrderingUnspecified => FixCarriesCandidates,
+            | ExternOrderingUnspecified
+            // C5 cache-policy on no-dcache core: closed candidate
+            // list = `["none"]` (the only legal policy on a core
+            // without D-cache). `Fix::ReplaceOneOf` carries the
+            // single repair axis; the other 5 C5 codes have
+            // multi-axis or codegen-invariant repairs (Fix::None)
+            // and sit in NeutralOrDeterministic below.
+            | MemCachePolicyUnsupportedOnNoDcacheCore => FixCarriesCandidates,
 
             // ── `expected` carries non-repair metadata ────────
             ExpressionParseMismatch | MeshExternalAmbiguousEventGroup => ExpectedIsMetadata,
@@ -5912,6 +6191,25 @@ mod tests {
             | ValidationBytesMaxSizeViolation
             | MemPoolTooLarge
             | MemInterPoolPaddingNotEmitted
+            // C5 cache-maintenance + author-guard + codegen-invariant
+            // (5 codes; the 6th — MemCachePolicyUnsupportedOnNoDcacheCore
+            // — sits in FixCarriesCandidates above with `["none"]`):
+            //   - alignment / slot-size: multi-axis author repair
+            //     (raise alignment OR shrink slot OR adjust deploy
+            //     dcache_line_size); the `MemPoolTooLarge` precedent
+            //     argues `Fix::None`
+            //   - cache-maintenance-misplaced: author removes the
+            //     `<sce:extern>`; no closed candidate set
+            //   - speculative-prefetch-flag-missing: author sets the
+            //     deploy.yaml field per SoC datasheet; the message
+            //     prose names both M7+/M3 axes
+            //   - cache-pre-arm-invalidate-missing-on-speculative-core:
+            //     codegen-invariant violation, no author repair
+            | MemCacheLineAlignment
+            | MemSlotSizeNotCacheLineMultiple
+            | PoolCacheMaintenanceMisplaced
+            | PoolSpeculativePrefetchFlagMissing
+            | PoolCachePreArmInvalidateMissingOnSpeculativeCore
             | PoolSampleTypestateAttributesDisabled
             | PoolSampleCallbackSignatureNonBorrow
             // `<sce:extern>` signature mismatch: deterministic
@@ -6324,6 +6622,12 @@ mod tests {
                 | MemPoolSectionConflict
                 | MemPoolTooLarge
                 | MemInterPoolPaddingNotEmitted
+                | MemCacheLineAlignment
+                | MemSlotSizeNotCacheLineMultiple
+                | MemCachePolicyUnsupportedOnNoDcacheCore
+                | PoolCacheMaintenanceMisplaced
+                | PoolSpeculativePrefetchFlagMissing
+                | PoolCachePreArmInvalidateMissingOnSpeculativeCore
                 | PoolSampleTypestateAttributesDisabled
                 | PoolSampleTakeWithoutStagePool
                 | PoolSampleCallbackSignatureNonBorrow
@@ -6418,9 +6722,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            195,
+            201,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 195 distinct variants to match the DiagnosticCode \
+             expected 201 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -6536,7 +6840,31 @@ mod tests {
              `rfc-sce-call-intrinsic-registry.md`: \
              `extern/linker-flavor-unsupported`, \
              `extern/linker-flavor-os-managed-without-cmake-import`, \
-             `extern/ordering-insufficient-for-cross-core`.",
+             `extern/ordering-insufficient-for-cross-core`. Then \
+             watching-zenoh RFC §5.E C5 cache-maintenance intrinsics \
+             wired into §5.E codegen — six spec-named codes from \
+             RFC §5.E lines 1543-1545 + 1548 + 1552-1553 covering the \
+             cache-policy=maintain enforcement surface: \
+             `mem/cache-line-alignment` (pool alignment < platform \
+             dcache_line_size), \
+             `mem/slot-size-not-cache-line-multiple` (slot_size % \
+             dcache_line_size != 0), \
+             `mem/cache-policy-unsupported-on-no-dcache-core` \
+             (maintain/non-cacheable on platform.has_dcache=false; \
+             FixCarriesCandidates with `[\"none\"]`), \
+             `pool/cache-maintenance-misplaced` (parse-time author \
+             guard: <sce:extern> for cache trio rejected per spec \
+             lines 1222-1227 author-must-not), \
+             `pool/speculative-prefetch-flag-missing` (config-\
+             completeness: has_dcache=true requires has_speculative_\
+             prefetch when at least one cache-policy=maintain pool \
+             exists), \
+             `pool/cache-pre-arm-invalidate-missing-on-speculative-\
+             core` (codegen-invariant guard against template \
+             regression that would silently drop the pre-arm \
+             cache-invalidate edge on M7+ cores). Auto-injects 3 \
+             cache extern declarations at parse time (atomic C \
+             sidecar emit picks them up automatically); 195 → 201.",
         );
     }
 
