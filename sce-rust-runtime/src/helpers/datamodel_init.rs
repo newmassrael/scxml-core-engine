@@ -21,6 +21,7 @@
 #[cfg(not(feature = "no_std"))]
 use std::path::{Path, PathBuf};
 
+#[cfg(not(feature = "no_std"))]
 use crate::scripting::{IScriptEngine, ScriptValue};
 
 /// W3C SCXML 5.2.2: Check if expression is a JavaScript function literal.
@@ -97,6 +98,12 @@ pub fn resolve_src_path(src: &str, base_path: &str) -> PathBuf {
 /// may be a valid expression or just text.
 ///
 /// Ports the evaluate-then-fallback pattern from C++ `DataModelInitHelper::initializeVariable`.
+///
+/// Watching-zenoh RFC §5.J.2: gated to `!no_std` because [`IScriptEngine`] is
+/// part of `crate::scripting`, which is whole-module gated under `--no-std`
+/// (the `codegen/no-std-script-not-supported` validator rejects `<script>`
+/// up-front so this helper is unreachable from generated no_std code).
+#[cfg(not(feature = "no_std"))]
 pub fn eval_or_set_string(
     se: &dyn IScriptEngine,
     sid: &str,
@@ -131,6 +138,10 @@ pub fn eval_or_set_string(
 /// 1. Empty content -> set to null
 /// 2. XML detected (starts with `<`) -> `set_variable_as_dom()`
 /// 3. Otherwise -> `evaluate_expression()` with whitespace-normalized string fallback
+///
+/// Watching-zenoh RFC §5.J.2: gated to `!no_std` for the same reason as
+/// [`eval_or_set_string`] — the [`IScriptEngine`] dependency.
+#[cfg(not(feature = "no_std"))]
 pub fn initialize_variable(
     se: &dyn IScriptEngine,
     sid: &str,
@@ -186,6 +197,10 @@ pub fn initialize_variable_from_src(
 /// there is no string fallback — expr failures are always errors.
 ///
 /// Ports C++ `DataModelInitHelper::initializeVariableFromExpr`.
+///
+/// Watching-zenoh RFC §5.J.2: gated to `!no_std` for the same reason as
+/// [`eval_or_set_string`] — the [`IScriptEngine`] dependency.
+#[cfg(not(feature = "no_std"))]
 pub fn initialize_variable_from_expr(
     se: &dyn IScriptEngine,
     sid: &str,

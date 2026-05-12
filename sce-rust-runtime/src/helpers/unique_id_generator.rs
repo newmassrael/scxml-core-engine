@@ -14,8 +14,11 @@
 //! is unavailable. Send/invoke/event IDs only need uniqueness within a single
 //! statechart instance (W3C SCXML §5.10.1) — the `AtomicU64` counter alone
 //! satisfies that contract, so under `--features=no_std` the timestamp branch
-//! returns zero and uniqueness rides entirely on the global counter.
+//! returns zero and uniqueness rides entirely on the global counter. ID
+//! strings are returned as [`SceString`] (= `String` under std, capped
+//! `heapless::String<MAX_EVENT_STRING_LEN>` under no_std).
 
+use crate::SceString;
 use core::sync::atomic::{AtomicU64, Ordering};
 #[cfg(not(feature = "no_std"))]
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -23,21 +26,58 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// Global counter for ensuring uniqueness within the same millisecond.
 static GLOBAL_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// Build `{prefix}_{timestamp}{counter}` into a fresh [`SceString`].
+///
+/// Single formatter shared by all generators below — std uses `format!`,
+/// no_std uses `core::fmt::Write` into a `heapless::String`. Overflow under
+/// no_std truncates per heapless semantics (the 256-byte cap is far above
+/// any realistic prefix + u64 + u64).
+fn format_unique_id(prefix: &str, timestamp: u64, counter: u64) -> SceString {
+    #[cfg(not(feature = "no_std"))]
+    {
+        format!("{}_{}{}", prefix, timestamp, counter)
+    }
+    #[cfg(feature = "no_std")]
+    {
+        use core::fmt::Write;
+        let mut s = SceString::new();
+        let _ = write!(&mut s, "{}_{}{}", prefix, timestamp, counter);
+        s
+    }
+}
+
+/// Build `{state_id}.platform_{counter}` into a fresh [`SceString`].
+///
+/// W3C SCXML 6.4 (test 224) invoke ID layout when a state_id is supplied.
+fn format_invoke_id(state_id: &str, counter: u64) -> SceString {
+    #[cfg(not(feature = "no_std"))]
+    {
+        format!("{}.platform_{}", state_id, counter)
+    }
+    #[cfg(feature = "no_std")]
+    {
+        use core::fmt::Write;
+        let mut s = SceString::new();
+        let _ = write!(&mut s, "{}.platform_{}", state_id, counter);
+        s
+    }
+}
+
 /// Generate a unique ID with the given prefix.
 ///
 /// Format: `{prefix}_{timestamp}_{counter}`
 ///
 /// Ports C++ `UniqueIdGenerator::generateUniqueId`.
-pub fn generate_unique_id(prefix: &str) -> String {
+pub fn generate_unique_id(prefix: &str) -> SceString {
     let timestamp = current_timestamp_millis();
     let counter = GLOBAL_COUNTER.fetch_add(1, Ordering::Relaxed);
-    format!("{}_{}{}", prefix, timestamp, counter)
+    format_unique_id(prefix, timestamp, counter)
 }
 
 /// Generate a unique session ID.
 ///
 /// Ports C++ `UniqueIdGenerator::generateSessionId`.
-pub fn generate_session_id(prefix: &str) -> String {
+pub fn generate_session_id(prefix: &str) -> SceString {
     let prefix = if prefix.is_empty() { "session" } else { prefix };
     generate_unique_id(prefix)
 }
@@ -45,7 +85,7 @@ pub fn generate_session_id(prefix: &str) -> String {
 /// Generate a unique send ID for event scheduling.
 ///
 /// Ports C++ `UniqueIdGenerator::generateSendId`.
-pub fn generate_send_id() -> String {
+pub fn generate_send_id() -> SceString {
     generate_unique_id("send")
 }
 
@@ -55,33 +95,33 @@ pub fn generate_send_id() -> String {
 /// `{state_id}.platform_{counter}` for compliance.
 ///
 /// Ports C++ `UniqueIdGenerator::generateInvokeId`.
-pub fn generate_invoke_id(state_id: &str) -> String {
+pub fn generate_invoke_id(state_id: &str) -> SceString {
     if state_id.is_empty() {
         generate_unique_id("invoke")
     } else {
         let counter = GLOBAL_COUNTER.fetch_add(1, Ordering::Relaxed);
-        format!("{}.platform_{}", state_id, counter)
+        format_invoke_id(state_id, counter)
     }
 }
 
 /// Generate a unique event ID for HTTP event processing.
 ///
 /// Ports C++ `UniqueIdGenerator::generateEventId`.
-pub fn generate_event_id() -> String {
+pub fn generate_event_id() -> SceString {
     generate_unique_id("event")
 }
 
 /// Generate a unique correlation ID for concurrent operations.
 ///
 /// Ports C++ `UniqueIdGenerator::generateCorrelationId`.
-pub fn generate_correlation_id() -> String {
+pub fn generate_correlation_id() -> SceString {
     generate_unique_id("corr")
 }
 
 /// Generate a unique action ID for SCXML actions.
 ///
 /// Ports C++ `UniqueIdGenerator::generateActionId`.
-pub fn generate_action_id(prefix: &str) -> String {
+pub fn generate_action_id(prefix: &str) -> SceString {
     let prefix = if prefix.is_empty() { "action" } else { prefix };
     generate_unique_id(prefix)
 }

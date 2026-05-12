@@ -6,6 +6,16 @@
 //! 1:1 port of `sce/include/common/UrlEncodingHelper.h`. Provides RFC 3986
 //! percent-encoding for `application/x-www-form-urlencoded` format used by
 //! the BasicHTTP Event I/O Processor.
+//!
+//! Watching-zenoh RFC §5.J.2 (lines 1989-1994): whole-module gated to
+//! `!no_std` because the only intended consumer is the BasicHTTP Event I/O
+//! Processor, which is itself `!no_std`-gated (the
+//! `codegen/no-std-http-not-supported` validator rejects HTTP `<send>`
+//! up-front so URL encoding is unreachable from generated no_std code).
+//! Mirrors the `event_data.rs` precedent (B-γ2d-1) for HTTP-coupled helpers
+//! with no no_std consumer.
+
+#![cfg(not(feature = "no_std"))]
 
 /// W3C SCXML C.2: Percent-encode a string for URL transmission.
 ///

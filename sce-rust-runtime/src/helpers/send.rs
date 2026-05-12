@@ -12,6 +12,7 @@
 
 use crate::helpers::scxml_constants;
 use crate::helpers::unique_id_generator;
+use crate::{sce_string_from_str, SceString};
 
 /// W3C SCXML 6.2: Check if target is invalid (starts with '!').
 ///
@@ -71,12 +72,23 @@ pub fn is_http_target(target: &str) -> bool {
 /// W3C SCXML 6.2: Validate send target.
 ///
 /// Returns `Ok(())` if valid, `Err(message)` if invalid (error.execution
-/// should be raised).
+/// should be raised). The error string is a [`SceString`] (= `String` under
+/// std, `heapless::String<MAX_EVENT_STRING_LEN>` under no_std).
 ///
 /// Ports C++ `SendHelper::validateTarget`.
-pub fn validate_target(target: &str) -> Result<(), String> {
+pub fn validate_target(target: &str) -> Result<(), SceString> {
     if is_invalid_target(target) {
-        Err(format!("Invalid target value: {}", target))
+        #[cfg(not(feature = "no_std"))]
+        {
+            Err(format!("Invalid target value: {}", target))
+        }
+        #[cfg(feature = "no_std")]
+        {
+            use core::fmt::Write;
+            let mut s = SceString::new();
+            let _ = write!(&mut s, "Invalid target value: {}", target);
+            Err(s)
+        }
     } else {
         Ok(())
     }
@@ -121,9 +133,11 @@ pub fn validate_basic_http_send(
     send_type: &str,
     target: &str,
     target_expr: &str,
-) -> Result<(), String> {
+) -> Result<(), SceString> {
     if requires_target_attribute(send_type) && target.is_empty() && target_expr.is_empty() {
-        Err("BasicHTTPEventProcessor requires target attribute".to_string())
+        Err(sce_string_from_str(
+            "BasicHTTPEventProcessor requires target attribute",
+        ))
     } else {
         Ok(())
     }
@@ -131,10 +145,11 @@ pub fn validate_basic_http_send(
 
 /// W3C SCXML 6.2: Generate a unique send ID.
 ///
-/// Delegates to [`unique_id_generator::generate_send_id`].
+/// Delegates to [`unique_id_generator::generate_send_id`]. Returns
+/// [`SceString`] (= `String` under std, capped `heapless::String` under no_std).
 ///
 /// Ports C++ `SendHelper::generateSendId`.
-pub fn generate_send_id() -> String {
+pub fn generate_send_id() -> SceString {
     unique_id_generator::generate_send_id()
 }
 

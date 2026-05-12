@@ -9,7 +9,18 @@
 //! The C++ version uses `IScriptEngine` for expression evaluation. The Rust port
 //! provides the same JSON serialization utilities and delegates expression
 //! evaluation to the `IScriptEngine` trait from `crate::scripting`.
+//!
+//! Watching-zenoh RFC §5.J.2 (lines 1989-1994): under `--features=no_std`:
+//! - [`emit_content_literal`] stays available (the Rust AOT template
+//!   `entry_exit_actions.rs.jinja2` emits a call to it unconditionally for
+//!   `<content>literal</content>` donedata) but returns [`crate::SceString`]
+//!   so it composes with the capped `EventMetadata.data` field.
+//! - [`build_done_data_json`] and [`escape_json_string`] depend on
+//!   `helpers::event_data` (whole-module `!no_std`-gated) and have no current
+//!   consumer; they are gated to `!no_std`.
 
+use crate::{sce_string_from_str, SceString};
+#[cfg(not(feature = "no_std"))]
 use crate::helpers::event_data;
 
 /// W3C SCXML 5.5: Emit an inline `<content>` literal as `_event.data`.
@@ -32,9 +43,11 @@ use crate::helpers::event_data;
 ///
 /// # Returns
 ///
-/// The literal as `_event.data` (raw string — no JSON quoting).
-pub fn emit_content_literal(literal: &str) -> String {
-    literal.to_string()
+/// The literal as `_event.data` (raw string — no JSON quoting). Returned as
+/// [`SceString`] so the no_std variant (capped `heapless::String`) composes
+/// with `EventMetadata.data`.
+pub fn emit_content_literal(literal: &str) -> SceString {
+    sce_string_from_str(literal)
 }
 
 /// W3C SCXML 5.5: Build JSON string from param name/value pairs.
@@ -51,6 +64,10 @@ pub fn emit_content_literal(literal: &str) -> String {
 /// # Returns
 ///
 /// JSON string like `{"Var1":"1","Var2":"hello"}`.
+///
+/// Watching-zenoh RFC §5.J.2: gated to `!no_std` — delegates to
+/// [`event_data::escape_json_string`] which is itself whole-module gated.
+#[cfg(not(feature = "no_std"))]
 pub fn build_done_data_json(params: &[(&str, &str)]) -> String {
     if params.is_empty() {
         return String::new();
@@ -86,6 +103,7 @@ pub fn build_done_data_json(params: &[(&str, &str)]) -> String {
 /// Check if a string value is a JSON literal that should not be quoted.
 ///
 /// Returns `true` for: numeric values, `true`, `false`, `null`.
+#[cfg(not(feature = "no_std"))]
 fn is_json_literal(value: &str) -> bool {
     if value == "true" || value == "false" || value == "null" {
         return true;
@@ -95,6 +113,10 @@ fn is_json_literal(value: &str) -> bool {
 }
 
 /// W3C SCXML 5.5: Escape JSON string (delegates to event_data module).
+///
+/// Watching-zenoh RFC §5.J.2: gated to `!no_std` — delegates to
+/// [`event_data::escape_json_string`] which is itself whole-module gated.
+#[cfg(not(feature = "no_std"))]
 pub fn escape_json_string(s: &str) -> String {
     event_data::escape_json_string(s)
 }

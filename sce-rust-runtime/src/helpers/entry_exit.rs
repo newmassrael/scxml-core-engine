@@ -10,6 +10,14 @@
 //! In the C++ code, blocks are `std::vector<std::function<void()>>` and
 //! error isolation is provided by lambda scope (return stops one block only).
 //! In Rust, we use `&mut [Box<dyn FnMut()>]` or closures for the same effect.
+//!
+//! Watching-zenoh RFC §5.J.2 (lines 1989-1994): the `Box<dyn FnMut()>` block
+//! variants ([`execute_entry_blocks`] / [`execute_exit_blocks`]) require
+//! `alloc` and are gated to `!no_std`. The pure-closure variants
+//! ([`execute_entry_closures`] / [`execute_exit_closures`]) take
+//! `&mut [&mut dyn FnMut()]` slices (no allocation) and stay available under
+//! `--features=no_std`. The generated AOT code under no_std prefers the
+//! closure form per the same lock-in.
 
 use crate::sce_log_debug;
 
@@ -20,6 +28,11 @@ use crate::sce_log_debug;
 /// execute per W3C SCXML 3.8.
 ///
 /// Ports C++ `EntryExitHelper<StatePolicy, Engine>::executeEntryBlocks`.
+///
+/// Watching-zenoh RFC §5.J.2: gated to `!no_std` because `Box<dyn FnMut()>`
+/// requires `alloc`. The closure-slice variant
+/// [`execute_entry_closures`] is the no_std-compatible alternative.
+#[cfg(not(feature = "no_std"))]
 pub fn execute_entry_blocks(blocks: &mut [Box<dyn FnMut()>], state_id: &str) {
     let count = blocks.len();
 
@@ -57,6 +70,11 @@ pub fn execute_entry_blocks(blocks: &mut [Box<dyn FnMut()>], state_id: &str) {
 /// Same semantics as [`execute_entry_blocks`] but for `<onexit>` handlers.
 ///
 /// Ports C++ `EntryExitHelper<StatePolicy, Engine>::executeExitBlocks`.
+///
+/// Watching-zenoh RFC §5.J.2: gated to `!no_std` because `Box<dyn FnMut()>`
+/// requires `alloc`. The closure-slice variant
+/// [`execute_exit_closures`] is the no_std-compatible alternative.
+#[cfg(not(feature = "no_std"))]
 pub fn execute_exit_blocks(blocks: &mut [Box<dyn FnMut()>], state_id: &str) {
     let count = blocks.len();
 

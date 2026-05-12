@@ -36,14 +36,37 @@ pub fn is_valid_location(location: &str) -> bool {
 
 /// W3C SCXML 5.3/5.4: Get error message for an invalid location.
 ///
-/// Ports C++ `AssignHelper::getInvalidLocationErrorMessage`.
-pub fn get_invalid_location_error(location: &str) -> String {
+/// Ports C++ `AssignHelper::getInvalidLocationErrorMessage`. Returns
+/// [`crate::SceString`] (= `String` under std, capped `heapless::String`
+/// under no_std).
+///
+/// Watching-zenoh RFC §5.J.2: the format-and-return shape is preserved under
+/// no_std via `core::fmt::Write` into a `heapless::String`.
+pub fn get_invalid_location_error(location: &str) -> crate::SceString {
     if location.is_empty() {
-        "Assignment location cannot be empty".to_string()
+        crate::sce_string_from_str("Assignment location cannot be empty")
     } else if SYSTEM_VARIABLES.contains(&location) {
-        format!("Cannot assign to read-only system variable: {}", location)
+        format_location_error("Cannot assign to read-only system variable: ", location)
     } else {
-        format!("Invalid assignment location: {}", location)
+        format_location_error("Invalid assignment location: ", location)
+    }
+}
+
+/// Build `{prefix}{location}` into a fresh [`crate::SceString`].
+///
+/// Single formatter shared by the two non-empty branches of
+/// [`get_invalid_location_error`] so the std/no_std split lives in one place.
+fn format_location_error(prefix: &str, location: &str) -> crate::SceString {
+    #[cfg(not(feature = "no_std"))]
+    {
+        format!("{}{}", prefix, location)
+    }
+    #[cfg(feature = "no_std")]
+    {
+        use core::fmt::Write;
+        let mut s = crate::SceString::new();
+        let _ = write!(&mut s, "{}{}", prefix, location);
+        s
     }
 }
 
