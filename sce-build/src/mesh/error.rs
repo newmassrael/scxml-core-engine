@@ -989,20 +989,84 @@ pub enum DeployError {
     },
 
     /// A machine declared `scheduler.kind: cooperative` without
-    /// `scheduler.worker_stack_budget` (SCE Mesh §14, watching-zenoh RFC
-    /// §5.K line 2160-2164). The cooperative worker drives `<send>` queue
-    /// draining inside a fixed stack frame; without an authored bound,
-    /// codegen has no static budget to gate TLV-decode recursion against.
-    /// Rejected at parse time.
+    /// `scheduler.worker_stack_budget` (watching-zenoh RFC §5.K line
+    /// 2426 `deploy/worker-stack-budget-missing`). The cooperative
+    /// worker drives `<send>` queue draining inside a fixed stack
+    /// frame; without an authored bound, codegen has no static budget
+    /// to gate TLV-decode recursion against. Rejected at parse time.
     #[error("machine '{machine}': scheduler.kind 'cooperative' requires \
-             scheduler.worker_stack_budget (bytes). SCE Mesh §14 (RFC §5.K) — \
-             cooperative drives the `<send>` queue inside a fixed stack frame; \
-             a missing budget would let TLV-decode recursion silently overflow. \
+             scheduler.worker_stack_budget (bytes). watching-zenoh RFC §5.K \
+             line 2426 (`deploy/worker-stack-budget-missing`) — cooperative \
+             drives the `<send>` queue inside a fixed stack frame; a missing \
+             budget would let TLV-decode recursion silently overflow. \
              Repair: add `worker_stack_budget: <bytes>` under `scheduler:` (e.g. \
              4096), or change `kind:` to `tokio` / `rt` to inherit the host \
              runtime's stack defaults.")]
     SchedulerCooperativeMissingStackBudget {
         machine: String,
+    },
+
+    /// A machine declared `scheduler.kind: cooperative` without
+    /// `scheduler.worker_slot_budget_us` (watching-zenoh RFC §5.K line
+    /// 2428-2429 `deploy/worker-slot-budget-missing`). The cooperative
+    /// scheduler hosts each worker for at most this many microseconds
+    /// per tick slot; without an authored ceiling, the §5.B aggregate
+    /// WCET check has no budget to compare against and the slot-count
+    /// derivation (per [`super::deploy::validate_machine_scheduler_worker_capacity`])
+    /// cannot run. Rejected at parse time.
+    #[error("machine '{machine}': scheduler.kind 'cooperative' requires \
+             scheduler.worker_slot_budget_us (microseconds). watching-zenoh \
+             RFC §5.K line 2428-2429 (`deploy/worker-slot-budget-missing`) — \
+             per-slot WCET ceiling drives the §5.B aggregate WCET check and \
+             the cooperative slot-count derivation. Repair: add \
+             `worker_slot_budget_us: <us>` under `scheduler:` (e.g. 200), or \
+             change `kind:` to `tokio` / `rt` to skip the WCET check.")]
+    SchedulerCooperativeMissingSlotBudget {
+        machine: String,
+    },
+
+    /// A machine declared `scheduler.kind: cooperative` without
+    /// `scheduler.keepalive_jitter_budget_us` (watching-zenoh RFC §5.K
+    /// line 2430-2431 `deploy/keepalive-jitter-budget-missing`). The
+    /// sum of worst-case slot budgets in one tick window MUST fit inside
+    /// this bound, so the consumer check (§5.B aggregate WCET) needs
+    /// the ceiling to enforce keepalive emission jitter limits.
+    /// Rejected at parse time.
+    #[error("machine '{machine}': scheduler.kind 'cooperative' requires \
+             scheduler.keepalive_jitter_budget_us (microseconds). watching-zenoh \
+             RFC §5.K line 2430-2431 (`deploy/keepalive-jitter-budget-missing`) \
+             — sum of worst-case slot budgets in one tick window must fit \
+             inside this bound. Repair: add `keepalive_jitter_budget_us: <us>` \
+             under `scheduler:` (recommended default: 0.5 × min lease), or \
+             change `kind:` to `tokio` / `rt` to inherit host runtime jitter.")]
+    SchedulerCooperativeMissingKeepaliveJitterBudget {
+        machine: String,
+    },
+
+    /// A machine declared more workers (entries under `machines.<m>.workers`)
+    /// than the cooperative scheduler can host in one tick window
+    /// (watching-zenoh RFC §5.K line 2423
+    /// `deploy/scheduler-incompatible-with-worker-count`). The
+    /// derived ceiling is `floor(tick_period_us / worker_slot_budget_us)`;
+    /// `workers.len()` exceeds this. The forge-side anchor for the same
+    /// failure mode is `worker/scheduler-unsupported` (spec §5.D line
+    /// 912), raised during [`crate::compile_forge_with_deploy`] for
+    /// the specific Worker doc that overflowed the budget.
+    #[error("machine '{machine}': declared {worker_count} workers under \
+             machines.{machine}.workers, but cooperative scheduler can host \
+             only {slot_count} per tick window (derived from tick_period_us \
+             {tick_period_us} / worker_slot_budget_us {worker_slot_budget_us}). \
+             watching-zenoh RFC §5.K line 2423 \
+             (`deploy/scheduler-incompatible-with-worker-count`). Repair: \
+             raise `tick_period_us`, lower `worker_slot_budget_us`, remove \
+             excess workers, or switch `scheduler.kind:` to a preemptive \
+             host (`tokio` / `rt`).")]
+    SchedulerIncompatibleWithWorkerCount {
+        machine: String,
+        worker_count: u32,
+        slot_count: u32,
+        tick_period_us: u32,
+        worker_slot_budget_us: u32,
     },
 }
 
@@ -2235,6 +2299,44 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             expected: None,
             fix: None,
             key_fragments: vec![machine.clone()],
+        },
+        DeployError::SchedulerCooperativeMissingSlotBudget { machine } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeploySchedulerCooperativeMissingSlotBudget,
+            stage: Stage::MeshDeploy,
+            actual: Some(machine.clone()),
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone()],
+        },
+        DeployError::SchedulerCooperativeMissingKeepaliveJitterBudget { machine } => {
+            DiagnosticPayload {
+                code: DiagnosticCode::MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget,
+                stage: Stage::MeshDeploy,
+                actual: Some(machine.clone()),
+                expected: None,
+                fix: None,
+                key_fragments: vec![machine.clone()],
+            }
+        }
+        DeployError::SchedulerIncompatibleWithWorkerCount {
+            machine,
+            worker_count,
+            slot_count,
+            tick_period_us,
+            worker_slot_budget_us,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeploySchedulerIncompatibleWithWorkerCount,
+            stage: Stage::MeshDeploy,
+            actual: Some(worker_count.to_string()),
+            expected: Some(vec![slot_count.to_string()]),
+            fix: None,
+            key_fragments: vec![
+                machine.clone(),
+                worker_count.to_string(),
+                slot_count.to_string(),
+                tick_period_us.to_string(),
+                worker_slot_budget_us.to_string(),
+            ],
         },
     }
 }

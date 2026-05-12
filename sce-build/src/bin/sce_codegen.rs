@@ -626,6 +626,8 @@ fn cmd_generate(
             let forge_opts = sce_build::ForgeCompileOptions {
                 go_module_prefix: go_module_prefix.map(str::to_owned),
                 const_fold_budget,
+                cache_platform: None,
+                worker_placement: None,
             };
             match sce_build::compile_forge_with_imports(
                 &scxml_content,

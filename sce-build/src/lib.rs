@@ -677,6 +677,37 @@ pub fn compile_forge_with_deploy(
         }
     }
 
+    // C2-γ: forge-side anchor for spec §5.D line 912
+    // (`worker/scheduler-unsupported`). When a Worker doc compiles
+    // against a resolved target machine, the machine MUST list it in
+    // `machines.<m>.workers` so the cooperative scheduler can budget
+    // a tick slot. Silent-skip when the deploy or target_machine is
+    // absent (Q-η5 (a) precedent — deploy-unaware paths cannot enforce
+    // slot accounting); the deploy-side sum check
+    // (`deploy/scheduler-incompatible-with-worker-count`) catches the
+    // counterpart violation at deploy.yaml parse time.
+    if let (Some(cfg), Some(machine_name)) = (deploy, target_machine) {
+        if let forge::model::ForgeDocument::Worker(worker) = &doc {
+            if let Some(machine) = cfg
+                .device_for_machine(machine_name)
+                .and_then(|d| d.machines.get(machine_name))
+            {
+                if !machine.workers.contains_key(&worker.name) {
+                    return Err(Located::new(
+                        ValidationError::WorkerSchedulerUnsupported {
+                            worker_name: worker.name.clone(),
+                            machine: machine_name.to_string(),
+                        }
+                        .into(),
+                        label.diagnostic_label,
+                        None,
+                        None,
+                    ));
+                }
+            }
+        }
+    }
+
     // C5: build the cache_platform options threading from the resolved
     // machine's platform block. Fires only on the deploy-aware path
     // (deploy + target_machine + machine.platform all resolved). When
@@ -697,10 +728,70 @@ pub fn compile_forge_with_deploy(
                 .unwrap_or(false),
         })
     })();
+
+    // C2-γ: build the worker_placement options threading from the
+    // resolved machine's `workers:` block. Fires only on the deploy-
+    // aware path with at least one worker declared. Mirrors the
+    // cache_platform populator pattern (C5) — `compile_forge_with_imports`
+    // never reaches here and worker_placement stays `None`, matching
+    // the C2-β codegen-invariant validator's silent-skip on missing
+    // placement (Q-η5 (a) precedent).
+    let worker_placement = (|| -> Option<Vec<WorkerPlacement>> {
+        let cfg = deploy?;
+        let machine_name = target_machine?;
+        let device = cfg.device_for_machine(machine_name)?;
+        let machine = device.machines.get(machine_name)?;
+        if machine.workers.is_empty() {
+            return None;
+        }
+        let mut placements: Vec<WorkerPlacement> = machine
+            .workers
+            .iter()
+            .filter_map(|(worker_name, worker_cfg)| {
+                worker_cfg.placement.as_ref().map(|p| WorkerPlacement {
+                    worker_name: worker_name.clone(),
+                    producer_core: p.producer_core,
+                    consumer_core: p.consumer_core,
+                })
+            })
+            .collect();
+        if placements.is_empty() {
+            return None;
+        }
+        // Deterministic order so downstream codegen-invariant scans
+        // are byte-stable across HashMap iteration order.
+        placements.sort_by(|a, b| a.worker_name.cmp(&b.worker_name));
+        Some(placements)
+    })();
     let options = ForgeCompileOptions {
         cache_platform,
+        worker_placement,
         ..Default::default()
     };
+
+    // C2-γ: connect the worker_placement populator to its C2-β
+    // codegen-invariant consumer. `compile_forge_with_imports` runs
+    // this validator on the imports path; `compile_forge_with_deploy`
+    // needs to run it equivalently so the deploy.yaml-populated
+    // placement reaches the cross-core ordering check. Without this
+    // wire, `worker_placement` would be built-but-unconsumed under
+    // the deploy-aware path (`feedback_silently_broken_hooks.md`
+    // violation).
+    validate_worker_inbox_ordering_placement(
+        &doc,
+        options.worker_placement.as_deref(),
+        label.diagnostic_label,
+    )?;
+
+    // C2-γ: same rationale for cross-resolution. The `<sce:link-rx>`
+    // ref must resolve to a declared kind=link import; under
+    // `compile_forge_with_deploy` the validator was previously
+    // missing — re-wiring closes the gap.
+    validate_worker_cross_refs(
+        &doc,
+        &parsed.imports,
+        label.diagnostic_label,
+    )?;
 
     let template_base = find_template_base();
 

@@ -1315,6 +1315,33 @@ pub enum ValidationError {
         /// SCXML processing thread).
         consumer_core: u32,
     },
+
+    /// watching-zenoh RFC §5.D line 912
+    /// (`worker/scheduler-unsupported`) — a Worker doc reached
+    /// [`crate::compile_forge_with_deploy`] but the resolved target
+    /// machine does not list it under `machines.<m>.workers`. The
+    /// cooperative scheduler tracks one tick slot per declared worker;
+    /// an undeclared worker has no slot, so codegen would emit a
+    /// worker the scheduler cannot account for. The deploy-side anchor
+    /// for the slot-count sum check is
+    /// [`crate::mesh::error::DeployError::SchedulerIncompatibleWithWorkerCount`]
+    /// (spec §5.K line 2423); the forge-side anchor here fires on the
+    /// per-doc miss.
+    #[error(
+        "worker '{worker_name}': not declared in deploy.yaml under \
+         `machines.{machine}.workers`. watching-zenoh RFC §5.D line 912 \
+         (`worker/scheduler-unsupported`) — the cooperative scheduler \
+         tracks one tick slot per declared worker; an undeclared \
+         worker has no slot. Repair: add `{worker_name}:` under \
+         `machines.{machine}.workers:` in deploy.yaml, or remove the \
+         Worker doc from the build."
+    )]
+    WorkerSchedulerUnsupported {
+        /// Worker name from `<scxml sce:kind="worker" name="...">`.
+        worker_name: String,
+        /// Target machine that did not list the worker.
+        machine: String,
+    },
 }
 
 /// watching-zenoh RFC §5.E B7-η' Atomic A2 callback-path failure

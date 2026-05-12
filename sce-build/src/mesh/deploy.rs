@@ -486,16 +486,24 @@ pub struct PlatformConfig {
 }
 
 /// Per-machine scheduler descriptor (SCE Mesh §14, watching-zenoh RFC
-/// §5.K).
+/// §5.K lines 2209-2222).
 ///
-/// `kind = cooperative` REQUIRES `worker_stack_budget`
-/// ([`validate_scheduler_cooperative_stack_budget`]): the cooperative
-/// worker drives `<send>` queue draining inside a fixed stack frame,
-/// and a missing budget would let TLV-decode recursion silently
-/// blow the stack. Other knobs from RFC §5.K (`tick_period_us`,
-/// `worker_slot_budget_us`, `keepalive_jitter_budget_us`) land
-/// alongside their codegen consumer in Phase A4+ per the RFC §7
-/// sequence.
+/// Three knobs are REQUIRED when `kind: cooperative`:
+/// - `worker_stack_budget` ([`validate_scheduler_cooperative_stack_budget`])
+///   — TLV-decode recursion bound (spec line 2426 `deploy/worker-stack-budget-missing`).
+/// - `worker_slot_budget_us` ([`validate_worker_slot_budget_required_when_cooperative`])
+///   — per-slot WCET ceiling, microseconds (spec line 2428-2429
+///   `deploy/worker-slot-budget-missing`).
+/// - `keepalive_jitter_budget_us` ([`validate_keepalive_jitter_required_when_cooperative`])
+///   — keepalive emission jitter ceiling (spec line 2430-2431
+///   `deploy/keepalive-jitter-budget-missing`).
+///
+/// `tick_period_us` is optional at parse time; when present alongside
+/// `worker_slot_budget_us`, derives the cooperative scheduler's
+/// per-tick slot capacity (`floor(tick_period_us / worker_slot_budget_us)`).
+/// The derived count is the ceiling enforced by
+/// [`validate_machine_scheduler_worker_capacity`]
+/// (spec line 2423 `deploy/scheduler-incompatible-with-worker-count`).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MachineSchedulerConfig {
@@ -506,6 +514,28 @@ pub struct MachineSchedulerConfig {
     /// the host runtime, not a build-time bound).
     #[serde(default)]
     pub worker_stack_budget: Option<u32>,
+    /// Cooperative scheduler tick period in microseconds (spec line 2211).
+    /// Together with `worker_slot_budget_us` derives the per-tick slot
+    /// capacity used by [`validate_machine_scheduler_worker_capacity`].
+    /// Optional at parse time; required for the worker-count vs slot-count
+    /// check to fire (when absent, the check silent-skips per Q-η5 (a)
+    /// precedent).
+    #[serde(default)]
+    pub tick_period_us: Option<u32>,
+    /// Per-slot WCET ceiling in microseconds (spec line 2213). REQUIRED
+    /// when `kind: cooperative` per spec line 2428-2429
+    /// `deploy/worker-slot-budget-missing`. Used by the codec / algorithm
+    /// aggregate-WCET check (§5.B + §5.A) and by the cooperative slot-count
+    /// derivation in [`validate_machine_scheduler_worker_capacity`].
+    #[serde(default)]
+    pub worker_slot_budget_us: Option<u32>,
+    /// Keepalive emission jitter ceiling in microseconds (spec line 2218).
+    /// REQUIRED when `kind: cooperative` per spec line 2430-2431
+    /// `deploy/keepalive-jitter-budget-missing`. Sum of worst-case slot
+    /// budgets in one tick window MUST fit inside this bound; the
+    /// downstream check lands with the §5.B aggregate WCET consumer.
+    #[serde(default)]
+    pub keepalive_jitter_budget_us: Option<u32>,
 }
 
 /// Per-machine scheduler kind axis (SCE Mesh §14, watching-zenoh RFC
@@ -528,6 +558,43 @@ impl SchedulerKind {
             SchedulerKind::Rt => "rt",
         }
     }
+}
+
+/// Per-machine worker placement entry (watching-zenoh RFC §5.D + §5.I,
+/// C2-γ). Declares which core hosts each worker doc's inbox producer
+/// (link-rx-driven path) and consumer (SCXML processing thread).
+///
+/// Threaded into [`crate::ForgeCompileOptions::worker_placement`] by
+/// [`crate::compile_forge_with_deploy`] for the codegen-invariant
+/// validator [`crate::validate_worker_inbox_ordering_placement`]
+/// (C2-β `e2980d83`) to detect cross-core relaxed-ordering violations
+/// (`worker/inbox-ordering-relaxed-across-cores`).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkerPlacementConfig {
+    /// Core index hosting the inbox producer.
+    pub producer_core: u32,
+    /// Core index hosting the inbox consumer.
+    pub consumer_core: u32,
+}
+
+/// Per-machine worker descriptor (watching-zenoh RFC §5.D + §5.K, C2-γ).
+/// Authors list every worker doc bound to the machine and declare its
+/// runtime placement when cross-core ordering matters. Absent
+/// `placement:` ⇒ codegen-invariant validator silent-skips for that
+/// worker (single-core mode); the cooperative slot-count check
+/// ([`validate_machine_scheduler_worker_capacity`]) still counts the
+/// entry toward the machine's worker budget.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkerDeployConfig {
+    /// Optional cross-core placement (see [`WorkerPlacementConfig`]).
+    /// Required when the worker doc declares `<sce:inbox ordering="relaxed"/>`
+    /// AND `core_count > 1`; the codegen-invariant validator catches the
+    /// cross-core violation. Single-core machines and `ordering="acq_rel"`
+    /// workers omit the block.
+    #[serde(default)]
+    pub placement: Option<WorkerPlacementConfig>,
 }
 
 /// SRAM region descriptor (SCE Mesh §14, watching-zenoh RFC §5.K).
@@ -1084,6 +1151,20 @@ pub struct MachineConfig {
     /// consumer (Phase B+).
     #[serde(default)]
     pub memory: Option<MemoryConfig>,
+
+    /// Per-machine worker doc registry (watching-zenoh RFC §5.D + §5.K,
+    /// C2-γ). Keyed by worker name (matches `<scxml sce:kind="worker"
+    /// name="...">`). The map's length feeds the cooperative slot-count
+    /// check ([`validate_machine_scheduler_worker_capacity`]); each entry
+    /// can carry an optional cross-core `placement:` block consumed by
+    /// the inbox-ordering codegen-invariant validator.
+    ///
+    /// Absent ⇒ machine declares no workers; the slot-count check
+    /// silent-skips. Present ⇒ slot-count check fires when
+    /// `workers.len() > derived_slot_count`
+    /// (spec line 2423 `deploy/scheduler-incompatible-with-worker-count`).
+    #[serde(default)]
+    pub workers: HashMap<String, WorkerDeployConfig>,
 }
 
 /// Custom deserializer for [`MachineConfig::someip_service_id`].
@@ -1560,6 +1641,9 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_someip_machine_liveness_service_ids(&cfg)?;
     validate_platform_class_os_consistency(&cfg)?;
     validate_scheduler_cooperative_stack_budget(&cfg)?;
+    validate_worker_slot_budget_required_when_cooperative(&cfg)?;
+    validate_keepalive_jitter_required_when_cooperative(&cfg)?;
+    validate_machine_scheduler_worker_capacity(&cfg)?;
 
     Ok(cfg)
 }
@@ -1612,6 +1696,113 @@ fn validate_scheduler_cooperative_stack_budget(cfg: &DeployConfig) -> Result<(),
             {
                 return Err(DeployError::SchedulerCooperativeMissingStackBudget {
                     machine: machine_name.clone(),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// watching-zenoh RFC §5.K line 2428-2429 (`deploy/worker-slot-budget-missing`)
+/// — when a machine's scheduler runs in cooperative mode,
+/// `worker_slot_budget_us` is REQUIRED. The per-slot WCET ceiling feeds
+/// the §5.B aggregate WCET check and the cooperative slot-count
+/// derivation; without it the build cannot bound TLV/algorithm worst-
+/// case execution time per tick, and the slot-count vs worker-count
+/// invariant cannot be enforced.
+fn validate_worker_slot_budget_required_when_cooperative(
+    cfg: &DeployConfig,
+) -> Result<(), DeployError> {
+    for device in cfg.topology.values() {
+        for (machine_name, machine) in device.machines.iter() {
+            let Some(sched) = machine.scheduler.as_ref() else {
+                continue;
+            };
+            if matches!(sched.kind, SchedulerKind::Cooperative)
+                && sched.worker_slot_budget_us.is_none()
+            {
+                return Err(DeployError::SchedulerCooperativeMissingSlotBudget {
+                    machine: machine_name.clone(),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// watching-zenoh RFC §5.K line 2430-2431
+/// (`deploy/keepalive-jitter-budget-missing`) — when a machine's
+/// scheduler runs in cooperative mode, `keepalive_jitter_budget_us` is
+/// REQUIRED. The sum of worst-case slot budgets in one tick window must
+/// fit inside this bound; without an authored ceiling, the §5.B
+/// aggregate WCET consumer cannot enforce keepalive emission jitter
+/// limits and zenoh peers may drop liveliness tokens under scheduler
+/// stress.
+fn validate_keepalive_jitter_required_when_cooperative(
+    cfg: &DeployConfig,
+) -> Result<(), DeployError> {
+    for device in cfg.topology.values() {
+        for (machine_name, machine) in device.machines.iter() {
+            let Some(sched) = machine.scheduler.as_ref() else {
+                continue;
+            };
+            if matches!(sched.kind, SchedulerKind::Cooperative)
+                && sched.keepalive_jitter_budget_us.is_none()
+            {
+                return Err(DeployError::SchedulerCooperativeMissingKeepaliveJitterBudget {
+                    machine: machine_name.clone(),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// watching-zenoh RFC §5.K line 2423
+/// (`deploy/scheduler-incompatible-with-worker-count`) — when a machine
+/// declares more workers than the cooperative scheduler can host in one
+/// tick window, raise the deploy-side anchor for the over-subscription.
+///
+/// The derived slot count is `floor(tick_period_us / worker_slot_budget_us)`.
+/// Validator silent-skips when:
+/// - `scheduler.kind` is not `cooperative` (tokio/rt use preemption, no
+///   slot accounting),
+/// - `tick_period_us` is absent (no derivation possible — Q-η5 (a)
+///   precedent silent-skip on missing deploy info),
+/// - `worker_slot_budget_us` is absent (already caught by
+///   [`validate_worker_slot_budget_required_when_cooperative`]).
+///
+/// The forge-side anchor for the same axis is `worker/scheduler-unsupported`
+/// (spec §5.D line 912), raised during [`crate::compile_forge_with_deploy`]
+/// when a Worker doc compiles against a machine without an entry for
+/// itself in `machines.<m>.workers` (signals: undeclared worker, scheduler
+/// cannot account for it).
+fn validate_machine_scheduler_worker_capacity(cfg: &DeployConfig) -> Result<(), DeployError> {
+    for device in cfg.topology.values() {
+        for (machine_name, machine) in device.machines.iter() {
+            let Some(sched) = machine.scheduler.as_ref() else {
+                continue;
+            };
+            if !matches!(sched.kind, SchedulerKind::Cooperative) {
+                continue;
+            }
+            let (Some(tick_period_us), Some(worker_slot_budget_us)) =
+                (sched.tick_period_us, sched.worker_slot_budget_us)
+            else {
+                continue;
+            };
+            if worker_slot_budget_us == 0 {
+                continue;
+            }
+            let slot_count = tick_period_us / worker_slot_budget_us;
+            let worker_count = machine.workers.len() as u32;
+            if worker_count > slot_count {
+                return Err(DeployError::SchedulerIncompatibleWithWorkerCount {
+                    machine: machine_name.clone(),
+                    worker_count,
+                    slot_count,
+                    tick_period_us,
+                    worker_slot_budget_us,
                 });
             }
         }
@@ -5791,6 +5982,10 @@ topology:
 
     #[test]
     fn scheduler_cooperative_with_budget_parses() {
+        // C2-γ extends the required-when-cooperative set: stack budget
+        // (C2-α), slot budget (line 2428-9), keepalive jitter budget
+        // (line 2430-1). All three must be present for the cooperative
+        // arm to parse without error.
         let yaml = r##"
 version: "1.0"
 topology:
@@ -5801,6 +5996,8 @@ topology:
         scheduler:
           kind: cooperative
           worker_stack_budget: 4096
+          worker_slot_budget_us: 200
+          keepalive_jitter_budget_us: 5000
 "##;
         let cfg = parse_deploy_str(yaml).expect("cooperative+budget must parse");
         let sched = cfg
@@ -5811,6 +6008,8 @@ topology:
             .expect("scheduler parsed");
         assert_eq!(sched.kind, SchedulerKind::Cooperative);
         assert_eq!(sched.worker_stack_budget, Some(4096));
+        assert_eq!(sched.worker_slot_budget_us, Some(200));
+        assert_eq!(sched.keepalive_jitter_budget_us, Some(5000));
     }
 
     #[test]

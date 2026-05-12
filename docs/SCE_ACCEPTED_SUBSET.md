@@ -477,6 +477,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `worker/link-rx-ref-unknown` | Validation |
 | `worker/inbox-ordering-unspecified` | Validation |
 | `worker/inbox-ordering-relaxed-across-cores` | Validation |
+| `worker/scheduler-unsupported` | Validation |
 | `extern/symbol-not-in-whitelist` | Validation |
 | `extern/abi-mismatch` | Validation |
 | `extern/signature-mismatch` | Validation |
@@ -555,7 +556,10 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/distributability-r1-shared-write` | Mesh Deploy |
 | `mesh/distributability-r2-cross-region-transition` | Mesh Deploy |
 | `mesh/deploy-platform-class-os-mismatch` | Mesh Deploy |
-| `mesh/deploy-scheduler-cooperative-missing-stack-budget` | Mesh Deploy |
+| `deploy/worker-stack-budget-missing` | Mesh Deploy |
+| `deploy/worker-slot-budget-missing` | Mesh Deploy |
+| `deploy/keepalive-jitter-budget-missing` | Mesh Deploy |
+| `deploy/scheduler-incompatible-with-worker-count` | Mesh Deploy |
 | `mesh/external-parse` | Mesh External |
 | `mesh/external-unresolved-names` | Mesh External |
 | `mesh/external-ambiguous-event-group` | Mesh External |

@@ -900,6 +900,21 @@ pub enum DiagnosticCode {
     #[serde(rename = "worker/inbox-ordering-relaxed-across-cores")]
     WorkerInboxOrderingRelaxedAcrossCores,
 
+    /// Worker doc compiles against a target machine that did not list it
+    /// in `deploy.machines.<m>.workers`. Spec §5.D line 912 verbatim
+    /// (`worker/scheduler-unsupported` — "worker count exceeds scheduler
+    /// slot count"). The deploy-side anchor for the sum check is
+    /// [`MeshDeploySchedulerIncompatibleWithWorkerCount`] (spec §5.K
+    /// line 2423); this forge-side code fires when
+    /// [`crate::compile_forge_with_deploy`] sees a Worker doc whose
+    /// `name` is absent from the resolved machine's `workers` map,
+    /// signaling the worker was not budgeted into the cooperative
+    /// scheduler's tick window. Repair surface = no closed candidate
+    /// list (author either adds the worker to deploy.yaml or removes
+    /// the Worker doc); `fix: None` per NeutralOrDeterministic class.
+    #[serde(rename = "worker/scheduler-unsupported")]
+    WorkerSchedulerUnsupported,
+
     // ── §5.I `<sce:extern>` whitelisted intrinsic registry
     //    (watching-zenoh RFC §5.I, Atomic A). Four spec-verbatim
     //    codes (lines 1847-1850) that fire at parse-time on
@@ -1090,8 +1105,41 @@ pub enum DiagnosticCode {
     // §14 per-machine platform/scheduler schema (RFC §5.K, Phase A2)
     #[serde(rename = "mesh/deploy-platform-class-os-mismatch")]
     MeshDeployPlatformClassOsMismatch,
-    #[serde(rename = "mesh/deploy-scheduler-cooperative-missing-stack-budget")]
+    /// Watching-zenoh RFC §5.K line 2426 verbatim
+    /// (`deploy/worker-stack-budget-missing`). Cooperative scheduler
+    /// declared without `worker_stack_budget`. Renamed from the
+    /// SCE-Mesh-prefix wire (`mesh/deploy-scheduler-cooperative-missing-stack-budget`)
+    /// to the watching-zenoh-prefix wire at C2-γ landing; SCE Mesh §14
+    /// continues to anchor to the same variant.
+    #[serde(rename = "deploy/worker-stack-budget-missing")]
     MeshDeploySchedulerCooperativeMissingStackBudget,
+    /// Watching-zenoh RFC §5.K line 2428-2429 verbatim
+    /// (`deploy/worker-slot-budget-missing`). Cooperative scheduler
+    /// declared without `worker_slot_budget_us`. Validator
+    /// [`crate::mesh::deploy::validate_worker_slot_budget_required_when_cooperative`]
+    /// fires at deploy.yaml parse time.
+    #[serde(rename = "deploy/worker-slot-budget-missing")]
+    MeshDeploySchedulerCooperativeMissingSlotBudget,
+    /// Watching-zenoh RFC §5.K line 2430-2431 verbatim
+    /// (`deploy/keepalive-jitter-budget-missing`). Cooperative
+    /// scheduler declared without `keepalive_jitter_budget_us`.
+    /// Validator
+    /// [`crate::mesh::deploy::validate_keepalive_jitter_required_when_cooperative`]
+    /// fires at deploy.yaml parse time.
+    #[serde(rename = "deploy/keepalive-jitter-budget-missing")]
+    MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget,
+    /// Watching-zenoh RFC §5.K line 2423 verbatim
+    /// (`deploy/scheduler-incompatible-with-worker-count`). Cooperative
+    /// scheduler's derived slot count (`floor(tick_period_us /
+    /// worker_slot_budget_us)`) is less than the number of workers
+    /// declared under `machines.<m>.workers`. Validator
+    /// [`crate::mesh::deploy::validate_machine_scheduler_worker_capacity`]
+    /// fires at deploy.yaml parse time after the three "*-missing"
+    /// validators have confirmed the budget fields are present. The
+    /// forge-side anchor for the same axis is [`WorkerSchedulerUnsupported`]
+    /// (spec §5.D line 912).
+    #[serde(rename = "deploy/scheduler-incompatible-with-worker-count")]
+    MeshDeploySchedulerIncompatibleWithWorkerCount,
     // External config stage
     #[serde(rename = "mesh/external-read")]
     MeshExternalRead,
@@ -1320,6 +1368,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         WorkerLinkRxRefUnknown,
         WorkerInboxOrderingUnspecified,
         WorkerInboxOrderingRelaxedAcrossCores,
+        // Worker kind scheduler-capacity forge-side anchor (watching-zenoh RFC §5.D, C2-γ)
+        WorkerSchedulerUnsupported,
         // `<sce:extern>` whitelisted intrinsic registry (watching-zenoh RFC §5.I, Atomic A)
         ExternSymbolNotInWhitelist,
         ExternAbiMismatch,
@@ -1393,6 +1443,10 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDistributabilityR2CrossRegionTransition,
         MeshDeployPlatformClassOsMismatch,
         MeshDeploySchedulerCooperativeMissingStackBudget,
+        // C2-γ scheduler-capacity axis (watching-zenoh RFC §5.K lines 2423/2428-9/2430-1)
+        MeshDeploySchedulerCooperativeMissingSlotBudget,
+        MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget,
+        MeshDeploySchedulerIncompatibleWithWorkerCount,
         // Mesh External config
         MeshExternalRead,
         MeshExternalParse,
@@ -1593,6 +1647,12 @@ impl DiagnosticCode {
             WorkerInboxOrderingUnspecified
             | WorkerInboxOrderingRelaxedAcrossCores => Some("watching-zenoh RFC §5.I"),
 
+            // ── Worker scheduler-capacity axis (RFC §5.D + §5.K, C2-γ) ──
+            //    Forge-side anchor (line 912) lives in §5.D worker
+            //    domain; the three deploy-side anchors (line 2423 /
+            //    2428-9 / 2430-1) live in §5.K deploy.yaml domain.
+            WorkerSchedulerUnsupported => Some("watching-zenoh RFC §5.D"),
+
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
 
@@ -1659,8 +1719,20 @@ impl DiagnosticCode {
             | MeshDeployPartitionPoolMachine
             | MeshDeployPartitionTransportBindingUnsupported
             | MeshDeployPartitionBarrierTimeoutInvalid
-            | MeshDeployPlatformClassOsMismatch
-            | MeshDeploySchedulerCooperativeMissingStackBudget => Some("SCE Mesh §14"),
+            | MeshDeployPlatformClassOsMismatch => Some("SCE Mesh §14"),
+
+            // ── C2-γ scheduler-capacity deploy-side anchors
+            //    (watching-zenoh RFC §5.K lines 2423 / 2426 / 2428-9 / 2430-1).
+            //    The stack-budget variant was renamed at C2-γ landing
+            //    from the SCE-Mesh-prefix wire to the watching-zenoh-prefix
+            //    wire (`deploy/worker-stack-budget-missing`); the spec
+            //    anchor follows the rename. The three sibling variants
+            //    follow the same anchor. ──
+            MeshDeploySchedulerCooperativeMissingStackBudget
+            | MeshDeploySchedulerCooperativeMissingSlotBudget
+            | MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget
+            | MeshDeploySchedulerIncompatibleWithWorkerCount
+                => Some("watching-zenoh RFC §5.K"),
 
             // ── Mesh rule 12 — parallel root designation (SCE_MESH.md §14 rule 12) ──
             MeshPartitionParallelRootUndesignated
@@ -1883,6 +1955,7 @@ impl DiagnosticCode {
             WorkerLinkRxRefUnknown => "worker/link-rx-ref-unknown",
             WorkerInboxOrderingUnspecified => "worker/inbox-ordering-unspecified",
             WorkerInboxOrderingRelaxedAcrossCores => "worker/inbox-ordering-relaxed-across-cores",
+            WorkerSchedulerUnsupported => "worker/scheduler-unsupported",
             ExternSymbolNotInWhitelist => "extern/symbol-not-in-whitelist",
             ExternAbiMismatch => "extern/abi-mismatch",
             ExternSignatureMismatch => "extern/signature-mismatch",
@@ -1950,7 +2023,10 @@ impl DiagnosticCode {
             MeshDistributabilityR1SharedWrite => "mesh/distributability-r1-shared-write",
             MeshDistributabilityR2CrossRegionTransition => "mesh/distributability-r2-cross-region-transition",
             MeshDeployPlatformClassOsMismatch => "mesh/deploy-platform-class-os-mismatch",
-            MeshDeploySchedulerCooperativeMissingStackBudget => "mesh/deploy-scheduler-cooperative-missing-stack-budget",
+            MeshDeploySchedulerCooperativeMissingStackBudget => "deploy/worker-stack-budget-missing",
+            MeshDeploySchedulerCooperativeMissingSlotBudget => "deploy/worker-slot-budget-missing",
+            MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget => "deploy/keepalive-jitter-budget-missing",
+            MeshDeploySchedulerIncompatibleWithWorkerCount => "deploy/scheduler-incompatible-with-worker-count",
             MeshExternalRead => "mesh/external-read",
             MeshExternalParse => "mesh/external-parse",
             MeshExternalUnresolvedNames => "mesh/external-unresolved-names",
@@ -3300,6 +3376,21 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 consumer_core.to_string(),
             ],
         },
+        ValidationError::WorkerSchedulerUnsupported {
+            worker_name,
+            machine,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::WorkerSchedulerUnsupported,
+            stage: Stage::Validation,
+            // Forge-side anchor for spec §5.D line 912. Per-doc miss
+            // against the resolved machine's `workers` map.
+            // NeutralOrDeterministic — author either declares the
+            // worker in deploy.yaml or removes the Worker doc.
+            expected: None,
+            actual: Some(worker_name.clone()),
+            fix: None,
+            key_fragments: vec![worker_name.clone(), machine.clone()],
+        },
         // ── §5.I `<sce:extern>` whitelist rejection (Atomic A) ──
         ValidationError::ExternSymbolNotInWhitelist {
             name,
@@ -4551,6 +4642,22 @@ mod tests {
                 // Hash placeholder — patched by byte-stability assertion.
                 r#"{"v":1,"id":"fnv1a:b605193320262358","code":"worker/inbox-ordering-relaxed-across-cores","stage":"validation","spec":"watching-zenoh RFC §5.I","message":"worker 'rx_loop': <sce:inbox ordering=\"relaxed\"> declared but deploy.placement pins producer on core 0 and consumer on core 1. Cross-core SPSC inboxes require acquire/release pairing on head/tail (per spec §5.I lines 1752-1758). Replace with `ordering=\"acq_rel\"` or co-locate producer + consumer on the same core via deploy.placement.","actual":"relaxed"}"#,
             ),
+            (
+                // RFC §5.D line 912 C2-γ: forge-side anchor for scheduler
+                // capacity violations. Fires when a Worker doc compiles
+                // against a machine that did not list it in
+                // `machines.<m>.workers`. NeutralOrDeterministic — author
+                // adds the worker to deploy.yaml or removes the Worker
+                // doc; no closed candidate set.
+                "forge/worker-scheduler-unsupported",
+                ValidationError::WorkerSchedulerUnsupported {
+                    worker_name: "rx_loop".into(),
+                    machine: "mcu_node".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:39f753b9c4918241","code":"worker/scheduler-unsupported","stage":"validation","spec":"watching-zenoh RFC §5.D","message":"worker 'rx_loop': not declared in deploy.yaml under `machines.mcu_node.workers`. watching-zenoh RFC §5.D line 912 (`worker/scheduler-unsupported`) — the cooperative scheduler tracks one tick slot per declared worker; an undeclared worker has no slot. Repair: add `rx_loop:` under `machines.mcu_node.workers:` in deploy.yaml, or remove the Worker doc from the build.","actual":"rx_loop"}"#,
+            ),
             // ── §5.I `<sce:extern>` whitelisted intrinsic registry (Atomic A) ──
             (
                 // RFC §5.I line 1847: symbol absent from the §5.I baseline
@@ -5773,12 +5880,40 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:9195176fda736ee8","code":"mesh/deploy-platform-class-os-mismatch","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"machine 'mcu_node': platform.class 'mcu' is not compatible with platform.os 'linux'. SCE Mesh §14 (RFC §5.K) admits 'mcu' with os ∈ {bare_metal, rtos} and 'ap' with os ∈ {linux, qnx, macos, freebsd, windows}. Repair: change either field so the pair becomes admissible, or drop the platform: section to leave the machine unclassified.","actual":"linux"}"#,
             ),
             (
-                "mesh/deploy-scheduler-cooperative-missing-stack-budget",
+                "deploy/worker-stack-budget-missing",
                 DeployError::SchedulerCooperativeMissingStackBudget {
                     machine: "mcu_node".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:1bf3b1c517af4dd0","code":"mesh/deploy-scheduler-cooperative-missing-stack-budget","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"machine 'mcu_node': scheduler.kind 'cooperative' requires scheduler.worker_stack_budget (bytes). SCE Mesh §14 (RFC §5.K) — cooperative drives the `<send>` queue inside a fixed stack frame; a missing budget would let TLV-decode recursion silently overflow. Repair: add `worker_stack_budget: <bytes>` under `scheduler:` (e.g. 4096), or change `kind:` to `tokio` / `rt` to inherit the host runtime's stack defaults.","actual":"mcu_node"}"#,
+                r#"{"v":1,"id":"fnv1a:936f4785a68e36b5","code":"deploy/worker-stack-budget-missing","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': scheduler.kind 'cooperative' requires scheduler.worker_stack_budget (bytes). watching-zenoh RFC §5.K line 2426 (`deploy/worker-stack-budget-missing`) — cooperative drives the `<send>` queue inside a fixed stack frame; a missing budget would let TLV-decode recursion silently overflow. Repair: add `worker_stack_budget: <bytes>` under `scheduler:` (e.g. 4096), or change `kind:` to `tokio` / `rt` to inherit the host runtime's stack defaults.","actual":"mcu_node"}"#,
+            ),
+            (
+                "deploy/worker-slot-budget-missing",
+                DeployError::SchedulerCooperativeMissingSlotBudget {
+                    machine: "mcu_node".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:c7e272ab44356ef1","code":"deploy/worker-slot-budget-missing","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': scheduler.kind 'cooperative' requires scheduler.worker_slot_budget_us (microseconds). watching-zenoh RFC §5.K line 2428-2429 (`deploy/worker-slot-budget-missing`) — per-slot WCET ceiling drives the §5.B aggregate WCET check and the cooperative slot-count derivation. Repair: add `worker_slot_budget_us: <us>` under `scheduler:` (e.g. 200), or change `kind:` to `tokio` / `rt` to skip the WCET check.","actual":"mcu_node"}"#,
+            ),
+            (
+                "deploy/keepalive-jitter-budget-missing",
+                DeployError::SchedulerCooperativeMissingKeepaliveJitterBudget {
+                    machine: "mcu_node".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:79db8ea5ee156731","code":"deploy/keepalive-jitter-budget-missing","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': scheduler.kind 'cooperative' requires scheduler.keepalive_jitter_budget_us (microseconds). watching-zenoh RFC §5.K line 2430-2431 (`deploy/keepalive-jitter-budget-missing`) — sum of worst-case slot budgets in one tick window must fit inside this bound. Repair: add `keepalive_jitter_budget_us: <us>` under `scheduler:` (recommended default: 0.5 × min lease), or change `kind:` to `tokio` / `rt` to inherit host runtime jitter.","actual":"mcu_node"}"#,
+            ),
+            (
+                "deploy/scheduler-incompatible-with-worker-count",
+                DeployError::SchedulerIncompatibleWithWorkerCount {
+                    machine: "mcu_node".into(),
+                    worker_count: 5,
+                    slot_count: 3,
+                    tick_period_us: 1000,
+                    worker_slot_budget_us: 300,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:f26a225afadc7a9a","code":"deploy/scheduler-incompatible-with-worker-count","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': declared 5 workers under machines.mcu_node.workers, but cooperative scheduler can host only 3 per tick window (derived from tick_period_us 1000 / worker_slot_budget_us 300). watching-zenoh RFC §5.K line 2423 (`deploy/scheduler-incompatible-with-worker-count`). Repair: raise `tick_period_us`, lower `worker_slot_budget_us`, remove excess workers, or switch `scheduler.kind:` to a preemptive host (`tokio` / `rt`).","expected":["3"],"actual":"5"}"#,
             ),
             (
                 "mesh/external-read",
@@ -6537,6 +6672,11 @@ mod tests {
             // `fix: None`.
             | WorkerInboxOrderingUnspecified
             | WorkerInboxOrderingRelaxedAcrossCores
+            // C2-γ worker scheduler-capacity forge-side anchor
+            // (RFC §5.D line 912). Author repair is either adding the
+            // worker to `deploy.machines.<m>.workers` or removing the
+            // Worker doc; no closed candidate list.
+            | WorkerSchedulerUnsupported
             // `<sce:extern>` signature mismatch: deterministic
             // `Fix::Replace` with the canonical sig. The other three
             // codes sit in FixCarriesCandidates above.
@@ -6647,6 +6787,13 @@ mod tests {
             | MeshDistributabilityR2CrossRegionTransition
             | MeshDeployPlatformClassOsMismatch
             | MeshDeploySchedulerCooperativeMissingStackBudget
+            // C2-γ scheduler-capacity deploy-side anchors (RFC §5.K
+            // lines 2423 / 2428-9 / 2430-1). Author repair = add the
+            // missing field or rebalance worker count; no closed
+            // candidate list, so `fix: None` ⇒ NeutralOrDeterministic.
+            | MeshDeploySchedulerCooperativeMissingSlotBudget
+            | MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget
+            | MeshDeploySchedulerIncompatibleWithWorkerCount
             | MeshExternalRead
             | MeshExternalParse
             | MeshExternalUnresolvedNames
@@ -6960,6 +7107,7 @@ mod tests {
                 | WorkerLinkRxRefUnknown
                 | WorkerInboxOrderingUnspecified
                 | WorkerInboxOrderingRelaxedAcrossCores
+                | WorkerSchedulerUnsupported
                 | ExternSymbolNotInWhitelist
                 | ExternAbiMismatch
                 | ExternSignatureMismatch
@@ -7017,6 +7165,9 @@ mod tests {
                 | MeshDistributabilityR2CrossRegionTransition
                 | MeshDeployPlatformClassOsMismatch
                 | MeshDeploySchedulerCooperativeMissingStackBudget
+                | MeshDeploySchedulerCooperativeMissingSlotBudget
+                | MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget
+                | MeshDeploySchedulerIncompatibleWithWorkerCount
                 | MeshExternalRead | MeshExternalParse
                 | MeshExternalUnresolvedNames | MeshExternalAmbiguousEventGroup
                 | MeshExternalEmptyEventGroup
@@ -7051,9 +7202,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            205,
+            209,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 205 distinct variants to match the DiagnosticCode \
+             expected 209 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -7232,7 +7383,22 @@ mod tests {
              — `parse_imports`'s long-standing statechart-rejection \
              prevents the η-precedent's parsed.imports-direct shape from \
              applying to outbox refs without a deeper architectural \
-             change; 202 → 205.",
+             change; 202 → 205. Then watching-zenoh RFC §5.D + §5.K \
+             C2-γ scheduler-capacity axis adds four spec-named codes: \
+             `worker/scheduler-unsupported` (§5.D line 912 — forge-side \
+             anchor for compile_forge_with_deploy when a Worker doc is \
+             not declared in `machines.<m>.workers`), \
+             `deploy/worker-slot-budget-missing` (§5.K line 2428-2429 — \
+             cooperative scheduler missing `worker_slot_budget_us`), \
+             `deploy/keepalive-jitter-budget-missing` (§5.K line 2430-2431 \
+             — cooperative scheduler missing `keepalive_jitter_budget_us`), \
+             and `deploy/scheduler-incompatible-with-worker-count` (§5.K \
+             line 2423 — `workers.len() > floor(tick_period_us / \
+             worker_slot_budget_us)`). The C2-γ landing also renames the \
+             pre-existing wire `mesh/deploy-scheduler-cooperative-missing-stack-budget` \
+             to spec-verbatim `deploy/worker-stack-budget-missing` (§5.K \
+             line 2426). Rename is wire-only; variant ident retained. \
+             205 → 209.",
         );
     }
 

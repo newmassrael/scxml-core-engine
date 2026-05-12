@@ -274,7 +274,10 @@ references against a real document and drift silently.
 | `mesh/deploy-unsupported-version` | `mesh-deploy` | `replace_one_of` | SCE Mesh §14 |
 | `mesh/deploy-duplicate-machine` | `mesh-deploy` | no | SCE Mesh §14 |
 | `mesh/deploy-platform-class-os-mismatch` | `mesh-deploy` | no | SCE Mesh §14 |
-| `mesh/deploy-scheduler-cooperative-missing-stack-budget` | `mesh-deploy` | no | SCE Mesh §14 |
+| `deploy/worker-stack-budget-missing` | `mesh-deploy` | no | watching-zenoh RFC §5.K |
+| `deploy/worker-slot-budget-missing` | `mesh-deploy` | no | watching-zenoh RFC §5.K |
+| `deploy/keepalive-jitter-budget-missing` | `mesh-deploy` | no | watching-zenoh RFC §5.K |
+| `deploy/scheduler-incompatible-with-worker-count` | `mesh-deploy` | no | watching-zenoh RFC §5.K |
 | `mesh/external-read` | `mesh-external` | no | |
 | `mesh/external-parse` | `mesh-external` | no | |
 | `mesh/external-unresolved-names` | `mesh-external` | no | |
