@@ -765,31 +765,6 @@
       ]
     },
     {
-      "name": "timer_diag_scheduler",
-      "kind": "timer",
-      "ref_section": "timers",
-      "timers": [
-        {
-          "id": "testerPresent",
-          "timer_type": "periodic",
-          "interval_ms": 2000,
-          "callback": "fireTesterPresent"
-        },
-        {
-          "id": "responseTimeout",
-          "timer_type": "one_shot",
-          "interval_ms": 5000,
-          "callback": "fireHandleTimeout"
-        },
-        {
-          "id": "retryDelay",
-          "timer_type": "one_shot",
-          "interval_ms": 10000,
-          "callback": "fireRetrySecurityAccess"
-        }
-      ]
-    },
-    {
       "name": "lookup_engine_status",
       "kind": "lookup",
       "ref_section": "string_lookups",

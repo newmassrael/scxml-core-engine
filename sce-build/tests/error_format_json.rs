@@ -642,18 +642,18 @@ fn json_mode_observer_missing_enter_reports_monitor_data_line() {
     );
 }
 
-/// Periodic `<data sce:timer="periodic">` missing `sce:interval`
-/// must report at the timer `<data>` line. Pins parse_timer L1678.
-fn write_timer_missing_interval_fixture() -> (ScratchDir, PathBuf) {
+/// Timer doc missing `<sce:period>` must report at the document
+/// root (`<scxml>`) line — the validator anchors at the parent
+/// node because the missing child has no source location of its
+/// own. Pins parse_timer (watching-zenoh RFC §5.D shape).
+fn write_timer_missing_period_fixture() -> (ScratchDir, PathBuf) {
     let dir = ScratchDir::new("leaf-precision");
-    let path = dir.path().join("timer_missing_interval.scxml");
+    let path = dir.path().join("timer_missing_period.scxml");
     let body = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="timer" name="bad_timer">
-  <datamodel>
-    <data id="t" sce:timer="periodic" sce:event="tick"/>
-  </datamodel>
+  <sce:fire-event>tick</sce:fire-event>
 </scxml>
 "#;
     std::fs::write(&path, body).expect("write timer fixture");
@@ -661,18 +661,18 @@ fn write_timer_missing_interval_fixture() -> (ScratchDir, PathBuf) {
 }
 
 #[test]
-fn json_mode_timer_periodic_missing_interval_reports_data_line() {
-    let (_dir, scxml) = write_timer_missing_interval_fixture();
+fn json_mode_timer_missing_period_reports_root_line() {
+    let (_dir, scxml) = write_timer_missing_period_fixture();
     let out = run_generate(&sce_codegen_bin(), &scxml, "json");
     assert!(!out.status.success());
     assert_eq!(out.status.code(), Some(3));
     let parsed: serde_json::Value =
         serde_json::from_str(String::from_utf8(out.stderr).unwrap().trim_end()).unwrap();
-    assert_eq!(parsed["code"], "validation/missing-attribute");
+    assert_eq!(parsed["code"], "validation/missing-element");
     assert_eq!(
         parsed["location"]["line"].as_u64(),
-        Some(6),
-        "must point at the timer <data>, not <scxml> root: {parsed}"
+        Some(2),
+        "must point at the <scxml> root (the missing <sce:period> has no own location): {parsed}"
     );
 }
 

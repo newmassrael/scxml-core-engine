@@ -2,6 +2,8 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="timer")
+// Shape: watching-zenoh RFC §5.D line 880-886 — single timer per
+// doc with event-driven reset / state-exit cancel / fire event.
 // Runtime: {{ runtime_dep }}
 // Do not edit — regenerate from the source SCXML file.
 
@@ -10,35 +12,55 @@ package com.sce.generated.{{ package }}
 import com.sce.forge.runtime.Timer
 
 /**
- * Handler interface for [{{ struct_name }}]. The user implements these methods
- * on a state class and passes the instance to the [{{ struct_name }}] constructor.
- * Missing methods produce a compile-time error, so there is no silent fallback.
+ * Period configured at compile time from `<sce:period>`.
+ * Microseconds; cover MCU microsecond ticks through minute-scale
+ * watchdogs in one type.
+ */
+const val PERIOD_US: Long = {{ period_us }}L
+const val PERIOD_MS: Long = {{ period_ms }}L
+{% if reset_on_event %}
+const val RESET_ON_EVENT: String = "{{ reset_on_event }}"
+{% endif %}
+{% if cancel_on_state_exit %}
+const val CANCEL_ON_STATE_EXIT: String = "{{ cancel_on_state_exit }}"
+{% endif %}
+
+/**
+ * Handler interface for [{{ struct_name }}]. The user implements the
+ * fire method on a state class and passes the instance to the
+ * [{{ struct_name }}] constructor.
  */
 interface {{ struct_name }}Handler {
-{% for cb in unique_callbacks %}
-    fun fire{{ cb.callback_pascal }}()
-{% endfor %}
+    fun fire{{ callback_pascal }}()
 }
 
 class {{ struct_name }}(
     private val handler: {{ struct_name }}Handler,
-{% for timer in timers %}
-    private val {{ timer.id }}Timer: Timer{% if not loop.last %},{% endif %}
-
-{% endfor %}
+    private val timer: Timer
 ) {
-{% for timer in timers %}
 
-    fun start{{ timer.id_pascal }}() {
-{% if timer.is_periodic %}
-        {{ timer.id }}Timer.startPeriodic({{ timer.time_ms }}L) { handler.fire{{ timer.callback_pascal }}() }
-{% else %}
-        {{ timer.id }}Timer.startOneShot({{ timer.time_ms }}L) { handler.fire{{ timer.callback_pascal }}() }
+    /** Start the periodic timer at compile-time `PERIOD_MS`. */
+    fun start() {
+        timer.startPeriodic(PERIOD_MS) { handler.fire{{ callback_pascal }}() }
+    }
+
+    /** Cancel the timer. Idempotent per the runtime contract. */
+    fun cancel() {
+        timer.cancel()
+    }
+{% if reset_on_event %}
+
+    /** `<sce:reset-on event="{{ reset_on_event }}"/>` consumer hook. */
+    fun onReset{{ reset_handler_pascal }}() {
+        cancel()
+        start()
+    }
 {% endif %}
-    }
+{% if cancel_on_state_exit %}
 
-    fun cancel{{ timer.id_pascal }}() {
-        {{ timer.id }}Timer.cancel()
+    /** `<sce:cancel-on state-exit="{{ cancel_on_state_exit }}"/>` consumer hook. */
+    fun onCancel{{ cancel_state_pascal }}Exit() {
+        cancel()
     }
-{% endfor %}
+{% endif %}
 }

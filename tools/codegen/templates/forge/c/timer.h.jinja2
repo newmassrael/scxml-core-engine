@@ -2,6 +2,8 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
 /* SCE Forge: Auto-generated from Extended SCXML (sce:kind="timer") */
+/* Shape: watching-zenoh RFC §5.D line 880-886 — single timer per
+ * doc with event-driven reset / state-exit cancel / fire event. */
 /* Runtime: {{ runtime_dep }} */
 /* Do not edit — regenerate from the source SCXML file. */
 
@@ -17,90 +19,82 @@
 {% endfor %}
 {% endif %}
 
-/* Timer HAL — vtable interface. cpp uses `class ITimer { virtual ... };`;
- * the C11 mirror is a struct of method pointers. Concrete timer impls
- * embed this struct as their first member and downcast inside method
- * bodies (offsetof = 0 by struct-layout convention). */
+/* Period configured at compile time from `<sce:period>`. */
+#define {{ snake | upper }}_PERIOD_US UINT64_C({{ period_us }})
+#define {{ snake | upper }}_PERIOD_MS UINT32_C({{ period_ms }})
+{% if reset_on_event %}
+#define {{ snake | upper }}_RESET_ON_EVENT "{{ reset_on_event }}"
+{% endif %}
+{% if cancel_on_state_exit %}
+#define {{ snake | upper }}_CANCEL_ON_STATE_EXIT "{{ cancel_on_state_exit }}"
+{% endif %}
+
+/* Timer HAL — vtable interface. C mirror of cpp `class ITimer`. */
 typedef void (*{{ snake }}_timer_cb_t)(void *ctx);
 
 typedef struct {{ snake }}_itimer {
     void (*start_periodic)(struct {{ snake }}_itimer *self, uint32_t interval_ms,
                            {{ snake }}_timer_cb_t cb, void *cb_ctx);
-    void (*start_one_shot)(struct {{ snake }}_itimer *self, uint32_t delay_ms,
-                           {{ snake }}_timer_cb_t cb, void *cb_ctx);
     void (*cancel)(struct {{ snake }}_itimer *self);
 } {{ snake }}_itimer_t;
 
-/* Handler — user-supplied per-callback function pointers. cpp uses duck
- * typing on a Handler template parameter (compile-time check) and
- * imposes a `fire<Pascal>` method naming convention. C11 mirrors that
- * convention with `fire_<snake>` field names so the manifest oracle
- * keys (`"callback": "fireTesterPresent"`) map 1:1 to handler slots
- * after snake_case normalisation. NULL pointers are dropped silently
- * at trampoline time (cpp's duck-typed missing method would not
- * compile, but C11 has no equivalent compile-time check). */
+/* Handler — user-supplied fire callback. The §5.D single-timer shape
+ * has one fire-event per doc, so the handler struct carries a single
+ * function pointer (NULL-checked at trampoline time). */
 typedef struct {
     void *user_data;
-{% for cb in unique_callbacks %}
-    void (*fire_{{ cb.callback_snake }})(void *user_data);
-{% endfor %}
+    void (*fire_{{ callback_snake }})(void *user_data);
 } {{ snake }}_handler_t;
 
-/* Scheduler state — wraps handler + N timer pointers (one per <data> with
- * sce:timer). cpp keeps `Handler&` and `ITimer&` references; C11 stores
- * the handler by value (function-pointer struct, cheap to copy) and the
- * itimer instances by pointer (ownership stays with the user). */
+/* Scheduler state — wraps handler + single timer pointer. */
 typedef struct {
     {{ snake }}_handler_t handler;
-{% for timer in timers %}
-    {{ snake }}_itimer_t *{{ timer.id_snake }}_timer;
-{% endfor %}
+    {{ snake }}_itimer_t *timer;
 } {{ snake }}_t;
 
 static inline void {{ snake }}_init({{ snake }}_t *self,
-        {{ snake }}_handler_t handler{% for timer in timers %},
-        {{ snake }}_itimer_t *{{ timer.id_snake }}_timer{% endfor %}) {
+        {{ snake }}_handler_t handler,
+        {{ snake }}_itimer_t *timer) {
     self->handler = handler;
-{% for timer in timers %}
-    self->{{ timer.id_snake }}_timer = {{ timer.id_snake }}_timer;
-{% endfor %}
+    self->timer = timer;
 }
 
-/* Per-callback trampolines. cpp uses `static_cast<Self*>(ctx)->handler_.<cb>()`;
- * the C11 mirror recovers the scheduler from `ctx`, then dispatches
- * through the user's handler function pointer (NULL-checked). The
- * trampoline name is `<snake>_on_fire_<callback_snake>` to mirror the
- * handler field's `fire_<snake>` form. */
-{% for cb in unique_callbacks %}
-static inline void {{ snake }}_on_fire_{{ cb.callback_snake }}(void *ctx) {
+/* Fire trampoline — recovers scheduler from `ctx`, dispatches through
+ * the handler function pointer (NULL-checked). */
+static inline void {{ snake }}_on_fire_{{ callback_snake }}(void *ctx) {
     {{ snake }}_t *self = ({{ snake }}_t *)ctx;
-    if (self->handler.fire_{{ cb.callback_snake }} != NULL) {
-        self->handler.fire_{{ cb.callback_snake }}(self->handler.user_data);
+    if (self->handler.fire_{{ callback_snake }} != NULL) {
+        self->handler.fire_{{ callback_snake }}(self->handler.user_data);
     }
 }
-{% endfor %}
 
-/* Per-timer start/cancel pairs. cpp emits `start<TimerPascal>()` /
- * `cancel<TimerPascal>()`; C11 uses `<snake>_start_<id_snake>` /
- * `<snake>_cancel_<id_snake>` to fit C's lower_snake_case convention
- * without name-mangling. */
-{% for timer in timers %}
+/* Start the periodic timer at compile-time `PERIOD_MS`. */
+static inline void {{ snake }}_start({{ snake }}_t *self) {
+    self->timer->start_periodic(
+        self->timer, {{ snake | upper }}_PERIOD_MS,
+        {{ snake }}_on_fire_{{ callback_snake }}, self);
+}
 
-static inline void {{ snake }}_start_{{ timer.id_snake }}({{ snake }}_t *self) {
-{% if timer.is_periodic %}
-    self->{{ timer.id_snake }}_timer->start_periodic(
-        self->{{ timer.id_snake }}_timer, {{ timer.time_ms }},
-        {{ snake }}_on_fire_{{ timer.callback_snake }}, self);
-{% else %}
-    self->{{ timer.id_snake }}_timer->start_one_shot(
-        self->{{ timer.id_snake }}_timer, {{ timer.time_ms }},
-        {{ snake }}_on_fire_{{ timer.callback_snake }}, self);
+/* Cancel the timer. Idempotent per the HAL contract. */
+static inline void {{ snake }}_cancel({{ snake }}_t *self) {
+    self->timer->cancel(self->timer);
+}
+{% if reset_on_event %}
+
+/* `<sce:reset-on event="{{ reset_on_event }}"/>` consumer hook —
+ * wire into the host SCXML transition body for this event. */
+static inline void {{ snake }}_on_reset_{{ reset_handler_snake }}({{ snake }}_t *self) {
+    {{ snake }}_cancel(self);
+    {{ snake }}_start(self);
+}
 {% endif %}
-}
+{% if cancel_on_state_exit %}
 
-static inline void {{ snake }}_cancel_{{ timer.id_snake }}({{ snake }}_t *self) {
-    self->{{ timer.id_snake }}_timer->cancel(self->{{ timer.id_snake }}_timer);
+/* `<sce:cancel-on state-exit="{{ cancel_on_state_exit }}"/>` consumer
+ * hook — wire into the host SCXML `<onexit>` for this state. */
+static inline void {{ snake }}_on_cancel_{{ cancel_state_snake }}_exit({{ snake }}_t *self) {
+    {{ snake }}_cancel(self);
 }
-{% endfor %}
+{% endif %}
 
 #endif  /* {{ guard }} */

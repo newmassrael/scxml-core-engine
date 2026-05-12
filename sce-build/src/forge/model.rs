@@ -1738,55 +1738,56 @@ pub struct InterpolationModel {
 
 // ── Timer kind ────────────────────────────────────────────────
 
-/// Timer scheduling type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TimerType {
-    Periodic,
-    Timeout,
-    Delayed,
-}
-
-impl TimerType {
-    pub fn from_attr(s: &str) -> Option<Self> {
-        match s {
-            "periodic" => Some(Self::Periodic),
-            "timeout" => Some(Self::Timeout),
-            "delayed" => Some(Self::Delayed),
-            _ => None,
-        }
-    }
-
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Periodic => "periodic",
-            Self::Timeout => "timeout",
-            Self::Delayed => "delayed",
-        }
-    }
-}
-
-/// A single timer definition within a timer kind.
-#[derive(Debug, Clone, Serialize)]
-pub struct TimerEntry {
-    pub id: String,
-    pub timer_type: TimerType,
-    /// Time in milliseconds (interval for periodic, duration for timeout, delay for delayed).
-    pub time_ms: u32,
-    /// Event name to emit when timer fires.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub event: Option<String>,
-    /// Callback name for timeout expiry (alternative to event).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub on_timeout: Option<String>,
-}
-
-/// Timer: periodic/delayed/timeout task scheduling.
-/// Generates a struct with timer members and start/cancel methods.
+/// Timer kind shape per watching-zenoh RFC §5.D line 880-886.
+///
+/// One timer per forge doc — keepalive, retry, watchdog, etc. The
+/// timer self-manages its lifecycle through `reset_on` (event-driven
+/// restart) and `cancel_on_state_exit` (state-exit-driven cancel),
+/// and emits `fire_event` when the period elapses.
+///
+/// **Pre-C1 legacy shape removed.** Before 2026-05-12, this kind
+/// declared multiple `TimerEntry` records under `<datamodel>` with
+/// `sce:timer="periodic|timeout|delayed"` + integer-millisecond
+/// attributes. The legacy shape did not cover the §5.D semantics
+/// (event-driven reset, state-exit cancel, single named timer per
+/// doc); C1 migrates SCE to the spec-mandated shape per
+/// `feedback_spec_mirror_parity.md` and
+/// `feedback_pre_release_no_compat.md` (pre-1.0 rename permitted).
+///
+/// Codegen contract (RFC §5.D lines 902-906):
+/// - AP: deadline tracker on top of generic event queue
+///   (e.g. `tokio::time::interval` for Rust, `ScheduledExecutorService`
+///   for Kotlin, `time.AfterFunc` for Go, `asyncio.sleep` for Python)
+/// - MCU: compile-time slot in a static timer wheel
+///
+/// Diagnostics (RFC §5.D lines 909-910):
+/// - `timer/period-below-tick-rate` — `period_us` declared shorter
+///   than `scheduler.tick_period_us`; cooperative scheduler cannot
+///   dispatch faster than its tick rate.
+/// - `timer/slot-overflow` — total timer doc count for a machine
+///   exceeds `scheduler.timer_wheel_depth`; the static wheel cannot
+///   hold any more.
 #[derive(Debug, Clone, Serialize)]
 pub struct TimerModel {
+    /// Timer name from `<scxml sce:kind="timer" name="...">`. Used
+    /// as the codegen struct prefix (`<Name>Timer` / `<name>_timer`).
     pub name: String,
-    pub timers: Vec<TimerEntry>,
+    /// Timer period in microseconds (parsed from `<sce:period>` body
+    /// text with unit suffix — `5s` / `100ms` / `30us` / `2m`). u64
+    /// chosen because periods up to ~5800 years fit; u32 microseconds
+    /// would cap at ~71 minutes.
+    pub period_us: u64,
+    /// Event name that resets the timer's deadline when raised.
+    /// `<sce:reset-on event="..."/>` (optional).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reset_on_event: Option<String>,
+    /// State id whose exit cancels the timer.
+    /// `<sce:cancel-on state-exit="..."/>` (optional).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cancel_on_state_exit: Option<String>,
+    /// Event name raised when the timer fires.
+    /// `<sce:fire-event>...</sce:fire-event>` (required).
+    pub fire_event: String,
 }
 
 // ── Observer kind ─────────────────────────────────────────────

@@ -13890,58 +13890,61 @@ fn render_timer(
     let mut ctx = l.base_context(&m.name);
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
-    let timers: Vec<serde_json::Value> = m.timers.iter().map(|t| {
-        let callback = t.event.as_deref()
-            .or(t.on_timeout.as_deref())
-            .unwrap_or(&t.id);
-        serde_json::json!({
-            "id": t.id,
-            "id_pascal": filters::to_pascal_case(t.id.clone()),
-            "id_snake": filters::to_snake_case(t.id.clone()),
-            "timer_type": t.timer_type.as_str(),
-            "time_ms": t.time_ms,
-            "event": t.event,
-            "on_timeout": t.on_timeout,
-            "callback": callback,
-            "callback_pascal": filters::to_pascal_case(callback.to_string()),
-            "callback_snake": filters::to_snake_case(callback.to_string()),
-            "is_periodic": t.timer_type == TimerType::Periodic,
-        })
-    }).collect();
-
-    // Deduplicate callbacks: two timers may target the same handler method,
-    // but the handler trait/concept lists each method exactly once. Insertion-
-    // order preserved (BTreeMap keyed by encounter index) so output is stable.
-    let mut seen = std::collections::BTreeSet::new();
-    let unique_callbacks: Vec<serde_json::Value> = m.timers.iter()
-        .filter_map(|t| {
-            let callback = t.event.as_deref()
-                .or(t.on_timeout.as_deref())
-                .unwrap_or(&t.id)
-                .to_string();
-            if seen.insert(callback.clone()) {
-                Some(serde_json::json!({
-                    "callback": callback.clone(),
-                    "callback_pascal": filters::to_pascal_case(callback.clone()),
-                    "callback_snake": filters::to_snake_case(callback),
-                }))
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    ctx.insert("timers".into(), serde_json::json!(timers));
-    ctx.insert("unique_callbacks".into(), serde_json::json!(unique_callbacks));
+    // Single-timer-per-doc shape per watching-zenoh RFC §5.D line
+    // 880-886. Body-text duration is normalized to microseconds in
+    // the IR; the codegen templates emit milliseconds (period_us /
+    // 1000) for runtime APIs that take ms (Rust `tokio::time::interval`
+    // takes `Duration::from_micros`; C/Cpp HAL accepts ms; Kotlin/Go/
+    // Python emit a duration value with the same unit).
+    let fire_event = m.fire_event.clone();
+    let callback_pascal = filters::to_pascal_case(fire_event.clone());
+    let callback_snake = filters::to_snake_case(fire_event.clone());
+    ctx.insert("period_us".into(), m.period_us.into());
+    ctx.insert(
+        "period_ms".into(),
+        (m.period_us.saturating_div(1_000)).into(),
+    );
+    ctx.insert("fire_event".into(), fire_event.clone().into());
+    ctx.insert("callback_pascal".into(), callback_pascal.into());
+    ctx.insert("callback_snake".into(), callback_snake.into());
+    ctx.insert(
+        "reset_on_event".into(),
+        match m.reset_on_event.as_deref() {
+            Some(s) => s.to_string().into(),
+            None => serde_json::Value::Null,
+        },
+    );
+    ctx.insert(
+        "cancel_on_state_exit".into(),
+        match m.cancel_on_state_exit.as_deref() {
+            Some(s) => s.to_string().into(),
+            None => serde_json::Value::Null,
+        },
+    );
+    if let Some(s) = m.reset_on_event.as_deref() {
+        ctx.insert(
+            "reset_handler_snake".into(),
+            filters::to_snake_case(s.to_string()).into(),
+        );
+        ctx.insert(
+            "reset_handler_pascal".into(),
+            filters::to_pascal_case(s.to_string()).into(),
+        );
+    }
+    if let Some(s) = m.cancel_on_state_exit.as_deref() {
+        ctx.insert(
+            "cancel_state_snake".into(),
+            filters::to_snake_case(s.to_string()).into(),
+        );
+        ctx.insert(
+            "cancel_state_pascal".into(),
+            filters::to_pascal_case(s.to_string()).into(),
+        );
+    }
     ctx.insert("has_imports".into(), has_imports.into());
     ctx.insert("imports".into(), serde_json::to_value(&stateful_imports).unwrap_or_default());
     ctx.insert("all_imports".into(), serde_json::to_value(&all_imports).unwrap_or_default());
 
-    // RFC §5.J.2 Phase E-4: C11 emits a vtable-based ITimer interface +
-    // a function-pointer handler struct + per-timer start/cancel pairs
-    // (no runtime header surface). Adds `<snake>` so emitted typedefs
-    // and trampoline functions are scheduler-prefixed and don't collide
-    // across schedulers sharing a translation unit.
     if matches!(lang, crate::generator::Language::C11) {
         ctx.insert(
             "snake".into(),

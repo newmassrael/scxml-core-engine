@@ -2998,33 +2998,6 @@
       ]
     }
   },
-  "timers": {
-    "timer_diag_scheduler": {
-      "fixture": "TimerDiagScheduler",
-      "signature": "start(handler, timers...) -> registrations",
-      "description": "Diagnostic scheduler: periodic tester-present at 2s, response timeout at 5s, delayed retry at 10s. Conformance verifies that calling start<Timer>() registers the correct timer type and interval with the HAL mock, and that the stored callback dispatches to the correct handler method.",
-      "timers": [
-        {
-          "id": "testerPresent",
-          "type": "periodic",
-          "interval_ms": 2000,
-          "callback": "fireTesterPresent"
-        },
-        {
-          "id": "responseTimeout",
-          "type": "one_shot",
-          "interval_ms": 5000,
-          "callback": "fireHandleTimeout"
-        },
-        {
-          "id": "retryDelay",
-          "type": "one_shot",
-          "interval_ms": 10000,
-          "callback": "fireRetrySecurityAccess"
-        }
-      ]
-    }
-  },
   "string_lookups": {
     "lookup_engine_status": {
       "fixture": "lookup_engine_status",

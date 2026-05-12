@@ -278,6 +278,7 @@ references against a real document and drift silently.
 | `deploy/worker-slot-budget-missing` | `mesh-deploy` | no | watching-zenoh RFC §5.K |
 | `deploy/keepalive-jitter-budget-missing` | `mesh-deploy` | no | watching-zenoh RFC §5.K |
 | `deploy/scheduler-incompatible-with-worker-count` | `mesh-deploy` | no | watching-zenoh RFC §5.K |
+| `timer/slot-overflow` | `mesh-deploy` | no | watching-zenoh RFC §5.D |
 | `mesh/external-read` | `mesh-external` | no | |
 | `mesh/external-parse` | `mesh-external` | no | |
 | `mesh/external-unresolved-names` | `mesh-external` | no | |

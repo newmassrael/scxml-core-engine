@@ -1,4 +1,6 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="timer")
+// Shape: watching-zenoh RFC §5.D line 880-886 — single timer per
+// doc with event-driven reset / state-exit cancel / fire event.
 // Runtime: sce_forge_runtime::hal
 // Do not edit — regenerate from the source SCXML file.
 
@@ -6,57 +8,47 @@ package timer_diag_scheduler
 
 import "github.com/newmassrael/sce-forge-runtime/timer"
 
-// TimerDiagSchedulerHandler is the user-supplied callback interface.
-// Missing methods produce a compile error at the constructor call site —
-// Go's structural interface satisfaction is checked when NewTimerDiagScheduler
-// is invoked, so there is no silent fallback.
+// Period configured at compile time from `<sce:period>`. Microseconds
+// (uint64) cover MCU microsecond ticks through minute-scale watchdogs
+// in one type.
+const (
+	PeriodUs uint64 = 2000000
+	PeriodMs uint32 = 2000
+	ResetOnEvent string = "diag.heartbeat"
+	CancelOnStateExit string = "diag.idle"
+)
+
+// TimerDiagSchedulerHandler is the user-supplied fire callback interface.
 type TimerDiagSchedulerHandler interface {
-	FireTesterPresent()
-	FireHandleTimeout()
-	FireRetrySecurityAccess()
+	FireDiagTick()
 }
 
 type TimerDiagScheduler struct {
 	handler TimerDiagSchedulerHandler
-	testerPresentTimer timer.Timer
-	responseTimeoutTimer timer.Timer
-	retryDelayTimer timer.Timer
+	timer   timer.Timer
 }
 
-func NewTimerDiagScheduler(
-	handler TimerDiagSchedulerHandler,
-	testerPresentTimer timer.Timer,
-	responseTimeoutTimer timer.Timer,
-	retryDelayTimer timer.Timer,
-) *TimerDiagScheduler {
-	return &TimerDiagScheduler{
-		handler: handler,
-		testerPresentTimer: testerPresentTimer,
-		responseTimeoutTimer: responseTimeoutTimer,
-		retryDelayTimer: retryDelayTimer,
-	}
+func NewTimerDiagScheduler(handler TimerDiagSchedulerHandler, t timer.Timer) *TimerDiagScheduler {
+	return &TimerDiagScheduler{handler: handler, timer: t}
 }
 
-func (s *TimerDiagScheduler) StartTesterPresent() {
-	s.testerPresentTimer.StartPeriodic(2000, func() { s.handler.FireTesterPresent() })
+// Start the periodic timer at compile-time `PeriodMs`.
+func (s *TimerDiagScheduler) Start() {
+	s.timer.StartPeriodic(PeriodMs, func() { s.handler.FireDiagTick() })
 }
 
-func (s *TimerDiagScheduler) CancelTesterPresent() {
-	s.testerPresentTimer.Cancel()
+// Cancel the timer. Idempotent per the runtime contract.
+func (s *TimerDiagScheduler) Cancel() {
+	s.timer.Cancel()
 }
 
-func (s *TimerDiagScheduler) StartResponseTimeout() {
-	s.responseTimeoutTimer.StartOneShot(5000, func() { s.handler.FireHandleTimeout() })
+// `<sce:reset-on event="diag.heartbeat"/>` consumer hook.
+func (s *TimerDiagScheduler) OnResetDiagHeartbeat() {
+	s.Cancel()
+	s.Start()
 }
 
-func (s *TimerDiagScheduler) CancelResponseTimeout() {
-	s.responseTimeoutTimer.Cancel()
-}
-
-func (s *TimerDiagScheduler) StartRetryDelay() {
-	s.retryDelayTimer.StartOneShot(10000, func() { s.handler.FireRetrySecurityAccess() })
-}
-
-func (s *TimerDiagScheduler) CancelRetryDelay() {
-	s.retryDelayTimer.Cancel()
+// `<sce:cancel-on state-exit="diag.idle"/>` consumer hook.
+func (s *TimerDiagScheduler) OnCancelDiagIdleExit() {
+	s.Cancel()
 }

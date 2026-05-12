@@ -1068,6 +1068,25 @@ pub enum DeployError {
         tick_period_us: u32,
         worker_slot_budget_us: u32,
     },
+
+    /// A machine declared more Timer docs under `machines.<m>.timers`
+    /// than `scheduler.timer_wheel_depth` can accommodate
+    /// (watching-zenoh RFC §5.D line 910 `timer/slot-overflow`).
+    /// The MCU static timer wheel is sized at compile time; each
+    /// timer slot is one wheel cell.
+    #[error("machine '{machine}': declared {timer_count} timers under \
+             machines.{machine}.timers, but scheduler.timer_wheel_depth = \
+             {wheel_depth} slots cannot accommodate them. watching-zenoh \
+             RFC §5.D line 910 (`timer/slot-overflow`) — the static \
+             timer wheel is sized at compile time. Repair: raise \
+             `scheduler.timer_wheel_depth`, remove excess timers, or \
+             switch to `scheduler.kind: tokio` / `rt` to inherit \
+             host runtime timer scheduling.")]
+    TimerSlotOverflow {
+        machine: String,
+        timer_count: u32,
+        wheel_depth: u32,
+    },
 }
 
 // ── Stage 1b: External infrastructure config ─────────────────
@@ -2336,6 +2355,22 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 slot_count.to_string(),
                 tick_period_us.to_string(),
                 worker_slot_budget_us.to_string(),
+            ],
+        },
+        DeployError::TimerSlotOverflow {
+            machine,
+            timer_count,
+            wheel_depth,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::TimerSlotOverflow,
+            stage: Stage::MeshDeploy,
+            actual: Some(timer_count.to_string()),
+            expected: Some(vec![wheel_depth.to_string()]),
+            fix: None,
+            key_fragments: vec![
+                machine.clone(),
+                timer_count.to_string(),
+                wheel_depth.to_string(),
             ],
         },
     }

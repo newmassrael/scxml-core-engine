@@ -1342,6 +1342,33 @@ pub enum ValidationError {
         /// Target machine that did not list the worker.
         machine: String,
     },
+
+    /// watching-zenoh RFC §5.D line 909
+    /// (`timer/period-below-tick-rate`) — `<sce:period>` declared
+    /// shorter than `scheduler.tick_period_us`. The cooperative
+    /// scheduler cannot dispatch a timer faster than its tick rate.
+    #[error(
+        "timer '{timer_name}': <sce:period> = {period_us} us is shorter \
+         than scheduler.tick_period_us = {tick_period_us} us on machine \
+         '{machine}'. watching-zenoh RFC §5.D line 909 \
+         (`timer/period-below-tick-rate`) — the cooperative scheduler \
+         dispatches at most one timer per tick, so a period below the \
+         tick rate would miss every other deadline. Repair: raise \
+         `<sce:period>` to >= {tick_period_us}us, or lower \
+         `scheduler.tick_period_us` (warning: lowering tick rate \
+         increases scheduler overhead), or switch the target machine \
+         to `scheduler.kind: tokio` / `rt` (preemptive)."
+    )]
+    TimerPeriodBelowTickRate {
+        /// Timer name from `<scxml sce:kind="timer" name="...">`.
+        timer_name: String,
+        /// Target machine whose scheduler tick rate this period falls below.
+        machine: String,
+        /// Period declared in the source SCXML (microseconds).
+        period_us: u64,
+        /// Cooperative scheduler tick period (microseconds).
+        tick_period_us: u32,
+    },
 }
 
 /// watching-zenoh RFC §5.E B7-η' Atomic A2 callback-path failure

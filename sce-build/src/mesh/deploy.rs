@@ -536,6 +536,17 @@ pub struct MachineSchedulerConfig {
     /// downstream check lands with the §5.B aggregate WCET consumer.
     #[serde(default)]
     pub keepalive_jitter_budget_us: Option<u32>,
+    /// Static timer wheel depth — number of timer slots available
+    /// (watching-zenoh RFC §5.D line 904 "compile-time slot in a
+    /// static timer wheel" + line 910 `timer/slot-overflow`).
+    /// Optional at parse time; when present alongside
+    /// `machines.<m>.timers`, the slot-overflow validator
+    /// ([`validate_machine_timer_wheel_capacity`]) fires when
+    /// `timers.len() > timer_wheel_depth`. Absent ⇒ silent-skip
+    /// (Q-η5 (a) precedent — deploy-unaware paths don't have the
+    /// wheel sizing information).
+    #[serde(default)]
+    pub timer_wheel_depth: Option<u32>,
 }
 
 /// Per-machine scheduler kind axis (SCE Mesh §14, watching-zenoh RFC
@@ -596,6 +607,17 @@ pub struct WorkerDeployConfig {
     #[serde(default)]
     pub placement: Option<WorkerPlacementConfig>,
 }
+
+/// Per-machine timer doc descriptor (watching-zenoh RFC §5.D + §5.K,
+/// C1). Authors list every `sce:kind="timer"` doc bound to the
+/// machine; the map's length feeds the static timer wheel slot count
+/// check ([`validate_machine_timer_wheel_capacity`]). The schema
+/// admits an empty struct today so the slot-overflow validator has
+/// a count to compare against without forcing every author to declare
+/// per-timer metadata yet.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct TimerDeployConfig {}
 
 /// SRAM region descriptor (SCE Mesh §14, watching-zenoh RFC §5.K).
 /// Region attributes ride as raw strings at parse time so the schema
@@ -1165,6 +1187,19 @@ pub struct MachineConfig {
     /// (spec line 2423 `deploy/scheduler-incompatible-with-worker-count`).
     #[serde(default)]
     pub workers: HashMap<String, WorkerDeployConfig>,
+
+    /// Per-machine Timer doc registry (watching-zenoh RFC §5.D, C1).
+    /// Keyed by timer name (matches `<scxml sce:kind="timer"
+    /// name="...">`). The map's length feeds the static timer wheel
+    /// slot-overflow check
+    /// ([`validate_machine_timer_wheel_capacity`]).
+    ///
+    /// Absent ⇒ machine declares no timers; the slot-overflow
+    /// validator silent-skips. Present ⇒ slot-overflow fires when
+    /// `timers.len() > scheduler.timer_wheel_depth` (spec line 910
+    /// `timer/slot-overflow`).
+    #[serde(default)]
+    pub timers: HashMap<String, TimerDeployConfig>,
 }
 
 /// Custom deserializer for [`MachineConfig::someip_service_id`].
@@ -1644,6 +1679,7 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_worker_slot_budget_required_when_cooperative(&cfg)?;
     validate_keepalive_jitter_required_when_cooperative(&cfg)?;
     validate_machine_scheduler_worker_capacity(&cfg)?;
+    validate_machine_timer_wheel_capacity(&cfg)?;
 
     Ok(cfg)
 }
@@ -1803,6 +1839,38 @@ fn validate_machine_scheduler_worker_capacity(cfg: &DeployConfig) -> Result<(), 
                     slot_count,
                     tick_period_us,
                     worker_slot_budget_us,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// watching-zenoh RFC §5.D line 910 (`timer/slot-overflow`) — when a
+/// machine declares more `Timer` docs under `machines.<m>.timers` than
+/// `scheduler.timer_wheel_depth` static wheel slots can accommodate,
+/// the build cannot fit the timer set into the wheel at compile time.
+///
+/// Validator silent-skips when:
+/// - `machine.scheduler` is absent (no scheduler declared → no wheel),
+/// - `scheduler.timer_wheel_depth` is absent (Q-η5 (a) precedent —
+///   the deploy doesn't carry wheel sizing yet),
+/// - `machine.timers` is empty (no timers to overflow).
+fn validate_machine_timer_wheel_capacity(cfg: &DeployConfig) -> Result<(), DeployError> {
+    for device in cfg.topology.values() {
+        for (machine_name, machine) in device.machines.iter() {
+            let Some(sched) = machine.scheduler.as_ref() else {
+                continue;
+            };
+            let Some(wheel_depth) = sched.timer_wheel_depth else {
+                continue;
+            };
+            let timer_count = machine.timers.len() as u32;
+            if timer_count > wheel_depth {
+                return Err(DeployError::TimerSlotOverflow {
+                    machine: machine_name.clone(),
+                    timer_count,
+                    wheel_depth,
                 });
             }
         }

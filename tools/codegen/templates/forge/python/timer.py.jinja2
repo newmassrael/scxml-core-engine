@@ -2,6 +2,8 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
 # SCE Forge: Auto-generated from Extended SCXML (sce:kind="timer")
+# Shape: watching-zenoh RFC §5.D line 880-886 — single timer per
+# doc with event-driven reset / state-exit cancel / fire event.
 # Runtime: {{ runtime_dep }}
 # Do not edit — regenerate from the source SCXML file.
 
@@ -10,40 +12,55 @@ from abc import ABC, abstractmethod
 from sce_forge_runtime.timer import Timer
 
 
+# Period configured at compile time from `<sce:period>`. Microseconds
+# (int) cover MCU microsecond ticks through minute-scale watchdogs in
+# one type.
+PERIOD_US: int = {{ period_us }}
+PERIOD_MS: int = {{ period_ms }}
+{% if reset_on_event %}
+RESET_ON_EVENT: str = "{{ reset_on_event }}"
+{% endif %}
+{% if cancel_on_state_exit %}
+CANCEL_ON_STATE_EXIT: str = "{{ cancel_on_state_exit }}"
+{% endif %}
+
+
 class {{ struct_name }}Handler(ABC):
-    """Handler interface for [`{{ struct_name }}`]. The user implements these
-    methods on a state object and passes the instance to `{{ struct_name }}.__init__`.
-    Missing methods raise `TypeError` at handler instantiation time, so there
-    is no silent fallback.
+    """Handler interface for [`{{ struct_name }}`]. The user implements the
+    fire method on a state object and passes the instance to
+    `{{ struct_name }}.__init__`.
     """
 
-{% for cb in unique_callbacks %}
     @abstractmethod
-    def fire_{{ cb.callback_snake }}(self) -> None: ...
-{% endfor %}
+    def fire_{{ callback_snake }}(self) -> None: ...
 
 
 class {{ struct_name }}:
     def __init__(
         self,
         handler: {{ struct_name }}Handler,
-{% for timer in timers %}
-        {{ timer.id_snake }}_timer: Timer,
-{% endfor %}
+        timer: Timer,
     ) -> None:
         self._handler = handler
-{% for timer in timers %}
-        self._{{ timer.id_snake }}_timer = {{ timer.id_snake }}_timer
-{% endfor %}
-{% for timer in timers %}
+        self._timer = timer
 
-    def start_{{ timer.id_snake }}(self) -> None:
-{% if timer.is_periodic %}
-        self._{{ timer.id_snake }}_timer.start_periodic({{ timer.time_ms }}, self._handler.fire_{{ timer.callback_snake }})
-{% else %}
-        self._{{ timer.id_snake }}_timer.start_one_shot({{ timer.time_ms }}, self._handler.fire_{{ timer.callback_snake }})
+    def start(self) -> None:
+        """Start the periodic timer at compile-time PERIOD_MS."""
+        self._timer.start_periodic(PERIOD_MS, self._handler.fire_{{ callback_snake }})
+
+    def cancel(self) -> None:
+        """Cancel the timer. Idempotent per the runtime contract."""
+        self._timer.cancel()
+{% if reset_on_event %}
+
+    def on_reset_{{ reset_handler_snake }}(self) -> None:
+        """`<sce:reset-on event="{{ reset_on_event }}"/>` consumer hook."""
+        self.cancel()
+        self.start()
 {% endif %}
+{% if cancel_on_state_exit %}
 
-    def cancel_{{ timer.id_snake }}(self) -> None:
-        self._{{ timer.id_snake }}_timer.cancel()
-{% endfor %}
+    def on_cancel_{{ cancel_state_snake }}_exit(self) -> None:
+        """`<sce:cancel-on state-exit="{{ cancel_on_state_exit }}"/>` consumer hook."""
+        self.cancel()
+{% endif %}

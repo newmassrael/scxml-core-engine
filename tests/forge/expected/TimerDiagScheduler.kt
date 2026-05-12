@@ -1,4 +1,6 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="timer")
+// Shape: watching-zenoh RFC §5.D line 880-886 — single timer per
+// doc with event-driven reset / state-exit cancel / fire event.
 // Runtime: sce_forge_runtime::hal
 // Do not edit — regenerate from the source SCXML file.
 
@@ -7,44 +9,47 @@ package com.sce.generated.timer_diag_scheduler
 import com.sce.forge.runtime.Timer
 
 /**
- * Handler interface for [TimerDiagScheduler]. The user implements these methods
- * on a state class and passes the instance to the [TimerDiagScheduler] constructor.
- * Missing methods produce a compile-time error, so there is no silent fallback.
+ * Period configured at compile time from `<sce:period>`.
+ * Microseconds; cover MCU microsecond ticks through minute-scale
+ * watchdogs in one type.
+ */
+const val PERIOD_US: Long = 2000000L
+const val PERIOD_MS: Long = 2000L
+const val RESET_ON_EVENT: String = "diag.heartbeat"
+const val CANCEL_ON_STATE_EXIT: String = "diag.idle"
+
+/**
+ * Handler interface for [TimerDiagScheduler]. The user implements the
+ * fire method on a state class and passes the instance to the
+ * [TimerDiagScheduler] constructor.
  */
 interface TimerDiagSchedulerHandler {
-    fun fireTesterPresent()
-    fun fireHandleTimeout()
-    fun fireRetrySecurityAccess()
+    fun fireDiagTick()
 }
 
 class TimerDiagScheduler(
     private val handler: TimerDiagSchedulerHandler,
-    private val testerPresentTimer: Timer,
-    private val responseTimeoutTimer: Timer,
-    private val retryDelayTimer: Timer
+    private val timer: Timer
 ) {
 
-    fun startTesterPresent() {
-        testerPresentTimer.startPeriodic(2000L) { handler.fireTesterPresent() }
+    /** Start the periodic timer at compile-time `PERIOD_MS`. */
+    fun start() {
+        timer.startPeriodic(PERIOD_MS) { handler.fireDiagTick() }
     }
 
-    fun cancelTesterPresent() {
-        testerPresentTimer.cancel()
+    /** Cancel the timer. Idempotent per the runtime contract. */
+    fun cancel() {
+        timer.cancel()
     }
 
-    fun startResponseTimeout() {
-        responseTimeoutTimer.startOneShot(5000L) { handler.fireHandleTimeout() }
+    /** `<sce:reset-on event="diag.heartbeat"/>` consumer hook. */
+    fun onResetDiagHeartbeat() {
+        cancel()
+        start()
     }
 
-    fun cancelResponseTimeout() {
-        responseTimeoutTimer.cancel()
-    }
-
-    fun startRetryDelay() {
-        retryDelayTimer.startOneShot(10000L) { handler.fireRetrySecurityAccess() }
-    }
-
-    fun cancelRetryDelay() {
-        retryDelayTimer.cancel()
+    /** `<sce:cancel-on state-exit="diag.idle"/>` consumer hook. */
+    fun onCancelDiagIdleExit() {
+        cancel()
     }
 }

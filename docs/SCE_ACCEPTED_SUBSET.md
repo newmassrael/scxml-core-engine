@@ -478,6 +478,8 @@ Codes that the author can avoid by writing a better SCXML /
 | `worker/inbox-ordering-unspecified` | Validation |
 | `worker/inbox-ordering-relaxed-across-cores` | Validation |
 | `worker/scheduler-unsupported` | Validation |
+| `timer/period-below-tick-rate` | Validation |
+| `timer/slot-overflow` | Mesh Deploy |
 | `extern/symbol-not-in-whitelist` | Validation |
 | `extern/abi-mismatch` | Validation |
 | `extern/signature-mismatch` | Validation |

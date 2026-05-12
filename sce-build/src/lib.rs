@@ -708,6 +708,50 @@ pub fn compile_forge_with_deploy(
         }
     }
 
+    // C1: forge-side anchor for spec §5.D line 909
+    // (`timer/period-below-tick-rate`). When a Timer doc compiles
+    // against a resolved cooperative-scheduler machine, the timer's
+    // `<sce:period>` MUST be >= `scheduler.tick_period_us` so the
+    // dispatcher can hit every deadline. Silent-skip when:
+    // - deploy or target_machine is absent (Q-η5 (a)),
+    // - the machine has no scheduler block,
+    // - `scheduler.kind` is not cooperative (preemptive runtimes
+    //   own their own dispatch granularity),
+    // - `scheduler.tick_period_us` is absent (the comparison has
+    //   no reference point).
+    if let (Some(cfg), Some(machine_name)) = (deploy, target_machine) {
+        if let forge::model::ForgeDocument::Timer(timer) = &doc {
+            if let Some(machine) = cfg
+                .device_for_machine(machine_name)
+                .and_then(|d| d.machines.get(machine_name))
+            {
+                if let Some(sched) = machine.scheduler.as_ref() {
+                    if matches!(
+                        sched.kind,
+                        mesh::deploy::SchedulerKind::Cooperative
+                    ) {
+                        if let Some(tick_period_us) = sched.tick_period_us {
+                            if timer.period_us < tick_period_us as u64 {
+                                return Err(Located::new(
+                                    ValidationError::TimerPeriodBelowTickRate {
+                                        timer_name: timer.name.clone(),
+                                        machine: machine_name.to_string(),
+                                        period_us: timer.period_us,
+                                        tick_period_us,
+                                    }
+                                    .into(),
+                                    label.diagnostic_label,
+                                    None,
+                                    None,
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // C5: build the cache_platform options threading from the resolved
     // machine's platform block. Fires only on the deploy-aware path
     // (deploy + target_machine + machine.platform all resolved). When

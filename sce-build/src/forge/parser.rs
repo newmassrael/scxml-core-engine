@@ -4890,168 +4890,116 @@ fn parse_interpolation(
 
 // ── Timer parsing ─────────────────────────────────────────────
 
+/// Parse `<sce:period>` body-text with unit suffix (watching-zenoh
+/// RFC §5.D line 881 — `<sce:period>5s</sce:period>`). Accepted
+/// units: `us`, `ms`, `s`, `m`. Returns the period normalized to
+/// microseconds (u64) so a single integer type covers MCU
+/// microsecond ticks and AP minute-scale watchdogs uniformly.
+fn parse_duration_to_us(s: &str) -> Result<u64, String> {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return Err("empty duration string".into());
+    }
+    // Find the unit suffix — scan from the end for the first ASCII
+    // alphabetic character. Numeric portion is everything before.
+    let unit_start = trimmed
+        .char_indices()
+        .find_map(|(i, c)| c.is_ascii_alphabetic().then_some(i))
+        .ok_or_else(|| {
+            format!(
+                "missing unit suffix on '{trimmed}': expected one of us / ms / s / m"
+            )
+        })?;
+    let (number, unit) = trimmed.split_at(unit_start);
+    let n: u64 = number.trim().parse().map_err(|_| {
+        format!("non-integer duration value '{number}'")
+    })?;
+    let multiplier_us: u64 = match unit {
+        "us" => 1,
+        "ms" => 1_000,
+        "s" => 1_000_000,
+        "m" => 60_000_000,
+        other => {
+            return Err(format!(
+                "unsupported duration unit '{other}': expected one of us / ms / s / m"
+            ));
+        }
+    };
+    n.checked_mul(multiplier_us)
+        .ok_or_else(|| format!("duration overflow on '{trimmed}'"))
+}
+
+/// Parse `<scxml sce:kind="timer">` per watching-zenoh RFC §5.D
+/// line 880-886. Single-timer-per-doc shape with body-text durations
+/// and event-driven reset / state-exit cancel lifecycle.
 fn parse_timer(
     root: &roxmltree::Node,
     label: DocumentLabel<'_>,
 ) -> Result<TimerModel, Located<ForgeError>> {
-    let datamodel = find_child(root, "datamodel").ok_or_else(|| {
+    // <sce:period>5s</sce:period> — required body text.
+    let period_node = find_sce_child(root, "period").ok_or_else(|| {
         located(
             root,
             label.diagnostic_label,
             ValidationError::MissingElement {
                 kind: ForgeKind::Timer,
-                element: "datamodel".into(),
+                element: "sce:period".into(),
+            },
+        )
+    })?;
+    let period_text = period_node.text().unwrap_or("").trim().to_string();
+    let period_us = parse_duration_to_us(&period_text).map_err(|detail| {
+        located(
+            &period_node,
+            label.diagnostic_label,
+            ValidationError::NumericParse {
+                element: format!("Timer '{}'", label.identifier),
+                attr: "sce:period (body text)".into(),
+                value: period_text.clone(),
+                detail,
             },
         )
     })?;
 
-    let mut timers = Vec::new();
-
-    for data in data_children(&datamodel) {
-        let timer_str = match sce_attr(&data, "timer") {
-            Some(s) => s,
-            None => continue,
-        };
-
-        let id = data
-            .attribute("id")
-            .ok_or_else(|| {
-                located(
-                    &data,
-                    label.diagnostic_label,
-                    ValidationError::MissingAttribute {
-                        element: "Timer <data>".into(),
-                        attr: "id".into(),
-                    },
-                )
-            })?
-            .to_string();
-
-        let timer_type = TimerType::from_attr(&timer_str).ok_or_else(|| {
-            located(
-                &data,
-                label.diagnostic_label,
-                ValidationError::InvalidAttribute {
-                    element: format!("Timer '{id}'"),
-                    attr: "sce:timer".into(),
-                    value: timer_str.clone(),
-                    expected: "periodic, timeout, delayed".into(),
-                },
-            )
-        })?;
-
-        let time_ms = match timer_type {
-            TimerType::Periodic => {
-                let s = sce_attr(&data, "interval").ok_or_else(|| {
-                    located(
-                        &data,
-                        label.diagnostic_label,
-                        ValidationError::MissingAttribute {
-                            element: format!("Periodic timer '{id}'"),
-                            attr: "sce:interval".into(),
-                        },
-                    )
-                })?;
-                s.parse::<u32>().map_err(|_| {
-                    located(
-                        &data,
-                        label.diagnostic_label,
-                        ValidationError::NumericParse {
-                            element: format!("timer '{id}'"),
-                            attr: "sce:interval".into(),
-                            value: s.clone(),
-                            detail: "expected integer".into(),
-                        },
-                    )
-                })?
-            }
-            TimerType::Timeout => {
-                let s = sce_attr(&data, "duration").ok_or_else(|| {
-                    located(
-                        &data,
-                        label.diagnostic_label,
-                        ValidationError::MissingAttribute {
-                            element: format!("Timeout timer '{id}'"),
-                            attr: "sce:duration".into(),
-                        },
-                    )
-                })?;
-                s.parse::<u32>().map_err(|_| {
-                    located(
-                        &data,
-                        label.diagnostic_label,
-                        ValidationError::NumericParse {
-                            element: format!("timer '{id}'"),
-                            attr: "sce:duration".into(),
-                            value: s.clone(),
-                            detail: "expected integer".into(),
-                        },
-                    )
-                })?
-            }
-            TimerType::Delayed => {
-                let s = sce_attr(&data, "delay").ok_or_else(|| {
-                    located(
-                        &data,
-                        label.diagnostic_label,
-                        ValidationError::MissingAttribute {
-                            element: format!("Delayed timer '{id}'"),
-                            attr: "sce:delay".into(),
-                        },
-                    )
-                })?;
-                s.parse::<u32>().map_err(|_| {
-                    located(
-                        &data,
-                        label.diagnostic_label,
-                        ValidationError::NumericParse {
-                            element: format!("timer '{id}'"),
-                            attr: "sce:delay".into(),
-                            value: s.clone(),
-                            detail: "expected integer".into(),
-                        },
-                    )
-                })?
-            }
-        };
-
-        let event = sce_attr(&data, "event");
-        let on_timeout = sce_attr(&data, "on-timeout");
-
-        if event.is_none() && on_timeout.is_none() {
-            return Err(located(
-                &data,
-                label.diagnostic_label,
-                ValidationError::RequireEither {
-                    element: format!("Timer '{id}'"),
-                    alternatives: vec!["sce:event".into(), "sce:on-timeout".into()],
-                },
-            ));
-        }
-
-        timers.push(TimerEntry {
-            id,
-            timer_type,
-            time_ms,
-            event,
-            on_timeout,
-        });
-    }
-
-    if timers.is_empty() {
-        return Err(located(
-            &datamodel,
+    // <sce:fire-event>X</sce:fire-event> — required body text.
+    let fire_node = find_sce_child(root, "fire-event").ok_or_else(|| {
+        located(
+            root,
             label.diagnostic_label,
-            ValidationError::EmptyCollection {
+            ValidationError::MissingElement {
                 kind: ForgeKind::Timer,
-                what: "<data> with 'sce:timer' attribute".into(),
+                element: "sce:fire-event".into(),
+            },
+        )
+    })?;
+    let fire_event = fire_node.text().unwrap_or("").trim().to_string();
+    if fire_event.is_empty() {
+        return Err(located(
+            &fire_node,
+            label.diagnostic_label,
+            ValidationError::EmptyValue {
+                element: format!("Timer '{}'", label.identifier),
+                attr: "sce:fire-event (body text)".into(),
             },
         ));
     }
 
+    // <sce:reset-on event="X"/> — optional attribute.
+    let reset_on_event = find_sce_child(root, "reset-on")
+        .and_then(|n| n.attribute("event").map(|s| s.to_string()))
+        .filter(|s| !s.is_empty());
+
+    // <sce:cancel-on state-exit="X"/> — optional attribute.
+    let cancel_on_state_exit = find_sce_child(root, "cancel-on")
+        .and_then(|n| n.attribute("state-exit").map(|s| s.to_string()))
+        .filter(|s| !s.is_empty());
+
     Ok(TimerModel {
         name: label.identifier.to_string(),
-        timers,
+        period_us,
+        reset_on_event,
+        cancel_on_state_exit,
+        fire_event,
     })
 }
 

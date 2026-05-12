@@ -915,6 +915,30 @@ pub enum DiagnosticCode {
     #[serde(rename = "worker/scheduler-unsupported")]
     WorkerSchedulerUnsupported,
 
+    // ── §5.D Timer kind diagnostics (watching-zenoh RFC §5.D
+    //    lines 909-910). Both codes fire on the MCU cooperative
+    //    scheduler axis — silent-skip on AP / preemptive targets
+    //    where the runtime owns deadline tracking. ──
+    /// `<sce:period>` declared shorter than `scheduler.tick_period_us`.
+    /// The cooperative scheduler cannot dispatch a timer faster than
+    /// its own tick rate, so a period below the tick rate would miss
+    /// every other deadline. Fired from
+    /// [`crate::compile_forge_with_deploy`] when a Timer doc
+    /// resolves against a `scheduler.kind: cooperative` machine
+    /// with `tick_period_us` declared.
+    #[serde(rename = "timer/period-below-tick-rate")]
+    TimerPeriodBelowTickRate,
+
+    /// Total `Timer` doc count for a machine exceeds
+    /// `scheduler.timer_wheel_depth`. The MCU static timer wheel is
+    /// sized at compile time; declaring more timers than slots
+    /// overflows the wheel. Fired from the deploy.yaml validator
+    /// after counting `machines.<m>.timers.len()`. Silent-skip when
+    /// `timer_wheel_depth` is absent (Q-η5 (a) precedent — deploy-
+    /// unaware paths don't have the wheel sizing information).
+    #[serde(rename = "timer/slot-overflow")]
+    TimerSlotOverflow,
+
     // ── §5.I `<sce:extern>` whitelisted intrinsic registry
     //    (watching-zenoh RFC §5.I, Atomic A). Four spec-verbatim
     //    codes (lines 1847-1850) that fire at parse-time on
@@ -1370,6 +1394,9 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         WorkerInboxOrderingRelaxedAcrossCores,
         // Worker kind scheduler-capacity forge-side anchor (watching-zenoh RFC §5.D, C2-γ)
         WorkerSchedulerUnsupported,
+        // Timer kind diagnostics (watching-zenoh RFC §5.D, C1)
+        TimerPeriodBelowTickRate,
+        TimerSlotOverflow,
         // `<sce:extern>` whitelisted intrinsic registry (watching-zenoh RFC §5.I, Atomic A)
         ExternSymbolNotInWhitelist,
         ExternAbiMismatch,
@@ -1651,7 +1678,9 @@ impl DiagnosticCode {
             //    Forge-side anchor (line 912) lives in §5.D worker
             //    domain; the three deploy-side anchors (line 2423 /
             //    2428-9 / 2430-1) live in §5.K deploy.yaml domain.
-            WorkerSchedulerUnsupported => Some("watching-zenoh RFC §5.D"),
+            WorkerSchedulerUnsupported
+            | TimerPeriodBelowTickRate
+            | TimerSlotOverflow => Some("watching-zenoh RFC §5.D"),
 
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
@@ -1956,6 +1985,8 @@ impl DiagnosticCode {
             WorkerInboxOrderingUnspecified => "worker/inbox-ordering-unspecified",
             WorkerInboxOrderingRelaxedAcrossCores => "worker/inbox-ordering-relaxed-across-cores",
             WorkerSchedulerUnsupported => "worker/scheduler-unsupported",
+            TimerPeriodBelowTickRate => "timer/period-below-tick-rate",
+            TimerSlotOverflow => "timer/slot-overflow",
             ExternSymbolNotInWhitelist => "extern/symbol-not-in-whitelist",
             ExternAbiMismatch => "extern/abi-mismatch",
             ExternSignatureMismatch => "extern/signature-mismatch",
@@ -3391,6 +3422,28 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![worker_name.clone(), machine.clone()],
         },
+        ValidationError::TimerPeriodBelowTickRate {
+            timer_name,
+            machine,
+            period_us,
+            tick_period_us,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::TimerPeriodBelowTickRate,
+            stage: Stage::Validation,
+            // Forge-side anchor for spec §5.D line 909. Per-doc check
+            // when a Timer doc resolves against a cooperative scheduler.
+            // NeutralOrDeterministic — author raises period or lowers
+            // tick rate; no closed candidate.
+            expected: Some(vec![tick_period_us.to_string()]),
+            actual: Some(period_us.to_string()),
+            fix: None,
+            key_fragments: vec![
+                timer_name.clone(),
+                machine.clone(),
+                period_us.to_string(),
+                tick_period_us.to_string(),
+            ],
+        },
         // ── §5.I `<sce:extern>` whitelist rejection (Atomic A) ──
         ValidationError::ExternSymbolNotInWhitelist {
             name,
@@ -4658,6 +4711,22 @@ mod tests {
                 // Hash placeholder — patched by byte-stability assertion.
                 r#"{"v":1,"id":"fnv1a:39f753b9c4918241","code":"worker/scheduler-unsupported","stage":"validation","spec":"watching-zenoh RFC §5.D","message":"worker 'rx_loop': not declared in deploy.yaml under `machines.mcu_node.workers`. watching-zenoh RFC §5.D line 912 (`worker/scheduler-unsupported`) — the cooperative scheduler tracks one tick slot per declared worker; an undeclared worker has no slot. Repair: add `rx_loop:` under `machines.mcu_node.workers:` in deploy.yaml, or remove the Worker doc from the build.","actual":"rx_loop"}"#,
             ),
+            (
+                // RFC §5.D line 909 C1: forge-side anchor. Per-doc
+                // check fires when a Timer doc resolves against a
+                // cooperative-scheduler machine whose
+                // `tick_period_us` exceeds the doc's `period_us`.
+                "forge/timer-period-below-tick-rate",
+                ValidationError::TimerPeriodBelowTickRate {
+                    timer_name: "keepalive".into(),
+                    machine: "mcu_node".into(),
+                    period_us: 500,
+                    tick_period_us: 1000,
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:a84c33faf2495d72","code":"timer/period-below-tick-rate","stage":"validation","spec":"watching-zenoh RFC §5.D","message":"timer 'keepalive': <sce:period> = 500 us is shorter than scheduler.tick_period_us = 1000 us on machine 'mcu_node'. watching-zenoh RFC §5.D line 909 (`timer/period-below-tick-rate`) — the cooperative scheduler dispatches at most one timer per tick, so a period below the tick rate would miss every other deadline. Repair: raise `<sce:period>` to >= 1000us, or lower `scheduler.tick_period_us` (warning: lowering tick rate increases scheduler overhead), or switch the target machine to `scheduler.kind: tokio` / `rt` (preemptive).","expected":["1000"],"actual":"500"}"#,
+            ),
             // ── §5.I `<sce:extern>` whitelisted intrinsic registry (Atomic A) ──
             (
                 // RFC §5.I line 1847: symbol absent from the §5.I baseline
@@ -5916,6 +5985,16 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:f26a225afadc7a9a","code":"deploy/scheduler-incompatible-with-worker-count","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': declared 5 workers under machines.mcu_node.workers, but cooperative scheduler can host only 3 per tick window (derived from tick_period_us 1000 / worker_slot_budget_us 300). watching-zenoh RFC §5.K line 2423 (`deploy/scheduler-incompatible-with-worker-count`). Repair: raise `tick_period_us`, lower `worker_slot_budget_us`, remove excess workers, or switch `scheduler.kind:` to a preemptive host (`tokio` / `rt`).","expected":["3"],"actual":"5"}"#,
             ),
             (
+                "timer/slot-overflow",
+                DeployError::TimerSlotOverflow {
+                    machine: "mcu_node".into(),
+                    timer_count: 5,
+                    wheel_depth: 4,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:f5757abc38261115","code":"timer/slot-overflow","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.D","message":"machine 'mcu_node': declared 5 timers under machines.mcu_node.timers, but scheduler.timer_wheel_depth = 4 slots cannot accommodate them. watching-zenoh RFC §5.D line 910 (`timer/slot-overflow`) — the static timer wheel is sized at compile time. Repair: raise `scheduler.timer_wheel_depth`, remove excess timers, or switch to `scheduler.kind: tokio` / `rt` to inherit host runtime timer scheduling.","expected":["4"],"actual":"5"}"#,
+            ),
+            (
                 "mesh/external-read",
                 ExternalConfigError::Read {
                     path: "vsomeip.json".into(),
@@ -6677,6 +6756,12 @@ mod tests {
             // worker to `deploy.machines.<m>.workers` or removing the
             // Worker doc; no closed candidate list.
             | WorkerSchedulerUnsupported
+            // C1 Timer kind diagnostics (RFC §5.D lines 909-910).
+            // Both are author-judgment repairs: raise the period
+            // above the tick rate, or rebalance the timer count
+            // against the wheel depth. No closed candidate set.
+            | TimerPeriodBelowTickRate
+            | TimerSlotOverflow
             // `<sce:extern>` signature mismatch: deterministic
             // `Fix::Replace` with the canonical sig. The other three
             // codes sit in FixCarriesCandidates above.
@@ -7108,6 +7193,8 @@ mod tests {
                 | WorkerInboxOrderingUnspecified
                 | WorkerInboxOrderingRelaxedAcrossCores
                 | WorkerSchedulerUnsupported
+                | TimerPeriodBelowTickRate
+                | TimerSlotOverflow
                 | ExternSymbolNotInWhitelist
                 | ExternAbiMismatch
                 | ExternSignatureMismatch
@@ -7202,9 +7289,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            209,
+            211,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 209 distinct variants to match the DiagnosticCode \
+             expected 211 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -7398,7 +7485,19 @@ mod tests {
              pre-existing wire `mesh/deploy-scheduler-cooperative-missing-stack-budget` \
              to spec-verbatim `deploy/worker-stack-budget-missing` (§5.K \
              line 2426). Rename is wire-only; variant ident retained. \
-             205 → 209.",
+             205 → 209. Then watching-zenoh RFC §5.D C1 Timer kind \
+             migration adds two spec-named codes: \
+             `timer/period-below-tick-rate` (line 909, period < \
+             scheduler.tick_period_us on cooperative) and \
+             `timer/slot-overflow` (line 910, total Timer doc count \
+             for a machine exceeds scheduler.timer_wheel_depth). \
+             C1 also migrates the legacy multi-timer-per-doc \
+             `<datamodel>/<data sce:timer=\"periodic|timeout|delayed\">` \
+             shape to the spec-mandated single-timer-per-doc shape \
+             with body-text `<sce:period>` (unit suffix us/ms/s/m) + \
+             event-driven `<sce:reset-on>` / state-exit-driven \
+             `<sce:cancel-on>` / required `<sce:fire-event>` \
+             lifecycle. 209 → 211.",
         );
     }
 

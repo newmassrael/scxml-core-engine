@@ -127,6 +127,8 @@
         "worker/inbox-ordering-unspecified",
         "worker/inbox-ordering-relaxed-across-cores",
         "worker/scheduler-unsupported",
+        "timer/period-below-tick-rate",
+        "timer/slot-overflow",
         "extern/symbol-not-in-whitelist",
         "extern/abi-mismatch",
         "extern/signature-mismatch",

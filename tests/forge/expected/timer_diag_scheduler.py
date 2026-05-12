@@ -1,4 +1,6 @@
 # SCE Forge: Auto-generated from Extended SCXML (sce:kind="timer")
+# Shape: watching-zenoh RFC §5.D line 880-886 — single timer per
+# doc with event-driven reset / state-exit cancel / fire event.
 # Runtime: sce_forge_runtime::hal
 # Do not edit — regenerate from the source SCXML file.
 
@@ -7,48 +9,47 @@ from abc import ABC, abstractmethod
 from sce_forge_runtime.timer import Timer
 
 
+# Period configured at compile time from `<sce:period>`. Microseconds
+# (int) cover MCU microsecond ticks through minute-scale watchdogs in
+# one type.
+PERIOD_US: int = 2000000
+PERIOD_MS: int = 2000
+RESET_ON_EVENT: str = "diag.heartbeat"
+CANCEL_ON_STATE_EXIT: str = "diag.idle"
+
+
 class TimerDiagSchedulerHandler(ABC):
-    """Handler interface for [`TimerDiagScheduler`]. The user implements these
-    methods on a state object and passes the instance to `TimerDiagScheduler.__init__`.
-    Missing methods raise `TypeError` at handler instantiation time, so there
-    is no silent fallback.
+    """Handler interface for [`TimerDiagScheduler`]. The user implements the
+    fire method on a state object and passes the instance to
+    `TimerDiagScheduler.__init__`.
     """
 
     @abstractmethod
-    def fire_tester_present(self) -> None: ...
-    @abstractmethod
-    def fire_handle_timeout(self) -> None: ...
-    @abstractmethod
-    def fire_retry_security_access(self) -> None: ...
+    def fire_diag_tick(self) -> None: ...
 
 
 class TimerDiagScheduler:
     def __init__(
         self,
         handler: TimerDiagSchedulerHandler,
-        tester_present_timer: Timer,
-        response_timeout_timer: Timer,
-        retry_delay_timer: Timer,
+        timer: Timer,
     ) -> None:
         self._handler = handler
-        self._tester_present_timer = tester_present_timer
-        self._response_timeout_timer = response_timeout_timer
-        self._retry_delay_timer = retry_delay_timer
+        self._timer = timer
 
-    def start_tester_present(self) -> None:
-        self._tester_present_timer.start_periodic(2000, self._handler.fire_tester_present)
+    def start(self) -> None:
+        """Start the periodic timer at compile-time PERIOD_MS."""
+        self._timer.start_periodic(PERIOD_MS, self._handler.fire_diag_tick)
 
-    def cancel_tester_present(self) -> None:
-        self._tester_present_timer.cancel()
+    def cancel(self) -> None:
+        """Cancel the timer. Idempotent per the runtime contract."""
+        self._timer.cancel()
 
-    def start_response_timeout(self) -> None:
-        self._response_timeout_timer.start_one_shot(5000, self._handler.fire_handle_timeout)
+    def on_reset_diag_heartbeat(self) -> None:
+        """`<sce:reset-on event="diag.heartbeat"/>` consumer hook."""
+        self.cancel()
+        self.start()
 
-    def cancel_response_timeout(self) -> None:
-        self._response_timeout_timer.cancel()
-
-    def start_retry_delay(self) -> None:
-        self._retry_delay_timer.start_one_shot(10000, self._handler.fire_retry_security_access)
-
-    def cancel_retry_delay(self) -> None:
-        self._retry_delay_timer.cancel()
+    def on_cancel_diag_idle_exit(self) -> None:
+        """`<sce:cancel-on state-exit="diag.idle"/>` consumer hook."""
+        self.cancel()
