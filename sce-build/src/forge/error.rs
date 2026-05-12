@@ -1530,6 +1530,123 @@ pub enum ValidationError {
         /// Bounded-collection name from `<scxml sce:kind="bounded-collection" name="...">`.
         collection_name: String,
     },
+
+    /// watching-zenoh RFC §5.L lines 2566-2567 +  2650
+    /// (`collection/element-type-not-a-kind`) — `<sce:element-type>NAME`
+    /// body text does not resolve in the build's forge-doc registry to
+    /// a codec-kind struct (§5.B) or procedure-kind state record. C6-α
+    /// stores the body text as an opaque `String`; C6-β consumes the
+    /// orchestrator-assembled element-type candidate map
+    /// (`HashMap<String, ForgeDocument>` populated only for codec +
+    /// procedure docs during pass-1 of
+    /// [`crate::compile_scxml_with_imports`]) and either fires this
+    /// code (name absent from the map OR present but with an
+    /// incompatible kind — both surface as the same code per Q-Outbox-3
+    /// (b) `*RefUnknown` + `*WrongKind` precedent that split axes only
+    /// when repair surfaces differ; here both axes share the closed
+    /// candidate set so the single code suffices) or returns Ok.
+    ///
+    /// Closed candidate list rides `Fix::ReplaceOneOf` with the sorted
+    /// union of registered codec + procedure doc names. η-precedent:
+    /// [`Self::WorkerOutboxRefUnknown`] uses the same sorted-closed-set
+    /// shape.
+    #[error(
+        "bounded-collection '{collection_name}': <sce:element-type>{element_type}</sce:element-type> does not name a codec-kind struct or procedure-kind state record in this build. \
+         watching-zenoh RFC §5.L line 2566-2567 — element types must reference another forge kind by name (codec for byte-encoded structs, procedure for stateful records). \
+         Declare the element type as a separate `.scxml` document (codec: `<scxml sce:kind=\"codec\" name=\"{element_type}\">`; procedure: `<scxml sce:kind=\"procedure\" name=\"{element_type}\">`), or replace the body text with one of the registered candidates: {candidates_list}."
+    )]
+    CollectionElementTypeNotAKind {
+        /// Bounded-collection name from `<scxml sce:kind="bounded-collection" name="...">`.
+        collection_name: String,
+        /// `<sce:element-type>` body text as authored. Surfaced in the
+        /// message + `actual` so the diagnostic names the failing
+        /// reference verbatim.
+        element_type: String,
+        /// Sorted closed candidate set — every registered codec +
+        /// procedure doc name. Wire payload's `Fix::ReplaceOneOf`
+        /// consumes this verbatim.
+        candidates: Vec<String>,
+        /// Joined comma-space form of `candidates` for the message
+        /// body (matches `WorkerOutboxRefUnknown` shape).
+        candidates_list: String,
+    },
+
+    /// watching-zenoh RFC §5.L line 2615 + 2651
+    /// (`collection/index-by-field-missing`) — `<sce:index-by field="X"/>`
+    /// names a field that does not exist on the resolved element-type
+    /// struct. Fires only when [`Self::CollectionElementTypeNotAKind`]
+    /// would not also fire (suffix-then-owner pattern: element-type
+    /// resolution succeeds first, then field enumeration runs against
+    /// the resolved kind's field set).
+    ///
+    /// Field enumeration mirrors the codec + procedure arms of
+    /// [`crate::discover_stateful_member_fields`] — codec exposes
+    /// `CodecModel.fields[].id`; procedure exposes
+    /// `ProcedureModel.inputs[].id + internals[].id`.
+    ///
+    /// Closed candidate list rides `Fix::ReplaceOneOf` with the sorted
+    /// list of field names from the resolved element-type kind.
+    #[error(
+        "bounded-collection '{collection_name}': <sce:index-by field=\"{field}\"/> names a field that does not exist on element-type '{element_type}' ({element_kind} kind). \
+         watching-zenoh RFC §5.L line 2615 — the `index-by` field enables `find_by_index(IndexKey)` and must name an actual struct field of the element type. \
+         Replace `field=\"{field}\"` with one of the {element_type}'s declared fields: {candidates_list}."
+    )]
+    CollectionIndexByFieldMissing {
+        /// Bounded-collection name from `<scxml sce:kind="bounded-collection" name="...">`.
+        collection_name: String,
+        /// `<sce:index-by field>` value as authored.
+        field: String,
+        /// Element-type name (already verified to resolve in the
+        /// forge-doc registry to a codec or procedure kind — this
+        /// code runs after element-type-not-a-kind passes).
+        element_type: String,
+        /// Slash-path label for the resolved element-type kind
+        /// (`codec` or `procedure`). Surfaced in the message so the
+        /// author sees which field surface applies.
+        element_kind: String,
+        /// Sorted closed candidate set — every declared field of the
+        /// resolved element-type kind.
+        candidates: Vec<String>,
+        /// Joined comma-space form of `candidates` for the message
+        /// body.
+        candidates_list: String,
+    },
+
+    /// watching-zenoh RFC §5.L lines 2560-2562 + 2652
+    /// (`collection/multi-writer-without-atomics`) —
+    /// `<sce:concurrency>multi-writer</sce:concurrency>` declared on a
+    /// bounded-collection without any §5.I atomic intrinsic having been
+    /// imported via `<sce:extern>` anywhere in the build. The spec
+    /// fixes multi-writer to "acquire/release atomics on head/tail",
+    /// so the build's `<sce:extern>` trust-surface must acknowledge
+    /// atomic intrinsics for codegen to legitimately emit them.
+    ///
+    /// Check is build-wide cross-doc per user direction (Gate B Q2
+    /// `C6-β 에 포함, 빌드 단위 cross-doc 검사`): pass-1 of
+    /// [`crate::compile_scxml_with_imports`] aggregates every parsed
+    /// forge doc's `extern_declarations` into a single slice; the
+    /// validator scans for any entry whose registry-resolved purpose
+    /// starts with `"atomic-"` (the C4 atomic A baseline registry
+    /// tags atomic-load / atomic-store / atomic-cas-* / atomic-fetch-*
+    /// uniformly via the [`crate::forge::intrinsic_registry::Symbol::purpose`]
+    /// field). At least one such declaration anywhere in the build
+    /// allows multi-writer; zero declarations fires this code.
+    ///
+    /// No closed candidate set — the C4 baseline registry's atomic
+    /// family is too large (≥101 spans load/store/cas/fetch ×
+    /// 5 widths × multiple orderings) for a useful
+    /// `Fix::ReplaceOneOf`; author judgment chooses the right ordering
+    /// + width. NeutralOrDeterministic non_overlap_class with
+    /// `fix: None`.
+    #[error(
+        "bounded-collection '{collection_name}': <sce:concurrency>multi-writer</sce:concurrency> requires at least one §5.I atomic intrinsic to be declared via <sce:extern> somewhere in this build. \
+         watching-zenoh RFC §5.L lines 2560-2562 — multi-writer codegen lowers to acquire/release atomics on head/tail; the build's <sce:extern> trust-surface must acknowledge atomic intrinsics for codegen to emit them. \
+         Repair: either declare an atomic intrinsic via <sce:extern> (e.g. `<sce:extern name=\"sce_atomic_load_acquire_u32\" sig=\"(*const u32) -> u32\" abi=\"c\"/>` in any forge doc in this build), or change `<sce:concurrency>` to `single-writer`."
+    )]
+    CollectionMultiWriterWithoutAtomics {
+        /// Bounded-collection name from `<scxml sce:kind="bounded-collection" name="...">`.
+        collection_name: String,
+    },
 }
 
 /// watching-zenoh RFC §5.E B7-η' Atomic A2 callback-path failure

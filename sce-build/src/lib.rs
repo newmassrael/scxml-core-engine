@@ -1302,10 +1302,30 @@ pub fn compile_scxml_with_imports(
     // cannot run until pass 2 finishes registering SCXML statechart
     // names (workers may route their outbox to statechart inboxes per
     // Q-Outbox-3 (b)).
+    //
+    // Bounded-collection docs + codec/procedure docs + aggregated
+    // extern_declarations are captured for the C6-β cross-doc
+    // resolution pass (`validate_bounded_collection_cross_refs`). The
+    // `SceCrossDocRegistry` reserves SCXML-cross-reference semantics
+    // for Link / Statechart / Worker kinds (those that SCXML
+    // documents may reference via `<sce:on-sample>` /
+    // `<sce:outbox>`), while codec + procedure participate only in
+    // forge→forge cross-references as bounded-collection element
+    // types — so the C6-β surface lives on a dedicated map per Gate B
+    // user direction 2026-05-13.
     let mut cross_doc = SceCrossDocRegistry::new();
     let mut pool_reg = ForgePoolRegistry::new();
     let mut workers_for_outbox: Vec<(String, forge::model::WorkerModel)> =
         Vec::new();
+    let mut bounded_collections_for_xref: Vec<(
+        String,
+        forge::model::BoundedCollectionModel,
+    )> = Vec::new();
+    let mut element_type_candidates: std::collections::HashMap<
+        String,
+        forge::model::ForgeDocument,
+    > = std::collections::HashMap::new();
+    let mut all_extern_declarations: Vec<forge::model::ExternDeclaration> = Vec::new();
 
     for forge_path in forge_files {
         let path_str = forge_path.to_str().unwrap_or("");
@@ -1368,12 +1388,41 @@ pub fn compile_scxml_with_imports(
                 None,
             )
         })?;
-        // Capture Worker docs for the C2 follow-up Atomic B outbox
-        // cross-resolution pass. Non-worker forge docs (link / codec /
-        // algorithm / buffer-pool / timer / extern sidecars) silently
-        // skip — they have no `<sce:outbox>` field.
-        if let forge::model::ForgeDocument::Worker(worker) = parsed.document {
-            workers_for_outbox.push((basename.to_string(), worker));
+        // Aggregate every parsed doc's extern_declarations into the
+        // build-wide slice consumed by the C6-β multi-writer atomic-
+        // import check. The spec contract is "atomic imports must
+        // exist somewhere in the build", so the union across all
+        // forge docs is the relevant surface; per-doc isolation would
+        // force authors to redeclare atomics in every BC doc, which
+        // contradicts the §5.I trust-surface design.
+        all_extern_declarations.extend(parsed.extern_declarations.iter().cloned());
+
+        // Capture per-kind for downstream cross-doc validators. The
+        // C2 follow-up Atomic B outbox path needs workers; the C6-β
+        // path needs bounded-collections (subject docs) + codec /
+        // procedure (element-type candidates). Other forge docs (link
+        // / algorithm / buffer-pool / timer / transform / condition /
+        // lookup / interpolation / filter / observer / validator)
+        // silently skip — they have no role in either cross-doc
+        // surface.
+        match parsed.document {
+            forge::model::ForgeDocument::Worker(worker) => {
+                workers_for_outbox.push((basename.to_string(), worker));
+            }
+            forge::model::ForgeDocument::BoundedCollection(bc) => {
+                bounded_collections_for_xref.push((basename.to_string(), bc));
+            }
+            doc @ (forge::model::ForgeDocument::Codec(_)
+            | forge::model::ForgeDocument::Procedure(_)) => {
+                // Element-type candidate map keyed by doc name; name
+                // uniqueness across the build is already enforced by
+                // `cross_doc.record_document` above (different kinds
+                // sharing a name collide there). `insert` is safe —
+                // duplicates are unreachable.
+                let key = doc.name().to_string();
+                element_type_candidates.insert(key, doc);
+            }
+            _ => {}
         }
     }
 
@@ -1429,6 +1478,24 @@ pub fn compile_scxml_with_imports(
     // (basename) so the diagnostic anchor points at the worker doc
     // that wrote the offending `<sce:outbox>`.
     validate_worker_outbox_references(&workers_for_outbox, &cross_doc)?;
+
+    // ── C6 Atomic β bounded-collection cross-doc resolution ──
+    //
+    // Runs after pass-1 captures all parsed forge docs (so
+    // `element_type_candidates` + `all_extern_declarations` are
+    // populated) and after worker outbox so cross-doc validators run
+    // in spec-section order (§5.D outbox before §5.L bounded-
+    // collection). Independent of SCXML statechart registration — the
+    // C6-β surface is forge→forge entirely (codec/procedure element
+    // types + atomic-purpose `<sce:extern>` declarations), so it
+    // does not depend on pass-2's statechart-name population. Failing
+    // here short-circuits codegen pass-3, matching the worker outbox
+    // pattern.
+    validate_bounded_collection_cross_refs(
+        &bounded_collections_for_xref,
+        &element_type_candidates,
+        &all_extern_declarations,
+    )?;
 
     // Pass 3: codegen. Forge docs route through `compile_forge_with_imports`
     // (which re-parses + runs forge-internal cross-resolution + emits);
@@ -2104,6 +2171,171 @@ fn validate_worker_outbox_references(
                     None,
                 ));
             }
+        }
+    }
+    Ok(())
+}
+
+/// watching-zenoh RFC §5.L C6 Atomic β (Q1 user direction
+/// 2026-05-13: separate forge-doc map for codec/procedure
+/// element-type candidates; Q2 user direction: build-wide cross-doc
+/// scan for atomic intrinsic imports). Three failure axes per spec
+/// lines 2566-2567 + 2615 + 2560-2562:
+///
+/// * `collection/element-type-not-a-kind` — body text of
+///   `<sce:element-type>NAME` does not resolve in `element_type_candidates`
+///   (the orchestrator-assembled `HashMap<String, ForgeDocument>` of
+///   codec + procedure docs only). Closed candidate list rides
+///   `Fix::ReplaceOneOf`.
+/// * `collection/index-by-field-missing` — `<sce:index-by field=\"X\"/>`
+///   names a field absent from the resolved element-type's struct.
+///   Field enumeration mirrors [`discover_stateful_member_fields`]'s
+///   codec + procedure arms (`CodecModel.fields[].id` for codecs,
+///   `ProcedureModel.inputs[].id + .internals[].id` for procedures).
+/// * `collection/multi-writer-without-atomics` — `<sce:concurrency>`
+///   declared as `multi-writer` while the build's aggregated
+///   `extern_declarations` slice contains no entry whose registry-
+///   resolved purpose starts with `\"atomic-\"`. The C4 atomic A
+///   baseline registry tags `atomic-load` / `atomic-store` /
+///   `atomic-cas-*` / `atomic-fetch-*` uniformly via the
+///   [`forge::intrinsic_registry::Symbol::purpose`] field, so a single
+///   prefix scan covers the entire family.
+///
+/// Element-type resolution runs first (suffix-then-owner mirror of
+/// [`validate_worker_outbox_references`]); index-by enumeration only
+/// fires when element-type resolves to a candidate. Multi-writer runs
+/// independently — it does not depend on element-type resolving
+/// because the spec contract is "atomic imports must exist in the
+/// build" regardless of whether the element type is well-formed.
+///
+/// The one-error-at-a-time wire policy means a doc with both an
+/// unknown element-type and a missing index-by field surfaces only
+/// the element-type failure on the first build cycle. After the
+/// element-type is fixed, the next build cycle catches the index-by
+/// field. Multi-writer is reported separately when the BC's
+/// `concurrency` mode is `MultiWriter` and the atomic-import surface
+/// is empty.
+///
+/// Called by [`compile_scxml_with_imports`] in pass-2 (after pass-1
+/// captures the parsed forge docs and aggregates externs) and before
+/// pass-3 codegen so a failing build fails early. Empty
+/// `bounded_collections` returns Ok with no work — the orchestrator
+/// callsite is a no-op for builds without any BC docs.
+fn validate_bounded_collection_cross_refs(
+    bounded_collections: &[(String, forge::model::BoundedCollectionModel)],
+    element_type_candidates: &std::collections::HashMap<String, forge::model::ForgeDocument>,
+    extern_declarations: &[forge::model::ExternDeclaration],
+) -> Result<(), forge::error::Located<forge::error::ForgeError>> {
+    use forge::error::{Located, ValidationError};
+    use forge::model::{ConcurrencyMode, ForgeDocument};
+
+    // Pre-compute the sorted closed candidate set once (used by both
+    // element-type-not-a-kind and the index-by validator that depends
+    // on element-type resolution). The map iteration order is
+    // unspecified, so we sort on every call — the cost is bounded by
+    // the number of codec + procedure docs in the build (typically
+    // <50) and keeps the wire payload deterministic.
+    let mut element_type_names: Vec<String> = element_type_candidates
+        .keys()
+        .cloned()
+        .collect();
+    element_type_names.sort();
+
+    // Pre-compute the build-wide atomic-import surface answer once —
+    // every BC checks against the same global slice. The C4 atomic A
+    // baseline registry tags load/store/cas-weak/cas-strong/fetch
+    // uniformly via `purpose: "atomic-<op>"`, so a single prefix scan
+    // covers the entire family. Symbols absent from the baseline
+    // registry (would-be plugin extensions) are silently skipped — a
+    // plugin author who wires an atomic-family symbol still benefits
+    // from declaring the appropriate purpose tag at registry merge
+    // time per C4 atomic B's plugin loader contract.
+    let build_has_atomic_import = extern_declarations.iter().any(|decl| {
+        forge::intrinsic_registry::lookup_symbol(&decl.name)
+            .map(|sym| sym.purpose.starts_with("atomic-"))
+            .unwrap_or(false)
+    });
+
+    for (diag_label, bc) in bounded_collections {
+        // ── Element-type kind resolution axis ──
+        match element_type_candidates.get(bc.element_type.as_str()) {
+            Some(doc) => {
+                // ── Index-by field enumeration axis (runs only when
+                //    element-type resolves; otherwise the user must
+                //    fix element-type first per one-error-at-a-time
+                //    wire policy). ──
+                if let Some(field) = bc.index_by.as_ref() {
+                    let (element_kind, mut field_candidates) = match doc {
+                        ForgeDocument::Codec(m) => {
+                            let names: Vec<String> =
+                                m.fields.iter().map(|f| f.id.clone()).collect();
+                            ("codec".to_string(), names)
+                        }
+                        ForgeDocument::Procedure(m) => {
+                            let names: Vec<String> = m
+                                .inputs
+                                .iter()
+                                .map(|f| f.id.clone())
+                                .chain(m.internals.iter().map(|f| f.id.clone()))
+                                .collect();
+                            ("procedure".to_string(), names)
+                        }
+                        // Unreachable: `element_type_candidates` is
+                        // populated only for codec + procedure docs in
+                        // pass-1 of `compile_scxml_with_imports`. Other
+                        // ForgeDocument variants never enter the map.
+                        _ => continue,
+                    };
+                    if !field_candidates.iter().any(|f| f == field) {
+                        field_candidates.sort();
+                        let candidates_list = field_candidates.join(", ");
+                        return Err(Located::new(
+                            ValidationError::CollectionIndexByFieldMissing {
+                                collection_name: bc.name.clone(),
+                                field: field.clone(),
+                                element_type: bc.element_type.clone(),
+                                element_kind,
+                                candidates: field_candidates,
+                                candidates_list,
+                            }
+                            .into(),
+                            diag_label.clone(),
+                            None,
+                            None,
+                        ));
+                    }
+                }
+            }
+            None => {
+                let candidates_list = element_type_names.join(", ");
+                return Err(Located::new(
+                    ValidationError::CollectionElementTypeNotAKind {
+                        collection_name: bc.name.clone(),
+                        element_type: bc.element_type.clone(),
+                        candidates: element_type_names.clone(),
+                        candidates_list,
+                    }
+                    .into(),
+                    diag_label.clone(),
+                    None,
+                    None,
+                ));
+            }
+        }
+
+        // ── Multi-writer atomic-import surface axis ──
+        if matches!(bc.concurrency, ConcurrencyMode::MultiWriter)
+            && !build_has_atomic_import
+        {
+            return Err(Located::new(
+                ValidationError::CollectionMultiWriterWithoutAtomics {
+                    collection_name: bc.name.clone(),
+                }
+                .into(),
+                diag_label.clone(),
+                None,
+                None,
+            ));
         }
     }
     Ok(())

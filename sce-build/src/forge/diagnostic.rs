@@ -1014,6 +1014,37 @@ pub enum DiagnosticCode {
     #[serde(rename = "collection/overflow-policy-oldest-wins-requires-ordering-insertion")]
     CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion,
 
+    /// `<sce:element-type>NAME</sce:element-type>` body text does not
+    /// resolve to a codec-kind struct or procedure-kind state record
+    /// anywhere in the build's forge-doc set. Spec line 2566-2567
+    /// restricts element types to these two kinds. Cross-doc validator
+    /// in C6-β consumes the orchestrator-assembled element-type
+    /// candidate map (`HashMap<String, ForgeDocument>` populated only
+    /// for codec + procedure docs). Closed candidate set rides
+    /// `Fix::ReplaceOneOf` ⇒ FixCarriesCandidates non_overlap_class.
+    #[serde(rename = "collection/element-type-not-a-kind")]
+    CollectionElementTypeNotAKind,
+
+    /// `<sce:index-by field="X"/>` names a field that does not exist
+    /// on the resolved element-type struct (codec.fields or
+    /// procedure.inputs + internals). Spec line 2615 fixes
+    /// `find_by_index` to a declared struct field. Closed candidate
+    /// set (sorted field names from the resolved element type) rides
+    /// `Fix::ReplaceOneOf` ⇒ FixCarriesCandidates non_overlap_class.
+    #[serde(rename = "collection/index-by-field-missing")]
+    CollectionIndexByFieldMissing,
+
+    /// `<sce:concurrency>multi-writer</sce:concurrency>` declared
+    /// without any §5.I atomic intrinsic having been imported via
+    /// `<sce:extern>` anywhere in the build. Spec lines 2560-2562 fix
+    /// multi-writer codegen to acquire/release atomics on head/tail;
+    /// the build's `<sce:extern>` trust-surface must acknowledge
+    /// atomic intrinsics. No closed candidate set — the C4 baseline
+    /// atomic family is too large for a useful `Fix::ReplaceOneOf`,
+    /// so `fix: None` ⇒ NeutralOrDeterministic non_overlap_class.
+    #[serde(rename = "collection/multi-writer-without-atomics")]
+    CollectionMultiWriterWithoutAtomics,
+
     // ── §5.D Timer kind diagnostics (watching-zenoh RFC §5.D
     //    lines 909-910). Both codes fire on the MCU cooperative
     //    scheduler axis — silent-skip on AP / preemptive targets
@@ -1506,6 +1537,10 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // Bounded-collection kind parse-time structure validators (watching-zenoh RFC §5.L, C6-α)
         CollectionOrderingSortedRequiresIndexBy,
         CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion,
+        // Bounded-collection kind cross-doc resolution (watching-zenoh RFC §5.L, C6-β)
+        CollectionElementTypeNotAKind,
+        CollectionIndexByFieldMissing,
+        CollectionMultiWriterWithoutAtomics,
         // Timer kind diagnostics (watching-zenoh RFC §5.D, C1)
         TimerPeriodBelowTickRate,
         TimerSlotOverflow,
@@ -1805,12 +1840,19 @@ impl DiagnosticCode {
 
             // ── §5.L Bounded-collection kind parse-time structure
             //    validators (watching-zenoh RFC §5.L lines 2540-2655,
-            //    C6-α). Both codes are XML-structure-only — the sorted
-            //    ordering requires an explicit `<sce:index-by>` field
-            //    (spec line 2559), and `oldest-wins` overflow requires
-            //    `insertion` ordering (spec line 2655).
+            //    C6-α + C6-β). C6-α codes are XML-structure-only — the
+            //    sorted ordering requires an explicit `<sce:index-by>`
+            //    field (spec line 2559), and `oldest-wins` overflow
+            //    requires `insertion` ordering (spec line 2655). C6-β
+            //    codes are cross-doc — element-type kind resolution
+            //    (lines 2566-2567), index-by field enumeration
+            //    (line 2615), multi-writer atomic-import surface
+            //    (lines 2560-2562). All five sit on §5.L.
             CollectionOrderingSortedRequiresIndexBy
-            | CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion => {
+            | CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion
+            | CollectionElementTypeNotAKind
+            | CollectionIndexByFieldMissing
+            | CollectionMultiWriterWithoutAtomics => {
                 Some("watching-zenoh RFC §5.L")
             }
 
@@ -2138,6 +2180,9 @@ impl DiagnosticCode {
             WorkerOutboxTargetSuffixInvalid => "worker/outbox-target-suffix-invalid",
             CollectionOrderingSortedRequiresIndexBy => "collection/ordering-sorted-requires-index-by",
             CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion => "collection/overflow-policy-oldest-wins-requires-ordering-insertion",
+            CollectionElementTypeNotAKind => "collection/element-type-not-a-kind",
+            CollectionIndexByFieldMissing => "collection/index-by-field-missing",
+            CollectionMultiWriterWithoutAtomics => "collection/multi-writer-without-atomics",
             TimerPeriodBelowTickRate => "timer/period-below-tick-rate",
             TimerSlotOverflow => "timer/slot-overflow",
             ExternSymbolNotInWhitelist => "extern/symbol-not-in-whitelist",
@@ -3675,6 +3720,69 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![collection_name.clone()],
         },
+        // ── §5.L Bounded-collection cross-doc resolution (C6-β) ──
+        ValidationError::CollectionElementTypeNotAKind {
+            collection_name,
+            element_type,
+            candidates,
+            candidates_list: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CollectionElementTypeNotAKind,
+            stage: Stage::Validation,
+            // `actual` carries the authored element-type body text so the
+            // diagnostic surfaces what was written; closed candidate list
+            // (sorted codec + procedure name union) rides
+            // `Fix::ReplaceOneOf`. η-precedent: `WorkerOutboxRefUnknown`
+            // carries the same shape.
+            expected: None,
+            actual: Some(element_type.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![collection_name.clone(), element_type.clone()],
+        },
+        ValidationError::CollectionIndexByFieldMissing {
+            collection_name,
+            field,
+            element_type,
+            element_kind,
+            candidates,
+            candidates_list: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CollectionIndexByFieldMissing,
+            stage: Stage::Validation,
+            // `actual` carries the authored field name (the failing
+            // reference); resolved element-type + kind ride
+            // `key_fragments` for byte-stable test discrimination from
+            // sibling cross-doc failures. FixCarriesCandidates over the
+            // sorted field name list of the resolved kind.
+            expected: None,
+            actual: Some(field.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![
+                collection_name.clone(),
+                element_type.clone(),
+                element_kind.clone(),
+                field.clone(),
+            ],
+        },
+        ValidationError::CollectionMultiWriterWithoutAtomics {
+            collection_name,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CollectionMultiWriterWithoutAtomics,
+            stage: Stage::Validation,
+            // No closed candidate set — atomic family is too large
+            // (100+ symbols across load/store/cas/fetch × widths ×
+            // orderings) for `Fix::ReplaceOneOf` to be useful. Author
+            // picks width + ordering + op from the §5.I baseline per
+            // their use case. NeutralOrDeterministic.
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![collection_name.clone()],
+        },
         ValidationError::TimerPeriodBelowTickRate {
             timer_name,
             machine,
@@ -5096,6 +5204,64 @@ mod tests {
                 .into(),
                 // Hash placeholder — byte-stability assertion patches.
                 r#"{"v":1,"id":"fnv1a:31723798e4ccd410","code":"collection/overflow-policy-oldest-wins-requires-ordering-insertion","stage":"validation","spec":"watching-zenoh RFC §5.L","message":"bounded-collection 'local_sub_table': <sce:on-overflow>oldest-wins</sce:on-overflow> requires <sce:ordering>insertion</sce:ordering>, but ordering is `sorted-by(index-by)`. watching-zenoh RFC §5.L line 2655 lists this combination as the explicit anti-pattern: `oldest-wins` presumes a temporal ordering that `sorted-by` replaces with the `index-by` field comparator. Repair: change `<sce:ordering>` to `insertion` (keeps the oldest-wins policy), or change `<sce:on-overflow>` to `reject` / `diagnostic-event`."}"#,
+            ),
+            // ── §5.L Bounded-collection cross-doc resolution (C6-β) ──
+            (
+                // RFC §5.L lines 2566-2567: element-type body text does
+                // not resolve to a codec-kind struct or procedure-kind
+                // state record. FixCarriesCandidates — sorted codec +
+                // procedure name union rides Fix::ReplaceOneOf.
+                "forge/collection-element-type-not-a-kind",
+                ValidationError::CollectionElementTypeNotAKind {
+                    collection_name: "local_sub_table".into(),
+                    element_type: "subscrription_entry".into(),
+                    candidates: vec![
+                        "router_handle".into(),
+                        "subscription_entry".into(),
+                    ],
+                    candidates_list:
+                        "router_handle, subscription_entry".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:653bda4f395fa2f4","code":"collection/element-type-not-a-kind","stage":"validation","spec":"watching-zenoh RFC §5.L","message":"bounded-collection 'local_sub_table': <sce:element-type>subscrription_entry</sce:element-type> does not name a codec-kind struct or procedure-kind state record in this build. watching-zenoh RFC §5.L line 2566-2567 — element types must reference another forge kind by name (codec for byte-encoded structs, procedure for stateful records). Declare the element type as a separate `.scxml` document (codec: `<scxml sce:kind=\"codec\" name=\"subscrription_entry\">`; procedure: `<scxml sce:kind=\"procedure\" name=\"subscrription_entry\">`), or replace the body text with one of the registered candidates: router_handle, subscription_entry.","actual":"subscrription_entry","fix":{"kind":"replace_one_of","candidates":["router_handle","subscription_entry"]}}"#,
+            ),
+            (
+                // RFC §5.L line 2615: index-by field absent from the
+                // resolved element-type struct (codec.fields[].id or
+                // procedure.inputs[].id + internals[].id enumeration).
+                // FixCarriesCandidates over the sorted field name list.
+                "forge/collection-index-by-field-missing",
+                ValidationError::CollectionIndexByFieldMissing {
+                    collection_name: "local_sub_table".into(),
+                    field: "key_id".into(),
+                    element_type: "subscription_entry".into(),
+                    element_kind: "codec".into(),
+                    candidates: vec![
+                        "callback_id".into(),
+                        "key_expr_id".into(),
+                    ],
+                    candidates_list:
+                        "callback_id, key_expr_id".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:4a9fd47c8aae2381","code":"collection/index-by-field-missing","stage":"validation","spec":"watching-zenoh RFC §5.L","message":"bounded-collection 'local_sub_table': <sce:index-by field=\"key_id\"/> names a field that does not exist on element-type 'subscription_entry' (codec kind). watching-zenoh RFC §5.L line 2615 — the `index-by` field enables `find_by_index(IndexKey)` and must name an actual struct field of the element type. Replace `field=\"key_id\"` with one of the subscription_entry's declared fields: callback_id, key_expr_id.","actual":"key_id","fix":{"kind":"replace_one_of","candidates":["callback_id","key_expr_id"]}}"#,
+            ),
+            (
+                // RFC §5.L lines 2560-2562: multi-writer concurrency
+                // declared without any §5.I atomic intrinsic imported
+                // via `<sce:extern>` anywhere in the build. No closed
+                // candidate set — the C4 baseline atomic family is too
+                // large for `Fix::ReplaceOneOf`; author chooses width +
+                // ordering + op. NeutralOrDeterministic, no Fix.
+                "forge/collection-multi-writer-without-atomics",
+                ValidationError::CollectionMultiWriterWithoutAtomics {
+                    collection_name: "local_sub_table".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:b944cb27eabbfac8","code":"collection/multi-writer-without-atomics","stage":"validation","spec":"watching-zenoh RFC §5.L","message":"bounded-collection 'local_sub_table': <sce:concurrency>multi-writer</sce:concurrency> requires at least one §5.I atomic intrinsic to be declared via <sce:extern> somewhere in this build. watching-zenoh RFC §5.L lines 2560-2562 — multi-writer codegen lowers to acquire/release atomics on head/tail; the build's <sce:extern> trust-surface must acknowledge atomic intrinsics for codegen to emit them. Repair: either declare an atomic intrinsic via <sce:extern> (e.g. `<sce:extern name=\"sce_atomic_load_acquire_u32\" sig=\"(*const u32) -> u32\" abi=\"c\"/>` in any forge doc in this build), or change `<sce:concurrency>` to `single-writer`."}"#,
             ),
             // ── §5.I `<sce:extern>` whitelisted intrinsic registry (Atomic A) ──
             (
@@ -7091,7 +7257,16 @@ mod tests {
             //   unique repair) and rides `NeutralOrDeterministic`
             //   below.
             | WorkerOutboxRefUnknown
-            | WorkerOutboxTargetWrongKind => FixCarriesCandidates,
+            | WorkerOutboxTargetWrongKind
+            // ── C6-β Bounded-collection cross-doc resolution ──
+            //   Two of the three β codes carry a closed candidate
+            //   list (sorted codec + procedure name union for element-
+            //   type-not-a-kind; sorted field-name list for index-by-
+            //   field-missing). The third (multi-writer-without-atomics)
+            //   has no useful closed set across the C4 baseline's
+            //   atomic family and rides `NeutralOrDeterministic` below.
+            | CollectionElementTypeNotAKind
+            | CollectionIndexByFieldMissing => FixCarriesCandidates,
 
             // ── `expected` carries non-repair metadata ────────
             ExpressionParseMismatch | MeshExternalAmbiguousEventGroup => ExpectedIsMetadata,
@@ -7198,6 +7373,13 @@ mod tests {
             //   single canonical candidate → NeutralOrDeterministic.
             | CollectionOrderingSortedRequiresIndexBy
             | CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion
+            // C6-β multi-writer without atomic imports: the C4 baseline
+            // atomic family spans 100+ symbols (load/store/cas/fetch ×
+            // 5 widths × multiple orderings) so a `Fix::ReplaceOneOf`
+            // candidate list would be neither useful nor compact —
+            // author chooses width + ordering + op based on their use
+            // case. `fix: None` ⇒ NeutralOrDeterministic.
+            | CollectionMultiWriterWithoutAtomics
             // C1 Timer kind diagnostics (RFC §5.D lines 909-910).
             // Both are author-judgment repairs: raise the period
             // above the tick rate, or rebalance the timer count
@@ -7653,6 +7835,9 @@ mod tests {
                 | WorkerOutboxTargetSuffixInvalid
                 | CollectionOrderingSortedRequiresIndexBy
                 | CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion
+                | CollectionElementTypeNotAKind
+                | CollectionIndexByFieldMissing
+                | CollectionMultiWriterWithoutAtomics
                 | TimerPeriodBelowTickRate
                 | TimerSlotOverflow
                 | ExternSymbolNotInWhitelist
@@ -7749,9 +7934,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            220,
+            223,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 220 distinct variants to match the DiagnosticCode \
+             expected 223 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -8009,7 +8194,59 @@ mod tests {
              whole-module gated to `!no_std`). Both ride \
              `NeutralOrDeterministic` non_overlap_class for the same \
              reason as the B-β pair — drop `--no-std` or remove the \
-             construct, no closed candidate set. 216 → 218.",
+             construct, no closed candidate set. 216 → 218. Then \
+             watching-zenoh RFC §5.L C6 Atomic α bounded-collection kind \
+             — two parse-time structure validators from spec lines 2559 \
+             + 2655: `collection/ordering-sorted-requires-index-by` \
+             (sorted-by ordering declared without an accompanying \
+             `<sce:index-by>` element — codegen has no comparator) and \
+             `collection/overflow-policy-oldest-wins-requires-ordering-\
+             insertion` (oldest-wins overflow paired with sorted-by \
+             ordering — \"oldest\" has no temporal meaning when iteration \
+             order is comparator-derived). Both ride \
+             `NeutralOrDeterministic` non_overlap_class (sorted: author \
+             must name a field from author-domain knowledge; \
+             oldest-wins: two equally valid repair paths means no single \
+             canonical candidate). C6-α schema lock ships \
+             `<sce:element-type>` / `<sce:capacity source=deploy|const>` / \
+             `<sce:index-by field>` / `<sce:on-overflow>` / `<sce:ordering>` \
+             / `<sce:concurrency>` body with cross-doc resolution + \
+             deploy-time + codegen surfaces deferred to β/γ; 218 → 220. \
+             Then watching-zenoh RFC §5.L C6 Atomic β bounded-collection \
+             cross-doc resolution — three codes from spec lines 2566-2567 \
+             + 2615 + 2560-2562 closing the cross-doc layer C6-α \
+             deferred: `collection/element-type-not-a-kind` for \
+             `<sce:element-type>NAME` body text that does not resolve to \
+             a codec-kind struct or procedure-kind state record \
+             anywhere in the build, and `collection/index-by-field-\
+             missing` for `<sce:index-by field=\"X\"/>` naming a field \
+             absent from the resolved element-type's struct (codec \
+             `.fields[].id` or procedure `.inputs[].id + .internals[].id` \
+             enumeration mirroring `discover_stateful_member_fields`). \
+             Both ride `Fix::ReplaceOneOf` over the sorted candidate \
+             union — codec + procedure name set for element-type, \
+             declared field-name set for index-by — so \
+             FixCarriesCandidates non_overlap_class follows the C2-\
+             outbox B `worker/outbox-ref-unknown` precedent for sorted-\
+             closed-candidate diagnostics. Third code \
+             `collection/multi-writer-without-atomics` (RFC §5.L lines \
+             2560-2562 — multi-writer codegen lowers to acquire/release \
+             atomics on head/tail; the build's `<sce:extern>` trust-\
+             surface must acknowledge atomic intrinsics) is build-wide \
+             cross-doc per user direction: pass-1 of \
+             `compile_scxml_with_imports` aggregates every parsed forge \
+             doc's `extern_declarations` into a single slice; the \
+             validator scans for any entry whose registry-resolved \
+             purpose starts with `\"atomic-\"`. NeutralOrDeterministic \
+             non_overlap_class — the C4 baseline atomic family spans \
+             100+ symbols (load/store/cas/fetch × 5 widths × multiple \
+             orderings) so a useful candidate list is impossible; author \
+             judgment chooses width + ordering + op. Cross-doc validator \
+             consumes a separate forge-doc map per Gate B finding (the \
+             `SceCrossDocRegistry` reserves SCXML-cross-reference \
+             semantics for Link / Statechart / Worker kinds, while \
+             codec / procedure participate only in forge→forge cross-\
+             references); 220 → 223.",
         );
     }
 

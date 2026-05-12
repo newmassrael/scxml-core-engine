@@ -483,6 +483,9 @@ Codes that the author can avoid by writing a better SCXML /
 | `worker/outbox-target-suffix-invalid` | Validation |
 | `collection/ordering-sorted-requires-index-by` | Validation |
 | `collection/overflow-policy-oldest-wins-requires-ordering-insertion` | Validation |
+| `collection/element-type-not-a-kind` | Validation |
+| `collection/index-by-field-missing` | Validation |
+| `collection/multi-writer-without-atomics` | Validation |
 | `timer/period-below-tick-rate` | Validation |
 | `timer/slot-overflow` | Mesh Deploy |
 | `extern/symbol-not-in-whitelist` | Validation |
