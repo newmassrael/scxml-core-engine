@@ -66,6 +66,7 @@
 
 pub mod engine;
 pub mod event;
+pub mod hal;
 pub mod helpers;
 pub mod http;
 pub mod invoke;
@@ -75,6 +76,7 @@ pub mod scripting;
 // Public re-exports — the primary API surface
 pub use engine::Engine;
 pub use event::{EventMetadata, EventType, EventWithMetadata};
+pub use hal::{Hal, NoOpHal, StdHal};
 pub use http::{HttpSendRequest, HttpSendResponse};
 pub use policy::StatePolicy;
 pub use scripting::{IScriptEngine, ScriptEngineProvider, ScriptError, ScriptResult, ScriptValue};
