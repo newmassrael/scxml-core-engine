@@ -1,0 +1,103 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+/* SCE Forge: Auto-generated from Extended SCXML (sce:kind="worker") */
+/* Runtime: sce-c-runtime atomics (sce_atomic_*_u32 family). */
+/* Do not edit — regenerate from the source SCXML file. */
+/*
+ * watching-zenoh RFC §5.D worker primitive: SPSC inbox driven by a
+ * link-rx source (`<sce:link-rx ref="{{ link_rx }}"/>`) feeding a
+ * concurrent execution context on cooperative-scheduler MCUs. Spec
+ * line 904: "inbox = heapless::spsc (Rust) or fixed ring buffer (C)".
+ * This header declares the opaque `_t` family + thin function
+ * prototypes; the `.c` sibling carries the ring-buffer storage and
+ * impl bodies.
+ *
+ * RFC §5.I lines 1752-1758 ordering choice: `ordering="{{ inbox_ordering }}"`
+ * pins the head/tail atomic operations to either acq/rel or relaxed
+ * variants of the §5.I baseline `sce_atomic_*_u32` family (C4 atomic
+ * A registry). Cross-core placement with `relaxed` raises
+ * `worker/inbox-ordering-relaxed-across-cores` at codegen time when
+ * deploy.placement is supplied.
+ *
+ * Event payload is a uint32_t tag — SCE-side MVP shape. Integration
+ * code maps SCXML event names ↔ uint32_t tags out-of-band. Future
+ * extension widens the payload via a deploy.yaml event-type registry.
+ *
+ * Generated from `name="{{ name }}"` with depth `{{ inbox_depth }}`,
+ * ordering `{{ inbox_ordering }}`, link-rx `{{ link_rx }}`,
+{%- if has_outbox %}
+ * outbox `{{ outbox }}`.
+{%- else %}
+ * outbox absent.
+{%- endif %}
+ */
+
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Inbox depth (`<sce:inbox depth="{{ inbox_depth }}"/>`). */
+#define {{ upper_name }}_INBOX_DEPTH ((size_t){{ inbox_depth }})
+
+/* SPSC ordering choice (`<sce:inbox ordering="{{ inbox_ordering }}"/>`).
+ * Constant carries the author's choice as a stable wire token so
+ * downstream tooling can introspect without re-parsing SCXML. */
+#define {{ upper_name }}_INBOX_ORDERING "{{ inbox_ordering }}"
+
+/* Driving link kind name (`<sce:link-rx ref="{{ link_rx }}"/>`). */
+#define {{ upper_name }}_LINK_RX "{{ link_rx }}"
+
+{%- if has_outbox %}
+/* Recipient inbox path (`<sce:outbox ref="{{ outbox }}"/>`). */
+#define {{ upper_name }}_OUTBOX "{{ outbox }}"
+{%- endif %}
+
+/* Opaque producer handle — pin-passed to `_try_push`. Backed by the
+ * single storage block declared in the sibling `.c` translation unit;
+ * `_split` returns a producer + consumer pair carved out of that
+ * block (the SPSC contract: one producer, one consumer, disjoint
+ * method sets per Q-C2-8 (b) lock). */
+typedef struct {{ snake_name }}_inbox_producer_s {{ snake_name }}_inbox_producer_t;
+
+/* Opaque consumer handle — pin-passed to `_try_pop`. Mirror of the
+ * producer half. */
+typedef struct {{ snake_name }}_inbox_consumer_s {{ snake_name }}_inbox_consumer_t;
+
+/* Acquire the producer handle for the worker's inbox. Returns the
+ * same pointer on repeated calls (the storage is `static` in the
+ * sibling `.c`); the SPSC contract requires the caller to hand the
+ * pointer to at most one driver path. */
+{{ snake_name }}_inbox_producer_t *{{ snake_name }}_inbox_producer(void);
+
+/* Acquire the consumer handle. Mirror of `_producer`. */
+{{ snake_name }}_inbox_consumer_t *{{ snake_name }}_inbox_consumer(void);
+
+/* Push `event` onto the inbox. Returns `false` when the inbox is
+ * full so the caller can apply backpressure (drop, retry, signal-
+ * overflow per the link's `<sce:backpressure>` policy). Atomic
+ * ordering on head/tail matches the `ordering="{{ inbox_ordering }}"`
+ * choice via the §5.I baseline atomic family. */
+bool {{ snake_name }}_inbox_try_push(
+    {{ snake_name }}_inbox_producer_t *producer, uint32_t event);
+
+/* Pop the next event into `*out`. Returns `false` when the inbox is
+ * empty; `*out` is unchanged in that case. */
+bool {{ snake_name }}_inbox_try_pop(
+    {{ snake_name }}_inbox_consumer_t *consumer, uint32_t *out);
+
+/* Capacity in elements — equals `{{ upper_name }}_INBOX_DEPTH`. */
+size_t {{ snake_name }}_inbox_capacity(void);
+
+#ifdef __cplusplus
+}  /* extern "C" */
+#endif
+
+#endif /* {{ guard }} */

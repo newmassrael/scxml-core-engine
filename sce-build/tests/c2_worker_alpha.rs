@@ -15,7 +15,7 @@
 
 use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
 use sce_build::forge::error::{ForgeError, Located, ValidationError, WorkerSharedStateReason};
-use sce_build::forge::model::{ForgeDocument, ForgeKind, InboxConfig, WorkerModel};
+use sce_build::forge::model::{ForgeDocument, ForgeKind, InboxConfig, InboxOrdering, WorkerModel};
 use sce_build::forge::parser::parse_forge;
 use sce_build::DocumentLabel;
 
@@ -48,7 +48,7 @@ fn worker_minimal_schema_parses() {
        xmlns:sce="http://sce.dev/ext"
        sce:kind="worker" name="rx_loop" version="1.0">
   <sce:link-rx ref="udp_scout"/>
-  <sce:inbox depth="16"/>
+  <sce:inbox depth="16" ordering="acq_rel"/>
 </scxml>"##;
     let w = parse(xml, "rx_loop").expect("minimal worker parses");
     assert_eq!(w.name, "rx_loop");
@@ -66,7 +66,7 @@ fn worker_full_schema_parses() {
        xmlns:sce="http://sce.dev/ext"
        sce:kind="worker" name="rx_loop" version="1.0">
   <sce:link-rx ref="udp_scout"/>
-  <sce:inbox depth="32"/>
+  <sce:inbox depth="32" ordering="acq_rel"/>
   <sce:outbox ref="session_fsm.inbox"/>
   <sce:body/>
 </scxml>"##;
@@ -84,7 +84,7 @@ fn worker_missing_link_rx_rejected() {
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="worker" name="rx_loop" version="1.0">
-  <sce:inbox depth="16"/>
+  <sce:inbox depth="16" ordering="acq_rel"/>
 </scxml>"##;
     let err = parse(xml, "rx_loop").expect_err("missing link-rx must reject");
     match err.error {
@@ -159,7 +159,7 @@ fn worker_import_kind_worker_fires_layer1_guard() {
        sce:kind="worker" name="rx_loop" version="1.0">
   <sce:import as="tx_loop" src="tx_loop.scxml" kind="worker"/>
   <sce:link-rx ref="udp_scout"/>
-  <sce:inbox depth="16"/>
+  <sce:inbox depth="16" ordering="acq_rel"/>
 </scxml>"##;
     let err = parse(xml, "rx_loop").expect_err("worker-kind import must reject");
     match &err.error {
@@ -206,7 +206,7 @@ fn worker_import_kind_worker_minimal_attrs_fires_layer1() {
        sce:kind="worker" name="rx_loop" version="1.0">
   <sce:import kind="worker"/>
   <sce:link-rx ref="udp_scout"/>
-  <sce:inbox depth="16"/>
+  <sce:inbox depth="16" ordering="acq_rel"/>
 </scxml>"##;
     let err = parse(xml, "rx_loop").expect_err("alias-less worker import must reject");
     match &err.error {
@@ -243,7 +243,7 @@ fn worker_import_non_worker_kind_does_not_fire_layer1() {
        sce:kind="worker" name="rx_loop" version="1.0">
   <sce:import as="udp_codec" src="udp.scxml" kind="codec"/>
   <sce:link-rx ref="udp_scout"/>
-  <sce:inbox depth="16"/>
+  <sce:inbox depth="16" ordering="acq_rel"/>
 </scxml>"##;
     let w = parse(xml, "rx_loop").expect("non-worker import is fine");
     assert_eq!(w.name, "rx_loop");
@@ -259,7 +259,7 @@ fn worker_body_assign_to_foreign_namespace_fires_layer2() {
        xmlns:sce="http://sce.dev/ext"
        sce:kind="worker" name="rx_loop" version="1.0">
   <sce:link-rx ref="udp_scout"/>
-  <sce:inbox depth="16"/>
+  <sce:inbox depth="16" ordering="acq_rel"/>
   <sce:body>
     <assign location="other_worker.counter" expr="0"/>
   </sce:body>
@@ -293,7 +293,7 @@ fn worker_body_event_data_refs_pass_layer2() {
        xmlns:sce="http://sce.dev/ext"
        sce:kind="worker" name="rx_loop" version="1.0">
   <sce:link-rx ref="udp_scout"/>
-  <sce:inbox depth="16"/>
+  <sce:inbox depth="16" ordering="acq_rel"/>
   <sce:body>
     <assign location="_event.data" expr="42"/>
   </sce:body>
@@ -310,7 +310,7 @@ fn worker_body_self_namespace_passes_layer2() {
        xmlns:sce="http://sce.dev/ext"
        sce:kind="worker" name="rx_loop" version="1.0">
   <sce:link-rx ref="udp_scout"/>
-  <sce:inbox depth="16"/>
+  <sce:inbox depth="16" ordering="acq_rel"/>
   <sce:body>
     <assign location="rx_loop.counter" expr="0"/>
   </sce:body>
@@ -328,7 +328,7 @@ fn worker_outbox_target_prefix_passes_layer2() {
        xmlns:sce="http://sce.dev/ext"
        sce:kind="worker" name="rx_loop" version="1.0">
   <sce:link-rx ref="udp_scout"/>
-  <sce:inbox depth="16"/>
+  <sce:inbox depth="16" ordering="acq_rel"/>
   <sce:outbox ref="session_fsm.inbox"/>
   <sce:body>
     <send target="session_fsm.inbox" event="rx.tick"/>
@@ -348,7 +348,7 @@ fn worker_body_numeric_literal_does_not_fire_layer2() {
        xmlns:sce="http://sce.dev/ext"
        sce:kind="worker" name="rx_loop" version="1.0">
   <sce:link-rx ref="udp_scout"/>
-  <sce:inbox depth="16"/>
+  <sce:inbox depth="16" ordering="acq_rel"/>
   <sce:body>
     <assign location="rx_loop.x" expr="3.14"/>
   </sce:body>
@@ -368,7 +368,7 @@ fn worker_shared_state_layers_share_diagnostic_code() {
        sce:kind="worker" name="w1" version="1.0">
   <sce:import as="w2" src="w2.scxml" kind="worker"/>
   <sce:link-rx ref="l"/>
-  <sce:inbox depth="1"/>
+  <sce:inbox depth="1" ordering="acq_rel"/>
 </scxml>"##;
     let err1 = parse(xml1, "w1").expect_err("layer 1");
     assert!(matches!(
@@ -382,7 +382,7 @@ fn worker_shared_state_layers_share_diagnostic_code() {
        xmlns:sce="http://sce.dev/ext"
        sce:kind="worker" name="w1" version="1.0">
   <sce:link-rx ref="l"/>
-  <sce:inbox depth="1"/>
+  <sce:inbox depth="1" ordering="acq_rel"/>
   <sce:body><assign location="foo.bar" expr="0"/></sce:body>
 </scxml>"##;
     let err2 = parse(xml2, "w1").expect_err("layer 2");
@@ -411,7 +411,7 @@ fn worker_model_field_shape_is_stable() {
        xmlns:sce="http://sce.dev/ext"
        sce:kind="worker" name="rx_loop" version="1.0">
   <sce:link-rx ref="udp_scout"/>
-  <sce:inbox depth="8"/>
+  <sce:inbox depth="8" ordering="acq_rel"/>
 </scxml>"##;
     let w = parse(xml, "rx_loop").unwrap();
     // Walk through the exhaustive field set to surface any drop or
@@ -419,11 +419,12 @@ fn worker_model_field_shape_is_stable() {
     let WorkerModel {
         name,
         link_rx,
-        inbox: InboxConfig { depth },
+        inbox: InboxConfig { depth, ordering },
         outbox,
     } = w;
     assert_eq!(name, "rx_loop");
     assert_eq!(link_rx, "udp_scout");
     assert_eq!(depth, 8);
+    assert_eq!(ordering, InboxOrdering::AcqRel);
     assert_eq!(outbox, None);
 }

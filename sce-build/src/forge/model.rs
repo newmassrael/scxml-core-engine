@@ -2492,21 +2492,61 @@ pub struct BufferPoolModel {
 
 // ── Worker kind ────────────────────────────────────────────────
 
-/// `<sce:inbox>` configuration — RFC §5.D line 894. SPSC ring-buffer
-/// inbox shape; per Q-C2-8 lock, the producer/consumer split is the
-/// type-level FSM (`heapless::spsc::{Producer,Consumer}` on Rust;
-/// opaque `sce_inbox_{producer,consumer}_t` family on C11). No
-/// separate FSM IR module — slot lifecycle is 2-state (free/in-use),
-/// degenerate compared to BufferPool's 7-state DMA lifecycle.
+/// SPSC inbox ordering choice (RFC §5.I lines 1752-1758, C2-β). Drives
+/// the atomic operations emitted on head/tail indices in both Rust and
+/// C11 codegen. `AcqRel` is the safe default (every push/pop pairs
+/// acquire+release on the index); `Relaxed` is the single-core
+/// fast-path (no inter-thread synchronization). Cross-core placement +
+/// `Relaxed` fires `worker/inbox-ordering-relaxed-across-cores` at
+/// codegen time per spec line 1755-1756.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum InboxOrdering {
+    /// `ordering="acq_rel"` — atomic load_acquire on head/tail reads,
+    /// atomic store_release on writes. Required for any inbox whose
+    /// producer + consumer halves are pinned to different cores.
+    AcqRel,
+    /// `ordering="relaxed"` — atomic load_relaxed / store_relaxed on
+    /// head/tail. Single-core fast-path; cross-core placement with
+    /// this choice raises `worker/inbox-ordering-relaxed-across-cores`.
+    Relaxed,
+}
+
+impl std::fmt::Display for InboxOrdering {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::AcqRel => write!(f, "acq_rel"),
+            Self::Relaxed => write!(f, "relaxed"),
+        }
+    }
+}
+
+/// `<sce:inbox>` configuration — RFC §5.D line 894 + §5.I lines
+/// 1752-1758. SPSC ring-buffer inbox shape; per Q-C2-8 lock, the
+/// producer/consumer split is the type-level FSM
+/// (`heapless::spsc::{Producer,Consumer}` on Rust; opaque
+/// `sce_inbox_{producer,consumer}_t` family on C11). No separate FSM
+/// IR module — slot lifecycle is 2-state (free/in-use), degenerate
+/// compared to BufferPool's 7-state DMA lifecycle.
 ///
-/// C2-α schema: only `depth` attribute (spec verbatim). Ordering
-/// choice + cross-core placement codes land in C2-β codegen atomic.
+/// C2-α schema: only `depth` attribute (spec verbatim). C2-β adds the
+/// `ordering` attribute as required (RFC §5.I lines 1757-1758 spec-
+/// verbatim per `feedback_spec_mirror_parity.md`; SCE's error-only
+/// wire realizes the spec "warning, codegen defaults to acq/rel" as
+/// a required-when-worker-exists error so the author makes an
+/// explicit choice before codegen emits ambiguous atomic ops).
 /// MPSC variant deferred until consumer signal (RFC §6 tracked).
 #[derive(Debug, Clone, Serialize)]
 pub struct InboxConfig {
     /// `<sce:inbox depth="N"/>` attribute body — fixed ring-buffer
     /// depth. Parser rejects 0. Spec line 894 verbatim attribute form.
     pub depth: u32,
+    /// `<sce:inbox ordering="acq_rel|relaxed"/>` (RFC §5.I lines
+    /// 1752-1758). Required at parse time; absence fires
+    /// `worker/inbox-ordering-unspecified`. Codegen wires the chosen
+    /// memory ordering into the head/tail atomic operations on both
+    /// Rust + C11 backends.
+    pub ordering: InboxOrdering,
 }
 
 /// Worker document — RFC §5.D concurrent execution context driven

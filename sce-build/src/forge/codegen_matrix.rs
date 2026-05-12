@@ -150,16 +150,19 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
             Language::Rust | Language::C11 => true,
             Language::Cpp | Language::Kotlin | Language::Go | Language::Python => false,
         },
-        // RFC §5.D Worker: C2-α is schema-only (parser + parse-time
-        // author guard `worker/shared-mutable-state`); codegen
-        // templates (Rust `worker.rs.jinja2` + C11 `worker.{h,c}.jinja2`)
-        // ship in C2-β as a dual-emit atomic per Q-C2-1 (a) lock.
-        // `false` on both Rust + C11 today documents "no shipped
-        // template" without falsely claiming emission; `kind_class`
-        // ahead of this lookup keeps cpp/kotlin/go/python MCU-class-
-        // rejected regardless.
+        // RFC §5.D Worker: C2-β ships dual-emit codegen on Rust +
+        // C11 per Q-C2-1 (a) lock. Rust template uses a self-contained
+        // SPSC ring buffer (spec line 904 author intent was
+        // `heapless::spsc` but C2-β stays no-external-crate to match
+        // the C11 ring-buffer side; ordering choice from
+        // `<sce:inbox ordering="...">` drives `Ordering::Acquire/Release`
+        // vs `Ordering::Relaxed` selection). C11 template emits the
+        // opaque `sce_inbox_producer_t` / `sce_inbox_consumer_t` family
+        // backed by `sce_atomic_*_u32` intrinsics from C4 atomic A's
+        // baseline registry. cpp/kotlin/go/python remain MCU-class-
+        // rejected by `kind_class` ahead of this lookup.
         ForgeKind::Worker => match lang {
-            Language::Rust | Language::C11 => false,
+            Language::Rust | Language::C11 => true,
             Language::Cpp | Language::Kotlin | Language::Go | Language::Python => false,
         },
     }

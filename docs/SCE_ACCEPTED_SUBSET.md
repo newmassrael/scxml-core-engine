@@ -474,6 +474,9 @@ Codes that the author can avoid by writing a better SCXML /
 | `pool/sample-take-without-stage-pool` | Validation |
 | `pool/sample-callback-signature-non-borrow` | Validation |
 | `worker/shared-mutable-state` | Validation |
+| `worker/link-rx-ref-unknown` | Validation |
+| `worker/inbox-ordering-unspecified` | Validation |
+| `worker/inbox-ordering-relaxed-across-cores` | Validation |
 | `extern/symbol-not-in-whitelist` | Validation |
 | `extern/abi-mismatch` | Validation |
 | `extern/signature-mismatch` | Validation |

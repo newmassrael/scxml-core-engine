@@ -9209,19 +9209,10 @@ pub fn generate_rust_with_imports_and_externs(
         // Phantom-typed `Slot<state>` API + 7-state lifecycle FSM
         // defer to B7-γ.
         ForgeDocument::BufferPool(m) => render_buffer_pool_rust(&env, m, imports, options)?,
-        // RFC §5.D Worker: C2-α is schema-only (parse-time author guard
-        // for `worker/shared-mutable-state` is the lone consumer of the
-        // parsed model). Codegen ships in C2-β as a dual-emit atomic
-        // (Rust `worker.rs.jinja2` using `heapless::spsc::{Producer,
-        // Consumer}` + C11 `worker.{h,c}.jinja2` opaque `sce_inbox_*`
-        // pair). `codegen_matrix::template_ships` returns `false` for
-        // Worker on every backend today, so `codegen_matrix::check`
-        // raises `codegen/generic-kind-backend-emit-missing` ahead of
-        // this match; the arm exists only to keep the exhaustive match
-        // honest.
-        ForgeDocument::Worker(_) => unreachable!(
-            "ForgeDocument::Worker rejected by codegen_matrix::check on rust (template ships in C2-β)"
-        ),
+        // RFC §5.D Worker C2-β: SPSC inbox ring buffer + Producer/
+        // Consumer split. Ordering choice from `<sce:inbox ordering>`
+        // pins the atomic Op selection.
+        ForgeDocument::Worker(m) => render_worker_rust(&env, m, imports)?,
     };
 
     let filename = format!("{}.rs", filters::to_snake_case(doc.name().to_string()));
@@ -9365,6 +9356,47 @@ fn render_buffer_pool_rust(
     })
 }
 
+/// Render a `<sce:kind="worker">` document for the Rust backend
+/// (watching-zenoh RFC §5.D, C2-β). Emits a self-contained SPSC ring
+/// buffer with the inbox depth from `<sce:inbox depth>` baked in as a
+/// `const` and the ordering choice from `<sce:inbox ordering>` driving
+/// `Ordering::Acquire`/`Release` vs `Ordering::Relaxed` selection on
+/// head/tail atomic operations. The Producer/Consumer split is the
+/// type-level FSM per Q-C2-8 (b) lock; both halves are emitted as
+/// distinct structs with disjoint method sets (`try_push` on Producer,
+/// `try_pop` on Consumer).
+fn render_worker_rust(
+    env: &minijinja::Environment<'_>,
+    m: &WorkerModel,
+    _imports: &[ImportContext],
+) -> Result<String, ForgeError> {
+    let tmpl = env
+        .get_template("worker.rs.jinja2")
+        .map_err(|e| ForgeError::Generate(GenerateError::TemplateLoad(format!(
+            "worker.rs.jinja2 (rust): {e}"
+        ))))?;
+    let ordering_is_acq_rel = m.inbox.ordering == InboxOrdering::AcqRel;
+    let ctx = minijinja::context! {
+        name => &m.name,
+        pascal_name => filters::to_pascal_case(m.name.clone()),
+        snake_name => filters::to_snake_case(m.name.clone()),
+        inbox_depth => m.inbox.depth,
+        inbox_ordering => m.inbox.ordering.to_string(),
+        // Boolean drives the ordering-constants block in the template
+        // (Acquire/Release vs Relaxed). The string form rides ORDERING
+        // const for downstream introspection.
+        ordering_is_acq_rel => ordering_is_acq_rel,
+        link_rx => &m.link_rx,
+        outbox => m.outbox.clone().unwrap_or_default(),
+        has_outbox => m.outbox.is_some(),
+    };
+    tmpl.render(ctx).map_err(|e| {
+        ForgeError::Generate(GenerateError::TemplateRender(format!(
+            "worker.rs.jinja2 (rust): {e}"
+        )))
+    })
+}
+
 /// Render a `<sce:kind="link">` document for the C11 backend
 /// (watching-zenoh RFC §5.C, B6-β). Mirrors `render_link_rust` but
 /// emits a header that composes a `sce_forge_link_t` driver handle
@@ -9411,6 +9443,81 @@ fn render_link_c(
             "link.h.jinja2 (c11): {e}"
         )))
     })
+}
+
+/// Render the `.h` header for a `<sce:kind="worker">` document on the
+/// C11 backend (watching-zenoh RFC §5.D, C2-β). Declares the opaque
+/// `_inbox_producer_t` / `_inbox_consumer_t` family + thin function
+/// prototypes. The `.c` sibling carries the ring-buffer storage and
+/// impl bodies (`render_worker_c_impl`) — both files emit in a single
+/// dispatcher pass per the buffer-pool `.h` + `.ld` precedent.
+fn render_worker_c_header(
+    env: &minijinja::Environment<'_>,
+    m: &WorkerModel,
+    _imports: &[ImportContext],
+) -> Result<String, ForgeError> {
+    let tmpl = env
+        .get_template("worker.h.jinja2")
+        .map_err(|e| ForgeError::Generate(GenerateError::TemplateLoad(format!(
+            "worker.h.jinja2 (c11): {e}"
+        ))))?;
+    let snake_name = filters::to_snake_case(m.name.clone());
+    let upper_name = to_upper_snake(&m.name);
+    let guard = format!("SCE_FORGE_{}_H", &upper_name);
+    let ctx = minijinja::context! {
+        name => &m.name,
+        snake_name => snake_name,
+        upper_name => upper_name,
+        guard => guard,
+        inbox_depth => m.inbox.depth,
+        inbox_ordering => m.inbox.ordering.to_string(),
+        link_rx => &m.link_rx,
+        outbox => m.outbox.clone().unwrap_or_default(),
+        has_outbox => m.outbox.is_some(),
+    };
+    tmpl.render(ctx).map_err(|e| {
+        ForgeError::Generate(GenerateError::TemplateRender(format!(
+            "worker.h.jinja2 (c11): {e}"
+        )))
+    })
+}
+
+/// Render the `.c` impl translation unit for a `<sce:kind="worker">`
+/// document. Carries the ring-buffer storage (`static volatile uint32_t
+/// g_storage[DEPTH]` + head/tail atomics) and the impl bodies for
+/// `_try_push` / `_try_pop`. The ordering choice from `<sce:inbox
+/// ordering>` selects the `sce_atomic_*_acquire_u32` /
+/// `sce_atomic_*_release_u32` vs `_relaxed_u32` baseline atomic
+/// variants. Returns `(filename, content)` so the dispatcher can push
+/// it onto `GeneratedOutput.files` alongside the `.h` header.
+fn render_worker_c_impl(
+    env: &minijinja::Environment<'_>,
+    m: &WorkerModel,
+    _imports: &[ImportContext],
+) -> Result<(String, String), ForgeError> {
+    let tmpl = env
+        .get_template("worker.c.jinja2")
+        .map_err(|e| ForgeError::Generate(GenerateError::TemplateLoad(format!(
+            "worker.c.jinja2 (c11): {e}"
+        ))))?;
+    let snake_name = filters::to_snake_case(m.name.clone());
+    let upper_name = to_upper_snake(&m.name);
+    let ordering_is_acq_rel = m.inbox.ordering == InboxOrdering::AcqRel;
+    let ctx = minijinja::context! {
+        name => &m.name,
+        snake_name => snake_name.clone(),
+        upper_name => upper_name,
+        inbox_depth => m.inbox.depth,
+        inbox_ordering => m.inbox.ordering.to_string(),
+        ordering_is_acq_rel => ordering_is_acq_rel,
+        link_rx => &m.link_rx,
+    };
+    let content = tmpl.render(ctx).map_err(|e| {
+        ForgeError::Generate(GenerateError::TemplateRender(format!(
+            "worker.c.jinja2 (c11): {e}"
+        )))
+    })?;
+    Ok((format!("{}.c", snake_name), content))
 }
 
 /// Render a `<sce:kind="buffer-pool">` document for the C11 backend
@@ -9811,15 +9918,12 @@ pub fn generate_c11_with_imports_and_externs(
         // sidecar linker fragment is appended to `files` after this
         // match per §5.E lines 1031-1086.
         ForgeDocument::BufferPool(m) => render_buffer_pool_c(&env, m, imports, options)?,
-        // RFC §5.D Worker: C2-α is schema-only; codegen ships in C2-β
-        // as a dual-emit atomic. `codegen_matrix::template_ships`
-        // returns `false` for Worker today, so `codegen_matrix::check`
-        // raises `codegen/generic-kind-backend-emit-missing` ahead of
-        // this match; the arm exists only to keep the exhaustive
-        // match honest.
-        ForgeDocument::Worker(_) => unreachable!(
-            "ForgeDocument::Worker rejected by codegen_matrix::check on c11 (template ships in C2-β)"
-        ),
+        // RFC §5.D Worker C2-β: SPSC inbox ring buffer + opaque
+        // producer/consumer handles. Ordering choice from
+        // `<sce:inbox ordering>` selects the §5.I baseline atomic
+        // variant (acq/rel vs relaxed). The dispatcher appends the
+        // `.c` sibling to `files` after this match.
+        ForgeDocument::Worker(m) => render_worker_c_header(&env, m, imports)?,
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -9856,6 +9960,15 @@ pub fn generate_c11_with_imports_and_externs(
     // pattern used by algorithm/codec test-vector sidecars above.
     if let ForgeDocument::BufferPool(m) = doc {
         files.push(render_buffer_pool_linker_fragment(&env, m)?);
+    }
+    // RFC §5.D Worker C2-β: emit the `.c` sibling alongside the
+    // `.h` header. Ring-buffer storage + impl bodies live in the
+    // `.c` translation unit; the `.h` declared opaque types +
+    // function prototypes. Multi-file emission rides the same
+    // `files` vector pattern used by the buffer-pool linker
+    // fragment + algorithm/codec test-vector sidecars above.
+    if let ForgeDocument::Worker(m) = doc {
+        files.push(render_worker_c_impl(&env, m, imports)?);
     }
     // RFC §5.I Atomic C — `<sce:extern>` sidecar (Q-Call-7 C11 shape).
     if let Some(sidecar) = render_externs_sidecar(

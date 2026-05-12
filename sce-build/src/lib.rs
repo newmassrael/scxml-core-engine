@@ -917,6 +917,41 @@ pub struct ForgeCompileOptions {
     /// validators ensure the field is always `Some` when at least one
     /// `cache-policy: maintain` pool exists.
     pub cache_platform: Option<CachePlatformInfo>,
+    /// RFC §5.D + §5.I C2-β worker inbox cross-core placement map.
+    /// Populated by [`compile_forge_with_deploy`] from the resolved
+    /// deploy.yaml `machines.<m>.workers.<w>.placement` block (lands
+    /// in C2-γ alongside `MachineSchedulerConfig`); left `None` by
+    /// deploy-unaware callers. The codegen-invariant validator
+    /// [`validate_worker_inbox_ordering_placement`] silent-skips on
+    /// `None` per the Q-η5 (a) precedent — `compile_forge_with_imports`
+    /// does not have the cross-core information needed to fire
+    /// `worker/inbox-ordering-relaxed-across-cores`. When `Some`, the
+    /// validator scans the slice for any entry whose producer/consumer
+    /// cores differ and whose worker doc declared `ordering="relaxed"`.
+    pub worker_placement: Option<Vec<WorkerPlacement>>,
+}
+
+/// RFC §5.D + §5.I C2-β cross-core worker placement entry. Populated
+/// from deploy.yaml's `machines.<m>.workers.<w>.placement.{producer_core,
+/// consumer_core}` block at [`compile_forge_with_deploy`] time and
+/// threaded to the inbox-ordering validator via
+/// [`ForgeCompileOptions::worker_placement`]. C2-β ships the
+/// validator + the wire-format `worker/inbox-ordering-relaxed-across-cores`
+/// code; the deploy.yaml schema field + the parser that populates it
+/// land in C2-γ alongside `MachineSchedulerConfig`. Until C2-γ ships,
+/// the slice is always `None` in production paths — the test suite
+/// constructs populated options to exercise the validator end-to-end.
+#[derive(Clone, Debug)]
+pub struct WorkerPlacement {
+    /// Worker doc name (forge `<scxml sce:kind="worker" name="...">`).
+    /// Matches `WorkerModel.name` verbatim.
+    pub worker_name: String,
+    /// Core index hosting the inbox producer (link-rx-driven path).
+    /// Zero-based per the deploy.yaml convention.
+    pub producer_core: u32,
+    /// Core index hosting the inbox consumer (the worker's own SCXML
+    /// processing thread).
+    pub consumer_core: u32,
 }
 
 /// RFC §5.E C5 cache-maintenance codegen-relevant platform invariants.
@@ -987,6 +1022,30 @@ pub fn compile_forge_with_imports(
     validate_link_pool_framer_resolution(
         &parsed.document,
         &import_ctx,
+        label.diagnostic_label,
+    )?;
+
+    // RFC §5.D C2-β worker cross-resolution. Per-doc resolution of
+    // `<sce:link-rx ref>` against kind=link imports and `<sce:outbox
+    // ref>` against kind=statechart imports. Silent-skip on non-
+    // Worker docs. Q-C2-3 (a)'s `ForgeWorkerRegistry` lock overturned
+    // 2026-05-11 after Gate B preflight surfaced built-but-unconsumed
+    // risk — direct parsed.imports check is the η-precedent textbook
+    // path.
+    validate_worker_cross_refs(
+        &parsed.document,
+        &parsed.imports,
+        label.diagnostic_label,
+    )?;
+
+    // RFC §5.I C2-β codegen-invariant for cross-core SPSC ordering.
+    // Silent-skip when `options.worker_placement` is `None` (deploy-
+    // unaware path); fires when the worker's declared `ordering=
+    // "relaxed"` coexists with a placement entry pinning producer +
+    // consumer on different cores.
+    validate_worker_inbox_ordering_placement(
+        &parsed.document,
+        options.worker_placement.as_deref(),
         label.diagnostic_label,
     )?;
 
@@ -1480,6 +1539,144 @@ fn validate_link_pool_framer_resolution(
             ));
         }
     }
+    Ok(())
+}
+
+/// RFC §5.D C2-β worker cross-resolution. Mirrors
+/// `validate_link_pool_framer_resolution` shape — operates on a single
+/// parsed worker doc and resolves its `<sce:link-rx ref>` +
+/// `<sce:outbox ref>` against `parsed.imports`.
+///
+/// Q-C2-3 (a) lock 2026-05-10 originally specified a separate
+/// `ForgeWorkerRegistry`; Gate B preflight (2026-05-11) surfaced that
+/// the registry would carry zero production population today (worker
+/// docs cannot import other workers per C2-α layer 1, and the spec
+/// example's outbox ref targets a state machine, not another worker).
+/// The textbook narrowing follows the η-precedent of resolving cross-
+/// refs directly against `parsed.imports` filtered by kind:
+///   - `link-rx ref` → must match a `kind="link"` import alias.
+///   - `outbox ref` (when present) → first-dot prefix must match a
+///     `kind="statechart"` import alias.
+///
+/// Both diagnostic axes carry `Fix::ReplaceOneOf` over the sorted alias
+/// candidate set of the expected kind. Silent-skip on non-Worker docs
+/// matches the dispatch shape of `validate_link_pool_framer_resolution`.
+fn validate_worker_cross_refs(
+    doc: &forge::model::ForgeDocument,
+    imports: &[forge::model::ForgeImport],
+    importing_doc: &str,
+) -> Result<(), forge::error::Located<forge::error::ForgeError>> {
+    use forge::error::{Located, ValidationError};
+    use forge::model::{ForgeDocument, ForgeKind};
+
+    let worker = match doc {
+        ForgeDocument::Worker(w) => w,
+        _ => return Ok(()),
+    };
+
+    // ── link-rx ref → kind=link import alias ──
+    //
+    // Sort the kind=link candidate set so `Fix::ReplaceOneOf` payload
+    // bytes stay deterministic (η-precedent: every `Fix` candidate
+    // list is sorted to keep the wire id reproducible).
+    let mut link_aliases: Vec<String> = imports
+        .iter()
+        .filter(|i| i.kind == ForgeKind::Link)
+        .map(|i| i.alias.clone())
+        .collect();
+    link_aliases.sort();
+    if !link_aliases.iter().any(|a| a == &worker.link_rx) {
+        let candidates_list = link_aliases.join(", ");
+        return Err(Located::new(
+            ValidationError::WorkerLinkRxRefUnknown {
+                worker_name: worker.name.clone(),
+                ref_name: worker.link_rx.clone(),
+                candidates: link_aliases,
+                candidates_list,
+            }
+            .into(),
+            importing_doc,
+            None,
+            None,
+        ));
+    }
+
+    // ── outbox ref cross-resolution deferred ──
+    //
+    // Gate B preflight (2026-05-11) surfaced that `parse_imports`
+    // rejects `kind="statechart"` imports as a long-standing forge
+    // invariant (parser.rs lines 6743-6751). The η-precedent's
+    // parsed.imports-direct check cannot resolve a worker's outbox
+    // owner-prefix against statechart docs without a deeper
+    // architectural change — the SCXML-side build tier is where
+    // statechart discovery is first-class today (`ForgeLinkRegistry`
+    // pattern). C2-β leaves the `worker/outbox-ref-unknown`
+    // diagnostic out of scope; a follow-up atomic places the
+    // outbox-side cross-resolution validator on the SCXML-side tier
+    // alongside `validate_on_sample_link_references` (already wires
+    // `ForgeLinkRegistry`). The format of outbox ref values is
+    // parser-checked at parse time (presence + non-empty string);
+    // semantic resolution against build-known statecharts arrives
+    // with the follow-up atomic.
+
+    Ok(())
+}
+
+/// RFC §5.I lines 1755-1756 C2-β — codegen-invariant guard for SPSC
+/// inbox ordering vs cross-core placement. Silent-skip when
+/// `ForgeCompileOptions.worker_placement` is `None` (Q-η5 (a)
+/// precedent: deploy-unaware path doesn't know cross-core
+/// information). When present, walks the placement slice for an entry
+/// matching the worker's name; fires
+/// `worker/inbox-ordering-relaxed-across-cores` when the worker's
+/// declared ordering is `relaxed` AND producer_core != consumer_core.
+///
+/// Placement entries that don't match the worker name silent-skip
+/// (the slice may carry entries for sibling workers in a multi-worker
+/// build). This matches the C5 deploy-aware validator pattern: the
+/// caller assembles a slice; the validator queries by name without
+/// requiring the slice to be exhaustive.
+fn validate_worker_inbox_ordering_placement(
+    doc: &forge::model::ForgeDocument,
+    placement: Option<&[WorkerPlacement]>,
+    importing_doc: &str,
+) -> Result<(), forge::error::Located<forge::error::ForgeError>> {
+    use forge::error::{Located, ValidationError};
+    use forge::model::{ForgeDocument, InboxOrdering};
+
+    let worker = match doc {
+        ForgeDocument::Worker(w) => w,
+        _ => return Ok(()),
+    };
+
+    let entries = match placement {
+        Some(p) => p,
+        // Deploy-unaware path — cannot determine cross-core layout,
+        // so silent-skip per Q-η5 (a) precedent. C2-γ wires the
+        // production populator from deploy.yaml.
+        None => return Ok(()),
+    };
+
+    if worker.inbox.ordering != InboxOrdering::Relaxed {
+        return Ok(());
+    }
+
+    for entry in entries {
+        if entry.worker_name == worker.name && entry.producer_core != entry.consumer_core {
+            return Err(Located::new(
+                ValidationError::WorkerInboxOrderingRelaxedAcrossCores {
+                    worker_name: worker.name.clone(),
+                    producer_core: entry.producer_core,
+                    consumer_core: entry.consumer_core,
+                }
+                .into(),
+                importing_doc,
+                None,
+                None,
+            ));
+        }
+    }
+
     Ok(())
 }
 

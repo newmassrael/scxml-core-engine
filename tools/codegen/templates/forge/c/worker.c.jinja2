@@ -1,0 +1,126 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+/* SCE Forge: Auto-generated from Extended SCXML (sce:kind="worker") */
+/* Runtime: sce-c-runtime atomics (sce_atomic_*_u32 family). */
+/* Do not edit — regenerate from the source SCXML file. */
+/*
+ * watching-zenoh RFC §5.D worker primitive impl translation unit.
+ * Ring-buffer storage + producer/consumer halves backed by the §5.I
+ * baseline `sce_atomic_*_u32` family. Ordering selection from
+ * `<sce:inbox ordering="{{ inbox_ordering }}"/>` pins which §5.I
+ * variant the head/tail atomic loads + stores resolve to.
+ *
+ * Generated from `name="{{ name }}"` with depth `{{ inbox_depth }}`,
+ * ordering `{{ inbox_ordering }}`.
+ */
+
+#include "{{ snake_name }}.h"
+
+#include <stdint.h>
+#include <stddef.h>
+
+/* §5.I atomic intrinsic externs — C4 atomic A baseline registry.
+ * Both ordering choices need acq/rel for the relaxed path's no-op
+ * fallback when running on hosts that lack a true relaxed primitive;
+ * however, SCE's spec contract is to honor the author's choice
+ * verbatim, so we forward-declare both `acquire/release` and
+ * `relaxed` variants and let the codegen select the per-op pair
+ * below. The sce-c-runtime impl is the implementation source of
+ * truth (see `sce-c-runtime/include/sce/atomic.h`). */
+extern uint32_t sce_atomic_load_acquire_u32(const volatile uint32_t *p);
+extern void sce_atomic_store_release_u32(volatile uint32_t *p, uint32_t v);
+extern uint32_t sce_atomic_load_relaxed_u32(const volatile uint32_t *p);
+extern void sce_atomic_store_relaxed_u32(volatile uint32_t *p, uint32_t v);
+
+/* Backing storage. `static` keeps it private to this translation unit;
+ * the `_inbox_producer()` / `_inbox_consumer()` getters return
+ * pointers into shared state, enforcing the single-producer single-
+ * consumer contract by visibility (multiple callers obtaining the
+ * same pointer is the SPSC bug; the contract holds when the caller
+ * hands the pointer to at most one driver path). */
+struct {{ snake_name }}_inbox_producer_s {
+    int tag; /* opaque marker so callers can't construct directly */
+};
+struct {{ snake_name }}_inbox_consumer_s {
+    int tag;
+};
+
+static struct {{ snake_name }}_inbox_producer_s g_producer = {0};
+static struct {{ snake_name }}_inbox_consumer_s g_consumer = {0};
+
+static volatile uint32_t g_storage[{{ upper_name }}_INBOX_DEPTH];
+/* Volatile-qualified for the §5.I atomic family's pointer contract;
+ * the field-internal access in `_try_push` / `_try_pop` uses the
+ * `sce_atomic_*_u32` primitives so the qualification is contract-
+ * level, not ad-hoc compiler-fence emission. */
+static volatile uint32_t g_head = 0;
+static volatile uint32_t g_tail = 0;
+
+{{ snake_name }}_inbox_producer_t *{{ snake_name }}_inbox_producer(void) {
+    return &g_producer;
+}
+
+{{ snake_name }}_inbox_consumer_t *{{ snake_name }}_inbox_consumer(void) {
+    return &g_consumer;
+}
+
+size_t {{ snake_name }}_inbox_capacity(void) {
+    return {{ upper_name }}_INBOX_DEPTH;
+}
+
+bool {{ snake_name }}_inbox_try_push(
+    {{ snake_name }}_inbox_producer_t *producer, uint32_t event) {
+    (void)producer;
+{%- if ordering_is_acq_rel %}
+    /* RFC §5.I lines 1752-1754: acq/rel pairing on head/tail. The
+     * producer reads `head` with acquire to observe the consumer's
+     * latest pops, then publishes its write to `tail` with release
+     * so the consumer's matching acquire load sees the new event. */
+    uint32_t tail = sce_atomic_load_acquire_u32(&g_tail);
+    uint32_t head = sce_atomic_load_acquire_u32(&g_head);
+{%- else %}
+    /* RFC §5.I lines 1755-1756: relaxed ordering. Single-core fast-
+     * path only; the codegen-invariant
+     * `worker/inbox-ordering-relaxed-across-cores` fires when this
+     * combination is paired with cross-core deploy.placement. */
+    uint32_t tail = sce_atomic_load_relaxed_u32(&g_tail);
+    uint32_t head = sce_atomic_load_relaxed_u32(&g_head);
+{%- endif %}
+    uint32_t next_tail = (tail + 1u) % (uint32_t){{ upper_name }}_INBOX_DEPTH;
+    if (next_tail == head) {
+        /* Inbox full — SPSC backpressure caller chooses next step. */
+        return false;
+    }
+    g_storage[tail] = event;
+{%- if ordering_is_acq_rel %}
+    sce_atomic_store_release_u32(&g_tail, next_tail);
+{%- else %}
+    sce_atomic_store_relaxed_u32(&g_tail, next_tail);
+{%- endif %}
+    return true;
+}
+
+bool {{ snake_name }}_inbox_try_pop(
+    {{ snake_name }}_inbox_consumer_t *consumer, uint32_t *out) {
+    (void)consumer;
+{%- if ordering_is_acq_rel %}
+    uint32_t head = sce_atomic_load_acquire_u32(&g_head);
+    uint32_t tail = sce_atomic_load_acquire_u32(&g_tail);
+{%- else %}
+    uint32_t head = sce_atomic_load_relaxed_u32(&g_head);
+    uint32_t tail = sce_atomic_load_relaxed_u32(&g_tail);
+{%- endif %}
+    if (head == tail) {
+        /* Empty. */
+        return false;
+    }
+    *out = g_storage[head];
+    uint32_t next_head = (head + 1u) % (uint32_t){{ upper_name }}_INBOX_DEPTH;
+{%- if ordering_is_acq_rel %}
+    sce_atomic_store_release_u32(&g_head, next_head);
+{%- else %}
+    sce_atomic_store_relaxed_u32(&g_head, next_head);
+{%- endif %}
+    return true;
+}

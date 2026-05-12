@@ -853,6 +853,53 @@ pub enum DiagnosticCode {
     #[serde(rename = "worker/shared-mutable-state")]
     WorkerSharedMutableState,
 
+    // ── §5.D + §5.I C2-β cross-resolution + inbox ordering ──────────
+    //    Worker docs reference (a) the driving link kind via
+    //    `<sce:link-rx ref>` and (b) the recipient state machine's
+    //    inbox via `<sce:outbox ref>`. Both refs cross-resolve against
+    //    the worker doc's own `<sce:import>` declarations
+    //    (η-precedent: `validate_link_pool_framer_resolution` resolves
+    //    framer codec aliases the same way). The 2 ordering codes
+    //    cover §5.I lines 1752-1758: every SPSC inbox must declare
+    //    acquire/release vs relaxed; relaxed-across-cores is a
+    //    codegen-invariant guard against unsafe cross-cache-coherency
+    //    pairing. Diagnostic names preserve spec wording verbatim per
+    //    `feedback_spec_mirror_parity.md`. ──
+    /// `<sce:link-rx ref>` names an alias not imported as kind=link.
+    /// Repair surface = `Fix::ReplaceOneOf` over the sorted set of
+    /// link-kind import aliases on this worker doc. Non-spec
+    /// diagnostic per Q-C2-2 (a) lock 2026-05-10; cross-resolution is
+    /// SCE's per-doc strengthening of the spec example's elided import
+    /// shape.
+    #[serde(rename = "worker/link-rx-ref-unknown")]
+    WorkerLinkRxRefUnknown,
+
+    /// `<sce:inbox>` declared without an explicit `ordering` attribute.
+    /// Spec §5.I lines 1757-1758 verbatim: "no ordering chosen, codegen
+    /// defaults to acquire/release with a warning". SCE's error-only
+    /// wire realizes the warning as a required-when-worker-exists
+    /// error: the author must explicitly pick `acq_rel` or `relaxed`
+    /// (the choice changes the atomic ops emitted on head/tail
+    /// indices in both Rust + C11 codegen). Repair surface = no
+    /// closed candidate list (author chooses based on placement);
+    /// `fix: None` per NeutralOrDeterministic class. Spec-verbatim
+    /// name (`worker/inbox-ordering-unspecified`).
+    #[serde(rename = "worker/inbox-ordering-unspecified")]
+    WorkerInboxOrderingUnspecified,
+
+    /// `<sce:inbox ordering="relaxed">` declared while deploy.placement
+    /// pins inbox producer and consumer on different cores. Spec §5.I
+    /// lines 1755-1756 verbatim: relaxed on cross-worker shared state
+    /// is insufficient. Codegen-invariant guard: silent-skip when
+    /// `ForgeCompileOptions.worker_placement` is absent (Q-η5 (a)
+    /// precedent), fires when explicit cross-core placement coexists
+    /// with `relaxed` ordering. Repair surface = no closed candidate
+    /// list (author either changes ordering to `acq_rel` or co-locates
+    /// the worker on a single core); `fix: None`. Spec-verbatim name
+    /// (`worker/inbox-ordering-relaxed-across-cores`).
+    #[serde(rename = "worker/inbox-ordering-relaxed-across-cores")]
+    WorkerInboxOrderingRelaxedAcrossCores,
+
     // ── §5.I `<sce:extern>` whitelisted intrinsic registry
     //    (watching-zenoh RFC §5.I, Atomic A). Four spec-verbatim
     //    codes (lines 1847-1850) that fire at parse-time on
@@ -1269,6 +1316,10 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         PoolSampleCallbackSignatureNonBorrow,
         // Worker kind shared-state encapsulation (watching-zenoh RFC §5.D, C2-α)
         WorkerSharedMutableState,
+        // Worker kind cross-resolution + inbox ordering (watching-zenoh RFC §5.D + §5.I, C2-β)
+        WorkerLinkRxRefUnknown,
+        WorkerInboxOrderingUnspecified,
+        WorkerInboxOrderingRelaxedAcrossCores,
         // `<sce:extern>` whitelisted intrinsic registry (watching-zenoh RFC §5.I, Atomic A)
         ExternSymbolNotInWhitelist,
         ExternAbiMismatch,
@@ -1532,6 +1583,15 @@ impl DiagnosticCode {
 
             // ── §5.D Worker kind encapsulation (C2-α) ───────────────
             WorkerSharedMutableState => Some("watching-zenoh RFC §5.D"),
+
+            // ── Worker cross-resolution (RFC §5.D, C2-β) + SPSC inbox
+            //    ordering (RFC §5.I lines 1752-1758, C2-β) ──
+            //    Cross-ref codes carry §5.D spec anchor (worker schema
+            //    is §5.D's domain). Ordering codes carry §5.I anchor
+            //    (the SPSC/MPSC ordering contract is §5.I's domain).
+            WorkerLinkRxRefUnknown => Some("watching-zenoh RFC §5.D"),
+            WorkerInboxOrderingUnspecified
+            | WorkerInboxOrderingRelaxedAcrossCores => Some("watching-zenoh RFC §5.I"),
 
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
@@ -1820,6 +1880,9 @@ impl DiagnosticCode {
             PoolSampleTakeWithoutStagePool => "pool/sample-take-without-stage-pool",
             PoolSampleCallbackSignatureNonBorrow => "pool/sample-callback-signature-non-borrow",
             WorkerSharedMutableState => "worker/shared-mutable-state",
+            WorkerLinkRxRefUnknown => "worker/link-rx-ref-unknown",
+            WorkerInboxOrderingUnspecified => "worker/inbox-ordering-unspecified",
+            WorkerInboxOrderingRelaxedAcrossCores => "worker/inbox-ordering-relaxed-across-cores",
             ExternSymbolNotInWhitelist => "extern/symbol-not-in-whitelist",
             ExternAbiMismatch => "extern/abi-mismatch",
             ExternSignatureMismatch => "extern/signature-mismatch",
@@ -3178,6 +3241,65 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 worker_shared_state_actual(reason),
             ],
         },
+        // ── §5.D C2-β cross-resolution: link-rx + outbox ref ──
+        ValidationError::WorkerLinkRxRefUnknown {
+            worker_name,
+            ref_name,
+            candidates,
+            candidates_list: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::WorkerLinkRxRefUnknown,
+            stage: Stage::Validation,
+            // `actual` carries the offending ref; closed candidate
+            // list (sorted kind=link import aliases) rides
+            // `Fix::ReplaceOneOf`. η-precedent: LinkClassUnsupportedOnTarget.
+            expected: None,
+            actual: Some(ref_name.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![worker_name.clone(), ref_name.clone()],
+        },
+        // ── §5.I C2-β SPSC inbox ordering ──
+        ValidationError::WorkerInboxOrderingUnspecified {
+            worker_name,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::WorkerInboxOrderingUnspecified,
+            stage: Stage::Validation,
+            // No `actual` value to surface — the violation is the
+            // absence of the `ordering` attribute. NeutralOrDeterministic
+            // non_overlap_class with `fix: None`; author picks
+            // `acq_rel` or `relaxed` based on placement (not a closed
+            // candidate set today — semantics of the choice ride the
+            // diagnostic message, not the wire payload).
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![worker_name.clone()],
+        },
+        ValidationError::WorkerInboxOrderingRelaxedAcrossCores {
+            worker_name,
+            producer_core,
+            consumer_core,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::WorkerInboxOrderingRelaxedAcrossCores,
+            stage: Stage::Validation,
+            // Codegen-invariant: relaxed declared, but placement pins
+            // producer and consumer on different cores. `actual`
+            // carries the offending ordering string verbatim so the
+            // wire surface names what was declared rather than what
+            // was inferred. NeutralOrDeterministic — author picks
+            // between flipping ordering or re-pinning placement;
+            // neither axis is a closed candidate today.
+            expected: None,
+            actual: Some("relaxed".to_string()),
+            fix: None,
+            key_fragments: vec![
+                worker_name.clone(),
+                producer_core.to_string(),
+                consumer_core.to_string(),
+            ],
+        },
         // ── §5.I `<sce:extern>` whitelist rejection (Atomic A) ──
         ValidationError::ExternSymbolNotInWhitelist {
             name,
@@ -4377,6 +4499,57 @@ mod tests {
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
                 r#"{"v":1,"id":"fnv1a:f054d112eea16560","code":"worker/shared-mutable-state","stage":"validation","spec":"watching-zenoh RFC §5.D","message":"worker 'rx_loop': declares <sce:import as=\"tx_loop\" src=\"tx_loop.scxml\" kind=\"worker\"/>; workers cannot import other worker kinds. Workers must communicate with other workers only through their own inbox (consume) and the recipient's inbox via <sce:outbox ref=\"...\"> (produce); all other paths to another worker's state are forbidden per RFC §5.D line 911 (\"any non-inbox access to another worker's state\").","actual":"<sce:import as=\"tx_loop\" src=\"tx_loop.scxml\" kind=\"worker\"/>"}"#,
+            ),
+            // ── §5.D C2-β worker cross-resolution: link-rx + outbox ref ──
+            (
+                // RFC §5.D C2-β: `<sce:link-rx ref="X">` must reference
+                // an alias imported as `kind="link"`. Mirrors η-precedent
+                // `validate_link_pool_framer_resolution` resolution shape.
+                // FixCarriesCandidates with the sorted kind=link import
+                // alias set on this worker doc.
+                "forge/worker-link-rx-ref-unknown",
+                ValidationError::WorkerLinkRxRefUnknown {
+                    worker_name: "rx_loop".into(),
+                    ref_name: "udp_scout".into(),
+                    candidates: vec!["status_link".into()],
+                    candidates_list: "status_link".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:60c2fe22d1085b50","code":"worker/link-rx-ref-unknown","stage":"validation","spec":"watching-zenoh RFC §5.D","message":"worker 'rx_loop': <sce:link-rx ref=\"udp_scout\"> references a name that is not imported as a link kind. Declare the link via <sce:import as=\"udp_scout\" src=\"...\" kind=\"link\"/> on this worker document, or replace the ref with one of the imported link-kind aliases (closest matches: status_link).","actual":"udp_scout","fix":{"kind":"replace_one_of","candidates":["status_link"]}}"#,
+            ),
+            // ── §5.I C2-β SPSC inbox ordering ──
+            (
+                // RFC §5.I lines 1757-1758 C2-β: `<sce:inbox>` declared
+                // without an `ordering` attribute. SCE's error-only wire
+                // realizes the spec "warning" as a required-when-worker-
+                // exists error so authors get a load-bearing choice
+                // before codegen emits ambiguous atomic ops.
+                "forge/worker-inbox-ordering-unspecified",
+                ValidationError::WorkerInboxOrderingUnspecified {
+                    worker_name: "rx_loop".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:066432600b5950a2","code":"worker/inbox-ordering-unspecified","stage":"validation","spec":"watching-zenoh RFC §5.I","message":"worker 'rx_loop': <sce:inbox> declared without an `ordering` attribute. Pick `ordering=\"acq_rel\"` (safe default; producer and consumer pair head/tail with acquire+release on every push/pop) or `ordering=\"relaxed\"` (single-core fast-path; cross-core placement raises `worker/inbox-ordering-relaxed-across-cores`). Spec §5.I line 1752-1758 mandates one of these two for every SPSC inbox."}"#,
+            ),
+            (
+                // RFC §5.I lines 1755-1756 C2-β: codegen-invariant
+                // guard. Silent-skip when `ForgeCompileOptions.worker_
+                // placement` is `None` (deploy-unaware path); fires
+                // only when explicit cross-core placement coexists with
+                // `relaxed` ordering. NeutralOrDeterministic — both
+                // repair axes (flip ordering or co-locate) are author
+                // judgment, not a closed candidate.
+                "forge/worker-inbox-ordering-relaxed-across-cores",
+                ValidationError::WorkerInboxOrderingRelaxedAcrossCores {
+                    worker_name: "rx_loop".into(),
+                    producer_core: 0,
+                    consumer_core: 1,
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:b605193320262358","code":"worker/inbox-ordering-relaxed-across-cores","stage":"validation","spec":"watching-zenoh RFC §5.I","message":"worker 'rx_loop': <sce:inbox ordering=\"relaxed\"> declared but deploy.placement pins producer on core 0 and consumer on core 1. Cross-core SPSC inboxes require acquire/release pairing on head/tail (per spec §5.I lines 1752-1758). Replace with `ordering=\"acq_rel\"` or co-locate producer + consumer on the same core via deploy.placement.","actual":"relaxed"}"#,
             ),
             // ── §5.I `<sce:extern>` whitelisted intrinsic registry (Atomic A) ──
             (
@@ -6273,7 +6446,18 @@ mod tests {
             // single repair axis; the other 5 C5 codes have
             // multi-axis or codegen-invariant repairs (Fix::None)
             // and sit in NeutralOrDeterministic below.
-            | MemCachePolicyUnsupportedOnNoDcacheCore => FixCarriesCandidates,
+            | MemCachePolicyUnsupportedOnNoDcacheCore
+            // C2-β worker cross-resolution: link-rx ref-unknown rides
+            // `Fix::ReplaceOneOf` with sorted alias lists from
+            // `parsed.imports` filtered to kind=link. η-precedent:
+            // `LinkClassUnsupportedOnTarget` carries closed candidates
+            // the same way. (Outbox cross-resolution against statechart
+            // kinds defers to a future SCXML-side atomic — `parse_imports`
+            // currently rejects `kind="statechart"` imports as a
+            // long-standing forge invariant, so the cross-ref tier
+            // needs to live in the SCXML pipeline where statechart
+            // discovery is first-class.)
+            | WorkerLinkRxRefUnknown => FixCarriesCandidates,
 
             // ── `expected` carries non-repair metadata ────────
             ExpressionParseMismatch | MeshExternalAmbiguousEventGroup => ExpectedIsMetadata,
@@ -6346,6 +6530,13 @@ mod tests {
             // No closed candidate set — the foreign-namespace path is
             // arbitrary, so `fix: None` ⇒ NeutralOrDeterministic.
             | WorkerSharedMutableState
+            // C2-β inbox ordering codes: author chooses `acq_rel` vs
+            // `relaxed` based on placement; codegen-invariant fires
+            // when relaxed coexists with cross-core placement. Both
+            // axes are author-judgment (not closed candidate), so
+            // `fix: None`.
+            | WorkerInboxOrderingUnspecified
+            | WorkerInboxOrderingRelaxedAcrossCores
             // `<sce:extern>` signature mismatch: deterministic
             // `Fix::Replace` with the canonical sig. The other three
             // codes sit in FixCarriesCandidates above.
@@ -6766,6 +6957,9 @@ mod tests {
                 | PoolSampleTakeWithoutStagePool
                 | PoolSampleCallbackSignatureNonBorrow
                 | WorkerSharedMutableState
+                | WorkerLinkRxRefUnknown
+                | WorkerInboxOrderingUnspecified
+                | WorkerInboxOrderingRelaxedAcrossCores
                 | ExternSymbolNotInWhitelist
                 | ExternAbiMismatch
                 | ExternSignatureMismatch
@@ -6857,9 +7051,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            202,
+            205,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 202 distinct variants to match the DiagnosticCode \
+             expected 205 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -7013,7 +7207,32 @@ mod tests {
              follow-up atomic gated on C4 intrinsic-registry composition \
              surface per Q-C2-7 (a)+(b) lock; spec line 911 phrasing \
              \"any non-inbox access to another worker's state\" covers \
-             all three layers together; 201 → 202.",
+             all three layers together; 201 → 202. Then watching-zenoh \
+             RFC §5.D + §5.I C2-β Worker codegen + inbox ordering — \
+             three codes (count narrowed from the original 4 after Gate \
+             B preflight surfaced `parse_imports` rejects \
+             `kind=\"statechart\"` imports as a long-standing forge \
+             invariant): `worker/link-rx-ref-unknown` for `<sce:link-rx \
+             ref>` not matching a `kind=\"link\"` import alias follows \
+             the η-precedent `validate_link_pool_framer_resolution` \
+             shape, validating against `parsed.imports` within \
+             `compile_forge_with_imports` and riding `Fix::ReplaceOneOf` \
+             over the sorted alias candidate set; two spec-verbatim \
+             SPSC inbox ordering codes from RFC §5.I lines 1752-1758 \
+             (`worker/inbox-ordering-unspecified` parse-time error when \
+             `<sce:inbox>` lacks the required `ordering` attribute — \
+             SCE's error-only wire realizes the spec \"warning\" as \
+             required-when-worker-exists, and \
+             `worker/inbox-ordering-relaxed-across-cores` codegen-invariant \
+             when explicit `ordering=\"relaxed\"` coexists with deploy \
+             placement pinning producer and consumer on different cores). \
+             Outbox cross-resolution (`worker/outbox-ref-unknown`) defers \
+             to a follow-up atomic that places the validator on the \
+             SCXML-side build tier (where statechart docs are first-class) \
+             — `parse_imports`'s long-standing statechart-rejection \
+             prevents the η-precedent's parsed.imports-direct shape from \
+             applying to outbox refs without a deeper architectural \
+             change; 202 → 205.",
         );
     }
 

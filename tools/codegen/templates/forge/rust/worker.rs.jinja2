@@ -1,0 +1,267 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="worker")
+// Runtime: self-contained on (rust, *) — no SCE-side helper crate.
+// Do not edit — regenerate from the source SCXML file.
+//
+// watching-zenoh RFC §5.D worker primitive: an SPSC inbox driven by
+// a link-rx source (`<sce:link-rx ref="{{ link_rx }}"/>`) feeding a
+// concurrent execution context. Spec line 904: "inbox = heapless::spsc
+// (Rust) or fixed ring buffer (C)". This template emits the fixed
+// ring-buffer shape directly (no external crate dependency); the
+// Producer/Consumer split is the type-level FSM per Q-C2-8 (b) lock
+// (heapless::spsc inspires the shape, not the dependency).
+//
+// RFC §5.I lines 1752-1758 ordering choice: `ordering="{{ inbox_ordering }}"`
+// pins the head/tail atomic operations to either `Acquire`/`Release`
+// (acq_rel) or `Relaxed` (relaxed). Cross-core placement with
+// `relaxed` raises `worker/inbox-ordering-relaxed-across-cores` at
+// codegen time when deploy.placement is supplied.
+//
+// Generated from `name="{{ name }}"` with depth `{{ inbox_depth }}`,
+// ordering `{{ inbox_ordering }}`, link-rx `{{ link_rx }}`,
+{%- if has_outbox %}
+// outbox `{{ outbox }}`.
+{%- else %}
+// outbox absent.
+{%- endif %}
+
+#![allow(clippy::all)]
+#![allow(unused_imports)]
+#![allow(unused_variables)]
+#![allow(dead_code)]
+
+use core::cell::UnsafeCell;
+use core::mem::MaybeUninit;
+use core::sync::atomic::{AtomicUsize, Ordering};
+
+/// Inbox depth (`<sce:inbox depth="{{ inbox_depth }}"/>`). Fixed ring-
+/// buffer capacity; never resizable at runtime.
+pub const DEPTH: usize = {{ inbox_depth }};
+
+/// SPSC ordering choice (`<sce:inbox ordering="{{ inbox_ordering }}"/>`).
+/// Round-tripped as a constant so downstream tooling (deploy review,
+/// tracing) can introspect the choice without re-parsing SCXML.
+pub const ORDERING: &'static str = "{{ inbox_ordering }}";
+
+/// Driving link kind name (`<sce:link-rx ref="{{ link_rx }}"/>`).
+/// Consumer resolves this against the imported link map at integration
+/// time (the build-orch tier wires producer-side `try_push` against
+/// the link kind's RX framer codec output).
+pub const LINK_RX: &'static str = "{{ link_rx }}";
+
+{%- if has_outbox %}
+/// Recipient inbox path (`<sce:outbox ref="{{ outbox }}"/>`). Owner-
+/// prefix (text before the first `.`) names an imported statechart
+/// kind; suffix (`inbox`) names the canonical event-injection channel
+/// on that statechart.
+pub const OUTBOX: &'static str = "{{ outbox }}";
+{%- endif %}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Atomic ordering constants — pinned from `<sce:inbox ordering>`
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{%- if ordering_is_acq_rel %}
+// `ordering="acq_rel"` per RFC §5.I lines 1752-1754: every push pairs
+// a load-acquire on the consumer-owned head with a store-release on
+// the producer-owned tail (and symmetrically for pop). Required for
+// cross-core SPSC pairings to satisfy the cache-coherency happens-
+// before contract.
+const HEAD_LOAD_ORD: Ordering = Ordering::Acquire;
+const HEAD_STORE_ORD: Ordering = Ordering::Release;
+const TAIL_LOAD_ORD: Ordering = Ordering::Acquire;
+const TAIL_STORE_ORD: Ordering = Ordering::Release;
+{%- else %}
+// `ordering="relaxed"` per RFC §5.I lines 1755-1756: head/tail use
+// `Ordering::Relaxed` for both load and store. Single-core fast-path
+// only; cross-core placement with this choice raises
+// `worker/inbox-ordering-relaxed-across-cores` at codegen time.
+const HEAD_LOAD_ORD: Ordering = Ordering::Relaxed;
+const HEAD_STORE_ORD: Ordering = Ordering::Relaxed;
+const TAIL_LOAD_ORD: Ordering = Ordering::Relaxed;
+const TAIL_STORE_ORD: Ordering = Ordering::Relaxed;
+{%- endif %}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Inbox<E> — backing storage + head/tail index pair
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Generated SPSC ring-buffer inbox. The element type `E` is supplied
+/// by the consumer at instantiation time — typically the framer
+/// codec's decoded output for `<sce:link-rx ref="{{ link_rx }}"/>`.
+/// `Inbox` owns the storage table and the head/tail atomics; the
+/// `split` method returns the producer/consumer halves with disjoint
+/// method sets.
+pub struct {{ pascal_name }}Inbox<E> {
+    /// Slot storage. Each slot is `MaybeUninit<E>` so the buffer can
+    /// carry partially-initialized elements at runtime; the SPSC
+    /// discipline ensures the producer's writes happen-before the
+    /// consumer's reads.
+    storage: UnsafeCell<[MaybeUninit<E>; DEPTH]>,
+    /// Consumer-owned write index. Producer reads to check fullness.
+    head: AtomicUsize,
+    /// Producer-owned write index. Consumer reads to check emptyness.
+    tail: AtomicUsize,
+}
+
+// Inbox is `Sync` as long as `E: Send` — the SPSC discipline + atomic
+// head/tail provide the cross-thread synchronization.
+unsafe impl<E: Send> Sync for {{ pascal_name }}Inbox<E> {}
+
+impl<E> {{ pascal_name }}Inbox<E> {
+    /// Construct an empty inbox. Storage starts uninitialized; the
+    /// head/tail indices both start at 0 (empty state).
+    pub const fn new() -> Self {
+        // SAFETY: `MaybeUninit::uninit()` is the canonical way to
+        // declare an uninitialized array element; the SPSC discipline
+        // ensures every slot is initialized before it is read.
+        Self {
+            storage: UnsafeCell::new([const { MaybeUninit::uninit() }; DEPTH]),
+            head: AtomicUsize::new(0),
+            tail: AtomicUsize::new(0),
+        }
+    }
+
+    /// Split the inbox into producer + consumer halves. The borrow on
+    /// `self` keeps both halves bound to the inbox's lifetime; the
+    /// halves carry shared `&` references to the inbox but operate on
+    /// disjoint atomic fields (producer writes tail; consumer writes
+    /// head) so the SPSC contract holds.
+    pub fn split(&mut self) -> ({{ pascal_name }}Producer<'_, E>, {{ pascal_name }}Consumer<'_, E>) {
+        // SAFETY: `split` consumes `&mut self`, so at most one
+        // (producer, consumer) pair can exist at a time. The two
+        // halves alias the inbox via shared `&` references and only
+        // operate on disjoint atomic fields, which is the canonical
+        // SPSC invariant.
+        let ptr: *const Self = self;
+        unsafe {
+            (
+                {{ pascal_name }}Producer { inbox: &*ptr },
+                {{ pascal_name }}Consumer { inbox: &*ptr },
+            )
+        }
+    }
+}
+
+impl<E> Default for {{ pascal_name }}Inbox<E> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Producer half — `try_push` (the only producer-facing entry point)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Producer half of the SPSC split. The driver code (typically the
+/// link-rx ISR or polling loop) writes events here; the worker's
+/// SCXML processing thread consumes them on the `Consumer` half.
+pub struct {{ pascal_name }}Producer<'a, E> {
+    inbox: &'a {{ pascal_name }}Inbox<E>,
+}
+
+impl<'a, E> {{ pascal_name }}Producer<'a, E> {
+    /// Push `event` onto the inbox. Returns `Err(event)` when the
+    /// inbox is full so the caller can apply backpressure (drop,
+    /// retry, signal-overflow per the link's `<sce:backpressure>`
+    /// policy). Atomic ordering on head/tail matches the
+    /// `ordering="{{ inbox_ordering }}"` choice.
+    pub fn try_push(&mut self, event: E) -> Result<(), E> {
+        let tail = self.inbox.tail.load(TAIL_LOAD_ORD);
+        let head = self.inbox.head.load(HEAD_LOAD_ORD);
+        let next_tail = (tail + 1) % DEPTH;
+        if next_tail == head {
+            // Inbox full — return ownership of `event` so the caller
+            // can decide between drop / retry / signal.
+            return Err(event);
+        }
+        // SAFETY: `tail` is in-bounds because we mask with `% DEPTH`,
+        // and the SPSC contract ensures the consumer never reads slot
+        // `tail` until we publish via `store(next_tail, TAIL_STORE_ORD)`.
+        unsafe {
+            let storage = self.inbox.storage.get();
+            (*storage)[tail].write(event);
+        }
+        self.inbox.tail.store(next_tail, TAIL_STORE_ORD);
+        Ok(())
+    }
+
+    /// Capacity in elements — equals `DEPTH`.
+    pub const fn capacity(&self) -> usize {
+        DEPTH
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Consumer half — `try_pop` (the only consumer-facing entry point)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Consumer half of the SPSC split. The worker's SCXML processing
+/// thread polls this to pull events for state-machine dispatch.
+pub struct {{ pascal_name }}Consumer<'a, E> {
+    inbox: &'a {{ pascal_name }}Inbox<E>,
+}
+
+impl<'a, E> {{ pascal_name }}Consumer<'a, E> {
+    /// Pop the next event, or `None` if the inbox is empty. Atomic
+    /// ordering on head/tail matches the `ordering="{{ inbox_ordering }}"`
+    /// choice.
+    pub fn try_pop(&mut self) -> Option<E> {
+        let head = self.inbox.head.load(HEAD_LOAD_ORD);
+        let tail = self.inbox.tail.load(TAIL_LOAD_ORD);
+        if head == tail {
+            // Empty.
+            return None;
+        }
+        // SAFETY: SPSC contract guarantees slot `head` holds an
+        // initialized `E` because we did not advance `head` past the
+        // last `try_push` boundary.
+        let event = unsafe {
+            let storage = self.inbox.storage.get();
+            (*storage)[head].assume_init_read()
+        };
+        let next_head = (head + 1) % DEPTH;
+        self.inbox.head.store(next_head, HEAD_STORE_ORD);
+        Some(event)
+    }
+
+    /// Capacity in elements — equals `DEPTH`.
+    pub const fn capacity(&self) -> usize {
+        DEPTH
+    }
+}
+
+#[cfg(test)]
+mod generated_tests {
+    use super::*;
+
+    #[test]
+    fn empty_inbox_pop_returns_none() {
+        let mut inbox: {{ pascal_name }}Inbox<u32> = {{ pascal_name }}Inbox::new();
+        let (mut _producer, mut consumer) = inbox.split();
+        assert!(consumer.try_pop().is_none());
+    }
+
+    #[test]
+    fn push_then_pop_round_trips_value() {
+        let mut inbox: {{ pascal_name }}Inbox<u32> = {{ pascal_name }}Inbox::new();
+        let (mut producer, mut consumer) = inbox.split();
+        producer.try_push(42).expect("not full");
+        assert_eq!(consumer.try_pop(), Some(42));
+        assert!(consumer.try_pop().is_none());
+    }
+
+    #[test]
+    fn full_inbox_push_returns_err() {
+        let mut inbox: {{ pascal_name }}Inbox<u32> = {{ pascal_name }}Inbox::new();
+        let (mut producer, _) = inbox.split();
+        // Ring buffer holds DEPTH-1 elements (one slot is the
+        // empty/full sentinel).
+        for i in 0..(DEPTH - 1) {
+            producer.try_push(i as u32).expect("not full yet");
+        }
+        assert_eq!(producer.try_push(99), Err(99));
+    }
+}

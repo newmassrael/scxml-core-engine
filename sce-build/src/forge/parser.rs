@@ -6498,6 +6498,41 @@ fn parse_worker(
         ));
     }
 
+    // ── Required: <sce:inbox ordering="acq_rel|relaxed"/> ──
+    //
+    // RFC §5.I lines 1752-1758 spec-verbatim. Spec says "no ordering
+    // chosen, codegen defaults to acquire/release with a warning" —
+    // SCE's error-only wire realizes that warning as a required-when-
+    // worker-exists error so the author makes an explicit choice
+    // before codegen emits ambiguous atomic ops on head/tail indices.
+    // The choice changes the emitted code (load_acquire/store_release
+    // vs load_relaxed/store_relaxed) on both Rust + C11 backends.
+    let ordering = match inbox_node.attribute("ordering") {
+        Some("acq_rel") => crate::forge::model::InboxOrdering::AcqRel,
+        Some("relaxed") => crate::forge::model::InboxOrdering::Relaxed,
+        Some(other) => {
+            return Err(located(
+                &inbox_node,
+                label.diagnostic_label,
+                ValidationError::InvalidAttribute {
+                    element: "<sce:inbox>".into(),
+                    attr: "ordering".into(),
+                    value: other.to_string(),
+                    expected: "acq_rel or relaxed".into(),
+                },
+            ));
+        }
+        None => {
+            return Err(located(
+                &inbox_node,
+                label.diagnostic_label,
+                ValidationError::WorkerInboxOrderingUnspecified {
+                    worker_name: doc_name.to_string(),
+                },
+            ));
+        }
+    };
+
     // ── Optional: <sce:outbox ref="..."/> ──
     let outbox = find_sce_child(root, "outbox").and_then(|node| {
         node.attribute("ref")
@@ -6553,7 +6588,7 @@ fn parse_worker(
     Ok(WorkerModel {
         name: doc_name.to_string(),
         link_rx,
-        inbox: InboxConfig { depth },
+        inbox: InboxConfig { depth, ordering },
         outbox,
     })
 }

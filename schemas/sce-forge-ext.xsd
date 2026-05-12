@@ -1235,6 +1235,24 @@
   <xs:element name="inbox">
     <xs:complexType>
       <xs:attribute name="depth" type="xs:positiveInteger" use="required"/>
+      <!-- watching-zenoh RFC §5.I lines 1752-1758 (C2-β): SPSC inbox
+           ordering choice. Spec phrasing labels missing-ordering a
+           "warning"; SCE's error-only wire realizes the warning as a
+           required-when-worker-exists error (parse-time
+           `worker/inbox-ordering-unspecified`), so the XSD shape stays
+           optional and the Rust parser enforces presence with a typed
+           diagnostic that names the choice axes. The XSD enum closes
+           the accepted set to `acq_rel` | `relaxed` so foreign values
+           reject at schema validation time rather than reaching the
+           parser's `InvalidAttribute` fallback. -->
+      <xs:attribute name="ordering" use="optional">
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:enumeration value="acq_rel"/>
+            <xs:enumeration value="relaxed"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:attribute>
     </xs:complexType>
   </xs:element>
 

@@ -1236,6 +1236,85 @@ pub enum ValidationError {
         /// Layered classification — see [`WorkerSharedStateReason`].
         reason: WorkerSharedStateReason,
     },
+
+    /// watching-zenoh RFC §5.D (C2-β cross-resolution). The worker's
+    /// `<sce:link-rx ref="X">` names `X` that does not resolve to a
+    /// `<sce:import as="X" kind="link">` declaration on this worker
+    /// document. `validate_link_pool_framer_resolution` precedent: a
+    /// worker driven by a link kind must declare the link via
+    /// `<sce:import>` so cross-resolution within
+    /// `compile_forge_with_imports` can confirm shape compatibility
+    /// before codegen. Closed candidate list rides `Fix::ReplaceOneOf`
+    /// with the sorted set of link-kind import aliases (η-precedent for
+    /// closest-match suggestions). Non-spec diagnostic per Q-C2-2 (a):
+    /// the spec example elides imports but SCE's per-doc compile path
+    /// requires explicit cross-resolution.
+    #[error(
+        "worker '{worker_name}': <sce:link-rx ref=\"{ref_name}\"> references a name that is not imported as a link kind. \
+         Declare the link via <sce:import as=\"{ref_name}\" src=\"...\" kind=\"link\"/> on this worker document, or replace the ref with one of the imported link-kind aliases (closest matches: {candidates_list})."
+    )]
+    WorkerLinkRxRefUnknown {
+        /// The worker document whose `<sce:link-rx>` carries the
+        /// unresolvable ref. Anchored at the `<sce:link-rx>` node by
+        /// `located()` at the call site.
+        worker_name: String,
+        /// Offending `<sce:link-rx ref>` value as authored.
+        ref_name: String,
+        /// Sorted closed candidate set — every kind=link alias known
+        /// to `parsed.imports` for this document. Wire payload's
+        /// `Fix::ReplaceOneOf` consumes this verbatim.
+        candidates: Vec<String>,
+        /// Joined comma-space form of `candidates` for the message
+        /// body (matches `ExternSymbolNotInWhitelist`'s shape so
+        /// per-instance message rendering stays parity).
+        candidates_list: String,
+    },
+
+    /// watching-zenoh RFC §5.I line 1757-1758 — `<sce:inbox>` declared
+    /// without an `ordering` attribute. Spec phrasing labels this a
+    /// "warning, codegen defaults to acquire/release"; SCE's error-only
+    /// wire surface (no severity dimension yet) realizes the warning as
+    /// a required-when-worker-exists error: the author must explicitly
+    /// pick `ordering="acq_rel"` or `ordering="relaxed"`. The choice
+    /// changes the emitted atomic operations on head/tail indices in
+    /// both Rust + C11 codegen, so silent default is risk-prone on a
+    /// cross-core multi-MCU target. Diagnostic name preserves spec
+    /// wording verbatim per `feedback_spec_mirror_parity.md`.
+    #[error(
+        "worker '{worker_name}': <sce:inbox> declared without an `ordering` attribute. \
+         Pick `ordering=\"acq_rel\"` (safe default; producer and consumer pair head/tail with acquire+release on every push/pop) or `ordering=\"relaxed\"` (single-core fast-path; cross-core placement raises `worker/inbox-ordering-relaxed-across-cores`). Spec §5.I line 1752-1758 mandates one of these two for every SPSC inbox."
+    )]
+    WorkerInboxOrderingUnspecified {
+        /// The worker document whose `<sce:inbox>` lacks ordering.
+        /// Anchored at the `<sce:inbox>` node by `located()`.
+        worker_name: String,
+    },
+
+    /// watching-zenoh RFC §5.I line 1755-1756 — `<sce:inbox
+    /// ordering="relaxed">` declared on a worker whose producer and
+    /// consumer halves resolve to different cores via deploy.placement.
+    /// Per spec, `relaxed` on cross-core shared state is "insufficient";
+    /// head/tail indices need acquire/release pairing to guarantee
+    /// happens-before ordering across the cache-coherency boundary.
+    /// Codegen-invariant guard: silent-skip when deploy is absent
+    /// (`ForgeCompileOptions.worker_placement` is `None`), fires only
+    /// when explicit cross-core placement coexists with `relaxed`
+    /// ordering. Diagnostic name preserves spec wording verbatim.
+    #[error(
+        "worker '{worker_name}': <sce:inbox ordering=\"relaxed\"> declared but deploy.placement pins producer on core {producer_core} and consumer on core {consumer_core}. \
+         Cross-core SPSC inboxes require acquire/release pairing on head/tail (per spec §5.I lines 1752-1758). Replace with `ordering=\"acq_rel\"` or co-locate producer + consumer on the same core via deploy.placement."
+    )]
+    WorkerInboxOrderingRelaxedAcrossCores {
+        /// The worker document whose inbox declared relaxed ordering
+        /// against cross-core placement. Anchored at the `<sce:inbox>`
+        /// node by `located()`.
+        worker_name: String,
+        /// Core index hosting the inbox producer (link-rx-driven path).
+        producer_core: u32,
+        /// Core index hosting the inbox consumer (the worker's own
+        /// SCXML processing thread).
+        consumer_core: u32,
+    },
 }
 
 /// watching-zenoh RFC §5.E B7-η' Atomic A2 callback-path failure
