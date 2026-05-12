@@ -976,6 +976,19 @@ fn cmd_generate(
         ) {
             error_format.emit_and_exit(&e, "Partition context injection error: ");
         }
+        // C3 Atomic B-γ1: apply the deploy.yaml
+        // `default_event_queue_capacity` fallback for models that did
+        // not declare `<scxml sce:capacity="N">` on the root. The
+        // populator is a no-op when the model carries an explicit
+        // capacity or when the deploy lacks the field — matching the
+        // cache_platform / worker_placement precedent of silent-skip
+        // on partial deploy data.
+        if let Err(e) = sce_build::populate_event_queue_capacity_from_deploy(
+            &mut model,
+            Path::new(deploy_file),
+        ) {
+            error_format.emit_and_exit(&e, "Event-queue capacity injection error: ");
+        }
     }
 
     let locate_codegen = |e: sce_build::forge::error::GenerateError| -> Located<ForgeError> {
@@ -983,6 +996,21 @@ fn cmd_generate(
     };
     let output = match lang {
         Language::Rust => {
+            // C3 Atomic B-γ1 lands `<sce:capacity>` parsing +
+            // deploy.yaml `default_event_queue_capacity` populator +
+            // `pub const EVENT_QUEUE_CAPACITY` template emission. The
+            // `--no-std` CLI flag stays a B-β-level validation gate
+            // (script/HTTP rejection — consumed earlier in
+            // `validate_no_std_compatibility`); the template-level
+            // `#![no_std]` + `use core::time::Duration` switch lands in
+            // B-γ2 alongside the runtime port + sub-template `std::*`
+            // → `core::*` swaps (send.rs.jinja2 / process_transition
+            // .rs.jinja2 / invoke_methods.rs.jinja2). Wiring those in
+            // B-γ1 would emit code that compiles cleanly under std but
+            // fails on the first sub-template `std::time::Duration` /
+            // `std::collections::HashSet` / `std::sync::atomic` site
+            // under `--features=no_std` — `feedback_silently_broken_
+            // hooks.md` anti-pattern unless co-landed with B-γ2.
             let code = sce_build::generator::generate(&model, &template_dir)
                 .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
             GeneratedOutput {

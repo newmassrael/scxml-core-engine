@@ -687,6 +687,27 @@ pub struct SCXMLModel {
     pub binding: String,
     pub datamodel_type: String,
 
+    /// Watching-zenoh RFC §5.J.2 + §5.L (Q-RustNoStd-7 (a), C3 Atomic
+    /// B-γ1): per-document event-queue capacity declared via
+    /// `<scxml sce:capacity="N">` on the root element. Drives the
+    /// `heapless::spsc::Queue<E, N>` capacity literal that Atomic
+    /// B-γ2's runtime port consumes when emitting the no_std event
+    /// queue. Unit: events (not bytes).
+    ///
+    /// Resolution rule (Q-RustNoStd-7 (a)): per-instance attribute
+    /// wins; fallback to deploy.yaml
+    /// `machines.<m>.scheduler.default_event_queue_capacity` when
+    /// the attribute is absent. Both being absent is permitted today
+    /// (`--no-std` codegen still works against std runtime); the
+    /// capacity becomes load-bearing when B-γ2's heapless adoption
+    /// lands.
+    ///
+    /// Schema invariant enforced by the parser: present-but-malformed
+    /// (non-numeric, zero, or u32-overflow) surfaces
+    /// `validation/invalid-attribute` — no silent coercion.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event_queue_capacity: Option<u32>,
+
     pub states: BTreeMap<String, State>,
     pub events: BTreeSet<String>,
     pub history_default_targets: BTreeMap<String, String>,

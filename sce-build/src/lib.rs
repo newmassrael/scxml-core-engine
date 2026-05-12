@@ -3457,6 +3457,55 @@ pub fn inject_server_model_mutations(
     Ok(mesh::topology::inject_server_response_sends(model, &response_events))
 }
 
+/// Watching-zenoh RFC §5.J.2 + §5.L (Q-RustNoStd-7 (a), C3 Atomic
+/// B-γ1): apply the deploy.yaml
+/// `machines.<m>.scheduler.default_event_queue_capacity` fallback
+/// to a model whose per-instance `<scxml sce:capacity="N">` is
+/// absent.
+///
+/// Resolution rule (spec line 1993):
+///   - per-instance attribute wins (`model.event_queue_capacity`
+///     already set by parser ⇒ this function is a no-op),
+///   - fallback to deploy.yaml `default_event_queue_capacity` when
+///     attribute is absent,
+///   - both absent ⇒ remains `None` (B-γ2's no_std codegen path
+///     will surface the missing-capacity diagnostic when the
+///     heapless adoption lands; B-γ1 tolerates None because the
+///     std codegen path does not consume the value yet).
+///
+/// Machine-name resolution mirrors
+/// [`inject_server_model_mutations`]: try `model.name` first, then
+/// fall back to the deploy.yaml's `source:` reverse-lookup. Silent
+/// no-op when neither the machine nor the scheduler block resolves.
+pub fn populate_event_queue_capacity_from_deploy(
+    model: &mut model::SCXMLModel,
+    deploy_path: &Path,
+) -> Result<(), mesh::error::MeshError> {
+    if model.event_queue_capacity.is_some() {
+        return Ok(());
+    }
+    let deploy_cfg = mesh::deploy::parse_deploy(deploy_path)?;
+
+    let effective_machine_name = if deploy_cfg.device_for_machine(&model.name).is_some() {
+        model.name.clone()
+    } else {
+        deploy_cfg
+            .find_machine_name_by_source(&model.name)
+            .unwrap_or_else(|| model.name.clone())
+    };
+
+    let capacity = deploy_cfg
+        .device_for_machine(&effective_machine_name)
+        .and_then(|d| d.machines.get(&effective_machine_name))
+        .and_then(|m| m.scheduler.as_ref())
+        .and_then(|s| s.default_event_queue_capacity);
+
+    if let Some(n) = capacity {
+        model.event_queue_capacity = Some(n);
+    }
+    Ok(())
+}
+
 /// Returns `Ok(MeshResult)` with generated files and all warnings,
 /// or `Err(MeshError)` on hard failure.
 pub fn compile_mesh_transport(

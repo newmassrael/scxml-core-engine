@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
+#
+# SCE workspace cargo configuration.
+#
+# Target declarations only. Build profiles + lints live in the
+# workspace `Cargo.toml`; default targets remain the host triple
+# (no `[build] target = ...` here).
+
+# ── Watching-zenoh RFC §5.J.2 (C3 Atomic B-γ1): MCU target ──
+#
+# `thumbv7em-none-eabihf` is the canonical Cortex-M4F target SCE
+# emits Rust code for under `--no-std`. The target is registered
+# here so consumers can drive `cargo build --target=thumbv7em-none-
+# eabihf -p sce-rust-runtime --no-default-features --features=no_std`
+# from any workspace directory without supplying linker hints.
+#
+# `linker` and `rustflags` are set per the Cortex-M4F convention
+# (rust-lld + Tier-2-default rustflags). The actual runtime port
+# (engine.rs + helpers/* from std to core::* + heapless) lands in
+# Atomic B-γ2; until then `cargo build --target=thumbv7em-none-
+# eabihf --features=no_std` is expected to fail with std-import
+# errors in the runtime crate's not-yet-ported modules. The target
+# registration alone does not invoke a build — CI gating with an
+# expect-pass invocation co-lands with B-γ2.
+[target.thumbv7em-none-eabihf]
+linker = "rust-lld"
+rustflags = [
+  # Cortex-M default ABI is hard-float; `-eabihf` triple already
+  # implies VFPv4-D16 (single-precision FPU on Cortex-M4F).
+  "-C", "link-arg=-Tlink.x",
+]

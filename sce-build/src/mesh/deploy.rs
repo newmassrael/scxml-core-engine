@@ -547,6 +547,20 @@ pub struct MachineSchedulerConfig {
     /// wheel sizing information).
     #[serde(default)]
     pub timer_wheel_depth: Option<u32>,
+    /// Watching-zenoh RFC §5.J.2 + §5.L (Q-RustNoStd-7 (a), C3
+    /// Atomic B-γ1): fallback event-queue capacity for machines
+    /// whose SCXML document omits the per-instance
+    /// `<scxml sce:capacity="N">` attribute. Unit: events.
+    ///
+    /// Resolution rule: per-instance `SCXMLModel.event_queue_capacity`
+    /// wins; this field supplies the deploy-default for the
+    /// remainder. Both absent is permitted at B-γ1 (std builds do
+    /// not consume the capacity); B-γ2's heapless adoption makes
+    /// the value load-bearing for `no_std` builds and adds a
+    /// `default_event_queue_capacity-missing` diagnostic when the
+    /// no_std codegen path has nothing to source the literal from.
+    #[serde(default)]
+    pub default_event_queue_capacity: Option<u32>,
 }
 
 /// Per-machine scheduler kind axis (SCE Mesh §14, watching-zenoh RFC

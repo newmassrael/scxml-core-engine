@@ -412,12 +412,47 @@ impl SCXMLParser {
             }
         }
 
+        // Watching-zenoh RFC §5.J.2 + §5.L (Q-RustNoStd-7 (a), C3
+        // Atomic B-γ1): `<scxml sce:capacity="N">` declares the
+        // per-document event-queue capacity. Two-pass extraction:
+        // (1) read the namespaced attribute via the SCE_NAMESPACE
+        // URI; (2) if present, parse as u32 and reject zero / non-
+        // numeric values with `validation/invalid-attribute`. Absent
+        // ⇒ `None`, deploy.yaml `default_event_queue_capacity`
+        // fallback applies later in the toolchain (populator hook
+        // mirrors the `cache_platform` precedent in
+        // `compile_forge_with_deploy`). The value becomes load-
+        // bearing in Atomic B-γ2 when `heapless::spsc::Queue<E, N>`
+        // replaces `Vec<E>` in `helpers/event_queue.rs`.
+        let event_queue_capacity =
+            match root.attribute((crate::forge::model::SCE_NAMESPACE, "capacity")) {
+                None => None,
+                Some(raw) => match raw.parse::<u32>() {
+                    Ok(n) if n > 0 => Some(n),
+                    _ => {
+                        return Err(crate::forge::error::Located::new(
+                            crate::forge::error::ValidationError::InvalidAttribute {
+                                element: "scxml".to_string(),
+                                attr: "sce:capacity".to_string(),
+                                value: raw.to_string(),
+                                expected: "positive u32".to_string(),
+                            }
+                            .into(),
+                            diag_label,
+                            None,
+                            None,
+                        ));
+                    }
+                },
+            };
+
         let mut model = SCXMLModel {
             name: name.to_string(),
             scxml_name: root.attribute("name").unwrap_or("").to_string(),
             initial,
             binding: root.attribute("binding").unwrap_or("early").to_string(),
             datamodel_type: root.attribute("datamodel").unwrap_or("ecmascript").to_string(),
+            event_queue_capacity,
             ..Default::default()
         };
 

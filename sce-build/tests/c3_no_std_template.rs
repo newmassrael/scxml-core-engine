@@ -1,0 +1,261 @@
+//! C3 Atomic B-γ1 integration tests — `<sce:capacity>` SCXML
+//! attribute + `default_event_queue_capacity` deploy.yaml fallback
+//! + Rust codegen template `pub const EVENT_QUEUE_CAPACITY`
+//! emission + `.cargo/config.toml` thumbv7em target registration.
+//!
+//! Watching-zenoh RFC §5.J.2 + §5.L (Q-RustNoStd-7 (a)). The
+//! per-document capacity flows: parser reads `<scxml sce:capacity>`
+//! → SCXMLModel.event_queue_capacity → (optional fallback from
+//! deploy.yaml) → Rust template emits `pub const EVENT_QUEUE_CAPACITY`
+//! when present. The runtime port (B-γ2) consumes the const for
+//! `heapless::spsc::Queue<E, EVENT_QUEUE_CAPACITY>`.
+//!
+//! The template-level `#![no_std]` + `use core::time::Duration`
+//! switch is intentionally NOT in B-γ1 (would emit silently-broken
+//! code given that sub-templates still use std paths). That switch
+//! co-lands with B-γ2's runtime port + sub-template swaps.
+
+use std::path::Path;
+
+use sce_build::forge::error::{ForgeError, ValidationError};
+use sce_build::generator::generate;
+use sce_build::parser::SCXMLParser;
+
+const PLAIN_FSM: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s0">
+  <state id="s0">
+    <transition event="go" target="s1"/>
+  </state>
+  <state id="s1"/>
+</scxml>
+"#;
+
+const FSM_WITH_CAPACITY: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s0" sce:capacity="32">
+  <state id="s0">
+    <transition event="go" target="s1"/>
+  </state>
+  <state id="s1"/>
+</scxml>
+"#;
+
+fn parse(content: &str, label: &str) -> sce_build::model::SCXMLModel {
+    let mut parser = SCXMLParser::new();
+    parser
+        .parse_string(content, label)
+        .unwrap_or_else(|e| panic!("parse failed for {label}: {:?}", e.error))
+}
+
+fn template_dir() -> std::path::PathBuf {
+    sce_build::find_template_dir_for(sce_build::generator::Language::Rust)
+}
+
+#[test]
+fn sce_capacity_attribute_is_parsed_into_model() {
+    let model = parse(FSM_WITH_CAPACITY, "cap_fsm");
+    assert_eq!(model.event_queue_capacity, Some(32));
+}
+
+#[test]
+fn missing_sce_capacity_attribute_leaves_model_field_none() {
+    let model = parse(PLAIN_FSM, "plain");
+    assert_eq!(model.event_queue_capacity, None);
+}
+
+#[test]
+fn malformed_sce_capacity_attribute_emits_invalid_attribute() {
+    let malformed = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s0" sce:capacity="not-a-number">
+  <state id="s0"/>
+</scxml>
+"#;
+    let mut parser = SCXMLParser::new();
+    let err = parser
+        .parse_string(malformed, "bad_cap")
+        .expect_err("non-numeric sce:capacity must reject");
+    match err.error {
+        ForgeError::Validation(ValidationError::InvalidAttribute {
+            element,
+            attr,
+            value,
+            ..
+        }) => {
+            assert_eq!(element, "scxml");
+            assert_eq!(attr, "sce:capacity");
+            assert_eq!(value, "not-a-number");
+        }
+        other => panic!("expected InvalidAttribute, got: {other:?}"),
+    }
+}
+
+#[test]
+fn zero_sce_capacity_attribute_rejects() {
+    // Q-RustNoStd-7 (a): capacity is the event-queue size; zero is
+    // not a meaningful value. Reject at parse time so downstream
+    // codegen cannot emit a 0-sized `heapless::Vec<E, 0>` (which
+    // compiles but always overflows on first push).
+    let zero_cap = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s0" sce:capacity="0">
+  <state id="s0"/>
+</scxml>
+"#;
+    let mut parser = SCXMLParser::new();
+    let err = parser
+        .parse_string(zero_cap, "zero_cap")
+        .expect_err("zero sce:capacity must reject");
+    assert!(matches!(
+        err.error,
+        ForgeError::Validation(ValidationError::InvalidAttribute { .. })
+    ));
+}
+
+#[test]
+fn rust_template_emits_event_queue_capacity_const_when_set() {
+    let model = parse(FSM_WITH_CAPACITY, "cap_fsm");
+    let code = generate(&model, &template_dir()).expect("template render must succeed");
+    assert!(
+        code.contains("pub const EVENT_QUEUE_CAPACITY: usize = 32;"),
+        "expected `pub const EVENT_QUEUE_CAPACITY: usize = 32;` in generated code, got first 100 lines:\n{}",
+        code.lines().take(100).collect::<Vec<_>>().join("\n")
+    );
+}
+
+#[test]
+fn rust_template_omits_event_queue_capacity_const_when_absent() {
+    let model = parse(PLAIN_FSM, "plain");
+    let code = generate(&model, &template_dir()).expect("template render must succeed");
+    assert!(
+        !code.contains("EVENT_QUEUE_CAPACITY"),
+        "no capacity declared ⇒ no const emitted"
+    );
+}
+
+#[test]
+fn populate_event_queue_capacity_from_deploy_fills_missing_attribute() {
+    // Author omits `<scxml sce:capacity>`; deploy.yaml supplies
+    // `machines.<m>.scheduler.default_event_queue_capacity`. The
+    // populator threads the fallback into the model so codegen can
+    // emit the same `pub const EVENT_QUEUE_CAPACITY` it would have
+    // for a per-instance declaration.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let deploy_path = dir.path().join("deploy.yaml");
+    std::fs::write(
+        &deploy_path,
+        r#"version: "1.0"
+topology:
+  dev1:
+    machines:
+      plain:
+        source: plain.scxml
+        platform:
+          class: ap
+          os: linux
+        scheduler:
+          kind: cooperative
+          worker_stack_budget: 1024
+          tick_period_us: 1000
+          worker_slot_budget_us: 100
+          keepalive_jitter_budget_us: 50
+          default_event_queue_capacity: 64
+"#,
+    )
+    .expect("deploy.yaml write");
+
+    let mut model = parse(PLAIN_FSM, "plain");
+    assert_eq!(model.event_queue_capacity, None);
+    sce_build::populate_event_queue_capacity_from_deploy(&mut model, &deploy_path)
+        .expect("populator must succeed");
+    assert_eq!(model.event_queue_capacity, Some(64));
+}
+
+#[test]
+fn populate_event_queue_capacity_from_deploy_preserves_instance_attribute() {
+    // Per-instance attribute wins over deploy.yaml fallback per
+    // Q-RustNoStd-7 (a) resolution rule.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let deploy_path = dir.path().join("deploy.yaml");
+    std::fs::write(
+        &deploy_path,
+        r#"version: "1.0"
+topology:
+  dev1:
+    machines:
+      cap_fsm:
+        source: cap_fsm.scxml
+        platform:
+          class: ap
+          os: linux
+        scheduler:
+          kind: cooperative
+          worker_stack_budget: 1024
+          tick_period_us: 1000
+          worker_slot_budget_us: 100
+          keepalive_jitter_budget_us: 50
+          default_event_queue_capacity: 128
+"#,
+    )
+    .expect("deploy.yaml write");
+
+    let mut model = parse(FSM_WITH_CAPACITY, "cap_fsm");
+    assert_eq!(model.event_queue_capacity, Some(32));
+    sce_build::populate_event_queue_capacity_from_deploy(&mut model, &deploy_path)
+        .expect("populator must succeed");
+    // 32 from the instance attribute survives — not overwritten by 128.
+    assert_eq!(model.event_queue_capacity, Some(32));
+}
+
+#[test]
+fn populate_event_queue_capacity_from_deploy_silent_skip_when_field_absent() {
+    // Deploy parses but lacks the new field ⇒ model stays None.
+    // Mirrors cache_platform / worker_placement silent-skip
+    // precedent (Q-η5 (a)).
+    let dir = tempfile::tempdir().expect("tempdir");
+    let deploy_path = dir.path().join("deploy.yaml");
+    std::fs::write(
+        &deploy_path,
+        r#"version: "1.0"
+topology:
+  dev1:
+    machines:
+      plain:
+        source: plain.scxml
+        platform:
+          class: ap
+          os: linux
+"#,
+    )
+    .expect("deploy.yaml write");
+
+    let mut model = parse(PLAIN_FSM, "plain");
+    sce_build::populate_event_queue_capacity_from_deploy(&mut model, &deploy_path)
+        .expect("populator must succeed");
+    assert_eq!(model.event_queue_capacity, None);
+}
+
+#[test]
+fn cargo_config_declares_thumbv7em_target() {
+    // Workspace `.cargo/config.toml` registers the canonical Cortex-
+    // M4F target so consumers can build with
+    // `cargo --target=thumbv7em-none-eabihf` from any directory.
+    // Atomic B-γ2's runtime port makes the build actually succeed;
+    // B-γ1's check is presence of the section + linker config.
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("workspace root");
+    let cfg = std::fs::read_to_string(workspace_root.join(".cargo").join("config.toml"))
+        .expect("workspace `.cargo/config.toml` must exist");
+    assert!(
+        cfg.contains("[target.thumbv7em-none-eabihf]"),
+        ".cargo/config.toml must declare the thumbv7em-none-eabihf target"
+    );
+    assert!(
+        cfg.contains("linker = \"rust-lld\""),
+        "thumbv7em target must specify rust-lld as linker"
+    );
+}
