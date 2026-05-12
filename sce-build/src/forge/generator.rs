@@ -769,6 +769,14 @@ pub fn generate_cpp_with_imports_and_externs(
         ForgeDocument::Worker(_) => unreachable!(
             "ForgeDocument::Worker rejected by codegen_matrix::check on cpp"
         ),
+        // RFC §5.L: BoundedCollection is Generic-class but C6-α ships
+        // no codegen templates — `template_ships` returns false for
+        // every backend until C6-γ. `codegen_matrix::check` raises
+        // `TemplateMissing` ahead of this match, so the unreachable
+        // documents the contract.
+        ForgeDocument::BoundedCollection(_) => unreachable!(
+            "ForgeDocument::BoundedCollection rejected by codegen_matrix::check on cpp (C6-α schema-only)"
+        ),
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -9100,6 +9108,9 @@ pub fn generate_kotlin_with_imports(
         ForgeDocument::Worker(_) => unreachable!(
             "ForgeDocument::Worker rejected by codegen_matrix::check on kotlin"
         ),
+        ForgeDocument::BoundedCollection(_) => unreachable!(
+            "ForgeDocument::BoundedCollection rejected by codegen_matrix::check on kotlin (C6-α schema-only)"
+        ),
     };
 
     let filename = format!("{}.kt", filters::to_pascal_case(doc.name().to_string()));
@@ -9213,6 +9224,9 @@ pub fn generate_rust_with_imports_and_externs(
         // Consumer split. Ordering choice from `<sce:inbox ordering>`
         // pins the atomic Op selection.
         ForgeDocument::Worker(m) => render_worker_rust(&env, m, imports)?,
+        ForgeDocument::BoundedCollection(_) => unreachable!(
+            "ForgeDocument::BoundedCollection rejected by codegen_matrix::check on rust (C6-α schema-only; C6-γ ships heapless::Vec<T, N> + insert/remove/get/iter/len/capacity API per RFC §5.L lines 2571-2572 + 2609-2619)"
+        ),
     };
 
     let filename = format!("{}.rs", filters::to_snake_case(doc.name().to_string()));
@@ -9715,6 +9729,9 @@ pub fn generate_go_with_imports(
         ForgeDocument::Worker(_) => unreachable!(
             "ForgeDocument::Worker rejected by codegen_matrix::check on go"
         ),
+        ForgeDocument::BoundedCollection(_) => unreachable!(
+            "ForgeDocument::BoundedCollection rejected by codegen_matrix::check on go (C6-α schema-only)"
+        ),
     };
 
     let filename = format!("{}.go", filters::to_snake_case(doc.name().to_string()));
@@ -9809,6 +9826,9 @@ pub fn generate_python_with_imports(
         // RFC §5.D / §5.J.4: rejected upstream by codegen_matrix::check.
         ForgeDocument::Worker(_) => unreachable!(
             "ForgeDocument::Worker rejected by codegen_matrix::check on python"
+        ),
+        ForgeDocument::BoundedCollection(_) => unreachable!(
+            "ForgeDocument::BoundedCollection rejected by codegen_matrix::check on python (C6-α schema-only)"
         ),
     };
 
@@ -9924,6 +9944,9 @@ pub fn generate_c11_with_imports_and_externs(
         // variant (acq/rel vs relaxed). The dispatcher appends the
         // `.c` sibling to `files` after this match.
         ForgeDocument::Worker(m) => render_worker_c_header(&env, m, imports)?,
+        ForgeDocument::BoundedCollection(_) => unreachable!(
+            "ForgeDocument::BoundedCollection rejected by codegen_matrix::check on c11 (C6-α schema-only; C6-γ ships slot+bitmap struct with `_insert/_remove/_find_by_index` API per RFC §5.L lines 2573-2575 + 2624-2640)"
+        ),
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));

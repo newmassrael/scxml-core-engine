@@ -2276,6 +2276,13 @@ fn discover_stateful_member_fields(
         // emitted at C2-β codegen time. Member discovery defers to
         // the first authored `<sce:call alias="..."/>` consumer.
         ForgeDocument::Worker(_) => {}
+        // RFC §5.L: BoundedCollection owns the slot table, occupancy
+        // mask, generation counters as instance state but exposes no
+        // SCXML-expression-visible typed fields in C6-α — the
+        // insert/remove/get/iter/len/capacity API is method-only per
+        // spec lines 2609-2619 and lands in C6-γ codegen. Member
+        // discovery defers to the first authored `<sce:call>` consumer.
+        ForgeDocument::BoundedCollection(_) => {}
         // Stateless kinds handled via stateless_signature path.
         // Algorithm (RFC §5.A) is a stateless free function; no member
         // fields exposed to user expressions.
@@ -2333,7 +2340,12 @@ fn discover_stateful_member_methods(
         | ForgeDocument::Timer(_)
         | ForgeDocument::Link(_)
         | ForgeDocument::BufferPool(_)
-        | ForgeDocument::Worker(_) => Vec::new(),
+        | ForgeDocument::Worker(_)
+        // RFC §5.L BoundedCollection: methods insert/remove/get/
+        // find_by_index/iter/len/capacity per spec lines 2609-2619 land
+        // in C6-γ codegen. Until the first `<sce:call alias.insert(...)>`
+        // consumer surfaces, member method discovery returns empty.
+        | ForgeDocument::BoundedCollection(_) => Vec::new(),
         // Stateless kinds: caller filters via `is_stateful` before reaching
         // here. Listed so the match stays exhaustive — adding a new
         // ForgeDocument variant forces a decision at this site.
@@ -2464,7 +2476,11 @@ fn discover_primary_function(
         | forge::model::ForgeDocument::Timer(_)
         | forge::model::ForgeDocument::Link(_)
         | forge::model::ForgeDocument::BufferPool(_)
-        | forge::model::ForgeDocument::Worker(_) => None,
+        | forge::model::ForgeDocument::Worker(_)
+        // RFC §5.L: stateful — uses member access via insert/remove
+        // etc. (spec lines 2609-2619). No callsite-visible primary
+        // free function name.
+        | forge::model::ForgeDocument::BoundedCollection(_) => None,
         // RFC §5.A Algorithm: free function whose name is the
         // SCXML-author-declared `name=` attribute, lowered to each
         // language's idiomatic identifier per RFC §5.J.5. The

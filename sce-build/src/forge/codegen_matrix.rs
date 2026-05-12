@@ -73,7 +73,12 @@ pub const fn kind_class(kind: ForgeKind) -> KindClass {
         | ForgeKind::Interpolation
         | ForgeKind::Timer
         | ForgeKind::Observer
-        | ForgeKind::Algorithm => KindClass::Generic,
+        | ForgeKind::Algorithm
+        // RFC §5.L lines 2566-2581: BoundedCollection ships on all 6
+        // backends with language-builtin primitives (no MCU-specific
+        // hardware constraint like DMA section/cache for BufferPool, no
+        // cross-core atomics constraint like Worker). Generic class.
+        | ForgeKind::BoundedCollection => KindClass::Generic,
         // RFC §5.C / §5.J.4: Link is the first MCU-class kind.
         // Authoring it on cpp/kotlin/go/python raises
         // `codegen/mcu-class-kind-on-non-mcu-language` (existing A6
@@ -164,6 +169,15 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         ForgeKind::Worker => match lang {
             Language::Rust | Language::C11 => true,
             Language::Cpp | Language::Kotlin | Language::Go | Language::Python => false,
+        },
+        // RFC §5.L BoundedCollection: C6-α ships schema + parser only
+        // (no codegen templates yet). C6-γ closes the 6-backend codegen
+        // matrix per spec line 2571-2581. Every language returns `false`
+        // until then so the `EmitOutcome::TemplateMissing` path fires
+        // explicitly rather than silently emitting a stub.
+        ForgeKind::BoundedCollection => match lang {
+            Language::Rust | Language::Cpp | Language::Kotlin
+            | Language::Go | Language::Python | Language::C11 => false,
         },
     }
 }

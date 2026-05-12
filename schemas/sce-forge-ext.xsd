@@ -53,6 +53,8 @@
       <xs:enumeration value="buffer-pool"/>
       <!-- watching-zenoh RFC §5.D (Phase C2, MCU-class) -->
       <xs:enumeration value="worker"/>
+      <!-- watching-zenoh RFC §5.L (Phase C6, Generic-class) -->
+      <xs:enumeration value="bounded-collection"/>
     </xs:restriction>
   </xs:simpleType>
 

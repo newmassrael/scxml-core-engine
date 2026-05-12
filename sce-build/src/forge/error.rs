@@ -1494,6 +1494,42 @@ pub enum ValidationError {
         /// Cooperative scheduler tick period (microseconds).
         tick_period_us: u32,
     },
+
+    /// watching-zenoh RFC §5.L line 2559
+    /// (`collection/ordering-sorted-requires-index-by`) — a
+    /// `<sce:ordering>sorted-by(index-by)</sce:ordering>` declaration
+    /// without an accompanying `<sce:index-by field="..."/>` element.
+    /// Spec line 2559 fixes the SortedByIndex iteration order to the
+    /// `index-by` field; without that field there is no comparator the
+    /// codegen can lower. C6-α parse-time structure check.
+    #[error(
+        "bounded-collection '{collection_name}': <sce:ordering>sorted-by(index-by)</sce:ordering> declared without <sce:index-by field=\"...\"/>. \
+         watching-zenoh RFC §5.L line 2559 fixes sorted iteration to the `index-by` field; without it the codegen has no comparator to lower. \
+         Repair: add an `<sce:index-by field=\"FIELD\"/>` element naming a field of the element-type struct, or change `<sce:ordering>` to `insertion`."
+    )]
+    CollectionOrderingSortedRequiresIndexBy {
+        /// Bounded-collection name from `<scxml sce:kind="bounded-collection" name="...">`.
+        collection_name: String,
+    },
+
+    /// watching-zenoh RFC §5.L line 2655
+    /// (`collection/overflow-policy-oldest-wins-requires-ordering-insertion`)
+    /// — `<sce:on-overflow>oldest-wins</sce:on-overflow>` declared
+    /// together with `<sce:ordering>sorted-by(index-by)</sce:ordering>`.
+    /// Spec line 2655 lists this combination as the explicit anti-
+    /// pattern: the `oldest-wins` policy presumes a temporal ordering
+    /// (insertion timestamp) that `sorted-by` mode replaces with the
+    /// `index-by` field comparator, so "oldest" has no defined meaning.
+    /// C6-α parse-time structure check.
+    #[error(
+        "bounded-collection '{collection_name}': <sce:on-overflow>oldest-wins</sce:on-overflow> requires <sce:ordering>insertion</sce:ordering>, but ordering is `sorted-by(index-by)`. \
+         watching-zenoh RFC §5.L line 2655 lists this combination as the explicit anti-pattern: `oldest-wins` presumes a temporal ordering that `sorted-by` replaces with the `index-by` field comparator. \
+         Repair: change `<sce:ordering>` to `insertion` (keeps the oldest-wins policy), or change `<sce:on-overflow>` to `reject` / `diagnostic-event`."
+    )]
+    CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion {
+        /// Bounded-collection name from `<scxml sce:kind="bounded-collection" name="...">`.
+        collection_name: String,
+    },
 }
 
 /// watching-zenoh RFC §5.E B7-η' Atomic A2 callback-path failure

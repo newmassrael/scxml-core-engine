@@ -448,6 +448,8 @@ fn parse_forge_from_node(
         ForgeKind::Link => parse_link(root, label).map(ForgeDocument::Link),
         ForgeKind::BufferPool => parse_buffer_pool(root, label).map(ForgeDocument::BufferPool),
         ForgeKind::Worker => parse_worker(root, label).map(ForgeDocument::Worker),
+        ForgeKind::BoundedCollection => parse_bounded_collection(root, label)
+            .map(ForgeDocument::BoundedCollection),
         ForgeKind::Statechart => Err(located(
             root,
             label.diagnostic_label,
@@ -6597,6 +6599,272 @@ fn require_u32_body(
                 expected: "u32 integer".into(),
             },
         )
+    })
+}
+
+// ── Bounded-collection kind parsing (RFC §5.L) ────────────────
+
+/// Parse a `<scxml sce:kind="bounded-collection">` document body per
+/// watching-zenoh RFC §5.L lines 2540-2655.
+///
+/// C6-α scope: schema + parse + 2 parse-time structure validators
+/// (`collection/ordering-sorted-requires-index-by` from spec line 2559
+/// + `collection/overflow-policy-oldest-wins-requires-ordering-
+/// insertion` from spec line 2655). The other four diagnostics listed in
+/// the spec body (`collection/capacity-unresolved` deploy-time;
+/// `collection/element-type-not-a-kind` + `collection/index-by-field-
+/// missing` + `collection/multi-writer-without-atomics` cross-doc) defer
+/// to C6-β/γ when the consumer wiring is in place — per the
+/// `feedback_silently_broken_hooks` discipline, codes land alongside
+/// their cross-resolution producer rather than as wire-but-unconsumed
+/// surface.
+fn parse_bounded_collection(
+    root: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+) -> Result<BoundedCollectionModel, Located<ForgeError>> {
+    use crate::forge::model::{
+        BoundedCollectionModel, CapacitySource, CollectionOrdering, ConcurrencyMode,
+        OverflowPolicy,
+    };
+
+    let doc_name = label.identifier;
+
+    // ── Required: <sce:element-type>NAME</sce:element-type> ──
+    //
+    // Spec line 2552 verbatim element form. C6-α stores the body text
+    // as opaque String; cross-doc resolution against
+    // `SceCrossDocRegistry` (verifying the name resolves AND is a
+    // codec/procedure kind per spec lines 2566-2567) lands in C6-β
+    // behind `collection/element-type-not-a-kind`.
+    let element_type_node = find_sce_child(root, "element-type").ok_or_else(|| {
+        located(
+            root,
+            label.diagnostic_label,
+            ValidationError::MissingElement {
+                kind: ForgeKind::BoundedCollection,
+                element: "sce:element-type".into(),
+            },
+        )
+    })?;
+    let element_type = element_type_node.text().unwrap_or("").trim().to_string();
+    if element_type.is_empty() {
+        return Err(located(
+            &element_type_node,
+            label.diagnostic_label,
+            ValidationError::InvalidAttribute {
+                element: "<sce:element-type>".into(),
+                attr: "<body>".into(),
+                value: String::new(),
+                expected: "non-empty kind name (codec or procedure)".into(),
+            },
+        ));
+    }
+
+    // ── Required: <sce:capacity .../> (one of source="deploy" key=... OR const=...) ──
+    let capacity_node = find_sce_child(root, "capacity").ok_or_else(|| {
+        located(
+            root,
+            label.diagnostic_label,
+            ValidationError::MissingElement {
+                kind: ForgeKind::BoundedCollection,
+                element: "sce:capacity".into(),
+            },
+        )
+    })?;
+    let capacity = match (
+        capacity_node.attribute("source"),
+        capacity_node.attribute("key"),
+        capacity_node.attribute("const"),
+    ) {
+        // `<sce:capacity source="deploy" key="machines.X.limits.Y"/>` — spec lines 2553-2554.
+        (Some("deploy"), Some(key), None) => {
+            let key = key.trim().to_string();
+            if key.is_empty() {
+                return Err(located(
+                    &capacity_node,
+                    label.diagnostic_label,
+                    ValidationError::InvalidAttribute {
+                        element: "<sce:capacity>".into(),
+                        attr: "key".into(),
+                        value: String::new(),
+                        expected: "non-empty dotted key path (e.g. \"machines.X.limits.Y\")".into(),
+                    },
+                ));
+            }
+            CapacitySource::DeployKey { key }
+        }
+        // `<sce:capacity const="N"/>` — spec line 2602.
+        (None, None, Some(c)) => {
+            let value: u32 = c.parse().map_err(|_| {
+                located(
+                    &capacity_node,
+                    label.diagnostic_label,
+                    ValidationError::InvalidAttribute {
+                        element: "<sce:capacity>".into(),
+                        attr: "const".into(),
+                        value: c.to_string(),
+                        expected: "positive u32 (build-time slot count)".into(),
+                    },
+                )
+            })?;
+            if value == 0 {
+                return Err(located(
+                    &capacity_node,
+                    label.diagnostic_label,
+                    ValidationError::InvalidAttribute {
+                        element: "<sce:capacity>".into(),
+                        attr: "const".into(),
+                        value: c.to_string(),
+                        expected: "positive non-zero u32".into(),
+                    },
+                ));
+            }
+            CapacitySource::CompileConst { value }
+        }
+        _ => {
+            return Err(located(
+                &capacity_node,
+                label.diagnostic_label,
+                ValidationError::InvalidAttribute {
+                    element: "<sce:capacity>".into(),
+                    attr: "(source|key|const)".into(),
+                    value: String::new(),
+                    expected: r#"exactly one of `source="deploy" key="..."` or `const="..."`"#
+                        .into(),
+                },
+            ));
+        }
+    };
+
+    // ── Optional: <sce:index-by field="..."/> ──
+    let index_by = find_sce_child(root, "index-by")
+        .map(|n| {
+            require_attr(&n, "field", "<sce:index-by>", label.diagnostic_label)
+                .and_then(|v| {
+                    let v = v.trim().to_string();
+                    if v.is_empty() {
+                        Err(located(
+                            &n,
+                            label.diagnostic_label,
+                            ValidationError::InvalidAttribute {
+                                element: "<sce:index-by>".into(),
+                                attr: "field".into(),
+                                value: String::new(),
+                                expected: "non-empty field name from element-type struct".into(),
+                            },
+                        ))
+                    } else {
+                        Ok(v)
+                    }
+                })
+        })
+        .transpose()?;
+
+    // ── Optional: <sce:on-overflow>policy</sce:on-overflow> (default DiagnosticEvent) ──
+    let on_overflow = match find_sce_child(root, "on-overflow") {
+        None => OverflowPolicy::DiagnosticEvent,
+        Some(n) => match n.text().unwrap_or("").trim() {
+            "diagnostic-event" => OverflowPolicy::DiagnosticEvent,
+            "reject" => OverflowPolicy::Reject,
+            "oldest-wins" => OverflowPolicy::OldestWins,
+            other => {
+                return Err(located(
+                    &n,
+                    label.diagnostic_label,
+                    ValidationError::InvalidAttribute {
+                        element: "<sce:on-overflow>".into(),
+                        attr: "<body>".into(),
+                        value: other.to_string(),
+                        expected: "diagnostic-event | reject | oldest-wins".into(),
+                    },
+                ));
+            }
+        },
+    };
+
+    // ── Optional: <sce:ordering>mode</sce:ordering> (default Insertion) ──
+    let ordering = match find_sce_child(root, "ordering") {
+        None => CollectionOrdering::Insertion,
+        Some(n) => {
+            let raw = n.text().unwrap_or("").trim();
+            // Spec line 2558-2559: `sorted-by(index-by)` is the
+            // canonical literal text; accept either the parenthesised
+            // form or the bare `sorted-by` keyword for ergonomics.
+            match raw {
+                "insertion" => CollectionOrdering::Insertion,
+                "sorted-by(index-by)" | "sorted-by" => CollectionOrdering::SortedByIndex,
+                other => {
+                    return Err(located(
+                        &n,
+                        label.diagnostic_label,
+                        ValidationError::InvalidAttribute {
+                            element: "<sce:ordering>".into(),
+                            attr: "<body>".into(),
+                            value: other.to_string(),
+                            expected: "insertion | sorted-by(index-by)".into(),
+                        },
+                    ));
+                }
+            }
+        }
+    };
+
+    // ── Optional: <sce:concurrency>mode</sce:concurrency> (default SingleWriter) ──
+    let concurrency = match find_sce_child(root, "concurrency") {
+        None => ConcurrencyMode::SingleWriter,
+        Some(n) => match n.text().unwrap_or("").trim() {
+            "single-writer" => ConcurrencyMode::SingleWriter,
+            "multi-writer" => ConcurrencyMode::MultiWriter,
+            other => {
+                return Err(located(
+                    &n,
+                    label.diagnostic_label,
+                    ValidationError::InvalidAttribute {
+                        element: "<sce:concurrency>".into(),
+                        attr: "<body>".into(),
+                        value: other.to_string(),
+                        expected: "single-writer | multi-writer".into(),
+                    },
+                ));
+            }
+        },
+    };
+
+    // ── Parse-time structure validator #1: sorted-by requires index-by ──
+    // Spec line 2559 — fires `collection/ordering-sorted-requires-index-by`.
+    if matches!(ordering, CollectionOrdering::SortedByIndex) && index_by.is_none() {
+        return Err(located(
+            root,
+            label.diagnostic_label,
+            ValidationError::CollectionOrderingSortedRequiresIndexBy {
+                collection_name: doc_name.to_string(),
+            },
+        ));
+    }
+
+    // ── Parse-time structure validator #2: oldest-wins requires insertion ──
+    // Spec line 2655 — fires
+    // `collection/overflow-policy-oldest-wins-requires-ordering-insertion`.
+    if matches!(on_overflow, OverflowPolicy::OldestWins)
+        && !matches!(ordering, CollectionOrdering::Insertion)
+    {
+        return Err(located(
+            root,
+            label.diagnostic_label,
+            ValidationError::CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion {
+                collection_name: doc_name.to_string(),
+            },
+        ));
+    }
+
+    Ok(BoundedCollectionModel {
+        name: doc_name.to_string(),
+        element_type,
+        capacity,
+        index_by,
+        on_overflow,
+        ordering,
+        concurrency,
     })
 }
 

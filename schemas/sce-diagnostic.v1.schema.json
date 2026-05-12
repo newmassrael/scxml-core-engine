@@ -134,6 +134,8 @@
         "worker/outbox-ref-unknown",
         "worker/outbox-target-wrong-kind",
         "worker/outbox-target-suffix-invalid",
+        "collection/ordering-sorted-requires-index-by",
+        "collection/overflow-policy-oldest-wins-requires-ordering-insertion",
         "timer/period-below-tick-rate",
         "timer/slot-overflow",
         "extern/symbol-not-in-whitelist",

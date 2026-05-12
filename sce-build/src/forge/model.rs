@@ -121,6 +121,20 @@ pub enum ForgeKind {
     /// deploy-aware `MachineSchedulerConfig` + worker-count validation
     /// lands in C2-γ.
     Worker,
+    /// Typed container with build-time-declared capacity but runtime-varying
+    /// occupancy — watching-zenoh RFC §5.L lines 2540-2655. zenoh-pico parity
+    /// (runtime subscription declare/undeclare + queryable + reassembly
+    /// tables) requires this on MCU where heap is forbidden. Six-language
+    /// emitter table per §5.J.5 (Rust `heapless::Vec<T, N>` / C11 slot+bitmap
+    /// struct / Cpp `std::array<T, N>` + `std::bitset<N>` / Kotlin
+    /// `Array<T?>` + `BooleanArray` / Go fixed-array + mask / Python list +
+    /// bytearray mask). C6-α ships the schema + parse-time validators for
+    /// the two structure-only codes (`collection/ordering-sorted-requires-
+    /// index-by` + `collection/overflow-policy-oldest-wins-requires-ordering-
+    /// insertion`); cross-doc element-type resolution + index-by-field
+    /// verification + atomics-import check land in C6-β; deploy-time
+    /// capacity resolution + 6-backend codegen land in C6-γ.
+    BoundedCollection,
 }
 
 impl ForgeKind {
@@ -144,6 +158,7 @@ impl ForgeKind {
         "link",
         "buffer-pool",
         "worker",
+        "bounded-collection",
     ];
 
     /// Parse from `sce:kind` attribute value. Returns `None` for unknown kinds.
@@ -164,6 +179,7 @@ impl ForgeKind {
             "link" => Some(Self::Link),
             "buffer-pool" => Some(Self::BufferPool),
             "worker" => Some(Self::Worker),
+            "bounded-collection" => Some(Self::BoundedCollection),
             _ => None,
         }
     }
@@ -211,6 +227,14 @@ impl ForgeKind {
             // consumer}_t handle pair on C11). The inbox storage + head/
             // tail indices are instance state of the generated struct.
             Self::Worker => true,
+            // RFC §5.L lines 2566-2581: BoundedCollection emits a typed
+            // fixed-capacity container — Rust `heapless::Vec<T, N>` /
+            // Cpp `std::array<T, N>` + `std::bitset<N>` / Kotlin
+            // `Array<T?>` + `BooleanArray` / Go fixed array + mask /
+            // Python list + bytearray mask / C11 slot+bitmap struct.
+            // The slot table, occupancy mask, and generation counters
+            // are instance state of the generated struct.
+            Self::BoundedCollection => true,
         }
     }
 
@@ -254,6 +278,14 @@ impl ForgeKind {
             // through §5.I `<sce:extern>` whitelist (`sce_intrinsics_runtime`
             // baseline); the SCE-side helper-crate tier is `None`.
             Self::Worker => RuntimeDep::None,
+            // RFC §5.L lines 2571-2581: BoundedCollection lowers to a
+            // self-contained slot table per backend (no SCE-side helper
+            // crate) — `heapless` is a third-party Rust crate, the
+            // C11/Cpp/Kotlin/Go/Python forms use language-builtin
+            // primitives only. The cross-backend parity contract
+            // (§6.2.6) is codegen-time, not a runtime helper. Tier
+            // `None` matches BufferPool's stance.
+            Self::BoundedCollection => RuntimeDep::None,
         }
     }
 
@@ -276,6 +308,7 @@ impl ForgeKind {
                 | Self::Link
                 | Self::BufferPool
                 | Self::Worker
+                | Self::BoundedCollection
         )
     }
 }
@@ -298,6 +331,7 @@ impl std::fmt::Display for ForgeKind {
             Self::Link => write!(f, "link"),
             Self::BufferPool => write!(f, "buffer-pool"),
             Self::Worker => write!(f, "worker"),
+            Self::BoundedCollection => write!(f, "bounded-collection"),
         }
     }
 }
@@ -2550,6 +2584,135 @@ pub struct InboxConfig {
     pub ordering: InboxOrdering,
 }
 
+// ── Bounded-collection kind (RFC §5.L) ─────────────────────────
+
+/// `<sce:capacity>` source — RFC §5.L lines 2553-2554 + 2600-2603.
+///
+/// Either resolved from `deploy.yaml` at codegen time
+/// (`<sce:capacity source="deploy" key="machines.X.limits.Y"/>`) or a
+/// build-time constant (`<sce:capacity const="N"/>`). Spec line 2583-2585
+/// fixes the lowering: both shapes resolve to a per-language compile-time
+/// constant in the emitted code. The cross-backend parity contract
+/// (§6.2.6) verifies that the same insertion sequence produces the same
+/// iterator order on every backend.
+///
+/// C6-α validates the XML attribute structure (exactly one of
+/// `source="deploy" key=...` or `const="..."`) at parse time; deploy-key
+/// resolution against `MachineDeployConfig.limits` lands in C6-γ behind
+/// `collection/capacity-unresolved`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CapacitySource {
+    /// `<sce:capacity source="deploy" key="machines.X.limits.Y"/>` — key
+    /// path against deploy.yaml resolved at codegen time. Empty / missing
+    /// `key` attribute parse-rejects.
+    DeployKey { key: String },
+    /// `<sce:capacity const="N"/>` — build-time constant. Positive `u32`
+    /// only; `0` or non-numeric parse-rejects.
+    CompileConst { value: u32 },
+}
+
+/// `<sce:on-overflow>` policy — RFC §5.L lines 2556-2557 + 2604.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OverflowPolicy {
+    /// `<sce:on-overflow>diagnostic-event</sce:on-overflow>` — emit a
+    /// runtime diagnostic event when the table is full (default per spec
+    /// line 2556).
+    DiagnosticEvent,
+    /// `<sce:on-overflow>reject</sce:on-overflow>` — return
+    /// `Err(OverflowError)` from `insert`; caller decides.
+    Reject,
+    /// `<sce:on-overflow>oldest-wins</sce:on-overflow>` — drop the
+    /// oldest entry to make room. Requires `<sce:ordering>insertion`
+    /// (validated by [`DiagnosticCode::CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion`]).
+    OldestWins,
+}
+
+/// `<sce:ordering>` mode — RFC §5.L lines 2558-2559 + 2605.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CollectionOrdering {
+    /// `<sce:ordering>insertion</sce:ordering>` — iterator yields entries
+    /// in insertion order (default per spec line 2558).
+    Insertion,
+    /// `<sce:ordering>sorted-by(index-by)</sce:ordering>` — iterator
+    /// yields entries sorted by the `<sce:index-by field="...">` field.
+    /// Requires `<sce:index-by>` to be present (validated by
+    /// [`DiagnosticCode::CollectionOrderingSortedRequiresIndexBy`]).
+    SortedByIndex,
+}
+
+/// `<sce:concurrency>` mode — RFC §5.L lines 2560-2562 + 2606.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ConcurrencyMode {
+    /// `<sce:concurrency>single-writer</sce:concurrency>` — exactly one
+    /// task may call mutating ops. Default per spec line 2560.
+    SingleWriter,
+    /// `<sce:concurrency>multi-writer</sce:concurrency>` — multiple
+    /// tasks may call mutating ops. Requires §5.I `<sce:call>` atomic
+    /// intrinsics imported (validated cross-doc by
+    /// `collection/multi-writer-without-atomics` in C6-β).
+    MultiWriter,
+}
+
+/// Bounded-collection document — RFC §5.L lines 2540-2655.
+///
+/// Typed container with build-time-declared capacity but runtime-varying
+/// occupancy. The MCU use case (zenoh-pico parity) requires runtime
+/// subscription declare/undeclare + queryable + in-flight reassembly
+/// tables without a heap allocator.
+///
+/// C6-α schema (per `<scxml sce:kind="bounded-collection">` body):
+/// - `<sce:element-type>NAME</sce:element-type>` (required, body text)
+///   — references another forge kind by name (codec-kind struct or
+///   procedure-kind state record per spec line 2566-2567). C6-α stores
+///   as opaque `String`; cross-doc resolution against
+///   `SceCrossDocRegistry` (verifying the name resolves AND is a
+///   codec/procedure kind) lands in C6-β behind
+///   `collection/element-type-not-a-kind`.
+/// - `<sce:capacity .../>` (required, exactly one attribute form) — see
+///   [`CapacitySource`] doc.
+/// - `<sce:index-by field="FIELD"/>` (optional) — enables `find_by_index`
+///   API per spec line 2615. C6-α stores the field name as
+///   `Option<String>`; cross-doc verification that the field exists in
+///   the element-type struct lands in C6-β behind
+///   `collection/index-by-field-missing`.
+/// - `<sce:on-overflow>POLICY</sce:on-overflow>` (optional, default
+///   `diagnostic-event`) — see [`OverflowPolicy`].
+/// - `<sce:ordering>MODE</sce:ordering>` (optional, default `insertion`)
+///   — see [`CollectionOrdering`].
+/// - `<sce:concurrency>MODE</sce:concurrency>` (optional, default
+///   `single-writer`) — see [`ConcurrencyMode`].
+///
+/// Parse-time validators (C6-α):
+/// - `collection/ordering-sorted-requires-index-by` — if `ordering` is
+///   `SortedByIndex`, `<sce:index-by>` must be present.
+/// - `collection/overflow-policy-oldest-wins-requires-ordering-insertion`
+///   — if `on_overflow` is `OldestWins`, `ordering` must be `Insertion`
+///   (spec line 2655).
+#[derive(Debug, Clone, Serialize)]
+pub struct BoundedCollectionModel {
+    pub name: String,
+    /// `<sce:element-type>` body text — references another forge kind by
+    /// name. C6-α opaque `String`; cross-doc resolution in C6-β.
+    pub element_type: String,
+    /// `<sce:capacity .../>` — deploy-key or compile-time constant.
+    pub capacity: CapacitySource,
+    /// `<sce:index-by field="...">` — optional index field for
+    /// `find_by_index`. C6-α stores as opaque `Option<String>`; cross-doc
+    /// element-struct field verification in C6-β.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub index_by: Option<String>,
+    /// `<sce:on-overflow>` — default `DiagnosticEvent` per spec line 2556.
+    pub on_overflow: OverflowPolicy,
+    /// `<sce:ordering>` — default `Insertion` per spec line 2558.
+    pub ordering: CollectionOrdering,
+    /// `<sce:concurrency>` — default `SingleWriter` per spec line 2560.
+    pub concurrency: ConcurrencyMode,
+}
+
 /// Worker document — RFC §5.D concurrent execution context driven
 /// by a `<sce:link-rx>` source.
 ///
@@ -2631,6 +2794,8 @@ pub enum ForgeDocument {
     BufferPool(BufferPoolModel),
     #[serde(rename = "worker")]
     Worker(WorkerModel),
+    #[serde(rename = "bounded-collection")]
+    BoundedCollection(BoundedCollectionModel),
 }
 
 impl ForgeDocument {
@@ -2650,6 +2815,7 @@ impl ForgeDocument {
             Self::Link(m) => &m.name,
             Self::BufferPool(m) => &m.name,
             Self::Worker(m) => &m.name,
+            Self::BoundedCollection(m) => &m.name,
         }
     }
 
@@ -2669,6 +2835,7 @@ impl ForgeDocument {
             Self::Link(_) => ForgeKind::Link,
             Self::BufferPool(_) => ForgeKind::BufferPool,
             Self::Worker(_) => ForgeKind::Worker,
+            Self::BoundedCollection(_) => ForgeKind::BoundedCollection,
         }
     }
 
@@ -2704,6 +2871,12 @@ impl ForgeDocument {
             // RFC §5.D: heapless::spsc on Rust + bare ring-buffer on C11
             // with §5.I atomic intrinsics. No SCE-side runtime helper.
             Self::Worker(_) => RuntimeDep::None,
+            // RFC §5.L lines 2571-2581: self-contained slot table per
+            // backend (heapless::Vec / std::array / Array+BooleanArray /
+            // fixed array + mask / list + bytearray / C array + bitmap).
+            // No SCE-side runtime helper crate. Cross-backend parity is
+            // codegen-time (§6.2.6).
+            Self::BoundedCollection(_) => RuntimeDep::None,
         }
     }
 }

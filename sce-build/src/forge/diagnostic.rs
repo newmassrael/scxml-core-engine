@@ -985,6 +985,35 @@ pub enum DiagnosticCode {
     #[serde(rename = "worker/outbox-target-suffix-invalid")]
     WorkerOutboxTargetSuffixInvalid,
 
+    // ── §5.L Bounded-collection kind diagnostics (watching-zenoh RFC
+    //    §5.L lines 2540-2655). C6-α ships the two structure-only codes
+    //    here; cross-doc (element-type-not-a-kind / index-by-field-
+    //    missing / multi-writer-without-atomics) defers to C6-β,
+    //    deploy-time (capacity-unresolved) defers to C6-γ. ──
+    /// `<sce:ordering>sorted-by(index-by)</sce:ordering>` declared
+    /// without an accompanying `<sce:index-by field="..."/>` element.
+    /// Spec line 2559 fixes the SortedByIndex iteration order to the
+    /// `index-by` field; without that field there is no comparator
+    /// the codegen can lower. The single recoverable repair is to add
+    /// an `<sce:index-by>` element naming a field of the element-type
+    /// struct — but the field name is author-domain knowledge, so the
+    /// non-overlap class is `NeutralOrDeterministic` (no closed
+    /// candidate set; no expected metadata).
+    #[serde(rename = "collection/ordering-sorted-requires-index-by")]
+    CollectionOrderingSortedRequiresIndexBy,
+
+    /// `<sce:on-overflow>oldest-wins</sce:on-overflow>` declared together
+    /// with `<sce:ordering>sorted-by(index-by)</sce:ordering>`. Spec line
+    /// 2655 lists this combination as the explicit anti-pattern: the
+    /// `oldest-wins` policy presumes a temporal ordering (insertion
+    /// timestamp) that the `sorted-by` mode replaces with the
+    /// `index-by` field comparator, so "oldest" has no defined meaning.
+    /// Repair is deterministic — keep the `oldest-wins` policy, change
+    /// `<sce:ordering>` to `insertion`. `Fix::ReplaceWith` carries
+    /// `"insertion"`; single-value repair → `NeutralOrDeterministic`.
+    #[serde(rename = "collection/overflow-policy-oldest-wins-requires-ordering-insertion")]
+    CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion,
+
     // ── §5.D Timer kind diagnostics (watching-zenoh RFC §5.D
     //    lines 909-910). Both codes fire on the MCU cooperative
     //    scheduler axis — silent-skip on AP / preemptive targets
@@ -1474,6 +1503,9 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         WorkerOutboxRefUnknown,
         WorkerOutboxTargetWrongKind,
         WorkerOutboxTargetSuffixInvalid,
+        // Bounded-collection kind parse-time structure validators (watching-zenoh RFC §5.L, C6-α)
+        CollectionOrderingSortedRequiresIndexBy,
+        CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion,
         // Timer kind diagnostics (watching-zenoh RFC §5.D, C1)
         TimerPeriodBelowTickRate,
         TimerSlotOverflow,
@@ -1770,6 +1802,17 @@ impl DiagnosticCode {
             WorkerOutboxRefUnknown
             | WorkerOutboxTargetWrongKind
             | WorkerOutboxTargetSuffixInvalid => Some("watching-zenoh RFC §5.D"),
+
+            // ── §5.L Bounded-collection kind parse-time structure
+            //    validators (watching-zenoh RFC §5.L lines 2540-2655,
+            //    C6-α). Both codes are XML-structure-only — the sorted
+            //    ordering requires an explicit `<sce:index-by>` field
+            //    (spec line 2559), and `oldest-wins` overflow requires
+            //    `insertion` ordering (spec line 2655).
+            CollectionOrderingSortedRequiresIndexBy
+            | CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion => {
+                Some("watching-zenoh RFC §5.L")
+            }
 
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
@@ -2093,6 +2136,8 @@ impl DiagnosticCode {
             WorkerOutboxRefUnknown => "worker/outbox-ref-unknown",
             WorkerOutboxTargetWrongKind => "worker/outbox-target-wrong-kind",
             WorkerOutboxTargetSuffixInvalid => "worker/outbox-target-suffix-invalid",
+            CollectionOrderingSortedRequiresIndexBy => "collection/ordering-sorted-requires-index-by",
+            CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion => "collection/overflow-policy-oldest-wins-requires-ordering-insertion",
             TimerPeriodBelowTickRate => "timer/period-below-tick-rate",
             TimerSlotOverflow => "timer/slot-overflow",
             ExternSymbolNotInWhitelist => "extern/symbol-not-in-whitelist",
@@ -3602,6 +3647,34 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 suffix.clone(),
             ],
         },
+        // ── §5.L Bounded-collection parse-time structure validators (C6-α) ──
+        ValidationError::CollectionOrderingSortedRequiresIndexBy {
+            collection_name,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CollectionOrderingSortedRequiresIndexBy,
+            stage: Stage::Validation,
+            // No closed candidate set — the repair requires authoring a
+            // field name from the element-type struct, which is author-
+            // domain knowledge (cf. non_overlap_class entry's reasoning).
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![collection_name.clone()],
+        },
+        ValidationError::CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion {
+            collection_name,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion,
+            stage: Stage::Validation,
+            // Per non_overlap_class reasoning: two equally valid repairs
+            // (change ordering to `insertion`, or change policy off
+            // `oldest-wins`) means no single canonical candidate →
+            // NeutralOrDeterministic without a `Fix`.
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![collection_name.clone()],
+        },
         ValidationError::TimerPeriodBelowTickRate {
             timer_name,
             machine,
@@ -4561,7 +4634,7 @@ mod tests {
             (
                 "forge/unsupported-kind",
                 ValidationError::UnsupportedKind("bogus".into()).into(),
-                r#"{"v":1,"id":"fnv1a:812898e1a23fda4d","code":"validation/unsupported-kind","stage":"validation","spec":"SCE Forge §3.2","message":"unsupported sce:kind value: 'bogus'","actual":"bogus","fix":{"kind":"replace_one_of","candidates":["statechart","transform","lookup","condition","codec","procedure","validator","filter","interpolation","timer","observer","algorithm","link","buffer-pool","worker"]}}"#,
+                r#"{"v":1,"id":"fnv1a:812898e1a23fda4d","code":"validation/unsupported-kind","stage":"validation","spec":"SCE Forge §3.2","message":"unsupported sce:kind value: 'bogus'","actual":"bogus","fix":{"kind":"replace_one_of","candidates":["statechart","transform","lookup","condition","codec","procedure","validator","filter","interpolation","timer","observer","algorithm","link","buffer-pool","worker","bounded-collection"]}}"#,
             ),
             (
                 "forge/duplicate-id",
@@ -4997,6 +5070,32 @@ mod tests {
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
                 r#"{"v":1,"id":"fnv1a:a84c33faf2495d72","code":"timer/period-below-tick-rate","stage":"validation","spec":"watching-zenoh RFC §5.D","message":"timer 'keepalive': <sce:period> = 500 us is shorter than scheduler.tick_period_us = 1000 us on machine 'mcu_node'. watching-zenoh RFC §5.D line 909 (`timer/period-below-tick-rate`) — the cooperative scheduler dispatches at most one timer per tick, so a period below the tick rate would miss every other deadline. Repair: raise `<sce:period>` to >= 1000us, or lower `scheduler.tick_period_us` (warning: lowering tick rate increases scheduler overhead), or switch the target machine to `scheduler.kind: tokio` / `rt` (preemptive).","expected":["1000"],"actual":"500"}"#,
+            ),
+            // ── §5.L Bounded-collection parse-time structure validators (C6-α) ──
+            (
+                // RFC §5.L line 2559: sorted-by ordering with no
+                // <sce:index-by> field — codegen has no comparator
+                // to lower. NeutralOrDeterministic, no Fix payload.
+                "forge/collection-ordering-sorted-requires-index-by",
+                ValidationError::CollectionOrderingSortedRequiresIndexBy {
+                    collection_name: "local_sub_table".into(),
+                }
+                .into(),
+                // Hash placeholder — byte-stability assertion patches.
+                r#"{"v":1,"id":"fnv1a:e42ff124e4f1930b","code":"collection/ordering-sorted-requires-index-by","stage":"validation","spec":"watching-zenoh RFC §5.L","message":"bounded-collection 'local_sub_table': <sce:ordering>sorted-by(index-by)</sce:ordering> declared without <sce:index-by field=\"...\"/>. watching-zenoh RFC §5.L line 2559 fixes sorted iteration to the `index-by` field; without it the codegen has no comparator to lower. Repair: add an `<sce:index-by field=\"FIELD\"/>` element naming a field of the element-type struct, or change `<sce:ordering>` to `insertion`."}"#,
+            ),
+            (
+                // RFC §5.L line 2655: oldest-wins policy paired with
+                // sorted-by ordering — "oldest" has no meaning when
+                // iteration order is comparator-derived. Two equally
+                // valid repairs → NeutralOrDeterministic, no Fix.
+                "forge/collection-overflow-policy-oldest-wins-requires-ordering-insertion",
+                ValidationError::CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion {
+                    collection_name: "local_sub_table".into(),
+                }
+                .into(),
+                // Hash placeholder — byte-stability assertion patches.
+                r#"{"v":1,"id":"fnv1a:31723798e4ccd410","code":"collection/overflow-policy-oldest-wins-requires-ordering-insertion","stage":"validation","spec":"watching-zenoh RFC §5.L","message":"bounded-collection 'local_sub_table': <sce:on-overflow>oldest-wins</sce:on-overflow> requires <sce:ordering>insertion</sce:ordering>, but ordering is `sorted-by(index-by)`. watching-zenoh RFC §5.L line 2655 lists this combination as the explicit anti-pattern: `oldest-wins` presumes a temporal ordering that `sorted-by` replaces with the `index-by` field comparator. Repair: change `<sce:ordering>` to `insertion` (keeps the oldest-wins policy), or change `<sce:on-overflow>` to `reject` / `diagnostic-event`."}"#,
             ),
             // ── §5.I `<sce:extern>` whitelisted intrinsic registry (Atomic A) ──
             (
@@ -7084,6 +7183,21 @@ mod tests {
             // two outbox axes (unknown / wrong-kind) carry a closed
             // candidate set and live in FixCarriesCandidates above.
             | WorkerOutboxTargetSuffixInvalid
+            // C6-α Bounded-collection parse-time structure validators
+            // (RFC §5.L lines 2559 + 2655). Neither carries a closed
+            // candidate set:
+            // - `ordering-sorted-requires-index-by`: the repair is to
+            //   author an `<sce:index-by>` element naming a field of
+            //   the element-type struct, but the field name is author-
+            //   domain knowledge → no enumeration possible.
+            // - `overflow-policy-oldest-wins-requires-ordering-insertion`:
+            //   the repair is deterministic (`<sce:ordering>insertion`)
+            //   so it could ride `Fix::ReplaceWith`, but per spec the
+            //   author could also keep `ordering=sorted-by` and change
+            //   the policy — two equally valid repair paths means no
+            //   single canonical candidate → NeutralOrDeterministic.
+            | CollectionOrderingSortedRequiresIndexBy
+            | CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion
             // C1 Timer kind diagnostics (RFC §5.D lines 909-910).
             // Both are author-judgment repairs: raise the period
             // above the tick rate, or rebalance the timer count
@@ -7537,6 +7651,8 @@ mod tests {
                 | WorkerOutboxRefUnknown
                 | WorkerOutboxTargetWrongKind
                 | WorkerOutboxTargetSuffixInvalid
+                | CollectionOrderingSortedRequiresIndexBy
+                | CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion
                 | TimerPeriodBelowTickRate
                 | TimerSlotOverflow
                 | ExternSymbolNotInWhitelist
@@ -7633,9 +7749,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            218,
+            220,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 218 distinct variants to match the DiagnosticCode \
+             expected 220 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
