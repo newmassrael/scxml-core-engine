@@ -11,6 +11,14 @@
 //! carry metadata describing its origin, send ID, type, data, and more. The
 //! `_event` system variable exposes these fields to ECMAScript expressions
 //! (e.g., `_event.name`, `_event.data`, `_event.sendid`, `_event.origin`).
+//!
+//! Watching-zenoh RFC §5.J.2 (lines 1989-1994): string-typed fields are
+//! backed by [`crate::SceString`], which is `std::string::String` under the
+//! default std build and `heapless::String<MAX_EVENT_STRING_LEN>` under
+//! `--features=no_std`. The cap and motivation are documented at
+//! [`crate::MAX_EVENT_STRING_LEN`].
+
+use crate::{sce_string_from_str, SceString};
 
 /// Event type classification (W3C SCXML 5.10.1).
 ///
@@ -47,17 +55,17 @@ impl EventType {
 #[derive(Debug, Clone, Default)]
 pub struct EventMetadata {
     /// `_event.data` — event payload as a JSON string (empty when no payload).
-    pub data: String,
+    pub data: SceString,
     /// `_event.type` — classification (internal / external / platform).
     pub event_type: EventType,
     /// `_event.sendid` — send ID from originating `<send>` (empty if none).
-    pub send_id: String,
+    pub send_id: SceString,
     /// `_event.origin` — origin URI (empty if no origin).
-    pub origin: String,
+    pub origin: SceString,
     /// `_event.origintype` — type of origin (e.g., SCXML Event I/O Processor URI).
-    pub origin_type: String,
+    pub origin_type: SceString,
     /// `_event.invokeid` — invoke ID if event came from a child invoke (W3C 6.4.1).
-    pub invoke_id: String,
+    pub invoke_id: SceString,
 }
 
 impl EventMetadata {
@@ -78,12 +86,14 @@ impl EventMetadata {
     }
 
     /// Construct external metadata with a send ID and origin (e.g., for `<send>`).
-    pub fn external(send_id: String, origin: String) -> Self {
+    pub fn external(send_id: SceString, origin: SceString) -> Self {
         Self {
             event_type: EventType::External,
             send_id,
             origin,
-            origin_type: crate::helpers::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE.to_string(),
+            origin_type: sce_string_from_str(
+                crate::helpers::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE,
+            ),
             ..Default::default()
         }
     }
@@ -101,7 +111,7 @@ pub struct EventWithMetadata<E> {
     /// Event metadata (data, type, sendid, origin, origintype, invokeid).
     pub metadata: EventMetadata,
     /// W3C SCXML C.2: HTTP POST target URL (empty if not an HTTP send).
-    pub target: String,
+    pub target: SceString,
 }
 
 impl<E> EventWithMetadata<E> {
@@ -110,7 +120,7 @@ impl<E> EventWithMetadata<E> {
         Self {
             event,
             metadata: EventMetadata::default(),
-            target: String::new(),
+            target: SceString::new(),
         }
     }
 
@@ -125,13 +135,13 @@ impl<E> EventWithMetadata<E> {
     #[allow(clippy::too_many_arguments)]
     pub fn with_fields(
         event: E,
-        data: String,
-        origin: String,
-        send_id: String,
+        data: SceString,
+        origin: SceString,
+        send_id: SceString,
         event_type: EventType,
-        origin_type: String,
-        invoke_id: String,
-        target: String,
+        origin_type: SceString,
+        invoke_id: SceString,
+        target: SceString,
     ) -> Self {
         Self {
             event,

@@ -12,8 +12,12 @@
 //! Rust, the policy trait does not expose raw struct fields; instead, generated
 //! code can call these helpers to extract metadata from `EventWithMetadata` and
 //! pass it to the script engine via `IScriptEngine::set_variable`.
+//!
+//! Watching-zenoh RFC §5.J.2: string-typed fields use [`crate::SceString`]
+//! (alloc-backed under std, heapless-backed under `--features=no_std`).
 
 use crate::event::{EventMetadata, EventType, EventWithMetadata};
+use crate::{sce_string_from_str, SceString};
 
 /// Populate an [`EventMetadata`] from individual field values.
 ///
@@ -25,12 +29,12 @@ pub fn build_metadata(
     invoke_id: &str,
 ) -> EventMetadata {
     EventMetadata {
-        data: String::new(),
+        data: SceString::new(),
         event_type: EventType::External,
-        send_id: send_id.to_string(),
-        origin: origin.to_string(),
-        origin_type: origin_type.to_string(),
-        invoke_id: invoke_id.to_string(),
+        send_id: sce_string_from_str(send_id),
+        origin: sce_string_from_str(origin),
+        origin_type: sce_string_from_str(origin_type),
+        invoke_id: sce_string_from_str(invoke_id),
     }
 }
 
@@ -44,14 +48,14 @@ pub fn create_done_invoke_event<E>(event: E, invoke_id: &str) -> EventWithMetada
     EventWithMetadata {
         event,
         metadata: EventMetadata {
-            data: String::new(),
+            data: SceString::new(),
             event_type: EventType::Platform,
-            send_id: String::new(),
-            origin: String::new(),
-            origin_type: String::new(),
-            invoke_id: invoke_id.to_string(),
+            send_id: SceString::new(),
+            origin: SceString::new(),
+            origin_type: SceString::new(),
+            invoke_id: sce_string_from_str(invoke_id),
         },
-        target: String::new(),
+        target: SceString::new(),
     }
 }
 
@@ -67,9 +71,9 @@ pub fn extract_event_fields<E: Copy>(
     get_event_name: impl Fn(E) -> &'static str,
 ) -> EventFields {
     EventFields {
-        name: get_event_name(event_with_meta.event).to_string(),
+        name: sce_string_from_str(get_event_name(event_with_meta.event)),
         data: event_with_meta.metadata.data.clone(),
-        event_type: event_with_meta.metadata.event_type.as_str().to_string(),
+        event_type: sce_string_from_str(event_with_meta.metadata.event_type.as_str()),
         send_id: event_with_meta.metadata.send_id.clone(),
         origin: event_with_meta.metadata.origin.clone(),
         origin_type: event_with_meta.metadata.origin_type.clone(),
@@ -81,17 +85,17 @@ pub fn extract_event_fields<E: Copy>(
 #[derive(Debug, Clone, Default)]
 pub struct EventFields {
     /// `_event.name`
-    pub name: String,
+    pub name: SceString,
     /// `_event.data`
-    pub data: String,
+    pub data: SceString,
     /// `_event.type` -- "internal", "external", or "platform"
-    pub event_type: String,
+    pub event_type: SceString,
     /// `_event.sendid`
-    pub send_id: String,
+    pub send_id: SceString,
     /// `_event.origin`
-    pub origin: String,
+    pub origin: SceString,
     /// `_event.origintype`
-    pub origin_type: String,
+    pub origin_type: SceString,
     /// `_event.invokeid`
-    pub invoke_id: String,
+    pub invoke_id: SceString,
 }

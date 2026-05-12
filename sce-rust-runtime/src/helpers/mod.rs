@@ -52,6 +52,12 @@ pub mod conflict_resolution;
 pub mod datamodel_init;
 pub mod done_data;
 pub mod entry_exit;
+// Watching-zenoh RFC §5.J.2: event-data JSON construction is alloc-coupled
+// (BTreeMap<String, Vec<String>> input, String output). No template emits
+// calls into this helper today, so the no_std codegen has no consumer — the
+// no_std variant lands with a heapless::String<N> output + &[(&str, &str)]
+// input under a future atomic when consumer demand surfaces.
+#[cfg(not(feature = "no_std"))]
 pub mod event_data;
 pub mod event_matching;
 pub mod event_metadata;

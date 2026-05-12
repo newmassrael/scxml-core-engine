@@ -96,6 +96,76 @@ compile_error!(
      (and any `<script>` from your SCXML), or drop `no_std`."
 );
 
+// ── Bounded-collection type aliases (watching-zenoh RFC §5.J.2) ──────
+//
+// Under `--features=no_std` the runtime crate is `#![no_std]` with **no
+// `alloc` dependency** per spec line 1989-1994 ("zero `alloc`
+// dependency"). String-typed event payload fields (`_event.data`,
+// `_event.sendid`, `_event.origin`, `_event.origintype`,
+// `_event.invokeid`) bound their capacity at `MAX_EVENT_STRING_LEN`
+// bytes. `SceString` is `std::string::String` under the default std
+// build (unchanged API) and `heapless::String<MAX_EVENT_STRING_LEN>`
+// under `--features=no_std` (stack-allocated, `Result`-returning
+// `push_str`). 256 is the v1 cap, sized to fit RFC §5.D telemetry-event
+// payloads + an origin URI without truncation; per-document tunable via
+// `<scxml sce:event-string-capacity="N">` is deferred until a consumer
+// surfaces a documented overflow.
+//
+// Pattern mirrors the §5.D event-queue capacity (`EVENT_QUEUE_CAPACITY`
+// emitted from codegen via `<sce:capacity>` per B-γ1) plus B-γ2b's
+// microstep-dedup cap (`heapless::FnvIndexSet<_, 64>` reasoned
+// constant). When the no_std consumer signals a per-document
+// requirement, the codegen can grow a parallel `EVENT_STRING_CAPACITY`
+// const and this alias becomes generic over the const.
+
+/// Maximum byte length of an event metadata string under `--features=no_std`.
+///
+/// Bounds the capacity of [`SceString`] for `EventMetadata.data`,
+/// `EventMetadata.send_id`, `EventMetadata.origin`, `EventMetadata.origin_type`,
+/// and `EventMetadata.invoke_id`. The std build's `SceString = String` is
+/// unbounded; this constant only affects the no_std variant.
+///
+/// v1 value 256 covers W3C SCXML 5.10.1 platform-event payloads + send-target
+/// URIs without truncation. Author-tunable cap deferred to a future atomic
+/// once an MCU consumer surfaces a concrete overflow signal (per
+/// `feedback_planned_not_yagni` discipline — capacities ride consumer
+/// signal, not speculation).
+pub const MAX_EVENT_STRING_LEN: usize = 256;
+
+/// Owned-string type used for event metadata fields across both std and
+/// no_std builds.
+///
+/// - std build: `std::string::String` (unbounded, heap-allocated).
+/// - no_std build: `heapless::String<MAX_EVENT_STRING_LEN>` (stack-allocated,
+///   `push_str` is `Result`-returning).
+///
+/// Construction sites that need to convert from `&str` to `SceString` should
+/// use [`sce_string_from_str`] which abstracts the API divergence.
+#[cfg(not(feature = "no_std"))]
+pub type SceString = ::std::string::String;
+#[cfg(feature = "no_std")]
+pub type SceString = ::heapless::String<MAX_EVENT_STRING_LEN>;
+
+/// Convert a borrowed `&str` into an owned [`SceString`].
+///
+/// Under std this is `s.to_string()`. Under no_std this is
+/// `heapless::String::try_from(s).unwrap_or_default()` — strings longer than
+/// [`MAX_EVENT_STRING_LEN`] truncate to empty rather than panic, matching the
+/// behavior `unwrap_or_default` provides on the std side for malformed inputs.
+/// Callers that need to detect the truncation should use heapless's `try_from`
+/// directly under `cfg(feature = "no_std")`.
+#[inline]
+pub fn sce_string_from_str(s: &str) -> SceString {
+    #[cfg(not(feature = "no_std"))]
+    {
+        s.to_string()
+    }
+    #[cfg(feature = "no_std")]
+    {
+        SceString::try_from(s).unwrap_or_default()
+    }
+}
+
 pub mod engine;
 pub mod event;
 pub mod hal;

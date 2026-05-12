@@ -9,6 +9,17 @@
 //! The C++ version depends on `SCXMLTypes.h` and `ScriptValue`. For the Rust
 //! port, we use the `ScriptValue` from `crate::scripting` and provide simpler
 //! string-based JSON construction for the static code path.
+//!
+//! Watching-zenoh RFC §5.J.2 (lines 1989-1994): whole-module gated to
+//! `cfg(not(feature = "no_std"))` because both the input type
+//! (`BTreeMap<String, Vec<String>>`) and the output type (`String`) are
+//! alloc-coupled. No template currently emits calls into this helper, so
+//! the no_std codegen has no need for it at present — when an MCU consumer
+//! demands `<send>` param JSON construction the no_std variant lands with
+//! a `heapless::String<N>` output + `&[(&str, &str)]` input under a future
+//! atomic, gated on a concrete capacity requirement.
+
+#![cfg(not(feature = "no_std"))]
 
 use std::collections::BTreeMap;
 
