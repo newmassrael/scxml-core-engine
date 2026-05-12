@@ -118,6 +118,28 @@ compile_error!(
 // requirement, the codegen can grow a parallel `EVENT_STRING_CAPACITY`
 // const and this alias becomes generic over the const.
 
+/// Maximum number of simultaneously-pending delayed events in the no_std
+/// [`PullScheduler`](crate::engine::PullScheduler) ring.
+///
+/// Bounds the `heapless::Vec<ScheduledEntry<E>, _>` capacity of the no_std
+/// variant of the scheduler. `<send delay>` author surface; this is the
+/// in-flight delay-pending dimension, distinct from the event queue capacity
+/// (`<sce:capacity>` populates `EVENT_QUEUE_CAPACITY` per-document for the
+/// ready-to-process queue — that's a different dimension).
+///
+/// v1 value 32 covers typical statechart in-flight `<send delay>` parallelism
+/// (1-5 simultaneous timers in the W3C 202 test corpus) with a ~6× safety
+/// margin. Profiler-driven per-document tunable (via a future
+/// `StatePolicy::SCHEDULER_CAPACITY: usize` associated const + matching
+/// `<sce:scheduler-capacity>` parser surface, mirroring B-γ1's `<sce:capacity>`
+/// architecture) is deferred until an MCU consumer surfaces a concrete
+/// over/under-fit signal — per `feedback_planned_not_yagni` discipline
+/// (capacities ride consumer signal, not speculation).
+///
+/// The std build's `PullScheduler` keeps `Vec<ScheduledEntry<E>>` (unbounded)
+/// so this constant only affects the `--features=no_std` variant.
+pub const MAX_SCHEDULED_EVENTS: usize = 32;
+
 /// Maximum byte length of an event metadata string under `--features=no_std`.
 ///
 /// Bounds the capacity of [`SceString`] for `EventMetadata.data`,

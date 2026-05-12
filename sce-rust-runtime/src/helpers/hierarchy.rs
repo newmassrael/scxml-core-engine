@@ -63,8 +63,12 @@ pub type StateChain<S> = ::heapless::Vec<S, MAX_HIERARCHY_DEPTH>;
 /// an `.expect()` tripwire — the surrounding [`MAX_HIERARCHY_DEPTH`] depth guard
 /// in each caller bounds the chain length to the heapless capacity, so the push
 /// failure path is unreachable under valid input.
+///
+/// Exposed at `pub(crate)` so [`crate::engine::Engine::get_active_states`] (and
+/// other in-crate state walkers) can share the same cfg-branched push body
+/// without each redefining it — single source of truth.
 #[inline]
-fn push_chain<S: core::fmt::Debug>(chain: &mut StateChain<S>, item: S) {
+pub(crate) fn push_chain<S: core::fmt::Debug>(chain: &mut StateChain<S>, item: S) {
     #[cfg(not(feature = "no_std"))]
     {
         chain.push(item);
@@ -82,8 +86,11 @@ fn push_chain<S: core::fmt::Debug>(chain: &mut StateChain<S>, item: S) {
 /// Under std this is `Vec::with_capacity(8)` (preserves the existing pre-allocation
 /// hint for typical depths 1-5). Under no_std this is `heapless::Vec::new()` — the
 /// capacity is fixed at compile time so the hint is a no-op.
+///
+/// Exposed at `pub(crate)` so in-crate state walkers (e.g. `Engine::get_active_states`)
+/// can construct empty chains via the same cfg-branched path.
 #[inline]
-fn new_chain<S>() -> StateChain<S> {
+pub(crate) fn new_chain<S>() -> StateChain<S> {
     #[cfg(not(feature = "no_std"))]
     {
         ::std::vec::Vec::with_capacity(8)

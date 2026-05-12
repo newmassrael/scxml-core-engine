@@ -40,73 +40,151 @@
 // reachable from emitted code; gate the import + method to `!no_std`.
 #[cfg(not(feature = "no_std"))]
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+// `Duration` is re-exported by `std::time` from `core::time` and is therefore
+// available under both build profiles. `Instant`, however, is host-clock-coupled
+// and lives only in `std`; the no_std variant routes its monotonic-time reads
+// through the `Hal::now_ticks_ms` returning a u64 millisecond tick (see the
+// `SchedTimePoint` alias below).
+use core::time::Duration;
+#[cfg(not(feature = "no_std"))]
+use std::time::Instant;
 
 use crate::event::{EventMetadata, EventType, EventWithMetadata};
 use crate::hal::Hal;
 use crate::helpers::event_queue::EventQueueManager;
 use crate::helpers::{hierarchy, state_policy_concepts as concepts};
+// Watching-zenoh RFC §5.J.2: the HTTP module is alloc-coupled
+// (HashMap<String, Vec<String>> + reqwest) and whole-module-gated to `!no_std`
+// in `lib.rs`. The codegen-time validator rejects
+// `BasicHTTPEventProcessor` `<send>` under `--no-std` via
+// `codegen/no-std-http-not-supported`, so the engine's HTTP fields + dispatch
+// surface are unreachable from emitted no_std code.
+#[cfg(not(feature = "no_std"))]
 use crate::http::{HttpSendRequest, HttpSendResponse};
 use crate::policy::StatePolicy;
-use crate::sce_log_debug;
+use crate::{sce_log_debug, SceString};
+#[cfg(feature = "no_std")]
+use crate::MAX_SCHEDULED_EVENTS;
+
+// ─────────────────────────────────────────────────────────────────────
+// Scheduler time point alias (Watching-zenoh RFC §5.J.2 line 1984 HAL)
+// ─────────────────────────────────────────────────────────────────────
+// `SchedTimePoint` decouples the scheduler's comparable-timestamp type from
+// the host clock. std builds use `Instant` (preserves existing behaviour);
+// no_std builds use `u64` milliseconds — the `<P::Hal>::now_ticks_ms()`
+// reading. The `PullScheduler` itself holds no clock source: all
+// time-comparing methods take `now: SchedTimePoint` as a parameter (DI
+// pattern), and `Engine<P>` resolves the per-build `now` via the
+// `sched_now`/`sched_now_plus` helpers below.
+
+/// Comparable timestamp used by the scheduler under each build profile.
+///
+/// - std: `std::time::Instant` — host monotonic clock, ABI-preserving.
+/// - no_std: `u64` — millisecond ticks from `<P::Hal as Hal>::now_ticks_ms()`.
+#[cfg(not(feature = "no_std"))]
+pub type SchedTimePoint = Instant;
+#[cfg(feature = "no_std")]
+pub type SchedTimePoint = u64;
 
 /// Minimal scheduler stub for Phase 1.
 ///
-/// 1:1 API parity with C++ `SCE::PullScheduler<EventType>`, but the Phase 1
-/// implementation stores delayed events as immediately-ready — suitable for
-/// tests that do not rely on real time. Phase 4 replaces this with a real
-/// polling scheduler backed by `std::thread::sleep`-style polling.
+/// 1:1 API parity with C++ `SCE::PullScheduler<EventType>`. Stores delayed
+/// events with a `SchedTimePoint` ready-time and exposes pull-style queries
+/// (`has_ready_events_at` / `pop_ready_event_at`) that take the caller's
+/// current time as a parameter — a textbook dependency-injection split that
+/// keeps the scheduler clock-source-agnostic and makes it unit-testable with
+/// synthetic clocks.
+///
+/// Watching-zenoh RFC §5.J.2 (lines 1989-1994): under `--features=no_std`
+/// the backing store is a stack-allocated `heapless::Vec` capped at
+/// [`MAX_SCHEDULED_EVENTS`] (= 32 in v1; see the `lib.rs` doc-comment for the
+/// reasoning and the deferred per-document tunable). Capacity overflow under
+/// no_std is treated as a fatal configuration error (panic) per the same
+/// "no silent transition drop" discipline the W3C SCXML algorithm follows.
 ///
 /// Kept as a concrete (non-trait) type to match C++ `SCE::PullScheduler<Event> scheduler_;`.
 #[derive(Debug)]
 pub struct PullScheduler<E> {
     /// Pending entries: (event, event_data_json, send_id, ready_at).
+    #[cfg(not(feature = "no_std"))]
     entries: Vec<ScheduledEntry<E>>,
+    #[cfg(feature = "no_std")]
+    entries: ::heapless::Vec<ScheduledEntry<E>, MAX_SCHEDULED_EVENTS>,
     next_auto_send_id: u64,
 }
 
 #[derive(Debug)]
 struct ScheduledEntry<E> {
     event: E,
-    event_data: String,
-    send_id: String,
-    ready_at: Instant,
+    event_data: SceString,
+    send_id: SceString,
+    ready_at: SchedTimePoint,
 }
 
 impl<E: Clone> PullScheduler<E> {
     /// Construct an empty scheduler.
     pub fn new() -> Self {
         Self {
+            #[cfg(not(feature = "no_std"))]
             entries: Vec::new(),
+            #[cfg(feature = "no_std")]
+            entries: ::heapless::Vec::new(),
             next_auto_send_id: 0,
         }
     }
 
-    /// W3C SCXML 6.2: Schedule an event for delayed delivery.
+    /// W3C SCXML 6.2: Schedule an event for delayed delivery, given an
+    /// already-resolved `ready_at` time-point.
     ///
-    /// If `send_id` is empty, an automatic ID is generated. Returns the ID used
-    /// (caller can use it to cancel). Matches C++
-    /// `PullScheduler::scheduleEvent(EventType, milliseconds, string, string)`.
-    pub fn schedule_event(
+    /// If `send_id` is empty, an automatic ID is generated. Returns the ID
+    /// used (caller can use it to cancel). The caller is responsible for
+    /// computing `ready_at` from the current clock + delay — `Engine<P>`'s
+    /// `schedule_event` wrapper does this via `sched_now_plus(delay)`.
+    ///
+    /// Watching-zenoh RFC §5.J.2: under `--features=no_std` an attempted
+    /// push past [`MAX_SCHEDULED_EVENTS`] panics rather than silently dropping
+    /// the event (W3C SCXML no-silent-drop discipline).
+    pub fn schedule_event_at(
         &mut self,
         event: E,
-        delay: Duration,
+        ready_at: SchedTimePoint,
         send_id: &str,
         event_data: &str,
-    ) -> String {
-        let effective_send_id = if send_id.is_empty() {
+    ) -> SceString {
+        let effective_send_id: SceString = if send_id.is_empty() {
             self.next_auto_send_id += 1;
-            format!("auto_send_{}", self.next_auto_send_id)
+            format_auto_send_id(self.next_auto_send_id)
         } else {
-            send_id.to_string()
+            crate::sce_string_from_str(send_id)
         };
-        self.entries.push(ScheduledEntry {
+        let entry = ScheduledEntry {
             event,
-            event_data: event_data.to_string(),
+            event_data: crate::sce_string_from_str(event_data),
             send_id: effective_send_id.clone(),
-            ready_at: Instant::now() + delay,
-        });
+            ready_at,
+        };
+        self.push_scheduled(entry);
         effective_send_id
+    }
+
+    /// Push into [`Self::entries`] uniformly under std and no_std.
+    ///
+    /// Under std this is `Vec::push` (infallible). Under no_std this is
+    /// `heapless::Vec::push` with an `.expect` panic — W3C SCXML mandates no
+    /// silent transition drop, so an over-capacity schedule attempt is treated
+    /// as a fatal configuration error rather than swallowed.
+    #[inline]
+    fn push_scheduled(&mut self, entry: ScheduledEntry<E>) {
+        #[cfg(not(feature = "no_std"))]
+        {
+            self.entries.push(entry);
+        }
+        #[cfg(feature = "no_std")]
+        {
+            self.entries.push(entry).map_err(|_| ()).expect(
+                "PullScheduler: heapless capacity exhausted (MAX_SCHEDULED_EVENTS=32 — author has more in-flight <send delay> than scheduler can hold; tune capacity or reduce concurrency)",
+            );
+        }
     }
 
     /// W3C SCXML 6.2.5: Cancel a scheduled event by send ID. Returns `true` if found.
@@ -117,22 +195,49 @@ impl<E: Clone> PullScheduler<E> {
     }
 
     /// Whether any scheduled events are ready to fire (ready_at <= now).
-    pub fn has_ready_events(&self) -> bool {
-        let now = Instant::now();
+    ///
+    /// Caller supplies the current time — see `Engine<P>::has_ready_events` for
+    /// the host-build wrapper that reads `<P::Hal>::now_ticks_ms()` / `Instant::now()`.
+    pub fn has_ready_events_at(&self, now: SchedTimePoint) -> bool {
         self.entries.iter().any(|e| e.ready_at <= now)
     }
 
     /// Pop the next ready event and its data. Returns `None` if nothing is ready.
     ///
-    /// Matches C++ `PullScheduler::popReadyEvent(E&, string&) -> bool` (but returns
+    /// Caller supplies the current time. Matches C++
+    /// `PullScheduler::popReadyEvent(E&, string&) -> bool` (but returns
     /// an `Option` tuple instead of bool+out-params, which is the idiomatic Rust shape).
-    pub fn pop_ready_event(&mut self) -> Option<(E, String)> {
-        let now = Instant::now();
+    pub fn pop_ready_event_at(&mut self, now: SchedTimePoint) -> Option<(E, SceString)> {
         let idx = self.entries.iter().position(|e| e.ready_at <= now)?;
+        // heapless::Vec::remove is `pub fn remove(&mut self, index: usize) -> T`
+        // — same shape as Vec::remove, so this works under both profiles.
         let entry = self.entries.remove(idx);
         Some((entry.event, entry.event_data))
     }
 }
+
+/// Build the synthetic `auto_send_{N}` id for [`PullScheduler::schedule_event_at`]
+/// when the caller passes an empty `send_id`.
+///
+/// std uses `format!`; no_std writes into a fresh `SceString` via
+/// `core::fmt::Write` — heapless's `push_str` is `Result`-returning but the
+/// 256-byte cap is far above any realistic `auto_send_<u64>` rendering
+/// (`auto_send_18446744073709551615` is 32 bytes).
+#[inline]
+fn format_auto_send_id(counter: u64) -> SceString {
+    #[cfg(not(feature = "no_std"))]
+    {
+        format!("auto_send_{}", counter)
+    }
+    #[cfg(feature = "no_std")]
+    {
+        use core::fmt::Write;
+        let mut s = SceString::new();
+        let _ = write!(&mut s, "auto_send_{}", counter);
+        s
+    }
+}
+
 
 impl<E: Clone> Default for PullScheduler<E> {
     fn default() -> Self {
@@ -172,8 +277,21 @@ pub struct Engine<P: StatePolicy> {
     /// Whether the engine is currently running (set false by `stop()` and final state).
     pub(crate) is_running: bool,
     /// W3C SCXML 6.4: Completion callback invoked when reaching a final state.
+    ///
+    /// Watching-zenoh RFC §5.J.2: `Box<dyn FnMut>` is alloc-coupled and gated to
+    /// `!no_std`. Embedded consumers poll [`is_in_final_state`](Self::is_in_final_state)
+    /// instead; a future no_std-compatible completion ABI (extern "C" fn +
+    /// userdata) lands when a consumer demands it. Mirrors the gate applied to
+    /// `helpers::entry_exit::execute_*_blocks` in B-γ2d-2.
+    #[cfg(not(feature = "no_std"))]
     pub(crate) completion_callback: Option<Box<dyn FnMut()>>,
     /// W3C SCXML C.2: HTTP send dispatch callback.
+    ///
+    /// Watching-zenoh RFC §5.J.2: HTTP is rejected upstream under `--no-std`
+    /// via `codegen/no-std-http-not-supported`, so the callback field + setter
+    /// + dispatcher are all gated to `!no_std`. Generated no_std code never
+    /// emits a `perform_http_send` call site.
+    #[cfg(not(feature = "no_std"))]
     pub(crate) on_http_send: Option<Box<dyn FnMut(HttpSendRequest) -> Option<HttpSendResponse>>>,
     /// W3C SCXML 6.2: Delayed event scheduler.
     pub(crate) scheduler: PullScheduler<P::Event>,
@@ -184,8 +302,10 @@ pub struct Engine<P: StatePolicy> {
     /// and the Kotlin `StateMachineEngine.donedataAtFinal` field. Populated by
     /// generated `execute_entry_actions` code on a child's top-level final and
     /// read by the parent's [`helpers::invoke_processing::raise_done_invoke`]
-    /// before emitting `done.invoke.<id>`.
-    pub(crate) donedata_at_final: String,
+    /// before emitting `done.invoke.<id>`. Typed as [`SceString`] so the no_std
+    /// build composes with the capped-string convention used across
+    /// `EventMetadata` (B-γ2d-1).
+    pub(crate) donedata_at_final: SceString,
 }
 
 impl<P: StatePolicy> Engine<P> {
@@ -205,10 +325,53 @@ impl<P: StatePolicy> Engine<P> {
             internal_queue: EventQueueManager::new(),
             external_queue: EventQueueManager::new(),
             is_running: false,
+            #[cfg(not(feature = "no_std"))]
             completion_callback: None,
+            #[cfg(not(feature = "no_std"))]
             on_http_send: None,
             scheduler: PullScheduler::new(),
-            donedata_at_final: String::new(),
+            donedata_at_final: SceString::new(),
+        }
+    }
+
+    // ════════════════════════════════════════
+    // Scheduler clock readers (per-build cfg-branched, HAL-routed under no_std)
+    // ════════════════════════════════════════
+
+    /// Resolve the current scheduler time point for "now".
+    ///
+    /// Routes through `<P::Hal>::now_ticks_ms()` under no_std (returning a u64
+    /// millisecond tick) and through `Instant::now()` under std. The textbook
+    /// DI split keeps [`PullScheduler`] clock-source-agnostic and unit-testable.
+    #[inline]
+    fn sched_now(&self) -> SchedTimePoint {
+        #[cfg(not(feature = "no_std"))]
+        {
+            Instant::now()
+        }
+        #[cfg(feature = "no_std")]
+        {
+            <P::Hal as Hal>::now_ticks_ms()
+        }
+    }
+
+    /// Resolve `now + delay` for scheduling.
+    ///
+    /// Under std this is `Instant::now() + delay`. Under no_std this is
+    /// `<P::Hal>::now_ticks_ms().saturating_add(delay.as_millis() as u64)` —
+    /// `saturating_add` clamps a pathologically large delay to `u64::MAX`
+    /// rather than wrapping (`u64::MAX` ms ≈ 585 million years, so the clamp
+    /// is operationally indistinguishable from "infinity").
+    #[inline]
+    fn sched_now_plus(&self, delay: Duration) -> SchedTimePoint {
+        #[cfg(not(feature = "no_std"))]
+        {
+            Instant::now() + delay
+        }
+        #[cfg(feature = "no_std")]
+        {
+            let delay_ms = delay.as_millis() as u64;
+            <P::Hal as Hal>::now_ticks_ms().saturating_add(delay_ms)
         }
     }
 
@@ -383,7 +546,10 @@ impl<P: StatePolicy> Engine<P> {
             self.check_eventless_transitions();
         }
 
-        // W3C SCXML 6.4: Fire completion callback if we reached a final state during init
+        // W3C SCXML 6.4: Fire completion callback if we reached a final state during init.
+        // Watching-zenoh RFC §5.J.2: Box<dyn FnMut> callback is alloc-coupled and gated
+        // to `!no_std` (see field declaration above).
+        #[cfg(not(feature = "no_std"))]
         if self.is_in_final_state() && self.completion_callback.is_some() {
             sce_log_debug!("Engine::initialize: reached final state during init, invoking completion callback");
             let active = self.get_active_states();
@@ -403,6 +569,7 @@ impl<P: StatePolicy> Engine<P> {
         self.process_event_queues();
         self.check_eventless_transitions();
 
+        #[cfg(not(feature = "no_std"))]
         if self.is_in_final_state() && self.completion_callback.is_some() {
             sce_log_debug!("Engine::step: invoking completion callback");
             if let Some(cb) = self.completion_callback.as_mut() {
@@ -420,6 +587,7 @@ impl<P: StatePolicy> Engine<P> {
             return;
         }
         if self.is_in_final_state() {
+            #[cfg(not(feature = "no_std"))]
             if let Some(cb) = self.completion_callback.as_mut() {
                 sce_log_debug!("Engine::tick: final state already reached, invoking completion callback");
                 cb();
@@ -427,8 +595,14 @@ impl<P: StatePolicy> Engine<P> {
             return;
         }
 
-        // W3C SCXML 6.2: Pop all ready scheduled events into the external queue
-        while let Some((event, data)) = self.scheduler.pop_ready_event() {
+        // W3C SCXML 6.2: Pop all ready scheduled events into the external queue.
+        // Read the clock once per iteration via the cfg-branched helper — keeps
+        // `PullScheduler` clock-source-agnostic (textbook DI split).
+        loop {
+            let now = self.sched_now();
+            let Some((event, data)) = self.scheduler.pop_ready_event_at(now) else {
+                break;
+            };
             self.raise_external(event, &data, "");
         }
 
@@ -474,15 +648,29 @@ impl<P: StatePolicy> Engine<P> {
     /// Non-parallel machines: returns the hierarchy `[leaf, parent, grandparent, ..., root]`.
     /// Parallel machines: returns the union of all active regions via
     /// [`StatePolicy::get_active_states`](crate::StatePolicy::get_active_states).
-    pub fn get_active_states(&self) -> Vec<P::State> {
+    ///
+    /// Watching-zenoh RFC §5.J.2: returns the bounded
+    /// [`hierarchy::StateChain`](crate::helpers::hierarchy::StateChain) which
+    /// aliases `Vec<P::State>` under std (ABI-preserving) and
+    /// `heapless::Vec<P::State, MAX_HIERARCHY_DEPTH>` under no_std. The parallel
+    /// branch (`policy.get_active_states()` returning a heap `Vec`) is gated to
+    /// `!no_std` because policy.rs's default impl is itself alloc-coupled (the
+    /// policy.rs port lands in B-γ2d-5). Reuses the existing
+    /// `MAX_HIERARCHY_DEPTH=16` capacity invariant — no new capacity constant
+    /// (D-1 lockin preserved).
+    pub fn get_active_states(&self) -> hierarchy::StateChain<P::State> {
+        #[cfg(not(feature = "no_std"))]
         if concepts::has_active_states::<P>() {
             return self.policy.get_active_states();
         }
-        // Walk from current state up to root
-        let mut active = Vec::with_capacity(8);
+        // Walk from current state up to root via the cfg-branched chain helper.
+        // Bounded by MAX_HIERARCHY_DEPTH=16 under no_std (panics on overflow per
+        // W3C SCXML no-silent-drop discipline — a hierarchy walk exceeding depth
+        // 16 indicates a generator bug or cyclic parent relationship).
+        let mut active: hierarchy::StateChain<P::State> = hierarchy::new_chain();
         let mut current = Some(self.current_state);
         while let Some(state) = current {
-            active.push(state);
+            hierarchy::push_chain(&mut active, state);
             current = P::get_parent(state);
         }
         active
@@ -500,7 +688,7 @@ impl<P: StatePolicy> Engine<P> {
     /// Called from generated `execute_entry_actions` code on a child engine
     /// (1:1 port of the C++ AOT `stashDonedataAtFinal` / Kotlin
     /// `StateMachineEngine.stashDonedataAtFinal` contract).
-    pub fn stash_donedata_at_final(&mut self, data: String) {
+    pub fn stash_donedata_at_final(&mut self, data: SceString) {
         self.donedata_at_final = data;
     }
 
@@ -549,13 +737,13 @@ impl<P: StatePolicy> Engine<P> {
     pub fn raise_external(&mut self, event: P::Event, event_data: &str, origin: &str) {
         let meta = EventWithMetadata::with_fields(
             event,
-            event_data.to_string(),
-            origin.to_string(),
-            String::new(), // send_id
+            crate::sce_string_from_str(event_data),
+            crate::sce_string_from_str(origin),
+            SceString::new(), // send_id
             EventType::External,
-            crate::helpers::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE.to_string(),
-            String::new(), // invoke_id
-            String::new(), // target
+            crate::sce_string_from_str(crate::helpers::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE),
+            SceString::new(), // invoke_id
+            SceString::new(), // target
         );
         self.external_queue.raise(meta);
 
@@ -628,7 +816,7 @@ impl<P: StatePolicy> Engine<P> {
         let meta = EventWithMetadata {
             event,
             metadata,
-            target: String::new(),
+            target: SceString::new(),
         };
         self.external_queue.raise(meta);
         self.step();
@@ -639,14 +827,21 @@ impl<P: StatePolicy> Engine<P> {
     // ════════════════════════════════════════
 
     /// Schedule an event for delayed delivery. Returns the send ID.
+    ///
+    /// Resolves the current clock via [`sched_now_plus`](Self::sched_now_plus)
+    /// (`Instant::now() + delay` under std, `<P::Hal>::now_ticks_ms() + delay_ms`
+    /// under no_std) and forwards to the clock-source-agnostic
+    /// [`PullScheduler::schedule_event_at`].
     pub fn schedule_event(
         &mut self,
         event: P::Event,
         delay: Duration,
         send_id: &str,
         event_data: &str,
-    ) -> String {
-        self.scheduler.schedule_event(event, delay, send_id, event_data)
+    ) -> SceString {
+        let ready_at = self.sched_now_plus(delay);
+        self.scheduler
+            .schedule_event_at(event, ready_at, send_id, event_data)
     }
 
     /// Cancel a previously scheduled event by send ID.
@@ -656,7 +851,7 @@ impl<P: StatePolicy> Engine<P> {
 
     /// Whether the scheduler has events ready to fire.
     pub fn has_ready_events(&self) -> bool {
-        self.scheduler.has_ready_events()
+        self.scheduler.has_ready_events_at(self.sched_now())
     }
 
     // ════════════════════════════════════════
@@ -664,6 +859,12 @@ impl<P: StatePolicy> Engine<P> {
     // ════════════════════════════════════════
 
     /// W3C SCXML 6.4: Register a callback invoked when the engine reaches a final state.
+    ///
+    /// Watching-zenoh RFC §5.J.2: gated to `!no_std` because `Box<dyn FnMut>` is
+    /// alloc-coupled (mirrors `helpers::entry_exit::execute_*_blocks` gate from
+    /// B-γ2d-2). Embedded consumers poll [`is_in_final_state`](Self::is_in_final_state)
+    /// instead.
+    #[cfg(not(feature = "no_std"))]
     pub fn set_completion_callback<F: FnMut() + 'static>(&mut self, callback: F) {
         self.completion_callback = Some(Box::new(callback));
     }
@@ -674,6 +875,11 @@ impl<P: StatePolicy> Engine<P> {
     /// [`HttpSendResponse`]. When `Some`, the engine injects the response event
     /// into the external queue — enabling real HTTP round-trips against the
     /// shared W3C test server (`standalone_http_server.js`).
+    ///
+    /// Watching-zenoh RFC §5.J.2: gated to `!no_std` (HTTP itself is whole-module
+    /// gated; the codegen-time validator rejects `BasicHTTPEventProcessor`
+    /// `<send>` under `--no-std` via `codegen/no-std-http-not-supported`).
+    #[cfg(not(feature = "no_std"))]
     pub fn set_http_send_callback<F>(&mut self, callback: F)
     where
         F: FnMut(HttpSendRequest) -> Option<HttpSendResponse> + 'static,
@@ -687,6 +893,10 @@ impl<P: StatePolicy> Engine<P> {
     /// `Some(HttpSendResponse)`, the engine injects the response event into the
     /// external queue. The engine has no knowledge of HTTP transport — callers
     /// supply the implementation via [`set_http_send_callback`].
+    ///
+    /// Watching-zenoh RFC §5.J.2: gated to `!no_std` — see
+    /// [`set_http_send_callback`] for the upstream rejection rationale.
+    #[cfg(not(feature = "no_std"))]
     pub fn perform_http_send(
         &mut self,
         target: String,
@@ -700,7 +910,7 @@ impl<P: StatePolicy> Engine<P> {
             if let Some(resp) = response {
                 if let Some(evt) = P::get_event_from_name(&resp.event_name) {
                     let mut meta = EventWithMetadata::new(evt);
-                    meta.metadata = EventMetadata::external(String::new(), String::new());
+                    meta.metadata = EventMetadata::external(SceString::new(), SceString::new());
                     meta.metadata.data = resp.event_data;
                     self.external_queue.raise(meta);
                 }
@@ -717,6 +927,14 @@ impl<P: StatePolicy> Engine<P> {
     /// Matches C++ `runUntilCompletion(timeout, pollInterval)`. Polls the scheduler
     /// and calls `tick()` in a loop until either the final state is reached or
     /// `timeout` elapses. Returns `true` on completion, `false` on timeout.
+    ///
+    /// Watching-zenoh RFC §5.J.2: gated to `!no_std` because the polling loop
+    /// uses `std::thread::sleep` for cooperative blocking and `Instant::elapsed`
+    /// for the timeout — both host-thread-coupled. no_std consumers drive their
+    /// own executor loop, calling [`tick`](Self::tick) plus
+    /// [`has_ready_events`](Self::has_ready_events) under their HAL waker
+    /// (e.g. embassy `Signal`).
+    #[cfg(not(feature = "no_std"))]
     pub fn run_until_completion(&mut self, timeout: Duration, poll_interval: Duration) -> bool {
         // W3C SCXML: if already stopped but reached final state during initialize(), return true
         if !self.is_running {
@@ -914,13 +1132,18 @@ impl<P: StatePolicy> Engine<P> {
         };
 
         if let Some(lca_state) = lca {
-            // W3C SCXML 3.13: Exit active descendants of old_state deepest first
-            let mut descendants_to_exit: Vec<P::State> = pre_transition_states
-                .iter()
-                .copied()
-                .filter(|&s| s != old_state && P::is_descendant_of(s, old_state))
-                .collect();
-            // Sort by document order descending (deeper first)
+            // W3C SCXML 3.13: Exit active descendants of old_state deepest first.
+            // Build via the cfg-branched StateChain so the no_std heapless variant
+            // is bounded by MAX_HIERARCHY_DEPTH (the active states slice is itself
+            // a depth-bounded chain — descendants_to_exit ⊆ pre_transition_states).
+            let mut descendants_to_exit: hierarchy::StateChain<P::State> = hierarchy::new_chain();
+            for &s in pre_transition_states.iter() {
+                if s != old_state && P::is_descendant_of(s, old_state) {
+                    hierarchy::push_chain(&mut descendants_to_exit, s);
+                }
+            }
+            // Sort by document order descending (deeper first). Both std `Vec` and
+            // `heapless::Vec` impl `Deref<Target = [T]>`, so `sort_by` works on both.
             descendants_to_exit.sort_by(|a, b| P::get_document_order(*b).cmp(&P::get_document_order(*a)));
 
             for descendant in descendants_to_exit {
@@ -948,13 +1171,19 @@ impl<P: StatePolicy> Engine<P> {
             // W3C SCXML 3.13: Execute transition actions between exit and entry
             self.execute_transition_actions_dispatch();
 
-            // W3C SCXML 3.13: Enter from LCA down to new_state
-            let entry_chain: Vec<P::State> = if new_state == lca_state {
-                // Ancestor/self case — enter full subtree from target
+            // W3C SCXML 3.13: Enter from LCA down to new_state. Uses StateChain
+            // so the no_std heapless variant is bounded by MAX_HIERARCHY_DEPTH —
+            // same depth invariant as `build_entry_chain_from_ancestor` itself.
+            let entry_chain: hierarchy::StateChain<P::State> = if new_state == lca_state {
+                // Ancestor/self case — enter full subtree from target.
                 let full = hierarchy::build_entry_chain::<P>(new_state);
-                full.into_iter()
-                    .filter(|&s| s == lca_state || P::is_descendant_of(s, lca_state))
-                    .collect()
+                let mut filtered: hierarchy::StateChain<P::State> = hierarchy::new_chain();
+                for s in full.into_iter() {
+                    if s == lca_state || P::is_descendant_of(s, lca_state) {
+                        hierarchy::push_chain(&mut filtered, s);
+                    }
+                }
+                filtered
             } else {
                 hierarchy::build_entry_chain_from_ancestor::<P>(new_state, lca_state)
             };
