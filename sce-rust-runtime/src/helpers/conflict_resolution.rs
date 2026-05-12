@@ -8,6 +8,17 @@
 //!
 //! All functions are generic over `P: StatePolicy`, matching the C++ pattern of
 //! `template <typename StatePolicy>`.
+//!
+//! Watching-zenoh RFC §5.J.2 (lines 1989-1994): whole-module gated to `!no_std`.
+//! The Rust AOT codegen template
+//! (`tools/codegen/templates/rust/conflict_resolution.rs.jinja2`) re-implements
+//! `compute_exit_set` and `remove_conflicting_transitions` inline on the
+//! generated `Self` impl rather than calling into this module. The only
+//! cross-module helper consumed by templates is
+//! `hierarchy::build_entry_chain`, which is ported to be no_std-compatible in
+//! the hierarchy module itself.
+
+#![cfg(not(feature = "no_std"))]
 
 use crate::helpers::hierarchy;
 use crate::policy::StatePolicy;

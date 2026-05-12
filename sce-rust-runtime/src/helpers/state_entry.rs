@@ -7,6 +7,13 @@
 //! calculation and optimized entry order for deep initial targets.
 //!
 //! All functions are generic over `P: StatePolicy`.
+//!
+//! Watching-zenoh RFC §5.J.2 (lines 1989-1994): whole-module gated to `!no_std`.
+//! The deep-entry helpers use `Vec<Vec<P::State>>` + `HashSet<S>` accumulators
+//! and have zero template consumer — the Rust AOT generator emits deep-entry
+//! traversal inline.
+
+#![cfg(not(feature = "no_std"))]
 
 use std::collections::HashSet;
 use std::hash::Hash;

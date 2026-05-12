@@ -21,6 +21,15 @@
 //! detect cyclic parent relationships. A cycle indicates a generator bug or corrupted
 //! SCXML; the functions panic with a diagnostic message. Matches C++ `throw std::runtime_error`
 //! semantics — both are fatal, unrecoverable errors.
+//!
+//! ## no_std variant (Watching-zenoh RFC §5.J.2)
+//!
+//! Under `--features=no_std`, the chain return type [`StateChain`] is a stack-allocated
+//! [`heapless::Vec`] capped at [`MAX_HIERARCHY_DEPTH`] (= 16). The same depth-guard panic
+//! used under std bounds capacity, so the no_std push paths are infallible by construction
+//! — they `.expect()` only as a generator-bug tripwire. No new capacity constant is
+//! introduced; the std `Vec<P::State>` and no_std `heapless::Vec<P::State, 16>` share the
+//! single existing `MAX_HIERARCHY_DEPTH` invariant.
 
 use crate::policy::StatePolicy;
 
@@ -30,6 +39,60 @@ use crate::policy::StatePolicy;
 /// W3C SCXML has no normative depth limit; 16 covers every real-world document we've
 /// encountered (typical: 1-5, complex: up to 10).
 pub const MAX_HIERARCHY_DEPTH: usize = 16;
+
+/// Compile-time bounded state chain returned by the hierarchy chain-builders.
+///
+/// - **std build**: [`Vec<S>`] — unbounded heap allocation, capacity hint only.
+/// - **no_std build**: [`heapless::Vec<S, MAX_HIERARCHY_DEPTH>`] — stack-allocated,
+///   compile-time-capped at 16 elements. The capacity is bounded by the existing
+///   [`MAX_HIERARCHY_DEPTH`] depth-guard panic in each chain-builder, so push under
+///   no_std is infallible-by-construction; a heapless push failure indicates a
+///   generator bug (cyclic parent relationship the depth guard missed).
+///
+/// Watching-zenoh RFC §5.J.2 (lines 1989-1994): reuses [`MAX_HIERARCHY_DEPTH`] rather
+/// than introducing a new capacity constant — the same depth invariant bounds both
+/// the iteration count and the heapless allocation.
+#[cfg(not(feature = "no_std"))]
+pub type StateChain<S> = ::std::vec::Vec<S>;
+#[cfg(feature = "no_std")]
+pub type StateChain<S> = ::heapless::Vec<S, MAX_HIERARCHY_DEPTH>;
+
+/// Push into a [`StateChain`] uniformly under std and no_std.
+///
+/// Under std this is `Vec::push`. Under no_std this is `heapless::Vec::push` with
+/// an `.expect()` tripwire — the surrounding [`MAX_HIERARCHY_DEPTH`] depth guard
+/// in each caller bounds the chain length to the heapless capacity, so the push
+/// failure path is unreachable under valid input.
+#[inline]
+fn push_chain<S: core::fmt::Debug>(chain: &mut StateChain<S>, item: S) {
+    #[cfg(not(feature = "no_std"))]
+    {
+        chain.push(item);
+    }
+    #[cfg(feature = "no_std")]
+    {
+        chain.push(item).expect(
+            "hierarchy: chain capacity exhausted — depth check at MAX_HIERARCHY_DEPTH should have fired first (generator bug or corrupted hierarchy)",
+        );
+    }
+}
+
+/// Construct an empty [`StateChain`].
+///
+/// Under std this is `Vec::with_capacity(8)` (preserves the existing pre-allocation
+/// hint for typical depths 1-5). Under no_std this is `heapless::Vec::new()` — the
+/// capacity is fixed at compile time so the hint is a no-op.
+#[inline]
+fn new_chain<S>() -> StateChain<S> {
+    #[cfg(not(feature = "no_std"))]
+    {
+        ::std::vec::Vec::with_capacity(8)
+    }
+    #[cfg(feature = "no_std")]
+    {
+        ::heapless::Vec::new()
+    }
+}
 
 /// W3C SCXML 3.12: Find the Least Common Ancestor of two states.
 ///
@@ -57,7 +120,7 @@ pub fn find_lca<P: StatePolicy>(state1: P::State, state2: P::State) -> Option<P:
     }
 
     // Build state1's ancestor chain (starting from state1's parent, per W3C 3.13 test 504)
-    let mut ancestors1: Vec<P::State> = Vec::with_capacity(8);
+    let mut ancestors1: StateChain<P::State> = new_chain();
     if let Some(mut current) = P::get_parent(state1) {
         let mut depth = 0;
         loop {
@@ -67,7 +130,7 @@ pub fn find_lca<P: StatePolicy>(state1: P::State, state2: P::State) -> Option<P:
                     state1
                 );
             }
-            ancestors1.push(current);
+            push_chain(&mut ancestors1, current);
             match P::get_parent(current) {
                 Some(parent) => current = parent,
                 None => break,
@@ -148,8 +211,8 @@ pub fn is_descendant_of<P: StatePolicy>(descendant: P::State, ancestor: P::State
 pub fn build_exit_chain<P: StatePolicy>(
     from_state: P::State,
     stop_before_state: P::State,
-) -> Vec<P::State> {
-    let mut chain: Vec<P::State> = Vec::with_capacity(8);
+) -> StateChain<P::State> {
+    let mut chain: StateChain<P::State> = new_chain();
     let mut current = from_state;
     let mut depth = 0;
 
@@ -160,7 +223,7 @@ pub fn build_exit_chain<P: StatePolicy>(
                 from_state
             );
         }
-        chain.push(current);
+        push_chain(&mut chain, current);
         match P::get_parent(current) {
             Some(parent) => current = parent,
             None => break, // Reached root without finding stop state — return what we have
@@ -185,8 +248,8 @@ pub fn build_exit_chain<P: StatePolicy>(
 pub fn build_entry_chain_from_ancestor<P: StatePolicy>(
     target: P::State,
     ancestor: P::State,
-) -> Vec<P::State> {
-    let mut chain: Vec<P::State> = Vec::with_capacity(8);
+) -> StateChain<P::State> {
+    let mut chain: StateChain<P::State> = new_chain();
     let mut current = target;
     let mut depth = 0;
 
@@ -197,7 +260,7 @@ pub fn build_entry_chain_from_ancestor<P: StatePolicy>(
                 target
             );
         }
-        chain.push(current);
+        push_chain(&mut chain, current);
         match P::get_parent(current) {
             Some(parent) => current = parent,
             None => break, // Reached root without finding ancestor
@@ -223,8 +286,8 @@ pub fn build_entry_chain_from_ancestor<P: StatePolicy>(
 /// # Panics
 ///
 /// Panics if the chain exceeds [`MAX_HIERARCHY_DEPTH`].
-pub fn build_entry_chain<P: StatePolicy>(leaf_state: P::State) -> Vec<P::State> {
-    let mut chain: Vec<P::State> = Vec::with_capacity(8);
+pub fn build_entry_chain<P: StatePolicy>(leaf_state: P::State) -> StateChain<P::State> {
+    let mut chain: StateChain<P::State> = new_chain();
     let mut current = leaf_state;
     let mut depth = 0;
 
@@ -236,7 +299,7 @@ pub fn build_entry_chain<P: StatePolicy>(leaf_state: P::State) -> Vec<P::State> 
                 leaf_state
             );
         }
-        chain.push(current);
+        push_chain(&mut chain, current);
         match P::get_parent(current) {
             Some(parent) => current = parent,
             None => break, // Reached root

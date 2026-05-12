@@ -48,6 +48,14 @@ pub mod state_policy_concepts;
 
 // Phase 2 modules
 pub mod assign;
+// Watching-zenoh RFC §5.J.2: W3C Appendix D.2 conflict resolution helpers use
+// `Vec<P::State>` / `Vec<TransitionDescriptor<P::State>>` accumulation patterns
+// that are alloc-coupled. The Rust AOT codegen template
+// (`tools/codegen/templates/rust/conflict_resolution.rs.jinja2`) re-implements
+// these algorithms inline on the generated `Self` impl rather than calling
+// into this module, so the no_std build has zero current consumer. Mirrors
+// `event_data` / `invoke_processing` whole-module gate precedent.
+#[cfg(not(feature = "no_std"))]
 pub mod conflict_resolution;
 pub mod datamodel_init;
 pub mod done_data;
@@ -65,10 +73,21 @@ pub mod event_processing;
 pub mod event_type;
 pub mod foreach;
 pub mod guard;
+// Watching-zenoh RFC §5.J.2: history-state helpers use `Vec<P::State>` +
+// `HashSet<P::State>` accumulators. Zero template consumer — the Rust AOT
+// generator emits history-state handling inline on the generated `Self` impl.
+#[cfg(not(feature = "no_std"))]
 pub mod history;
 pub mod in_predicate;
+// Watching-zenoh RFC §5.J.2: parallel-region helpers use `Vec` / `HashSet` /
+// `HashMap<S, S>` accumulators across 30+ public fns. Zero template consumer —
+// the Rust AOT generator emits region traversal inline.
+#[cfg(not(feature = "no_std"))]
 pub mod parallel_state;
 pub mod send;
+// Watching-zenoh RFC §5.J.2: deep-state-entry helpers use `Vec<Vec<P::State>>`
+// + `HashSet<S>` accumulators. Zero template consumer.
+#[cfg(not(feature = "no_std"))]
 pub mod state_entry;
 pub mod string_utils;
 pub mod unique_id_generator;

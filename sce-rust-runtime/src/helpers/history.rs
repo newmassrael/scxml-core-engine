@@ -8,6 +8,13 @@
 //! hierarchy queries.
 //!
 //! All functions are generic over `P: StatePolicy`.
+//!
+//! Watching-zenoh RFC §5.J.2 (lines 1989-1994): whole-module gated to `!no_std`.
+//! The history-state helpers use `Vec<P::State>` + `HashSet<P::State>`
+//! accumulators and have zero template consumer — the Rust AOT generator emits
+//! history-state restoration inline.
+
+#![cfg(not(feature = "no_std"))]
 
 use std::collections::HashSet;
 
