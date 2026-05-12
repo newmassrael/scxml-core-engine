@@ -336,7 +336,7 @@
         };
         engine.schedule_event(
             {{ machine_name }}Event::{{ action.event | to_event_variant }},
-            std::time::Duration::from_millis(delay_ms),
+            core::time::Duration::from_millis(delay_ms),
             &send_id,
             event_data,
         );
@@ -347,7 +347,7 @@
 {% if action.event %}
     engine.schedule_event(
         {{ machine_name }}Event::{{ action.event | to_event_variant }},
-        std::time::Duration::from_millis({{ action.delay_ms }}),
+        core::time::Duration::from_millis({{ action.delay_ms }}),
         &send_id,
         event_data,
     );
@@ -357,7 +357,7 @@
 {% if action.event %}
     engine.schedule_event(
         {{ machine_name }}Event::{{ action.event | to_event_variant }},
-        std::time::Duration::from_millis({{ action.delay_ms | default(0) }}),
+        core::time::Duration::from_millis({{ action.delay_ms | default(0) }}),
         &send_id,
         event_data,
     );

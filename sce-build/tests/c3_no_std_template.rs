@@ -136,6 +136,29 @@ fn rust_template_omits_event_queue_capacity_const_when_absent() {
     );
 }
 
+/// C3 Atomic B-γ2a: trivial sub-template `std::*` → `core::*` swaps
+/// position the generated code one step closer to no_std-compatible.
+/// Under std builds the swap is behavior-preserving — `core::time::*`
+/// and `core::sync::atomic::*` are the same types `std::time::*` /
+/// `std::sync::atomic::*` re-export. The drift guard locks in the
+/// `core::*` spelling so a future template edit that reverts back to
+/// `std::*` paths surfaces the regression here rather than waiting
+/// for B-γ3's `#![no_std]` emission to fire compile errors against
+/// the generated code.
+#[test]
+fn rust_template_emits_core_time_duration_not_std() {
+    let model = parse(PLAIN_FSM, "plain");
+    let code = generate(&model, &template_dir()).expect("template render must succeed");
+    assert!(
+        code.contains("use core::time::Duration;"),
+        "template must emit `use core::time::Duration;` (B-γ2a swap)"
+    );
+    assert!(
+        !code.contains("use std::time::Duration;"),
+        "template must not emit `use std::time::Duration;` after B-γ2a swap"
+    );
+}
+
 #[test]
 fn populate_event_queue_capacity_from_deploy_fills_missing_attribute() {
     // Author omits `<scxml sce:capacity>`; deploy.yaml supplies

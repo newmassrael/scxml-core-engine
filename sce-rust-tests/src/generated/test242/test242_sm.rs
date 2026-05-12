@@ -28,7 +28,7 @@
 // camelCase verbatim into Rust field names like `child_invokedChild`
 // keeps the generated code traceable back to the SCXML source.
 #![allow(non_snake_case)]
-// Codegen always emits `use std::time::Duration` and the umbrella
+// Codegen always emits `use core::time::Duration` and the umbrella
 // `use sce_rust_runtime::{Engine, StatePolicy};`; fixtures with no
 // `<send delay=...>` and no engine-borrowing actions never reference
 // `Duration`/`Engine`, leaving the imports unused.
@@ -69,7 +69,7 @@
 #![allow(clippy::complexity)]
 
 
-use std::time::Duration;
+use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
 
 
@@ -187,8 +187,8 @@ impl Test242Policy {
 
                 // W3C SCXML 6.4: Ensure child session ID for invoke tracking
                 if child_policy.session_id.is_none() {
-                    static CHILD_SESSION_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-                    let cid = CHILD_SESSION_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    static CHILD_SESSION_COUNTER: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+                    let cid = CHILD_SESSION_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     child_policy.session_id = Some(format!("child_session_{}", cid));
                 }
 
@@ -257,8 +257,8 @@ impl Test242Policy {
 
                 // W3C SCXML 6.4: Ensure child session ID for invoke tracking
                 if child_policy.session_id.is_none() {
-                    static CHILD_SESSION_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-                    let cid = CHILD_SESSION_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    static CHILD_SESSION_COUNTER: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+                    let cid = CHILD_SESSION_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     child_policy.session_id = Some(format!("child_session_{}", cid));
                 }
 
@@ -327,8 +327,8 @@ impl Test242Policy {
 
                 // W3C SCXML 6.4: Ensure child session ID for invoke tracking
                 if child_policy.session_id.is_none() {
-                    static CHILD_SESSION_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-                    let cid = CHILD_SESSION_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    static CHILD_SESSION_COUNTER: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+                    let cid = CHILD_SESSION_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     child_policy.session_id = Some(format!("child_session_{}", cid));
                 }
 
@@ -684,7 +684,7 @@ impl StatePolicy for Test242Policy {
     // W3C SCXML 6.2: Delayed send (1000ms)
     engine.schedule_event(
         Test242Event::Timeout1,
-        std::time::Duration::from_millis(1000),
+        core::time::Duration::from_millis(1000),
         &send_id,
         event_data,
     );
@@ -724,7 +724,7 @@ impl StatePolicy for Test242Policy {
     // W3C SCXML 6.2: Delayed send (1000ms)
     engine.schedule_event(
         Test242Event::Timeout2,
-        std::time::Duration::from_millis(1000),
+        core::time::Duration::from_millis(1000),
         &send_id,
         event_data,
     );
@@ -764,7 +764,7 @@ impl StatePolicy for Test242Policy {
     // W3C SCXML 6.2: Delayed send (1000ms)
     engine.schedule_event(
         Test242Event::Timeout3,
-        std::time::Duration::from_millis(1000),
+        core::time::Duration::from_millis(1000),
         &send_id,
         event_data,
     );

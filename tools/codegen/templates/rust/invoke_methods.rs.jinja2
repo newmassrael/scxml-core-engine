@@ -65,8 +65,8 @@
 
                 // W3C SCXML 6.4: Ensure child session ID for invoke tracking
                 if child_policy.session_id.is_none() {
-                    static CHILD_SESSION_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-                    let cid = CHILD_SESSION_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    static CHILD_SESSION_COUNTER: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+                    let cid = CHILD_SESSION_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     child_policy.session_id = Some(format!("child_session_{}", cid));
                 }
 
@@ -223,8 +223,8 @@
                 child_policy.child_session_id = child_session_id.clone();
 
                 if child_policy.session_id.is_none() {
-                    static HYBRID_SESSION_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-                    let cid = HYBRID_SESSION_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    static HYBRID_SESSION_COUNTER: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+                    let cid = HYBRID_SESSION_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     child_policy.session_id = Some(format!("hybrid_session_{}", cid));
                 }
 

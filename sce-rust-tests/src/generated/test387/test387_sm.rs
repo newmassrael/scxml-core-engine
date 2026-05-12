@@ -28,7 +28,7 @@
 // camelCase verbatim into Rust field names like `child_invokedChild`
 // keeps the generated code traceable back to the SCXML source.
 #![allow(non_snake_case)]
-// Codegen always emits `use std::time::Duration` and the umbrella
+// Codegen always emits `use core::time::Duration` and the umbrella
 // `use sce_rust_runtime::{Engine, StatePolicy};`; fixtures with no
 // `<send delay=...>` and no engine-borrowing actions never reference
 // `Duration`/`Engine`, leaving the imports unused.
@@ -69,7 +69,7 @@
 #![allow(clippy::complexity)]
 
 
-use std::time::Duration;
+use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
 
 
@@ -490,7 +490,7 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test387Event::EnteringS122
     // W3C SCXML 6.2: Delayed send (1000ms)
     engine.schedule_event(
         Test387Event::Timeout,
-        std::time::Duration::from_millis(1000),
+        core::time::Duration::from_millis(1000),
         &send_id,
         event_data,
     );

@@ -28,7 +28,7 @@
 // camelCase verbatim into Rust field names like `child_invokedChild`
 // keeps the generated code traceable back to the SCXML source.
 #![allow(non_snake_case)]
-// Codegen always emits `use std::time::Duration` and the umbrella
+// Codegen always emits `use core::time::Duration` and the umbrella
 // `use sce_rust_runtime::{Engine, StatePolicy};`; fixtures with no
 // `<send delay=...>` and no engine-borrowing actions never reference
 // `Duration`/`Engine`, leaving the imports unused.
@@ -69,7 +69,7 @@
 #![allow(clippy::complexity)]
 
 
-use std::time::Duration;
+use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
 
 
@@ -164,8 +164,8 @@ impl Test376Policy {
     // Uses atomic counter (1:1 with C++ UniqueIdGenerator::generateSessionId)
     fn ensure_session_id(&mut self) {
         if self.session_id.is_none() {
-            static SESSION_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-            let id = SESSION_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            static SESSION_COUNTER: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+            let id = SESSION_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             self.session_id = Some(format!("session_{}", id));
         }
     }
