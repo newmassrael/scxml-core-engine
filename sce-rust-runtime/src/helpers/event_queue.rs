@@ -12,7 +12,15 @@
 //! W3C SCXML C.1 (test189): internal events are processed exhaustively before
 //! any external event. The engine's macrostep loop drains the internal queue
 //! first, then processes one external event, then re-drains the internal queue.
+//!
+//! Watching-zenoh RFC §5.J.2 (lines 1989-1994): under `--features=no_std` the
+//! backing store is a stack-allocated [`heapless::Deque`] capped at
+//! [`crate::MAX_EVENT_QUEUE_DEPTH`] (= 64 in v1; see lib.rs for the
+//! reasoning + per-document tunable deferral). Overflow under no_std panics
+//! with an explicit message rather than silently dropping the event
+//! (W3C §C.1 mandates no silent transition drop).
 
+#[cfg(not(feature = "no_std"))]
 use std::collections::VecDeque;
 
 /// FIFO queue for SCXML events with metadata.
@@ -20,26 +28,46 @@ use std::collections::VecDeque;
 /// Generic over the event type (typically `EventWithMetadata<E>` where `E`
 /// is the policy's event enum). Ports C++ `SCE::Core::EventQueueManager<T>`.
 ///
-/// Implementation: thin wrapper around `VecDeque<T>`. Named to match C++ so
-/// generated code reads naturally when cross-referenced with C++ source.
+/// Implementation: under std, a thin wrapper around `VecDeque<T>`
+/// (unbounded). Under `--features=no_std`, a wrapper around
+/// `heapless::Deque<T, MAX_EVENT_QUEUE_DEPTH>` (stack-allocated, capped at
+/// 64 in v1). Named to match C++ so generated code reads naturally when
+/// cross-referenced with C++ source.
 #[derive(Debug)]
 pub struct EventQueueManager<T> {
+    #[cfg(not(feature = "no_std"))]
     queue: VecDeque<T>,
+    #[cfg(feature = "no_std")]
+    queue: ::heapless::Deque<T, { crate::MAX_EVENT_QUEUE_DEPTH }>,
 }
 
 impl<T> EventQueueManager<T> {
     /// Construct an empty queue.
     pub fn new() -> Self {
         Self {
+            #[cfg(not(feature = "no_std"))]
             queue: VecDeque::new(),
+            #[cfg(feature = "no_std")]
+            queue: ::heapless::Deque::new(),
         }
     }
 
     /// W3C SCXML 3.12.1: Enqueue an event at the back of the FIFO queue.
     ///
-    /// Matches C++ `raise(T&&)`.
+    /// Matches C++ `raise(T&&)`. Under `--features=no_std` an attempted push
+    /// past [`crate::MAX_EVENT_QUEUE_DEPTH`] panics rather than silently
+    /// dropping the event — W3C SCXML §C.1 mandates no silent transition drop.
     pub fn raise(&mut self, event: T) {
-        self.queue.push_back(event);
+        #[cfg(not(feature = "no_std"))]
+        {
+            self.queue.push_back(event);
+        }
+        #[cfg(feature = "no_std")]
+        {
+            self.queue.push_back(event).map_err(|_| ()).expect(
+                "EventQueueManager: heapless capacity exhausted (MAX_EVENT_QUEUE_DEPTH=64 — peak chained <raise> exceeded queue size; W3C §C.1 mandates no silent drop)",
+            );
+        }
     }
 
     /// Dequeue the next event (FIFO). Returns `None` if the queue is empty.

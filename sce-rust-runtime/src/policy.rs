@@ -32,11 +32,12 @@
 //! the SCXML document actually uses. The engine branches on these `const` flags at
 //! compile time, yielding zero runtime overhead for unused features.
 
-use std::fmt::Debug;
-use std::hash::Hash;
+use core::fmt::Debug;
+use core::hash::Hash;
 
 use crate::event::EventWithMetadata;
 use crate::hal::Hal;
+use crate::helpers::hierarchy::{self, StateChain};
 use crate::Engine;
 
 /// The contract that generated state machine policies must satisfy.
@@ -197,8 +198,18 @@ pub trait StatePolicy: Sized + 'static {
 
     /// Get initial children of a compound state (W3C SCXML 3.6).
     /// Returns the resolved initial child state(s) for deep initial targets.
-    fn get_initial_children(_state: Self::State) -> Vec<Self::State> {
-        Vec::new()
+    ///
+    /// Watching-zenoh RFC §5.J.2: returns the bounded
+    /// [`StateChain<Self::State>`](crate::helpers::hierarchy::StateChain) — aliased
+    /// to `Vec<Self::State>` under std (ABI-preserving — existing generated
+    /// overrides keep emitting `Vec<...>` which is the same type via the alias)
+    /// and to `heapless::Vec<Self::State, MAX_HIERARCHY_DEPTH=16>` under no_std.
+    /// The default no-op returns an empty chain via
+    /// [`hierarchy::new_chain`](crate::helpers::hierarchy::new_chain). Reuses the
+    /// existing `MAX_HIERARCHY_DEPTH` invariant — no new capacity constant
+    /// (D-1 lockin preserved beyond `MAX_SCHEDULED_EVENTS` / `MAX_EVENT_QUEUE_DEPTH`).
+    fn get_initial_children(_state: Self::State) -> StateChain<Self::State> {
+        hierarchy::new_chain()
     }
 
     /// Get initial child considering history (W3C SCXML 3.11).
@@ -322,8 +333,13 @@ pub trait StatePolicy: Sized + 'static {
     /// Get active states for parallel state machines (W3C SCXML 3.4).
     ///
     /// Generated only when `HAS_ACTIVE_STATES` is `true`.
-    fn get_active_states(&self) -> Vec<Self::State> {
-        Vec::new()
+    ///
+    /// Watching-zenoh RFC §5.J.2: return type matches the cfg-conditional
+    /// [`StateChain`] alias — see [`get_initial_children`](Self::get_initial_children)
+    /// above for the std/no_std mapping rationale. The default no-op returns
+    /// an empty chain.
+    fn get_active_states(&self) -> StateChain<Self::State> {
+        hierarchy::new_chain()
     }
 
     /// Forward external events to autoforward children (W3C SCXML 6.4.6).

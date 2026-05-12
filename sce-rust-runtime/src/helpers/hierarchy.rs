@@ -54,6 +54,9 @@ pub const MAX_HIERARCHY_DEPTH: usize = 16;
 /// the iteration count and the heapless allocation.
 #[cfg(not(feature = "no_std"))]
 pub type StateChain<S> = ::std::vec::Vec<S>;
+/// no_std variant of [`StateChain`]: stack-allocated `heapless::Vec` capped
+/// at [`MAX_HIERARCHY_DEPTH`]. See the std-variant doc-comment above for the
+/// full contract.
 #[cfg(feature = "no_std")]
 pub type StateChain<S> = ::heapless::Vec<S, MAX_HIERARCHY_DEPTH>;
 

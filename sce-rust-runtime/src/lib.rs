@@ -118,6 +118,30 @@ compile_error!(
 // requirement, the codegen can grow a parallel `EVENT_STRING_CAPACITY`
 // const and this alias becomes generic over the const.
 
+/// Maximum FIFO depth of the no_std event queue (internal + external).
+///
+/// Bounds the `heapless::Deque<T, _>` capacity of
+/// [`EventQueueManager`](crate::helpers::event_queue::EventQueueManager) under
+/// `--features=no_std`. Distinct from [`MAX_SCHEDULED_EVENTS`] — the queue
+/// holds events *waiting to be processed*, while the scheduler holds events
+/// *waiting on a delay timer*. Distinct from
+/// [`MAX_SCHEDULED_EVENTS`] (delay table) and from the
+/// per-document `<sce:capacity>` author-tunable that B-γ1 emits as the
+/// generated `EVENT_QUEUE_CAPACITY` const — wiring the per-document value into
+/// the runtime crate requires either stabilised `generic_const_exprs` or a
+/// const-traits architecture and is deferred until consumer signal demands it.
+///
+/// v1 value 64 covers typical statechart microstep depth: W3C SCXML §C.1
+/// mandates the internal queue is drained between external events, so the
+/// peak depth is the maximum chained `<raise>` count in a single macrostep.
+/// The W3C 202 test corpus tops out at ~16 chained raises (test 224's
+/// `done.invoke.*` fan-out); 64 gives a 4× safety margin without bloating
+/// stack footprint (64 × sizeof(EventWithMetadata) ≈ 64 × 32 bytes = 2 KiB).
+///
+/// The std build's [`EventQueueManager`] keeps `std::collections::VecDeque<T>`
+/// (unbounded) so this constant only affects the `--features=no_std` variant.
+pub const MAX_EVENT_QUEUE_DEPTH: usize = 64;
+
 /// Maximum number of simultaneously-pending delayed events in the no_std
 /// [`PullScheduler`](crate::engine::PullScheduler) ring.
 ///
@@ -165,6 +189,9 @@ pub const MAX_EVENT_STRING_LEN: usize = 256;
 /// use [`sce_string_from_str`] which abstracts the API divergence.
 #[cfg(not(feature = "no_std"))]
 pub type SceString = ::std::string::String;
+/// no_std variant of [`SceString`]: stack-allocated `heapless::String` capped
+/// at [`MAX_EVENT_STRING_LEN`]. See the std-variant doc-comment above for the
+/// full contract.
 #[cfg(feature = "no_std")]
 pub type SceString = ::heapless::String<MAX_EVENT_STRING_LEN>;
 
@@ -201,6 +228,15 @@ pub mod helpers;
 /// any consumer that enables `http-send` together with `no_std`.
 #[cfg(not(feature = "no_std"))]
 pub mod http;
+/// W3C SCXML 6.4 invoke lifecycle helpers.
+///
+/// Watching-zenoh RFC §5.J.2: whole-module gated to `!no_std`. `<invoke>` is
+/// rejected upstream at codegen time via `codegen/no-std-invoke-not-supported`
+/// (B-γ2c `591979e5`), so the lifecycle helpers (PendingInvoke / ChildSession
+/// / defer_invoke / cancel_invokes_for_state / execute_pending_invokes /
+/// create_done_invoke_event_name) are unreachable from emitted no_std code.
+/// Mirrors `helpers::invoke_processing` whole-module gate (same atomic).
+#[cfg(not(feature = "no_std"))]
 pub mod invoke;
 pub mod policy;
 /// ECMAScript engine abstraction.

@@ -83,6 +83,9 @@ use crate::MAX_SCHEDULED_EVENTS;
 /// - no_std: `u64` — millisecond ticks from `<P::Hal as Hal>::now_ticks_ms()`.
 #[cfg(not(feature = "no_std"))]
 pub type SchedTimePoint = Instant;
+/// no_std variant of [`SchedTimePoint`]: `u64` millisecond ticks read from
+/// `<P::Hal as Hal>::now_ticks_ms()`. See the std-variant doc-comment above
+/// for the full contract.
 #[cfg(feature = "no_std")]
 pub type SchedTimePoint = u64;
 
@@ -778,13 +781,17 @@ impl<P: StatePolicy> Engine<P> {
             "Engine::raise_external_with_meta: enqueuing external event with metadata"
         );
 
-        // W3C SCXML 6.4.6: Autoforward
+        // W3C SCXML 6.4.6: Autoforward.
+        // `P::get_event_name` already returns `&'static str`; pass directly
+        // to `forward_to_autoforward_children(&str, ...)` without an
+        // alloc-coupled `to_string()` round-trip — same observable behaviour
+        // under std, compiles under no_std.
         if concepts::has_autoforward::<P>() {
-            let name = P::get_event_name(event.event).to_string();
+            let name = P::get_event_name(event.event);
             let policy_ptr: *mut P = &mut self.policy as *mut P;
             // SAFETY: see execute_on_entry.
             unsafe {
-                (*policy_ptr).forward_to_autoforward_children(&name, self);
+                (*policy_ptr).forward_to_autoforward_children(name, self);
             }
         }
 
@@ -1142,9 +1149,14 @@ impl<P: StatePolicy> Engine<P> {
                     hierarchy::push_chain(&mut descendants_to_exit, s);
                 }
             }
-            // Sort by document order descending (deeper first). Both std `Vec` and
-            // `heapless::Vec` impl `Deref<Target = [T]>`, so `sort_by` works on both.
-            descendants_to_exit.sort_by(|a, b| P::get_document_order(*b).cmp(&P::get_document_order(*a)));
+            // Sort by document order descending (deeper first). Use
+            // `sort_unstable_by` (in `core::slice`, no alloc) rather than
+            // `sort_by` (alloc-coupled): document-order values are distinct
+            // by construction so stability is irrelevant, and the unstable
+            // variant compiles under both std and `--features=no_std`.
+            descendants_to_exit.sort_unstable_by(|a, b| {
+                P::get_document_order(*b).cmp(&P::get_document_order(*a))
+            });
 
             for descendant in descendants_to_exit {
                 sce_log_debug!("handle_hierarchical_transition: exit descendant {:?}", descendant);

@@ -32,18 +32,16 @@
 /// assert!(matches_event_descriptor("anything", "*"));         // universal wildcard
 /// ```
 pub fn matches_event_descriptor(event_name: &str, descriptor: &str) -> bool {
-    // W3C SCXML 5.9.3: Split descriptor into space-separated tokens
-    let tokens: Vec<&str> = descriptor.split_whitespace().collect();
-
-    // Empty descriptor: no match
-    if tokens.is_empty() {
-        return false;
-    }
-
-    // W3C SCXML 5.9.3: Event matches if it matches ANY token
-    for token in &tokens {
+    // W3C SCXML 5.9.3: Iterate space-separated tokens directly. An empty or
+    // whitespace-only descriptor produces zero tokens — the loop body never
+    // executes and the fn falls through to `false`, matching the W3C "no
+    // match" semantics. The previous `Vec<&str>` accumulation was redundant
+    // (each token is independently testable in iteration order) and
+    // alloc-coupled; iterating the `split_whitespace` adapter directly is
+    // both no_std-portable and zero-allocation. Watching-zenoh RFC §5.J.2.
+    for token in descriptor.split_whitespace() {
         // W3C SCXML 5.9.3: Universal wildcard "*" matches any event
-        if *token == "*" {
+        if token == "*" {
             return true;
         }
 
@@ -56,7 +54,7 @@ pub fn matches_event_descriptor(event_name: &str, descriptor: &str) -> bool {
         }
 
         // W3C SCXML 5.9.3: Exact match
-        if event_name == *token {
+        if event_name == token {
             return true;
         }
 
@@ -64,7 +62,7 @@ pub fn matches_event_descriptor(event_name: &str, descriptor: &str) -> bool {
         // "foo" matches "foo.bar" but NOT "foobar"
         if event_name.len() > token.len()
             && event_name.as_bytes()[token.len()] == b'.'
-            && event_name.starts_with(*token)
+            && event_name.starts_with(token)
         {
             return true;
         }
