@@ -212,27 +212,37 @@ fn reject_liveliness_without_handler(
 // ── Rust generator ───────────────────────────────────────────────
 
 /// Generate Rust code from an analyzed SCXMLModel (filesystem-based).
-pub fn generate(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
+///
+/// `no_std` toggles the watching-zenoh RFC §5.J.2 (C3 Atomic B-γ2b)
+/// codegen mode: emits `#![no_std]` at the crate root and switches
+/// `parent_external_queue` + microstep `HashSet` to heapless variants.
+/// Default `false` keeps std-coupled output for the existing 200+ AOT
+/// W3C fixtures byte-identical. The B-β (`818de8eb`) CLI flag
+/// `--no-std` threads through `cmd_generate` to this parameter.
+pub fn generate(model: &SCXMLModel, template_dir: &Path, no_std: bool) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Rust")?;
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
     filters::register_filters(&mut env);
-    render_rust(&env, model)
+    render_rust(&env, model, no_std)
 }
 
 /// Generate Rust code using pre-loaded template strings (WASM-compatible).
+///
+/// See [`generate`] for `no_std` semantics.
 pub fn generate_with_templates(
     model: &SCXMLModel,
     templates: &[(&str, &str)],
+    no_std: bool,
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Rust")?;
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
     filters::register_filters(&mut env);
-    render_rust(&env, model)
+    render_rust(&env, model, no_std)
 }
 
-fn render_rust(env: &Environment, model: &SCXMLModel) -> Result<String, GenerateError> {
+fn render_rust(env: &Environment, model: &SCXMLModel, no_std: bool) -> Result<String, GenerateError> {
     let machine_name = filters::to_pascal_case(model.name.clone());
 
     // SCE Forge: render inline kind declarations as Rust code fragments.
@@ -257,6 +267,7 @@ fn render_rust(env: &Environment, model: &SCXMLModel) -> Result<String, Generate
         license_config => minijinja::Value::from_serialize(&license_config()),
         inline_kind_types => &inline_kind_types,
         inline_kind_fns => &inline_kind_fns,
+        no_std => no_std,
     };
     tmpl.render(ctx).map_err(render_error)
 }
@@ -1015,7 +1026,7 @@ mod tests {
     fn rust_generate_rejects_mesh_rpc_invoke() {
         let model = parse(MESH_RPC_SCXML);
         let templates: &[(&str, &str)] = &[];
-        let err = generate_with_templates(&model, templates).unwrap_err();
+        let err = generate_with_templates(&model, templates, false).unwrap_err();
         match err {
             GenerateError::UnsupportedFeature(msg) => {
                 assert!(msg.contains("sce:mesh-rpc"), "msg names the feature: {msg}");
@@ -1497,7 +1508,7 @@ mod tests {
         // any error here other than UnsupportedFeature proves the
         // gate is not the blocker.
         let templates: &[(&str, &str)] = &[];
-        match generate_with_templates(&model, templates) {
+        match generate_with_templates(&model, templates, false) {
             Err(GenerateError::UnsupportedFeature(_)) => {
                 panic!("plain SCXML must not trip the mesh-rpc gate")
             }

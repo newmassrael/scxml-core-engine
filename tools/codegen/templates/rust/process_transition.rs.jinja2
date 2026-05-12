@@ -151,10 +151,24 @@
             // W3C SCXML 3.13: Deduplicate transitions collected from multiple descendants
             // of the same ancestor (e.g., both parallel regions bubble up to the same parent
             // transition; test 504). Preserves first-match document order.
+{% if no_std %}
+            // Watching-zenoh RFC §5.J.2: heapless::FnvIndexSet replaces
+            // the std HashSet under --no-std. The 64-entry cap is the
+            // per-microstep enabled-transitions ceiling — exceed it and panic
+            // loudly rather than silently dropping transitions (which would
+            // violate W3C SCXML Appendix D.2 semantics).
+            let mut seen: heapless::FnvIndexSet<({{ machine_name }}State, usize), 64> =
+                heapless::FnvIndexSet::new();
+            enabled_transitions.retain(|t| {
+                seen.insert((t.source, t.transition_index))
+                    .expect("microstep enabled-transitions exceeded 64-entry no_std cap")
+            });
+{% else %}
             let mut seen = std::collections::HashSet::new();
             enabled_transitions.retain(|t| {
                 seen.insert((t.source, t.transition_index))
             });
+{% endif %}
 
             // W3C SCXML Appendix D.2: Remove conflicting transitions
             if !enabled_transitions.is_empty() {

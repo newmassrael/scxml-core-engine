@@ -1011,7 +1011,7 @@ fn cmd_generate(
             // `std::collections::HashSet` / `std::sync::atomic` site
             // under `--features=no_std` — `feedback_silently_broken_
             // hooks.md` anti-pattern unless co-landed with B-γ2.
-            let code = sce_build::generator::generate(&model, &template_dir)
+            let code = sce_build::generator::generate(&model, &template_dir, no_std)
                 .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
             GeneratedOutput {
                 files: vec![(format!("{input_stem}_sm.rs"), code)],
@@ -2036,7 +2036,12 @@ impl W3cBackend for RustBackend {
     fn test_output_dir(&self) -> &Path { &self.test_dir }
 
     fn generate_sm(&self, model: &SCXMLModel, input_stem: &str) -> Result<Vec<(String, String)>, ForgeError> {
-        let code = sce_build::generator::generate(model, &self.tmpl_dir)?;
+        // W3C SCXML W3C-test runner always emits std-coupled code:
+        // the 202-fixture AOT suite exercises std-backed engine paths
+        // (HTTP, script engines, multi-thread Arc<Mutex> external
+        // queue). `--no-std` is a CLI-only profile per B-β; W3C
+        // fixtures stay byte-identical to the pre-B-γ2b state.
+        let code = sce_build::generator::generate(model, &self.tmpl_dir, false)?;
         Ok(vec![(format!("{input_stem}_sm.rs"), code)])
     }
 

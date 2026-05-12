@@ -41,6 +41,24 @@ const FSM_WITH_CAPACITY: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "#;
 
+// Parallel-state fixture: the microstep dedup HashSet emission lives
+// under `{% if model.has_parallel_states %}` in process_transition.rs
+// .jinja2 — atomic-only fixtures never reach the dedup block, so the
+// HashSet ↔ heapless::FnvIndexSet swap assertions need a fixture that
+// actually exercises the parallel-state transition path.
+const PARALLEL_FSM: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="p">
+  <parallel id="p">
+    <state id="r1">
+      <transition event="go" target="r1"/>
+    </state>
+    <state id="r2">
+      <transition event="go" target="r2"/>
+    </state>
+  </parallel>
+</scxml>
+"#;
+
 fn parse(content: &str, label: &str) -> sce_build::model::SCXMLModel {
     let mut parser = SCXMLParser::new();
     parser
@@ -118,7 +136,7 @@ fn zero_sce_capacity_attribute_rejects() {
 #[test]
 fn rust_template_emits_event_queue_capacity_const_when_set() {
     let model = parse(FSM_WITH_CAPACITY, "cap_fsm");
-    let code = generate(&model, &template_dir()).expect("template render must succeed");
+    let code = generate(&model, &template_dir(), false).expect("template render must succeed");
     assert!(
         code.contains("pub const EVENT_QUEUE_CAPACITY: usize = 32;"),
         "expected `pub const EVENT_QUEUE_CAPACITY: usize = 32;` in generated code, got first 100 lines:\n{}",
@@ -129,7 +147,7 @@ fn rust_template_emits_event_queue_capacity_const_when_set() {
 #[test]
 fn rust_template_omits_event_queue_capacity_const_when_absent() {
     let model = parse(PLAIN_FSM, "plain");
-    let code = generate(&model, &template_dir()).expect("template render must succeed");
+    let code = generate(&model, &template_dir(), false).expect("template render must succeed");
     assert!(
         !code.contains("EVENT_QUEUE_CAPACITY"),
         "no capacity declared ⇒ no const emitted"
@@ -148,7 +166,7 @@ fn rust_template_omits_event_queue_capacity_const_when_absent() {
 #[test]
 fn rust_template_emits_core_time_duration_not_std() {
     let model = parse(PLAIN_FSM, "plain");
-    let code = generate(&model, &template_dir()).expect("template render must succeed");
+    let code = generate(&model, &template_dir(), false).expect("template render must succeed");
     assert!(
         code.contains("use core::time::Duration;"),
         "template must emit `use core::time::Duration;` (B-γ2a swap)"
@@ -259,6 +277,123 @@ topology:
     sce_build::populate_event_queue_capacity_from_deploy(&mut model, &deploy_path)
         .expect("populator must succeed");
     assert_eq!(model.event_queue_capacity, None);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// C3 Atomic B-γ2b — `--no-std` codegen mode emission contract
+// ═══════════════════════════════════════════════════════════════════
+//
+// The generator now takes a `no_std: bool` parameter (B-β's
+// `--no-std` CLI flag, wired through `cmd_generate`). When set, the
+// Rust template emits `#![no_std]` at the crate root, swaps the
+// microstep dedup `HashSet` for `heapless::FnvIndexSet`, and elides
+// the `parent_external_queue` field whose `Arc<Mutex<...>>` type is
+// alloc-coupled (per Watching-zenoh RFC §5.J.2 lines 1989-1994 —
+// "no path from generated no_std code into alloc::*"). The runtime
+// port (helpers cfg-gates, engine.rs split, full `--features=no_std`
+// build) lands in subsequent atomics; B-γ2b proves the emitter side.
+
+#[test]
+fn rust_template_emits_no_std_attribute_under_no_std_flag() {
+    let model = parse(PLAIN_FSM, "plain_nostd");
+    let code = generate(&model, &template_dir(), true).expect("template render must succeed");
+    assert!(
+        code.contains("#![no_std]"),
+        "--no-std flag must emit `#![no_std]` crate attribute"
+    );
+}
+
+#[test]
+fn rust_template_omits_no_std_attribute_under_default_std() {
+    let model = parse(PLAIN_FSM, "plain_std");
+    let code = generate(&model, &template_dir(), false).expect("template render must succeed");
+    assert!(
+        !code.contains("#![no_std]"),
+        "default (std) codegen must not emit `#![no_std]`"
+    );
+}
+
+#[test]
+fn rust_template_emits_heapless_fnv_index_set_under_no_std() {
+    let model = parse(PARALLEL_FSM, "parallel_nostd_dedup");
+    let code = generate(&model, &template_dir(), true).expect("template render must succeed");
+    assert!(
+        code.contains("heapless::FnvIndexSet"),
+        "--no-std flag must emit heapless::FnvIndexSet for the microstep dedup set"
+    );
+    assert!(
+        !code.contains("std::collections::HashSet"),
+        "--no-std flag must not emit std::collections::HashSet"
+    );
+}
+
+#[test]
+fn rust_template_emits_std_hashset_under_default_std() {
+    let model = parse(PARALLEL_FSM, "parallel_std_dedup");
+    let code = generate(&model, &template_dir(), false).expect("template render must succeed");
+    assert!(
+        code.contains("std::collections::HashSet"),
+        "default (std) codegen must emit std::collections::HashSet for the microstep dedup set"
+    );
+    assert!(
+        !code.contains("heapless::FnvIndexSet"),
+        "default (std) codegen must not pull in heapless::FnvIndexSet"
+    );
+}
+
+#[test]
+fn rust_template_elides_parent_external_queue_field_under_no_std() {
+    let model = parse(PLAIN_FSM, "plain_nostd_pq");
+    let code = generate(&model, &template_dir(), true).expect("template render must succeed");
+    // The Arc<Mutex<Vec<...>>> type is alloc-coupled (`alloc::sync::Arc`
+    // / `std::sync::Mutex`), so the field is elided entirely under
+    // --no-std. SCXML <invoke> is also codegen-rejected under --no-std
+    // (B-γ2c diagnostic), so no usage site for this field ever appears
+    // in a valid --no-std generation.
+    assert!(
+        !code.contains("parent_external_queue"),
+        "--no-std codegen must elide the parent_external_queue field"
+    );
+}
+
+#[test]
+fn rust_template_emits_parent_external_queue_field_under_default_std() {
+    let model = parse(PLAIN_FSM, "plain_std_pq");
+    let code = generate(&model, &template_dir(), false).expect("template render must succeed");
+    assert!(
+        code.contains("pub parent_external_queue:"),
+        "default (std) codegen must emit the parent_external_queue field"
+    );
+    assert!(
+        code.contains("parent_external_queue: None"),
+        "default (std) codegen must initialize parent_external_queue to None"
+    );
+}
+
+#[test]
+fn rust_template_omits_std_collections_hashset_under_no_std_with_capacity() {
+    let model = parse(FSM_WITH_CAPACITY, "cap_nostd");
+    let code = generate(&model, &template_dir(), true).expect("template render must succeed");
+    // Capacity-aware fixture still must not pull std::collections::HashSet.
+    assert!(
+        !code.contains("std::collections::HashSet"),
+        "no_std + capacity must not regress to std::collections::HashSet"
+    );
+    assert!(
+        code.contains("pub const EVENT_QUEUE_CAPACITY: usize = 32;"),
+        "no_std + capacity must still emit EVENT_QUEUE_CAPACITY const (B-γ1)"
+    );
+}
+
+#[test]
+fn rust_template_no_std_emission_is_byte_idempotent() {
+    // Same model + same no_std flag = byte-identical output (jinja2
+    // determinism). Locks in that the no_std switch has no nondetermin-
+    // istic side effects (e.g., HashMap iteration order in context).
+    let model = parse(PLAIN_FSM, "plain_idempotent");
+    let a = generate(&model, &template_dir(), true).expect("first render");
+    let b = generate(&model, &template_dir(), true).expect("second render");
+    assert_eq!(a, b, "no_std=true must produce byte-identical output across calls");
 }
 
 #[test]

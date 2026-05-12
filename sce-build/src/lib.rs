@@ -198,7 +198,7 @@ pub fn compile_scxml_to_string_typed(
     template_dir: &Path,
 ) -> Result<String, CompileError> {
     let model = compile_model(scxml_path)?;
-    generator::generate(&model, template_dir)
+    generator::generate(&model, template_dir, false)
         .map_err(|e| locate_codegen_error(e, scxml_path))
 }
 
@@ -219,7 +219,7 @@ pub fn compile_from_string_typed(
     templates: &[(&str, &str)],
 ) -> Result<String, CompileError> {
     let model = compile_model_from_string(scxml_content, scxml_name)?;
-    generator::generate_with_templates(&model, templates)
+    generator::generate_with_templates(&model, templates, false)
         .map_err(|e| locate_codegen_error(e, scxml_name))
 }
 
@@ -246,7 +246,7 @@ pub fn compile_from_string_lang_typed(
 
     match language {
         generator::Language::Rust => {
-            let code = generator::generate_with_templates(&model, templates)
+            let code = generator::generate_with_templates(&model, templates, false)
                 .map_err(|e| locate_codegen_error(e, scxml_name))?;
             Ok(generator::GeneratedOutput {
                 files: vec![(format!("{scxml_name}_sm.rs"), code)],
@@ -314,7 +314,7 @@ pub fn compile_scxml_lang_typed(
 
     match language {
         generator::Language::Rust => {
-            let code = generator::generate(&model, template_dir)
+            let code = generator::generate(&model, template_dir, false)
                 .map_err(|e| locate_codegen_error(e, scxml_path))?;
             Ok(generator::GeneratedOutput {
                 files: vec![(format!("{input_stem}_sm.rs"), code)],

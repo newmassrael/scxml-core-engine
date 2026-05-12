@@ -3,6 +3,16 @@
 
 {% include 'license_header.rs.jinja2' %}
 
+{% if no_std %}
+// Watching-zenoh RFC §5.J.2: no_std variant of the statechart
+// emitter. `sce-rust-runtime` ships a `no_std` feature gate, and
+// the generated crate omits `std::*` paths — Duration comes from
+// `core::time`, the microstep dedup set is `heapless::FnvIndexSet`,
+// and the parent-event queue field is elided (SCXML `<invoke>` is
+// rejected at codegen time under `--no-std` per the
+// `codegen/no-std-invoke-not-supported` diagnostic).
+#![no_std]
+{% endif %}
 
 //! Generated Rust state machine for `{{ model.name }}`.
 //!
@@ -216,9 +226,14 @@ pub struct {{ machine_name }}Policy {
     child_{{ invoke_info.field_suffix }}: Option<Box<sce_rust_runtime::Engine<super::{{ invoke_info.child_name }}_sm::{{ invoke_info.child_name | to_machine_name }}Policy>>>,
     pending_done_invoke_{{ invoke_info.field_suffix }}: bool,
 {% endfor %}
+{% if not no_std %}
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
-    // Always generated — any SM can be invoked as a child
+    // Always generated under std — any SM can be invoked as a child. Under
+    // `--no-std` (Watching-zenoh RFC §5.J.2) the SCXML `<invoke>` element
+    // is codegen-rejected, so no parent_external_queue handle is ever
+    // wired in, and the Arc<Mutex<...>> (alloc-coupled) is omitted.
     pub parent_external_queue: Option<std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>>,
+{% endif %}
     // W3C SCXML 6.4.1: This child's invoke ID (for _event.invokeid in parent)
     pub invoke_id: String,
     // W3C SCXML 6.5: Child session ID for finalize origin matching
@@ -299,7 +314,9 @@ impl {{ machine_name }}Policy {
             child_{{ invoke_info.field_suffix }}: None,
             pending_done_invoke_{{ invoke_info.field_suffix }}: false,
 {% endfor %}
+{% if not no_std %}
             parent_external_queue: None,
+{% endif %}
             invoke_id: String::new(),
             child_session_id: String::new(),
         }
