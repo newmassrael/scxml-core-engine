@@ -33,6 +33,12 @@
 //! Phases 2-4 expand scheduler, HTTP send, invoke support, and the full
 //! parallel state processing machinery.
 
+// Watching-zenoh RFC §5.J.2 (lines 1989-1994): `Arc`/`Mutex` back the
+// parent→child external event queue plumbing in `get_external_queue_handle`,
+// which is invoke-coupled. The codegen-time validator rejects `<invoke>` under
+// `--no-std` via `codegen/no-std-invoke-not-supported`, so the handle is never
+// reachable from emitted code; gate the import + method to `!no_std`.
+#[cfg(not(feature = "no_std"))]
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -516,6 +522,11 @@ impl<P: StatePolicy> Engine<P> {
     ///
     /// Returns an `Arc<Mutex<Vec<(event_name, event_data)>>>` that child state machines
     /// can push events into via `#_parent` send targets. Parent drains this in `tick_children()`.
+    ///
+    /// Watching-zenoh RFC §5.J.2: gated to `!no_std` because `Arc`/`Mutex`/`Vec` are
+    /// alloc-coupled and the `<invoke>` author surface that wires this handle into
+    /// generated code is rejected at codegen time under `--no-std`.
+    #[cfg(not(feature = "no_std"))]
     pub fn get_external_queue_handle(&self) -> Arc<Mutex<Vec<(String, String)>>> {
         // Each call creates a new shared queue; the generated policy stores it.
         Arc::new(Mutex::new(Vec::new()))

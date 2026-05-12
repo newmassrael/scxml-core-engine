@@ -8,8 +8,16 @@
 //!
 //! Uses `std::sync::atomic` for the global counter, matching the C++ approach
 //! of `std::atomic<uint64_t> globalCounter_`.
+//!
+//! Watching-zenoh RFC §5.J.2 (lines 1989-1994): under the no_std variant the
+//! Unix-epoch timestamp source (`SystemTime::now().duration_since(UNIX_EPOCH)`)
+//! is unavailable. Send/invoke/event IDs only need uniqueness within a single
+//! statechart instance (W3C SCXML §5.10.1) — the `AtomicU64` counter alone
+//! satisfies that contract, so under `--features=no_std` the timestamp branch
+//! returns zero and uniqueness rides entirely on the global counter.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use core::sync::atomic::{AtomicU64, Ordering};
+#[cfg(not(feature = "no_std"))]
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Global counter for ensuring uniqueness within the same millisecond.
@@ -95,9 +103,19 @@ pub fn reset_for_testing() {
 }
 
 /// Get current timestamp in milliseconds since Unix epoch.
+///
+/// Watching-zenoh RFC §5.J.2: under `--features=no_std` the Unix-epoch source is
+/// unavailable; the timestamp segment is reduced to zero and per-instance
+/// uniqueness is provided by `GLOBAL_COUNTER`.
+#[cfg(not(feature = "no_std"))]
 fn current_timestamp_millis() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64
+}
+
+#[cfg(feature = "no_std")]
+fn current_timestamp_millis() -> u64 {
+    0
 }

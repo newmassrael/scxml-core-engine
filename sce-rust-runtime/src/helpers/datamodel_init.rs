@@ -9,7 +9,16 @@
 //! The C++ version delegates expression evaluation to `IScriptEngine`. The Rust
 //! port provides the initialization orchestration logic; actual script engine
 //! calls happen through the `IScriptEngine` trait from `crate::scripting`.
+//!
+//! Watching-zenoh RFC §5.J.2 (lines 1989-1994): the no_std statechart variant
+//! has zero `alloc` dependency. Filesystem-coupled helpers (`Path`/`PathBuf`
+//! types, `std::env::current_exe`, `std::fs::read_to_string`) are gated to
+//! `cfg(not(feature = "no_std"))`. Author-side `<data src="...">` is rejected
+//! up-front by `validate_no_std_compatibility` (diagnostic
+//! `codegen/no-std-fs-load-not-supported`), so under `--no-std` the
+//! initialize-from-src path is unreachable.
 
+#[cfg(not(feature = "no_std"))]
 use std::path::{Path, PathBuf};
 
 use crate::scripting::{IScriptEngine, ScriptValue};
@@ -31,6 +40,10 @@ pub fn is_function_expression(expr: &str) -> bool {
 /// relative path to absolute based on the executable's location.
 ///
 /// Ports C++ `DataModelInitHelper::resolveExecutableBasePath`.
+///
+/// Watching-zenoh RFC §5.J.2: gated to `!no_std` because `PathBuf` and
+/// `std::env::current_exe` are alloc-coupled.
+#[cfg(not(feature = "no_std"))]
 pub fn resolve_executable_base_path(relative_path: &str) -> PathBuf {
     match std::env::current_exe() {
         Ok(exe_path) => {
@@ -56,6 +69,11 @@ pub fn is_xml_content(content: &str) -> bool {
 /// Strips the `file:` prefix if present and resolves relative to `base_path`.
 ///
 /// W3C SCXML 5.2.2: External source loading via `src` attribute.
+///
+/// Watching-zenoh RFC §5.J.2: gated to `!no_std` because `Path`/`PathBuf` are
+/// alloc-coupled. Under `--no-std` the codegen-time validator rejects
+/// `<data src="...">` so this helper is never emitted into generated code.
+#[cfg(not(feature = "no_std"))]
 pub fn resolve_src_path(src: &str, base_path: &str) -> PathBuf {
     let file_path = src.strip_prefix("file:").unwrap_or(src);
 
@@ -142,6 +160,12 @@ pub fn initialize_variable(
 /// content, then delegates to [`initialize_variable`].
 ///
 /// Ports C++ `DataModelInitHelper::initializeVariableFromSrc`.
+///
+/// Watching-zenoh RFC §5.J.2: gated to `!no_std` because `std::fs::read_to_string`
+/// is OS-coupled and `PathBuf` is alloc-coupled. Under `--no-std` the codegen-time
+/// validator rejects `<data src="...">` so this helper is never emitted into
+/// generated code.
+#[cfg(not(feature = "no_std"))]
 pub fn initialize_variable_from_src(
     se: &dyn IScriptEngine,
     sid: &str,

@@ -3940,19 +3940,32 @@ pub enum Pipeline {
 /// - `model.needs_http_send` (any `<send type="BasicHTTPEventProcessor">`
 ///   with an http(s) target/targetexpr)
 ///
-/// Fires `codegen/no-std-script-not-supported` first when both axes
-/// apply — single-diagnostic-per-call matches the C2-outbox precedent
-/// (one rejection per pass; the second surfaces after the author
-/// repairs the first). `document` is the SCXML basename; `locations`
-/// is a single human-readable summary so downstream agents can
-/// dispatch on `key_fragments` while authors get a readable message.
+/// Single-diagnostic-per-call matches the C2-outbox precedent (one
+/// rejection per pass; the next surfaces after the author repairs the
+/// first). Axis order is **most-specific first** so the author repair
+/// path names the offending construct directly:
 ///
-/// Returns `Ok(())` when neither axis fires — note that today this
-/// does **not** mean the generated Rust code will compile under
-/// `no_std`; the runtime crate's `engine.rs` + `helpers/` still use
-/// std types. B-γ ports those to `core::` + `heapless` and adds the
-/// `#![no_std]` template emission. B-β reserves the CLI flag and
-/// closes the two author-visible incompatibility axes.
+/// 1. **fs-load** — `<data src="...">` (filesystem helpers gated to
+///    `!no_std` in `helpers/datamodel_init.rs`).
+/// 2. **invoke** — `<invoke>` (alloc-coupled `Arc`/`Mutex`/`HashMap`
+///    in `helpers/invoke_processing.rs`).
+/// 3. **script** — any ECMAScript cause the analyzer detects
+///    (`needs_script_engine` is the broad catch-all that also flags
+///    `<data expr>`, transition guards, send-expr, etc.).
+/// 4. **http** — `<send type="BasicHTTPEventProcessor">` (specific
+///    rejection on its own when the document is otherwise script-clean).
+///
+/// `document` is the SCXML basename; `locations` is a single
+/// human-readable summary so downstream agents can dispatch on
+/// `key_fragments` while authors get a readable message.
+///
+/// Returns `Ok(())` when no axis fires — note that today this does
+/// **not** mean the generated Rust code will compile under `no_std`;
+/// the runtime crate's `engine.rs` + remaining `helpers/` modules still
+/// use std types. B-γ2c (this commit) closes the helper cfg-gates for
+/// the three Q-Port-1/2/3 sites alongside the author-visible
+/// `<data src>` and `<invoke>` rejections; the full compile-target gate
+/// remains the responsibility of a later atomic.
 pub fn validate_no_std_compatibility(
     model: &model::SCXMLModel,
     scxml_path: &std::path::Path,
@@ -3964,6 +3977,72 @@ pub fn validate_no_std_compatibility(
         .and_then(|s| s.to_str())
         .unwrap_or("unknown")
         .to_string();
+
+    // C3 Atomic B-γ2c (watching-zenoh RFC §5.J.2 lines 1989-1994): the
+    // no_std variant has zero alloc dependency. Filesystem-coupled
+    // helpers in `sce-rust-runtime/src/helpers/datamodel_init.rs` are
+    // gated to `!no_std`; reject `<data src="...">` up-front so the
+    // generated crate never tries to call them.
+    //
+    // The script-engine analyzer also flags `<data src>` (it triggers
+    // `needs_script_engine` via [`crate::script_engine_analyzer::collect_datamodel_causes`]),
+    // so checking fs-load *before* script lets the author see the more
+    // specific repair ("remove src or inline content") instead of the
+    // catch-all script diagnostic.
+    let fs_locations: Vec<String> = std::iter::empty::<(Option<String>, &str)>()
+        .chain(model.variables.iter().filter_map(|v| {
+            if v.src.is_empty() {
+                None
+            } else {
+                Some((None, v.src.as_str()))
+            }
+        }))
+        .chain(model.states.iter().flat_map(|(state_id, state)| {
+            state.datamodel.iter().filter_map(move |v| {
+                if v.src.is_empty() {
+                    None
+                } else {
+                    Some((Some(state_id.clone()), v.src.as_str()))
+                }
+            })
+        }))
+        .map(|(state, src)| match state {
+            Some(s) => format!("<data src=\"{}\"> in state '{}'", src, s),
+            None => format!("<data src=\"{}\"> at document scope", src),
+        })
+        .collect();
+    if !fs_locations.is_empty() {
+        return Err(GenerateError::CodegenNoStdFsLoadNotSupported {
+            document,
+            locations: fs_locations.join("; "),
+        }
+        .into());
+    }
+
+    // C3 Atomic B-γ2c: invoke processing in
+    // `sce-rust-runtime/src/helpers/invoke_processing.rs` is
+    // whole-module gated to `!no_std` because `Arc<Mutex<Vec<…>>>` +
+    // `HashMap` are alloc-coupled. `model.invokes` is the aggregated
+    // flat view refreshed in `parser::refresh_invokes_view` at the end
+    // of every parse, so a single non-empty check covers state-nested
+    // invokes too. Checked *before* the script axis: child-invoke
+    // metadata propagates `child_needs_script_engine = true` whenever
+    // the child file is missing or itself script-using (parser.rs:3568
+    // `parse_child_metadata`), so the broad script axis would
+    // otherwise mask the invoke-specific repair.
+    if !model.invokes.is_empty() {
+        let n = model.invokes.len();
+        let locations = if n == 1 {
+            "1 <invoke> element".to_string()
+        } else {
+            format!("{} <invoke> elements", n)
+        };
+        return Err(GenerateError::CodegenNoStdInvokeNotSupported {
+            document,
+            locations,
+        }
+        .into());
+    }
 
     if model.needs_script_engine || model.has_unresolved_external_script {
         let locations = if !model.global_scripts.is_empty() {

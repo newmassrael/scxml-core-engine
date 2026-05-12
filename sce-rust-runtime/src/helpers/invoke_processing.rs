@@ -10,6 +10,14 @@
 //! - [`drain_and_raise_child_events`]: drain child-to-parent event queue and raise with metadata
 //! - [`raise_done_invoke`]: generate done.invoke.{id} event when child completes
 //! - [`is_platform_event`]: W3C SCXML 6.4.6 platform event filter for autoforward
+//!
+//! Watching-zenoh RFC §5.J.2 (lines 1989-1994): the entire module is gated to
+//! `cfg(not(feature = "no_std"))` because `Arc`/`Mutex`/`Vec`/`HashMap` are
+//! `alloc`-coupled. Author-side `<invoke>` is rejected up-front by
+//! `validate_no_std_compatibility` (diagnostic `codegen/no-std-invoke-not-supported`),
+//! so under `--no-std` no generated code reaches this module.
+
+#![cfg(not(feature = "no_std"))]
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

@@ -97,6 +97,8 @@
         "codegen/generic-kind-backend-emit-missing",
         "codegen/no-std-script-not-supported",
         "codegen/no-std-http-not-supported",
+        "codegen/no-std-fs-load-not-supported",
+        "codegen/no-std-invoke-not-supported",
         "algorithm/const-not-foldable",
         "algorithm/const-fold-budget-exceeded",
         "algorithm/const-yield-type-mismatch",

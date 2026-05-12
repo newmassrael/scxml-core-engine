@@ -497,6 +497,15 @@ pub enum DiagnosticCode {
     CodegenNoStdScriptNotSupported,
     #[serde(rename = "codegen/no-std-http-not-supported")]
     CodegenNoStdHttpNotSupported,
+    // C3 Atomic B-γ2c: <data src="..."> requires PathBuf + std::fs::read_to_string,
+    // both alloc/OS-coupled. RFC §5.J.2 lines 1989-1994 forbid alloc paths in
+    // generated no_std code.
+    #[serde(rename = "codegen/no-std-fs-load-not-supported")]
+    CodegenNoStdFsLoadNotSupported,
+    // C3 Atomic B-γ2c: <invoke> binds child-session lifecycle via
+    // Arc<Mutex<Vec<...>>> + HashMap, all alloc-coupled. Same RFC §5.J.2 rule.
+    #[serde(rename = "codegen/no-std-invoke-not-supported")]
+    CodegenNoStdInvokeNotSupported,
 
     // ── §5.F build-time const-fold (watching-zenoh RFC §5.F, Phase A4-γ).
     //    The host interpreter (`forge::const_fold`) emits these
@@ -1406,9 +1415,12 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // Codegen matrix shells (watching-zenoh RFC §5.J.4 / §5.J.5)
         CodegenMcuClassKindOnNonMcuLanguage,
         CodegenGenericKindBackendEmitMissing,
-        // Codegen Rust no_std variant rejection (watching-zenoh RFC §5.J.2, C3 Atomic B-β)
+        // Codegen Rust no_std variant rejection (watching-zenoh RFC §5.J.2,
+        // C3 Atomic B-β + B-γ2c)
         CodegenNoStdScriptNotSupported,
         CodegenNoStdHttpNotSupported,
+        CodegenNoStdFsLoadNotSupported,
+        CodegenNoStdInvokeNotSupported,
         // Algorithm §5.F const-fold (watching-zenoh RFC §5.F, Phase A4-γ)
         AlgorithmConstNotFoldable,
         AlgorithmConstFoldBudgetExceeded,
@@ -1868,7 +1880,9 @@ impl DiagnosticCode {
             //    incompatibility is line 1983 ("`sce-rust-runtime`
             //    grows a `no_std` feature gate").
             CodegenNoStdScriptNotSupported
-            | CodegenNoStdHttpNotSupported => Some("watching-zenoh RFC §5.J.2"),
+            | CodegenNoStdHttpNotSupported
+            | CodegenNoStdFsLoadNotSupported
+            | CodegenNoStdInvokeNotSupported => Some("watching-zenoh RFC §5.J.2"),
 
             // ── No authoritative citation ────────────────────────
             //
@@ -2042,6 +2056,8 @@ impl DiagnosticCode {
             CodegenGenericKindBackendEmitMissing => "codegen/generic-kind-backend-emit-missing",
             CodegenNoStdScriptNotSupported => "codegen/no-std-script-not-supported",
             CodegenNoStdHttpNotSupported => "codegen/no-std-http-not-supported",
+            CodegenNoStdFsLoadNotSupported => "codegen/no-std-fs-load-not-supported",
+            CodegenNoStdInvokeNotSupported => "codegen/no-std-invoke-not-supported",
             AlgorithmConstNotFoldable => "algorithm/const-not-foldable",
             AlgorithmConstFoldBudgetExceeded => "algorithm/const-fold-budget-exceeded",
             AlgorithmConstYieldTypeMismatch => "algorithm/const-yield-type-mismatch",
@@ -3968,6 +3984,22 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![document.clone(), locations.clone()],
         },
+        GenerateError::CodegenNoStdFsLoadNotSupported { document, locations } => DiagnosticPayload {
+            code: DiagnosticCode::CodegenNoStdFsLoadNotSupported,
+            stage: Stage::Generate,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![document.clone(), locations.clone()],
+        },
+        GenerateError::CodegenNoStdInvokeNotSupported { document, locations } => DiagnosticPayload {
+            code: DiagnosticCode::CodegenNoStdInvokeNotSupported,
+            stage: Stage::Generate,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![document.clone(), locations.clone()],
+        },
         GenerateError::ConstNotFoldable {
             algorithm,
             const_name,
@@ -5348,6 +5380,27 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:1e0ad94889d9bb0c","code":"codegen/no-std-http-not-supported","stage":"generate","spec":"watching-zenoh RFC §5.J.2","message":"Rust no_std variant rejects HTTP send: document 'demo' uses BasicHTTPEventProcessor at <send target=\"http://localhost\"> in state 'send_step' (watching-zenoh RFC §5.J.2; sce-rust-runtime no_std feature is incompatible with `http-send`)"}"#,
+            ),
+            // ── Watching-zenoh RFC §5.J.2 Rust no_std variant rejections
+            //    (C3 Atomic B-γ2c). Helper runtime cfg-gate companion
+            //    pair: filesystem load + invoke. ──
+            (
+                "forge/codegen-no-std-fs-load-not-supported",
+                GenerateError::CodegenNoStdFsLoadNotSupported {
+                    document: "demo".into(),
+                    locations: "<data id='cfg' src='file:cfg.json'>".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:69b3678acabbba8d","code":"codegen/no-std-fs-load-not-supported","stage":"generate","spec":"watching-zenoh RFC §5.J.2","message":"Rust no_std variant rejects external `<data src>`: document 'demo' loads file content at <data id='cfg' src='file:cfg.json'> (watching-zenoh RFC §5.J.2; filesystem helpers are gated to !no_std and unreachable from emitted code)"}"#,
+            ),
+            (
+                "forge/codegen-no-std-invoke-not-supported",
+                GenerateError::CodegenNoStdInvokeNotSupported {
+                    document: "demo".into(),
+                    locations: "<invoke type='scxml' src='child.scxml'>".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:d46720a4cb2f313e","code":"codegen/no-std-invoke-not-supported","stage":"generate","spec":"watching-zenoh RFC §5.J.2","message":"Rust no_std variant rejects `<invoke>`: document 'demo' invokes child sessions at <invoke type='scxml' src='child.scxml'> (watching-zenoh RFC §5.J.2; invoke processing is gated to !no_std and unreachable from emitted code)"}"#,
             ),
             // ── Algorithm kind sema (watching-zenoh RFC §5.A) ───────
             (
@@ -7076,12 +7129,15 @@ mod tests {
             | GenerateUnsupportedFeature
             | CodegenMcuClassKindOnNonMcuLanguage
             | CodegenGenericKindBackendEmitMissing
-            // C3 Atomic B-β no_std rejections: author repair is
-            // "drop --no-std" or "remove `<script>` / HTTP send".
+            // C3 Atomic B-β + B-γ2c no_std rejections: author repair is
+            // "drop --no-std" or "remove the offending construct"
+            // (`<script>` / HTTP send / `<data src>` / `<invoke>`).
             // No closed candidate set, so `fix: None` ⇒
             // NeutralOrDeterministic.
             | CodegenNoStdScriptNotSupported
             | CodegenNoStdHttpNotSupported
+            | CodegenNoStdFsLoadNotSupported
+            | CodegenNoStdInvokeNotSupported
             | AlgorithmConstNotFoldable
             | AlgorithmConstFoldBudgetExceeded
             | AlgorithmConstYieldTypeMismatch
@@ -7444,6 +7500,8 @@ mod tests {
                 | CodegenGenericKindBackendEmitMissing
                 | CodegenNoStdScriptNotSupported
                 | CodegenNoStdHttpNotSupported
+                | CodegenNoStdFsLoadNotSupported
+                | CodegenNoStdInvokeNotSupported
                 | AlgorithmConstNotFoldable
                 | AlgorithmConstFoldBudgetExceeded
                 | AlgorithmConstYieldTypeMismatch
@@ -7575,9 +7633,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            216,
+            218,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 216 distinct variants to match the DiagnosticCode \
+             expected 218 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -7822,7 +7880,20 @@ mod tests {
              the runtime crate's `lib.rs`). Both ride \
              `NeutralOrDeterministic` non_overlap_class — author repair \
              is to drop `--no-std` or to remove the incompatible \
-             construct, no closed candidate set. 214 → 216.",
+             construct, no closed candidate set. 214 → 216. Then \
+             watching-zenoh RFC §5.J.2 C3 Atomic B-γ2c closes the helper \
+             runtime cfg-gate with a second no_std rejection pair: \
+             `codegen/no-std-fs-load-not-supported` fires when the document \
+             contains `<data src=\"...\">` (the filesystem helpers in \
+             `sce-rust-runtime/src/helpers/datamodel_init.rs` need `PathBuf` \
+             plus `std::fs::read_to_string`, both alloc/OS-coupled per spec \
+             line 1989-1994), and `codegen/no-std-invoke-not-supported` \
+             fires when the document contains `<invoke>` (the invoke \
+             machinery uses `Arc<Mutex<Vec<...>>>` plus `HashMap` and is \
+             whole-module gated to `!no_std`). Both ride \
+             `NeutralOrDeterministic` non_overlap_class for the same \
+             reason as the B-β pair — drop `--no-std` or remove the \
+             construct, no closed candidate set. 216 → 218.",
         );
     }
 

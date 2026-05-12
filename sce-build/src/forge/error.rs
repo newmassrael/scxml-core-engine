@@ -1771,6 +1771,38 @@ pub enum GenerateError {
     )]
     CodegenNoStdHttpNotSupported { document: String, locations: String },
 
+    /// Watching-zenoh RFC §5.J.2 (C3 Atomic B-γ2c): the SCXML document is
+    /// generated with `sce-codegen generate -l rust --no-std` but contains a
+    /// `<data src="...">` element. External-file loading requires
+    /// `std::fs::read_to_string` plus `PathBuf` / `std::env::current_exe`,
+    /// all of which are alloc- or OS-coupled and forbidden under the no_std
+    /// variant per spec line 1989-1994 ("no path from generated no_std code
+    /// into `alloc::*`"). Author repair is to inline the data via `expr` /
+    /// element content or drop `--no-std`. `locations` is a single
+    /// human-readable summary of the offending `<data>` sites.
+    #[error(
+        "Rust no_std variant rejects external `<data src>`: document '{document}' \
+         loads file content at {locations} (watching-zenoh RFC §5.J.2; \
+         filesystem helpers are gated to !no_std and unreachable from emitted code)"
+    )]
+    CodegenNoStdFsLoadNotSupported { document: String, locations: String },
+
+    /// Watching-zenoh RFC §5.J.2 (C3 Atomic B-γ2c): the SCXML document is
+    /// generated with `sce-codegen generate -l rust --no-std` but contains a
+    /// `<invoke>` element. SCXML invoke binds child-session lifecycle to the
+    /// parent statechart through `Arc<Mutex<Vec<…>>>` queues plus a
+    /// `HashMap` of active sessions, all of which are alloc-coupled and
+    /// forbidden under the no_std variant per spec line 1989-1994. Author
+    /// repair is to remove the `<invoke>` (sub-statecharts are out of scope
+    /// for the firmware profile) or drop `--no-std`. `locations` is a single
+    /// human-readable summary of the offending `<invoke>` sites.
+    #[error(
+        "Rust no_std variant rejects `<invoke>`: document '{document}' invokes \
+         child sessions at {locations} (watching-zenoh RFC §5.J.2; \
+         invoke processing is gated to !no_std and unreachable from emitted code)"
+    )]
+    CodegenNoStdInvokeNotSupported { document: String, locations: String },
+
     /// RFC §5.F: a `<sce:fold>` body or a `<sce:const init=...>` scalar
     /// expression cannot be reduced to a build-time value. The host
     /// interpreter rejects every construct outside the §5.F substrate

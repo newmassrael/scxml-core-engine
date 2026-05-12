@@ -66,5 +66,9 @@ pub mod send;
 pub mod state_entry;
 pub mod string_utils;
 pub mod unique_id_generator;
+// Watching-zenoh RFC §5.J.2: invoke processing is alloc-coupled (Arc/Mutex/Vec/
+// HashMap) and never reached under `--no-std` since the codegen-time validator
+// rejects `<invoke>` via `codegen/no-std-invoke-not-supported`.
+#[cfg(not(feature = "no_std"))]
 pub mod invoke_processing;
 pub mod url_encoding;
