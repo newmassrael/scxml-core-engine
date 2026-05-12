@@ -27,9 +27,31 @@ http-send = []
 # Deterministic fake-clock scheduler for tests (swaps PullScheduler impl)
 test-clock = []
 
+# Watching-zenoh RFC §5.J.2: bare-metal MCU profile of the runtime.
+# Selecting `no_std` declares `#![no_std]` at the crate root and
+# pulls in `heapless` for fixed-capacity collections (§5.J.2 line
+# 1989: zero `alloc` dependency). Mutually exclusive with
+# `script-engine-lua`, `script-engine-quickjs`, and `http-send` —
+# Lua/QuickJS and tokio/reqwest are all std-coupled, so the
+# combinations would never link. The exclusivity is enforced at
+# compile time via `compile_error!` in `lib.rs` so a misconfigured
+# Cargo.toml fails loudly before consumers debug linker output.
+#
+# C3 Atomic B-β lands the feature flag, cfg-gates http/scripting,
+# and the codegen-side rejection diagnostics. Atomic B-γ ports
+# `engine.rs` and `helpers/` to `core::` + `heapless`; until B-γ
+# lands `cargo build --no-default-features --features=no_std` is
+# expected to fail with std-import errors in those modules. The
+# Cargo feature ladder is in place so downstream consumers can pin
+# the wire shape today and migrate incrementally.
+no_std = ["dep:heapless"]
+
 [dependencies]
 log = { workspace = true }
 thiserror = { workspace = true }
+# Fixed-capacity collections for the `no_std` feature variant.
+# Optional + gated by `no_std` so std builds never link it.
+heapless = { workspace = true, optional = true }
 
 [dev-dependencies]
 # Env-based log output during tests

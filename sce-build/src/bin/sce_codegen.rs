@@ -357,6 +357,27 @@ enum Commands {
         /// tables, lower for tighter CI budgets.
         #[arg(long)]
         const_fold_budget: Option<u64>,
+        /// Watching-zenoh RFC §5.J.2 (C3 Atomic B-β): target the
+        /// `sce-rust-runtime` no_std variant.
+        ///
+        /// Only meaningful with `-l rust`; ignored for other
+        /// language targets. When set, validates that the SCXML
+        /// document does not use constructs that require a
+        /// std-coupled runtime (script engines, BasicHTTP send) —
+        /// the no_std variant cannot link Lua / QuickJS / tokio /
+        /// reqwest. Author-side violations fire
+        /// `codegen/no-std-script-not-supported` /
+        /// `codegen/no-std-http-not-supported`.
+        ///
+        /// Note: B-β reserves the flag and gates the diagnostics.
+        /// Actual no_std code emission (`#![no_std]` attribute +
+        /// `use core::time::Duration` + heapless adoption in the
+        /// runtime crate) lands in Atomic B-γ. Today a clean (no
+        /// script, no HTTP) document still generates std-flavored
+        /// code when `--no-std` is passed; the flag's role is
+        /// validation + future-intent declaration.
+        #[arg(long)]
+        no_std: bool,
     },
     /// Multi-doc generate with cross-doc registry — wires
     /// `validate_on_sample_link_references` into production
@@ -518,6 +539,7 @@ fn main() {
             deploy,
             partition,
             const_fold_budget,
+            no_std,
         } => cmd_generate(
             &scxml,
             &language,
@@ -531,6 +553,7 @@ fn main() {
             deploy.as_deref(),
             partition.as_deref(),
             const_fold_budget,
+            no_std,
             error_format,
         ),
         Commands::Orchestrate {
@@ -675,6 +698,7 @@ fn cmd_generate(
     deploy_path: Option<&str>,
     for_partition: Option<&str>,
     const_fold_budget: Option<u64>,
+    no_std: bool,
     error_format: ErrorFormat,
 ) {
     let lang: Language = language.parse().unwrap_or_else(|_| {
@@ -894,6 +918,25 @@ fn cmd_generate(
         let located =
             sce_build::forge::error::Located::new(err, scxml_path, None, None);
         error_format.emit_and_exit(&located, "");
+    }
+
+    // Watching-zenoh RFC §5.J.2 (C3 Atomic B-β): Rust no_std variant
+    // rejection. Only fires when `--no-std` is paired with `-l rust`
+    // (the flag is a no-op for other language targets, mirroring how
+    // `--go-module-prefix` is rust/kotlin-inert). Two axes:
+    //   1. `<script>` — Lua/QuickJS need `alloc`, no_std forbids it.
+    //   2. BasicHTTP send — tokio/reqwest are std-coupled.
+    // The model already carries `needs_script_engine` /
+    // `has_unresolved_external_script` / `needs_http_send` flags from
+    // the parser + analyzer passes; B-β just reads them.
+    if no_std && lang == Language::Rust {
+        if let Err(err) =
+            sce_build::validate_no_std_compatibility(&model, Path::new(scxml_path))
+        {
+            let located =
+                sce_build::forge::error::Located::new(err, scxml_path, None, None);
+            error_format.emit_and_exit(&located, "");
+        }
     }
 
     resolve_source_path(&mut model, Path::new(scxml_path));

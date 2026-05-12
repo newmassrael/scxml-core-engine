@@ -60,23 +60,74 @@
 //! // ...process events via engine.process_event(...) / engine.tick() ...
 //! ```
 
+#![cfg_attr(feature = "no_std", no_std)]
 #![deny(clippy::undocumented_unsafe_blocks)]
 #![warn(missing_docs)]
 #![warn(clippy::all)]
+
+// Watching-zenoh RFC §5.J.2 (C3 Atomic B-β): cfg-assert the
+// incompatible feature combinations at compile time. The `no_std`
+// feature is mutually exclusive with `http-send` (tokio/reqwest are
+// std-coupled) and with both script-engine features (Lua and QuickJS
+// require `alloc`, which `no_std` forbids per spec line 1989 zero-
+// alloc mandate). `compile_error!` fires a clear, actionable message
+// before the build reaches its first std-coupled symbol — without
+// this guard a misconfigured Cargo profile would otherwise surface as
+// "cannot find type `Vec` in module `core`" deep in the std-coupled
+// modules, which is the textbook silent-broken-hook anti-pattern.
+#[cfg(all(feature = "no_std", feature = "http-send"))]
+compile_error!(
+    "`no_std` and `http-send` are mutually exclusive: tokio/reqwest are std-coupled. \
+     Either drop `http-send` (and any `<send type=\"BasicHTTPEventProcessor\">` from \
+     your SCXML), or drop `no_std`. Watching-zenoh RFC §5.J.2 line 1983."
+);
+
+#[cfg(all(feature = "no_std", feature = "script-engine-lua"))]
+compile_error!(
+    "`no_std` and `script-engine-lua` are mutually exclusive: the Lua interpreter requires \
+     `alloc`, which `no_std` forbids per RFC §5.J.2 line 1989 (zero `alloc` dependency). \
+     Either drop `script-engine-lua` (and any `<script>` from your SCXML), or drop `no_std`."
+);
+
+#[cfg(all(feature = "no_std", feature = "script-engine-quickjs"))]
+compile_error!(
+    "`no_std` and `script-engine-quickjs` are mutually exclusive: QuickJS requires `alloc`, \
+     which `no_std` forbids per RFC §5.J.2 line 1989. Either drop `script-engine-quickjs` \
+     (and any `<script>` from your SCXML), or drop `no_std`."
+);
 
 pub mod engine;
 pub mod event;
 pub mod hal;
 pub mod helpers;
+/// W3C SCXML C.2 BasicHTTPEventProcessor send payload shapes.
+///
+/// Gated out of `no_std` builds because the module body uses
+/// `std::collections::HashMap`. B-γ swaps in a `heapless::FnvIndexMap`
+/// equivalent for the no_std variant; until then the no_std build
+/// excludes the module entirely and the cfg-assert above rejects
+/// any consumer that enables `http-send` together with `no_std`.
+#[cfg(not(feature = "no_std"))]
 pub mod http;
 pub mod invoke;
 pub mod policy;
+/// ECMAScript engine abstraction.
+///
+/// Gated out of `no_std` builds because the trait impls land in
+/// `sce-rust-lua` / future `sce-rust-quickjs`, both of which require
+/// `alloc` (the cfg-assert above rejects the combination at
+/// compile time). The trait surface itself is `core::`-portable;
+/// re-introducing it under no_std is B-γ's call when consumer demand
+/// materialises.
+#[cfg(not(feature = "no_std"))]
 pub mod scripting;
 
 // Public re-exports — the primary API surface
 pub use engine::Engine;
 pub use event::{EventMetadata, EventType, EventWithMetadata};
 pub use hal::{Hal, NoOpHal, StdHal};
+#[cfg(not(feature = "no_std"))]
 pub use http::{HttpSendRequest, HttpSendResponse};
 pub use policy::StatePolicy;
+#[cfg(not(feature = "no_std"))]
 pub use scripting::{IScriptEngine, ScriptEngineProvider, ScriptError, ScriptResult, ScriptValue};

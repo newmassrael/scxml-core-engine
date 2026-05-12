@@ -482,6 +482,22 @@ pub enum DiagnosticCode {
     #[serde(rename = "codegen/generic-kind-backend-emit-missing")]
     CodegenGenericKindBackendEmitMissing,
 
+    // ── §5.J.2 Rust no_std variant rejection (C3 Atomic B-β).
+    //    Producer: `cmd_generate` walks the parsed SCXML model when
+    //    `--no-std` is passed to `sce-codegen generate -l rust` and
+    //    rejects documents that depend on std-coupled runtime
+    //    features. Watching-zenoh RFC §5.J.2 line 1989 prescribes
+    //    `zero alloc dependency`; the `sce-rust-runtime` feature
+    //    matrix encodes the same: `no_std` is incompatible with
+    //    `http-send`, `script-engine-lua`, and `script-engine-quickjs`.
+    //    Author repair is to drop `--no-std`, or remove the
+    //    incompatible SCXML construct. Stage = Generate (codegen-time
+    //    rejection shares the existing repair-routing key). ──
+    #[serde(rename = "codegen/no-std-script-not-supported")]
+    CodegenNoStdScriptNotSupported,
+    #[serde(rename = "codegen/no-std-http-not-supported")]
+    CodegenNoStdHttpNotSupported,
+
     // ── §5.F build-time const-fold (watching-zenoh RFC §5.F, Phase A4-γ).
     //    The host interpreter (`forge::const_fold`) emits these
     //    codegen-time errors when a `<sce:fold>` body — or a scalar
@@ -1390,6 +1406,9 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // Codegen matrix shells (watching-zenoh RFC §5.J.4 / §5.J.5)
         CodegenMcuClassKindOnNonMcuLanguage,
         CodegenGenericKindBackendEmitMissing,
+        // Codegen Rust no_std variant rejection (watching-zenoh RFC §5.J.2, C3 Atomic B-β)
+        CodegenNoStdScriptNotSupported,
+        CodegenNoStdHttpNotSupported,
         // Algorithm §5.F const-fold (watching-zenoh RFC §5.F, Phase A4-γ)
         AlgorithmConstNotFoldable,
         AlgorithmConstFoldBudgetExceeded,
@@ -1841,6 +1860,16 @@ impl DiagnosticCode {
             MeshDistributabilityR1SharedWrite
             | MeshDistributabilityR2CrossRegionTransition => Some("SCE Mesh §16.3"),
 
+            // ── §5.J.2 Rust no_std variant (C3 Atomic B-β) ───────
+            //    Both rejections anchor on the watching-zenoh RFC
+            //    section that defines the no_std variant of the Rust
+            //    backend; the script-engine incompatibility is line
+            //    1989 ("zero alloc dependency") and the http-send
+            //    incompatibility is line 1983 ("`sce-rust-runtime`
+            //    grows a `no_std` feature gate").
+            CodegenNoStdScriptNotSupported
+            | CodegenNoStdHttpNotSupported => Some("watching-zenoh RFC §5.J.2"),
+
             // ── No authoritative citation ────────────────────────
             //
             // Anchors are deliberately narrow: a code lands here when
@@ -2011,6 +2040,8 @@ impl DiagnosticCode {
             GenerateUnsupportedFeature => "generate/unsupported-feature",
             CodegenMcuClassKindOnNonMcuLanguage => "codegen/mcu-class-kind-on-non-mcu-language",
             CodegenGenericKindBackendEmitMissing => "codegen/generic-kind-backend-emit-missing",
+            CodegenNoStdScriptNotSupported => "codegen/no-std-script-not-supported",
+            CodegenNoStdHttpNotSupported => "codegen/no-std-http-not-supported",
             AlgorithmConstNotFoldable => "algorithm/const-not-foldable",
             AlgorithmConstFoldBudgetExceeded => "algorithm/const-fold-budget-exceeded",
             AlgorithmConstYieldTypeMismatch => "algorithm/const-yield-type-mismatch",
@@ -3921,6 +3952,22 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![kind.clone(), language.clone()],
         },
+        GenerateError::CodegenNoStdScriptNotSupported { document, locations } => DiagnosticPayload {
+            code: DiagnosticCode::CodegenNoStdScriptNotSupported,
+            stage: Stage::Generate,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![document.clone(), locations.clone()],
+        },
+        GenerateError::CodegenNoStdHttpNotSupported { document, locations } => DiagnosticPayload {
+            code: DiagnosticCode::CodegenNoStdHttpNotSupported,
+            stage: Stage::Generate,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![document.clone(), locations.clone()],
+        },
         GenerateError::ConstNotFoldable {
             algorithm,
             const_name,
@@ -5280,6 +5327,27 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:d54c90195c019259","code":"codegen/generic-kind-backend-emit-missing","stage":"generate","message":"generic-class kind 'algorithm': template missing for language 'python' (watching-zenoh RFC §5.J.4 expects all six backends to emit)"}"#,
+            ),
+            // ── Watching-zenoh RFC §5.J.2 Rust no_std variant rejections
+            //    (C3 Atomic B-β). Author-side `--no-std` gate on
+            //    `sce-codegen generate -l rust`. ──
+            (
+                "forge/codegen-no-std-script-not-supported",
+                GenerateError::CodegenNoStdScriptNotSupported {
+                    document: "demo".into(),
+                    locations: "<script> in state 'init'".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:99d806fa3e160004","code":"codegen/no-std-script-not-supported","stage":"generate","spec":"watching-zenoh RFC §5.J.2","message":"Rust no_std variant rejects `<script>`: document 'demo' uses ECMAScript at <script> in state 'init' (watching-zenoh RFC §5.J.2; sce-rust-runtime no_std feature is incompatible with `script-engine-lua` and `script-engine-quickjs`)"}"#,
+            ),
+            (
+                "forge/codegen-no-std-http-not-supported",
+                GenerateError::CodegenNoStdHttpNotSupported {
+                    document: "demo".into(),
+                    locations: "<send target=\"http://localhost\"> in state 'send_step'".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:1e0ad94889d9bb0c","code":"codegen/no-std-http-not-supported","stage":"generate","spec":"watching-zenoh RFC §5.J.2","message":"Rust no_std variant rejects HTTP send: document 'demo' uses BasicHTTPEventProcessor at <send target=\"http://localhost\"> in state 'send_step' (watching-zenoh RFC §5.J.2; sce-rust-runtime no_std feature is incompatible with `http-send`)"}"#,
             ),
             // ── Algorithm kind sema (watching-zenoh RFC §5.A) ───────
             (
@@ -7008,6 +7076,12 @@ mod tests {
             | GenerateUnsupportedFeature
             | CodegenMcuClassKindOnNonMcuLanguage
             | CodegenGenericKindBackendEmitMissing
+            // C3 Atomic B-β no_std rejections: author repair is
+            // "drop --no-std" or "remove `<script>` / HTTP send".
+            // No closed candidate set, so `fix: None` ⇒
+            // NeutralOrDeterministic.
+            | CodegenNoStdScriptNotSupported
+            | CodegenNoStdHttpNotSupported
             | AlgorithmConstNotFoldable
             | AlgorithmConstFoldBudgetExceeded
             | AlgorithmConstYieldTypeMismatch
@@ -7368,6 +7442,8 @@ mod tests {
                 | GenerateUnsupportedFeature
                 | CodegenMcuClassKindOnNonMcuLanguage
                 | CodegenGenericKindBackendEmitMissing
+                | CodegenNoStdScriptNotSupported
+                | CodegenNoStdHttpNotSupported
                 | AlgorithmConstNotFoldable
                 | AlgorithmConstFoldBudgetExceeded
                 | AlgorithmConstYieldTypeMismatch
@@ -7499,9 +7575,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            214,
+            216,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 214 distinct variants to match the DiagnosticCode \
+             expected 216 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -7730,7 +7806,23 @@ mod tests {
              registry from `compile_scxml_with_imports` (Atomic A \
              foundation) and runs after statechart-name registration \
              so worker→statechart and worker→worker outboxes resolve \
-             symmetrically. 211 → 214.",
+             symmetrically. 211 → 214; then watching-zenoh RFC §5.J.2 \
+             C3 Atomic B-β Rust no_std variant rejection pair: \
+             `codegen/no-std-script-not-supported` fires when an SCXML \
+             document that contains `<script>` is generated with \
+             `sce-codegen generate -l rust --no-std` (the `sce-rust-runtime` \
+             `no_std` Cargo feature is mutually exclusive with the \
+             `script-engine-lua` / `script-engine-quickjs` features per \
+             spec line 1989 zero-alloc mandate), and \
+             `codegen/no-std-http-not-supported` fires when the same \
+             document carries a `<send type=\"BasicHTTPEventProcessor\">` \
+             or `<send target=\"http://...\">` (the runtime crate's \
+             `http-send` feature is std-coupled to tokio/reqwest, so \
+             `no_std + http-send` is rejected at the cfg-assert layer in \
+             the runtime crate's `lib.rs`). Both ride \
+             `NeutralOrDeterministic` non_overlap_class — author repair \
+             is to drop `--no-std` or to remove the incompatible \
+             construct, no closed candidate set. 214 → 216.",
         );
     }
 

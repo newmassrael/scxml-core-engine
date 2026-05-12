@@ -3876,6 +3876,77 @@ pub enum Pipeline {
 /// See [`Pipeline`] for the full routing table and the rationale behind
 /// each case. This predicate is the single source of truth for routing
 /// — the CLI dispatches on it, and any future embedding API must too.
+/// Watching-zenoh RFC §5.J.2 (C3 Atomic B-β): reject SCXML constructs
+/// that are incompatible with the `sce-rust-runtime` no_std variant.
+///
+/// Caller invokes this only when `sce-codegen generate -l rust --no-std`
+/// is in effect — the gate is `lang == Rust && no_std == true` at the
+/// CLI surface. The function reads three model flags already
+/// populated by the parser and analyzer:
+///
+/// - `model.needs_script_engine` (per-state executable content that
+///   requires ECMAScript)
+/// - `model.has_unresolved_external_script` (parse-time
+///   `<script src=...>` the parser could not load)
+/// - `model.needs_http_send` (any `<send type="BasicHTTPEventProcessor">`
+///   with an http(s) target/targetexpr)
+///
+/// Fires `codegen/no-std-script-not-supported` first when both axes
+/// apply — single-diagnostic-per-call matches the C2-outbox precedent
+/// (one rejection per pass; the second surfaces after the author
+/// repairs the first). `document` is the SCXML basename; `locations`
+/// is a single human-readable summary so downstream agents can
+/// dispatch on `key_fragments` while authors get a readable message.
+///
+/// Returns `Ok(())` when neither axis fires — note that today this
+/// does **not** mean the generated Rust code will compile under
+/// `no_std`; the runtime crate's `engine.rs` + `helpers/` still use
+/// std types. B-γ ports those to `core::` + `heapless` and adds the
+/// `#![no_std]` template emission. B-β reserves the CLI flag and
+/// closes the two author-visible incompatibility axes.
+pub fn validate_no_std_compatibility(
+    model: &model::SCXMLModel,
+    scxml_path: &std::path::Path,
+) -> Result<(), forge::error::ForgeError> {
+    use forge::error::GenerateError;
+
+    let document = scxml_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    if model.needs_script_engine || model.has_unresolved_external_script {
+        let locations = if !model.global_scripts.is_empty() {
+            format!(
+                "{} <script> action(s) at document scope",
+                model.global_scripts.len()
+            )
+        } else if model.has_unresolved_external_script {
+            "<script src=...> with unresolved external reference".to_string()
+        } else {
+            "ECMAScript executable content (analyzer-detected)".to_string()
+        };
+        return Err(GenerateError::CodegenNoStdScriptNotSupported {
+            document,
+            locations,
+        }
+        .into());
+    }
+
+    if model.needs_http_send {
+        return Err(GenerateError::CodegenNoStdHttpNotSupported {
+            document,
+            locations:
+                "BasicHTTPEventProcessor <send> target/targetexpr (analyzer-detected)"
+                    .to_string(),
+        }
+        .into());
+    }
+
+    Ok(())
+}
+
 pub fn classify_document(content: &str) -> Pipeline {
     use forge::error::{ForgeError, ValidationError};
     match forge::parser::detect_kind(content) {

@@ -95,6 +95,8 @@
         "generate/unsupported-feature",
         "codegen/mcu-class-kind-on-non-mcu-language",
         "codegen/generic-kind-backend-emit-missing",
+        "codegen/no-std-script-not-supported",
+        "codegen/no-std-http-not-supported",
         "algorithm/const-not-foldable",
         "algorithm/const-fold-budget-exceeded",
         "algorithm/const-yield-type-mismatch",
