@@ -6299,13 +6299,18 @@ fn parse_buffer_pool(
 ///
 /// **Schema (C2-α).**
 /// - `<sce:link-rx ref="...">` (required) — driving link kind name.
-///   Cross-resolution validator (`worker/link-rx-ref-unknown`) defers
-///   to C2-β co-landed with codegen.
+///   Cross-resolution validator (`worker/link-rx-ref-unknown`) lives
+///   in [`crate::validate_worker_cross_refs`] (C2-β).
 /// - `<sce:inbox depth="N"/>` (required) — SPSC ring-buffer depth.
 ///   Spec line 894 verbatim attribute form per Q-C2-4 (a) lock.
 /// - `<sce:outbox ref="...">` (optional) — recipient inbox path.
-///   Cross-resolution validator (`worker/outbox-ref-unknown`) defers
-///   to C2-β co-landed with codegen.
+///   Cross-resolution validators
+///   (`worker/outbox-ref-unknown` +
+///   `worker/outbox-target-wrong-kind` +
+///   `worker/outbox-target-suffix-invalid`) live in
+///   [`crate::validate_worker_outbox_references`] (C2 follow-up
+///   Atomic B). The parser accepts any non-empty value; semantic
+///   resolution rides the orchestrator's cross-doc registry.
 /// - `<sce:body>` (optional) — SCXML actions; usually empty per
 ///   spec line 897 ("link-rx drives event injection automatically").
 ///
@@ -6326,12 +6331,13 @@ fn parse_buffer_pool(
 /// a tracked follow-up atomic gated on C4 intrinsic-registry
 /// composition surface per Q-C2-7 (a)+(b) lock.
 ///
-/// Cross-resolution (`worker/link-rx-ref-unknown` +
-/// `worker/outbox-ref-unknown`), MachineSchedulerConfig deploy-aware
-/// validation (`worker/scheduler-unsupported` +
-/// `deploy/scheduler-config-missing`), and inbox-ordering codegen
-/// invariants (`worker/inbox-ordering-relaxed-across-cores` +
-/// `worker/inbox-ordering-unspecified`) all defer to C2-β/γ.
+/// MachineSchedulerConfig deploy-aware validation
+/// (`worker/scheduler-unsupported` +
+/// `deploy/scheduler-incompatible-with-worker-count`) and
+/// inbox-ordering codegen invariants
+/// (`worker/inbox-ordering-relaxed-across-cores` +
+/// `worker/inbox-ordering-unspecified`) live in C2-γ + C2-β
+/// validators respectively.
 fn parse_worker(
     root: &roxmltree::Node,
     label: DocumentLabel<'_>,

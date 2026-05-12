@@ -1297,8 +1297,15 @@ pub fn compile_scxml_with_imports(
     use forge::pool_registry::ForgePoolRegistry;
 
     // Pass 1: parse forge docs, populate cross-doc + pool registries.
+    // Worker docs are also captured for the C2 follow-up Atomic B outbox
+    // cross-resolution pass (`validate_worker_outbox_references`), which
+    // cannot run until pass 2 finishes registering SCXML statechart
+    // names (workers may route their outbox to statechart inboxes per
+    // Q-Outbox-3 (b)).
     let mut cross_doc = SceCrossDocRegistry::new();
     let mut pool_reg = ForgePoolRegistry::new();
+    let mut workers_for_outbox: Vec<(String, forge::model::WorkerModel)> =
+        Vec::new();
 
     for forge_path in forge_files {
         let path_str = forge_path.to_str().unwrap_or("");
@@ -1361,6 +1368,13 @@ pub fn compile_scxml_with_imports(
                 None,
             )
         })?;
+        // Capture Worker docs for the C2 follow-up Atomic B outbox
+        // cross-resolution pass. Non-worker forge docs (link / codec /
+        // algorithm / buffer-pool / timer / extern sidecars) silently
+        // skip — they have no `<sce:outbox>` field.
+        if let forge::model::ForgeDocument::Worker(worker) = parsed.document {
+            workers_for_outbox.push((basename.to_string(), worker));
+        }
     }
 
     // Pass 2: parse SCXML docs, register statechart names, run cross-ref
@@ -1406,6 +1420,15 @@ pub fn compile_scxml_with_imports(
             .unwrap_or("");
         parser::validate_on_sample_link_references(model, &cross_doc, &pool_reg, basename)?;
     }
+
+    // ── C2 follow-up Atomic B outbox cross-resolution ──
+    //
+    // Runs after pass-2 statechart registration so worker→statechart
+    // outbox refs resolve symmetrically with worker→worker refs.
+    // Captured WorkerModels from pass 1 carry the diag_label
+    // (basename) so the diagnostic anchor points at the worker doc
+    // that wrote the offending `<sce:outbox>`.
+    validate_worker_outbox_references(&workers_for_outbox, &cross_doc)?;
 
     // Pass 3: codegen. Forge docs route through `compile_forge_with_imports`
     // (which re-parses + runs forge-internal cross-resolution + emits);
@@ -1938,20 +1961,151 @@ fn validate_worker_cross_refs(
         ));
     }
 
-    // ── outbox ref cross-resolution deferred ──
+    // ── outbox ref cross-resolution lives in a sibling validator ──
     //
-    // The cross-doc registry foundation that resolves outbox refs
-    // landed in C2-outbox Atomic A (`compile_scxml_with_imports` +
-    // `SceCrossDocRegistry` recording statechart + worker names
-    // alongside link kinds). Atomic B (the next atomic in this
-    // chain) wires the outbox validator on top of that foundation
-    // with the 3 spec-extension codes (`worker/outbox-ref-unknown`,
-    // `worker/outbox-target-wrong-kind`, `worker/outbox-target-
-    // suffix-invalid` per Q-Outbox-8 (c) lock 2026-05-12). Until
-    // Atomic B lands, parser-side validation accepts any non-empty
-    // outbox ref; cross-doc semantic resolution rides the Atomic A
-    // orchestrator's registry consumer slot.
+    // [`validate_worker_outbox_references`] operates on the cross-doc
+    // `SceCrossDocRegistry` (statechart + worker names across the build)
+    // rather than this doc's own imports — outbox refs target peer
+    // SCXML documents that the single-file
+    // [`compile_forge_with_imports`] path cannot see. The orchestrator
+    // [`compile_scxml_with_imports`] is the sole caller; single-file
+    // forge compile paths accept any non-empty outbox value (the
+    // forge-side parser at `forge/parser.rs` only enforces non-empty;
+    // semantic resolution requires the cross-doc registry which
+    // single-file paths do not assemble).
 
+    Ok(())
+}
+
+/// watching-zenoh RFC §5.D C2 follow-up Atomic B (Q-Outbox-1..9
+/// LOCKED 2026-05-12). SCXML-side `<sce:outbox ref="<owner>.<suffix>">`
+/// cross-resolution against the build's
+/// [`forge::cross_doc_registry::SceCrossDocRegistry`]. Three failure
+/// axes map onto three spec-extension diagnostics per Q-Outbox-8 (c)
+/// lock:
+///
+/// * `worker/outbox-target-suffix-invalid` — suffix !=  `inbox` (Q-Outbox-6
+///   (a) strict-suffix lock). Includes the missing-dot case where the
+///   ref lacks a `.` entirely; suffix surfaces as the empty string.
+/// * `worker/outbox-ref-unknown` — owner segment not registered in any
+///   parsed forge / SCXML doc.
+/// * `worker/outbox-target-wrong-kind` — owner registered but kind is
+///   neither statechart nor worker (Q-Outbox-3 (b) recipient kinds).
+///
+/// Suffix check fires first because it is syntactic (no registry
+/// dependency); if it passes, owner resolution runs against the
+/// statechart + worker union. The one-error-at-a-time wire policy
+/// means an owner-typo on a suffix-typo ref surfaces only after the
+/// suffix is repaired — but each error message names the exact axis
+/// the author hit, so the repair sequence is bounded.
+///
+/// Workers without `<sce:outbox>` silent-skip (it is optional per
+/// RFC §5.D worker schema). Empty registry + worker-with-outbox is
+/// a legitimate caller bug (orchestrator should populate the
+/// registry before invoking the validator) — surfaces as
+/// `worker/outbox-ref-unknown` with `candidates` = empty Vec, which
+/// is the same shape as an authored typo against a single-worker
+/// build (no peer to send to).
+///
+/// Called by [`compile_scxml_with_imports`] after pass-2 statechart
+/// registration. The per-doc validator [`validate_worker_cross_refs`]
+/// (link-rx axis) runs in pass-3 codegen via
+/// [`compile_forge_with_imports`]; the outbox axis cannot live there
+/// because the registry it consults is built only by the
+/// orchestrator.
+fn validate_worker_outbox_references(
+    workers: &[(String, forge::model::WorkerModel)],
+    registry: &forge::cross_doc_registry::SceCrossDocRegistry,
+) -> Result<(), forge::error::Located<forge::error::ForgeError>> {
+    use forge::cross_doc_registry::ScxmlDocKind;
+    use forge::error::{Located, ValidationError};
+
+    for (diag_label, worker) in workers {
+        let Some(outbox_value) = worker.outbox.as_ref() else {
+            continue;
+        };
+
+        // Decompose `<owner>.<suffix>` per Q-Outbox-6 (a) shape lock.
+        // `split_once` on `.` yields the first dot's left/right pair,
+        // matching spec line 895's `session_fsm.inbox` form. A
+        // missing dot routes to suffix-invalid with empty suffix —
+        // the strict-suffix lock rejects bare `<owner>` per Q-Outbox-6
+        // recommendation rationale (option (c) "bare owner" rejected
+        // as a deprecated-on-arrival form).
+        let (owner, suffix) = match outbox_value.split_once('.') {
+            Some(pair) => pair,
+            None => (outbox_value.as_str(), ""),
+        };
+
+        // ── Suffix-invalid axis (Q-Outbox-6 (a) strict-suffix) ──
+        if suffix != "inbox" {
+            return Err(Located::new(
+                ValidationError::WorkerOutboxTargetSuffixInvalid {
+                    worker_name: worker.name.clone(),
+                    outbox_value: outbox_value.clone(),
+                    owner: owner.to_string(),
+                    suffix: suffix.to_string(),
+                }
+                .into(),
+                diag_label.clone(),
+                None,
+                None,
+            ));
+        }
+
+        // ── Owner resolution axis (Q-Outbox-3 (b) recipient kinds) ──
+        //
+        // Closed candidate union: every registered statechart +
+        // worker, each suffixed with `.inbox` so candidates are
+        // drop-in replacements for the entire `ref` attribute. Worker
+        // self-reference is legal in spec terms (`outbox ref="<self>.
+        // inbox"` would deliver into the worker's own inbox — odd
+        // but not forbidden); we don't filter self out of the
+        // candidate list because the validator surfaces resolution
+        // failures, not stylistic guidance.
+        let candidates: Vec<String> = registry
+            .names_of_any_kind(&[ScxmlDocKind::Statechart, ScxmlDocKind::Worker])
+            .into_iter()
+            .map(|name| format!("{name}.inbox"))
+            .collect();
+        let candidates_list = candidates.join(", ");
+        match registry.lookup(owner) {
+            Some(ScxmlDocKind::Statechart) | Some(ScxmlDocKind::Worker) => {
+                // Canonical case — passes.
+            }
+            Some(other_kind) => {
+                return Err(Located::new(
+                    ValidationError::WorkerOutboxTargetWrongKind {
+                        worker_name: worker.name.clone(),
+                        outbox_value: outbox_value.clone(),
+                        owner: owner.to_string(),
+                        actual_kind: other_kind.as_str().to_string(),
+                        candidates,
+                        candidates_list,
+                    }
+                    .into(),
+                    diag_label.clone(),
+                    None,
+                    None,
+                ));
+            }
+            None => {
+                return Err(Located::new(
+                    ValidationError::WorkerOutboxRefUnknown {
+                        worker_name: worker.name.clone(),
+                        outbox_value: outbox_value.clone(),
+                        owner: owner.to_string(),
+                        candidates,
+                        candidates_list,
+                    }
+                    .into(),
+                    diag_label.clone(),
+                    None,
+                    None,
+                ));
+            }
+        }
+    }
     Ok(())
 }
 

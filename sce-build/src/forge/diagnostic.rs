@@ -915,6 +915,51 @@ pub enum DiagnosticCode {
     #[serde(rename = "worker/scheduler-unsupported")]
     WorkerSchedulerUnsupported,
 
+    // ── §5.D C2 follow-up: SCXML-side `<sce:outbox ref>` cross-
+    //    resolution against the build-wide
+    //    [`crate::forge::cross_doc_registry::SceCrossDocRegistry`].
+    //    Atomic A (`3e5e26e9`) landed the orchestrator + registry +
+    //    3-kind variant; Atomic B (this batch) adds the validator
+    //    consumer. Q-Outbox-6 (a) strict-suffix lock (`.inbox`) +
+    //    Q-Outbox-3 (b) recipient kinds (statechart + worker) +
+    //    Q-Outbox-8 (c) 3-code split per repair axis (unknown /
+    //    wrong-kind / suffix-invalid).
+    /// `<sce:outbox ref>`'s owner segment does not match any
+    /// statechart or worker doc in the build's cross-doc registry.
+    /// Distinct from [`Self::WorkerOutboxTargetWrongKind`] (owner
+    /// found but kind not in {statechart, worker}); distinct from
+    /// [`Self::WorkerOutboxTargetSuffixInvalid`] (syntactic suffix
+    /// failure independent of registry state). Repair surface =
+    /// `Fix::ReplaceOneOf` over the sorted union of statechart +
+    /// worker doc names (each suffixed with `.inbox` so candidates
+    /// are drop-in replacements). Non-spec diagnostic per Q-Outbox-8
+    /// (c) lock 2026-05-12.
+    #[serde(rename = "worker/outbox-ref-unknown")]
+    WorkerOutboxRefUnknown,
+
+    /// `<sce:outbox ref>`'s owner segment resolves in the cross-doc
+    /// registry but to a kind not in {statechart, worker}. Today the
+    /// only other kind the registry holds is `link` (forge link
+    /// imports), so a wrong-kind hit usually means the author confused
+    /// a link import alias with a statechart name. Repair surface =
+    /// `Fix::ReplaceOneOf` over the same sorted statechart + worker
+    /// `.inbox` set as [`Self::WorkerOutboxRefUnknown`]. Non-spec
+    /// diagnostic per Q-Outbox-8 (c) lock 2026-05-12.
+    #[serde(rename = "worker/outbox-target-wrong-kind")]
+    WorkerOutboxTargetWrongKind,
+
+    /// `<sce:outbox ref>` declares a suffix other than `inbox`
+    /// (including missing dot entirely). Spec §5.D line 895 example
+    /// writes `session_fsm.inbox`; spec line 1998 codegen table fixes
+    /// the recipient queue name to `inbox`. Repair is deterministic:
+    /// keep the authored owner segment, replace the suffix with
+    /// `inbox`. `Fix::ReplaceWith` carries `"{owner}.inbox"`. Single-
+    /// value repair → `NeutralOrDeterministic` non-overlap class.
+    /// Non-spec diagnostic per Q-Outbox-6 (a) + Q-Outbox-8 (c) lock
+    /// 2026-05-12.
+    #[serde(rename = "worker/outbox-target-suffix-invalid")]
+    WorkerOutboxTargetSuffixInvalid,
+
     // ── §5.D Timer kind diagnostics (watching-zenoh RFC §5.D
     //    lines 909-910). Both codes fire on the MCU cooperative
     //    scheduler axis — silent-skip on AP / preemptive targets
@@ -1394,6 +1439,10 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         WorkerInboxOrderingRelaxedAcrossCores,
         // Worker kind scheduler-capacity forge-side anchor (watching-zenoh RFC §5.D, C2-γ)
         WorkerSchedulerUnsupported,
+        // Worker kind SCXML-side outbox cross-resolution (watching-zenoh RFC §5.D, C2 follow-up Atomic B)
+        WorkerOutboxRefUnknown,
+        WorkerOutboxTargetWrongKind,
+        WorkerOutboxTargetSuffixInvalid,
         // Timer kind diagnostics (watching-zenoh RFC §5.D, C1)
         TimerPeriodBelowTickRate,
         TimerSlotOverflow,
@@ -1681,6 +1730,15 @@ impl DiagnosticCode {
             WorkerSchedulerUnsupported
             | TimerPeriodBelowTickRate
             | TimerSlotOverflow => Some("watching-zenoh RFC §5.D"),
+
+            // ── Worker SCXML-side outbox cross-resolution (RFC §5.D,
+            //    C2 follow-up Atomic B). All three axes live in §5.D
+            //    worker domain (the worker schema's `<sce:outbox>` is
+            //    §5.D's; the recipient codegen contract is §5.D's
+            //    inbox lowering).
+            WorkerOutboxRefUnknown
+            | WorkerOutboxTargetWrongKind
+            | WorkerOutboxTargetSuffixInvalid => Some("watching-zenoh RFC §5.D"),
 
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
@@ -1985,6 +2043,9 @@ impl DiagnosticCode {
             WorkerInboxOrderingUnspecified => "worker/inbox-ordering-unspecified",
             WorkerInboxOrderingRelaxedAcrossCores => "worker/inbox-ordering-relaxed-across-cores",
             WorkerSchedulerUnsupported => "worker/scheduler-unsupported",
+            WorkerOutboxRefUnknown => "worker/outbox-ref-unknown",
+            WorkerOutboxTargetWrongKind => "worker/outbox-target-wrong-kind",
+            WorkerOutboxTargetSuffixInvalid => "worker/outbox-target-suffix-invalid",
             TimerPeriodBelowTickRate => "timer/period-below-tick-rate",
             TimerSlotOverflow => "timer/slot-overflow",
             ExternSymbolNotInWhitelist => "extern/symbol-not-in-whitelist",
@@ -3422,6 +3483,78 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![worker_name.clone(), machine.clone()],
         },
+        // ── §5.D C2 follow-up Atomic B outbox cross-resolution ──
+        ValidationError::WorkerOutboxRefUnknown {
+            worker_name,
+            outbox_value,
+            owner,
+            candidates,
+            candidates_list: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::WorkerOutboxRefUnknown,
+            stage: Stage::Validation,
+            // `actual` carries the full authored ref so the diagnostic
+            // surfaces what was written (owner segment alone hides the
+            // suffix); closed candidate list (sorted statechart +
+            // worker `.inbox` set) rides `Fix::ReplaceOneOf`.
+            // η-precedent: `WorkerLinkRxRefUnknown` carries candidates
+            // the same way.
+            expected: None,
+            actual: Some(outbox_value.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![worker_name.clone(), owner.clone()],
+        },
+        ValidationError::WorkerOutboxTargetWrongKind {
+            worker_name,
+            outbox_value,
+            owner,
+            actual_kind,
+            candidates,
+            candidates_list: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::WorkerOutboxTargetWrongKind,
+            stage: Stage::Validation,
+            // `actual` carries the full authored ref so the diagnostic
+            // names what was written; the resolved kind rides
+            // `key_fragments` for byte-stable test discrimination
+            // between "unknown" and "wrong-kind" failure axes.
+            expected: None,
+            actual: Some(outbox_value.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![
+                worker_name.clone(),
+                owner.clone(),
+                actual_kind.clone(),
+            ],
+        },
+        ValidationError::WorkerOutboxTargetSuffixInvalid {
+            worker_name,
+            outbox_value,
+            owner,
+            suffix,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::WorkerOutboxTargetSuffixInvalid,
+            stage: Stage::Validation,
+            // Single-value deterministic repair: keep the authored
+            // owner, replace suffix with `inbox`. `Fix::ReplaceWith`
+            // carries `{owner}.inbox` so an agent applies the fix
+            // without rewriting the prefix. NeutralOrDeterministic
+            // non_overlap_class.
+            expected: None,
+            actual: Some(outbox_value.clone()),
+            fix: Some(Fix::ReplaceWith {
+                to: format!("{owner}.inbox"),
+            }),
+            key_fragments: vec![
+                worker_name.clone(),
+                owner.clone(),
+                suffix.clone(),
+            ],
+        },
         ValidationError::TimerPeriodBelowTickRate {
             timer_name,
             machine,
@@ -4710,6 +4843,65 @@ mod tests {
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
                 r#"{"v":1,"id":"fnv1a:39f753b9c4918241","code":"worker/scheduler-unsupported","stage":"validation","spec":"watching-zenoh RFC §5.D","message":"worker 'rx_loop': not declared in deploy.yaml under `machines.mcu_node.workers`. watching-zenoh RFC §5.D line 912 (`worker/scheduler-unsupported`) — the cooperative scheduler tracks one tick slot per declared worker; an undeclared worker has no slot. Repair: add `rx_loop:` under `machines.mcu_node.workers:` in deploy.yaml, or remove the Worker doc from the build.","actual":"rx_loop"}"#,
+            ),
+            // ── §5.D C2 follow-up Atomic B worker outbox cross-resolution ──
+            (
+                // RFC §5.D C2 follow-up Atomic B: owner segment not in
+                // SceCrossDocRegistry. FixCarriesCandidates — sorted
+                // statechart + worker `.inbox` set rides Fix::ReplaceOneOf.
+                "forge/worker-outbox-ref-unknown",
+                ValidationError::WorkerOutboxRefUnknown {
+                    worker_name: "rx_loop".into(),
+                    outbox_value: "sesion_fsm.inbox".into(),
+                    owner: "sesion_fsm".into(),
+                    candidates: vec![
+                        "session_fsm.inbox".into(),
+                        "tx_loop.inbox".into(),
+                    ],
+                    candidates_list:
+                        "session_fsm.inbox, tx_loop.inbox".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:99378501ddb9866e","code":"worker/outbox-ref-unknown","stage":"validation","spec":"watching-zenoh RFC §5.D","message":"worker 'rx_loop': <sce:outbox ref=\"sesion_fsm.inbox\"> names owner 'sesion_fsm' which is not a registered statechart or worker. Declare the recipient as a separate `.scxml` document in this build (statechart: `<scxml name=\"sesion_fsm\">`; worker: `<scxml sce:kind=\"worker\" name=\"sesion_fsm\">`), or replace the ref with one of the registered recipients: session_fsm.inbox, tx_loop.inbox.","actual":"sesion_fsm.inbox","fix":{"kind":"replace_one_of","candidates":["session_fsm.inbox","tx_loop.inbox"]}}"#,
+            ),
+            (
+                // RFC §5.D C2 follow-up Atomic B: owner found but kind not
+                // in {statechart, worker} — today's only other kind in the
+                // registry is `link`. FixCarriesCandidates — same sorted
+                // union shape as outbox-ref-unknown.
+                "forge/worker-outbox-target-wrong-kind",
+                ValidationError::WorkerOutboxTargetWrongKind {
+                    worker_name: "rx_loop".into(),
+                    outbox_value: "udp_scout.inbox".into(),
+                    owner: "udp_scout".into(),
+                    actual_kind: "link".into(),
+                    candidates: vec![
+                        "session_fsm.inbox".into(),
+                        "tx_loop.inbox".into(),
+                    ],
+                    candidates_list:
+                        "session_fsm.inbox, tx_loop.inbox".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:1efb5e754cd03d3d","code":"worker/outbox-target-wrong-kind","stage":"validation","spec":"watching-zenoh RFC §5.D","message":"worker 'rx_loop': <sce:outbox ref=\"udp_scout.inbox\"> names 'udp_scout' which is registered as a link kind, not a statechart or worker. Outbox refs may only target statechart or worker inboxes (RFC §5.D line 911 \"any non-inbox access\" by negation admits inbox access on statechart + worker kinds). Replace with one of: session_fsm.inbox, tx_loop.inbox.","actual":"udp_scout.inbox","fix":{"kind":"replace_one_of","candidates":["session_fsm.inbox","tx_loop.inbox"]}}"#,
+            ),
+            (
+                // RFC §5.D C2 follow-up Atomic B: suffix !=  `inbox` per
+                // Q-Outbox-6 (a) strict-suffix lock. Deterministic
+                // single-value Fix::ReplaceWith.
+                // NeutralOrDeterministic non_overlap_class.
+                "forge/worker-outbox-target-suffix-invalid",
+                ValidationError::WorkerOutboxTargetSuffixInvalid {
+                    worker_name: "rx_loop".into(),
+                    outbox_value: "session_fsm.inbx".into(),
+                    owner: "session_fsm".into(),
+                    suffix: "inbx".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:a8a2cabe814a473a","code":"worker/outbox-target-suffix-invalid","stage":"validation","spec":"watching-zenoh RFC §5.D","message":"worker 'rx_loop': <sce:outbox ref=\"session_fsm.inbx\"> declares suffix 'inbx' but the only legal suffix is 'inbox' (RFC §5.D line 895 example: `<owner>.inbox`; spec line 1998 codegen table fixes the recipient queue name to `inbox`). Replace with `session_fsm.inbox`.","actual":"session_fsm.inbx","fix":{"kind":"replace_with","to":"session_fsm.inbox"}}"#,
             ),
             (
                 // RFC §5.D line 909 C1: forge-side anchor. Per-doc
@@ -6666,12 +6858,20 @@ mod tests {
             // `parsed.imports` filtered to kind=link. η-precedent:
             // `LinkClassUnsupportedOnTarget` carries closed candidates
             // the same way. (Outbox cross-resolution against statechart
-            // kinds defers to a future SCXML-side atomic — `parse_imports`
-            // currently rejects `kind="statechart"` imports as a
-            // long-standing forge invariant, so the cross-ref tier
-            // needs to live in the SCXML pipeline where statechart
-            // discovery is first-class.)
-            | WorkerLinkRxRefUnknown => FixCarriesCandidates,
+            // / worker docs landed in C2 follow-up Atomic B alongside
+            // the SCXML-side `compile_scxml_with_imports` orchestrator
+            // that builds the cross-doc registry the validator
+            // consumes — see `WorkerOutboxRefUnknown` +
+            // `WorkerOutboxTargetWrongKind` below.)
+            | WorkerLinkRxRefUnknown
+            // ── C2 follow-up Atomic B outbox cross-resolution ──
+            //   Two of the three outbox axes carry a closed candidate
+            //   list (sorted statechart + worker `.inbox` set);
+            //   suffix-invalid is deterministic (`{owner}.inbox` is the
+            //   unique repair) and rides `NeutralOrDeterministic`
+            //   below.
+            | WorkerOutboxRefUnknown
+            | WorkerOutboxTargetWrongKind => FixCarriesCandidates,
 
             // ── `expected` carries non-repair metadata ────────
             ExpressionParseMismatch | MeshExternalAmbiguousEventGroup => ExpectedIsMetadata,
@@ -6756,6 +6956,13 @@ mod tests {
             // worker to `deploy.machines.<m>.workers` or removing the
             // Worker doc; no closed candidate list.
             | WorkerSchedulerUnsupported
+            // C2 follow-up Atomic B outbox suffix-invalid axis: spec
+            // §5.D line 895 + line 1998 fix the recipient queue name
+            // to `inbox`, so the repair is deterministic
+            // (`{owner}.inbox`) and rides `Fix::ReplaceWith`. The other
+            // two outbox axes (unknown / wrong-kind) carry a closed
+            // candidate set and live in FixCarriesCandidates above.
+            | WorkerOutboxTargetSuffixInvalid
             // C1 Timer kind diagnostics (RFC §5.D lines 909-910).
             // Both are author-judgment repairs: raise the period
             // above the tick rate, or rebalance the timer count
@@ -7193,6 +7400,9 @@ mod tests {
                 | WorkerInboxOrderingUnspecified
                 | WorkerInboxOrderingRelaxedAcrossCores
                 | WorkerSchedulerUnsupported
+                | WorkerOutboxRefUnknown
+                | WorkerOutboxTargetWrongKind
+                | WorkerOutboxTargetSuffixInvalid
                 | TimerPeriodBelowTickRate
                 | TimerSlotOverflow
                 | ExternSymbolNotInWhitelist
@@ -7289,9 +7499,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            211,
+            214,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 211 distinct variants to match the DiagnosticCode \
+             expected 214 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -7497,7 +7707,30 @@ mod tests {
              with body-text `<sce:period>` (unit suffix us/ms/s/m) + \
              event-driven `<sce:reset-on>` / state-exit-driven \
              `<sce:cancel-on>` / required `<sce:fire-event>` \
-             lifecycle. 209 → 211.",
+             lifecycle. 209 → 211. Then watching-zenoh RFC §5.D C2 \
+             follow-up Atomic B adds the SCXML-side `<sce:outbox ref>` \
+             cross-resolution surface (the outbox piece C2-β deferred \
+             pending the cross-doc registry foundation Atomic A landed): \
+             three non-spec codes per Q-Outbox-8 (c) lock 2026-05-12 \
+             splitting the failure axes by repair surface — \
+             `worker/outbox-ref-unknown` for an owner not in the \
+             `SceCrossDocRegistry` (statechart + worker union per \
+             Q-Outbox-3 (b)), `worker/outbox-target-wrong-kind` for an \
+             owner registered as an incompatible kind (today only \
+             link — buffer-pool / algorithm / codec / timer / extern \
+             never enter the registry), and `worker/outbox-target-\
+             suffix-invalid` for any suffix !=  `inbox` per Q-Outbox-6 \
+             (a) strict-suffix lock (RFC §5.D line 895 example + line \
+             1998 codegen table jointly fix the recipient queue name). \
+             The first two ride `Fix::ReplaceOneOf` over the sorted \
+             union of statechart + worker `.inbox` candidates; the \
+             third rides `Fix::ReplaceWith` (deterministic single \
+             repair `{{owner}}.inbox`) and sits in `NeutralOrDeterministic`. \
+             Validator `validate_worker_outbox_references` consumes the \
+             registry from `compile_scxml_with_imports` (Atomic A \
+             foundation) and runs after statechart-name registration \
+             so worker→statechart and worker→worker outboxes resolve \
+             symmetrically. 211 → 214.",
         );
     }
 

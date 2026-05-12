@@ -2562,8 +2562,16 @@ pub struct InboxConfig {
 ///   Producer/consumer pair drawn from `heapless::spsc::split()` on
 ///   Rust; opaque `sce_inbox_{producer,consumer}_t` on C11.
 /// - `<sce:outbox ref="...">` (optional) — recipient worker/state-
-///   machine inbox for emitted events. Cross-resolution validator
-///   `worker/outbox-ref-unknown` defers to C2-β.
+///   machine inbox for emitted events. Three cross-resolution
+///   validators (`worker/outbox-ref-unknown` +
+///   `worker/outbox-target-wrong-kind` +
+///   `worker/outbox-target-suffix-invalid`) live in
+///   [`crate::validate_worker_outbox_references`] (C2 follow-up
+///   Atomic B). Parser keeps `outbox` as an opaque
+///   `Option<String>`; semantic resolution against statechart +
+///   worker recipients happens against the
+///   [`crate::forge::cross_doc_registry::SceCrossDocRegistry`] in
+///   the orchestrator pass.
 /// - `<sce:body>` (optional, usually empty per spec line 897) — SCXML
 ///   actions. C2-α scans for `worker/shared-mutable-state` violations
 ///   (any `<sce:import kind="worker">` in the document, plus body

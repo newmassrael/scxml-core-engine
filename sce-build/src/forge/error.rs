@@ -1343,6 +1343,131 @@ pub enum ValidationError {
         machine: String,
     },
 
+    /// watching-zenoh RFC §5.D C2 follow-up — `<sce:outbox ref="X">`
+    /// names an owner segment (`X.split('.').next()`) that does not
+    /// resolve to a recorded statechart or worker doc in the build's
+    /// [`crate::forge::cross_doc_registry::SceCrossDocRegistry`]. Q-Outbox-3
+    /// (b) admits both statechart and worker recipients per spec line
+    /// 911 ("any non-inbox access" admits inbox access regardless of
+    /// owner kind). Q-Outbox-8 (c) splits the failure axis: this code
+    /// fires on owner-not-in-registry; [`Self::WorkerOutboxTargetWrongKind`]
+    /// fires when the owner resolves but to an incompatible kind (e.g.
+    /// link kind); [`Self::WorkerOutboxTargetSuffixInvalid`] fires on
+    /// suffix !=  `inbox` per Q-Outbox-6 (a) strict-suffix lock.
+    ///
+    /// Closed candidate list rides `Fix::ReplaceOneOf` with the sorted
+    /// union of statechart + worker doc names (each suffixed with
+    /// `.inbox` so the candidate strings are drop-in replacements for
+    /// the entire `ref` attribute). η-precedent:
+    /// [`Self::WorkerLinkRxRefUnknown`] uses the same sorted-closed-set
+    /// shape.
+    #[error(
+        "worker '{worker_name}': <sce:outbox ref=\"{outbox_value}\"> names owner '{owner}' which is not a registered statechart or worker. \
+         Declare the recipient as a separate `.scxml` document in this build (statechart: `<scxml name=\"{owner}\">`; worker: `<scxml sce:kind=\"worker\" name=\"{owner}\">`), or replace the ref with one of the registered recipients: {candidates_list}."
+    )]
+    WorkerOutboxRefUnknown {
+        /// The worker document whose `<sce:outbox>` carries the
+        /// unresolvable ref. Anchored at the `<sce:outbox>` node by
+        /// `located()` at the call site.
+        worker_name: String,
+        /// `<sce:outbox ref>` value as authored (full
+        /// `<owner>.<suffix>` string).
+        outbox_value: String,
+        /// Owner segment extracted from `outbox_value` (the substring
+        /// before the first `.`). Surfaced so the diagnostic message
+        /// names the failing segment rather than burying it in the
+        /// full ref string.
+        owner: String,
+        /// Sorted closed candidate set — every registered statechart +
+        /// worker doc name, each suffixed with `.inbox` so each entry
+        /// is a complete drop-in replacement for the offending `ref`
+        /// attribute value. Wire payload's `Fix::ReplaceOneOf` consumes
+        /// this verbatim.
+        candidates: Vec<String>,
+        /// Joined comma-space form of `candidates` for the message
+        /// body (matches `WorkerLinkRxRefUnknown` shape).
+        candidates_list: String,
+    },
+
+    /// watching-zenoh RFC §5.D C2 follow-up — `<sce:outbox ref="X">`
+    /// names an owner that *does* resolve in the cross-doc registry but
+    /// to a kind incompatible with the outbox contract (today: link
+    /// kind, since `<sce:outbox>` can only target the heapless::spsc::Queue
+    /// inbox primitive that statechart + worker docs both lower into).
+    /// Distinct from [`Self::WorkerOutboxRefUnknown`] (owner not in
+    /// registry at all) so authors get distinct repair guidance: a
+    /// wrong-kind hit usually means the author confused a link import
+    /// alias with a statechart name; an unknown hit usually means a
+    /// typo or a missing file.
+    ///
+    /// Closed candidate list rides `Fix::ReplaceOneOf` with the same
+    /// sorted union as [`Self::WorkerOutboxRefUnknown`] — valid
+    /// statechart + worker `.inbox` targets.
+    #[error(
+        "worker '{worker_name}': <sce:outbox ref=\"{outbox_value}\"> names '{owner}' which is registered as a {actual_kind} kind, not a statechart or worker. \
+         Outbox refs may only target statechart or worker inboxes (RFC §5.D line 911 \"any non-inbox access\" by negation admits inbox access on statechart + worker kinds). Replace with one of: {candidates_list}."
+    )]
+    WorkerOutboxTargetWrongKind {
+        /// The worker document whose `<sce:outbox>` carries the
+        /// wrong-kind ref. Anchored at the `<sce:outbox>` node by
+        /// `located()` at the call site.
+        worker_name: String,
+        /// `<sce:outbox ref>` value as authored.
+        outbox_value: String,
+        /// Owner segment extracted from `outbox_value`.
+        owner: String,
+        /// Actual kind registered for `owner` in the cross-doc registry
+        /// (e.g. `"link"` for a link import alias mistaken for a
+        /// statechart). Slash-path label from
+        /// [`crate::forge::cross_doc_registry::ScxmlDocKind::as_str`].
+        actual_kind: String,
+        /// Sorted closed candidate set — same union shape as
+        /// [`Self::WorkerOutboxRefUnknown::candidates`].
+        candidates: Vec<String>,
+        /// Joined comma-space form of `candidates` for the message
+        /// body.
+        candidates_list: String,
+    },
+
+    /// watching-zenoh RFC §5.D C2 follow-up — `<sce:outbox ref="X">`
+    /// declares a suffix !=  `inbox`, violating the Q-Outbox-6 (a)
+    /// strict-suffix lock. Spec line 895 example writes
+    /// `session_fsm.inbox` exactly; codegen contract for both
+    /// statechart and worker recipients is "deliver to the
+    /// heapless::spsc::Queue named `inbox`" (spec line 1998 codegen
+    /// table), so other suffixes (`.event_loop`, `.inbx` typos, bare
+    /// `<owner>` without dot, …) have no codegen contract today.
+    ///
+    /// Repair is deterministic: keep the authored owner, replace the
+    /// suffix with the literal `inbox`. `Fix::ReplaceWith` carries
+    /// `"{owner}.inbox"`. Single-value repair places this in the
+    /// `NeutralOrDeterministic` non-overlap class.
+    ///
+    /// Suffix is checked before owner — even if the owner is also
+    /// unresolvable, the syntactic repair surfaces first. One-error-
+    /// at-a-time wire policy then surfaces the owner failure on the
+    /// next build cycle after the suffix is fixed.
+    #[error(
+        "worker '{worker_name}': <sce:outbox ref=\"{outbox_value}\"> declares suffix '{suffix}' but the only legal suffix is 'inbox' (RFC §5.D line 895 example: `<owner>.inbox`; spec line 1998 codegen table fixes the recipient queue name to `inbox`). \
+         Replace with `{owner}.inbox`."
+    )]
+    WorkerOutboxTargetSuffixInvalid {
+        /// The worker document whose `<sce:outbox>` carries the
+        /// suffix-invalid ref. Anchored at the `<sce:outbox>` node by
+        /// `located()`.
+        worker_name: String,
+        /// `<sce:outbox ref>` value as authored.
+        outbox_value: String,
+        /// Owner segment as authored (substring before the first `.`,
+        /// or the entire `outbox_value` if there is no `.`). Used to
+        /// compose the deterministic `Fix::ReplaceWith` target.
+        owner: String,
+        /// Suffix as authored (substring after the first `.`, or empty
+        /// when no `.` is present — both forms violate the strict
+        /// `<owner>.inbox` requirement).
+        suffix: String,
+    },
+
     /// watching-zenoh RFC §5.D line 909
     /// (`timer/period-below-tick-rate`) — `<sce:period>` declared
     /// shorter than `scheduler.tick_period_us`. The cooperative
