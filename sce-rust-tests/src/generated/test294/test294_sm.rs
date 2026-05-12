@@ -295,6 +295,7 @@ impl Default for Test294Policy {
 impl StatePolicy for Test294Policy {
     type State = Test294State;
     type Event = Test294Event;
+    type Hal = sce_rust_runtime::StdHal;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;

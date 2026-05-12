@@ -145,6 +145,7 @@ impl Default for Test338MachineNamePolicy {
 impl StatePolicy for Test338MachineNamePolicy {
     type State = Test338MachineNameState;
     type Event = Test338MachineNameEvent;
+    type Hal = sce_rust_runtime::StdHal;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;

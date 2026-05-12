@@ -179,6 +179,7 @@ impl Default for Test404Policy {
 impl StatePolicy for Test404Policy {
     type State = Test404State;
     type Event = Test404Event;
+    type Hal = sce_rust_runtime::StdHal;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = true;

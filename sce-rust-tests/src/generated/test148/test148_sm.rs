@@ -292,6 +292,7 @@ impl Default for Test148Policy {
 impl StatePolicy for Test148Policy {
     type State = Test148State;
     type Event = Test148Event;
+    type Hal = sce_rust_runtime::StdHal;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;

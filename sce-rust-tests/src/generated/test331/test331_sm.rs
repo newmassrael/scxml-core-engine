@@ -291,6 +291,7 @@ impl Default for Test331Policy {
 impl StatePolicy for Test331Policy {
     type State = Test331State;
     type Event = Test331Event;
+    type Hal = sce_rust_runtime::StdHal;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;

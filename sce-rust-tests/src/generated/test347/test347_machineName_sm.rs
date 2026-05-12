@@ -150,6 +150,7 @@ impl Default for Test347MachineNamePolicy {
 impl StatePolicy for Test347MachineNamePolicy {
     type State = Test347MachineNameState;
     type Event = Test347MachineNameEvent;
+    type Hal = sce_rust_runtime::StdHal;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;

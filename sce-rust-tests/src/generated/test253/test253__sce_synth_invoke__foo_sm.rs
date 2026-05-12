@@ -288,6 +288,7 @@ impl Default for Test253SceSynthInvokeFooPolicy {
 impl StatePolicy for Test253SceSynthInvokeFooPolicy {
     type State = Test253SceSynthInvokeFooState;
     type Event = Test253SceSynthInvokeFooEvent;
+    type Hal = sce_rust_runtime::StdHal;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;

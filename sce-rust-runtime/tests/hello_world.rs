@@ -48,6 +48,7 @@ impl HwPolicy {
 impl StatePolicy for HwPolicy {
     type State = HwState;
     type Event = HwEvent;
+    type Hal = sce_rust_runtime::StdHal;
 
     fn initial_state() -> Self::State {
         HwState::Stopped

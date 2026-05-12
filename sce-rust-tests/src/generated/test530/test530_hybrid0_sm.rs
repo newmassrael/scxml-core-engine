@@ -143,6 +143,7 @@ impl Default for Test530Hybrid0Policy {
 impl StatePolicy for Test530Hybrid0Policy {
     type State = Test530Hybrid0State;
     type Event = Test530Hybrid0Event;
+    type Hal = sce_rust_runtime::StdHal;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;

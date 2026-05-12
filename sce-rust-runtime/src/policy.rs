@@ -36,6 +36,7 @@ use std::fmt::Debug;
 use std::hash::Hash;
 
 use crate::event::EventWithMetadata;
+use crate::hal::Hal;
 use crate::Engine;
 
 /// The contract that generated state machine policies must satisfy.
@@ -63,6 +64,20 @@ pub trait StatePolicy: Sized + 'static {
 
     /// Event enum type generated per SCXML document (W3C SCXML 3.12).
     type Event: Copy + Eq + Hash + Debug + 'static;
+
+    /// HAL impl bound to this policy (watching-zenoh RFC §5.J.2 line 1984).
+    ///
+    /// Determines which [`Hal`] impl the [`Engine`] dispatches `ticks` /
+    /// `wake` / `irq-save` calls through. Generated code emits
+    /// `type Hal = sce_rust_runtime::StdHal;` per policy under the default
+    /// host backend; the future `sce-codegen generate -l rust --no-std` flag
+    /// (Atomic B-β) will emit a different HAL type for no_std consumers.
+    ///
+    /// No default is provided: stable Rust forbids default associated types
+    /// (`#![feature(associated_type_defaults)]` is nightly-only), and the
+    /// explicit per-policy emission keeps every generated state machine's
+    /// HAL target self-declaring rather than implicit.
+    type Hal: Hal;
 
     // ──────────────────────────────────────────────
     // Feature flags (C++ `static constexpr bool HAS_...`)

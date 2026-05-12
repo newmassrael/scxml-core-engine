@@ -149,6 +149,7 @@ impl Default for Test377Policy {
 impl StatePolicy for Test377Policy {
     type State = Test377State;
     type Event = Test377Event;
+    type Hal = sce_rust_runtime::StdHal;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;

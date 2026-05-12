@@ -270,6 +270,7 @@ impl Default for DonedataLocalInvokeChild0Policy {
 impl StatePolicy for DonedataLocalInvokeChild0Policy {
     type State = DonedataLocalInvokeChild0State;
     type Event = DonedataLocalInvokeChild0Event;
+    type Hal = sce_rust_runtime::StdHal;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;

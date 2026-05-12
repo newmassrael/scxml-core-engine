@@ -37,7 +37,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::event::{EventMetadata, EventType, EventWithMetadata};
-use crate::hal::{Hal, StdHal};
+use crate::hal::Hal;
 use crate::helpers::event_queue::EventQueueManager;
 use crate::helpers::{hierarchy, state_policy_concepts as concepts};
 use crate::http::{HttpSendRequest, HttpSendResponse};
@@ -143,18 +143,17 @@ impl<E: Clone> Default for PullScheduler<E> {
 /// Generic over a [`StatePolicy`] `P` that encodes the state machine structure
 /// at compile time. Matches C++ `StaticExecutionEngine<StatePolicy>`.
 ///
-/// ## HAL routing (watching-zenoh RFC §5.J.2, Atomic A foundation)
+/// ## HAL routing (watching-zenoh RFC §5.J.2)
 ///
 /// The std-touching surface (ticks / wake / irq-save) is reachable through
-/// the [`crate::hal::Hal`] trait. Atomic A wires two consumer methods on
-/// [`Engine`] — [`Self::hal_now_ticks_ms`] and [`Self::hal_wake`] — that
-/// forward to [`StdHal`] today. The full `Engine<P, H: Hal>` generic
-/// adoption (so a no_std consumer can pick a non-default HAL) lands in
-/// Atomic B alongside the codegen `--no-std` flag and `heapless::*`
-/// adoption — the StatePolicy trait's `engine: &mut Engine<Self>` methods
-/// need a coordinated change (either generic-over-H methods or an
-/// associated `type Hal: Hal;`) that pairs naturally with the generator
-/// template update.
+/// the [`crate::hal::Hal`] trait via the policy's [`StatePolicy::Hal`]
+/// associated type. Two consumer methods on [`Engine`]
+/// — [`Self::hal_now_ticks_ms`] and [`Self::hal_wake`] — forward to
+/// `<P::Hal>::*`. Generated code emits `type Hal = StdHal;` per policy by
+/// default, so existing call sites read the host monotonic clock and a
+/// no-op waker. A future codegen `-l rust --no-std` flag (Atomic B-β) can
+/// substitute a no_std HAL impl per emitted policy without changing the
+/// `Engine<P>` shape on the runtime side.
 pub struct Engine<P: StatePolicy> {
     /// Generated per-SM policy struct (datamodel, last-transition flags, etc.).
     pub(crate) policy: P,
@@ -211,25 +210,25 @@ impl<P: StatePolicy> Engine<P> {
     // HAL-routed queries (watching-zenoh RFC §5.J.2 line 1984)
     // ════════════════════════════════════════
 
-    /// Return [`StdHal`]-routed monotonic millisecond tick count.
+    /// Return the policy's [`Hal`]-routed monotonic millisecond tick count.
     ///
-    /// Atomic A wires this as the in-crate consumer of [`Hal::now_ticks_ms`]:
-    /// today it reads the host monotonic clock (`std::time::Instant` epoch
-    /// captured at first call) so existing schedulers keep working
-    /// unchanged. Atomic B will make this method generic over a `H: Hal`
-    /// type parameter on [`Engine`] so no_std consumers can substitute a
-    /// platform clock.
+    /// Forwards to `<P::Hal>::now_ticks_ms()`. The [`StatePolicy::Hal`]
+    /// associated type determines the dispatch target — generated code
+    /// today emits `type Hal = StdHal;` so `Engine<MyPolicy>` reads the
+    /// host monotonic clock. A future no_std codegen emission can substitute
+    /// a different HAL impl (Atomic B-β).
     pub fn hal_now_ticks_ms(&self) -> u64 {
-        StdHal::now_ticks_ms()
+        <P::Hal as Hal>::now_ticks_ms()
     }
 
-    /// Signal the HAL that the runtime has work to drain.
+    /// Signal the policy's HAL that the runtime has work to drain.
     ///
-    /// Forwards to [`StdHal::wake`] — a no-op on single-threaded std builds.
-    /// Atomic B generalizes this to consumer-provided HAL impls (where the
-    /// no_std target typically wires the executor's task waker).
+    /// Forwards to `<P::Hal>::wake()`. On `StdHal` (current generated-code
+    /// default) this is a no-op (single-threaded `!Sync` design — see
+    /// crate-level doc). No_std HAL impls typically wire this to the
+    /// consumer's executor waker (e.g. embassy `Signal::signal()`).
     pub fn hal_wake(&self) {
-        <StdHal as Hal>::wake();
+        <P::Hal as Hal>::wake();
     }
 
     // ════════════════════════════════════════

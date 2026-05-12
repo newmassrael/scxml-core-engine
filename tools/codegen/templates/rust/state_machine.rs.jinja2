@@ -313,6 +313,7 @@ impl Default for {{ machine_name }}Policy {
 impl StatePolicy for {{ machine_name }}Policy {
     type State = {{ machine_name }}State;
     type Event = {{ machine_name }}Event;
+    type Hal = sce_rust_runtime::StdHal;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = {{ 'true' if model.has_parallel_states else 'false' }};

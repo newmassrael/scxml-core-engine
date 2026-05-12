@@ -357,6 +357,7 @@ impl Default for Test403cPolicy {
 impl StatePolicy for Test403cPolicy {
     type State = Test403cState;
     type Event = Test403cEvent;
+    type Hal = sce_rust_runtime::StdHal;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = true;

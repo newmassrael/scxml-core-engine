@@ -146,6 +146,7 @@ impl Default for Test422Child2Policy {
 impl StatePolicy for Test422Child2Policy {
     type State = Test422Child2State;
     type Event = Test422Child2Event;
+    type Hal = sce_rust_runtime::StdHal;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;

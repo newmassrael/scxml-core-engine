@@ -294,6 +294,7 @@ impl Default for Test241SceSynthInvokeInvoke1Policy {
 impl StatePolicy for Test241SceSynthInvokeInvoke1Policy {
     type State = Test241SceSynthInvokeInvoke1State;
     type Event = Test241SceSynthInvokeInvoke1Event;
+    type Hal = sce_rust_runtime::StdHal;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;

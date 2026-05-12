@@ -143,6 +143,7 @@ impl Default for Test239sub1Policy {
 impl StatePolicy for Test239sub1Policy {
     type State = Test239sub1State;
     type Event = Test239sub1Event;
+    type Hal = sce_rust_runtime::StdHal;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;

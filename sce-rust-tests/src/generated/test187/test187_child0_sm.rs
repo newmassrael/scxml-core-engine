@@ -146,6 +146,7 @@ impl Default for Test187Child0Policy {
 impl StatePolicy for Test187Child0Policy {
     type State = Test187Child0State;
     type Event = Test187Child0Event;
+    type Hal = sce_rust_runtime::StdHal;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;

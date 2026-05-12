@@ -145,6 +145,7 @@ impl Default for Test301Policy {
 impl StatePolicy for Test301Policy {
     type State = Test301State;
     type Event = Test301Event;
+    type Hal = sce_rust_runtime::StdHal;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;
