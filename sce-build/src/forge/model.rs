@@ -2393,7 +2393,7 @@ pub struct LinkModel {
     /// belongs on the link kind, not on the deploy.yaml binding —
     /// rx_pool/tx_pool precedent). When a SCXML state declares
     /// `<sce:on-sample link="X">`, the η' validator looks up link X
-    /// in the [`super::link_registry::ForgeLinkRegistry`]; the link's
+    /// in the [`super::cross_doc_registry::SceCrossDocRegistry`]; the link's
     /// `stage_pool` field decides whether `take()` is wired (resolves
     /// to a buffer-pool kind whose slots back the owned-copy
     /// destination) or whether `take()` will panic at runtime
@@ -2577,7 +2577,7 @@ pub struct WorkerModel {
     pub name: String,
     /// `<sce:link-rx ref="...">` — required driver source. Spec line
     /// 893 phrasing "drives this worker" → required. Empty-ref parse
-    /// rejects; cross-ref resolution against `ForgeLinkRegistry`
+    /// rejects; cross-ref resolution against `SceCrossDocRegistry`
     /// defers to C2-β.
     pub link_rx: String,
     /// `<sce:inbox depth="N"/>` — required typed event queue.

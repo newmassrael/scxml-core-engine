@@ -1141,7 +1141,7 @@
     destination, co-located with `<sce:rx-pool>` / `<sce:tx-pool>` on
     the link kind. SCXML on-sample validators
     (`validate_on_sample_link_references`) consult the build's
-    `ForgeLinkRegistry` to decide whether `pool/sample-take-without-
+    `SceCrossDocRegistry` to decide whether `pool/sample-take-without-
     stage-pool` fires for a state's `<sce:on-sample link="X">`.
   -->
   <xs:element name="stage-pool">

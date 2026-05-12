@@ -410,7 +410,7 @@ pub enum DiagnosticCode {
     // Author-facing rules for `<sce:on-sample>` SCE extension. Atomic A
     // ships the structural diagnostics (placement, uniqueness,
     // event-name-conflict); cross-ref diagnostics (link-not-declared,
-    // link-wrong-kind) are gated on Atomic B's ForgeLinkRegistry.
+    // link-wrong-kind) are gated on Atomic B's SceCrossDocRegistry.
     #[serde(rename = "scxml/on-sample-invalid-parent")]
     ScxmlOnSampleInvalidParent,
     #[serde(rename = "scxml/on-sample-link-duplicate-in-state")]
@@ -419,10 +419,10 @@ pub enum DiagnosticCode {
     ScxmlOnSampleEventNameConflict,
     // ── watching-zenoh RFC §5.E B7-η' Atomic B cross-ref family ──
     // Cross-reference resolution surface for `<sce:on-sample link="X">`
-    // against the build's `ForgeLinkRegistry`. Atomic A landed the
+    // against the build's `SceCrossDocRegistry`. Atomic A landed the
     // structural codes above; Atomic B opens the cross-ref pair.
     // `link-wrong-kind` is wired forward-compat — today
-    // `ForgeLinkKind` has the `Link` variant only, so the validator's
+    // `ScxmlDocKind` has the `Link` variant only, so the validator's
     // match never reaches the `Some(non-Link)` arm in production.
     #[serde(rename = "scxml/on-sample-link-not-declared")]
     ScxmlOnSampleLinkNotDeclared,
@@ -4569,7 +4569,7 @@ mod tests {
                 // `wrong-kind` — forward-compat per stage_pool precedent.
                 // Wired through full sync; unreachable in production
                 // until a future cross-registry generalization grows
-                // `ForgeLinkKind` with non-Link variants.
+                // `ScxmlDocKind` with non-Link variants.
                 "forge/scxml-on-sample-link-wrong-kind",
                 ValidationError::OnSampleLinkWrongKind {
                     state_id: "running".into(),
@@ -7350,9 +7350,9 @@ mod tests {
              (`scxml/on-sample-link-not-declared`, \
              `scxml/on-sample-link-wrong-kind`) closing the η' codegen \
              prereq chain. Both ride `Fix::ReplaceOneOf` over the \
-             `ForgeLinkRegistry`-declared link-name candidate set; \
+             `SceCrossDocRegistry`-declared link-name candidate set; \
              `wrong-kind` is wired forward-compat per the stage_pool \
-             `wrong-kind` precedent — the single-variant `ForgeLinkKind` \
+             `wrong-kind` precedent — the single-variant `ScxmlDocKind` \
              registry today only stores Link kinds, so the validator's \
              match never reaches the `Some(non-Link)` arm in \
              production until a future cross-registry generalization; \

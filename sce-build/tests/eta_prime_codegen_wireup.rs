@@ -20,11 +20,15 @@ use tempfile::tempdir;
 
 /// Minimal SCXML with one `<sce:on-sample>` block. Cross-ref
 /// validation (`validate_on_sample_link_references`) is gated on
-/// the build's `ForgeLinkRegistry`, which `compile_scxml_lang`
+/// the build's `SceCrossDocRegistry`, which `compile_scxml_lang`
 /// does not assemble — so this fixture compiles without a forge
 /// document declaring `scout_link`. Structural validators in
 /// `parser::parse_file` still run (placement / uniqueness /
-/// event-name / callback-path); the fixture passes them.
+/// event-name / callback-path); the fixture passes them. The
+/// orchestrator-aware entry point `compile_scxml_with_imports`
+/// (C2 outbox follow-up Atomic A) DOES build the registry and
+/// run cross-ref validation; consumers that need that surface
+/// switch to that entry point.
 const FIXTURE: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"

@@ -1256,6 +1256,208 @@ pub fn compile_forge_with_imports(
     Ok(output)
 }
 
+/// Multi-doc compile entry point — watching-zenoh RFC §5.D C2 outbox
+/// follow-up Atomic A (Q-Outbox-1 (a) lock 2026-05-12).
+///
+/// Walks every input doc (SCXML statechart + forge artifact files),
+/// parses each, builds the build-wide [`forge::cross_doc_registry::
+/// SceCrossDocRegistry`] (statechart + worker + link names) plus the
+/// [`forge::pool_registry::ForgePoolRegistry`] (buffer-pool names),
+/// then runs cross-document validators against the shared registries
+/// before emitting code per-doc.
+///
+/// Distinguishing value vs the single-file entry points
+/// ([`compile_scxml_lang_typed`], [`compile_forge_with_imports`]): the
+/// orchestrator is the *only* production path that wires
+/// [`parser::validate_on_sample_link_references`] into the build.
+/// Before this entry point existed, the on-sample validator was
+/// reachable only from tests — `<sce:on-sample link="undeclared">`
+/// references silently passed every single-file build path (a
+/// [`feedback_silently_broken_hooks`](../../.claude/projects/-home-coin-scxml-core-engine/memory/feedback_silently_broken_hooks.md)
+/// instance closed by Atomic A's wire-up).
+///
+/// Output shape: `Vec<(filename_basename, GeneratedOutput)>`. The
+/// basename includes the source file extension so callers know which
+/// emit path produced each artifact (forge sidecars travel together
+/// in their `GeneratedOutput::files` vector; statechart sidecars
+/// similarly).
+///
+/// Empty file lists (both slices empty) are legal and return an empty
+/// output vector with no error — `compile_scxml_with_imports(&[], &[],
+/// …)` is the no-op case the orchestrator must not crash on.
+pub fn compile_scxml_with_imports(
+    scxml_files: &[&Path],
+    forge_files: &[&Path],
+    template_dir: &Path,
+    language: generator::Language,
+    options: &ForgeCompileOptions,
+) -> Result<Vec<(String, generator::GeneratedOutput)>, CompileError> {
+    use forge::cross_doc_registry::SceCrossDocRegistry;
+    use forge::error::{Located, ValidationError};
+    use forge::pool_registry::ForgePoolRegistry;
+
+    // Pass 1: parse forge docs, populate cross-doc + pool registries.
+    let mut cross_doc = SceCrossDocRegistry::new();
+    let mut pool_reg = ForgePoolRegistry::new();
+
+    for forge_path in forge_files {
+        let path_str = forge_path.to_str().unwrap_or("");
+        let content = std::fs::read_to_string(forge_path).map_err(|e| {
+            Located::new(
+                forge::error::GenerateError::InvalidConfig(format!(
+                    "compile_scxml_with_imports: cannot read {path_str}: {e}"
+                ))
+                .into(),
+                path_str,
+                None,
+                None,
+            )
+        })?;
+        let stem = forge_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("forge");
+        let basename = forge_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(path_str);
+        let label = DocumentLabel {
+            identifier: stem,
+            diagnostic_label: basename,
+        };
+        let parsed = forge::parser::parse_forge_with_imports(&content, label)?
+            .ok_or_else(|| {
+                Located::new(
+                    ValidationError::WrongPipeline {
+                        kind: forge::model::ForgeKind::Statechart,
+                    }
+                    .into(),
+                    basename,
+                    None,
+                    None,
+                )
+            })?;
+        let doc_name = parsed.document.name().to_string();
+        cross_doc.record_document(&parsed.document).map_err(|existing| {
+            Located::new(
+                forge::error::GenerateError::InvalidConfig(format!(
+                    "compile_scxml_with_imports: doc name '{doc_name}' already registered as kind '{existing_kind}'",
+                    existing_kind = existing.as_str()
+                ))
+                .into(),
+                basename,
+                None,
+                None,
+            )
+        })?;
+        pool_reg.record_document(&parsed.document).map_err(|existing| {
+            Located::new(
+                forge::error::GenerateError::InvalidConfig(format!(
+                    "compile_scxml_with_imports: pool registry rejected '{doc_name}' (existing kind '{existing:?}')"
+                ))
+                .into(),
+                basename,
+                None,
+                None,
+            )
+        })?;
+    }
+
+    // Pass 2: parse SCXML docs, register statechart names, run cross-ref
+    // validators against the shared registries. The on-sample wire-up
+    // here is the production-side closure for the pre-Atomic-A silently
+    // broken hook (`feedback_silently_broken_hooks.md`).
+    let mut scxml_models: Vec<(std::path::PathBuf, SCXMLModel)> = Vec::new();
+    for scxml_path in scxml_files {
+        let path_str = scxml_path.to_str().unwrap_or("");
+        let model = compile_model(path_str)?;
+        let basename = scxml_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(path_str);
+        if !model.name.is_empty() {
+            // SCXML without a `name` attribute is legal at the parser
+            // tier; skip registration so outbox refs of the form
+            // `<owner>.inbox` resolve only against named docs. The
+            // skipped doc still proceeds through cross-ref validation
+            // (it cannot be a recipient, but it can be a sender).
+            cross_doc
+                .record_statechart(model.name.clone())
+                .map_err(|existing| {
+                    Located::new(
+                        forge::error::GenerateError::InvalidConfig(format!(
+                            "compile_scxml_with_imports: statechart '{name}' collides with previously-registered kind '{existing_kind}'",
+                            name = model.name,
+                            existing_kind = existing.as_str()
+                        ))
+                        .into(),
+                        basename,
+                        None,
+                        None,
+                    )
+                })?;
+        }
+        scxml_models.push(((*scxml_path).to_path_buf(), model));
+    }
+    for (path, model) in &scxml_models {
+        let basename = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+        parser::validate_on_sample_link_references(model, &cross_doc, &pool_reg, basename)?;
+    }
+
+    // Pass 3: codegen. Forge docs route through `compile_forge_with_imports`
+    // (which re-parses + runs forge-internal cross-resolution + emits);
+    // SCXML docs route through `compile_scxml_lang_typed` (which re-parses
+    // + emits). The orchestrator's unique contribution is the registry +
+    // validator pass above — codegen itself remains the existing pipeline
+    // so single-file callers and the orchestrator share emit paths.
+    let mut outputs: Vec<(String, generator::GeneratedOutput)> = Vec::new();
+
+    for forge_path in forge_files {
+        let path_str = forge_path.to_str().unwrap_or("");
+        let content = std::fs::read_to_string(forge_path).map_err(|e| {
+            Located::new(
+                forge::error::GenerateError::InvalidConfig(format!(
+                    "compile_scxml_with_imports: cannot read {path_str}: {e}"
+                ))
+                .into(),
+                path_str,
+                None,
+                None,
+            )
+        })?;
+        let stem = forge_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("forge");
+        let basename = forge_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(path_str);
+        let label = DocumentLabel {
+            identifier: stem,
+            diagnostic_label: basename,
+        };
+        let base_dir = forge_path.parent().unwrap_or_else(|| Path::new("."));
+        let out = compile_forge_with_imports(&content, label, language, base_dir, options)?;
+        outputs.push((basename.to_string(), out));
+    }
+
+    for scxml_path in scxml_files {
+        let path_str = scxml_path.to_str().unwrap_or("");
+        let basename = scxml_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(path_str);
+        let out = compile_scxml_lang_typed(path_str, template_dir, language)?;
+        outputs.push((basename.to_string(), out));
+    }
+
+    Ok(outputs)
+}
+
 /// Wire-format name for a [`generator::Language`] — mirrors
 /// [`forge::codegen_matrix::language_wire_name`] but accessible from
 /// `lib.rs` without crossing the matrix module boundary. Kept private;
@@ -1738,21 +1940,17 @@ fn validate_worker_cross_refs(
 
     // ── outbox ref cross-resolution deferred ──
     //
-    // Gate B preflight (2026-05-11) surfaced that `parse_imports`
-    // rejects `kind="statechart"` imports as a long-standing forge
-    // invariant (parser.rs lines 6743-6751). The η-precedent's
-    // parsed.imports-direct check cannot resolve a worker's outbox
-    // owner-prefix against statechart docs without a deeper
-    // architectural change — the SCXML-side build tier is where
-    // statechart discovery is first-class today (`ForgeLinkRegistry`
-    // pattern). C2-β leaves the `worker/outbox-ref-unknown`
-    // diagnostic out of scope; a follow-up atomic places the
-    // outbox-side cross-resolution validator on the SCXML-side tier
-    // alongside `validate_on_sample_link_references` (already wires
-    // `ForgeLinkRegistry`). The format of outbox ref values is
-    // parser-checked at parse time (presence + non-empty string);
-    // semantic resolution against build-known statecharts arrives
-    // with the follow-up atomic.
+    // The cross-doc registry foundation that resolves outbox refs
+    // landed in C2-outbox Atomic A (`compile_scxml_with_imports` +
+    // `SceCrossDocRegistry` recording statechart + worker names
+    // alongside link kinds). Atomic B (the next atomic in this
+    // chain) wires the outbox validator on top of that foundation
+    // with the 3 spec-extension codes (`worker/outbox-ref-unknown`,
+    // `worker/outbox-target-wrong-kind`, `worker/outbox-target-
+    // suffix-invalid` per Q-Outbox-8 (c) lock 2026-05-12). Until
+    // Atomic B lands, parser-side validation accepts any non-empty
+    // outbox ref; cross-doc semantic resolution rides the Atomic A
+    // orchestrator's registry consumer slot.
 
     Ok(())
 }

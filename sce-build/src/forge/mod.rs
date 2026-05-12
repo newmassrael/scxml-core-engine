@@ -15,7 +15,7 @@ pub mod extern_emit;
 pub mod extern_validator;
 pub mod intrinsic_registry;
 pub mod limits;
-pub mod link_registry;
+pub mod cross_doc_registry;
 pub mod model;
 pub mod parser;
 pub mod pool_registry;

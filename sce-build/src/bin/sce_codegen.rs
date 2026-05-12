@@ -358,6 +358,29 @@ enum Commands {
         #[arg(long)]
         const_fold_budget: Option<u64>,
     },
+    /// Multi-doc generate with cross-doc registry — wires
+    /// `validate_on_sample_link_references` into production
+    /// (watching-zenoh RFC §5.D C2 outbox follow-up Atomic A).
+    /// Use this when the build has multiple SCXML/forge docs that
+    /// reference each other across files (`<sce:on-sample link>`,
+    /// future `<sce:outbox ref>`); single-file `Generate` does not
+    /// build the cross-doc registry and silently skips cross-ref
+    /// validation. Both lists may be empty (no-op).
+    Orchestrate {
+        /// Input SCXML file path (repeat for multiple files).
+        #[arg(long = "scxml")]
+        scxml: Vec<String>,
+        /// Input forge file path (repeat for multiple files).
+        #[arg(long = "forge")]
+        forge: Vec<String>,
+        /// Target language (rust, cpp, kotlin, go, c11).
+        #[arg(short, long)]
+        language: String,
+        /// Output directory (one entry per input doc; sidecars travel
+        /// with their primary in `GeneratedOutput::files`).
+        #[arg(short, long)]
+        output_dir: String,
+    },
     /// Batch generate W3C test state machines and test classes
     GenerateW3c {
         /// Target language (rust, cpp, kotlin, go, c11). C11 is RFC §5.J.1 foundation only — emitter lands in M2+.
@@ -510,6 +533,12 @@ fn main() {
             const_fold_budget,
             error_format,
         ),
+        Commands::Orchestrate {
+            scxml,
+            forge,
+            language,
+            output_dir,
+        } => cmd_orchestrate(&scxml, &forge, &language, &output_dir, error_format),
         Commands::GenerateW3c {
             language,
             registry,
@@ -551,6 +580,83 @@ fn main() {
             resource_dir.as_deref(),
         ),
         Commands::Expand { scxml } => cmd_expand(&scxml),
+    }
+}
+
+// ── Subcommand: orchestrate ─────────────────────────────────────
+//
+// watching-zenoh RFC §5.D C2 outbox follow-up Atomic A entry point —
+// the production-side consumer that closes the pre-Atomic-A silent
+// hole on `validate_on_sample_link_references`. Authors that hold
+// multi-doc builds (cross-file `<sce:on-sample link>` references, or
+// the future `<sce:outbox ref>` axis landing in Atomic B) switch to
+// this subcommand to gain cross-doc registry construction + cross-ref
+// validation that the single-file `Generate` cannot provide.
+
+fn cmd_orchestrate(
+    scxml_paths: &[String],
+    forge_paths: &[String],
+    language: &str,
+    output_dir: &str,
+    error_format: ErrorFormat,
+) {
+    let lang: Language = language.parse().unwrap_or_else(|_| {
+        error_format
+            .emit_and_exit(&CliError::UnknownLanguage { lang: language.to_string() }, "")
+    });
+
+    let scxml_path_bufs: Vec<std::path::PathBuf> =
+        scxml_paths.iter().map(std::path::PathBuf::from).collect();
+    let forge_path_bufs: Vec<std::path::PathBuf> =
+        forge_paths.iter().map(std::path::PathBuf::from).collect();
+    let scxml_refs: Vec<&Path> = scxml_path_bufs.iter().map(|p| p.as_path()).collect();
+    let forge_refs: Vec<&Path> = forge_path_bufs.iter().map(|p| p.as_path()).collect();
+
+    // Default options match `Generate`'s sentinel defaults. Future
+    // CLI flags can grow the surface (deploy.yaml, format-style,
+    // const_fold_budget) when consumer demand arrives; the minimal
+    // shape today keeps the Atomic A wire footprint bounded.
+    let options = sce_build::ForgeCompileOptions {
+        go_module_prefix: None,
+        const_fold_budget: None,
+        cache_platform: None,
+        worker_placement: None,
+    };
+
+    let template_dir = sce_build::find_template_dir_for(lang);
+
+    let outputs = match sce_build::compile_scxml_with_imports(
+        &scxml_refs,
+        &forge_refs,
+        &template_dir,
+        lang,
+        &options,
+    ) {
+        Ok(o) => o,
+        Err(e) => error_format.emit_forge_and_exit(&e),
+    };
+
+    let out_root = Path::new(output_dir);
+    if !out_root.exists() {
+        if let Err(e) = fs::create_dir_all(out_root) {
+            error_format.emit_and_exit(
+                &CliError::WriteOutput { path: output_dir.to_string(), source: e },
+                "",
+            );
+        }
+    }
+
+    for (basename, generated) in &outputs {
+        for (file_name, code) in &generated.files {
+            let path = out_root.join(file_name);
+            fs::write(&path, code).unwrap_or_else(|e| {
+                error_format.emit_and_exit(
+                    &CliError::WriteOutput { path: path.display().to_string(), source: e },
+                    "",
+                )
+            });
+        }
+        let _ = basename; // basename is the input-doc label; outputs already self-name.
     }
 }
 

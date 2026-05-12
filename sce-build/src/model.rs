@@ -610,7 +610,7 @@ impl std::ops::DerefMut for HybridInvokeInfo {
 pub struct OnSampleNode {
     /// `link="X"` — forge link kind artifact name. Cross-reference
     /// resolution against the build's [`crate::forge::pool_registry`]-style
-    /// `ForgeLinkRegistry` is the Atomic B follow-on; structural
+    /// `SceCrossDocRegistry` is the Atomic B follow-on; structural
     /// validators in this atomic do not consult the registry.
     pub link: String,
     /// `event="X"` — SCXML event name raised when a Sample arrives.

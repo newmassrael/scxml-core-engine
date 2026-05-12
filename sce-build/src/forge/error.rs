@@ -976,7 +976,7 @@ pub enum ValidationError {
     /// a `<sce:on-sample link="X">` reference points at a name that
     /// no `.forge` file in the build declares as a link kind. The
     /// `Fix::ReplaceOneOf` candidate list is sourced from the
-    /// build's `ForgeLinkRegistry` (sorted) so authors see legal
+    /// build's `SceCrossDocRegistry` (sorted) so authors see legal
     /// alternatives without scraping the message body. An empty
     /// `candidates` list means no link kind is declared anywhere in
     /// the build — likely a missing `.forge` file rather than a
@@ -1005,12 +1005,12 @@ pub enum ValidationError {
     /// actual link kind names.
     ///
     /// Production reachability: forward-compat. The single-variant
-    /// `ForgeLinkKind` registry today only stores Link kinds, so
+    /// `ScxmlDocKind` registry today only stores Link kinds, so
     /// the validator's match never reaches the `Some(non-Link)`
     /// arm. Wired through the full 11-place sync (enum,
     /// `ALL_DIAGNOSTIC_CODES`, schema, acceptance, golden, payload)
     /// so a future cross-registry generalization (or new
-    /// `ForgeLinkKind` variant) can fire it without re-plumbing.
+    /// `ScxmlDocKind` variant) can fire it without re-plumbing.
     #[error("state '{state_id}': <sce:on-sample link=\"{link}\"> resolves to a forge '{actual_kind}' kind, not 'link'. Only link kind documents back the on-sample subscriber contract. Repoint the reference at one of the build's link kind names. See watching-zenoh RFC §5.E.")]
     OnSampleLinkWrongKind {
         /// State id whose `<sce:on-sample>` carries the
