@@ -224,7 +224,7 @@ fn warn_policy_fires_expected_fragmentation_rate_high() {
     let cfg = parse_deploy_str(&yaml).expect("warn parses");
     let (links, pools) = fixture_link_and_pool();
     let (link_view, pool_view) = views(&links, &pools);
-    let err = validate_reassembly_cross_doc(&cfg, &link_view, &pool_view)
+    let err = validate_reassembly_cross_doc(&cfg, &link_view, &pool_view, &std::collections::BTreeSet::new())
         .expect_err("rate > 25 fires");
     match err {
         ValidationError::ReassemblyExpectedFragmentationRateHigh { rate_percent, .. } => {
@@ -249,7 +249,7 @@ fn warn_policy_opt_out_suppresses_warning() {
         default_pool("rx_data_pool", 16, 700),
     );
     let (link_view, pool_view) = views(&links, &pools);
-    validate_reassembly_cross_doc(&cfg, &link_view, &pool_view)
+    validate_reassembly_cross_doc(&cfg, &link_view, &pool_view, &std::collections::BTreeSet::new())
         .expect("opt-out under warn ⇒ silent-skip");
 }
 
@@ -261,7 +261,7 @@ fn error_policy_promotes_to_pool_stage_copy_policy_error() {
     let cfg = parse_deploy_str(&yaml).expect("error parses");
     let (links, pools) = fixture_link_and_pool();
     let (link_view, pool_view) = views(&links, &pools);
-    let err = validate_reassembly_cross_doc(&cfg, &link_view, &pool_view)
+    let err = validate_reassembly_cross_doc(&cfg, &link_view, &pool_view, &std::collections::BTreeSet::new())
         .expect_err("rate > 25 + error policy fires");
     match err {
         ValidationError::PoolStageCopyPolicyError {
@@ -289,7 +289,7 @@ fn error_policy_opt_out_suppresses_promotion() {
         default_pool("rx_data_pool", 16, 700),
     );
     let (link_view, pool_view) = views(&links, &pools);
-    validate_reassembly_cross_doc(&cfg, &link_view, &pool_view)
+    validate_reassembly_cross_doc(&cfg, &link_view, &pool_view, &std::collections::BTreeSet::new())
         .expect("opt-out under error ⇒ silent-skip per spec line 2358-2361");
 }
 
@@ -301,7 +301,7 @@ fn forbid_policy_promotes_to_pool_stage_copy_policy_error_without_opt_out() {
     let cfg = parse_deploy_str(&yaml).expect("forbid parses");
     let (links, pools) = fixture_link_and_pool();
     let (link_view, pool_view) = views(&links, &pools);
-    let err = validate_reassembly_cross_doc(&cfg, &link_view, &pool_view)
+    let err = validate_reassembly_cross_doc(&cfg, &link_view, &pool_view, &std::collections::BTreeSet::new())
         .expect_err("rate > 25 + forbid policy + no opt-out fires");
     match err {
         ValidationError::PoolStageCopyPolicyError { policy, .. } => {
@@ -326,7 +326,7 @@ fn forbid_policy_with_opt_out_rejects_outright() {
         default_pool("rx_data_pool", 16, 700),
     );
     let (link_view, pool_view) = views(&links, &pools);
-    let err = validate_reassembly_cross_doc(&cfg, &link_view, &pool_view)
+    let err = validate_reassembly_cross_doc(&cfg, &link_view, &pool_view, &std::collections::BTreeSet::new())
         .expect_err("forbid rejects opt-out outright");
     match err {
         ValidationError::PoolStageCopyAcceptRejectedUnderForbid { machine, link_name } => {
@@ -354,7 +354,7 @@ fn warn_policy_with_opt_out_does_not_reject() {
         default_pool("rx_data_pool", 16, 700),
     );
     let (link_view, pool_view) = views(&links, &pools);
-    validate_reassembly_cross_doc(&cfg, &link_view, &pool_view)
+    validate_reassembly_cross_doc(&cfg, &link_view, &pool_view, &std::collections::BTreeSet::new())
         .expect("warn + opt-out ⇒ silent-skip (no rejection)");
 }
 
@@ -375,7 +375,7 @@ fn error_policy_with_opt_out_does_not_reject() {
         default_pool("rx_data_pool", 16, 700),
     );
     let (link_view, pool_view) = views(&links, &pools);
-    validate_reassembly_cross_doc(&cfg, &link_view, &pool_view)
+    validate_reassembly_cross_doc(&cfg, &link_view, &pool_view, &std::collections::BTreeSet::new())
         .expect("error + opt-out ⇒ silent-skip (no rejection)");
 }
 

@@ -9246,8 +9246,10 @@ pub fn generate_rust_with_imports_and_externs(
         ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::Rust, options)?,
         // RFC §5.C: byte-stream link emit. The template wires the
         // §5.B framer into RX/TX paths and routes the result through
-        // the `Link` trait owned by `sce-link-runtime`.
-        ForgeDocument::Link(m) => render_link_rust(&env, m, imports)?,
+        // the `Link` trait owned by `sce-link-runtime`. C10-α threads
+        // the orchestrator-resolved listener-pair flag so the Sibling
+        // EstablishedSession half emits when this link is a listener.
+        ForgeDocument::Link(m) => render_link_rust(&env, m, imports, options)?,
         // RFC §5.E: DMA-aligned slot table emit. B7-α ships the
         // minimum slot table on `(rust, std)` — fixed-size array of
         // `[u8; SLOT_SIZE]`, bitmap freelist, acquire/return surface.
@@ -9318,12 +9320,22 @@ fn render_link_rust(
     env: &minijinja::Environment<'_>,
     m: &LinkModel,
     _imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
     let tmpl = env
         .get_template("link.rs.jinja2")
         .map_err(|e| ForgeError::Generate(GenerateError::TemplateLoad(format!(
             "link.rs.jinja2 (rust): {e}"
         ))))?;
+    // C10-α: orchestrator-resolved listener-pair flag. `None` (deploy-
+    // unaware paths) collapses to `false` — silent-skip per Q-η5 (a):
+    // no deploy ⇒ no listener-pair synthesis. The set-membership lookup
+    // matches the rendered link's name exactly (no aliasing).
+    let is_listener_with_sibling = options
+        .listener_links
+        .as_ref()
+        .map(|s| s.contains(&m.name))
+        .unwrap_or(false);
     let ctx = minijinja::context! {
         name => &m.name,
         pascal_name => filters::to_pascal_case(m.name.clone()),
@@ -9348,12 +9360,44 @@ fn render_link_rust(
         has_rx_pool => m.rx_pool.is_some(),
         has_tx_pool => m.tx_pool.is_some(),
         has_stage_pool => m.stage_pool.is_some(),
+        is_listener_with_sibling => is_listener_with_sibling,
     };
-    tmpl.render(ctx).map_err(|e| {
+    let rendered = tmpl.render(ctx).map_err(|e| {
         ForgeError::Generate(GenerateError::TemplateRender(format!(
             "link.rs.jinja2 (rust): {e}"
         )))
-    })
+    })?;
+    if is_listener_with_sibling {
+        check_listener_sibling_emitted_rust(&m.name, &rendered)?;
+    }
+    Ok(rendered)
+}
+
+/// C10-α codegen self-check for the §5.C listener-pair Sibling
+/// emission invariant on the Rust backend (RFC §5.C lines 849-856).
+/// The Rust template emits `pub struct {pascal}EstablishedSession<L: Link>`
+/// inside the `{% if is_listener_with_sibling %}` block. If the
+/// rendered output is missing that exact suffix, fire
+/// `link/listener-link-not-paired-with-established-sibling`.
+///
+/// Mirrors [`check_reassembly_peer_id_zid_invariant_rust`] (C9-γ
+/// precedent at generator.rs:9455-9472).
+fn check_listener_sibling_emitted_rust(
+    link_name: &str,
+    rendered: &str,
+) -> Result<(), ForgeError> {
+    let pascal_name = filters::to_pascal_case(link_name.to_string());
+    let needle = format!("pub struct {}EstablishedSession", pascal_name);
+    if rendered.contains(&needle) {
+        Ok(())
+    } else {
+        Err(ForgeError::Validation(
+            crate::forge::error::ValidationError::LinkListenerLinkNotPairedWithEstablishedSibling {
+                link_name: link_name.to_string(),
+                language: "rust".to_string(),
+            },
+        ))
+    }
 }
 
 /// Render a `<sce:kind="buffer-pool">` document for the Rust backend
@@ -10067,6 +10111,7 @@ fn render_link_c(
     env: &minijinja::Environment<'_>,
     m: &LinkModel,
     _imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
     let tmpl = env
         .get_template("link.h.jinja2")
@@ -10076,9 +10121,16 @@ fn render_link_c(
     let snake_name = filters::to_snake_case(m.name.clone());
     let upper_name = to_upper_snake(&m.name);
     let guard = format!("SCE_FORGE_{}_H", &upper_name);
+    // C10-α: orchestrator-resolved listener-pair flag. Same shape as
+    // the Rust backend; `None` collapses to `false`.
+    let is_listener_with_sibling = options
+        .listener_links
+        .as_ref()
+        .map(|s| s.contains(&m.name))
+        .unwrap_or(false);
     let ctx = minijinja::context! {
         name => &m.name,
-        snake_name => snake_name,
+        snake_name => snake_name.clone(),
         upper_name => upper_name,
         guard => guard,
         class => m.class.to_string(),
@@ -10096,12 +10148,44 @@ fn render_link_c(
         }).collect::<Vec<_>>(),
         stage_pool => m.stage_pool.clone().unwrap_or_default(),
         has_stage_pool => m.stage_pool.is_some(),
+        is_listener_with_sibling => is_listener_with_sibling,
     };
-    tmpl.render(ctx).map_err(|e| {
+    let rendered = tmpl.render(ctx).map_err(|e| {
         ForgeError::Generate(GenerateError::TemplateRender(format!(
             "link.h.jinja2 (c11): {e}"
         )))
-    })
+    })?;
+    if is_listener_with_sibling {
+        check_listener_sibling_emitted_c(&m.name, &snake_name, &rendered)?;
+    }
+    Ok(rendered)
+}
+
+/// C10-α codegen self-check for the §5.C listener-pair Sibling
+/// emission invariant on the C11 backend (RFC §5.C lines 849-856).
+/// The C11 template emits `} {snake_name}_established_session_t;`
+/// inside the `{% if is_listener_with_sibling %}` block. If the
+/// rendered output is missing that exact typedef suffix, fire
+/// `link/listener-link-not-paired-with-established-sibling`.
+///
+/// Mirrors [`check_reassembly_peer_id_zid_invariant_c11`] (C9-γ
+/// precedent at generator.rs:10262-10284).
+fn check_listener_sibling_emitted_c(
+    link_name: &str,
+    snake_name: &str,
+    rendered: &str,
+) -> Result<(), ForgeError> {
+    let needle = format!("{}_established_session_t", snake_name);
+    if rendered.contains(&needle) {
+        Ok(())
+    } else {
+        Err(ForgeError::Validation(
+            crate::forge::error::ValidationError::LinkListenerLinkNotPairedWithEstablishedSibling {
+                link_name: link_name.to_string(),
+                language: "c11".to_string(),
+            },
+        ))
+    }
 }
 
 /// Render the `.h` header for a `<sce:kind="worker">` document on the
@@ -10633,8 +10717,10 @@ pub fn generate_c11_with_imports_and_externs(
         // RFC §5.C: byte-stream link emit. The template wires the
         // §5.B framer into RX/TX paths through the canonical Linux-
         // kernel separate-vtable shape declared in
-        // `sce-forge-runtime/c/include/sce/forge/link.h`.
-        ForgeDocument::Link(m) => render_link_c(&env, m, imports)?,
+        // `sce-forge-runtime/c/include/sce/forge/link.h`. C10-α
+        // threads the orchestrator-resolved listener-pair flag for
+        // Sibling EstablishedSession emission.
+        ForgeDocument::Link(m) => render_link_c(&env, m, imports, options)?,
         // RFC §5.E B7-β: c11 parity for the rust slot table landed
         // in B7-α. Emits a `__attribute__((section, aligned))` storage
         // table + occupancy bitmap + acquire/release surface; the

@@ -1818,6 +1818,78 @@ pub enum ValidationError {
         language: String,
     },
 
+    /// watching-zenoh RFC §5.C lines 849-856 verbatim
+    /// (`link/listener-link-not-paired-with-established-sibling`) —
+    /// codegen self-check that every `session_arming` listener
+    /// instance has emitted its `established_session` sibling per the
+    /// "Listener-link sibling emission" contract above (RFC §5.C
+    /// lines 799-833). Hard error. Template regression guard,
+    /// unreachable in well-formed codegen; it exists to ensure the
+    /// listener emission template cannot silently regress to single-
+    /// instance shape (which would re-introduce the OQ-W22
+    /// contradiction).
+    ///
+    /// C10-α wires this on a post-render substring check inside
+    /// [`super::generator::render_link_rust`] +
+    /// [`super::generator::render_link_c`] when
+    /// [`crate::ForgeCompileOptions::listener_links`] contains the
+    /// rendered link's name: the emitted output must carry the
+    /// durable Sibling type-name suffix (`EstablishedSession` for
+    /// Rust, `_established_session_t` for C11). In normal use the
+    /// template always emits both halves under the orchestrator
+    /// flag; the diagnostic exists to catch a future template edit
+    /// that drops the Sibling block — mirrors the
+    /// `BufferPoolInterPoolPaddingNotEmitted` /
+    /// `ReassemblyPeerIdNotZidOnEstablishedSession` self-check shape
+    /// per generator.rs:10225.
+    #[error(
+        "link '{link_name}' ({language} backend): listener-link sibling emission missing the `established_session` half. \
+         watching-zenoh RFC §5.C lines 849-856 — codegen invariant violation: every `session_arming` listener must emit its paired `established_session` sibling so per-peer dispatch retains a stable codegen-time identity (re-introduces OQ-W22 if dropped). \
+         In well-formed templates the diagnostic never fires (the per-language link template emits both halves unconditionally when `listener_links` contains this name); report at https://github.com/newmassrael/scxml-core-engine/issues"
+    )]
+    LinkListenerLinkNotPairedWithEstablishedSibling {
+        link_name: String,
+        language: String,
+    },
+
+    /// watching-zenoh RFC §5.M lines 2982-2994 verbatim
+    /// (`reassembly/binding-on-unpaired-listener`) — a reassembly-
+    /// pool binding has resolved to a `session_arming` link instance
+    /// whose paired `established_session` sibling does not exist.
+    /// Hard error. In well-formed codegen this is unreachable (the
+    /// listener-link sibling emission contract in §5.C guarantees
+    /// pairing); the diagnostic guards SCXML that explicitly targets
+    /// the `session_arming` half (bypassing the auto-resolution) and
+    /// any future schema evolution that introduces non-listener
+    /// `session_arming` instances. Distinct from
+    /// `reassembly/untrusted-link-binding` (which post-C10 fires
+    /// only on Untrusted bindings) and from
+    /// `link/listener-link-not-paired-with-established-sibling`
+    /// (which is the §5.C-side codegen self-check).
+    ///
+    /// C10-α wires this inside
+    /// [`crate::mesh::deploy::validate_reassembly_cross_doc`] (C13-α-2
+    /// + C13-γ landing site): when the bound link's trust_class is
+    /// `session_arming` AND the orchestrator-resolved listener-link
+    /// set does NOT contain the link name (i.e. no `Accepting.*`
+    /// substate on the machine's source SCXML), the validator fires
+    /// this code in place of the historic
+    /// `reassembly/untrusted-link-binding` for the session-arming
+    /// subcase. NeutralOrDeterministic — two valid repair paths:
+    /// add an `Accepting.*` substate to the machine's source SCXML
+    /// (making the link a real listener so the sibling auto-
+    /// synthesizes), or remove the reassembly-pool binding.
+    #[error(
+        "reassembly-variant buffer-pool '{pool_name}' is bound to link '{link_name}' on machine '{machine}'; the link declares `trust_class: session_arming` but its machine source SCXML has no `Accepting.*` substate, so codegen cannot synthesize the paired `established_session` sibling. \
+         watching-zenoh RFC §5.M lines 2982-2994 — only listeners (machine source SCXML carrying `Accepting.*`) auto-rebind a `session_arming` reassembly binding to the `established_session` sibling; without that pairing the binding has no valid landing site. \
+         Repair: add an `Accepting.*` substate to machine '{machine}'s source SCXML (making link '{link_name}' a real listener so the sibling auto-synthesizes), or remove the reassembly-pool binding from link '{link_name}'."
+    )]
+    ReassemblyBindingOnUnpairedListener {
+        pool_name: String,
+        machine: String,
+        link_name: String,
+    },
+
     /// watching-zenoh RFC §5.K line 2504-2511 verbatim
     /// (`pool/stage-copy-policy-error`). `pool_defaults.stage_copy_policy:
     /// error` (or `forbid`) AND the §5.M / ARCHITECTURE §9.3

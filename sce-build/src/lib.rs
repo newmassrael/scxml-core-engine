@@ -1205,6 +1205,27 @@ pub struct ForgeCompileOptions {
     /// the codegen boundary rather than silently emitting placeholders.
     pub bounded_collection_resolutions:
         Option<std::collections::HashMap<String, BoundedCollectionResolution>>,
+    /// watching-zenoh RFC §5.C lines 802-833 + §5.M lines 2771-2828
+    /// (C10-α) — sorted set of `<sce:link>` doc names whose
+    /// orchestrator-resolved (deploy `domain_attrs.trust_class:
+    /// session_arming` × machine source SCXML `Accepting.*`
+    /// substate-present) pair makes the link a listener. Drives
+    /// per-language `render_link_*` sibling emission: when this set
+    /// contains the rendered link's name, the template emits BOTH a
+    /// Listener half (existing shape) AND a Sibling half (durable
+    /// `EstablishedSession` type-name suffix per Q-C10-3 a). The
+    /// post-render substring self-check
+    /// `link/listener-link-not-paired-with-established-sibling` greps
+    /// for the durable suffix and fires on template regression.
+    ///
+    /// Populated by [`compile_scxml_with_imports`] when `deploy:
+    /// Some`; left `None` by deploy-unaware callers
+    /// ([`compile_forge_with_imports`], `sce_codegen` CLI on single
+    /// forge docs without deploy). When `None`, the codegen path
+    /// emits the existing single-instance Listener-only shape — no
+    /// sibling synthesized, no self-check — matching pre-C10 behavior
+    /// verbatim.
+    pub listener_links: Option<std::collections::BTreeSet<String>>,
 }
 
 /// RFC §5.D + §5.I C2-β cross-core worker placement entry. Populated
@@ -1735,6 +1756,19 @@ pub fn compile_scxml_with_imports(
     // burst_pps + tick_period_us + arrivals_per_tick / drain_per_second);
     // forge-side reassembly validators emit `ValidationError`
     // directly per the existing `#[from]` flow.
+    // ── C10-α listener-pair resolution ──
+    //
+    // Computed unconditionally so deploy-aware downstream consumers
+    // (the C13 cross-doc validators + the per-doc compile_forge_with_imports
+    // codegen pass) see a single source of truth. Defaults to an
+    // empty set on `deploy: None` paths — silent-skip per Q-η5 (a):
+    // no deploy ⇒ no machine.source × session_arming axis to scan;
+    // listener-pair synthesis cannot fire.
+    let listener_links: std::collections::BTreeSet<String> = match deploy {
+        Some(deploy_cfg) => resolve_listener_links(deploy_cfg, &scxml_models),
+        None => std::collections::BTreeSet::new(),
+    };
+
     if let Some(deploy_cfg) = deploy {
         let forge_link_models_view: std::collections::HashMap<String, &forge::model::LinkModel> =
             link_models_for_xref
@@ -1775,6 +1809,7 @@ pub fn compile_scxml_with_imports(
             deploy_cfg,
             &forge_link_models_view,
             &pool_models_view,
+            &listener_links,
         )
         .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
 
@@ -1834,11 +1869,28 @@ pub fn compile_scxml_with_imports(
                 ))
             })
             .collect();
-    let bc_options_override = if bc_resolutions.is_empty() {
+    // C10-α: thread the orchestrator-resolved listener-link set into
+    // the per-doc ForgeCompileOptions so each `render_link_*` template
+    // can synthesize the Sibling half + the post-render self-check
+    // fires on the right links. The deploy-aware path always carries
+    // an explicit-empty `Some(empty)` so downstream consumers can
+    // distinguish "no listeners declared" from "deploy-unaware
+    // compile" (the latter must not synthesize siblings — silent-skip
+    // per Q-η5 (a)).
+    let listener_links_override: Option<std::collections::BTreeSet<String>> =
+        deploy.map(|_| listener_links.clone());
+    let needs_override =
+        !bc_resolutions.is_empty() || listener_links_override.is_some();
+    let bc_options_override = if !needs_override {
         None
     } else {
         let mut overridden = options.clone();
-        overridden.bounded_collection_resolutions = Some(bc_resolutions);
+        if !bc_resolutions.is_empty() {
+            overridden.bounded_collection_resolutions = Some(bc_resolutions);
+        }
+        if let Some(ll) = listener_links_override {
+            overridden.listener_links = Some(ll);
+        }
         Some(overridden)
     };
 
@@ -2575,6 +2627,93 @@ fn parse_bounded_collection_deploy_key(key: &str) -> Option<(&str, &str)> {
 /// the abstract [`forge::model::SceType`] of that field. Each
 /// backend's render fn converts the abstract type to its language-
 /// specific string at codegen time via the existing `rust_type` /
+/// watching-zenoh RFC §5.C line 806 (C10-α) — `Accepting.*` substate
+/// presence walk over an `SCXMLModel`. The session-FSM canonical state
+/// shape (`docs/session-fsm.md` §2.6, §2.7) names the accept-side
+/// states `Accepting`, `Accepting.AwaitingInitSyn`,
+/// `Accepting.SentInitAck`, etc.; the spec's dot-glob `Accepting.*`
+/// is matched here by an ID prefix walk (Sub-Q-C10-α-3 (a) lock).
+///
+/// Match rule: a state-id matches when it is exactly `Accepting` OR
+/// it begins with `Accepting.` (with the trailing dot). The trailing-
+/// dot guard rejects unrelated state IDs that share the `Accepting`
+/// stem (e.g. `AcceptingPayment`).
+pub fn accepting_substate_present(model: &SCXMLModel) -> bool {
+    model.states.keys().any(|id| {
+        id == "Accepting" || id.starts_with("Accepting.")
+    })
+}
+
+/// watching-zenoh RFC §5.C lines 802-833 + §5.M lines 2771-2828
+/// (C10-α) — resolve the listener-pair set for the deploy + parsed
+/// SCXML corpus. A `<sce:link>` becomes a listener (sibling-emitting)
+/// when BOTH conditions hold per spec line 806:
+///
+/// 1. Deploy-side: `machines.<m>.links.<name>.domain_attrs.trust_class`
+///    is `session_arming`.
+/// 2. SCXML-side: the machine's `source` SCXML doc contains any state
+///    whose `id` matches the `Accepting.*` dot-glob per
+///    [`accepting_substate_present`].
+///
+/// Either-condition-alone ⇒ silent-skip (single Listener-only
+/// instance, no sibling synthesized). The silent-skip discipline
+/// mirrors [[feedback-silently-broken-hooks]] —
+/// `binding-on-unpaired-listener` exists precisely to surface the
+/// missing-sibling case where SCXML targets the half (currently
+/// unreachable from author surface; future-proofing per spec line
+/// 2982-2994).
+///
+/// Returns the sorted `BTreeSet<String>` of listener link names —
+/// the cross-doc consumer ([`crate::mesh::deploy::validate_reassembly_cross_doc`]
+/// extended signature) and the codegen template populator
+/// ([`ForgeCompileOptions::listener_links`]) both read this set.
+/// `BTreeSet` keeps the iteration order deterministic so any
+/// downstream `key_fragments` quoting derives a stable hash.
+pub fn resolve_listener_links(
+    deploy_cfg: &mesh::deploy::DeployConfig,
+    scxml_models: &[(std::path::PathBuf, SCXMLModel)],
+) -> std::collections::BTreeSet<String> {
+    use mesh::deploy::TrustClass;
+    let mut listener_links: std::collections::BTreeSet<String> =
+        std::collections::BTreeSet::new();
+    for device in deploy_cfg.topology.values() {
+        for (_machine_name, machine) in device.machines.iter() {
+            // Resolve `machine.source` against the parsed scxml_models
+            // by basename match — deploy.yaml's `source` is a path
+            // string that the orchestrator passes verbatim to
+            // `scxml_files`, so the two reach for the same filename.
+            let machine_source = machine.source.as_str();
+            let model = scxml_models.iter().find(|(path, _)| {
+                path.file_name()
+                    .and_then(|s| s.to_str())
+                    .map(|n| n == machine_source)
+                    .unwrap_or(false)
+                    || path.to_str().map(|p| p == machine_source).unwrap_or(false)
+            });
+            let Some((_, model)) = model else {
+                // Source not in the build's SCXML set — silent-skip
+                // (deploy declares a machine whose SCXML is not part
+                // of this compile call; the existing reassembly /
+                // burst validators silent-skip on the same join
+                // absence per Q-η5 (a)).
+                continue;
+            };
+            if !accepting_substate_present(model) {
+                continue;
+            }
+            for (link_name, link) in machine.links.iter() {
+                let Some(domain) = link.domain_attrs.as_ref() else {
+                    continue;
+                };
+                if matches!(domain.trust_class, TrustClass::SessionArming) {
+                    listener_links.insert(link_name.clone());
+                }
+            }
+        }
+    }
+    listener_links
+}
+
 /// `cpp_type` / `kotlin_type` / etc. helpers.
 ///
 /// Mirrors the field enumeration used by

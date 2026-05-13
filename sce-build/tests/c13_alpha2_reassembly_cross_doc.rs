@@ -401,7 +401,7 @@ fn slot_size_below_declared_mtu_fires() {
     let mut pool_registry: HashMap<String, &BufferPoolModel> = HashMap::new();
     pool_registry.insert("rx_data_pool".to_string(), &pool);
 
-    let err = validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry)
+    let err = validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry, &std::collections::BTreeSet::new())
         .expect_err("slot_size < mtu fires");
     let ValidationError::MemReassemblySlotSizeBelowDeclaredMtu {
         pool_name,
@@ -443,7 +443,7 @@ fn max_fragments_insufficient_fires_on_reassembly_variant() {
     let mut pool_registry: HashMap<String, &BufferPoolModel> = HashMap::new();
     pool_registry.insert("rx_reassembly_pool".to_string(), &pool);
 
-    let err = validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry)
+    let err = validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry, &std::collections::BTreeSet::new())
         .expect_err("reassembly slot too small");
     let ValidationError::ReassemblyMaxFragmentsInsufficientForMtu {
         pool_name,
@@ -484,7 +484,7 @@ fn max_fragments_happy_when_slot_size_sufficient() {
     let mut pool_registry: HashMap<String, &BufferPoolModel> = HashMap::new();
     pool_registry.insert("rx_reassembly_pool".to_string(), &pool);
 
-    validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry)
+    validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry, &std::collections::BTreeSet::new())
         .expect("slot_size suffices → Ok");
 }
 
@@ -529,7 +529,7 @@ fn expected_fragmentation_rate_high_fires_on_default_pool() {
     // Confirm the validator returns SOME error from {#1, #3} for the
     // fixture rather than silent-passing. Per spec deterministic
     // first-failure, #1 fires before #3 in walk order.
-    let err = validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry)
+    let err = validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry, &std::collections::BTreeSet::new())
         .expect_err("slot_size < mtu OR p99 fragmentation rate fires");
     match err {
         ValidationError::MemReassemblySlotSizeBelowDeclaredMtu { .. }
@@ -568,20 +568,73 @@ fn expected_fragmentation_silent_skip_on_reassembly_variant() {
     // #3 must NOT fire on reassembly variant per Q-C13-α2-4 (a).
     // #6 also silent-skips because expected_p99 = 1024, memcpy = 1.0,
     // clock = 400 ⇒ wcet = 1024 × 1.0 / 400 = 3 µs ≪ 200 µs budget.
-    validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry)
+    validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry, &std::collections::BTreeSet::new())
         .expect("reassembly variant silent-skips #3 → Ok");
 }
 
-// ── #4 reassembly/untrusted-link-binding ───────────────────────
+// ── #4 reassembly/untrusted-link-binding + C10-α reassembly/binding-on-unpaired-listener ──
 
 #[test]
-fn untrusted_link_binding_fires_on_session_arming() {
-    // C13-β added parse-time validators that require session_arming
-    // links to declare session_arming_quota + accept_rate_per_sec +
-    // accept_rate_burst. The reassembly cross-doc check #4 only fires
-    // AFTER parse-time passes, so the fixture now carries those
-    // anti-flood fields. C13-α-2's reassembly check itself is
-    // unchanged.
+fn untrusted_link_binding_fires_on_untrusted_trust_class() {
+    // After C10-α the `reassembly/untrusted-link-binding` code
+    // narrows to `trust_class: untrusted` only (RFC §5.M lines
+    // 2964-2969 + 2982-2994). The historic session_arming subcase
+    // shifts to `reassembly/binding-on-unpaired-listener` —
+    // exercised by [`binding_on_unpaired_listener_fires_without_listener`]
+    // below.
+    let yaml = deploy_with_links(
+        r#"          udp_data:
+            bind: "0.0.0.0:7447"
+            driver: lwip_udp
+            mtu_bytes: 1500
+            domain_attrs:
+              trust_class: untrusted
+"#,
+    );
+    let cfg = parse_deploy_str(&yaml).expect("deploy parses");
+
+    let link = link_model("udp_data", Some("rx_reassembly_pool"));
+    let pool = reassembly_pool("rx_reassembly_pool", 16, 16000, 8);
+    let mut forge_links: HashMap<String, &LinkModel> = HashMap::new();
+    forge_links.insert("udp_data".to_string(), &link);
+    let mut pool_registry: HashMap<String, &BufferPoolModel> = HashMap::new();
+    pool_registry.insert("rx_reassembly_pool".to_string(), &pool);
+
+    let err = validate_reassembly_cross_doc(
+        &cfg,
+        &forge_links,
+        &pool_registry,
+        &std::collections::BTreeSet::new(),
+    )
+    .expect_err("untrusted binding is rejected");
+    let ValidationError::ReassemblyUntrustedLinkBinding {
+        pool_name,
+        trust_class,
+        link_name,
+        ..
+    } = err
+    else {
+        panic!("expected ReassemblyUntrustedLinkBinding, got {err:?}");
+    };
+    assert_eq!(pool_name, "rx_reassembly_pool");
+    assert_eq!(trust_class, "untrusted");
+    assert_eq!(link_name, "udp_data");
+}
+
+#[test]
+fn binding_on_unpaired_listener_fires_without_listener() {
+    // C10-α retargets the session_arming subcase from the historic
+    // `reassembly/untrusted-link-binding` to the new
+    // `reassembly/binding-on-unpaired-listener`. When the listener-
+    // link set is empty (deploy declares `trust_class: session_arming`
+    // but the machine's source SCXML has no `Accepting.*` substate),
+    // no Sibling EstablishedSession instance can be synthesized and
+    // the validator surfaces the binding mistake at the only check
+    // that can reach it.
+    //
+    // The C13-β anti-flood validators require session_arming_quota +
+    // accept_rate_per_sec + accept_rate_burst — the fixture carries
+    // those so the test exercises the post-parse cross-doc path.
     let yaml = deploy_with_links(
         r#"          udp_listener:
             bind: "0.0.0.0:7447"
@@ -603,20 +656,59 @@ fn untrusted_link_binding_fires_on_session_arming() {
     let mut pool_registry: HashMap<String, &BufferPoolModel> = HashMap::new();
     pool_registry.insert("rx_reassembly_pool".to_string(), &pool);
 
-    let err = validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry)
-        .expect_err("session_arming binding is rejected");
-    let ValidationError::ReassemblyUntrustedLinkBinding {
+    let err = validate_reassembly_cross_doc(
+        &cfg,
+        &forge_links,
+        &pool_registry,
+        &std::collections::BTreeSet::new(),
+    )
+    .expect_err("session_arming binding without listener is rejected");
+    let ValidationError::ReassemblyBindingOnUnpairedListener {
         pool_name,
-        trust_class,
+        machine,
         link_name,
-        ..
     } = err
     else {
-        panic!("expected ReassemblyUntrustedLinkBinding, got {err:?}");
+        panic!("expected ReassemblyBindingOnUnpairedListener, got {err:?}");
     };
     assert_eq!(pool_name, "rx_reassembly_pool");
-    assert_eq!(trust_class, "session_arming");
+    assert_eq!(machine, "mcu_node");
     assert_eq!(link_name, "udp_listener");
+}
+
+#[test]
+fn binding_on_session_arming_listener_passes() {
+    // C10-α happy-path: `trust_class: session_arming` + listener
+    // (link name in `listener_links`) auto-rebinds the binding to
+    // the synthesized Sibling EstablishedSession instance per RFC
+    // §5.C lines 821-825. The validator silent-passes the #4 check
+    // and continues with #3 / #6 against the same field set.
+    let yaml = deploy_with_links(
+        r#"          udp_listener:
+            bind: "0.0.0.0:7447"
+            driver: lwip_udp
+            mtu_bytes: 1500
+            domain_attrs:
+              trust_class: session_arming
+            session_arming_quota: 8
+            accept_rate_per_sec: 4
+            accept_rate_burst: 8
+"#,
+    );
+    let cfg = parse_deploy_str(&yaml).expect("deploy parses");
+
+    let link = link_model("udp_listener", Some("rx_reassembly_pool"));
+    let pool = reassembly_pool("rx_reassembly_pool", 16, 16000, 8);
+    let mut forge_links: HashMap<String, &LinkModel> = HashMap::new();
+    forge_links.insert("udp_listener".to_string(), &link);
+    let mut pool_registry: HashMap<String, &BufferPoolModel> = HashMap::new();
+    pool_registry.insert("rx_reassembly_pool".to_string(), &pool);
+
+    let mut listener_links = std::collections::BTreeSet::new();
+    listener_links.insert("udp_listener".to_string());
+
+    validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry, &listener_links)
+        .expect("session_arming + listener silent-passes the #4 check");
 }
 
 // ── #5 reassembly/trust-class-missing-on-fragmenting-link ──────
@@ -641,7 +733,7 @@ fn trust_class_missing_on_fragmenting_link_fires() {
     let mut pool_registry: HashMap<String, &BufferPoolModel> = HashMap::new();
     pool_registry.insert("rx_reassembly_pool".to_string(), &pool);
 
-    let err = validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry)
+    let err = validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry, &std::collections::BTreeSet::new())
         .expect_err("domain_attrs absent on reassembly-bound link");
     let ValidationError::ReassemblyTrustClassMissingOnFragmentingLink {
         pool_name,
@@ -711,7 +803,7 @@ topology:
     let mut pool_registry: HashMap<String, &BufferPoolModel> = HashMap::new();
     pool_registry.insert("rx_data_pool".to_string(), &pool);
 
-    let err = validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry)
+    let err = validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry, &std::collections::BTreeSet::new())
         .expect_err("stage-copy WCET exceeds slot budget");
     let ValidationError::ReassemblyStageCopyWcetExceedsSlotBudget {
         machine,
@@ -780,7 +872,7 @@ topology:
     let mut pool_registry: HashMap<String, &BufferPoolModel> = HashMap::new();
     pool_registry.insert("rx_data_pool".to_string(), &pool);
 
-    validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry)
+    validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry, &std::collections::BTreeSet::new())
         .expect("missing memcpy_cycles_per_byte → silent-skip Ok");
 }
 
@@ -809,6 +901,6 @@ fn full_reassembly_pipeline_happy_path() {
     let mut pool_registry: HashMap<String, &BufferPoolModel> = HashMap::new();
     pool_registry.insert("rx_reassembly_pool".to_string(), &pool);
 
-    validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry)
+    validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry, &std::collections::BTreeSet::new())
         .expect("all axes satisfied → Ok");
 }

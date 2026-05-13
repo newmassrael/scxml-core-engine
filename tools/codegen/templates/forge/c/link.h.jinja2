@@ -95,6 +95,61 @@ static inline sce_forge_link_status_t {{ snake_name }}_link_tx(
     return self->driver.ops->tx(self->driver.self, frame);
 }
 
+{% if is_listener_with_sibling %}
+/* ── C10-α listener-link Sibling half (RFC §5.C lines 802-833) ──
+ *
+ * The listener-link sibling-pair contract per RFC §5.C lines 802-803:
+ * codegen models this `session_arming` listener (machine source SCXML
+ * carries `Accepting.*` substate per RFC §5.C line 806) as TWO
+ * logical link-instances sharing one physical socket. The
+ * `{{ snake_name }}_link_t` typedef above is the Listener half
+ * (pre-handshake / `session_arming` trust); the
+ * `{{ snake_name }}_established_session_t` typedef below is the
+ * synthesized Sibling half (post-handshake / `established_session`
+ * trust). The Sibling inherits the same 6 fields (`bind`, `driver`,
+ * `mtu_bytes`, `expected_p99_bytes`, `burst_pps`, `rx_dispatch`) by
+ * codegen-time projection per RFC §5.C lines 814-816; it
+ * deliberately does NOT inherit the §5.K accept-side hardening
+ * fields per RFC §5.C lines 816-820 (those are meaningful only on
+ * the `session_arming` half).
+ *
+ * The `_established_session_t` typedef suffix is the durable
+ * post-render self-check anchor — the C10-α codegen self-check
+ * `link/listener-link-not-paired-with-established-sibling`
+ * (Q-C10-3 a) greps for this suffix; absence fires the diagnostic. */
+typedef struct {
+    sce_forge_link_t driver;
+} {{ snake_name }}_established_session_t;
+
+/* Build the Sibling wrapper from a driver handle sharing the same
+ * physical socket as the Listener half. Per-peer dispatch routes
+ * bytes to this half after the unicast session FSM transitions out
+ * of `Accepting.*` (RFC §5.C lines 810-813); that dispatch is a
+ * runtime concern, NOT part of C10-α's codegen surface. */
+static inline void {{ snake_name }}_established_session_init(
+    {{ snake_name }}_established_session_t *self, sce_forge_link_t driver) {
+    self->driver = driver;
+}
+
+/* Pull the next RX frame from the driver. Same contract as the
+ * Listener half; per-peer dispatch routes post-handshake bytes
+ * here. */
+static inline bool {{ snake_name }}_established_session_rx(
+    {{ snake_name }}_established_session_t *self, sce_forge_link_rx_frame_t *out) {
+    return self->driver.ops->rx(self->driver.self, out);
+}
+
+/* Submit `bytes` for TX. Honors the link's `<sce:backpressure>`
+ * policy via the driver's `tx` return value. */
+static inline sce_forge_link_status_t {{ snake_name }}_established_session_tx(
+    {{ snake_name }}_established_session_t *self, const uint8_t *bytes, size_t len) {
+    sce_forge_link_tx_frame_t frame;
+    frame.data = bytes;
+    frame.len = len;
+    return self->driver.ops->tx(self->driver.self, frame);
+}
+{% endif %}
+
 #ifdef __cplusplus
 }  /* extern "C" */
 #endif

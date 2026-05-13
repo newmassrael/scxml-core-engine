@@ -2844,6 +2844,25 @@ pub fn validate_reassembly_cross_doc(
     cfg: &DeployConfig,
     forge_link_models: &std::collections::HashMap<String, &crate::forge::model::LinkModel>,
     pool_registry_full: &std::collections::HashMap<String, &crate::forge::model::BufferPoolModel>,
+    // C10-α (Q-C10-4 a) — orchestrator-resolved listener-link set
+    // (`<link_name>` for every `session_arming` link whose machine's
+    // source SCXML carries any `Accepting.*` substate). Drives the
+    // session_arming branch of the #4 check below: when the bound
+    // link is a listener, the binding silently rebinds to the
+    // synthesized `established_session` sibling (RFC §5.C lines
+    // 802-803 + 821-825 + 2782-2783); when it is not, the binding
+    // has no valid landing site and the validator fires
+    // `reassembly/binding-on-unpaired-listener` in place of the
+    // historic `reassembly/untrusted-link-binding` for the
+    // session-arming subcase.
+    //
+    // Pass `&BTreeSet::new()` from deploy-unaware test paths and
+    // single-doc compile paths (no SCXML axis available); the
+    // session_arming branch then ALWAYS falls through to the
+    // `binding-on-unpaired-listener` code, surfacing the binding
+    // mistake at the only check that can reach it. Untrusted +
+    // EstablishedSession branches are unaffected by this parameter.
+    listener_links: &std::collections::BTreeSet<String>,
 ) -> Result<(), crate::forge::error::ValidationError> {
     use crate::forge::error::ValidationError;
     use crate::forge::model::BufferPoolVariant;
@@ -2945,26 +2964,74 @@ pub fn validate_reassembly_cross_doc(
                         }
                     }
 
-                    // ── #4 reassembly/untrusted-link-binding ──
-                    // Spec line 2964-2969. Fires when the link's
-                    // resolved trust_class is `Untrusted` or
-                    // `SessionArming`. EstablishedSession passes.
+                    // ── #4 reassembly/untrusted-link-binding +
+                    //    C10-α reassembly/binding-on-unpaired-listener ──
+                    //
+                    // Spec line 2964-2969 frames `untrusted-link-
+                    // binding` as the rejection for non-
+                    // `established_session` bindings; spec lines
+                    // 2982-2994 (`binding-on-unpaired-listener`)
+                    // narrows the `session_arming` subcase to the
+                    // listener-pair-aware path. Q-C10-4 (a) routing:
+                    //
+                    //   trust_class = EstablishedSession → pass
+                    //   trust_class = SessionArming + listener →
+                    //     silent-pass (binding rebinds to the
+                    //     synthesized Sibling EstablishedSession
+                    //     instance, RFC §5.C lines 821-825)
+                    //   trust_class = SessionArming + non-listener →
+                    //     fire `reassembly/binding-on-unpaired-listener`
+                    //   trust_class = Untrusted → fire
+                    //     `reassembly/untrusted-link-binding`
+                    //     (Untrusted-only after C10-α)
+                    //
                     // Silent-skip when domain_attrs entirely absent
                     // — that scenario is named by #5 below.
                     if let Some(domain) = link.domain_attrs.as_ref() {
-                        if !matches!(domain.trust_class, TrustClass::EstablishedSession)
-                        {
-                            return Err(
-                                ValidationError::ReassemblyUntrustedLinkBinding {
-                                    pool_name: pool_name.to_string(),
-                                    trust_class: domain
-                                        .trust_class
-                                        .as_str()
-                                        .to_string(),
-                                    machine: machine_name.clone(),
-                                    link_name: link_name.clone(),
-                                },
-                            );
+                        match domain.trust_class {
+                            TrustClass::EstablishedSession => {
+                                // Happy path — reassembly binding is
+                                // valid on post-handshake trust class.
+                            }
+                            TrustClass::SessionArming => {
+                                if !listener_links.contains(link_name) {
+                                    // No `Accepting.*` substate on
+                                    // the machine's source SCXML;
+                                    // the listener-pair walker did
+                                    // not synthesize the Sibling
+                                    // EstablishedSession instance,
+                                    // so the binding has no valid
+                                    // landing site. RFC §5.M lines
+                                    // 2982-2994.
+                                    return Err(
+                                        ValidationError::ReassemblyBindingOnUnpairedListener {
+                                            pool_name: pool_name.to_string(),
+                                            machine: machine_name.clone(),
+                                            link_name: link_name.clone(),
+                                        },
+                                    );
+                                }
+                                // Listener — binding auto-rebinds to
+                                // the synthesized Sibling
+                                // EstablishedSession instance. Falls
+                                // through to subsequent checks
+                                // (#3 stage-copy rate, #6 stage-copy
+                                // WCET) which evaluate against the
+                                // same field set.
+                            }
+                            TrustClass::Untrusted => {
+                                return Err(
+                                    ValidationError::ReassemblyUntrustedLinkBinding {
+                                        pool_name: pool_name.to_string(),
+                                        trust_class: domain
+                                            .trust_class
+                                            .as_str()
+                                            .to_string(),
+                                        machine: machine_name.clone(),
+                                        link_name: link_name.clone(),
+                                    },
+                                );
+                            }
                         }
                     } else {
                         // ── #5 reassembly/trust-class-missing-on-fragmenting-link ──

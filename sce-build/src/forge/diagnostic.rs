@@ -1166,6 +1166,67 @@ pub enum DiagnosticCode {
     #[serde(rename = "reassembly/peer-id-not-zid-on-established-session")]
     ReassemblyPeerIdNotZidOnEstablishedSession,
 
+    /// Codegen self-check: a `<sce:link>` whose orchestrator-resolved
+    /// (deploy `domain_attrs.trust_class: session_arming` × machine
+    /// source SCXML `Accepting.*` substate-present) pair makes it a
+    /// listener emitted the Listener half but did NOT emit the paired
+    /// `established_session` Sibling half. watching-zenoh RFC §5.C
+    /// lines 849-856 verbatim: "codegen self-check that every
+    /// `session_arming` listener instance has emitted its
+    /// `established_session` sibling per the 'Listener-link sibling
+    /// emission' contract above. Hard error. This is a template
+    /// regression guard, unreachable in well-formed codegen; it exists
+    /// to ensure the listener emission template cannot silently
+    /// regress to single-instance shape (which would re-introduce the
+    /// OQ-W22 contradiction)."
+    ///
+    /// Wired into [`super::generator::render_link_rust`] +
+    /// [`super::generator::render_link_c`] as a post-render substring
+    /// check when [`crate::ForgeCompileOptions::listener_links`]
+    /// contains the rendered link's name: the emitted output must
+    /// carry the durable `EstablishedSession` type-name suffix (Rust)
+    /// / `_established_session_t` typedef (C11). In well-formed
+    /// templates the diagnostic never fires (the per-language link
+    /// template emits both halves unconditionally when the listener
+    /// flag is set); mirrors the `reassembly/peer-id-not-zid-on-
+    /// established-session` self-check shape per generator.rs:10225.
+    /// NeutralOrDeterministic (Q-C10-7 a) — pure template-regression
+    /// guard with no closed candidate set.
+    #[serde(rename = "link/listener-link-not-paired-with-established-sibling")]
+    LinkListenerLinkNotPairedWithEstablishedSibling,
+
+    /// Author-facing hard error: a reassembly-pool binding has
+    /// resolved to a `session_arming` link instance whose paired
+    /// `established_session` sibling does not exist. watching-zenoh
+    /// RFC §5.M lines 2982-2994 verbatim: "a reassembly-pool binding
+    /// has resolved to a `session_arming` link instance whose paired
+    /// `established_session` sibling does not exist. Hard error. In
+    /// well-formed codegen this is unreachable (the listener-link
+    /// sibling emission contract in §5.C guarantees pairing); the
+    /// diagnostic guards SCXML that explicitly targets the
+    /// `session_arming` half (bypassing the auto-resolution) and any
+    /// future schema evolution that introduces non-listener
+    /// `session_arming` instances. Distinct from
+    /// `reassembly/untrusted-link-binding` (which rejects bindings to
+    /// `untrusted` and to standalone `session_arming` non-listeners)
+    /// and from `link/listener-link-not-paired-with-established-
+    /// sibling` (which is the §5.C-side codegen self-check)."
+    ///
+    /// Wired into
+    /// [`crate::mesh::deploy::validate_reassembly_cross_doc`] (C13-α-2
+    /// + C13-γ landing site): when the bound link's resolved
+    /// `trust_class` is `session_arming` AND the orchestrator-resolved
+    /// listener-link set does NOT contain the link name (i.e. no
+    /// `Accepting.*` substate on the machine's source SCXML), the
+    /// validator fires this code in place of the historic
+    /// `reassembly/untrusted-link-binding` for the session-arming
+    /// subcase. NeutralOrDeterministic (Q-C10-7 a) — two valid repair
+    /// paths: add an `Accepting.*` substate to the machine's source
+    /// SCXML (making the link a real listener so the sibling
+    /// auto-synthesizes), or remove the reassembly-pool binding.
+    #[serde(rename = "reassembly/binding-on-unpaired-listener")]
+    MeshDeployReassemblyBindingOnUnpairedListener,
+
     // ── §5.L Bounded-collection kind diagnostics (watching-zenoh RFC
     //    §5.L lines 2540-2655). C6-α ships the two structure-only codes
     //    here; cross-doc (element-type-not-a-kind / index-by-field-
@@ -2016,6 +2077,9 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ReassemblyStageCopyWcetExceedsSlotBudget,
         // Fragment-reassembly codegen self-check (watching-zenoh RFC §5.M, C9-γ)
         ReassemblyPeerIdNotZidOnEstablishedSession,
+        // Listener-link sibling-pair (watching-zenoh RFC §5.C + §5.M, C10-α)
+        LinkListenerLinkNotPairedWithEstablishedSibling,
+        MeshDeployReassemblyBindingOnUnpairedListener,
         // Bounded-collection kind parse-time structure validators (watching-zenoh RFC §5.L, C6-α)
         CollectionOrderingSortedRequiresIndexBy,
         CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion,
@@ -2397,8 +2461,19 @@ impl DiagnosticCode {
             | ReassemblyTrustClassMissingOnFragmentingLink
             | ReassemblyStageCopyWcetExceedsSlotBudget
             // C9-γ codegen self-check (RFC §5.M lines 2976-2981).
-            | ReassemblyPeerIdNotZidOnEstablishedSession => {
+            | ReassemblyPeerIdNotZidOnEstablishedSession
+            // C10-α reassembly side of the listener-pair (RFC §5.M
+            // lines 2982-2994). Shares §5.M anchor with the C9-γ
+            // codegen self-check + the 6 C9-β / C13-α-2 cross-doc
+            // reassembly codes.
+            | MeshDeployReassemblyBindingOnUnpairedListener => {
                 Some("watching-zenoh RFC §5.M")
+            }
+            // C10-α listener-pair codegen self-check (RFC §5.C lines
+            // 849-856). The §5.C anchor matches the existing B6-α/β/γ
+            // link family.
+            LinkListenerLinkNotPairedWithEstablishedSibling => {
+                Some("watching-zenoh RFC §5.C")
             }
 
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
@@ -2768,6 +2843,8 @@ impl DiagnosticCode {
             ReassemblyTrustClassMissingOnFragmentingLink => "reassembly/trust-class-missing-on-fragmenting-link",
             ReassemblyStageCopyWcetExceedsSlotBudget => "reassembly/stage-copy-wcet-exceeds-slot-budget",
             ReassemblyPeerIdNotZidOnEstablishedSession => "reassembly/peer-id-not-zid-on-established-session",
+            LinkListenerLinkNotPairedWithEstablishedSibling => "link/listener-link-not-paired-with-established-sibling",
+            MeshDeployReassemblyBindingOnUnpairedListener => "reassembly/binding-on-unpaired-listener",
             CollectionOrderingSortedRequiresIndexBy => "collection/ordering-sorted-requires-index-by",
             CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion => "collection/overflow-policy-oldest-wins-requires-ordering-insertion",
             CollectionElementTypeNotAKind => "collection/element-type-not-a-kind",
@@ -4637,6 +4714,44 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![pool_name.clone(), language.clone()],
         },
+        // ── §5.C C10-α codegen self-check ──
+        ValidationError::LinkListenerLinkNotPairedWithEstablishedSibling {
+            link_name,
+            language,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::LinkListenerLinkNotPairedWithEstablishedSibling,
+            stage: Stage::Validation,
+            // Codegen-internal invariant — same shape as C9-γ
+            // `ReassemblyPeerIdNotZidOnEstablishedSession`. Author-
+            // side `actual` / `expected` / `fix` carry no useful
+            // information.
+            actual: None,
+            expected: None,
+            fix: None,
+            key_fragments: vec![link_name.clone(), language.clone()],
+        },
+        // ── §5.M C10-α reassembly-binding-on-unpaired-listener ──
+        ValidationError::ReassemblyBindingOnUnpairedListener {
+            pool_name,
+            machine,
+            link_name,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployReassemblyBindingOnUnpairedListener,
+            stage: Stage::Validation,
+            // Two valid repair paths (add `Accepting.*` vs remove
+            // binding) — NeutralOrDeterministic. Mirrors
+            // `ReassemblyTrustClassMissingOnFragmentingLink` shape:
+            // no `actual` / `expected`; message text carries both
+            // structural repairs.
+            actual: None,
+            expected: None,
+            fix: None,
+            key_fragments: vec![
+                pool_name.clone(),
+                machine.clone(),
+                link_name.clone(),
+            ],
+        },
         // ── §5.K C13-γ stage-copy policy promotion + opt-out rejection ──
         ValidationError::PoolStageCopyPolicyError {
             pool_name,
@@ -6326,6 +6441,36 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:c88b0fe4fe0b1ff7","code":"reassembly/peer-id-not-zid-on-established-session","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"reassembly-variant buffer-pool 'rx_reassembly_pool' (rust backend): emitted per-slot peer-id is not the 16-byte ZID signature required for `trust_class: established_session` bindings. watching-zenoh RFC §5.M line 2976-2981 — codegen invariant violation: per-peer quota check must use the handshake-derived ZID as the peer key, not the wire source address (defends against UDP source-IP spoofing on `established_session` links). In well-formed templates the reassembly variant always emits the 16-byte ZID typedef (the cross-doc validator `reassembly/untrusted-link-binding` gates non-`established_session` bindings upstream), so this diagnostic fires only on template regression; report at https://github.com/newmassrael/scxml-core-engine/issues"}"#,
+            ),
+            (
+                // RFC §5.C lines 849-856: codegen self-check —
+                // listener-link must emit both Listener + Sibling
+                // halves. NeutralOrDeterministic; pure template-
+                // regression guard (mirrors C9-γ
+                // `reassembly/peer-id-not-zid-on-established-session`).
+                "forge/link-listener-link-not-paired-with-established-sibling",
+                ValidationError::LinkListenerLinkNotPairedWithEstablishedSibling {
+                    link_name: "udp_listener".into(),
+                    language: "rust".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:1018399a1345bb35","code":"link/listener-link-not-paired-with-established-sibling","stage":"validation","spec":"watching-zenoh RFC §5.C","message":"link 'udp_listener' (rust backend): listener-link sibling emission missing the `established_session` half. watching-zenoh RFC §5.C lines 849-856 — codegen invariant violation: every `session_arming` listener must emit its paired `established_session` sibling so per-peer dispatch retains a stable codegen-time identity (re-introduces OQ-W22 if dropped). In well-formed templates the diagnostic never fires (the per-language link template emits both halves unconditionally when `listener_links` contains this name); report at https://github.com/newmassrael/scxml-core-engine/issues"}"#,
+            ),
+            (
+                // RFC §5.M lines 2982-2994: reassembly binding on
+                // session_arming link without paired sibling.
+                // NeutralOrDeterministic; two valid repair paths
+                // (add `Accepting.*` substate vs remove binding).
+                "forge/reassembly-binding-on-unpaired-listener",
+                ValidationError::ReassemblyBindingOnUnpairedListener {
+                    pool_name: "rx_reassembly_pool".into(),
+                    machine: "mcu_node".into(),
+                    link_name: "udp_listener".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:c9d90099f8ed9a01","code":"reassembly/binding-on-unpaired-listener","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"reassembly-variant buffer-pool 'rx_reassembly_pool' is bound to link 'udp_listener' on machine 'mcu_node'; the link declares `trust_class: session_arming` but its machine source SCXML has no `Accepting.*` substate, so codegen cannot synthesize the paired `established_session` sibling. watching-zenoh RFC §5.M lines 2982-2994 — only listeners (machine source SCXML carrying `Accepting.*`) auto-rebind a `session_arming` reassembly binding to the `established_session` sibling; without that pairing the binding has no valid landing site. Repair: add an `Accepting.*` substate to machine 'mcu_node's source SCXML (making link 'udp_listener' a real listener so the sibling auto-synthesizes), or remove the reassembly-pool binding from link 'udp_listener'."}"#,
             ),
             // ── §5.K C13-γ stage-copy policy promotion + opt-out rejection ──
             (
@@ -8907,6 +9052,16 @@ mod tests {
             // codegen-internal invariants where author-side `actual` /
             // `expected` / `fix` carry no useful information.
             | ReassemblyPeerIdNotZidOnEstablishedSession
+            // C10-α listener-pair codegen self-check (RFC §5.C lines
+            // 849-856). Pure template-regression guard — mirrors
+            // `reassembly/peer-id-not-zid-on-established-session`
+            // shape. NeutralOrDeterministic (Q-C10-7 a).
+            | LinkListenerLinkNotPairedWithEstablishedSibling
+            // C10-α reassembly-binding-on-unpaired-listener (RFC §5.M
+            // lines 2982-2994). Two valid repair paths (add
+            // `Accepting.*` substate vs remove the binding) — no
+            // closed candidate set. NeutralOrDeterministic (Q-C10-7 a).
+            | MeshDeployReassemblyBindingOnUnpairedListener
             // C6-β multi-writer without atomic imports: the C4 baseline
             // atomic family spans 100+ symbols (load/store/cas/fetch ×
             // 5 widths × multiple orderings) so a `Fix::ReplaceOneOf`
@@ -9460,6 +9615,8 @@ mod tests {
                 | ReassemblyTrustClassMissingOnFragmentingLink
                 | ReassemblyStageCopyWcetExceedsSlotBudget
                 | ReassemblyPeerIdNotZidOnEstablishedSession
+                | LinkListenerLinkNotPairedWithEstablishedSibling
+                | MeshDeployReassemblyBindingOnUnpairedListener
                 | TimerPeriodBelowTickRate
                 | TimerSlotOverflow
                 | ExternSymbolNotInWhitelist
@@ -9575,9 +9732,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            258,
+            260,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 258 distinct variants to match the DiagnosticCode \
+             expected 260 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -10066,7 +10223,28 @@ mod tests {
              three-axis repair); the second wires a sorted-union \
              baseline + target-plugin allowlist check at the \
              orchestrator level (FixCarriesCandidates over the \
-             union). 256 → 258.",
+             union). 256 → 258. Then watching-zenoh RFC §5.C lines \
+             849-856 + §5.M lines 2982-2994 land the C10-α \
+             listener-link sibling-pair: two NeutralOrDeterministic \
+             codes (`link/listener-link-not-paired-with-established-\
+             sibling` codegen self-check + `reassembly/binding-on-\
+             unpaired-listener` author-facing cross-doc). The \
+             orchestrator-resolved `listener_links: BTreeSet<String>` \
+             is the single source of truth — populated by joining \
+             deploy `trust_class: session_arming` × machine source \
+             SCXML `Accepting.*` substate-present (Q-C10-5 a) and \
+             consumed by both (a) `validate_reassembly_cross_doc`'s \
+             new session-arming branch which fires `binding-on-\
+             unpaired-listener` when the link is not a listener \
+             (Q-C10-4 a, narrowing the historic \
+             `reassembly/untrusted-link-binding` to Untrusted-only \
+             after C10-α) and (b) `render_link_rust` + \
+             `render_link_c` template extensions emitting a \
+             durable-suffix Sibling half (`EstablishedSession` Rust \
+             struct / `_established_session_t` C11 typedef per \
+             Q-C10-3 + Q-C10-5). Post-render substring grep mirrors \
+             the C9-γ `reassembly/peer-id-not-zid-on-established-\
+             session` precedent (generator.rs:10225). 258 → 260.",
         );
     }
 

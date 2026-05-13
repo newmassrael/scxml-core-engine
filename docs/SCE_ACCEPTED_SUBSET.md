@@ -496,6 +496,8 @@ Codes that the author can avoid by writing a better SCXML /
 | `reassembly/trust-class-missing-on-fragmenting-link` | Validation |
 | `reassembly/stage-copy-wcet-exceeds-slot-budget` | Validation |
 | `reassembly/peer-id-not-zid-on-established-session` | Validation |
+| `link/listener-link-not-paired-with-established-sibling` | Validation |
+| `reassembly/binding-on-unpaired-listener` | Validation |
 | `collection/ordering-sorted-requires-index-by` | Validation |
 | `collection/overflow-policy-oldest-wins-requires-ordering-insertion` | Validation |
 | `collection/element-type-not-a-kind` | Validation |

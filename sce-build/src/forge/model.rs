@@ -2457,6 +2457,107 @@ pub struct LinkModel {
     pub accept_stage_copy_rate: bool,
 }
 
+/// Watching-zenoh RFC §5.C lines 814-820 — listener-link sibling-pair
+/// role discriminator. A `<sce:link>` whose deploy-resolved
+/// `domain_attrs.trust_class` is `session_arming` and whose machine
+/// source SCXML carries any `Accepting.*` substate (RFC §5.C line 806
+/// + `docs/session-fsm.md` §2.6) is modeled by codegen as TWO logical
+/// link-instances sharing one physical socket: the `Listener` half
+/// receives bytes pre-handshake (`session_arming` trust), the
+/// `Sibling` half receives them post-handshake (`established_session`
+/// trust). RFC §5.C lines 802-803 + §5.M lines 2782-2783 mandate the
+/// codegen-time split so `reassembly/untrusted-link-binding` retains
+/// its static semantics (the runtime per-peer `Established` flag is
+/// out of reach at validate-time).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum LinkInstanceRole {
+    /// Pre-handshake half. Receives bytes while the per-peer session
+    /// FSM is in `Accepting.*`. Inherits the §5.K accept-side hardening
+    /// fields (`session_arming_quota`, `accept_rate_*`,
+    /// `accepting_inactivity_timeout_ms`, `stateless_accept`). For a
+    /// non-listener `<sce:link>` (no synthesized sibling), this is the
+    /// only role emitted and the role is implicit.
+    Listener,
+    /// Post-handshake half. Synthesized — NOT author-declared. Receives
+    /// bytes when the per-peer session FSM has transitioned out of
+    /// `Accepting.*`. Inherits `bind`, `driver`, `mtu_bytes`,
+    /// `expected_p99_bytes`, `burst_pps`, `rx_dispatch` from the
+    /// Listener entry (RFC §5.C lines 814-816); deliberately does NOT
+    /// inherit the §5.K accept-side hardening fields per RFC §5.C
+    /// lines 816-820 (those are meaningful only on the `session_arming`
+    /// half).
+    Sibling,
+}
+
+impl LinkInstanceRole {
+    /// Canonical wire form used by diagnostic `key_fragments` and the
+    /// downstream type-name suffix on the Sibling half.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            LinkInstanceRole::Listener => "listener",
+            LinkInstanceRole::Sibling => "established-session",
+        }
+    }
+}
+
+/// Watching-zenoh RFC §5.C lines 802-833 + §5.M lines 2782-2783
+/// (C10-α) — resolved link-instance produced by the orchestrator's
+/// listener-pair walker. For a non-listener `<sce:link>` the
+/// orchestrator emits a single `Listener`-role instance; for a
+/// listener (trust_class `session_arming` + machine SCXML carries
+/// `Accepting.*`), it emits BOTH a `Listener` (pre-handshake) and a
+/// `Sibling` (post-handshake) instance keyed by the same source link
+/// name.
+///
+/// **Consumers** (Q-C10-2 a — IR-level synthesis, codegen-time split):
+/// - [`crate::mesh::deploy::validate_reassembly_cross_doc`] reads the
+///   per-link Sibling presence flag to gate
+///   `reassembly/binding-on-unpaired-listener` (Q-C10-4 a).
+/// - The per-language `render_link_*` templates emit the Sibling half
+///   under a distinct type-name suffix when the link is a listener;
+///   the post-render substring self-check
+///   (`link/listener-link-not-paired-with-established-sibling`,
+///   Q-C10-3 a) fires when the suffix is missing.
+///
+/// The inherited 6 fields are carried by VALUE rather than holding a
+/// reference to the source `LinkConfig` so the orchestrator's
+/// downstream consumers can iterate without re-joining against the
+/// deploy schema. The Listener role echoes the source link's fields
+/// verbatim; the Sibling role echoes the same six values (per RFC
+/// §5.C lines 814-816 the sibling is field-by-field identical on
+/// these axes), and the validator + template never reach for the
+/// hardening fields on a Sibling instance.
+#[derive(Debug, Clone, Serialize)]
+pub struct ResolvedLinkInstance {
+    /// Deploy `machines.<name>` that owns the source link declaration.
+    /// The orchestrator preserves the original machine name so the
+    /// diagnostic `key_fragments` for
+    /// `reassembly/binding-on-unpaired-listener` quote the same
+    /// `(machine, link_name)` shape the existing reassembly codes use.
+    pub machine: String,
+    /// `<sce:link name="X">` body name. The Listener + Sibling pair
+    /// share this name; the role discriminator separates them.
+    pub link_name: String,
+    /// Listener vs Sibling. See [`LinkInstanceRole`].
+    pub role: LinkInstanceRole,
+    /// RFC §5.C line 814 — `bind`.
+    pub bind: String,
+    /// RFC §5.C line 814 — `driver`.
+    pub driver: String,
+    /// RFC §5.C line 814-816 — `mtu_bytes`.
+    pub mtu_bytes: Option<u32>,
+    /// RFC §5.C line 814-816 — `expected_p99_bytes`.
+    pub expected_p99_bytes: Option<u32>,
+    /// RFC §5.C line 814-816 — `burst_pps`.
+    pub burst_pps: Option<u32>,
+    /// RFC §5.C line 814-816 — `rx_dispatch` (resolved per
+    /// [`crate::mesh::deploy::LinkConfig::resolved_rx_dispatch`]).
+    /// Carried by value so downstream consumers don't re-resolve the
+    /// default. Wire form is the kebab-case `as_str` of `RxDispatch`.
+    pub rx_dispatch: String,
+}
+
 /// `<sce:cache-policy>` enum — RFC §5.E lines 948-957. Three policies
 /// determine how codegen positions cache-maintenance ops on FSM edges:
 /// `maintain` emits clean/invalidate around DMA boundaries (B7-δ);
