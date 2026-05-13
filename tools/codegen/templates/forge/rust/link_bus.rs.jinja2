@@ -1,0 +1,63 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+// SCE Forge: Auto-generated per-machine LinkBus aggregator
+// Runtime: sce_link_runtime (AP-side, tokio host)
+// Machine: {{ machine_name }}
+// Do not edit — regenerate from deploy.yaml + the source forge link docs.
+//
+// watching-zenoh RFC §5.N lines 3041-3049 (C10-β AP path).
+// `LinkBus` aggregates one `tokio::sync::mpsc::Sender<{Link}Event>` per
+// declared `<sce:link>` in this machine's `machines.<name>.links` block.
+// FSM workers receive `&LinkBus` and call `.send_<link>()` to push
+// outbound bytes through the matching link's tokio task. Each link has
+// its own `tokio::spawn` task per RFC §5.N line 3046; this struct only
+// owns the cross-link routing handles.
+
+#![allow(clippy::all)]
+#![allow(unused_imports)]
+#![allow(unused_variables)]
+#![allow(dead_code)]
+
+use tokio::sync::mpsc;
+
+/// Per-link outbound TX envelope. Generated as a closed enum keyed by
+/// link name so cross-link routing is type-safe at compile time.
+#[derive(Debug, Clone)]
+pub enum LinkBusEvent {
+{% for link in links %}    /// Envelope for `<sce:link name="{{ link.name }}"/>`.
+    {{ link.pascal_name }}(Vec<u8>),
+{% endfor %}}
+
+/// Per-machine link aggregator. One mpsc sender per declared
+/// `<sce:link>` in `machines.{{ machine_name }}.links`. FSM workers
+/// thread a borrow of this struct into their action contexts; sending
+/// over a link routes via the matching channel into that link's
+/// dedicated `tokio::spawn` task.
+pub struct {{ machine_pascal }}LinkBus {
+{% for link in links %}    /// Outbound sender for `<sce:link name="{{ link.name }}"/>`.
+    pub {{ link.snake_name }}_tx: mpsc::Sender<Vec<u8>>,
+{% endfor %}}
+
+impl {{ machine_pascal }}LinkBus {
+    /// Construct the bus from per-link channel halves. The orchestrator
+    /// produces these from each link's `tokio::spawn` task setup.
+    pub fn new(
+{% for link in links %}        {{ link.snake_name }}_tx: mpsc::Sender<Vec<u8>>,
+{% endfor %}    ) -> Self {
+        Self {
+{% for link in links %}            {{ link.snake_name }}_tx,
+{% endfor %}        }
+    }
+
+{% for link in links %}    /// Send `bytes` over `<sce:link name="{{ link.name }}"/>`.
+    /// Returns `Err` when the link's tokio task has closed its receiver
+    /// — typically a driver shutdown.
+    pub async fn send_{{ link.snake_name }}(
+        &self,
+        bytes: Vec<u8>,
+    ) -> Result<(), mpsc::error::SendError<Vec<u8>>> {
+        self.{{ link.snake_name }}_tx.send(bytes).await
+    }
+
+{% endfor %}}

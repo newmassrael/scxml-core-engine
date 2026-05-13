@@ -9400,6 +9400,204 @@ fn check_listener_sibling_emitted_rust(
     }
 }
 
+/// C10-β per-machine LinkBus aggregator on the Rust (AP) backend
+/// (watching-zenoh RFC §5.N lines 3041-3049, Q-C10-β-5 a). Emits the
+/// `{Machine}LinkBus` struct + `LinkBusEvent` enum carrying one
+/// `tokio::sync::mpsc::Sender<Vec<u8>>` per link in
+/// `deploy.machines.<m>.links`. The orchestrator pipeline path
+/// pushes the rendered output as `{machine}_link_bus.rs`.
+///
+/// `link_names` arrives in declaration order from
+/// `deploy.machines.<m>.links` so the emitted field order is
+/// deterministic.
+pub fn render_machine_link_bus_rust(
+    env: &minijinja::Environment<'_>,
+    machine_name: &str,
+    link_names: &[String],
+) -> Result<String, ForgeError> {
+    let tmpl = env
+        .get_template("link_bus.rs.jinja2")
+        .map_err(|e| ForgeError::Generate(GenerateError::TemplateLoad(format!(
+            "link_bus.rs.jinja2 (rust): {e}"
+        ))))?;
+    let links: Vec<_> = link_names
+        .iter()
+        .map(|n| minijinja::context! {
+            name => n,
+            pascal_name => filters::to_pascal_case(n.clone()),
+            snake_name => filters::to_snake_case(n.clone()),
+        })
+        .collect();
+    let ctx = minijinja::context! {
+        machine_name => machine_name,
+        machine_pascal => filters::to_pascal_case(machine_name.to_string()),
+        machine_snake => filters::to_snake_case(machine_name.to_string()),
+        links => links,
+    };
+    tmpl.render(ctx).map_err(|e| {
+        ForgeError::Generate(GenerateError::TemplateRender(format!(
+            "link_bus.rs.jinja2 (rust): {e}"
+        )))
+    })
+}
+
+/// C10-β per-machine cooperative scheduler on the Rust (MCU `no_std`)
+/// backend (watching-zenoh RFC §5.N lines 3050-3055, Q-C10-β-6 a).
+/// Emits the per-machine `tick()` function + round-robin
+/// `LINK_ORDER` constants. The orchestrator pipeline path pushes the
+/// rendered output as `{machine}_scheduler.rs`.
+pub fn render_machine_scheduler_rust(
+    env: &minijinja::Environment<'_>,
+    machine_name: &str,
+    link_names: &[String],
+    tick_period_us: u32,
+    per_link_budget_us: u32,
+) -> Result<String, ForgeError> {
+    let tmpl = env
+        .get_template("scheduler.rs.jinja2")
+        .map_err(|e| ForgeError::Generate(GenerateError::TemplateLoad(format!(
+            "scheduler.rs.jinja2 (rust): {e}"
+        ))))?;
+    let links: Vec<_> = link_names
+        .iter()
+        .map(|n| minijinja::context! {
+            name => n,
+            pascal_name => filters::to_pascal_case(n.clone()),
+            snake_name => filters::to_snake_case(n.clone()),
+        })
+        .collect();
+    let ctx = minijinja::context! {
+        machine_name => machine_name,
+        tick_period_us => tick_period_us,
+        per_link_budget_us => per_link_budget_us,
+        links => links,
+    };
+    tmpl.render(ctx).map_err(|e| {
+        ForgeError::Generate(GenerateError::TemplateRender(format!(
+            "scheduler.rs.jinja2 (rust): {e}"
+        )))
+    })
+}
+
+/// C10-β per-machine emission entry point used by the orchestrator
+/// (watching-zenoh RFC §5.N + Q-C10-β-5/-6/-7 a). The orchestrator
+/// passes per-machine info from `deploy.machines.<m>` after the C13 +
+/// C10-α validators land; this helper builds the right env + dispatches
+/// to the language-specific render fn. Returns a list of
+/// `(filename, content)` entries the orchestrator pushes onto its
+/// outputs vector with `(machine_name, GeneratedOutput { files: ... })`.
+///
+/// Rust path (AP `LinkBus` + MCU scheduler emit when `tick_period_us` +
+/// `per_link_budget_us` both present) emits two files per machine:
+/// `<machine_snake>_link_bus.rs` + `<machine_snake>_scheduler.rs`.
+/// C11 path emits one file: `<machine_snake>_scheduler.h`. Other
+/// backends silent-skip (Q-C10-β-7 a — Rust + C11 only).
+pub fn render_machine_concurrency_artifacts(
+    template_dir: &Path,
+    language: crate::generator::Language,
+    machine_name: &str,
+    link_names: &[String],
+    tick_period_us: Option<u32>,
+    per_link_budget_us: Option<u32>,
+) -> Result<Vec<(String, String)>, ForgeError> {
+    if link_names.is_empty() {
+        // No links on this machine ⇒ no LinkBus / scheduler to emit.
+        return Ok(Vec::new());
+    }
+    let snake = filters::to_snake_case(machine_name.to_string());
+    let mut files: Vec<(String, String)> = Vec::new();
+    match language {
+        crate::generator::Language::Rust => {
+            let forge_dir = template_dir.join("forge/rust");
+            let mut env = generator::new_env();
+            generator::load_templates(&mut env, &forge_dir)?;
+            // AP LinkBus emits unconditionally (it does not depend on
+            // tick budget — it is the cross-link routing surface).
+            let bus = render_machine_link_bus_rust(&env, machine_name, link_names)?;
+            files.push((format!("{}_link_bus.rs", snake), bus));
+            // MCU scheduler emits only when both tick fields present.
+            // Single-doc compile paths + AP-only machines silent-skip
+            // per Q-C10-β-9 (a).
+            if let (Some(tick), Some(budget)) = (tick_period_us, per_link_budget_us) {
+                let sched = render_machine_scheduler_rust(
+                    &env,
+                    machine_name,
+                    link_names,
+                    tick,
+                    budget,
+                )?;
+                files.push((format!("{}_scheduler.rs", snake), sched));
+            }
+        }
+        crate::generator::Language::C11 => {
+            // C11 has no LinkBus equivalent — AP-only construct. The
+            // MCU scheduler emits when both tick fields present.
+            if let (Some(tick), Some(budget)) = (tick_period_us, per_link_budget_us) {
+                let forge_dir = template_dir.join("forge/c");
+                let mut env = generator::new_env();
+                generator::load_templates(&mut env, &forge_dir)?;
+                let sched = render_machine_scheduler_c(
+                    &env,
+                    machine_name,
+                    link_names,
+                    tick,
+                    budget,
+                )?;
+                files.push((format!("{}_scheduler.h", snake), sched));
+            }
+        }
+        _ => {
+            // Q-C10-β-7 (a): backends without `link.*.jinja2` today
+            // silent-skip per the C10-α footprint precedent.
+        }
+    }
+    Ok(files)
+}
+
+/// C10-β per-machine cooperative scheduler on the C11 (MCU
+/// `bare_metal`) backend (Q-C10-β-6 a + Q-C10-β-7 a). Emits the
+/// per-machine `{machine}_scheduler_tick()` static-inline function +
+/// `LINK_ORDER` array + per-link budget macros. The orchestrator
+/// pipeline path pushes the rendered output as `{machine}_scheduler.h`.
+pub fn render_machine_scheduler_c(
+    env: &minijinja::Environment<'_>,
+    machine_name: &str,
+    link_names: &[String],
+    tick_period_us: u32,
+    per_link_budget_us: u32,
+) -> Result<String, ForgeError> {
+    let tmpl = env
+        .get_template("scheduler.h.jinja2")
+        .map_err(|e| ForgeError::Generate(GenerateError::TemplateLoad(format!(
+            "scheduler.h.jinja2 (c11): {e}"
+        ))))?;
+    let snake_name = filters::to_snake_case(machine_name.to_string());
+    let upper_name = to_upper_snake(machine_name);
+    let guard = format!("SCE_FORGE_{}_SCHEDULER_H", &upper_name);
+    let links: Vec<_> = link_names
+        .iter()
+        .map(|n| minijinja::context! {
+            name => n,
+            snake_name => filters::to_snake_case(n.clone()),
+        })
+        .collect();
+    let ctx = minijinja::context! {
+        machine_name => machine_name,
+        machine_snake => snake_name,
+        machine_upper => upper_name,
+        guard => guard,
+        tick_period_us => tick_period_us,
+        per_link_budget_us => per_link_budget_us,
+        link_count => link_names.len() as u32,
+        links => links,
+    };
+    tmpl.render(ctx).map_err(|e| {
+        ForgeError::Generate(GenerateError::TemplateRender(format!(
+            "scheduler.h.jinja2 (c11): {e}"
+        )))
+    })
+}
+
 /// Render a `<sce:kind="buffer-pool">` document for the Rust backend
 /// (watching-zenoh RFC §5.E, B7-α + C5). Emits a struct owning a
 /// fixed-size `[[u8; SLOT_SIZE]; SLOT_COUNT]` slot table + per-slot

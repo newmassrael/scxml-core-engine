@@ -1227,6 +1227,55 @@ pub enum DiagnosticCode {
     #[serde(rename = "reassembly/binding-on-unpaired-listener")]
     MeshDeployReassemblyBindingOnUnpairedListener,
 
+    /// Watching-zenoh RFC §5.N line 3060 verbatim
+    /// (`link/concurrent-count-exceeds-scheduler-slots`) — MCU-only
+    /// cooperative-scheduler accounting: more links than the
+    /// scheduler can accommodate within one tick. Hard error.
+    ///
+    /// Slot ceiling derivation (Q-C10-β-2 a): `floor(tick_period_us
+    /// / per_link_budget_us)` mirrors the C2-γ
+    /// `validate_machine_scheduler_worker_capacity` precedent at
+    /// mesh/deploy.rs `worker_slot_budget_us`. Validator silent-
+    /// skips when `platform.class != mcu`, `scheduler.kind !=
+    /// cooperative`, `tick_period_us` absent, or `per_link_budget_us`
+    /// absent (per Q-η5 (a) precedent). Repair: raise
+    /// `per_link_budget_us`, lower `tick_period_us`, or remove a
+    /// link declaration from `machines.<m>.links`.
+    #[serde(rename = "link/concurrent-count-exceeds-scheduler-slots")]
+    LinkConcurrentCountExceedsSchedulerSlots,
+
+    /// Watching-zenoh RFC §5.N line 3061 verbatim
+    /// (`link/per-link-budget-exceeds-tick-period`). Per-link budget
+    /// must fit inside one cooperative tick:
+    /// `per_link_budget_us > tick_period_us` is the single-link
+    /// sanity check (Q-C10-β-3 a literal code-name reading). Hard
+    /// error. NeutralOrDeterministic — two-axis repair (lower
+    /// `per_link_budget_us` or raise `tick_period_us`). Validator
+    /// silent-skips when either input absent or scheduler is not
+    /// cooperative.
+    #[serde(rename = "link/per-link-budget-exceeds-tick-period")]
+    LinkPerLinkBudgetExceedsTickPeriod,
+
+    /// Watching-zenoh RFC §5.N line 3062 verbatim
+    /// (`link/inbound-event-queue-unsized`). A `<sce:link>` declares
+    /// at least one `<sce:inbound>` event but the downstream FSM's
+    /// event queue depth is undeclared. Hard error.
+    ///
+    /// Two acceptable size sources per Q-C10-β-4 a: SCXML
+    /// per-instance `<scxml sce:capacity="N">` (preferred — pins
+    /// the FSM-side spsc capacity to the machine's actual event
+    /// volume) or deploy
+    /// `machines.<m>.scheduler.default_event_queue_capacity`
+    /// (fallback — single default applied to every undeclared
+    /// machine on the deploy). Validator extends
+    /// `compile_scxml_with_imports` pass-2 (C13 + C10-α
+    /// orchestrator-level precedent). Silent-skip when the link has
+    /// no inbound events declared or when no SCXML imports the link
+    /// (no FSM downstream to size). NeutralOrDeterministic —
+    /// two-axis repair (per-instance vs per-machine source).
+    #[serde(rename = "link/inbound-event-queue-unsized")]
+    LinkInboundEventQueueUnsized,
+
     // ── §5.L Bounded-collection kind diagnostics (watching-zenoh RFC
     //    §5.L lines 2540-2655). C6-α ships the two structure-only codes
     //    here; cross-doc (element-type-not-a-kind / index-by-field-
@@ -2080,6 +2129,10 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // Listener-link sibling-pair (watching-zenoh RFC §5.C + §5.M, C10-α)
         LinkListenerLinkNotPairedWithEstablishedSibling,
         MeshDeployReassemblyBindingOnUnpairedListener,
+        // Multi-link concurrency contract (watching-zenoh RFC §5.N, C10-β)
+        LinkConcurrentCountExceedsSchedulerSlots,
+        LinkPerLinkBudgetExceedsTickPeriod,
+        LinkInboundEventQueueUnsized,
         // Bounded-collection kind parse-time structure validators (watching-zenoh RFC §5.L, C6-α)
         CollectionOrderingSortedRequiresIndexBy,
         CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion,
@@ -2476,6 +2529,15 @@ impl DiagnosticCode {
                 Some("watching-zenoh RFC §5.C")
             }
 
+            // C10-β multi-link concurrency contract (RFC §5.N lines
+            // 3031-3062). All three codes share the §5.N anchor —
+            // distinct §5 section from §5.C (B6 link kind) and §5.M
+            // (reassembly variant) so the spec table-of-contents stays
+            // readable.
+            LinkConcurrentCountExceedsSchedulerSlots
+            | LinkPerLinkBudgetExceedsTickPeriod
+            | LinkInboundEventQueueUnsized => Some("watching-zenoh RFC §5.N"),
+
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
 
@@ -2845,6 +2907,9 @@ impl DiagnosticCode {
             ReassemblyPeerIdNotZidOnEstablishedSession => "reassembly/peer-id-not-zid-on-established-session",
             LinkListenerLinkNotPairedWithEstablishedSibling => "link/listener-link-not-paired-with-established-sibling",
             MeshDeployReassemblyBindingOnUnpairedListener => "reassembly/binding-on-unpaired-listener",
+            LinkConcurrentCountExceedsSchedulerSlots => "link/concurrent-count-exceeds-scheduler-slots",
+            LinkPerLinkBudgetExceedsTickPeriod => "link/per-link-budget-exceeds-tick-period",
+            LinkInboundEventQueueUnsized => "link/inbound-event-queue-unsized",
             CollectionOrderingSortedRequiresIndexBy => "collection/ordering-sorted-requires-index-by",
             CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion => "collection/overflow-policy-oldest-wins-requires-ordering-insertion",
             CollectionElementTypeNotAKind => "collection/element-type-not-a-kind",
@@ -4752,6 +4817,28 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 link_name.clone(),
             ],
         },
+        // ── §5.N C10-β link/inbound-event-queue-unsized ──
+        ValidationError::LinkInboundEventQueueUnsized {
+            machine,
+            link_name,
+            inbound_event_count,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::LinkInboundEventQueueUnsized,
+            stage: Stage::Validation,
+            // `actual` = the link's declared inbound event count,
+            // making the surface volume visible to authors. Two-axis
+            // repair (per-instance sce:capacity vs per-machine deploy
+            // default) — NeutralOrDeterministic, no closed candidate
+            // set, message text carries both structural repairs.
+            actual: Some(inbound_event_count.to_string()),
+            expected: None,
+            fix: None,
+            key_fragments: vec![
+                machine.clone(),
+                link_name.clone(),
+                inbound_event_count.to_string(),
+            ],
+        },
         // ── §5.K C13-γ stage-copy policy promotion + opt-out rejection ──
         ValidationError::PoolStageCopyPolicyError {
             pool_name,
@@ -6472,6 +6559,21 @@ mod tests {
                 // Hash placeholder — patched by byte-stability assertion.
                 r#"{"v":1,"id":"fnv1a:c9d90099f8ed9a01","code":"reassembly/binding-on-unpaired-listener","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"reassembly-variant buffer-pool 'rx_reassembly_pool' is bound to link 'udp_listener' on machine 'mcu_node'; the link declares `trust_class: session_arming` but its machine source SCXML has no `Accepting.*` substate, so codegen cannot synthesize the paired `established_session` sibling. watching-zenoh RFC §5.M lines 2982-2994 — only listeners (machine source SCXML carrying `Accepting.*`) auto-rebind a `session_arming` reassembly binding to the `established_session` sibling; without that pairing the binding has no valid landing site. Repair: add an `Accepting.*` substate to machine 'mcu_node's source SCXML (making link 'udp_listener' a real listener so the sibling auto-synthesizes), or remove the reassembly-pool binding from link 'udp_listener'."}"#,
             ),
+            (
+                // RFC §5.N line 3062: cross-doc link has inbound
+                // events but no FSM event-queue capacity reaches it.
+                // NeutralOrDeterministic — two-axis repair (per-
+                // instance sce:capacity vs per-machine
+                // default_event_queue_capacity).
+                "forge/link-inbound-event-queue-unsized",
+                ValidationError::LinkInboundEventQueueUnsized {
+                    machine: "mcu_node".into(),
+                    link_name: "udp_listener".into(),
+                    inbound_event_count: 3,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:d927379bfa06a12a","code":"link/inbound-event-queue-unsized","stage":"validation","spec":"watching-zenoh RFC §5.N","message":"link 'udp_listener' on machine 'mcu_node': declares 3 inbound event(s) but no downstream FSM event-queue capacity is bound. watching-zenoh RFC §5.N line 3062 — link declared but downstream FSM inbox depth unset. Repair: add `<scxml sce:capacity=\"N\">` to machine 'mcu_node's source SCXML (per-instance), or add `scheduler.default_event_queue_capacity: N` under `machines.mcu_node` (per-machine fallback).","actual":"3"}"#,
+            ),
             // ── §5.K C13-γ stage-copy policy promotion + opt-out rejection ──
             (
                 // RFC §5.K line 2504-2511: warning promoted to hard error.
@@ -8164,6 +8266,35 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:f5757abc38261115","code":"timer/slot-overflow","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.D","message":"machine 'mcu_node': declared 5 timers under machines.mcu_node.timers, but scheduler.timer_wheel_depth = 4 slots cannot accommodate them. watching-zenoh RFC §5.D line 910 (`timer/slot-overflow`) — the static timer wheel is sized at compile time. Repair: raise `scheduler.timer_wheel_depth`, remove excess timers, or switch to `scheduler.kind: tokio` / `rt` to inherit host runtime timer scheduling.","expected":["4"],"actual":"5"}"#,
             ),
             (
+                // RFC §5.N line 3060: MCU cooperative scheduler slot
+                // overrun. NeutralOrDeterministic — three-axis repair
+                // (raise per_link_budget, lower tick_period, drop a
+                // link).
+                "link/concurrent-count-exceeds-scheduler-slots",
+                DeployError::LinkConcurrentCountExceedsSchedulerSlots {
+                    machine: "mcu_node".into(),
+                    link_count: 4,
+                    slot_count: 2,
+                    tick_period_us: 1000,
+                    per_link_budget_us: 500,
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:e23d9c6761cfacc7","code":"link/concurrent-count-exceeds-scheduler-slots","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.N","message":"machine 'mcu_node' (MCU): 4 links declared but the cooperative scheduler accommodates only 2 per-tick slots (`floor(tick_period_us 1000 / per_link_budget_us 500) = 2`). watching-zenoh RFC §5.N line 3060 — more links than the cooperative scheduler can accommodate. Repair: raise `per_link_budget_us`, lower `tick_period_us`, or remove a link declaration from `machines.<m>.links`.","expected":["2"],"actual":"4"}"#,
+            ),
+            (
+                // RFC §5.N line 3061: per-link budget can't fit one
+                // tick. NeutralOrDeterministic — two-axis repair.
+                "link/per-link-budget-exceeds-tick-period",
+                DeployError::LinkPerLinkBudgetExceedsTickPeriod {
+                    machine: "mcu_node".into(),
+                    per_link_budget_us: 2000,
+                    tick_period_us: 1000,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:b3df0736b5b45af5","code":"link/per-link-budget-exceeds-tick-period","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.N","message":"machine 'mcu_node': `scheduler.per_link_budget_us: 2000` exceeds `scheduler.tick_period_us: 1000`. watching-zenoh RFC §5.N line 3061 — a single link's budget cannot exceed the entire cooperative tick. Repair: lower `per_link_budget_us` to ≤ `tick_period_us`, or raise `tick_period_us`.","expected":["1000"],"actual":"2000"}"#,
+            ),
+            (
                 "mesh/external-read",
                 ExternalConfigError::Read {
                     path: "vsomeip.json".into(),
@@ -9062,6 +9193,20 @@ mod tests {
             // `Accepting.*` substate vs remove the binding) — no
             // closed candidate set. NeutralOrDeterministic (Q-C10-7 a).
             | MeshDeployReassemblyBindingOnUnpairedListener
+            // C10-β multi-link concurrency codes (RFC §5.N lines
+            // 3060-3062). All three are multi-axis author-domain
+            // repairs with no closed candidate sets per Q-C10-β-8 (a):
+            //   `concurrent-count-exceeds-scheduler-slots`: raise
+            //   per_link_budget_us / lower tick_period_us / drop a
+            //   link.
+            //   `per-link-budget-exceeds-tick-period`: lower
+            //   per_link_budget_us / raise tick_period_us.
+            //   `inbound-event-queue-unsized`: add SCXML
+            //   `sce:capacity="N"` per-instance OR
+            //   `default_event_queue_capacity` per-machine.
+            | LinkConcurrentCountExceedsSchedulerSlots
+            | LinkPerLinkBudgetExceedsTickPeriod
+            | LinkInboundEventQueueUnsized
             // C6-β multi-writer without atomic imports: the C4 baseline
             // atomic family spans 100+ symbols (load/store/cas/fetch ×
             // 5 widths × multiple orderings) so a `Fix::ReplaceOneOf`
@@ -9617,6 +9762,9 @@ mod tests {
                 | ReassemblyPeerIdNotZidOnEstablishedSession
                 | LinkListenerLinkNotPairedWithEstablishedSibling
                 | MeshDeployReassemblyBindingOnUnpairedListener
+                | LinkConcurrentCountExceedsSchedulerSlots
+                | LinkPerLinkBudgetExceedsTickPeriod
+                | LinkInboundEventQueueUnsized
                 | TimerPeriodBelowTickRate
                 | TimerSlotOverflow
                 | ExternSymbolNotInWhitelist
@@ -9732,9 +9880,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            260,
+            263,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 260 distinct variants to match the DiagnosticCode \
+             expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -10244,7 +10392,33 @@ mod tests {
              struct / `_established_session_t` C11 typedef per \
              Q-C10-3 + Q-C10-5). Post-render substring grep mirrors \
              the C9-γ `reassembly/peer-id-not-zid-on-established-\
-             session` precedent (generator.rs:10225). 258 → 260.",
+             session` precedent (generator.rs:10225). 258 → 260. Then \
+             watching-zenoh RFC §5.N lines 3031-3062 land the C10-β \
+             multi-link concurrency contract — three \
+             NeutralOrDeterministic codes (`link/concurrent-count-\
+             exceeds-scheduler-slots` MCU-only via \
+             `floor(tick_period_us / per_link_budget_us)` slot \
+             derivation mirroring C2-γ \
+             `validate_machine_scheduler_worker_capacity`; \
+             `link/per-link-budget-exceeds-tick-period` literal \
+             code-name reading per Q-C10-β-3 a; \
+             `link/inbound-event-queue-unsized` extending \
+             `compile_scxml_with_imports` pass-2 cross-doc to verify \
+             SCXML `event_queue_capacity` OR deploy \
+             `default_event_queue_capacity` source for any link \
+             carrying inbound events per Q-C10-β-4 a). New \
+             `MachineSchedulerConfig.per_link_budget_us: Option<u32>` \
+             schema field per spec line 3056-3057 verbatim drives the \
+             first two codes; the third closes the §5.J.2 + §5.N \
+             event-queue-size axis the C3 Atomic B-γ1 field-only \
+             landing deliberately left unconnected. AP `LinkBus` + MCU \
+             round-robin templates emit per-machine sibling artifacts \
+             (Rust + C11 only, matching the C10-α link.* footprint \
+             per Q-C10-β-7 a) via a new orchestrator pipeline path \
+             that iterates `deploy.machines` and pushes \
+             `(<machine>_link_bus.rs / <machine>_scheduler.{{rs,c}}, \
+             GeneratedOutput)` entries alongside the existing \
+             basename-keyed per-doc outputs. 260 → 263.",
         );
     }
 

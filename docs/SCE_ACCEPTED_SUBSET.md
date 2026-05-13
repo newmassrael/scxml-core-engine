@@ -498,6 +498,9 @@ Codes that the author can avoid by writing a better SCXML /
 | `reassembly/peer-id-not-zid-on-established-session` | Validation |
 | `link/listener-link-not-paired-with-established-sibling` | Validation |
 | `reassembly/binding-on-unpaired-listener` | Validation |
+| `link/concurrent-count-exceeds-scheduler-slots` | Mesh Deploy |
+| `link/per-link-budget-exceeds-tick-period` | Mesh Deploy |
+| `link/inbound-event-queue-unsized` | Validation |
 | `collection/ordering-sorted-requires-index-by` | Validation |
 | `collection/overflow-policy-oldest-wins-requires-ordering-insertion` | Validation |
 | `collection/element-type-not-a-kind` | Validation |

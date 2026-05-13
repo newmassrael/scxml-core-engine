@@ -1890,6 +1890,35 @@ pub enum ValidationError {
         link_name: String,
     },
 
+    /// watching-zenoh RFC §5.N line 3062 verbatim
+    /// (`link/inbound-event-queue-unsized`) — C10-β cross-doc
+    /// orchestrator-level check. A `<sce:link>` declares
+    /// `<sce:inbound event="X"/>` rows but no FSM event-queue
+    /// capacity reaches the machine that imports the link. Two
+    /// acceptable sources per Q-C10-β-4 (a): SCXML per-instance
+    /// `<scxml sce:capacity="N">` (preferred) or deploy
+    /// `machines.<m>.scheduler.default_event_queue_capacity`
+    /// (fallback). Both absent ⇒ no compile-time bound on the
+    /// downstream queue depth.
+    ///
+    /// C10-β wires this inside
+    /// [`crate::compile_scxml_with_imports`] pass-2 after the C13-α-2
+    /// + C10-α validators (matching the orchestrator-level cross-doc
+    /// precedent). Silent-skip when the link has no inbound events
+    /// declared or when no SCXML imports the link.
+    /// NeutralOrDeterministic — two-axis repair (per-instance vs
+    /// per-machine size source).
+    #[error(
+        "link '{link_name}' on machine '{machine}': declares {inbound_event_count} inbound event(s) but no downstream FSM event-queue capacity is bound. \
+         watching-zenoh RFC §5.N line 3062 — link declared but downstream FSM inbox depth unset. \
+         Repair: add `<scxml sce:capacity=\"N\">` to machine '{machine}'s source SCXML (per-instance), or add `scheduler.default_event_queue_capacity: N` under `machines.{machine}` (per-machine fallback)."
+    )]
+    LinkInboundEventQueueUnsized {
+        machine: String,
+        link_name: String,
+        inbound_event_count: u32,
+    },
+
     /// watching-zenoh RFC §5.K line 2504-2511 verbatim
     /// (`pool/stage-copy-policy-error`). `pool_defaults.stage_copy_policy:
     /// error` (or `forbid`) AND the §5.M / ARCHITECTURE §9.3

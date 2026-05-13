@@ -1486,6 +1486,44 @@ pub enum DeployError {
         role: String,
         candidates: Vec<String>,
     },
+
+    /// Watching-zenoh RFC §5.N line 3060 verbatim
+    /// (`link/concurrent-count-exceeds-scheduler-slots`). MCU-only:
+    /// the cooperative scheduler's per-tick slot ceiling is
+    /// `floor(tick_period_us / per_link_budget_us)` (Q-C10-β-2 a,
+    /// mirroring C2-γ `validate_machine_scheduler_worker_capacity`);
+    /// when `links.len() > slot_count`, a fixed-order round-robin
+    /// cannot service every link within one tick.
+    #[error(
+        "machine '{machine}' (MCU): {link_count} links declared but the cooperative scheduler accommodates only {slot_count} per-tick slots \
+         (`floor(tick_period_us {tick_period_us} / per_link_budget_us {per_link_budget_us}) = {slot_count}`). \
+         watching-zenoh RFC §5.N line 3060 — more links than the cooperative scheduler can accommodate. \
+         Repair: raise `per_link_budget_us`, lower `tick_period_us`, or remove a link declaration from `machines.<m>.links`."
+    )]
+    LinkConcurrentCountExceedsSchedulerSlots {
+        machine: String,
+        link_count: u32,
+        slot_count: u32,
+        tick_period_us: u32,
+        per_link_budget_us: u32,
+    },
+
+    /// Watching-zenoh RFC §5.N line 3061 verbatim
+    /// (`link/per-link-budget-exceeds-tick-period`). The per-link
+    /// budget must fit inside one cooperative tick:
+    /// `per_link_budget_us > tick_period_us` (Q-C10-β-3 a single-
+    /// link sanity check). Author-side repair is two-axis (lower
+    /// budget or raise tick period).
+    #[error(
+        "machine '{machine}': `scheduler.per_link_budget_us: {per_link_budget_us}` exceeds `scheduler.tick_period_us: {tick_period_us}`. \
+         watching-zenoh RFC §5.N line 3061 — a single link's budget cannot exceed the entire cooperative tick. \
+         Repair: lower `per_link_budget_us` to ≤ `tick_period_us`, or raise `tick_period_us`."
+    )]
+    LinkPerLinkBudgetExceedsTickPeriod {
+        machine: String,
+        per_link_budget_us: u32,
+        tick_period_us: u32,
+    },
 }
 
 // ── Stage 1b: External infrastructure config ─────────────────
@@ -3077,6 +3115,51 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 link_name.clone(),
                 role.clone(),
                 extern_name.clone(),
+            ],
+        },
+        // ── §5.N C10-β concurrent-count-exceeds-scheduler-slots ──
+        DeployError::LinkConcurrentCountExceedsSchedulerSlots {
+            machine,
+            link_count,
+            slot_count,
+            tick_period_us,
+            per_link_budget_us,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::LinkConcurrentCountExceedsSchedulerSlots,
+            stage: Stage::MeshDeploy,
+            // `actual` = declared link count; `expected` = derived slot
+            // ceiling (the bound link_count must not exceed). The
+            // tick_period + per_link_budget inputs ride key_fragments
+            // so a downstream renderer can reproduce the derivation.
+            actual: Some(link_count.to_string()),
+            expected: Some(vec![slot_count.to_string()]),
+            fix: None,
+            key_fragments: vec![
+                machine.clone(),
+                link_count.to_string(),
+                slot_count.to_string(),
+                tick_period_us.to_string(),
+                per_link_budget_us.to_string(),
+            ],
+        },
+        // ── §5.N C10-β per-link-budget-exceeds-tick-period ──
+        DeployError::LinkPerLinkBudgetExceedsTickPeriod {
+            machine,
+            per_link_budget_us,
+            tick_period_us,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::LinkPerLinkBudgetExceedsTickPeriod,
+            stage: Stage::MeshDeploy,
+            // `actual` = the overshooting per_link_budget; `expected`
+            // = the tick period bound. Two-axis repair (lower budget /
+            // raise tick) — `fix: None` signals NeutralOrDeterministic.
+            actual: Some(per_link_budget_us.to_string()),
+            expected: Some(vec![tick_period_us.to_string()]),
+            fix: None,
+            key_fragments: vec![
+                machine.clone(),
+                per_link_budget_us.to_string(),
+                tick_period_us.to_string(),
             ],
         },
     }

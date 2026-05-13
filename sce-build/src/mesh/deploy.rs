@@ -1028,6 +1028,20 @@ pub struct MachineSchedulerConfig {
     /// no_std codegen path has nothing to source the literal from.
     #[serde(default)]
     pub default_event_queue_capacity: Option<u32>,
+    /// Watching-zenoh RFC §5.N line 3056-3057 (C10-β) — per-link
+    /// work cap inside one cooperative scheduler tick. Unit:
+    /// microseconds. Optional at parse time; required for both
+    /// C10-β codes that consume it
+    /// (`link/concurrent-count-exceeds-scheduler-slots` derives the
+    /// MCU slot ceiling via
+    /// `floor(tick_period_us / per_link_budget_us)` per Q-C10-β-2 a;
+    /// `link/per-link-budget-exceeds-tick-period` fires when
+    /// `per_link_budget_us > tick_period_us` per Q-C10-β-3 a).
+    /// Silent-skip when absent per Q-η5 (a) precedent — single-doc
+    /// compile paths + AP machines that use `tokio::spawn` per link
+    /// don't consume the slot accounting.
+    #[serde(default)]
+    pub per_link_budget_us: Option<u32>,
 }
 
 /// Per-machine scheduler kind axis (SCE Mesh §14, watching-zenoh RFC
@@ -2237,6 +2251,7 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_worker_slot_budget_required_when_cooperative(&cfg)?;
     validate_keepalive_jitter_required_when_cooperative(&cfg)?;
     validate_machine_scheduler_worker_capacity(&cfg)?;
+    validate_machine_scheduler_link_concurrency(&cfg)?;
     validate_machine_timer_wheel_capacity(&cfg)?;
     validate_links(&cfg)?;
     validate_pool_defaults(&cfg)?;
@@ -3389,6 +3404,95 @@ fn validate_keepalive_jitter_required_when_cooperative(
 /// when a Worker doc compiles against a machine without an entry for
 /// itself in `machines.<m>.workers` (signals: undeclared worker, scheduler
 /// cannot account for it).
+/// Watching-zenoh RFC §5.N lines 3060-3061 (C10-β) — paired
+/// validators for the multi-link concurrency contract on the
+/// cooperative-scheduler path.
+///
+/// **#1 `link/concurrent-count-exceeds-scheduler-slots`** (MCU-only
+/// per spec line 3060 prose, gated on `platform.class: mcu`). The
+/// per-tick slot ceiling is
+/// `floor(tick_period_us / per_link_budget_us)` per Q-C10-β-2 (a),
+/// mirroring [`validate_machine_scheduler_worker_capacity`]. Fires
+/// when `links.len() > slot_count`.
+///
+/// **#2 `link/per-link-budget-exceeds-tick-period`** (all classes —
+/// the sanity check is "a single link's budget can't exceed one
+/// tick" regardless of platform). Fires when
+/// `per_link_budget_us > tick_period_us`.
+///
+/// Both silent-skip when any of the following are absent (per Q-η5
+/// (a) precedent):
+///   - `scheduler.kind` != `cooperative` (tokio/rt use preemption;
+///     spec §5.N AP path uses `tokio::spawn` per link — no slot
+///     accounting),
+///   - `tick_period_us` absent,
+///   - `per_link_budget_us` absent (the C10-β new field — single-doc
+///     compile paths + machines that opt out of the budget cap
+///     silent-skip).
+///
+/// Returns the first failure (deterministic order: devices →
+/// machines → per-link budget check first → slot count second).
+fn validate_machine_scheduler_link_concurrency(
+    cfg: &DeployConfig,
+) -> Result<(), DeployError> {
+    for device in cfg.topology.values() {
+        for (machine_name, machine) in device.machines.iter() {
+            let Some(sched) = machine.scheduler.as_ref() else {
+                continue;
+            };
+            if !matches!(sched.kind, SchedulerKind::Cooperative) {
+                continue;
+            }
+            let (Some(tick_period_us), Some(per_link_budget_us)) =
+                (sched.tick_period_us, sched.per_link_budget_us)
+            else {
+                continue;
+            };
+
+            // ── #2 `link/per-link-budget-exceeds-tick-period` ──
+            // Spec line 3061 verbatim. All cooperative-scheduled
+            // platforms, regardless of class. Single-link sanity
+            // check (Q-C10-β-3 a literal code-name reading).
+            if per_link_budget_us > tick_period_us {
+                return Err(DeployError::LinkPerLinkBudgetExceedsTickPeriod {
+                    machine: machine_name.clone(),
+                    per_link_budget_us,
+                    tick_period_us,
+                });
+            }
+
+            // ── #1 `link/concurrent-count-exceeds-scheduler-slots` ──
+            // Spec line 3060 verbatim, MCU-only. AP cooperative
+            // schedulers (rare) use `tokio::spawn` per link per spec
+            // line 3046-3049 — no slot accounting. Silent-skip when
+            // platform.class != mcu OR platform entirely absent.
+            let is_mcu = machine
+                .platform
+                .as_ref()
+                .map(|p| matches!(p.class, PlatformClass::Mcu))
+                .unwrap_or(false);
+            if !is_mcu {
+                continue;
+            }
+            if per_link_budget_us == 0 {
+                continue;
+            }
+            let slot_count = tick_period_us / per_link_budget_us;
+            let link_count = machine.links.len() as u32;
+            if link_count > slot_count {
+                return Err(DeployError::LinkConcurrentCountExceedsSchedulerSlots {
+                    machine: machine_name.clone(),
+                    link_count,
+                    slot_count,
+                    tick_period_us,
+                    per_link_budget_us,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
 fn validate_machine_scheduler_worker_capacity(cfg: &DeployConfig) -> Result<(), DeployError> {
     for device in cfg.topology.values() {
         for (machine_name, machine) in device.machines.iter() {

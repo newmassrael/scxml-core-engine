@@ -1,0 +1,91 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+/* SCE Forge: Auto-generated per-machine cooperative scheduler */
+/* Runtime: sce-c-runtime (MCU `bare_metal` target) */
+/* Machine: {{ machine_name }} */
+/* Do not edit — regenerate from deploy.yaml + the source forge link docs. */
+/*
+ * watching-zenoh RFC §5.N lines 3050-3055 (C10-β MCU path).
+ * The cooperative scheduler's tick loop polls each link's
+ * `driver.poll()` in a fixed round-robin per spec line 3050; the
+ * per-link work cap is `per_link_budget_us = {{ per_link_budget_us }}` µs.
+ * Starvation guarantee (spec line 3053-3055): no link can starve
+ * another because the round-robin order is deterministic and the
+ * budget caps per-link work per tick.
+ */
+
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <stdint.h>
+#include <stddef.h>
+
+#include "sce/forge/link.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Cooperative scheduler tick budget — total tick period in
+ * microseconds. Sourced from `scheduler.tick_period_us` on this
+ * machine's deploy entry. */
+#define SCE_FORGE_{{ machine_upper }}_TICK_PERIOD_US ({{ tick_period_us }}u)
+
+/* Per-link work cap per tick — sourced from
+ * `scheduler.per_link_budget_us`. The scheduler bounds each
+ * `link.poll()` call by this budget; the cumulative bound
+ * `per_link_budget_us × links.len()` is build-time-verified to fit
+ * inside `TICK_PERIOD_US` via the §5.N parse-time validators. */
+#define SCE_FORGE_{{ machine_upper }}_PER_LINK_BUDGET_US ({{ per_link_budget_us }}u)
+
+/* Round-robin link count for this machine. */
+#define SCE_FORGE_{{ machine_upper }}_LINK_COUNT ({{ link_count }}u)
+
+/* Round-robin link order — declaration order from deploy.yaml so the
+ * starvation guarantee is reproducible across rebuilds. Spec line 3053:
+ * "Scheduler emits a round-robin visit-order invariant: no link can
+ * starve another." */
+static const char *const SCE_FORGE_{{ machine_upper }}_LINK_ORDER[SCE_FORGE_{{ machine_upper }}_LINK_COUNT] = {
+{% for link in links %}    "{{ link.name }}",
+{% endfor %}};
+
+/* Tick the cooperative scheduler once. The caller passes an array of
+ * `sce_forge_link_t` driver handles in `LINK_ORDER` order; the
+ * scheduler polls each driver via the existing `ops->rx` primitive
+ * (the documented non-blocking poll surface per
+ * `sce/forge/link.h:69-73`) and routes any decoded frame to the
+ * caller-supplied dispatch callback. The
+ * `PER_LINK_BUDGET_US` constant above is the build-time-verified
+ * per-link work cap; future runtime crates that add a
+ * `poll(deadline_us)` op to the vtable will consume the constant
+ * directly. One tick boundary is the caller's responsibility
+ * (typical MCU shape: `SysTick` IRQ wakes a main-loop ticker that
+ * invokes `{{ machine_snake }}_scheduler_tick()` once per
+ * `TICK_PERIOD_US`). */
+typedef void (*{{ machine_snake }}_scheduler_dispatch_fn)(
+    void *ctx, size_t link_index, sce_forge_link_rx_frame_t frame);
+
+static inline void {{ machine_snake }}_scheduler_tick(
+    sce_forge_link_t *const drivers[SCE_FORGE_{{ machine_upper }}_LINK_COUNT],
+    {{ machine_snake }}_scheduler_dispatch_fn dispatch,
+    void *dispatch_ctx) {
+    for (size_t i = 0; i < SCE_FORGE_{{ machine_upper }}_LINK_COUNT; ++i) {
+        sce_forge_link_t *const drv = drivers[i];
+        if (drv == NULL || drv->ops == NULL || drv->ops->rx == NULL) {
+            continue;
+        }
+        sce_forge_link_rx_frame_t frame;
+        if (drv->ops->rx(drv->self, &frame)) {
+            if (dispatch != NULL) {
+                dispatch(dispatch_ctx, i, frame);
+            }
+        }
+    }
+}
+
+#ifdef __cplusplus
+}  /* extern "C" */
+#endif
+
+#endif /* {{ guard }} */

@@ -1831,6 +1831,81 @@ pub fn compile_scxml_with_imports(
         )
         .map_err(mesh::error::MeshError::Deploy)
         .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
+
+        // ── C10-β link/inbound-event-queue-unsized ──
+        //
+        // Watching-zenoh RFC §5.N line 3062 verbatim — for every link
+        // carrying `<sce:inbound>` events, the build must observe an
+        // event-queue capacity binding from one of two sources per
+        // Q-C10-β-4 (a): SCXML per-instance `sce:capacity="N"` on the
+        // machine's source SCXML doc (preferred), or deploy
+        // `scheduler.default_event_queue_capacity` (fallback). The
+        // validator walks the deploy/forge link union pair to enumerate
+        // (machine, link_name, inbound_count) tuples and fires the
+        // diagnostic when both size sources are absent.
+        //
+        // Sites the validator joins:
+        //   1. `forge_link_models_view` (built above) → inbound count
+        //      per link name.
+        //   2. `deploy.machines.<m>.links` → which machine owns the
+        //      link.
+        //   3. `scxml_models` (already parsed in pass 2 above) → the
+        //      machine's source SCXML's `event_queue_capacity`.
+        //   4. `deploy.machines.<m>.scheduler.default_event_queue_capacity`
+        //      → per-machine fallback.
+        //
+        // Silent-skip per Q-C10-β-9 (a) when the link has no inbound
+        // events declared OR when no SCXML imports the link (no FSM
+        // downstream to size).
+        for device in deploy_cfg.topology.values() {
+            for (machine_name, machine) in device.machines.iter() {
+                for (link_name, _link_cfg) in machine.links.iter() {
+                    let Some(forge_link) = forge_link_models_view.get(link_name) else {
+                        continue;
+                    };
+                    let inbound_count = forge_link.inbound.len() as u32;
+                    if inbound_count == 0 {
+                        continue;
+                    }
+
+                    // Per-instance source: machine.source SCXML's
+                    // event_queue_capacity wins. Match scxml model by
+                    // basename = machine.source.
+                    let machine_source = machine.source.as_str();
+                    let model = scxml_models.iter().find_map(|(path, model)| {
+                        let matches = path
+                            .file_name()
+                            .and_then(|s| s.to_str())
+                            .map(|n| n == machine_source)
+                            .unwrap_or(false)
+                            || path.to_str().map(|p| p == machine_source).unwrap_or(false);
+                        if matches { Some(model) } else { None }
+                    });
+                    let has_per_instance =
+                        model.and_then(|m| m.event_queue_capacity).is_some();
+                    // Per-machine fallback source.
+                    let has_per_machine = machine
+                        .scheduler
+                        .as_ref()
+                        .and_then(|s| s.default_event_queue_capacity)
+                        .is_some();
+
+                    if !has_per_instance && !has_per_machine {
+                        return Err(Located::new(
+                            ValidationError::LinkInboundEventQueueUnsized {
+                                machine: machine_name.clone(),
+                                link_name: link_name.clone(),
+                                inbound_event_count: inbound_count,
+                            }
+                            .into(),
+                            DEPLOY_LABEL,
+                            None,
+                            None,
+                        ));
+                    }
+                }
+            }
+        }
     }
 
     // C6-γ2: bounded-collection codegen resolutions for the orchestrator
@@ -1947,6 +2022,59 @@ pub fn compile_scxml_with_imports(
             .unwrap_or(path_str);
         let out = compile_scxml_lang_typed(path_str, template_dir, language)?;
         outputs.push((basename.to_string(), out));
+    }
+
+    // ── C10-β per-machine concurrency artifacts ──
+    //
+    // Watching-zenoh RFC §5.N lines 3041-3055 (Q-C10-β-5/-6 a). Iterate
+    // `deploy.machines` and emit per-machine AP `LinkBus` + MCU
+    // round-robin scheduler artifacts alongside the per-doc outputs
+    // above. The emit fires only on Rust + C11 per Q-C10-β-7 (a) and
+    // silent-skips on the deploy-unaware path (single-file CLI) per
+    // Q-C10-β-9 (a).
+    //
+    // Uses [`find_template_base`] rather than the per-language
+    // `template_dir` parameter — the latter is the SCXML-side root
+    // (`<base>/<lang>` for some backends), while the C10-β per-machine
+    // emitters resolve `forge/rust` and `forge/c` directly under the
+    // shared template root (matching the existing
+    // `compile_forge_with_imports` helper-discovery pattern at lib.rs:1338).
+    if let Some(deploy_cfg) = deploy {
+        let template_base = find_template_base();
+        for device in deploy_cfg.topology.values() {
+            for (machine_name, machine) in device.machines.iter() {
+                let link_names: Vec<String> = machine
+                    .links
+                    .keys()
+                    .cloned()
+                    .collect::<std::collections::BTreeSet<String>>()
+                    .into_iter()
+                    .collect();
+                let tick_period_us = machine
+                    .scheduler
+                    .as_ref()
+                    .and_then(|s| s.tick_period_us);
+                let per_link_budget_us = machine
+                    .scheduler
+                    .as_ref()
+                    .and_then(|s| s.per_link_budget_us);
+                let files = forge::generator::render_machine_concurrency_artifacts(
+                    &template_base,
+                    language,
+                    machine_name,
+                    &link_names,
+                    tick_period_us,
+                    per_link_budget_us,
+                )
+                .map_err(|e| Located::new(e, "deploy.yaml", None, None))?;
+                if !files.is_empty() {
+                    outputs.push((
+                        machine_name.clone(),
+                        generator::GeneratedOutput { files },
+                    ));
+                }
+            }
+        }
     }
 
     Ok(outputs)
