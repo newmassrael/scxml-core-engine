@@ -1,0 +1,301 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="bounded-collection")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+//
+// watching-zenoh RFC §5.L bounded-collection — typed fixed-capacity
+// container whose occupancy varies at runtime. Spec line 2576-2577
+// emit shape: `std::array<T, N>` storage + `std::bitset<N>` occupancy
+// + `uint32_t generation[N]` array + `uint32_t count`. A
+// forward-iterator class exposes only occupied slots
+// (`begin()`/`end()` walk via the bitset).
+//
+// Operations contract (spec lines 2609-2619):
+//   insert / remove / get / find_by_index (if index-by set) / iter
+//   (begin/end) / len / capacity.
+//
+// Handle (spec lines 2621-2622): POD struct over `uint32_t` carrying
+// slot index (low 16 bits) + generation counter (high 16 bits).
+// ABI-parity with the C11 backend (§5.J.5 cross-backend invariant).
+
+#pragma once
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <array>
+#include <bitset>
+#include <cstdint>
+#include <cstddef>
+#include <optional>
+
+#include "{{ element_snake }}.h"
+
+namespace SCE::Generated::{{ namespace }} {
+
+using {{ element_pascal }}Type = ::SCE::Generated::{{ element_pascal }}::{{ element_pascal }};
+
+/// Slot capacity (`<sce:capacity>`). For `source="deploy"` the value
+/// is resolved from `machines.<m>.limits.<k>` at codegen time per
+/// RFC §5.L lines 2583-2585; for `const="N"` the value comes from
+/// the SCXML.
+inline constexpr std::size_t CAPACITY = {{ capacity }};
+
+/// Slot-index bit width inside the packed `{{ pascal }}Handle` u32.
+/// Q-γ2-Handle-bits (a) symmetric split — 65536 slots × 65536
+/// generations, ABI-parity with C11 `uint32_t`.
+inline constexpr std::uint32_t SLOT_BITS = 16;
+/// Generation-counter bit width inside the packed `{{ pascal }}Handle` u32.
+inline constexpr std::uint32_t GEN_BITS = 16;
+inline constexpr std::uint32_t SLOT_MASK = (std::uint32_t{1} << SLOT_BITS) - 1;
+inline constexpr std::uint32_t GEN_MASK = (std::uint32_t{1} << GEN_BITS) - 1;
+
+static_assert(CAPACITY <= (std::size_t{1} << SLOT_BITS),
+              "CAPACITY exceeds slot-index width — increase SLOT_BITS or lower capacity");
+
+/// Stable `uint32_t`-wide handle into `{{ pascal }}` (spec lines
+/// 2621-2622). POD struct so it's trivially copyable, ABI-parity
+/// with the C11 backend's `uint32_t` emit. Each `remove → insert`
+/// reuse in the same slot increments the generation counter so a
+/// stale handle's `get()` returns `std::nullopt` and `remove()`
+/// returns `false`.
+struct {{ pascal }}Handle {
+    std::uint32_t raw;
+
+    /// Pack a `(slot, generation)` pair into the wire u32.
+    static constexpr {{ pascal }}Handle make(std::uint32_t slot, std::uint32_t generation) noexcept {
+        return {{ pascal }}Handle{
+            (((generation & GEN_MASK) << SLOT_BITS) | (slot & SLOT_MASK))
+        };
+    }
+    /// Slot index (low 16 bits).
+    constexpr std::uint32_t slot() const noexcept { return raw & SLOT_MASK; }
+    /// Generation counter (high 16 bits).
+    constexpr std::uint32_t generation() const noexcept {
+        return (raw >> SLOT_BITS) & GEN_MASK;
+    }
+
+    constexpr bool operator==(const {{ pascal }}Handle& rhs) const noexcept {
+        return raw == rhs.raw;
+    }
+    constexpr bool operator!=(const {{ pascal }}Handle& rhs) const noexcept {
+        return raw != rhs.raw;
+    }
+};
+
+/// Overflow error returned by `insert()` when the table is full
+/// (spec line 2612). Fires under `<sce:on-overflow>reject</sce:on-overflow>`
+/// AND `<sce:on-overflow>diagnostic-event</sce:on-overflow>` policies.
+/// The diagnostic-event runtime firing into the SCXML engine event
+/// queue is a separate concern — γ3 emits this for both policies
+/// per spec line 2612 ("Result<Handle, OverflowError>") uniform
+/// shape.
+struct {{ pascal }}OverflowError {
+    constexpr bool operator==(const {{ pascal }}OverflowError&) const noexcept { return true; }
+};
+
+/// Lightweight `std::optional`-like wrapper over `{Handle | OverflowError}`
+/// to give the `insert()` return type a Cpp17-compatible Result shape
+/// (spec line 2612 maps `Result<Handle, OverflowError>` to a sum
+/// type; full `std::expected` is C++23 — `sce_core` is `cxx_std_17`).
+struct {{ pascal }}InsertResult {
+    bool ok;
+    {{ pascal }}Handle handle;
+    {{ pascal }}OverflowError error;
+
+    constexpr bool is_ok() const noexcept { return ok; }
+    constexpr bool is_err() const noexcept { return !ok; }
+};
+
+/// `{{ pascal }}` — RFC §5.L bounded-collection over element type
+/// `{{ element_pascal }}`. Capacity `{{ capacity }}`,
+/// `<sce:on-overflow>{{ on_overflow }}</sce:on-overflow>`,
+/// `<sce:ordering>{{ ordering }}</sce:ordering>`,
+/// `<sce:concurrency>{{ concurrency }}</sce:concurrency>`.
+class {{ pascal }} {
+public:
+    using value_type = {{ element_pascal }}Type;
+
+    /// Compile-time capacity (spec line 2618).
+    static constexpr std::size_t capacity() noexcept { return CAPACITY; }
+
+    {{ pascal }}() : count_(0) {
+        generation_.fill(0);
+    }
+
+    /// Occupied slot count (spec line 2617).
+    std::size_t len() const noexcept { return count_; }
+
+    /// `true` when no slot is occupied.
+    bool empty() const noexcept { return count_ == 0; }
+
+    /// Insert `elem` (spec line 2612). Returns an `InsertResult`
+    /// whose `is_ok()` indicates a fresh handle; `is_err()` carries
+    /// the OverflowError under `reject` / `diagnostic-event`. Under
+    /// `oldest-wins` the oldest slot is evicted and reused — `is_ok()`
+    /// is always true.
+    {{ pascal }}InsertResult insert(const {{ element_pascal }}Type& elem) {
+        if (count_ < CAPACITY) {
+            std::size_t slot = first_free_slot();
+            slots_[slot] = elem;
+            bitmap_.set(slot);
+            ++count_;
+            const std::uint32_t gen = generation_[slot];
+            return {{ pascal }}InsertResult{
+                true,
+                {{ pascal }}Handle::make(static_cast<std::uint32_t>(slot), gen),
+                {{ pascal }}OverflowError{}
+            };
+        }
+{% if overflow_is_oldest_wins %}
+        // <sce:on-overflow>oldest-wins</sce:on-overflow>: evict the
+        // oldest-occupied slot and reuse. The parse-time validator
+        // `collection/overflow-policy-oldest-wins-requires-ordering-insertion`
+        // pins ordering=Insertion under this policy, so the lowest
+        // occupied slot index IS the oldest entry.
+        std::size_t slot = oldest_occupied_slot();
+        slots_[slot] = elem;
+        generation_[slot] = (generation_[slot] + 1) & GEN_MASK;
+        // count_ unchanged (1 evict + 1 insert = 0 delta).
+        const std::uint32_t gen = generation_[slot];
+        return {{ pascal }}InsertResult{
+            true,
+            {{ pascal }}Handle::make(static_cast<std::uint32_t>(slot), gen),
+            {{ pascal }}OverflowError{}
+        };
+{% else %}
+        return {{ pascal }}InsertResult{
+            false,
+            {{ pascal }}Handle{0},
+            {{ pascal }}OverflowError{}
+        };
+{% endif %}
+    }
+
+    /// Remove the entry referenced by `handle` (spec line 2613).
+    /// Returns `false` when the slot is already free OR when the
+    /// handle's generation does not match the slot's current
+    /// generation (use-after-remove detection).
+    bool remove({{ pascal }}Handle handle) {
+        const std::size_t slot = handle.slot();
+        if (slot >= CAPACITY) return false;
+        if (!bitmap_.test(slot)) return false;
+        if (generation_[slot] != handle.generation()) return false;
+        slots_[slot] = {{ element_pascal }}Type{};
+        bitmap_.reset(slot);
+        generation_[slot] = (generation_[slot] + 1) & GEN_MASK;
+        --count_;
+        return true;
+    }
+
+    /// Look up the entry referenced by `handle` (spec line 2614).
+    /// Returns `std::nullopt` when the slot is free OR when the
+    /// handle's generation does not match (use-after-remove
+    /// detection).
+    std::optional<{{ element_pascal }}Type> get({{ pascal }}Handle handle) const {
+        const std::size_t slot = handle.slot();
+        if (slot >= CAPACITY) return std::nullopt;
+        if (!bitmap_.test(slot)) return std::nullopt;
+        if (generation_[slot] != handle.generation()) return std::nullopt;
+        return slots_[slot];
+    }
+{% if has_index_by %}
+    /// Find the first occupied slot whose `<sce:index-by field="{{ index_by_field }}"/>`
+    /// equals `key` (spec line 2615). Linear scan bounded by
+    /// `CAPACITY` (build-time constant) — satisfies §5.A `max-iter`
+    /// requirement when this method is called from algorithm
+    /// bodies.
+    std::optional<{{ pascal }}Handle> find_by_index(const {{ index_by_cpp_type }}& key) const {
+        for (std::size_t slot = 0; slot < CAPACITY; ++slot) {
+            if (!bitmap_.test(slot)) continue;
+            if (slots_[slot].{{ index_by_field }} == key) {
+                return {{ pascal }}Handle::make(static_cast<std::uint32_t>(slot), generation_[slot]);
+            }
+        }
+        return std::nullopt;
+    }
+{% endif %}
+    /// Forward iterator that exposes only occupied slots (spec line
+    /// 2616). Skips unoccupied entries via the bitset on every
+    /// `operator++`. Conforms to LegacyForwardIterator so it works
+    /// in range-based `for` loops.
+    class const_iterator {
+    public:
+        using iterator_category = std::forward_iterator_tag;
+        using value_type = {{ element_pascal }}Type;
+        using reference = const {{ element_pascal }}Type&;
+        using pointer = const {{ element_pascal }}Type*;
+        using difference_type = std::ptrdiff_t;
+
+        const_iterator(const {{ pascal }}* table, std::size_t slot)
+            : table_(table), slot_(slot) {
+            advance_to_occupied();
+        }
+
+        reference operator*() const { return table_->slots_[slot_]; }
+        pointer operator->() const { return &table_->slots_[slot_]; }
+
+        const_iterator& operator++() {
+            ++slot_;
+            advance_to_occupied();
+            return *this;
+        }
+        const_iterator operator++(int) {
+            const_iterator copy = *this;
+            ++(*this);
+            return copy;
+        }
+
+        bool operator==(const const_iterator& other) const noexcept {
+            return table_ == other.table_ && slot_ == other.slot_;
+        }
+        bool operator!=(const const_iterator& other) const noexcept {
+            return !(*this == other);
+        }
+
+    private:
+        const {{ pascal }}* table_;
+        std::size_t slot_;
+
+        void advance_to_occupied() {
+            while (slot_ < CAPACITY && !table_->bitmap_.test(slot_)) {
+                ++slot_;
+            }
+        }
+    };
+
+    const_iterator begin() const { return const_iterator(this, 0); }
+    const_iterator end() const { return const_iterator(this, CAPACITY); }
+
+private:
+    std::array<{{ element_pascal }}Type, CAPACITY> slots_{};
+    std::bitset<CAPACITY> bitmap_;
+    std::array<std::uint32_t, CAPACITY> generation_{};
+    std::uint32_t count_;
+
+    std::size_t first_free_slot() const {
+        for (std::size_t slot = 0; slot < CAPACITY; ++slot) {
+            if (!bitmap_.test(slot)) return slot;
+        }
+        // Unreachable: caller checks `count_ < CAPACITY` before
+        // calling. Kept as a defensive return to keep the function
+        // total under all reachable code paths.
+        return CAPACITY;
+    }
+{% if overflow_is_oldest_wins %}
+    std::size_t oldest_occupied_slot() const {
+        for (std::size_t slot = 0; slot < CAPACITY; ++slot) {
+            if (bitmap_.test(slot)) return slot;
+        }
+        // Unreachable: caller is `insert()`'s eviction branch, which
+        // is reached only when `count_ == CAPACITY`, implying at
+        // least one occupied slot exists.
+        return 0;
+    }
+{% endif %}
+};
+
+}  // namespace SCE::Generated::{{ namespace }}
+
+#endif  // {{ guard }}

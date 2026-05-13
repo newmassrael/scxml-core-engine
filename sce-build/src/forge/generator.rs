@@ -476,7 +476,7 @@ fn resolve_single_import(
 // ── Cross-language type mapping (SRP: lives in generator, not model) ──
 
 /// Map SceType to C++ type name.
-fn cpp_type(ty: &SceType) -> &'static str {
+pub(crate) fn cpp_type(ty: &SceType) -> &'static str {
     match ty {
         SceType::Uint8 => "uint8_t",
         SceType::Uint16 => "uint16_t",
@@ -551,7 +551,7 @@ fn c_literal(text: &str, ty: &SceType) -> String {
 }
 
 /// Map SceType to Kotlin type name (SCE_FORGE.md Section 3.3).
-fn kotlin_type(ty: &SceType) -> &'static str {
+pub(crate) fn kotlin_type(ty: &SceType) -> &'static str {
     match ty {
         SceType::Uint8 => "UByte",
         SceType::Uint16 => "UShort",
@@ -769,14 +769,14 @@ pub fn generate_cpp_with_imports_and_externs(
         ForgeDocument::Worker(_) => unreachable!(
             "ForgeDocument::Worker rejected by codegen_matrix::check on cpp"
         ),
-        // RFC §5.L: BoundedCollection is Generic-class but C6-α ships
-        // no codegen templates — `template_ships` returns false for
-        // every backend until C6-γ. `codegen_matrix::check` raises
-        // `TemplateMissing` ahead of this match, so the unreachable
-        // documents the contract.
-        ForgeDocument::BoundedCollection(_) => unreachable!(
-            "ForgeDocument::BoundedCollection rejected by codegen_matrix::check on cpp (C6-α schema-only)"
-        ),
+        // RFC §5.L C6-γ3: emits the slot-table + Handle + ops
+        // contract on the Cpp backend per spec line 2576-2577
+        // (`std::array<T, N>` + `std::bitset<N>` + generation
+        // counter + occupied-only iterator). Capacity and index-by
+        // resolutions ride `options.bounded_collection_resolutions`.
+        ForgeDocument::BoundedCollection(m) => {
+            render_bounded_collection_cpp(&env, m, imports, options)?
+        }
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -9108,9 +9108,14 @@ pub fn generate_kotlin_with_imports(
         ForgeDocument::Worker(_) => unreachable!(
             "ForgeDocument::Worker rejected by codegen_matrix::check on kotlin"
         ),
-        ForgeDocument::BoundedCollection(_) => unreachable!(
-            "ForgeDocument::BoundedCollection rejected by codegen_matrix::check on kotlin (C6-α schema-only)"
-        ),
+        // RFC §5.L C6-γ3: emits the slot-table + Handle + ops
+        // contract on the Kotlin backend per spec line 2578
+        // (`Array<T?>(N)` + `BooleanArray(N)` + generation +
+        // Iterable<T>). Capacity and index-by resolutions ride
+        // `options.bounded_collection_resolutions`.
+        ForgeDocument::BoundedCollection(m) => {
+            render_bounded_collection_kotlin(&env, m, imports, options)?
+        }
     };
 
     let filename = format!("{}.kt", filters::to_pascal_case(doc.name().to_string()));
@@ -9417,41 +9422,27 @@ fn render_worker_rust(
     })
 }
 
-/// Render a `<sce:kind="bounded-collection">` document for the Rust
-/// backend (watching-zenoh RFC §5.L, C6-γ2). Emits a slot table over
-/// `Vec<Option<T>>` (std) or `heapless::Vec<Option<T>, N>` (no_std)
-/// per spec line 2571-2572, with a parallel `[u32; N]` generation
-/// counter, `[u32; (N+31)/32]` occupancy bitmap, and the operations
-/// contract from spec lines 2609-2619. Handle is a tuple newtype
-/// over `u32` carrying slot index (low 16 bits) + generation
-/// counter (high 16 bits) per spec lines 2621-2622 (Q-γ2-Handle-bits
-/// lock 2026-05-13: 16/16 symmetric split).
-///
-/// Two pieces of context must be resolved upstream by the time this
-/// function is called: the capacity (deploy-key value OR compile-
-/// const literal) and — when `<sce:index-by>` is declared — the Rust
-/// type-string of the index field on the element-type struct.
-/// Single-doc entries ([`compile_forge_with_deploy`]) populate the
-/// former; the orchestrator ([`compile_scxml_with_imports`])
-/// populates the latter. When either is required but missing, this
-/// function raises `InvalidConfig` naming the BC and the missing
-/// piece — the codegen boundary stays an honest invariant rather
-/// than silently emitting placeholders.
-fn render_bounded_collection_rust(
-    env: &minijinja::Environment<'_>,
-    m: &crate::forge::model::BoundedCollectionModel,
-    _imports: &[ImportContext],
-    options: &crate::ForgeCompileOptions,
-) -> Result<String, ForgeError> {
-    use crate::forge::model::CapacitySource;
-    let tmpl = env
-        .get_template("bounded_collection.rs.jinja2")
-        .map_err(|e| {
-            ForgeError::Generate(GenerateError::TemplateLoad(format!(
-                "bounded_collection.rs.jinja2 (rust): {e}"
-            )))
-        })?;
+/// Shared resolution bundle for `<sce:kind="bounded-collection">`
+/// codegen across all 6 backends (γ2 rust + γ3 cpp/kotlin + γ4 c11/
+/// go/python). Each backend's render fn calls
+/// `resolve_bounded_collection_inputs` to get a uniform shape, then
+/// converts the abstract `index_by_sce_type` to its language-
+/// specific type-string at the call site (γ2 rust: `rust_type(...)`;
+/// γ3 cpp/kotlin: `cpp_type(...)` / `kotlin_type(...)`; γ4 etc).
+struct BoundedCollectionRenderInputs {
+    capacity: u32,
+    index_by_sce_type: Option<crate::forge::model::SceType>,
+    on_overflow_str: &'static str,
+    overflow_is_oldest_wins: bool,
+    ordering_str: &'static str,
+    concurrency_str: &'static str,
+}
 
+fn resolve_bounded_collection_inputs(
+    m: &crate::forge::model::BoundedCollectionModel,
+    options: &crate::ForgeCompileOptions,
+) -> Result<BoundedCollectionRenderInputs, ForgeError> {
+    use crate::forge::model::CapacitySource;
     let resolution = options
         .bounded_collection_resolutions
         .as_ref()
@@ -9483,37 +9474,35 @@ fn render_bounded_collection_rust(
         }
     };
 
-    // Resolve index-by Rust type-string. When `<sce:index-by>` is
-    // absent the template skips `find_by_index` emit entirely; when
-    // present, the orchestrator must have populated the resolution,
-    // otherwise the codegen-time invariant breaks and we surface a
-    // clear `InvalidConfig` instead of a silently-broken hook.
-    let index_by_rust_type: Option<String> = match (&m.index_by, resolution) {
-        (None, _) => None,
-        (Some(_), Some(r)) if r.index_by_field_rust_type.is_some() => {
-            r.index_by_field_rust_type.clone()
-        }
-        (Some(field), _) => {
-            return Err(ForgeError::Generate(GenerateError::InvalidConfig(
-                format!(
-                    "bounded-collection '{name}': <sce:index-by field=\"{field}\"/> \
-                     resolution missing — find_by_index emit requires the orchestrator \
-                     (compile_scxml_with_imports) to thread the element-type document \
-                     so the field's Rust type can be inferred. Route this build through \
-                     the orchestrator (or supply \
-                     ForgeCompileOptions::bounded_collection_resolutions \
-                     manually in tests).",
-                    name = m.name,
-                    field = field,
-                ),
-            )));
-        }
-    };
-
-    let pascal = filters::to_pascal_case(m.name.clone());
-    let snake = filters::to_snake_case(m.name.clone());
-    let element_pascal = filters::to_pascal_case(m.element_type.clone());
-    let element_snake = filters::to_snake_case(m.element_type.clone());
+    // Resolve the abstract index-by SceType. When `<sce:index-by>`
+    // is absent the template skips `find_by_index` emit entirely;
+    // when present, the orchestrator must have populated the
+    // resolution, otherwise the codegen-time invariant breaks and
+    // we surface a clear `InvalidConfig` instead of a silently-
+    // broken hook. Each backend's render fn converts the abstract
+    // type to its language string at the call site.
+    let index_by_sce_type: Option<crate::forge::model::SceType> =
+        match (&m.index_by, resolution) {
+            (None, _) => None,
+            (Some(_), Some(r)) if r.index_by_field_sce_type.is_some() => {
+                r.index_by_field_sce_type.clone()
+            }
+            (Some(field), _) => {
+                return Err(ForgeError::Generate(GenerateError::InvalidConfig(
+                    format!(
+                        "bounded-collection '{name}': <sce:index-by \
+                         field=\"{field}\"/> resolution missing — find_by_index \
+                         emit requires the orchestrator (compile_scxml_with_imports) \
+                         to thread the element-type document so the field's type \
+                         can be inferred. Route this build through the orchestrator \
+                         (or supply ForgeCompileOptions::bounded_collection_resolutions \
+                         manually in tests).",
+                        name = m.name,
+                        field = field,
+                    ),
+                )));
+            }
+        };
 
     let on_overflow_str = match m.on_overflow {
         crate::forge::model::OverflowPolicy::DiagnosticEvent => "diagnostic-event",
@@ -9528,6 +9517,54 @@ fn render_bounded_collection_rust(
         crate::forge::model::ConcurrencyMode::SingleWriter => "single-writer",
         crate::forge::model::ConcurrencyMode::MultiWriter => "multi-writer",
     };
+    let overflow_is_oldest_wins = matches!(
+        m.on_overflow,
+        crate::forge::model::OverflowPolicy::OldestWins
+    );
+
+    Ok(BoundedCollectionRenderInputs {
+        capacity,
+        index_by_sce_type,
+        on_overflow_str,
+        overflow_is_oldest_wins,
+        ordering_str,
+        concurrency_str,
+    })
+}
+
+/// Render a `<sce:kind="bounded-collection">` document for the Rust
+/// backend (watching-zenoh RFC §5.L, C6-γ2). Emits a slot table over
+/// `Vec<Option<T>>` (std) or `heapless::Vec<Option<T>, N>` (no_std)
+/// per spec line 2571-2572, with a parallel `[u32; N]` generation
+/// counter, `[u32; (N+31)/32]` occupancy bitmap, and the operations
+/// contract from spec lines 2609-2619. Handle is a tuple newtype
+/// over `u32` carrying slot index (low 16 bits) + generation
+/// counter (high 16 bits) per spec lines 2621-2622 (Q-γ2-Handle-bits
+/// lock 2026-05-13: 16/16 symmetric split).
+fn render_bounded_collection_rust(
+    env: &minijinja::Environment<'_>,
+    m: &crate::forge::model::BoundedCollectionModel,
+    _imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
+) -> Result<String, ForgeError> {
+    let inputs = resolve_bounded_collection_inputs(m, options)?;
+    let tmpl = env
+        .get_template("bounded_collection.rs.jinja2")
+        .map_err(|e| {
+            ForgeError::Generate(GenerateError::TemplateLoad(format!(
+                "bounded_collection.rs.jinja2 (rust): {e}"
+            )))
+        })?;
+
+    let pascal = filters::to_pascal_case(m.name.clone());
+    let snake = filters::to_snake_case(m.name.clone());
+    let element_pascal = filters::to_pascal_case(m.element_type.clone());
+    let element_snake = filters::to_snake_case(m.element_type.clone());
+    let index_by_rust_type = inputs
+        .index_by_sce_type
+        .as_ref()
+        .map(|t| rust_type(t).to_string())
+        .unwrap_or_default();
 
     let ctx = minijinja::context! {
         name => &m.name,
@@ -9535,22 +9572,136 @@ fn render_bounded_collection_rust(
         snake => snake,
         element_pascal => element_pascal,
         element_snake => element_snake,
-        capacity => capacity,
-        on_overflow => on_overflow_str,
-        overflow_is_oldest_wins => matches!(
-            m.on_overflow,
-            crate::forge::model::OverflowPolicy::OldestWins
-        ),
-        ordering => ordering_str,
-        concurrency => concurrency_str,
+        capacity => inputs.capacity,
+        on_overflow => inputs.on_overflow_str,
+        overflow_is_oldest_wins => inputs.overflow_is_oldest_wins,
+        ordering => inputs.ordering_str,
+        concurrency => inputs.concurrency_str,
         has_index_by => m.index_by.is_some(),
         index_by_field => m.index_by.clone().unwrap_or_default(),
-        index_by_rust_type => index_by_rust_type.unwrap_or_default(),
+        index_by_rust_type => index_by_rust_type,
         runtime_dep => "self-contained on (rust, std) and (rust, no_std)",
     };
     tmpl.render(ctx).map_err(|e| {
         ForgeError::Generate(GenerateError::TemplateRender(format!(
             "bounded_collection.rs.jinja2 (rust): {e}"
+        )))
+    })
+}
+
+/// Render a `<sce:kind="bounded-collection">` document for the C++
+/// backend (watching-zenoh RFC §5.L, C6-γ3). Emits `std::array<T, N>`
+/// + `std::bitset<N>` + `std::array<std::uint32_t, N>` generation
+/// counter per spec line 2576-2577. Handle is a POD struct over
+/// `uint32_t` (Q-γ3-Handle-cpp-shape (a) lock — ABI-parity with C11
+/// `uint32_t` and the Rust tuple newtype). The `iter()` axis is
+/// surfaced as `begin()` / `end()` over a forward-iterator that
+/// skips unoccupied slots via the bitset; range-based-for compatible.
+fn render_bounded_collection_cpp(
+    env: &minijinja::Environment<'_>,
+    m: &crate::forge::model::BoundedCollectionModel,
+    _imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
+) -> Result<String, ForgeError> {
+    let inputs = resolve_bounded_collection_inputs(m, options)?;
+    let tmpl = env
+        .get_template("bounded_collection.h.jinja2")
+        .map_err(|e| {
+            ForgeError::Generate(GenerateError::TemplateLoad(format!(
+                "bounded_collection.h.jinja2 (cpp): {e}"
+            )))
+        })?;
+
+    let pascal = filters::to_pascal_case(m.name.clone());
+    let snake = filters::to_snake_case(m.name.clone());
+    let element_pascal = filters::to_pascal_case(m.element_type.clone());
+    let element_snake = filters::to_snake_case(m.element_type.clone());
+    let upper_name = to_upper_snake(&m.name);
+    let guard = format!("SCE_FORGE_{}_H", upper_name);
+    let index_by_cpp_type = inputs
+        .index_by_sce_type
+        .as_ref()
+        .map(|t| cpp_type(t).to_string())
+        .unwrap_or_default();
+
+    let ctx = minijinja::context! {
+        name => &m.name,
+        pascal => pascal,
+        snake => snake,
+        namespace => pascal.clone(),
+        guard => guard,
+        element_pascal => element_pascal,
+        element_snake => element_snake,
+        capacity => inputs.capacity,
+        on_overflow => inputs.on_overflow_str,
+        overflow_is_oldest_wins => inputs.overflow_is_oldest_wins,
+        ordering => inputs.ordering_str,
+        concurrency => inputs.concurrency_str,
+        has_index_by => m.index_by.is_some(),
+        index_by_field => m.index_by.clone().unwrap_or_default(),
+        index_by_cpp_type => index_by_cpp_type,
+        runtime_dep => "self-contained — std::array + std::bitset only",
+    };
+    tmpl.render(ctx).map_err(|e| {
+        ForgeError::Generate(GenerateError::TemplateRender(format!(
+            "bounded_collection.h.jinja2 (cpp): {e}"
+        )))
+    })
+}
+
+/// Render a `<sce:kind="bounded-collection">` document for the
+/// Kotlin backend (watching-zenoh RFC §5.L, C6-γ3). Emits
+/// `Array<T?>(N)` + `BooleanArray(N)` occupancy + `IntArray(N)`
+/// generation per spec line 2578. Handle is `@JvmInline value class
+/// <Pascal>Handle(val raw: UInt)` (Q-γ3-Handle-kotlin-shape (a) lock
+/// — zero-allocation at runtime, ABI-parity with the C11 / Cpp /
+/// Rust `uint32_t` emit). The `iter()` axis is surfaced as
+/// `Iterable<T>` conformance whose `iterator()` skips unoccupied
+/// slots.
+fn render_bounded_collection_kotlin(
+    env: &minijinja::Environment<'_>,
+    m: &crate::forge::model::BoundedCollectionModel,
+    _imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
+) -> Result<String, ForgeError> {
+    let inputs = resolve_bounded_collection_inputs(m, options)?;
+    let tmpl = env
+        .get_template("bounded_collection.kt.jinja2")
+        .map_err(|e| {
+            ForgeError::Generate(GenerateError::TemplateLoad(format!(
+                "bounded_collection.kt.jinja2 (kotlin): {e}"
+            )))
+        })?;
+
+    let pascal = filters::to_pascal_case(m.name.clone());
+    let snake = filters::to_snake_case(m.name.clone());
+    let element_pascal = filters::to_pascal_case(m.element_type.clone());
+    let element_snake = filters::to_snake_case(m.element_type.clone());
+    let index_by_kotlin_type = inputs
+        .index_by_sce_type
+        .as_ref()
+        .map(|t| kotlin_type(t).to_string())
+        .unwrap_or_default();
+
+    let ctx = minijinja::context! {
+        name => &m.name,
+        pascal => pascal,
+        snake => snake,
+        element_pascal => element_pascal,
+        element_snake => element_snake,
+        capacity => inputs.capacity,
+        on_overflow => inputs.on_overflow_str,
+        overflow_is_oldest_wins => inputs.overflow_is_oldest_wins,
+        ordering => inputs.ordering_str,
+        concurrency => inputs.concurrency_str,
+        has_index_by => m.index_by.is_some(),
+        index_by_field => m.index_by.clone().unwrap_or_default(),
+        index_by_kotlin_type => index_by_kotlin_type,
+        runtime_dep => "self-contained — Kotlin stdlib only",
+    };
+    tmpl.render(ctx).map_err(|e| {
+        ForgeError::Generate(GenerateError::TemplateRender(format!(
+            "bounded_collection.kt.jinja2 (kotlin): {e}"
         )))
     })
 }

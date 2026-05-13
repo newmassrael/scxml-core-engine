@@ -868,7 +868,7 @@ pub fn compile_forge_with_deploy(
     // never needs to read `m.capacity` when this map is populated).
     // DeployKey BCs reuse the γ1 lookup performed above — the validator
     // returned Ok ⇒ the value MUST be present in `machine.limits`. The
-    // `index_by_field_rust_type` axis stays `None` because this path
+    // `index_by_field_sce_type` axis stays `None` because this path
     // lacks the orchestrator's element-type candidate map; BCs going
     // through `compile_forge_with_deploy` with `<sce:index-by>`
     // declared raise `InvalidConfig` at the render layer per Q-γ2
@@ -900,7 +900,7 @@ pub fn compile_forge_with_deploy(
             bc.name.clone(),
             BoundedCollectionResolution {
                 capacity,
-                index_by_field_rust_type: None,
+                index_by_field_sce_type: None,
             },
         );
         Some(map)
@@ -1172,7 +1172,7 @@ pub struct ForgeCompileOptions {
     ///   from the resolved `<sce:capacity source="deploy" key=...>`
     ///   value (γ1's `machines.<m>.limits.<k>` lookup). Single-doc path
     ///   so the map has one entry.
-    /// * [`compile_scxml_with_imports`] populates `index_by_field_rust_type`
+    /// * [`compile_scxml_with_imports`] populates `index_by_field_sce_type`
     ///   from the resolved element-type ForgeDocument (codec / procedure)
     ///   for every BC with `<sce:index-by>` declared. Multi-doc path so
     ///   the map carries one entry per BC.
@@ -1238,14 +1238,18 @@ pub struct CachePlatformInfo {
 /// upstream populator copies the literal so the render layer treats
 /// both sources uniformly.
 ///
-/// `index_by_field_rust_type` covers spec line 2615: when
+/// `index_by_field_sce_type` covers spec line 2615: when
 /// `<sce:index-by field="...">` is declared, the orchestrator
-/// extracts the Rust type of that field from the resolved
-/// element-type doc (codec field type / procedure input or internal
-/// type). `None` when no `<sce:index-by>` is set OR when the
-/// upstream path cannot resolve it; the render layer rejects the
-/// latter as `InvalidConfig` rather than silently dropping the
-/// emit.
+/// extracts the abstract [`forge::model::SceType`] of that field
+/// from the resolved element-type doc (codec field type / procedure
+/// input or internal type). Each backend's render fn converts the
+/// abstract type into the language-specific string at codegen time
+/// via the existing `rust_type` / `cpp_type` / `kotlin_type` / `c_type` /
+/// etc helpers — keeping the IR backend-neutral and the conversion
+/// table single-sourced. `None` when no `<sce:index-by>` is set OR
+/// when the upstream path cannot resolve it; the render layer
+/// rejects the latter as `InvalidConfig` rather than silently
+/// dropping the emit.
 #[derive(Clone, Debug)]
 pub struct BoundedCollectionResolution {
     /// Resolved capacity (spec lines 2571 + 2583-2585). For deploy-key
@@ -1253,10 +1257,13 @@ pub struct BoundedCollectionResolution {
     /// the literal `<sce:capacity const="N">` value copied through
     /// for uniform render handling.
     pub capacity: u32,
-    /// Rust type-string for the `<sce:index-by field>` axis. `None`
-    /// when `<sce:index-by>` is not declared. `Some` populated by
-    /// the orchestrator from the resolved element-type doc.
-    pub index_by_field_rust_type: Option<String>,
+    /// Abstract field type for the `<sce:index-by field>` axis.
+    /// `None` when `<sce:index-by>` is not declared. `Some` populated
+    /// by the orchestrator from the resolved element-type doc.
+    /// Each backend's render fn converts via its own type-string
+    /// helper — γ2 emits `rust_type(...)`, γ3 emits `cpp_type(...)` /
+    /// `kotlin_type(...)`, γ4 emits `c_type(...)` / Go / Python.
+    pub index_by_field_sce_type: Option<forge::model::SceType>,
 }
 
 /// Compile a forge SCXML with cross-file import resolution, validation,
@@ -1673,16 +1680,16 @@ pub fn compile_scxml_with_imports(
                     // precedent ("populator skips when source is missing").
                     forge::model::CapacitySource::DeployKey { .. } => return None,
                 };
-                let index_by_field_rust_type =
+                let index_by_field_sce_type =
                     bc.index_by.as_ref().and_then(|field| {
                         let element_doc = element_type_candidates.get(&bc.element_type)?;
-                        extract_bounded_collection_index_field_rust_type(element_doc, field)
+                        extract_bounded_collection_index_field_sce_type(element_doc, field)
                     });
                 Some((
                     bc.name.clone(),
                     BoundedCollectionResolution {
                         capacity,
-                        index_by_field_rust_type,
+                        index_by_field_sce_type,
                     },
                 ))
             })
@@ -2410,9 +2417,12 @@ fn parse_bounded_collection_deploy_key(key: &str) -> Option<(&str, &str)> {
     Some((machine_segment, limit_name))
 }
 
-/// watching-zenoh RFC §5.L C6 Atomic γ2 — look up `field` on the
+/// watching-zenoh RFC §5.L C6 Atomic γ2/γ3 — look up `field` on the
 /// resolved element-type [`forge::model::ForgeDocument`] and return
-/// the Rust type-string for that field (e.g. `"u32"`, `"String"`).
+/// the abstract [`forge::model::SceType`] of that field. Each
+/// backend's render fn converts the abstract type to its language-
+/// specific string at codegen time via the existing `rust_type` /
+/// `cpp_type` / `kotlin_type` / etc. helpers.
 ///
 /// Mirrors the field enumeration used by
 /// [`validate_bounded_collection_cross_refs`]'s `collection/index-by-
@@ -2422,12 +2432,12 @@ fn parse_bounded_collection_deploy_key(key: &str) -> Option<(&str, &str)> {
 /// element-type before this helper runs from the orchestrator
 /// populator, so a `None` return here would imply the model layout
 /// changed since validation — unreachable on a healthy build.
-fn extract_bounded_collection_index_field_rust_type(
+fn extract_bounded_collection_index_field_sce_type(
     element_doc: &forge::model::ForgeDocument,
     field: &str,
-) -> Option<String> {
+) -> Option<forge::model::SceType> {
     use forge::model::ForgeDocument;
-    let sce_type = match element_doc {
+    match element_doc {
         ForgeDocument::Codec(codec) => codec
             .fields
             .iter()
@@ -2444,8 +2454,7 @@ fn extract_bounded_collection_index_field_rust_type(
         // do not appear here. The validator above also rejects them
         // ahead of codegen via `collection/element-type-not-a-kind`.
         _ => None,
-    }?;
-    Some(forge::generator::rust_type(&sce_type).to_string())
+    }
 }
 
 /// watching-zenoh RFC §5.L C6 Atomic β (Q1 user direction

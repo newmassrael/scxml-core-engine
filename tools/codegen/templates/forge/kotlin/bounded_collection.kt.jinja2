@@ -1,0 +1,228 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="bounded-collection")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+//
+// watching-zenoh RFC §5.L bounded-collection — typed fixed-capacity
+// container whose occupancy varies at runtime. Spec line 2578 emit
+// shape: `Array<T?>(N)` storage + `BooleanArray(N)` occupancy +
+// `IntArray(N)` generation counter + `var len: Int`. The Handle is
+// a `@JvmInline value class` over `UInt` (Kotlin 2.1 stable feature)
+// so the type-safe wrapper costs zero allocation at runtime while
+// preserving ABI-parity with the C11 / Cpp `uint32_t` emit.
+//
+// Operations contract (spec lines 2609-2619):
+//   insert / remove / get / findByIndex (if index-by set) / iter
+//   (via `Iterable<T>` conformance) / len / capacity.
+
+@file:Suppress(
+    "ClassName",
+    "FunctionName",
+    "PropertyName",
+    "MemberVisibilityCanBePrivate",
+    "RemoveRedundantQualifierName",
+    "unused",
+)
+
+package com.sce.generated.{{ snake }}
+
+import com.sce.generated.{{ element_snake }}.{{ element_pascal }}
+
+/// Slot capacity (`<sce:capacity>`). For `source="deploy"` the value
+/// is resolved from `machines.<m>.limits.<k>` at codegen time per
+/// RFC §5.L lines 2583-2585; for `const="N"` the value comes from
+/// the SCXML.
+const val CAPACITY: Int = {{ capacity }}
+
+/// Slot-index bit width inside the packed `{{ pascal }}Handle.raw`.
+/// Q-γ2-Handle-bits (a) symmetric split — 65536 slots × 65536
+/// generations, ABI-parity with C11 `uint32_t` / Cpp `std::uint32_t`.
+const val SLOT_BITS: Int = 16
+/// Generation-counter bit width inside the packed `{{ pascal }}Handle.raw`.
+const val GEN_BITS: Int = 16
+const val SLOT_MASK: UInt = ((1u shl SLOT_BITS) - 1u)
+const val GEN_MASK: UInt = ((1u shl GEN_BITS) - 1u)
+
+/// Stable `UInt`-wide handle into `{{ pascal }}` (spec lines
+/// 2621-2622). Inline value class so the type-safe wrapper costs
+/// zero allocation at runtime — Kotlin/JVM lowers it to the
+/// underlying `Int`. ABI-parity with C11 / Cpp `uint32_t` emit.
+/// Each `remove → insert` reuse in the same slot increments the
+/// generation counter so a stale handle's `get()` returns `null`
+/// and `remove()` returns `false`.
+@JvmInline
+value class {{ pascal }}Handle(val raw: UInt) {
+    /// Slot index (low {{ '{' }}SLOT_BITS{{ '}' }} bits).
+    val slot: UInt get() = raw and SLOT_MASK
+
+    /// Generation counter (high {{ '{' }}GEN_BITS{{ '}' }} bits).
+    val generation: UInt get() = (raw shr SLOT_BITS) and GEN_MASK
+
+    companion object {
+        /// Pack a `(slot, generation)` pair into the wire UInt.
+        fun pack(slot: UInt, generation: UInt): {{ pascal }}Handle =
+            {{ pascal }}Handle(((generation and GEN_MASK) shl SLOT_BITS) or (slot and SLOT_MASK))
+    }
+}
+
+/// `{{ pascal }}` insert result, mirroring the Rust
+/// `Result<Handle, OverflowError>` spec line 2612 shape. Under
+/// `<sce:on-overflow>oldest-wins</sce:on-overflow>` the variant is
+/// always `Ok` (the table evicts the oldest entry to make room);
+/// under `reject` / `diagnostic-event` it surfaces `Err` when the
+/// table is full. The diagnostic-event runtime firing into the
+/// SCXML engine event queue is a separate concern — γ3 emits `Err`
+/// uniformly for both policies per spec line 2612.
+sealed class {{ pascal }}InsertResult {
+    data class Ok(val handle: {{ pascal }}Handle) : {{ pascal }}InsertResult()
+    object Err : {{ pascal }}InsertResult()
+}
+
+/// `{{ pascal }}` — RFC §5.L bounded-collection over element type
+/// `{{ element_pascal }}`. Capacity `{{ capacity }}`,
+/// `<sce:on-overflow>{{ on_overflow }}</sce:on-overflow>`,
+/// `<sce:ordering>{{ ordering }}</sce:ordering>`,
+/// `<sce:concurrency>{{ concurrency }}</sce:concurrency>`.
+class {{ pascal }} : Iterable<{{ element_pascal }}> {
+    private val slots: Array<{{ element_pascal }}?> = arrayOfNulls(CAPACITY)
+    private val occupied: BooleanArray = BooleanArray(CAPACITY)
+    private val generation: IntArray = IntArray(CAPACITY)
+    private var count: Int = 0
+
+    /// Occupied slot count (spec line 2617).
+    fun len(): Int = count
+
+    /// `true` when no slot is occupied.
+    fun isEmpty(): Boolean = count == 0
+
+    /// Compile-time capacity (spec line 2618).
+    fun capacity(): Int = CAPACITY
+
+    /// Insert `elem` (spec line 2612). Returns `Ok` with a fresh
+    /// handle when a slot is free; `Err` when the table is full
+    /// under `reject` / `diagnostic-event`. Under `oldest-wins`
+    /// the oldest-occupied slot is evicted and reused — the result
+    /// is always `Ok`.
+    fun insert(elem: {{ element_pascal }}): {{ pascal }}InsertResult {
+        val freeSlot = firstFreeSlot()
+        if (freeSlot >= 0) {
+            slots[freeSlot] = elem
+            occupied[freeSlot] = true
+            ++count
+            val gen = generation[freeSlot].toUInt() and GEN_MASK
+            return {{ pascal }}InsertResult.Ok(
+                {{ pascal }}Handle.pack(freeSlot.toUInt(), gen)
+            )
+        }
+{% if overflow_is_oldest_wins %}
+        // <sce:on-overflow>oldest-wins</sce:on-overflow>: evict the
+        // oldest-occupied slot and reuse. The parse-time validator
+        // `collection/overflow-policy-oldest-wins-requires-ordering-insertion`
+        // pins ordering=Insertion under this policy, so the lowest
+        // occupied slot index IS the oldest entry.
+        val evictSlot = oldestOccupiedSlot()
+        slots[evictSlot] = elem
+        generation[evictSlot] = ((generation[evictSlot].toUInt() + 1u) and GEN_MASK).toInt()
+        // count unchanged (1 evict + 1 insert = 0 delta).
+        val gen = generation[evictSlot].toUInt() and GEN_MASK
+        return {{ pascal }}InsertResult.Ok(
+            {{ pascal }}Handle.pack(evictSlot.toUInt(), gen)
+        )
+{% else %}
+        return {{ pascal }}InsertResult.Err
+{% endif %}
+    }
+
+    /// Remove the entry referenced by `handle` (spec line 2613).
+    /// Returns `false` when the slot is already free OR when the
+    /// handle's generation does not match the slot's current
+    /// generation (use-after-remove detection).
+    fun remove(handle: {{ pascal }}Handle): Boolean {
+        val slotIdx = handle.slot.toInt()
+        if (slotIdx >= CAPACITY) return false
+        if (!occupied[slotIdx]) return false
+        if ((generation[slotIdx].toUInt() and GEN_MASK) != handle.generation) return false
+        slots[slotIdx] = null
+        occupied[slotIdx] = false
+        generation[slotIdx] = ((generation[slotIdx].toUInt() + 1u) and GEN_MASK).toInt()
+        --count
+        return true
+    }
+
+    /// Look up the entry referenced by `handle` (spec line 2614).
+    /// Returns `null` when the slot is free OR when the handle's
+    /// generation does not match (use-after-remove detection).
+    fun get(handle: {{ pascal }}Handle): {{ element_pascal }}? {
+        val slotIdx = handle.slot.toInt()
+        if (slotIdx >= CAPACITY) return null
+        if (!occupied[slotIdx]) return null
+        if ((generation[slotIdx].toUInt() and GEN_MASK) != handle.generation) return null
+        return slots[slotIdx]
+    }
+{% if has_index_by %}
+    /// Find the first occupied slot whose `<sce:index-by field="{{ index_by_field }}"/>`
+    /// equals `key` (spec line 2615). Linear scan bounded by
+    /// `CAPACITY` (build-time constant) — satisfies §5.A `max-iter`
+    /// requirement when this method is called from algorithm
+    /// bodies.
+    fun findByIndex(key: {{ index_by_kotlin_type }}): {{ pascal }}Handle? {
+        for (slotIdx in 0 until CAPACITY) {
+            if (!occupied[slotIdx]) continue
+            val elem = slots[slotIdx] ?: continue
+            if (elem.{{ index_by_field }} == key) {
+                val gen = generation[slotIdx].toUInt() and GEN_MASK
+                return {{ pascal }}Handle.pack(slotIdx.toUInt(), gen)
+            }
+        }
+        return null
+    }
+{% endif %}
+    /// Iterate occupied entries in slot-index order (spec line
+    /// 2616). The iterator skips unoccupied slots via the
+    /// `BooleanArray` on every `next()`. Under
+    /// `<sce:ordering>insertion</sce:ordering>` the slot order
+    /// matches insertion order (validated by parse-time gates).
+    override fun iterator(): Iterator<{{ element_pascal }}> =
+        object : Iterator<{{ element_pascal }}> {
+            private var idx = 0
+
+            init {
+                advanceToOccupied()
+            }
+
+            override fun hasNext(): Boolean = idx < CAPACITY
+
+            override fun next(): {{ element_pascal }} {
+                val elem = slots[idx]!!
+                ++idx
+                advanceToOccupied()
+                return elem
+            }
+
+            private fun advanceToOccupied() {
+                while (idx < CAPACITY && !occupied[idx]) {
+                    ++idx
+                }
+            }
+        }
+
+    private fun firstFreeSlot(): Int {
+        for (slotIdx in 0 until CAPACITY) {
+            if (!occupied[slotIdx]) return slotIdx
+        }
+        return -1
+    }
+{% if overflow_is_oldest_wins %}
+    private fun oldestOccupiedSlot(): Int {
+        for (slotIdx in 0 until CAPACITY) {
+            if (occupied[slotIdx]) return slotIdx
+        }
+        // Unreachable: caller is `insert()`'s eviction branch, which
+        // is reached only when `count == CAPACITY`, implying at
+        // least one occupied slot exists.
+        return 0
+    }
+{% endif %}
+}
