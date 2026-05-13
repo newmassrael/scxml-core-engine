@@ -1566,6 +1566,45 @@ pub enum DiagnosticCode {
     #[serde(rename = "deploy/link-rx-dispatch-worker-tick-on-high-burst")]
     MeshDeployLinkRxDispatchWorkerTickOnHighBurst,
 
+    // ── C13-γ pool_defaults.stage_copy_policy (RFC §5.K lines
+    //    2350-2369 + 2504-2519). Three codes wire the policy enum
+    //    plus the per-link `<sce:accept-stage-copy-rate>` opt-out
+    //    semantics. ──
+
+    /// Watching-zenoh RFC §5.K line 2504-2511 verbatim
+    /// (`pool/stage-copy-policy-error`). `pool_defaults.stage_copy_policy:
+    /// error` (or `forbid`) AND the §5.M / ARCHITECTURE §9.3
+    /// stage-copy-rate gate fires. The warning that would have
+    /// surfaced as `reassembly/expected-fragmentation-rate-high` is
+    /// promoted to a hard error. Author resolutions: raise
+    /// `<sce:slot-size>`, lower `expected_p99_bytes`, or add
+    /// `<sce:accept-stage-copy-rate>` on the affected link source
+    /// (last option unavailable under `forbid` per
+    /// `pool/stage-copy-accept-rejected-under-forbid`).
+    /// NeutralOrDeterministic — multi-axis repair, author chooses.
+    #[serde(rename = "pool/stage-copy-policy-error")]
+    PoolStageCopyPolicyError,
+
+    /// Watching-zenoh RFC §5.K line 2512-2516 verbatim
+    /// (`pool/stage-copy-accept-rejected-under-forbid`).
+    /// `pool_defaults.stage_copy_policy: forbid` AND a link source
+    /// carries `<sce:accept-stage-copy-rate>`. The opt-out is rejected
+    /// outright; only structural fixes (raise `<sce:slot-size>` or
+    /// lower `expected_p99_bytes`) are accepted under `forbid`.
+    /// NeutralOrDeterministic — two valid repair paths (remove the
+    /// opt-out vs change policy to `error`).
+    #[serde(rename = "pool/stage-copy-accept-rejected-under-forbid")]
+    PoolStageCopyAcceptRejectedUnderForbid,
+
+    /// Watching-zenoh RFC §5.K line 2517-2519 verbatim
+    /// (`deploy/stage-copy-policy-unknown`).
+    /// `pool_defaults.stage_copy_policy` declared with a value other
+    /// than `warn` / `error` / `forbid`. Hard error (typo guard).
+    /// FixCarriesCandidates over the closed set
+    /// [`crate::mesh::deploy::StageCopyPolicy::ALL`].
+    #[serde(rename = "deploy/stage-copy-policy-unknown")]
+    MeshDeployStageCopyPolicyUnknown,
+
     /// Watching-zenoh RFC §5.K line 2501-2503 verbatim
     /// (`deploy/link-burst-pps-missing-on-isr-dispatch`). The resolved
     /// `rx_dispatch` (per [`super::super::mesh::deploy::LinkConfig::resolved_rx_dispatch`])
@@ -1957,6 +1996,10 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // C13-α-2 cross-doc RX pool burst invariants (RFC §5.K lines 2489-2500)
         MeshDeployLinkBurstAbsorptionInsufficient,
         MeshDeployLinkRxDispatchWorkerTickOnHighBurst,
+        // C13-γ pool_defaults.stage_copy_policy (RFC §5.K lines 2350-2369 + 2504-2519)
+        PoolStageCopyPolicyError,
+        PoolStageCopyAcceptRejectedUnderForbid,
+        MeshDeployStageCopyPolicyUnknown,
         // Mesh External config
         MeshExternalRead,
         MeshExternalParse,
@@ -2318,6 +2361,11 @@ impl DiagnosticCode {
             | MeshDeployLinkNotDeclaredInForge
             | MeshDeployLinkBurstAbsorptionInsufficient
             | MeshDeployLinkRxDispatchWorkerTickOnHighBurst
+            // C13-γ pool_defaults.stage_copy_policy (RFC §5.K lines
+            // 2350-2369 + 2504-2519). Three codes share §5.K anchor.
+            | PoolStageCopyPolicyError
+            | PoolStageCopyAcceptRejectedUnderForbid
+            | MeshDeployStageCopyPolicyUnknown
                 => Some("watching-zenoh RFC §5.K"),
 
             // ── Mesh rule 12 — parallel root designation (SCE_MESH.md §14 rule 12) ──
@@ -2665,6 +2713,9 @@ impl DiagnosticCode {
             MeshDeployLinkNotDeclaredInForge => "deploy/link-not-declared-in-forge",
             MeshDeployLinkBurstAbsorptionInsufficient => "deploy/link-burst-absorption-insufficient",
             MeshDeployLinkRxDispatchWorkerTickOnHighBurst => "deploy/link-rx-dispatch-worker-tick-on-high-burst",
+            PoolStageCopyPolicyError => "pool/stage-copy-policy-error",
+            PoolStageCopyAcceptRejectedUnderForbid => "pool/stage-copy-accept-rejected-under-forbid",
+            MeshDeployStageCopyPolicyUnknown => "deploy/stage-copy-policy-unknown",
             MeshExternalRead => "mesh/external-read",
             MeshExternalParse => "mesh/external-parse",
             MeshExternalUnresolvedNames => "mesh/external-unresolved-names",
@@ -4419,6 +4470,49 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 stage_copy_wcet_us.to_string(),
             ],
         },
+        // ── §5.K C13-γ stage-copy policy promotion + opt-out rejection ──
+        ValidationError::PoolStageCopyPolicyError {
+            pool_name,
+            slot_size,
+            expected_p99_bytes,
+            rate_percent,
+            machine,
+            link_name,
+            policy,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::PoolStageCopyPolicyError,
+            stage: Stage::Validation,
+            // `actual` = computed rate %; `expected` = 25% threshold.
+            // NeutralOrDeterministic: multi-axis repair, no closed
+            // candidate set.
+            actual: Some(rate_percent.to_string()),
+            expected: Some(vec!["25".to_string()]),
+            fix: None,
+            key_fragments: vec![
+                pool_name.clone(),
+                slot_size.to_string(),
+                expected_p99_bytes.to_string(),
+                rate_percent.to_string(),
+                machine.clone(),
+                link_name.clone(),
+                policy.clone(),
+            ],
+        },
+        ValidationError::PoolStageCopyAcceptRejectedUnderForbid {
+            machine,
+            link_name,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::PoolStageCopyAcceptRejectedUnderForbid,
+            stage: Stage::Validation,
+            // `actual` carries the offending element's name so the
+            // wire payload surfaces what was rejected. Per
+            // non_overlap_class: two valid repair paths (remove
+            // opt-out vs change policy), no closed candidate set.
+            actual: Some("<sce:accept-stage-copy-rate>".to_string()),
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), link_name.clone()],
+        },
         // ── §5.L Bounded-collection cross-doc resolution (C6-β) ──
         ValidationError::CollectionElementTypeNotAKind {
             collection_name,
@@ -6052,6 +6146,34 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:c41a9b3397849183","code":"reassembly/stage-copy-wcet-exceeds-slot-budget","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"link 'udp_data' on machine 'mcu_node': stage-copy WCET (1365 µs) exceeds `scheduler.worker_slot_budget_us: 200`. watching-zenoh RFC §5.M line 2995-2999 — `expected_p99_bytes (16384) × memcpy_cycles_per_byte (4) / clock_freq_mhz (48) > worker_slot_budget_us`. The stage copy alone starves Keepalive and parallel-region timers (ARCHITECTURE §9.3 + §3.4). Repair: raise `worker_slot_budget_us` (and re-validate every algorithm), lower `expected_p99_bytes` so stage copy is never invoked at that size, or raise the bound pool's `<sce:slot-size>` to absorb p99 without invoking stage copy.","expected":["200"],"actual":"1365"}"#,
             ),
+            // ── §5.K C13-γ stage-copy policy promotion + opt-out rejection ──
+            (
+                // RFC §5.K line 2504-2511: warning promoted to hard error.
+                // NeutralOrDeterministic; multi-axis repair.
+                "forge/pool-stage-copy-policy-error",
+                ValidationError::PoolStageCopyPolicyError {
+                    pool_name: "rx_data_pool".into(),
+                    slot_size: 700,
+                    expected_p99_bytes: 1024,
+                    rate_percent: 31,
+                    machine: "mcu_node".into(),
+                    link_name: "udp_data".into(),
+                    policy: "error".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:c91f1db81740d284","code":"pool/stage-copy-policy-error","stage":"validation","spec":"watching-zenoh RFC §5.K","message":"link 'udp_data' on machine 'mcu_node': `expected_p99_bytes: 1024` vs RX pool 'rx_data_pool' `<sce:slot-size>700</sce:slot-size>` triggers stage-copy rate 31% (> 25% threshold), promoted to hard error under `pool_defaults.stage_copy_policy: error`. watching-zenoh RFC §5.K line 2504-2511 — author resolution: raise `<sce:slot-size>` on pool 'rx_data_pool', lower `expected_p99_bytes`, or add `<sce:accept-stage-copy-rate>` on link 'udp_data' (last option unavailable under `forbid`).","expected":["25"],"actual":"31"}"#,
+            ),
+            (
+                // RFC §5.K line 2512-2516: forbid rejects the opt-out outright.
+                // NeutralOrDeterministic; two valid repair paths.
+                "forge/pool-stage-copy-accept-rejected-under-forbid",
+                ValidationError::PoolStageCopyAcceptRejectedUnderForbid {
+                    machine: "mcu_node".into(),
+                    link_name: "udp_data".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:c4ce58defa7ffd7f","code":"pool/stage-copy-accept-rejected-under-forbid","stage":"validation","spec":"watching-zenoh RFC §5.K","message":"link 'udp_data' on machine 'mcu_node': `<sce:accept-stage-copy-rate>` declared but `pool_defaults.stage_copy_policy: forbid` rejects the opt-out outright. watching-zenoh RFC §5.K line 2512-2516 — only structural fixes (raise `<sce:slot-size>` or lower `expected_p99_bytes`) are accepted under `forbid`. Repair: remove `<sce:accept-stage-copy-rate>` from link 'udp_data', or change `pool_defaults.stage_copy_policy` to `error` (which permits the opt-out).","actual":"<sce:accept-stage-copy-rate>"}"#,
+            ),
             // ── §5.L Bounded-collection cross-doc resolution (C6-β) ──
             (
                 // RFC §5.L lines 2566-2567: element-type body text does
@@ -7608,6 +7730,23 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:68d69cab5e950a11","code":"deploy/link-not-declared-in-forge","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_data' declared in deploy.yaml but no forge `<scxml sce:kind=\"link\" name=\"udp_data\">` document was declared/imported. C13-α-1 cross-doc validator (`deploy/link-not-declared-in-forge`) per Q-C13-5 (a) lock. Repair: declare the forge link doc and import it from a statechart/worker on this machine, or pick one of [udp_scout] (forge link doc names known to this build), or remove the orphan deploy entry.","actual":"udp_data","fix":{"kind":"replace_one_of","candidates":["udp_scout"]}}"#,
             ),
             (
+                // C13-γ parse-time typo guard for the policy enum.
+                // FixCarriesCandidates over StageCopyPolicy::ALL.
+                "deploy/stage-copy-policy-unknown",
+                DeployError::StageCopyPolicyUnknown {
+                    machine: "mcu_node".into(),
+                    value: "errr".into(),
+                    candidates: vec![
+                        "warn".into(),
+                        "error".into(),
+                        "forbid".into(),
+                    ],
+                    candidates_list: "warn, error, forbid".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:5ca8faec9e11c481","code":"deploy/stage-copy-policy-unknown","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': `pool_defaults.stage_copy_policy: errr` is not a known policy. watching-zenoh RFC §5.K line 2517-2519 (`deploy/stage-copy-policy-unknown`) — closed-set typo guard. Repair: pick one of [warn, error, forbid].","actual":"errr","fix":{"kind":"replace_one_of","candidates":["warn","error","forbid"]}}"#,
+            ),
+            (
                 "timer/slot-overflow",
                 DeployError::TimerSlotOverflow {
                     machine: "mcu_node".into(),
@@ -8344,7 +8483,13 @@ mod tests {
             // below.
             | MeshDeployLinkDriverUnknown
             | MeshDeployLinkNotDeclaredInDeploy
-            | MeshDeployLinkNotDeclaredInForge => FixCarriesCandidates,
+            | MeshDeployLinkNotDeclaredInForge
+            // C13-γ deploy/stage-copy-policy-unknown — closed set
+            // {warn, error, forbid} (RFC §5.K line 2351 + 2517-2519
+            // verbatim, single source of truth at
+            // `StageCopyPolicy::ALL`). FixCarriesCandidates over the
+            // three values.
+            | MeshDeployStageCopyPolicyUnknown => FixCarriesCandidates,
 
             // ── `expected` carries non-repair metadata ────────
             ExpressionParseMismatch | MeshExternalAmbiguousEventGroup => ExpectedIsMetadata,
@@ -8663,6 +8808,19 @@ mod tests {
             // budget. No closed candidate set.
             | MeshDeployLinkBurstAbsorptionInsufficient
             | MeshDeployLinkRxDispatchWorkerTickOnHighBurst
+            // C13-γ stage-copy promotion + opt-out rejection. Both
+            // ride NeutralOrDeterministic:
+            //   - pool/stage-copy-policy-error: multi-axis repair
+            //     (raise slot_size / lower expected_p99 / add
+            //     accept-stage-copy-rate / change policy to warn).
+            //   - pool/stage-copy-accept-rejected-under-forbid: two
+            //     valid repair paths (remove the opt-out element vs
+            //     change policy to error). Single-element closed-set
+            //     repair would collapse to Fix::ReplaceWith but the
+            //     two-path repair surface keeps it in
+            //     NeutralOrDeterministic.
+            | PoolStageCopyPolicyError
+            | PoolStageCopyAcceptRejectedUnderForbid
             | MeshExternalRead
             | MeshExternalParse
             | MeshExternalUnresolvedNames
@@ -9075,6 +9233,9 @@ mod tests {
                 | MeshDeployLinkNotDeclaredInForge
                 | MeshDeployLinkBurstAbsorptionInsufficient
                 | MeshDeployLinkRxDispatchWorkerTickOnHighBurst
+                | PoolStageCopyPolicyError
+                | PoolStageCopyAcceptRejectedUnderForbid
+                | MeshDeployStageCopyPolicyUnknown
                 | MeshExternalRead | MeshExternalParse
                 | MeshExternalUnresolvedNames | MeshExternalAmbiguousEventGroup
                 | MeshExternalEmptyEventGroup
@@ -9109,9 +9270,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            247,
+            250,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 247 distinct variants to match the DiagnosticCode \
+             expected 250 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -9544,7 +9705,19 @@ mod tests {
              `domain_attrs.trust_class` / PlatformConfig WCET fields \
              (C13-α-1 schema landed). All 8 codes ride \
              NeutralOrDeterministic (multi-axis repair; per Q-C13-α2-7 a). \
-             239 → 247.",
+             239 → 247. Then watching-zenoh RFC §5.K lines 2350-2369 + \
+             2504-2519 land the C13-γ `pool_defaults.stage_copy_policy` \
+             promotion family — 3 spec-named codes: \
+             `pool/stage-copy-policy-error` (NeutralOrDeterministic — \
+             warning under `warn` promoted to hard error under `error` \
+             / `forbid`, multi-axis repair) + \
+             `pool/stage-copy-accept-rejected-under-forbid` \
+             (NeutralOrDeterministic — `forbid` rejects the per-link \
+             `<sce:accept-stage-copy-rate>` opt-out, two valid repair \
+             paths: remove opt-out vs change policy) + \
+             `deploy/stage-copy-policy-unknown` (FixCarriesCandidates \
+             over the closed-set `StageCopyPolicy::ALL` = {{warn, \
+             error, forbid}}). 247 → 250.",
         );
     }
 

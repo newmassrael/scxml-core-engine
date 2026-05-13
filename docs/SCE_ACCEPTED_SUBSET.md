@@ -598,6 +598,9 @@ Codes that the author can avoid by writing a better SCXML /
 | `deploy/link-not-declared-in-forge` | Mesh Deploy |
 | `deploy/link-burst-absorption-insufficient` | Mesh Deploy |
 | `deploy/link-rx-dispatch-worker-tick-on-high-burst` | Mesh Deploy |
+| `pool/stage-copy-policy-error` | Validation |
+| `pool/stage-copy-accept-rejected-under-forbid` | Validation |
+| `deploy/stage-copy-policy-unknown` | Mesh Deploy |
 | `mesh/external-parse` | Mesh External |
 | `mesh/external-unresolved-names` | Mesh External |
 | `mesh/external-ambiguous-event-group` | Mesh External |

@@ -2439,6 +2439,22 @@ pub struct LinkModel {
     /// on-sample subscriber exists for a link without `stage_pool`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stage_pool: Option<String>,
+    /// `<sce:accept-stage-copy-rate/>` — watching-zenoh RFC §5.K
+    /// lines 2356-2361 + 2509-2511 per-link opt-out for the §5.M /
+    /// ARCHITECTURE §9.3 stage-copy-rate gate. Presence of the
+    /// element (no body / no attribute parsing in C13-γ scope per
+    /// `[[feedback-no-versioning]]`) suppresses
+    /// `reassembly/expected-fragmentation-rate-high` under
+    /// `pool_defaults.stage_copy_policy: warn` and
+    /// `pool/stage-copy-policy-error` under `error`. Under `forbid`
+    /// (RFC line 2512-2516) the opt-out itself is rejected via
+    /// `pool/stage-copy-accept-rejected-under-forbid`.
+    ///
+    /// Default `false` so existing fixtures without the opt-out
+    /// preserve their C13-α-2 behavior verbatim.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    #[serde(default)]
+    pub accept_stage_copy_rate: bool,
 }
 
 /// `<sce:cache-policy>` enum — RFC §5.E lines 948-957. Three policies

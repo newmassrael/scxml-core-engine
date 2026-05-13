@@ -1787,6 +1787,43 @@ pub enum ValidationError {
         stage_copy_wcet_us: u32,
     },
 
+    /// watching-zenoh RFC §5.K line 2504-2511 verbatim
+    /// (`pool/stage-copy-policy-error`). `pool_defaults.stage_copy_policy:
+    /// error` (or `forbid`) AND the §5.M / ARCHITECTURE §9.3
+    /// stage-copy-rate gate fires; the warning is promoted to hard
+    /// error. C13-γ deploy-aware consumer of
+    /// `MachineConfig::resolved_stage_copy_policy`.
+    #[error(
+        "link '{link_name}' on machine '{machine}': `expected_p99_bytes: {expected_p99_bytes}` vs RX pool '{pool_name}' `<sce:slot-size>{slot_size}</sce:slot-size>` triggers stage-copy rate {rate_percent}% (> 25% threshold), promoted to hard error under `pool_defaults.stage_copy_policy: {policy}`. \
+         watching-zenoh RFC §5.K line 2504-2511 — author resolution: raise `<sce:slot-size>` on pool '{pool_name}', lower `expected_p99_bytes`, or add `<sce:accept-stage-copy-rate>` on link '{link_name}' (last option unavailable under `forbid`)."
+    )]
+    PoolStageCopyPolicyError {
+        pool_name: String,
+        slot_size: u32,
+        expected_p99_bytes: u32,
+        rate_percent: u32,
+        machine: String,
+        link_name: String,
+        policy: String,
+    },
+
+    /// watching-zenoh RFC §5.K line 2512-2516 verbatim
+    /// (`pool/stage-copy-accept-rejected-under-forbid`).
+    /// `pool_defaults.stage_copy_policy: forbid` AND the link source
+    /// carries `<sce:accept-stage-copy-rate>`. The opt-out itself is
+    /// rejected outright regardless of whether the rate threshold is
+    /// exceeded (spec contract is the element's mere presence under
+    /// `forbid` is the violation).
+    #[error(
+        "link '{link_name}' on machine '{machine}': `<sce:accept-stage-copy-rate>` declared but `pool_defaults.stage_copy_policy: forbid` rejects the opt-out outright. \
+         watching-zenoh RFC §5.K line 2512-2516 — only structural fixes (raise `<sce:slot-size>` or lower `expected_p99_bytes`) are accepted under `forbid`. \
+         Repair: remove `<sce:accept-stage-copy-rate>` from link '{link_name}', or change `pool_defaults.stage_copy_policy` to `error` (which permits the opt-out)."
+    )]
+    PoolStageCopyAcceptRejectedUnderForbid {
+        machine: String,
+        link_name: String,
+    },
+
     /// watching-zenoh RFC §5.L lines 2566-2567 +  2650
     /// (`collection/element-type-not-a-kind`) — `<sce:element-type>NAME`
     /// body text does not resolve in the build's forge-doc registry to

@@ -6217,6 +6217,7 @@ mod tests {
             rx_pool: None,
             tx_pool: None,
             stage_pool: stage_pool.map(String::from),
+            accept_stage_copy_rate: false,
         })
     }
 

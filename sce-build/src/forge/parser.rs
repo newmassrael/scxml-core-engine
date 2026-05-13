@@ -6189,6 +6189,15 @@ fn parse_link(
         None => None,
     };
 
+    // RFC §5.K lines 2356-2361 + 2509-2511 — per-link opt-out for
+    // the §5.M / ARCHITECTURE §9.3 stage-copy-rate gate. C13-γ
+    // recognizes the element's presence as the opt-out signal; body
+    // text / `justification` attribute parsing defers until a
+    // consumer exists per `[[feedback-no-versioning]]`. Under
+    // `pool_defaults.stage_copy_policy: forbid` the opt-out itself
+    // is rejected; the deploy-aware validator carries that contract.
+    let accept_stage_copy_rate = find_sce_child(root, "accept-stage-copy-rate").is_some();
+
     Ok(LinkModel {
         name: doc_name.to_string(),
         class,
@@ -6199,6 +6208,7 @@ fn parse_link(
         rx_pool,
         tx_pool,
         stage_pool,
+        accept_stage_copy_rate,
     })
 }
 

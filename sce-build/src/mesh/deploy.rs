@@ -588,6 +588,111 @@ pub enum RxDispatch {
     WorkerTick,
 }
 
+/// Machine-wide stage-copy policy enum (watching-zenoh RFC §5.K
+/// lines 2351-2369). Drives the C13-γ promotion of
+/// `reassembly/expected-fragmentation-rate-high` (warning under
+/// `warn`) to `pool/stage-copy-policy-error` (hard error under
+/// `error` / `forbid`), and gates the per-link `<sce:accept-stage-
+/// copy-rate>` opt-out (still allowed under `warn` / `error`,
+/// rejected outright under `forbid` via `pool/stage-copy-accept-
+/// rejected-under-forbid`).
+///
+/// Default = `Warn` (spec line 2351 default). The default applies
+/// only when both `pool_defaults` and `pool_defaults.stage_copy_policy`
+/// are present in declaration syntax but treated as their literal
+/// default; absence of `pool_defaults` entirely keeps the validator's
+/// pre-C13-γ behavior unchanged via [`MachineConfig::resolved_stage_copy_policy`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StageCopyPolicy {
+    /// Spec line 2352-2357: default. §5.M / ARCHITECTURE §9.3
+    /// stage-copy-rate gate emits `reassembly/expected-fragmentation-
+    /// rate-high` as a warning; the per-link
+    /// `<sce:accept-stage-copy-rate>` opt-out suppresses it.
+    Warn,
+    /// Spec line 2358-2361: warning is promoted to hard error
+    /// (`pool/stage-copy-policy-error`). The per-link opt-out is
+    /// still honored.
+    Error,
+    /// Spec line 2362-2367: same promotion as `Error` AND
+    /// `<sce:accept-stage-copy-rate>` itself is rejected via
+    /// `pool/stage-copy-accept-rejected-under-forbid`. For
+    /// safety-critical deploys (medical / automotive / aerospace)
+    /// where any stage-copy is unacceptable.
+    Forbid,
+}
+
+impl StageCopyPolicy {
+    /// Wire-format label matching the `#[serde(rename_all = "snake_case")]`
+    /// rendition. Used by diagnostic payload + Fix::ReplaceOneOf
+    /// candidate list of `deploy/stage-copy-policy-unknown` so the
+    /// closed-set the spec names is the exact set the diagnostic
+    /// surfaces.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            StageCopyPolicy::Warn => "warn",
+            StageCopyPolicy::Error => "error",
+            StageCopyPolicy::Forbid => "forbid",
+        }
+    }
+    /// Closed-set repair candidates for
+    /// `deploy/stage-copy-policy-unknown`. Spec line 2518-2519 lists
+    /// {warn, error, forbid} verbatim — this method is the single
+    /// source of truth for the diagnostic's `Fix::ReplaceOneOf`.
+    pub const ALL: &'static [&'static str] = &["warn", "error", "forbid"];
+}
+
+/// Machine-wide pool-defaults block (watching-zenoh RFC §5.K
+/// lines 2350-2369). C13-γ ships only `stage_copy_policy`; future
+/// pool-default fields land here additively (each gated on its
+/// in-atomic consumer per `[[feedback-silently-broken-hooks]]`).
+///
+/// `#[serde(deny_unknown_fields)]` parse-rejects unknown nested keys
+/// — future fields (`cache_default_policy`, `dma_alignment_floor`,
+/// etc.) must land alongside their consumers, not as anticipatory
+/// schema entries.
+///
+/// **Schema type for `stage_copy_policy`**: `String` (not the typed
+/// `StageCopyPolicy` enum) — mirrors the `LinkConfig::driver: String`
+/// precedent for closed-set fields. Serde would reject unknown enum
+/// values via a generic "unknown variant" error before
+/// `validate_pool_defaults` could fire the spec-named
+/// `deploy/stage-copy-policy-unknown` diagnostic; the String shape
+/// lets the post-parse validator surface that typo guard verbatim
+/// (RFC §5.K line 2517-2519).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PoolDefaults {
+    /// Spec line 2351: warn (default) | error | forbid.
+    /// Validated by [`validate_pool_defaults`] which fires
+    /// `deploy/stage-copy-policy-unknown` on closed-set miss; typed
+    /// access via [`MachineConfig::resolved_stage_copy_policy`] which
+    /// runs `StageCopyPolicy::from_str` (infallible after parse-time
+    /// validation per the contract).
+    #[serde(default = "default_stage_copy_policy_str")]
+    pub stage_copy_policy: String,
+}
+
+fn default_stage_copy_policy_str() -> String {
+    "warn".to_string()
+}
+
+impl StageCopyPolicy {
+    /// Inverse of [`Self::as_str`] — maps the validated wire string
+    /// back to the typed enum. Returns `None` on unknown values;
+    /// callers downstream of [`validate_pool_defaults`] should never
+    /// hit `None` since that validator parse-rejects unknown values
+    /// before this conversion is ever invoked.
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "warn" => Some(StageCopyPolicy::Warn),
+            "error" => Some(StageCopyPolicy::Error),
+            "forbid" => Some(StageCopyPolicy::Forbid),
+            _ => None,
+        }
+    }
+}
+
 /// Per-link domain attributes (watching-zenoh RFC §5.K line 2263-2271).
 ///
 /// When declared, `trust_class` is REQUIRED per Q-C13-4 (a) — spec
@@ -1478,6 +1583,33 @@ pub struct MachineConfig {
     /// `#[serde(deny_unknown_fields)]` on [`LinkConfig`].
     #[serde(default)]
     pub links: HashMap<String, LinkConfig>,
+
+    /// Machine-wide pool-defaults block (watching-zenoh RFC §5.K
+    /// lines 2350-2369, C13-γ). Today carries only
+    /// `stage_copy_policy`; future fields land additively per
+    /// `[[feedback-silently-broken-hooks]]`. Absent ⇒
+    /// `stage_copy_policy = Warn` (existing
+    /// `reassembly/expected-fragmentation-rate-high` warning
+    /// semantic preserved).
+    #[serde(default)]
+    pub pool_defaults: Option<PoolDefaults>,
+}
+
+impl MachineConfig {
+    /// Resolved stage-copy policy. Absence of `pool_defaults` entirely
+    /// keeps the pre-C13-γ behavior (Warn). When `pool_defaults` is
+    /// declared, its `stage_copy_policy` String field maps to the
+    /// typed enum via [`StageCopyPolicy::from_str`]; unknown values
+    /// are unreachable here because [`validate_pool_defaults`]
+    /// parse-rejects them. The `unwrap_or(Warn)` on the from_str
+    /// result is defense-in-depth — a missed validator wiring would
+    /// fall back to the spec-default behavior rather than panic.
+    pub fn resolved_stage_copy_policy(&self) -> StageCopyPolicy {
+        self.pool_defaults
+            .as_ref()
+            .and_then(|pd| StageCopyPolicy::from_str(&pd.stage_copy_policy))
+            .unwrap_or(StageCopyPolicy::Warn)
+    }
 }
 
 /// Custom deserializer for [`MachineConfig::someip_service_id`].
@@ -1959,8 +2091,40 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_machine_scheduler_worker_capacity(&cfg)?;
     validate_machine_timer_wheel_capacity(&cfg)?;
     validate_links(&cfg)?;
+    validate_pool_defaults(&cfg)?;
 
     Ok(cfg)
+}
+
+/// Watching-zenoh RFC §5.K line 2517-2519 parse-time typo guard
+/// (`deploy/stage-copy-policy-unknown`). Walks every machine's
+/// `pool_defaults.stage_copy_policy` String field and rejects values
+/// outside the closed set [`StageCopyPolicy::ALL`] = {warn, error,
+/// forbid}. Mirrors [`validate_links`]'s `LinkDriverUnknown` pattern
+/// — String at schema time, closed-allowlist validator post-parse.
+fn validate_pool_defaults(cfg: &DeployConfig) -> Result<(), DeployError> {
+    for device in cfg.topology.values() {
+        for (machine_name, machine) in device.machines.iter() {
+            let Some(pool_defaults) = machine.pool_defaults.as_ref() else {
+                continue;
+            };
+            if StageCopyPolicy::from_str(&pool_defaults.stage_copy_policy).is_none()
+            {
+                let candidates: Vec<String> = StageCopyPolicy::ALL
+                    .iter()
+                    .map(|s| (*s).to_string())
+                    .collect();
+                let candidates_list = candidates.join(", ");
+                return Err(DeployError::StageCopyPolicyUnknown {
+                    machine: machine_name.clone(),
+                    value: pool_defaults.stage_copy_policy.clone(),
+                    candidates,
+                    candidates_list,
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 /// C13-α-1 — `machines.<n>.links.<name>` parse-time validators.
@@ -2390,6 +2554,12 @@ pub fn validate_reassembly_cross_doc(
                 else {
                     continue;
                 };
+                // C13-γ accept_stage_copy_rate lookup — same join the
+                // resolver did, surfacing the forge LinkModel reference
+                // for the opt-out semantics. The lookup cannot fail
+                // when the resolver succeeded (3-way join shares the
+                // first step).
+                let forge_link = forge_link_models.get(link_name).copied();
                 // Re-fetch the full BufferPoolModel for slot_size and
                 // reassembly-specific config; the resolver returns only
                 // slot_count + variant ref to keep its signature lean.
@@ -2497,14 +2667,51 @@ pub fn validate_reassembly_cross_doc(
                     }
                 }
 
+                // ── C13-γ pool/stage-copy-accept-rejected-under-forbid ──
+                // Spec line 2512-2516 — under `forbid` policy, the
+                // mere presence of `<sce:accept-stage-copy-rate>` on
+                // a link source is a hard error regardless of whether
+                // the rate gate would fire. Checked before #3 + #6
+                // because spec contract is "the opt-out itself is
+                // rejected outright"; deterministic-first-failure
+                // walk order surfaces this code before the rate-gate
+                // codes when both would apply.
+                let policy = machine.resolved_stage_copy_policy();
+                if matches!(policy, StageCopyPolicy::Forbid)
+                    && forge_link
+                        .map(|l| l.accept_stage_copy_rate)
+                        .unwrap_or(false)
+                {
+                    return Err(
+                        ValidationError::PoolStageCopyAcceptRejectedUnderForbid {
+                            machine: machine_name.clone(),
+                            link_name: link_name.clone(),
+                        },
+                    );
+                }
+
                 // ── #3 reassembly/expected-fragmentation-rate-high ──
-                // Spec line 2950-2952 verbatim. The formula references
+                //     (or its C13-γ promotion `pool/stage-copy-policy-error`)
+                //
+                // Spec line 2950-2952 verbatim — the formula references
                 // "the regular RX pool's slot_size", which is the
                 // `BufferPoolVariant::Default` pool bound to the link.
                 // Per Q-C13-α2-4 (a): silent-skip when no Default pool
                 // is bound — that means the link has no "regular RX"
                 // path the formula can reference. When the resolved
                 // pool IS the Default variant, use its slot_size.
+                //
+                // C13-γ promotion semantics (RFC §5.K lines 2358-2367):
+                //   - `Warn` (default): #3 fires unless the link
+                //     declares `<sce:accept-stage-copy-rate>` (opt-out
+                //     suppresses the warning per spec line 2356-2357).
+                //   - `Error`: warning promoted to
+                //     `pool/stage-copy-policy-error`; opt-out still
+                //     suppresses (spec line 2358-2361).
+                //   - `Forbid`: same promotion as `Error`; opt-out
+                //     itself was already rejected above, so reaching
+                //     this point with `Forbid` implies no opt-out
+                //     and the promoted hard error fires.
                 if let Some(expected_p99_bytes) = link.expected_p99_bytes {
                     if let BufferPoolVariant::Default = variant {
                         if expected_p99_bytes > slot_size {
@@ -2515,16 +2722,41 @@ pub fn validate_reassembly_cross_doc(
                                 / expected_p99_bytes as u64)
                                 as u32;
                             if rate_percent > 25 {
-                                return Err(
-                                    ValidationError::ReassemblyExpectedFragmentationRateHigh {
-                                        pool_name: pool_name.to_string(),
-                                        slot_size,
-                                        expected_p99_bytes,
-                                        rate_percent,
-                                        machine: machine_name.clone(),
-                                        link_name: link_name.clone(),
-                                    },
-                                );
+                                let opt_out = forge_link
+                                    .map(|l| l.accept_stage_copy_rate)
+                                    .unwrap_or(false);
+                                // Opt-out suppresses the diagnostic
+                                // under `warn` and `error` per spec
+                                // line 2356-2361. Under `forbid` the
+                                // opt-out was rejected above so this
+                                // branch is unreachable with opt-out
+                                // = true on `forbid`.
+                                if !opt_out {
+                                    return Err(match policy {
+                                        StageCopyPolicy::Warn => {
+                                            ValidationError::ReassemblyExpectedFragmentationRateHigh {
+                                                pool_name: pool_name.to_string(),
+                                                slot_size,
+                                                expected_p99_bytes,
+                                                rate_percent,
+                                                machine: machine_name.clone(),
+                                                link_name: link_name.clone(),
+                                            }
+                                        }
+                                        StageCopyPolicy::Error
+                                        | StageCopyPolicy::Forbid => {
+                                            ValidationError::PoolStageCopyPolicyError {
+                                                pool_name: pool_name.to_string(),
+                                                slot_size,
+                                                expected_p99_bytes,
+                                                rate_percent,
+                                                machine: machine_name.clone(),
+                                                link_name: link_name.clone(),
+                                                policy: policy.as_str().to_string(),
+                                            }
+                                        }
+                                    });
+                                }
                             }
                         }
                     }

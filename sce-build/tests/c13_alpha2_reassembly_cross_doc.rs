@@ -84,6 +84,7 @@ fn link_model(name: &str, rx_pool: Option<&str>) -> LinkModel {
         rx_pool: rx_pool.map(str::to_string),
         tx_pool: None,
         stage_pool: None,
+        accept_stage_copy_rate: false,
     }
 }
 

@@ -344,6 +344,7 @@ mod tests {
             rx_pool: None,
             tx_pool: None,
             stage_pool: Some("scout_stage_pool".to_string()),
+            accept_stage_copy_rate: false,
         });
         reg.record_document(&doc).unwrap();
         assert_eq!(reg.lookup("scout_link"), Some(ScxmlDocKind::Link));
@@ -369,6 +370,7 @@ mod tests {
             rx_pool: None,
             tx_pool: None,
             stage_pool: None,
+            accept_stage_copy_rate: false,
         });
         reg.record_document(&doc).unwrap();
         assert_eq!(reg.lookup("borrow_only_link"), Some(ScxmlDocKind::Link));

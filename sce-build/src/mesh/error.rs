@@ -1325,6 +1325,23 @@ pub enum DeployError {
         candidates: Vec<String>,
         candidates_list: String,
     },
+
+    /// Watching-zenoh RFC §5.K line 2517-2519 verbatim
+    /// (`deploy/stage-copy-policy-unknown`).
+    /// `pool_defaults.stage_copy_policy` declared with a value other
+    /// than `warn` / `error` / `forbid`. Parse-time typo guard;
+    /// FixCarriesCandidates over the closed set.
+    #[error("machine '{machine}': `pool_defaults.stage_copy_policy: \
+             {value}` is not a known policy. watching-zenoh RFC §5.K \
+             line 2517-2519 (`deploy/stage-copy-policy-unknown`) — \
+             closed-set typo guard. Repair: pick one of \
+             [{candidates_list}].")]
+    StageCopyPolicyUnknown {
+        machine: String,
+        value: String,
+        candidates: Vec<String>,
+        candidates_list: String,
+    },
 }
 
 // ── Stage 1b: External infrastructure config ─────────────────
@@ -2774,6 +2791,24 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 candidates: candidates.clone(),
             }),
             key_fragments: vec![machine.clone(), link_name.clone()],
+        },
+        DeployError::StageCopyPolicyUnknown {
+            machine,
+            value,
+            candidates,
+            candidates_list: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployStageCopyPolicyUnknown,
+            stage: Stage::MeshDeploy,
+            // `actual` = the offending value; closed-set candidates
+            // ride `Fix::ReplaceOneOf` (StageCopyPolicy::ALL = {warn,
+            // error, forbid}).
+            actual: Some(value.clone()),
+            expected: None,
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![machine.clone(), value.clone()],
         },
     }
 }
