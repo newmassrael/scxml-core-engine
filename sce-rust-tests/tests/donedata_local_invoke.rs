@@ -15,23 +15,13 @@
 // Fixture: sce-rust-tests/fixtures/donedata_local_invoke.scxml
 //
 // Regeneration (after fixture or template edit):
-//   cargo build --bin sce-codegen --features cli --release -p sce-build
-//   TMP=$(mktemp -d)
-//   cp sce-rust-tests/fixtures/donedata_local_invoke.scxml "$TMP/"
-//   target/release/sce-codegen generate \
-//       "$TMP/donedata_local_invoke.scxml" -l rust -o "$TMP/"
-//   for child in "$TMP"/donedata_local_invoke_child*.scxml; do
-//       target/release/sce-codegen generate "$child" \
-//           --as-child --parent-stem donedata_local_invoke \
-//           -l rust -o "$TMP/"
-//   done
-//   cp "$TMP"/*.rs \
-//       sce-rust-tests/src/generated/donedata_local_invoke/
-//   rm -rf "$TMP"
-// (Copying the fixture into `$TMP` first is what keeps the transient
-//  split-out `donedata_local_invoke_child{0,1}.scxml` artifacts out of the
-//  tracked `sce-rust-tests/fixtures/` directory — sce-codegen writes those
-//  adjacent to the input, not into `-o`.)
+//   scripts/regen_donedata_local_invoke.sh
+//
+// The script wraps the mktemp + per-child --as-child workflow so the
+// synth-invoke side files (Mesh §9.6.6 rule 1 pins them adjacent to the
+// parent input) do not pollute the tracked `sce-rust-tests/fixtures/`
+// directory and the `_sm.rs` artefacts land in this dir with mod.rs
+// stitched to match.
 
 use std::time::Duration;
 
