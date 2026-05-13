@@ -501,28 +501,37 @@ fn json_mode_condition_missing_expr_reports_leaf_line() {
     );
 }
 
-/// Write a codec fixture that passes XSD but fails the post-loop
-/// `fields.is_empty()` check inside `parse_codec`. XSD accepts a
-/// lone input `<data>` with no output fields, so validation must
-/// run against the `<datamodel>` container — the most specific
-/// node still in scope at that raise-site.
-fn write_codec_no_output_fields_fixture() -> (ScratchDir, PathBuf) {
+/// Write a transform fixture that passes XSD but fails the post-loop
+/// `outputs.is_empty()` check inside `parse_transform`. XSD accepts a
+/// lone input `<data>` with no output fields, so validation must run
+/// against the `<datamodel>` container — the most specific node still
+/// in scope at that raise-site (forge/parser.rs:530-535).
+///
+/// **Why transform, not codec**: this fixture used to ride parse_codec's
+/// `fields.is_empty()` check, but RFC §5.B B5-α deliberately accepts
+/// zero-field codecs (Zenoh KeepAlive empty-body messages keyed by the
+/// surrounding header byte) — parse_codec no longer raises
+/// EmptyCollection on a fields-empty body. parse_transform still
+/// container-anchors EmptyCollection on missing inputs/outputs (one of
+/// the two raise paths still required by transform's two-direction
+/// semantic), preserving the leaf-precision contract this test pins.
+fn write_transform_no_outputs_fixture() -> (ScratchDir, PathBuf) {
     let dir = ScratchDir::new("leaf-precision");
-    let path = dir.path().join("codec_no_output.scxml");
+    let path = dir.path().join("transform_no_outputs.scxml");
     let body = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" name="bad_codec">
+       sce:kind="transform" name="bad_transform">
   <datamodel>
     <data id="raw" sce:type="bytes" sce:direction="in"/>
   </datamodel>
 </scxml>
 "#;
-    std::fs::write(&path, body).expect("write codec fixture");
+    std::fs::write(&path, body).expect("write transform fixture");
     (dir, path)
 }
 
-/// Leaf-precision acceptance test for `parse_codec`.
+/// Leaf-precision acceptance test for `parse_transform`.
 ///
 /// The `<scxml>` root is on line 2 and `<datamodel>` on line 5.
 /// Post-loop validation reports at `<datamodel>` — the most specific
@@ -531,8 +540,8 @@ fn write_codec_no_output_fields_fixture() -> (ScratchDir, PathBuf) {
 /// template across container-level raises (not just per-`<data>`
 /// raises exercised by the condition test above).
 #[test]
-fn json_mode_codec_no_output_reports_datamodel_line() {
-    let (_dir, scxml) = write_codec_no_output_fields_fixture();
+fn json_mode_transform_no_outputs_reports_datamodel_line() {
+    let (_dir, scxml) = write_transform_no_outputs_fixture();
     let out = run_generate(&sce_codegen_bin(), &scxml, "json");
 
     assert!(!out.status.success(), "must fail when no output fields");
