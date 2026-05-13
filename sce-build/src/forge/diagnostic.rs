@@ -1142,6 +1142,30 @@ pub enum DiagnosticCode {
     #[serde(rename = "reassembly/stage-copy-wcet-exceeds-slot-budget")]
     ReassemblyStageCopyWcetExceedsSlotBudget,
 
+    /// Codegen self-check: the emitted reassembly-variant pool's
+    /// per-slot peer-id is not the 16-byte ZID signature mandated for
+    /// `trust_class: established_session` bindings. RFC §5.M line
+    /// 2976-2981 verbatim: "internal codegen invariant: per-peer quota
+    /// check on an `established_session` link must use ZID (handshake-
+    /// derived) as the peer key, not the wire source address. Codegen
+    /// guard against template regression that would silently fall back
+    /// to spoofable wire ID."
+    ///
+    /// Wired into [`super::generator::render_buffer_pool_rust`] and
+    /// [`super::generator::render_buffer_pool_c`] as a post-render
+    /// substring check when the resolved variant is
+    /// [`super::model::BufferPoolVariant::Reassembly`]. In well-formed
+    /// templates the diagnostic never fires — the reassembly variant
+    /// only resolves on `established_session` links (cross-doc
+    /// validator `reassembly/untrusted-link-binding` gates non-
+    /// `established_session` bindings upstream) and the template
+    /// hardcodes the 16-byte ZID typedef. The diagnostic exists as a
+    /// regression guard for future template edits that drop the ZID
+    /// shape; mirrors the `mem/inter-pool-padding-not-emitted`
+    /// self-check shape (generator.rs:10225).
+    #[serde(rename = "reassembly/peer-id-not-zid-on-established-session")]
+    ReassemblyPeerIdNotZidOnEstablishedSession,
+
     // ── §5.L Bounded-collection kind diagnostics (watching-zenoh RFC
     //    §5.L lines 2540-2655). C6-α ships the two structure-only codes
     //    here; cross-doc (element-type-not-a-kind / index-by-field-
@@ -1962,6 +1986,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ReassemblyUntrustedLinkBinding,
         ReassemblyTrustClassMissingOnFragmentingLink,
         ReassemblyStageCopyWcetExceedsSlotBudget,
+        // Fragment-reassembly codegen self-check (watching-zenoh RFC §5.M, C9-γ)
+        ReassemblyPeerIdNotZidOnEstablishedSession,
         // Bounded-collection kind parse-time structure validators (watching-zenoh RFC §5.L, C6-α)
         CollectionOrderingSortedRequiresIndexBy,
         CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion,
@@ -2338,7 +2364,9 @@ impl DiagnosticCode {
             | ReassemblyExpectedFragmentationRateHigh
             | ReassemblyUntrustedLinkBinding
             | ReassemblyTrustClassMissingOnFragmentingLink
-            | ReassemblyStageCopyWcetExceedsSlotBudget => {
+            | ReassemblyStageCopyWcetExceedsSlotBudget
+            // C9-γ codegen self-check (RFC §5.M lines 2976-2981).
+            | ReassemblyPeerIdNotZidOnEstablishedSession => {
                 Some("watching-zenoh RFC §5.M")
             }
 
@@ -2704,6 +2732,7 @@ impl DiagnosticCode {
             ReassemblyUntrustedLinkBinding => "reassembly/untrusted-link-binding",
             ReassemblyTrustClassMissingOnFragmentingLink => "reassembly/trust-class-missing-on-fragmenting-link",
             ReassemblyStageCopyWcetExceedsSlotBudget => "reassembly/stage-copy-wcet-exceeds-slot-budget",
+            ReassemblyPeerIdNotZidOnEstablishedSession => "reassembly/peer-id-not-zid-on-established-session",
             CollectionOrderingSortedRequiresIndexBy => "collection/ordering-sorted-requires-index-by",
             CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion => "collection/overflow-policy-oldest-wins-requires-ordering-insertion",
             CollectionElementTypeNotAKind => "collection/element-type-not-a-kind",
@@ -4554,6 +4583,23 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 stage_copy_wcet_us.to_string(),
             ],
         },
+        // ── §5.M C9-γ codegen self-check ──
+        ValidationError::ReassemblyPeerIdNotZidOnEstablishedSession {
+            pool_name,
+            language,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ReassemblyPeerIdNotZidOnEstablishedSession,
+            stage: Stage::Validation,
+            // Codegen-internal invariant — author-side `actual` /
+            // `expected` / `fix` carry no useful information (the
+            // "fix" is to file an upstream bug, not to edit the
+            // SCXML). Mirrors `BufferPoolInterPoolPaddingNotEmitted`
+            // shape (diagnostic.rs:3921, generator.rs:10225).
+            actual: None,
+            expected: None,
+            fix: None,
+            key_fragments: vec![pool_name.clone(), language.clone()],
+        },
         // ── §5.K C13-γ stage-copy policy promotion + opt-out rejection ──
         ValidationError::PoolStageCopyPolicyError {
             pool_name,
@@ -6229,6 +6275,20 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:c41a9b3397849183","code":"reassembly/stage-copy-wcet-exceeds-slot-budget","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"link 'udp_data' on machine 'mcu_node': stage-copy WCET (1365 µs) exceeds `scheduler.worker_slot_budget_us: 200`. watching-zenoh RFC §5.M line 2995-2999 — `expected_p99_bytes (16384) × memcpy_cycles_per_byte (4) / clock_freq_mhz (48) > worker_slot_budget_us`. The stage copy alone starves Keepalive and parallel-region timers (ARCHITECTURE §9.3 + §3.4). Repair: raise `worker_slot_budget_us` (and re-validate every algorithm), lower `expected_p99_bytes` so stage copy is never invoked at that size, or raise the bound pool's `<sce:slot-size>` to absorb p99 without invoking stage copy.","expected":["200"],"actual":"1365"}"#,
+            ),
+            (
+                // RFC §5.M line 2976-2981: codegen self-check —
+                // reassembly variant must emit ZID-shaped per-slot
+                // peer-id. NeutralOrDeterministic; pure template-
+                // regression guard (mirrors
+                // `mem/inter-pool-padding-not-emitted` shape).
+                "forge/reassembly-peer-id-not-zid-on-established-session",
+                ValidationError::ReassemblyPeerIdNotZidOnEstablishedSession {
+                    pool_name: "rx_reassembly_pool".into(),
+                    language: "rust".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:c88b0fe4fe0b1ff7","code":"reassembly/peer-id-not-zid-on-established-session","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"reassembly-variant buffer-pool 'rx_reassembly_pool' (rust backend): emitted per-slot peer-id is not the 16-byte ZID signature required for `trust_class: established_session` bindings. watching-zenoh RFC §5.M line 2976-2981 — codegen invariant violation: per-peer quota check must use the handshake-derived ZID as the peer key, not the wire source address (defends against UDP source-IP spoofing on `established_session` links). In well-formed templates the reassembly variant always emits the 16-byte ZID typedef (the cross-doc validator `reassembly/untrusted-link-binding` gates non-`established_session` bindings upstream), so this diagnostic fires only on template regression; report at https://github.com/newmassrael/scxml-core-engine/issues"}"#,
             ),
             // ── §5.K C13-γ stage-copy policy promotion + opt-out rejection ──
             (
@@ -8766,6 +8826,14 @@ mod tests {
             | ReassemblyUntrustedLinkBinding
             | ReassemblyTrustClassMissingOnFragmentingLink
             | ReassemblyStageCopyWcetExceedsSlotBudget
+            // C9-γ codegen self-check (RFC §5.M lines 2976-2981). Pure
+            // template-regression guard with no author-domain repair —
+            // "report the bug upstream" is the only path forward.
+            // NeutralOrDeterministic mirrors the
+            // `mem/inter-pool-padding-not-emitted` precedent for
+            // codegen-internal invariants where author-side `actual` /
+            // `expected` / `fix` carry no useful information.
+            | ReassemblyPeerIdNotZidOnEstablishedSession
             // C6-β multi-writer without atomic imports: the C4 baseline
             // atomic family spans 100+ symbols (load/store/cas/fetch ×
             // 5 widths × multiple orderings) so a `Fix::ReplaceOneOf`
@@ -9311,6 +9379,7 @@ mod tests {
                 | ReassemblyUntrustedLinkBinding
                 | ReassemblyTrustClassMissingOnFragmentingLink
                 | ReassemblyStageCopyWcetExceedsSlotBudget
+                | ReassemblyPeerIdNotZidOnEstablishedSession
                 | TimerPeriodBelowTickRate
                 | TimerSlotOverflow
                 | ExternSymbolNotInWhitelist
@@ -9424,9 +9493,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            255,
+            256,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 255 distinct variants to match the DiagnosticCode \
+             expected 256 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -9891,7 +9960,20 @@ mod tests {
              entries; the latter requires cross-doc resolution \
              against the §5.I baseline whitelist + loaded \
              target_plugin symbols, which lives on \
-             `compile_forge_with_deploy` not parse-time. 250 → 255.",
+             `compile_forge_with_deploy` not parse-time. 250 → 255. \
+             Then watching-zenoh RFC §5.M lines 2976-2981 land the \
+             C9-γ codegen self-check \
+             `reassembly/peer-id-not-zid-on-established-session` — a \
+             template-regression guard fired by post-render substring \
+             inspection inside `render_buffer_pool_rust` / \
+             `render_buffer_pool_c` when the resolved variant is \
+             `BufferPoolVariant::Reassembly` and the emitted output \
+             does not contain the 16-byte ZID peer-id signature. In \
+             well-formed templates the diagnostic never fires (the \
+             cross-doc validator `reassembly/untrusted-link-binding` \
+             gates non-`established_session` bindings upstream); \
+             NeutralOrDeterministic mirrors the \
+             `mem/inter-pool-padding-not-emitted` precedent. 255 → 256.",
         );
     }
 

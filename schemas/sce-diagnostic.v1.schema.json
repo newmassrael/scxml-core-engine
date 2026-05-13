@@ -148,6 +148,7 @@
         "reassembly/untrusted-link-binding",
         "reassembly/trust-class-missing-on-fragmenting-link",
         "reassembly/stage-copy-wcet-exceeds-slot-budget",
+        "reassembly/peer-id-not-zid-on-established-session",
         "collection/ordering-sorted-requires-index-by",
         "collection/overflow-policy-oldest-wins-requires-ordering-insertion",
         "collection/element-type-not-a-kind",

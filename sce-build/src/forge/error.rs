@@ -1787,6 +1787,37 @@ pub enum ValidationError {
         stage_copy_wcet_us: u32,
     },
 
+    /// watching-zenoh RFC §5.M line 2976-2981 verbatim
+    /// (`reassembly/peer-id-not-zid-on-established-session`) — internal
+    /// codegen invariant: per-peer quota check on an
+    /// `established_session` link must use ZID (handshake-derived) as
+    /// the peer key, not the wire source address. Codegen guard
+    /// against template regression that would silently fall back to
+    /// spoofable wire ID.
+    ///
+    /// C9-γ wires this on a post-render substring check inside
+    /// [`render_buffer_pool_rust`] / [`render_buffer_pool_c`] when the
+    /// resolved variant is [`BufferPoolVariant::Reassembly`]: the
+    /// emitted output must contain the 16-byte ZID peer-id signature.
+    /// In normal use the template always emits the ZID shape (the
+    /// reassembly variant only resolves for `established_session`
+    /// bindings — the cross-doc validator
+    /// `reassembly/untrusted-link-binding` rejects any other
+    /// trust class). The diagnostic exists to catch a future
+    /// template edit that drops the ZID type or substitutes a
+    /// wire-source typedef — mirrors the
+    /// `BufferPoolInterPoolPaddingNotEmitted` self-check shape per
+    /// generator.rs:10225.
+    #[error(
+        "reassembly-variant buffer-pool '{pool_name}' ({language} backend): emitted per-slot peer-id is not the 16-byte ZID signature required for `trust_class: established_session` bindings. \
+         watching-zenoh RFC §5.M line 2976-2981 — codegen invariant violation: per-peer quota check must use the handshake-derived ZID as the peer key, not the wire source address (defends against UDP source-IP spoofing on `established_session` links). \
+         In well-formed templates the reassembly variant always emits the 16-byte ZID typedef (the cross-doc validator `reassembly/untrusted-link-binding` gates non-`established_session` bindings upstream), so this diagnostic fires only on template regression; report at https://github.com/newmassrael/scxml-core-engine/issues"
+    )]
+    ReassemblyPeerIdNotZidOnEstablishedSession {
+        pool_name: String,
+        language: String,
+    },
+
     /// watching-zenoh RFC §5.K line 2504-2511 verbatim
     /// (`pool/stage-copy-policy-error`). `pool_defaults.stage_copy_policy:
     /// error` (or `forbid`) AND the §5.M / ARCHITECTURE §9.3

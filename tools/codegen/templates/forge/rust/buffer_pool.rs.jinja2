@@ -87,6 +87,104 @@ pub const STATE_COUNT: usize = 7;
 /// `forge::buffer_pool_fsm::TRANSITION_COUNT` — the eleven legal
 /// edges from spec §5.E lines 1141-1156.
 pub const TRANSITION_COUNT: usize = 11;
+{%- if variant_reassembly %}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// C9-γ reassembly variant per-slot state (RFC §5.M lines 2680-2698
+// + 2864-2876). The reassembly variant of §5.E (`<sce:variant>reassembly`)
+// extends the slot table with three additional per-slot fields the
+// author-level Fragment FSM (RFC §5.M lines 2864-2876, lives in
+// downstream SCXML statechart) consumes:
+//   - `bitmap: [u32; FRAGMENT_BITMAP_WORDS]` — fragment-index bitmap
+//     marking each received fragment; bitmap width derived from
+//     `<sce:max-fragments-per-message>` (RFC §5.M line 2688 +
+//     2694-2698).
+//   - `deadline: u64` — per-slot reassembly deadline in raw ticks /
+//     ms; `<sce:reassembly-timeout-ms>` (RFC §5.M line 2689) drives
+//     the timer the FSM's `Receiving → TimedOut` edge consumes
+//     (`docs/reassembly-fsm.md` §2.4.5).
+//   - `peer_id: PeerId` — handshake-derived ZID (RFC §5.M lines
+//     2700-2738). Reassembly is forbidden on non-`established_session`
+//     links by the cross-doc validator
+//     `reassembly/untrusted-link-binding`, so the peer-id is always
+//     the 16-byte ZID — never the spoofable wire source address.
+//     The `reassembly/peer-id-not-zid-on-established-session`
+//     codegen self-check enforces this template invariant per RFC
+//     §5.M lines 2976-2981.
+//
+// Quota enforcement (RFC §5.M lines 2848-2856) lives in the author
+// SCXML algorithm (`<scxml sce:kind="algorithm">`) that walks the
+// slot table at `Fragment.First` arrival — it is intentionally NOT
+// emitted from the pool template (O(slot_count) bounded loop fits
+// `mode="static"` WCET; no runtime infrastructure needed in the
+// codegen output). Same for fragment-index marking and
+// completion-detection: those live in the author FSM body.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Bitmap word count per reassembly slot — `ceil(max-fragments-per-message / 32)`.
+/// Width pinned to `u32` (4 bytes) at the size assertion below; using
+/// platform-natural `usize` would break the wire-shape invariant the
+/// runtime metadata layer relies on.
+pub const FRAGMENT_BITMAP_WORDS: usize = ({{ max_fragments_per_message }} + 31) / 32;
+
+/// `<sce:max-fragments-per-message>` (RFC §5.M line 2688) — the
+/// closed cap a reassembled message's fragment count cannot exceed
+/// (worst-case message must complete within the bitmap width).
+pub const MAX_FRAGMENTS_PER_MESSAGE: u32 = {{ max_fragments_per_message }};
+
+/// `<sce:reassembly-timeout-ms>` (RFC §5.M line 2689) — per-slot
+/// deadline value in milliseconds, written into `ReassemblySlot.deadline`
+/// at `Fragment.First` arrival.
+pub const REASSEMBLY_TIMEOUT_MS: u32 = {{ reassembly_timeout_ms }};
+
+/// `<sce:per-peer-quota>` (RFC §5.M lines 2690, 2841-2861) — caps
+/// the in-flight reassembly slots a single peer (keyed by ZID) may
+/// hold. Consumed by the SCXML-side per-peer quota algorithm; this
+/// constant exposes the configured cap so the algorithm doesn't have
+/// to round-trip through the deploy.yaml.
+pub const PER_PEER_QUOTA: u32 = {{ per_peer_quota }};
+
+/// Handshake-derived peer identifier — 16-byte Zenoh ZID (RFC §5.M
+/// lines 2708-2714). The `reassembly/peer-id-not-zid-on-established-
+/// session` codegen self-check (RFC §5.M lines 2976-2981) enforces
+/// that this declaration emits the `[u8; 16]` byte-array shape on
+/// every reassembly-variant pool — wire-source typedefs would silently
+/// inherit UDP source-IP spoofing exposure.
+pub type PeerId = [u8; 16];
+
+/// Per-slot reassembly state — RFC §5.M lines 2680-2698. Author SCXML
+/// FSM bodies (`docs/reassembly-fsm.md`) reach into `bitmap` and
+/// `deadline` directly; `peer_id` is matched on `Fragment.Continue`
+/// / `Final` to bind continuation fragments to the originating ZID.
+#[repr(C)]
+pub struct ReassemblySlot {
+    /// Fragment-index bitmap. Bit `i` (LSB-first across words) marks
+    /// fragment index `i` as received. RFC §5.M line 2696.
+    pub bitmap: [u32; FRAGMENT_BITMAP_WORDS],
+    /// Per-slot reassembly deadline (raw ms ticks). RFC §5.M line
+    /// 2689 + 2697.
+    pub deadline: u64,
+    /// Originating peer ZID. RFC §5.M lines 2697-2714.
+    pub peer_id: PeerId,
+}
+
+// Drift guards — pin the FRAGMENT_BITMAP_WORDS+deadline wire shape
+// so a future port to 16-bit / 64-bit `usize` cores or a "smarter"
+// bitmap type does not silently re-define the per-slot layout the
+// author FSM and the cross-language tracing path observe.
+const _: () = assert!(
+    core::mem::size_of::<u32>() == 4,
+    "fragment-index bitmap word is fixed to u32 (4 bytes) per RFC §5.M line 2696",
+);
+const _: () = assert!(
+    core::mem::size_of::<u64>() == 8,
+    "reassembly slot deadline is fixed to u64 (8 bytes) per RFC §5.M line 2697",
+);
+const _: () = assert!(
+    core::mem::size_of::<PeerId>() == 16,
+    "reassembly slot peer-id is fixed to 16-byte ZID per RFC §5.M lines 2708-2714",
+);
+{%- endif %}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Slot lifecycle state — runtime tag value (mirrors C11 enum)

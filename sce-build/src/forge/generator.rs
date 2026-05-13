@@ -9387,6 +9387,27 @@ fn render_buffer_pool_rust(
         .as_ref()
         .map(|p| p.has_speculative_prefetch)
         .unwrap_or(false);
+    // C9-γ reassembly variant context (RFC §5.M lines 2680-2698).
+    // `BufferPoolVariant::Default` collapses to the pre-C9 template
+    // shape; the reassembly arm fans the three required reassembly
+    // fields onto the template so the `{% if variant_reassembly %}`
+    // block emits the per-slot bitmap + deadline + ZID peer-id
+    // typedef. The cross-doc validator
+    // `reassembly/untrusted-link-binding` upstream rejects bindings
+    // to non-`established_session` links, so the ZID type is the
+    // structurally invariant choice here (C9-γ codegen self-check
+    // below catches template regression that drops the 16-byte
+    // shape).
+    let (variant_reassembly, max_fragments_per_message, reassembly_timeout_ms, per_peer_quota) =
+        match &m.variant {
+            crate::forge::model::BufferPoolVariant::Default => (false, 0u32, 0u32, 0u32),
+            crate::forge::model::BufferPoolVariant::Reassembly(cfg) => (
+                true,
+                cfg.max_fragments_per_message,
+                cfg.reassembly_timeout_ms,
+                cfg.per_peer_quota,
+            ),
+        };
     let ctx = minijinja::context! {
         name => &m.name,
         pascal_name => filters::to_pascal_case(m.name.clone()),
@@ -9402,12 +9423,50 @@ fn render_buffer_pool_rust(
         // (conditionally) cache_invalidate when cache_policy=maintain.
         cache_maintain => m.cache_policy == crate::forge::model::CachePolicy::Maintain,
         has_speculative_prefetch => has_speculative_prefetch,
+        // C9-γ reassembly variant.
+        variant_reassembly => variant_reassembly,
+        max_fragments_per_message => max_fragments_per_message,
+        reassembly_timeout_ms => reassembly_timeout_ms,
+        per_peer_quota => per_peer_quota,
     };
-    tmpl.render(ctx).map_err(|e| {
+    let rendered = tmpl.render(ctx).map_err(|e| {
         ForgeError::Generate(GenerateError::TemplateRender(format!(
             "buffer_pool.rs.jinja2 (rust): {e}"
         )))
-    })
+    })?;
+    // C9-γ codegen self-check (RFC §5.M lines 2976-2981). When the
+    // resolved variant is Reassembly, the rendered output MUST carry
+    // the 16-byte ZID peer-id typedef so the per-peer quota algorithm
+    // keys on a non-spoofable handshake identifier. The cross-doc
+    // validator `reassembly/untrusted-link-binding` already gates
+    // non-`established_session` bindings; this self-check is purely
+    // a template-regression guard (mirrors `check_inter_pool_padding_invariant`).
+    if variant_reassembly {
+        check_reassembly_peer_id_zid_invariant_rust(&m.name, &rendered)?;
+    }
+    Ok(rendered)
+}
+
+/// C9-γ codegen self-check for the §5.M reassembly-variant peer-id
+/// invariant (RFC §5.M lines 2976-2981). The Rust template emits
+/// `pub type PeerId = [u8; 16];` on every reassembly-variant pool —
+/// the closed candidate ZID typedef. If the rendered fragment is
+/// missing that exact byte-array shape, fire
+/// `reassembly/peer-id-not-zid-on-established-session`.
+fn check_reassembly_peer_id_zid_invariant_rust(
+    pool_name: &str,
+    rendered_rs: &str,
+) -> Result<(), ForgeError> {
+    if rendered_rs.contains("pub type PeerId = [u8; 16]") {
+        Ok(())
+    } else {
+        Err(ForgeError::Validation(
+            crate::forge::error::ValidationError::ReassemblyPeerIdNotZidOnEstablishedSession {
+                pool_name: pool_name.to_string(),
+                language: "rust".to_string(),
+            },
+        ))
+    }
 }
 
 /// Render a `<sce:kind="worker">` document for the Rust backend
@@ -10151,10 +10210,24 @@ fn render_buffer_pool_c(
         .as_ref()
         .map(|p| p.has_speculative_prefetch)
         .unwrap_or(false);
+    // C9-γ reassembly variant context — mirror of Rust render fn so
+    // both backends emit the same per-slot bitmap + deadline + ZID
+    // shape from the same input model (RFC §5.M lines 2680-2698 +
+    // 2976-2981).
+    let (variant_reassembly, max_fragments_per_message, reassembly_timeout_ms, per_peer_quota) =
+        match &m.variant {
+            crate::forge::model::BufferPoolVariant::Default => (false, 0u32, 0u32, 0u32),
+            crate::forge::model::BufferPoolVariant::Reassembly(cfg) => (
+                true,
+                cfg.max_fragments_per_message,
+                cfg.reassembly_timeout_ms,
+                cfg.per_peer_quota,
+            ),
+        };
     let ctx = minijinja::context! {
         name => &m.name,
-        snake_name => snake_name,
-        upper_name => upper_name,
+        snake_name => snake_name.clone(),
+        upper_name => upper_name.clone(),
         guard => guard,
         slot_count => m.slot_count,
         slot_size => m.slot_size,
@@ -10169,12 +10242,45 @@ fn render_buffer_pool_c(
         // the same names without per-backend wiring guesswork.
         cache_maintain => m.cache_policy == crate::forge::model::CachePolicy::Maintain,
         has_speculative_prefetch => has_speculative_prefetch,
+        // C9-γ reassembly variant.
+        variant_reassembly => variant_reassembly,
+        max_fragments_per_message => max_fragments_per_message,
+        reassembly_timeout_ms => reassembly_timeout_ms,
+        per_peer_quota => per_peer_quota,
     };
-    tmpl.render(ctx).map_err(|e| {
+    let rendered = tmpl.render(ctx).map_err(|e| {
         ForgeError::Generate(GenerateError::TemplateRender(format!(
             "buffer_pool.h.jinja2 (c11): {e}"
         )))
-    })
+    })?;
+    if variant_reassembly {
+        check_reassembly_peer_id_zid_invariant_c11(&m.name, &snake_name, &rendered)?;
+    }
+    Ok(rendered)
+}
+
+/// C9-γ codegen self-check for the §5.M reassembly-variant peer-id
+/// invariant on the C11 backend (RFC §5.M lines 2976-2981). The C11
+/// template emits `typedef uint8_t <snake>_peer_id_t[16];` on every
+/// reassembly-variant pool. If the rendered header is missing that
+/// exact byte-array shape, fire
+/// `reassembly/peer-id-not-zid-on-established-session`.
+fn check_reassembly_peer_id_zid_invariant_c11(
+    pool_name: &str,
+    snake_name: &str,
+    rendered_h: &str,
+) -> Result<(), ForgeError> {
+    let needle = format!("typedef uint8_t {}_peer_id_t[16]", snake_name);
+    if rendered_h.contains(&needle) {
+        Ok(())
+    } else {
+        Err(ForgeError::Validation(
+            crate::forge::error::ValidationError::ReassemblyPeerIdNotZidOnEstablishedSession {
+                pool_name: pool_name.to_string(),
+                language: "c11".to_string(),
+            },
+        ))
+    }
 }
 
 /// Render the sidecar linker fragment that pairs with the buffer-pool
