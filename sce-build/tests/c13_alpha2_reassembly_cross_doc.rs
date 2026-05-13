@@ -576,6 +576,12 @@ fn expected_fragmentation_silent_skip_on_reassembly_variant() {
 
 #[test]
 fn untrusted_link_binding_fires_on_session_arming() {
+    // C13-β added parse-time validators that require session_arming
+    // links to declare session_arming_quota + accept_rate_per_sec +
+    // accept_rate_burst. The reassembly cross-doc check #4 only fires
+    // AFTER parse-time passes, so the fixture now carries those
+    // anti-flood fields. C13-α-2's reassembly check itself is
+    // unchanged.
     let yaml = deploy_with_links(
         r#"          udp_listener:
             bind: "0.0.0.0:7447"
@@ -583,6 +589,9 @@ fn untrusted_link_binding_fires_on_session_arming() {
             mtu_bytes: 1500
             domain_attrs:
               trust_class: session_arming
+            session_arming_quota: 8
+            accept_rate_per_sec: 4
+            accept_rate_burst: 8
 "#,
     );
     let cfg = parse_deploy_str(&yaml).expect("deploy parses");

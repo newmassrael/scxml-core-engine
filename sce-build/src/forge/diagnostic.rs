@@ -1605,6 +1605,72 @@ pub enum DiagnosticCode {
     #[serde(rename = "deploy/stage-copy-policy-unknown")]
     MeshDeployStageCopyPolicyUnknown,
 
+    // ── C13-β anti-flood + stateless_accept (RFC §5.K lines
+    //    2272-2349 + 2449-2473). Five codes wire the conditional
+    //    requirement, dead-config rejection, opt-out reuirement,
+    //    and key-rotation invariant. Two additional spec codes
+    //    defer to follow-up atomics:
+    //      - `deploy/session-arming-quota-vs-peer-table-invariant-violated`
+    //        (line 2460-2462) needs `peer_table.capacity` +
+    //        `max_handshake_time_s` schema fields that the spec
+    //        references in invariants but does not declare as
+    //        deploy.yaml schema entries today.
+    //      - `deploy/stateless-accept-extern-not-whitelisted`
+    //        (line 2466-2469) requires cross-doc resolution against
+    //        the §5.I baseline whitelist AND any loaded
+    //        `target_plugin` symbols — target_plugin loading lives
+    //        on `compile_forge_with_deploy`, not at parse-time.
+    //    Both defer per `[[feedback-silently-broken-hooks]]`.
+
+    /// Watching-zenoh RFC §5.K line 2449-2451 verbatim
+    /// (`deploy/session-arming-quota-missing`). Link declares
+    /// `trust_class: session_arming` but no `session_arming_quota`.
+    /// Hard error; without a cap an attacker can fill every
+    /// `Accepting.*` slot. Repair: declare a concrete u32 value
+    /// (MCU default 8, AP default 32 per spec line 2282).
+    /// NeutralOrDeterministic — author-domain value, no closed
+    /// candidate set.
+    #[serde(rename = "deploy/session-arming-quota-missing")]
+    MeshDeploySessionArmingQuotaMissing,
+
+    /// Watching-zenoh RFC §5.K line 2452-2453 verbatim
+    /// (`deploy/accept-rate-config-missing`). `trust_class:
+    /// session_arming` link missing `accept_rate_per_sec` or
+    /// `accept_rate_burst`. Hard error.
+    /// NeutralOrDeterministic — author-domain values.
+    #[serde(rename = "deploy/accept-rate-config-missing")]
+    MeshDeployAcceptRateConfigMissing,
+
+    /// Watching-zenoh RFC §5.K line 2454-2459 verbatim
+    /// (`deploy/session-arming-fields-on-non-arming-link`). Anti-
+    /// flood / stateless_accept fields declared on a `trust_class:
+    /// untrusted` or `established_session` link where `Accepting.*`
+    /// is never instantiated. Dead config; suggests author confusion
+    /// about which link is the listener. Hard error.
+    /// NeutralOrDeterministic — two valid repair paths (change
+    /// trust_class to session_arming vs remove the dead fields).
+    #[serde(rename = "deploy/session-arming-fields-on-non-arming-link")]
+    MeshDeploySessionArmingFieldsOnNonArmingLink,
+
+    /// Watching-zenoh RFC §5.K line 2463-2465 verbatim
+    /// (`deploy/stateless-accept-required-on-untrusted-source`).
+    /// Link with `domain_attrs.untrusted_source: true` but no
+    /// `stateless_accept` block. Hard error.
+    /// NeutralOrDeterministic — author must author the full block.
+    #[serde(rename = "deploy/stateless-accept-required-on-untrusted-source")]
+    MeshDeployStatelessAcceptRequiredOnUntrustedSource,
+
+    /// Watching-zenoh RFC §5.K line 2470-2473 verbatim
+    /// (`deploy/stateless-accept-key-rotation-shorter-than-lifetime`).
+    /// `key_rotation_s × 1000 ≤ 2 × cookie_lifetime_ms`. The
+    /// previous-key honor window cannot bridge a rotation, so
+    /// handshakes near rotation boundaries get spurious cookie
+    /// rejection. Hard error.
+    /// NeutralOrDeterministic — two-axis repair (raise key_rotation_s
+    /// vs lower cookie_lifetime_ms).
+    #[serde(rename = "deploy/stateless-accept-key-rotation-shorter-than-lifetime")]
+    MeshDeployStatelessAcceptKeyRotationShorterThanLifetime,
+
     /// Watching-zenoh RFC §5.K line 2501-2503 verbatim
     /// (`deploy/link-burst-pps-missing-on-isr-dispatch`). The resolved
     /// `rx_dispatch` (per [`super::super::mesh::deploy::LinkConfig::resolved_rx_dispatch`])
@@ -2000,6 +2066,12 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         PoolStageCopyPolicyError,
         PoolStageCopyAcceptRejectedUnderForbid,
         MeshDeployStageCopyPolicyUnknown,
+        // C13-β anti-flood + stateless_accept (RFC §5.K lines 2272-2349 + 2449-2473)
+        MeshDeploySessionArmingQuotaMissing,
+        MeshDeployAcceptRateConfigMissing,
+        MeshDeploySessionArmingFieldsOnNonArmingLink,
+        MeshDeployStatelessAcceptRequiredOnUntrustedSource,
+        MeshDeployStatelessAcceptKeyRotationShorterThanLifetime,
         // Mesh External config
         MeshExternalRead,
         MeshExternalParse,
@@ -2366,6 +2438,13 @@ impl DiagnosticCode {
             | PoolStageCopyPolicyError
             | PoolStageCopyAcceptRejectedUnderForbid
             | MeshDeployStageCopyPolicyUnknown
+            // C13-β anti-flood + stateless_accept (RFC §5.K lines
+            // 2272-2349 + 2449-2473). Five codes share §5.K anchor.
+            | MeshDeploySessionArmingQuotaMissing
+            | MeshDeployAcceptRateConfigMissing
+            | MeshDeploySessionArmingFieldsOnNonArmingLink
+            | MeshDeployStatelessAcceptRequiredOnUntrustedSource
+            | MeshDeployStatelessAcceptKeyRotationShorterThanLifetime
                 => Some("watching-zenoh RFC §5.K"),
 
             // ── Mesh rule 12 — parallel root designation (SCE_MESH.md §14 rule 12) ──
@@ -2716,6 +2795,11 @@ impl DiagnosticCode {
             PoolStageCopyPolicyError => "pool/stage-copy-policy-error",
             PoolStageCopyAcceptRejectedUnderForbid => "pool/stage-copy-accept-rejected-under-forbid",
             MeshDeployStageCopyPolicyUnknown => "deploy/stage-copy-policy-unknown",
+            MeshDeploySessionArmingQuotaMissing => "deploy/session-arming-quota-missing",
+            MeshDeployAcceptRateConfigMissing => "deploy/accept-rate-config-missing",
+            MeshDeploySessionArmingFieldsOnNonArmingLink => "deploy/session-arming-fields-on-non-arming-link",
+            MeshDeployStatelessAcceptRequiredOnUntrustedSource => "deploy/stateless-accept-required-on-untrusted-source",
+            MeshDeployStatelessAcceptKeyRotationShorterThanLifetime => "deploy/stateless-accept-key-rotation-shorter-than-lifetime",
             MeshExternalRead => "mesh/external-read",
             MeshExternalParse => "mesh/external-parse",
             MeshExternalUnresolvedNames => "mesh/external-unresolved-names",
@@ -7746,6 +7830,59 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:5ca8faec9e11c481","code":"deploy/stage-copy-policy-unknown","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': `pool_defaults.stage_copy_policy: errr` is not a known policy. watching-zenoh RFC §5.K line 2517-2519 (`deploy/stage-copy-policy-unknown`) — closed-set typo guard. Repair: pick one of [warn, error, forbid].","actual":"errr","fix":{"kind":"replace_one_of","candidates":["warn","error","forbid"]}}"#,
             ),
+            // ── C13-β anti-flood + stateless_accept (RFC §5.K lines 2272-2349 + 2449-2473) ──
+            (
+                "deploy/session-arming-quota-missing",
+                DeployError::SessionArmingQuotaMissing {
+                    machine: "mcu_node".into(),
+                    link_name: "udp_listener".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:f5f597205aa5b0e5","code":"deploy/session-arming-quota-missing","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_listener' declares `trust_class: session_arming` but no `session_arming_quota`. watching-zenoh RFC §5.K line 2449-2451 — without a cap an attacker can fill every `Accepting.*` slot. Repair: declare `session_arming_quota: <count>` (MCU recommended 8, AP recommended 32 per spec line 2282)."}"#,
+            ),
+            (
+                "deploy/accept-rate-config-missing",
+                DeployError::AcceptRateConfigMissing {
+                    machine: "mcu_node".into(),
+                    link_name: "udp_listener".into(),
+                    missing_fields: "accept_rate_per_sec, accept_rate_burst".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:6fbd647f1bd1aeb1","code":"deploy/accept-rate-config-missing","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_listener' declares `trust_class: session_arming` but missing accept-rate config: accept_rate_per_sec, accept_rate_burst. watching-zenoh RFC §5.K line 2452-2453 — token-bucket rate-limit is required to prevent half-open quota saturation. Repair: declare both `accept_rate_per_sec` and `accept_rate_burst` (spec line 2290-2302 recommends defaults `accept_rate_per_sec: 4` MCU / `16` AP and `accept_rate_burst: 2 × accept_rate_per_sec`).","actual":"accept_rate_per_sec, accept_rate_burst"}"#,
+            ),
+            (
+                "deploy/session-arming-fields-on-non-arming-link",
+                DeployError::SessionArmingFieldsOnNonArmingLink {
+                    machine: "mcu_node".into(),
+                    link_name: "udp_data".into(),
+                    trust_class: "established_session".into(),
+                    offending_fields: "session_arming_quota".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:a981ec0d75389842","code":"deploy/session-arming-fields-on-non-arming-link","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_data' declares `trust_class: established_session` but anti-flood / stateless_accept fields are present (session_arming_quota). watching-zenoh RFC §5.K line 2454-2459 — `Accepting.*` is never instantiated on this trust class so the fields are dead config (suggests author confusion about which link is the listener). Repair: change `trust_class` to `session_arming` on link 'udp_data' if it is in fact the listener, or remove the dead fields.","actual":"established_session"}"#,
+            ),
+            (
+                "deploy/stateless-accept-required-on-untrusted-source",
+                DeployError::StatelessAcceptRequiredOnUntrustedSource {
+                    machine: "mcu_node".into(),
+                    link_name: "udp_listener".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:06e17061b74e6486","code":"deploy/stateless-accept-required-on-untrusted-source","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_listener' declares `domain_attrs.untrusted_source: true` but no `stateless_accept` block. watching-zenoh RFC §5.K line 2463-2465 — links exposed to networks the deployment does not control must use HMAC cookies to prevent stateful spoofing. Repair: add a `stateless_accept:` block with `mode`, `cookie_lifetime_ms`, `key_rotation_s`, `hmac_extern`, `rng_extern` per spec line 2320-2349, or set `untrusted_source: false` if the link is on a controlled network."}"#,
+            ),
+            (
+                "deploy/stateless-accept-key-rotation-shorter-than-lifetime",
+                DeployError::StatelessAcceptKeyRotationShorterThanLifetime {
+                    machine: "mcu_node".into(),
+                    link_name: "udp_listener".into(),
+                    key_rotation_s: 30,
+                    cookie_lifetime_ms: 30_000,
+                    rotation_ms: 30_000,
+                    lifetime_doubled: 60_000,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:16e83b54ae5813fa","code":"deploy/stateless-accept-key-rotation-shorter-than-lifetime","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_listener' `stateless_accept.key_rotation_s: 30` × 1000 ≤ 2 × `cookie_lifetime_ms: 30000` (30000 ≤ 60000). watching-zenoh RFC §5.K line 2470-2473 — the previous-key honor window cannot bridge a rotation, so handshakes near rotation boundaries get spurious cookie rejection. Repair: raise `key_rotation_s` to > `2 × cookie_lifetime_ms / 1000`, or lower `cookie_lifetime_ms` to < `key_rotation_s × 500`.","expected":["60000"],"actual":"30000"}"#,
+            ),
             (
                 "timer/slot-overflow",
                 DeployError::TimerSlotOverflow {
@@ -8821,6 +8958,18 @@ mod tests {
             //     NeutralOrDeterministic.
             | PoolStageCopyPolicyError
             | PoolStageCopyAcceptRejectedUnderForbid
+            // C13-β anti-flood + stateless_accept. All five ride
+            // NeutralOrDeterministic — author-domain numeric values
+            // for the *-missing codes; two-axis repair for the
+            // key-rotation-shorter-than-lifetime invariant; remove-
+            // or-change-trust-class repair for the
+            // session-arming-fields-on-non-arming-link; full-block
+            // authoring for the stateless-accept-required code.
+            | MeshDeploySessionArmingQuotaMissing
+            | MeshDeployAcceptRateConfigMissing
+            | MeshDeploySessionArmingFieldsOnNonArmingLink
+            | MeshDeployStatelessAcceptRequiredOnUntrustedSource
+            | MeshDeployStatelessAcceptKeyRotationShorterThanLifetime
             | MeshExternalRead
             | MeshExternalParse
             | MeshExternalUnresolvedNames
@@ -9236,6 +9385,11 @@ mod tests {
                 | PoolStageCopyPolicyError
                 | PoolStageCopyAcceptRejectedUnderForbid
                 | MeshDeployStageCopyPolicyUnknown
+                | MeshDeploySessionArmingQuotaMissing
+                | MeshDeployAcceptRateConfigMissing
+                | MeshDeploySessionArmingFieldsOnNonArmingLink
+                | MeshDeployStatelessAcceptRequiredOnUntrustedSource
+                | MeshDeployStatelessAcceptKeyRotationShorterThanLifetime
                 | MeshExternalRead | MeshExternalParse
                 | MeshExternalUnresolvedNames | MeshExternalAmbiguousEventGroup
                 | MeshExternalEmptyEventGroup
@@ -9270,9 +9424,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            250,
+            255,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 250 distinct variants to match the DiagnosticCode \
+             expected 255 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -9717,7 +9871,27 @@ mod tests {
              paths: remove opt-out vs change policy) + \
              `deploy/stage-copy-policy-unknown` (FixCarriesCandidates \
              over the closed-set `StageCopyPolicy::ALL` = {{warn, \
-             error, forbid}}). 247 → 250.",
+             error, forbid}}). 247 → 250. Then watching-zenoh RFC \
+             §5.K lines 2272-2349 + 2449-2473 land the C13-β \
+             anti-flood + stateless_accept family — 5 spec-named \
+             codes (`deploy/session-arming-quota-missing` + \
+             `deploy/accept-rate-config-missing` + \
+             `deploy/session-arming-fields-on-non-arming-link` + \
+             `deploy/stateless-accept-required-on-untrusted-source` \
+             + `deploy/stateless-accept-key-rotation-shorter-than-\
+             lifetime`), all NeutralOrDeterministic. Two additional \
+             spec codes (`deploy/session-arming-quota-vs-peer-table-\
+             invariant-violated` at line 2460-2462 + \
+             `deploy/stateless-accept-extern-not-whitelisted` at \
+             line 2466-2469) defer per \
+             `[[feedback-silently-broken-hooks]]` — the former \
+             references `peer_table.capacity` + \
+             `max_handshake_time_s` schema fields the spec uses in \
+             invariants but does not declare as deploy.yaml schema \
+             entries; the latter requires cross-doc resolution \
+             against the §5.I baseline whitelist + loaded \
+             target_plugin symbols, which lives on \
+             `compile_forge_with_deploy` not parse-time. 250 → 255.",
         );
     }
 

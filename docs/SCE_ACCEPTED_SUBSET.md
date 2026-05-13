@@ -601,6 +601,11 @@ Codes that the author can avoid by writing a better SCXML /
 | `pool/stage-copy-policy-error` | Validation |
 | `pool/stage-copy-accept-rejected-under-forbid` | Validation |
 | `deploy/stage-copy-policy-unknown` | Mesh Deploy |
+| `deploy/session-arming-quota-missing` | Mesh Deploy |
+| `deploy/accept-rate-config-missing` | Mesh Deploy |
+| `deploy/session-arming-fields-on-non-arming-link` | Mesh Deploy |
+| `deploy/stateless-accept-required-on-untrusted-source` | Mesh Deploy |
+| `deploy/stateless-accept-key-rotation-shorter-than-lifetime` | Mesh Deploy |
 | `mesh/external-parse` | Mesh External |
 | `mesh/external-unresolved-names` | Mesh External |
 | `mesh/external-ambiguous-event-group` | Mesh External |

@@ -693,6 +693,58 @@ impl StageCopyPolicy {
     }
 }
 
+/// HMAC primitive used by the `stateless_accept` cookie scheme
+/// (watching-zenoh RFC §5.K lines 2325-2330). Today's MVP variant is
+/// `cookie_hmac_sha256`; alternative primitives (e.g. Blake2s for
+/// SoCs without SHA-256 acceleration) land as new enum values when
+/// the need is concrete per spec line 2326-2330 — not preemptively.
+/// Serde rejects unknown values with the generic "unknown variant"
+/// error, which surfaces as `DeployError::Yaml` at parse time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HmacMode {
+    /// HMAC-SHA-256 truncated to 32 bytes (spec line 2325).
+    CookieHmacSha256,
+}
+
+/// Stateless-accept cookie scheme block (watching-zenoh RFC §5.K
+/// lines 2320-2349). REQUIRED when `LinkDomainAttrs.untrusted_source`
+/// is `true`; optional but recommended on `trust_class:
+/// session_arming` links facing >0 untrusted peers.
+///
+/// `#[serde(deny_unknown_fields)]` parse-rejects unknown nested keys
+/// — future fields land alongside their consumers per
+/// `[[feedback-silently-broken-hooks]]`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StatelessAccept {
+    /// Spec line 2325 — single MVP variant, see [`HmacMode`].
+    pub mode: HmacMode,
+    /// Spec line 2331-2333 — cookie validity window in milliseconds.
+    /// After this, an echoing OpenSyn is silently rejected (runtime
+    /// emits `session/cookie-rejected` with `reason=expired`).
+    pub cookie_lifetime_ms: u32,
+    /// Spec line 2334-2338 — HMAC key rotation interval in seconds.
+    /// Previous key honored for one additional `cookie_lifetime_ms`
+    /// window after rotation. Build-time invariant per spec line
+    /// 2470-2473: `key_rotation_s × 1000 > 2 × cookie_lifetime_ms`
+    /// (else `stateless-accept-key-rotation-shorter-than-lifetime`
+    /// fires).
+    pub key_rotation_s: u32,
+    /// Spec line 2339-2344 — symbol name from the §5.I baseline
+    /// intrinsics whitelist OR a loaded `target_plugin` entry.
+    /// Symbol-allowlist validator
+    /// (`stateless-accept-extern-not-whitelisted`) defers to a
+    /// follow-up cross-doc atomic; C13-β ships the typed schema
+    /// field only.
+    pub hmac_extern: String,
+    /// Spec line 2345-2349 — CSPRNG symbol used to seed key
+    /// material at FSM-instance startup. Plugin authors are
+    /// responsible for the entropy source. Same allowlist check
+    /// surface as `hmac_extern`; defers identically.
+    pub rng_extern: String,
+}
+
 /// Per-link domain attributes (watching-zenoh RFC §5.K line 2263-2271).
 ///
 /// When declared, `trust_class` is REQUIRED per Q-C13-4 (a) — spec
@@ -789,6 +841,62 @@ pub struct LinkConfig {
     /// trust-class-missing-on-fragmenting-link}`).
     #[serde(default)]
     pub domain_attrs: Option<LinkDomainAttrs>,
+
+    // ── C13-β anti-flood + stateless_accept (RFC §5.K lines
+    //    2272-2349 + 2449-2473). All five anti-flood fields plus the
+    //    stateless_accept block are conditionally required when
+    //    `domain_attrs.trust_class: session_arming` (the listener
+    //    half of a handshake-bearing link). When the link is
+    //    `untrusted` / `established_session`, declaring any of these
+    //    fields fires `deploy/session-arming-fields-on-non-arming-link`
+    //    — Accepting.* is never instantiated on those classes so the
+    //    fields would be dead config. ──
+
+    /// Spec line 2279-2289 — max concurrent half-open `Accepting.*`
+    /// slots per link. MCU default 8, AP default 32 (not auto-applied
+    /// — validator fires `session-arming-quota-missing` on absence
+    /// when `trust_class: session_arming`). Build invariant
+    /// `session_arming_quota × max_handshake_time_s ≤
+    /// peer_table.capacity` deferred to a follow-up atomic that
+    /// adds the `peer_table` + `max_handshake_time_s` schema fields
+    /// (not yet declared in spec).
+    #[serde(default)]
+    pub session_arming_quota: Option<u32>,
+    /// Spec line 2290-2299 — token-bucket refill rate per (link,
+    /// src_addr). MCU default 4, AP default 16. Validator fires
+    /// `accept-rate-config-missing` on absence when `trust_class:
+    /// session_arming`.
+    #[serde(default)]
+    pub accept_rate_per_sec: Option<u32>,
+    /// Spec line 2300-2302 — token-bucket capacity per (link,
+    /// src_addr). Default `2 × accept_rate_per_sec` (not auto-
+    /// applied — validator fires `accept-rate-config-missing` on
+    /// absence when `trust_class: session_arming`).
+    #[serde(default)]
+    pub accept_rate_burst: Option<u32>,
+    /// Spec line 2303-2311 — capacity of the per-source token-bucket
+    /// table. Default `4 × session_arming_quota`. Spike from many
+    /// src_addrs falls through to a single shared bucket (degraded
+    /// mode) emitting runtime `session/accept-rate-table-saturated`.
+    /// Not required at C13-β parse-time (downstream consumer fires
+    /// runtime informational only).
+    #[serde(default)]
+    pub accept_rate_table_capacity: Option<u32>,
+    /// Spec line 2312-2319 — bound on the worst-case
+    /// `Accepting.AwaitingInitSyn` / `Accepting.SentInitAck` hold
+    /// time. Optional; downstream FSM consumer enforces.
+    #[serde(default)]
+    pub accepting_inactivity_timeout_ms: Option<u32>,
+    /// Spec line 2320-2349 — HMAC cookie stateless accept block.
+    /// REQUIRED when `domain_attrs.untrusted_source: true`
+    /// (validator fires `stateless-accept-required-on-untrusted-source`).
+    /// Optional otherwise. Per spec line 2466-2469, the
+    /// `hmac_extern` + `rng_extern` symbol allowlist check
+    /// (`stateless-accept-extern-not-whitelisted`) requires the
+    /// loaded target_plugin set + the §5.I baseline whitelist; that
+    /// validator defers to a follow-up cross-doc atomic.
+    #[serde(default)]
+    pub stateless_accept: Option<StatelessAccept>,
 }
 
 impl LinkConfig {
@@ -2255,6 +2363,137 @@ fn validate_links(cfg: &DeployConfig) -> Result<(), DeployError> {
                             machine: machine_name.clone(),
                             link_name: link_name.clone(),
                         });
+                    }
+                }
+
+                // ── C13-β anti-flood + stateless_accept ──
+                //
+                // The five checks below mirror the spec-section walk
+                // order of `RFC §5.K lines 2449-2473`:
+                //  - 6. Dead-config rejection (line 2454-2459) —
+                //    anti-flood / stateless_accept on a non-arming
+                //    link. Surfaced FIRST in deterministic walk order
+                //    because the diagnostic names a class of error
+                //    that supersedes the missing-field codes: if the
+                //    trust_class is wrong, "*-missing" advice would
+                //    mislead the author.
+                //  - 7. session_arming_quota-missing (line 2449-2451).
+                //  - 8. accept_rate config missing (line 2452-2453).
+                //  - 9. stateless_accept required on untrusted_source
+                //    (line 2463-2465).
+                //  - 10. stateless_accept key-rotation vs lifetime
+                //    invariant (line 2470-2473).
+                let trust_class = link.domain_attrs.as_ref().map(|d| d.trust_class);
+                let untrusted_source = link
+                    .domain_attrs
+                    .as_ref()
+                    .map(|d| d.untrusted_source)
+                    .unwrap_or(false);
+
+                // 6. session-arming-fields-on-non-arming-link.
+                // The fields are "dead config" when trust_class is NOT
+                // session_arming, OR when domain_attrs is absent
+                // entirely (no Accepting.* can ever instantiate
+                // without a trust class declaration).
+                let is_session_arming =
+                    matches!(trust_class, Some(TrustClass::SessionArming));
+                if !is_session_arming {
+                    let mut offending: Vec<&str> = Vec::new();
+                    if link.session_arming_quota.is_some() {
+                        offending.push("session_arming_quota");
+                    }
+                    if link.accept_rate_per_sec.is_some() {
+                        offending.push("accept_rate_per_sec");
+                    }
+                    if link.accept_rate_burst.is_some() {
+                        offending.push("accept_rate_burst");
+                    }
+                    if link.accept_rate_table_capacity.is_some() {
+                        offending.push("accept_rate_table_capacity");
+                    }
+                    if link.accepting_inactivity_timeout_ms.is_some() {
+                        offending.push("accepting_inactivity_timeout_ms");
+                    }
+                    if link.stateless_accept.is_some() {
+                        offending.push("stateless_accept");
+                    }
+                    if !offending.is_empty() {
+                        let offending_fields = offending.join(", ");
+                        // `actual` carries the offending trust_class
+                        // value (or "<absent>" when domain_attrs is
+                        // entirely missing) so the wire payload names
+                        // the axis the author got wrong.
+                        let trust_class_str = trust_class
+                            .map(|tc| tc.as_str().to_string())
+                            .unwrap_or_else(|| "<absent>".to_string());
+                        return Err(
+                            DeployError::SessionArmingFieldsOnNonArmingLink {
+                                machine: machine_name.clone(),
+                                link_name: link_name.clone(),
+                                trust_class: trust_class_str,
+                                offending_fields,
+                            },
+                        );
+                    }
+                }
+
+                // 7. session-arming-quota-missing — fires when
+                // `trust_class: session_arming` AND no quota.
+                if is_session_arming && link.session_arming_quota.is_none() {
+                    return Err(DeployError::SessionArmingQuotaMissing {
+                        machine: machine_name.clone(),
+                        link_name: link_name.clone(),
+                    });
+                }
+
+                // 8. accept-rate-config-missing — fires when
+                // `trust_class: session_arming` AND any of the two
+                // load-bearing fields are missing (spec line 2453
+                // names `accept_rate_per_sec` OR `accept_rate_burst`).
+                if is_session_arming {
+                    let mut missing: Vec<&str> = Vec::new();
+                    if link.accept_rate_per_sec.is_none() {
+                        missing.push("accept_rate_per_sec");
+                    }
+                    if link.accept_rate_burst.is_none() {
+                        missing.push("accept_rate_burst");
+                    }
+                    if !missing.is_empty() {
+                        return Err(DeployError::AcceptRateConfigMissing {
+                            machine: machine_name.clone(),
+                            link_name: link_name.clone(),
+                            missing_fields: missing.join(", "),
+                        });
+                    }
+                }
+
+                // 9. stateless-accept-required-on-untrusted-source.
+                if untrusted_source && link.stateless_accept.is_none() {
+                    return Err(
+                        DeployError::StatelessAcceptRequiredOnUntrustedSource {
+                            machine: machine_name.clone(),
+                            link_name: link_name.clone(),
+                        },
+                    );
+                }
+
+                // 10. stateless-accept-key-rotation-shorter-than-lifetime.
+                // Spec line 2470-2473 invariant verbatim:
+                //   `key_rotation_s × 1000 > 2 × cookie_lifetime_ms`
+                if let Some(sa) = link.stateless_accept.as_ref() {
+                    let rotation_ms = sa.key_rotation_s as u64 * 1000;
+                    let lifetime_doubled = sa.cookie_lifetime_ms as u64 * 2;
+                    if rotation_ms <= lifetime_doubled {
+                        return Err(
+                            DeployError::StatelessAcceptKeyRotationShorterThanLifetime {
+                                machine: machine_name.clone(),
+                                link_name: link_name.clone(),
+                                key_rotation_s: sa.key_rotation_s,
+                                cookie_lifetime_ms: sa.cookie_lifetime_ms,
+                                rotation_ms,
+                                lifetime_doubled,
+                            },
+                        );
                     }
                 }
             }

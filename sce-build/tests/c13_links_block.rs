@@ -275,26 +275,28 @@ fn link_mtu_missing_on_fragmenting_link_fires() {
     assert_eq!(link_name, "udp_data");
 }
 
-/// Q-C13-2 (a) lock: deferred C13-β fields (anti-flood + stateless_accept)
-/// parse-reject under C13-α-1 via `#[serde(deny_unknown_fields)]`. A
-/// deploy declaring `session_arming_quota: 8` on a C13-α-1-only build
-/// fails the deserialization gate with the standard "unknown field"
-/// message.
+/// Q-C13-2 (a) lock evolution: C13-β landed the anti-flood fields, so
+/// the prior "deferred field rejects" pin no longer holds. The test
+/// is repointed to assert that the deny_unknown_fields gate still
+/// rejects an actually-unknown field name (`bogus_future_field`) so
+/// the schema-stability contract stays exercised. C13-β's own
+/// integration tests (`c13_beta_antiflood.rs`) cover positive +
+/// negative semantics for the new fields.
 #[test]
-fn deferred_anti_flood_fields_reject_under_c13_alpha_1() {
+fn unknown_link_field_rejects_under_deny_unknown_fields() {
     let yaml = deploy_prelude_with_links(
         r#"          udp_data:
             bind: "0.0.0.0:7447"
             driver: lwip_udp
-            session_arming_quota: 8
+            bogus_future_field: 8
 "#,
     );
-    let err = parse_deploy_str(&yaml).expect_err("deferred field rejects");
+    let err = parse_deploy_str(&yaml).expect_err("unknown field rejects");
     // The DeployError::Parse variant carries the serde rejection.
     let s = format!("{err:?}");
     assert!(
-        s.contains("session_arming_quota") || s.contains("unknown field"),
-        "expected unknown-field rejection naming session_arming_quota, got {s:?}"
+        s.contains("bogus_future_field") || s.contains("unknown field"),
+        "expected unknown-field rejection naming bogus_future_field, got {s:?}"
     );
 }
 

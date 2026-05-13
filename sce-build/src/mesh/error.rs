@@ -1342,6 +1342,102 @@ pub enum DeployError {
         candidates: Vec<String>,
         candidates_list: String,
     },
+
+    /// Watching-zenoh RFC §5.K line 2449-2451 verbatim
+    /// (`deploy/session-arming-quota-missing`). Link declares
+    /// `trust_class: session_arming` but no `session_arming_quota`.
+    /// Hard error.
+    #[error("machine '{machine}': link '{link_name}' declares \
+             `trust_class: session_arming` but no \
+             `session_arming_quota`. watching-zenoh RFC §5.K line \
+             2449-2451 — without a cap an attacker can fill every \
+             `Accepting.*` slot. Repair: declare \
+             `session_arming_quota: <count>` (MCU recommended 8, AP \
+             recommended 32 per spec line 2282).")]
+    SessionArmingQuotaMissing {
+        machine: String,
+        link_name: String,
+    },
+
+    /// Watching-zenoh RFC §5.K line 2452-2453 verbatim
+    /// (`deploy/accept-rate-config-missing`). `trust_class:
+    /// session_arming` link missing `accept_rate_per_sec` or
+    /// `accept_rate_burst`.
+    #[error("machine '{machine}': link '{link_name}' declares \
+             `trust_class: session_arming` but missing \
+             accept-rate config: {missing_fields}. watching-zenoh \
+             RFC §5.K line 2452-2453 — token-bucket rate-limit is \
+             required to prevent half-open quota saturation. Repair: \
+             declare both `accept_rate_per_sec` and \
+             `accept_rate_burst` (spec line 2290-2302 recommends \
+             defaults `accept_rate_per_sec: 4` MCU / `16` AP and \
+             `accept_rate_burst: 2 × accept_rate_per_sec`).")]
+    AcceptRateConfigMissing {
+        machine: String,
+        link_name: String,
+        missing_fields: String,
+    },
+
+    /// Watching-zenoh RFC §5.K line 2454-2459 verbatim
+    /// (`deploy/session-arming-fields-on-non-arming-link`). Anti-
+    /// flood / stateless_accept fields declared on a `trust_class:
+    /// untrusted` or `established_session` link where `Accepting.*`
+    /// is never instantiated.
+    #[error("machine '{machine}': link '{link_name}' declares \
+             `trust_class: {trust_class}` but anti-flood / \
+             stateless_accept fields are present ({offending_fields}). \
+             watching-zenoh RFC §5.K line 2454-2459 — `Accepting.*` is \
+             never instantiated on this trust class so the fields are \
+             dead config (suggests author confusion about which link \
+             is the listener). Repair: change `trust_class` to \
+             `session_arming` on link '{link_name}' if it is in fact \
+             the listener, or remove the dead fields.")]
+    SessionArmingFieldsOnNonArmingLink {
+        machine: String,
+        link_name: String,
+        trust_class: String,
+        offending_fields: String,
+    },
+
+    /// Watching-zenoh RFC §5.K line 2463-2465 verbatim
+    /// (`deploy/stateless-accept-required-on-untrusted-source`).
+    /// Link with `domain_attrs.untrusted_source: true` but no
+    /// `stateless_accept` block.
+    #[error("machine '{machine}': link '{link_name}' declares \
+             `domain_attrs.untrusted_source: true` but no \
+             `stateless_accept` block. watching-zenoh RFC §5.K line \
+             2463-2465 — links exposed to networks the deployment \
+             does not control must use HMAC cookies to prevent \
+             stateful spoofing. Repair: add a `stateless_accept:` \
+             block with `mode`, `cookie_lifetime_ms`, \
+             `key_rotation_s`, `hmac_extern`, `rng_extern` per spec \
+             line 2320-2349, or set `untrusted_source: false` if the \
+             link is on a controlled network.")]
+    StatelessAcceptRequiredOnUntrustedSource {
+        machine: String,
+        link_name: String,
+    },
+
+    /// Watching-zenoh RFC §5.K line 2470-2473 verbatim
+    /// (`deploy/stateless-accept-key-rotation-shorter-than-lifetime`).
+    /// `key_rotation_s × 1000 ≤ 2 × cookie_lifetime_ms`.
+    #[error("machine '{machine}': link '{link_name}' \
+             `stateless_accept.key_rotation_s: {key_rotation_s}` × 1000 \
+             ≤ 2 × `cookie_lifetime_ms: {cookie_lifetime_ms}` \
+             ({rotation_ms} ≤ {lifetime_doubled}). watching-zenoh RFC §5.K \
+             line 2470-2473 — the previous-key honor window cannot \
+             bridge a rotation, so handshakes near rotation boundaries \
+             get spurious cookie rejection. Repair: raise \
+             `key_rotation_s` to > `2 × cookie_lifetime_ms / 1000`, or \
+             lower `cookie_lifetime_ms` to < `key_rotation_s × 500`.")]
+    StatelessAcceptKeyRotationShorterThanLifetime {
+        machine: String,
+        link_name: String,
+        key_rotation_s: u32,
+        cookie_lifetime_ms: u32,
+        rotation_ms: u64,
+        lifetime_doubled: u64,
+    },
 }
 
 // ── Stage 1b: External infrastructure config ─────────────────
@@ -2809,6 +2905,80 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 candidates: candidates.clone(),
             }),
             key_fragments: vec![machine.clone(), value.clone()],
+        },
+        DeployError::SessionArmingQuotaMissing { machine, link_name } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeploySessionArmingQuotaMissing,
+            stage: Stage::MeshDeploy,
+            actual: None,
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), link_name.clone()],
+        },
+        DeployError::AcceptRateConfigMissing {
+            machine,
+            link_name,
+            missing_fields,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployAcceptRateConfigMissing,
+            stage: Stage::MeshDeploy,
+            actual: Some(missing_fields.clone()),
+            expected: None,
+            fix: None,
+            key_fragments: vec![
+                machine.clone(),
+                link_name.clone(),
+                missing_fields.clone(),
+            ],
+        },
+        DeployError::SessionArmingFieldsOnNonArmingLink {
+            machine,
+            link_name,
+            trust_class,
+            offending_fields,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeploySessionArmingFieldsOnNonArmingLink,
+            stage: Stage::MeshDeploy,
+            actual: Some(trust_class.clone()),
+            expected: None,
+            fix: None,
+            key_fragments: vec![
+                machine.clone(),
+                link_name.clone(),
+                trust_class.clone(),
+                offending_fields.clone(),
+            ],
+        },
+        DeployError::StatelessAcceptRequiredOnUntrustedSource {
+            machine,
+            link_name,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployStatelessAcceptRequiredOnUntrustedSource,
+            stage: Stage::MeshDeploy,
+            actual: None,
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), link_name.clone()],
+        },
+        DeployError::StatelessAcceptKeyRotationShorterThanLifetime {
+            machine,
+            link_name,
+            key_rotation_s,
+            cookie_lifetime_ms,
+            rotation_ms,
+            lifetime_doubled,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployStatelessAcceptKeyRotationShorterThanLifetime,
+            stage: Stage::MeshDeploy,
+            // `actual` = rotation_ms (LHS); `expected` = lifetime_doubled (RHS).
+            actual: Some(rotation_ms.to_string()),
+            expected: Some(vec![lifetime_doubled.to_string()]),
+            fix: None,
+            key_fragments: vec![
+                machine.clone(),
+                link_name.clone(),
+                key_rotation_s.to_string(),
+                cookie_lifetime_ms.to_string(),
+            ],
         },
     }
 }
