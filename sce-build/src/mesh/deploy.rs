@@ -483,6 +483,205 @@ pub struct PlatformConfig {
     /// phases. Optional at parse time.
     #[serde(default)]
     pub core_count: Option<u32>,
+    /// Core clock frequency in MHz (watching-zenoh RFC §5.K line 2185).
+    /// Drives the stage-copy WCET formula (`expected_p99_bytes ×
+    /// memcpy_cycles_per_byte / clock_freq_mhz`) gated by
+    /// `reassembly/stage-copy-wcet-exceeds-slot-budget` (RFC §5.M line
+    /// 2995, C9-β consumer) and the §5.B aggregate WCET roll-up.
+    /// Optional at parse time; consumer-side validators (C9-β) require
+    /// it when a reassembly-variant buffer pool is bound to a link on
+    /// this machine. C13-α schema-only addition.
+    #[serde(default)]
+    pub clock_freq_mhz: Option<u32>,
+    /// Per-target memcpy cost in cycles-per-byte (watching-zenoh RFC
+    /// §5.K line 2188-2192). Architecture defaults per spec:
+    /// M0/M0+ = 4.0, M3/M4 = 2.0, M7 = 1.0, A-class = 0.5. Used by the
+    /// §5.M `reassembly/stage-copy-wcet-exceeds-slot-budget` consumer
+    /// (C9-β) alongside `clock_freq_mhz`. Optional at parse time per
+    /// Q-C13-6 (a); consumer-side validators raise when missing AND a
+    /// reassembly-variant pool is bound.
+    #[serde(default)]
+    pub memcpy_cycles_per_byte: Option<f32>,
+    /// Per-byte VLE decode cost (watching-zenoh RFC §5.K line 2193-2200).
+    /// Architecture defaults per spec: M0/M0+ = 12.0, M3/M4 = 8.0,
+    /// M7 = 6.0, A-class = 3.0. REQUIRED at the §5.B aggregate WCET
+    /// consumer when any codec on the deploy contains a `vle_*` field
+    /// AND `scheduler.kind=cooperative`. Optional at parse time
+    /// (presence enforced by §5.B consumer when load-bearing).
+    #[serde(default)]
+    pub vle_decode_cycles_per_byte: Option<f32>,
+    /// Fixed cost per TLV chain entry in microseconds (watching-zenoh
+    /// RFC §5.K line 2201-2208). id-byte + length VLE + dispatch.
+    /// Architecture defaults per spec: M0/M0+ = 1.5, M3/M4 = 0.8,
+    /// M7 = 0.5, A-class = 0.2. REQUIRED at §5.B aggregate WCET when
+    /// any codec on the deploy contains a `tlv-chain` AND
+    /// `scheduler.kind=cooperative`. Optional at parse time per
+    /// Q-C13-6 (a).
+    #[serde(default)]
+    pub tlv_chain_per_entry_overhead_us: Option<f32>,
+}
+
+/// Trust-class enum for `machines.<n>.links.<name>.domain_attrs.trust_class`
+/// (watching-zenoh RFC §5.K line 2265 + §5.M line 2716-2732). Three
+/// values determine what traffic the link may carry and whether
+/// reassembly pools may bind to it:
+/// - `untrusted` — Scout / Hello only (small, never fragmented). Pool
+///   binding **forbidden**.
+/// - `session_arming` — INIT / OPEN handshake (small). Pool binding
+///   **forbidden**.
+/// - `established_session` — Frame / data plane (may fragment). Pool
+///   binding **required** for reassembly.
+///
+/// C13-α parses the enum; C9-β validators (`reassembly/untrusted-
+/// link-binding` + `reassembly/trust-class-missing-on-fragmenting-link`)
+/// consume it at cross-doc resolution time. Q-C13-4 (a) lock: no
+/// default; required when `domain_attrs` is declared.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TrustClass {
+    /// Scout / Hello traffic only. Reassembly-pool binding raises
+    /// `reassembly/untrusted-link-binding` (C9-β, RFC §5.M line 2964).
+    Untrusted,
+    /// INIT / OPEN handshake traffic. Anti-flood fields apply (C13-β).
+    /// Reassembly-pool binding raises `reassembly/untrusted-link-binding`.
+    SessionArming,
+    /// Post-handshake Frame / data plane traffic. ONLY trust class
+    /// eligible for reassembly-pool binding (RFC §5.M line 2731).
+    EstablishedSession,
+}
+
+/// RX-dispatch policy for `machines.<n>.links.<name>.rx_dispatch`
+/// (watching-zenoh RFC §5.K line 2254-2262).
+///
+/// - `isr_to_pool` — RX-complete IRQ immediately re-arms next slot
+///   from descriptor ring (wire-rate absorption). Required when
+///   `burst_pps` declared.
+/// - `worker_tick` — RX only progresses on cooperative tick (simpler,
+///   lower wire-rate ceiling).
+///
+/// Q-C13-3 (a) conditional default per spec line 2261: `IsrToPool`
+/// when `burst_pps` declared, `WorkerTick` otherwise. Applied at the
+/// field-resolver layer (post-parse), not parser-tier — same pattern
+/// as C2-γ `WorkerPlacementConfig` populator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RxDispatch {
+    /// IRQ-driven RX, descriptor ring re-arm. Wire-rate absorption.
+    IsrToPool,
+    /// Cooperative-tick-driven RX. Lower wire-rate ceiling, simpler
+    /// driver. Default when `burst_pps` is absent.
+    WorkerTick,
+}
+
+/// Per-link domain attributes (watching-zenoh RFC §5.K line 2263-2271).
+///
+/// When declared, `trust_class` is REQUIRED per Q-C13-4 (a) — spec
+/// line 2731 makes `established_session` the explicit gating intent
+/// for reassembly; defaulting would mask author confusion.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LinkDomainAttrs {
+    /// `untrusted | session_arming | established_session` (Q-C13-4 a:
+    /// required when `domain_attrs` declared, no default). Spec line
+    /// 2265.
+    pub trust_class: TrustClass,
+    /// `true` when the link is exposed to a network the deployment
+    /// does not control (public Internet, untrusted LAN). When
+    /// `true`, `stateless_accept` becomes REQUIRED (C13-β consumer).
+    /// Spec line 2266-2271. Defaults to `false`.
+    #[serde(default)]
+    pub untrusted_source: bool,
+}
+
+/// Per-link configuration entry (watching-zenoh RFC §5.K line 2232-2349).
+///
+/// Q-C13-2 (a) lock: only `bind` + `driver` are required at the schema
+/// level; every other field is `Option` because spec mandates them
+/// conditionally on sibling-field presence (e.g. `burst_pps` only
+/// matters when `rx_dispatch: isr_to_pool` is in play). Conditional
+/// requirements are enforced by `validate_link_*` consumers (parser-
+/// time, run after `parse_str`).
+///
+/// **C13-α scope** carries 7 fields; the C13-β anti-flood family
+/// (`session_arming_quota`, `accept_rate_*`, `accepting_inactivity_
+/// timeout_ms`) and the `stateless_accept` sub-block are intentionally
+/// NOT in this struct per `[[feedback-silently-broken-hooks]]` —
+/// `#[serde(deny_unknown_fields)]` parse-rejects them with the
+/// standard "unknown field" message until C13-β lands the fields
+/// alongside their semantic enforcement.
+///
+/// **Cross-doc resolution**: the `name` axis (HashMap key) is joined
+/// against forge `<scxml sce:kind="link" name="X">` document names via
+/// `validate_link_name_cross_doc` (Q-C13-5 a). Two new diagnostics:
+/// `deploy/link-not-declared-in-deploy` (forge name has no deploy
+/// counterpart) + `deploy/link-not-declared-in-forge` (deploy name
+/// has no forge counterpart).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LinkConfig {
+    /// `bind:` (spec line 2234) — endpoint address. Wire format is
+    /// driver-specific (UDP: `host:port`, TCP: `host:port`, multicast:
+    /// `224.x.x.x:port`); parser-side is opaque `String`. C13-α
+    /// validators don't normalize or split — driver-level parsing
+    /// belongs to the link-driver runtime.
+    pub bind: String,
+    /// `driver:` (spec line 2235) — link-driver kind name. Q-C13-8 (a):
+    /// kept as `String` (not Rust enum) so forge `<sce:link>` author-
+    /// declared drivers extend organically without freezing the set.
+    /// Closed-allowlist validator (`deploy/link-driver-unknown`) rejects
+    /// values absent from the C13-α known-driver baseline (currently
+    /// `{lwip_udp, lwip_tcp}`; extended as new forge link-kind docs
+    /// ship) AND from any cross-doc forge link-kind registry entry.
+    pub driver: String,
+    /// `mtu_bytes:` (spec line 2236-2242) — link-layer MTU. REQUIRED
+    /// for fragmenting links (per the C9-β `reassembly/max-fragments-
+    /// insufficient-for-mtu` consumer, RFC §5.M line 2947). Optional at
+    /// parse time; when missing on a Fragment-FSM-bound link, the
+    /// consumer raises `deploy/link-mtu-missing-on-fragmenting-link`.
+    #[serde(default)]
+    pub mtu_bytes: Option<u32>,
+    /// `expected_p99_bytes:` (spec line 2243-2247) — declared application
+    /// p99 payload size. Drives the stage-copy rate warning
+    /// (`reassembly/expected-fragmentation-rate-high`, RFC §5.M line
+    /// 2950) and the stage-copy WCET check (`reassembly/stage-copy-
+    /// wcet-exceeds-slot-budget`, RFC §5.M line 2995). Optional; when
+    /// absent, the build assumes `p99 = mtu_bytes` (no warning).
+    #[serde(default)]
+    pub expected_p99_bytes: Option<u32>,
+    /// `burst_pps:` (spec line 2248-2253) — declared peak inbound
+    /// packets-per-second. Drives the RX pool sizing check
+    /// (`deploy/link-burst-absorption-insufficient`, RFC §5.K line
+    /// 2489-2495). For multicast: derive from worst peer count × per-
+    /// peer rate. REQUIRED when `rx_dispatch: isr_to_pool` per spec
+    /// line 2261-2262 (Q-C13-3 a default).
+    #[serde(default)]
+    pub burst_pps: Option<u32>,
+    /// `rx_dispatch:` (spec line 2254-2262) — `isr_to_pool` for IRQ-
+    /// driven wire-rate absorption, `worker_tick` for cooperative-tick-
+    /// driven RX. Q-C13-3 (a) default: `IsrToPool` when `burst_pps`
+    /// declared, `WorkerTick` otherwise. Default applied by the
+    /// field-resolver layer (post-parse).
+    #[serde(default)]
+    pub rx_dispatch: Option<RxDispatch>,
+    /// `domain_attrs:` (spec line 2263-2271) — trust-class + untrusted-
+    /// source flag. Optional at parse time; presence opens C9-β cross-
+    /// doc validator paths (`reassembly/{untrusted-link-binding,
+    /// trust-class-missing-on-fragmenting-link}`).
+    #[serde(default)]
+    pub domain_attrs: Option<LinkDomainAttrs>,
+}
+
+impl LinkConfig {
+    /// Q-C13-3 (a) conditional default resolution: `IsrToPool` when
+    /// `burst_pps` is declared, `WorkerTick` otherwise. Spec line 2261
+    /// verbatim. Returns the explicit author value when present.
+    pub fn resolved_rx_dispatch(&self) -> RxDispatch {
+        match (self.rx_dispatch, self.burst_pps.is_some()) {
+            (Some(rxd), _) => rxd,
+            (None, true) => RxDispatch::IsrToPool,
+            (None, false) => RxDispatch::WorkerTick,
+        }
+    }
 }
 
 /// Per-machine scheduler descriptor (SCE Mesh §14, watching-zenoh RFC
@@ -1243,6 +1442,27 @@ pub struct MachineConfig {
     /// ```
     #[serde(default)]
     pub limits: HashMap<String, u32>,
+
+    /// Per-machine link configuration registry (watching-zenoh RFC §5.K
+    /// line 2232-2349, C13-α). Keyed by link name (joined against forge
+    /// `<scxml sce:kind="link" name="X">` document names via the
+    /// cross-doc validator pair `deploy/{link-not-declared-in-deploy,
+    /// link-not-declared-in-forge}`).
+    ///
+    /// Absent ⇒ machine declares no link instances; cross-doc validator
+    /// silent-skips (no forge-side link references to resolve). Present
+    /// ⇒ each entry's `bind` + `driver` + optional fields are validated
+    /// at parse time + cross-doc resolved at orchestrator pass-2.
+    ///
+    /// Q-C13-1 (a) scope: C13-α ships core link fields (`bind`,
+    /// `driver`, `mtu_bytes`, `expected_p99_bytes`, `burst_pps`,
+    /// `rx_dispatch`, `domain_attrs`). C13-β adds anti-flood fields
+    /// (`session_arming_quota`, `accept_rate_*`,
+    /// `accepting_inactivity_timeout_ms`, `stateless_accept` block);
+    /// those fields parse-reject under C13-α via
+    /// `#[serde(deny_unknown_fields)]` on [`LinkConfig`].
+    #[serde(default)]
+    pub links: HashMap<String, LinkConfig>,
 }
 
 /// Custom deserializer for [`MachineConfig::someip_service_id`].
@@ -1723,8 +1943,219 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_keepalive_jitter_required_when_cooperative(&cfg)?;
     validate_machine_scheduler_worker_capacity(&cfg)?;
     validate_machine_timer_wheel_capacity(&cfg)?;
+    validate_links(&cfg)?;
 
     Ok(cfg)
+}
+
+/// C13-α-1 — `machines.<n>.links.<name>` parse-time validators.
+///
+/// Five intra-link checks (RFC §5.K lines 2421-2503):
+///   1. `deploy/link-driver-unknown` — driver in known baseline or
+///      forge cross-doc registry. Cross-doc lookup runs in the
+///      orchestrator pass; this parse-time pass only checks the
+///      built-in `{lwip_udp, lwip_tcp}` baseline + emits a candidate
+///      list pre-populated from the baseline (orchestrator pass
+///      extends it).
+///   2. `deploy/link-mtu-below-driver-floor` — if `mtu_bytes` declared
+///      AND driver is in known baseline, check against floor.
+///   3. `deploy/link-expected-p99-exceeds-mtu` — if both fields
+///      declared, check `expected_p99_bytes <= mtu_bytes`.
+///   4. `deploy/link-burst-pps-missing-on-isr-dispatch` — if the
+///      resolved `rx_dispatch == IsrToPool` AND `burst_pps.is_none()`,
+///      fire.
+///   5. `deploy/link-mtu-missing-on-fragmenting-link` — if
+///      `domain_attrs.trust_class == EstablishedSession` (the only
+///      class permitted to carry Fragment traffic per RFC §5.M line
+///      2731) AND `mtu_bytes.is_none()`, fire.
+///
+/// The cross-doc validators `deploy/link-not-declared-in-deploy` +
+/// `deploy/link-not-declared-in-forge` (Q-C13-5 a) need the forge
+/// cross-doc registry; they live in [`validate_links_cross_doc`] and
+/// run from the orchestrator pass, not from `parse_str`.
+///
+/// Per Q-C13-1 (a) + RFC §8 explicit defer:
+/// `deploy/link-burst-absorption-insufficient` + `deploy/link-rx-
+/// dispatch-worker-tick-on-high-burst` defer to C13-α-2 — both
+/// require RX pool slot_count cross-doc resolution.
+fn validate_links(cfg: &DeployConfig) -> Result<(), DeployError> {
+    /// Known-driver baseline carrying min-MTU floor.
+    /// Currently `lwip_udp = 28` (IPv4 minimum header) and
+    /// `lwip_tcp = 40` (IPv4 + TCP minimum). Unknown drivers fall
+    /// through to forge cross-doc registry lookup in the orchestrator
+    /// pass; the parse-time validator silent-skips the floor check
+    /// for them.
+    const KNOWN_DRIVERS: &[(&str, u32)] = &[("lwip_tcp", 40), ("lwip_udp", 28)];
+
+    fn known_driver_floor(driver: &str) -> Option<u32> {
+        KNOWN_DRIVERS
+            .iter()
+            .find_map(|(name, floor)| if *name == driver { Some(*floor) } else { None })
+    }
+
+    for device in cfg.topology.values() {
+        for (machine_name, machine) in device.machines.iter() {
+            for (link_name, link) in machine.links.iter() {
+                // 1. driver-unknown — parse-time fires only when the
+                //    driver name is absent from the baseline. The
+                //    cross-doc orchestrator pass extends the candidate
+                //    set with forge `<sce:link>` doc names + may emit
+                //    the same code at that layer; here we only catch
+                //    the no-forge-link case.
+                if known_driver_floor(&link.driver).is_none() {
+                    // Stable candidate baseline (sorted). Orchestrator
+                    // pass adds forge link-doc names if available.
+                    let mut candidates: Vec<String> =
+                        KNOWN_DRIVERS.iter().map(|(n, _)| (*n).to_string()).collect();
+                    candidates.sort();
+                    let candidates_list = candidates.join(", ");
+                    return Err(DeployError::LinkDriverUnknown {
+                        machine: machine_name.clone(),
+                        link_name: link_name.clone(),
+                        driver: link.driver.clone(),
+                        candidates,
+                        candidates_list,
+                    });
+                }
+
+                // 2. mtu-below-driver-floor — only fires when driver IS
+                //    in baseline AND mtu_bytes is declared (Optional).
+                if let Some(mtu) = link.mtu_bytes {
+                    if let Some(floor) = known_driver_floor(&link.driver) {
+                        if mtu < floor {
+                            return Err(DeployError::LinkMtuBelowDriverFloor {
+                                machine: machine_name.clone(),
+                                link_name: link_name.clone(),
+                                driver: link.driver.clone(),
+                                declared_mtu: mtu,
+                                driver_floor: floor,
+                            });
+                        }
+                    }
+                }
+
+                // 3. expected-p99-exceeds-mtu — both fields declared.
+                if let (Some(p99), Some(mtu)) = (link.expected_p99_bytes, link.mtu_bytes) {
+                    if p99 > mtu {
+                        return Err(DeployError::LinkExpectedP99ExceedsMtu {
+                            machine: machine_name.clone(),
+                            link_name: link_name.clone(),
+                            expected_p99_bytes: p99,
+                            mtu_bytes: mtu,
+                        });
+                    }
+                }
+
+                // 4. burst-pps-missing-on-isr-dispatch — resolved
+                //    rx_dispatch via [`LinkConfig::resolved_rx_dispatch`]
+                //    (Q-C13-3 a). The conditional default makes
+                //    `burst_pps` declared → `IsrToPool` already; the
+                //    failure mode is `rx_dispatch: isr_to_pool` set
+                //    explicitly without `burst_pps`, OR future user-
+                //    error of declaring isr without rate. With the
+                //    conditional default this fires only when the
+                //    author explicitly sets `rx_dispatch: isr_to_pool`.
+                if matches!(link.resolved_rx_dispatch(), RxDispatch::IsrToPool)
+                    && link.burst_pps.is_none()
+                {
+                    return Err(DeployError::LinkBurstPpsMissingOnIsrDispatch {
+                        machine: machine_name.clone(),
+                        link_name: link_name.clone(),
+                    });
+                }
+
+                // 5. mtu-missing-on-fragmenting-link — Q-C13-2 (a) +
+                //    Q-C13-5 (a) — under-approximation per
+                //    [`DiagnosticCode::MeshDeployLinkMtuMissingOnFragmentingLink`]
+                //    doc comment.
+                if let Some(domain) = link.domain_attrs.as_ref() {
+                    if matches!(domain.trust_class, TrustClass::EstablishedSession)
+                        && link.mtu_bytes.is_none()
+                    {
+                        return Err(DeployError::LinkMtuMissingOnFragmentingLink {
+                            machine: machine_name.clone(),
+                            link_name: link_name.clone(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// C13-α-1 cross-doc link-name resolution (Q-C13-5 a lock).
+///
+/// Two validators run after the forge cross-doc registry is populated:
+///   - `deploy/link-not-declared-in-deploy` — every forge
+///     `<scxml sce:kind="link" name="X">` document declared in the
+///     registry must have at least one `machines.<n>.links.X` entry
+///     in the deploy.
+///   - `deploy/link-not-declared-in-forge` — every
+///     `machines.<n>.links.X` entry must have a matching forge
+///     `<sce:link>` document name in the registry.
+///
+/// Returns the first failure encountered (deterministic order: iterate
+/// devices → machines → links in declaration order).
+///
+/// `forge_link_names` is the sorted set of names returned by
+/// `SceCrossDocRegistry::names_of_kind(ScxmlDocKind::Link)`. Callers
+/// supply it explicitly to keep this module free of a `forge::*`
+/// dependency.
+pub fn validate_links_cross_doc(
+    cfg: &DeployConfig,
+    forge_link_names: &[String],
+) -> Result<(), DeployError> {
+    use std::collections::BTreeSet;
+
+    // Build the sorted deploy-side link-name union across all machines.
+    let mut deploy_link_names: BTreeSet<&str> = BTreeSet::new();
+    for device in cfg.topology.values() {
+        for machine in device.machines.values() {
+            for name in machine.links.keys() {
+                deploy_link_names.insert(name.as_str());
+            }
+        }
+    }
+    let forge_set: BTreeSet<&str> = forge_link_names.iter().map(|s| s.as_str()).collect();
+
+    // Pass A: forge → deploy. Every forge link doc must have at least
+    // one deploy entry across the build.
+    for forge_name in &forge_set {
+        if !deploy_link_names.contains(forge_name) {
+            let candidates: Vec<String> =
+                deploy_link_names.iter().map(|s| s.to_string()).collect();
+            let candidates_list = candidates.join(", ");
+            return Err(DeployError::LinkNotDeclaredInDeploy {
+                link_name: (*forge_name).to_string(),
+                candidates,
+                candidates_list,
+            });
+        }
+    }
+
+    // Pass B: deploy → forge. Every deploy entry must have a matching
+    // forge link doc name. Iterate per-machine so the error carries
+    // the host machine name.
+    for device in cfg.topology.values() {
+        for (machine_name, machine) in device.machines.iter() {
+            for link_name in machine.links.keys() {
+                if !forge_set.contains(link_name.as_str()) {
+                    let candidates: Vec<String> =
+                        forge_set.iter().map(|s| s.to_string()).collect();
+                    let candidates_list = candidates.join(", ");
+                    return Err(DeployError::LinkNotDeclaredInForge {
+                        machine: machine_name.clone(),
+                        link_name: link_name.clone(),
+                        candidates,
+                        candidates_list,
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// SCE Mesh §14 (watching-zenoh RFC §5.K) — when a machine declares a

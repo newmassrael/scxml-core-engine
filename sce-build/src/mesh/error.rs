@@ -1087,6 +1087,192 @@ pub enum DeployError {
         timer_count: u32,
         wheel_depth: u32,
     },
+
+    // ── C13-α-1 §5.K `links:` block parse-time + cross-doc validators
+    //    (watching-zenoh RFC §5.K lines 2232-2540). 9 codes total: 7
+    //    spec-named (lines 2421, 2440-2503) + 2 cross-doc (Q-C13-5 a
+    //    lock). C13-β anti-flood family + C9-β reassembly cross-doc
+    //    codes defer to follow-up atomics per scope-split decision. ──
+
+    /// Watching-zenoh RFC §5.K line 2421
+    /// (`deploy/link-driver-unknown`). `machines.<n>.links.<name>.driver`
+    /// names a driver that is not in the C13-α-1 known-driver baseline
+    /// (currently `{lwip_udp, lwip_tcp}`) AND not declared as a forge
+    /// `<scxml sce:kind="link" name="X">` document in the build's
+    /// cross-doc registry.
+    ///
+    /// `candidates` carries the sorted union (known-driver + forge
+    /// link-doc names) per Q-C13-8 (a) lock; the registry-driven
+    /// expansion lets new forge link-kind docs extend the validator
+    /// without freezing the Rust enum surface.
+    #[error("machine '{machine}': link '{link_name}' declares driver \
+             '{driver}' which is unknown. watching-zenoh RFC §5.K \
+             line 2421 (`deploy/link-driver-unknown`) — the build's \
+             closed-allowlist + forge `<sce:link>` cross-doc registry \
+             union does not contain this driver. Repair: pick one of \
+             [{candidates_list}].")]
+    LinkDriverUnknown {
+        machine: String,
+        link_name: String,
+        driver: String,
+        /// Sorted candidate set (known-driver baseline union forge
+        /// `<sce:link>` document names). Empty list when nothing is
+        /// known — diagnostic still surfaces the unknown driver but
+        /// the `Fix::ReplaceOneOf` will be empty.
+        candidates: Vec<String>,
+        /// Cached pretty-print of `candidates` for the error display
+        /// (joined by `, `).
+        candidates_list: String,
+    },
+
+    /// Watching-zenoh RFC §5.K line 2440-2442
+    /// (`deploy/link-mtu-missing-on-fragmenting-link`). A link with
+    /// `domain_attrs.trust_class: established_session` (the only trust
+    /// class permitted to carry Fragment traffic per RFC §5.M line
+    /// 2731) declares no `mtu_bytes`. The build cannot size reassembly
+    /// pool slots per the §5.M `reassembly/max-fragments-insufficient-
+    /// for-mtu` consumer.
+    ///
+    /// **Under-approximation note**: C13-α-1 uses the trust-class
+    /// signal as a conservative proxy for "Fragment-FSM-bound link" —
+    /// precise reassembly-pool-bound detection awaits C13-α-2 cross-
+    /// doc step. Authors who declare an `established_session` link
+    /// without `mtu_bytes` see this earlier than the C9-β reassembly
+    /// consumer.
+    #[error("machine '{machine}': link '{link_name}' declares \
+             `domain_attrs.trust_class: established_session` but \
+             `mtu_bytes:` is absent. watching-zenoh RFC §5.K line \
+             2440-2442 (`deploy/link-mtu-missing-on-fragmenting-link`) \
+             — only `established_session` trust class carries Fragment \
+             traffic (RFC §5.M line 2731) and the build cannot size \
+             reassembly pool slots without the link-layer MTU. Repair: \
+             add `mtu_bytes: <bytes>` under this link entry (e.g. \
+             1472 for UDP/IPv4 over Ethernet).")]
+    LinkMtuMissingOnFragmentingLink {
+        machine: String,
+        link_name: String,
+    },
+
+    /// Watching-zenoh RFC §5.K line 2443-2445
+    /// (`deploy/link-mtu-below-driver-floor`). `mtu_bytes` declared
+    /// smaller than the driver's minimum payload; the driver default
+    /// would override silently. C13-α-1 baseline driver floors:
+    /// `lwip_udp` = 28 (IPv4 minimum header), `lwip_tcp` = 40
+    /// (IPv4+TCP minimum). Unknown drivers silent-skip this check
+    /// until their floor is registered.
+    #[error("machine '{machine}': link '{link_name}' declares `mtu_bytes: \
+             {declared_mtu}` which is below driver '{driver}'s minimum \
+             payload floor ({driver_floor}). watching-zenoh RFC §5.K \
+             line 2443-2445 (`deploy/link-mtu-below-driver-floor`) — \
+             the driver's default minimum would override the declared \
+             value silently. Repair: raise `mtu_bytes` to >= \
+             {driver_floor}, or change the driver to one with a smaller \
+             header floor.")]
+    LinkMtuBelowDriverFloor {
+        machine: String,
+        link_name: String,
+        driver: String,
+        declared_mtu: u32,
+        driver_floor: u32,
+    },
+
+    /// Watching-zenoh RFC §5.K line 2446-2448
+    /// (`deploy/link-expected-p99-exceeds-mtu`).
+    /// `expected_p99_bytes > mtu_bytes`; the p99 message would always
+    /// fragment. C13-α-1 ships the structural warning at parse-time
+    /// regardless of pool binding — the C9-β reassembly consumer
+    /// (`reassembly/expected-fragmentation-rate-high`) refines this
+    /// when the reassembly-pool-bound-to-link cross-doc step lands in
+    /// C13-α-2.
+    #[error("machine '{machine}': link '{link_name}' declares \
+             `expected_p99_bytes: {expected_p99_bytes}` which exceeds \
+             `mtu_bytes: {mtu_bytes}`. watching-zenoh RFC §5.K line \
+             2446-2448 (`deploy/link-expected-p99-exceeds-mtu`) — the \
+             p99 message would always fragment. Repair: lower \
+             `expected_p99_bytes` to <= `mtu_bytes`, or raise \
+             `mtu_bytes` (driver permitting), or bind a reassembly \
+             pool to this link via a forge `<sce:link>` declaration.")]
+    LinkExpectedP99ExceedsMtu {
+        machine: String,
+        link_name: String,
+        expected_p99_bytes: u32,
+        mtu_bytes: u32,
+    },
+
+    // Watching-zenoh RFC §5.K line 2489-2495
+    // (`deploy/link-burst-absorption-insufficient`) + line 2496-2500
+    // (`deploy/link-rx-dispatch-worker-tick-on-high-burst`) defer to
+    // C13-α-2 per [[feedback-silently-broken-hooks]] — both require
+    // RX pool slot_count cross-doc resolution against forge `<sce:link>`
+    // + `ForgePoolRegistry`. C13-α-1 lands the codes' typed surface
+    // only when the consumer ships in the same atomic.
+
+    /// Watching-zenoh RFC §5.K line 2501-2503
+    /// (`deploy/link-burst-pps-missing-on-isr-dispatch`). The resolved
+    /// `rx_dispatch` is `IsrToPool` but `burst_pps` is not declared.
+    /// ISR fast-path requires the rate to size descriptor ring +
+    /// validate stack budget. C13-α-1 fires at parse-time since the
+    /// resolution is purely intra-link-config (per Q-C13-3 a default).
+    #[error("machine '{machine}': link '{link_name}' resolves to \
+             `rx_dispatch: isr_to_pool` but `burst_pps` is not declared. \
+             watching-zenoh RFC §5.K line 2501-2503 \
+             (`deploy/link-burst-pps-missing-on-isr-dispatch`) — ISR \
+             fast-path requires `burst_pps` to size the descriptor \
+             ring and validate the stack budget. Repair: declare \
+             `burst_pps: <pps>`, or explicitly set `rx_dispatch: \
+             worker_tick` to opt into the slower cooperative-tick \
+             path.")]
+    LinkBurstPpsMissingOnIsrDispatch {
+        machine: String,
+        link_name: String,
+    },
+
+    /// C13-α-1 cross-doc validator pair (Q-C13-5 a). A forge
+    /// `<scxml sce:kind="link" name="X">` document was declared in the
+    /// build's cross-doc registry but no `machines.<n>.links.<X>`
+    /// entry exists in deploy.yaml. The forge-side link declares its
+    /// framer / codec / pool refs but has no deploy-side wire endpoint
+    /// to bind. Author repair: add the deploy entry, or remove the
+    /// orphan forge link doc.
+    ///
+    /// `candidates` carries the sorted deploy-side link name set
+    /// across the build (union across all machines) — primary repair
+    /// is adding the missing entry, but knowing what names ARE
+    /// declared helps the author spot typos.
+    #[error("forge `<sce:link name=\"{link_name}\">` declared but no \
+             `deploy.yaml::machines.<n>.links.{link_name}` entry \
+             exists. C13-α-1 cross-doc validator \
+             (`deploy/link-not-declared-in-deploy`) per Q-C13-5 (a) \
+             lock. Repair: add the deploy entry under one of [\
+             {candidates_list}] or another machine, or remove the \
+             forge link doc.")]
+    LinkNotDeclaredInDeploy {
+        link_name: String,
+        candidates: Vec<String>,
+        candidates_list: String,
+    },
+
+    /// C13-α-1 cross-doc validator pair (Q-C13-5 a). A
+    /// `deploy.yaml::machines.<n>.links.<X>` entry exists but no
+    /// forge `<sce:link name="X">` was declared/imported in the
+    /// build. The deploy entry has no wire framer / codec pairing —
+    /// dead config. Author repair: add the forge `<sce:link>` doc, or
+    /// remove the orphan deploy entry.
+    #[error("machine '{machine}': link '{link_name}' declared in \
+             deploy.yaml but no forge `<scxml sce:kind=\"link\" \
+             name=\"{link_name}\">` document was declared/imported. \
+             C13-α-1 cross-doc validator \
+             (`deploy/link-not-declared-in-forge`) per Q-C13-5 (a) \
+             lock. Repair: declare the forge link doc and import it \
+             from a statechart/worker on this machine, or pick one \
+             of [{candidates_list}] (forge link doc names known to \
+             this build), or remove the orphan deploy entry.")]
+    LinkNotDeclaredInForge {
+        machine: String,
+        link_name: String,
+        candidates: Vec<String>,
+        candidates_list: String,
+    },
 }
 
 // ── Stage 1b: External infrastructure config ─────────────────
@@ -2372,6 +2558,112 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 timer_count.to_string(),
                 wheel_depth.to_string(),
             ],
+        },
+
+        // ── C13-α-1 §5.K `links:` block (RFC §5.K lines 2232-2540) ──
+        DeployError::LinkDriverUnknown {
+            machine,
+            link_name,
+            driver,
+            candidates,
+            candidates_list: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployLinkDriverUnknown,
+            stage: Stage::MeshDeploy,
+            actual: Some(driver.clone()),
+            expected: None,
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![machine.clone(), link_name.clone(), driver.clone()],
+        },
+        DeployError::LinkMtuMissingOnFragmentingLink {
+            machine,
+            link_name,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployLinkMtuMissingOnFragmentingLink,
+            stage: Stage::MeshDeploy,
+            actual: None,
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), link_name.clone()],
+        },
+        DeployError::LinkMtuBelowDriverFloor {
+            machine,
+            link_name,
+            driver,
+            declared_mtu,
+            driver_floor,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployLinkMtuBelowDriverFloor,
+            stage: Stage::MeshDeploy,
+            actual: Some(declared_mtu.to_string()),
+            expected: Some(vec![driver_floor.to_string()]),
+            fix: None,
+            key_fragments: vec![
+                machine.clone(),
+                link_name.clone(),
+                driver.clone(),
+                declared_mtu.to_string(),
+            ],
+        },
+        DeployError::LinkExpectedP99ExceedsMtu {
+            machine,
+            link_name,
+            expected_p99_bytes,
+            mtu_bytes,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployLinkExpectedP99ExceedsMtu,
+            stage: Stage::MeshDeploy,
+            actual: Some(expected_p99_bytes.to_string()),
+            expected: Some(vec![mtu_bytes.to_string()]),
+            fix: None,
+            key_fragments: vec![
+                machine.clone(),
+                link_name.clone(),
+                expected_p99_bytes.to_string(),
+                mtu_bytes.to_string(),
+            ],
+        },
+        DeployError::LinkBurstPpsMissingOnIsrDispatch {
+            machine,
+            link_name,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployLinkBurstPpsMissingOnIsrDispatch,
+            stage: Stage::MeshDeploy,
+            actual: None,
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), link_name.clone()],
+        },
+        DeployError::LinkNotDeclaredInDeploy {
+            link_name,
+            candidates,
+            candidates_list: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployLinkNotDeclaredInDeploy,
+            stage: Stage::MeshDeploy,
+            actual: Some(link_name.clone()),
+            expected: None,
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![link_name.clone()],
+        },
+        DeployError::LinkNotDeclaredInForge {
+            machine,
+            link_name,
+            candidates,
+            candidates_list: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployLinkNotDeclaredInForge,
+            stage: Stage::MeshDeploy,
+            actual: Some(link_name.clone()),
+            expected: None,
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![machine.clone(), link_name.clone()],
         },
     }
 }

@@ -1375,6 +1375,121 @@ pub enum DiagnosticCode {
     /// (spec §5.D line 912).
     #[serde(rename = "deploy/scheduler-incompatible-with-worker-count")]
     MeshDeploySchedulerIncompatibleWithWorkerCount,
+
+    // ── §5.K `links:` block parse-time + cross-doc validators
+    //    (watching-zenoh RFC §5.K lines 2232-2540, C13-α-1). 9 codes:
+    //    7 spec-named (`link-driver-unknown` at line 2421, `link-mtu-*`
+    //    at lines 2440-2448, `link-burst-*` at lines 2489-2503) plus 2
+    //    cross-doc joins (Q-C13-5 a) that pair forge `<sce:link name>`
+    //    documents against deploy.yaml `machines.<n>.links.<name>`
+    //    entries. C13-β anti-flood / stateless_accept codes + the 6
+    //    C9-β reassembly cross-doc codes (`mem/reassembly-slot-size-
+    //    below-declared-mtu`, `reassembly/{max-fragments-insufficient-
+    //    for-mtu, expected-fragmentation-rate-high, untrusted-link-
+    //    binding, trust-class-missing-on-fragmenting-link, stage-copy-
+    //    wcet-exceeds-slot-budget}`) defer to C13-α-2 follow-up atomic
+    //    per scope-split decision. ──
+
+    /// Watching-zenoh RFC §5.K line 2421 verbatim
+    /// (`deploy/link-driver-unknown`). `machines.<n>.links.<name>.driver`
+    /// value is not in the C13-α-known-driver baseline (currently
+    /// `{lwip_udp, lwip_tcp}`; extends as new forge link-kind docs
+    /// ship) AND not declared as a forge `<sce:link>` document name in
+    /// the build's [`crate::forge::cross_doc_registry::SceCrossDocRegistry`].
+    /// `Fix::ReplaceOneOf` over the known-driver + forge-link-doc-name
+    /// union, sorted. Q-C13-8 (a) lock: enum-shape kept as `String` so
+    /// forge-side driver authoring extends organically; closed-allowlist
+    /// validator is the gate, not the type system.
+    #[serde(rename = "deploy/link-driver-unknown")]
+    MeshDeployLinkDriverUnknown,
+
+    /// Watching-zenoh RFC §5.K line 2440-2442 verbatim
+    /// (`deploy/link-mtu-missing-on-fragmenting-link`). A
+    /// `machines.<n>.links.<name>` entry is bound to a forge
+    /// `<sce:link name="...">` whose FSM emits/consumes Fragment codec
+    /// events, but `mtu_bytes` is absent. Without it the build cannot
+    /// size reassembly pool slots per §5.M C9-β. The C13-α-1 detector
+    /// uses a conservative under-approximation per Q-C13-2 / Q-C13-5
+    /// shape — it fires for every `domain_attrs.trust_class:
+    /// established_session` link missing `mtu_bytes`, since
+    /// `established_session` is the only trust class permitted to carry
+    /// Fragment traffic per RFC §5.M line 2731. Precise Fragment-FSM
+    /// detection awaits the §5.M reassembly-pool-bound-to-link
+    /// cross-doc validator (C13-α-2 + C9-β co-land); the C13-α-1
+    /// under-approximation surfaces the same author error class earlier.
+    #[serde(rename = "deploy/link-mtu-missing-on-fragmenting-link")]
+    MeshDeployLinkMtuMissingOnFragmentingLink,
+
+    /// Watching-zenoh RFC §5.K line 2443-2445 verbatim
+    /// (`deploy/link-mtu-below-driver-floor`). `mtu_bytes` declared
+    /// smaller than the driver's minimum payload (e.g. UDP/IPv6's
+    /// 56-byte floor); driver default would override silently. The
+    /// known-driver baseline carries each driver's floor (currently
+    /// `{lwip_udp: 28, lwip_tcp: 40}` from IPv4 minimum-header
+    /// arithmetic); unknown drivers fall back to silent-skip until
+    /// their floor is registered.
+    #[serde(rename = "deploy/link-mtu-below-driver-floor")]
+    MeshDeployLinkMtuBelowDriverFloor,
+
+    /// Watching-zenoh RFC §5.K line 2446-2448 verbatim
+    /// (`deploy/link-expected-p99-exceeds-mtu`). `expected_p99_bytes >
+    /// mtu_bytes` AND no reassembly pool is bound to the link (precise
+    /// "no reassembly pool" check defers to C13-α-2 + C9-β co-land; the
+    /// C13-α-1 detector fires the warning whenever
+    /// `expected_p99_bytes > mtu_bytes` regardless of pool binding,
+    /// matching the spec's "the p99 message would always fragment but
+    /// no reassembly path exists" intent — authors with a reassembly
+    /// pool already see C9-β's `reassembly/expected-fragmentation-
+    /// rate-high` consumer, the two diagnostics complement).
+    #[serde(rename = "deploy/link-expected-p99-exceeds-mtu")]
+    MeshDeployLinkExpectedP99ExceedsMtu,
+
+    // Watching-zenoh RFC §5.K line 2489-2495
+    // (`deploy/link-burst-absorption-insufficient`) + line 2496-2500
+    // (`deploy/link-rx-dispatch-worker-tick-on-high-burst`) defer to
+    // C13-α-2 follow-up atomic per [[feedback-silently-broken-hooks]]:
+    // both detectors require the link's bound RX pool slot_count to
+    // be cross-doc-resolved against the forge `<sce:link>` document's
+    // `<sce:rx-pool ref="X">` and the `ForgePoolRegistry` entry for
+    // `X`. Wiring that infrastructure into the C13-α deploy validator
+    // path is the C13-α-2 scope; landing the codes here without
+    // consumers would violate the silently-broken-hook discipline.
+    // (C13-α-1 reduced from RFC §8's "9 spec-named codes" to 7; the
+    // remaining 2 land in C13-α-2.)
+
+    /// Watching-zenoh RFC §5.K line 2501-2503 verbatim
+    /// (`deploy/link-burst-pps-missing-on-isr-dispatch`). The resolved
+    /// `rx_dispatch` (per [`super::super::mesh::deploy::LinkConfig::resolved_rx_dispatch`])
+    /// is `IsrToPool` but `burst_pps` is not declared. ISR fast-path
+    /// requires the rate to size descriptor ring + validate stack
+    /// budget. Repair: declare `burst_pps`, or set `rx_dispatch:
+    /// worker_tick` explicitly. C13-α-1 detector fires at parse-time
+    /// since the resolution is purely intra-link-config.
+    #[serde(rename = "deploy/link-burst-pps-missing-on-isr-dispatch")]
+    MeshDeployLinkBurstPpsMissingOnIsrDispatch,
+
+    /// C13-α-1 cross-doc validator pair (Q-C13-5 a lock). A forge
+    /// `<scxml sce:kind="link" name="X">` document was imported by
+    /// some statechart/worker on this machine, but no
+    /// `deploy.yaml::machines.<n>.links.<X>` entry exists. Build
+    /// cannot resolve the link's `bind` address, `mtu_bytes`, or
+    /// `domain_attrs`. `Fix::ReplaceOneOf` over the deploy-side
+    /// link-name set for this machine (sorted). Mirrors B6-η
+    /// `validate_stage_pool_references` + C2-outbox
+    /// `validate_worker_outbox_references` precedents.
+    #[serde(rename = "deploy/link-not-declared-in-deploy")]
+    MeshDeployLinkNotDeclaredInDeploy,
+
+    /// C13-α-1 cross-doc validator pair (Q-C13-5 a lock). A
+    /// `deploy.yaml::machines.<n>.links.<X>` entry exists, but no
+    /// forge `<scxml sce:kind="link" name="X">` document was
+    /// declared/imported. The deploy entry has no wire framer / codec
+    /// pairing — dead config. `Fix::ReplaceOneOf` over the forge-side
+    /// link-name set (sorted), pulled from
+    /// [`crate::forge::cross_doc_registry::SceCrossDocRegistry::names_of_kind`].
+    #[serde(rename = "deploy/link-not-declared-in-forge")]
+    MeshDeployLinkNotDeclaredInForge,
+
     // External config stage
     #[serde(rename = "mesh/external-read")]
     MeshExternalRead,
@@ -1715,6 +1830,14 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeploySchedulerCooperativeMissingSlotBudget,
         MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget,
         MeshDeploySchedulerIncompatibleWithWorkerCount,
+        // C13-α-1 `links:` block schema + parse-time + cross-doc (RFC §5.K lines 2232-2540)
+        MeshDeployLinkDriverUnknown,
+        MeshDeployLinkMtuMissingOnFragmentingLink,
+        MeshDeployLinkMtuBelowDriverFloor,
+        MeshDeployLinkExpectedP99ExceedsMtu,
+        MeshDeployLinkBurstPpsMissingOnIsrDispatch,
+        MeshDeployLinkNotDeclaredInDeploy,
+        MeshDeployLinkNotDeclaredInForge,
         // Mesh External config
         MeshExternalRead,
         MeshExternalParse,
@@ -2056,6 +2179,14 @@ impl DiagnosticCode {
             | MeshDeploySchedulerCooperativeMissingSlotBudget
             | MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget
             | MeshDeploySchedulerIncompatibleWithWorkerCount
+            // C13-α-1 `links:` block (RFC §5.K lines 2232-2540).
+            | MeshDeployLinkDriverUnknown
+            | MeshDeployLinkMtuMissingOnFragmentingLink
+            | MeshDeployLinkMtuBelowDriverFloor
+            | MeshDeployLinkExpectedP99ExceedsMtu
+            | MeshDeployLinkBurstPpsMissingOnIsrDispatch
+            | MeshDeployLinkNotDeclaredInDeploy
+            | MeshDeployLinkNotDeclaredInForge
                 => Some("watching-zenoh RFC §5.K"),
 
             // ── Mesh rule 12 — parallel root designation (SCE_MESH.md §14 rule 12) ──
@@ -2388,6 +2519,13 @@ impl DiagnosticCode {
             MeshDeploySchedulerCooperativeMissingSlotBudget => "deploy/worker-slot-budget-missing",
             MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget => "deploy/keepalive-jitter-budget-missing",
             MeshDeploySchedulerIncompatibleWithWorkerCount => "deploy/scheduler-incompatible-with-worker-count",
+            MeshDeployLinkDriverUnknown => "deploy/link-driver-unknown",
+            MeshDeployLinkMtuMissingOnFragmentingLink => "deploy/link-mtu-missing-on-fragmenting-link",
+            MeshDeployLinkMtuBelowDriverFloor => "deploy/link-mtu-below-driver-floor",
+            MeshDeployLinkExpectedP99ExceedsMtu => "deploy/link-expected-p99-exceeds-mtu",
+            MeshDeployLinkBurstPpsMissingOnIsrDispatch => "deploy/link-burst-pps-missing-on-isr-dispatch",
+            MeshDeployLinkNotDeclaredInDeploy => "deploy/link-not-declared-in-deploy",
+            MeshDeployLinkNotDeclaredInForge => "deploy/link-not-declared-in-forge",
             MeshExternalRead => "mesh/external-read",
             MeshExternalParse => "mesh/external-parse",
             MeshExternalUnresolvedNames => "mesh/external-unresolved-names",
@@ -6972,6 +7110,81 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:f26a225afadc7a9a","code":"deploy/scheduler-incompatible-with-worker-count","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': declared 5 workers under machines.mcu_node.workers, but cooperative scheduler can host only 3 per tick window (derived from tick_period_us 1000 / worker_slot_budget_us 300). watching-zenoh RFC §5.K line 2423 (`deploy/scheduler-incompatible-with-worker-count`). Repair: raise `tick_period_us`, lower `worker_slot_budget_us`, remove excess workers, or switch `scheduler.kind:` to a preemptive host (`tokio` / `rt`).","expected":["3"],"actual":"5"}"#,
             ),
+            // ── C13-α-1 §5.K `links:` block (RFC §5.K lines 2232-2540) ──
+            (
+                "deploy/link-driver-unknown",
+                DeployError::LinkDriverUnknown {
+                    machine: "mcu_node".into(),
+                    link_name: "udp_data".into(),
+                    driver: "foo_udp".into(),
+                    candidates: vec!["lwip_tcp".into(), "lwip_udp".into()],
+                    candidates_list: "lwip_tcp, lwip_udp".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:29690d741179d6f1","code":"deploy/link-driver-unknown","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_data' declares driver 'foo_udp' which is unknown. watching-zenoh RFC §5.K line 2421 (`deploy/link-driver-unknown`) — the build's closed-allowlist + forge `<sce:link>` cross-doc registry union does not contain this driver. Repair: pick one of [lwip_tcp, lwip_udp].","actual":"foo_udp","fix":{"kind":"replace_one_of","candidates":["lwip_tcp","lwip_udp"]}}"#,
+            ),
+            (
+                "deploy/link-mtu-missing-on-fragmenting-link",
+                DeployError::LinkMtuMissingOnFragmentingLink {
+                    machine: "mcu_node".into(),
+                    link_name: "udp_data".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:863c8c160c2fe018","code":"deploy/link-mtu-missing-on-fragmenting-link","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_data' declares `domain_attrs.trust_class: established_session` but `mtu_bytes:` is absent. watching-zenoh RFC §5.K line 2440-2442 (`deploy/link-mtu-missing-on-fragmenting-link`) — only `established_session` trust class carries Fragment traffic (RFC §5.M line 2731) and the build cannot size reassembly pool slots without the link-layer MTU. Repair: add `mtu_bytes: <bytes>` under this link entry (e.g. 1472 for UDP/IPv4 over Ethernet)."}"#,
+            ),
+            (
+                "deploy/link-mtu-below-driver-floor",
+                DeployError::LinkMtuBelowDriverFloor {
+                    machine: "mcu_node".into(),
+                    link_name: "udp_data".into(),
+                    driver: "lwip_udp".into(),
+                    declared_mtu: 20,
+                    driver_floor: 28,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:b923c818f30343df","code":"deploy/link-mtu-below-driver-floor","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_data' declares `mtu_bytes: 20` which is below driver 'lwip_udp's minimum payload floor (28). watching-zenoh RFC §5.K line 2443-2445 (`deploy/link-mtu-below-driver-floor`) — the driver's default minimum would override the declared value silently. Repair: raise `mtu_bytes` to >= 28, or change the driver to one with a smaller header floor.","expected":["28"],"actual":"20"}"#,
+            ),
+            (
+                "deploy/link-expected-p99-exceeds-mtu",
+                DeployError::LinkExpectedP99ExceedsMtu {
+                    machine: "mcu_node".into(),
+                    link_name: "udp_data".into(),
+                    expected_p99_bytes: 2048,
+                    mtu_bytes: 1472,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:04a20137542a8e63","code":"deploy/link-expected-p99-exceeds-mtu","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_data' declares `expected_p99_bytes: 2048` which exceeds `mtu_bytes: 1472`. watching-zenoh RFC §5.K line 2446-2448 (`deploy/link-expected-p99-exceeds-mtu`) — the p99 message would always fragment. Repair: lower `expected_p99_bytes` to <= `mtu_bytes`, or raise `mtu_bytes` (driver permitting), or bind a reassembly pool to this link via a forge `<sce:link>` declaration.","expected":["1472"],"actual":"2048"}"#,
+            ),
+            (
+                "deploy/link-burst-pps-missing-on-isr-dispatch",
+                DeployError::LinkBurstPpsMissingOnIsrDispatch {
+                    machine: "mcu_node".into(),
+                    link_name: "udp_data".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:ae5e6142a2e8c826","code":"deploy/link-burst-pps-missing-on-isr-dispatch","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_data' resolves to `rx_dispatch: isr_to_pool` but `burst_pps` is not declared. watching-zenoh RFC §5.K line 2501-2503 (`deploy/link-burst-pps-missing-on-isr-dispatch`) — ISR fast-path requires `burst_pps` to size the descriptor ring and validate the stack budget. Repair: declare `burst_pps: <pps>`, or explicitly set `rx_dispatch: worker_tick` to opt into the slower cooperative-tick path."}"#,
+            ),
+            (
+                "deploy/link-not-declared-in-deploy",
+                DeployError::LinkNotDeclaredInDeploy {
+                    link_name: "udp_data".into(),
+                    candidates: vec!["udp_scout".into()],
+                    candidates_list: "udp_scout".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:7769451379390caa","code":"deploy/link-not-declared-in-deploy","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"forge `<sce:link name=\"udp_data\">` declared but no `deploy.yaml::machines.<n>.links.udp_data` entry exists. C13-α-1 cross-doc validator (`deploy/link-not-declared-in-deploy`) per Q-C13-5 (a) lock. Repair: add the deploy entry under one of [udp_scout] or another machine, or remove the forge link doc.","actual":"udp_data","fix":{"kind":"replace_one_of","candidates":["udp_scout"]}}"#,
+            ),
+            (
+                "deploy/link-not-declared-in-forge",
+                DeployError::LinkNotDeclaredInForge {
+                    machine: "mcu_node".into(),
+                    link_name: "udp_data".into(),
+                    candidates: vec!["udp_scout".into()],
+                    candidates_list: "udp_scout".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:68d69cab5e950a11","code":"deploy/link-not-declared-in-forge","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_data' declared in deploy.yaml but no forge `<scxml sce:kind=\"link\" name=\"udp_data\">` document was declared/imported. C13-α-1 cross-doc validator (`deploy/link-not-declared-in-forge`) per Q-C13-5 (a) lock. Repair: declare the forge link doc and import it from a statechart/worker on this machine, or pick one of [udp_scout] (forge link doc names known to this build), or remove the orphan deploy entry.","actual":"udp_data","fix":{"kind":"replace_one_of","candidates":["udp_scout"]}}"#,
+            ),
             (
                 "timer/slot-overflow",
                 DeployError::TimerSlotOverflow {
@@ -7694,7 +7907,22 @@ mod tests {
             //     algorithm = the imported algorithm name itself).
             // The other four sit in NeutralOrDeterministic below.
             | AlgorithmCallTargetUnknown
-            | AlgorithmCallTargetMethodUnknown => FixCarriesCandidates,
+            | AlgorithmCallTargetMethodUnknown
+            // C13-α-1 `links:` block cross-doc + driver-unknown
+            // (RFC §5.K lines 2421, Q-C13-5 a, Q-C13-8 a). All three
+            // ride `Fix::ReplaceOneOf`:
+            //   - `deploy/link-driver-unknown`: closed candidate set =
+            //     known-driver baseline + forge link-doc names (sorted).
+            //   - `deploy/link-not-declared-in-deploy`: closed candidate
+            //     set = deploy-side link-name set on the same machine.
+            //   - `deploy/link-not-declared-in-forge`: closed candidate
+            //     set = forge-side link-name set (across the build).
+            // The other 6 C13-α-1 link codes have multi-axis or
+            // author-domain repairs and sit in NeutralOrDeterministic
+            // below.
+            | MeshDeployLinkDriverUnknown
+            | MeshDeployLinkNotDeclaredInDeploy
+            | MeshDeployLinkNotDeclaredInForge => FixCarriesCandidates,
 
             // ── `expected` carries non-repair metadata ────────
             ExpressionParseMismatch | MeshExternalAmbiguousEventGroup => ExpectedIsMetadata,
@@ -7973,6 +8201,20 @@ mod tests {
             | MeshDeploySchedulerCooperativeMissingSlotBudget
             | MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget
             | MeshDeploySchedulerIncompatibleWithWorkerCount
+            // C13-α-1 `links:` block parse-level + multi-axis repairs
+            // (RFC §5.K lines 2440-2503). 6 of the 9 C13-α-1 codes
+            // carry author-domain or multi-axis repairs with no closed
+            // candidate set — driver MTU floor is the LOWER bound (not
+            // the exact author value), expected_p99 vs mtu has two
+            // equally valid repair paths (lower p99 or raise mtu),
+            // burst-absorption-insufficient has three structural fixes
+            // (raise slot_count / lower tick_period_us / switch
+            // dispatch), etc. The other 3 link codes carry closed
+            // candidate sets and sit in FixCarriesCandidates above.
+            | MeshDeployLinkMtuMissingOnFragmentingLink
+            | MeshDeployLinkMtuBelowDriverFloor
+            | MeshDeployLinkExpectedP99ExceedsMtu
+            | MeshDeployLinkBurstPpsMissingOnIsrDispatch
             | MeshExternalRead
             | MeshExternalParse
             | MeshExternalUnresolvedNames
@@ -8370,6 +8612,13 @@ mod tests {
                 | MeshDeploySchedulerCooperativeMissingSlotBudget
                 | MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget
                 | MeshDeploySchedulerIncompatibleWithWorkerCount
+                | MeshDeployLinkDriverUnknown
+                | MeshDeployLinkMtuMissingOnFragmentingLink
+                | MeshDeployLinkMtuBelowDriverFloor
+                | MeshDeployLinkExpectedP99ExceedsMtu
+                | MeshDeployLinkBurstPpsMissingOnIsrDispatch
+                | MeshDeployLinkNotDeclaredInDeploy
+                | MeshDeployLinkNotDeclaredInForge
                 | MeshExternalRead | MeshExternalParse
                 | MeshExternalUnresolvedNames | MeshExternalAmbiguousEventGroup
                 | MeshExternalEmptyEventGroup
@@ -8404,9 +8653,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            232,
+            239,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 232 distinct variants to match the DiagnosticCode \
+             expected 239 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -8786,7 +9035,37 @@ mod tests {
              per-slot bitmap/deadline/peer-id emission + 1 codegen-\
              template-regression guard defer to C9-γ. Listener-link \
              sibling-split codes (2) belong to C10/C11 per spec line \
-             2820-2824. 230 → 232.",
+             2820-2824. 230 → 232. Then watching-zenoh RFC §5.K lines \
+             2232-2540 lands the C13-α-1 `links:` block schema with 9 \
+             new spec-named codes: 7 deploy-side parse-time + cross-doc \
+             validators (`deploy/link-driver-unknown` at spec line \
+             2421, `deploy/link-mtu-missing-on-fragmenting-link` at \
+             2440-2442, `deploy/link-mtu-below-driver-floor` at \
+             2443-2445, `deploy/link-expected-p99-exceeds-mtu` at \
+             2446-2448, `deploy/link-burst-absorption-insufficient` \
+             at 2489-2495, `deploy/link-rx-dispatch-worker-tick-on-\
+             high-burst` at 2496-2500, `deploy/link-burst-pps-missing-\
+             on-isr-dispatch` at 2501-2503) plus 2 cross-doc validators \
+             (Q-C13-5 a lock; `deploy/link-not-declared-in-deploy` + \
+             `deploy/link-not-declared-in-forge` pair forge link doc \
+             names against deploy.yaml `machines.<n>.links.<name>` \
+             entries). Three ride `FixCarriesCandidates` (driver-\
+             unknown closed candidate = known-driver baseline + forge \
+             link-doc names; both not-declared codes ride opposite-side \
+             link-name set per Q-C13-5 a). Four ride `NeutralOrDeterministic` \
+             (multi-axis or author-domain repairs: mtu-missing requires \
+             author concrete value, p99-exceeds-mtu has two-path repair, \
+             burst-pps-missing-on-isr-dispatch carries 2 structural \
+             fixes). 2 spec codes (`deploy/link-burst-absorption-\
+             insufficient` at 2489-2495 + `deploy/link-rx-dispatch-\
+             worker-tick-on-high-burst` at 2496-2500) defer to C13-α-2 \
+             per [[feedback-silently-broken-hooks]] — both require RX \
+             pool slot_count to be cross-doc-resolved against the \
+             forge `<sce:link>` document's `<sce:rx-pool ref=\"X\">` \
+             and the `ForgePoolRegistry` entry for `X`, infrastructure \
+             that lands in C13-α-2. 6 C9-β reassembly cross-doc codes \
+             (mem/reassembly-slot-size-below-declared-mtu + 5 \
+             reassembly/*) also defer to C13-α-2. 232 → 239.",
         );
     }
 

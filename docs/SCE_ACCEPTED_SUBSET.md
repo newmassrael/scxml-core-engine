@@ -380,7 +380,7 @@ no typed interpretation or are explicitly excluded:
 
 ---
 
-## Appendix — `DiagnosticCode` index (232 codes)
+## Appendix — `DiagnosticCode` index (239 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -583,6 +583,13 @@ Codes that the author can avoid by writing a better SCXML /
 | `deploy/worker-slot-budget-missing` | Mesh Deploy |
 | `deploy/keepalive-jitter-budget-missing` | Mesh Deploy |
 | `deploy/scheduler-incompatible-with-worker-count` | Mesh Deploy |
+| `deploy/link-driver-unknown` | Mesh Deploy |
+| `deploy/link-mtu-missing-on-fragmenting-link` | Mesh Deploy |
+| `deploy/link-mtu-below-driver-floor` | Mesh Deploy |
+| `deploy/link-expected-p99-exceeds-mtu` | Mesh Deploy |
+| `deploy/link-burst-pps-missing-on-isr-dispatch` | Mesh Deploy |
+| `deploy/link-not-declared-in-deploy` | Mesh Deploy |
+| `deploy/link-not-declared-in-forge` | Mesh Deploy |
 | `mesh/external-parse` | Mesh External |
 | `mesh/external-unresolved-names` | Mesh External |
 | `mesh/external-ambiguous-event-group` | Mesh External |
