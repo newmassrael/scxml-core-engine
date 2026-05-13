@@ -75,6 +75,7 @@ fn compile_pair_for(
         &template_dir(lang),
         lang,
         &ForgeCompileOptions::default(),
+        None,
     )
     .expect("orchestrator codegen succeeds");
     let bc_output = outputs
@@ -497,6 +498,7 @@ fn cpp_kotlin_element_type_procedure_emits() {
         &template_dir(Language::Cpp),
         Language::Cpp,
         &ForgeCompileOptions::default(),
+        None,
     )
     .expect("cpp orchestrator codegen succeeds");
     let cpp_body = cpp_outputs
@@ -521,6 +523,7 @@ fn cpp_kotlin_element_type_procedure_emits() {
         &template_dir(Language::Kotlin),
         Language::Kotlin,
         &ForgeCompileOptions::default(),
+        None,
     )
     .expect("kotlin orchestrator codegen succeeds");
     let kt_body = kt_outputs

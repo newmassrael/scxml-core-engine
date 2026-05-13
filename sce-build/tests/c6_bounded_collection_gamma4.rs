@@ -103,6 +103,7 @@ fn compile_pair_for(
         &template_dir(lang),
         lang,
         &options_for(lang),
+        None,
     )
     .expect("orchestrator codegen succeeds");
     let bc_output = outputs
@@ -485,6 +486,7 @@ fn go_missing_module_prefix_errors() {
         &template_dir(Language::Go),
         Language::Go,
         &ForgeCompileOptions::default(), // no go_module_prefix
+        None,
     );
     let err = match result {
         Ok(_) => panic!("Go BC without go_module_prefix must error"),
@@ -802,6 +804,7 @@ fn procedure_element_type_all_six_backends() {
         &template_dir(Language::C11),
         Language::C11,
         &options_for(Language::C11),
+        None,
     )
     .expect("c11 codegen");
     let c11_body = extract_bc(&c11_outputs);
@@ -817,6 +820,7 @@ fn procedure_element_type_all_six_backends() {
         &template_dir(Language::Go),
         Language::Go,
         &options_for(Language::Go),
+        None,
     )
     .expect("go codegen");
     let go_body = extract_bc(&go_outputs);
@@ -832,6 +836,7 @@ fn procedure_element_type_all_six_backends() {
         &template_dir(Language::Python),
         Language::Python,
         &options_for(Language::Python),
+        None,
     )
     .expect("python codegen");
     let py_body = extract_bc(&py_outputs);
@@ -849,6 +854,7 @@ fn procedure_element_type_all_six_backends() {
         &template_dir(Language::Cpp),
         Language::Cpp,
         &options_for(Language::Cpp),
+        None,
     )
     .expect("cpp codegen");
     let cpp_body = extract_bc(&cpp_outputs);
@@ -863,6 +869,7 @@ fn procedure_element_type_all_six_backends() {
         &template_dir(Language::Kotlin),
         Language::Kotlin,
         &options_for(Language::Kotlin),
+        None,
     )
     .expect("kotlin codegen");
     let kt_body = extract_bc(&kt_outputs);
@@ -875,6 +882,7 @@ fn procedure_element_type_all_six_backends() {
         &template_dir(Language::Rust),
         Language::Rust,
         &options_for(Language::Rust),
+        None,
     )
     .expect("rust codegen");
     let rust_body = extract_bc(&rust_outputs);

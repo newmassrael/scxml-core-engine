@@ -143,6 +143,7 @@ fn happy_orchestrator_compiles_multi_doc() {
         &template_dir(),
         Language::Rust,
         &default_options(),
+        None,
     )
     .expect("happy multi-doc compile must succeed");
 
@@ -177,6 +178,7 @@ fn on_sample_link_not_declared_fires_in_production() {
         &template_dir(),
         Language::Rust,
         &default_options(),
+        None,
     ) {
         Ok(_) => panic!("undeclared on-sample link must fire diagnostic"),
         Err(e) => e,
@@ -220,6 +222,7 @@ fn on_sample_sample_take_without_stage_pool_fires() {
         &template_dir(),
         Language::Rust,
         &default_options(),
+        None,
     ) {
         Ok(_) => panic!("missing stage-pool must fire diagnostic"),
         Err(e) => e,
@@ -276,6 +279,7 @@ fn on_sample_link_wrong_kind_fires() {
         &template_dir(),
         Language::Rust,
         &default_options(),
+        None,
     ) {
         Ok(_) => panic!("wrong-kind on-sample target must fire diagnostic"),
         Err(e) => e,
@@ -310,6 +314,7 @@ fn empty_file_lists_yield_empty_outputs() {
         &template_dir(),
         Language::Rust,
         &default_options(),
+        None,
     )
     .expect("empty file lists must not error");
 
@@ -352,6 +357,7 @@ fn worker_doc_records_into_cross_doc_registry() {
         &template_dir(),
         Language::Rust,
         &default_options(),
+        None,
     ) {
         Ok(_) => panic!("on-sample targeting worker name must fire wrong-kind"),
         Err(e) => e,
@@ -372,4 +378,389 @@ fn worker_doc_records_into_cross_doc_registry() {
         }
         other => panic!("expected OnSampleLinkWrongKind, got: {other:?}"),
     }
+}
+
+// ─── 7. C13-α-1 + C13-α-2 deploy-aware orchestrator wiring ──────────
+//
+// These tests pin that `compile_scxml_with_imports(..., Some(deploy))`
+// fires the C13-α-1 / C13-α-2 cross-doc validators (validate_links_cross_doc
+// + validate_links_burst_invariants + validate_reassembly_cross_doc).
+// Before this orchestrator wiring landed, the 3 validators were
+// publicly exposed but had no production caller — closing the
+// silent-broken-hook precedent named in c13_alpha_1_landed.md +
+// c13_alpha_2_landed.md.
+
+/// Forge `<sce:link>` with an `<sce:rx-pool ref>` that the C13-α-2
+/// burst + reassembly validators follow to a `<sce:kind="buffer-pool">`
+/// document in the same build.
+fn link_with_rx_pool(name: &str, rx_pool_ref: &str) -> String {
+    format!(
+        r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="link" name="{name}" version="1.0">
+  <sce:link-class>udp</sce:link-class>
+  <sce:framer ref="scout_frame_codec"/>
+  <sce:backpressure>drop</sce:backpressure>
+  <sce:rx-pool ref="{rx_pool_ref}"/>
+</scxml>"##
+    )
+}
+
+/// Forge `<sce:kind="buffer-pool">` Default-variant pool document
+/// (no `<sce:variant>` element ⇒ BufferPoolVariant::Default).
+fn buffer_pool_default(name: &str, slot_count: u32, slot_size: u32) -> String {
+    format!(
+        r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="{name}" version="1.0">
+  <sce:slot-count>{slot_count}</sce:slot-count>
+  <sce:slot-size>{slot_size}</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>32</sce:alignment>
+  <sce:cache-policy>none</sce:cache-policy>
+</scxml>"##
+    )
+}
+
+/// Deploy fixture YAML — a single machine with platform + scheduler +
+/// memory + per-test `links:` body plugged in.
+fn deploy_with_links(links_yaml: &str) -> String {
+    format!(
+        r#"
+version: "1.0"
+topology:
+  mcu_device:
+    machines:
+      mcu_node:
+        source: session_fsm.scxml
+        platform:
+          class: mcu
+          os: bare_metal
+          has_dcache: true
+          dcache_line_size: 32
+          has_speculative_prefetch: false
+          core_count: 1
+          clock_freq_mhz: 400
+          memcpy_cycles_per_byte: 1.0
+        scheduler:
+          kind: cooperative
+          tick_period_us: 1000
+          worker_stack_budget: 4096
+          worker_slot_budget_us: 200
+          keepalive_jitter_budget_us: 5000
+        memory:
+          sram_regions:
+            sram1: {{ base: 0x08000000, size: 65536, attr: [dma_coherent, cacheable] }}
+          dma_channels: [DW0_CH0]
+        links:
+{links_yaml}
+"#,
+    )
+}
+
+/// Tiny statechart with no on-sample / outbox — just enough to satisfy
+/// the orchestrator's pass-2 walk without triggering other cross-ref
+/// validators. C13 tests focus on the deploy-aware path only.
+fn statechart_minimal(name: &str) -> String {
+    format!(
+        r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       name="{name}"
+       version="1.0"
+       initial="idle"
+       datamodel="ecmascript">
+  <state id="idle"/>
+</scxml>"##
+    )
+}
+
+/// Deploy-aware path silently passes when no deploy is supplied —
+/// orchestrator must NOT fire C13 validators with `None` deploy
+/// (Q-η5 (a) silent-skip precedent). This is the baseline that
+/// every existing call site relies on.
+#[test]
+fn c13_validators_silent_skip_when_deploy_none() {
+    use sce_build::mesh::deploy::parse_deploy_str;
+    let dir = tempdir().expect("tempdir");
+    let scxml = write_doc(
+        dir.path(),
+        "session_fsm.scxml",
+        &statechart_minimal("session_fsm"),
+    );
+    // Forge has `udp_data` but if we passed deploy with no matching
+    // entry, validate_links_cross_doc WOULD fire. With None deploy,
+    // the orchestrator silent-skips all 3 validators.
+    let pool = write_doc(
+        dir.path(),
+        "rx_data_pool.scxml",
+        &buffer_pool_default("rx_data_pool", 16, 1500),
+    );
+    let link = write_doc(
+        dir.path(),
+        "udp_data.scxml",
+        &link_with_rx_pool("udp_data", "rx_data_pool"),
+    );
+
+    // Sanity: a deploy WITHOUT `udp_data` would trigger
+    // LinkNotDeclaredInDeploy if we passed it; we pass None instead.
+    let _orphan_deploy = parse_deploy_str(&deploy_with_links(
+        r#"          udp_scout:
+            bind: "224.0.0.224:7446"
+            driver: lwip_udp
+"#,
+    ))
+    .expect("orphan deploy parses");
+
+    compile_scxml_with_imports(
+        &[scxml.as_path()],
+        &[pool.as_path(), link.as_path()],
+        &template_dir(),
+        Language::Rust,
+        &default_options(),
+        // ← deploy: None ⇒ C13 validators silent-skip.
+        None,
+    )
+    .expect("None deploy ⇒ C13 validators silent-skip ⇒ Ok");
+}
+
+/// C13-α-1 `validate_links_cross_doc` fires through the orchestrator:
+/// forge declares `udp_data` but the supplied deploy.yaml has no
+/// matching `machines.<n>.links.udp_data` entry.
+#[test]
+fn c13_link_not_declared_in_deploy_fires_through_orchestrator() {
+    use sce_build::mesh::deploy::parse_deploy_str;
+    let dir = tempdir().expect("tempdir");
+    let scxml = write_doc(
+        dir.path(),
+        "session_fsm.scxml",
+        &statechart_minimal("session_fsm"),
+    );
+    let pool = write_doc(
+        dir.path(),
+        "rx_data_pool.scxml",
+        &buffer_pool_default("rx_data_pool", 16, 1500),
+    );
+    let link = write_doc(
+        dir.path(),
+        "udp_data.scxml",
+        &link_with_rx_pool("udp_data", "rx_data_pool"),
+    );
+
+    // Deploy has `udp_scout` but forge has `udp_data` — Pass A
+    // (forge → deploy) fires LinkNotDeclaredInDeploy.
+    let deploy = parse_deploy_str(&deploy_with_links(
+        r#"          udp_scout:
+            bind: "224.0.0.224:7446"
+            driver: lwip_udp
+"#,
+    ))
+    .expect("deploy parses");
+
+    let err = match compile_scxml_with_imports(
+        &[scxml.as_path()],
+        &[pool.as_path(), link.as_path()],
+        &template_dir(),
+        Language::Rust,
+        &default_options(),
+        Some(&deploy),
+    ) {
+        Ok(_) => panic!("forge udp_data + deploy udp_scout must fire"),
+        Err(e) => e,
+    };
+
+    // The orchestrator routes DeployError through ForgeError::Mesh.
+    match err.error {
+        ForgeError::Mesh(ref mesh_err) => match mesh_err {
+            sce_build::mesh::error::MeshError::Deploy(
+                sce_build::mesh::error::DeployError::LinkNotDeclaredInDeploy {
+                    link_name,
+                    ..
+                },
+            ) => {
+                assert_eq!(link_name, "udp_data");
+            }
+            other => panic!("expected DeployError::LinkNotDeclaredInDeploy, got {other:?}"),
+        },
+        other => panic!("expected ForgeError::Mesh, got: {other:?}"),
+    }
+}
+
+/// C13-α-2 `validate_reassembly_cross_doc` fires through the
+/// orchestrator: pool slot_size < link.mtu_bytes triggers
+/// `mem/reassembly-slot-size-below-declared-mtu`.
+#[test]
+fn c13_reassembly_slot_size_fires_through_orchestrator() {
+    use sce_build::mesh::deploy::parse_deploy_str;
+    let dir = tempdir().expect("tempdir");
+    let scxml = write_doc(
+        dir.path(),
+        "session_fsm.scxml",
+        &statechart_minimal("session_fsm"),
+    );
+    // Pool slot_size=256, link mtu_bytes=1500 → #1 fires (slot < mtu).
+    let pool = write_doc(
+        dir.path(),
+        "rx_data_pool.scxml",
+        &buffer_pool_default("rx_data_pool", 16, 256),
+    );
+    let link = write_doc(
+        dir.path(),
+        "udp_data.scxml",
+        &link_with_rx_pool("udp_data", "rx_data_pool"),
+    );
+
+    let deploy = parse_deploy_str(&deploy_with_links(
+        r#"          udp_data:
+            bind: "0.0.0.0:7447"
+            driver: lwip_udp
+            mtu_bytes: 1500
+            domain_attrs:
+              trust_class: established_session
+"#,
+    ))
+    .expect("deploy parses");
+
+    let err = match compile_scxml_with_imports(
+        &[scxml.as_path()],
+        &[pool.as_path(), link.as_path()],
+        &template_dir(),
+        Language::Rust,
+        &default_options(),
+        Some(&deploy),
+    ) {
+        Ok(_) => panic!("slot_size 256 < mtu 1500 must fire"),
+        Err(e) => e,
+    };
+
+    match err.error {
+        ForgeError::Validation(ValidationError::MemReassemblySlotSizeBelowDeclaredMtu {
+            pool_name,
+            slot_size,
+            mtu_bytes,
+            ..
+        }) => {
+            assert_eq!(pool_name, "rx_data_pool");
+            assert_eq!(slot_size, 256);
+            assert_eq!(mtu_bytes, 1500);
+        }
+        other => panic!("expected MemReassemblySlotSizeBelowDeclaredMtu, got: {other:?}"),
+    }
+}
+
+/// C13-α-2 `validate_links_burst_invariants` fires through the
+/// orchestrator: burst_pps overruns the RX pool drain capacity.
+#[test]
+fn c13_burst_absorption_fires_through_orchestrator() {
+    use sce_build::mesh::deploy::parse_deploy_str;
+    let dir = tempdir().expect("tempdir");
+    let scxml = write_doc(
+        dir.path(),
+        "session_fsm.scxml",
+        &statechart_minimal("session_fsm"),
+    );
+    // slot_count=16, tick_period_us=1000, burst_pps=50_000 ⇒
+    // drain capacity (16 × 1_000_000 = 16M) < burst load × 2.0 safety
+    // (50_000 × 1000 × 2 = 100M) ⇒ #A fires.
+    let pool = write_doc(
+        dir.path(),
+        "rx_data_pool.scxml",
+        &buffer_pool_default("rx_data_pool", 16, 1500),
+    );
+    let link = write_doc(
+        dir.path(),
+        "udp_data.scxml",
+        &link_with_rx_pool("udp_data", "rx_data_pool"),
+    );
+
+    let deploy = parse_deploy_str(&deploy_with_links(
+        r#"          udp_data:
+            bind: "0.0.0.0:7447"
+            driver: lwip_udp
+            burst_pps: 50000
+            rx_dispatch: isr_to_pool
+"#,
+    ))
+    .expect("deploy parses");
+
+    let err = match compile_scxml_with_imports(
+        &[scxml.as_path()],
+        &[pool.as_path(), link.as_path()],
+        &template_dir(),
+        Language::Rust,
+        &default_options(),
+        Some(&deploy),
+    ) {
+        Ok(_) => panic!("50k pps vs 16 slots must fire absorption"),
+        Err(e) => e,
+    };
+
+    match err.error {
+        ForgeError::Mesh(ref mesh_err) => match mesh_err {
+            sce_build::mesh::error::MeshError::Deploy(
+                sce_build::mesh::error::DeployError::LinkBurstAbsorptionInsufficient {
+                    link_name,
+                    burst_pps,
+                    slot_count,
+                    ..
+                },
+            ) => {
+                assert_eq!(link_name, "udp_data");
+                assert_eq!(*burst_pps, 50_000);
+                assert_eq!(*slot_count, 16);
+            }
+            other => panic!("expected LinkBurstAbsorptionInsufficient, got {other:?}"),
+        },
+        other => panic!("expected ForgeError::Mesh, got: {other:?}"),
+    }
+}
+
+/// Happy path: deploy + forge align; orchestrator emits codegen
+/// output. Proves the wiring doesn't false-positive when inputs are
+/// well-formed.
+#[test]
+fn c13_orchestrator_happy_path_emits_outputs() {
+    use sce_build::mesh::deploy::parse_deploy_str;
+    let dir = tempdir().expect("tempdir");
+    let scxml = write_doc(
+        dir.path(),
+        "session_fsm.scxml",
+        &statechart_minimal("session_fsm"),
+    );
+    // Well-formed: slot_size >= mtu, burst absorption satisfied.
+    let pool = write_doc(
+        dir.path(),
+        "rx_data_pool.scxml",
+        &buffer_pool_default("rx_data_pool", 2000, 1500),
+    );
+    let link = write_doc(
+        dir.path(),
+        "udp_data.scxml",
+        &link_with_rx_pool("udp_data", "rx_data_pool"),
+    );
+
+    let deploy = parse_deploy_str(&deploy_with_links(
+        r#"          udp_data:
+            bind: "0.0.0.0:7447"
+            driver: lwip_udp
+            mtu_bytes: 1500
+            burst_pps: 50
+            rx_dispatch: isr_to_pool
+            domain_attrs:
+              trust_class: established_session
+"#,
+    ))
+    .expect("deploy parses");
+
+    let outputs = compile_scxml_with_imports(
+        &[scxml.as_path()],
+        &[pool.as_path(), link.as_path()],
+        &template_dir(),
+        Language::Rust,
+        &default_options(),
+        Some(&deploy),
+    )
+    .expect("well-formed inputs ⇒ orchestrator succeeds");
+    assert!(!outputs.is_empty(), "happy path must emit outputs");
 }

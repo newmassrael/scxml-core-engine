@@ -139,6 +139,7 @@ fn run_orchestrator(
         &template_dir(),
         Language::Rust,
         &default_options(),
+        None,
     )
 }
 

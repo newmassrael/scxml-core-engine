@@ -90,6 +90,7 @@ fn compile_pair(
         &template_dir(),
         Language::Rust,
         &ForgeCompileOptions::default(),
+        None,
     )
     .expect("orchestrator codegen succeeds");
 
@@ -480,6 +481,7 @@ fn element_type_procedure_emits() {
         &template_dir(),
         Language::Rust,
         &ForgeCompileOptions::default(),
+        None,
     )
     .expect("orchestrator codegen succeeds");
     let bc_output = outputs

@@ -95,6 +95,7 @@ fn compile_bc_for(lang: Language) -> String {
         &template_dir(lang),
         lang,
         &options_for(lang),
+        None,
     )
     .expect("orchestrator codegen succeeds");
     extract_bc(&outputs)

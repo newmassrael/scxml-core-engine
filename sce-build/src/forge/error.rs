@@ -125,6 +125,21 @@ pub enum ForgeError {
     #[error(transparent)]
     Scxml(#[from] crate::scxml_semantic::ScxmlSemanticError),
 
+    /// Mesh-deploy / topology / external-config / codegen failures
+    /// routed through the forge compile pipeline. Mirrors the
+    /// [`Self::Scxml`] precedent — `MeshError` is a parallel enum
+    /// outside `forge::*` (its own `mesh::error` module owns deploy
+    /// validation, transport routing, etc.), but the orchestrator
+    /// [`crate::compile_scxml_with_imports`] needs a deploy-aware
+    /// path that surfaces `mesh/deploy/*` codes through the same
+    /// `Located<ForgeError>` plumbing the forge cross-doc validators
+    /// already use. The `MeshError` `SingleDiagnostic` impl handles
+    /// wire payload conversion for every variant (Deploy / External /
+    /// Topology / Codegen / Io) — `forge_error_fields` delegates to
+    /// it via `e.diagnostic_payload()`.
+    #[error(transparent)]
+    Mesh(#[from] crate::mesh::error::MeshError),
+
     #[error("I/O error on {path}: {source}")]
     Io {
         path: PathBuf,
@@ -2318,6 +2333,13 @@ impl ForgeError {
             // semantic-stage rejections; the wire `code` distinguishes
             // forge vs SCXML failures, the exit code does not.
             ForgeError::Scxml(_) => 3,
+            // Mesh-deploy / topology / external / codegen failures
+            // delegate to MeshError::exit_code() so the deploy-aware
+            // path through `compile_scxml_with_imports` surfaces the
+            // same CLI exit code an mesh-only entry point would
+            // (`sce-codegen mesh ...`). MeshError owns the categorical
+            // mapping per its own taxonomy.
+            ForgeError::Mesh(e) => e.exit_code(),
             ForgeError::Io { .. } => 8,
         }
     }

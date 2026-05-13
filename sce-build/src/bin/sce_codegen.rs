@@ -649,6 +649,14 @@ fn cmd_orchestrate(
         &template_dir,
         lang,
         &options,
+        // CLI surface: this path does not yet take a deploy.yaml
+        // parameter from the command line. The deploy-aware
+        // orchestrator wiring lives on the `mesh` subcommand /
+        // future flag (Phase D scope). Until that wires deploy
+        // through, the multi-doc CLI silent-skips the C13-α-1/α-2
+        // cross-doc validators — matching every other deploy-
+        // unaware caller per the Q-η5 (a) silent-skip precedent.
+        None,
     ) {
         Ok(o) => o,
         Err(e) => error_format.emit_forge_and_exit(&e),

@@ -2850,6 +2850,15 @@ fn forge_error_fields(err: &ForgeError) -> DiagnosticPayload {
         ForgeError::Manifest(e) => manifest_fields(e),
         ForgeError::Generate(e) => generate_fields(e),
         ForgeError::Scxml(e) => scxml_semantic_fields(e),
+        // Delegate to `MeshError`'s `SingleDiagnostic` impl
+        // (mesh/error.rs:3219) — it already covers every variant
+        // (Deploy / External / Topology / Codegen / Io) with the
+        // correct DiagnosticCode + stage + payload. Routing through
+        // `ForgeError::Mesh` from `compile_scxml_with_imports`
+        // preserves the cross-doc validator wire shape.
+        ForgeError::Mesh(e) => {
+            <crate::mesh::error::MeshError as SingleDiagnostic>::diagnostic_payload(e)
+        }
         ForgeError::Io { path, .. } => DiagnosticPayload {
             code: DiagnosticCode::IoFilesystem,
             stage: Stage::Io,

@@ -1452,6 +1452,7 @@ pub fn compile_scxml_with_imports(
     template_dir: &Path,
     language: generator::Language,
     options: &ForgeCompileOptions,
+    deploy: Option<&mesh::deploy::DeployConfig>,
 ) -> Result<Vec<(String, generator::GeneratedOutput)>, CompileError> {
     use forge::cross_doc_registry::SceCrossDocRegistry;
     use forge::error::{Located, ValidationError};
@@ -1487,6 +1488,19 @@ pub fn compile_scxml_with_imports(
         forge::model::ForgeDocument,
     > = std::collections::HashMap::new();
     let mut all_extern_declarations: Vec<forge::model::ExternDeclaration> = Vec::new();
+    // C13-α-1 + C13-α-2 cross-doc validators (`validate_links_cross_doc`,
+    // `validate_links_burst_invariants`, `validate_reassembly_cross_doc`)
+    // need the parsed forge LinkModel + BufferPoolModel by name. Capture
+    // them during pass-1 alongside the worker/BC vectors so the deploy-
+    // aware orchestrator pass can build &HashMap views without re-parsing.
+    // Mirrors the `workers_for_outbox` + `bounded_collections_for_xref`
+    // pattern; consumed by `validate_*_cross_doc` only when `deploy` is
+    // `Some` — `None` (deploy-unaware path) silent-skips per Q-η5 (a)
+    // precedent (no deploy ⇒ no cross-doc deploy-vs-forge to check).
+    let mut link_models_for_xref: Vec<(String, forge::model::LinkModel)> =
+        Vec::new();
+    let mut pool_models_for_xref: Vec<(String, forge::model::BufferPoolModel)> =
+        Vec::new();
 
     for forge_path in forge_files {
         let path_str = forge_path.to_str().unwrap_or("");
@@ -1573,6 +1587,22 @@ pub fn compile_scxml_with_imports(
             forge::model::ForgeDocument::BoundedCollection(bc) => {
                 bounded_collections_for_xref.push((basename.to_string(), bc));
             }
+            forge::model::ForgeDocument::Link(link) => {
+                // C13-α-1 + C13-α-2 cross-doc validators read this
+                // back by link name to follow `<sce:rx-pool ref>` to
+                // the bound BufferPoolModel. The diag-label
+                // (basename) rides along so error sites name the
+                // forge link doc that wrote the offending ref.
+                link_models_for_xref.push((basename.to_string(), link));
+            }
+            forge::model::ForgeDocument::BufferPool(pool) => {
+                // C13-α-2 reassembly + burst validators look up pool
+                // slot_count / slot_size / variant via this capture.
+                // `pool_reg` only stores the kind discriminator; full
+                // BufferPoolModel field access requires the parallel
+                // capture vector.
+                pool_models_for_xref.push((basename.to_string(), pool));
+            }
             doc @ (forge::model::ForgeDocument::Codec(_)
             | forge::model::ForgeDocument::Procedure(_)) => {
                 // Element-type candidate map keyed by doc name; name
@@ -1657,6 +1687,78 @@ pub fn compile_scxml_with_imports(
         &element_type_candidates,
         &all_extern_declarations,
     )?;
+
+    // ── C13-α-1 + C13-α-2 deploy-aware cross-doc validators ──
+    //
+    // Closes the deferred-orchestrator-wiring debt named in
+    // `c13_alpha_1_landed.md` + `c13_alpha_2_landed.md`. When `deploy`
+    // is `Some`, three validators fire in spec-section walk order:
+    //   1. `validate_links_cross_doc` (§5.K Q-C13-5 a) — every forge
+    //      `<sce:link name=X>` must have a `deploy.machines.<n>.links.X`
+    //      counterpart, and vice versa.
+    //   2. `validate_links_burst_invariants` (§5.K lines 2489-2500) —
+    //      RX pool drain capacity vs declared `burst_pps` per the
+    //      cooperative tick window.
+    //   3. `validate_reassembly_cross_doc` (§5.M lines 2946-2995) —
+    //      slot_size vs mtu, reassembly fragment count, trust class,
+    //      stage-copy WCET.
+    //
+    // All three silent-skip on `None` deploy per Q-η5 (a) precedent
+    // (no deploy ⇒ no deploy-vs-forge axis to check). When deploy
+    // is `Some`, the validators consume `&HashMap` views over the
+    // pass-1 capture vectors — single source of truth for the
+    // 3-way join `deploy.links.<X>` → forge `<sce:link>` →
+    // `<sce:rx-pool ref>` → `BufferPoolModel`. Failure short-circuits
+    // codegen pass-3, matching the worker outbox + BC cross-doc
+    // pattern. Errors route through `ForgeError::Mesh(MeshError)` so
+    // the wire payload preserves all rich DeployError diagnostic
+    // fields (machine + link_name + pool_name + slot_count +
+    // burst_pps + tick_period_us + arrivals_per_tick / drain_per_second);
+    // forge-side reassembly validators emit `ValidationError`
+    // directly per the existing `#[from]` flow.
+    if let Some(deploy_cfg) = deploy {
+        let forge_link_models_view: std::collections::HashMap<String, &forge::model::LinkModel> =
+            link_models_for_xref
+                .iter()
+                .map(|(_, link)| (link.name.clone(), link))
+                .collect();
+        let pool_models_view: std::collections::HashMap<String, &forge::model::BufferPoolModel> =
+            pool_models_for_xref
+                .iter()
+                .map(|(_, pool)| (pool.name.clone(), pool))
+                .collect();
+        let forge_link_names: Vec<String> = forge_link_models_view
+            .keys()
+            .cloned()
+            .collect::<std::collections::BTreeSet<String>>()
+            .into_iter()
+            .collect();
+
+        // The diag_label for cross-doc failures points at deploy.yaml —
+        // the cross-doc axis names a deploy-side fact, not a per-forge-
+        // doc parser error. CLI surfaces the file via the wire `path`
+        // field; `Located::new` carries the label.
+        const DEPLOY_LABEL: &str = "deploy.yaml";
+
+        mesh::deploy::validate_links_cross_doc(deploy_cfg, &forge_link_names)
+            .map_err(mesh::error::MeshError::Deploy)
+            .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
+
+        mesh::deploy::validate_links_burst_invariants(
+            deploy_cfg,
+            &forge_link_models_view,
+            &pool_models_view,
+        )
+        .map_err(mesh::error::MeshError::Deploy)
+        .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
+
+        mesh::deploy::validate_reassembly_cross_doc(
+            deploy_cfg,
+            &forge_link_models_view,
+            &pool_models_view,
+        )
+        .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
+    }
 
     // C6-γ2: bounded-collection codegen resolutions for the orchestrator
     // path. CompileConst BCs copy the literal capacity through; DeployKey

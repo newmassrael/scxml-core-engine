@@ -82,6 +82,7 @@ fn compile_match_first_for(lang: Language) -> String {
         &template_dir(lang),
         lang,
         &options_for(lang),
+        None,
     )
     .expect("orchestrator codegen succeeds");
     extract_match_first(&outputs)
