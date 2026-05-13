@@ -48,10 +48,26 @@ no_std = ["dep:heapless"]
 
 [dependencies]
 log = { workspace = true }
-thiserror = { workspace = true }
+# `thiserror` is consumed only inside `pub mod scripting` (gated to
+# `cfg(not(feature = "no_std"))`). `default-features = false` drops the
+# crate's `std` feature so a `--features=no_std --target=thumbv7em-none-eabihf`
+# build does not pull `thiserror`'s `extern crate std` into the dependency
+# tree — bare-metal MCU targets have no `std` to resolve. Declared directly
+# (not via `workspace.dependencies`) because the workspace dep declares
+# the crate without an inline `default-features` toggle and a local
+# `default-features = false` override on a workspace dep is silently
+# ignored by Cargo (`workspace = true` requires the workspace declaration
+# to opt out of defaults). The version string mirrors workspace policy.
+thiserror = { version = "2.0", default-features = false }
 # Fixed-capacity collections for the `no_std` feature variant.
 # Optional + gated by `no_std` so std builds never link it.
 heapless = { workspace = true, optional = true }
+# Portable 64-bit atomics for MCU targets without native u64 atomic
+# instructions (Cortex-M4 `thumbv7em-none-eabihf`). On host targets this
+# crate re-exports the native `core::sync::atomic` types (zero overhead);
+# on MCU targets it falls back to lock-based emulation. Standard
+# embedded-Rust pattern — used by `embassy`, `defmt`, etc.
+portable-atomic = { version = "1", default-features = false, features = ["fallback"] }
 
 [dev-dependencies]
 # Env-based log output during tests

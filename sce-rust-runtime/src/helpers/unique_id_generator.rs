@@ -17,13 +17,29 @@
 //! returns zero and uniqueness rides entirely on the global counter. ID
 //! strings are returned as [`SceString`] (= `String` under std, capped
 //! `heapless::String<MAX_EVENT_STRING_LEN>` under no_std).
+//!
+//! ## 64-bit atomics on platforms without native support
+//!
+//! Cortex-M4 (the canonical MCU target `thumbv7em-none-eabihf`) lacks native
+//! 64-bit atomic instructions and `core::sync::atomic::AtomicU64` is therefore
+//! absent from its `core`. To keep the u64 ID semantics identical under std
+//! and no_std, the counter rides on [`portable_atomic::AtomicU64`] — on host
+//! targets this is a re-export of the native `core` atomic (zero overhead),
+//! and on MCU targets it is the crate's `fallback` lock-based emulation. This
+//! is the standard embedded-Rust convention for wider-than-native atomics
+//! (matches `embassy`, `defmt`, et al.).
 
 use crate::SceString;
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::sync::atomic::Ordering;
+use portable_atomic::AtomicU64;
 #[cfg(not(feature = "no_std"))]
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Global counter for ensuring uniqueness within the same millisecond.
+///
+/// Backed by [`portable_atomic::AtomicU64`] so the same `u64` ID semantics
+/// hold under std and on MCU targets that lack native 64-bit atomics (see
+/// module-level note).
 static GLOBAL_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Build `{prefix}_{timestamp}{counter}` into a fresh [`SceString`].

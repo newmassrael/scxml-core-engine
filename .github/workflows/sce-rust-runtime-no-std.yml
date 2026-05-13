@@ -1,0 +1,78 @@
+name: sce-rust-runtime no_std MCU target build
+
+# Watching-zenoh RFC §5.J.2 — proves the `sce-rust-runtime` crate's no_std
+# variant compiles for an actual Cortex-M4F MCU target (`thumbv7em-none-eabihf`),
+# not just the host toolchain. Catches accidental `std::*` reintroduction in
+# the runtime crate or any of its helpers as a hard CI failure.
+#
+# Trigger: source changes under `sce-rust-runtime/` or `sce-build/`'s templates
+# (which emit code that compiles against the no_std runtime). The Cargo lockfile
+# and the cargo target registration also gate the workflow so toolchain or
+# linker drift is caught.
+#
+# The thumbv7em-none-eabihf target's linker and rustflags are declared in
+# `.cargo/config.toml` (C3 Atomic B-γ1 `dfad80b4`); this workflow only adds the
+# rustup target and runs the build.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'sce-rust-runtime/**'
+      - 'tools/codegen/templates/rust/**'
+      - 'Cargo.lock'
+      - 'Cargo.toml'
+      - '.cargo/config.toml'
+      - '.github/workflows/sce-rust-runtime-no-std.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'sce-rust-runtime/**'
+      - 'tools/codegen/templates/rust/**'
+      - 'Cargo.lock'
+      - 'Cargo.toml'
+      - '.cargo/config.toml'
+      - '.github/workflows/sce-rust-runtime-no-std.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  no-std-thumbv7em:
+    name: Build sce-rust-runtime --features=no_std --target=thumbv7em-none-eabihf
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust Toolchain with MCU target
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+        targets: thumbv7em-none-eabihf
+
+    - name: Cache Cargo
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-no-std-${{ hashFiles('Cargo.lock', 'sce-rust-runtime/**/*.rs', 'sce-rust-runtime/Cargo.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-no-std-
+
+    # Proves the no_std runtime variant has no path into `std::*` — any
+    # accidental `use std::...` or `std::vec::Vec` reintroduction in the
+    # runtime crate or its helpers will fail this build with a hard error
+    # (the thumbv7em-none-eabihf target has no `std` crate to resolve to).
+    - name: Build sce-rust-runtime (no_std, MCU target)
+      run: |
+        cargo build \
+          -p sce-rust-runtime \
+          --no-default-features \
+          --features=no_std \
+          --target=thumbv7em-none-eabihf

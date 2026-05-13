@@ -151,7 +151,12 @@ pub struct {{ machine_name }}Policy {
 {% endif %}
 {% if model.has_parallel_states or model.uses_in_predicate %}
     // W3C SCXML 3.4: Active state configuration for parallel states / In() predicate
-    active_states: Vec<{{ machine_name }}State>,
+    //
+    // Watching-zenoh RFC §5.J.2: type is the runtime crate's
+    // [`StateChain`] alias — `Vec<S>` under std, `heapless::Vec<S, MAX_HIERARCHY_DEPTH>`
+    // under no_std. The std alias preserves the existing ABI; the no_std alias keeps
+    // the generated code allocator-free.
+    active_states: ::sce_rust_runtime::helpers::hierarchy::StateChain<{{ machine_name }}State>,
 {% endif %}
 {% if model.needs_external_flag %}
     // W3C SCXML 5.10.1: External event flag for _event.type classification
@@ -251,7 +256,7 @@ impl {{ machine_name }}Policy {
             has_transition_actions: false,
 {% endif %}
 {% if model.has_parallel_states or model.uses_in_predicate %}
-            active_states: Vec::new(),
+            active_states: ::sce_rust_runtime::helpers::hierarchy::new_chain(),
 {% endif %}
 {% if model.needs_external_flag %}
             next_event_is_external: false,
@@ -503,18 +508,23 @@ impl StatePolicy for {{ machine_name }}Policy {
     }
 
     // W3C SCXML 3.6: Get initial children of a compound state
-    fn get_initial_children(state: Self::State) -> Vec<Self::State> {
+    //
+    // Watching-zenoh RFC §5.J.2: return type is the runtime crate's
+    // [`StateChain`] alias and the body uses `state_chain_from_slice` instead of
+    // `vec![...]` so the emitted code compiles under `--no-std` (`vec!` is a
+    // std-only macro; heapless has no equivalent).
+    fn get_initial_children(state: Self::State) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
         match state {
 {% for state_id, state in model.states | dictsort %}
 {% if state.initial_children %}
-            {{ machine_name }}State::{{ state_id | to_state_variant }} => vec![
+            {{ machine_name }}State::{{ state_id | to_state_variant }} => ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([
 {% for child in state.initial_children %}
                 {{ machine_name }}State::{{ child | to_state_variant }},
 {% endfor %}
-            ],
+            ]),
 {% endif %}
 {% endfor %}
-            _ => Vec::new(),
+            _ => ::sce_rust_runtime::helpers::hierarchy::new_chain(),
         }
     }
 
@@ -581,7 +591,11 @@ impl StatePolicy for {{ machine_name }}Policy {
     }
 
 {% if model.has_parallel_states or model.uses_in_predicate %}
-    fn get_active_states(&self) -> Vec<Self::State> {
+    // Watching-zenoh RFC §5.J.2: trait default in `sce-rust-runtime::policy`
+    // returns `StateChain<Self::State>`; this override matches that signature
+    // so the std alias-to-`Vec<S>` and no_std alias-to-`heapless::Vec<S, …>`
+    // both resolve correctly.
+    fn get_active_states(&self) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
         self.active_states.clone()
     }
 {% endif %}

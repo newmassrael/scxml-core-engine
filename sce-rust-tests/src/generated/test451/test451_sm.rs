@@ -116,11 +116,19 @@ pub struct Test451Policy {
     last_transition_is_targetless: bool,
     last_transition_source_state: Test451State,
     // W3C SCXML 3.4: Active state configuration for parallel states / In() predicate
-    active_states: Vec<Test451State>,
+    //
+    // Watching-zenoh RFC §5.J.2: type is the runtime crate's
+    // [`StateChain`] alias — `Vec<S>` under std, `heapless::Vec<S, MAX_HIERARCHY_DEPTH>`
+    // under no_std. The std alias preserves the existing ABI; the no_std alias keeps
+    // the generated code allocator-free.
+    active_states: ::sce_rust_runtime::helpers::hierarchy::StateChain<Test451State>,
     // W3C SCXML 5.10: Session ID (script engine + invoke tracking)
     pub session_id: Option<String>,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
-    // Always generated — any SM can be invoked as a child
+    // Always generated under std — any SM can be invoked as a child. Under
+    // `--no-std` (Watching-zenoh RFC §5.J.2) the SCXML `<invoke>` element
+    // is codegen-rejected, so no parent_external_queue handle is ever
+    // wired in, and the Arc<Mutex<...>> (alloc-coupled) is omitted.
     pub parent_external_queue: Option<std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>>,
     // W3C SCXML 6.4.1: This child's invoke ID (for _event.invokeid in parent)
     pub invoke_id: String,
@@ -134,7 +142,7 @@ impl Test451Policy {
             last_transition_is_internal: false,
             last_transition_is_targetless: false,
             last_transition_source_state: Test451State::S0,
-            active_states: Vec::new(),
+            active_states: ::sce_rust_runtime::helpers::hierarchy::new_chain(),
             session_id: None,
             parent_external_queue: None,
             invoke_id: String::new(),
@@ -272,9 +280,14 @@ impl StatePolicy for Test451Policy {
     }
 
     // W3C SCXML 3.6: Get initial children of a compound state
-    fn get_initial_children(state: Self::State) -> Vec<Self::State> {
+    //
+    // Watching-zenoh RFC §5.J.2: return type is the runtime crate's
+    // [`StateChain`] alias and the body uses `state_chain_from_slice` instead of
+    // `vec![...]` so the emitted code compiles under `--no-std` (`vec!` is a
+    // std-only macro; heapless has no equivalent).
+    fn get_initial_children(state: Self::State) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
         match state {
-            _ => Vec::new(),
+            _ => ::sce_rust_runtime::helpers::hierarchy::new_chain(),
         }
     }
 
@@ -313,7 +326,11 @@ impl StatePolicy for Test451Policy {
         self.last_transition_source_state = state;
     }
 
-    fn get_active_states(&self) -> Vec<Self::State> {
+    // Watching-zenoh RFC §5.J.2: trait default in `sce-rust-runtime::policy`
+    // returns `StateChain<Self::State>`; this override matches that signature
+    // so the std alias-to-`Vec<S>` and no_std alias-to-`heapless::Vec<S, …>`
+    // both resolve correctly.
+    fn get_active_states(&self) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
         self.active_states.clone()
     }
 
@@ -328,8 +345,13 @@ impl StatePolicy for Test451Policy {
     // W3C SCXML 3.7: Execute <onentry> actions for a state
     fn execute_entry_actions(&mut self, state: Self::State, engine: &mut sce_rust_runtime::Engine<Self>) {
         // W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
+        //
+        // Watching-zenoh RFC §5.J.2: `push_chain` is the runtime crate's
+        // cfg-branched push wrapper — `Vec::push` under std, `heapless::Vec::push`
+        // with the depth-guard `.expect()` under no_std. Lets template-emitted code
+        // share the same call shape with `Engine::get_active_states`.
         if !self.active_states.contains(&state) {
-            self.active_states.push(state);
+            ::sce_rust_runtime::helpers::hierarchy::push_chain(&mut self.active_states, state);
         } else {
             return;  // W3C SCXML 3.8: Skip onentry actions for duplicate state entry
         }

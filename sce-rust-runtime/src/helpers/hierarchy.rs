@@ -67,11 +67,12 @@ pub type StateChain<S> = ::heapless::Vec<S, MAX_HIERARCHY_DEPTH>;
 /// in each caller bounds the chain length to the heapless capacity, so the push
 /// failure path is unreachable under valid input.
 ///
-/// Exposed at `pub(crate)` so [`crate::engine::Engine::get_active_states`] (and
-/// other in-crate state walkers) can share the same cfg-branched push body
-/// without each redefining it — single source of truth.
+/// `pub` so generated state machines (`tools/codegen/templates/rust/`) can call
+/// the cfg-branched push body without each fixture inlining the branch. Single
+/// source of truth shared between in-crate state walkers (`Engine::get_active_states`)
+/// and template-emitted `execute_entry_actions`.
 #[inline]
-pub(crate) fn push_chain<S: core::fmt::Debug>(chain: &mut StateChain<S>, item: S) {
+pub fn push_chain<S: core::fmt::Debug>(chain: &mut StateChain<S>, item: S) {
     #[cfg(not(feature = "no_std"))]
     {
         chain.push(item);
@@ -90,10 +91,11 @@ pub(crate) fn push_chain<S: core::fmt::Debug>(chain: &mut StateChain<S>, item: S
 /// hint for typical depths 1-5). Under no_std this is `heapless::Vec::new()` — the
 /// capacity is fixed at compile time so the hint is a no-op.
 ///
-/// Exposed at `pub(crate)` so in-crate state walkers (e.g. `Engine::get_active_states`)
-/// can construct empty chains via the same cfg-branched path.
+/// `pub` so generated state machines (`tools/codegen/templates/rust/`) can construct
+/// empty chains via the cfg-branched path that resolves identically across std and
+/// no_std builds.
 #[inline]
-pub(crate) fn new_chain<S>() -> StateChain<S> {
+pub fn new_chain<S>() -> StateChain<S> {
     #[cfg(not(feature = "no_std"))]
     {
         ::std::vec::Vec::with_capacity(8)
@@ -102,6 +104,29 @@ pub(crate) fn new_chain<S>() -> StateChain<S> {
     {
         ::heapless::Vec::new()
     }
+}
+
+/// Construct a [`StateChain`] from a compile-time-sized array of items.
+///
+/// Replaces the `vec![a, b, c]` macro for template emission — `vec!` is a std-only
+/// macro (`alloc` doesn't re-export it without the `alloc` feature, and heapless
+/// has no equivalent). Generated state machines use this at every site that
+/// previously emitted `vec![Self::State::A, Self::State::B]` for initial-children
+/// lists and similar fixed-size state collections.
+///
+/// `N` must be `<= MAX_HIERARCHY_DEPTH` (= 16); larger arrays trigger the same
+/// capacity-exhausted panic as [`push_chain`]. Initial-children lists are derived
+/// at codegen time from the SCXML document, so generator-bug detection is the
+/// only path that fires the panic.
+#[inline]
+pub fn state_chain_from_slice<S: core::fmt::Debug, const N: usize>(
+    items: [S; N],
+) -> StateChain<S> {
+    let mut chain = new_chain::<S>();
+    for item in items {
+        push_chain(&mut chain, item);
+    }
+    chain
 }
 
 /// W3C SCXML 3.12: Find the Least Common Ancestor of two states.

@@ -122,7 +122,10 @@ pub struct Test232Policy {
     child_invoke_0: Option<Box<sce_rust_runtime::Engine<super::test232__sce_synth_invoke__invoke_0_sm::Test232SceSynthInvokeInvoke0Policy>>>,
     pending_done_invoke_invoke_0: bool,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
-    // Always generated — any SM can be invoked as a child
+    // Always generated under std — any SM can be invoked as a child. Under
+    // `--no-std` (Watching-zenoh RFC §5.J.2) the SCXML `<invoke>` element
+    // is codegen-rejected, so no parent_external_queue handle is ever
+    // wired in, and the Arc<Mutex<...>> (alloc-coupled) is omitted.
     pub parent_external_queue: Option<std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>>,
     // W3C SCXML 6.4.1: This child's invoke ID (for _event.invokeid in parent)
     pub invoke_id: String,
@@ -391,12 +394,17 @@ impl StatePolicy for Test232Policy {
     }
 
     // W3C SCXML 3.6: Get initial children of a compound state
-    fn get_initial_children(state: Self::State) -> Vec<Self::State> {
+    //
+    // Watching-zenoh RFC §5.J.2: return type is the runtime crate's
+    // [`StateChain`] alias and the body uses `state_chain_from_slice` instead of
+    // `vec![...]` so the emitted code compiles under `--no-std` (`vec!` is a
+    // std-only macro; heapless has no equivalent).
+    fn get_initial_children(state: Self::State) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
         match state {
-            Test232State::S0 => vec![
+            Test232State::S0 => ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([
                 Test232State::S01,
-            ],
-            _ => Vec::new(),
+            ]),
+            _ => ::sce_rust_runtime::helpers::hierarchy::new_chain(),
         }
     }
 

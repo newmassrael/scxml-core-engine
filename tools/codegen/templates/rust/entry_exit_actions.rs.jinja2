@@ -19,8 +19,13 @@
     fn execute_entry_actions(&mut self, state: Self::State, engine: &mut sce_rust_runtime::Engine<Self>) {
 {% if model.has_parallel_states or model.uses_in_predicate %}
         // W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
+        //
+        // Watching-zenoh RFC §5.J.2: `push_chain` is the runtime crate's
+        // cfg-branched push wrapper — `Vec::push` under std, `heapless::Vec::push`
+        // with the depth-guard `.expect()` under no_std. Lets template-emitted code
+        // share the same call shape with `Engine::get_active_states`.
         if !self.active_states.contains(&state) {
-            self.active_states.push(state);
+            ::sce_rust_runtime::helpers::hierarchy::push_chain(&mut self.active_states, state);
         } else {
             return;  // W3C SCXML 3.8: Skip onentry actions for duplicate state entry
         }
