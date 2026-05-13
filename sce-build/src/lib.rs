@@ -862,9 +862,54 @@ pub fn compile_forge_with_deploy(
         placements.sort_by(|a, b| a.worker_name.cmp(&b.worker_name));
         Some(placements)
     })();
+    // C6-γ2: bounded-collection capacity resolution. Single-doc path
+    // so the map carries at most one entry. CompileConst BCs copy the
+    // literal through for uniform render handling (the render layer
+    // never needs to read `m.capacity` when this map is populated).
+    // DeployKey BCs reuse the γ1 lookup performed above — the validator
+    // returned Ok ⇒ the value MUST be present in `machine.limits`. The
+    // `index_by_field_rust_type` axis stays `None` because this path
+    // lacks the orchestrator's element-type candidate map; BCs going
+    // through `compile_forge_with_deploy` with `<sce:index-by>`
+    // declared raise `InvalidConfig` at the render layer per Q-γ2
+    // upstream-honesty discipline.
+    let bounded_collection_resolutions: Option<
+        std::collections::HashMap<String, BoundedCollectionResolution>,
+    > = (|| -> Option<_> {
+        let forge::model::ForgeDocument::BoundedCollection(bc) = &doc else {
+            return None;
+        };
+        let capacity: u32 = match &bc.capacity {
+            forge::model::CapacitySource::CompileConst { value } => *value,
+            forge::model::CapacitySource::DeployKey { key } => {
+                let cfg = deploy?;
+                let machine_name = target_machine?;
+                let (machine_segment, limit_name) =
+                    parse_bounded_collection_deploy_key(key)?;
+                if machine_segment != machine_name {
+                    return None;
+                }
+                let machine = cfg
+                    .device_for_machine(machine_name)
+                    .and_then(|d| d.machines.get(machine_name))?;
+                *machine.limits.get(limit_name)?
+            }
+        };
+        let mut map = std::collections::HashMap::new();
+        map.insert(
+            bc.name.clone(),
+            BoundedCollectionResolution {
+                capacity,
+                index_by_field_rust_type: None,
+            },
+        );
+        Some(map)
+    })();
+
     let options = ForgeCompileOptions {
         cache_platform,
         worker_placement,
+        bounded_collection_resolutions,
         ..Default::default()
     };
 
@@ -1119,6 +1164,28 @@ pub struct ForgeCompileOptions {
     /// validator scans the slice for any entry whose producer/consumer
     /// cores differ and whose worker doc declared `ordering="relaxed"`.
     pub worker_placement: Option<Vec<WorkerPlacement>>,
+    /// RFC §5.L C6-γ bounded-collection codegen-time resolutions, keyed
+    /// by `BoundedCollectionModel.name`. Populated by the two upstream
+    /// pipelines that have the information the BC template needs:
+    ///
+    /// * [`compile_forge_with_deploy`] populates the entry's `capacity`
+    ///   from the resolved `<sce:capacity source="deploy" key=...>`
+    ///   value (γ1's `machines.<m>.limits.<k>` lookup). Single-doc path
+    ///   so the map has one entry.
+    /// * [`compile_scxml_with_imports`] populates `index_by_field_rust_type`
+    ///   from the resolved element-type ForgeDocument (codec / procedure)
+    ///   for every BC with `<sce:index-by>` declared. Multi-doc path so
+    ///   the map carries one entry per BC.
+    ///
+    /// `None` on deploy-unaware single-file paths
+    /// ([`compile_forge_with_imports`], `sce_codegen` CLI). When `None`
+    /// AND the BC declares `<sce:capacity source="deploy">` OR
+    /// `<sce:index-by>`, the render layer raises a
+    /// [`forge::error::GenerateError::InvalidConfig`] naming the BC and
+    /// the missing piece — keeping the resolution invariant honest at
+    /// the codegen boundary rather than silently emitting placeholders.
+    pub bounded_collection_resolutions:
+        Option<std::collections::HashMap<String, BoundedCollectionResolution>>,
 }
 
 /// RFC §5.D + §5.I C2-β cross-core worker placement entry. Populated
@@ -1158,6 +1225,38 @@ pub struct CachePlatformInfo {
     /// `cache-policy: maintain` pool exists; missing config raises
     /// `pool/speculative-prefetch-flag-missing` (spec line 1553).
     pub has_speculative_prefetch: bool,
+}
+
+/// RFC §5.L C6-γ2 codegen-time resolution bundle for a single
+/// bounded-collection document. Both fields are populated upstream
+/// — the BC render layer simply reads what it needs and raises
+/// `InvalidConfig` when a declared schema feature has no resolution.
+///
+/// `capacity` covers spec lines 2583-2585: `<sce:capacity
+/// source="deploy" key=...>` resolves to a `u32` value from
+/// `machines.<m>.limits.<k>`. For `<sce:capacity const="N">` the
+/// upstream populator copies the literal so the render layer treats
+/// both sources uniformly.
+///
+/// `index_by_field_rust_type` covers spec line 2615: when
+/// `<sce:index-by field="...">` is declared, the orchestrator
+/// extracts the Rust type of that field from the resolved
+/// element-type doc (codec field type / procedure input or internal
+/// type). `None` when no `<sce:index-by>` is set OR when the
+/// upstream path cannot resolve it; the render layer rejects the
+/// latter as `InvalidConfig` rather than silently dropping the
+/// emit.
+#[derive(Clone, Debug)]
+pub struct BoundedCollectionResolution {
+    /// Resolved capacity (spec lines 2571 + 2583-2585). For deploy-key
+    /// BCs this is the lookup result; for compile-const BCs this is
+    /// the literal `<sce:capacity const="N">` value copied through
+    /// for uniform render handling.
+    pub capacity: u32,
+    /// Rust type-string for the `<sce:index-by field>` axis. `None`
+    /// when `<sce:index-by>` is not declared. `Some` populated by
+    /// the orchestrator from the resolved element-type doc.
+    pub index_by_field_rust_type: Option<String>,
 }
 
 /// Compile a forge SCXML with cross-file import resolution, validation,
@@ -1552,6 +1651,50 @@ pub fn compile_scxml_with_imports(
         &all_extern_declarations,
     )?;
 
+    // C6-γ2: bounded-collection codegen resolutions for the orchestrator
+    // path. CompileConst BCs copy the literal capacity through; DeployKey
+    // BCs are skipped here (no deploy access on this entry point — those
+    // route through [`compile_forge_with_deploy`]). For BCs with
+    // `<sce:index-by>`, extract the Rust type-string of the named field
+    // from the resolved element-type ForgeDocument that
+    // `validate_bounded_collection_cross_refs` just confirmed. The render
+    // layer reads `bounded_collection_resolutions[bc.name]` and surfaces
+    // a clear `InvalidConfig` if a needed key is absent.
+    let bc_resolutions: std::collections::HashMap<String, BoundedCollectionResolution> =
+        bounded_collections_for_xref
+            .iter()
+            .filter_map(|(_label, bc)| {
+                let capacity = match &bc.capacity {
+                    forge::model::CapacitySource::CompileConst { value } => *value,
+                    // Single-orchestrator path has no deploy; DeployKey
+                    // BCs surface their missing resolution at render
+                    // time via `InvalidConfig` — keeps this populator
+                    // free of guesswork and aligns with the cache_platform
+                    // precedent ("populator skips when source is missing").
+                    forge::model::CapacitySource::DeployKey { .. } => return None,
+                };
+                let index_by_field_rust_type =
+                    bc.index_by.as_ref().and_then(|field| {
+                        let element_doc = element_type_candidates.get(&bc.element_type)?;
+                        extract_bounded_collection_index_field_rust_type(element_doc, field)
+                    });
+                Some((
+                    bc.name.clone(),
+                    BoundedCollectionResolution {
+                        capacity,
+                        index_by_field_rust_type,
+                    },
+                ))
+            })
+            .collect();
+    let bc_options_override = if bc_resolutions.is_empty() {
+        None
+    } else {
+        let mut overridden = options.clone();
+        overridden.bounded_collection_resolutions = Some(bc_resolutions);
+        Some(overridden)
+    };
+
     // Pass 3: codegen. Forge docs route through `compile_forge_with_imports`
     // (which re-parses + runs forge-internal cross-resolution + emits);
     // SCXML docs route through `compile_scxml_lang_typed` (which re-parses
@@ -1586,7 +1729,14 @@ pub fn compile_scxml_with_imports(
             diagnostic_label: basename,
         };
         let base_dir = forge_path.parent().unwrap_or_else(|| Path::new("."));
-        let out = compile_forge_with_imports(&content, label, language, base_dir, options)?;
+        let effective_options = bc_options_override.as_ref().unwrap_or(options);
+        let out = compile_forge_with_imports(
+            &content,
+            label,
+            language,
+            base_dir,
+            effective_options,
+        )?;
         outputs.push((basename.to_string(), out));
     }
 
@@ -2258,6 +2408,44 @@ fn parse_bounded_collection_deploy_key(key: &str) -> Option<(&str, &str)> {
         return None;
     }
     Some((machine_segment, limit_name))
+}
+
+/// watching-zenoh RFC §5.L C6 Atomic γ2 — look up `field` on the
+/// resolved element-type [`forge::model::ForgeDocument`] and return
+/// the Rust type-string for that field (e.g. `"u32"`, `"String"`).
+///
+/// Mirrors the field enumeration used by
+/// [`validate_bounded_collection_cross_refs`]'s `collection/index-by-
+/// field-missing` axis (codec: `fields[].id` → `fields[].sce_type`;
+/// procedure: `inputs[].id ⊕ internals[].id` → `*.sce_type`). The
+/// cross-resolution validator guarantees the field exists on the
+/// element-type before this helper runs from the orchestrator
+/// populator, so a `None` return here would imply the model layout
+/// changed since validation — unreachable on a healthy build.
+fn extract_bounded_collection_index_field_rust_type(
+    element_doc: &forge::model::ForgeDocument,
+    field: &str,
+) -> Option<String> {
+    use forge::model::ForgeDocument;
+    let sce_type = match element_doc {
+        ForgeDocument::Codec(codec) => codec
+            .fields
+            .iter()
+            .find(|f| f.id == field)
+            .map(|f| f.sce_type.clone()),
+        ForgeDocument::Procedure(proc) => proc
+            .inputs
+            .iter()
+            .chain(proc.internals.iter())
+            .find(|f| f.id == field)
+            .map(|f| f.sce_type.clone()),
+        // Element-type candidate map admits only codec / procedure
+        // docs (pass-1 in `compile_scxml_with_imports`); other kinds
+        // do not appear here. The validator above also rejects them
+        // ahead of codegen via `collection/element-type-not-a-kind`.
+        _ => None,
+    }?;
+    Some(forge::generator::rust_type(&sce_type).to_string())
 }
 
 /// watching-zenoh RFC §5.L C6 Atomic β (Q1 user direction

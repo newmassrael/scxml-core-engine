@@ -31,12 +31,7 @@ use sce_build::generator::Language;
 use sce_build::ForgeCompileOptions;
 
 fn default_options() -> ForgeCompileOptions {
-    ForgeCompileOptions {
-        go_module_prefix: None,
-        const_fold_budget: None,
-        cache_platform: None,
-        worker_placement: None,
-    }
+    ForgeCompileOptions::default()
 }
 
 fn template_dir() -> PathBuf {

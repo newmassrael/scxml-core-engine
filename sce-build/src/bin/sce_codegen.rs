@@ -639,12 +639,7 @@ fn cmd_orchestrate(
     // CLI flags can grow the surface (deploy.yaml, format-style,
     // const_fold_budget) when consumer demand arrives; the minimal
     // shape today keeps the Atomic A wire footprint bounded.
-    let options = sce_build::ForgeCompileOptions {
-        go_module_prefix: None,
-        const_fold_budget: None,
-        cache_platform: None,
-        worker_placement: None,
-    };
+    let options = sce_build::ForgeCompileOptions::default();
 
     let template_dir = sce_build::find_template_dir_for(lang);
 
@@ -756,8 +751,7 @@ fn cmd_generate(
             let forge_opts = sce_build::ForgeCompileOptions {
                 go_module_prefix: go_module_prefix.map(str::to_owned),
                 const_fold_budget,
-                cache_platform: None,
-                worker_placement: None,
+                ..Default::default()
             };
             match sce_build::compile_forge_with_imports(
                 &scxml_content,

@@ -1,0 +1,290 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="bounded-collection")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+//
+// watching-zenoh RFC §5.L bounded-collection — typed fixed-capacity
+// container whose occupancy varies at runtime. Backing storage:
+//   - std:    `Vec<Option<T>>` capped at CAPACITY (spec line 2571).
+//   - no_std: `heapless::Vec<Option<T>, CAPACITY>` (spec line 2571).
+// A parallel `[u32; CAPACITY]` generation counter and a
+// `[u32; (CAPACITY + 31)/32]` occupancy bitmap turn the linear backing
+// into a slot-table with use-after-remove detection.
+//
+// Operations contract (spec lines 2609-2619):
+//   insert / remove / get / find_by_index (if index-by set) / iter /
+//   len / capacity.
+//
+// Handle (spec lines 2621-2622): tuple newtype over u32 carrying
+// slot index (low 16 bits) + generation counter (high 16 bits).
+
+#![allow(clippy::all)]
+#![allow(unused_imports)]
+#![allow(unused_variables)]
+#![allow(dead_code)]
+
+{# Cross-doc element-type import (spec lines 2566-2567). C6-β's
+   `collection/element-type-not-a-kind` validator guarantees this
+   name resolves to a codec/procedure kind before reaching here. #}
+use super::{{ element_snake }}::{{ element_pascal }};
+
+/// Slot capacity (`<sce:capacity>`). For `source="deploy"` the value
+/// is resolved from `machines.<m>.limits.<k>` at codegen time per
+/// RFC §5.L lines 2583-2585; for `const="N"` the value comes
+/// straight from the SCXML.
+pub const CAPACITY: usize = {{ capacity }};
+
+/// Number of `u32` words in the occupancy bitmap.
+const BITMAP_WORDS: usize = (CAPACITY + 31) / 32;
+
+/// Slot-index bit width inside the packed `{{ pascal }}Handle` u32.
+/// Q-γ2-Handle-bits (a) lock 2026-05-13: 16/16 symmetric split —
+/// 65536 slots × 65536 generations, ABI-parity with C11 `uint32_t`.
+const SLOT_BITS: u32 = 16;
+/// Generation-counter bit width inside the packed `{{ pascal }}Handle` u32.
+const GEN_BITS: u32 = 16;
+const SLOT_MASK: u32 = (1u32 << SLOT_BITS) - 1;
+const GEN_MASK: u32 = (1u32 << GEN_BITS) - 1;
+
+/// Stable `u32`-wide handle into `{{ pascal }}` (spec lines 2621-2622).
+/// Carries slot index (low {{ '{' }}SLOT_BITS{{ '}' }} bits) + generation counter
+/// (high {{ '{' }}GEN_BITS{{ '}' }} bits). Each `remove → insert` reuse in the same
+/// slot increments the generation counter so a stale handle's
+/// `get()` returns `None` and `remove()` returns `false`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub struct {{ pascal }}Handle(u32);
+
+impl {{ pascal }}Handle {
+    /// Pack a `(slot, generation)` pair into the wire u32.
+    pub const fn new(slot: u32, generation: u32) -> Self {
+        Self(((generation & GEN_MASK) << SLOT_BITS) | (slot & SLOT_MASK))
+    }
+    /// Slot index (low 16 bits).
+    pub const fn slot(self) -> u32 {
+        self.0 & SLOT_MASK
+    }
+    /// Generation counter (high 16 bits).
+    pub const fn generation(self) -> u32 {
+        (self.0 >> SLOT_BITS) & GEN_MASK
+    }
+    /// Raw packed `u32` representation (ABI-parity with C11 emit).
+    pub const fn raw(self) -> u32 {
+        self.0
+    }
+}
+
+/// Overflow error returned by `insert()` when the table is full
+/// (spec line 2612). Fires under `<sce:on-overflow>reject</sce:on-overflow>`
+/// AND `<sce:on-overflow>diagnostic-event</sce:on-overflow>` policies.
+/// The diagnostic-event runtime firing into the SCXML engine event
+/// queue is a separate concern — γ2 emits this Err uniformly for both
+/// policies per spec line 2612 ("Result<Handle, OverflowError>").
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct {{ pascal }}OverflowError;
+
+{# cfg-conditional backing storage per spec line 2571. The
+   #![cfg_attr(...)] form keeps the type alias visible to both
+   feature configurations so generated test code doesn't need
+   feature-aware imports. #}
+#[cfg(not(feature = "no_std"))]
+type {{ pascal }}Backing = ::std::vec::Vec<Option<{{ element_pascal }}>>;
+#[cfg(feature = "no_std")]
+type {{ pascal }}Backing = ::heapless::Vec<Option<{{ element_pascal }}>, CAPACITY>;
+
+/// `{{ pascal }}` — RFC §5.L bounded-collection over element type
+/// `{{ element_pascal }}`. Capacity `{{ capacity }}`,
+/// `<sce:on-overflow>{{ on_overflow }}</sce:on-overflow>`,
+/// `<sce:ordering>{{ ordering }}</sce:ordering>`,
+/// `<sce:concurrency>{{ concurrency }}</sce:concurrency>`.
+pub struct {{ pascal }} {
+    slots: {{ pascal }}Backing,
+    generation: [u32; CAPACITY],
+    bitmap: [u32; BITMAP_WORDS],
+    count: u32,
+}
+
+impl Default for {{ pascal }} {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl {{ pascal }} {
+    /// Construct an empty `{{ pascal }}` with all slots free.
+    pub fn new() -> Self {
+        let mut slots = {{ pascal }}Backing::new();
+        #[cfg(not(feature = "no_std"))]
+        slots.reserve_exact(CAPACITY);
+        for _ in 0..CAPACITY {
+            #[cfg(not(feature = "no_std"))]
+            slots.push(None);
+            #[cfg(feature = "no_std")]
+            let _ = slots.push(None);
+        }
+        Self {
+            slots,
+            generation: [0; CAPACITY],
+            bitmap: [0; BITMAP_WORDS],
+            count: 0,
+        }
+    }
+
+    /// Compile-time capacity (spec line 2618).
+    pub const fn capacity() -> usize {
+        CAPACITY
+    }
+
+    /// Occupied slot count (spec line 2617).
+    pub fn len(&self) -> usize {
+        self.count as usize
+    }
+
+    /// `true` when no slot is occupied.
+    pub fn is_empty(&self) -> bool {
+        self.count == 0
+    }
+
+    #[inline]
+    fn bit_is_set(&self, slot: usize) -> bool {
+        (self.bitmap[slot >> 5] >> (slot & 31)) & 1 == 1
+    }
+
+    #[inline]
+    fn bit_mark(&mut self, slot: usize) {
+        self.bitmap[slot >> 5] |= 1u32 << (slot & 31);
+    }
+
+    #[inline]
+    fn bit_clear(&mut self, slot: usize) {
+        self.bitmap[slot >> 5] &= !(1u32 << (slot & 31));
+    }
+
+    fn first_free_slot(&self) -> Option<usize> {
+        for w in 0..BITMAP_WORDS {
+            let inv = !self.bitmap[w];
+            if inv != 0 {
+                let bit = inv.trailing_zeros() as usize;
+                let slot = (w << 5) | bit;
+                if slot < CAPACITY {
+                    return Some(slot);
+                }
+            }
+        }
+        None
+    }
+{% if overflow_is_oldest_wins %}
+    /// Lowest-index occupied slot. Under `<sce:on-overflow>oldest-wins`
+    /// combined with `<sce:ordering>insertion</sce:ordering>` (locked
+    /// by parse-time validator
+    /// `collection/overflow-policy-oldest-wins-requires-ordering-insertion`),
+    /// the lowest-index slot IS the oldest entry — `first_free_slot`
+    /// keeps freed slots claimed by the next `insert`, so the linear
+    /// slot order tracks insertion order.
+    fn oldest_occupied_slot(&self) -> Option<usize> {
+        for slot in 0..CAPACITY {
+            if self.bit_is_set(slot) {
+                return Some(slot);
+            }
+        }
+        None
+    }
+{% endif %}
+    /// Insert `elem` (spec line 2612). Returns a fresh handle on
+    /// success, `Err({{ pascal }}OverflowError)` when the table is
+    /// full under `<sce:on-overflow>reject</sce:on-overflow>` or
+    /// `<sce:on-overflow>diagnostic-event</sce:on-overflow>`. Under
+    /// `<sce:on-overflow>oldest-wins</sce:on-overflow>` the oldest
+    /// slot is evicted and reused — the function returns `Ok`.
+    pub fn insert(&mut self, elem: {{ element_pascal }}) -> Result<{{ pascal }}Handle, {{ pascal }}OverflowError> {
+        if let Some(slot) = self.first_free_slot() {
+            self.slots[slot] = Some(elem);
+            self.bit_mark(slot);
+            self.count += 1;
+            let gen = self.generation[slot];
+            return Ok({{ pascal }}Handle::new(slot as u32, gen));
+        }
+{% if overflow_is_oldest_wins %}
+        // <sce:on-overflow>oldest-wins</sce:on-overflow>: evict the
+        // oldest-occupied slot and reuse it. `oldest_occupied_slot`
+        // is infallible here because `first_free_slot()` returned
+        // `None` implies CAPACITY ≥ 1 occupied slots.
+        let slot = self
+            .oldest_occupied_slot()
+            .expect("oldest-wins: full table must have an occupied slot");
+        self.slots[slot] = Some(elem);
+        self.generation[slot] = self.generation[slot].wrapping_add(1) & GEN_MASK;
+        // count unchanged (1 evict + 1 insert = 0 delta).
+        let gen = self.generation[slot];
+        Ok({{ pascal }}Handle::new(slot as u32, gen))
+{% else %}
+        Err({{ pascal }}OverflowError)
+{% endif %}
+    }
+
+    /// Remove the entry referenced by `handle` (spec line 2613).
+    /// Returns `false` when the slot is already free OR when the
+    /// handle's generation does not match the slot's current
+    /// generation (use-after-remove detection).
+    pub fn remove(&mut self, handle: {{ pascal }}Handle) -> bool {
+        let slot = handle.slot() as usize;
+        if slot >= CAPACITY {
+            return false;
+        }
+        if !self.bit_is_set(slot) {
+            return false;
+        }
+        if self.generation[slot] != handle.generation() {
+            return false;
+        }
+        self.slots[slot] = None;
+        self.bit_clear(slot);
+        self.generation[slot] = self.generation[slot].wrapping_add(1) & GEN_MASK;
+        self.count -= 1;
+        true
+    }
+
+    /// Look up the entry referenced by `handle` (spec line 2614).
+    /// Returns `None` when the slot is free OR when the handle's
+    /// generation does not match (use-after-remove detection).
+    pub fn get(&self, handle: {{ pascal }}Handle) -> Option<&{{ element_pascal }}> {
+        let slot = handle.slot() as usize;
+        if slot >= CAPACITY {
+            return None;
+        }
+        if !self.bit_is_set(slot) {
+            return None;
+        }
+        if self.generation[slot] != handle.generation() {
+            return None;
+        }
+        self.slots[slot].as_ref()
+    }
+{% if has_index_by %}
+    /// Find the first occupied slot whose `<sce:index-by field="{{ index_by_field }}"/>`
+    /// equals `key` (spec line 2615). Linear scan bounded by
+    /// `CAPACITY` (build-time constant) — satisfies §5.A `max-iter`
+    /// requirement when this method is called from algorithm
+    /// bodies.
+    pub fn find_by_index(&self, key: &{{ index_by_rust_type }}) -> Option<{{ pascal }}Handle> {
+        for slot in 0..CAPACITY {
+            if !self.bit_is_set(slot) {
+                continue;
+            }
+            if let Some(elem) = self.slots[slot].as_ref() {
+                if &elem.{{ index_by_field }} == key {
+                    return Some({{ pascal }}Handle::new(slot as u32, self.generation[slot]));
+                }
+            }
+        }
+        None
+    }
+{% endif %}
+    /// Iterate occupied entries in slot-index order (spec line 2616).
+    /// Under `<sce:ordering>insertion</sce:ordering>` the slot order
+    /// matches insertion order (validated by parse-time gates).
+    pub fn iter(&self) -> impl Iterator<Item = &{{ element_pascal }}> {
+        self.slots.iter().filter_map(|s| s.as_ref())
+    }
+}

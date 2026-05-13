@@ -582,7 +582,7 @@ fn kotlin_unsigned_conversion(ty: &SceType) -> Option<&'static str> {
 }
 
 /// Map SceType to Rust type name (SCE_FORGE.md Section 3.3).
-fn rust_type(ty: &SceType) -> &'static str {
+pub(crate) fn rust_type(ty: &SceType) -> &'static str {
     match ty {
         SceType::Uint8 => "u8",
         SceType::Uint16 => "u16",
@@ -9224,9 +9224,15 @@ pub fn generate_rust_with_imports_and_externs(
         // Consumer split. Ordering choice from `<sce:inbox ordering>`
         // pins the atomic Op selection.
         ForgeDocument::Worker(m) => render_worker_rust(&env, m, imports)?,
-        ForgeDocument::BoundedCollection(_) => unreachable!(
-            "ForgeDocument::BoundedCollection rejected by codegen_matrix::check on rust (C6-α schema-only; C6-γ ships heapless::Vec<T, N> + insert/remove/get/iter/len/capacity API per RFC §5.L lines 2571-2572 + 2609-2619)"
-        ),
+        // RFC §5.L C6-γ2: emits the slot-table + Handle + ops
+        // contract on the Rust backend. Capacity and `<sce:index-by>`
+        // resolutions ride `options.bounded_collection_resolutions`
+        // populated upstream by the orchestrator
+        // ([`compile_scxml_with_imports`]) or the deploy-aware path
+        // ([`compile_forge_with_deploy`]).
+        ForgeDocument::BoundedCollection(m) => {
+            render_bounded_collection_rust(&env, m, imports, options)?
+        }
     };
 
     let filename = format!("{}.rs", filters::to_snake_case(doc.name().to_string()));
@@ -9407,6 +9413,144 @@ fn render_worker_rust(
     tmpl.render(ctx).map_err(|e| {
         ForgeError::Generate(GenerateError::TemplateRender(format!(
             "worker.rs.jinja2 (rust): {e}"
+        )))
+    })
+}
+
+/// Render a `<sce:kind="bounded-collection">` document for the Rust
+/// backend (watching-zenoh RFC §5.L, C6-γ2). Emits a slot table over
+/// `Vec<Option<T>>` (std) or `heapless::Vec<Option<T>, N>` (no_std)
+/// per spec line 2571-2572, with a parallel `[u32; N]` generation
+/// counter, `[u32; (N+31)/32]` occupancy bitmap, and the operations
+/// contract from spec lines 2609-2619. Handle is a tuple newtype
+/// over `u32` carrying slot index (low 16 bits) + generation
+/// counter (high 16 bits) per spec lines 2621-2622 (Q-γ2-Handle-bits
+/// lock 2026-05-13: 16/16 symmetric split).
+///
+/// Two pieces of context must be resolved upstream by the time this
+/// function is called: the capacity (deploy-key value OR compile-
+/// const literal) and — when `<sce:index-by>` is declared — the Rust
+/// type-string of the index field on the element-type struct.
+/// Single-doc entries ([`compile_forge_with_deploy`]) populate the
+/// former; the orchestrator ([`compile_scxml_with_imports`])
+/// populates the latter. When either is required but missing, this
+/// function raises `InvalidConfig` naming the BC and the missing
+/// piece — the codegen boundary stays an honest invariant rather
+/// than silently emitting placeholders.
+fn render_bounded_collection_rust(
+    env: &minijinja::Environment<'_>,
+    m: &crate::forge::model::BoundedCollectionModel,
+    _imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
+) -> Result<String, ForgeError> {
+    use crate::forge::model::CapacitySource;
+    let tmpl = env
+        .get_template("bounded_collection.rs.jinja2")
+        .map_err(|e| {
+            ForgeError::Generate(GenerateError::TemplateLoad(format!(
+                "bounded_collection.rs.jinja2 (rust): {e}"
+            )))
+        })?;
+
+    let resolution = options
+        .bounded_collection_resolutions
+        .as_ref()
+        .and_then(|map| map.get(&m.name));
+
+    // Resolve capacity. CompileConst is always self-contained; the
+    // upstream populator additionally copies the literal through for
+    // uniform shape — either source is fine here. DeployKey requires
+    // an upstream resolution; missing one is a `compile_forge_with_imports`
+    // single-file invocation against a BC that needs deploy.yaml
+    // context. Surface as `InvalidConfig` naming both the BC and the
+    // unresolved key.
+    let capacity: u32 = match (&m.capacity, resolution) {
+        (CapacitySource::CompileConst { value }, _) => *value,
+        (CapacitySource::DeployKey { .. }, Some(r)) => r.capacity,
+        (CapacitySource::DeployKey { key }, None) => {
+            return Err(ForgeError::Generate(GenerateError::InvalidConfig(
+                format!(
+                    "bounded-collection '{name}': <sce:capacity source=\"deploy\" \
+                     key=\"{key}\"/> resolution missing — single-file \
+                     compile_forge_with_imports has no deploy.yaml context. \
+                     Route through compile_forge_with_deploy (or supply \
+                     ForgeCompileOptions::bounded_collection_resolutions \
+                     manually in tests) to pin the capacity.",
+                    name = m.name,
+                    key = key,
+                ),
+            )));
+        }
+    };
+
+    // Resolve index-by Rust type-string. When `<sce:index-by>` is
+    // absent the template skips `find_by_index` emit entirely; when
+    // present, the orchestrator must have populated the resolution,
+    // otherwise the codegen-time invariant breaks and we surface a
+    // clear `InvalidConfig` instead of a silently-broken hook.
+    let index_by_rust_type: Option<String> = match (&m.index_by, resolution) {
+        (None, _) => None,
+        (Some(_), Some(r)) if r.index_by_field_rust_type.is_some() => {
+            r.index_by_field_rust_type.clone()
+        }
+        (Some(field), _) => {
+            return Err(ForgeError::Generate(GenerateError::InvalidConfig(
+                format!(
+                    "bounded-collection '{name}': <sce:index-by field=\"{field}\"/> \
+                     resolution missing — find_by_index emit requires the orchestrator \
+                     (compile_scxml_with_imports) to thread the element-type document \
+                     so the field's Rust type can be inferred. Route this build through \
+                     the orchestrator (or supply \
+                     ForgeCompileOptions::bounded_collection_resolutions \
+                     manually in tests).",
+                    name = m.name,
+                    field = field,
+                ),
+            )));
+        }
+    };
+
+    let pascal = filters::to_pascal_case(m.name.clone());
+    let snake = filters::to_snake_case(m.name.clone());
+    let element_pascal = filters::to_pascal_case(m.element_type.clone());
+    let element_snake = filters::to_snake_case(m.element_type.clone());
+
+    let on_overflow_str = match m.on_overflow {
+        crate::forge::model::OverflowPolicy::DiagnosticEvent => "diagnostic-event",
+        crate::forge::model::OverflowPolicy::Reject => "reject",
+        crate::forge::model::OverflowPolicy::OldestWins => "oldest-wins",
+    };
+    let ordering_str = match m.ordering {
+        crate::forge::model::CollectionOrdering::Insertion => "insertion",
+        crate::forge::model::CollectionOrdering::SortedByIndex => "sorted-by(index-by)",
+    };
+    let concurrency_str = match m.concurrency {
+        crate::forge::model::ConcurrencyMode::SingleWriter => "single-writer",
+        crate::forge::model::ConcurrencyMode::MultiWriter => "multi-writer",
+    };
+
+    let ctx = minijinja::context! {
+        name => &m.name,
+        pascal => pascal,
+        snake => snake,
+        element_pascal => element_pascal,
+        element_snake => element_snake,
+        capacity => capacity,
+        on_overflow => on_overflow_str,
+        overflow_is_oldest_wins => matches!(
+            m.on_overflow,
+            crate::forge::model::OverflowPolicy::OldestWins
+        ),
+        ordering => ordering_str,
+        concurrency => concurrency_str,
+        has_index_by => m.index_by.is_some(),
+        index_by_field => m.index_by.clone().unwrap_or_default(),
+        index_by_rust_type => index_by_rust_type.unwrap_or_default(),
+        runtime_dep => "self-contained on (rust, std) and (rust, no_std)",
+    };
+    tmpl.render(ctx).map_err(|e| {
+        ForgeError::Generate(GenerateError::TemplateRender(format!(
+            "bounded_collection.rs.jinja2 (rust): {e}"
         )))
     })
 }

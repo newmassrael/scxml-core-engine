@@ -76,9 +76,14 @@ topology:
 /// Run `compile_forge_with_deploy` and discard the codegen output —
 /// γ1 validator runs before codegen reaches the bounded-collection
 /// arm, so a failing validator surfaces here as a Located<ForgeError>.
-/// Successful runs reach γ2-deferred codegen which emits
-/// `Generate(CodegenGenericKindBackendEmitMissing)` — the helper
-/// accepts that as a successful validator pass.
+/// γ2-onwards the Rust BC template ships, so successful runs return
+/// `Ok` directly. The historical `CodegenGenericKindBackendEmitMissing`
+/// fallback is preserved for the non-Rust language paths the matrix
+/// still defers; on `Language::Rust` the only acceptable error remains
+/// a γ2-internal `InvalidConfig` for cases where γ1 silently skipped
+/// (machine mismatch, single-file path) so the deploy resolution
+/// never made it into options — that is itself proof that the
+/// validator passed.
 fn assert_validator_passed(
     scxml: &str,
     deploy_yaml: &str,
@@ -101,7 +106,23 @@ fn assert_validator_passed(
                     ..
                 },
             ) if kind == "bounded-collection" => {
-                // γ2-deferred codegen — validator passed.
+                // Pre-γ2 deferred-template fallback — kept for other
+                // backends still on the matrix's `false` arm.
+            }
+            ForgeError::Generate(
+                sce_build::forge::error::GenerateError::InvalidConfig(msg),
+            ) if msg.contains("bounded-collection")
+                && msg.contains("resolution missing") =>
+            {
+                // γ2 render-time gate: γ1 validator passed (silent-
+                // skipped per Q-η5 (a)) but the codegen layer has no
+                // resolution to consume. The BC was designed for a
+                // different target machine OR no deploy was supplied,
+                // so γ1 deliberately left the value unresolved. The
+                // assertion target is "γ1 silently passed"; γ2's
+                // resolution gap on these silent-skip paths is the
+                // expected downstream consequence, not a validator
+                // failure.
             }
             other => panic!(
                 "C6-γ1 validator must silent-pass; got unrelated error: {other:?}"
@@ -252,7 +273,18 @@ fn compile_const_silent_skips_without_deploy() {
                     ..
                 },
             ) if kind == "bounded-collection" => {
-                // γ2-deferred codegen — validator silent-skipped (no deploy).
+                // Pre-γ2 deferred-template fallback — kept for other
+                // backends still on the matrix's `false` arm.
+            }
+            ForgeError::Generate(
+                sce_build::forge::error::GenerateError::InvalidConfig(msg),
+            ) if msg.contains("bounded-collection")
+                && msg.contains("resolution missing") =>
+            {
+                // γ2 render-time gate: single-file deploy-aware path
+                // has no deploy.yaml, so the deploy-key cannot
+                // resolve. γ1 validator silent-skipped per Q-η5 (a);
+                // γ2 surfaces the resolution gap at codegen time.
             }
             other => panic!(
                 "single-file path must silent-skip validator; got unrelated error: {other:?}"

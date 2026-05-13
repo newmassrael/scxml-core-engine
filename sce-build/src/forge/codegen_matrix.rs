@@ -170,14 +170,18 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
             Language::Rust | Language::C11 => true,
             Language::Cpp | Language::Kotlin | Language::Go | Language::Python => false,
         },
-        // RFC §5.L BoundedCollection: C6-α ships schema + parser only
-        // (no codegen templates yet). C6-γ closes the 6-backend codegen
-        // matrix per spec line 2571-2581. Every language returns `false`
-        // until then so the `EmitOutcome::TemplateMissing` path fires
+        // RFC §5.L BoundedCollection: C6-γ closes the 6-backend codegen
+        // matrix per spec line 2571-2581 in stages — γ2 ships `Rust`
+        // (heapless::Vec<T, N> std / no_std + 16/16 packed Handle u32
+        // + insert/remove/get/find_by_index/iter/len/capacity per spec
+        // lines 2609-2622). γ3 closes Cpp + Kotlin; γ4 closes Go +
+        // Python + C11. Backends still without a template return
+        // `false` so the `EmitOutcome::TemplateMissing` path fires
         // explicitly rather than silently emitting a stub.
         ForgeKind::BoundedCollection => match lang {
-            Language::Rust | Language::Cpp | Language::Kotlin
-            | Language::Go | Language::Python | Language::C11 => false,
+            Language::Rust => true,
+            Language::Cpp | Language::Kotlin | Language::Go
+            | Language::Python | Language::C11 => false,
         },
     }
 }
