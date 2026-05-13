@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  watching-zenoh RFC §5.A line 311 + §5.L line 2642-2647 (C7 keyexpr-
+  fixture sub-atomic 3 of 3, 2026-05-13): outer algorithm — runtime
+  KeyExpr matching reference exemplar. Iterates the bounded-collection
+  `subs` (via the C7-foundation `get_by_slot` index-loop) and dispatches
+  into the inner `keyexpr_intersect` algorithm (cross-doc algorithm
+  import — Q-C7-4 / Q-C7-8 (a) lock). Returns the matching slot index
+  (1-based; 0xFFFF reserved as not-found sentinel matching the uint16
+  return contract).
+
+  Q-C7-9 (a) lock — v1 calls `keyexpr_intersect(entry.callback_id,
+  target)` for exact uint32 ID equality. Watching-zenoh-side fixtures
+  (C8 multicast session FSM, C12 liveliness token FSM) author their
+  own `keyexpr_intersect` variants with wildcard / prefix semantics
+  against this v1 BC-iter contract.
+
+  Two C7-lowering surfaces exercised:
+    1. `<sce:foreach in="subs">` — BC-foreach index-loop emit (Q-C7-2 (c)).
+    2. `km(entry.callback_id, target)` — cross-algorithm dispatch via
+       expression-form qualified-call rename (alias `km` substituted by
+       `<namespace>::<name>` for Rust/Cpp, `<namespace>.<Name>` for Go,
+       `<namespace>.<name>` for Python, `<namespace>_<name>` for C11,
+       camelCase bare on Kotlin via wildcard import).
+
+  The expression-form dispatch is the value-returning path (cond reads
+  bool). The `<sce:call>` statement form (Q-C7-4) is for void-returning
+  cross-doc dispatch which is rarer in v1 — covered by lower-level
+  unit tests in c7_keyexpr_match.rs rather than this fixture.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       name="keyexpr_match_first"
+       version="1.0">
+  <sce:import kind="bounded-collection" src="local_sub_table.scxml" as="subs"/>
+  <sce:import kind="algorithm" src="algorithm_keyexpr_intersect_exact.scxml" as="km"/>
+  <sce:signature>
+    <sce:param name="target" type="uint32"/>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:foreach item="entry" in="subs">
+      <sce:if cond="km(entry.callback_id, target)">
+        <sce:return expr="0"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="0xFFFF"/>
+  </sce:body>
+</scxml>

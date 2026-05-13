@@ -15108,8 +15108,20 @@ fn lower_algorithm_stmt(
                 // break/return work everywhere).
                 let it = l.local_id(item);
                 let alias = imp.alias.as_str();
-                let inner_pad = "    ".repeat(indent + 2);
-                let body_inner_indent = indent + 2;
+                // Body indent depends on the per-backend BC-iter
+                // shape. Rust/Cpp/C11/Kotlin nest the body inside a
+                // second block opened after the None-check (Rust
+                // `if let Some`, Cpp `if has_value`, C11 `{`-block,
+                // Kotlin `run {}` wrapper omitted in favour of bare
+                // bottom-of-for-loop placement) — body sits at
+                // indent+2. Go/Python use the `continue`-on-miss
+                // pattern with no extra nesting — body sits at
+                // indent+1 (sibling statement to the None-check).
+                let body_inner_indent = match lang {
+                    Language::Rust | Language::Cpp | Language::C11 => indent + 2,
+                    Language::Kotlin | Language::Go | Language::Python => indent + 1,
+                };
+                let inner_pad = "    ".repeat(body_inner_indent);
                 match lang {
                     Language::Rust => {
                         let type_name = &imp.type_name;
@@ -15174,22 +15186,18 @@ fn lower_algorithm_stmt(
                         out.push_str(&format!("{pad}    {{\n"));
                     }
                     Language::Kotlin => {
-                        let type_name = &imp.type_name;
-                        let _ = type_name;
                         // Kotlin BC instance method `capacity()` returns
                         // Int — convert to UInt for the unsigned `until`
                         // range that matches `getBySlot(slot: UInt)`.
+                        // `?: continue` is an expression: body follows
+                        // at for-loop scope (`body_inner_indent =
+                        // indent + 1`); no extra `run {}` wrapper.
                         out.push_str(&format!(
                             "{pad}for (slotIdx in 0u until {alias}.capacity().toUInt()) {{\n"
                         ));
                         out.push_str(&format!(
                             "{pad}    val {it} = {alias}.getBySlot(slotIdx) ?: continue\n"
                         ));
-                        // Open an additional brace block so the body
-                        // indent matches the other backends' double-
-                        // brace pattern and the closing emission stays
-                        // symmetric.
-                        out.push_str(&format!("{pad}    run {{\n"));
                     }
                     Language::Go => {
                         let snake = &imp.namespace;
@@ -15228,30 +15236,19 @@ fn lower_algorithm_stmt(
                         body_inner_indent, assigned, return_ty, imports, out,
                     )?;
                 }
-                // Per-backend close braces.
+                // Per-backend close braces. Rust/Cpp/C11 close two
+                // blocks (the Some/has_value branch + the for-loop);
+                // Kotlin/Go close one (the for-loop only); Python
+                // closes nothing (indentation-driven scope).
                 match lang {
-                    Language::Rust => {
+                    Language::Rust | Language::Cpp | Language::C11 => {
                         out.push_str(&format!("{pad}    }}\n"));
                         out.push_str(&format!("{pad}}}\n"));
                     }
-                    Language::Cpp => {
-                        out.push_str(&format!("{pad}    }}\n"));
+                    Language::Kotlin | Language::Go => {
                         out.push_str(&format!("{pad}}}\n"));
                     }
-                    Language::C11 => {
-                        out.push_str(&format!("{pad}    }}\n"));
-                        out.push_str(&format!("{pad}}}\n"));
-                    }
-                    Language::Kotlin => {
-                        out.push_str(&format!("{pad}    }}\n"));
-                        out.push_str(&format!("{pad}}}\n"));
-                    }
-                    Language::Go => {
-                        out.push_str(&format!("{pad}}}\n"));
-                    }
-                    Language::Python => {
-                        // Python uses indentation only — no closing brace.
-                    }
+                    Language::Python => {}
                 }
             } else {
                 // Bytes iteration — RFC §5.A v1. Item is a `u8`. Source
@@ -15696,16 +15693,31 @@ fn render_algorithm(
     // expression emitter would re-case the body's reference and the
     // declared symbol would no longer match. The rename map produces
     // a `Raw(name)` AST node, which every emitter prints verbatim.
-    let const_renames_owned: Vec<String> = m
+    //
+    // C7 keyexpr-fixture sub-atomic 3 of 3 (2026-05-13): the rename
+    // map ALSO carries bare-alias substitutions for algorithm-kind
+    // imports — `<sce:if cond="km(args)">` lowers to the imported
+    // algorithm's qualified call (`<namespace>::<name>` for Rust /
+    // Cpp, `<namespace>.<NamePascal>` for Go, `<namespace>.<name>` for
+    // Python, `<namespace>_<name>` for C11, bare camelCase on Kotlin
+    // via the wildcard import). Mirrors the codec/procedure render
+    // path (`render_*` fns build the same owned-renames map on
+    // generator.rs:8943-8949) — algorithm parity was the missing
+    // piece until C7 cross-algo dispatch surfaced the need.
+    let mut const_renames_owned: Vec<(String, String)> = m
         .consts
         .iter()
-        .map(|c| to_upper_snake(&c.name))
+        .map(|c| (c.name.clone(), to_upper_snake(&c.name)))
         .collect();
-    let const_renames: std::collections::HashMap<&str, &str> = m
-        .consts
+    for imp in imports {
+        if imp.kind == "algorithm" && !imp.qualified_call.is_empty() {
+            const_renames_owned
+                .push((imp.alias.clone(), imp.qualified_call.clone()));
+        }
+    }
+    let const_renames: std::collections::HashMap<&str, &str> = const_renames_owned
         .iter()
-        .zip(const_renames_owned.iter())
-        .map(|(c, screaming)| (c.name.as_str(), screaming.as_str()))
+        .map(|(k, v)| (k.as_str(), v.as_str()))
         .collect();
     let return_ty_inferred = m
         .signature

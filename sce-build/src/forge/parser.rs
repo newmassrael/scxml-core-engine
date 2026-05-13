@@ -5199,8 +5199,27 @@ fn parse_algorithm(
 
     let test_vectors = parse_test_vectors(root, &signature, label.diagnostic_label)?;
 
+    // RFC §5.A line 274 example + C7 keyexpr-fixture (sub-atomic 3 of 3,
+    // 2026-05-13): the `<scxml sce:kind="algorithm" name="X">`
+    // attribute is the algorithm's canonical author-facing name and
+    // becomes the emitted function symbol per RFC §5.J.5 lowering
+    // (Rust `pub fn <name_snake>`, Cpp `inline <return> <name_snake>`,
+    // Kotlin `fun <name_camel>`, etc.). When absent the file-stem
+    // identifier is the documentary fallback (preserves the legacy
+    // `algorithm_crc16.scxml` → `algorithm_crc16` shape exercised by
+    // the conformance harness). Resolving the attribute here keeps
+    // `validate_and_enrich_imports::discover_primary_function` +
+    // `build_qualified_call` aligned with the template emit on the
+    // cross-doc dispatch path (the C7-lowering renames pipeline
+    // substitutes `alias` with `<namespace>::<algorithm_name>` and
+    // the consumed symbol must match).
+    let name = root
+        .attribute("name")
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| label.identifier.to_string());
+
     Ok(AlgorithmModel {
-        name: label.identifier.to_string(),
+        name,
         signature,
         consts,
         body,

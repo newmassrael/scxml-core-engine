@@ -3013,14 +3013,24 @@ fn discover_primary_function(
         // cross-file consumer of `<sce:call target="algo_name"/>`
         // resolves through this name.
         forge::model::ForgeDocument::Algorithm(m) => {
+            // C7 keyexpr-fixture sub-atomic 3 of 3 (2026-05-13) — first
+            // production cross-doc consumer of the algorithm kind.
+            // Kotlin's previous `"{Pascal}.call"` shape was wrong: the
+            // Kotlin algorithm template (algorithm.kt.jinja2) emits a
+            // top-level `fun {{ name_camel }}(...)` in package
+            // `com.sce.generated.{{ package }}`, not a class with a
+            // `.call` member. The `import com.sce.generated.<snake>.*`
+            // wildcard from `resolve_single_import` brings the bare
+            // camelCase function name into scope at the call site —
+            // matches the Cpp `<namespace>::<func>` + Rust
+            // `<namespace>::<func>` shape that consumes the function
+            // name verbatim (no wrapper class).
             Some(match language {
                 generator::Language::Rust
                 | generator::Language::Python
                 | generator::Language::C11 => filters::to_snake_case(m.name.clone()),
                 generator::Language::Cpp => filters::to_snake_case(m.name.clone()),
-                generator::Language::Kotlin => {
-                    format!("{}.call", filters::to_pascal_case(m.name.clone()))
-                }
+                generator::Language::Kotlin => filters::to_camel_case(m.name.clone()),
                 generator::Language::Go => filters::to_pascal_case(m.name.clone()),
             })
         }
