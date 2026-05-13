@@ -4,10 +4,18 @@
 #
 # verify_embed_manifest.sh — drift guard for embed/MANIFEST.json.
 #
-# Re-emits the manifest into a temporary location and byte-compares it
-# against the checked-in file. A mismatch means a sce/include/ header
-# was edited without regenerating the manifest — fail and point at the
-# regeneration command.
+# Re-emits the manifest in place and compares the API-surface fields
+# against the checked-in file (label-only fields embed_version +
+# clang_version are stripped before diff — see canon_manifest below).
+# A mismatch means a sce/include/ header was edited without
+# regenerating the manifest; fail and point at the regeneration
+# command. The committed manifest is always restored before exit so
+# the working tree stays clean for subsequent CI steps.
+#
+# On a fresh checkout (CI, or `git clean -fdx`) embed/include/ does
+# not exist because /embed/** is gitignored except for MANIFEST.json;
+# this script self-bootstraps by invoking package_embed.sh
+# --skip-manifest before the emit step.
 #
 # Intended for CI; also runnable locally before sending a PR that
 # touches public headers.
@@ -17,6 +25,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCE_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 EMBED_DIR="${SCE_ROOT}/embed"
+INCLUDE_DIR="${EMBED_DIR}/include"
 MANIFEST="${EMBED_DIR}/MANIFEST.json"
 
 if [[ ! -f "${MANIFEST}" ]]; then
@@ -27,14 +36,54 @@ if [[ ! -f "${MANIFEST}" ]]; then
 fi
 
 # Snapshot the checked-in manifest, regenerate in place, compare, restore
-# on mismatch so CI retry paths do not leave the tree dirty.
+# on mismatch so CI retry paths do not leave the tree dirty. Snapshot
+# MUST happen before the bootstrap below, because package_embed.sh
+# starts with `rm -rf "${OUTPUT_DIR}"` and would wipe the committed
+# manifest along with the rest of embed/.
 SNAPSHOT="$(mktemp --suffix=.json)"
 trap 'rm -f "${SNAPSHOT}"' EXIT
 cp "${MANIFEST}" "${SNAPSHOT}"
 
+# Bootstrap: on a fresh checkout (CI, or a `git clean -fdx` developer
+# tree) embed/include/ does not exist yet because /embed/** is
+# gitignored except for MANIFEST.json. emit_embed_manifest.sh reads
+# embed/include/**/*.h to produce the manifest and would hard-error
+# here. Run package_embed.sh with --skip-manifest so embed/include/
+# materialises but MANIFEST.json stays absent — the emit step below
+# is then the sole writer of the comparison target, preserving this
+# verifier's "snapshot vs freshly emitted" semantics.
+if [[ ! -d "${INCLUDE_DIR}" ]]; then
+    echo "Bootstrapping ${INCLUDE_DIR} via package_embed.sh --skip-manifest..." >&2
+    "${SCRIPT_DIR}/package_embed.sh" --skip-manifest >/dev/null
+fi
+
 "${SCRIPT_DIR}/emit_embed_manifest.sh" >/dev/null
 
-if ! diff -q "${SNAPSHOT}" "${MANIFEST}" >/dev/null 2>&1; then
+# Canonicalise both sides by stripping label-only fields before comparison:
+#   embed_version — HEAD-derived; legitimately lags between regen commits.
+#   clang_version — toolchain-derived; differs across machines/runners.
+# Mirrors verify_embed_payload.sh's filter (lines 67-85): both verifiers
+# share the "API surface vs label" axis and must agree on which fields
+# count as drift signal vs noise. Without this, every push from a SHA
+# that the committed manifest does not pin would fail spuriously even
+# when the header surface is byte-identical.
+canon_manifest() {
+    python3 -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+d.pop("embed_version", None)
+d.pop("clang_version", None)
+json.dump(d, sys.stdout, sort_keys=True, indent=2)
+' "$1"
+}
+
+CANON_SNAPSHOT="$(mktemp --suffix=.committed.json)"
+CANON_FRESH="$(mktemp --suffix=.fresh.json)"
+trap 'rm -f "${SNAPSHOT}" "${CANON_SNAPSHOT}" "${CANON_FRESH}"' EXIT
+canon_manifest "${SNAPSHOT}" > "${CANON_SNAPSHOT}"
+canon_manifest "${MANIFEST}" > "${CANON_FRESH}"
+
+if ! diff -q "${CANON_SNAPSHOT}" "${CANON_FRESH}" >/dev/null 2>&1; then
     echo "ERROR: embed/MANIFEST.json is stale." >&2
     echo "" >&2
     echo "The embed public-header surface has changed since the manifest" >&2
@@ -44,11 +93,17 @@ if ! diff -q "${SNAPSHOT}" "${MANIFEST}" >/dev/null 2>&1; then
     echo "" >&2
     echo "commit the updated embed/MANIFEST.json, and retry." >&2
     echo "" >&2
-    echo "--- diff (first 80 lines) ---" >&2
-    diff -u "${SNAPSHOT}" "${MANIFEST}" | head -n 80 >&2 || true
+    echo "--- diff (first 80 lines, excluding embed_version + clang_version) ---" >&2
+    diff -u "${CANON_SNAPSHOT}" "${CANON_FRESH}" | head -n 80 >&2 || true
     # Restore the checked-in copy so subsequent CI steps see a clean tree.
     cp "${SNAPSHOT}" "${MANIFEST}"
     exit 1
 fi
+
+# Restore the checked-in copy: emit_embed_manifest.sh overwrote it
+# with a label-bumped (embed_version/clang_version) variant that is
+# API-equivalent but not byte-identical, and downstream CI steps
+# (verify_embed_payload.sh) snapshot the committed copy themselves.
+cp "${SNAPSHOT}" "${MANIFEST}"
 
 echo "OK: embed/MANIFEST.json is up to date."
