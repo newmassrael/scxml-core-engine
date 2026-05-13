@@ -139,6 +139,7 @@
         "collection/element-type-not-a-kind",
         "collection/index-by-field-missing",
         "collection/multi-writer-without-atomics",
+        "collection/capacity-unresolved",
         "timer/period-below-tick-rate",
         "timer/slot-overflow",
         "extern/symbol-not-in-whitelist",

@@ -1045,6 +1045,20 @@ pub enum DiagnosticCode {
     #[serde(rename = "collection/multi-writer-without-atomics")]
     CollectionMultiWriterWithoutAtomics,
 
+    /// `<sce:capacity source="deploy" key="machines.<machine>.limits.<limit>"/>`
+    /// names a deploy-key whose `<limit>` segment is not declared
+    /// under `machines.<machine>.limits:` in deploy.yaml. Spec lines
+    /// 2583-2585 fix `<sce:capacity source="deploy">` to a per-machine
+    /// limit lookup whose unresolved state blocks the codegen-time
+    /// compile-time constant lowering. Fires only on the
+    /// `compile_forge_with_deploy` path (deploy + target_machine both
+    /// Some); silent-skips when the key's machine segment != target
+    /// per Q-η5 (a) precedent. Closed candidate set (sorted declared
+    /// limit names under target_machine.limits) rides
+    /// `Fix::ReplaceOneOf` ⇒ FixCarriesCandidates non_overlap_class.
+    #[serde(rename = "collection/capacity-unresolved")]
+    CollectionCapacityUnresolved,
+
     // ── §5.D Timer kind diagnostics (watching-zenoh RFC §5.D
     //    lines 909-910). Both codes fire on the MCU cooperative
     //    scheduler axis — silent-skip on AP / preemptive targets
@@ -1541,6 +1555,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CollectionElementTypeNotAKind,
         CollectionIndexByFieldMissing,
         CollectionMultiWriterWithoutAtomics,
+        // Bounded-collection kind deploy-time capacity resolution (watching-zenoh RFC §5.L, C6-γ1)
+        CollectionCapacityUnresolved,
         // Timer kind diagnostics (watching-zenoh RFC §5.D, C1)
         TimerPeriodBelowTickRate,
         TimerSlotOverflow,
@@ -1852,7 +1868,8 @@ impl DiagnosticCode {
             | CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion
             | CollectionElementTypeNotAKind
             | CollectionIndexByFieldMissing
-            | CollectionMultiWriterWithoutAtomics => {
+            | CollectionMultiWriterWithoutAtomics
+            | CollectionCapacityUnresolved => {
                 Some("watching-zenoh RFC §5.L")
             }
 
@@ -2183,6 +2200,7 @@ impl DiagnosticCode {
             CollectionElementTypeNotAKind => "collection/element-type-not-a-kind",
             CollectionIndexByFieldMissing => "collection/index-by-field-missing",
             CollectionMultiWriterWithoutAtomics => "collection/multi-writer-without-atomics",
+            CollectionCapacityUnresolved => "collection/capacity-unresolved",
             TimerPeriodBelowTickRate => "timer/period-below-tick-rate",
             TimerSlotOverflow => "timer/slot-overflow",
             ExternSymbolNotInWhitelist => "extern/symbol-not-in-whitelist",
@@ -3783,6 +3801,34 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![collection_name.clone()],
         },
+        // ── §5.L Bounded-collection deploy-time capacity resolution (C6-γ1) ──
+        ValidationError::CollectionCapacityUnresolved {
+            collection_name,
+            key,
+            machine,
+            limit,
+            candidates,
+            candidates_list: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CollectionCapacityUnresolved,
+            stage: Stage::Validation,
+            // `actual` carries the full authored key so the diagnostic
+            // surfaces what was written; resolved machine + limit
+            // ride `key_fragments` for byte-stable test discrimination
+            // from sibling C6 codes. FixCarriesCandidates over the
+            // sorted declared limit names from
+            // `target_machine.limits`.
+            expected: None,
+            actual: Some(key.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![
+                collection_name.clone(),
+                machine.clone(),
+                limit.clone(),
+            ],
+        },
         ValidationError::TimerPeriodBelowTickRate {
             timer_name,
             machine,
@@ -5262,6 +5308,29 @@ mod tests {
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
                 r#"{"v":1,"id":"fnv1a:b944cb27eabbfac8","code":"collection/multi-writer-without-atomics","stage":"validation","spec":"watching-zenoh RFC §5.L","message":"bounded-collection 'local_sub_table': <sce:concurrency>multi-writer</sce:concurrency> requires at least one §5.I atomic intrinsic to be declared via <sce:extern> somewhere in this build. watching-zenoh RFC §5.L lines 2560-2562 — multi-writer codegen lowers to acquire/release atomics on head/tail; the build's <sce:extern> trust-surface must acknowledge atomic intrinsics for codegen to emit them. Repair: either declare an atomic intrinsic via <sce:extern> (e.g. `<sce:extern name=\"sce_atomic_load_acquire_u32\" sig=\"(*const u32) -> u32\" abi=\"c\"/>` in any forge doc in this build), or change `<sce:concurrency>` to `single-writer`."}"#,
+            ),
+            // ── §5.L Bounded-collection deploy-time capacity resolution (C6-γ1) ──
+            (
+                // RFC §5.L lines 2583-2585: `<sce:capacity source="deploy"
+                // key=…/>` references an undeclared limit under
+                // `machines.<machine>.limits:`. FixCarriesCandidates —
+                // sorted declared limit names ride Fix::ReplaceOneOf.
+                "forge/collection-capacity-unresolved",
+                ValidationError::CollectionCapacityUnresolved {
+                    collection_name: "local_sub_table".into(),
+                    key: "machines.mcu_node.limits.local_subscriptions".into(),
+                    machine: "mcu_node".into(),
+                    limit: "local_subscriptions".into(),
+                    candidates: vec![
+                        "in_flight_reassembly".into(),
+                        "subscription_table".into(),
+                    ],
+                    candidates_list:
+                        "in_flight_reassembly, subscription_table".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:4604decf96012397","code":"collection/capacity-unresolved","stage":"validation","spec":"watching-zenoh RFC §5.L","message":"bounded-collection 'local_sub_table': <sce:capacity source=\"deploy\" key=\"machines.mcu_node.limits.local_subscriptions\"/> references limit 'local_subscriptions' on machine 'mcu_node', but deploy.yaml does not declare `machines.mcu_node.limits.local_subscriptions`. watching-zenoh RFC §5.L lines 2583-2585 — `<sce:capacity source=\"deploy\">` resolves at codegen time to a per-language compile-time constant from `machines.<machine>.limits.<limit>:`; an unresolved limit blocks emission. Repair: declare `local_subscriptions: <count>` under `machines.mcu_node.limits:` in deploy.yaml (declared limits today: in_flight_reassembly, subscription_table), or switch the BC's `<sce:capacity>` to `const=\"N\"`.","actual":"machines.mcu_node.limits.local_subscriptions","fix":{"kind":"replace_one_of","candidates":["in_flight_reassembly","subscription_table"]}}"#,
             ),
             // ── §5.I `<sce:extern>` whitelisted intrinsic registry (Atomic A) ──
             (
@@ -7266,7 +7335,13 @@ mod tests {
             //   has no useful closed set across the C4 baseline's
             //   atomic family and rides `NeutralOrDeterministic` below.
             | CollectionElementTypeNotAKind
-            | CollectionIndexByFieldMissing => FixCarriesCandidates,
+            | CollectionIndexByFieldMissing
+            // C6-γ1 deploy-time capacity resolution: sorted set of
+            // declared limit names under `machines.<machine>.limits:`
+            // rides `Fix::ReplaceOneOf`. Mirrors the
+            // `BufferPoolSectionConflict` precedent for sorted-
+            // declared-name candidate sets.
+            | CollectionCapacityUnresolved => FixCarriesCandidates,
 
             // ── `expected` carries non-repair metadata ────────
             ExpressionParseMismatch | MeshExternalAmbiguousEventGroup => ExpectedIsMetadata,
@@ -7838,6 +7913,7 @@ mod tests {
                 | CollectionElementTypeNotAKind
                 | CollectionIndexByFieldMissing
                 | CollectionMultiWriterWithoutAtomics
+                | CollectionCapacityUnresolved
                 | TimerPeriodBelowTickRate
                 | TimerSlotOverflow
                 | ExternSymbolNotInWhitelist
@@ -7934,9 +8010,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            223,
+            224,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 223 distinct variants to match the DiagnosticCode \
+             expected 224 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -8246,7 +8322,33 @@ mod tests {
              `SceCrossDocRegistry` reserves SCXML-cross-reference \
              semantics for Link / Statechart / Worker kinds, while \
              codec / procedure participate only in forge→forge cross-\
-             references); 220 → 223.",
+             references); 220 → 223. Then watching-zenoh RFC §5.L \
+             C6 Atomic γ1 bounded-collection deploy-time capacity \
+             resolution — one spec-named code from spec lines 2583-2585 \
+             + 2649 closing the codegen-time prereq C6-α deferred: \
+             `collection/capacity-unresolved` fires on the \
+             `compile_forge_with_deploy` path when `<sce:capacity \
+             source=\"deploy\" key=\"machines.<m>.limits.<k>\"/>` \
+             names a limit that is not declared under \
+             `machines.<m>.limits:` in deploy.yaml. New `MachineConfig.\
+             limits: HashMap<String, u32>` field (mirrors the \
+             `workers`/`timers` per-machine registry precedent — \
+             keyed by limit name, value is the codegen-lowered slot \
+             count). Validator silent-skips when deploy or \
+             target_machine is None (single-file compile paths) or \
+             when the key's machine segment does not equal \
+             target_machine (BC doc designed for a different machine) \
+             per the Q-η5 (a) precedent. Closed candidate set (sorted \
+             declared limit names) rides `Fix::ReplaceOneOf` ⇒ \
+             FixCarriesCandidates non_overlap_class — mirrors the \
+             `BufferPoolSectionConflict` precedent for sorted-\
+             declared-name candidate sets. γ1 deliberately defers \
+             the Handle bit-allocation contract (slot index + \
+             generation counter per spec lines 2621-2622) to γ2 \
+             alongside the first-backend (Rust) template emit per \
+             `[[feedback-silently-broken-hooks]]` — the Handle is \
+             purely codegen-time and has no in-atomic consumer at the \
+             foundation tier; 223 → 224.",
         );
     }
 

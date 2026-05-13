@@ -750,6 +750,61 @@ pub fn compile_forge_with_deploy(
                 }
             }
         }
+
+        // ── C6-γ1 Bounded-collection deploy-time capacity resolution ──
+        //
+        // RFC §5.L lines 2583-2585: `<sce:capacity source="deploy"
+        // key="machines.<m>.limits.<k>"/>` resolves at codegen time to
+        // a per-language compile-time constant from the named limit
+        // under `machines.<m>.limits:` in deploy.yaml. Fires
+        // `collection/capacity-unresolved` when the key references the
+        // target machine but the limit is not declared.
+        //
+        // Silent-skip paths per Q-η5 (a):
+        //   - `<sce:capacity const="N"/>` carries no deploy reference;
+        //     no validation needed.
+        //   - Key does not match the `machines.<m>.limits.<k>` shape
+        //     (likely a different deploy schema author convention or
+        //     malformed key — α parser accepts opaque strings; β/γ
+        //     resolve only the shape spec defines).
+        //   - Key's machine segment != target_machine (BC doc designed
+        //     for a different machine; deploy resolution runs only on
+        //     the host machine's compile).
+        if let forge::model::ForgeDocument::BoundedCollection(bc) = &doc {
+            if let forge::model::CapacitySource::DeployKey { key } = &bc.capacity {
+                if let Some((machine_segment, limit_name)) =
+                    parse_bounded_collection_deploy_key(key)
+                {
+                    if machine_segment == machine_name {
+                        if let Some(machine) = cfg
+                            .device_for_machine(machine_name)
+                            .and_then(|d| d.machines.get(machine_name))
+                        {
+                            if !machine.limits.contains_key(limit_name) {
+                                let mut candidates: Vec<String> =
+                                    machine.limits.keys().cloned().collect();
+                                candidates.sort();
+                                let candidates_list = candidates.join(", ");
+                                return Err(Located::new(
+                                    ValidationError::CollectionCapacityUnresolved {
+                                        collection_name: bc.name.clone(),
+                                        key: key.clone(),
+                                        machine: machine_name.to_string(),
+                                        limit: limit_name.to_string(),
+                                        candidates,
+                                        candidates_list,
+                                    }
+                                    .into(),
+                                    label.diagnostic_label,
+                                    None,
+                                    None,
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // C5: build the cache_platform options threading from the resolved
@@ -2174,6 +2229,35 @@ fn validate_worker_outbox_references(
         }
     }
     Ok(())
+}
+
+/// watching-zenoh RFC §5.L C6 Atomic γ1 — parse a
+/// `<sce:capacity source="deploy" key>` body into its
+/// `(machine_segment, limit_name)` components, matching the
+/// `machines.<machine>.limits.<limit>` shape from spec line 2570 +
+/// 2583-2585. Returns `None` when the key has fewer than four
+/// dot-separated segments OR doesn't start with `machines.` / contain
+/// `.limits.`, signalling the validator to silent-skip per the
+/// Q-η5 (a) precedent (malformed keys are tolerated at this layer
+/// because α's parser accepts opaque strings; γ1 only resolves the
+/// shape the spec defines).
+///
+/// The `limit_name` may itself contain dots (e.g. `local.subs.v2`);
+/// the parse splits only the leading `machines.<m>.limits.` prefix
+/// and treats the remainder verbatim as the limit name. The
+/// `machine_segment` is the second dot-separated segment, with no
+/// inner-dot tolerance (machine names are not dotted per the deploy
+/// schema convention).
+fn parse_bounded_collection_deploy_key(key: &str) -> Option<(&str, &str)> {
+    let after_machines = key.strip_prefix("machines.")?;
+    let dot_after_machine = after_machines.find('.')?;
+    let machine_segment = &after_machines[..dot_after_machine];
+    let after_machine = &after_machines[dot_after_machine + 1..];
+    let limit_name = after_machine.strip_prefix("limits.")?;
+    if limit_name.is_empty() {
+        return None;
+    }
+    Some((machine_segment, limit_name))
 }
 
 /// watching-zenoh RFC §5.L C6 Atomic β (Q1 user direction

@@ -486,6 +486,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `collection/element-type-not-a-kind` | Validation |
 | `collection/index-by-field-missing` | Validation |
 | `collection/multi-writer-without-atomics` | Validation |
+| `collection/capacity-unresolved` | Validation |
 | `timer/period-below-tick-rate` | Validation |
 | `timer/slot-overflow` | Mesh Deploy |
 | `extern/symbol-not-in-whitelist` | Validation |

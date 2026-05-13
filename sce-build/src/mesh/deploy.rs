@@ -1214,6 +1214,35 @@ pub struct MachineConfig {
     /// `timer/slot-overflow`).
     #[serde(default)]
     pub timers: HashMap<String, TimerDeployConfig>,
+
+    /// Per-machine dynamic-state capacity ceilings (watching-zenoh RFC
+    /// §5.L lines 2570-2585 + 2649, C6-γ1). Keyed by limit name —
+    /// the dotted suffix of a `<sce:capacity source="deploy"
+    /// key="machines.<machine>.limits.<limit>">` reference on a
+    /// bounded-collection doc. Value is the compile-time slot count
+    /// the codegen lowers into a per-language constant (Rust
+    /// `heapless::Vec<T, N>` / Cpp `std::array<T, N>` / etc per spec
+    /// §5.J.5).
+    ///
+    /// Absent ⇒ machine declares no limits; the C6-γ1
+    /// [`validate_bounded_collection_capacity_resolution`] silent-
+    /// skips for any BC doc whose `<sce:capacity>` keys this machine.
+    /// Present ⇒ each BC doc with a `deploy` capacity source resolves
+    /// its limit name against this map; missing entries fire
+    /// `collection/capacity-unresolved` with `Fix::ReplaceOneOf`
+    /// carrying the sorted list of declared limit names so authors
+    /// see legal alternatives.
+    ///
+    /// ```yaml
+    /// machines:
+    ///   mcu_node:
+    ///     source: mcu_node.scxml
+    ///     limits:
+    ///       local_subscriptions: 32
+    ///       in_flight_reassembly: 8
+    /// ```
+    #[serde(default)]
+    pub limits: HashMap<String, u32>,
 }
 
 /// Custom deserializer for [`MachineConfig::someip_service_id`].

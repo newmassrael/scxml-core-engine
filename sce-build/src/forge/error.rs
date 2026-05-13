@@ -1647,6 +1647,54 @@ pub enum ValidationError {
         /// Bounded-collection name from `<scxml sce:kind="bounded-collection" name="...">`.
         collection_name: String,
     },
+
+    /// watching-zenoh RFC §5.L lines 2583-2585 + 2649
+    /// (`collection/capacity-unresolved`) — `<sce:capacity source="deploy"
+    /// key="machines.<machine>.limits.<limit>"/>` names a deploy-key
+    /// whose `<limit>` segment is not declared under
+    /// `machines.<machine>.limits:` in deploy.yaml. The codegen must
+    /// lower the capacity into a per-language compile-time constant
+    /// (spec line 2570-2585), so an unresolved key blocks emit.
+    ///
+    /// Fires only on the [`crate::compile_forge_with_deploy`] path
+    /// (deploy + target_machine both Some) per the Q-η5 (a) silent-
+    /// skip precedent: single-file compile paths cannot resolve
+    /// deploy-key capacities because they don't know which machine
+    /// will host the BC doc. Silent-skips also when the key's
+    /// machine segment does not equal `target_machine` — the BC doc
+    /// was designed for a different machine; deploy.yaml resolution
+    /// runs only on the host machine's compile.
+    ///
+    /// Closed candidate list rides `Fix::ReplaceOneOf` with the
+    /// sorted set of limit names declared under
+    /// `machines.<machine>.limits:` (matches the
+    /// `BufferPoolSectionConflict` precedent for sorted-declared-name
+    /// candidate sets). FixCarriesCandidates non_overlap_class.
+    #[error(
+        "bounded-collection '{collection_name}': <sce:capacity source=\"deploy\" key=\"{key}\"/> references limit '{limit}' on machine '{machine}', but deploy.yaml does not declare `machines.{machine}.limits.{limit}`. \
+         watching-zenoh RFC §5.L lines 2583-2585 — `<sce:capacity source=\"deploy\">` resolves at codegen time to a per-language compile-time constant from `machines.<machine>.limits.<limit>:`; an unresolved limit blocks emission. \
+         Repair: declare `{limit}: <count>` under `machines.{machine}.limits:` in deploy.yaml (declared limits today: {candidates_list}), or switch the BC's `<sce:capacity>` to `const=\"N\"`."
+    )]
+    CollectionCapacityUnresolved {
+        /// Bounded-collection name from `<scxml sce:kind="bounded-collection" name="...">`.
+        collection_name: String,
+        /// `<sce:capacity key>` value as authored (full dotted path,
+        /// e.g. `machines.mcu_node.limits.local_subscriptions`).
+        key: String,
+        /// Target machine name (extracted from the key's middle
+        /// segment; matches `compile_forge_with_deploy`'s
+        /// `target_machine` param when the validator fires).
+        machine: String,
+        /// Limit name (final dotted segment) the author asked for.
+        limit: String,
+        /// Sorted closed candidate set — every declared limit name
+        /// under `machines.<machine>.limits:`. Wire payload's
+        /// `Fix::ReplaceOneOf` consumes this verbatim.
+        candidates: Vec<String>,
+        /// Joined comma-space form of `candidates` for the message
+        /// body (matches the sibling cross-doc diagnostics' shape).
+        candidates_list: String,
+    },
 }
 
 /// watching-zenoh RFC §5.E B7-η' Atomic A2 callback-path failure
