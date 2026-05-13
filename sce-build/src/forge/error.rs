@@ -419,6 +419,82 @@ pub enum ValidationError {
     #[error("algorithm: signature declares return type but body's last statement is not <sce:return>")]
     AlgorithmReturnMissing,
 
+    /// RFC §5.A + §5.L line 2642-2647 (C7-lowering): `<sce:foreach
+    /// in="X">` where X resolves to neither (a) an algorithm signature
+    /// param of type `bytes` nor (b) an `<sce:import
+    /// kind="bounded-collection" as="X">` alias. Codegen-time check,
+    /// fires from `lower_algorithm_stmt::Foreach`'s source dispatch.
+    /// `candidates` is the sorted union of bytes-typed params + BC
+    /// import aliases visible at the foreach call site.
+    #[error("algorithm: <sce:foreach in=\"{src}\">: source does not resolve to a bytes param or a bounded-collection import alias")]
+    AlgorithmForeachSourceNotIterable {
+        src: String,
+        candidates: Vec<String>,
+    },
+
+    /// RFC §5.A line 311 + §5.L line 2642-2647 (C7-lowering): `<sce:call
+    /// target="alias.method">` where `alias` does not match any
+    /// `<sce:import as="...">` declared in the enclosing algorithm doc.
+    /// `candidates` is the sorted list of declared import aliases.
+    #[error("algorithm: <sce:call target=\"{target}\">: alias '{alias}' is not a declared import")]
+    AlgorithmCallTargetUnknown {
+        target: String,
+        alias: String,
+        candidates: Vec<String>,
+    },
+
+    /// RFC §5.A line 311 + §5.L line 2611-2618 (C7-lowering): dotted
+    /// call's alias resolves but `method` is not in the kind's
+    /// public-method set. For bounded-collection imports the closed
+    /// callable set is `{find_by_index, get, get_by_slot, len,
+    /// capacity}` (read-only — mutation is rejected separately via
+    /// `algorithm/bc-mutation-forbidden`). For algorithm imports the
+    /// only callable method name equals the imported algorithm's
+    /// declared `name`.
+    #[error("algorithm: <sce:call target=\"{target}\">: method '{method}' is not callable on import '{alias}' (kind={kind})")]
+    AlgorithmCallTargetMethodUnknown {
+        target: String,
+        alias: String,
+        method: String,
+        kind: String,
+        candidates: Vec<String>,
+    },
+
+    /// RFC §5.A line 333 (algorithms are pure: no heap allocation, no
+    /// closures, no exceptions/panics) + §5.L line 2611 (BC mutation
+    /// API is `insert`/`remove`). Algorithm-body dispatch into a BC
+    /// alias is read-only; `<sce:call target="bc_alias.insert">` or
+    /// `bc_alias.remove` violates the purity contract.
+    #[error("algorithm: <sce:call target=\"{target}\">: mutating bounded-collection method '{method}' is forbidden from algorithm body (algorithms are pure per RFC §5.A)")]
+    AlgorithmBcMutationForbidden {
+        target: String,
+        method: String,
+    },
+
+    /// RFC §5.A v1 + §5.L line 2642-2647 (C7-lowering): `<sce:foreach
+    /// in="<bc-alias>">` body declares a `<sce:var name="..."
+    /// type="uint8">` — the legacy bytes-iteration pattern where the
+    /// loop item is a `u8`. BC iteration carries the element-type, not
+    /// `uint8`; the body cannot rely on `u8` semantics.
+    #[error("algorithm: <sce:foreach in=\"{src}\"> over bounded-collection: body's <sce:var name=\"{var_name}\" type=\"uint8\"> uses the bytes-iteration pattern but '{src}' is a bounded-collection (item carries element-type)")]
+    AlgorithmForeachSourceBcWithBytesItemType {
+        src: String,
+        var_name: String,
+    },
+
+    /// RFC §5.A line 311 (C7-lowering): dotted `<sce:call
+    /// target="alias.method">` argument count does not match the
+    /// imported callable's signature arity. For algorithm imports the
+    /// expected arity comes from the imported `<sce:signature>`'s
+    /// `<sce:param>` count. BC methods have fixed arities (1-2 per
+    /// §5.L), validated by the same path.
+    #[error("algorithm: <sce:call target=\"{target}\">: argument count {actual} does not match callable's arity {expected}")]
+    AlgorithmCallArgCountMismatch {
+        target: String,
+        actual: usize,
+        expected: usize,
+    },
+
     /// RFC §5.B variant primitive (B1-β): the variant's enumerated
     /// arms don't cover the tag field's value domain AND no
     /// `<sce:default>` arm catches the unenumerated values. At least

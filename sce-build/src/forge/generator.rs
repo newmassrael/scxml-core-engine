@@ -147,6 +147,24 @@ pub struct ImportContext {
     /// [`BufferPoolModel`]: crate::forge::model::BufferPoolModel
     #[serde(skip)]
     pub buffer_pool_slot_size: Option<u32>,
+
+    /// For bounded-collection imports: the imported BC's
+    /// `<sce:element-type>` body text, captured at enrichment time
+    /// from the parsed [`BoundedCollectionModel`]. Consumed by the
+    /// C7-lowering algorithm-over-BC iter emit (RFC §5.A line 311 +
+    /// §5.L line 2642-2647): the C11 backend writes a stack-copy of
+    /// the element value via the codec's emitted typedef
+    /// (`<element_snake>_t`), so the body's authored `entry.field`
+    /// dot-access lowers cleanly without a per-statement
+    /// `.` → `->` substitution surface. Other backends derive the
+    /// element-type from their own idiomatic accessor (`Option<&T>`
+    /// in Rust, `std::optional<T>` in Cpp, etc.) and do not consume
+    /// this field. `None` for non-BC imports and for BC imports
+    /// whose model failed to parse during enrichment.
+    ///
+    /// [`BoundedCollectionModel`]: crate::forge::model::BoundedCollectionModel
+    #[serde(skip)]
+    pub bc_element_snake: Option<String>,
 }
 
 /// Resolve a list of `ForgeImport` into template-ready `ImportContext`.
@@ -278,6 +296,7 @@ fn resolve_single_import(
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
                 buffer_pool_slot_size: None,
+                bc_element_snake: None,
             }
         }
         crate::generator::Language::Kotlin => {
@@ -309,6 +328,7 @@ fn resolve_single_import(
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
                 buffer_pool_slot_size: None,
+                bc_element_snake: None,
             }
         }
         crate::generator::Language::Rust => {
@@ -342,6 +362,7 @@ fn resolve_single_import(
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
                 buffer_pool_slot_size: None,
+                bc_element_snake: None,
             }
         }
         crate::generator::Language::Go => {
@@ -401,6 +422,7 @@ fn resolve_single_import(
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
                 buffer_pool_slot_size: None,
+                bc_element_snake: None,
             }
         }
         crate::generator::Language::Python => {
@@ -434,6 +456,7 @@ fn resolve_single_import(
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
                 buffer_pool_slot_size: None,
+                bc_element_snake: None,
             }
         }
         crate::generator::Language::C11 => {
@@ -468,6 +491,7 @@ fn resolve_single_import(
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
                 buffer_pool_slot_size: None,
+                bc_element_snake: None,
             }
         }
     }
@@ -14668,6 +14692,46 @@ fn algorithm_param_type(lang: crate::generator::Language, ty: &SceType) -> Strin
     }
 }
 
+/// RFC §5.A line 311 + Q-C7-6 (b) lock (C7-lowering 2026-05-13): for a
+/// `<sce:import kind="bounded-collection" as="<alias>">` declared on an
+/// algorithm document, emit the per-backend positional reference
+/// parameter that threads the BC instance into the free function. The
+/// signature gains one such param per BC import, appended after the
+/// declared `<sce:param>` entries (declared-param positions stay
+/// byte-stable so existing fixtures without imports are unchanged).
+fn algorithm_format_bc_import_param(
+    lang: crate::generator::Language,
+    imp: &ImportContext,
+) -> String {
+    use crate::generator::Language;
+    let alias = imp.alias.as_str();
+    match lang {
+        // Rust: `&LocalSubTable` shared reference — algorithm bodies
+        // are pure (no mutation), so the borrow is immutable.
+        Language::Rust => format!(
+            "{}: &{}",
+            filters::to_snake_case(alias.to_string()),
+            imp.type_name
+        ),
+        // Cpp: const reference into the imported document's
+        // namespace-qualified class (matches `member_type` shape).
+        Language::Cpp => format!("const {}& {}", imp.member_type, alias),
+        // Kotlin: object/class param. The BC class is brought into
+        // scope by the wildcard import statement, so the bare PascalCase
+        // suffices on the signature.
+        Language::Kotlin => format!("{}: {}", alias, imp.type_name),
+        // Go: pointer into the imported package's struct. `member_type`
+        // already carries the `package.Type` form.
+        Language::Go => format!("{} *{}", alias, imp.member_type),
+        // Python: typed reference; the included `from .snake import
+        // Pascal` brings the class into scope for the annotation.
+        Language::Python => format!("{}: {}", alias, imp.type_name),
+        // C11: const pointer to the typedef'd struct (`<snake>_t`).
+        // No namespace concept — `member_type` already carries `_t`.
+        Language::C11 => format!("const {} *{}", imp.member_type, alias),
+    }
+}
+
 /// Format a single algorithm parameter per RFC §5.J.5 emitter table.
 fn algorithm_format_param(lang: crate::generator::Language, name: &str, ty: &SceType) -> String {
     use crate::generator::Language;
@@ -14763,6 +14827,7 @@ fn lower_algorithm_body(
     renames: &std::collections::HashMap<&str, &str>,
     indent: usize,
     return_ty: crate::forge::types::InferredType,
+    imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
     let mut out = String::new();
     let pad = "    ".repeat(indent);
@@ -14779,7 +14844,7 @@ fn lower_algorithm_body(
         std::collections::HashSet::new();
     collect_algorithm_assigned_roots(stmts, &mut assigned);
     for s in stmts {
-        lower_algorithm_stmt(s, lang, type_ctx, &l, renames, &pad, indent, &assigned, return_ty, &mut out)?;
+        lower_algorithm_stmt(s, lang, type_ctx, &l, renames, &pad, indent, &assigned, return_ty, imports, &mut out)?;
     }
     Ok(out.trim_end().to_string())
 }
@@ -14834,6 +14899,7 @@ fn lower_algorithm_stmt(
     indent: usize,
     assigned: &std::collections::HashSet<String>,
     return_ty: crate::forge::types::InferredType,
+    imports: &[ImportContext],
     out: &mut String,
 ) -> Result<(), ForgeError> {
     use crate::forge::types::InferredType;
@@ -14923,12 +14989,12 @@ fn lower_algorithm_stmt(
                     out.push_str(&format!("{pad}if {cond_lowered}:\n"));
                     let inner_pad = "    ".repeat(indent + 1);
                     for st in then_body {
-                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, return_ty, out)?;
+                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, return_ty, imports, out)?;
                     }
                     if let Some(eb) = else_body {
                         out.push_str(&format!("{pad}else:\n"));
                         for st in eb {
-                            lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, return_ty, out)?;
+                            lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, return_ty, imports, out)?;
                         }
                     }
                 }
@@ -14940,12 +15006,12 @@ fn lower_algorithm_stmt(
                     out.push_str(&header_open);
                     let inner_pad = "    ".repeat(indent + 1);
                     for st in then_body {
-                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, return_ty, out)?;
+                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, return_ty, imports, out)?;
                     }
                     if let Some(eb) = else_body {
                         out.push_str(&format!("{pad}}} else {{\n"));
                         for st in eb {
-                            lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, return_ty, out)?;
+                            lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, return_ty, imports, out)?;
                         }
                     }
                     out.push_str(&format!("{pad}}}\n"));
@@ -14968,7 +15034,7 @@ fn lower_algorithm_stmt(
                     out.push_str(&format!("{pad}while {cond_lowered}:\n"));
                     let inner_pad = "    ".repeat(indent + 1);
                     for st in body {
-                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, return_ty, out)?;
+                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, return_ty, imports, out)?;
                     }
                 }
                 _ => {
@@ -14984,50 +15050,273 @@ fn lower_algorithm_stmt(
                     out.push_str(&header_open);
                     let inner_pad = "    ".repeat(indent + 1);
                     for st in body {
-                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, return_ty, out)?;
+                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, return_ty, imports, out)?;
                     }
                     out.push_str(&format!("{pad}}}\n"));
                 }
             }
         }
         AlgorithmStmt::Foreach { item, source, body } => {
-            // RFC §5.A v1: foreach iterates a `bytes` source — the item
-            // is a `u8`. Future versions over bounded-collection (§5.L)
-            // generalize the loop type.
-            let src_lowered = expr::transpile_typed(
-                source,
-                l.expr_target(),
-                type_ctx,
-                renames,
-                InferredType::Unknown,
-            )?;
-            let it = l.local_id(item);
-            let header = match lang {
-                Language::Rust => format!("{pad}for &{it} in {src_lowered}.iter() {{\n"),
-                Language::Cpp => format!("{pad}for (std::uint8_t {it} : {src_lowered}) {{\n"),
-                Language::C11 => format!(
-                    "{pad}for (size_t __i = 0; __i < {src_lowered}.len; ++__i) {{\n{pad}    uint8_t {it} = {src_lowered}.data[__i];\n"
-                ),
-                // Kotlin's `ByteArray` iteration yields signed `Byte`,
-                // but RFC §5.A v1 declares the foreach item as `uint8`
-                // — the type ctx hands the body a `UByte`. Reinterpret
-                // each iteration's `Byte` as `UByte` (bit-pattern
-                // preserved) so subsequent `<sce:var type="uintN" init="b">`
-                // widenings via `.toUShort()` zero-extend correctly.
-                Language::Kotlin => format!(
-                    "{pad}for (__raw_{it} in {src_lowered}) {{\n{pad}    val {it}: UByte = __raw_{it}.toUByte()\n"
-                ),
-                Language::Go => format!("{pad}for _, {it} := range {src_lowered} {{\n"),
-                Language::Python => format!("{pad}for {it} in {src_lowered}:\n"),
-            };
-            out.push_str(&header);
-            let inner_indent = if matches!(lang, Language::Python) { indent + 1 } else { indent + 1 };
-            let inner_pad = "    ".repeat(inner_indent);
-            for st in body {
-                lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, inner_indent, assigned, return_ty, out)?;
-            }
-            if !matches!(lang, Language::Python) {
-                out.push_str(&format!("{pad}}}\n"));
+            // RFC §5.A line 311 + §5.L line 2642-2647 (C7-lowering
+            // 2026-05-13): source dispatch decides bytes-iteration vs
+            // BC-iteration. The author wrote `<sce:foreach in="X">`
+            // where X is either (a) a `<sce:param type="bytes">` name
+            // → existing bytes iter (item is `u8`), or (b) an
+            // `<sce:import kind="bounded-collection" as="X">` alias →
+            // BC iter via `get_by_slot` (item carries the BC element-
+            // type). The parse-time validator
+            // `algorithm/foreach-source-not-iterable` rejects sources
+            // that resolve to neither, so by the time codegen runs we
+            // trust source matches one branch.
+            let bc_import = imports
+                .iter()
+                .find(|imp| imp.alias.as_str() == source.as_str()
+                    && imp.kind == "bounded-collection");
+            if let Some(imp) = bc_import {
+                // RFC §5.A v1 + §5.L line 2642-2647 (Q-C7-10 (a)
+                // diagnostic surface, C7-lowering 2026-05-13): the BC
+                // foreach body carries the element-type per item; a
+                // legacy bytes-iteration pattern would declare a
+                // first-level `<sce:var type="uint8" .../>` to
+                // reinterpret each byte. Misapplied to BC iteration the
+                // var becomes a stranded scalar that is never wired to
+                // an element field. Detect the pattern up-front and
+                // fire `algorithm/foreach-source-bc-with-bytes-item-
+                // type` so the author migrates the body to element-
+                // field access (e.g. `entry.callback_id` instead of a
+                // separate `<sce:var name="b" type="uint8"/>`).
+                for st in body {
+                    if let AlgorithmStmt::Var { name: var_name, sce_type, .. } = st {
+                        if matches!(sce_type, SceType::Uint8) {
+                            return Err(crate::forge::error::ValidationError::AlgorithmForeachSourceBcWithBytesItemType {
+                                src: source.clone(),
+                                var_name: var_name.clone(),
+                            }
+                            .into());
+                        }
+                    }
+                }
+                // BC iteration — uniform index-loop across all 6
+                // backends per Q-C7-2 (c) lock. Each backend emits:
+                //   for slot_idx in 0..CAPACITY {
+                //       if let Some(item) = bc.get_by_slot(slot_idx) {
+                //           <body>
+                //       }
+                //   }
+                // Body lowering reuses the existing for-loop machinery
+                // (no closure-state-share complications, native
+                // break/return work everywhere).
+                let it = l.local_id(item);
+                let alias = imp.alias.as_str();
+                let inner_pad = "    ".repeat(indent + 2);
+                let body_inner_indent = indent + 2;
+                match lang {
+                    Language::Rust => {
+                        let type_name = &imp.type_name;
+                        out.push_str(&format!(
+                            "{pad}for slot_idx in 0..({type_name}::capacity() as u32) {{\n"
+                        ));
+                        out.push_str(&format!(
+                            "{pad}    if let Some({it}) = {alias}.get_by_slot(slot_idx) {{\n"
+                        ));
+                    }
+                    Language::Cpp => {
+                        let type_name = &imp.type_name;
+                        out.push_str(&format!(
+                            "{pad}for (std::uint32_t slot_idx = 0; slot_idx < static_cast<std::uint32_t>({type_name}::capacity()); ++slot_idx) {{\n"
+                        ));
+                        out.push_str(&format!(
+                            "{pad}    auto {it}_opt = {alias}.get_by_slot(slot_idx);\n"
+                        ));
+                        out.push_str(&format!(
+                            "{pad}    if ({it}_opt.has_value()) {{\n"
+                        ));
+                        out.push_str(&format!(
+                            "{pad}        const auto& {it} = {it}_opt.value();\n"
+                        ));
+                    }
+                    Language::C11 => {
+                        // C11 needs deref-copy to keep dot member-access
+                        // working in the body — the transpiler's
+                        // `.field` lowering targets value-typed locals,
+                        // and pointer locals would need a per-name
+                        // `.` → `->` substitution surface that v1's
+                        // expression emitter does not have.
+                        //
+                        // The deref-copy requires naming the codec's
+                        // emitted typedef (`<element_snake>_t`); the
+                        // BC import enrichment populates
+                        // `bc_element_snake` from the BC's parsed
+                        // `<sce:element-type>` body so this site can
+                        // assemble the typedef name without a second
+                        // cross-doc lookup.
+                        let snake = &imp.namespace;
+                        let upper = to_upper_snake(snake);
+                        let element_snake = imp.bc_element_snake.as_ref().ok_or_else(|| {
+                            GenerateError::InvalidConfig(format!(
+                                "C7-lowering C11 foreach-BC: import alias '{}' \
+                                 has no enriched `bc_element_snake` — the BC's \
+                                 `<sce:element-type>` body must be captured by \
+                                 `validate_and_enrich_imports` before codegen",
+                                imp.alias
+                            ))
+                        })?;
+                        out.push_str(&format!(
+                            "{pad}for (uint32_t slot_idx = 0u; slot_idx < {upper}_CAPACITY; ++slot_idx) {{\n"
+                        ));
+                        out.push_str(&format!(
+                            "{pad}    const {element_snake}_t *{it}_ptr = {snake}_get_by_slot({alias}, slot_idx);\n"
+                        ));
+                        out.push_str(&format!("{pad}    if ({it}_ptr == NULL) continue;\n"));
+                        out.push_str(&format!(
+                            "{pad}    {element_snake}_t {it} = *{it}_ptr;\n"
+                        ));
+                        out.push_str(&format!("{pad}    {{\n"));
+                    }
+                    Language::Kotlin => {
+                        let type_name = &imp.type_name;
+                        let _ = type_name;
+                        // Kotlin BC instance method `capacity()` returns
+                        // Int — convert to UInt for the unsigned `until`
+                        // range that matches `getBySlot(slot: UInt)`.
+                        out.push_str(&format!(
+                            "{pad}for (slotIdx in 0u until {alias}.capacity().toUInt()) {{\n"
+                        ));
+                        out.push_str(&format!(
+                            "{pad}    val {it} = {alias}.getBySlot(slotIdx) ?: continue\n"
+                        ));
+                        // Open an additional brace block so the body
+                        // indent matches the other backends' double-
+                        // brace pattern and the closing emission stays
+                        // symmetric.
+                        out.push_str(&format!("{pad}    run {{\n"));
+                    }
+                    Language::Go => {
+                        let snake = &imp.namespace;
+                        let pascal = &imp.type_name;
+                        let _ = snake;
+                        // Go BC package-level capacity constant is
+                        // `<Pascal>Capacity` per the BC template.
+                        out.push_str(&format!(
+                            "{pad}for slotIdx := uint32(0); slotIdx < {pascal}Capacity; slotIdx++ {{\n"
+                        ));
+                        out.push_str(&format!(
+                            "{pad}    {it}, ok := {alias}.GetBySlot(slotIdx)\n"
+                        ));
+                        out.push_str(&format!("{pad}    if !ok {{ continue }}\n"));
+                    }
+                    Language::Python => {
+                        // Python BC static method `capacity()` returns
+                        // int; the comprehension form is the most
+                        // idiomatic but a plain for-range over the
+                        // capacity keeps the body shape uniform with
+                        // the other backends.
+                        let type_name = &imp.type_name;
+                        out.push_str(&format!(
+                            "{pad}for slot_idx in range({type_name}.capacity()):\n"
+                        ));
+                        out.push_str(&format!(
+                            "{pad}    {it} = {alias}.get_by_slot(slot_idx)\n"
+                        ));
+                        out.push_str(&format!("{pad}    if {it} is None:\n"));
+                        out.push_str(&format!("{pad}        continue\n"));
+                    }
+                }
+                for st in body {
+                    lower_algorithm_stmt(
+                        st, lang, type_ctx, l, renames, &inner_pad,
+                        body_inner_indent, assigned, return_ty, imports, out,
+                    )?;
+                }
+                // Per-backend close braces.
+                match lang {
+                    Language::Rust => {
+                        out.push_str(&format!("{pad}    }}\n"));
+                        out.push_str(&format!("{pad}}}\n"));
+                    }
+                    Language::Cpp => {
+                        out.push_str(&format!("{pad}    }}\n"));
+                        out.push_str(&format!("{pad}}}\n"));
+                    }
+                    Language::C11 => {
+                        out.push_str(&format!("{pad}    }}\n"));
+                        out.push_str(&format!("{pad}}}\n"));
+                    }
+                    Language::Kotlin => {
+                        out.push_str(&format!("{pad}    }}\n"));
+                        out.push_str(&format!("{pad}}}\n"));
+                    }
+                    Language::Go => {
+                        out.push_str(&format!("{pad}}}\n"));
+                    }
+                    Language::Python => {
+                        // Python uses indentation only — no closing brace.
+                    }
+                }
+            } else {
+                // Bytes iteration — RFC §5.A v1. Item is a `u8`. Source
+                // must be a `bytes`-typed `<sce:param>`; anything else
+                // raises `algorithm/foreach-source-not-iterable` so the
+                // author can correct the reference before reaching
+                // backend emit. Candidates surface the visible names
+                // (bytes-typed params + BC import aliases) so the JSON
+                // wire's `key_fragments` content-hash stays
+                // discriminating per source-name shape.
+                if !matches!(type_ctx.lookup_var(source), InferredType::Bytes) {
+                    let mut candidates: Vec<String> = type_ctx
+                        .vars
+                        .iter()
+                        .filter(|(_, ty)| matches!(**ty, InferredType::Bytes))
+                        .map(|(name, _)| (*name).to_string())
+                        .collect();
+                    candidates.extend(
+                        imports
+                            .iter()
+                            .filter(|imp| imp.kind == "bounded-collection")
+                            .map(|imp| imp.alias.clone()),
+                    );
+                    candidates.sort();
+                    return Err(crate::forge::error::ValidationError::AlgorithmForeachSourceNotIterable {
+                        src: source.clone(),
+                        candidates,
+                    }
+                    .into());
+                }
+                let src_lowered = expr::transpile_typed(
+                    source,
+                    l.expr_target(),
+                    type_ctx,
+                    renames,
+                    InferredType::Unknown,
+                )?;
+                let it = l.local_id(item);
+                let header = match lang {
+                    Language::Rust => format!("{pad}for &{it} in {src_lowered}.iter() {{\n"),
+                    Language::Cpp => format!("{pad}for (std::uint8_t {it} : {src_lowered}) {{\n"),
+                    Language::C11 => format!(
+                        "{pad}for (size_t __i = 0; __i < {src_lowered}.len; ++__i) {{\n{pad}    uint8_t {it} = {src_lowered}.data[__i];\n"
+                    ),
+                    // Kotlin's `ByteArray` iteration yields signed `Byte`,
+                    // but RFC §5.A v1 declares the foreach item as `uint8`
+                    // — the type ctx hands the body a `UByte`. Reinterpret
+                    // each iteration's `Byte` as `UByte` (bit-pattern
+                    // preserved) so subsequent `<sce:var type="uintN" init="b">`
+                    // widenings via `.toUShort()` zero-extend correctly.
+                    Language::Kotlin => format!(
+                        "{pad}for (__raw_{it} in {src_lowered}) {{\n{pad}    val {it}: UByte = __raw_{it}.toUByte()\n"
+                    ),
+                    Language::Go => format!("{pad}for _, {it} := range {src_lowered} {{\n"),
+                    Language::Python => format!("{pad}for {it} in {src_lowered}:\n"),
+                };
+                out.push_str(&header);
+                let inner_indent = if matches!(lang, Language::Python) { indent + 1 } else { indent + 1 };
+                let inner_pad = "    ".repeat(inner_indent);
+                for st in body {
+                    lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, inner_indent, assigned, return_ty, imports, out)?;
+                }
+                if !matches!(lang, Language::Python) {
+                    out.push_str(&format!("{pad}}}\n"));
+                }
             }
         }
         AlgorithmStmt::Return { expr: e } => {
@@ -15074,10 +15363,196 @@ fn lower_algorithm_stmt(
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             let semi = if matches!(lang, Language::Kotlin | Language::Python) { "" } else { ";" };
-            out.push_str(&format!(
-                "{pad}{target}({args}){semi}\n",
-                args = lowered_args.join(", ")
-            ));
+
+            // RFC §5.A line 311 + §5.L line 2642-2647 (C7-lowering
+            // 2026-05-13): dotted target `<sce:call
+            // target="alias.method">` dispatches into an `<sce:import>`
+            // alias. Bare target (no dot) keeps the v1 behaviour of
+            // emitting a sibling free-function call verbatim.
+            if let Some((alias, method)) = target.split_once('.') {
+                // BC public read-only method roster (Q-C7-5 (a) lock).
+                const BC_READONLY_METHODS: &[&str] = &[
+                    "capacity", "find_by_index", "get", "get_by_slot", "len",
+                ];
+                // BC mutating methods rejected by `algorithm/
+                // bc-mutation-forbidden` (Q-C7-5 (a) lock — algorithms
+                // are pure per RFC §5.A line 333).
+                const BC_MUTATING_METHODS: &[&str] = &["insert", "remove"];
+
+                let imp = imports.iter().find(|i| i.alias.as_str() == alias);
+                let imp = match imp {
+                    Some(imp) => imp,
+                    None => {
+                        let mut candidates: Vec<String> =
+                            imports.iter().map(|i| i.alias.clone()).collect();
+                        candidates.sort();
+                        return Err(crate::forge::error::ValidationError::AlgorithmCallTargetUnknown {
+                            target: target.clone(),
+                            alias: alias.to_string(),
+                            candidates,
+                        }
+                        .into());
+                    }
+                };
+
+                let emit_qualified_call = |lang: Language, alias: &str, method: &str| -> String {
+                    match lang {
+                        // BC import → instance method dispatch via the
+                        // positional ref param. Algorithm import →
+                        // free-function namespace-qualified call.
+                        Language::Rust => {
+                            if imp.kind == "bounded-collection" {
+                                format!("{alias}.{method}")
+                            } else {
+                                // Algorithm: `<snake>::<method>` —
+                                // `imp.namespace` is the snake form.
+                                let snake = filters::to_snake_case(alias.to_string());
+                                let _ = snake;
+                                format!("{ns}::{method}", ns = imp.namespace)
+                            }
+                        }
+                        Language::Cpp => {
+                            if imp.kind == "bounded-collection" {
+                                format!("{alias}.{method}")
+                            } else {
+                                // Algorithm: `SCE::Generated::<Ns>::<method>`.
+                                format!("{ns}::{method}", ns = imp.namespace)
+                            }
+                        }
+                        Language::Kotlin => {
+                            // Both BC (instance) and algorithm (object
+                            // singleton method on the imported package's
+                            // `<NameCamel>(...)` free function) use `.`
+                            // dispatch syntax in Kotlin.
+                            format!("{alias}.{method}")
+                        }
+                        Language::Go => {
+                            // Go BC instance method; algorithm cross-
+                            // call: `<package>.<MethodPascal>` — BC
+                            // method names already use Pascal form per
+                            // BC template (GetBySlot, FindByIndex,
+                            // etc.); BC v1 algorithm body uses the
+                            // exported names directly.
+                            let go_method = match method {
+                                "get_by_slot" => "GetBySlot".to_string(),
+                                "find_by_index" => "FindByIndex".to_string(),
+                                "get" => "Get".to_string(),
+                                "len" => "Len".to_string(),
+                                "capacity" => "Capacity".to_string(),
+                                other => filters::to_pascal_case(other.to_string()),
+                            };
+                            format!("{alias}.{go_method}")
+                        }
+                        Language::Python => {
+                            // BC instance method; algorithm cross-call:
+                            // `<snake>.<func_snake>(...)`.
+                            format!("{alias}.{method}")
+                        }
+                        Language::C11 => {
+                            // C11: no namespaces — function prefix
+                            // dispatch. BC method = `<bc_snake>_<method>(self, args...)`;
+                            // algorithm cross-call = `<algo_snake>_<func>(args)`.
+                            if imp.kind == "bounded-collection" {
+                                format!("{snake}_{method}", snake = imp.namespace)
+                            } else {
+                                format!("{ns}_{method}", ns = imp.namespace)
+                            }
+                        }
+                    }
+                };
+
+                if imp.kind == "bounded-collection" {
+                    // Method roster validation.
+                    if BC_MUTATING_METHODS.contains(&method) {
+                        return Err(crate::forge::error::ValidationError::AlgorithmBcMutationForbidden {
+                            target: target.clone(),
+                            method: method.to_string(),
+                        }
+                        .into());
+                    }
+                    if !BC_READONLY_METHODS.contains(&method) {
+                        let candidates: Vec<String> =
+                            BC_READONLY_METHODS.iter().map(|s| (*s).to_string()).collect();
+                        return Err(crate::forge::error::ValidationError::AlgorithmCallTargetMethodUnknown {
+                            target: target.clone(),
+                            alias: alias.to_string(),
+                            method: method.to_string(),
+                            kind: "bounded-collection".to_string(),
+                            candidates,
+                        }
+                        .into());
+                    }
+                    // Arity validation (fixed per RFC §5.L: find_by_index/
+                    // get/get_by_slot take 1 arg; len/capacity take 0).
+                    let expected_arity = match method {
+                        "find_by_index" | "get" | "get_by_slot" => 1,
+                        "len" | "capacity" => 0,
+                        _ => unreachable!("BC_READONLY_METHODS roster guard"),
+                    };
+                    if args.len() != expected_arity {
+                        return Err(crate::forge::error::ValidationError::AlgorithmCallArgCountMismatch {
+                            target: target.clone(),
+                            actual: args.len(),
+                            expected: expected_arity,
+                        }
+                        .into());
+                    }
+                    // Emit per-backend method call. C11 needs `&self`
+                    // as the first arg (snake-prefix dispatch).
+                    let qualified = emit_qualified_call(lang, alias, method);
+                    let final_args = match lang {
+                        Language::C11 => {
+                            // BC C11 methods take `const <snake>_t *self`
+                            // as the first param; thread `alias`
+                            // (already a `const <snake>_t *`) into the
+                            // call.
+                            let mut a = vec![alias.to_string()];
+                            a.extend(lowered_args.iter().cloned());
+                            a.join(", ")
+                        }
+                        _ => lowered_args.join(", "),
+                    };
+                    out.push_str(&format!("{pad}{qualified}({final_args}){semi}\n"));
+                } else if imp.kind == "algorithm" {
+                    // Cross-algorithm dispatch — arity check from the
+                    // imported algorithm's discovered signature
+                    // (`imp.param_types.len()` is populated by
+                    // `validate_and_enrich_imports::discover_stateless_signature`).
+                    let expected_arity = imp.param_types.len();
+                    if args.len() != expected_arity {
+                        return Err(crate::forge::error::ValidationError::AlgorithmCallArgCountMismatch {
+                            target: target.clone(),
+                            actual: args.len(),
+                            expected: expected_arity,
+                        }
+                        .into());
+                    }
+                    let qualified = emit_qualified_call(lang, alias, method);
+                    out.push_str(&format!(
+                        "{pad}{qualified}({args}){semi}\n",
+                        args = lowered_args.join(", ")
+                    ));
+                } else {
+                    // Other kinds (codec/procedure/etc.) — out of scope
+                    // per Q-C7-5 (a) lock. No closed candidate set —
+                    // future RFC extensions may add cross-kind dispatch.
+                    return Err(crate::forge::error::ValidationError::AlgorithmCallTargetMethodUnknown {
+                        target: target.clone(),
+                        alias: alias.to_string(),
+                        method: method.to_string(),
+                        kind: imp.kind.clone(),
+                        candidates: Vec::new(),
+                    }
+                    .into());
+                }
+            } else {
+                // Bare target — sibling free-function call within the
+                // same algorithm doc. Emit verbatim per v1 behaviour.
+                out.push_str(&format!(
+                    "{pad}{target}({args}){semi}\n",
+                    args = lowered_args.join(", ")
+                ));
+            }
         }
     }
     Ok(())
@@ -15086,7 +15561,7 @@ fn lower_algorithm_stmt(
 fn render_algorithm(
     env: &minijinja::Environment,
     m: &AlgorithmModel,
-    _imports: &[ImportContext],
+    imports: &[ImportContext],
     lang: crate::generator::Language,
     options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
@@ -15175,12 +15650,27 @@ fn render_algorithm(
         }
     }
 
-    // Per-RFC §5.J.5 signature emit.
-    let params_str = m
+    // Per-RFC §5.J.5 signature emit. Q-C7-6 (b) lock (C7-lowering
+    // 2026-05-13): each `<sce:import kind="bounded-collection">` adds a
+    // per-backend positional reference param appended after the
+    // declared `<sce:param>` entries. Existing algorithm fixtures
+    // without imports are unaffected (BC-import filter is empty →
+    // params_str byte-identical to v1).
+    let declared_params: Vec<String> = m
         .signature
         .params
         .iter()
         .map(|p| algorithm_format_param(lang, &p.name, &p.sce_type))
+        .collect();
+    let bc_import_params: Vec<String> = imports
+        .iter()
+        .filter(|imp| imp.kind == "bounded-collection")
+        .map(|imp| algorithm_format_bc_import_param(lang, imp))
+        .collect();
+    let params_str = declared_params
+        .iter()
+        .chain(bc_import_params.iter())
+        .cloned()
         .collect::<Vec<_>>()
         .join(", ");
 
@@ -15223,7 +15713,7 @@ fn render_algorithm(
         .as_ref()
         .map(InferredType::from_sce_type)
         .unwrap_or(InferredType::Unknown);
-    let body = lower_algorithm_body(&m.body, lang, &type_ctx, &const_renames, 1, return_ty_inferred)?;
+    let body = lower_algorithm_body(&m.body, lang, &type_ctx, &const_renames, 1, return_ty_inferred, imports)?;
 
     let needs_span = m
         .signature
@@ -15237,6 +15727,28 @@ fn render_algorithm(
     ctx.insert("name_camel".into(), filters::to_camel_case(m.name.clone()).into());
     ctx.insert("params_str".into(), params_str.into());
     ctx.insert("return_type".into(), return_type.into());
+    // RFC §5.A line 311 + Q-C7-6 (b) lock (C7-lowering 2026-05-13):
+    // expose imports so the per-language template's top-of-file
+    // include block emits the right include / use / import statement
+    // per BC alias declared on the algorithm doc. Empty when no
+    // imports → templates' `{% if all_imports %}` block elides.
+    // Codec/procedure precedent: `imports` is the stateful-only
+    // subset (used for member-variable declarations); `all_imports`
+    // is the full slice (used for include statements). Algorithm
+    // function emit doesn't store BC instances as members (they ride
+    // through positional ref params), so the template consumes
+    // `all_imports` for the include block and ignores `imports`.
+    let (has_imports, all_imports_val, stateful_imports_val) =
+        build_template_imports(imports);
+    ctx.insert("has_imports".into(), has_imports.into());
+    ctx.insert(
+        "imports".into(),
+        serde_json::to_value(&stateful_imports_val).unwrap_or_default(),
+    );
+    ctx.insert(
+        "all_imports".into(),
+        serde_json::to_value(&all_imports_val).unwrap_or_default(),
+    );
     ctx.insert(
         "has_return".into(),
         m.signature.return_type.is_some().into(),
@@ -16821,6 +17333,7 @@ mod tests {
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
                 buffer_pool_slot_size: None,
+                bc_element_snake: None,
             },
             ImportContext {
                 alias: "c".to_string(),
@@ -16841,6 +17354,7 @@ mod tests {
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
                 buffer_pool_slot_size: None,
+                bc_element_snake: None,
             },
         ];
         let (has, _all, _stateful) = build_template_imports(&imports);

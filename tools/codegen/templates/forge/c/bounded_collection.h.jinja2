@@ -38,7 +38,7 @@
  * allocation, no goroutine/iterator-state baggage.
  *
  * Generated from `name="{{ name }}"` with capacity `{{ capacity }}`,
- * element-type `{{ element_pascal }}`, on-overflow `{{ on_overflow }}`,
+ * element-type `{{ element_snake }}_t`, on-overflow `{{ on_overflow }}`,
  * ordering `{{ ordering }}`, concurrency `{{ concurrency }}`.
  */
 
@@ -112,7 +112,7 @@ static inline uint32_t {{ snake }}_handle_generation(
 
 /* Storage shape per spec lines 2573-2575 verbatim. */
 typedef struct {
-    {{ element_pascal }} slots[{{ upper_name }}_CAPACITY];
+    {{ element_snake }}_t slots[{{ upper_name }}_CAPACITY];
     uint32_t generation[{{ upper_name }}_CAPACITY];
     uint32_t bitmap[{{ upper_name }}_BITMAP_WORDS];
     uint32_t count;
@@ -175,7 +175,7 @@ static inline void {{ snake }}_init({{ snake }}_t *self)
  * validator that forces ordering=Insertion). */
 static inline {{ snake }}_insert_result_t {{ snake }}_insert(
     {{ snake }}_t *self,
-    const {{ element_pascal }} *elem)
+    const {{ element_snake }}_t *elem)
 {
     {{ snake }}_insert_result_t r;
     if (self->count < {{ upper_name }}_CAPACITY) {
@@ -240,7 +240,7 @@ static inline bool {{ snake }}_remove(
 
 /* Get (spec line 2614). Returns NULL when the slot is free OR when
  * the handle's generation no longer matches. */
-static inline const {{ element_pascal }} *{{ snake }}_get(
+static inline const {{ element_snake }}_t *{{ snake }}_get(
     const {{ snake }}_t *self,
     {{ snake }}_handle_t handle)
 {
@@ -259,7 +259,7 @@ static inline const {{ element_pascal }} *{{ snake }}_get(
  * where the caller walks slot indices directly via the bitmap order).
  * Backs the C7 `<sce:foreach in="<bc-alias>">` index-loop lowering
  * across all 6 backends (Q-C7-2 (c) lock 2026-05-13). */
-static inline const {{ element_pascal }} *{{ snake }}_get_by_slot(
+static inline const {{ element_snake }}_t *{{ snake }}_get_by_slot(
     const {{ snake }}_t *self,
     uint32_t slot)
 {
@@ -297,7 +297,7 @@ static inline {{ snake }}_insert_result_t {{ snake }}_find_by_index(
  * the callback can carry per-call state without globals. */
 static inline void {{ snake }}_foreach(
     const {{ snake }}_t *self,
-    void (*fn)(const {{ element_pascal }} *elem, void *user),
+    void (*fn)(const {{ element_snake }}_t *elem, void *user),
     void *user)
 {
     for (uint32_t slot = 0u; slot < {{ upper_name }}_CAPACITY; ++slot) {

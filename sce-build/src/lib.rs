@@ -2061,6 +2061,19 @@ fn validate_and_enrich_imports(
             if let forge::model::ForgeDocument::BufferPool(pm) = &doc {
                 ctx.buffer_pool_slot_size = Some(pm.slot_size);
             }
+            // RFC §5.A line 311 + §5.L line 2642-2647 (C7-lowering
+            // 2026-05-13): bounded-collection imports carry their
+            // element-type snake form forward so the algorithm-over-BC
+            // iter emit can name the codec's `<element_snake>_t`
+            // typedef when the C11 backend stack-copies the element
+            // value (dot-access body preservation — see
+            // `ImportContext::bc_element_snake` for the cross-backend
+            // contract).
+            if let forge::model::ForgeDocument::BoundedCollection(bcm) = &doc {
+                ctx.bc_element_snake = Some(filters::to_snake_case(
+                    bcm.element_type.clone(),
+                ));
+            }
             if !ctx.is_stateful {
                 if let Some(name) = discover_primary_function(&doc, language) {
                     ctx.qualified_call = build_qualified_call(&name, &ctx.namespace, language);

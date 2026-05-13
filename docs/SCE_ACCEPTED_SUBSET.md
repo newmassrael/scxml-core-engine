@@ -446,6 +446,12 @@ Codes that the author can avoid by writing a better SCXML /
 | `algorithm/local-shadows-param` | Validation |
 | `algorithm/lvalue-unsupported` | Validation |
 | `algorithm/return-missing` | Validation |
+| `algorithm/foreach-source-not-iterable` | Validation |
+| `algorithm/call-target-unknown` | Validation |
+| `algorithm/call-target-method-unknown` | Validation |
+| `algorithm/bc-mutation-forbidden` | Validation |
+| `algorithm/foreach-source-bc-with-bytes-item-type` | Validation |
+| `algorithm/call-arg-count-mismatch` | Validation |
 | `algorithm/const-not-foldable` | Generate |
 | `algorithm/const-fold-budget-exceeded` | Generate |
 | `algorithm/const-yield-type-mismatch` | Generate |

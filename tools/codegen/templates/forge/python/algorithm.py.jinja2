@@ -12,6 +12,12 @@
 # contract that `<sce:foreach item>` is `uint8`. Numeric arithmetic
 # in Python is arbitrary-precision so unsigned-narrow truncation is
 # the body author's responsibility (e.g. `crc & 0xFFFF`).
+{% if all_imports %}
+
+{% for imp in all_imports %}
+{{ imp.include_stmt }}
+{% endfor %}
+{% endif %}
 
 {{ consts_prelude }}def {{ name }}({{ params_str }}){% if has_return %} -> {{ return_type }}{% endif %}:
 {{ body }}

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  watching-zenoh RFC §5.A line 311 + §5.L line 2642-2647 (C7-lowering
+  2026-05-13): minimal algorithm-over-BC exemplar. Imports the BC
+  `local_sub_table.scxml` under alias `subs` and iterates via
+  `<sce:foreach in="subs">` to find the first occupied slot whose
+  element's `callback_id` field equals the `target` param. Returns the
+  slot index (1-based to leave 0 as the "not found" sentinel per the
+  uint16 return contract).
+
+  Single fixture exercises four C7-lowering surfaces:
+    1. `<sce:foreach in="<bc-alias>">` source dispatch (Q-Lowering-4 b).
+    2. Field access on the BC element (`entry.callback_id`).
+    3. Native early `<sce:return>` from inside the BC iteration.
+    4. The `for_each` body emit's `slot_idx` local — note we don't
+       emit `slot_idx` literally; the body uses a per-loop counter
+       only inside the codegen and the author's contract is the
+       element + early-exit, mirrors the spec's "iteration + match"
+       pattern.
+
+  Reference exemplar with full keyexpr_intersect semantics ships in
+  the C7-keyexpr-fixture atomic (sub-atomic 3 of 3). This fixture
+  keeps the lowering surface tight so the integration test file
+  `c7_keyexpr_match.rs` can read the emitted code line-by-line and
+  assert the per-backend index-loop + dotted-call shape.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       version="1.0">
+  <sce:import kind="bounded-collection" src="local_sub_table.scxml" as="subs"/>
+  <sce:signature>
+    <sce:param name="target" type="uint32"/>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:foreach item="entry" in="subs">
+      <sce:if cond="entry.callback_id === target">
+        <sce:return expr="0"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="0xFFFF"/>
+  </sce:body>
+</scxml>

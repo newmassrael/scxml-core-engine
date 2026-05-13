@@ -10,6 +10,14 @@
 // parameters lower to `[]byte` (RFC §5.J.5 emitter table).
 
 package {{ package }}
+{% if all_imports %}
+
+import (
+{% for imp in all_imports %}
+{{ imp.include_stmt }}
+{% endfor %}
+)
+{% endif %}
 
 {{ consts_prelude }}func {{ name_pascal }}({{ params_str }}){% if has_return %} {{ return_type }}{% endif %} {
 {{ body }}

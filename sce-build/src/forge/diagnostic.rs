@@ -397,6 +397,27 @@ pub enum DiagnosticCode {
     #[serde(rename = "algorithm/return-missing")]
     AlgorithmReturnMissing,
 
+    // ── Algorithm-over-BC dispatch (RFC §5.A line 311 + §5.L lines
+    //    2611-2618 + 2642-2647, C7-lowering 2026-05-13). Six codes wire
+    //    the `<sce:foreach in="<bc>">` + `<sce:call
+    //    target="alias.method">` lowering surface that lets an
+    //    algorithm body iterate a bounded-collection import and
+    //    dispatch into its read-only method set. Two ride
+    //    `FixCarriesCandidates` (alias / method enumeration); four
+    //    ride `NeutralOrDeterministic`. ───────────────────────────
+    #[serde(rename = "algorithm/foreach-source-not-iterable")]
+    AlgorithmForeachSourceNotIterable,
+    #[serde(rename = "algorithm/call-target-unknown")]
+    AlgorithmCallTargetUnknown,
+    #[serde(rename = "algorithm/call-target-method-unknown")]
+    AlgorithmCallTargetMethodUnknown,
+    #[serde(rename = "algorithm/bc-mutation-forbidden")]
+    AlgorithmBcMutationForbidden,
+    #[serde(rename = "algorithm/foreach-source-bc-with-bytes-item-type")]
+    AlgorithmForeachSourceBcWithBytesItemType,
+    #[serde(rename = "algorithm/call-arg-count-mismatch")]
+    AlgorithmCallArgCountMismatch,
+
     // ── SCXML semantic-validation (RFC §W5). Three of the four
     //    SCXML semantic failures fold into existing `validation/*`
     //    codes per the W4 D4 fold precedent — concept identity:
@@ -1456,6 +1477,14 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         AlgorithmLocalShadowsParam,
         AlgorithmLvalueUnsupported,
         AlgorithmReturnMissing,
+        // Algorithm-over-BC dispatch (RFC §5.A line 311 + §5.L lines
+        // 2611-2618 + 2642-2647, C7-lowering 2026-05-13)
+        AlgorithmForeachSourceNotIterable,
+        AlgorithmCallTargetUnknown,
+        AlgorithmCallTargetMethodUnknown,
+        AlgorithmBcMutationForbidden,
+        AlgorithmForeachSourceBcWithBytesItemType,
+        AlgorithmCallArgCountMismatch,
         // SCXML semantic (RFC §W5)
         ScxmlTopLevelScriptUnloaded,
         ScxmlOnSampleInvalidParent,
@@ -1771,6 +1800,18 @@ impl DiagnosticCode {
             AlgorithmLocalShadowsParam
             | AlgorithmLvalueUnsupported
             | AlgorithmReturnMissing => Some("watching-zenoh RFC §5.A"),
+
+            // ── Algorithm-over-BC dispatch (C7-lowering: RFC §5.A
+            //    line 311 + §5.L lines 2611-2618 + 2642-2647). Six
+            //    codes share the cross-section anchor that names both
+            //    the algorithm `Call`/`Foreach` IR shape and the BC
+            //    public-method roster. ─────────────────────────────
+            AlgorithmForeachSourceNotIterable
+            | AlgorithmCallTargetUnknown
+            | AlgorithmCallTargetMethodUnknown
+            | AlgorithmBcMutationForbidden
+            | AlgorithmForeachSourceBcWithBytesItemType
+            | AlgorithmCallArgCountMismatch => Some("watching-zenoh RFC §5.A + §5.L"),
 
             // ── Algorithm §5.F build-time const-fold ─────────────
             AlgorithmConstNotFoldable
@@ -2129,6 +2170,14 @@ impl DiagnosticCode {
             AlgorithmLocalShadowsParam => "algorithm/local-shadows-param",
             AlgorithmLvalueUnsupported => "algorithm/lvalue-unsupported",
             AlgorithmReturnMissing => "algorithm/return-missing",
+            AlgorithmForeachSourceNotIterable => "algorithm/foreach-source-not-iterable",
+            AlgorithmCallTargetUnknown => "algorithm/call-target-unknown",
+            AlgorithmCallTargetMethodUnknown => "algorithm/call-target-method-unknown",
+            AlgorithmBcMutationForbidden => "algorithm/bc-mutation-forbidden",
+            AlgorithmForeachSourceBcWithBytesItemType => {
+                "algorithm/foreach-source-bc-with-bytes-item-type"
+            }
+            AlgorithmCallArgCountMismatch => "algorithm/call-arg-count-mismatch",
             ScxmlTopLevelScriptUnloaded => "scxml/top-level-script-unloaded",
             ScxmlOnSampleInvalidParent => "scxml/on-sample-invalid-parent",
             ScxmlOnSampleLinkDuplicateInState => "scxml/on-sample-link-duplicate-in-state",
@@ -2996,6 +3045,111 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: None,
             fix: None,
             key_fragments: Vec::new(),
+        },
+        // ── C7-lowering: algorithm-over-BC dispatch ──────────────────
+        // Two codes ride `FixCarriesCandidates` (alias / method
+        // enumeration); the other four are `NeutralOrDeterministic`.
+        ValidationError::AlgorithmForeachSourceNotIterable {
+            src,
+            candidates,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::AlgorithmForeachSourceNotIterable,
+            stage: Stage::Validation,
+            // Multi-axis repair (author may add a BC import OR rename
+            // the foreach source to an existing bytes param); no
+            // single canonical `Fix::Replace` value. The visible-name
+            // union rides `key_fragments` for content-hash stability.
+            expected: None,
+            actual: Some(src.clone()),
+            fix: None,
+            key_fragments: {
+                let mut k = vec![src.clone()];
+                k.extend(candidates.iter().cloned());
+                k
+            },
+        },
+        ValidationError::AlgorithmCallTargetUnknown {
+            target,
+            alias,
+            candidates,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::AlgorithmCallTargetUnknown,
+            stage: Stage::Validation,
+            // Closed candidate set = declared import alias roster.
+            // Mirrors `WorkerOutboxRefUnknown` precedent for sorted
+            // alias-name candidates.
+            expected: None,
+            actual: Some(alias.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![target.clone(), alias.clone()],
+        },
+        ValidationError::AlgorithmCallTargetMethodUnknown {
+            target,
+            alias,
+            method,
+            kind,
+            candidates,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::AlgorithmCallTargetMethodUnknown,
+            stage: Stage::Validation,
+            // Closed candidate set = the import kind's public-method
+            // roster (BC: `{find_by_index, get, get_by_slot, len,
+            // capacity}`; algorithm: the algorithm name itself).
+            expected: None,
+            actual: Some(method.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![target.clone(), alias.clone(), kind.clone()],
+        },
+        ValidationError::AlgorithmBcMutationForbidden { target, method } => DiagnosticPayload {
+            code: DiagnosticCode::AlgorithmBcMutationForbidden,
+            stage: Stage::Validation,
+            // Author repair is either (a) move the mutation into a
+            // statechart-level `<sce:on-sample>`/`<onentry>` block
+            // that legally calls BC `.insert`/`.remove`, or (b)
+            // delete the call. No closed candidate — both repairs
+            // sit outside the algorithm body so neither rides
+            // `Fix::Replace`.
+            expected: None,
+            actual: Some(method.clone()),
+            fix: None,
+            key_fragments: vec![target.clone(), method.clone()],
+        },
+        ValidationError::AlgorithmForeachSourceBcWithBytesItemType { src, var_name } => {
+            DiagnosticPayload {
+                code: DiagnosticCode::AlgorithmForeachSourceBcWithBytesItemType,
+                stage: Stage::Validation,
+                // Repair is "remove the bytes-pattern `<sce:var
+                // type=uint8>` and rely on the foreach item's
+                // element-type binding" — a deletion, not a
+                // replacement. `Fix::None`.
+                expected: None,
+                actual: Some(var_name.clone()),
+                fix: None,
+                key_fragments: vec![src.clone(), var_name.clone()],
+            }
+        }
+        ValidationError::AlgorithmCallArgCountMismatch {
+            target,
+            actual,
+            expected,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::AlgorithmCallArgCountMismatch,
+            stage: Stage::Validation,
+            // Numeric mismatch; the imported callable's arity is the
+            // single repair axis but arg expressions are author-
+            // domain. `expected`/`fix` stay `None` per
+            // `NeutralOrDeterministic` non_overlap_class default;
+            // both numbers ride `key_fragments` for content-hash
+            // discrimination (matches `ValidationCountMismatch`
+            // precedent).
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![target.clone(), actual.to_string(), expected.to_string()],
         },
         ValidationError::CodecVariantArmUnreachable {
             codec,
@@ -5760,6 +5914,74 @@ mod tests {
                 ValidationError::AlgorithmReturnMissing.into(),
                 r#"{"v":1,"id":"fnv1a:e2582bd483bbf621","code":"algorithm/return-missing","stage":"validation","spec":"watching-zenoh RFC §5.A","message":"algorithm: signature declares return type but body's last statement is not <sce:return>"}"#,
             ),
+            // ── C7-lowering: algorithm-over-BC dispatch goldens
+            //    (RFC §5.A line 311 + §5.L lines 2611-2618 + 2642-2647).
+            //    Hash placeholders — patched by byte-stability assertion.
+            (
+                "forge/algorithm-foreach-source-not-iterable",
+                ValidationError::AlgorithmForeachSourceNotIterable {
+                    src: "missing_bc".into(),
+                    candidates: vec!["data".into(), "subs".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:8e088992b058a56d","code":"algorithm/foreach-source-not-iterable","stage":"validation","spec":"watching-zenoh RFC §5.A + §5.L","message":"algorithm: <sce:foreach in=\"missing_bc\">: source does not resolve to a bytes param or a bounded-collection import alias","actual":"missing_bc"}"#,
+            ),
+            (
+                "forge/algorithm-call-target-unknown",
+                ValidationError::AlgorithmCallTargetUnknown {
+                    target: "missing_alias.find_by_index".into(),
+                    alias: "missing_alias".into(),
+                    candidates: vec!["subs".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:7ca80fadd3ca6709","code":"algorithm/call-target-unknown","stage":"validation","spec":"watching-zenoh RFC §5.A + §5.L","message":"algorithm: <sce:call target=\"missing_alias.find_by_index\">: alias 'missing_alias' is not a declared import","actual":"missing_alias","fix":{"kind":"replace_one_of","candidates":["subs"]}}"#,
+            ),
+            (
+                "forge/algorithm-call-target-method-unknown",
+                ValidationError::AlgorithmCallTargetMethodUnknown {
+                    target: "subs.unknown_method".into(),
+                    alias: "subs".into(),
+                    method: "unknown_method".into(),
+                    kind: "bounded-collection".into(),
+                    candidates: vec![
+                        "capacity".into(),
+                        "find_by_index".into(),
+                        "get".into(),
+                        "get_by_slot".into(),
+                        "len".into(),
+                    ],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:18c90b6a637ace44","code":"algorithm/call-target-method-unknown","stage":"validation","spec":"watching-zenoh RFC §5.A + §5.L","message":"algorithm: <sce:call target=\"subs.unknown_method\">: method 'unknown_method' is not callable on import 'subs' (kind=bounded-collection)","actual":"unknown_method","fix":{"kind":"replace_one_of","candidates":["capacity","find_by_index","get","get_by_slot","len"]}}"#,
+            ),
+            (
+                "forge/algorithm-bc-mutation-forbidden",
+                ValidationError::AlgorithmBcMutationForbidden {
+                    target: "subs.insert".into(),
+                    method: "insert".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:7fa7fc026ed6fad4","code":"algorithm/bc-mutation-forbidden","stage":"validation","spec":"watching-zenoh RFC §5.A + §5.L","message":"algorithm: <sce:call target=\"subs.insert\">: mutating bounded-collection method 'insert' is forbidden from algorithm body (algorithms are pure per RFC §5.A)","actual":"insert"}"#,
+            ),
+            (
+                "forge/algorithm-foreach-source-bc-with-bytes-item-type",
+                ValidationError::AlgorithmForeachSourceBcWithBytesItemType {
+                    src: "subs".into(),
+                    var_name: "b".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:6b9c5ec0f8cf743f","code":"algorithm/foreach-source-bc-with-bytes-item-type","stage":"validation","spec":"watching-zenoh RFC §5.A + §5.L","message":"algorithm: <sce:foreach in=\"subs\"> over bounded-collection: body's <sce:var name=\"b\" type=\"uint8\"> uses the bytes-iteration pattern but 'subs' is a bounded-collection (item carries element-type)","actual":"b"}"#,
+            ),
+            (
+                "forge/algorithm-call-arg-count-mismatch",
+                ValidationError::AlgorithmCallArgCountMismatch {
+                    target: "subs.find_by_index".into(),
+                    actual: 2,
+                    expected: 1,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:bd464011584cd3c9","code":"algorithm/call-arg-count-mismatch","stage":"validation","spec":"watching-zenoh RFC §5.A + §5.L","message":"algorithm: <sce:call target=\"subs.find_by_index\">: argument count 2 does not match callable's arity 1"}"#,
+            ),
             // ── §5.F build-time const-fold (watching-zenoh RFC §5.F) ─
             (
                 "forge/algorithm-const-not-foldable",
@@ -7341,7 +7563,19 @@ mod tests {
             // rides `Fix::ReplaceOneOf`. Mirrors the
             // `BufferPoolSectionConflict` precedent for sorted-
             // declared-name candidate sets.
-            | CollectionCapacityUnresolved => FixCarriesCandidates,
+            | CollectionCapacityUnresolved
+            // C7-lowering algorithm-over-BC dispatch (RFC §5.A line 311
+            // + §5.L line 2611-2618 + 2642-2647). Two of the six
+            // codes carry a closed candidate set:
+            //   - `algorithm/call-target-unknown`: sorted alias roster
+            //     from the algorithm doc's `<sce:import>` list.
+            //   - `algorithm/call-target-method-unknown`: the import's
+            //     public-method roster per kind (BC = closed
+            //     `{find_by_index, get, get_by_slot, len, capacity}`;
+            //     algorithm = the imported algorithm name itself).
+            // The other four sit in NeutralOrDeterministic below.
+            | AlgorithmCallTargetUnknown
+            | AlgorithmCallTargetMethodUnknown => FixCarriesCandidates,
 
             // ── `expected` carries non-repair metadata ────────
             ExpressionParseMismatch | MeshExternalAmbiguousEventGroup => ExpectedIsMetadata,
@@ -7473,6 +7707,25 @@ mod tests {
             | AlgorithmLocalShadowsParam
             | AlgorithmLvalueUnsupported
             | AlgorithmReturnMissing
+            // C7-lowering algorithm-over-BC dispatch — four of the six
+            // codes ride `NeutralOrDeterministic`:
+            //   - `algorithm/foreach-source-not-iterable`: multi-axis
+            //     repair (rename source OR add BC import); `Fix::None`.
+            //   - `algorithm/bc-mutation-forbidden`: repair is either
+            //     move the mutation to a non-algorithm host or delete
+            //     the call; both repairs sit outside the algorithm
+            //     body so no `Fix::Replace` value applies.
+            //   - `algorithm/foreach-source-bc-with-bytes-item-type`:
+            //     repair is "delete the bytes-pattern <sce:var>"; a
+            //     deletion, not a replacement.
+            //   - `algorithm/call-arg-count-mismatch`: numeric arity
+            //     mismatch; arg expressions are author-domain so no
+            //     `Fix::Replace` candidate. Matches the
+            //     `ValidationCountMismatch` precedent.
+            | AlgorithmForeachSourceNotIterable
+            | AlgorithmBcMutationForbidden
+            | AlgorithmForeachSourceBcWithBytesItemType
+            | AlgorithmCallArgCountMismatch
             | ScxmlTopLevelScriptUnloaded
             | ScxmlOnSampleInvalidParent
             | ScxmlOnSampleLinkDuplicateInState
@@ -7852,6 +8105,12 @@ mod tests {
                 | AlgorithmLocalShadowsParam
                 | AlgorithmLvalueUnsupported
                 | AlgorithmReturnMissing
+                | AlgorithmForeachSourceNotIterable
+                | AlgorithmCallTargetUnknown
+                | AlgorithmCallTargetMethodUnknown
+                | AlgorithmBcMutationForbidden
+                | AlgorithmForeachSourceBcWithBytesItemType
+                | AlgorithmCallArgCountMismatch
                 | ScxmlTopLevelScriptUnloaded
                 | ScxmlOnSampleInvalidParent
                 | ScxmlOnSampleLinkDuplicateInState
@@ -8010,9 +8269,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            224,
+            230,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 224 distinct variants to match the DiagnosticCode \
+             expected 230 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -8348,7 +8607,29 @@ mod tests {
              alongside the first-backend (Rust) template emit per \
              `[[feedback-silently-broken-hooks]]` — the Handle is \
              purely codegen-time and has no in-atomic consumer at the \
-             foundation tier; 223 → 224.",
+             foundation tier; 223 → 224. Then watching-zenoh RFC §5.A \
+             line 311 + §5.L lines 2611-2618 + 2642-2647 C7-lowering \
+             algorithm-over-BC dispatch — six spec-named codes wiring \
+             the `<sce:foreach in=\"<bc>\">` + `<sce:call \
+             target=\"alias.method\">` lowering surface so an algorithm \
+             body iterates a bounded-collection import and dispatches \
+             into its read-only method set. Two ride \
+             `Fix::ReplaceOneOf` ⇒ FixCarriesCandidates: \
+             `algorithm/call-target-unknown` (sorted alias roster from \
+             the algorithm doc's `<sce:import>` list) and \
+             `algorithm/call-target-method-unknown` (per-kind public-\
+             method roster — BC closed `{{find_by_index, get, \
+             get_by_slot, len, capacity}}`, algorithm singleton = the \
+             imported algorithm name itself). Four ride \
+             `NeutralOrDeterministic`: `algorithm/foreach-source-not-\
+             iterable` (multi-axis: rename source OR add BC import), \
+             `algorithm/bc-mutation-forbidden` (repair sits outside the \
+             algorithm body — algorithms are pure per RFC §5.A line \
+             333), `algorithm/foreach-source-bc-with-bytes-item-type` \
+             (deletion-style repair), and `algorithm/call-arg-count-\
+             mismatch` (numeric arity mismatch — arg expressions are \
+             author-domain, mirrors `ValidationCountMismatch` precedent). \
+             224 → 230.",
         );
     }
 

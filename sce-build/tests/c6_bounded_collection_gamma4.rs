@@ -152,8 +152,13 @@ fn c11_happy_compile_const_no_index_by() {
     assert!(code.contains("#define LOCAL_SUB_TABLE_SLOT_BITS 16u"));
     assert!(code.contains("#define LOCAL_SUB_TABLE_GEN_BITS 16u"));
 
-    // Storage shape per spec lines 2573-2575 verbatim.
-    assert!(code.contains("typedef struct {\n    SubscriptionEntry slots[LOCAL_SUB_TABLE_CAPACITY];"));
+    // Storage shape per spec lines 2573-2575 verbatim. The element-
+    // type reference uses the codec's emitted typedef
+    // `<element_snake>_t` (C7-lowering 2026-05-13 foundation fix —
+    // pre-C7-lowering the BC C11 template referenced `<element_pascal>`
+    // which has no codec-side typedef, making gcc compilation fail
+    // silently under the text-only foundation tests).
+    assert!(code.contains("typedef struct {\n    subscription_entry_t slots[LOCAL_SUB_TABLE_CAPACITY];"));
     assert!(code.contains("uint32_t generation[LOCAL_SUB_TABLE_CAPACITY];"));
     assert!(code.contains("uint32_t bitmap[LOCAL_SUB_TABLE_BITMAP_WORDS];"));
     assert!(code.contains("uint32_t count;\n} local_sub_table_t;"));
@@ -161,13 +166,13 @@ fn c11_happy_compile_const_no_index_by() {
     // Operations contract (spec line 2575 snake_case API).
     assert!(code.contains("static inline local_sub_table_insert_result_t local_sub_table_insert("));
     assert!(code.contains("static inline bool local_sub_table_remove("));
-    assert!(code.contains("static inline const SubscriptionEntry *local_sub_table_get("));
+    assert!(code.contains("static inline const subscription_entry_t *local_sub_table_get("));
     assert!(code.contains("static inline uint32_t local_sub_table_len("));
     assert!(code.contains("static inline uint32_t local_sub_table_capacity("));
 
     // Q-γ4-C11-iter-shape (a): callback iteration.
     assert!(code.contains("static inline void local_sub_table_foreach("));
-    assert!(code.contains("void (*fn)(const SubscriptionEntry *elem, void *user),"));
+    assert!(code.contains("void (*fn)(const subscription_entry_t *elem, void *user),"));
 
     // No find_by_index without <sce:index-by>.
     assert!(

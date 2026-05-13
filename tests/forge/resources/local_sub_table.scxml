@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  watching-zenoh RFC §5.L (bounded-collection kind) + RFC §5.A line 311
+  + §5.L line 2642-2647 (C7-lowering 2026-05-13): minimal BC consumed
+  by `algorithm_bc_iter_minimal.scxml` to exercise the algorithm-over-
+  BC `<sce:foreach in="<bc-alias>">` + `<sce:call target="alias.method">`
+  lowering surface. Capacity 8 keeps the C11 deref-copy + uniform
+  index-loop emit small enough to inspect by hand while still covering
+  the slot-occupancy / get_by_slot path. Element-type `subscription_entry`
+  (sibling codec) carries `callback_id: uint32` as the matchable field.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="bounded-collection"
+       name="local_sub_table"
+       version="1.0">
+  <sce:element-type>subscription_entry</sce:element-type>
+  <sce:capacity const="8"/>
+</scxml>

@@ -8,6 +8,12 @@
 // RFC §5.A: pure synchronous function with bounded loops. Free
 // function, no instance state. `#![no_std]`-clean when no `bytes`
 // parameter (this fixture: no_std_clean = {{ no_std_clean }}).
+{% if all_imports %}
+
+{% for imp in all_imports %}
+{{ imp.include_stmt }}
+{% endfor %}
+{% endif %}
 
 {{ consts_prelude }}#[allow(clippy::all)]
 #[allow(unused_assignments)]

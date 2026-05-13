@@ -17,6 +17,12 @@
 {% endif %}
 
 package com.sce.generated.{{ package }}
+{% if all_imports %}
+
+{% for imp in all_imports %}
+{{ imp.include_stmt }}
+{% endfor %}
+{% endif %}
 
 {{ consts_prelude }}fun {{ name_camel }}({{ params_str }}){% if has_return %}: {{ return_type }}{% endif %} {
 {{ body }}

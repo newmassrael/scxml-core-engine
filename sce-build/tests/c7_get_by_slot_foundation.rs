@@ -245,11 +245,16 @@ fn python_get_by_slot_signature_and_boundary_checks() {
 fn c11_get_by_slot_signature_and_boundary_checks() {
     let code = compile_bc_for(Language::C11);
 
-    // Signature: static inline const SubscriptionEntry *local_sub_table_get_by_slot(
-    //                const local_sub_table_t *self, uint32_t slot)
+    // Signature: static inline const subscription_entry_t
+    //                *local_sub_table_get_by_slot(
+    //                    const local_sub_table_t *self, uint32_t slot)
+    // The element-type reference matches the codec's emitted typedef
+    // `<element_snake>_t` (codec template's `c_struct_typedef`), so the
+    // BC's `#include "<element_snake>.h"` brings the type into scope
+    // without requiring an additional PascalCase alias.
     assert!(
         code.contains(
-            "static inline const SubscriptionEntry *local_sub_table_get_by_slot(\n    const local_sub_table_t *self,\n    uint32_t slot)"
+            "static inline const subscription_entry_t *local_sub_table_get_by_slot(\n    const local_sub_table_t *self,\n    uint32_t slot)"
         ),
         "C11 signature missing; got:\n{code}"
     );
