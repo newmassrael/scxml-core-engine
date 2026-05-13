@@ -176,7 +176,15 @@ fn link_driver_unknown_fires() {
     assert_eq!(link_name, "udp_data");
     assert_eq!(driver, "foo_udp");
     // Sorted baseline known-driver set.
-    assert_eq!(candidates, vec!["lwip_tcp".to_string(), "lwip_udp".to_string()]);
+    // Sorted KNOWN_DRIVERS baseline: lwip_tcp / lwip_udp / serial_uart (spec C11 added serial).
+    assert_eq!(
+        candidates,
+        vec![
+            "lwip_tcp".to_string(),
+            "lwip_udp".to_string(),
+            "serial_uart".to_string(),
+        ]
+    );
 }
 
 /// Negative: `mtu_bytes` below driver floor (`lwip_udp` floor = 28).

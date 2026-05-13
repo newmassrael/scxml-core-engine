@@ -2322,12 +2322,25 @@ fn validate_pool_defaults(cfg: &DeployConfig) -> Result<(), DeployError> {
 /// require RX pool slot_count cross-doc resolution.
 fn validate_links(cfg: &DeployConfig) -> Result<(), DeployError> {
     /// Known-driver baseline carrying min-MTU floor.
-    /// Currently `lwip_udp = 28` (IPv4 minimum header) and
-    /// `lwip_tcp = 40` (IPv4 + TCP minimum). Unknown drivers fall
-    /// through to forge cross-doc registry lookup in the orchestrator
-    /// pass; the parse-time validator silent-skips the floor check
-    /// for them.
-    const KNOWN_DRIVERS: &[(&str, u32)] = &[("lwip_tcp", 40), ("lwip_udp", 28)];
+    ///
+    /// IP-stack drivers carry an IP-encapsulation floor:
+    ///   - `lwip_udp = 28` (IPv4 minimum header)
+    ///   - `lwip_tcp = 40` (IPv4 + TCP minimum)
+    ///
+    /// Non-IP drivers carry floor `0` to mark "skip floor check"
+    /// explicitly — the §5.B framer codec carries the frame-size
+    /// invariant at the protocol-decoder layer instead:
+    ///   - `serial_uart = 0` (UART has no IP-stack overhead;
+    ///     watching-zenoh RFC §5.C line 729 + spec C11 atomic)
+    ///
+    /// Unknown drivers fall through to forge cross-doc registry
+    /// lookup in the orchestrator pass; the parse-time validator
+    /// silent-skips the floor check for them.
+    const KNOWN_DRIVERS: &[(&str, u32)] = &[
+        ("lwip_tcp", 40),
+        ("lwip_udp", 28),
+        ("serial_uart", 0),
+    ];
 
     fn known_driver_floor(driver: &str) -> Option<u32> {
         KNOWN_DRIVERS
