@@ -1631,20 +1631,18 @@ pub enum DiagnosticCode {
 
     // ── C13-β anti-flood + stateless_accept (RFC §5.K lines
     //    2272-2349 + 2449-2473). Five codes wire the conditional
-    //    requirement, dead-config rejection, opt-out reuirement,
-    //    and key-rotation invariant. Two additional spec codes
-    //    defer to follow-up atomics:
+    //    requirement, dead-config rejection, opt-out requirement,
+    //    and key-rotation invariant. C13 deferred-2 closes the two
+    //    follow-ups originally deferred:
     //      - `deploy/session-arming-quota-vs-peer-table-invariant-violated`
-    //        (line 2460-2462) needs `peer_table.capacity` +
-    //        `max_handshake_time_s` schema fields that the spec
-    //        references in invariants but does not declare as
-    //        deploy.yaml schema entries today.
+    //        (line 2460-2462) — landed alongside `peer_table` +
+    //        `max_handshake_time_s` schema fields on the
+    //        `stateless_accept` block (validator wired into
+    //        `validate_links` per per-link invariant scope).
     //      - `deploy/stateless-accept-extern-not-whitelisted`
-    //        (line 2466-2469) requires cross-doc resolution against
-    //        the §5.I baseline whitelist AND any loaded
-    //        `target_plugin` symbols — target_plugin loading lives
-    //        on `compile_forge_with_deploy`, not at parse-time.
-    //    Both defer per `[[feedback-silently-broken-hooks]]`.
+    //        (line 2466-2469) — landed at the orchestrator level
+    //        where the §5.I baseline + loaded `target_plugin`
+    //        symbols converge, mirroring C4 Atomic B precedent.
 
     /// Watching-zenoh RFC §5.K line 2449-2451 verbatim
     /// (`deploy/session-arming-quota-missing`). Link declares
@@ -1694,6 +1692,36 @@ pub enum DiagnosticCode {
     /// vs lower cookie_lifetime_ms).
     #[serde(rename = "deploy/stateless-accept-key-rotation-shorter-than-lifetime")]
     MeshDeployStatelessAcceptKeyRotationShorterThanLifetime,
+
+    /// Watching-zenoh RFC §5.K line 2460-2462 verbatim
+    /// (`deploy/session-arming-quota-vs-peer-table-invariant-violated`).
+    /// `session_arming_quota × max_handshake_time_s > peer_table.capacity`.
+    /// A slow legitimate handshake can be evicted under attack when
+    /// an attacker churns the quota faster than the per-peer table
+    /// absorbs. Hard error.
+    /// NeutralOrDeterministic — three-axis repair (raise
+    /// `peer_table.capacity`, lower `session_arming_quota`, or lower
+    /// `max_handshake_time_s`); the wire payload carries the
+    /// violating product in `actual` and the bound in `expected`.
+    /// C13 deferred-2 lands the consuming validator inside
+    /// `validate_links` alongside the other anti-flood checks.
+    #[serde(rename = "deploy/session-arming-quota-vs-peer-table-invariant-violated")]
+    MeshDeploySessionArmingQuotaVsPeerTableInvariantViolated,
+
+    /// Watching-zenoh RFC §5.K line 2466-2469 verbatim
+    /// (`deploy/stateless-accept-extern-not-whitelisted`).
+    /// `hmac_extern` or `rng_extern` symbol not present in the
+    /// `sce_intrinsics_runtime` core whitelist AND not declared in
+    /// any loaded `target_plugin`. Hard error.
+    /// FixCarriesCandidates — closed-set candidates is the sorted
+    /// union of §5.I baseline names + target-plugin-loaded names
+    /// (`Fix::ReplaceOneOf`). C13 deferred-2 lands the consuming
+    /// validator at the orchestrator level
+    /// (`compile_scxml_with_imports` + `compile_forge_with_deploy`)
+    /// because target-plugin loading is deploy-driven, mirroring
+    /// the C4 Atomic B precedent.
+    #[serde(rename = "deploy/stateless-accept-extern-not-whitelisted")]
+    MeshDeployStatelessAcceptExternNotWhitelisted,
 
     /// Watching-zenoh RFC §5.K line 2501-2503 verbatim
     /// (`deploy/link-burst-pps-missing-on-isr-dispatch`). The resolved
@@ -2098,6 +2126,9 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeploySessionArmingFieldsOnNonArmingLink,
         MeshDeployStatelessAcceptRequiredOnUntrustedSource,
         MeshDeployStatelessAcceptKeyRotationShorterThanLifetime,
+        // C13 deferred-2: peer_table invariant + extern allowlist (RFC §5.K lines 2460-2462 + 2466-2469)
+        MeshDeploySessionArmingQuotaVsPeerTableInvariantViolated,
+        MeshDeployStatelessAcceptExternNotWhitelisted,
         // Mesh External config
         MeshExternalRead,
         MeshExternalParse,
@@ -2473,6 +2504,10 @@ impl DiagnosticCode {
             | MeshDeploySessionArmingFieldsOnNonArmingLink
             | MeshDeployStatelessAcceptRequiredOnUntrustedSource
             | MeshDeployStatelessAcceptKeyRotationShorterThanLifetime
+            // C13 deferred-2: peer_table invariant (RFC §5.K line
+            // 2460-2462) + extern allowlist (RFC §5.K line 2466-2469).
+            | MeshDeploySessionArmingQuotaVsPeerTableInvariantViolated
+            | MeshDeployStatelessAcceptExternNotWhitelisted
                 => Some("watching-zenoh RFC §5.K"),
 
             // ── Mesh rule 12 — parallel root designation (SCE_MESH.md §14 rule 12) ──
@@ -2829,6 +2864,8 @@ impl DiagnosticCode {
             MeshDeploySessionArmingFieldsOnNonArmingLink => "deploy/session-arming-fields-on-non-arming-link",
             MeshDeployStatelessAcceptRequiredOnUntrustedSource => "deploy/stateless-accept-required-on-untrusted-source",
             MeshDeployStatelessAcceptKeyRotationShorterThanLifetime => "deploy/stateless-accept-key-rotation-shorter-than-lifetime",
+            MeshDeploySessionArmingQuotaVsPeerTableInvariantViolated => "deploy/session-arming-quota-vs-peer-table-invariant-violated",
+            MeshDeployStatelessAcceptExternNotWhitelisted => "deploy/stateless-accept-extern-not-whitelisted",
             MeshExternalRead => "mesh/external-read",
             MeshExternalParse => "mesh/external-parse",
             MeshExternalUnresolvedNames => "mesh/external-unresolved-names",
@@ -7944,6 +7981,34 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:16e83b54ae5813fa","code":"deploy/stateless-accept-key-rotation-shorter-than-lifetime","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_listener' `stateless_accept.key_rotation_s: 30` × 1000 ≤ 2 × `cookie_lifetime_ms: 30000` (30000 ≤ 60000). watching-zenoh RFC §5.K line 2470-2473 — the previous-key honor window cannot bridge a rotation, so handshakes near rotation boundaries get spurious cookie rejection. Repair: raise `key_rotation_s` to > `2 × cookie_lifetime_ms / 1000`, or lower `cookie_lifetime_ms` to < `key_rotation_s × 500`.","expected":["60000"],"actual":"30000"}"#,
             ),
             (
+                "deploy/session-arming-quota-vs-peer-table-invariant-violated",
+                DeployError::SessionArmingQuotaVsPeerTableInvariantViolated {
+                    machine: "mcu_node".into(),
+                    link_name: "udp_listener".into(),
+                    session_arming_quota: 8,
+                    max_handshake_time_s: 2,
+                    peer_table_capacity: 8,
+                    product: 16,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:4fea7d1c968b2879","code":"deploy/session-arming-quota-vs-peer-table-invariant-violated","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_listener' `session_arming_quota: 8` × `stateless_accept.max_handshake_time_s: 2` > `stateless_accept.peer_table.capacity: 8` (16 > 8). watching-zenoh RFC §5.K line 2460-2462 — a slow legitimate handshake can be evicted under attack when the attacker churns the quota faster than the per-peer table can absorb. Repair: raise `peer_table.capacity` to ≥ 16, or lower `session_arming_quota` or `max_handshake_time_s` so the product fits the table.","expected":["8"],"actual":"16"}"#,
+            ),
+            (
+                "deploy/stateless-accept-extern-not-whitelisted",
+                DeployError::StatelessAcceptExternNotWhitelisted {
+                    machine: "mcu_node".into(),
+                    link_name: "udp_listener".into(),
+                    extern_name: "my_custom_hmac".into(),
+                    role: "hmac".into(),
+                    candidates: vec![
+                        "__sce_intrinsic_cookie_hmac_sha256".to_string(),
+                        "__sce_intrinsic_csprng".to_string(),
+                    ],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:023288f561f5a592","code":"deploy/stateless-accept-extern-not-whitelisted","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_listener' `stateless_accept.hmac_extern: my_custom_hmac` not present in the §5.I baseline intrinsics whitelist AND not declared in any loaded `target_plugin`. watching-zenoh RFC §5.K line 2466-2469 — `hmac_extern` and `rng_extern` symbols must come from the baseline registry or a target-plugin entry. Repair: spell the symbol exactly as it appears in the baseline registry or add the symbol to a loaded target-plugin file.","actual":"my_custom_hmac","fix":{"kind":"replace_one_of","candidates":["__sce_intrinsic_cookie_hmac_sha256","__sce_intrinsic_csprng"]}}"#,
+            ),
+            (
                 "timer/slot-overflow",
                 DeployError::TimerSlotOverflow {
                     machine: "mcu_node".into(),
@@ -8686,7 +8751,15 @@ mod tests {
             // verbatim, single source of truth at
             // `StageCopyPolicy::ALL`). FixCarriesCandidates over the
             // three values.
-            | MeshDeployStageCopyPolicyUnknown => FixCarriesCandidates,
+            | MeshDeployStageCopyPolicyUnknown
+            // C13 deferred-2 deploy/stateless-accept-extern-not-
+            // whitelisted (RFC §5.K line 2466-2469). Closed set =
+            // sorted union of §5.I baseline intrinsics names + any
+            // target-plugin-loaded symbol names; Fix::ReplaceOneOf
+            // carries the union so authors get a single canonical
+            // candidate list independent of which registry the
+            // symbol originated in.
+            | MeshDeployStatelessAcceptExternNotWhitelisted => FixCarriesCandidates,
 
             // ── `expected` carries non-repair metadata ────────
             ExpressionParseMismatch | MeshExternalAmbiguousEventGroup => ExpectedIsMetadata,
@@ -9038,6 +9111,13 @@ mod tests {
             | MeshDeploySessionArmingFieldsOnNonArmingLink
             | MeshDeployStatelessAcceptRequiredOnUntrustedSource
             | MeshDeployStatelessAcceptKeyRotationShorterThanLifetime
+            // C13 deferred-2 peer-table invariant. NeutralOrDeterministic
+            // — three-axis repair (raise peer_table.capacity, lower
+            // session_arming_quota, or lower max_handshake_time_s).
+            // The wire payload's `expected` carries the bound
+            // (peer_table.capacity); no closed candidate set exists
+            // because the repair axes are independent author choices.
+            | MeshDeploySessionArmingQuotaVsPeerTableInvariantViolated
             | MeshExternalRead
             | MeshExternalParse
             | MeshExternalUnresolvedNames
@@ -9459,6 +9539,8 @@ mod tests {
                 | MeshDeploySessionArmingFieldsOnNonArmingLink
                 | MeshDeployStatelessAcceptRequiredOnUntrustedSource
                 | MeshDeployStatelessAcceptKeyRotationShorterThanLifetime
+                | MeshDeploySessionArmingQuotaVsPeerTableInvariantViolated
+                | MeshDeployStatelessAcceptExternNotWhitelisted
                 | MeshExternalRead | MeshExternalParse
                 | MeshExternalUnresolvedNames | MeshExternalAmbiguousEventGroup
                 | MeshExternalEmptyEventGroup
@@ -9493,9 +9575,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            256,
+            258,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 256 distinct variants to match the DiagnosticCode \
+             expected 258 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -9973,7 +10055,18 @@ mod tests {
              cross-doc validator `reassembly/untrusted-link-binding` \
              gates non-`established_session` bindings upstream); \
              NeutralOrDeterministic mirrors the \
-             `mem/inter-pool-padding-not-emitted` precedent. 255 → 256.",
+             `mem/inter-pool-padding-not-emitted` precedent. 255 → 256. \
+             Then watching-zenoh RFC §5.K lines 2460-2462 + 2466-2469 \
+             close the two C13-β-deferred codes \
+             (`deploy/session-arming-quota-vs-peer-table-invariant-violated` \
+             + `deploy/stateless-accept-extern-not-whitelisted`) via \
+             the C13 deferred-2 atomic: the first lands the \
+             `peer_table` + `max_handshake_time_s` schema fields on \
+             the `stateless_accept` block (NeutralOrDeterministic \
+             three-axis repair); the second wires a sorted-union \
+             baseline + target-plugin allowlist check at the \
+             orchestrator level (FixCarriesCandidates over the \
+             union). 256 → 258.",
         );
     }
 

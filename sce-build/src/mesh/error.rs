@@ -1438,6 +1438,54 @@ pub enum DeployError {
         rotation_ms: u64,
         lifetime_doubled: u64,
     },
+
+    /// Watching-zenoh RFC §5.K line 2460-2462 verbatim
+    /// (`deploy/session-arming-quota-vs-peer-table-invariant-violated`).
+    /// `session_arming_quota × max_handshake_time_s > peer_table.capacity`.
+    /// A slow legitimate handshake can be evicted under attack.
+    #[error("machine '{machine}': link '{link_name}' \
+             `session_arming_quota: {session_arming_quota}` × \
+             `stateless_accept.max_handshake_time_s: {max_handshake_time_s}` \
+             > `stateless_accept.peer_table.capacity: {peer_table_capacity}` \
+             ({product} > {peer_table_capacity}). watching-zenoh RFC §5.K \
+             line 2460-2462 — a slow legitimate handshake can be \
+             evicted under attack when the attacker churns the quota \
+             faster than the per-peer table can absorb. Repair: raise \
+             `peer_table.capacity` to ≥ {product}, or lower \
+             `session_arming_quota` or `max_handshake_time_s` so the \
+             product fits the table.")]
+    SessionArmingQuotaVsPeerTableInvariantViolated {
+        machine: String,
+        link_name: String,
+        session_arming_quota: u32,
+        max_handshake_time_s: u32,
+        peer_table_capacity: u32,
+        product: u64,
+    },
+
+    /// Watching-zenoh RFC §5.K line 2466-2469 verbatim
+    /// (`deploy/stateless-accept-extern-not-whitelisted`). `hmac_extern`
+    /// or `rng_extern` symbol not present in `sce_intrinsics_runtime`
+    /// core whitelist AND not declared in any loaded `target_plugin`.
+    /// The wire payload's `candidates` field rides the closed sorted
+    /// union of baseline + plugin symbols so authors get a `Fix::
+    /// ReplaceOneOf` shape (FixCarriesCandidates non_overlap_class).
+    #[error("machine '{machine}': link '{link_name}' \
+             `stateless_accept.{role}_extern: {extern_name}` not present \
+             in the §5.I baseline intrinsics whitelist AND not declared \
+             in any loaded `target_plugin`. watching-zenoh RFC §5.K \
+             line 2466-2469 — `hmac_extern` and `rng_extern` symbols \
+             must come from the baseline registry or a target-plugin \
+             entry. Repair: spell the symbol exactly as it appears in \
+             the baseline registry or add the symbol to a loaded \
+             target-plugin file.")]
+    StatelessAcceptExternNotWhitelisted {
+        machine: String,
+        link_name: String,
+        extern_name: String,
+        role: String,
+        candidates: Vec<String>,
+    },
 }
 
 // ── Stage 1b: External infrastructure config ─────────────────
@@ -2978,6 +3026,57 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 link_name.clone(),
                 key_rotation_s.to_string(),
                 cookie_lifetime_ms.to_string(),
+            ],
+        },
+        DeployError::SessionArmingQuotaVsPeerTableInvariantViolated {
+            machine,
+            link_name,
+            session_arming_quota,
+            max_handshake_time_s,
+            peer_table_capacity,
+            product,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeploySessionArmingQuotaVsPeerTableInvariantViolated,
+            stage: Stage::MeshDeploy,
+            // `actual` = the violating product (LHS of the invariant);
+            // `expected` = the table capacity (RHS bound the product
+            // must not exceed). Two-axis repair (raise capacity OR
+            // lower quota / handshake time) — fix: None signals
+            // NeutralOrDeterministic, the bound is in `expected`.
+            actual: Some(product.to_string()),
+            expected: Some(vec![peer_table_capacity.to_string()]),
+            fix: None,
+            key_fragments: vec![
+                machine.clone(),
+                link_name.clone(),
+                session_arming_quota.to_string(),
+                max_handshake_time_s.to_string(),
+                peer_table_capacity.to_string(),
+            ],
+        },
+        DeployError::StatelessAcceptExternNotWhitelisted {
+            machine,
+            link_name,
+            extern_name,
+            role,
+            candidates,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployStatelessAcceptExternNotWhitelisted,
+            stage: Stage::MeshDeploy,
+            actual: Some(extern_name.clone()),
+            expected: None,
+            // FixCarriesCandidates non_overlap_class — sorted-union
+            // baseline + plugin symbols ride `Fix::ReplaceOneOf` so
+            // authors get the canonical name set without the wire
+            // payload iterating the full 101-symbol baseline.
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![
+                machine.clone(),
+                link_name.clone(),
+                role.clone(),
+                extern_name.clone(),
             ],
         },
     }

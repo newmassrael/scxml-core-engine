@@ -707,6 +707,27 @@ pub enum HmacMode {
     CookieHmacSha256,
 }
 
+/// Per-peer tracking table parameters (watching-zenoh RFC §5.K line
+/// 2460-2462 + §5.M lines 2705-2706). Author-declared capacity of the
+/// peer-tracking table the FSM maintains for anti-flood and per-peer
+/// quota accounting. C13 deferred-2 carries only `capacity`; future
+/// per-peer parameters (e.g. eviction policy) land alongside their
+/// consumers per [[feedback-silently-broken-hooks]].
+///
+/// Spec dot-notation `peer_table.capacity` is mirrored as a nested
+/// sub-struct so authors and the spec text share one schema shape.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PeerTable {
+    /// Spec line 2460-2462 + §5.M lines 2705-2706 — capacity of the
+    /// per-peer tracking table. Build invariant per §5.K line
+    /// 2460-2462: `session_arming_quota × max_handshake_time_s ≤
+    /// peer_table.capacity` (else
+    /// `deploy/session-arming-quota-vs-peer-table-invariant-violated`
+    /// fires). Required when the `peer_table` block is declared.
+    pub capacity: u32,
+}
+
 /// Stateless-accept cookie scheme block (watching-zenoh RFC §5.K
 /// lines 2320-2349). REQUIRED when `LinkDomainAttrs.untrusted_source`
 /// is `true`; optional but recommended on `trust_class:
@@ -733,16 +754,32 @@ pub struct StatelessAccept {
     pub key_rotation_s: u32,
     /// Spec line 2339-2344 — symbol name from the §5.I baseline
     /// intrinsics whitelist OR a loaded `target_plugin` entry.
-    /// Symbol-allowlist validator
-    /// (`stateless-accept-extern-not-whitelisted`) defers to a
-    /// follow-up cross-doc atomic; C13-β ships the typed schema
-    /// field only.
+    /// Cross-doc allowlist validator
+    /// (`deploy/stateless-accept-extern-not-whitelisted`) fires when
+    /// the symbol is in neither set (C13 deferred-2).
     pub hmac_extern: String,
     /// Spec line 2345-2349 — CSPRNG symbol used to seed key
     /// material at FSM-instance startup. Plugin authors are
     /// responsible for the entropy source. Same allowlist check
-    /// surface as `hmac_extern`; defers identically.
+    /// surface as `hmac_extern`.
     pub rng_extern: String,
+    /// Spec §5.K line 2460-2462 — per-peer tracking table parameters
+    /// (peer-tracking shape is anti-flood / DoS-hardening state).
+    /// Optional at parse time; absence silent-skips the invariant
+    /// check (`deploy/session-arming-quota-vs-peer-table-invariant-
+    /// violated`) per the Q-η5 (a) silent-skip discipline.
+    #[serde(default)]
+    pub peer_table: Option<PeerTable>,
+    /// Spec §5.K line 2460-2462 — per-handshake time budget in
+    /// seconds. Build invariant `session_arming_quota ×
+    /// max_handshake_time_s ≤ peer_table.capacity` (an attacker
+    /// churning the quota cannot evict a slow legitimate handshake).
+    /// Sibling of `cookie_lifetime_ms` / `key_rotation_s` at the
+    /// `stateless_accept` block level — matches the spec's other
+    /// time-budget parameters at this nesting depth. Optional at
+    /// parse time; absence silent-skips the invariant check.
+    #[serde(default)]
+    pub max_handshake_time_s: Option<u32>,
 }
 
 /// Per-link domain attributes (watching-zenoh RFC §5.K line 2263-2271).
@@ -855,11 +892,13 @@ pub struct LinkConfig {
     /// Spec line 2279-2289 — max concurrent half-open `Accepting.*`
     /// slots per link. MCU default 8, AP default 32 (not auto-applied
     /// — validator fires `session-arming-quota-missing` on absence
-    /// when `trust_class: session_arming`). Build invariant
-    /// `session_arming_quota × max_handshake_time_s ≤
-    /// peer_table.capacity` deferred to a follow-up atomic that
-    /// adds the `peer_table` + `max_handshake_time_s` schema fields
-    /// (not yet declared in spec).
+    /// when `trust_class: session_arming`). Build invariant per spec
+    /// line 2460-2462: `session_arming_quota × max_handshake_time_s
+    /// ≤ peer_table.capacity` (validator
+    /// `deploy/session-arming-quota-vs-peer-table-invariant-violated`
+    /// fires when violated; both sibling fields live on the
+    /// `stateless_accept` sub-block, so the check is conditional on
+    /// stateless_accept presence per Q-η5 (a) silent-skip).
     #[serde(default)]
     pub session_arming_quota: Option<u32>,
     /// Spec line 2290-2299 — token-bucket refill rate per (link,
@@ -892,9 +931,10 @@ pub struct LinkConfig {
     /// (validator fires `stateless-accept-required-on-untrusted-source`).
     /// Optional otherwise. Per spec line 2466-2469, the
     /// `hmac_extern` + `rng_extern` symbol allowlist check
-    /// (`stateless-accept-extern-not-whitelisted`) requires the
-    /// loaded target_plugin set + the §5.I baseline whitelist; that
-    /// validator defers to a follow-up cross-doc atomic.
+    /// (`deploy/stateless-accept-extern-not-whitelisted`) consumes
+    /// the loaded target_plugin set + the §5.I baseline whitelist;
+    /// the validator runs at the orchestrator level where both
+    /// inputs converge (C13 deferred-2).
     #[serde(default)]
     pub stateless_accept: Option<StatelessAccept>,
 }
@@ -2496,6 +2536,45 @@ fn validate_links(cfg: &DeployConfig) -> Result<(), DeployError> {
                         );
                     }
                 }
+
+                // 11. session-arming-quota-vs-peer-table-invariant-violated.
+                // Spec line 2460-2462 invariant verbatim:
+                //   `session_arming_quota × max_handshake_time_s ≤
+                //    peer_table.capacity`
+                // (else a slow legitimate handshake can be evicted under
+                // attack — the attacker churns the quota faster than the
+                // per-peer table absorbs).
+                //
+                // Silent-skip when any of the three inputs is absent
+                // (stateless_accept block omitted, peer_table sub-block
+                // omitted, max_handshake_time_s sibling omitted, or
+                // session_arming_quota omitted at link level) — per
+                // Q-η5 (a) silent-skip discipline. session_arming_quota
+                // missing on a session_arming link is already caught by
+                // check #7 above, so the silent-skip here doesn't mask
+                // that case.
+                if let Some(sa) = link.stateless_accept.as_ref() {
+                    if let (Some(peer_table), Some(max_handshake_time_s), Some(session_arming_quota)) = (
+                        sa.peer_table.as_ref(),
+                        sa.max_handshake_time_s,
+                        link.session_arming_quota,
+                    ) {
+                        let product =
+                            session_arming_quota as u64 * max_handshake_time_s as u64;
+                        if product > peer_table.capacity as u64 {
+                            return Err(
+                                DeployError::SessionArmingQuotaVsPeerTableInvariantViolated {
+                                    machine: machine_name.clone(),
+                                    link_name: link_name.clone(),
+                                    session_arming_quota,
+                                    max_handshake_time_s,
+                                    peer_table_capacity: peer_table.capacity,
+                                    product,
+                                },
+                            );
+                        }
+                    }
+                }
             }
         }
     }
@@ -3041,6 +3120,71 @@ pub fn validate_reassembly_cross_doc(
                                 stage_copy_wcet_us,
                             },
                         );
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Watching-zenoh RFC §5.K line 2466-2469 — stateless_accept extern
+/// allowlist (C13 deferred-2). For each link with a `stateless_accept`
+/// block, the `hmac_extern` + `rng_extern` symbol names must be
+/// present in the §5.I baseline intrinsics whitelist
+/// ([`crate::forge::intrinsic_registry::BASELINE_SYMBOLS`]) OR in the
+/// passed `plugin_symbols` slice (target_plugin-loaded entries per C4
+/// Atomic B). When the symbol is in neither, the validator returns
+/// [`DeployError::StatelessAcceptExternNotWhitelisted`] carrying the
+/// sorted union of baseline + plugin names as `Fix::ReplaceOneOf`
+/// candidates.
+///
+/// Lives at the orchestrator level because target-plugin loading is
+/// deploy-driven, mirroring the C4 Atomic B precedent — the baseline
+/// whitelist is a compile-time const, but the plugin set varies per
+/// deploy.
+pub fn validate_stateless_accept_externs(
+    cfg: &DeployConfig,
+    plugin_symbols: &[crate::forge::target_plugin::PluginSymbol],
+) -> Result<(), DeployError> {
+    use crate::forge::intrinsic_registry::{lookup_symbol, BASELINE_SYMBOLS};
+
+    let plugin_has = |name: &str| plugin_symbols.iter().any(|s| s.name == name);
+    let resolved = |name: &str| lookup_symbol(name).is_some() || plugin_has(name);
+
+    // Closed-set candidates = sorted union of baseline + plugin names.
+    // Built lazily on first miss so the happy path stays allocation-
+    // free. The union is sorted because the wire payload's
+    // `Fix::ReplaceOneOf` ride determinism matters for byte-stable
+    // golden tests (FixCarriesCandidates non_overlap_class).
+    let build_candidates = || -> Vec<String> {
+        let mut out: Vec<String> = BASELINE_SYMBOLS.iter().map(|s| s.name.to_string()).collect();
+        for ps in plugin_symbols {
+            out.push(ps.name.clone());
+        }
+        out.sort();
+        out.dedup();
+        out
+    };
+
+    for device in cfg.topology.values() {
+        for (machine_name, machine) in device.machines.iter() {
+            for (link_name, link) in machine.links.iter() {
+                let Some(sa) = link.stateless_accept.as_ref() else {
+                    continue;
+                };
+                for (role, extern_name) in [
+                    ("hmac", &sa.hmac_extern),
+                    ("rng", &sa.rng_extern),
+                ] {
+                    if !resolved(extern_name) {
+                        return Err(DeployError::StatelessAcceptExternNotWhitelisted {
+                            machine: machine_name.clone(),
+                            link_name: link_name.clone(),
+                            extern_name: extern_name.clone(),
+                            role: role.to_string(),
+                            candidates: build_candidates(),
+                        });
                     }
                 }
             }

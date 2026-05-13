@@ -464,6 +464,25 @@ pub fn compile_forge_with_deploy(
         None => Vec::new(),
     };
 
+    // C13 deferred-2: stateless_accept extern allowlist (watching-zenoh
+    // RFC §5.K line 2466-2469). Single-doc path runs the same
+    // allowlist check the orchestrator runs, against the same composed
+    // (baseline ∪ plugin_symbols) registry. Failure short-circuits
+    // before parse so callers that hit `compile_forge_with_deploy`
+    // directly (CLI `sce-codegen generate --deploy=path`, in-process
+    // tests) see the deploy-side diagnostic identically to the
+    // orchestrator path.
+    if let Some(cfg) = deploy {
+        mesh::deploy::validate_stateless_accept_externs(cfg, &plugin_symbols).map_err(|e| {
+            Located::new(
+                forge::error::ForgeError::Mesh(mesh::error::MeshError::Deploy(e)),
+                label.diagnostic_label,
+                None,
+                None,
+            )
+        })?;
+    }
+
     let parsed = forge::parser::parse_forge_with_imports_and_plugin(content, label, &plugin_symbols)?
         .ok_or_else(|| Located::new(
             ValidationError::WrongPipeline {
@@ -1757,6 +1776,25 @@ pub fn compile_scxml_with_imports(
             &forge_link_models_view,
             &pool_models_view,
         )
+        .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
+
+        // C13 deferred-2: stateless_accept hmac_extern / rng_extern
+        // allowlist (watching-zenoh RFC §5.K line 2466-2469). The
+        // sorted union of §5.I baseline + target_plugin-loaded symbols
+        // is the closed candidate set. The orchestrator path loads
+        // plugin_symbols here (mirroring `compile_forge_with_deploy`'s
+        // single-doc loader) so the validator sees the same registry
+        // composition the parser would see.
+        // load_target_plugin_for_compile returns Located<ForgeError>
+        // (the same type as the orchestrator's CompileError alias) —
+        // bubble through with ?. Any plugin-load failure surfaces at
+        // the deploy.yaml label set above.
+        let orchestrator_plugin_symbols = load_target_plugin_for_compile(deploy_cfg, DEPLOY_LABEL)?;
+        mesh::deploy::validate_stateless_accept_externs(
+            deploy_cfg,
+            &orchestrator_plugin_symbols,
+        )
+        .map_err(mesh::error::MeshError::Deploy)
         .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
     }
 

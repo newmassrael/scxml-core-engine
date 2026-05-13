@@ -245,6 +245,8 @@
         "deploy/session-arming-fields-on-non-arming-link",
         "deploy/stateless-accept-required-on-untrusted-source",
         "deploy/stateless-accept-key-rotation-shorter-than-lifetime",
+        "deploy/session-arming-quota-vs-peer-table-invariant-violated",
+        "deploy/stateless-accept-extern-not-whitelisted",
         "mesh/external-read",
         "mesh/external-parse",
         "mesh/external-unresolved-names",
