@@ -1936,6 +1936,19 @@ pub enum DiagnosticCode {
     // Mesh I/O
     #[serde(rename = "mesh/io")]
     MeshIo,
+
+    // ── Forge generated-source drift detection (watching-zenoh RFC
+    //    §6.2.6, B9 atomic 2026-05-14). Single code covers both axes
+    //    of `sce-codegen verify`'s recomputed-vs-embedded comparison:
+    //    `source-hash` mismatch (input SCXML or deploy.yaml drifted
+    //    since generation) and `template-hash` mismatch (codegen
+    //    template tree or Cargo.lock drifted). Per Q-§6.2.6-5 lock —
+    //    `actual` field carries the axis label (`source`|`template`)
+    //    plus the embedded hex; `expected` carries the recomputed
+    //    hex. Repair is `sce-codegen <regen-command>` (deterministic,
+    //    no candidate set), hence NeutralOrDeterministic. ─────────
+    #[serde(rename = "forge/source-hash-mismatch")]
+    ForgeSourceHashMismatch,
 }
 
 /// Canonical enumeration of every `DiagnosticCode` variant.
@@ -2283,6 +2296,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshCodegenPoolWithRpcClientUnsupported,
         // Mesh Io
         MeshIo,
+        // Forge generated-source drift detection (watching-zenoh RFC §6.2.6)
+        ForgeSourceHashMismatch,
     ]
 };
 
@@ -2679,6 +2694,12 @@ impl DiagnosticCode {
             | CodegenNoStdFsLoadNotSupported
             | CodegenNoStdInvokeNotSupported => Some("watching-zenoh RFC §5.J.2"),
 
+            // ── §6.2.6 generated-source drift detection (B9, 2026-05-14) ──
+            //    The single mismatch code covers both axes (source-hash
+            //    + template-hash); the spec section defines the header
+            //    contract + `sce-build verify` recompute pipeline.
+            ForgeSourceHashMismatch => Some("watching-zenoh RFC §6.2.6"),
+
             // ── No authoritative citation ────────────────────────
             //
             // Anchors are deliberately narrow: a code lands here when
@@ -3041,6 +3062,7 @@ impl DiagnosticCode {
             MeshCodegenEventNameCollision => "mesh/codegen-event-name-collision",
             MeshCodegenPoolWithRpcClientUnsupported => "mesh/codegen-pool-with-rpc-client-unsupported",
             MeshIo => "mesh/io",
+            ForgeSourceHashMismatch => "forge/source-hash-mismatch",
         }
     }
 }
@@ -8755,6 +8777,27 @@ mod tests {
                 },
                 r#"{"v":1,"id":"fnv1a:94f3f36322d6b380","code":"cli/no-scxml-tag","stage":"cli","message":"No <scxml> tag found in notes.txt","actual":"notes.txt"}"#,
             ),
+            // ── §6.2.6 generated-source drift (B9, 2026-05-14) ──
+            //    Single code covers both axes (source-hash + template-hash).
+            //    `axis` field carries `"source"` or `"template"` to
+            //    disambiguate the drifted half; `actual` field embeds the
+            //    axis label + embedded value so consumers parsing the
+            //    wire can identify the drift axis without re-reading the
+            //    file.
+            (
+                "forge/source-hash-mismatch",
+                CliError::VerifySourceHashMismatch {
+                    path: "out/foo_sm.rs".into(),
+                    axis: "source",
+                    expected_hex:
+                        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                            .into(),
+                    actual_hex:
+                        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                            .into(),
+                },
+                r#"{"v":1,"id":"fnv1a:6bbb966dd3008e84","code":"forge/source-hash-mismatch","stage":"cli","spec":"watching-zenoh RFC §6.2.6","message":"out/foo_sm.rs: §6.2.6 source-hash mismatch (embedded=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, recomputed=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) — regenerate via sce-codegen","actual":"source-hash=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}"#,
+            ),
         ]
     }
 
@@ -9445,7 +9488,11 @@ mod tests {
             | MeshCodegenTemplateRender
             | MeshCodegenEventNameCollision
             | MeshCodegenPoolWithRpcClientUnsupported
-            | MeshIo => NeutralOrDeterministic,
+            | MeshIo
+            // ── §6.2.6 generated-source drift (B9). Repair is the
+            //    deterministic `sce-codegen <regen-command>` — no
+            //    candidate set across multiple repair paths. ──
+            | ForgeSourceHashMismatch => NeutralOrDeterministic,
         }
     }
 
@@ -9868,7 +9915,9 @@ mod tests {
                 | MeshCodegenUnsupportedTransport | MeshCodegenTemplateRead
                 | MeshCodegenTemplateRender | MeshCodegenEventNameCollision
                 | MeshCodegenPoolWithRpcClientUnsupported
-                | MeshIo => true,
+                | MeshIo
+                // B9 §6.2.6 generated-source drift detection
+                | ForgeSourceHashMismatch => true,
             }
         }
         for &code in ALL_DIAGNOSTIC_CODES {
@@ -9880,7 +9929,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            263,
+            264,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
              expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
@@ -10418,7 +10467,12 @@ mod tests {
              that iterates `deploy.machines` and pushes \
              `(<machine>_link_bus.rs / <machine>_scheduler.{{rs,c}}, \
              GeneratedOutput)` entries alongside the existing \
-             basename-keyed per-doc outputs. 260 → 263.",
+             basename-keyed per-doc outputs. 260 → 263. Then \
+             watching-zenoh RFC §6.2.6 B9 generated-source drift \
+             detection ForgeSourceHashMismatch — single code covers \
+             both axes (source-hash + template-hash) per Q-§6.2.6-5 \
+             lock; emitted from `sce-codegen verify` when embedded \
+             header hash diverges from recomputed state. 263 → 264.",
         );
     }
 

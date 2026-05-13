@@ -38,6 +38,10 @@ regex = "1"
 thiserror = "2"
 # Python Jinja2 compatibility (dict.items(), str.strip(), etc.)
 minijinja-contrib = { version = "2", features = ["pycompat"] }
+# SHA-256 for spec §6.2.6 generated-source drift detection. See
+# `forge::drift` — computes `source-hash` over input SCXML + deploy.yaml
+# and `template-hash` over the codegen template tree + Cargo.lock.
+sha2 = { workspace = true }
 # WASM bindings (optional)
 wasm-bindgen = { version = "0.2", optional = true }
 # CLI argument parsing (for sce-codegen binary)
@@ -106,6 +110,15 @@ required-features = ["cli"]
 [[test]]
 name = "codegen_smoke"
 path = "tests/codegen_smoke.rs"
+required-features = ["cli"]
+
+# Integration test for spec §6.2.6 generated-source drift detection
+# (B9 atomic 2026-05-14). Depends on `sce-codegen verify` subcommand,
+# hence the shared `cli` feature gate. Round-trips header inject +
+# verify CLI; drift simulation by tampering the input SCXML.
+[[test]]
+name = "b9_drift_detection"
+path = "tests/b9_drift_detection.rs"
 required-features = ["cli"]
 
 

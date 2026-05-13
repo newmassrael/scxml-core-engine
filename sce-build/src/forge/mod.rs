@@ -10,6 +10,7 @@ pub mod buffer_pool_fsm;
 pub mod codegen_matrix;
 pub mod const_fold;
 pub mod diagnostic;
+pub mod drift;
 pub mod error;
 pub mod extern_emit;
 pub mod extern_validator;

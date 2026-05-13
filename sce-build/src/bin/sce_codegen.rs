@@ -526,6 +526,37 @@ enum Commands {
         #[arg(long)]
         resource_dir: Option<String>,
     },
+
+    /// Verify generated-source drift per spec §6.2.6.
+    ///
+    /// Scans `out_dir` for emitted files (.rs / .cpp / .h / .kt / .go /
+    /// .py / .c), reads each file's `// SCE-GENERATED` header,
+    /// recomputes `source-hash` + `template-hash` from the current
+    /// source + template state, and fails on mismatch with
+    /// `forge/source-hash-mismatch`. CI / pre-commit hooks invoke this
+    /// to enforce the "manual edits to `out/` are forbidden" invariant.
+    Verify {
+        /// Generated output directory to verify (recursive).
+        out_dir: String,
+        /// Input SCXML root used at codegen time. Required so the
+        /// `source-hash` recompute walks the same `**/*.scxml` set the
+        /// original codegen consumed.
+        #[arg(long)]
+        input_root: String,
+        /// Path to deploy.yaml if it was part of the original codegen
+        /// input set. Optional — single-document codegen omits this.
+        #[arg(long)]
+        deploy: Option<String>,
+        /// Override the template tree location used for the
+        /// `template-hash` recompute. Defaults to
+        /// `<workspace_root>/tools/codegen/templates`.
+        #[arg(long)]
+        template_root: Option<String>,
+        /// Override the `Cargo.lock` location used for the
+        /// `template-hash` recompute. Defaults to `<workspace_root>/Cargo.lock`.
+        #[arg(long)]
+        cargo_lock: Option<String>,
+    },
 }
 
 fn main() {
@@ -622,6 +653,20 @@ fn main() {
             resource_dir.as_deref(),
         ),
         Commands::Expand { scxml } => cmd_expand(&scxml),
+        Commands::Verify {
+            out_dir,
+            input_root,
+            deploy,
+            template_root,
+            cargo_lock,
+        } => cmd_verify(
+            &out_dir,
+            &input_root,
+            deploy.as_deref(),
+            template_root.as_deref(),
+            cargo_lock.as_deref(),
+            error_format,
+        ),
     }
 }
 
@@ -2690,6 +2735,160 @@ fn cmd_expand(scxml_path: &str) {
                 source: e,
             })
         });
+}
+
+// ── Subcommand: verify ─────────────────────────────────────────
+//
+// Spec §6.2.6 generated-source drift detection. Recomputes
+// `source-hash` + `template-hash` over the current source/template
+// state and compares each generated file's embedded header against
+// the recomputed values. First mismatch wins (deterministic ordering
+// via BTreeMap-sorted file walk) and exits non-zero with
+// `forge/source-hash-mismatch`.
+
+fn cmd_verify(
+    out_dir: &str,
+    input_root: &str,
+    deploy: Option<&str>,
+    template_root: Option<&str>,
+    cargo_lock: Option<&str>,
+    error_format: ErrorFormat,
+) {
+    use sce_build::forge::drift::{
+        compute_source_hash, compute_template_hash, parse_embedded_hashes, DriftHashes,
+    };
+
+    let out_path = Path::new(out_dir);
+    let input_path = Path::new(input_root);
+    let deploy_path = deploy.map(Path::new);
+
+    // Defaults for template_root / cargo_lock: probe upwards from
+    // the current working directory until we find a `Cargo.toml`
+    // that names `sce-build` member or until we hit filesystem root.
+    let workspace_root = locate_workspace_root_for_verify();
+    let tpl_root_default = workspace_root.join("tools").join("codegen").join("templates");
+    let lock_default = workspace_root.join("Cargo.lock");
+    let tpl_root = template_root
+        .map(std::path::PathBuf::from)
+        .unwrap_or(tpl_root_default);
+    let lock_path = cargo_lock
+        .map(std::path::PathBuf::from)
+        .unwrap_or(lock_default);
+
+    let expected_source = match compute_source_hash(input_path, deploy_path) {
+        Ok(h) => h,
+        Err(e) => {
+            cli_exit(CliError::ReadInput {
+                path: format!("{}: source-hash compute failed: {e}", input_path.display()),
+                source: std::io::Error::new(std::io::ErrorKind::Other, "drift compute"),
+            });
+        }
+    };
+    let expected_template = match compute_template_hash(&tpl_root, &lock_path) {
+        Ok(h) => h,
+        Err(e) => {
+            cli_exit(CliError::ReadInput {
+                path: format!("{}: template-hash compute failed: {e}", tpl_root.display()),
+                source: std::io::Error::new(std::io::ErrorKind::Other, "drift compute"),
+            });
+        }
+    };
+    let expected = DriftHashes {
+        source_hash: expected_source,
+        template_hash: expected_template,
+    };
+
+    let files = collect_generated_files(out_path);
+    let mut headerless: Vec<std::path::PathBuf> = Vec::new();
+    for file in &files {
+        let Ok(content) = fs::read_to_string(file) else {
+            continue;
+        };
+        let Some(embedded) = parse_embedded_hashes(&content) else {
+            headerless.push(file.clone());
+            continue;
+        };
+        if embedded.source_hash_hex != expected.source_hex() {
+            error_format.emit_and_exit(
+                &CliError::VerifySourceHashMismatch {
+                    path: file.display().to_string(),
+                    axis: "source",
+                    expected_hex: expected.source_hex(),
+                    actual_hex: embedded.source_hash_hex,
+                },
+                "",
+            );
+        }
+        if embedded.template_hash_hex != expected.template_hex() {
+            error_format.emit_and_exit(
+                &CliError::VerifySourceHashMismatch {
+                    path: file.display().to_string(),
+                    axis: "template",
+                    expected_hex: expected.template_hex(),
+                    actual_hex: embedded.template_hash_hex,
+                },
+                "",
+            );
+        }
+    }
+    // Files without an SCE-GENERATED header are reported but do not
+    // fail the verify pass on their own — the spec invariant is
+    // `every emitted file carries a header`, but the verifier's job is
+    // drift detection on files that DO have headers. Headerless files
+    // surface as an informational note on stderr so authors notice
+    // partial migration windows.
+    if !headerless.is_empty() {
+        eprintln!(
+            "sce-codegen verify: {} headerless file(s) skipped (no SCE-GENERATED block); first: {}",
+            headerless.len(),
+            headerless[0].display()
+        );
+    }
+}
+
+/// Walks `out_dir` recursively and returns every file whose extension
+/// matches the set SCE backends emit. Ordering is BTreeMap-sorted so
+/// the first-mismatch-wins diagnostic is deterministic across
+/// filesystem-readdir reorderings.
+fn collect_generated_files(out_dir: &Path) -> Vec<std::path::PathBuf> {
+    use std::collections::BTreeSet;
+    fn walk(dir: &Path, out: &mut BTreeSet<std::path::PathBuf>) {
+        let Ok(entries) = fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path, out);
+            } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                if matches!(ext, "rs" | "cpp" | "h" | "kt" | "go" | "py" | "c") {
+                    out.insert(path);
+                }
+            }
+        }
+    }
+    let mut out = BTreeSet::new();
+    walk(out_dir, &mut out);
+    out.into_iter().collect()
+}
+
+/// Walks upward from the current directory looking for a directory
+/// containing a `Cargo.toml` AND a `tools/codegen/templates` subdir
+/// (the workspace root signature). Falls back to the current directory
+/// if the walk fails to find a match — verify will then emit a clear
+/// I/O error on the missing path.
+fn locate_workspace_root_for_verify() -> std::path::PathBuf {
+    let mut cursor = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    loop {
+        if cursor.join("Cargo.toml").exists()
+            && cursor.join("tools").join("codegen").join("templates").exists()
+        {
+            return cursor;
+        }
+        if !cursor.pop() {
+            return std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        }
+    }
 }
 
 // ── Subcommand: list-fixtures ──────────────────────────────────

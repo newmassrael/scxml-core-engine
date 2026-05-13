@@ -380,7 +380,7 @@ no typed interpretation or are explicitly excluded:
 
 ---
 
-## Appendix — `DiagnosticCode` index (239 codes)
+## Appendix — `DiagnosticCode` index (264 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -675,6 +675,7 @@ or SCE-internal issues.
 | `mesh/codegen-template-read` | Mesh Codegen | Mesh template asset read |
 | `mesh/codegen-template-render` | Mesh Codegen | Mesh template rendering failure |
 | `mesh/io` | Mesh Io | Generic mesh codegen filesystem failure |
+| `forge/source-hash-mismatch` | Cli | `sce-codegen verify` detected drift between an emitted file's embedded §6.2.6 header hash and the recomputed value over current source + template state; not preventable by authoring SCXML (regenerate via `sce-codegen` to repair) |
 
 ---
 

@@ -284,7 +284,8 @@
         "mesh/codegen-template-render",
         "mesh/codegen-event-name-collision",
         "mesh/codegen-pool-with-rpc-client-unsupported",
-        "mesh/io"
+        "mesh/io",
+        "forge/source-hash-mismatch"
       ]
     },
     "stage": {

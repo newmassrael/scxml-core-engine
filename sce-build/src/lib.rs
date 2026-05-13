@@ -138,6 +138,35 @@ fn guard_static_generatable(model: &SCXMLModel, source_name: &str) -> Result<(),
         .map_err(|err| Located::new(err, source_name, None, None))
 }
 
+/// Prepend the spec §6.2.6 `// SCE-GENERATED` header to every file in
+/// `output`. The comment prefix is picked per-file based on extension
+/// (`.py` → `#`, everything else → `//`).
+///
+/// Idempotent across re-invocations — files that already lead with the
+/// SCE-GENERATED banner get their existing header lines replaced rather
+/// than duplicated. Repeat invocations with the same `hashes` /
+/// `generated_at_secs` are byte-stable.
+///
+/// Pairs with `sce-codegen verify <out-dir>`: emit through this helper
+/// so the verify command can recompute and compare hashes against the
+/// embedded values, fulfilling the spec invariant that every emitted
+/// file carries a drift-detectable header.
+///
+/// Pure helper — does not touch the filesystem. Caller decides whether
+/// to write the headered output.
+pub fn apply_drift_headers_to_output(
+    output: &mut generator::GeneratedOutput,
+    hashes: &forge::drift::DriftHashes,
+    generated_at_secs: u64,
+) {
+    use std::path::Path;
+    for (filename, content) in &mut output.files {
+        let prefix = forge::drift::comment_prefix_for_path(Path::new(filename));
+        *content =
+            forge::drift::prepend_or_replace_header(content, hashes, generated_at_secs, prefix);
+    }
+}
+
 /// Resolve SCXML source path to project-relative path.
 pub fn resolve_source_path(model: &mut SCXMLModel, scxml_path: &str) {
     if let Ok(abs) = std::fs::canonicalize(scxml_path) {
