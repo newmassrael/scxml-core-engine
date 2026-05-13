@@ -489,6 +489,12 @@ Codes that the author can avoid by writing a better SCXML /
 | `worker/outbox-target-suffix-invalid` | Validation |
 | `mem/reassembly-pool-variant-missing-max-fragments` | Validation |
 | `mem/reassembly-pool-variant-missing-timeout` | Validation |
+| `mem/reassembly-slot-size-below-declared-mtu` | Validation |
+| `reassembly/max-fragments-insufficient-for-mtu` | Validation |
+| `reassembly/expected-fragmentation-rate-high` | Validation |
+| `reassembly/untrusted-link-binding` | Validation |
+| `reassembly/trust-class-missing-on-fragmenting-link` | Validation |
+| `reassembly/stage-copy-wcet-exceeds-slot-budget` | Validation |
 | `collection/ordering-sorted-requires-index-by` | Validation |
 | `collection/overflow-policy-oldest-wins-requires-ordering-insertion` | Validation |
 | `collection/element-type-not-a-kind` | Validation |
@@ -590,6 +596,8 @@ Codes that the author can avoid by writing a better SCXML /
 | `deploy/link-burst-pps-missing-on-isr-dispatch` | Mesh Deploy |
 | `deploy/link-not-declared-in-deploy` | Mesh Deploy |
 | `deploy/link-not-declared-in-forge` | Mesh Deploy |
+| `deploy/link-burst-absorption-insufficient` | Mesh Deploy |
+| `deploy/link-rx-dispatch-worker-tick-on-high-burst` | Mesh Deploy |
 | `mesh/external-parse` | Mesh External |
 | `mesh/external-unresolved-names` | Mesh External |
 | `mesh/external-ambiguous-event-group` | Mesh External |

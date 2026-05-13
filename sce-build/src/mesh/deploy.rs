@@ -550,6 +550,21 @@ pub enum TrustClass {
     EstablishedSession,
 }
 
+impl TrustClass {
+    /// Snake-case wire label matching the `#[serde(rename_all = "snake_case")]`
+    /// rendition. Used by diagnostic message text + `actual` payload so
+    /// the wire form stays stable across Rust edition / `Debug`-impl
+    /// changes. The C13-α-2 reassembly cross-doc validator emits this
+    /// in the `actual` field of `reassembly/untrusted-link-binding`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TrustClass::Untrusted => "untrusted",
+            TrustClass::SessionArming => "session_arming",
+            TrustClass::EstablishedSession => "established_session",
+        }
+    }
+}
+
 /// RX-dispatch policy for `machines.<n>.links.<name>.rx_dispatch`
 /// (watching-zenoh RFC §5.K line 2254-2262).
 ///
@@ -2155,6 +2170,411 @@ pub fn validate_links_cross_doc(
         }
     }
 
+    Ok(())
+}
+
+/// Cross-document join for §5.K + §5.M validators that need the RX
+/// pool slot count of a deploy-declared link.
+///
+/// Three steps, each silent-skipping on absence per Q-η5 (a) precedent
+/// (the [`MachineSchedulerConfig::tick_period_us`] populator): forge
+/// `<sce:link name=link_name>` must exist, its `<sce:rx-pool ref=Y>`
+/// must be declared, and that pool name must resolve to a
+/// [`crate::forge::model::BufferPoolModel`] entry in the supplied
+/// registry map. When all three resolve, returns the pool name + its
+/// declared `slot_count` + the [`BufferPoolVariant`] discriminant so
+/// consumers can distinguish reassembly bindings (§5.M) from regular
+/// RX (§5.K burst-rate) cases without re-joining.
+///
+/// Single source of truth for the 3-way join — Q-C13-α2-2 (a) lock.
+/// Callers are validators in this module (`validate_links_burst_invariants`)
+/// and in [`crate::forge::validate`] / cross-doc orchestration paths
+/// where the same join is required. The function avoids `forge::*`
+/// imports beyond the explicit `BufferPoolVariant` re-export to keep
+/// the mesh module's dependency surface minimal — the
+/// `BufferPoolModel` is consumed by reference through the registry map.
+pub fn resolve_link_rx_pool_slot_count<'a>(
+    link_name: &str,
+    forge_link_models: &'a std::collections::HashMap<String, &'a crate::forge::model::LinkModel>,
+    pool_registry_full: &'a std::collections::HashMap<String, &'a crate::forge::model::BufferPoolModel>,
+) -> Option<(&'a str, u32, &'a crate::forge::model::BufferPoolVariant)> {
+    let forge_link = forge_link_models.get(link_name)?;
+    let rx_pool_ref = forge_link.rx_pool.as_deref()?;
+    let pool = pool_registry_full.get(rx_pool_ref)?;
+    Some((rx_pool_ref, pool.slot_count, &pool.variant))
+}
+
+/// Watching-zenoh RFC §5.K lines 2489-2500 (`deploy/link-burst-
+/// absorption-insufficient` + `deploy/link-rx-dispatch-worker-tick-
+/// on-high-burst`) — cross-doc validators that consume
+/// [`resolve_link_rx_pool_slot_count`] to check the cooperative-tick
+/// drain capacity against the declared inbound burst rate.
+///
+/// Silent-skips when any of the following are absent (per Q-η5 (a)
+/// precedent — `[[feedback-silently-broken-hooks]]` discipline,
+/// "data unavailable" must not synthesize false errors):
+///   - `link.burst_pps` (no declared burst rate to test against)
+///   - `scheduler.tick_period_us` (no cooperative tick to bound the
+///     drain capacity by; the failure mode is only meaningful for
+///     `kind: cooperative` per spec line 2489)
+///   - cross-doc join (forge link / rx_pool / BufferPoolModel) per
+///     [`resolve_link_rx_pool_slot_count`]
+///
+/// Returns the first failure (deterministic order: devices → machines
+/// → links in declaration order, then the spec's burst-absorption
+/// invariant before the worker_tick-overrun invariant).
+pub fn validate_links_burst_invariants(
+    cfg: &DeployConfig,
+    forge_link_models: &std::collections::HashMap<String, &crate::forge::model::LinkModel>,
+    pool_registry_full: &std::collections::HashMap<String, &crate::forge::model::BufferPoolModel>,
+) -> Result<(), DeployError> {
+    for device in cfg.topology.values() {
+        for (machine_name, machine) in device.machines.iter() {
+            let Some(tick_period_us) = machine
+                .scheduler
+                .as_ref()
+                .and_then(|s| s.tick_period_us)
+            else {
+                continue;
+            };
+            for (link_name, link) in machine.links.iter() {
+                let Some(burst_pps) = link.burst_pps else {
+                    continue;
+                };
+                let Some((pool_name, slot_count, _variant)) =
+                    resolve_link_rx_pool_slot_count(
+                        link_name,
+                        forge_link_models,
+                        pool_registry_full,
+                    )
+                else {
+                    continue;
+                };
+
+                // ── `deploy/link-burst-absorption-insufficient` ──
+                // Spec verbatim (line 2489-2495):
+                //   `slot_count × ticks_per_second / burst_pps < 1.0`
+                //   with safety factor 2.0
+                // ticks_per_second = 1_000_000 / tick_period_us.
+                // Re-arranged to integer math (no float):
+                //   slot_count × 1_000_000 < burst_pps × tick_period_us × 2
+                // The safety factor lives on the RHS to keep both
+                // operands as u64; overflow-safe because all four inputs
+                // are u32.
+                let drain_capacity_u64 =
+                    slot_count as u64 * 1_000_000;
+                let burst_load_u64 = burst_pps as u64
+                    * tick_period_us as u64
+                    * 2;
+                if drain_capacity_u64 < burst_load_u64 {
+                    // drain_per_second = slot_count × ticks_per_second
+                    //                  = slot_count × 1_000_000 /
+                    //                    tick_period_us
+                    // For the message text we expose the effective
+                    // drain-per-second WITHOUT the safety factor so the
+                    // numbers reflect raw pool capacity; the burst
+                    // comparison itself uses the safety factor per
+                    // spec.
+                    let drain_per_second = (slot_count as u64 * 1_000_000
+                        / tick_period_us as u64)
+                        .min(u32::MAX as u64)
+                        as u32;
+                    return Err(DeployError::LinkBurstAbsorptionInsufficient {
+                        machine: machine_name.clone(),
+                        link_name: link_name.clone(),
+                        pool_name: pool_name.to_string(),
+                        slot_count,
+                        burst_pps,
+                        tick_period_us,
+                        drain_per_second,
+                    });
+                }
+
+                // ── `deploy/link-rx-dispatch-worker-tick-on-high-burst` ──
+                // Spec verbatim (line 2496-2500):
+                //   `rx_dispatch: worker_tick` declared AND
+                //   `burst_pps × tick_period_us > slot_count` (one tick
+                //   of arrivals overruns the pool).
+                // Note the spec compares against tick_period_us in
+                // microseconds; one tick = tick_period_us / 1_000_000
+                // seconds, so arrivals per tick = burst_pps ×
+                // tick_period_us / 1_000_000.
+                if matches!(
+                    link.resolved_rx_dispatch(),
+                    RxDispatch::WorkerTick
+                ) {
+                    let arrivals_per_tick_u64 = (burst_pps as u64
+                        * tick_period_us as u64)
+                        / 1_000_000;
+                    if arrivals_per_tick_u64 > slot_count as u64 {
+                        let arrivals_per_tick = arrivals_per_tick_u64
+                            .min(u32::MAX as u64)
+                            as u32;
+                        return Err(
+                            DeployError::LinkRxDispatchWorkerTickOnHighBurst {
+                                machine: machine_name.clone(),
+                                link_name: link_name.clone(),
+                                pool_name: pool_name.to_string(),
+                                slot_count,
+                                burst_pps,
+                                tick_period_us,
+                                arrivals_per_tick,
+                            },
+                        );
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Watching-zenoh RFC §5.M lines 2946-2999 cross-doc validators for
+/// reassembly-variant buffer pools bound to deploy-declared links.
+///
+/// Six codes ride through this one entry point (the
+/// `[[diagnostic-code-edit-checklist]]` atomic family per Q-C13-α2-6 a);
+/// each fires from a join of `deploy.links.<X>` → forge `<sce:link
+/// name=X>` → its `<sce:rx-pool ref=Y>` → `BufferPoolModel` for Y
+/// (resolved via [`resolve_link_rx_pool_slot_count`]). The validators
+/// emit [`crate::forge::error::ValidationError`] rather than
+/// [`DeployError`] because the spec anchor (§5.M) lives in the forge
+/// kinds catalog, not the deploy schema chapter — and the
+/// `mem/*` + `reassembly/*` slash-paths align with the validation
+/// stage in `[[SCE_ERROR_CONTRACT]]`.
+///
+/// Each validator silent-skips on absence per Q-η5 (a) precedent. The
+/// six are ordered by spec line in the same way the diagnostic catalog
+/// presents them, so a deterministic first-failure return reproduces
+/// the catalog reading order.
+///
+/// Reassembly-specific axes use the bound pool's
+/// [`crate::forge::model::BufferPoolVariant::Reassembly`] config; the
+/// "regular RX pool" axis (codes #3 expected-fragmentation-rate-high
+/// uses `(expected_p99 - regular_pool.slot_size) / expected_p99 >
+/// 0.25` per spec line 2902) walks every `BufferPoolVariant::Default`
+/// pool bound to the link by scanning both rx_pool and tx_pool refs
+/// for completeness, but Q-C13-α2-4 (a) silent-skips when no Default
+/// pool is bound to the link — the formula references "the regular
+/// RX pool's slot_size" which doesn't exist for the link in that
+/// scenario.
+pub fn validate_reassembly_cross_doc(
+    cfg: &DeployConfig,
+    forge_link_models: &std::collections::HashMap<String, &crate::forge::model::LinkModel>,
+    pool_registry_full: &std::collections::HashMap<String, &crate::forge::model::BufferPoolModel>,
+) -> Result<(), crate::forge::error::ValidationError> {
+    use crate::forge::error::ValidationError;
+    use crate::forge::model::BufferPoolVariant;
+
+    for device in cfg.topology.values() {
+        for (machine_name, machine) in device.machines.iter() {
+            // Scheduler-derived inputs for #6 stage-copy-wcet (spec
+            // line 2995-2999). Silent-skip when any input absent.
+            let worker_slot_budget_us = machine
+                .scheduler
+                .as_ref()
+                .and_then(|s| s.worker_slot_budget_us);
+            let (clock_freq_mhz, memcpy_cycles_per_byte) = machine
+                .platform
+                .as_ref()
+                .map(|p| (p.clock_freq_mhz, p.memcpy_cycles_per_byte))
+                .unwrap_or((None, None));
+
+            for (link_name, link) in machine.links.iter() {
+                let Some((pool_name, _slot_count, variant)) =
+                    resolve_link_rx_pool_slot_count(
+                        link_name,
+                        forge_link_models,
+                        pool_registry_full,
+                    )
+                else {
+                    continue;
+                };
+                // Re-fetch the full BufferPoolModel for slot_size and
+                // reassembly-specific config; the resolver returns only
+                // slot_count + variant ref to keep its signature lean.
+                // Both halves come from the same registry entry, so the
+                // second lookup is O(1) and cannot fail when the
+                // resolver succeeded.
+                let pool = pool_registry_full.get(pool_name).expect(
+                    "resolver succeeded ⇒ pool present in registry; \
+                     consistent map view assumed",
+                );
+                let slot_size = pool.slot_size;
+
+                // ── #1 mem/reassembly-slot-size-below-declared-mtu ──
+                // Spec line 2946. Applies to ANY RX-bound pool (the
+                // happy-path datagram must fit in a single slot,
+                // regardless of variant). Silent-skip when mtu_bytes
+                // is absent — the under-approximation already lives
+                // on `MeshDeployLinkMtuMissingOnFragmentingLink` at
+                // parse time.
+                if let Some(mtu_bytes) = link.mtu_bytes {
+                    if slot_size < mtu_bytes {
+                        return Err(
+                            ValidationError::MemReassemblySlotSizeBelowDeclaredMtu {
+                                pool_name: pool_name.to_string(),
+                                slot_size,
+                                mtu_bytes,
+                                machine: machine_name.clone(),
+                                link_name: link_name.clone(),
+                            },
+                        );
+                    }
+                }
+
+                // ── Reassembly-variant-only checks (#2/#4/#5) ──
+                // Spec lines 2947-2949 + 2964-2969 + 2970-2975 apply
+                // only when the bound pool carries the
+                // `BufferPoolVariant::Reassembly` discriminator. The
+                // `Default` arm silent-skips them entirely; this
+                // matches the spec's "reassembly pool bound to a
+                // link" framing — non-reassembly bindings are
+                // governed by the spec's §5.K / §5.E plain RX
+                // pathways.
+                if let BufferPoolVariant::Reassembly(reassembly_cfg) = variant {
+                    // ── #2 reassembly/max-fragments-insufficient-for-mtu ──
+                    // Spec line 2947-2949 verbatim. Silent-skip when
+                    // link.mtu_bytes absent (same reasoning as #1).
+                    if let Some(mtu_bytes) = link.mtu_bytes {
+                        let required = (reassembly_cfg.max_fragments_per_message as u64
+                            * mtu_bytes as u64)
+                            .min(u32::MAX as u64)
+                            as u32;
+                        if slot_size < required {
+                            return Err(
+                                ValidationError::ReassemblyMaxFragmentsInsufficientForMtu {
+                                    pool_name: pool_name.to_string(),
+                                    slot_size,
+                                    max_fragments_per_message: reassembly_cfg
+                                        .max_fragments_per_message,
+                                    mtu_bytes,
+                                    required,
+                                    machine: machine_name.clone(),
+                                    link_name: link_name.clone(),
+                                },
+                            );
+                        }
+                    }
+
+                    // ── #4 reassembly/untrusted-link-binding ──
+                    // Spec line 2964-2969. Fires when the link's
+                    // resolved trust_class is `Untrusted` or
+                    // `SessionArming`. EstablishedSession passes.
+                    // Silent-skip when domain_attrs entirely absent
+                    // — that scenario is named by #5 below.
+                    if let Some(domain) = link.domain_attrs.as_ref() {
+                        if !matches!(domain.trust_class, TrustClass::EstablishedSession)
+                        {
+                            return Err(
+                                ValidationError::ReassemblyUntrustedLinkBinding {
+                                    pool_name: pool_name.to_string(),
+                                    trust_class: domain
+                                        .trust_class
+                                        .as_str()
+                                        .to_string(),
+                                    machine: machine_name.clone(),
+                                    link_name: link_name.clone(),
+                                },
+                            );
+                        }
+                    } else {
+                        // ── #5 reassembly/trust-class-missing-on-fragmenting-link ──
+                        // Spec line 2970-2975. Q-C13-α2-8 (a) lock:
+                        // domain_attrs absent on a reassembly-bound
+                        // link triggers the diagnostic; the
+                        // "declared without trust_class" case is
+                        // already parse-rejected by
+                        // `LinkDomainAttrs.trust_class` required-when-
+                        // block-declared shape (C13-α-1).
+                        return Err(
+                            ValidationError::ReassemblyTrustClassMissingOnFragmentingLink {
+                                pool_name: pool_name.to_string(),
+                                machine: machine_name.clone(),
+                                link_name: link_name.clone(),
+                            },
+                        );
+                    }
+                }
+
+                // ── #3 reassembly/expected-fragmentation-rate-high ──
+                // Spec line 2950-2952 verbatim. The formula references
+                // "the regular RX pool's slot_size", which is the
+                // `BufferPoolVariant::Default` pool bound to the link.
+                // Per Q-C13-α2-4 (a): silent-skip when no Default pool
+                // is bound — that means the link has no "regular RX"
+                // path the formula can reference. When the resolved
+                // pool IS the Default variant, use its slot_size.
+                if let Some(expected_p99_bytes) = link.expected_p99_bytes {
+                    if let BufferPoolVariant::Default = variant {
+                        if expected_p99_bytes > slot_size {
+                            // rate_percent = (p99 - slot_size) / p99 × 100
+                            // Integer math: (p99 - slot_size) × 100 / p99
+                            let excess = expected_p99_bytes - slot_size;
+                            let rate_percent = (excess as u64 * 100
+                                / expected_p99_bytes as u64)
+                                as u32;
+                            if rate_percent > 25 {
+                                return Err(
+                                    ValidationError::ReassemblyExpectedFragmentationRateHigh {
+                                        pool_name: pool_name.to_string(),
+                                        slot_size,
+                                        expected_p99_bytes,
+                                        rate_percent,
+                                        machine: machine_name.clone(),
+                                        link_name: link_name.clone(),
+                                    },
+                                );
+                            }
+                        }
+                    }
+                }
+
+                // ── #6 reassembly/stage-copy-wcet-exceeds-slot-budget ──
+                // Spec line 2995-2999 verbatim. Four inputs required:
+                // expected_p99_bytes (link), memcpy_cycles_per_byte +
+                // clock_freq_mhz (platform), worker_slot_budget_us
+                // (scheduler). Silent-skip on any absence — the
+                // formula has no meaningful interpretation otherwise.
+                if let (
+                    Some(expected_p99_bytes),
+                    Some(memcpy_cycles_per_byte),
+                    Some(clock_freq_mhz),
+                    Some(worker_slot_budget_us),
+                ) = (
+                    link.expected_p99_bytes,
+                    memcpy_cycles_per_byte,
+                    clock_freq_mhz,
+                    worker_slot_budget_us,
+                ) {
+                    // stage_copy_wcet_us = bytes × cycles_per_byte /
+                    //                      clock_freq_mhz
+                    // Cycles ÷ MHz = microseconds (1 MHz = 1 cycle/us).
+                    // Use f64 for the intermediate product to avoid
+                    // overflow on large p99; round half-up to u32.
+                    let stage_copy_wcet_us = ((expected_p99_bytes as f64
+                        * memcpy_cycles_per_byte as f64)
+                        / clock_freq_mhz as f64)
+                        .ceil()
+                        .min(u32::MAX as f64)
+                        as u32;
+                    if stage_copy_wcet_us > worker_slot_budget_us {
+                        return Err(
+                            ValidationError::ReassemblyStageCopyWcetExceedsSlotBudget {
+                                machine: machine_name.clone(),
+                                link_name: link_name.clone(),
+                                expected_p99_bytes,
+                                memcpy_cycles_per_byte,
+                                clock_freq_mhz,
+                                worker_slot_budget_us,
+                                stage_copy_wcet_us,
+                            },
+                        );
+                    }
+                }
+            }
+        }
+    }
     Ok(())
 }
 

@@ -1052,6 +1052,96 @@ pub enum DiagnosticCode {
     #[serde(rename = "mem/reassembly-pool-variant-missing-timeout")]
     MemReassemblyPoolVariantMissingTimeout,
 
+    // ── §5.M Fragment-reassembly cross-doc validators (C13-α-2 +
+    //    C9-β co-land, watching-zenoh RFC §5.M lines 2946-2995).
+    //    Each fires from a cross-doc resolver that walks
+    //    `deploy.links.<X>` → forge `<sce:link name=X>` → its
+    //    `<sce:rx-pool ref=Y>` → `ForgePoolRegistry`'s BufferPoolModel
+    //    for Y. Silent-skip on any join-step failure per Q-η5 (a) /
+    //    Q-C13-α2-4 (a). All six ride NeutralOrDeterministic — every
+    //    code has multi-axis repair paths (raise slot_size, lower
+    //    expected_p99, change max-fragments-per-message, lower
+    //    mtu_bytes, change trust_class, raise worker_slot_budget_us)
+    //    that are author-domain decisions rather than closed
+    //    candidate sets. ──
+
+    /// `<sce:rx-pool ref>` bound to a link whose `mtu_bytes` exceeds
+    /// the pool's `<sce:slot-size>`. RFC §5.M line 2946 names this
+    /// code. The slot cannot hold a single full-MTU datagram; even
+    /// the non-fragmented happy path fails to admit one wire frame.
+    /// Repair is multi-axis: raise `<sce:slot-size>` on the pool,
+    /// lower `mtu_bytes` on the link, or unbind the pool and emit a
+    /// reassembly-variant pool sized to fragments instead.
+    #[serde(rename = "mem/reassembly-slot-size-below-declared-mtu")]
+    MemReassemblySlotSizeBelowDeclaredMtu,
+
+    /// Reassembly-variant pool's `<sce:slot-size>` cannot hold the
+    /// worst-case reassembled message implied by
+    /// `<sce:max-fragments-per-message>` and the bound link's
+    /// `mtu_bytes`. RFC §5.M line 2947-2949 verbatim: `slot_size <
+    /// max-fragments-per-message × mtu_bytes`. Hard error — worst-case
+    /// message cannot complete reassembly within declared bounds.
+    /// Repair: raise `<sce:slot-size>`, lower
+    /// `<sce:max-fragments-per-message>`, or lower link `mtu_bytes`.
+    #[serde(rename = "reassembly/max-fragments-insufficient-for-mtu")]
+    ReassemblyMaxFragmentsInsufficientForMtu,
+
+    /// Build-time stage-copy rate gate. RFC §5.M line 2950-2952
+    /// verbatim: `(expected_p99_bytes - rx_pool.slot_size) /
+    /// expected_p99_bytes > 0.25`. The 25% threshold is the spec's
+    /// default warning point — beyond it, the link runs the
+    /// ARCHITECTURE §9.3 stage-copy path on >¼ of inbound traffic.
+    /// Warning (not hard error per C13-α-2 scope; suppressible via
+    /// `<sce:accept-stage-copy-rate>` on the link source; promotable
+    /// to `pool/stage-copy-policy-error` via §5.K
+    /// `pool_defaults.stage_copy_policy: error` — both routes defer
+    /// to C13-γ). Silent-skip when no regular RX pool is bound (the
+    /// "regular RX pool" the formula references doesn't exist), per
+    /// Q-C13-α2-4 (a).
+    #[serde(rename = "reassembly/expected-fragmentation-rate-high")]
+    ReassemblyExpectedFragmentationRateHigh,
+
+    /// Reassembly pool bound to a link whose
+    /// `domain_attrs.trust_class` is `untrusted` or `session_arming`.
+    /// RFC §5.M line 2964-2969 verbatim: hard error. Fragmentation
+    /// on these links is forbidden; only `established_session` links
+    /// may carry fragmented traffic. The constraint defends against
+    /// UDP source-IP spoofing exhausting per-peer quota space (the
+    /// fragment-flood attack vector named at spec line 2962-2963).
+    /// Repair: change `trust_class` to `established_session` (only if
+    /// the link is in fact post-handshake), or remove the
+    /// reassembly-pool binding from this link.
+    #[serde(rename = "reassembly/untrusted-link-binding")]
+    ReassemblyUntrustedLinkBinding,
+
+    /// Reassembly pool bound to a link, but the link has no
+    /// `domain_attrs` block at all (so `trust_class` is implicitly
+    /// undeclared). RFC §5.M line 2970-2975 verbatim: hard error;
+    /// build cannot decide whether the binding is safe. Per
+    /// Q-C13-α2-8 (a) lock: absence of the `domain_attrs` block is
+    /// the trigger — when `domain_attrs` is declared without
+    /// `trust_class`, C13-α-1's parser rejection
+    /// (`LinkDomainAttrs.trust_class` is required-when-block-declared)
+    /// catches it earlier. Repair: declare `trust_class:
+    /// established_session` for data-plane links, or remove the
+    /// reassembly-pool binding for control-plane links.
+    #[serde(rename = "reassembly/trust-class-missing-on-fragmenting-link")]
+    ReassemblyTrustClassMissingOnFragmentingLink,
+
+    /// Stage-copy WCET vs cooperative slot budget. RFC §5.M line
+    /// 2995-2999 verbatim: `expected_p99_bytes ×
+    /// memcpy_cycles_per_byte / clock_freq_mhz >
+    /// worker_slot_budget_us`. When triggered, the implicit memcpy in
+    /// the stage-copy path alone blows the cooperative slot, starving
+    /// Keepalive and other parallel-region timers (ARCHITECTURE §9.3
+    /// + §3.4). Silent-skip when any of the four platform/scheduler
+    /// inputs are absent (per Q-η5 (a) precedent). Repair: raise
+    /// `worker_slot_budget_us`, lower `expected_p99_bytes` so stage
+    /// copy is never invoked at that size, or raise the bound pool's
+    /// `<sce:slot-size>` to absorb p99 without invoking stage copy.
+    #[serde(rename = "reassembly/stage-copy-wcet-exceeds-slot-budget")]
+    ReassemblyStageCopyWcetExceedsSlotBudget,
+
     // ── §5.L Bounded-collection kind diagnostics (watching-zenoh RFC
     //    §5.L lines 2540-2655). C6-α ships the two structure-only codes
     //    here; cross-doc (element-type-not-a-kind / index-by-field-
@@ -1444,18 +1534,37 @@ pub enum DiagnosticCode {
     #[serde(rename = "deploy/link-expected-p99-exceeds-mtu")]
     MeshDeployLinkExpectedP99ExceedsMtu,
 
-    // Watching-zenoh RFC §5.K line 2489-2495
-    // (`deploy/link-burst-absorption-insufficient`) + line 2496-2500
-    // (`deploy/link-rx-dispatch-worker-tick-on-high-burst`) defer to
-    // C13-α-2 follow-up atomic per [[feedback-silently-broken-hooks]]:
-    // both detectors require the link's bound RX pool slot_count to
-    // be cross-doc-resolved against the forge `<sce:link>` document's
-    // `<sce:rx-pool ref="X">` and the `ForgePoolRegistry` entry for
-    // `X`. Wiring that infrastructure into the C13-α deploy validator
-    // path is the C13-α-2 scope; landing the codes here without
-    // consumers would violate the silently-broken-hook discipline.
-    // (C13-α-1 reduced from RFC §8's "9 spec-named codes" to 7; the
-    // remaining 2 land in C13-α-2.)
+    /// Watching-zenoh RFC §5.K line 2489-2495 verbatim
+    /// (`deploy/link-burst-absorption-insufficient`). `burst_pps × 1s`
+    /// of worst-case inbound exceeds the RX pool's drain rate within
+    /// one cooperative tick window: `slot_count × ticks_per_second /
+    /// burst_pps < 1.0` with safety factor 2.0 (i.e. the check fires
+    /// when `slot_count × 1_000_000 / tick_period_us < burst_pps × 2`).
+    /// Pool will deplete during burst and drop packets. C13-α-2 fires
+    /// from a cross-doc resolver that joins `deploy.links.<X>` → forge
+    /// `<sce:link name=X>` → `<sce:rx-pool ref>` → ForgePoolRegistry's
+    /// `BufferPoolModel.slot_count`. Silent-skip on any join failure
+    /// or missing scheduler.tick_period_us per Q-η5 (a). Multi-axis
+    /// repair: raise `<sce:slot-count>` on the pool, lower
+    /// `scheduler.tick_period_us`, or switch `rx_dispatch` to
+    /// `isr_to_pool` when currently `worker_tick`.
+    #[serde(rename = "deploy/link-burst-absorption-insufficient")]
+    MeshDeployLinkBurstAbsorptionInsufficient,
+
+    /// Watching-zenoh RFC §5.K line 2496-2500 verbatim
+    /// (`deploy/link-rx-dispatch-worker-tick-on-high-burst`).
+    /// `rx_dispatch: worker_tick` declared but `burst_pps ×
+    /// tick_period_us / 1_000_000 > slot_count` (one tick window of
+    /// arrivals overruns the pool). Hard error unless author justifies
+    /// via `<sce:accept-burst-drop-rate>` on the link source (a
+    /// forge-side opt-out gated by C13-γ, not yet shipped at C13-α-2;
+    /// the C13-α-2 detector treats the opt-out as absent). C13-α-2
+    /// silent-skips when join steps or `tick_period_us` are missing.
+    /// Multi-axis repair: switch `rx_dispatch` to `isr_to_pool`, raise
+    /// `<sce:slot-count>` to absorb the per-tick burst, or lower
+    /// `tick_period_us` so each window admits fewer arrivals.
+    #[serde(rename = "deploy/link-rx-dispatch-worker-tick-on-high-burst")]
+    MeshDeployLinkRxDispatchWorkerTickOnHighBurst,
 
     /// Watching-zenoh RFC §5.K line 2501-2503 verbatim
     /// (`deploy/link-burst-pps-missing-on-isr-dispatch`). The resolved
@@ -1741,6 +1850,13 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // Fragment-reassembly buffer-pool variant parse-time structure validators (watching-zenoh RFC §5.M, C9-α)
         MemReassemblyPoolVariantMissingMaxFragments,
         MemReassemblyPoolVariantMissingTimeout,
+        // Fragment-reassembly cross-doc validators (watching-zenoh RFC §5.M, C13-α-2 + C9-β co-land)
+        MemReassemblySlotSizeBelowDeclaredMtu,
+        ReassemblyMaxFragmentsInsufficientForMtu,
+        ReassemblyExpectedFragmentationRateHigh,
+        ReassemblyUntrustedLinkBinding,
+        ReassemblyTrustClassMissingOnFragmentingLink,
+        ReassemblyStageCopyWcetExceedsSlotBudget,
         // Bounded-collection kind parse-time structure validators (watching-zenoh RFC §5.L, C6-α)
         CollectionOrderingSortedRequiresIndexBy,
         CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion,
@@ -1838,6 +1954,9 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployLinkBurstPpsMissingOnIsrDispatch,
         MeshDeployLinkNotDeclaredInDeploy,
         MeshDeployLinkNotDeclaredInForge,
+        // C13-α-2 cross-doc RX pool burst invariants (RFC §5.K lines 2489-2500)
+        MeshDeployLinkBurstAbsorptionInsufficient,
+        MeshDeployLinkRxDispatchWorkerTickOnHighBurst,
         // Mesh External config
         MeshExternalRead,
         MeshExternalParse,
@@ -2096,7 +2215,15 @@ impl DiagnosticCode {
             //    cross-link / codegen-side reassembly diagnostics defer
             //    to C9-β/γ + C10/C11 per RFC stub §1.7 phase column.
             MemReassemblyPoolVariantMissingMaxFragments
-            | MemReassemblyPoolVariantMissingTimeout => {
+            | MemReassemblyPoolVariantMissingTimeout
+            // C13-α-2 + C9-β cross-doc validators (RFC §5.M lines 2946-2995).
+            // The 6 cross-doc reassembly codes share §5.M spec anchor.
+            | MemReassemblySlotSizeBelowDeclaredMtu
+            | ReassemblyMaxFragmentsInsufficientForMtu
+            | ReassemblyExpectedFragmentationRateHigh
+            | ReassemblyUntrustedLinkBinding
+            | ReassemblyTrustClassMissingOnFragmentingLink
+            | ReassemblyStageCopyWcetExceedsSlotBudget => {
                 Some("watching-zenoh RFC §5.M")
             }
 
@@ -2179,7 +2306,9 @@ impl DiagnosticCode {
             | MeshDeploySchedulerCooperativeMissingSlotBudget
             | MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget
             | MeshDeploySchedulerIncompatibleWithWorkerCount
-            // C13-α-1 `links:` block (RFC §5.K lines 2232-2540).
+            // C13-α-1 `links:` block (RFC §5.K lines 2232-2540) +
+            // C13-α-2 cross-doc RX-pool burst invariants (RFC §5.K
+            // lines 2489-2500).
             | MeshDeployLinkDriverUnknown
             | MeshDeployLinkMtuMissingOnFragmentingLink
             | MeshDeployLinkMtuBelowDriverFloor
@@ -2187,6 +2316,8 @@ impl DiagnosticCode {
             | MeshDeployLinkBurstPpsMissingOnIsrDispatch
             | MeshDeployLinkNotDeclaredInDeploy
             | MeshDeployLinkNotDeclaredInForge
+            | MeshDeployLinkBurstAbsorptionInsufficient
+            | MeshDeployLinkRxDispatchWorkerTickOnHighBurst
                 => Some("watching-zenoh RFC §5.K"),
 
             // ── Mesh rule 12 — parallel root designation (SCE_MESH.md §14 rule 12) ──
@@ -2440,6 +2571,12 @@ impl DiagnosticCode {
             WorkerOutboxTargetSuffixInvalid => "worker/outbox-target-suffix-invalid",
             MemReassemblyPoolVariantMissingMaxFragments => "mem/reassembly-pool-variant-missing-max-fragments",
             MemReassemblyPoolVariantMissingTimeout => "mem/reassembly-pool-variant-missing-timeout",
+            MemReassemblySlotSizeBelowDeclaredMtu => "mem/reassembly-slot-size-below-declared-mtu",
+            ReassemblyMaxFragmentsInsufficientForMtu => "reassembly/max-fragments-insufficient-for-mtu",
+            ReassemblyExpectedFragmentationRateHigh => "reassembly/expected-fragmentation-rate-high",
+            ReassemblyUntrustedLinkBinding => "reassembly/untrusted-link-binding",
+            ReassemblyTrustClassMissingOnFragmentingLink => "reassembly/trust-class-missing-on-fragmenting-link",
+            ReassemblyStageCopyWcetExceedsSlotBudget => "reassembly/stage-copy-wcet-exceeds-slot-budget",
             CollectionOrderingSortedRequiresIndexBy => "collection/ordering-sorted-requires-index-by",
             CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion => "collection/overflow-policy-oldest-wins-requires-ordering-insertion",
             CollectionElementTypeNotAKind => "collection/element-type-not-a-kind",
@@ -2526,6 +2663,8 @@ impl DiagnosticCode {
             MeshDeployLinkBurstPpsMissingOnIsrDispatch => "deploy/link-burst-pps-missing-on-isr-dispatch",
             MeshDeployLinkNotDeclaredInDeploy => "deploy/link-not-declared-in-deploy",
             MeshDeployLinkNotDeclaredInForge => "deploy/link-not-declared-in-forge",
+            MeshDeployLinkBurstAbsorptionInsufficient => "deploy/link-burst-absorption-insufficient",
+            MeshDeployLinkRxDispatchWorkerTickOnHighBurst => "deploy/link-rx-dispatch-worker-tick-on-high-burst",
             MeshExternalRead => "mesh/external-read",
             MeshExternalParse => "mesh/external-parse",
             MeshExternalUnresolvedNames => "mesh/external-unresolved-names",
@@ -4122,6 +4261,155 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 key_fragments: vec![pool_name.clone()],
             }
         }
+        // ── §5.M Fragment-reassembly cross-doc validators (C13-α-2 + C9-β) ──
+        ValidationError::MemReassemblySlotSizeBelowDeclaredMtu {
+            pool_name,
+            slot_size,
+            mtu_bytes,
+            machine,
+            link_name,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MemReassemblySlotSizeBelowDeclaredMtu,
+            stage: Stage::Validation,
+            // `actual` = the offending slot_size; `expected` = the
+            // mtu lower bound. NeutralOrDeterministic: multi-axis
+            // repair (raise slot_size / lower mtu / bind different
+            // pool) — author chooses.
+            actual: Some(slot_size.to_string()),
+            expected: Some(vec![mtu_bytes.to_string()]),
+            fix: None,
+            key_fragments: vec![
+                pool_name.clone(),
+                slot_size.to_string(),
+                mtu_bytes.to_string(),
+                machine.clone(),
+                link_name.clone(),
+            ],
+        },
+        ValidationError::ReassemblyMaxFragmentsInsufficientForMtu {
+            pool_name,
+            slot_size,
+            max_fragments_per_message,
+            mtu_bytes,
+            required,
+            machine,
+            link_name,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ReassemblyMaxFragmentsInsufficientForMtu,
+            stage: Stage::Validation,
+            actual: Some(slot_size.to_string()),
+            expected: Some(vec![required.to_string()]),
+            fix: None,
+            key_fragments: vec![
+                pool_name.clone(),
+                slot_size.to_string(),
+                max_fragments_per_message.to_string(),
+                mtu_bytes.to_string(),
+                required.to_string(),
+                machine.clone(),
+                link_name.clone(),
+            ],
+        },
+        ValidationError::ReassemblyExpectedFragmentationRateHigh {
+            pool_name,
+            slot_size,
+            expected_p99_bytes,
+            rate_percent,
+            machine,
+            link_name,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ReassemblyExpectedFragmentationRateHigh,
+            stage: Stage::Validation,
+            // `actual` = the computed rate percent; `expected` = the
+            // 25% threshold (default per spec, suppressible via §5.K
+            // pool_defaults C13-γ scope).
+            actual: Some(rate_percent.to_string()),
+            expected: Some(vec!["25".to_string()]),
+            fix: None,
+            key_fragments: vec![
+                pool_name.clone(),
+                slot_size.to_string(),
+                expected_p99_bytes.to_string(),
+                rate_percent.to_string(),
+                machine.clone(),
+                link_name.clone(),
+            ],
+        },
+        ValidationError::ReassemblyUntrustedLinkBinding {
+            pool_name,
+            trust_class,
+            machine,
+            link_name,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ReassemblyUntrustedLinkBinding,
+            stage: Stage::Validation,
+            // `actual` = the offending trust_class; expected omitted
+            // (single permitted value `established_session` would
+            // collapse to a FixCarriesCandidates shape, but
+            // Q-C13-α2-7 (a) keeps the second valid repair "remove
+            // binding entirely" in scope so the code stays
+            // NeutralOrDeterministic and the message carries the
+            // canonical replacement value).
+            actual: Some(trust_class.clone()),
+            expected: None,
+            fix: None,
+            key_fragments: vec![
+                pool_name.clone(),
+                trust_class.clone(),
+                machine.clone(),
+                link_name.clone(),
+            ],
+        },
+        ValidationError::ReassemblyTrustClassMissingOnFragmentingLink {
+            pool_name,
+            machine,
+            link_name,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ReassemblyTrustClassMissingOnFragmentingLink,
+            stage: Stage::Validation,
+            // No `actual` (the field is absent); message text carries
+            // the canonical "declare trust_class: established_session"
+            // guidance — but the second valid repair (remove the pool
+            // binding) keeps this in NeutralOrDeterministic.
+            actual: None,
+            expected: None,
+            fix: None,
+            key_fragments: vec![
+                pool_name.clone(),
+                machine.clone(),
+                link_name.clone(),
+            ],
+        },
+        ValidationError::ReassemblyStageCopyWcetExceedsSlotBudget {
+            machine,
+            link_name,
+            expected_p99_bytes,
+            memcpy_cycles_per_byte,
+            clock_freq_mhz,
+            worker_slot_budget_us,
+            stage_copy_wcet_us,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ReassemblyStageCopyWcetExceedsSlotBudget,
+            stage: Stage::Validation,
+            // `actual` = computed stage-copy WCET; `expected` = the
+            // slot budget ceiling. The four inputs feeding the formula
+            // ride key_fragments so a downstream renderer can quote
+            // them verbatim.
+            actual: Some(stage_copy_wcet_us.to_string()),
+            expected: Some(vec![worker_slot_budget_us.to_string()]),
+            fix: None,
+            key_fragments: vec![
+                machine.clone(),
+                link_name.clone(),
+                expected_p99_bytes.to_string(),
+                // f32 normalized to a stable string form so
+                // key_fragments hash is reproducible across runs.
+                format!("{memcpy_cycles_per_byte}"),
+                clock_freq_mhz.to_string(),
+                worker_slot_budget_us.to_string(),
+                stage_copy_wcet_us.to_string(),
+            ],
+        },
         // ── §5.L Bounded-collection cross-doc resolution (C6-β) ──
         ValidationError::CollectionElementTypeNotAKind {
             collection_name,
@@ -5662,6 +5950,99 @@ mod tests {
                 // Hash placeholder — byte-stability assertion patches.
                 r#"{"v":1,"id":"fnv1a:1c6a61294467efab","code":"mem/reassembly-pool-variant-missing-timeout","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"buffer-pool 'rx_reassembly_pool': <sce:variant>reassembly</sce:variant> declared without <sce:reassembly-timeout-ms>N</sce:reassembly-timeout-ms>. watching-zenoh RFC §5.M line 2689 fixes the per-slot deadline field to this value; without it the reassembly FSM has no `Receiving → TimedOut` edge timer (`docs/reassembly-fsm.md` §2.4.5). Repair: add an `<sce:reassembly-timeout-ms>N</sce:reassembly-timeout-ms>` element with a positive integer N (milliseconds) derived from link latency budget and acceptable hold time."}"#,
             ),
+            // ── §5.M Fragment-reassembly cross-doc validators (C13-α-2 + C9-β) ──
+            (
+                // RFC §5.M line 2946: rx-pool slot_size < link mtu_bytes.
+                // NeutralOrDeterministic, no Fix payload (multi-axis
+                // repair: raise slot_size, lower mtu, bind different pool).
+                "forge/mem-reassembly-slot-size-below-declared-mtu",
+                ValidationError::MemReassemblySlotSizeBelowDeclaredMtu {
+                    pool_name: "rx_data_pool".into(),
+                    slot_size: 256,
+                    mtu_bytes: 512,
+                    machine: "mcu_node".into(),
+                    link_name: "udp_data".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:eba6a0d43209c75a","code":"mem/reassembly-slot-size-below-declared-mtu","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"buffer-pool 'rx_data_pool' is bound as RX pool for link 'udp_data' on machine 'mcu_node', but `<sce:slot-size>256</sce:slot-size>` is smaller than the link's `mtu_bytes: 512`. watching-zenoh RFC §5.M line 2946 — the slot cannot admit a single full-MTU datagram, so even the non-fragmented happy path fails. Repair: raise `<sce:slot-size>` on pool 'rx_data_pool' to >= 512, lower `mtu_bytes` on link 'udp_data', or bind a different (larger) pool.","expected":["512"],"actual":"256"}"#,
+            ),
+            (
+                // RFC §5.M line 2947-2949: reassembly slot_size < max-fragments × mtu.
+                // Hard error; multi-axis repair (raise slot_size / lower
+                // max-fragments / lower mtu). NeutralOrDeterministic.
+                "forge/reassembly-max-fragments-insufficient-for-mtu",
+                ValidationError::ReassemblyMaxFragmentsInsufficientForMtu {
+                    pool_name: "rx_reassembly_pool".into(),
+                    slot_size: 1024,
+                    max_fragments_per_message: 8,
+                    mtu_bytes: 512,
+                    required: 4096,
+                    machine: "mcu_node".into(),
+                    link_name: "udp_data".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:3460f145fdcb9f41","code":"reassembly/max-fragments-insufficient-for-mtu","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"reassembly-variant buffer-pool 'rx_reassembly_pool' is bound to link 'udp_data' on machine 'mcu_node', but `<sce:slot-size>1024</sce:slot-size>` cannot hold the worst-case reassembled message: `<sce:max-fragments-per-message>8</sce:max-fragments-per-message> × link.mtu_bytes (512) = 4096` bytes required. watching-zenoh RFC §5.M line 2947-2949 verbatim: `slot_size >= max-fragments-per-message × mtu_bytes` — worst-case message must complete reassembly within declared bounds. Repair: raise `<sce:slot-size>` on pool 'rx_reassembly_pool' to >= 4096, lower `<sce:max-fragments-per-message>`, or lower link `mtu_bytes`.","expected":["4096"],"actual":"1024"}"#,
+            ),
+            (
+                // RFC §5.M line 2950-2952: expected_p99 vs rx_pool slot_size
+                // implies > 25% stage-copy rate. Warning (multi-axis repair).
+                // NeutralOrDeterministic.
+                "forge/reassembly-expected-fragmentation-rate-high",
+                ValidationError::ReassemblyExpectedFragmentationRateHigh {
+                    pool_name: "rx_data_pool".into(),
+                    slot_size: 700,
+                    expected_p99_bytes: 1024,
+                    rate_percent: 31,
+                    machine: "mcu_node".into(),
+                    link_name: "udp_data".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:79cd242c82f712e0","code":"reassembly/expected-fragmentation-rate-high","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"link 'udp_data' on machine 'mcu_node': `expected_p99_bytes: 1024` exceeds RX pool 'rx_data_pool' `<sce:slot-size>700</sce:slot-size>` by more than the 25% default stage-copy threshold (rate = 31%). watching-zenoh RFC §5.M line 2950-2952 — `(expected_p99_bytes - rx_pool.slot_size) / expected_p99_bytes > 0.25` triggers the warning. Repair: raise `<sce:slot-size>` on pool 'rx_data_pool', lower `expected_p99_bytes` (with justification), or add `<sce:accept-stage-copy-rate>` on the link source (C13-γ scope).","expected":["25"],"actual":"31"}"#,
+            ),
+            (
+                // RFC §5.M line 2964-2969: reassembly pool bound to a
+                // link with trust_class != established_session. Hard error.
+                // NeutralOrDeterministic (per Q-C13-α2-7 a — two valid
+                // repairs: change trust_class OR remove binding).
+                "forge/reassembly-untrusted-link-binding",
+                ValidationError::ReassemblyUntrustedLinkBinding {
+                    pool_name: "rx_reassembly_pool".into(),
+                    trust_class: "session_arming".into(),
+                    machine: "mcu_node".into(),
+                    link_name: "udp_listener".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:9f94349333d3b9ad","code":"reassembly/untrusted-link-binding","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"reassembly-variant buffer-pool 'rx_reassembly_pool' is bound to link 'udp_listener' on machine 'mcu_node', but the link declares `trust_class: session_arming`. watching-zenoh RFC §5.M line 2964-2969 — only `trust_class: established_session` links may carry fragmented traffic; reassembly on `untrusted` / `session_arming` links exposes the per-peer quota space to source-IP spoofing. Repair: change link 'udp_listener' to `trust_class: established_session` (only if the link is in fact post-handshake), or remove the reassembly-pool binding.","actual":"session_arming"}"#,
+            ),
+            (
+                // RFC §5.M line 2970-2975: domain_attrs absent on a
+                // link with reassembly-pool binding. Hard error.
+                // NeutralOrDeterministic (two valid repairs).
+                "forge/reassembly-trust-class-missing-on-fragmenting-link",
+                ValidationError::ReassemblyTrustClassMissingOnFragmentingLink {
+                    pool_name: "rx_reassembly_pool".into(),
+                    machine: "mcu_node".into(),
+                    link_name: "udp_data".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:d09ad5b8d7cdc514","code":"reassembly/trust-class-missing-on-fragmenting-link","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"reassembly-variant buffer-pool 'rx_reassembly_pool' is bound to link 'udp_data' on machine 'mcu_node', but the link does not declare `domain_attrs.trust_class`. watching-zenoh RFC §5.M line 2970-2975 — build cannot decide whether the binding is safe without a declared trust class. Repair: declare `domain_attrs: { trust_class: established_session }` on link 'udp_data' (data-plane links), or remove the reassembly-pool binding (control-plane links)."}"#,
+            ),
+            (
+                // RFC §5.M line 2995-2999: stage-copy WCET vs slot budget.
+                // NeutralOrDeterministic (multi-axis repair).
+                "forge/reassembly-stage-copy-wcet-exceeds-slot-budget",
+                ValidationError::ReassemblyStageCopyWcetExceedsSlotBudget {
+                    machine: "mcu_node".into(),
+                    link_name: "udp_data".into(),
+                    expected_p99_bytes: 16384,
+                    memcpy_cycles_per_byte: 4.0,
+                    clock_freq_mhz: 48,
+                    worker_slot_budget_us: 200,
+                    stage_copy_wcet_us: 1365,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:c41a9b3397849183","code":"reassembly/stage-copy-wcet-exceeds-slot-budget","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"link 'udp_data' on machine 'mcu_node': stage-copy WCET (1365 µs) exceeds `scheduler.worker_slot_budget_us: 200`. watching-zenoh RFC §5.M line 2995-2999 — `expected_p99_bytes (16384) × memcpy_cycles_per_byte (4) / clock_freq_mhz (48) > worker_slot_budget_us`. The stage copy alone starves Keepalive and parallel-region timers (ARCHITECTURE §9.3 + §3.4). Repair: raise `worker_slot_budget_us` (and re-validate every algorithm), lower `expected_p99_bytes` so stage copy is never invoked at that size, or raise the bound pool's `<sce:slot-size>` to absorb p99 without invoking stage copy.","expected":["200"],"actual":"1365"}"#,
+            ),
             // ── §5.L Bounded-collection cross-doc resolution (C6-β) ──
             (
                 // RFC §5.L lines 2566-2567: element-type body text does
@@ -7165,6 +7546,38 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:ae5e6142a2e8c826","code":"deploy/link-burst-pps-missing-on-isr-dispatch","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_data' resolves to `rx_dispatch: isr_to_pool` but `burst_pps` is not declared. watching-zenoh RFC §5.K line 2501-2503 (`deploy/link-burst-pps-missing-on-isr-dispatch`) — ISR fast-path requires `burst_pps` to size the descriptor ring and validate the stack budget. Repair: declare `burst_pps: <pps>`, or explicitly set `rx_dispatch: worker_tick` to opt into the slower cooperative-tick path."}"#,
             ),
             (
+                // C13-α-2 cross-doc: declared burst_pps overruns RX
+                // pool drain capacity within one cooperative tick.
+                "deploy/link-burst-absorption-insufficient",
+                DeployError::LinkBurstAbsorptionInsufficient {
+                    machine: "mcu_node".into(),
+                    link_name: "udp_data".into(),
+                    pool_name: "rx_data_pool".into(),
+                    slot_count: 16,
+                    burst_pps: 50_000,
+                    tick_period_us: 1000,
+                    drain_per_second: 16_000,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:149ee464a43d20f6","code":"deploy/link-burst-absorption-insufficient","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_data' declares `burst_pps: 50000` against RX pool 'rx_data_pool' with `<sce:slot-count>16</sce:slot-count>` and scheduler `tick_period_us: 1000`. Effective drain capacity is 16000 pps (with the 2.0 safety factor required by watching-zenoh RFC §5.K line 2489-2495), insufficient for the declared burst. Repair: raise `<sce:slot-count>` on pool 'rx_data_pool', lower `scheduler.tick_period_us`, or switch `rx_dispatch: isr_to_pool` when currently `worker_tick`.","expected":["16000"],"actual":"50000"}"#,
+            ),
+            (
+                // C13-α-2 cross-doc: rx_dispatch: worker_tick overruns
+                // RX pool in one tick window.
+                "deploy/link-rx-dispatch-worker-tick-on-high-burst",
+                DeployError::LinkRxDispatchWorkerTickOnHighBurst {
+                    machine: "mcu_node".into(),
+                    link_name: "udp_data".into(),
+                    pool_name: "rx_data_pool".into(),
+                    slot_count: 16,
+                    burst_pps: 100_000,
+                    tick_period_us: 1000,
+                    arrivals_per_tick: 100,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:f396cb2184d51ea2","code":"deploy/link-rx-dispatch-worker-tick-on-high-burst","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_data' resolves to `rx_dispatch: worker_tick` but one tick window of arrivals overruns RX pool 'rx_data_pool'. `burst_pps × tick_period_us / 1_000_000 = 100` exceeds `<sce:slot-count>16</sce:slot-count>`. watching-zenoh RFC §5.K line 2496-2500 (`deploy/link-rx-dispatch-worker-tick-on-high-burst`). Repair: switch `rx_dispatch: isr_to_pool` (descriptor-ring re-arm absorbs the burst), raise `<sce:slot-count>` on pool 'rx_data_pool' to admit the per-tick arrivals, or lower `scheduler.tick_period_us` so each window admits fewer arrivals.","expected":["16"],"actual":"100"}"#,
+            ),
+            (
                 "deploy/link-not-declared-in-deploy",
                 DeployError::LinkNotDeclaredInDeploy {
                     link_name: "udp_data".into(),
@@ -8043,6 +8456,25 @@ mod tests {
             //   hold time; author-domain knowledge.
             | MemReassemblyPoolVariantMissingMaxFragments
             | MemReassemblyPoolVariantMissingTimeout
+            // C13-α-2 + C9-β Fragment-reassembly cross-doc validators
+            // (RFC §5.M lines 2946-2995). Per Q-C13-α2-7 (a) lock: all
+            // six ride NeutralOrDeterministic. Every code has multi-axis
+            // repair (raise slot_size / lower expected_p99 / change
+            // max-fragments-per-message / lower mtu_bytes / change
+            // trust_class / raise worker_slot_budget_us); author picks
+            // the appropriate axis based on the deployment's hot path.
+            // `reassembly/untrusted-link-binding` could conceptually ride
+            // `Fix::ReplaceWith` "established_session" (single-element
+            // closed set), but the second repair "remove the pool
+            // binding entirely" is equally valid per spec line 2973-2975,
+            // so the two-path repair shape lives in
+            // NeutralOrDeterministic alongside its siblings.
+            | MemReassemblySlotSizeBelowDeclaredMtu
+            | ReassemblyMaxFragmentsInsufficientForMtu
+            | ReassemblyExpectedFragmentationRateHigh
+            | ReassemblyUntrustedLinkBinding
+            | ReassemblyTrustClassMissingOnFragmentingLink
+            | ReassemblyStageCopyWcetExceedsSlotBudget
             // C6-β multi-writer without atomic imports: the C4 baseline
             // atomic family spans 100+ symbols (load/store/cas/fetch ×
             // 5 widths × multiple orderings) so a `Fix::ReplaceOneOf`
@@ -8215,6 +8647,13 @@ mod tests {
             | MeshDeployLinkMtuBelowDriverFloor
             | MeshDeployLinkExpectedP99ExceedsMtu
             | MeshDeployLinkBurstPpsMissingOnIsrDispatch
+            // C13-α-2 cross-doc RX-pool burst invariants. Both ride
+            // NeutralOrDeterministic — repair is multi-axis per spec
+            // (raise slot_count, lower tick_period_us, switch rx_dispatch
+            // mode); author chooses the axis fitting the deployment
+            // budget. No closed candidate set.
+            | MeshDeployLinkBurstAbsorptionInsufficient
+            | MeshDeployLinkRxDispatchWorkerTickOnHighBurst
             | MeshExternalRead
             | MeshExternalParse
             | MeshExternalUnresolvedNames
@@ -8550,6 +8989,12 @@ mod tests {
                 | CollectionCapacityUnresolved
                 | MemReassemblyPoolVariantMissingMaxFragments
                 | MemReassemblyPoolVariantMissingTimeout
+                | MemReassemblySlotSizeBelowDeclaredMtu
+                | ReassemblyMaxFragmentsInsufficientForMtu
+                | ReassemblyExpectedFragmentationRateHigh
+                | ReassemblyUntrustedLinkBinding
+                | ReassemblyTrustClassMissingOnFragmentingLink
+                | ReassemblyStageCopyWcetExceedsSlotBudget
                 | TimerPeriodBelowTickRate
                 | TimerSlotOverflow
                 | ExternSymbolNotInWhitelist
@@ -8619,6 +9064,8 @@ mod tests {
                 | MeshDeployLinkBurstPpsMissingOnIsrDispatch
                 | MeshDeployLinkNotDeclaredInDeploy
                 | MeshDeployLinkNotDeclaredInForge
+                | MeshDeployLinkBurstAbsorptionInsufficient
+                | MeshDeployLinkRxDispatchWorkerTickOnHighBurst
                 | MeshExternalRead | MeshExternalParse
                 | MeshExternalUnresolvedNames | MeshExternalAmbiguousEventGroup
                 | MeshExternalEmptyEventGroup
@@ -8653,9 +9100,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            239,
+            247,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 239 distinct variants to match the DiagnosticCode \
+             expected 247 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -9065,7 +9512,30 @@ mod tests {
              and the `ForgePoolRegistry` entry for `X`, infrastructure \
              that lands in C13-α-2. 6 C9-β reassembly cross-doc codes \
              (mem/reassembly-slot-size-below-declared-mtu + 5 \
-             reassembly/*) also defer to C13-α-2. 232 → 239.",
+             reassembly/*) also defer to C13-α-2. 232 → 239. Then \
+             watching-zenoh RFC §5.M lines 2946-2995 + §5.K lines \
+             2489-2500 land the C13-α-2 cross-doc validators that \
+             consume `compile_scxml_with_imports`'s newly captured \
+             forge LinkModel + BufferPoolModel maps. 2 deploy-side codes \
+             (`deploy/link-burst-absorption-insufficient` + \
+             `deploy/link-rx-dispatch-worker-tick-on-high-burst`) ride \
+             the shared cross-doc resolver `resolve_link_rx_pool_slot_count` \
+             that joins `deploy.links.<X>` → forge `<sce:link name=X>` → \
+             `<sce:rx-pool ref=Y>` → ForgePoolRegistry's BufferPoolModel \
+             for Y; both fire when the cooperative tick window cannot \
+             drain the declared burst. 6 forge-side reassembly cross-doc \
+             codes (`mem/reassembly-slot-size-below-declared-mtu` + \
+             `reassembly/max-fragments-insufficient-for-mtu` + \
+             `reassembly/expected-fragmentation-rate-high` + \
+             `reassembly/untrusted-link-binding` + \
+             `reassembly/trust-class-missing-on-fragmenting-link` + \
+             `reassembly/stage-copy-wcet-exceeds-slot-budget`) consume \
+             the same resolver to check `BufferPoolVariant::Reassembly` \
+             bindings against link `mtu_bytes` / `expected_p99_bytes` / \
+             `domain_attrs.trust_class` / PlatformConfig WCET fields \
+             (C13-α-1 schema landed). All 8 codes ride \
+             NeutralOrDeterministic (multi-axis repair; per Q-C13-α2-7 a). \
+             239 → 247.",
         );
     }
 

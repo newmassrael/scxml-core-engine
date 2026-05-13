@@ -1642,6 +1642,136 @@ pub enum ValidationError {
         pool_name: String,
     },
 
+    /// watching-zenoh RFC §5.M line 2946
+    /// (`mem/reassembly-slot-size-below-declared-mtu`) — an `<sce:rx-pool
+    /// ref>` binding resolved to a buffer-pool whose `<sce:slot-size>`
+    /// is smaller than the bound link's `mtu_bytes`. The slot cannot
+    /// hold a single full-MTU datagram; even the non-fragmented happy
+    /// path fails to admit one wire frame. C13-α-2 cross-doc consumer
+    /// of `resolve_link_rx_pool_slot_count` (silent-skip on join
+    /// failure).
+    #[error(
+        "buffer-pool '{pool_name}' is bound as RX pool for link '{link_name}' on machine '{machine}', but `<sce:slot-size>{slot_size}</sce:slot-size>` is smaller than the link's `mtu_bytes: {mtu_bytes}`. \
+         watching-zenoh RFC §5.M line 2946 — the slot cannot admit a single full-MTU datagram, so even the non-fragmented happy path fails. \
+         Repair: raise `<sce:slot-size>` on pool '{pool_name}' to >= {mtu_bytes}, lower `mtu_bytes` on link '{link_name}', or bind a different (larger) pool."
+    )]
+    MemReassemblySlotSizeBelowDeclaredMtu {
+        /// Buffer-pool name from `<scxml sce:kind="buffer-pool" name="...">`.
+        pool_name: String,
+        /// Pool's declared `<sce:slot-size>` value.
+        slot_size: u32,
+        /// Link's declared `mtu_bytes` from deploy.yaml.
+        mtu_bytes: u32,
+        /// Deploy machine hosting the link binding.
+        machine: String,
+        /// Link name (joins deploy.yaml + forge `<sce:link>`).
+        link_name: String,
+    },
+
+    /// watching-zenoh RFC §5.M line 2947-2949
+    /// (`reassembly/max-fragments-insufficient-for-mtu`) — reassembly-
+    /// variant pool's `<sce:slot-size>` cannot hold the worst-case
+    /// reassembled message implied by `<sce:max-fragments-per-message>`
+    /// and the bound link's `mtu_bytes`. Spec invariant verbatim:
+    /// `slot_size >= max-fragments-per-message × mtu_bytes`. Hard
+    /// error. C13-α-2 cross-doc consumer.
+    #[error(
+        "reassembly-variant buffer-pool '{pool_name}' is bound to link '{link_name}' on machine '{machine}', but `<sce:slot-size>{slot_size}</sce:slot-size>` cannot hold the worst-case reassembled message: `<sce:max-fragments-per-message>{max_fragments_per_message}</sce:max-fragments-per-message> × link.mtu_bytes ({mtu_bytes}) = {required}` bytes required. \
+         watching-zenoh RFC §5.M line 2947-2949 verbatim: `slot_size >= max-fragments-per-message × mtu_bytes` — worst-case message must complete reassembly within declared bounds. \
+         Repair: raise `<sce:slot-size>` on pool '{pool_name}' to >= {required}, lower `<sce:max-fragments-per-message>`, or lower link `mtu_bytes`."
+    )]
+    ReassemblyMaxFragmentsInsufficientForMtu {
+        pool_name: String,
+        slot_size: u32,
+        max_fragments_per_message: u32,
+        mtu_bytes: u32,
+        required: u32,
+        machine: String,
+        link_name: String,
+    },
+
+    /// watching-zenoh RFC §5.M line 2950-2952
+    /// (`reassembly/expected-fragmentation-rate-high`) — the bound
+    /// link's `expected_p99_bytes` exceeds the regular RX pool's
+    /// `<sce:slot-size>` such that more than 25% of inbound traffic
+    /// would run the ARCHITECTURE §9.3 stage-copy path. Default
+    /// warning per spec (suppressible via
+    /// `<sce:accept-stage-copy-rate>` on the link source, gated by
+    /// C13-γ). Silent-skip when no regular `BufferPoolVariant::Default`
+    /// pool is bound (Q-C13-α2-4 (a) — the formula references "the
+    /// regular RX pool's slot_size" which does not exist for the link).
+    #[error(
+        "link '{link_name}' on machine '{machine}': `expected_p99_bytes: {expected_p99_bytes}` exceeds RX pool '{pool_name}' `<sce:slot-size>{slot_size}</sce:slot-size>` by more than the 25% default stage-copy threshold (rate = {rate_percent}%). \
+         watching-zenoh RFC §5.M line 2950-2952 — `(expected_p99_bytes - rx_pool.slot_size) / expected_p99_bytes > 0.25` triggers the warning. \
+         Repair: raise `<sce:slot-size>` on pool '{pool_name}', lower `expected_p99_bytes` (with justification), or add `<sce:accept-stage-copy-rate>` on the link source (C13-γ scope)."
+    )]
+    ReassemblyExpectedFragmentationRateHigh {
+        pool_name: String,
+        slot_size: u32,
+        expected_p99_bytes: u32,
+        rate_percent: u32,
+        machine: String,
+        link_name: String,
+    },
+
+    /// watching-zenoh RFC §5.M line 2964-2969
+    /// (`reassembly/untrusted-link-binding`) — reassembly-variant
+    /// pool bound to a link with `trust_class: untrusted` or
+    /// `session_arming`. Hard error: fragmentation on these links
+    /// is forbidden; only `established_session` links may carry
+    /// fragmented traffic. Defends against UDP source-IP spoofing
+    /// exhausting per-peer quota space.
+    #[error(
+        "reassembly-variant buffer-pool '{pool_name}' is bound to link '{link_name}' on machine '{machine}', but the link declares `trust_class: {trust_class}`. \
+         watching-zenoh RFC §5.M line 2964-2969 — only `trust_class: established_session` links may carry fragmented traffic; reassembly on `untrusted` / `session_arming` links exposes the per-peer quota space to source-IP spoofing. \
+         Repair: change link '{link_name}' to `trust_class: established_session` (only if the link is in fact post-handshake), or remove the reassembly-pool binding."
+    )]
+    ReassemblyUntrustedLinkBinding {
+        pool_name: String,
+        trust_class: String,
+        machine: String,
+        link_name: String,
+    },
+
+    /// watching-zenoh RFC §5.M line 2970-2975
+    /// (`reassembly/trust-class-missing-on-fragmenting-link`) —
+    /// reassembly-variant pool bound to a link whose `domain_attrs`
+    /// block is absent entirely (Q-C13-α2-8 (a) lock). Build cannot
+    /// decide whether the binding is safe.
+    #[error(
+        "reassembly-variant buffer-pool '{pool_name}' is bound to link '{link_name}' on machine '{machine}', but the link does not declare `domain_attrs.trust_class`. \
+         watching-zenoh RFC §5.M line 2970-2975 — build cannot decide whether the binding is safe without a declared trust class. \
+         Repair: declare `domain_attrs: {{ trust_class: established_session }}` on link '{link_name}' (data-plane links), or remove the reassembly-pool binding (control-plane links)."
+    )]
+    ReassemblyTrustClassMissingOnFragmentingLink {
+        pool_name: String,
+        machine: String,
+        link_name: String,
+    },
+
+    /// watching-zenoh RFC §5.M line 2995-2999
+    /// (`reassembly/stage-copy-wcet-exceeds-slot-budget`) — the
+    /// implicit memcpy in the stage-copy path alone blows the
+    /// cooperative slot. Formula verbatim: `expected_p99_bytes ×
+    /// memcpy_cycles_per_byte / clock_freq_mhz > worker_slot_budget_us`.
+    /// Silent-skip when any of the four platform/scheduler inputs
+    /// absent (per Q-η5 (a) precedent).
+    #[error(
+        "link '{link_name}' on machine '{machine}': stage-copy WCET ({stage_copy_wcet_us} µs) exceeds `scheduler.worker_slot_budget_us: {worker_slot_budget_us}`. \
+         watching-zenoh RFC §5.M line 2995-2999 — `expected_p99_bytes ({expected_p99_bytes}) × memcpy_cycles_per_byte ({memcpy_cycles_per_byte}) / clock_freq_mhz ({clock_freq_mhz}) > worker_slot_budget_us`. \
+         The stage copy alone starves Keepalive and parallel-region timers (ARCHITECTURE §9.3 + §3.4). \
+         Repair: raise `worker_slot_budget_us` (and re-validate every algorithm), lower `expected_p99_bytes` so stage copy is never invoked at that size, or raise the bound pool's `<sce:slot-size>` to absorb p99 without invoking stage copy."
+    )]
+    ReassemblyStageCopyWcetExceedsSlotBudget {
+        machine: String,
+        link_name: String,
+        expected_p99_bytes: u32,
+        memcpy_cycles_per_byte: f32,
+        clock_freq_mhz: u32,
+        worker_slot_budget_us: u32,
+        stage_copy_wcet_us: u32,
+    },
+
     /// watching-zenoh RFC §5.L lines 2566-2567 +  2650
     /// (`collection/element-type-not-a-kind`) — `<sce:element-type>NAME`
     /// body text does not resolve in the build's forge-doc registry to

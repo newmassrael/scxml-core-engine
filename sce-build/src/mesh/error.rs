@@ -1199,13 +1199,65 @@ pub enum DeployError {
         mtu_bytes: u32,
     },
 
-    // Watching-zenoh RFC §5.K line 2489-2495
-    // (`deploy/link-burst-absorption-insufficient`) + line 2496-2500
-    // (`deploy/link-rx-dispatch-worker-tick-on-high-burst`) defer to
-    // C13-α-2 per [[feedback-silently-broken-hooks]] — both require
-    // RX pool slot_count cross-doc resolution against forge `<sce:link>`
-    // + `ForgePoolRegistry`. C13-α-1 lands the codes' typed surface
-    // only when the consumer ships in the same atomic.
+    /// Watching-zenoh RFC §5.K line 2489-2495
+    /// (`deploy/link-burst-absorption-insufficient`). `burst_pps × 1s`
+    /// of worst-case inbound exceeds the RX pool's drain rate within
+    /// one cooperative tick window. C13-α-2 cross-doc consumer of
+    /// `resolve_link_rx_pool_slot_count` (joins `deploy.links.<X>` →
+    /// forge `<sce:link>` → `<sce:rx-pool ref>` → ForgePoolRegistry's
+    /// BufferPoolModel slot_count). Threshold: `slot_count × 1_000_000
+    /// / tick_period_us < burst_pps × 2` (safety factor 2.0 per spec
+    /// line 2492). Silent-skips on any join failure or missing
+    /// `scheduler.tick_period_us` / `burst_pps`.
+    #[error("machine '{machine}': link '{link_name}' declares \
+             `burst_pps: {burst_pps}` against RX pool '{pool_name}' \
+             with `<sce:slot-count>{slot_count}</sce:slot-count>` \
+             and scheduler `tick_period_us: {tick_period_us}`. \
+             Effective drain capacity is {drain_per_second} pps \
+             (with the 2.0 safety factor required by watching-zenoh \
+             RFC §5.K line 2489-2495), insufficient for the declared \
+             burst. Repair: raise `<sce:slot-count>` on pool \
+             '{pool_name}', lower `scheduler.tick_period_us`, or \
+             switch `rx_dispatch: isr_to_pool` when currently \
+             `worker_tick`.")]
+    LinkBurstAbsorptionInsufficient {
+        machine: String,
+        link_name: String,
+        pool_name: String,
+        slot_count: u32,
+        burst_pps: u32,
+        tick_period_us: u32,
+        drain_per_second: u32,
+    },
+
+    /// Watching-zenoh RFC §5.K line 2496-2500
+    /// (`deploy/link-rx-dispatch-worker-tick-on-high-burst`).
+    /// `rx_dispatch: worker_tick` declared but one tick window of
+    /// arrivals overruns the RX pool: `burst_pps × tick_period_us /
+    /// 1_000_000 > slot_count`. C13-α-2 cross-doc consumer of
+    /// `resolve_link_rx_pool_slot_count`. Silent-skips on any join
+    /// failure or missing `scheduler.tick_period_us` / `burst_pps`.
+    #[error("machine '{machine}': link '{link_name}' resolves to \
+             `rx_dispatch: worker_tick` but one tick window of \
+             arrivals overruns RX pool '{pool_name}'. \
+             `burst_pps × tick_period_us / 1_000_000 = {arrivals_per_tick}` \
+             exceeds `<sce:slot-count>{slot_count}</sce:slot-count>`. \
+             watching-zenoh RFC §5.K line 2496-2500 \
+             (`deploy/link-rx-dispatch-worker-tick-on-high-burst`). \
+             Repair: switch `rx_dispatch: isr_to_pool` (descriptor-ring \
+             re-arm absorbs the burst), raise `<sce:slot-count>` on \
+             pool '{pool_name}' to admit the per-tick arrivals, or \
+             lower `scheduler.tick_period_us` so each window admits \
+             fewer arrivals.")]
+    LinkRxDispatchWorkerTickOnHighBurst {
+        machine: String,
+        link_name: String,
+        pool_name: String,
+        slot_count: u32,
+        burst_pps: u32,
+        tick_period_us: u32,
+        arrivals_per_tick: u32,
+    },
 
     /// Watching-zenoh RFC §5.K line 2501-2503
     /// (`deploy/link-burst-pps-missing-on-isr-dispatch`). The resolved
@@ -2635,6 +2687,64 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             expected: None,
             fix: None,
             key_fragments: vec![machine.clone(), link_name.clone()],
+        },
+        DeployError::LinkBurstAbsorptionInsufficient {
+            machine,
+            link_name,
+            pool_name,
+            slot_count,
+            burst_pps,
+            tick_period_us,
+            drain_per_second,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployLinkBurstAbsorptionInsufficient,
+            stage: Stage::MeshDeploy,
+            // `actual` = declared burst rate; `expected` = computed
+            // drain capacity. Both axes of the failed inequality ride
+            // the wire payload so a downstream renderer can name the
+            // shortfall. Per non_overlap_class: the concrete repair
+            // value (raise slot_count to X / lower tick_period_us to Y
+            // / switch dispatch) is author-domain — no closed
+            // candidate set.
+            actual: Some(burst_pps.to_string()),
+            expected: Some(vec![drain_per_second.to_string()]),
+            fix: None,
+            key_fragments: vec![
+                machine.clone(),
+                link_name.clone(),
+                pool_name.clone(),
+                slot_count.to_string(),
+                burst_pps.to_string(),
+                tick_period_us.to_string(),
+            ],
+        },
+        DeployError::LinkRxDispatchWorkerTickOnHighBurst {
+            machine,
+            link_name,
+            pool_name,
+            slot_count,
+            burst_pps,
+            tick_period_us,
+            arrivals_per_tick,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployLinkRxDispatchWorkerTickOnHighBurst,
+            stage: Stage::MeshDeploy,
+            // `actual` = per-tick arrivals (the overrun rate);
+            // `expected` = pool slot_count (the per-tick admission
+            // ceiling). NeutralOrDeterministic: three repair axes
+            // (switch dispatch mode / raise slot_count / lower
+            // tick_period_us) are all author-domain choices.
+            actual: Some(arrivals_per_tick.to_string()),
+            expected: Some(vec![slot_count.to_string()]),
+            fix: None,
+            key_fragments: vec![
+                machine.clone(),
+                link_name.clone(),
+                pool_name.clone(),
+                slot_count.to_string(),
+                burst_pps.to_string(),
+                tick_period_us.to_string(),
+            ],
         },
         DeployError::LinkNotDeclaredInDeploy {
             link_name,
