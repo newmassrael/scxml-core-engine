@@ -79,12 +79,28 @@ typedef bool (*sce_forge_link_rx_fn)(void *self, sce_forge_link_rx_frame_t *out)
  * it), `block` blocks until the driver accepts the frame. */
 typedef sce_forge_link_status_t (*sce_forge_link_tx_fn)(void *self, sce_forge_link_tx_frame_t frame);
 
+/* Budget-aware tick hook (watching-zenoh RFC §5.N line 3050).
+ * The cooperative scheduler invokes `poll(self, deadline_us)` once
+ * per tick per link, with `deadline_us` capped to the deploy.yaml
+ * `scheduler.per_link_budget_us` value the C10-β codegen pins as
+ * the per-machine `PER_LINK_BUDGET_US` macro. Implementations use
+ * the deadline to bound internal work — drain wire bytes, decode
+ * frames into an internal queue, run housekeeping. Decoded frames
+ * are then retrieved via `ops->rx` from the driver's internal queue.
+ * Split-responsibility (poll for work, rx for retrieval) keeps the
+ * scheduler tick loop minimal. Required field (no NULL fallback)
+ * per the pre-release no-shim rule. A no-op body is acceptable when
+ * the driver pumps RX from a separate ISR / task — set the field
+ * to a function that returns immediately. */
+typedef void (*sce_forge_link_poll_fn)(void *self, uint32_t deadline_us);
+
 /* Shared, const-qualifiable vtable. Per RFC §5.J.1 + the watching-
  * zenoh MCU consumer, this lives in `.rodata` (flash/ROM on MCU)
  * so per-instance RAM cost is just `sizeof(void *) + sizeof(void *)`. */
 typedef struct {
-    sce_forge_link_rx_fn rx;
-    sce_forge_link_tx_fn tx;
+    sce_forge_link_rx_fn   rx;
+    sce_forge_link_tx_fn   tx;
+    sce_forge_link_poll_fn poll;
 } sce_forge_link_ops_t;
 
 /* Per-instance link handle. `ops` is the shared driver vtable;

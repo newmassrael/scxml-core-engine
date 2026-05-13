@@ -2,14 +2,14 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
 // SCE Forge: Auto-generated per-machine cooperative scheduler
-// Runtime: sce-rust-runtime (MCU `no_std` target)
+// Runtime: sce-link-runtime (MCU `no_std` target)
 // Machine: {{ machine_name }}
 // Do not edit — regenerate from deploy.yaml + the source forge link docs.
 //
 // watching-zenoh RFC §5.N lines 3050-3055 (C10-β MCU path).
 // The cooperative scheduler's tick loop polls each link's
-// `driver.poll()` in a fixed round-robin per spec line 3050; the
-// per-link work cap is `per_link_budget_us = {{ per_link_budget_us }}` µs.
+// `Link::poll(deadline_us)` in a fixed round-robin per spec line 3050;
+// the per-link work cap is `per_link_budget_us = {{ per_link_budget_us }}` µs.
 // Starvation guarantee (spec line 3053-3055): no link can starve
 // another because the round-robin order is deterministic and the budget
 // caps per-link work per tick.
@@ -19,16 +19,17 @@
 #![allow(unused_variables)]
 #![allow(dead_code)]
 
+use sce_link_runtime::Link;
+
 /// Cooperative scheduler tick budget — total tick period in
 /// microseconds. Sourced from `scheduler.tick_period_us` on this
 /// machine's deploy entry.
 pub const TICK_PERIOD_US: u32 = {{ tick_period_us }};
 
 /// Per-link work cap per tick — sourced from
-/// `scheduler.per_link_budget_us`. The scheduler bounds each
-/// `link.poll()` call by this budget; the cumulative bound
-/// `per_link_budget_us × links.len()` is build-time-verified to fit
-/// inside `TICK_PERIOD_US` via the §5.N parse-time validators.
+/// `scheduler.per_link_budget_us`. Consumed directly by every
+/// `Link::poll(deadline_us)` call site; deploy parse-time validators
+/// pin `per_link_budget_us × links.len() ≤ tick_period_us`.
 pub const PER_LINK_BUDGET_US: u32 = {{ per_link_budget_us }};
 
 /// Round-robin link order. Codegen pins the visit order to deploy
@@ -39,25 +40,12 @@ pub const LINK_ORDER: &[&str] = &[
 {% for link in links %}    "{{ link.name }}",
 {% endfor %}];
 
-/// Trait every per-link driver wrapper implements. The scheduler
-/// invokes `poll(deadline_us)` once per tick per link; the existing
-/// `sce_link_runtime::Link` trait's `rx` is the documented non-
-/// blocking poll primitive on the Rust side (mirrors the C
-/// `ops->rx` contract per `sce/forge/link.h:69-73`). The
-/// `PER_LINK_BUDGET_US` constant above is the build-time-verified
-/// per-link work cap; runtime crates that add a `poll(deadline_us)`
-/// extension consume the constant directly. Until then, `LinkDriver`
-/// impls forward `poll` to `rx` plus their own frame dispatch.
-pub trait LinkDriver {
-    fn poll(&mut self, deadline_us: u32);
-}
-
-/// Tick the cooperative scheduler once. Iterates each link's driver
-/// in `LINK_ORDER`, passing `PER_LINK_BUDGET_US` as the advisory
-/// budget. One tick boundary is the caller's responsibility (typical
-/// MCU shape: `SysTick` IRQ wakes a main-loop ticker that invokes
-/// `tick()` once per `TICK_PERIOD_US`).
-pub fn tick<{% for link in links %}{{ link.pascal_name }}: LinkDriver{% if not loop.last %}, {% endif %}{% endfor %}>(
+/// Tick the cooperative scheduler once. Iterates each link's
+/// [`sce_link_runtime::Link`] impl in `LINK_ORDER`, passing
+/// `PER_LINK_BUDGET_US` as the deadline. One tick boundary is the
+/// caller's responsibility (typical MCU shape: `SysTick` IRQ wakes a
+/// main-loop ticker that invokes `tick()` once per `TICK_PERIOD_US`).
+pub fn tick<{% for link in links %}{{ link.pascal_name }}: Link{% if not loop.last %}, {% endif %}{% endfor %}>(
 {% for link in links %}    {{ link.snake_name }}: &mut {{ link.pascal_name }},
 {% endfor %}) {
 {% for link in links %}    {{ link.snake_name }}.poll(PER_LINK_BUDGET_US);

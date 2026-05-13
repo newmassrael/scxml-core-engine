@@ -56,6 +56,15 @@ impl<L: Link> {{ pascal_name }}<L> {
         self.driver.tx(TxFrame::new(bytes))
     }
 
+    /// Budget-aware tick hook (RFC §5.N line 3050) — invoked once
+    /// per cooperative-scheduler tick with `deadline_us` capped to
+    /// the per-machine `PER_LINK_BUDGET_US`. Passthrough to the
+    /// underlying `impl Link::poll`; see [`sce_link_runtime::Link::poll`]
+    /// for the budget-vs-rx split-responsibility contract.
+    pub fn poll(&mut self, deadline_us: u32) {
+        self.driver.poll(deadline_us);
+    }
+
     /// Link-class declared in the source SCXML — `{{ class }}`.
     /// Round-tripped here so the SCXML's `<sce:link-class>` body
     /// can be inspected at runtime (e.g. for diagnostic logs).
@@ -142,6 +151,14 @@ impl<L: Link> {{ pascal_name }}EstablishedSession<L> {
     /// policy via the driver's `tx` return value.
     pub fn tx(&mut self, bytes: &[u8]) -> Result<(), LinkError> {
         self.driver.tx(TxFrame::new(bytes))
+    }
+
+    /// Budget-aware tick hook (RFC §5.N line 3050) — invoked once
+    /// per cooperative-scheduler tick with `deadline_us` capped to
+    /// the per-machine `PER_LINK_BUDGET_US`. Passthrough to the
+    /// underlying `impl Link::poll`.
+    pub fn poll(&mut self, deadline_us: u32) {
+        self.driver.poll(deadline_us);
     }
 
     /// Link-class declared in the source SCXML — `{{ class }}`.

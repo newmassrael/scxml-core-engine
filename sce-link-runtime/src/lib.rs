@@ -96,6 +96,30 @@ pub trait Link {
     /// `Err(LinkError::Backpressure)` (the SCE side ignores it),
     /// `block` blocks until the driver accepts the frame.
     fn tx(&mut self, frame: TxFrame<'_>) -> Result<(), LinkError>;
+
+    /// Budget-aware tick hook (watching-zenoh RFC §5.N line 3050).
+    /// The cooperative scheduler invokes `poll(deadline_us)` once per
+    /// tick per link, with `deadline_us` capped to the deploy.yaml
+    /// `scheduler.per_link_budget_us` value the C10-β codegen pins as
+    /// the per-machine `PER_LINK_BUDGET_US` constant.
+    ///
+    /// Implementations use the deadline to bound internal work —
+    /// drain wire bytes, decode frames into an internal queue,
+    /// run any housekeeping (RX-pool slot recycling, keepalive
+    /// timers). Decoded frames are then retrieved via [`Self::rx`]
+    /// from the driver's internal queue at whichever cadence the
+    /// SCXML interpreter's idle slot prefers. Split-responsibility
+    /// (poll for work, rx for retrieval) keeps the scheduler tick
+    /// loop minimal and lets drivers batch decode across multiple
+    /// wire frames inside one budget.
+    ///
+    /// Required (no default) per pre-release no-shim rule
+    /// (`feedback_pre_release_no_compat.md`) — every `Link` impl must
+    /// decide explicitly whether it does budget-aware work or returns
+    /// immediately. A no-op body is acceptable when the driver pumps
+    /// RX from a separate task (tokio) or interrupt handler (lwIP);
+    /// the `StubLink` in this crate is the no-op exemplar.
+    fn poll(&mut self, deadline_us: u32);
 }
 
 // === Sample API (B7-η' prerequisite) ============================================
@@ -364,6 +388,12 @@ impl Link for StubLink {
         self.tx_log.push(frame.data.to_vec());
         Ok(())
     }
+
+    /// No-op: the stub has no internal wire-drain logic — RX bytes
+    /// are pushed directly into `rx_queue` via `push_rx` and consumed
+    /// by `rx()`. Budget-aware drivers (lwIP, tokio) implement real
+    /// internal work here.
+    fn poll(&mut self, _deadline_us: u32) {}
 }
 
 #[cfg(test)]

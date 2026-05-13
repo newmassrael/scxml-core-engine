@@ -311,6 +311,21 @@ fn render_rust_emits_link_bus_and_scheduler_when_budgets_set() {
     assert!(sched.contains("PER_LINK_BUDGET_US: u32 = 500"));
     assert!(sched.contains(r#""udp_scout","#));
     assert!(sched.contains(r#""udp_data","#));
+    // Runtime poll(deadline_us) extension closure: scheduler must
+    // import sce-link-runtime's Link trait directly and call its
+    // poll method — no per-machine LinkDriver trait redundancy.
+    assert!(
+        sched.contains("use sce_link_runtime::Link;"),
+        "scheduler must import the runtime Link trait directly"
+    );
+    assert!(
+        !sched.contains("pub trait LinkDriver"),
+        "no per-machine LinkDriver trait — gap closed by Link::poll"
+    );
+    assert!(
+        sched.contains(".poll(PER_LINK_BUDGET_US);"),
+        "scheduler must call Link::poll with the per-link budget"
+    );
 }
 
 #[test]
@@ -347,6 +362,17 @@ fn render_c11_emits_scheduler_header() {
     assert!(body.contains("mcu_node_scheduler_tick"));
     assert!(body.contains(r#""udp_scout""#));
     assert!(body.contains(r#""udp_data""#));
+    // Runtime poll(deadline_us) extension closure: C11 scheduler
+    // must call ops->poll directly with the budget — no rx+dispatch
+    // callback workaround machinery.
+    assert!(
+        body.contains("drv->ops->poll(drv->self, SCE_FORGE_MCU_NODE_PER_LINK_BUDGET_US)"),
+        "C11 scheduler must call ops->poll with the per-link budget"
+    );
+    assert!(
+        !body.contains("scheduler_dispatch_fn"),
+        "no dispatch callback typedef — gap closed by ops->poll"
+    );
 }
 
 #[test]

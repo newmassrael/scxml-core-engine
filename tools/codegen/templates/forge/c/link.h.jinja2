@@ -95,6 +95,15 @@ static inline sce_forge_link_status_t {{ snake_name }}_link_tx(
     return self->driver.ops->tx(self->driver.self, frame);
 }
 
+/* Budget-aware tick hook (RFC §5.N line 3050) — invoked once per
+ * cooperative-scheduler tick with `deadline_us` capped to the
+ * per-machine `PER_LINK_BUDGET_US` macro. Passthrough to the
+ * underlying `ops->poll`. */
+static inline void {{ snake_name }}_link_poll(
+    {{ snake_name }}_link_t *self, uint32_t deadline_us) {
+    self->driver.ops->poll(self->driver.self, deadline_us);
+}
+
 {% if is_listener_with_sibling %}
 /* ── C10-α listener-link Sibling half (RFC §5.C lines 802-833) ──
  *
@@ -147,6 +156,12 @@ static inline sce_forge_link_status_t {{ snake_name }}_established_session_tx(
     frame.data = bytes;
     frame.len = len;
     return self->driver.ops->tx(self->driver.self, frame);
+}
+
+/* Budget-aware tick hook on the Sibling half. */
+static inline void {{ snake_name }}_established_session_poll(
+    {{ snake_name }}_established_session_t *self, uint32_t deadline_us) {
+    self->driver.ops->poll(self->driver.self, deadline_us);
 }
 {% endif %}
 
