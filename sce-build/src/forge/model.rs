@@ -2489,6 +2489,82 @@ impl std::fmt::Display for CachePolicy {
     }
 }
 
+/// `<sce:variant>` on `<scxml sce:kind="buffer-pool">` — RFC §5.M lines
+/// 2676-2698. The reassembly variant of §5.E carries three additional
+/// fields (`max-fragments-per-message`, `reassembly-timeout-ms`,
+/// `per-peer-quota`) bundled on the `Reassembly` arm via the
+/// [`ReassemblyConfig`] payload. The `Default` arm covers the absence
+/// of `<sce:variant>` (regular RX/TX/stage pool) — semantically the
+/// pre-C9 behavior of `<scxml sce:kind="buffer-pool">`.
+///
+/// **Why a sum type (Q-C9-1 a, RFC §3)**: the three reassembly-specific
+/// fields are cross-field-coupled — all three required when
+/// `variant=Reassembly`, all three forbidden when `variant=Default`.
+/// Lifting the discriminator + payload into a single enum makes that
+/// invariant type-system-enforced at every consumer; flat
+/// `Option<u32>` fields would spread the coupling across the
+/// `BufferPoolModel` struct.
+///
+/// Future variants per spec §5.E lines 1166-1180 "FSM extension
+/// policy" (TX-only, crypto-DMA, etc.) add new arms additively — the
+/// existing `Default` / `Reassembly` arms are stable.
+///
+/// **Backend coverage (spec line 2659-2664)**: reassembly variant
+/// inherits §5.E backend coverage — emits only on `(rust, *)` and
+/// `(c11, bare_metal)`. The existing
+/// `codegen/mcu-class-kind-on-non-mcu-language` diagnostic on the
+/// `ForgeKind::BufferPool` axis (Q-C9-6 a) gates non-MCU targets;
+/// C9-α does not introduce a new MCU-class diagnostic.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "variant", rename_all = "kebab-case")]
+pub enum BufferPoolVariant {
+    /// No `<sce:variant>` element (or the explicit form
+    /// `<sce:variant>default</sce:variant>`). Regular RX / TX / stage
+    /// pool semantics; carries no extra fields.
+    Default,
+    /// `<sce:variant>reassembly</sce:variant>` (RFC §5.M lines 2682,
+    /// 2688-2690). Per-slot fragment-index bitmap + deadline + peer-id
+    /// emission (codegen contract deferred to C9-γ). Parse-time enforces
+    /// the three sibling elements `<sce:max-fragments-per-message>`,
+    /// `<sce:reassembly-timeout-ms>`, `<sce:per-peer-quota>` are all
+    /// present (single-arm payload).
+    Reassembly(ReassemblyConfig),
+}
+
+/// Reassembly-variant configuration — RFC §5.M lines 2682, 2688-2690.
+///
+/// Bundles the three required fields a reassembly-variant buffer pool
+/// declares beyond the base §5.E shape. C9-α validates the shape at
+/// parse time (all three required, all `> 0`); cross-doc invariants
+/// referencing `links.<name>.{mtu_bytes, expected_p99_bytes,
+/// domain_attrs.trust_class}` and the peer-table-capacity build-time
+/// invariant defer to C9-β co-landing with C13 §5.K `links:` block.
+#[derive(Debug, Clone, Serialize)]
+pub struct ReassemblyConfig {
+    /// `<sce:max-fragments-per-message>` (RFC §5.M line 2688) — fragment-
+    /// index bitmap width per slot; bounds the worst-case fragment count
+    /// per reassembled message. C9-α parse rejection: missing element
+    /// (`mem/reassembly-pool-variant-missing-max-fragments`) or
+    /// value == 0 (`<sce:max-fragments-per-message> body text: 0`
+    /// generic `InvalidAttribute`).
+    pub max_fragments_per_message: u32,
+    /// `<sce:reassembly-timeout-ms>` (RFC §5.M line 2689) — per-slot
+    /// deadline emitted at codegen time. C9-α parse rejection: missing
+    /// element (`mem/reassembly-pool-variant-missing-timeout`) or
+    /// value == 0 (generic `InvalidAttribute`).
+    pub reassembly_timeout_ms: u32,
+    /// `<sce:per-peer-quota>` (RFC §5.M lines 2690, 2841-2861) — caps
+    /// the in-flight reassembly slots a single peer may hold.
+    /// `peer_table.capacity × per-peer-quota ≥ slot_count` invariant
+    /// defers to C9-β where the `peer_table.capacity` source lands
+    /// (§5.K). C9-α parse rejection: missing element (we reuse the
+    /// generic `MissingElement` rather than minting a third
+    /// reassembly-specific code per [[feedback-no-versioning]] — the
+    /// two spec-named codes are reserved for the cases the spec
+    /// explicitly names at line 2944-2945) or value == 0 (generic).
+    pub per_peer_quota: u32,
+}
+
 /// Buffer-pool document — RFC §5.E SRAM-placed, DMA-aligned slot table.
 ///
 /// B7-α schema (per `<scxml sce:kind="buffer-pool">` body):
@@ -2504,6 +2580,9 @@ impl std::fmt::Display for CachePolicy {
 ///   `mem/dma-channel-collision` deferred to B7-γ
 /// - `<sce:cache-policy>` ([`CachePolicy`]) — `maintain` /
 ///   `non-cacheable` / `none`; cache-maintenance pinning defers to B7-δ
+/// - `<sce:variant>` (optional, RFC §5.M line 2682) — `default` (no
+///   `<sce:variant>` element; semantic pre-C9 behavior) OR
+///   `reassembly` ([`ReassemblyConfig`] payload). C9-α.
 #[derive(Debug, Clone, Serialize)]
 pub struct BufferPoolModel {
     pub name: String,
@@ -2523,6 +2602,12 @@ pub struct BufferPoolModel {
     pub dma_channel: Option<String>,
     /// `<sce:cache-policy>` — `maintain` / `non-cacheable` / `none`.
     pub cache_policy: CachePolicy,
+    /// `<sce:variant>` discriminator (RFC §5.M line 2682; C9-α). The
+    /// `Default` arm covers the absence of `<sce:variant>` — pre-C9
+    /// regular RX/TX/stage pool behavior. `Reassembly` carries the
+    /// three reassembly-specific fields (max-fragments-per-message,
+    /// reassembly-timeout-ms, per-peer-quota).
+    pub variant: BufferPoolVariant,
 }
 
 // ── Worker kind ────────────────────────────────────────────────

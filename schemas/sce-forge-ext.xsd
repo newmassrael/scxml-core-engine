@@ -391,8 +391,28 @@
     </xs:complexType>
   </xs:element>
 
+  <!-- `<sce:variant>` serves two distinct purposes by host kind:
+
+       1. **Codec discriminated-union suffix (RFC §5.B B1-β / Y3-2b-ii)**
+          Inside `<datamodel>` of `<scxml sce:kind="codec">` — carries
+          `tag` attribute + `<sce:peek-byte>` / `<sce:arm>` /
+          `<sce:default>` children. Parser `parse_codec_variant`
+          enforces `tag` presence + arm shape.
+       2. **Buffer-pool variant discriminator (RFC §5.M C9-α)**
+          Top-level child of `<scxml sce:kind="buffer-pool">` — carries
+          plain text content `reassembly` (or `default`). Parser
+          `parse_buffer_pool` enforces the closed enum + the three
+          reassembly-only sibling elements.
+
+       The two contexts have disjoint surrounding scopes so there is no
+       parse-time ambiguity. The XSD relaxes the global element type
+       to permit BOTH shapes — `mixed="true"` for text content, `tag`
+       attribute optional. The XSD remains a structural-only gate;
+       semantic enforcement (codec's required `tag` + arms, buffer-
+       pool's closed enum value + required siblings) is the parser's
+       responsibility per `[[feedback-spec-mirror-parity]]`. -->
   <xs:element name="variant">
-    <xs:complexType>
+    <xs:complexType mixed="true">
       <xs:sequence>
         <!-- RFC §5.B Y3 atomic 2b-ii peek-byte — peek-byte mode:
              singleton `<sce:peek-byte>` child opts the variant into
@@ -425,9 +445,14 @@
           </xs:complexType>
         </xs:element>
       </xs:sequence>
-      <!-- Tag field id; must reference a sibling <sce:field>/<data> with
-           an unsigned-int sce:type. Validated by sce-build. -->
-      <xs:attribute name="tag" type="xs:string" use="required"/>
+      <!-- Tag field id (codec context only) — must reference a sibling
+           <sce:field>/<data> with an unsigned-int sce:type. Parser
+           `parse_codec_variant` enforces presence + resolution. C9-α
+           (RFC §5.M) relaxes the XSD requirement to `optional` so the
+           buffer-pool reassembly variant (text content `reassembly`,
+           no `tag`) passes; `parse_buffer_pool` enforces the closed
+           enum value. -->
+      <xs:attribute name="tag" type="xs:string" use="optional"/>
     </xs:complexType>
   </xs:element>
 
@@ -1213,6 +1238,44 @@
     <xs:complexType>
       <xs:simpleContent>
         <xs:extension base="sce:cachePolicyType"/>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       RFC §5.M reassembly-variant buffer-pool fields (C9-α)
+
+       Three sibling elements required when
+       `<sce:variant>reassembly</sce:variant>` is declared on a
+       `<scxml sce:kind="buffer-pool">` document. Parser-side
+       enforcement (`parse_buffer_pool` rejects missing or zero values)
+       via `mem/reassembly-pool-variant-missing-max-fragments` +
+       `mem/reassembly-pool-variant-missing-timeout` codes. Cross-doc
+       validators that read `<sce:per-peer-quota>` against §5.K's
+       `peer_table.capacity` (build-time invariant
+       `peer_table.capacity × per-peer-quota ≥ slot_count`) defer to
+       C9-β co-landing with C13.
+       ═══════════════════════════════════════════════════════════════ -->
+  <xs:element name="max-fragments-per-message">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:positiveInteger"/>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="reassembly-timeout-ms">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:positiveInteger"/>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="per-peer-quota">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:positiveInteger"/>
       </xs:simpleContent>
     </xs:complexType>
   </xs:element>

@@ -1607,6 +1607,41 @@ pub enum ValidationError {
         collection_name: String,
     },
 
+    /// watching-zenoh RFC §5.M line 2944
+    /// (`mem/reassembly-pool-variant-missing-max-fragments`) —
+    /// `<sce:variant>reassembly</sce:variant>` declared on a buffer-pool
+    /// without an accompanying `<sce:max-fragments-per-message>` sibling.
+    /// Spec line 2688 fixes the per-slot fragment-index bitmap width to
+    /// this value; without it codegen has no upper bound on the per-slot
+    /// fragment-ID tracking. C9-α parse-time structure check.
+    #[error(
+        "buffer-pool '{pool_name}': <sce:variant>reassembly</sce:variant> declared without <sce:max-fragments-per-message>N</sce:max-fragments-per-message>. \
+         watching-zenoh RFC §5.M line 2688 fixes the per-slot fragment-index bitmap width to this value; without it codegen has no upper bound on the per-slot fragment-ID tracking. \
+         Repair: add an `<sce:max-fragments-per-message>N</sce:max-fragments-per-message>` element with a positive integer N derived from the wire framer's per-message maximum."
+    )]
+    MemReassemblyPoolVariantMissingMaxFragments {
+        /// Buffer-pool name from `<scxml sce:kind="buffer-pool" name="...">`.
+        pool_name: String,
+    },
+
+    /// watching-zenoh RFC §5.M line 2945
+    /// (`mem/reassembly-pool-variant-missing-timeout`) —
+    /// `<sce:variant>reassembly</sce:variant>` declared on a buffer-pool
+    /// without an accompanying `<sce:reassembly-timeout-ms>` sibling.
+    /// Spec line 2689 + line 2696 fix the per-slot deadline field to
+    /// this value; without it the reassembly FSM has no
+    /// `Receiving → TimedOut` edge timer (`docs/reassembly-fsm.md`
+    /// §2.4.5). C9-α parse-time structure check.
+    #[error(
+        "buffer-pool '{pool_name}': <sce:variant>reassembly</sce:variant> declared without <sce:reassembly-timeout-ms>N</sce:reassembly-timeout-ms>. \
+         watching-zenoh RFC §5.M line 2689 fixes the per-slot deadline field to this value; without it the reassembly FSM has no `Receiving → TimedOut` edge timer (`docs/reassembly-fsm.md` §2.4.5). \
+         Repair: add an `<sce:reassembly-timeout-ms>N</sce:reassembly-timeout-ms>` element with a positive integer N (milliseconds) derived from link latency budget and acceptable hold time."
+    )]
+    MemReassemblyPoolVariantMissingTimeout {
+        /// Buffer-pool name from `<scxml sce:kind="buffer-pool" name="...">`.
+        pool_name: String,
+    },
+
     /// watching-zenoh RFC §5.L lines 2566-2567 +  2650
     /// (`collection/element-type-not-a-kind`) — `<sce:element-type>NAME`
     /// body text does not resolve in the build's forge-doc registry to

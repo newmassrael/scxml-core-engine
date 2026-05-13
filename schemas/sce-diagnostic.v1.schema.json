@@ -140,6 +140,8 @@
         "worker/outbox-ref-unknown",
         "worker/outbox-target-wrong-kind",
         "worker/outbox-target-suffix-invalid",
+        "mem/reassembly-pool-variant-missing-max-fragments",
+        "mem/reassembly-pool-variant-missing-timeout",
         "collection/ordering-sorted-requires-index-by",
         "collection/overflow-policy-oldest-wins-requires-ordering-insertion",
         "collection/element-type-not-a-kind",

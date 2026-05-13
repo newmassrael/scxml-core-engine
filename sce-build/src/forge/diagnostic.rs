@@ -1006,6 +1006,52 @@ pub enum DiagnosticCode {
     #[serde(rename = "worker/outbox-target-suffix-invalid")]
     WorkerOutboxTargetSuffixInvalid,
 
+    // ── §5.M Fragment-reassembly buffer-pool variant diagnostics
+    //    (watching-zenoh RFC §5.M lines 2944-2945). C9-α ships the two
+    //    parse-level structure codes here; cross-doc validators that
+    //    reference §5.K `links.<name>.{mtu_bytes, expected_p99_bytes,
+    //    domain_attrs.trust_class}` (6-8 codes including
+    //    `reassembly/max-fragments-insufficient-for-mtu`,
+    //    `reassembly/untrusted-link-binding`, etc.) defer to C9-β
+    //    co-landing with C13 §5.K `links:` block. The
+    //    `reassembly/per-peer-quota-build-invariant-violated` invariant
+    //    (peer_table.capacity × per-peer-quota ≥ slot_count) defers to
+    //    C9-β where `peer_table.capacity` source becomes available.
+    //    Codegen-side per-slot bitmap/deadline/peer-id emission +
+    //    `reassembly/peer-id-not-zid-on-established-session` template-
+    //    regression guard defer to C9-γ. Listener-link sibling-split
+    //    (`link/listener-link-not-paired-with-established-sibling` +
+    //    `reassembly/binding-on-unpaired-listener`) is a §5.C codegen
+    //    contract (spec line 2820-2824) and lands with C10/C11.
+    //    Q-C9-6 (a) lock: backend coverage diagnostic reuses
+    //    `codegen/mcu-class-kind-on-non-mcu-language` per spec line 2664
+    //    verbatim — no new MCU-class code minted here. ──
+    /// `<sce:variant>reassembly</sce:variant>` declared on a buffer-pool
+    /// without an accompanying `<sce:max-fragments-per-message>` sibling.
+    /// RFC §5.M line 2944 names this code. Spec line 2688 fixes the
+    /// fragment-index bitmap width per slot to the
+    /// `max-fragments-per-message` value; without it codegen has no
+    /// upper bound on the per-slot fragment-ID tracking. The single
+    /// recoverable repair is to add the missing element — but the
+    /// concrete fragment count is author-domain knowledge (depends on
+    /// the wire framer's per-message maximum), so the non-overlap class
+    /// is `NeutralOrDeterministic` (no closed candidate set).
+    #[serde(rename = "mem/reassembly-pool-variant-missing-max-fragments")]
+    MemReassemblyPoolVariantMissingMaxFragments,
+
+    /// `<sce:variant>reassembly</sce:variant>` declared on a buffer-pool
+    /// without an accompanying `<sce:reassembly-timeout-ms>` sibling.
+    /// RFC §5.M line 2945 names this code. Spec line 2689 + line 2696
+    /// fix the per-slot deadline field to this value; without it the
+    /// reassembly FSM has no `Receiving → TimedOut` edge timer
+    /// (`docs/reassembly-fsm.md` §2.4.5). The single recoverable
+    /// repair is to add the missing element with a concrete millisecond
+    /// value — author-domain knowledge (depends on link latency budget
+    /// and acceptable hold time), so the non-overlap class is
+    /// `NeutralOrDeterministic` (no closed candidate set).
+    #[serde(rename = "mem/reassembly-pool-variant-missing-timeout")]
+    MemReassemblyPoolVariantMissingTimeout,
+
     // ── §5.L Bounded-collection kind diagnostics (watching-zenoh RFC
     //    §5.L lines 2540-2655). C6-α ships the two structure-only codes
     //    here; cross-doc (element-type-not-a-kind / index-by-field-
@@ -1577,6 +1623,9 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         WorkerOutboxRefUnknown,
         WorkerOutboxTargetWrongKind,
         WorkerOutboxTargetSuffixInvalid,
+        // Fragment-reassembly buffer-pool variant parse-time structure validators (watching-zenoh RFC §5.M, C9-α)
+        MemReassemblyPoolVariantMissingMaxFragments,
+        MemReassemblyPoolVariantMissingTimeout,
         // Bounded-collection kind parse-time structure validators (watching-zenoh RFC §5.L, C6-α)
         CollectionOrderingSortedRequiresIndexBy,
         CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion,
@@ -1914,6 +1963,20 @@ impl DiagnosticCode {
                 Some("watching-zenoh RFC §5.L")
             }
 
+            // ── §5.M Fragment-reassembly variant parse-time structure
+            //    validators (watching-zenoh RFC §5.M lines 2944-2945,
+            //    C9-α). Both codes fire when
+            //    `<sce:variant>reassembly</sce:variant>` is declared
+            //    without one of its required sibling elements
+            //    (max-fragments-per-message at spec line 2688,
+            //    reassembly-timeout-ms at spec line 2689). Cross-doc /
+            //    cross-link / codegen-side reassembly diagnostics defer
+            //    to C9-β/γ + C10/C11 per RFC stub §1.7 phase column.
+            MemReassemblyPoolVariantMissingMaxFragments
+            | MemReassemblyPoolVariantMissingTimeout => {
+                Some("watching-zenoh RFC §5.M")
+            }
+
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
 
@@ -2244,6 +2307,8 @@ impl DiagnosticCode {
             WorkerOutboxRefUnknown => "worker/outbox-ref-unknown",
             WorkerOutboxTargetWrongKind => "worker/outbox-target-wrong-kind",
             WorkerOutboxTargetSuffixInvalid => "worker/outbox-target-suffix-invalid",
+            MemReassemblyPoolVariantMissingMaxFragments => "mem/reassembly-pool-variant-missing-max-fragments",
+            MemReassemblyPoolVariantMissingTimeout => "mem/reassembly-pool-variant-missing-timeout",
             CollectionOrderingSortedRequiresIndexBy => "collection/ordering-sorted-requires-index-by",
             CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion => "collection/overflow-policy-oldest-wins-requires-ordering-insertion",
             CollectionElementTypeNotAKind => "collection/element-type-not-a-kind",
@@ -3892,6 +3957,33 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![collection_name.clone()],
         },
+        // ── §5.M Fragment-reassembly variant parse-time structure validators (C9-α) ──
+        ValidationError::MemReassemblyPoolVariantMissingMaxFragments { pool_name } => {
+            DiagnosticPayload {
+                code: DiagnosticCode::MemReassemblyPoolVariantMissingMaxFragments,
+                stage: Stage::Validation,
+                // Per non_overlap_class reasoning: the concrete fragment
+                // count is author-domain knowledge (wire framer's per-
+                // message maximum), so no closed candidate set.
+                expected: None,
+                actual: None,
+                fix: None,
+                key_fragments: vec![pool_name.clone()],
+            }
+        }
+        ValidationError::MemReassemblyPoolVariantMissingTimeout { pool_name } => {
+            DiagnosticPayload {
+                code: DiagnosticCode::MemReassemblyPoolVariantMissingTimeout,
+                stage: Stage::Validation,
+                // Per non_overlap_class reasoning: the concrete timeout
+                // value is author-domain (link latency budget + acceptable
+                // hold time), so no closed candidate set.
+                expected: None,
+                actual: None,
+                fix: None,
+                key_fragments: vec![pool_name.clone()],
+            }
+        }
         // ── §5.L Bounded-collection cross-doc resolution (C6-β) ──
         ValidationError::CollectionElementTypeNotAKind {
             collection_name,
@@ -5404,6 +5496,33 @@ mod tests {
                 .into(),
                 // Hash placeholder — byte-stability assertion patches.
                 r#"{"v":1,"id":"fnv1a:31723798e4ccd410","code":"collection/overflow-policy-oldest-wins-requires-ordering-insertion","stage":"validation","spec":"watching-zenoh RFC §5.L","message":"bounded-collection 'local_sub_table': <sce:on-overflow>oldest-wins</sce:on-overflow> requires <sce:ordering>insertion</sce:ordering>, but ordering is `sorted-by(index-by)`. watching-zenoh RFC §5.L line 2655 lists this combination as the explicit anti-pattern: `oldest-wins` presumes a temporal ordering that `sorted-by` replaces with the `index-by` field comparator. Repair: change `<sce:ordering>` to `insertion` (keeps the oldest-wins policy), or change `<sce:on-overflow>` to `reject` / `diagnostic-event`."}"#,
+            ),
+            // ── §5.M Fragment-reassembly variant parse-time structure validators (C9-α) ──
+            (
+                // RFC §5.M line 2944: <sce:variant>reassembly with no
+                // <sce:max-fragments-per-message> sibling — codegen has
+                // no fragment-index bitmap width to lower per spec line
+                // 2688. NeutralOrDeterministic, no Fix payload.
+                "forge/mem-reassembly-pool-variant-missing-max-fragments",
+                ValidationError::MemReassemblyPoolVariantMissingMaxFragments {
+                    pool_name: "rx_reassembly_pool".into(),
+                }
+                .into(),
+                // Hash placeholder — byte-stability assertion patches.
+                r#"{"v":1,"id":"fnv1a:02053e3d69a3f3f4","code":"mem/reassembly-pool-variant-missing-max-fragments","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"buffer-pool 'rx_reassembly_pool': <sce:variant>reassembly</sce:variant> declared without <sce:max-fragments-per-message>N</sce:max-fragments-per-message>. watching-zenoh RFC §5.M line 2688 fixes the per-slot fragment-index bitmap width to this value; without it codegen has no upper bound on the per-slot fragment-ID tracking. Repair: add an `<sce:max-fragments-per-message>N</sce:max-fragments-per-message>` element with a positive integer N derived from the wire framer's per-message maximum."}"#,
+            ),
+            (
+                // RFC §5.M line 2945: <sce:variant>reassembly with no
+                // <sce:reassembly-timeout-ms> sibling — the reassembly
+                // FSM has no Receiving → TimedOut edge timer per spec
+                // line 2689. NeutralOrDeterministic, no Fix payload.
+                "forge/mem-reassembly-pool-variant-missing-timeout",
+                ValidationError::MemReassemblyPoolVariantMissingTimeout {
+                    pool_name: "rx_reassembly_pool".into(),
+                }
+                .into(),
+                // Hash placeholder — byte-stability assertion patches.
+                r#"{"v":1,"id":"fnv1a:1c6a61294467efab","code":"mem/reassembly-pool-variant-missing-timeout","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"buffer-pool 'rx_reassembly_pool': <sce:variant>reassembly</sce:variant> declared without <sce:reassembly-timeout-ms>N</sce:reassembly-timeout-ms>. watching-zenoh RFC §5.M line 2689 fixes the per-slot deadline field to this value; without it the reassembly FSM has no `Receiving → TimedOut` edge timer (`docs/reassembly-fsm.md` §2.4.5). Repair: add an `<sce:reassembly-timeout-ms>N</sce:reassembly-timeout-ms>` element with a positive integer N (milliseconds) derived from link latency budget and acceptable hold time."}"#,
             ),
             // ── §5.L Bounded-collection cross-doc resolution (C6-β) ──
             (
@@ -7682,6 +7801,20 @@ mod tests {
             //   single canonical candidate → NeutralOrDeterministic.
             | CollectionOrderingSortedRequiresIndexBy
             | CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion
+            // C9-α Fragment-reassembly variant parse-time structure
+            // validators (RFC §5.M lines 2944-2945). Neither carries a
+            // closed candidate set:
+            // - `mem/reassembly-pool-variant-missing-max-fragments`: the
+            //   repair is to add `<sce:max-fragments-per-message>N</sce:max-fragments-per-message>`
+            //   but the concrete N is author-domain knowledge (depends
+            //   on the wire framer's per-message maximum and the worst-
+            //   case message size); no enumeration possible.
+            // - `mem/reassembly-pool-variant-missing-timeout`: similar —
+            //   the repair is to add `<sce:reassembly-timeout-ms>N</sce:reassembly-timeout-ms>`
+            //   with N derived from link latency budget and acceptable
+            //   hold time; author-domain knowledge.
+            | MemReassemblyPoolVariantMissingMaxFragments
+            | MemReassemblyPoolVariantMissingTimeout
             // C6-β multi-writer without atomic imports: the C4 baseline
             // atomic family spans 100+ symbols (load/store/cas/fetch ×
             // 5 widths × multiple orderings) so a `Fix::ReplaceOneOf`
@@ -8173,6 +8306,8 @@ mod tests {
                 | CollectionIndexByFieldMissing
                 | CollectionMultiWriterWithoutAtomics
                 | CollectionCapacityUnresolved
+                | MemReassemblyPoolVariantMissingMaxFragments
+                | MemReassemblyPoolVariantMissingTimeout
                 | TimerPeriodBelowTickRate
                 | TimerSlotOverflow
                 | ExternSymbolNotInWhitelist
@@ -8269,9 +8404,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            230,
+            232,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 230 distinct variants to match the DiagnosticCode \
+             expected 232 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
@@ -8629,7 +8764,29 @@ mod tests {
              (deletion-style repair), and `algorithm/call-arg-count-\
              mismatch` (numeric arity mismatch — arg expressions are \
              author-domain, mirrors `ValidationCountMismatch` precedent). \
-             224 → 230.",
+             224 → 230. Then watching-zenoh RFC §5.M lines 2944-2945 \
+             land the C9-α fragment-reassembly variant parse-time \
+             structure validators — \
+             `mem/reassembly-pool-variant-missing-max-fragments` + \
+             `mem/reassembly-pool-variant-missing-timeout` fire when \
+             `<sce:variant>reassembly</sce:variant>` is declared without \
+             one of its three required sibling elements (spec line 2688 \
+             max-fragments-per-message + spec line 2689 reassembly-\
+             timeout-ms). Both ride `NeutralOrDeterministic` — repair \
+             requires authoring a concrete u32 value derived from \
+             author-domain knowledge (wire framer's per-message maximum, \
+             link latency budget) with no closed candidate set. The \
+             third reassembly-only element `<sce:per-peer-quota>` reuses \
+             the generic `ValidationError::MissingElement` rather than \
+             minting a third reassembly-specific code per spec — line \
+             2944-2945 names only these two. Cross-doc / cross-link \
+             validators that reference §5.K `links.<name>.{{mtu_bytes, \
+             expected_p99_bytes, domain_attrs.trust_class}}` (6-8 codes) \
+             defer to C9-β co-landing with C13 §5.K. Codegen-side \
+             per-slot bitmap/deadline/peer-id emission + 1 codegen-\
+             template-regression guard defer to C9-γ. Listener-link \
+             sibling-split codes (2) belong to C10/C11 per spec line \
+             2820-2824. 230 → 232.",
         );
     }
 

@@ -6305,6 +6305,14 @@ fn parse_buffer_pool(
         )
     })?;
 
+    // RFC §5.M C9-α — parse the optional `<sce:variant>` discriminator.
+    // Absent / "default" body text → `BufferPoolVariant::Default` (the
+    // pre-C9 regular RX/TX/stage pool semantics). Body text "reassembly"
+    // → `BufferPoolVariant::Reassembly(ReassemblyConfig { ... })` with
+    // its three required sibling elements parsed inline. Unknown body
+    // text → typed `InvalidAttribute` (closed-enum gate).
+    let variant = parse_buffer_pool_variant(root, label, doc_name)?;
+
     Ok(BufferPoolModel {
         name: doc_name.to_string(),
         slot_count,
@@ -6313,7 +6321,189 @@ fn parse_buffer_pool(
         alignment,
         dma_channel,
         cache_policy,
+        variant,
     })
+}
+
+/// Parse the `<sce:variant>` discriminator on a `<scxml sce:kind="buffer-pool">`
+/// document per RFC §5.M lines 2676-2698 (C9-α).
+///
+/// **Closed enum body-text set**: `default` (or absent) → `Default` arm;
+/// `reassembly` → `Reassembly(ReassemblyConfig { ... })` arm with the
+/// three required reassembly-only siblings parsed inline. Any other
+/// body-text value parse-rejects via `InvalidAttribute` (closed-enum
+/// gate; the open-set repair would require new spec primitives so a
+/// `FixCarriesCandidates` shape is appropriate downstream — but C9-α
+/// keeps the surface narrow per Q-C9-6 a, no new MCU-class codes).
+///
+/// **Cross-arm exclusivity**: the three reassembly-only siblings
+/// (`<sce:max-fragments-per-message>`, `<sce:reassembly-timeout-ms>`,
+/// `<sce:per-peer-quota>`) are **forbidden** when variant is `Default`
+/// (absent or "default" body text) — their presence in that context
+/// raises `InvalidAttribute` naming the misapplied element. This is the
+/// type-system mirror at parse time of the sum-type's "only-on-arm"
+/// invariant per Q-C9-1 (a).
+///
+/// **Missing reassembly-only siblings** under variant=`reassembly`:
+/// `<sce:max-fragments-per-message>` absence fires
+/// `MemReassemblyPoolVariantMissingMaxFragments`;
+/// `<sce:reassembly-timeout-ms>` absence fires
+/// `MemReassemblyPoolVariantMissingTimeout`. Both are the two spec-
+/// named codes at RFC §5.M lines 2944-2945. `<sce:per-peer-quota>`
+/// absence reuses the generic `MissingElement` per the [[feedback-no-versioning]]
+/// rule — spec line 2944-2945 names only the first two codes.
+///
+/// **Zero-value rejection**: any of the three siblings with `value == 0`
+/// raises generic `InvalidAttribute` (mirrors `slot-count`/`slot-size`/
+/// `alignment` zero-rejection 6234-6252 above).
+fn parse_buffer_pool_variant(
+    root: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+    doc_name: &str,
+) -> Result<crate::forge::model::BufferPoolVariant, Located<ForgeError>> {
+    use crate::forge::model::{BufferPoolVariant, ReassemblyConfig};
+
+    let variant_node = find_sce_child(root, "variant");
+    let variant_text = variant_node
+        .as_ref()
+        .map(|n| n.text().unwrap_or("").trim().to_string())
+        .unwrap_or_default();
+
+    // Closed enum decision: absent → Default; explicit "default" → Default;
+    // "reassembly" → Reassembly; anything else → typed rejection.
+    let is_reassembly = match variant_text.as_str() {
+        "" | "default" => false,
+        "reassembly" => true,
+        _ => {
+            // Element exists with unknown body text → typed reject.
+            let node = variant_node.as_ref().expect(
+                "variant_text non-empty implies variant_node was Some — \
+                 enforced by the `unwrap_or_default` chain above",
+            );
+            return Err(located(
+                node,
+                label.diagnostic_label,
+                ValidationError::InvalidAttribute {
+                    element: "<sce:variant>".into(),
+                    attr: "body text".into(),
+                    value: variant_text,
+                    expected: "default, reassembly".into(),
+                },
+            ));
+        }
+    };
+
+    // Reassembly-only siblings; presence and value rules differ by arm.
+    let max_fragments_node = find_sce_child(root, "max-fragments-per-message");
+    let timeout_node = find_sce_child(root, "reassembly-timeout-ms");
+    let per_peer_quota_node = find_sce_child(root, "per-peer-quota");
+
+    if !is_reassembly {
+        // variant=Default — reassembly-only siblings forbidden. Spec
+        // line 2682 names <sce:variant>reassembly as the gate for the
+        // three extra fields; their presence outside that arm is an
+        // author-misapplied configuration.
+        for (name, node) in [
+            ("max-fragments-per-message", &max_fragments_node),
+            ("reassembly-timeout-ms", &timeout_node),
+            ("per-peer-quota", &per_peer_quota_node),
+        ] {
+            if let Some(n) = node.as_ref() {
+                return Err(located(
+                    n,
+                    label.diagnostic_label,
+                    ValidationError::InvalidAttribute {
+                        element: format!("<sce:{name}>"),
+                        attr: "context".into(),
+                        value: "buffer-pool without <sce:variant>reassembly</sce:variant>".into(),
+                        expected: "only allowed when <sce:variant>reassembly</sce:variant> is declared".into(),
+                    },
+                ));
+            }
+        }
+        return Ok(BufferPoolVariant::Default);
+    }
+
+    // variant=Reassembly — all three siblings required + positive.
+    let max_fragments_per_message = if max_fragments_node.is_some() {
+        let v = require_u32_body(root, label, "max-fragments-per-message", doc_name)?;
+        reject_zero_field(root, label, "max-fragments-per-message", v)?;
+        v
+    } else {
+        return Err(located(
+            root,
+            label.diagnostic_label,
+            ValidationError::MemReassemblyPoolVariantMissingMaxFragments {
+                pool_name: doc_name.to_string(),
+            },
+        ));
+    };
+
+    let reassembly_timeout_ms = if timeout_node.is_some() {
+        let v = require_u32_body(root, label, "reassembly-timeout-ms", doc_name)?;
+        reject_zero_field(root, label, "reassembly-timeout-ms", v)?;
+        v
+    } else {
+        return Err(located(
+            root,
+            label.diagnostic_label,
+            ValidationError::MemReassemblyPoolVariantMissingTimeout {
+                pool_name: doc_name.to_string(),
+            },
+        ));
+    };
+
+    let per_peer_quota = if per_peer_quota_node.is_some() {
+        let v = require_u32_body(root, label, "per-peer-quota", doc_name)?;
+        reject_zero_field(root, label, "per-peer-quota", v)?;
+        v
+    } else {
+        // Per RFC stub §3 Q-C9-1 commentary: the third reassembly-only
+        // element reuses the generic MissingElement code; spec line
+        // 2944-2945 only names the first two reassembly-specific codes.
+        return Err(located(
+            root,
+            label.diagnostic_label,
+            ValidationError::MissingElement {
+                kind: ForgeKind::BufferPool,
+                element: "sce:per-peer-quota".into(),
+            },
+        ));
+    };
+
+    Ok(BufferPoolVariant::Reassembly(ReassemblyConfig {
+        max_fragments_per_message,
+        reassembly_timeout_ms,
+        per_peer_quota,
+    }))
+}
+
+/// Reject `value == 0` on a reassembly-variant sibling; mirrors the
+/// inline zero-rejection in `parse_buffer_pool` for slot-count /
+/// slot-size / alignment. Refactor surface: extracted here only
+/// because the C9-α reassembly siblings reuse the pattern; the
+/// existing inline form in `parse_buffer_pool` stays unchanged to
+/// avoid touching B7-α's golden test surface.
+fn reject_zero_field(
+    root: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+    name: &str,
+    value: u32,
+) -> Result<(), Located<ForgeError>> {
+    if value == 0 {
+        let node = find_sce_child(root, name).expect("caller verified the element exists");
+        return Err(located(
+            &node,
+            label.diagnostic_label,
+            ValidationError::InvalidAttribute {
+                element: format!("<sce:{name}>"),
+                attr: "body text".into(),
+                value: "0".into(),
+                expected: "positive integer".into(),
+            },
+        ));
+    }
+    Ok(())
 }
 
 /// Parse `<scxml sce:kind="worker">` per RFC §5.D lines 858-913.
