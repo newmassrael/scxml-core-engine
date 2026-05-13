@@ -202,6 +202,23 @@ class {{ pascal }}:
             return None
         return self._slots[slot]
 
+    def get_by_slot(self, slot: int) -> Optional[{{ element_pascal }}]:
+        """Slot-indexed read without Handle (RFC §5.L + C7 foundation).
+
+        Returns ``None`` when ``slot >= CAPACITY`` OR when the slot
+        is unoccupied. No generation check (the use-after-remove
+        guard is for the Handle-based :meth:`get`; slot-based access
+        is for iteration paths where the caller walks slot indices
+        directly). Backs the C7 ``<sce:foreach in="<bc-alias>">``
+        index-loop lowering across all 6 backends (Q-C7-2 (c) lock
+        2026-05-13).
+        """
+        if slot < 0 or slot >= CAPACITY:
+            return None
+        if not self._occupied[slot]:
+            return None
+        return self._slots[slot]
+
 {% if has_index_by %}
     def find_by_index(self, key: {{ index_by_py_type }}) -> Optional[{{ pascal }}Handle]:
         """Find the first occupied slot whose ``{{ index_by_field_snake }}`` equals ``key`` (spec line 2615).

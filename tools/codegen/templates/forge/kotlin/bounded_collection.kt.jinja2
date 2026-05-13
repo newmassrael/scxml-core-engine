@@ -161,6 +161,21 @@ class {{ pascal }} : Iterable<{{ element_pascal }}> {
         if ((generation[slotIdx].toUInt() and GEN_MASK) != handle.generation) return null
         return slots[slotIdx]
     }
+
+    /// Get-by-slot (RFC §5.L + C7 foundation): slot-indexed read
+    /// without Handle. Returns `null` when `slot >= CAPACITY` OR
+    /// when the slot is unoccupied. No generation check (the use-
+    /// after-remove guard is for the Handle-based `get`; slot-based
+    /// access is for iteration paths where the caller walks slot
+    /// indices directly). Backs the C7 `<sce:foreach in="<bc-alias>">`
+    /// index-loop lowering across all 6 backends (Q-C7-2 (c) lock
+    /// 2026-05-13).
+    fun getBySlot(slot: UInt): {{ element_pascal }}? {
+        val slotIdx = slot.toInt()
+        if (slotIdx >= CAPACITY) return null
+        if (!occupied[slotIdx]) return null
+        return slots[slotIdx]
+    }
 {% if has_index_by %}
     /// Find the first occupied slot whose `<sce:index-by field="{{ index_by_field }}"/>`
     /// equals `key` (spec line 2615). Linear scan bounded by

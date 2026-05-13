@@ -261,6 +261,25 @@ impl {{ pascal }} {
         }
         self.slots[slot].as_ref()
     }
+
+    /// Get-by-slot (RFC §5.L + C7 foundation): slot-indexed read
+    /// without Handle. Returns `None` when `slot >= CAPACITY` OR
+    /// when the slot is unoccupied. No generation check (the use-
+    /// after-remove guard is for the Handle-based `get`; slot-based
+    /// access is for iteration paths where the caller walks slot
+    /// indices directly). Backs the C7 `<sce:foreach in="<bc-alias>">`
+    /// index-loop lowering across all 6 backends (Q-C7-2 (c) lock
+    /// 2026-05-13).
+    pub fn get_by_slot(&self, slot: u32) -> Option<&{{ element_pascal }}> {
+        let slot = slot as usize;
+        if slot >= CAPACITY {
+            return None;
+        }
+        if !self.bit_is_set(slot) {
+            return None;
+        }
+        self.slots[slot].as_ref()
+    }
 {% if has_index_by %}
     /// Find the first occupied slot whose `<sce:index-by field="{{ index_by_field }}"/>`
     /// equals `key` (spec line 2615). Linear scan bounded by

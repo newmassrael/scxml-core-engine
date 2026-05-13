@@ -252,6 +252,22 @@ static inline const {{ element_pascal }} *{{ snake }}_get(
     return &self->slots[slot];
 }
 
+/* Get-by-slot (RFC §5.L + C7 foundation): slot-indexed read without
+ * Handle. Returns NULL when `slot >= CAPACITY` OR when the slot is
+ * unoccupied. No generation check (the use-after-remove guard is for
+ * the Handle-based `_get`; slot-based access is for iteration paths
+ * where the caller walks slot indices directly via the bitmap order).
+ * Backs the C7 `<sce:foreach in="<bc-alias>">` index-loop lowering
+ * across all 6 backends (Q-C7-2 (c) lock 2026-05-13). */
+static inline const {{ element_pascal }} *{{ snake }}_get_by_slot(
+    const {{ snake }}_t *self,
+    uint32_t slot)
+{
+    if (slot >= {{ upper_name }}_CAPACITY) return NULL;
+    if (!{{ snake }}_bitmap_get_(self, slot)) return NULL;
+    return &self->slots[slot];
+}
+
 {% if has_index_by %}
 /* Find-by-index (spec line 2615). Linear scan over occupied slots
  * (CAPACITY upper bound is build-time constant → satisfies §5.A
