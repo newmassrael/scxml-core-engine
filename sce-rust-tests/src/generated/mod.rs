@@ -1,3 +1,7 @@
+// SCE-GENERATED — DO NOT EDIT
+// source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
+// template-hash: 098da7c84370a4296423abd634e2f8f6f4f84b3edd0a0d3c66a03ff69b2a536b
+// generated-at: 0
 // GENERATED -- DO NOT EDIT (sce-codegen)
 //! Generated W3C SCXML conformance test state machines (202 tests).
 
@@ -82,6 +86,11 @@ pub mod test286;
 pub mod test287;
 pub mod test294;
 pub mod test298;
+// test301 removed in b3d991c0 — W3C SCXML §5.8 mandates rejection of documents
+// with nonexistent <script src>; generate-w3c batch path emits it anyway because
+// `generate_w3c_unified` does not honour `document_rejected`, but the artifact
+// is intentionally untracked so the integration test stays consistent with the
+// W3C-mandated rejection outcome.
 pub mod test302;
 pub mod test303;
 pub mod test304;

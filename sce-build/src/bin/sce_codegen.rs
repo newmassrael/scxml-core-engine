@@ -91,9 +91,129 @@ fn emit_batch_failure_ndjson(err: &sce_build::forge::error::Located<ForgeError>)
         emit_ndjson(&diag);
     }
 }
+use sce_build::forge::drift;
 use sce_build::generator::{GeneratedOutput, Language};
 use sce_build::model::SCXMLModel;
 use sce_build::parser::SCXMLParser;
+
+/// Spec §6.2.6 drift-header context bundled at `cmd_*` entry and
+/// threaded to every file-emitting helper. Two parts —
+/// `source_hash` (sha256 over `**/*.scxml` under `input_root` +
+/// optional `deploy.yaml`) and `template_hash` (sha256 over
+/// `tools/codegen/templates/` + `Cargo.lock` of the SCE workspace) —
+/// plus a `generated-at` timestamp that honours `SOURCE_DATE_EPOCH`
+/// for deterministic regen.
+///
+/// Pre-computed once per CLI invocation so every write site through
+/// `write_drift_aware` / `write_if_changed_drift_aware` shares the
+/// same numbers; `sce-codegen verify` then recomputes from the same
+/// inputs and matches each generated file's embedded header.
+#[derive(Debug, Clone)]
+struct DriftContext {
+    hashes: drift::DriftHashes,
+    generated_at: u64,
+}
+
+impl DriftContext {
+    /// Best-effort compute: failures along the workspace-probe path
+    /// downgrade the corresponding axis to a zero hash and log a
+    /// stderr note instead of aborting codegen. The spec invariant
+    /// is "every emitted file carries a header" — a zero-hash header
+    /// still satisfies that, and `sce-codegen verify` reports the
+    /// mismatch when invoked against the real workspace.
+    fn compute(input_root: &Path, deploy: Option<&Path>) -> Self {
+        let source_hash = drift::compute_source_hash(input_root, deploy)
+            .unwrap_or_else(|e| {
+                eprintln!(
+                    "sce-codegen: source-hash compute failed for {} ({e}); embedding zero hash",
+                    input_root.display(),
+                );
+                [0u8; 32]
+            });
+        let template_hash = match locate_workspace_root() {
+            Some(ws) => {
+                let tpl = ws.join("tools").join("codegen").join("templates");
+                let lock = ws.join("Cargo.lock");
+                drift::compute_template_hash(&tpl, &lock).unwrap_or_else(|e| {
+                    eprintln!(
+                        "sce-codegen: template-hash compute failed under {} ({e}); embedding zero hash",
+                        ws.display(),
+                    );
+                    [0u8; 32]
+                })
+            }
+            None => {
+                eprintln!(
+                    "sce-codegen: workspace root not detected; template-hash embedded as zero",
+                );
+                [0u8; 32]
+            }
+        };
+        Self {
+            hashes: drift::DriftHashes {
+                source_hash,
+                template_hash,
+            },
+            generated_at: drift::now_utc_seconds(),
+        }
+    }
+}
+
+/// File extension predicate matching `cmd_verify`'s
+/// `collect_generated_files` set. Header injection is skipped for
+/// every other extension so `.scxml` stubs, `.txt` children lists,
+/// CMake `.d` depfiles, and `.inl` C++ partials stay byte-stable.
+fn is_drift_eligible_path(path: &Path) -> bool {
+    matches!(
+        path.extension().and_then(|e| e.to_str()),
+        Some("rs") | Some("cpp") | Some("h") | Some("kt") | Some("go") | Some("py") | Some("c"),
+    )
+}
+
+/// Returns `content` with the §6.2.6 header prepended (or refreshed
+/// if already present) when `path`'s extension is in the drift-
+/// eligible set; otherwise echoes the input.
+fn apply_drift_header(content: &str, path: &Path, ctx: &DriftContext) -> String {
+    if is_drift_eligible_path(path) {
+        let prefix = drift::comment_prefix_for_path(path);
+        drift::prepend_or_replace_header(content, &ctx.hashes, ctx.generated_at, prefix)
+    } else {
+        content.to_string()
+    }
+}
+
+/// Drift-aware analogue of [`write_or_exit`]. Prepends the §6.2.6
+/// header for source-extension files (`.rs / .cpp / .h / .kt / .go /
+/// .py / .c`) before writing; non-source files are written verbatim.
+/// `sce-codegen verify` recomputes both hashes and rejects on
+/// mismatch, fulfilling the spec invariant that every emitted file
+/// carries a drift-detectable header.
+fn write_drift_aware<P: AsRef<Path>>(
+    fmt: ErrorFormat,
+    path: P,
+    content: &str,
+    ctx: &DriftContext,
+) {
+    let path_ref = path.as_ref();
+    let final_content = apply_drift_header(content, path_ref, ctx);
+    if let Err(e) = fs::write(path_ref, &final_content) {
+        fmt.emit_and_exit(
+            &CliError::WriteOutput {
+                path: path_ref.display().to_string(),
+                source: e,
+            },
+            "",
+        );
+    }
+}
+
+/// Drift-aware analogue of [`write_if_changed`]. Compares against
+/// the headered bytes so a regen with identical hashes is a no-op
+/// (preserves the mtime contract `write_if_changed` exists for).
+fn write_if_changed_drift_aware(path: &Path, content: &str, ctx: &DriftContext) -> bool {
+    let final_content = apply_drift_header(content, path, ctx);
+    write_if_changed(path, &final_content)
+}
 
 /// How diagnostics are rendered to stderr.
 ///
@@ -764,15 +884,23 @@ fn cmd_orchestrate(
         }
     }
 
+    // Spec §6.2.6 drift context — covers every output file written
+    // below with a `// SCE-GENERATED` header that `sce-codegen verify`
+    // can recompute and gate on. `input_root` defaults to the parent
+    // of the first SCXML path so a typical batch (all docs in one
+    // directory) hashes its whole input set; a flat fallback to "."
+    // keeps multi-dir invocations functional even though their hash
+    // is then the cwd recursive walk.
+    let drift_input_root: std::path::PathBuf = scxml_path_bufs
+        .first()
+        .and_then(|p| p.parent().map(|x| x.to_path_buf()))
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    let drift_ctx = DriftContext::compute(&drift_input_root, deploy_path.map(Path::new));
+
     for (basename, generated) in &outputs {
         for (file_name, code) in &generated.files {
             let path = out_root.join(file_name);
-            fs::write(&path, code).unwrap_or_else(|e| {
-                error_format.emit_and_exit(
-                    &CliError::WriteOutput { path: path.display().to_string(), source: e },
-                    "",
-                )
-            });
+            write_drift_aware(error_format, &path, code, &drift_ctx);
         }
         let _ = basename; // basename is the input-doc label; outputs already self-name.
     }
@@ -816,6 +944,18 @@ fn cmd_generate(
             "",
         )
     });
+
+    // Spec §6.2.6 drift context — input root defaults to the SCXML
+    // file's parent so the hash covers every `*.scxml` in that
+    // directory (the common-case test layout under
+    // `resources/<num>/`). Pre-computed once and threaded into every
+    // file write below so a single invocation's generated tree
+    // shares one source-hash / template-hash pair.
+    let drift_input_root: std::path::PathBuf = Path::new(scxml_path)
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    let drift_ctx = DriftContext::compute(&drift_input_root, deploy_path.map(Path::new));
 
     match sce_build::classify_document(&scxml_content) {
         sce_build::Pipeline::Forge => {
@@ -865,12 +1005,7 @@ fn cmd_generate(
                     let out = Path::new(output_dir);
                     for (filename, code) in &files {
                         let path = out.join(filename);
-                        fs::write(&path, code).unwrap_or_else(|e| {
-                            error_format.emit_and_exit(
-                                &CliError::WriteOutput { path: path.display().to_string(), source: e },
-                                "",
-                            )
-                        });
+                        write_drift_aware(error_format, &path, code, &drift_ctx);
                         report.artifacts.push(path.clone());
                     }
                     if let Some(dep_path) = depfile_path {
@@ -933,13 +1068,13 @@ fn cmd_generate(
                     name = input_stem, pascal = pascal
                 );
                 let inl = "// W3C SCXML 5.8: Document rejected\n";
-                write_or_exit(error_format, out.join(format!("{input_stem}_sm.h")), &header);
-                write_or_exit(error_format, out.join(format!("{input_stem}_sm.inl")), inl);
+                write_drift_aware(error_format, out.join(format!("{input_stem}_sm.h")), &header, &drift_ctx);
+                write_drift_aware(error_format, out.join(format!("{input_stem}_sm.inl")), inl, &drift_ctx);
             }
             Language::Rust => {
                 let stub = "// W3C SCXML 5.8: Document rejected\n\
                      // This state machine was rejected at parse time.\n";
-                write_or_exit(error_format, out.join(format!("{input_stem}_sm.rs")), stub);
+                write_drift_aware(error_format, out.join(format!("{input_stem}_sm.rs")), stub, &drift_ctx);
             }
             Language::Kotlin => {
                 let stub = format!(
@@ -947,7 +1082,7 @@ fn cmd_generate(
                      package com.sce.generated.{name}\n",
                     name = input_stem
                 );
-                write_or_exit(error_format, out.join(format!("{input_stem}Sm.kt")), &stub);
+                write_drift_aware(error_format, out.join(format!("{input_stem}Sm.kt")), &stub, &drift_ctx);
             }
             Language::Go => {
                 let stub = format!(
@@ -955,11 +1090,11 @@ fn cmd_generate(
                      package {name}\n",
                     name = input_stem
                 );
-                write_or_exit(error_format, out.join(format!("{input_stem}_sm.go")), &stub);
+                write_drift_aware(error_format, out.join(format!("{input_stem}_sm.go")), &stub, &drift_ctx);
             }
             Language::Python => {
                 let stub = "# W3C SCXML 5.8: Document rejected\n";
-                write_or_exit(error_format, out.join(format!("{input_stem}_sm.py")), stub);
+                write_drift_aware(error_format, out.join(format!("{input_stem}_sm.py")), stub, &drift_ctx);
             }
             Language::C11 => {
                 // RFC §5.J.1: C11 statechart stub. M1 emits a header-only
@@ -990,8 +1125,8 @@ fn cmd_generate(
                     input_stem = input_stem,
                     stem = input_stem
                 );
-                write_or_exit(error_format, out.join(format!("{input_stem}_sm.h")), &header);
-                write_or_exit(error_format, out.join(format!("{input_stem}_sm.c")), &body);
+                write_drift_aware(error_format, out.join(format!("{input_stem}_sm.h")), &header, &drift_ctx);
+                write_drift_aware(error_format, out.join(format!("{input_stem}_sm.c")), &body, &drift_ctx);
             }
         }
         report.rejected = Some(RejectedDocument {
@@ -1173,7 +1308,7 @@ fn cmd_generate(
     let mut output_paths = Vec::new();
     for (filename, code) in &files {
         let file_path = out_path.join(filename);
-        write_or_exit(error_format, &file_path, code);
+        write_drift_aware(error_format, &file_path, code, &drift_ctx);
         report.artifacts.push(file_path.clone());
         output_paths.push(file_path);
     }
@@ -1259,7 +1394,7 @@ fn cmd_generate(
                 let mesh_files = maybe_format_files(result.output.files, &cpp_formatter);
                 for (filename, code) in &mesh_files {
                     let file_path = out_path.join(filename);
-                    write_or_exit(error_format, &file_path, code);
+                    write_drift_aware(error_format, &file_path, code, &drift_ctx);
                     report.artifacts.push(file_path.clone());
                     output_paths.push(file_path);
                 }
@@ -1691,13 +1826,32 @@ trait W3cBackend {
     fn generate_sm(&self, model: &SCXMLModel, input_stem: &str) -> Result<Vec<(String, String)>, ForgeError>;
 
     /// Hook after writing parent SM (e.g. Rust writes mod.rs).
-    fn post_write_parent(&self, _test_id: &str, _test_mod_dir: &Path, _input_stem: &str) {}
+    fn post_write_parent(
+        &self,
+        _test_id: &str,
+        _test_mod_dir: &Path,
+        _input_stem: &str,
+        _drift_ctx: &DriftContext,
+    ) {}
 
     /// Process a successfully generated child SM: fix package, register module, etc.
-    fn process_child(&self, test_id: &str, child_name: &str, code: String, test_mod_dir: &Path);
+    fn process_child(
+        &self,
+        test_id: &str,
+        child_name: &str,
+        code: String,
+        test_mod_dir: &Path,
+        drift_ctx: &DriftContext,
+    );
 
     /// Handle a child that failed codegen (Kotlin generates stubs, others skip).
-    fn process_child_failure(&self, _test_id: &str, _child_name: &str, _test_mod_dir: &Path) {}
+    fn process_child_failure(
+        &self,
+        _test_id: &str,
+        _child_name: &str,
+        _test_mod_dir: &Path,
+        _drift_ctx: &DriftContext,
+    ) {}
 
     /// Generate test file content. Default returns empty (C++ uses CMake-managed test headers).
     fn generate_test_file(
@@ -1740,7 +1894,7 @@ trait W3cBackend {
     fn generates_test_files(&self) -> bool { true }
 
     /// Called after main loop to write module indices (Rust writes root mod.rs).
-    fn finalize(&self, _generated_ids: &[String]) {}
+    fn finalize(&self, _generated_ids: &[String], _drift_ctx: &DriftContext) {}
 
     /// Clean all generated files.
     fn clean(&self);
@@ -1771,6 +1925,7 @@ fn generate_child_sms(
     model: &SCXMLModel,
     scxml_path: &Path,
     test_mod_dir: &Path,
+    drift_ctx: &DriftContext,
 ) {
     let resource_dir = scxml_path.parent().unwrap_or(Path::new("."));
     let mut seen = BTreeSet::new();
@@ -1795,7 +1950,7 @@ fn generate_child_sms(
 
         let child_path = source_dir.join(format!("{child_name}.scxml"));
         if !child_path.exists() {
-            backend.process_child_failure(test_id, child_name, test_mod_dir);
+            backend.process_child_failure(test_id, child_name, test_mod_dir, drift_ctx);
             continue;
         }
 
@@ -1806,7 +1961,7 @@ fn generate_child_sms(
                 analyzer::analyze(&mut child_model, child_str);
 
                 if analyzer::can_generate_static(&child_model).is_err() {
-                    backend.process_child_failure(test_id, child_name, test_mod_dir);
+                    backend.process_child_failure(test_id, child_name, test_mod_dir, drift_ctx);
                     continue;
                 }
 
@@ -1826,16 +1981,16 @@ fn generate_child_sms(
                 match backend.generate_sm(&child_model, child_name) {
                     Ok(files) => {
                         if let Some((_, code)) = files.into_iter().next() {
-                            backend.process_child(test_id, child_name, code, test_mod_dir);
+                            backend.process_child(test_id, child_name, code, test_mod_dir, drift_ctx);
                         }
                     }
                     Err(_) => {
-                        backend.process_child_failure(test_id, child_name, test_mod_dir);
+                        backend.process_child_failure(test_id, child_name, test_mod_dir, drift_ctx);
                     }
                 }
             }
             Err(_) => {
-                backend.process_child_failure(test_id, child_name, test_mod_dir);
+                backend.process_child_failure(test_id, child_name, test_mod_dir, drift_ctx);
             }
         }
     }
@@ -1855,6 +2010,11 @@ fn generate_w3c_unified(
         backend.clean();
         return;
     }
+
+    // Spec §6.2.6 drift context — input root is the W3C resources
+    // tree; one hash pair covers every emitted parent SM + child SM
+    // + test harness across all 202 tests in this invocation.
+    let drift_ctx = DriftContext::compute(resources_dir, None);
 
     let cmake_tests = parse_cmake_tests(cmake_file);
     println!("C++ test registry: {} tests", cmake_tests.len());
@@ -1930,17 +2090,17 @@ fn generate_w3c_unified(
                         // Write SM files
                         for (filename, code) in &files {
                             let file_path = test_mod_dir.join(filename);
-                            write_if_changed(&file_path, code);
+                            write_if_changed_drift_aware(&file_path, code, &drift_ctx);
                         }
 
                         // Post-write hook (e.g. Rust writes initial mod.rs)
-                        backend.post_write_parent(test_id, &test_mod_dir, input_stem);
+                        backend.post_write_parent(test_id, &test_mod_dir, input_stem, &drift_ctx);
 
                         // W3C SCXML 6.4: Generate hybrid SCXML stubs + child state machines
                         // (only for backends that use per-test subdirs; C++ handles children via CMake)
                         if backend.uses_per_test_subdirs() {
                             generate_hybrid_child_scxmls(&model, &test_mod_dir);
-                            generate_child_sms(backend, test_id, &model, &scxml_path, &test_mod_dir);
+                            generate_child_sms(backend, test_id, &model, &scxml_path, &test_mod_dir, &drift_ctx);
                         }
 
                         // Detect pass state and generate test file (if backend supports it)
@@ -1964,7 +2124,7 @@ fn generate_w3c_unified(
                                 };
                                 let test_file = test_file_dir.join(&test_filename);
                                 fs::create_dir_all(test_file_dir).ok();
-                                write_if_changed(&test_file, &test_code);
+                                write_if_changed_drift_aware(&test_file, &test_code, &drift_ctx);
 
                                 if needs_script {
                                     generated_script.push(test_id.clone());
@@ -2041,7 +2201,7 @@ fn generate_w3c_unified(
     if single_test.is_none() {
         let mut all_ids: Vec<String> = generated_static.iter().chain(generated_script.iter()).cloned().collect();
         all_ids.sort_by(|a, b| a.len().cmp(&b.len()).then_with(|| a.cmp(b)));
-        backend.finalize(&all_ids);
+        backend.finalize(&all_ids, &drift_ctx);
     }
 
     // Summary
@@ -2139,7 +2299,13 @@ impl W3cBackend for RustBackend {
         Ok(vec![(format!("{input_stem}_sm.rs"), code)])
     }
 
-    fn post_write_parent(&self, _test_id: &str, test_mod_dir: &Path, input_stem: &str) {
+    fn post_write_parent(
+        &self,
+        _test_id: &str,
+        test_mod_dir: &Path,
+        input_stem: &str,
+        drift_ctx: &DriftContext,
+    ) {
         // Suppressions live on the generated `*_sm.rs` itself (see
         // `state_machine.rs.jinja2` header comment); the parent mod.rs no
         // longer needs to redundantly wrap the declaration in `#[allow(...)]`.
@@ -2148,14 +2314,27 @@ impl W3cBackend for RustBackend {
              mod {input_stem}_sm;\n\
              pub use {input_stem}_sm::*;\n"
         );
-        write_if_changed(&test_mod_dir.join("mod.rs"), &mod_content);
+        write_if_changed_drift_aware(&test_mod_dir.join("mod.rs"), &mod_content, drift_ctx);
     }
 
-    fn process_child(&self, _test_id: &str, child_name: &str, code: String, test_mod_dir: &Path) {
+    fn process_child(
+        &self,
+        _test_id: &str,
+        child_name: &str,
+        code: String,
+        test_mod_dir: &Path,
+        drift_ctx: &DriftContext,
+    ) {
         let child_sm_file = test_mod_dir.join(format!("{child_name}_sm.rs"));
-        write_if_changed(&child_sm_file, &code);
+        write_if_changed_drift_aware(&child_sm_file, &code, drift_ctx);
 
-        // Add child module to the test's mod.rs
+        // Add child module to the test's mod.rs. The existing file's
+        // first 4 lines are the drift header from `post_write_parent`;
+        // `write_if_changed_drift_aware`'s downstream
+        // `prepend_or_replace_header` detects that banner and replaces
+        // the 4-line block in place, so a plain string append below
+        // the read content is safe — the headered output still has
+        // exactly one §6.2.6 header at the top.
         let mod_file = test_mod_dir.join("mod.rs");
         if let Ok(existing) = fs::read_to_string(&mod_file) {
             if !existing.contains(&format!("mod {child_name}_sm;")) {
@@ -2163,7 +2342,7 @@ impl W3cBackend for RustBackend {
                     "mod {child_name}_sm;\n\
                      pub use {child_name}_sm::*;\n"
                 );
-                write_if_changed(&mod_file, &format!("{existing}{addition}"));
+                write_if_changed_drift_aware(&mod_file, &format!("{existing}{addition}"), drift_ctx);
             }
         }
     }
@@ -2222,7 +2401,7 @@ impl W3cBackend for RustBackend {
         format!("test_{test_id}.rs")
     }
 
-    fn finalize(&self, generated_ids: &[String]) {
+    fn finalize(&self, generated_ids: &[String], drift_ctx: &DriftContext) {
         if generated_ids.is_empty() {
             return;
         }
@@ -2234,7 +2413,7 @@ impl W3cBackend for RustBackend {
             mod_lines.push(format!("pub mod test{id};"));
         }
         mod_lines.push(String::new());
-        write_if_changed(&self.sm_base.join("mod.rs"), &mod_lines.join("\n"));
+        write_if_changed_drift_aware(&self.sm_base.join("mod.rs"), &mod_lines.join("\n"), drift_ctx);
     }
 
     fn clean(&self) {
@@ -2284,7 +2463,14 @@ impl W3cBackend for GoBackend {
         Ok(vec![(format!("{input_stem}_sm.go"), code)])
     }
 
-    fn process_child(&self, test_id: &str, child_name: &str, code: String, test_mod_dir: &Path) {
+    fn process_child(
+        &self,
+        test_id: &str,
+        child_name: &str,
+        code: String,
+        test_mod_dir: &Path,
+        drift_ctx: &DriftContext,
+    ) {
         let parent_package = format!("test{test_id}");
         let child_pkg = sce_build::filters::to_snake_case(child_name.to_string());
         let fixed_code = code.replace(
@@ -2292,7 +2478,7 @@ impl W3cBackend for GoBackend {
             &format!("package {parent_package}"),
         );
         let child_file = test_mod_dir.join(format!("{child_name}_sm.go"));
-        write_if_changed(&child_file, &fixed_code);
+        write_if_changed_drift_aware(&child_file, &fixed_code, drift_ctx);
     }
 
     fn generate_test_file(
@@ -2399,7 +2585,14 @@ impl W3cBackend for KotlinBackend {
         Ok(vec![(format!("{input_stem}Sm.kt"), code)])
     }
 
-    fn process_child(&self, test_id: &str, child_name: &str, code: String, test_mod_dir: &Path) {
+    fn process_child(
+        &self,
+        test_id: &str,
+        child_name: &str,
+        code: String,
+        test_mod_dir: &Path,
+        drift_ctx: &DriftContext,
+    ) {
         let parent_package = format!("test{test_id}");
         let child_package = child_name.to_lowercase();
         let fixed_code = code.replace(
@@ -2407,7 +2600,7 @@ impl W3cBackend for KotlinBackend {
             &format!("package com.sce.generated.{parent_package}"),
         );
         let child_sm_file = test_mod_dir.join(format!("{child_name}Sm.kt"));
-        write_if_changed(&child_sm_file, &fixed_code);
+        write_if_changed_drift_aware(&child_sm_file, &fixed_code, drift_ctx);
     }
 
     /// Kotlin's parent template handles hybrid invokes via
@@ -2419,7 +2612,13 @@ impl W3cBackend for KotlinBackend {
     /// because the parent template instantiates them by name.
     fn emits_hybrid_child_stub(&self) -> bool { false }
 
-    fn process_child_failure(&self, test_id: &str, child_name: &str, test_mod_dir: &Path) {
+    fn process_child_failure(
+        &self,
+        test_id: &str,
+        child_name: &str,
+        test_mod_dir: &Path,
+        drift_ctx: &DriftContext,
+    ) {
         let parent_package = format!("test{test_id}");
         let child_class = to_pascal_case(child_name);
         let stub = format!(
@@ -2441,7 +2640,7 @@ impl W3cBackend for KotlinBackend {
              }}\n"
         );
         let child_sm_file = test_mod_dir.join(format!("{child_name}Sm.kt"));
-        write_if_changed(&child_sm_file, &stub);
+        write_if_changed_drift_aware(&child_sm_file, &stub, drift_ctx);
     }
 
     fn generate_test_file(
@@ -2584,7 +2783,14 @@ impl W3cBackend for CppBackend {
     fn uses_per_test_subdirs(&self) -> bool { false }
     fn generates_test_files(&self) -> bool { false }
 
-    fn process_child(&self, _test_id: &str, _child_name: &str, _code: String, _test_mod_dir: &Path) {
+    fn process_child(
+        &self,
+        _test_id: &str,
+        _child_name: &str,
+        _code: String,
+        _test_mod_dir: &Path,
+        _drift_ctx: &DriftContext,
+    ) {
         // C++ children are handled by CMake via _children.txt, not the W3C generator
     }
 
@@ -2703,9 +2909,18 @@ fn cmd_generate_conformance(language: &str, manifest_path: &str, output_dir: &st
         cli_exit(CliError::CreateOutputDir { path: out_dir.display().to_string(), source: e })
     });
     let out_path = out_dir.join(sce_build::conformance::harness_filename(lang));
-    fs::write(&out_path, rendered).unwrap_or_else(|e| {
-        cli_exit(CliError::WriteOutput { path: out_path.display().to_string(), source: e })
-    });
+
+    // Spec §6.2.6: input root for the conformance harness is the
+    // sibling `resources/` of the manifest (mirrors
+    // `cmd_list_fixtures`'s resolution), so the embedded source-hash
+    // covers exactly the SCXML inputs the harness asserts against.
+    let drift_input_root: std::path::PathBuf = Path::new(manifest_path)
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|p| p.join("resources"))
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    let drift_ctx = DriftContext::compute(&drift_input_root, None);
+    write_drift_aware(current_error_format(), &out_path, &rendered, &drift_ctx);
     println!("Generated conformance harness: {}", out_path.display());
 }
 
@@ -2765,7 +2980,8 @@ fn cmd_verify(
     // Defaults for template_root / cargo_lock: probe upwards from
     // the current working directory until we find a `Cargo.toml`
     // that names `sce-build` member or until we hit filesystem root.
-    let workspace_root = locate_workspace_root_for_verify();
+    let workspace_root = locate_workspace_root()
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")));
     let tpl_root_default = workspace_root.join("tools").join("codegen").join("templates");
     let lock_default = workspace_root.join("Cargo.lock");
     let tpl_root = template_root
@@ -2874,19 +3090,20 @@ fn collect_generated_files(out_dir: &Path) -> Vec<std::path::PathBuf> {
 
 /// Walks upward from the current directory looking for a directory
 /// containing a `Cargo.toml` AND a `tools/codegen/templates` subdir
-/// (the workspace root signature). Falls back to the current directory
-/// if the walk fails to find a match — verify will then emit a clear
-/// I/O error on the missing path.
-fn locate_workspace_root_for_verify() -> std::path::PathBuf {
-    let mut cursor = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+/// (the workspace root signature). Returns `None` if the walk
+/// exhausts the filesystem without a match — callers either treat
+/// that as an error (DriftContext template-hash fallback) or fall
+/// back to the cwd (verify's I/O-error surface).
+fn locate_workspace_root() -> Option<std::path::PathBuf> {
+    let mut cursor = std::env::current_dir().ok()?;
     loop {
         if cursor.join("Cargo.toml").exists()
             && cursor.join("tools").join("codegen").join("templates").exists()
         {
-            return cursor;
+            return Some(cursor);
         }
         if !cursor.pop() {
-            return std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+            return None;
         }
     }
 }
