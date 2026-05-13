@@ -171,20 +171,21 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
             Language::Cpp | Language::Kotlin | Language::Go | Language::Python => false,
         },
         // RFC §5.L BoundedCollection: C6-γ closes the 6-backend codegen
-        // matrix per spec line 2571-2581 in stages — γ2 ships `Rust`
-        // (heapless::Vec<T, N> std / no_std + 16/16 packed Handle u32
-        // + insert/remove/get/find_by_index/iter/len/capacity per spec
-        // lines 2609-2622); γ3 closes `Cpp` (std::array + std::bitset
-        // + uint32_t generation + forward-iterator begin/end per spec
-        // line 2576-2577) + `Kotlin` (Array<T?>(N) + BooleanArray +
-        // IntArray generation + Iterable<T> per spec line 2578); γ4
-        // closes Go + Python + C11. Backends still without a template
-        // return `false` so the `EmitOutcome::TemplateMissing` path
-        // fires explicitly rather than silently emitting a stub.
-        ForgeKind::BoundedCollection => match lang {
-            Language::Rust | Language::Cpp | Language::Kotlin => true,
-            Language::Go | Language::Python | Language::C11 => false,
-        },
+        // matrix per spec line 2571-2581. γ2 ships `Rust` (heapless::Vec
+        // <T, N> std / no_std + 16/16 packed Handle u32 + insert/remove/
+        // get/find_by_index/iter/len/capacity per spec lines 2609-2622).
+        // γ3 closes `Cpp` (std::array + std::bitset + uint32_t generation
+        // + forward-iterator begin/end per spec line 2576-2577) + `Kotlin`
+        // (Array<T?>(N) + BooleanArray + IntArray generation + Iterable<T>
+        // per spec line 2578). γ4 closes `Go` ([N]T + [N]bool + [N]uint32
+        // + ForEach callback per spec line 2579) + `Python` (list[Optional
+        // [T]] + bytearray mask + bytearray gen + __iter__ + Optional[H]
+        // overflow per spec lines 2580-2581) + `C11` (struct slots[N] +
+        // generation[N] + bitmap[(N+31)/32] + count with snake_case
+        // _insert/_remove/_get/_find_by_index/_foreach API per spec
+        // lines 2573-2575). All 6 backends emit; the γ chain entirely
+        // closes the §5.L matrix.
+        ForgeKind::BoundedCollection => true,
     }
 }
 

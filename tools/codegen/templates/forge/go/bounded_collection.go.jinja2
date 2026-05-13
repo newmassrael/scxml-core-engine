@@ -1,0 +1,231 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="bounded-collection")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+//
+// watching-zenoh RFC §5.L bounded-collection — typed fixed-capacity
+// container per spec line 2579 emit shape: `[N]T` fixed array +
+// `[N]bool` occupancy mask + `[N]uint32` generation + `int count`.
+//
+// Operations contract (spec lines 2609-2619):
+//   Insert / Remove / Get / FindByIndex (if index-by set) / ForEach /
+//   Len / Capacity.
+//
+// Handle (spec lines 2621-2622): uint32 newtype carrying slot index
+// (low 16 bits) + generation counter (high 16 bits). ABI-identical
+// to the Rust tuple newtype + Cpp POD + Kotlin @JvmInline value class
+// + C11 typedef'd struct emit — cross-backend Handle interop is
+// wire-format stable (Q-γ4-Go-Handle-method-set (a) lock 2026-05-13:
+// receiver methods on uint32 newtype, no boxing, ABI-parity).
+//
+// Iteration (Q-γ4-Go-iter-shape (a) lock 2026-05-13): ForEach
+// callback iteration. The callback fires exactly once per occupied
+// slot in ascending slot-index order per spec line 2616 ("exposes
+// only occupied slots"). Matches the `slices.Sort` / `slices.Index`
+// callback precedent.
+//
+// Generation semantics (cross-backend parity): the counter is
+// incremented on Remove (so a Handle to the freed slot becomes
+// stale and Get/Remove return (nil,false) / false respectively);
+// Insert uses the slot's current generation value as-is. First
+// insert into a never-used slot yields (slot, gen=0); reuse after
+// remove yields (slot, gen=1), etc. Wrapping is masked to 16 bits.
+
+package {{ package }}
+
+import (
+	"errors"
+{% if has_element_import %}
+{{ element_import_stmt }}
+{% endif %}
+)
+
+// CAPACITY is the slot capacity per `<sce:capacity>` (spec lines
+// 2583-2585). For `source="deploy"` the value is resolved from
+// `machines.<m>.limits.<k>` at codegen time; for `const="N"` the
+// value comes from the SCXML.
+const {{ pascal }}Capacity = {{ capacity }}
+
+// Drift guard (parity with C11 _Static_assert + Rust const _:()=assert!):
+// CAPACITY must fit in 16 bits so the generation+slot pair packs
+// into a single uint32 Handle.
+const _ = uint16({{ capacity }})
+
+// {{ pascal }}SlotBits is the slot-index bit width inside the
+// packed Handle u32 (Q-γ2-Handle-bits (a) symmetric split).
+const {{ pascal }}SlotBits uint32 = 16
+
+// {{ pascal }}GenBits is the generation-counter bit width inside
+// the packed Handle u32.
+const {{ pascal }}GenBits uint32 = 16
+
+const {{ pascal }}SlotMask uint32 = 0xFFFF
+const {{ pascal }}GenMask uint32 = 0xFFFF
+
+// {{ pascal }}Handle is the stable uint32-wide handle (spec lines
+// 2621-2622). Defined as a newtype over uint32 so the public API
+// can carry the slot/generation accessors as receiver methods while
+// preserving 4-byte ABI parity with Rust / Cpp / Kotlin / C11.
+type {{ pascal }}Handle uint32
+
+// Slot returns the slot index (low 16 bits).
+func (h {{ pascal }}Handle) Slot() uint32 {
+	return uint32(h) & {{ pascal }}SlotMask
+}
+
+// Generation returns the generation counter (high 16 bits).
+func (h {{ pascal }}Handle) Generation() uint32 {
+	return (uint32(h) >> {{ pascal }}SlotBits) & {{ pascal }}GenMask
+}
+
+// New{{ pascal }}Handle packs a (slot, generation) pair into the
+// wire u32.
+func New{{ pascal }}Handle(slot, generation uint32) {{ pascal }}Handle {
+	return {{ pascal }}Handle(
+		((generation & {{ pascal }}GenMask) << {{ pascal }}SlotBits) |
+			(slot & {{ pascal }}SlotMask),
+	)
+}
+
+// Err{{ pascal }}Overflow is the sentinel error returned by Insert
+// when the table is full under `<sce:on-overflow>reject</sce:on-overflow>`
+// / `<sce:on-overflow>diagnostic-event</sce:on-overflow>`. Under
+// `<sce:on-overflow>oldest-wins</sce:on-overflow>` the eviction
+// always succeeds so this error never fires.
+var Err{{ pascal }}Overflow = errors.New(
+	"{{ snake }}: capacity {{ capacity }} exhausted")
+
+// {{ pascal }} is the bounded-collection storage (spec line 2579).
+// Capacity `{{ capacity }}`, on-overflow `{{ on_overflow }}`,
+// ordering `{{ ordering }}`, concurrency `{{ concurrency }}`.
+type {{ pascal }} struct {
+	slots      [{{ pascal }}Capacity]{{ element_qualified }}
+	generation [{{ pascal }}Capacity]uint32
+	occupied   [{{ pascal }}Capacity]bool
+	count      int
+}
+
+// New{{ pascal }} returns a zero-initialized bounded-collection.
+// All slots start unoccupied with generation 0.
+func New{{ pascal }}() *{{ pascal }} {
+	return &{{ pascal }}{}
+}
+
+// Len returns the number of occupied slots (spec line 2617).
+func (t *{{ pascal }}) Len() int {
+	return t.count
+}
+
+// Capacity returns the compile-time capacity (spec line 2618).
+func (t *{{ pascal }}) Capacity() int {
+	return {{ pascal }}Capacity
+}
+
+// Insert (spec line 2612). On overflow under reject/diagnostic-event
+// returns (zero-value Handle, Err{{ pascal }}Overflow); under
+// oldest-wins evicts slot 0 (the lowest occupied index = oldest
+// entry under ordering="insertion") and returns a fresh handle
+// with a nil error.
+func (t *{{ pascal }}) Insert(elem {{ element_qualified }}) ({{ pascal }}Handle, error) {
+	if t.count < {{ pascal }}Capacity {
+		for slot := 0; slot < {{ pascal }}Capacity; slot++ {
+			if !t.occupied[slot] {
+				t.slots[slot] = elem
+				t.occupied[slot] = true
+				t.count++
+				// Generation is NOT incremented on insert (parity
+				// with Cpp/Rust/Kotlin/C11); the slot's current
+				// value (bumped by the prior remove, or 0 if never
+				// used) becomes the handle's gen.
+				return New{{ pascal }}Handle(uint32(slot), t.generation[slot]), nil
+			}
+		}
+		// Unreachable: count_ < CAPACITY implies a free slot exists.
+	}
+{% if overflow_is_oldest_wins %}
+	// <sce:on-overflow>oldest-wins</sce:on-overflow>: evict slot 0.
+	// Increment generation to invalidate any stale Handle to slot 0.
+	// count_ unchanged (1 evict + 1 insert = 0 delta).
+	t.slots[0] = elem
+	t.generation[0] = (t.generation[0] + 1) & {{ pascal }}GenMask
+	return New{{ pascal }}Handle(0, t.generation[0]), nil
+{% else %}
+	// <sce:on-overflow>reject</sce:on-overflow> / diagnostic-event.
+	// The diagnostic-event runtime firing into the SCXML engine event
+	// queue is a separate concern.
+	return {{ pascal }}Handle(0), Err{{ pascal }}Overflow
+{% endif %}
+}
+
+// Remove (spec line 2613). Returns false when the slot is already
+// free OR when the handle's generation no longer matches (stale
+// handle / use-after-remove). On success, the slot's generation is
+// incremented (masked to 16 bits) so any other Handle to the same
+// slot becomes stale.
+func (t *{{ pascal }}) Remove(handle {{ pascal }}Handle) bool {
+	slot := handle.Slot()
+	gen := handle.Generation()
+	if slot >= {{ pascal }}Capacity {
+		return false
+	}
+	if !t.occupied[slot] {
+		return false
+	}
+	if t.generation[slot] != gen {
+		return false
+	}
+	t.occupied[slot] = false
+	t.generation[slot] = (t.generation[slot] + 1) & {{ pascal }}GenMask
+	var zero {{ element_qualified }}
+	t.slots[slot] = zero
+	t.count--
+	return true
+}
+
+// Get (spec line 2614). Returns (nil, false) when the slot is free
+// OR when the handle's generation no longer matches.
+func (t *{{ pascal }}) Get(handle {{ pascal }}Handle) (*{{ element_qualified }}, bool) {
+	slot := handle.Slot()
+	gen := handle.Generation()
+	if slot >= {{ pascal }}Capacity {
+		return nil, false
+	}
+	if !t.occupied[slot] {
+		return nil, false
+	}
+	if t.generation[slot] != gen {
+		return nil, false
+	}
+	return &t.slots[slot], true
+}
+
+{% if has_index_by %}
+// FindByIndex (spec line 2615). Linear scan over occupied slots
+// (CAPACITY upper bound is compile-time constant → satisfies §5.A
+// `max-iter` requirement when called from algorithm bodies). On
+// miss, returns (zero-value Handle, false).
+func (t *{{ pascal }}) FindByIndex(key {{ index_by_go_type }}) ({{ pascal }}Handle, bool) {
+	for slot := 0; slot < {{ pascal }}Capacity; slot++ {
+		if !t.occupied[slot] {
+			continue
+		}
+		if t.slots[slot].{{ index_by_field_pascal }} == key {
+			return New{{ pascal }}Handle(uint32(slot), t.generation[slot]), true
+		}
+	}
+	return {{ pascal }}Handle(0), false
+}
+{% endif %}
+
+// ForEach (spec line 2616). Invokes fn once per occupied slot in
+// ascending slot-index order. The element is passed by value; the
+// callback cannot mutate the underlying slot through this argument.
+func (t *{{ pascal }}) ForEach(fn func({{ element_qualified }})) {
+	for slot := 0; slot < {{ pascal }}Capacity; slot++ {
+		if t.occupied[slot] {
+			fn(t.slots[slot])
+		}
+	}
+}

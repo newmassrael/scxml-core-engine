@@ -507,7 +507,12 @@ fn cpp_param_type(ty: &SceType) -> String {
 /// `float`/`double`. String/Bytes are out of scope for Phase A — the
 /// transform fixtures do not exercise them; Phase B's codec arms add
 /// the heap-free byte-array handling.
-fn c_type(ty: &SceType) -> &'static str {
+///
+/// Lifted to `pub(crate)` so the §5.L bounded-collection's C11
+/// `find_by_index` emit can convert the abstract `index_by_field_sce_type`
+/// from `BoundedCollectionResolution` into a C type string. Same pattern
+/// as `cpp_type` / `kotlin_type` / `rust_type` (γ2/γ3 precedent).
+pub(crate) fn c_type(ty: &SceType) -> &'static str {
     match ty {
         SceType::Uint8 => "uint8_t",
         SceType::Uint16 => "uint16_t",
@@ -9706,6 +9711,268 @@ fn render_bounded_collection_kotlin(
     })
 }
 
+/// Render a `<sce:kind="bounded-collection">` document for the C11
+/// backend (watching-zenoh RFC §5.L, C6-γ4). Emits the
+/// `struct { T slots[N]; uint32_t generation[N]; uint32_t bitmap[(N+31)/32];
+/// uint32_t count; }` shape per spec lines 2573-2575 verbatim, with the
+/// `<snake>_insert/_remove/_find_by_index` API per spec line 2575 and
+/// `_get/_foreach/_len/_capacity` per spec lines 2613-2618. Handle is a
+/// POD `typedef struct { uint32_t raw; } <snake>_handle_t;` packing slot
+/// (low 16) + generation (high 16) — ABI-identical to the Cpp POD, Rust
+/// tuple newtype, Kotlin @JvmInline value class, and Go uint32 newtype
+/// emits. Iteration via `<snake>_foreach(self, fn, user)` callback per
+/// Q-γ4-C11-iter-shape (a) lock 2026-05-13.
+fn render_bounded_collection_c(
+    env: &minijinja::Environment<'_>,
+    m: &crate::forge::model::BoundedCollectionModel,
+    _imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
+) -> Result<String, ForgeError> {
+    let inputs = resolve_bounded_collection_inputs(m, options)?;
+    let tmpl = env
+        .get_template("bounded_collection.h.jinja2")
+        .map_err(|e| {
+            ForgeError::Generate(GenerateError::TemplateLoad(format!(
+                "bounded_collection.h.jinja2 (c11): {e}"
+            )))
+        })?;
+
+    let pascal = filters::to_pascal_case(m.name.clone());
+    let snake = filters::to_snake_case(m.name.clone());
+    let element_pascal = filters::to_pascal_case(m.element_type.clone());
+    let element_snake = filters::to_snake_case(m.element_type.clone());
+    let upper_name = to_upper_snake(&m.name);
+    let guard = format!("SCE_FORGE_{}_H", upper_name);
+    // The C11 codec / procedure emit names struct fields via
+    // `codec_field_id` (snake_case for C11). Mirror that here so
+    // `slots[slot].<field>` matches the element-type's emitted
+    // member name.
+    let index_by_field_snake = m
+        .index_by
+        .as_ref()
+        .map(|f| filters::to_snake_case(f.clone()))
+        .unwrap_or_default();
+    let index_by_c_type = inputs
+        .index_by_sce_type
+        .as_ref()
+        .map(|t| c_type(t).to_string())
+        .unwrap_or_default();
+
+    let ctx = minijinja::context! {
+        name => &m.name,
+        pascal => pascal,
+        snake => snake,
+        upper_name => upper_name,
+        guard => guard,
+        element_pascal => element_pascal,
+        element_snake => element_snake,
+        capacity => inputs.capacity,
+        on_overflow => inputs.on_overflow_str,
+        overflow_is_oldest_wins => inputs.overflow_is_oldest_wins,
+        ordering => inputs.ordering_str,
+        concurrency => inputs.concurrency_str,
+        has_index_by => m.index_by.is_some(),
+        index_by_field => index_by_field_snake,
+        index_by_c_type => index_by_c_type,
+        runtime_dep => "self-contained — <stdint.h> + <stdbool.h> + <stddef.h> only",
+    };
+    tmpl.render(ctx).map_err(|e| {
+        ForgeError::Generate(GenerateError::TemplateRender(format!(
+            "bounded_collection.h.jinja2 (c11): {e}"
+        )))
+    })
+}
+
+/// Render a `<sce:kind="bounded-collection">` document for the Go
+/// backend (watching-zenoh RFC §5.L, C6-γ4). Emits `[N]T` + `[N]bool`
+/// occupancy + `[N]uint32` generation + `int count` per spec line 2579
+/// verbatim. Handle is `type <Pascal>Handle uint32` with receiver methods
+/// `Slot()` / `Generation()` (Q-γ4-Go-Handle-method-set (a) lock —
+/// ABI-parity with the Rust / Cpp / Kotlin / C11 uint32-wide Handle).
+/// Iteration via `ForEach(fn func(T))` callback per Q-γ4-Go-iter-shape
+/// (a) lock. Overflow under reject/diagnostic-event returns the sentinel
+/// `Err<Pascal>Overflow`; under oldest-wins eviction always succeeds.
+///
+/// Element-type cross-package import requires `go_module_prefix` to be
+/// set so the qualified `<element_snake>.<ElementPascal>` reference
+/// resolves at compile time (mirrors `<sce:import>` for codec). Missing
+/// prefix surfaces as `InvalidConfig` with the same message shape as
+/// `validate_options`.
+fn render_bounded_collection_go(
+    env: &minijinja::Environment<'_>,
+    m: &crate::forge::model::BoundedCollectionModel,
+    _imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
+) -> Result<String, ForgeError> {
+    let inputs = resolve_bounded_collection_inputs(m, options)?;
+    let tmpl = env
+        .get_template("bounded_collection.go.jinja2")
+        .map_err(|e| {
+            ForgeError::Generate(GenerateError::TemplateLoad(format!(
+                "bounded_collection.go.jinja2 (go): {e}"
+            )))
+        })?;
+
+    let pascal = filters::to_pascal_case(m.name.clone());
+    let snake = filters::to_snake_case(m.name.clone());
+    let package = filters::to_snake_case(m.name.clone());
+    let element_pascal = filters::to_pascal_case(m.element_type.clone());
+    let element_snake = filters::to_snake_case(m.element_type.clone());
+
+    // Cross-package element-type access requires `go_module_prefix`
+    // (Go has no relative-package imports). Missing prefix surfaces
+    // the same InvalidConfig shape as `validate_options` for the
+    // `<sce:import>` path so error messages are consistent.
+    let element_import_stmt = match normalized_go_prefix(options) {
+        Some(prefix) if !prefix.is_empty() => {
+            format!("\t\"{prefix}/{element_snake}\"")
+        }
+        _ => {
+            return Err(ForgeError::Generate(GenerateError::InvalidConfig(
+                format!(
+                    "bounded-collection '{name}': <sce:element-type \
+                     name=\"{element}\"/> on the Go backend requires \
+                     ForgeCompileOptions.go_module_prefix so the \
+                     cross-package import resolves at compile time. \
+                     Set the prefix to the go.mod module path that \
+                     hosts the generated packages (e.g. \
+                     \"github.com/acme/project/generated\").",
+                    name = m.name,
+                    element = m.element_type,
+                )
+                .to_string(),
+            )));
+        }
+    };
+
+    // Element-type is qualified via the package name (snake_case).
+    let element_qualified = format!("{element_snake}.{element_pascal}");
+
+    // Go codec emits struct fields in PascalCase (`codec_field_id`
+    // arm). Mirror that here so `slots[slot].<Field>` matches the
+    // element-type's emitted member name.
+    let index_by_field_pascal = m
+        .index_by
+        .as_ref()
+        .map(|f| filters::to_pascal_case(f.clone()))
+        .unwrap_or_default();
+    let index_by_go_type = inputs
+        .index_by_sce_type
+        .as_ref()
+        .map(|t| go_type(t).to_string())
+        .unwrap_or_default();
+
+    let ctx = minijinja::context! {
+        name => &m.name,
+        pascal => pascal,
+        snake => snake,
+        package => package,
+        element_pascal => element_pascal,
+        element_snake => element_snake,
+        element_qualified => element_qualified,
+        has_element_import => true,
+        element_import_stmt => element_import_stmt,
+        capacity => inputs.capacity,
+        on_overflow => inputs.on_overflow_str,
+        overflow_is_oldest_wins => inputs.overflow_is_oldest_wins,
+        ordering => inputs.ordering_str,
+        concurrency => inputs.concurrency_str,
+        has_index_by => m.index_by.is_some(),
+        index_by_field_pascal => index_by_field_pascal,
+        index_by_go_type => index_by_go_type,
+        runtime_dep => "self-contained — Go stdlib `errors` only",
+    };
+    tmpl.render(ctx).map_err(|e| {
+        ForgeError::Generate(GenerateError::TemplateRender(format!(
+            "bounded_collection.go.jinja2 (go): {e}"
+        )))
+    })
+}
+
+/// Render a `<sce:kind="bounded-collection">` document for the Python
+/// backend (watching-zenoh RFC §5.L, C6-γ4). Emits `list` of length N
+/// initialized to `None` + `bytearray(N)` occupancy + per-slot
+/// generation packed into a sibling `bytearray(N * 2)` (u16 per slot,
+/// little-endian internal) + `int count` per spec lines 2580-2581. The
+/// internal generation representation is implementation-private; the
+/// wire-format Handle remains the packed u32 (slot|gen) shape so
+/// cross-backend interop holds.
+///
+/// Handle is `@dataclasses.dataclass(frozen=True, slots=True)` over
+/// `raw: int` with slot/generation property accessors (Q-γ4-Python-
+/// Handle-shape (a) lock — immutable + hashable + zero __dict__).
+/// Overflow under reject/diagnostic-event returns `None` via
+/// `Optional[Handle]` (Q-γ4-Python-overflow-emit (a) lock — Pythonic
+/// `dict.get()` precedent for "expected absence"). Iteration via
+/// `__iter__` generator + an explicit `for_each(fn)` named method for
+/// callers that prefer the named form (parity with the foreach API
+/// shape on Cpp/Kotlin/Go/C11).
+fn render_bounded_collection_python(
+    env: &minijinja::Environment<'_>,
+    m: &crate::forge::model::BoundedCollectionModel,
+    _imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
+) -> Result<String, ForgeError> {
+    let inputs = resolve_bounded_collection_inputs(m, options)?;
+    let tmpl = env
+        .get_template("bounded_collection.py.jinja2")
+        .map_err(|e| {
+            ForgeError::Generate(GenerateError::TemplateLoad(format!(
+                "bounded_collection.py.jinja2 (python): {e}"
+            )))
+        })?;
+
+    let pascal = filters::to_pascal_case(m.name.clone());
+    let snake = filters::to_snake_case(m.name.clone());
+    let element_pascal = filters::to_pascal_case(m.element_type.clone());
+    let element_snake = filters::to_snake_case(m.element_type.clone());
+
+    // Python uses relative-package imports (`from .<snake> import
+    // <Pascal>`) — the existing codec / procedure import resolver
+    // emits this exact shape (resolve_single_import Python arm).
+    // Mirror it for the BC's implicit element-type reference.
+    let element_import_stmt =
+        format!("from .{element_snake} import {element_pascal}");
+
+    // Python codec emits struct fields in snake_case (`codec_field_id`
+    // Python arm). Mirror that here so `_slots[slot].<field>` matches
+    // the element-type's emitted member name.
+    let index_by_field_snake = m
+        .index_by
+        .as_ref()
+        .map(|f| filters::to_snake_case(f.clone()))
+        .unwrap_or_default();
+    let index_by_py_type = inputs
+        .index_by_sce_type
+        .as_ref()
+        .map(|t| python_type(t).to_string())
+        .unwrap_or_default();
+
+    let ctx = minijinja::context! {
+        name => &m.name,
+        pascal => pascal,
+        snake => snake,
+        element_pascal => element_pascal,
+        element_snake => element_snake,
+        has_element_import => true,
+        element_import_stmt => element_import_stmt,
+        capacity => inputs.capacity,
+        on_overflow => inputs.on_overflow_str,
+        overflow_is_oldest_wins => inputs.overflow_is_oldest_wins,
+        ordering => inputs.ordering_str,
+        concurrency => inputs.concurrency_str,
+        has_index_by => m.index_by.is_some(),
+        index_by_field_snake => index_by_field_snake,
+        index_by_py_type => index_by_py_type,
+        runtime_dep => "self-contained — Python stdlib `dataclasses` + `typing` only",
+    };
+    tmpl.render(ctx).map_err(|e| {
+        ForgeError::Generate(GenerateError::TemplateRender(format!(
+            "bounded_collection.py.jinja2 (python): {e}"
+        )))
+    })
+}
+
 /// Render a `<sce:kind="link">` document for the C11 backend
 /// (watching-zenoh RFC §5.C, B6-β). Mirrors `render_link_rust` but
 /// emits a header that composes a `sce_forge_link_t` driver handle
@@ -9949,7 +10216,12 @@ fn check_inter_pool_padding_invariant(
 // ══════════════════════════════════════════════════════════════
 
 /// Map SceType to Go type name (SCE_FORGE.md Section 3.3).
-fn go_type(ty: &SceType) -> &'static str {
+///
+/// Lifted to `pub(crate)` so the §5.L bounded-collection's Go
+/// `FindByIndex` emit can convert the abstract `index_by_field_sce_type`
+/// from `BoundedCollectionResolution` into a Go type string. Same pattern
+/// as `cpp_type` / `kotlin_type` / `rust_type` / `c_type` (γ2/γ3 precedent).
+pub(crate) fn go_type(ty: &SceType) -> &'static str {
     match ty {
         SceType::Uint8 => "uint8",
         SceType::Uint16 => "uint16",
@@ -10024,9 +10296,9 @@ pub fn generate_go_with_imports(
         ForgeDocument::Worker(_) => unreachable!(
             "ForgeDocument::Worker rejected by codegen_matrix::check on go"
         ),
-        ForgeDocument::BoundedCollection(_) => unreachable!(
-            "ForgeDocument::BoundedCollection rejected by codegen_matrix::check on go (C6-α schema-only)"
-        ),
+        ForgeDocument::BoundedCollection(m) => {
+            render_bounded_collection_go(&env, m, imports, options)?
+        }
     };
 
     let filename = format!("{}.go", filters::to_snake_case(doc.name().to_string()));
@@ -10064,7 +10336,13 @@ pub fn generate_go_with_imports(
 // ══════════════════════════════════════════════════════════════
 
 /// Map SceType to Python type annotation (SCE_FORGE.md Section 3.3).
-fn python_type(ty: &SceType) -> &'static str {
+///
+/// Lifted to `pub(crate)` so the §5.L bounded-collection's Python
+/// `find_by_index` emit can convert the abstract `index_by_field_sce_type`
+/// from `BoundedCollectionResolution` into a Python type annotation. Same
+/// pattern as `cpp_type` / `kotlin_type` / `rust_type` / `c_type` /
+/// `go_type` (γ2/γ3 precedent).
+pub(crate) fn python_type(ty: &SceType) -> &'static str {
     match ty {
         SceType::Uint8
         | SceType::Uint16
@@ -10122,9 +10400,9 @@ pub fn generate_python_with_imports(
         ForgeDocument::Worker(_) => unreachable!(
             "ForgeDocument::Worker rejected by codegen_matrix::check on python"
         ),
-        ForgeDocument::BoundedCollection(_) => unreachable!(
-            "ForgeDocument::BoundedCollection rejected by codegen_matrix::check on python (C6-α schema-only)"
-        ),
+        ForgeDocument::BoundedCollection(m) => {
+            render_bounded_collection_python(&env, m, imports, options)?
+        }
     };
 
     let filename = format!("{}.py", filters::to_snake_case(doc.name().to_string()));
@@ -10239,9 +10517,9 @@ pub fn generate_c11_with_imports_and_externs(
         // variant (acq/rel vs relaxed). The dispatcher appends the
         // `.c` sibling to `files` after this match.
         ForgeDocument::Worker(m) => render_worker_c_header(&env, m, imports)?,
-        ForgeDocument::BoundedCollection(_) => unreachable!(
-            "ForgeDocument::BoundedCollection rejected by codegen_matrix::check on c11 (C6-α schema-only; C6-γ ships slot+bitmap struct with `_insert/_remove/_find_by_index` API per RFC §5.L lines 2573-2575 + 2624-2640)"
-        ),
+        ForgeDocument::BoundedCollection(m) => {
+            render_bounded_collection_c(&env, m, imports, options)?
+        }
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));

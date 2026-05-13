@@ -537,38 +537,10 @@ fn cpp_kotlin_element_type_procedure_emits() {
     assert!(kt_body.contains("fun findByIndex(key: ULong): ReassemblyTableHandle?"));
 }
 
-#[test]
-fn template_ships_matrix_flips() {
-    // Drift guard: γ3 flips `(Cpp, *)` + `(Kotlin, *)` to `true`
-    // for `ForgeKind::BoundedCollection` while leaving `(Go, *)` /
-    // `(Python, *)` / `(C11, *)` as `false` (γ4 scope). The matrix
-    // check is via the public lookup function — a regression that
-    // flips Go/Python/C11 early would fail this guard before any
-    // emit fixture catches the broken-template fallout.
-    use sce_build::forge::codegen_matrix::{lookup, EmitOutcome};
-    use sce_build::forge::model::ForgeKind;
-    assert_eq!(
-        lookup(ForgeKind::BoundedCollection, Language::Rust),
-        EmitOutcome::Emit
-    );
-    assert_eq!(
-        lookup(ForgeKind::BoundedCollection, Language::Cpp),
-        EmitOutcome::Emit
-    );
-    assert_eq!(
-        lookup(ForgeKind::BoundedCollection, Language::Kotlin),
-        EmitOutcome::Emit
-    );
-    assert_eq!(
-        lookup(ForgeKind::BoundedCollection, Language::Go),
-        EmitOutcome::TemplateMissing
-    );
-    assert_eq!(
-        lookup(ForgeKind::BoundedCollection, Language::Python),
-        EmitOutcome::TemplateMissing
-    );
-    assert_eq!(
-        lookup(ForgeKind::BoundedCollection, Language::C11),
-        EmitOutcome::TemplateMissing
-    );
-}
+// `template_ships_matrix_flips` (the γ3-stage drift guard) was
+// superseded by `template_ships_matrix_fully_closed` in
+// `c6_bounded_collection_gamma4.rs` after γ4 closed the matrix —
+// all 6 backends now emit, so a per-backend split assertion in the
+// γ3 file would assert `TemplateMissing` for Go/Python/C11 and fail.
+// The γ4 successor asserts the closed state (all 6 = Emit), which
+// is the only invariant worth pinning post-γ4.

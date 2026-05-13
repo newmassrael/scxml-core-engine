@@ -1,0 +1,241 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+# SCE Forge: Auto-generated from Extended SCXML (sce:kind="bounded-collection")
+# Runtime: {{ runtime_dep }}
+# Do not edit — regenerate from the source SCXML file.
+#
+# watching-zenoh RFC §5.L bounded-collection — typed fixed-capacity
+# container per spec lines 2580-2581 emit shape: `list` of length N
+# initialized to None + `bytearray(N)` mask + `int count`.
+#
+# Operations contract (spec lines 2609-2619):
+#   insert / remove / get / find_by_index (if index-by set) / __iter__ /
+#   __len__ / capacity.
+#
+# Handle (spec lines 2621-2622): frozen dataclass with __slots__ over
+# `raw: int` (Q-γ4-Python-Handle-shape (a) lock 2026-05-13). slot/
+# generation are property accessors. Immutable + hashable + type-safe;
+# zero __dict__ overhead via __slots__. ABI parity is preserved at
+# the wire level (raw is a 32-bit unsigned packed slot|gen).
+#
+# Overflow signaling (Q-γ4-Python-overflow-emit (a) lock 2026-05-13):
+# insert returns `Optional[Handle]` — None on overflow under
+# `<sce:on-overflow>reject</sce:on-overflow>` /
+# `<sce:on-overflow>diagnostic-event</sce:on-overflow>`. This matches
+# the Pythonic `dict.get()` / `re.match()` precedent for "expected
+# absence". Under `<sce:on-overflow>oldest-wins</sce:on-overflow>` the
+# eviction always succeeds so None is never returned.
+#
+# Generation semantics (cross-backend parity): the counter is
+# incremented on remove (so a Handle to the freed slot becomes
+# stale and get/remove return None / False respectively); insert
+# uses the slot's current generation value as-is. First insert
+# into a never-used slot yields (slot, gen=0); reuse after remove
+# yields (slot, gen=1), etc. Wrapping is masked to 16 bits.
+
+from __future__ import annotations
+
+import dataclasses
+from typing import Callable, Iterator, Optional
+
+{% if has_element_import %}
+{{ element_import_stmt }}
+{% endif %}
+
+# Slot capacity per `<sce:capacity>` (spec lines 2583-2585).
+CAPACITY: int = {{ capacity }}
+
+# Drift guard (parity with C11 _Static_assert + Rust const _ + Go
+# uint16 const): capacity must fit in 16 bits so the generation+slot
+# pair packs into a single uint32 Handle.
+assert CAPACITY <= 0xFFFF, (
+    f"{{ pascal }}: capacity {CAPACITY} must fit in 16 bits to preserve "
+    "16/16 Handle packing (spec lines 2575 + 2621-2622)."
+)
+
+# Slot-index bit width inside the packed Handle u32 (Q-γ2-Handle-bits
+# (a) symmetric split).
+_SLOT_BITS: int = 16
+_GEN_BITS: int = 16
+_SLOT_MASK: int = 0xFFFF
+_GEN_MASK: int = 0xFFFF
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class {{ pascal }}Handle:
+    """Stable uint32-wide handle (spec lines 2621-2622).
+
+    Frozen + slots=True so the instance is immutable, hashable, and
+    has zero __dict__ overhead. `raw` packs slot index (low 16 bits)
+    and generation counter (high 16 bits). ABI-parity with the C11
+    POD struct, Cpp POD, Rust tuple newtype, Kotlin @JvmInline value
+    class, and Go uint32 newtype emit.
+    """
+
+    raw: int
+
+    @property
+    def slot(self) -> int:
+        """Slot index (low 16 bits)."""
+        return self.raw & _SLOT_MASK
+
+    @property
+    def generation(self) -> int:
+        """Generation counter (high 16 bits)."""
+        return (self.raw >> _SLOT_BITS) & _GEN_MASK
+
+    @classmethod
+    def pack(cls, slot: int, generation: int) -> "{{ pascal }}Handle":
+        """Pack a (slot, generation) pair into the wire u32."""
+        return cls(((generation & _GEN_MASK) << _SLOT_BITS) | (slot & _SLOT_MASK))
+
+
+class {{ pascal }}:
+    """RFC §5.L bounded-collection over element type `{{ element_pascal }}`.
+
+    Capacity ``{{ capacity }}``, on-overflow ``{{ on_overflow }}``,
+    ordering ``{{ ordering }}``, concurrency ``{{ concurrency }}``.
+    """
+
+    __slots__ = ("_slots", "_generation", "_occupied", "_count")
+
+    def __init__(self) -> None:
+        self._slots: list[Optional[{{ element_pascal }}]] = [None] * CAPACITY
+        self._generation: bytearray = bytearray(CAPACITY * 2)  # u16 per slot
+        self._occupied: bytearray = bytearray(CAPACITY)
+        self._count: int = 0
+
+    def _gen_get(self, slot: int) -> int:
+        # Pull a u16 from the generation bytearray. Little-endian
+        # representation is internal-only — the wire-format Handle
+        # uses the packed u32 (slot|generation) shape regardless.
+        lo = self._generation[slot * 2]
+        hi = self._generation[slot * 2 + 1]
+        return (hi << 8) | lo
+
+    def _gen_set(self, slot: int, value: int) -> None:
+        value &= _GEN_MASK
+        self._generation[slot * 2] = value & 0xFF
+        self._generation[slot * 2 + 1] = (value >> 8) & 0xFF
+
+    @staticmethod
+    def capacity() -> int:
+        """Compile-time capacity (spec line 2618)."""
+        return CAPACITY
+
+    def __len__(self) -> int:
+        """Occupied slot count (spec line 2617)."""
+        return self._count
+
+    def insert(self, elem: {{ element_pascal }}) -> Optional[{{ pascal }}Handle]:
+        """Insert ``elem`` (spec line 2612).
+
+        Returns the new handle on success. On overflow under
+        ``reject`` / ``diagnostic-event`` returns ``None``. Under
+        ``oldest-wins`` evicts slot 0 (the lowest occupied index =
+        oldest entry under ``ordering="insertion"``) and always
+        returns a fresh handle.
+        """
+        if self._count < CAPACITY:
+            for slot in range(CAPACITY):
+                if not self._occupied[slot]:
+                    self._slots[slot] = elem
+                    self._occupied[slot] = 1
+                    self._count += 1
+                    # Generation is NOT incremented on insert (parity
+                    # with Cpp/Rust/Kotlin/Go/C11); the slot's current
+                    # value (bumped by the prior remove, or 0 if never
+                    # used) becomes the handle's gen.
+                    return {{ pascal }}Handle.pack(slot, self._gen_get(slot))
+            # Unreachable: _count < CAPACITY implies a free slot.
+{% if overflow_is_oldest_wins %}
+        # <sce:on-overflow>oldest-wins</sce:on-overflow>: evict slot 0.
+        # Increment generation to invalidate any stale Handle to slot 0.
+        # _count unchanged (1 evict + 1 insert = 0 delta).
+        self._slots[0] = elem
+        self._gen_set(0, (self._gen_get(0) + 1) & _GEN_MASK)
+        return {{ pascal }}Handle.pack(0, self._gen_get(0))
+{% else %}
+        # <sce:on-overflow>reject</sce:on-overflow> / diagnostic-event.
+        # The diagnostic-event runtime firing into the SCXML engine
+        # event queue is a separate concern.
+        return None
+{% endif %}
+
+    def remove(self, handle: {{ pascal }}Handle) -> bool:
+        """Remove the entry referenced by ``handle`` (spec line 2613).
+
+        Returns ``False`` when the slot is already free OR when the
+        handle's generation no longer matches (stale handle /
+        use-after-remove). On success, the slot's generation is
+        incremented (masked to 16 bits) so any other Handle to the
+        same slot becomes stale.
+        """
+        slot = handle.slot
+        gen = handle.generation
+        if slot >= CAPACITY:
+            return False
+        if not self._occupied[slot]:
+            return False
+        if self._gen_get(slot) != gen:
+            return False
+        self._occupied[slot] = 0
+        self._gen_set(slot, (self._gen_get(slot) + 1) & _GEN_MASK)
+        self._slots[slot] = None
+        self._count -= 1
+        return True
+
+    def get(self, handle: {{ pascal }}Handle) -> Optional[{{ element_pascal }}]:
+        """Look up the entry referenced by ``handle`` (spec line 2614).
+
+        Returns ``None`` when the slot is free OR when the handle's
+        generation no longer matches.
+        """
+        slot = handle.slot
+        gen = handle.generation
+        if slot >= CAPACITY:
+            return None
+        if not self._occupied[slot]:
+            return None
+        if self._gen_get(slot) != gen:
+            return None
+        return self._slots[slot]
+
+{% if has_index_by %}
+    def find_by_index(self, key: {{ index_by_py_type }}) -> Optional[{{ pascal }}Handle]:
+        """Find the first occupied slot whose ``{{ index_by_field_snake }}`` equals ``key`` (spec line 2615).
+
+        Linear scan bounded by CAPACITY (build-time constant) →
+        satisfies §5.A ``max-iter`` requirement when this method is
+        called from algorithm bodies. Returns ``None`` on miss.
+        """
+        for slot in range(CAPACITY):
+            if not self._occupied[slot]:
+                continue
+            elem = self._slots[slot]
+            if elem is not None and elem.{{ index_by_field_snake }} == key:
+                return {{ pascal }}Handle.pack(slot, self._gen_get(slot))
+        return None
+{% endif %}
+
+    def __iter__(self) -> Iterator[{{ element_pascal }}]:
+        """Iterate over occupied slots in ascending slot-index order (spec line 2616)."""
+        for slot in range(CAPACITY):
+            if self._occupied[slot]:
+                elem = self._slots[slot]
+                if elem is not None:
+                    yield elem
+
+    def for_each(self, fn: Callable[[{{ element_pascal }}], None]) -> None:
+        """Apply ``fn`` to every occupied slot in ascending slot-index order.
+
+        Equivalent to ``for elem in self: fn(elem)`` — provided as a
+        named entry point so cross-backend callers have a uniform
+        method name across all 6 backends (Cpp/Kotlin/Go/Rust/C11
+        all expose a foreach-style API; Python's __iter__ is the
+        idiomatic equivalent + this explicit method covers callers
+        that prefer the named form).
+        """
+        for elem in self:
+            fn(elem)

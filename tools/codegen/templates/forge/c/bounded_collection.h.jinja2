@@ -1,0 +1,310 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+/* SCE Forge: Auto-generated from Extended SCXML (sce:kind="bounded-collection") */
+/* Runtime: {{ runtime_dep }} */
+/* Do not edit — regenerate from the source SCXML file. */
+/*
+ * watching-zenoh RFC §5.L bounded-collection — typed fixed-capacity
+ * container whose occupancy varies at runtime. Spec lines 2573-2575
+ * verbatim emit shape:
+ *   struct { T slots[N]; uint32_t generation[N];
+ *            uint32_t bitmap[(N+31)/32]; uint32_t count; }
+ * with a generated `<snake>_insert/_remove/_find_by_index` API per
+ * spec line 2575, plus `_get/_foreach/_len/_capacity` per spec lines
+ * 2613-2618.
+ *
+ * Handle layout (spec lines 2621-2622): POD struct over `uint32_t`
+ * with slot index in the low 16 bits and a generation counter in
+ * the high 16 bits. The 16/16 split is ABI-identical to the C++ POD,
+ * Rust tuple newtype, Kotlin @JvmInline value class, and Go uint32
+ * newtype emit — cross-backend Handle interop is wire-format stable
+ * (Q-γ2-Handle-bits + Q-γ3-Handle-cpp-shape lock).
+ *
+ * Generation semantics (cross-backend parity): the counter is
+ * incremented on `remove` (so a Handle to the freed slot becomes
+ * stale and `get/remove` return NULL/false respectively); `insert`
+ * uses the slot's *current* generation value as-is. First insert
+ * into a never-used slot therefore yields `(slot, gen=0)`; reuse of
+ * the same slot after a remove yields `(slot, gen=1)`, etc. Wrapping
+ * is masked to 16 bits — the 16-bit counter rolls over after 65536
+ * remove/insert cycles on a single slot (acceptable: the use-after-
+ * remove guard is best-effort, not cryptographic).
+ *
+ * Iteration (Q-γ4-C11-iter-shape (a) lock 2026-05-13): exposed as
+ * `<snake>_foreach(self, fn, user)` callback iteration. `fn` fires
+ * exactly once per occupied slot in ascending slot-index order per
+ * spec line 2616 ("exposes only occupied slots"). MCU-idiomatic, zero
+ * allocation, no goroutine/iterator-state baggage.
+ *
+ * Generated from `name="{{ name }}"` with capacity `{{ capacity }}`,
+ * element-type `{{ element_pascal }}`, on-overflow `{{ on_overflow }}`,
+ * ordering `{{ ordering }}`, concurrency `{{ concurrency }}`.
+ */
+
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include "{{ element_snake }}.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Slot capacity per `<sce:capacity>` (spec lines 2583-2585). For
+ * `source="deploy"` the value is resolved from
+ * `machines.<m>.limits.<k>` at codegen time; for `const="N"` the
+ * value comes from the SCXML. */
+#define {{ upper_name }}_CAPACITY ((uint32_t){{ capacity }})
+
+/* Drift guard per spec line 2575: N must fit in 16 bits so the
+ * generation+slot pair packs into a single uint32_t Handle. */
+_Static_assert({{ capacity }} <= UINT16_MAX,
+    "{{ pascal }}: capacity must fit in 16 bits to preserve "
+    "16/16 Handle packing (spec lines 2575 + 2621-2622).");
+
+/* Bitmap word count per spec line 2574: ceil(N / 32) words. */
+#define {{ upper_name }}_BITMAP_WORDS \
+    (({{ upper_name }}_CAPACITY + 31u) / 32u)
+
+/* Slot-index bit width inside the packed Handle u32 (Q-γ2-Handle-bits
+ * (a) symmetric split). */
+#define {{ upper_name }}_SLOT_BITS 16u
+/* Generation-counter bit width inside the packed Handle u32. */
+#define {{ upper_name }}_GEN_BITS 16u
+#define {{ upper_name }}_SLOT_MASK ((uint32_t)0xFFFFu)
+#define {{ upper_name }}_GEN_MASK  ((uint32_t)0xFFFFu)
+
+/* Stable uint32_t-wide handle (spec lines 2621-2622). POD struct
+ * trivially copyable; ABI-identical to the Cpp POD + Rust tuple
+ * newtype + Kotlin @JvmInline value class + Go uint32 newtype. */
+typedef struct {
+    uint32_t raw;
+} {{ snake }}_handle_t;
+
+/* Pack a (slot, generation) pair into the wire u32. */
+static inline {{ snake }}_handle_t {{ snake }}_handle_pack(
+    uint32_t slot, uint32_t generation)
+{
+    {{ snake }}_handle_t h;
+    h.raw = ((generation & {{ upper_name }}_GEN_MASK) << {{ upper_name }}_SLOT_BITS)
+          | (slot & {{ upper_name }}_SLOT_MASK);
+    return h;
+}
+
+/* Slot index (low 16 bits). */
+static inline uint32_t {{ snake }}_handle_slot(
+    {{ snake }}_handle_t h)
+{
+    return h.raw & {{ upper_name }}_SLOT_MASK;
+}
+
+/* Generation counter (high 16 bits). */
+static inline uint32_t {{ snake }}_handle_generation(
+    {{ snake }}_handle_t h)
+{
+    return (h.raw >> {{ upper_name }}_SLOT_BITS) & {{ upper_name }}_GEN_MASK;
+}
+
+/* Storage shape per spec lines 2573-2575 verbatim. */
+typedef struct {
+    {{ element_pascal }} slots[{{ upper_name }}_CAPACITY];
+    uint32_t generation[{{ upper_name }}_CAPACITY];
+    uint32_t bitmap[{{ upper_name }}_BITMAP_WORDS];
+    uint32_t count;
+} {{ snake }}_t;
+
+/* Insert result (spec line 2612 `Result<Handle, OverflowError>`
+ * C-idiomatic projection): POD sum type carrying success flag + the
+ * resulting handle. On overflow under `reject` / `diagnostic-event`
+ * the `ok` field is false and `handle.raw` is 0 (sentinel — caller
+ * must not consume the handle when `ok == false`). Under
+ * `oldest-wins` the eviction succeeds so `ok` is always true. */
+typedef struct {
+    bool ok;
+    {{ snake }}_handle_t handle;
+} {{ snake }}_insert_result_t;
+
+/* ── Bitmap helpers (private, inline) ────────────────────────── */
+
+static inline bool {{ snake }}_bitmap_get_(
+    const {{ snake }}_t *self, uint32_t slot)
+{
+    return (bool)((self->bitmap[slot >> 5u] >> (slot & 31u)) & 1u);
+}
+
+static inline void {{ snake }}_bitmap_set_(
+    {{ snake }}_t *self, uint32_t slot)
+{
+    self->bitmap[slot >> 5u] |= ((uint32_t)1u << (slot & 31u));
+}
+
+static inline void {{ snake }}_bitmap_clear_(
+    {{ snake }}_t *self, uint32_t slot)
+{
+    self->bitmap[slot >> 5u] &= ~((uint32_t)1u << (slot & 31u));
+}
+
+/* ── Public API (spec lines 2609-2618) ───────────────────────── */
+
+/* Initialize an empty bounded-collection (clears bitmap + count;
+ * leaves slot storage uninitialized — `get`/`foreach` skip
+ * unoccupied slots via the bitmap, so reading uninitialized slot
+ * bytes is unreachable). */
+static inline void {{ snake }}_init({{ snake }}_t *self)
+{
+    self->count = 0u;
+    for (uint32_t i = 0u; i < {{ upper_name }}_BITMAP_WORDS; ++i) {
+        self->bitmap[i] = 0u;
+    }
+    for (uint32_t i = 0u; i < {{ upper_name }}_CAPACITY; ++i) {
+        self->generation[i] = 0u;
+    }
+}
+
+/* Insert (spec line 2612). Linear scan over the bitmap for the
+ * first empty slot. Returns ok=false under `reject` /
+ * `diagnostic-event` when the table is full; under `oldest-wins`
+ * evicts slot 0 (the lowest occupied index, pinned to the oldest
+ * entry by the parse-time
+ * `collection/overflow-policy-oldest-wins-requires-ordering-insertion`
+ * validator that forces ordering=Insertion). */
+static inline {{ snake }}_insert_result_t {{ snake }}_insert(
+    {{ snake }}_t *self,
+    const {{ element_pascal }} *elem)
+{
+    {{ snake }}_insert_result_t r;
+    if (self->count < {{ upper_name }}_CAPACITY) {
+        for (uint32_t slot = 0u; slot < {{ upper_name }}_CAPACITY; ++slot) {
+            if (!{{ snake }}_bitmap_get_(self, slot)) {
+                self->slots[slot] = *elem;
+                {{ snake }}_bitmap_set_(self, slot);
+                self->count += 1u;
+                /* Generation is NOT incremented on insert (parity
+                 * with Cpp/Rust/Kotlin); the slot's *current* value
+                 * (bumped by the prior remove, or 0 if never used)
+                 * becomes the handle's gen. */
+                r.ok = true;
+                r.handle = {{ snake }}_handle_pack(slot, self->generation[slot]);
+                return r;
+            }
+        }
+        /* Unreachable: count_ < CAPACITY implies a free slot exists.
+         * Defensive fall-through to keep the function total. */
+    }
+{% if overflow_is_oldest_wins %}
+    /* <sce:on-overflow>oldest-wins</sce:on-overflow>: evict slot 0
+     * (the lowest occupied index = oldest entry under
+     * ordering="insertion"). Increment generation to invalidate any
+     * stale Handle to slot 0. count_ unchanged (1 evict + 1 insert
+     * = 0 delta). */
+    self->slots[0] = *elem;
+    self->generation[0] = (self->generation[0] + 1u) & {{ upper_name }}_GEN_MASK;
+    r.ok = true;
+    r.handle = {{ snake }}_handle_pack(0u, self->generation[0]);
+    return r;
+{% else %}
+    /* <sce:on-overflow>reject</sce:on-overflow> /
+     * <sce:on-overflow>diagnostic-event</sce:on-overflow>: signal
+     * overflow with ok=false. The diagnostic-event runtime firing
+     * into the SCXML engine event queue is a separate concern. */
+    r.ok = false;
+    r.handle.raw = 0u;
+    return r;
+{% endif %}
+}
+
+/* Remove (spec line 2613). Returns false when the slot is already
+ * free OR when the handle's generation no longer matches (stale
+ * handle / use-after-remove). On success, the slot's generation is
+ * incremented (masked to 16 bits) so any other Handle to the same
+ * slot becomes stale. */
+static inline bool {{ snake }}_remove(
+    {{ snake }}_t *self,
+    {{ snake }}_handle_t handle)
+{
+    uint32_t slot = {{ snake }}_handle_slot(handle);
+    uint32_t gen  = {{ snake }}_handle_generation(handle);
+    if (slot >= {{ upper_name }}_CAPACITY) return false;
+    if (!{{ snake }}_bitmap_get_(self, slot)) return false;
+    if (self->generation[slot] != gen) return false;
+    {{ snake }}_bitmap_clear_(self, slot);
+    self->generation[slot] = (self->generation[slot] + 1u) & {{ upper_name }}_GEN_MASK;
+    self->count -= 1u;
+    return true;
+}
+
+/* Get (spec line 2614). Returns NULL when the slot is free OR when
+ * the handle's generation no longer matches. */
+static inline const {{ element_pascal }} *{{ snake }}_get(
+    const {{ snake }}_t *self,
+    {{ snake }}_handle_t handle)
+{
+    uint32_t slot = {{ snake }}_handle_slot(handle);
+    uint32_t gen  = {{ snake }}_handle_generation(handle);
+    if (slot >= {{ upper_name }}_CAPACITY) return NULL;
+    if (!{{ snake }}_bitmap_get_(self, slot)) return NULL;
+    if (self->generation[slot] != gen) return NULL;
+    return &self->slots[slot];
+}
+
+{% if has_index_by %}
+/* Find-by-index (spec line 2615). Linear scan over occupied slots
+ * (CAPACITY upper bound is build-time constant → satisfies §5.A
+ * `max-iter` requirement when called from algorithm bodies). On
+ * miss, returns `{ok=false, handle.raw=0}`. */
+static inline {{ snake }}_insert_result_t {{ snake }}_find_by_index(
+    const {{ snake }}_t *self,
+    {{ index_by_c_type }} key)
+{
+    {{ snake }}_insert_result_t r;
+    for (uint32_t slot = 0u; slot < {{ upper_name }}_CAPACITY; ++slot) {
+        if (!{{ snake }}_bitmap_get_(self, slot)) continue;
+        if (self->slots[slot].{{ index_by_field }} == key) {
+            r.ok = true;
+            r.handle = {{ snake }}_handle_pack(slot, self->generation[slot]);
+            return r;
+        }
+    }
+    r.ok = false;
+    r.handle.raw = 0u;
+    return r;
+}
+{% endif %}
+
+/* Foreach (spec line 2616). Invokes `fn` once per occupied slot in
+ * ascending slot-index order. `user` is passed through opaquely so
+ * the callback can carry per-call state without globals. */
+static inline void {{ snake }}_foreach(
+    const {{ snake }}_t *self,
+    void (*fn)(const {{ element_pascal }} *elem, void *user),
+    void *user)
+{
+    for (uint32_t slot = 0u; slot < {{ upper_name }}_CAPACITY; ++slot) {
+        if ({{ snake }}_bitmap_get_(self, slot)) {
+            fn(&self->slots[slot], user);
+        }
+    }
+}
+
+/* Len (spec line 2617). Number of occupied slots. */
+static inline uint32_t {{ snake }}_len(const {{ snake }}_t *self)
+{
+    return self->count;
+}
+
+/* Capacity (spec line 2618). Compile-time constant. */
+static inline uint32_t {{ snake }}_capacity(void)
+{
+    return {{ upper_name }}_CAPACITY;
+}
+
+#ifdef __cplusplus
+}  /* extern "C" */
+#endif
+
+#endif  /* {{ guard }} */
