@@ -90,6 +90,15 @@ name = "mesh_error_format_json"
 path = "tests/mesh_error_format_json.rs"
 required-features = ["cli"]
 
+# End-to-end CLI contract test for `sce-codegen orchestrate --deploy`
+# (C13 orchestrator wiring → CLI surface). Same `cli` feature gate as
+# the other binary-driven tests so the test target depends on the
+# `CARGO_BIN_EXE_sce-codegen` env var being populated.
+[[test]]
+name = "cli_orchestrate_deploy"
+path = "tests/cli_orchestrate_deploy.rs"
+required-features = ["cli"]
+
 # Structural smoke validator for all four codegen backends. Depends on
 # the `sce-codegen` binary, hence the `cli` gate shared with the other
 # end-to-end tests. See `tests/codegen_smoke.rs` for the rationale

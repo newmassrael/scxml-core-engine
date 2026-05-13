@@ -401,6 +401,17 @@ enum Commands {
         /// with their primary in `GeneratedOutput::files`).
         #[arg(short, long)]
         output_dir: String,
+        /// Optional path to deploy.yaml. When provided, the orchestrator
+        /// runs watching-zenoh RFC §5.K + §5.M cross-doc validators that
+        /// otherwise silent-skip:
+        ///   - `validate_links_cross_doc` (C13-α-1, §5.K Q-C13-5 a)
+        ///   - `validate_links_burst_invariants` (C13-α-2, §5.K 2489-2500)
+        ///   - `validate_reassembly_cross_doc` (C13-α-2 + C9-β, §5.M 2946-2995)
+        /// Omit to keep the multi-doc orchestrator deploy-unaware
+        /// (matching every pre-existing call site's Q-η5 (a) silent-
+        /// skip semantics).
+        #[arg(long)]
+        deploy: Option<String>,
     },
     /// Batch generate W3C test state machines and test classes
     GenerateW3c {
@@ -561,7 +572,15 @@ fn main() {
             forge,
             language,
             output_dir,
-        } => cmd_orchestrate(&scxml, &forge, &language, &output_dir, error_format),
+            deploy,
+        } => cmd_orchestrate(
+            &scxml,
+            &forge,
+            &language,
+            &output_dir,
+            deploy.as_deref(),
+            error_format,
+        ),
         Commands::GenerateW3c {
             language,
             registry,
@@ -621,6 +640,7 @@ fn cmd_orchestrate(
     forge_paths: &[String],
     language: &str,
     output_dir: &str,
+    deploy_path: Option<&str>,
     error_format: ErrorFormat,
 ) {
     let lang: Language = language.parse().unwrap_or_else(|_| {
@@ -636,12 +656,46 @@ fn cmd_orchestrate(
     let forge_refs: Vec<&Path> = forge_path_bufs.iter().map(|p| p.as_path()).collect();
 
     // Default options match `Generate`'s sentinel defaults. Future
-    // CLI flags can grow the surface (deploy.yaml, format-style,
-    // const_fold_budget) when consumer demand arrives; the minimal
-    // shape today keeps the Atomic A wire footprint bounded.
+    // CLI flags can grow the surface (format-style, const_fold_budget)
+    // when consumer demand arrives; the minimal shape today keeps the
+    // Atomic A wire footprint bounded.
     let options = sce_build::ForgeCompileOptions::default();
 
     let template_dir = sce_build::find_template_dir_for(lang);
+
+    // C13 orchestrator wiring (`b501b18c`): parse the optional
+    // deploy.yaml into a `DeployConfig` so the multi-doc compile path
+    // can fire watching-zenoh RFC §5.K + §5.M cross-doc validators.
+    // Errors during read/parse route through the same Located<ForgeError>
+    // pipeline `compile_scxml_with_imports` uses — `ForgeError::Mesh`
+    // wraps `MeshError::Deploy` so the wire JSON shape matches every
+    // other deploy-side diagnostic. The diagnostic label points at the
+    // user-supplied deploy.yaml path so CLI consumers see the file
+    // they passed.
+    let deploy_cfg: Option<sce_build::mesh::deploy::DeployConfig> =
+        match deploy_path {
+            Some(p) => {
+                let content = fs::read_to_string(p).unwrap_or_else(|e| {
+                    error_format.emit_and_exit(
+                        &CliError::ReadInput {
+                            path: p.to_string(),
+                            source: e,
+                        },
+                        "",
+                    )
+                });
+                match sce_build::mesh::deploy::parse_deploy_str(&content) {
+                    Ok(cfg) => Some(cfg),
+                    Err(e) => {
+                        let forge_err: ForgeError =
+                            sce_build::mesh::error::MeshError::Deploy(e).into();
+                        let located = Located::new(forge_err, p, None, None);
+                        error_format.emit_forge_and_exit(&located);
+                    }
+                }
+            }
+            None => None,
+        };
 
     let outputs = match sce_build::compile_scxml_with_imports(
         &scxml_refs,
@@ -649,14 +703,7 @@ fn cmd_orchestrate(
         &template_dir,
         lang,
         &options,
-        // CLI surface: this path does not yet take a deploy.yaml
-        // parameter from the command line. The deploy-aware
-        // orchestrator wiring lives on the `mesh` subcommand /
-        // future flag (Phase D scope). Until that wires deploy
-        // through, the multi-doc CLI silent-skips the C13-α-1/α-2
-        // cross-doc validators — matching every other deploy-
-        // unaware caller per the Q-η5 (a) silent-skip precedent.
-        None,
+        deploy_cfg.as_ref(),
     ) {
         Ok(o) => o,
         Err(e) => error_format.emit_forge_and_exit(&e),
