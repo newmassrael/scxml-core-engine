@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: 38f9aa1b2d3ebbd296494a87466e863947e9800e212f92f4427f69cce23376aa
+// template-hash: b1b0e61d23c97e64222bd3377de4701f221a70716e6715ed6db95b7e9bdfca4b
 // generated-at: 0
 
 
@@ -315,6 +315,28 @@ impl StatePolicy for Test387Policy {
         }
     }
 
+    fn get_state_name(state: Self::State) -> &'static str {
+        match state {
+            Test387State::Fail => "fail",
+            Test387State::Pass => "pass",
+            Test387State::S0 => "s0",
+            Test387State::S01 => "s01",
+            Test387State::S011 => "s011",
+            Test387State::S012 => "s012",
+            Test387State::S02 => "s02",
+            Test387State::S021 => "s021",
+            Test387State::S022 => "s022",
+            Test387State::S1 => "s1",
+            Test387State::S11 => "s11",
+            Test387State::S111 => "s111",
+            Test387State::S112 => "s112",
+            Test387State::S12 => "s12",
+            Test387State::S121 => "s121",
+            Test387State::S122 => "s122",
+            Test387State::S3 => "s3",
+            Test387State::S4 => "s4",
+        }
+    }
 
     fn null_event() -> Self::Event {
         Test387Event::Null

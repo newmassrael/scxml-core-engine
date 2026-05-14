@@ -114,6 +114,17 @@ impl StatePolicy for FakePolicy {
         }
     }
 
+    fn get_state_name(state: Self::State) -> &'static str {
+        match state {
+            FakeState::Root => "root",
+            FakeState::A => "a",
+            FakeState::A1 => "a1",
+            FakeState::A2 => "a2",
+            FakeState::B => "b",
+            FakeState::B1 => "b1",
+        }
+    }
+
     fn null_event() -> Self::Event {
         FakeEvent::Null
     }

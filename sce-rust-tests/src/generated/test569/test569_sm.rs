@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: 38f9aa1b2d3ebbd296494a87466e863947e9800e212f92f4427f69cce23376aa
+// template-hash: b1b0e61d23c97e64222bd3377de4701f221a70716e6715ed6db95b7e9bdfca4b
 // generated-at: 0
 
 
@@ -355,6 +355,13 @@ impl StatePolicy for Test569Policy {
         }
     }
 
+    fn get_state_name(state: Self::State) -> &'static str {
+        match state {
+            Test569State::Fail => "fail",
+            Test569State::Pass => "pass",
+            Test569State::S0 => "s0",
+        }
+    }
 
     fn null_event() -> Self::Event {
         Test569Event::Null

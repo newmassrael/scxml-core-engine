@@ -96,6 +96,14 @@ impl StatePolicy for HwPolicy {
         }
     }
 
+    fn get_state_name(state: Self::State) -> &'static str {
+        match state {
+            HwState::Stopped => "stopped",
+            HwState::Running => "running",
+            HwState::Done => "done",
+        }
+    }
+
     fn null_event() -> Self::Event {
         HwEvent::Null
     }

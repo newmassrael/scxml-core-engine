@@ -93,6 +93,7 @@ struct HasExternalEventFlagTrait<P, std::void_t<decltype(std::declval<P>().nextE
 //   HierarchyPolicy     → basic tree traversal (getParent, isCompoundState)
 //   BaseStatePolicy     → engine essentials (initialState, isFinalState, enums)
 //   EventNamingPolicy   → event name ↔ enum conversion
+//   StateNamingPolicy   → state enum → SCXML id string
 //   ParallelStatePolicy → parallel state extensions (isParallelState, regions)
 //
 // NOTE: Engine-dependent checks (processTransition, executeEntryActions, etc.)
@@ -149,6 +150,21 @@ template <typename P>
 concept EventNamingPolicy = BaseStatePolicy<P> && requires(P p, typename P::Event e, const std::string &name) {
     { p.getEventName(e) } -> std::convertible_to<std::string>;
     { p.getEventFromName(name) } -> std::same_as<std::optional<typename P::Event>>;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Level 3.5: State Naming Policy — state enum → SCXML id string
+// Used by: InPredicateHelper, trace recorders, post-mortem analyzers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// State id string resolution capability.
+/// The mapping is structural (independent of parallel states / In() predicate),
+/// so every generated policy must provide it. Mirrors EventNamingPolicy's
+/// shape — the unconditional `getStateName` emit in utility_methods.jinja2
+/// satisfies this contract.
+template <typename P>
+concept StateNamingPolicy = BaseStatePolicy<P> && requires(typename P::State s) {
+    { P::getStateName(s) } -> std::convertible_to<const char *>;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

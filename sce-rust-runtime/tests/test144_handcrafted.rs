@@ -127,6 +127,16 @@ impl StatePolicy for Test144Policy {
         }
     }
 
+    fn get_state_name(state: Self::State) -> &'static str {
+        // C++ `getStateName(State)` 1:1
+        match state {
+            Test144State::Fail => "fail",
+            Test144State::Pass => "pass",
+            Test144State::S0 => "s0",
+            Test144State::S1 => "s1",
+        }
+    }
+
     fn null_event() -> Self::Event {
         Test144Event::None
     }

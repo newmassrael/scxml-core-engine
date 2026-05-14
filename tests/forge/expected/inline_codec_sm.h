@@ -165,6 +165,8 @@ public:
 #if __cpp_concepts >= 202002L
 static_assert(::SCE::Core::EventNamingPolicy<inline_codecPolicy>,
     "Generated inline_codecPolicy must satisfy EventNamingPolicy concept");
+static_assert(::SCE::Core::StateNamingPolicy<inline_codecPolicy>,
+    "Generated inline_codecPolicy must satisfy StateNamingPolicy concept");
 #endif
 
 }  // namespace SCE::Generated::inline_codec

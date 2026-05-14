@@ -184,11 +184,12 @@ pub trait StatePolicy: Sized + 'static {
 
     /// Human-readable name of `state` (e.g., `"s0"`, `"passingState"`).
     ///
-    /// Only meaningful when `HAS_PARALLEL_STATES` is `true`; required for `In()` predicate
-    /// and `_state.active` queries. Default returns `""`.
-    fn get_state_name(_state: Self::State) -> &'static str {
-        ""
-    }
+    /// Required (no default): the State→id mapping is structural and external
+    /// consumers (trace recorders, post-mortem analyzers, In() predicate via
+    /// `helpers::in_predicate`) need it regardless of whether the SM uses
+    /// parallel states. Mirrors `get_event_name` (also required) — see the
+    /// C++ `StateNamingPolicy` concept in `sce/include/core/StatePolicyConcepts.h`.
+    fn get_state_name(state: Self::State) -> &'static str;
 
     /// Sentinel event value for eventless transition dispatch (W3C SCXML 3.13).
     ///

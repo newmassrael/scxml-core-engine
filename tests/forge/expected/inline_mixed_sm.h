@@ -216,6 +216,8 @@ public:
 #if __cpp_concepts >= 202002L
 static_assert(::SCE::Core::EventNamingPolicy<inline_mixedPolicy>,
     "Generated inline_mixedPolicy must satisfy EventNamingPolicy concept");
+static_assert(::SCE::Core::StateNamingPolicy<inline_mixedPolicy>,
+    "Generated inline_mixedPolicy must satisfy StateNamingPolicy concept");
 #endif
 
 }  // namespace SCE::Generated::inline_mixed
