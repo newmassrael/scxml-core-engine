@@ -2,6 +2,7 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
 {% include 'license_header.rs.jinja2' %}
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 
 {% if no_std %}
 // Watching-zenoh RFC §5.J.2: no_std variant of the statechart
@@ -72,6 +73,12 @@
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
 
+{# Watching-zenoh RFC §5.O Atomic 0b: per-backend SCE-MAP marker
+   anchoring the generated module to the `<scxml>` root element's
+   post-preprocessor source position. Both forms emitted per spec
+   lines 3135-3136 — the `#![doc]` form survives in rustdoc, the
+   `//` form survives as a stable comment grep target. #}
+{{ sce_map.source_marker(model.source_location, "rust", module_level=true) }}
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};

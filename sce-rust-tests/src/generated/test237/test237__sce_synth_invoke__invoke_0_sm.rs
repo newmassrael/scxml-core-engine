@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: 098da7c84370a4296423abd634e2f8f6f4f84b3edd0a0d3c66a03ff69b2a536b
+// template-hash: 38f9aa1b2d3ebbd296494a87466e863947e9800e212f92f4427f69cce23376aa
 // generated-at: 0
 
 
@@ -72,6 +72,8 @@
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
 
+#![doc = "SCE-MAP: test237__sce_synth_invoke__invoke_0.scxml:3"]
+// SCE-MAP: test237__sce_synth_invoke__invoke_0.scxml:3
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};

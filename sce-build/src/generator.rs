@@ -725,6 +725,17 @@ fn load_template_strings(
 }
 
 /// Recursively load all .jinja2 templates from a directory.
+///
+/// Watching-zenoh RFC §5.O Atomic 0b — also loads the workspace-
+/// shared `_macros/` directory (one level up from the per-backend
+/// template root) so cross-backend shared macros like
+/// `_macros/sce_map_marker.jinja2` are visible to every language
+/// that calls `find_template_dir_for`. Cpp / C11 already pass the
+/// template root (their `subdir = ""`); Rust / Kotlin / Go / Python
+/// pass a per-language subdir, so without the shared-macro loader
+/// they would lose access to the cross-backend macro family. The
+/// shared load skips silently when `_macros/` is absent (vendored
+/// builds without the macro tree).
 pub fn load_templates(env: &mut Environment<'_>, dir: &Path) -> Result<(), GenerateError> {
     if !dir.exists() {
         return Err(GenerateError::TemplateLoad(format!(
@@ -732,7 +743,21 @@ pub fn load_templates(env: &mut Environment<'_>, dir: &Path) -> Result<(), Gener
             dir.display()
         )));
     }
-    load_templates_recursive(env, dir, dir)
+    load_templates_recursive(env, dir, dir)?;
+    // Sibling `_macros/` lives at `<workspace>/tools/codegen/templates/_macros/`.
+    // For per-backend roots like `rust/`, `_macros/` is at the parent
+    // (`<workspace>/tools/codegen/templates/_macros/`); for root-level
+    // backends (Cpp, C11) it's already covered by the walk above.
+    if let Some(parent) = dir.parent() {
+        let shared_macros = parent.join("_macros");
+        if shared_macros.is_dir() && shared_macros != dir.join("_macros") {
+            // base_dir = parent so the loaded template names start
+            // with `_macros/...` — matches the path callers use in
+            // `{% import "_macros/sce_map_marker.jinja2" as sce_map %}`.
+            load_templates_recursive(env, parent, &shared_macros)?;
+        }
+    }
+    Ok(())
 }
 
 fn load_templates_recursive(

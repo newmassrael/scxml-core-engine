@@ -8,6 +8,8 @@
 // This generated code is MIT licensed and may be freely used in any project.
 // Runtime engine dependency: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // Full license: https://github.com/newmassrael/scxml-core-engine/blob/main/LICENSE
+// SCE-MAP: inline_mixed.scxml:3
+
 #pragma once
 #include "common/AssignHelper.h"
 #include "common/AssignmentExecutionHelper.h"

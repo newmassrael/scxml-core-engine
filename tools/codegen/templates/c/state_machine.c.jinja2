@@ -10,7 +10,14 @@
    (jinja2 inline) per c11_design_decisions.md.                            #}
 
 {% include 'license_header.jinja2' %}
-{% import 'c/scriptengine.jinja2' as se %}
+{%- import 'c/scriptengine.jinja2' as se %}
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{# Watching-zenoh RFC §5.O Atomic 0b: SCE-MAP marker anchoring the
+   generated C11 implementation. Module-level form is a comment per
+   the same rationale as the header — Atomic 0c switches to `#line`
+   for per-function emission where the redirect scope is local. #}
+
+{{ sce_map.source_marker(model.source_location, "c", module_level=true) }}
 
 #include "{{ model.name }}_sm.h"
 

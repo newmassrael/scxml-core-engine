@@ -121,6 +121,17 @@ name = "b9_drift_detection"
 path = "tests/b9_drift_detection.rs"
 required-features = ["cli"]
 
+# Watching-zenoh RFC §5.O Atomic 0b — per-backend SCE-MAP marker
+# presence assertion. Drives `sce-codegen generate -l <backend>`
+# against a minimal SCXML fixture and asserts the rendered output
+# carries the spec marker (`#![doc] + //` for Rust, comment-form for
+# the others at module scope) so a template edit that drops the
+# macro import surfaces immediately rather than silently regressing.
+[[test]]
+name = "s5_o_atomic_0b_markers"
+path = "tests/s5_o_atomic_0b_markers.rs"
+required-features = ["cli"]
+
 
 
 [lints]

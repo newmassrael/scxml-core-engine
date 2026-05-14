@@ -11,6 +11,13 @@
    (overridable per fixture via -DSCE_MAX_*=N).                              #}
 
 {% include 'license_header.jinja2' %}
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{# Watching-zenoh RFC §5.O Atomic 0b: SCE-MAP marker anchoring the
+   generated C11 header. Module-level form is a comment, not the
+   `#line` directive — `#line` in a header would propagate into
+   every including translation unit's diagnostics. #}
+
+{{ sce_map.source_marker(model.source_location, "c", module_level=true) }}
 
 #ifndef SCE_GENERATED_{{ model.name | upper }}_SM_H
 #define SCE_GENERATED_{{ model.name | upper }}_SM_H

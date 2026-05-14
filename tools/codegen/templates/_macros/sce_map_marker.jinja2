@@ -1,0 +1,77 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+{#
+   Watching-zenoh RFC §5.O — per-backend SCE-MAP marker macros.
+
+   Spec lines 3094-3160 fix the marker syntax per backend:
+     - C  / Cpp:   `#line {line} "{file}"` (preprocessor directive)
+     - Rust:       BOTH `#[doc = "SCE-MAP: …"]` AND `// SCE-MAP: …`
+                   per spec lines 3135-3136 "MUST emit BOTH" — Atomic 1
+                   adds the empirical preservation test that rustdoc
+                   keeps the `#[doc]` form on every emitted function.
+     - Kotlin:     `// SCE-MAP: {file}:{line}`
+     - Go:         `//line {file}:{line}` (recognised by `go vet` +
+                                           panic stack traces)
+     - Python:     `# SCE-MAP: {file}:{line}`
+
+   `loc` is the IR-attached `Option<SourceLocation>` populated by the
+   parser at every emission-eligible node (watching-zenoh RFC §5.O
+   Atomic 0a, see `sce-build/src/forge/provenance.rs`). The macro
+   silently elides when `loc` is None — the codegen pre-emit walker
+   (`validate_emission_provenance`) already gates on the populate, so
+   a None reaching this point is a parser-site regression caught by
+   the `traceability/scxml-line-range-missing` diagnostic, not a
+   silent miss [[feedback-silently-broken-hooks]].
+
+   `module_level=true` switches the Rust emission to the inner-attribute
+   form `#![doc = "..."]` so a top-of-module marker doesn't collide with
+   a `pub` item's own rustdoc. Other backends ignore the flag.
+
+   Atomic 0b lands the macro + ONE invocation per backend at the top
+   of the generated state machine source so the infrastructure proves
+   end-to-end. Atomic 0c extends to per-state on_entry/on_exit + per-
+   transition handlers + forge per-kind body functions; the macro is
+   single-source-of-truth so a syntax tweak there edits one place.
+#}
+
+{%- macro source_marker(loc, backend, module_level=false) -%}
+{%- if loc and loc.line -%}
+{%- if backend == "c" or backend == "cpp" -%}
+{#- C/Cpp `#line` is a preprocessor directive that remaps line
+    numbers for the *rest of the translation unit*. At file scope
+    (especially in a `.h` header included by many TUs) this would
+    propagate into every consumer's diagnostics. The comment form
+    is safe at module scope; Atomic 0c switches to `#line` for
+    per-function emission where the redirect is locally scoped to
+    the function body. -#}
+{%- if module_level %}
+// SCE-MAP: {{ loc.file }}:{{ loc.line }}
+{%- else %}
+#line {{ loc.line }} "{{ loc.file }}"
+{%- endif %}
+{%- elif backend == "rust" -%}
+{%- if module_level %}
+#![doc = "SCE-MAP: {{ loc.file }}:{{ loc.line }}"]
+// SCE-MAP: {{ loc.file }}:{{ loc.line }}
+{%- else %}
+#[doc = "SCE-MAP: {{ loc.file }}:{{ loc.line }}"]
+// SCE-MAP: {{ loc.file }}:{{ loc.line }}
+{%- endif %}
+{%- elif backend == "kotlin" %}
+// SCE-MAP: {{ loc.file }}:{{ loc.line }}
+{%- elif backend == "go" -%}
+{#- Go's `//line` directive remaps subsequent line numbers in panic
+    stack traces + `go vet` output. Like C/Cpp `#line`, file-scope
+    placement would shift every subsequent file position. Use the
+    comment form at module level; switch to `//line` for per-
+    function emission in Atomic 0c. -#}
+{%- if module_level %}
+// SCE-MAP: {{ loc.file }}:{{ loc.line }}
+{%- else %}
+//line {{ loc.file }}:{{ loc.line }}
+{%- endif %}
+{%- elif backend == "python" %}
+# SCE-MAP: {{ loc.file }}:{{ loc.line }}
+{%- endif %}
+{%- endif -%}
+{%- endmacro -%}

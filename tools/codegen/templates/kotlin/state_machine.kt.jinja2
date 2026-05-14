@@ -14,6 +14,10 @@
 // GENERATED CODE — DO NOT EDIT
 // Source: {{ model.scxml_source_path }}
 // Generator: SCE Kotlin Code Generator v1.0
+{% import '_macros/sce_map_marker.jinja2' as sce_map %}
+{# Watching-zenoh RFC §5.O Atomic 0b: SCE-MAP marker anchoring the
+   generated Kotlin file to the `<scxml>` root element's source. #}
+{{ sce_map.source_marker(model.source_location, "kotlin", module_level=true) }}
 
 package com.sce.generated.{{ model.name | lower }}
 
