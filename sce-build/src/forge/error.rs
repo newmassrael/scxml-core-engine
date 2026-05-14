@@ -21,7 +21,14 @@ use std::path::PathBuf;
 /// an error was raised. The leaf error enums stay focused on *what* is
 /// wrong — identity, expected/actual values, stage — and remain
 /// orthogonal to position.
-#[derive(Debug, Clone)]
+///
+/// Watching-zenoh RFC §5.O Atomic 0: also reused as the per-IR-node
+/// provenance record. Every emission-eligible node carries an
+/// `Option<SourceLocation>` so codegen templates can emit per-backend
+/// SCE-MAP markers (`#line` / `//line` / `// SCE-MAP:` / `#[doc]`)
+/// above the function header that node lowers to. Serialised so
+/// minijinja templates can `{% if state.source_location %}{{ ... }}{% endif %}`.
+#[derive(Debug, Clone, serde::Serialize, Default)]
 pub struct SourceLocation {
     pub file: String,
     pub line: Option<u32>,
@@ -2119,6 +2126,25 @@ pub enum ValidationError {
         /// Joined comma-space form of `candidates` for the message
         /// body (matches the sibling cross-doc diagnostics' shape).
         candidates_list: String,
+    },
+
+    /// Watching-zenoh RFC §5.O Atomic 0 — IR provenance pre-emit
+    /// guard. Fires when a node eligible for SCE-MAP marker emission
+    /// reaches the codegen pre-emit walker with `source_location:
+    /// None`. Codegen-internal invariant: authors never see this
+    /// signal in practice; the fix lives in the parser site that
+    /// produced the IR node. `node_kind` names the IR type
+    /// (`<scxml>`, `<state>`, `<transition>`, `<action>`); `node_id`
+    /// names the document-order identifier where available (state
+    /// id, transition event+target, or auto-id) so the parser site
+    /// is locatable from the wire payload alone.
+    #[error(
+        "{node_kind} '{node_id}': source_location not populated — \
+         §5.O Atomic 0 pre-emit guard (parser site missed)"
+    )]
+    TraceabilityScxmlLineRangeMissing {
+        node_kind: &'static str,
+        node_id: String,
     },
 }
 

@@ -20,6 +20,7 @@ pub mod cross_doc_registry;
 pub mod model;
 pub mod parser;
 pub mod pool_registry;
+pub mod provenance;
 pub mod target_plugin;
 pub mod types;
 pub mod type_ctx;

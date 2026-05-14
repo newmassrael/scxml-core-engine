@@ -1949,6 +1949,25 @@ pub enum DiagnosticCode {
     //    no candidate set), hence NeutralOrDeterministic. ─────────
     #[serde(rename = "forge/source-hash-mismatch")]
     ForgeSourceHashMismatch,
+
+    // ── Traceability §5.O Atomic 0 — IR provenance pre-emit guard
+    //    (watching-zenoh RFC §5.O lines 3289-3290 verbatim:
+    //    "XInclude / sce:template composition MUST track per-element
+    //    (file_id, line, column) and attach it to every IR node.
+    //    Codegen failure ... surfaced via
+    //    `traceability/scxml-line-range-missing` (codegen-internal)").
+    //    Fires at the compile-pipeline pre-emit pass when a node
+    //    eligible for marker emission carries `source_location: None`
+    //    — guarantees the per-backend SCE-MAP marker family (Atomic 0
+    //    function-level, Atomic 1 per-symbol attribution) is never
+    //    silently dropped on an unpopulated IR record. Author repair
+    //    is empty: this is a codegen-internal invariant, so authors
+    //    never see it in practice; the diagnostic exists so a future
+    //    parser edit that creates an IR node without populating
+    //    `source_location` surfaces immediately rather than producing
+    //    silently-broken codegen.
+    #[serde(rename = "traceability/scxml-line-range-missing")]
+    TraceabilityScxmlLineRangeMissing,
 }
 
 /// Canonical enumeration of every `DiagnosticCode` variant.
@@ -2298,6 +2317,9 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshIo,
         // Forge generated-source drift detection (watching-zenoh RFC §6.2.6)
         ForgeSourceHashMismatch,
+        // Traceability §5.O Atomic 0 — IR provenance pre-emit guard
+        // (watching-zenoh RFC §5.O lines 3289-3290).
+        TraceabilityScxmlLineRangeMissing,
     ]
 };
 
@@ -2700,6 +2722,15 @@ impl DiagnosticCode {
             //    contract + `sce-build verify` recompute pipeline.
             ForgeSourceHashMismatch => Some("watching-zenoh RFC §6.2.6"),
 
+            // ── §5.O Atomic 0 — traceability IR provenance pre-emit
+            //    guard. Spec lines 3289-3290 verbatim: "Codegen failure
+            //    ... surfaced via `traceability/scxml-line-range-
+            //    missing` (codegen-internal)". Anchors the diagnostic
+            //    against the per-IR-node `(file_id, line, column)`
+            //    invariant the Atomic 0 markers + Atomic 1 sourcemap
+            //    both consume.
+            TraceabilityScxmlLineRangeMissing => Some("watching-zenoh RFC §5.O"),
+
             // ── No authoritative citation ────────────────────────
             //
             // Anchors are deliberately narrow: a code lands here when
@@ -3063,6 +3094,7 @@ impl DiagnosticCode {
             MeshCodegenPoolWithRpcClientUnsupported => "mesh/codegen-pool-with-rpc-client-unsupported",
             MeshIo => "mesh/io",
             ForgeSourceHashMismatch => "forge/source-hash-mismatch",
+            TraceabilityScxmlLineRangeMissing => "traceability/scxml-line-range-missing",
         }
     }
 }
@@ -5106,6 +5138,26 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 key_fragments: vec![name.clone(), plugin_path.clone()],
             }
         }
+        // ── §5.O Atomic 0 — IR provenance pre-emit guard ─────────
+        //    Codegen-internal invariant: an IR node eligible for
+        //    SCE-MAP marker emission reached the pre-emit walker
+        //    with `source_location: None`. No author repair (the
+        //    fix lives in the parser site that produced the node).
+        //    `node_kind` + `node_id` ride `key_fragments` so the
+        //    wire payload is uniquely keyed per offending parser
+        //    site without leaking through `expected` / `actual`
+        //    (which carry no useful author-facing data here).
+        ValidationError::TraceabilityScxmlLineRangeMissing {
+            node_kind,
+            node_id,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::TraceabilityScxmlLineRangeMissing,
+            stage: Stage::Generate,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![(*node_kind).into(), node_id.clone()],
+        },
     }
 }
 
@@ -7475,6 +7527,21 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:e043d4876ee880bd","code":"pool/cache-pre-arm-invalidate-missing-on-speculative-core","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"buffer-pool 'rx_pool_sram1': generated source for backend `rust` is missing the `sce_dcache_invalidate_by_addr` call on the `free → dma-armed-rx` edge despite `cache-policy: maintain` + `platform.has_speculative_prefetch: true` — codegen invariant violation per RFC §5.E lines 1186-1198 + 1552; report at https://github.com/newmassrael/scxml-core-engine/issues"}"#,
             ),
+            // ── §5.O Atomic 0 IR provenance pre-emit guard ─────────
+            //    Codegen-internal invariant: a node eligible for SCE-
+            //    MAP marker emission carries `source_location: None`.
+            //    Author-facing fields stay empty (`actual: None`,
+            //    `expected: None`, `fix: None`); `node_kind` + `node_id`
+            //    ride `key_fragments` and surface through `message`.
+            (
+                "traceability/scxml-line-range-missing",
+                ValidationError::TraceabilityScxmlLineRangeMissing {
+                    node_kind: "<state>",
+                    node_id: "S0".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:c468c384e2af3fcf","code":"traceability/scxml-line-range-missing","stage":"generate","spec":"watching-zenoh RFC §5.O","message":"<state> 'S0': source_location not populated — §5.O Atomic 0 pre-emit guard (parser site missed)"}"#,
+            ),
         ]
     }
 
@@ -9492,7 +9559,13 @@ mod tests {
             // ── §6.2.6 generated-source drift (B9). Repair is the
             //    deterministic `sce-codegen <regen-command>` — no
             //    candidate set across multiple repair paths. ──
-            | ForgeSourceHashMismatch => NeutralOrDeterministic,
+            | ForgeSourceHashMismatch
+            // ── §5.O Atomic 0 — IR provenance guard. Codegen-internal
+            //    invariant: an empty source_location means the parser
+            //    site that produced this node failed to attach a
+            //    SourceLocation. No author repair — the fix lives in
+            //    the parser site, not the document. ──
+            | TraceabilityScxmlLineRangeMissing => NeutralOrDeterministic,
         }
     }
 
@@ -9917,7 +9990,9 @@ mod tests {
                 | MeshCodegenPoolWithRpcClientUnsupported
                 | MeshIo
                 // B9 §6.2.6 generated-source drift detection
-                | ForgeSourceHashMismatch => true,
+                | ForgeSourceHashMismatch
+                // §5.O Atomic 0 IR provenance pre-emit guard
+                | TraceabilityScxmlLineRangeMissing => true,
             }
         }
         for &code in ALL_DIAGNOSTIC_CODES {
@@ -9929,7 +10004,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            264,
+            265,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
              expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
@@ -10472,7 +10547,24 @@ mod tests {
              detection ForgeSourceHashMismatch — single code covers \
              both axes (source-hash + template-hash) per Q-§6.2.6-5 \
              lock; emitted from `sce-codegen verify` when embedded \
-             header hash diverges from recomputed state. 263 → 264.",
+             header hash diverges from recomputed state. 263 → 264. \
+             Then watching-zenoh RFC §5.O Atomic 0 IR provenance \
+             pre-emit guard TraceabilityScxmlLineRangeMissing — \
+             codegen-internal invariant firing when a node eligible \
+             for SCE-MAP marker emission carries `source_location: \
+             None`. Spec lines 3289-3290 verbatim: \"Codegen failure \
+             ... surfaced via `traceability/scxml-line-range-missing` \
+             (codegen-internal)\". NeutralOrDeterministic non_overlap_\
+             class — there is no author repair because the fix lives \
+             in the parser site that produced the IR node. The pre-\
+             emit walker that fires this code is `validate_emission_\
+             provenance` (forge/provenance.rs); it lands together \
+             with the diagnostic so the IR-field-as-only-consumer \
+             (parser-side populates) gains a consumer the same atomic \
+             ([[feedback-silently-broken-hooks]]). Atomic 0 part B \
+             will extend the validator surface alongside the per-\
+             backend marker emission templates and the forge_\
+             conformance + sce-rust-tests goldens regen. 264 → 265.",
         );
     }
 

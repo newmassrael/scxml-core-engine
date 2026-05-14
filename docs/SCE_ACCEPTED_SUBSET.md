@@ -676,6 +676,7 @@ or SCE-internal issues.
 | `mesh/codegen-template-render` | Mesh Codegen | Mesh template rendering failure |
 | `mesh/io` | Mesh Io | Generic mesh codegen filesystem failure |
 | `forge/source-hash-mismatch` | Cli | `sce-codegen verify` detected drift between an emitted file's embedded §6.2.6 header hash and the recomputed value over current source + template state; not preventable by authoring SCXML (regenerate via `sce-codegen` to repair) |
+| `traceability/scxml-line-range-missing` | Generate | watching-zenoh RFC §5.O Atomic 0 IR provenance pre-emit guard: a node eligible for SCE-MAP marker emission reaches the codegen pre-emit walker with `source_location: None`. Codegen-internal invariant — authors never see this signal in practice; the fix lives in the parser site that produced the IR node. |
 
 ---
 

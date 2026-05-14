@@ -210,6 +210,29 @@ pub fn expand_preprocessors(
     Ok((expanded, final_map, deps))
 }
 
+/// Watching-zenoh RFC §5.O Atomic 0: capture the post-preprocessor
+/// source position of an XML element for the SCE-MAP traceability
+/// chain. Templates lower the returned [`SourceLocation`] to a
+/// per-backend marker (`#line` / `//line` / `// SCE-MAP:` / `#[doc]`)
+/// above the function header the IR node lowers to.
+///
+/// `source_name` is the diagnostic label (file basename or stem) that
+/// the outer parser threads down — matches `location.file` on every
+/// other diagnostic emitted from the same site so a SCE-MAP marker
+/// points at the same authoring file an error would name.
+#[inline]
+fn source_location_of(
+    node: &roxmltree::Node,
+    source_name: &str,
+) -> Option<crate::forge::error::SourceLocation> {
+    let pos = node.document().text_pos_at(node.range().start);
+    Some(crate::forge::error::SourceLocation {
+        file: source_name.to_string(),
+        line: Some(pos.row),
+        col: Some(pos.col),
+    })
+}
+
 impl SCXMLParser {
     pub fn new() -> Self {
         Self {
@@ -446,6 +469,21 @@ impl SCXMLParser {
                 },
             };
 
+        // Watching-zenoh RFC §5.O Atomic 0: anchor the model at the
+        // `<scxml>` root element's post-preprocessor position. Codegen
+        // templates lower this to the top-level SCE-MAP marker above
+        // the generated state machine. XInclude / sce:template
+        // expansion already remapped row/col onto the included source
+        // via `expand_preprocessors` → `remap_post_expansion`, so the
+        // recorded line points at the source the author actually
+        // wrote, not the post-expansion outer document.
+        let root_pos = root.document().text_pos_at(root.range().start);
+        let root_source_location = Some(crate::forge::error::SourceLocation {
+            file: diag_label.to_string(),
+            line: Some(root_pos.row),
+            col: Some(root_pos.col),
+        });
+
         let mut model = SCXMLModel {
             name: name.to_string(),
             scxml_name: root.attribute("name").unwrap_or("").to_string(),
@@ -453,6 +491,7 @@ impl SCXMLParser {
             binding: root.attribute("binding").unwrap_or("early").to_string(),
             datamodel_type: root.attribute("datamodel").unwrap_or("ecmascript").to_string(),
             event_queue_capacity,
+            source_location: root_source_location,
             ..Default::default()
         };
 
@@ -922,6 +961,7 @@ impl SCXMLParser {
                 initial: child.attribute("initial").unwrap_or("").to_string(),
                 parent: parent_id.map(|s| s.to_string()),
                 document_order: self.document_order_counter,
+                source_location: source_location_of(&child, source_name),
                 ..Default::default()
             };
             self.document_order_counter += 1;
@@ -1038,6 +1078,7 @@ impl SCXMLParser {
                 is_final: true,
                 parent: parent_id.map(|s| s.to_string()),
                 document_order: self.document_order_counter,
+                source_location: source_location_of(&child, source_name),
                 ..Default::default()
             };
             self.document_order_counter += 1;
@@ -1075,6 +1116,7 @@ impl SCXMLParser {
                 is_parallel: true,
                 parent: parent_id.map(|s| s.to_string()),
                 document_order: self.document_order_counter,
+                source_location: source_location_of(&child, source_name),
                 ..Default::default()
             };
             self.document_order_counter += 1;
@@ -1209,6 +1251,7 @@ impl SCXMLParser {
             cond_kt,
             is_kt_condition,
             transition_type: elem.attribute("type").unwrap_or("external").to_string(),
+            source_location: source_location_of(elem, source_name),
             ..Default::default()
         };
 
@@ -1478,6 +1521,7 @@ impl SCXMLParser {
         let tag = local_name(child);
         let mut action = Action {
             action_type: tag.clone(),
+            source_location: source_location_of(child, source_name),
             ..Default::default()
         };
         match tag.as_str() {

@@ -33,6 +33,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::forge::error::SourceLocation;
 use crate::forge::model::InlineKind;
 
 /// W3C SCXML 3.3: Transition element
@@ -68,6 +69,15 @@ pub struct Transition {
     pub is_true_internal: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub internal_source: Option<String>,
+    /// Watching-zenoh RFC §5.O Atomic 0: post-preprocessor source
+    /// position of the `<transition>` element, populated by
+    /// [`crate::parser::SCXMLParser::parse_transition`] from
+    /// `roxmltree::Document::text_pos_at`. Templates emit
+    /// per-backend SCE-MAP markers above the transition's emitted
+    /// handler function (Rust `// SCE-MAP:` + `#[doc]`, C/C++
+    /// `#line`, Go `//line`, Kotlin `// SCE-MAP:`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
 }
 
 /// W3C SCXML executable content action
@@ -163,6 +173,16 @@ pub struct Action {
     // conventions (mesh::pattern), RPC reply pairing is inferred from
     // topology structure (mesh::topology::detect_rpc_pairs), and QoS is
     // a transport binding concern (deploy.yaml).
+    /// Watching-zenoh RFC §5.O Atomic 0: post-preprocessor source
+    /// position of the executable-content element this action
+    /// represents (`<raise>` / `<send>` / `<assign>` / `<log>` /
+    /// `<script>` / `<if>` / `<foreach>` / `<cancel>`). Populated by
+    /// [`crate::parser::SCXMLParser::parse_executable_content_single`].
+    /// Used by §5.O Atomic 1 per-action attribution (Atomic 0 only
+    /// emits function-level markers, so this field is read by the
+    /// pre-emit `validate_emission_provenance` walker today).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
 }
 
 /// W3C SCXML if/elseif branch
@@ -668,6 +688,14 @@ pub struct State {
     pub initial_history_id: String,
     pub initial_history_default_target: String,
     pub initial_history_default_actions: Vec<Action>,
+    /// Watching-zenoh RFC §5.O Atomic 0: post-preprocessor source
+    /// position of the `<state>` / `<final>` / `<parallel>` element.
+    /// Populated by [`crate::parser::SCXMLParser::parse_states`].
+    /// Drives the per-state SCE-MAP marker that codegen templates
+    /// emit above the on-entry / on-exit / transition-handler
+    /// functions this state lowers to.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
 }
 
 /// W3C SCXML: Complete state machine model
@@ -1000,6 +1028,17 @@ pub struct SCXMLModel {
     /// `false` when the machine declares no `liveliness:` section.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub machine_liveliness_opt_in: bool,
+
+    /// Watching-zenoh RFC §5.O Atomic 0: post-preprocessor source
+    /// position of the `<scxml>` root element. Populated by
+    /// [`crate::parser::SCXMLParser::parse_impl`]. Drives the
+    /// per-backend SCE-MAP marker above the generated state machine's
+    /// top-level definition (`impl <SmName>` / `class <SmName>` /
+    /// `struct <SmName>` / `fn main` for procedure-test wrappers).
+    /// XInclude / sce:template expanded content gets the position in
+    /// the *included* source via the preprocessor coordinate map.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
 }
 
 /// SCE_MESH.md §14 rule 12 — partition's role for a specific

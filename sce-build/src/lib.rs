@@ -106,6 +106,16 @@ fn compile_model(scxml_path: &str) -> Result<SCXMLModel, CompileError> {
     let mut model = parser.parse_file(scxml_path)?;
     analyzer::analyze(&mut model, scxml_path);
     guard_static_generatable(&model, scxml_path)?;
+    // Watching-zenoh RFC §5.O Atomic 0a — IR provenance pre-emit
+    // guard. Runs *after* the analyzer (so synthesised IR additions
+    // are visible) and *before* `resolve_source_path` populates the
+    // template-visible source path (so a `None` cannot leak through
+    // to the marker-emitting templates). The walker fires
+    // `traceability/scxml-line-range-missing` when a node eligible
+    // for SCE-MAP marker emission carries `source_location: None`
+    // — codegen-internal invariant, no author repair. See
+    // `forge::provenance` for the eligibility scope.
+    forge::provenance::validate_emission_provenance(&model, scxml_path)?;
     resolve_source_path(&mut model, scxml_path);
     Ok(model)
 }
@@ -120,6 +130,11 @@ fn compile_model_from_string(
     let mut model = parser.parse_string(scxml_content, scxml_name)?;
     analyzer::analyze(&mut model, "");
     guard_static_generatable(&model, scxml_name)?;
+    // Watching-zenoh RFC §5.O Atomic 0a — IR provenance pre-emit
+    // guard. WASM / parse_string callers share the same invariant
+    // as the file-based entry point above; both routes converge on
+    // `compile_model*` so the gate has a single placement.
+    forge::provenance::validate_emission_provenance(&model, scxml_name)?;
     Ok(model)
 }
 

@@ -285,7 +285,8 @@
         "mesh/codegen-event-name-collision",
         "mesh/codegen-pool-with-rpc-client-unsupported",
         "mesh/io",
-        "forge/source-hash-mismatch"
+        "forge/source-hash-mismatch",
+        "traceability/scxml-line-range-missing"
       ]
     },
     "stage": {
