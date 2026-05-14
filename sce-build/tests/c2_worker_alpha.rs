@@ -421,6 +421,7 @@ fn worker_model_field_shape_is_stable() {
         link_rx,
         inbox: InboxConfig { depth, ordering },
         outbox,
+        source_location: _,
     } = w;
     assert_eq!(name, "rx_loop");
     assert_eq!(link_rx, "udp_scout");

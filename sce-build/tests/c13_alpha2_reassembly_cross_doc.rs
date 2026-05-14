@@ -85,6 +85,7 @@ fn link_model(name: &str, rx_pool: Option<&str>) -> LinkModel {
         tx_pool: None,
         stage_pool: None,
         accept_stage_copy_rate: false,
+        source_location: None,
     }
 }
 
@@ -100,6 +101,7 @@ fn default_pool(name: &str, slot_count: u32, slot_size: u32) -> BufferPoolModel 
         dma_channel: None,
         cache_policy: CachePolicy::None,
         variant: BufferPoolVariant::Default,
+        source_location: None,
     }
 }
 
@@ -122,6 +124,7 @@ fn reassembly_pool(
             reassembly_timeout_ms: 100,
             per_peer_quota: 4,
         }),
+        source_location: None,
     }
 }
 

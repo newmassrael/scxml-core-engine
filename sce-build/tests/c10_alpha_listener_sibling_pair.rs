@@ -310,6 +310,7 @@ fn validate_reassembly_with_empty_listener_links_still_rejects_untrusted() {
         tx_pool: None,
         stage_pool: None,
         accept_stage_copy_rate: false,
+        source_location: None,
     };
     let pool = BufferPoolModel {
         name: "rx_reassembly_pool".to_string(),
@@ -324,6 +325,7 @@ fn validate_reassembly_with_empty_listener_links_still_rejects_untrusted() {
             reassembly_timeout_ms: 100,
             per_peer_quota: 4,
         }),
+        source_location: None,
     };
     let mut forge_links: HashMap<String, &LinkModel> = HashMap::new();
     forge_links.insert("udp_data".to_string(), &link);
