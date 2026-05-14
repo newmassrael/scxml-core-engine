@@ -550,6 +550,23 @@ enum Commands {
         /// validation + future-intent declaration.
         #[arg(long)]
         no_std: bool,
+        /// Override the directory used for the §6.2.6 `source-hash`
+        /// computation. Defaults to the SCXML file's parent
+        /// directory (the typical `resources/<num>/` test layout
+        /// where every input the codegen consumed lives next to the
+        /// driver file).
+        ///
+        /// Authoring workflows that stage the input file into a
+        /// temporary directory before generation (e.g.
+        /// `scripts/regen_donedata_local_invoke.sh`, which copies a
+        /// tracked fixture into `mktemp -d` so synth-invoke children
+        /// don't pollute the source tree) must point this back at
+        /// the canonical input root, otherwise the embedded
+        /// `source-hash` reflects the transient staging directory
+        /// and `sce-codegen verify` cannot reproduce it from the
+        /// repo.
+        #[arg(long)]
+        input_root: Option<String>,
     },
     /// Multi-doc generate with cross-doc registry — wires
     /// `validate_on_sample_link_references` into production
@@ -796,6 +813,7 @@ fn main() {
             partition,
             const_fold_budget,
             no_std,
+            input_root,
         } => cmd_generate(
             &scxml,
             &language,
@@ -810,6 +828,7 @@ fn main() {
             partition.as_deref(),
             const_fold_budget,
             no_std,
+            input_root.as_deref(),
             error_format,
         ),
         Commands::Orchestrate {
@@ -1030,6 +1049,7 @@ fn cmd_generate(
     for_partition: Option<&str>,
     const_fold_budget: Option<u64>,
     no_std: bool,
+    input_root_override: Option<&str>,
     error_format: ErrorFormat,
 ) {
     let lang: Language = language.parse().unwrap_or_else(|_| {
@@ -1056,13 +1076,20 @@ fn cmd_generate(
     // Spec §6.2.6 drift context — input root defaults to the SCXML
     // file's parent so the hash covers every `*.scxml` in that
     // directory (the common-case test layout under
-    // `resources/<num>/`). Pre-computed once and threaded into every
-    // file write below so a single invocation's generated tree
-    // shares one source-hash / template-hash pair.
-    let drift_input_root: std::path::PathBuf = Path::new(scxml_path)
-        .parent()
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    // `resources/<num>/`). The `--input-root` flag overrides the
+    // default for staged-input workflows (e.g. the donedata regen
+    // script copies its tracked fixture into a tmp dir but needs
+    // the embedded source-hash to reproduce against the tracked
+    // location, not the transient stage). Pre-computed once and
+    // threaded into every file write below so a single invocation's
+    // generated tree shares one source-hash / template-hash pair.
+    let drift_input_root: std::path::PathBuf = match input_root_override {
+        Some(s) => std::path::PathBuf::from(s),
+        None => Path::new(scxml_path)
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| std::path::PathBuf::from(".")),
+    };
     let drift_ctx = DriftContext::compute(&drift_input_root, deploy_path.map(Path::new));
 
     match sce_build::classify_document(&scxml_content) {

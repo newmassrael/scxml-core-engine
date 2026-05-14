@@ -50,17 +50,27 @@ cp "$FIXTURE" "$TMP/$STEM.scxml"
 # Step 3: parent generate. Emits parent _sm.rs into $TMP AND writes the
 # split-out synth-invoke children (Mesh §9.6.6 rule 1) into $TMP next
 # to the staged parent.
-"$CODEGEN" generate "$TMP/$STEM.scxml" -l rust -o "$TMP/"
+#
+# `--input-root` overrides the default §6.2.6 source-hash root (the
+# SCXML file's parent) so the embedded hash reflects the tracked
+# fixture location instead of the transient $TMP path — a stranger
+# running `sce-codegen verify sce-rust-tests/src/generated/donedata_local_invoke
+# --input-root sce-rust-tests/fixtures` then reproduces the same hash.
+INPUT_ROOT="sce-rust-tests/fixtures"
+"$CODEGEN" generate "$TMP/$STEM.scxml" -l rust -o "$TMP/" \
+    --input-root "$INPUT_ROOT"
 
 # Step 4: per-child generate. Each synth-invoke child becomes its own
 # state machine via --as-child --parent-stem so the emitted module names
 # (and the package layout for Kotlin/Go consumers) match the parent's
-# crate context.
+# crate context. The same `--input-root` override keeps every emitted
+# header pointing at the tracked fixture directory.
 for child in "$TMP"/${STEM}__sce_synth_invoke__*.scxml; do
     [[ -f "$child" ]] || continue
     "$CODEGEN" generate "$child" \
         --as-child --parent-stem "$STEM" \
-        -l rust -o "$TMP/"
+        -l rust -o "$TMP/" \
+        --input-root "$INPUT_ROOT"
 done
 
 # Step 5: clear stale _sm.rs files in the tracked generated tree so a
@@ -75,6 +85,17 @@ find "$GENERATED_DIR" -maxdepth 1 -name '*_sm.rs' -delete
 # script's contract is that fixtures/ stays a one-file hand-authored
 # surface (parent only) and generated/ stays the codegen output tree
 # (Rust files only).
+#
+# The Rust backend's template embeds the absolute path of the input
+# SCXML in a `// From:` comment block. Because we staged into $TMP,
+# that path would otherwise be nondeterministic (a different
+# `/tmp/tmp.XXXXXX` per regen). Rewrite the comment in place so the
+# tracked output points at the canonical input location, mirroring
+# the `--input-root` override used at hash time.
+for src in "$TMP"/*.rs; do
+    [[ -f "$src" ]] || continue
+    sed -i "s|// From: ${TMP}/|// From: ${INPUT_ROOT}/|g" "$src"
+done
 cp "$TMP"/*.rs "$GENERATED_DIR/"
 
 # Step 7: regenerate mod.rs. sce-codegen does not emit it for the

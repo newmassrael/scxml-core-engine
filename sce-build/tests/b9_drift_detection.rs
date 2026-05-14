@@ -284,6 +284,120 @@ fn verify_passes_when_input_set_is_empty_scxml_directory() {
 }
 
 #[test]
+fn input_root_override_pins_hash_to_canonical_location() {
+    // Round B donedata symmetry follow-up: when an authoring script
+    // stages its tracked input into a tmp dir (so split-out children
+    // don't pollute the source tree), the `--input-root` override
+    // lets the cmd_generate hash root point back at the canonical
+    // location. The embedded source-hash must therefore match
+    // `compute_source_hash(canonical)` — not the staging dir — so a
+    // stranger running `sce-codegen verify <out> --input-root <canonical>`
+    // reproduces the hash directly from the repo.
+    let root = TempDir::new().unwrap();
+    let canonical = root.path().join("canonical");
+    let stage = root.path().join("stage");
+    let out_dir = root.path().join("out");
+    fs::create_dir_all(&canonical).unwrap();
+    fs::create_dir_all(&stage).unwrap();
+    fs::create_dir_all(&out_dir).unwrap();
+
+    // A minimal SCXML that survives the parser + Rust codegen path.
+    let scxml = "<?xml version='1.0'?>\n\
+                 <scxml xmlns='http://www.w3.org/2005/07/scxml' \
+                 initial='s0' version='1.0' datamodel='ecmascript'>\
+                 <state id='s0'/></scxml>";
+    fs::write(canonical.join("foo.scxml"), scxml).unwrap();
+    fs::write(stage.join("foo.scxml"), scxml).unwrap();
+    // Add a second SCXML to canonical only so the two dirs produce
+    // different recursive hashes — proves `--input-root` actually
+    // routes through compute_source_hash and is not silently
+    // discarded.
+    fs::write(
+        canonical.join("bar.scxml"),
+        "<?xml version='1.0'?>\n\
+         <scxml xmlns='http://www.w3.org/2005/07/scxml' \
+         initial='b0' version='1.0' datamodel='ecmascript'>\
+         <state id='b0'/></scxml>",
+    )
+    .unwrap();
+
+    let bin = env_bin();
+    let result = Command::new(bin)
+        .arg("generate")
+        .arg(stage.join("foo.scxml").to_str().unwrap())
+        .arg("--input-root")
+        .arg(canonical.to_str().unwrap())
+        .arg("-l")
+        .arg("rust")
+        .arg("-o")
+        .arg(out_dir.to_str().unwrap())
+        .output()
+        .expect("spawn sce-codegen generate");
+    assert!(
+        result.status.success(),
+        "generate failed. stdout: {} stderr: {}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr),
+    );
+
+    let canonical_hashes = DriftHashes {
+        source_hash: compute_source_hash(&canonical, None).unwrap(),
+        template_hash: [0u8; 32], // unused below; we only compare source axis
+    };
+    let stage_hashes = DriftHashes {
+        source_hash: compute_source_hash(&stage, None).unwrap(),
+        template_hash: [0u8; 32],
+    };
+    assert_ne!(
+        canonical_hashes.source_hex(),
+        stage_hashes.source_hex(),
+        "test setup: canonical and stage dirs must produce different hashes",
+    );
+
+    let foo_sm = out_dir.join("foo_sm.rs");
+    assert!(foo_sm.exists(), "generate must emit foo_sm.rs at {}", foo_sm.display());
+    let content = fs::read_to_string(&foo_sm).unwrap();
+    let expected_line = format!("source-hash: {}", canonical_hashes.source_hex());
+    assert!(
+        content.contains(&expected_line),
+        "generated file must embed canonical source-hash. expected line: `{expected_line}`\nfirst 5 lines of {}:\n{}",
+        foo_sm.display(),
+        content.lines().take(5).collect::<Vec<_>>().join("\n"),
+    );
+
+    // Verify against canonical should pass.
+    let result = Command::new(bin)
+        .arg("verify")
+        .arg(out_dir.to_str().unwrap())
+        .arg("--input-root")
+        .arg(canonical.to_str().unwrap())
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "verify against canonical must pass. stderr: {}",
+        String::from_utf8_lossy(&result.stderr),
+    );
+
+    // Verify against stage should fail — different file set than
+    // the embedded hash was computed against.
+    let result = Command::new(bin)
+        .arg("verify")
+        .arg(out_dir.to_str().unwrap())
+        .arg("--input-root")
+        .arg(stage.to_str().unwrap())
+        .output()
+        .unwrap();
+    assert_ne!(
+        result.status.code(),
+        Some(0),
+        "verify against stage must fail (different file set than canonical). stderr: {}",
+        String::from_utf8_lossy(&result.stderr),
+    );
+}
+
+#[test]
 fn fixture_helper_invariants() {
     // Sanity: fixture setup itself produces parseable hash output, so
     // a test failure later isolates the actual verify logic rather
