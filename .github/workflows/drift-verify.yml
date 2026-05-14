@@ -1,0 +1,79 @@
+name: Drift Verify (B9 §6.2.6)
+
+# CI gate for spec §6.2.6 generated-source drift detection. Re-runs the
+# drift integration suites on every push/PR so a template-only edit
+# that changes a generated file but leaves the tracked output unchanged
+# (or vice versa) fails before merge.
+#
+# Trigger surface: anything that contributes to the source-hash /
+# template-hash inputs (sce-build sources, templates, tracked generated
+# trees, lockfile) or the workflow itself. Sub-2-minute runtime
+# expected — only the b9_drift_detection + s5_o_atomic_1_sourcemap
+# integration suites run, not the full workspace test sweep
+# (covered by w3c-tests.yml).
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'sce-build/**'
+      - 'tools/codegen/templates/**'
+      - 'sce-rust-tests/src/generated/**'
+      - 'sce-rust-tests/fixtures/**'
+      - 'resources/**'
+      - 'Cargo.lock'
+      - 'Cargo.toml'
+      - '.github/workflows/drift-verify.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'sce-build/**'
+      - 'tools/codegen/templates/**'
+      - 'sce-rust-tests/src/generated/**'
+      - 'sce-rust-tests/fixtures/**'
+      - 'resources/**'
+      - 'Cargo.lock'
+      - 'Cargo.toml'
+      - '.github/workflows/drift-verify.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  drift-verify:
+    name: B9 §6.2.6 drift detection suite
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache Cargo
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-drift-verify-${{ hashFiles('Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-drift-verify-
+
+    # B9 integration suite — synthetic input/template fixtures cover the
+    # verify subcommand's clean-pass / drifted-source / drifted-template /
+    # cwd-independence / empty-input invariants. A regression in
+    # apply_drift_headers_to_output or compute_source_hash fails this
+    # step before any unit-level masking can hide it.
+    - name: Verify B9 drift detection integration suite
+      run: cargo test -p sce-build --features cli --test b9_drift_detection -- --test-threads=1
+
+    # §5.O Atomic 1 sidecar — sourcemap JSON emission + addr2sce
+    # subcommand round-trip. Catches drift in the sourcemap surface
+    # alongside the header hashes (same SCE traceability boundary).
+    - name: Verify §5.O sourcemap integration suite
+      run: cargo test -p sce-build --features cli --test s5_o_atomic_1_sourcemap
