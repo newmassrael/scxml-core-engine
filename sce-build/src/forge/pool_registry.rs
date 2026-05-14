@@ -203,6 +203,7 @@ mod tests {
             dma_channel: None,
             cache_policy: CachePolicy::None,
             variant: BufferPoolVariant::Default,
+            source_location: None,
         };
         let doc = ForgeDocument::BufferPool(pool);
         let mut reg = ForgePoolRegistry::new();

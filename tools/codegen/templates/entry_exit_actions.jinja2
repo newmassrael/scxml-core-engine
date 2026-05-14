@@ -46,7 +46,14 @@
       Impact: W3C SCXML 5.5 _event.data now correctly populated for all donedata content/param tests
       Verification: Test 527 (donedata content expr) passes with _event.data == 'foo' guard evaluation
 #}
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 
+{# Watching-zenoh RFC §5.O Atomic 0c — function-scope SCE-MAP marker
+   above `executeEntryActions`. `#line N "file"` inside a function
+   body remaps subsequent line numbers for the function only; the
+   next per-function marker (executeExitActions below) resets the
+   directive's effect for the rest of the translation unit. #}
+    {{ sce_map.source_marker(model.source_location, "cpp") }}
     template <typename Engine>
 {% if not model.execute_entry_actions_needs_this %}    [[gnu::hot]] static void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine) {
 {% else %}    [[gnu::hot]] void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine) {
@@ -563,6 +570,7 @@
 {% endif %}
     }
 
+    {{ sce_map.source_marker(model.source_location, "cpp") }}
     template <typename Engine>
 {# W3C SCXML 3.11: history recording mutates the non-static history_{id}   #}
 {# members declared in the Policy class, so executeExitActions must be an  #}

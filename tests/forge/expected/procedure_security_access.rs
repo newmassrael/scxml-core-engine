@@ -1,3 +1,6 @@
+#![doc = "SCE-MAP: procedure_security_access:1"]
+// SCE-MAP: procedure_security_access:1
+
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure")
 // Runtime: sce_forge_runtime
 // Do not edit — regenerate from the source SCXML file.

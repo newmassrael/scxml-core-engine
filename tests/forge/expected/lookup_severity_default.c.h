@@ -1,3 +1,5 @@
+// SCE-MAP: lookup_severity_default:9
+
 /* SCE Forge: Auto-generated from Extended SCXML (sce:kind="lookup") */
 /* Runtime: sce_forge_runtime */
 /* Do not edit — regenerate from the source SCXML file. */

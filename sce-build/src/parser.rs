@@ -6262,6 +6262,11 @@ mod tests {
             tx_pool: None,
             stage_pool: stage_pool.map(String::from),
             accept_stage_copy_rate: false,
+            // Synthetic test helper — not built from a real
+            // `<scxml>` element, so §5.O Atomic 0c populates the
+            // post-emit walker with the same fixture stub the rest
+            // of these tests use.
+            source_location: None,
         })
     }
 

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: b1b0e61d23c97e64222bd3377de4701f221a70716e6715ed6db95b7e9bdfca4b
+// template-hash: 001c18dbd894d9aea04585450d4d20eb017bbd93c8a0ad242a38dda5c53478ac
 // generated-at: 0
 
 
@@ -307,6 +307,8 @@ impl StatePolicy for Test229SceSynthInvokeInvoke0Policy {
 
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
+    #[doc = "SCE-MAP: test229__sce_synth_invoke__invoke_0.scxml:3"]
+// SCE-MAP: test229__sce_synth_invoke__invoke_0.scxml:3
     fn execute_entry_actions(&mut self, state: Self::State, engine: &mut sce_rust_runtime::Engine<Self>) {
         match state {
             Test229SceSynthInvokeInvoke0State::Sub0 => {
@@ -365,6 +367,8 @@ impl StatePolicy for Test229SceSynthInvokeInvoke0Policy {
     }
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
+    #[doc = "SCE-MAP: test229__sce_synth_invoke__invoke_0.scxml:3"]
+// SCE-MAP: test229__sce_synth_invoke__invoke_0.scxml:3
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -376,6 +380,8 @@ impl StatePolicy for Test229SceSynthInvokeInvoke0Policy {
 
 
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
+    #[doc = "SCE-MAP: test229__sce_synth_invoke__invoke_0.scxml:3"]
+// SCE-MAP: test229__sce_synth_invoke__invoke_0.scxml:3
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -392,6 +398,8 @@ impl StatePolicy for Test229SceSynthInvokeInvoke0Policy {
     }
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
+    #[doc = "SCE-MAP: test229__sce_synth_invoke__invoke_0.scxml:3"]
+// SCE-MAP: test229__sce_synth_invoke__invoke_0.scxml:3
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         if !self.has_transition_actions {
             return;

@@ -1,3 +1,5 @@
+// SCE-MAP: codec_tail:3
+
 /* SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec") */
 /* Runtime: none */
 /* Do not edit — regenerate from the source SCXML file. */

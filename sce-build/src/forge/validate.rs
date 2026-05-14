@@ -169,6 +169,7 @@ mod tests {
                     line: None,
                 },
             ],
+            source_location: None,
         }
     }
 

@@ -451,6 +451,13 @@ pub fn compile_forge_from_string(
             None,
         ))?;
 
+    // Watching-zenoh RFC §5.O Atomic 0c — forge IR provenance pre-emit
+    // guard. Mirrors the SCXML-side `validate_emission_provenance`
+    // placement (compile_model* in this same file). The walker fires
+    // `traceability/scxml-line-range-missing` when a per-kind body
+    // emission would otherwise lose its SCE-MAP marker.
+    forge::provenance::validate_forge_emission_provenance(&doc, label.diagnostic_label)?;
+
     let template_base = find_template_base();
 
     let output = match language {
@@ -539,6 +546,11 @@ pub fn compile_forge_with_deploy(
         ))?;
     let extern_decls = parsed.extern_declarations.clone();
     let doc = parsed.document;
+
+    // Watching-zenoh RFC §5.O Atomic 0c — forge IR provenance pre-emit
+    // guard. Runs before deploy-aware validators so the wire payload
+    // anchors at the same `location.file` an η rejection would.
+    forge::provenance::validate_forge_emission_provenance(&doc, label.diagnostic_label)?;
 
     // η deploy-aware validation. Resolved target_os is the
     // intersection of deploy + target_machine + machine.platform —
@@ -1378,6 +1390,16 @@ pub fn compile_forge_with_imports(
             None,
             None,
         ))?;
+
+    // Watching-zenoh RFC §5.O Atomic 0c — forge IR provenance pre-emit
+    // guard. Runs before import resolution + cross-doc validators so a
+    // missing-provenance regression in any parser site surfaces with
+    // its own diagnostic instead of cascading into a downstream
+    // import / cross-resolution error.
+    forge::provenance::validate_forge_emission_provenance(
+        &parsed.document,
+        label.diagnostic_label,
+    )?;
 
     let template_base = find_template_base();
     let mut import_ctx = forge::generator::resolve_imports(&parsed.imports, &language, options)

@@ -1,3 +1,5 @@
+// SCE-MAP: procedure_diamond:2
+
 /* SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure") */
 /* Runtime: none */
 /* Do not edit — regenerate from the source SCXML file. */

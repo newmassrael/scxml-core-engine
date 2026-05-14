@@ -1,3 +1,6 @@
+#![doc = "SCE-MAP: algorithm_crc16:10"]
+// SCE-MAP: algorithm_crc16:10
+
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.

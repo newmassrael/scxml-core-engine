@@ -1,3 +1,6 @@
+#![doc = "SCE-MAP: codec_present_if_length_ref:16"]
+// SCE-MAP: codec_present_if_length_ref:16
+
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.

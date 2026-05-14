@@ -345,6 +345,7 @@ mod tests {
             tx_pool: None,
             stage_pool: Some("scout_stage_pool".to_string()),
             accept_stage_copy_rate: false,
+            source_location: None,
         });
         reg.record_document(&doc).unwrap();
         assert_eq!(reg.lookup("scout_link"), Some(ScxmlDocKind::Link));
@@ -371,6 +372,7 @@ mod tests {
             tx_pool: None,
             stage_pool: None,
             accept_stage_copy_rate: false,
+            source_location: None,
         });
         reg.record_document(&doc).unwrap();
         assert_eq!(reg.lookup("borrow_only_link"), Some(ScxmlDocKind::Link));
@@ -389,6 +391,7 @@ mod tests {
             link_rx: "udp_scout".to_string(),
             inbox: InboxConfig { depth: 16, ordering: InboxOrdering::AcqRel },
             outbox: None,
+            source_location: None,
         });
         reg.record_document(&doc).unwrap();
         assert_eq!(reg.lookup("rx_loop"), Some(ScxmlDocKind::Worker));

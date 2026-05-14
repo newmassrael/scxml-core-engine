@@ -1,3 +1,6 @@
+#![doc = "SCE-MAP: codec_variant_peek_basic:29"]
+// SCE-MAP: codec_variant_peek_basic:29
+
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.

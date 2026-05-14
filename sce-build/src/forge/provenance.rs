@@ -40,7 +40,8 @@
 // every IR node"). The walker covers only the four types above for
 // Atomic 0a; Atomic 0b extends to the per-action attribution emit.
 
-use crate::forge::error::{ForgeError, Located, ValidationError};
+use crate::forge::error::{ForgeError, Located, SourceLocation, ValidationError};
+use crate::forge::model::ForgeDocument;
 use crate::model::{Action, SCXMLModel, State, Transition};
 
 /// Walk every emission-eligible node in `model` and assert that
@@ -218,6 +219,69 @@ fn action_pinned_id(state_id: &str, action: &Action) -> String {
     }
 }
 
+/// Watching-zenoh RFC §5.O Atomic 0c — forge IR provenance pre-emit
+/// guard. Counterpart to [`validate_emission_provenance`] for the
+/// non-statechart kinds: each `ForgeDocument` variant lowers to a
+/// per-kind body function that carries an SCE-MAP marker driven by
+/// the model's `source_location`. A `None` here would silently strip
+/// the marker, regressing spec lines 3280-3284 + 3286-3290 — the
+/// same silently-broken-hook regression the SCXML-side walker
+/// prevents.
+///
+/// Exhaustive match on the `ForgeDocument` enum so the compiler
+/// rejects any future `ForgeKind` addition that lands its model
+/// without the provenance check. The `parsed_forge_walker_is_exhaustive`
+/// unit test below pins this contract from the test side too.
+///
+/// `scxml_path` is the diagnostic label threaded by callers
+/// (`compile_forge_from_string`, `compile_forge_with_deploy`,
+/// `compile_forge_with_imports`); it matches `location.file` on the
+/// wire so the diagnostic and the SCE-MAP marker that would have
+/// been emitted point at the same authoring file.
+pub fn validate_forge_emission_provenance(
+    doc: &ForgeDocument,
+    scxml_path: &str,
+) -> Result<(), Located<ForgeError>> {
+    let (kind_label, name, location) = forge_doc_provenance(doc);
+    if location.is_none() {
+        return Err(emit(scxml_path, kind_label, name));
+    }
+    Ok(())
+}
+
+/// Read the populated `source_location` from a [`ForgeDocument`]
+/// variant, for codegen-side consumers that need the IR-attached
+/// per-kind position (e.g. the Jinja2 `source_location` global
+/// driving SCE-MAP markers in [`crate::forge::generator::
+/// inject_source_location_global`]).
+pub fn forge_doc_source_location(doc: &ForgeDocument) -> Option<&SourceLocation> {
+    forge_doc_provenance(doc).2.as_ref()
+}
+
+/// Map a [`ForgeDocument`] variant to (XML element label, kind name,
+/// `source_location` reference). Centralised so adding a new kind
+/// surfaces in one place and the exhaustive-match invariant is
+/// preserved.
+fn forge_doc_provenance(doc: &ForgeDocument) -> (&'static str, &str, &Option<SourceLocation>) {
+    match doc {
+        ForgeDocument::Transform(m) => ("<scxml sce:kind=\"transform\">", &m.name, &m.source_location),
+        ForgeDocument::Lookup(m) => ("<scxml sce:kind=\"lookup\">", &m.name, &m.source_location),
+        ForgeDocument::Condition(m) => ("<scxml sce:kind=\"condition\">", &m.name, &m.source_location),
+        ForgeDocument::Codec(m) => ("<scxml sce:kind=\"codec\">", &m.name, &m.source_location),
+        ForgeDocument::Validator(m) => ("<scxml sce:kind=\"validator\">", &m.name, &m.source_location),
+        ForgeDocument::Procedure(m) => ("<scxml sce:kind=\"procedure\">", &m.name, &m.source_location),
+        ForgeDocument::Filter(m) => ("<scxml sce:kind=\"filter\">", &m.name, &m.source_location),
+        ForgeDocument::Interpolation(m) => ("<scxml sce:kind=\"interpolation\">", &m.name, &m.source_location),
+        ForgeDocument::Timer(m) => ("<scxml sce:kind=\"timer\">", &m.name, &m.source_location),
+        ForgeDocument::Observer(m) => ("<scxml sce:kind=\"observer\">", &m.name, &m.source_location),
+        ForgeDocument::Algorithm(m) => ("<scxml sce:kind=\"algorithm\">", &m.name, &m.source_location),
+        ForgeDocument::Link(m) => ("<scxml sce:kind=\"link\">", &m.name, &m.source_location),
+        ForgeDocument::BufferPool(m) => ("<scxml sce:kind=\"buffer-pool\">", &m.name, &m.source_location),
+        ForgeDocument::Worker(m) => ("<scxml sce:kind=\"worker\">", &m.name, &m.source_location),
+        ForgeDocument::BoundedCollection(m) => ("<scxml sce:kind=\"bounded-collection\">", &m.name, &m.source_location),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -299,6 +363,219 @@ mod tests {
                 assert_eq!(node_id, "armed");
             }
             other => panic!("expected TraceabilityScxmlLineRangeMissing, got {other:?}"),
+        }
+    }
+
+    /// Real-parser round trip for the forge walker: every kind the
+    /// parser builds populates `source_location`, so the post-emit
+    /// walker accepts the output. Mirrors
+    /// `parser_output_is_provenance_complete` on the statechart side
+    /// and pins the populate sites in `forge::parser` against silent
+    /// regressions.
+    #[test]
+    fn forge_parser_output_is_provenance_complete() {
+        let codec = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext" version="1.0"
+       sce:kind="codec" name="ping_frame" datamodel="ecmascript">
+  <datamodel>
+    <data id="opcode" sce:type="uint8"/>
+    <data id="payload" sce:type="uint8"/>
+  </datamodel>
+</scxml>"#;
+        let label = crate::DocumentLabel::symmetric("ping_frame.scxml");
+        let doc = crate::forge::parser::parse_forge(codec, label)
+            .expect("parses cleanly")
+            .expect("non-statechart kind");
+        validate_forge_emission_provenance(&doc, "ping_frame.scxml")
+            .expect("real forge parser output must satisfy §5.O Atomic 0c provenance");
+    }
+
+    /// Walker contract: every `ForgeDocument` variant whose
+    /// `source_location` is `None` surfaces the diagnostic with the
+    /// matching `<scxml sce:kind="…">` label. Exhaustive smoke check
+    /// so a future forge-kind addition that lands its model + parser
+    /// site but forgets the `source_location` populate fires here
+    /// rather than slipping through unnoticed.
+    #[test]
+    fn parsed_forge_walker_is_exhaustive() {
+        use crate::forge::model::{
+            AlgorithmModel, AlgorithmSignature, BackpressurePolicy, BoundedCollectionModel,
+            BufferPoolModel, BufferPoolVariant, CachePolicy, CapacitySource, CodecModel,
+            CollectionOrdering, ConcurrencyMode, ConditionModel, Direction, Endian, FilterModel,
+            FilterType, ForgeDocument, ForgeField, InboxConfig, InboxOrdering,
+            InterpolationAxis, InterpolationMethod, InterpolationModel, LinkClass, LinkModel,
+            LookupModel, MissPolicy, ObserverModel, OutOfBounds, OverflowPolicy, ProcedureModel,
+            SceType, ThresholdMonitor, TimerModel, TransformModel, ValidatorModel, ValidatorRules,
+            WorkerModel,
+        };
+        let scalar = ForgeField {
+            id: "x".into(),
+            sce_type: SceType::Uint8,
+            direction: Direction::In,
+            expr: None,
+            unit: None,
+            max_size: None,
+        };
+        let cases: Vec<ForgeDocument> = vec![
+            ForgeDocument::Transform(TransformModel {
+                name: "t".into(),
+                inputs: vec![scalar.clone()],
+                outputs: vec![scalar.clone()],
+                source_location: None,
+            }),
+            ForgeDocument::Lookup(LookupModel {
+                name: "l".into(),
+                input: scalar.clone(),
+                output: scalar.clone(),
+                entries: Vec::new(),
+                miss_policy: MissPolicy::Error,
+                source_location: None,
+            }),
+            ForgeDocument::Condition(ConditionModel {
+                name: "c".into(),
+                inputs: vec![scalar.clone()],
+                expr: "x > 0".into(),
+                source_location: None,
+            }),
+            ForgeDocument::Codec(CodecModel {
+                name: "k".into(),
+                default_endian: Endian::Little,
+                input_length: None,
+                fields: Vec::new(),
+                variant: None,
+                requires_parent_flags: None,
+                test_vectors: Vec::new(),
+                source_location: None,
+            }),
+            ForgeDocument::Validator(ValidatorModel {
+                name: "v".into(),
+                inputs: vec![scalar.clone()],
+                rules: ValidatorRules {
+                    ranges: Vec::new(),
+                    rate_of_changes: Vec::new(),
+                    plausibility: None,
+                },
+                source_location: None,
+            }),
+            ForgeDocument::Procedure(ProcedureModel {
+                name: "p".into(),
+                inputs: Vec::new(),
+                internals: Vec::new(),
+                helpers: Vec::new(),
+                initial: "s0".into(),
+                states: Vec::new(),
+                source_location: None,
+            }),
+            ForgeDocument::Filter(FilterModel {
+                name: "f".into(),
+                input: scalar.clone(),
+                output: scalar.clone(),
+                filter_type: FilterType::MovingAverage,
+                window: Some(4),
+                alpha: None,
+                source_location: None,
+            }),
+            ForgeDocument::Interpolation(InterpolationModel {
+                name: "i".into(),
+                inputs: vec![scalar.clone()],
+                output: scalar.clone(),
+                method: InterpolationMethod::Linear,
+                out_of_bounds: OutOfBounds::Clamp,
+                axes: vec![InterpolationAxis { input_id: "x".into(), breakpoints: vec![0.0, 1.0] }],
+                values: vec![0.0, 1.0],
+                source_location: None,
+            }),
+            ForgeDocument::Timer(TimerModel {
+                name: "tm".into(),
+                period_us: 1_000_000,
+                reset_on_event: None,
+                cancel_on_state_exit: None,
+                fire_event: "tick".into(),
+                source_location: None,
+            }),
+            ForgeDocument::Observer(ObserverModel {
+                name: "ob".into(),
+                inputs: vec![scalar.clone()],
+                monitors: vec![ThresholdMonitor {
+                    id: "m".into(),
+                    enter_expr: "x > 1".into(),
+                    leave_expr: None,
+                    on_enter: "hi".into(),
+                    on_leave: None,
+                }],
+                event_domain: None,
+                source_location: None,
+            }),
+            ForgeDocument::Algorithm(AlgorithmModel {
+                name: "alg".into(),
+                signature: AlgorithmSignature {
+                    params: Vec::new(),
+                    return_type: Some(SceType::Uint8),
+                },
+                consts: Vec::new(),
+                body: Vec::new(),
+                test_vectors: Vec::new(),
+                source_location: None,
+            }),
+            ForgeDocument::Link(LinkModel {
+                name: "ln".into(),
+                class: LinkClass::Udp,
+                framer: "f".into(),
+                backpressure: BackpressurePolicy::Drop,
+                inbound: Vec::new(),
+                outbound: Vec::new(),
+                rx_pool: None,
+                tx_pool: None,
+                stage_pool: None,
+                accept_stage_copy_rate: false,
+                source_location: None,
+            }),
+            ForgeDocument::BufferPool(BufferPoolModel {
+                name: "bp".into(),
+                slot_count: 1,
+                slot_size: 16,
+                section: "sram1".into(),
+                alignment: 8,
+                dma_channel: None,
+                cache_policy: CachePolicy::None,
+                variant: BufferPoolVariant::Default,
+                source_location: None,
+            }),
+            ForgeDocument::Worker(WorkerModel {
+                name: "w".into(),
+                link_rx: "ln".into(),
+                inbox: InboxConfig { depth: 4, ordering: InboxOrdering::AcqRel },
+                outbox: None,
+                source_location: None,
+            }),
+            ForgeDocument::BoundedCollection(BoundedCollectionModel {
+                name: "bc".into(),
+                element_type: "k".into(),
+                capacity: CapacitySource::CompileConst { value: 8 },
+                index_by: None,
+                on_overflow: OverflowPolicy::DiagnosticEvent,
+                ordering: CollectionOrdering::Insertion,
+                concurrency: ConcurrencyMode::SingleWriter,
+                source_location: None,
+            }),
+        ];
+        for doc in &cases {
+            let err = validate_forge_emission_provenance(doc, "x.scxml").expect_err(
+                "every variant with source_location: None must fire the walker",
+            );
+            match &err.error {
+                ForgeError::Validation(ValidationError::TraceabilityScxmlLineRangeMissing {
+                    node_kind,
+                    ..
+                }) => {
+                    assert!(
+                        node_kind.starts_with("<scxml sce:kind=\""),
+                        "expected kind label, got {node_kind:?}"
+                    );
+                }
+                other => panic!("expected TraceabilityScxmlLineRangeMissing, got {other:?}"),
+            }
         }
     }
 }

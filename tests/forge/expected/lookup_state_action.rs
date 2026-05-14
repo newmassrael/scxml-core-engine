@@ -1,3 +1,6 @@
+#![doc = "SCE-MAP: lookup_state_action:5"]
+// SCE-MAP: lookup_state_action:5
+
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="lookup")
 // Runtime: sce_forge_runtime
 // Do not edit — regenerate from the source SCXML file.

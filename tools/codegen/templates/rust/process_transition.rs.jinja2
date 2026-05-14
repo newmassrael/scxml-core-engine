@@ -13,8 +13,12 @@
 
     Ports from C++ process_transition.jinja2.
 #}
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
+    {# Watching-zenoh RFC §5.O Atomic 0c — function-scope SCE-MAP marker
+       above `process_transition` and `execute_transition_actions`. #}
+    {{ sce_map.source_marker(model.source_location, "rust") }}
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -211,6 +215,7 @@
     }
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
+    {{ sce_map.source_marker(model.source_location, "rust") }}
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
 {% if model.has_transition_actions %}
         if !self.has_transition_actions {

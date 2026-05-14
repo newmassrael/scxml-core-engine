@@ -15,7 +15,13 @@
 
     Uses actions/_render.kt.jinja2 for action dispatch (shared with transition_actions).
 #}
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+
     // Entry Actions (W3C SCXML 3.8)
+    {# Watching-zenoh RFC §5.O Atomic 0c — function-scope SCE-MAP marker
+       above the `onEntry` / `onExit` overrides. Kotlin's macro form is
+       a plain `// SCE-MAP:` comment — non-syntactic, no compile cost. #}
+    {{ sce_map.source_marker(model.source_location, "kotlin") }}
     override fun onEntry(state: {{ machine_name }}State) {
         when (state) {
 {% for state_id in model.states | sort %}
@@ -337,6 +343,7 @@
     }
 
     // Exit Actions (W3C SCXML 3.9)
+    {{ sce_map.source_marker(model.source_location, "kotlin") }}
     override fun onExit(state: {{ machine_name }}State) {
         when (state) {
 {% for state_id in model.states | sort %}

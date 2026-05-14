@@ -1,3 +1,6 @@
+#![doc = "SCE-MAP: crossfile_validator_codec:4"]
+// SCE-MAP: crossfile_validator_codec:4
+
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="validator")
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.

@@ -1,3 +1,6 @@
+#![doc = "SCE-MAP: crossfile_procedure_filter:10"]
+// SCE-MAP: crossfile_procedure_filter:10
+
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure")
 // Runtime: sce_forge_runtime
 // Do not edit — regenerate from the source SCXML file.

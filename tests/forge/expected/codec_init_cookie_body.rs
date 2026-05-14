@@ -1,3 +1,6 @@
+#![doc = "SCE-MAP: codec_init_cookie_body:36"]
+// SCE-MAP: codec_init_cookie_body:36
+
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.

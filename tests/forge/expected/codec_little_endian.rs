@@ -1,3 +1,6 @@
+#![doc = "SCE-MAP: codec_little_endian:3"]
+// SCE-MAP: codec_little_endian:3
+
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.

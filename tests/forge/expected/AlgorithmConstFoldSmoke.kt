@@ -1,3 +1,5 @@
+// SCE-MAP: algorithm_const_fold_smoke:25
+
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.

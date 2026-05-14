@@ -1,3 +1,6 @@
+#![doc = "SCE-MAP: codec_present_if_basic:10"]
+// SCE-MAP: codec_present_if_basic:10
+
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.

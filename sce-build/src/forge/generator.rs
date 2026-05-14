@@ -736,6 +736,33 @@ fn inject_runtime_dep_global(env: &mut minijinja::Environment, doc: &ForgeDocume
     env.add_global("runtime_dep", doc.runtime_dep().to_string());
 }
 
+/// Watching-zenoh RFC §5.O Atomic 0c — inject the per-kind
+/// `source_location` into the Jinja2 environment so every forge
+/// template can call
+/// `{{ sce_map.source_marker(source_location, "<backend>") }}`
+/// above its body function header.
+///
+/// Mirrors the SCXML-side wiring where the parser populates
+/// `state.source_location` / `transition.source_location` and the
+/// templates pick those values up directly. Forge per-kind models
+/// gained the `source_location` field in the §5.O Atomic 0c parser
+/// retrofit ([`crate::forge::parser::forge_source_location_of`]).
+///
+/// When the document carries `source_location: None` the global is
+/// inserted as JSON null so the macro's truthiness guard
+/// (`{%- if loc and loc.line -%}`) silently elides the marker. The
+/// `forge::provenance::validate_forge_emission_provenance` walker
+/// already fires on this case before codegen runs, so a `None`
+/// reaching this point is by definition a parser-site regression
+/// already surfaced via `traceability/scxml-line-range-missing`.
+fn inject_source_location_global(env: &mut minijinja::Environment, doc: &ForgeDocument) {
+    let value = match crate::forge::provenance::forge_doc_source_location(doc) {
+        Some(l) => minijinja::Value::from_serialize(l),
+        None => minijinja::Value::from(()),
+    };
+    env.add_global("source_location", value);
+}
+
 // ── Public API ─────────────────────────────────────────────────
 
 /// Generate code from a ForgeDocument for C++ using Jinja2 templates.
@@ -768,6 +795,7 @@ pub fn generate_cpp_with_imports_and_externs(
     let mut env = generator::new_env();
     generator::load_templates(&mut env, &forge_dir)?;
     inject_runtime_dep_global(&mut env, doc);
+    inject_source_location_global(&mut env, doc);
 
     let code = match doc {
         ForgeDocument::Transform(m) => render_transform(&env, m, imports, crate::generator::Language::Cpp)?,
@@ -9113,6 +9141,7 @@ pub fn generate_kotlin_with_imports(
     let mut env = generator::new_env();
     generator::load_templates(&mut env, &forge_dir)?;
     inject_runtime_dep_global(&mut env, doc);
+    inject_source_location_global(&mut env, doc);
 
     let code = match doc {
         ForgeDocument::Transform(m) => render_transform(&env, m, imports, crate::generator::Language::Kotlin)?,
@@ -9231,6 +9260,7 @@ pub fn generate_rust_with_imports_and_externs(
     let mut env = generator::new_env();
     generator::load_templates(&mut env, &forge_dir)?;
     inject_runtime_dep_global(&mut env, doc);
+    inject_source_location_global(&mut env, doc);
 
     let code = match doc {
         ForgeDocument::Transform(m) => render_transform(&env, m, imports, crate::generator::Language::Rust)?,
@@ -10684,6 +10714,7 @@ pub fn generate_go_with_imports(
     let mut env = generator::new_env();
     generator::load_templates(&mut env, &forge_dir)?;
     inject_runtime_dep_global(&mut env, doc);
+    inject_source_location_global(&mut env, doc);
 
     let code = match doc {
         ForgeDocument::Transform(m) => render_transform(&env, m, imports, crate::generator::Language::Go)?,
@@ -10788,6 +10819,7 @@ pub fn generate_python_with_imports(
     let mut env = generator::new_env();
     generator::load_templates(&mut env, &forge_dir)?;
     inject_runtime_dep_global(&mut env, doc);
+    inject_source_location_global(&mut env, doc);
 
     let code = match doc {
         ForgeDocument::Transform(m) => render_transform(&env, m, imports, crate::generator::Language::Python)?,
@@ -10893,6 +10925,7 @@ pub fn generate_c11_with_imports_and_externs(
     let mut env = generator::new_env();
     generator::load_templates(&mut env, &forge_dir)?;
     inject_runtime_dep_global(&mut env, doc);
+    inject_source_location_global(&mut env, doc);
 
     let code = match doc {
         ForgeDocument::Transform(m) => render_transform(&env, m, imports, crate::generator::Language::C11)?,

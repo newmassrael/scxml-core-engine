@@ -745,17 +745,23 @@ pub fn load_templates(env: &mut Environment<'_>, dir: &Path) -> Result<(), Gener
     }
     load_templates_recursive(env, dir, dir)?;
     // Sibling `_macros/` lives at `<workspace>/tools/codegen/templates/_macros/`.
-    // For per-backend roots like `rust/`, `_macros/` is at the parent
-    // (`<workspace>/tools/codegen/templates/_macros/`); for root-level
-    // backends (Cpp, C11) it's already covered by the walk above.
-    if let Some(parent) = dir.parent() {
+    // For per-backend roots like `rust/`, `_macros/` is one level up at
+    // (`<workspace>/tools/codegen/templates/_macros/`); for per-kind
+    // forge backends like `forge/rust/`, it is two levels up. Walk up
+    // the parent chain until either `_macros/` shows up or the chain
+    // terminates, so adding a third-level template tree later does
+    // not regress the inheritance.
+    let mut current = dir;
+    while let Some(parent) = current.parent() {
         let shared_macros = parent.join("_macros");
         if shared_macros.is_dir() && shared_macros != dir.join("_macros") {
             // base_dir = parent so the loaded template names start
             // with `_macros/...` — matches the path callers use in
             // `{% import "_macros/sce_map_marker.jinja2" as sce_map %}`.
             load_templates_recursive(env, parent, &shared_macros)?;
+            break;
         }
+        current = parent;
     }
     Ok(())
 }

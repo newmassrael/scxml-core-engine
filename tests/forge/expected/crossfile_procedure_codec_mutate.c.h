@@ -1,3 +1,5 @@
+// SCE-MAP: crossfile_procedure_codec_mutate:3
+
 /* SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure") */
 /* Runtime: sce_forge_runtime */
 /* Do not edit — regenerate from the source SCXML file. */

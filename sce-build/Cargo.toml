@@ -132,6 +132,14 @@ name = "s5_o_atomic_0b_markers"
 path = "tests/s5_o_atomic_0b_markers.rs"
 required-features = ["cli"]
 
+# Watching-zenoh RFC §5.O Atomic 0c — per-function SCE-MAP marker
+# presence. Extends Atomic 0b's module-level coverage to the per-
+# function emission contract and the forge per-kind body axis.
+[[test]]
+name = "s5_o_atomic_0c_markers"
+path = "tests/s5_o_atomic_0c_markers.rs"
+required-features = ["cli"]
+
 
 
 [lints]

@@ -1,3 +1,5 @@
+// SCE-MAP: codec_repeat_present_if_basic:37
+
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.

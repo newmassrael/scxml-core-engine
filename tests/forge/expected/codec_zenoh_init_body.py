@@ -1,3 +1,5 @@
+# SCE-MAP: codec_zenoh_init_body:41
+
 # SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 # Runtime: none
 # Do not edit — regenerate from the source SCXML file.

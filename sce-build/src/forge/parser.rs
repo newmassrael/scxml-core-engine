@@ -6,7 +6,9 @@
 // Reads `sce:kind` on <scxml> root and dispatches to kind-specific parsing.
 // Also handles inline kinds on <data> elements within statechart documents.
 
-use crate::forge::error::{ForgeError, Located, ValidationError, WorkerSharedStateReason, XmlError};
+use crate::forge::error::{
+    ForgeError, Located, SourceLocation, ValidationError, WorkerSharedStateReason, XmlError,
+};
 use crate::forge::model::*;
 use crate::DocumentLabel;
 
@@ -44,6 +46,34 @@ fn located_at_line<E: Into<ForgeError>>(
     err: E,
 ) -> Located<ForgeError> {
     Located::new(err.into(), name, line, None)
+}
+
+/// Watching-zenoh RFC §5.O Atomic 0c — build the per-IR-node
+/// `SourceLocation` for a forge model root.
+///
+/// Mirrors [`crate::parser::source_location_of`] so the SCXML and Forge
+/// halves of the parser populate the same provenance shape and the
+/// `forge::provenance` walker can keep one invariant. Computes (line,
+/// col) from `roxmltree::Document::text_pos_at` on the node's byte-range
+/// start so XInclude / sce:template composition flow through unchanged
+/// — the outer `expand_preprocessors` already remaps `node.range()` to
+/// the authored source file before the parse_* helpers see the node.
+///
+/// `source_name` is the same `diagnostic_label` threaded through
+/// [`DocumentLabel`] and [`located`] — keeping `location.file` aligned
+/// across diagnostics and SCE-MAP markers means an author-side tool
+/// opens the same file for both.
+#[inline]
+fn forge_source_location_of(
+    node: &roxmltree::Node,
+    source_name: &str,
+) -> Option<SourceLocation> {
+    let pos = node.document().text_pos_at(node.range().start);
+    Some(SourceLocation {
+        file: source_name.to_string(),
+        line: Some(pos.row),
+        col: Some(pos.col),
+    })
 }
 
 /// Detect the `sce:kind` attribute on the <scxml> root element.
@@ -547,6 +577,7 @@ fn parse_transform(
         name: label.identifier.to_string(),
         inputs,
         outputs,
+        source_location: forge_source_location_of(root, label.diagnostic_label),
     })
 }
 
@@ -695,6 +726,7 @@ fn parse_lookup(
         output,
         entries,
         miss_policy,
+        source_location: forge_source_location_of(root, label.diagnostic_label),
     })
 }
 
@@ -775,6 +807,7 @@ fn parse_condition(
         name: label.identifier.to_string(),
         inputs,
         expr,
+        source_location: forge_source_location_of(root, label.diagnostic_label),
     })
 }
 
@@ -969,6 +1002,7 @@ fn parse_codec(
         variant,
         requires_parent_flags,
         test_vectors,
+        source_location: forge_source_location_of(root, label.diagnostic_label),
     })
 }
 
@@ -3919,6 +3953,7 @@ fn parse_validator(
             rate_of_changes,
             plausibility,
         },
+        source_location: forge_source_location_of(root, label.diagnostic_label),
     })
 }
 
@@ -4130,6 +4165,7 @@ fn parse_procedure(
         helpers,
         initial,
         states,
+        source_location: forge_source_location_of(root, label.diagnostic_label),
     };
 
     // RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B1: catch
@@ -4632,6 +4668,7 @@ fn parse_filter(
         filter_type,
         window,
         alpha,
+        source_location: forge_source_location_of(root, label.diagnostic_label),
     })
 }
 
@@ -4887,6 +4924,7 @@ fn parse_interpolation(
         out_of_bounds,
         axes,
         values,
+        source_location: forge_source_location_of(root, label.diagnostic_label),
     })
 }
 
@@ -5002,6 +5040,7 @@ fn parse_timer(
         reset_on_event,
         cancel_on_state_exit,
         fire_event,
+        source_location: forge_source_location_of(root, label.diagnostic_label),
     })
 }
 
@@ -5126,6 +5165,7 @@ fn parse_observer(
         inputs,
         monitors,
         event_domain,
+        source_location: forge_source_location_of(root, label.diagnostic_label),
     })
 }
 
@@ -5224,6 +5264,7 @@ fn parse_algorithm(
         consts,
         body,
         test_vectors,
+        source_location: forge_source_location_of(root, label.diagnostic_label),
     })
 }
 
@@ -6209,6 +6250,7 @@ fn parse_link(
         tx_pool,
         stage_pool,
         accept_stage_copy_rate,
+        source_location: forge_source_location_of(root, label.diagnostic_label),
     })
 }
 
@@ -6332,6 +6374,7 @@ fn parse_buffer_pool(
         dma_channel,
         cache_policy,
         variant,
+        source_location: forge_source_location_of(root, label.diagnostic_label),
     })
 }
 
@@ -6765,6 +6808,7 @@ fn parse_worker(
         link_rx,
         inbox: InboxConfig { depth, ordering },
         outbox,
+        source_location: forge_source_location_of(root, label.diagnostic_label),
     })
 }
 
@@ -7084,6 +7128,7 @@ fn parse_bounded_collection(
         on_overflow,
         ordering,
         concurrency,
+        source_location: forge_source_location_of(root, label.diagnostic_label),
     })
 }
 

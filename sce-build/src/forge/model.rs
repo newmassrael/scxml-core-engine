@@ -10,6 +10,7 @@
 // Language-specific type mappings live in the generator, not here.
 // The model is language-agnostic.
 
+use crate::forge::error::SourceLocation;
 use serde::Serialize;
 
 /// SCE Extension namespace URI (SCE_FORGE.md Section 3.5).
@@ -482,6 +483,11 @@ pub struct TransformModel {
     pub name: String,
     pub inputs: Vec<ForgeField>,
     pub outputs: Vec<ForgeField>,
+    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// position of the `<scxml sce:kind="transform">` root element.
+    /// Drives the per-kind body function's SCE-MAP marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
 }
 
 // ── Lookup kind ────────────────────────────────────────────────
@@ -539,6 +545,11 @@ pub struct LookupModel {
     pub output: ForgeField,
     pub entries: Vec<LookupEntry>,
     pub miss_policy: MissPolicy,
+    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// position of the `<scxml sce:kind="lookup">` root element.
+    /// Drives the per-kind body function's SCE-MAP marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
 }
 
 impl LookupModel {
@@ -584,6 +595,11 @@ pub struct ConditionModel {
     pub inputs: Vec<ForgeField>,
     /// ECMAScript expression that evaluates to boolean.
     pub expr: String,
+    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// position of the `<scxml sce:kind="condition">` root element.
+    /// Drives the per-kind body function's SCE-MAP marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
 }
 
 // ── Validator kind ─────────────────────────────────────────
@@ -595,6 +611,11 @@ pub struct ValidatorModel {
     pub name: String,
     pub inputs: Vec<ForgeField>,
     pub rules: ValidatorRules,
+    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// position of the `<scxml sce:kind="validator">` root element.
+    /// Drives the per-kind body function's SCE-MAP marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
 }
 
 /// Validation rules container.
@@ -765,6 +786,11 @@ pub struct ProcedureModel {
     pub initial: String,
     /// All states in document order (regular + final).
     pub states: Vec<ProcedureState>,
+    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// position of the `<scxml sce:kind="procedure">` root element.
+    /// Drives the per-kind body function's SCE-MAP marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
 }
 
 impl ProcedureModel {
@@ -1426,6 +1452,11 @@ pub struct CodecModel {
     /// `render_codec_test_vector_sidecar` until B5-θ closures land.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub test_vectors: Vec<CodecTestVector>,
+    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// position of the `<scxml sce:kind="codec">` root element.
+    /// Drives the per-kind body function's SCE-MAP marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
 }
 
 impl CodecModel {
@@ -1690,6 +1721,11 @@ pub struct FilterModel {
     /// Smoothing factor (0..1) for low-pass filter.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub alpha: Option<f64>,
+    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// position of the `<scxml sce:kind="filter">` root element.
+    /// Drives the per-kind body function's SCE-MAP marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
 }
 
 // ── Interpolation kind ────────────────────────────────────────
@@ -1768,6 +1804,11 @@ pub struct InterpolationModel {
     pub axes: Vec<InterpolationAxis>,
     /// Table values (flat, row-major for 2D).
     pub values: Vec<f64>,
+    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// position of the `<scxml sce:kind="interpolation">` root element.
+    /// Drives the per-kind body function's SCE-MAP marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
 }
 
 // ── Timer kind ────────────────────────────────────────────────
@@ -1822,6 +1863,11 @@ pub struct TimerModel {
     /// Event name raised when the timer fires.
     /// `<sce:fire-event>...</sce:fire-event>` (required).
     pub fire_event: String,
+    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// position of the `<scxml sce:kind="timer">` root element.
+    /// Drives the per-kind body function's SCE-MAP marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
 }
 
 // ── Observer kind ─────────────────────────────────────────────
@@ -1856,6 +1902,11 @@ pub struct ObserverModel {
     /// When absent, the observer falls back to a file-local enum and cannot
     /// be composed with other observers (see SCE_FORGE.md §4.11).
     pub event_domain: Option<String>,
+    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// position of the `<scxml sce:kind="observer">` root element.
+    /// Drives the per-kind body function's SCE-MAP marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
 }
 
 // ── Cross-file import ─────────────────────────────────────────
@@ -2185,6 +2236,11 @@ pub struct AlgorithmModel {
     /// scalar return — multi-field codec test-vector defers to B5.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub test_vectors: Vec<TestVector>,
+    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// position of the `<scxml sce:kind="algorithm">` root element.
+    /// Drives the per-kind body function's SCE-MAP marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
 }
 
 /// RFC §5.B test-vector value literal. v1 covers the scalar types an
@@ -2455,6 +2511,11 @@ pub struct LinkModel {
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     #[serde(default)]
     pub accept_stage_copy_rate: bool,
+    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// position of the `<scxml sce:kind="link">` root element.
+    /// Drives the per-kind body function's SCE-MAP marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
 }
 
 /// Watching-zenoh RFC §5.C lines 814-820 — listener-link sibling-pair
@@ -2725,6 +2786,11 @@ pub struct BufferPoolModel {
     /// three reassembly-specific fields (max-fragments-per-message,
     /// reassembly-timeout-ms, per-peer-quota).
     pub variant: BufferPoolVariant,
+    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// position of the `<scxml sce:kind="buffer-pool">` root element.
+    /// Drives the per-kind body function's SCE-MAP marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
 }
 
 // ── Worker kind ────────────────────────────────────────────────
@@ -2913,6 +2979,11 @@ pub struct BoundedCollectionModel {
     pub ordering: CollectionOrdering,
     /// `<sce:concurrency>` — default `SingleWriter` per spec line 2560.
     pub concurrency: ConcurrencyMode,
+    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// position of the `<scxml sce:kind="bounded-collection">` root element.
+    /// Drives the per-kind body function's SCE-MAP marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
 }
 
 /// Worker document — RFC §5.D concurrent execution context driven
@@ -2960,6 +3031,11 @@ pub struct WorkerModel {
     /// machine via `<sce:link-rx>`-driven event mapping.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub outbox: Option<String>,
+    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// position of the `<scxml sce:kind="worker">` root element.
+    /// Drives the per-kind body function's SCE-MAP marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
 }
 
 // ── Forge document ─────────────────────────────────────────────

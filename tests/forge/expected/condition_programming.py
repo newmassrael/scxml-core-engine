@@ -1,3 +1,5 @@
+# SCE-MAP: condition_programming:3
+
 # SCE Forge: Auto-generated from Extended SCXML (sce:kind="condition")
 # Runtime: none
 # Do not edit — regenerate from the source SCXML file.
