@@ -814,6 +814,26 @@ pub struct SCXMLModel {
     /// outside C).
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub driver_refs: Vec<DriverRef>,
+    /// Watching-zenoh RFC §5.2 Round F-α-2 — section attribute payload
+    /// for the C11 backend's `SCE_SM_FN` macro emission. Set by
+    /// [`crate::compile_scxml_lang_typed_with_section`] when
+    /// `deploy.yaml`'s `platform.c11_section_attribute.class` is
+    /// present; `None` everywhere else (the parser never touches this
+    /// field, the SCXML document does not encode the section choice).
+    ///
+    /// When `Some("<name>")`, every C11 statechart function definition
+    /// receives a `SCE_SM_FN` prefix that the emitted macro expands to
+    /// `__attribute__((section("<name>")))`. When `None`, the macro
+    /// expands to nothing — function definitions stay textually
+    /// `SCE_SM_FN <ret> name(...)` so a downstream sce-rust-runtime
+    /// linker change can later swap the macro definition without
+    /// re-emitting the per-function source.
+    ///
+    /// Non-C11 backends ignore this field (the section-attribute
+    /// reject `mcu/section-attribute-on-non-mcu-target` fires at the
+    /// orchestrator pass before any non-C11 codegen runs).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub c11_section_attribute_class: Option<String>,
     /// W3C SCXML 6.4 / test229: `true` iff any `<invoke>` in the document
     /// carries `autoforward="true"`. Drives codegen of the
     /// `forward_to_autoforward_children` helper + its call site in the

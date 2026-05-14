@@ -223,3 +223,76 @@ topology:
         "diagnostic message must mention the offending backend. Got: {msg}",
     );
 }
+
+#[test]
+fn fixture_e_section_attribute_emits_macro_and_function_prefix() {
+    // Round F-α-2: C11 backend + `platform.c11_section_attribute.class`
+    // must (i) emit the `SCE_SM_FN` macro definition with the requested
+    // section name, and (ii) prefix every statechart function definition
+    // with `SCE_SM_FN`. Author override via pre-include `#define
+    // SCE_SM_FN ...` stays open because the macro is `#ifndef`-guarded.
+    let tmp = tempfile::TempDir::new().unwrap();
+    let scxml = write_scxml(&tmp, FIXTURE_NO_DRIVER);
+
+    let deploy_yaml = r#"
+topology:
+  app_device:
+    machines:
+      round_f_alpha:
+        source: round_f_alpha.scxml
+        platform:
+          class: mcu
+          os: bare_metal
+          c11_section_attribute:
+            class: ".app_code"
+"#;
+    let deploy_cfg = sce_build::mesh::deploy::parse_deploy_str(deploy_yaml)
+        .expect("synthetic deploy.yaml parses");
+
+    let options = ForgeCompileOptions::default();
+    let outputs = sce_build::compile_scxml_with_imports(
+        &[&scxml],
+        &[],
+        &template_dir(),
+        Language::C11,
+        &options,
+        Some(&deploy_cfg),
+    )
+    .expect("C11 codegen succeeds when c11_section_attribute is set");
+
+    let sm_c = outputs
+        .iter()
+        .find_map(|(_basename, out)| {
+            out.files.iter().find(|(name, _)| name.ends_with("_sm.c"))
+        })
+        .map(|(_, body)| body.clone())
+        .expect("orchestrator emits a *_sm.c for the C11 fixture");
+
+    assert!(
+        sm_c.contains("__attribute__((section(\".app_code\")))"),
+        "SCE_SM_FN macro definition must carry the requested section name. \
+         Excerpt:\n{}",
+        sm_c.lines()
+            .take(80)
+            .collect::<Vec<_>>()
+            .join("\n"),
+    );
+    assert!(
+        sm_c.contains("SCE_SM_FN"),
+        "Statechart function definitions must reference SCE_SM_FN at \
+         least once (the macro itself is referenced inside its own \
+         `#define`, so this assertion is byte-weak; the next assertion \
+         counts emit sites). Excerpt:\n{}",
+        sm_c.lines()
+            .take(80)
+            .collect::<Vec<_>>()
+            .join("\n"),
+    );
+    let fn_prefix_count = sm_c.matches("SCE_SM_FN").count();
+    assert!(
+        fn_prefix_count >= 10,
+        "Expected SCE_SM_FN to appear on ≥10 function definition sites \
+         (the §5.O Atomic 0 minimal fixture emits ~30 statechart \
+         functions). Got {fn_prefix_count}.",
+    );
+}

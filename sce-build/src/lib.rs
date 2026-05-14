@@ -425,14 +425,41 @@ pub fn compile_scxml_lang_typed(
 /// `platform.driver_root` override (Q-Round-F-D5). `driver_root: None`
 /// means "fall back to the SCXML file's parent directory" so this is
 /// a strict superset of the deploy-unaware entry — every existing
-/// caller route remains byte-stable when no override is in play. The
-/// orchestrator ([`compile_scxml_with_imports`]) selects the override
-/// per machine and threads it in; single-file callers pass `None`.
+/// caller route remains byte-stable when no override is in play.
+///
+/// The orchestrator ([`compile_scxml_with_imports`]) selects both the
+/// driver_root override and the F-α-2 C11 section attribute class per
+/// machine and routes through [`compile_scxml_lang_typed_with_section`];
+/// this entry is the no-section convenience wrapper that single-file
+/// (deploy-unaware) callers keep using.
 pub fn compile_scxml_lang_typed_with_driver_root(
     scxml_path: &str,
     template_dir: &Path,
     language: generator::Language,
     driver_root: Option<&Path>,
+) -> Result<generator::GeneratedOutput, CompileError> {
+    compile_scxml_lang_typed_with_section(scxml_path, template_dir, language, driver_root, None)
+}
+
+/// Watching-zenoh RFC §5.2 Round F-α-2 — deploy-aware variant that
+/// additionally honours `deploy.yaml`'s `platform.c11_section_attribute.class`
+/// for the C11 backend. When `section_class` is `Some("<name>")`, the
+/// emitted `*_sm.c` defines `SCE_SM_FN` as
+/// `__attribute__((section("<name>")))` and every statechart function
+/// definition receives the prefix. When `None`, `SCE_SM_FN` expands to
+/// empty so the emitted source stays byte-stable against the F-α
+/// baseline (modulo the textual prefix token itself, which is part of
+/// the round-trip lock).
+///
+/// `section_class` is ignored on non-C11 backends; the orchestrator
+/// already fires `mcu/section-attribute-on-non-mcu-target` for that
+/// case (Q-Round-F-D3) before this entry runs.
+pub fn compile_scxml_lang_typed_with_section(
+    scxml_path: &str,
+    template_dir: &Path,
+    language: generator::Language,
+    driver_root: Option<&Path>,
+    section_class: Option<&str>,
 ) -> Result<generator::GeneratedOutput, CompileError> {
     let mut model = compile_model(scxml_path)?;
     if !model.driver_refs.is_empty() {
@@ -440,6 +467,9 @@ pub fn compile_scxml_lang_typed_with_driver_root(
             Some(root) => resolve_driver_refs_with_root(&mut model, scxml_path, root)?,
             None => resolve_driver_refs(&mut model, scxml_path)?,
         }
+    }
+    if matches!(language, generator::Language::C11) {
+        model.c11_section_attribute_class = section_class.map(str::to_string);
     }
 
     let input_stem = Path::new(scxml_path)
@@ -2171,26 +2201,34 @@ pub fn compile_scxml_with_imports(
         outputs.push((basename.to_string(), out));
     }
 
-    // Watching-zenoh RFC §5.2 Round F-α — codegen-entry checks that
-    // depend on `deploy.yaml`. (i) Non-MCU backend reject of
+    // Watching-zenoh RFC §5.2 Round F-α / F-α-2 — codegen-entry checks
+    // that depend on `deploy.yaml`. (i) Non-MCU backend reject of
     // `platform.c11_section_attribute` (Q-Round-F-D3) fires before any
     // SCXML codegen because the section attribute itself has no axis
     // outside C11; the early exit keeps templates from emitting
     // half-applied directives. (ii) `platform.driver_root` override
     // (Q-Round-F-D5) is resolved per-machine and threaded into
-    // [`compile_scxml_lang_typed_with_driver_root`] so each statechart
-    // resolves `<sce:driver>` against the deploy-specified root. The
-    // first machine carrying the override wins per-orchestrator-run;
-    // the single-machine common case (one `deploy.yaml`, one `c11_*`
-    // backend target) is the only shape Q-Round-F-D5 commits.
+    // [`compile_scxml_lang_typed_with_section`] so each statechart
+    // resolves `<sce:driver>` against the deploy-specified root.
+    // (iii) F-α-2 `c11_section_attribute.class` is captured here and
+    // routed through the same entry so the C11 backend's `SCE_SM_FN`
+    // macro expands to `__attribute__((section("<class>")))` and every
+    // statechart function definition carries the prefix. The first
+    // machine carrying either override wins per-orchestrator-run; the
+    // single-machine common case (one `deploy.yaml`, one `c11_*` backend
+    // target) is the only shape Q-Round-F-D5 commits.
     let mut deploy_driver_root: Option<std::path::PathBuf> = None;
+    let mut deploy_section_class: Option<String> = None;
     if let Some(deploy_cfg) = deploy {
         for device in deploy_cfg.topology.values() {
             for machine in device.machines.values() {
                 if let Some(platform) = machine.platform.as_ref() {
-                    if platform.c11_section_attribute.is_some() {
+                    if let Some(section) = platform.c11_section_attribute.as_ref() {
                         forge::codegen_matrix::check_c11_section_attribute(true, language)
                             .map_err(|e| Located::new(e.into(), "deploy.yaml", None, None))?;
+                        if deploy_section_class.is_none() {
+                            deploy_section_class.clone_from(&section.class);
+                        }
                     }
                     if let Some(root) = platform.driver_root.as_deref() {
                         if deploy_driver_root.is_none() {
@@ -2208,11 +2246,12 @@ pub fn compile_scxml_with_imports(
             .file_name()
             .and_then(|s| s.to_str())
             .unwrap_or(path_str);
-        let out = compile_scxml_lang_typed_with_driver_root(
+        let out = compile_scxml_lang_typed_with_section(
             path_str,
             template_dir,
             language,
             deploy_driver_root.as_deref(),
+            deploy_section_class.as_deref(),
         )?;
         outputs.push((basename.to_string(), out));
     }
