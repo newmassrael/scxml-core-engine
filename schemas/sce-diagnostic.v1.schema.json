@@ -290,7 +290,8 @@
         "traceability/state-id-collision",
         "traceability/symbol-name-exceeds-c-identifier-limit",
         "traceability/sourcemap-source-hash-mismatch",
-        "traceability/sce-map-attribute-stripped"
+        "traceability/sce-map-attribute-stripped",
+        "traceability/meta-generated-source-line-marker-missing"
       ]
     },
     "stage": {

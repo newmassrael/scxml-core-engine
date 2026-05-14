@@ -252,6 +252,76 @@ pub fn check_source_hash_matches(
     Ok(())
 }
 
+/// Walks `out_dir` recursively and verifies that every SCE-emitted
+/// file (identified by a parseable §6.2.6 drift header — see
+/// `ARCHITECTURE.md` "Traceability Ownership Boundary") contains at
+/// least one `SCE-MAP:` marker line. Returns on the first violation
+/// so the diagnostic surfaces a single concrete file rather than a
+/// batch report.
+///
+/// Files without a drift header are silently skipped per the
+/// boundary contract: external meta-generator output (protoc,
+/// bindgen, cbindgen) and hand-authored sources sit outside SCE's
+/// traceability ownership.
+///
+/// The walker fires
+/// [`ValidationError::TraceabilityMetaGeneratedSourceLineMarkerMissing`]
+/// when a drift-headered file lacks the marker — that combination
+/// indicates a codegen-internal invariant violation (a template
+/// regressed, lost its `SCE-MAP:` macro call) rather than an author
+/// repair surface, so the diagnostic is informational-only with no
+/// `Fix`.
+pub fn validate_emitted_files_have_markers(
+    out_dir: &std::path::Path,
+) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
+    use crate::forge::drift::parse_embedded_hashes;
+    use std::collections::BTreeSet;
+
+    fn walk(dir: &std::path::Path, out: &mut BTreeSet<std::path::PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path, out);
+            } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                if matches!(ext, "rs" | "cpp" | "h" | "kt" | "go" | "py" | "c") {
+                    out.insert(path);
+                }
+            }
+        }
+    }
+
+    let mut files = BTreeSet::new();
+    walk(out_dir, &mut files);
+
+    for file in &files {
+        let Ok(content) = std::fs::read_to_string(file) else {
+            continue;
+        };
+        if parse_embedded_hashes(&content).is_none() {
+            // ARCHITECTURE.md "Traceability Ownership Boundary":
+            // external meta-generator output is out-of-scope by
+            // design — skip silently.
+            continue;
+        }
+        if !content.contains("SCE-MAP:") {
+            let file_str = file.display().to_string();
+            return Err(crate::forge::error::Located::new(
+                crate::forge::error::ValidationError::TraceabilityMetaGeneratedSourceLineMarkerMissing {
+                    file: file_str.clone(),
+                }
+                .into(),
+                &file_str,
+                None,
+                None,
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Construct a [`SourceSymbol`] from a raw [`SourceLocation`] +
 /// metadata. Convenience for tests and ad-hoc callers; production
 /// `build` walks the symbol table directly.

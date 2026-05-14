@@ -2006,6 +2006,18 @@ pub enum DiagnosticCode {
     //    miss. Diagnostic signals the fallback was needed.
     #[serde(rename = "traceability/sce-map-attribute-stripped")]
     TraceabilitySceMapAttributeStripped,
+
+    // ── Traceability §5.O Atomic 1 follow-up — codegen-internal
+    //    invariant: every SCE-emitted file (one carrying a §6.2.6
+    //    drift header) MUST contain at least one `SCE-MAP:` marker.
+    //    Walker `forge::sourcemap::validate_emitted_files_have_markers`
+    //    fires this from cmd_generate / cmd_generate_w3c success paths.
+    //    Files without a drift header (external meta-generator output)
+    //    are silently skipped per ARCHITECTURE.md "Traceability
+    //    Ownership Boundary". Author repair is empty — the fix lives
+    //    in the template that lost its `sce_map_marker` macro call.
+    #[serde(rename = "traceability/meta-generated-source-line-marker-missing")]
+    TraceabilityMetaGeneratedSourceLineMarkerMissing,
 }
 
 /// Canonical enumeration of every `DiagnosticCode` variant.
@@ -2365,6 +2377,11 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         TraceabilitySymbolNameExceedsCIdentifierLimit,
         TraceabilitySourcemapSourceHashMismatch,
         TraceabilitySceMapAttributeStripped,
+        // Traceability §5.O Atomic 1 follow-up — ownership-boundary
+        // walker fires this when a drift-headered file is missing
+        // its SCE-MAP marker. ARCHITECTURE.md "Traceability Ownership
+        // Boundary" defines the scope.
+        TraceabilityMetaGeneratedSourceLineMarkerMissing,
     ]
 };
 
@@ -2785,7 +2802,8 @@ impl DiagnosticCode {
             TraceabilityStateIdCollision
             | TraceabilitySymbolNameExceedsCIdentifierLimit
             | TraceabilitySourcemapSourceHashMismatch
-            | TraceabilitySceMapAttributeStripped => Some("watching-zenoh RFC §5.O"),
+            | TraceabilitySceMapAttributeStripped
+            | TraceabilityMetaGeneratedSourceLineMarkerMissing => Some("watching-zenoh RFC §5.O"),
 
             // ── No authoritative citation ────────────────────────
             //
@@ -3155,6 +3173,9 @@ impl DiagnosticCode {
             TraceabilitySymbolNameExceedsCIdentifierLimit => "traceability/symbol-name-exceeds-c-identifier-limit",
             TraceabilitySourcemapSourceHashMismatch => "traceability/sourcemap-source-hash-mismatch",
             TraceabilitySceMapAttributeStripped => "traceability/sce-map-attribute-stripped",
+            TraceabilityMetaGeneratedSourceLineMarkerMissing => {
+                "traceability/meta-generated-source-line-marker-missing"
+            }
         }
     }
 }
@@ -5303,6 +5324,20 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 profile.clone(),
             ],
         },
+        // ── §5.O Atomic 1 follow-up — codegen-internal traceability
+        //    invariant: SCE-emitted file lacks an SCE-MAP marker.
+        //    NeutralOrDeterministic. No author repair — the fix is in
+        //    a template `tools/codegen/templates/` upstream.
+        ValidationError::TraceabilityMetaGeneratedSourceLineMarkerMissing { file } => {
+            DiagnosticPayload {
+                code: DiagnosticCode::TraceabilityMetaGeneratedSourceLineMarkerMissing,
+                stage: Stage::Generate,
+                expected: None,
+                actual: Some(file.clone()),
+                fix: None,
+                key_fragments: vec![file.clone()],
+            }
+        }
     }
 }
 
@@ -7746,6 +7781,19 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:eefcdcd7864bca4d","code":"traceability/sce-map-attribute-stripped","stage":"generate","spec":"watching-zenoh RFC §5.O","message":"SCE-MAP `#[doc]` marker stripped from 'test144::on_entry_s0_0' in sce_rust_tests (release); falling back to `// SCE-MAP:` line comments. Repair: re-emit with the dual-marker form (default since §5.O Atomic 0c) or upstream the rustdoc fix","actual":"test144::on_entry_s0_0"}"#,
             ),
+            //    SCE-MAP marker missing on a §6.2.6-headered file
+            //    (codegen-internal invariant per ARCHITECTURE.md
+            //    "Traceability Ownership Boundary"). `actual` carries
+            //    the offending file path; `key_fragments` reuse the
+            //    same path so the wire-id is path-stable.
+            (
+                "traceability/meta-generated-source-line-marker-missing",
+                ValidationError::TraceabilityMetaGeneratedSourceLineMarkerMissing {
+                    file: "out/test144/test144_sm.rs".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:052d4d7f20b67021","code":"traceability/meta-generated-source-line-marker-missing","stage":"generate","spec":"watching-zenoh RFC §5.O","message":"emitted file 'out/test144/test144_sm.rs' carries a §6.2.6 drift header but no `SCE-MAP:` marker line. Per ARCHITECTURE.md \"Traceability Ownership Boundary\", every SCE-emitted file must carry at least one marker. Repair: a template under `tools/codegen/templates/` is missing its `sce_map_marker` macro call — report upstream","actual":"out/test144/test144_sm.rs"}"#,
+            ),
         ]
     }
 
@@ -9787,7 +9835,13 @@ mod tests {
             //    a heads-up not a hard repair. ──
             | TraceabilitySymbolNameExceedsCIdentifierLimit
             | TraceabilitySourcemapSourceHashMismatch
-            | TraceabilitySceMapAttributeStripped => NeutralOrDeterministic,
+            | TraceabilitySceMapAttributeStripped
+            // ── §5.O Atomic 1 follow-up — ownership-boundary walker.
+            //    Codegen-internal invariant: no author repair, the
+            //    fix is in the template that lost its SCE-MAP macro
+            //    call. NeutralOrDeterministic since the diagnostic is
+            //    informational toward upstream pipeline-bug repair. ──
+            | TraceabilityMetaGeneratedSourceLineMarkerMissing => NeutralOrDeterministic,
         }
     }
 
@@ -10219,7 +10273,9 @@ mod tests {
                 | TraceabilityStateIdCollision
                 | TraceabilitySymbolNameExceedsCIdentifierLimit
                 | TraceabilitySourcemapSourceHashMismatch
-                | TraceabilitySceMapAttributeStripped => true,
+                | TraceabilitySceMapAttributeStripped
+                // §5.O Atomic 1 follow-up — boundary walker
+                | TraceabilityMetaGeneratedSourceLineMarkerMissing => true,
             }
         }
         for &code in ALL_DIAGNOSTIC_CODES {
@@ -10231,7 +10287,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            269,
+            270,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
              expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
@@ -10819,7 +10875,18 @@ mod tests {
              whose sourcemap entry says one should exist. The \
              `// SCE-MAP:` line-comment dual-emit path (default since \
              §5.O Atomic 0c) is the fallback the diagnostic signals \
-             toward, not a hard failure. 265 → 269.",
+             toward, not a hard failure. 265 → 269. Then the §5.O \
+             Atomic 1 follow-up adds the traceability ownership \
+             boundary walker: `traceability/meta-generated-source-line- \
+             marker-missing` (NeutralOrDeterministic; codegen-internal, \
+             empty fix) fires from \
+             `forge::sourcemap::validate_emitted_files_have_markers` \
+             when an SCE-emitted file (identified by a §6.2.6 drift \
+             header) carries no `SCE-MAP:` marker — the textbook \
+             boundary contract per ARCHITECTURE.md \"Traceability \
+             Ownership Boundary\" (external meta-generator output is \
+             silently out-of-scope by virtue of carrying no drift \
+             header). 269 → 270.",
         );
     }
 

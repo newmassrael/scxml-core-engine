@@ -2239,6 +2239,35 @@ pub enum ValidationError {
         function: String,
         profile: String,
     },
+
+    /// Watching-zenoh RFC §5.O Atomic 1 follow-up — codegen-internal
+    /// traceability invariant: every SCE-emitted file (one carrying a
+    /// `// SCE-GENERATED` drift header per §6.2.6) MUST contain at
+    /// least one `SCE-MAP:` marker line. The two artefacts ship
+    /// together — Atomic 0b/0c populate the markers on the same
+    /// templates that Atomic 1 fingerprints via the sourcemap JSON —
+    /// so a drift-headered file with no marker indicates a template
+    /// edit dropped the marker macro call without anyone noticing.
+    /// ARCHITECTURE.md "Traceability Ownership Boundary" pins the
+    /// scope: only files SCE emits directly are subject to this
+    /// invariant; external meta-generator output (protoc, bindgen,
+    /// cbindgen, capnproto, hand-authored sources) carries no drift
+    /// header and is silently out-of-scope.
+    ///
+    /// Author repair is empty: this is an SCE codegen-pipeline bug,
+    /// not a document bug. The fix is upstream in
+    /// `tools/codegen/templates/_macros/sce_map_marker.jinja2`'s
+    /// callers — re-add the missing `SCE-MAP:` marker emission and
+    /// the invariant repairs.
+    #[error(
+        "emitted file '{file}' carries a §6.2.6 drift header but no \
+         `SCE-MAP:` marker line. Per ARCHITECTURE.md \"Traceability \
+         Ownership Boundary\", every SCE-emitted file must carry at \
+         least one marker. Repair: a template under \
+         `tools/codegen/templates/` is missing its \
+         `sce_map_marker` macro call — report upstream"
+    )]
+    TraceabilityMetaGeneratedSourceLineMarkerMissing { file: String },
 }
 
 /// watching-zenoh RFC §5.E B7-η' Atomic A2 callback-path failure

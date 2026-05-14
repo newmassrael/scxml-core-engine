@@ -665,3 +665,26 @@ sce-go-tests        W3C conformance (202/202)
 6. **You Don't Pay for What You Don't Use**: 4-tier library structure — link only what you need
 7. **Multi-Backend Parity**: Same SCXML sources, same codegen pipeline, same W3C compliance across C++/Rust/Kotlin/Go/Python
 8. **Parity Scope**: Multi-backend parity covers W3C SCXML codegen. Mesh (the SCE-specific distributed capability) is implemented in C++ alone — `tools/codegen/templates/mesh/` contains only `cpp/`, and no other backend carries `MeshEnvelope` or `mesh_transport` code. Per-backend mesh expansion is case-by-case, gated on explicit demand, not an implicit parity obligation. `SCE_MESH.md` stays agnostic to implementation count; the scope rule lives at the architecture layer. The AOT `<parallel>`-final template stays partition-awareness-free for single-process machines; the partition-aware branch lives in `tools/codegen/templates/mesh/cpp/parallel_final.jinja2` (rule 12 designation in SCE_MESH.md §14 — root partition hosts tracker + local `done.state` raise, non-root partition emits wire 21 only) and is the sole coupling point between mesh deploy.yaml and AOT template shape, and lands atomically with the §16.5 `ParallelCompletionTracker` runtime and the rule 12 validator.
+
+## Traceability Ownership Boundary
+
+§5.O traceability (sourcemap JSON + addr2sce + per-symbol SCE-MAP markers) and §6.2.6 generated-source drift detection cover the files SCE emits directly. Files produced by external meta-generators (protoc, bindgen, cbindgen, capnproto), build-system wrappers (CMake / Cargo `build.rs` / Bazel), and hand-authored sources are out-of-scope by design.
+
+**In scope (SCE owns):**
+
+- Every file `sce-codegen` writes: `*_sm.{rs,cpp,h,kt,go,py,c}`, `mod.rs`, per-machine `sce_sourcemap.json` sidecars.
+- The §6.2.6 drift header is the canonical SCE-ownership marker. Files carrying a `// SCE-GENERATED — DO NOT EDIT` block with embedded `source-hash` + `template-hash` lines are SCE-traced; files without that header are out-of-scope.
+
+**Out of scope (SCE does not trace):**
+
+- Output of external meta-generators (protoc-generated `.pb.go`, bindgen-generated FFI bindings, etc.).
+- Hand-authored sources next to generated files (test harnesses, integration drivers).
+- Build-system wrappers and shell scripts.
+
+**Why a boundary, not a recursive ownership chain.** A single-vendor traceability map for a multi-tool pipeline would couple SCE's release cadence to every upstream tool's output format. The textbook answer — established by the JavaScript source-maps spec over twenty years — is that each stage in a toolchain emits its own sourcemap, and integration happens via sourcemap chaining at the consumer side. Single-Responsibility Principle and Bounded Context (DDD) both point the same direction: SCE traces what SCE emits, external tools trace what they emit, and the consumer composes chains as needed.
+
+**addr2sce semantics.** When `sce-codegen addr2sce` cannot find a symbol in the SCE sourcemap (or the embedded `// SCE-MAP:` marker), it returns an explicit not-found rather than silently degrading or guessing. The not-found is the correct answer for symbols that originate in code SCE did not emit; pretending to resolve them would be a silently-broken hook.
+
+**Walker contract.** `forge::sourcemap::validate_emitted_files_have_markers` runs after every `cmd_generate` / `cmd_generate_w3c` success path. It walks `out_dir` recursively, identifies SCE-emitted files by the presence of a §6.2.6 drift header, and verifies each one contains at least one `SCE-MAP:` marker line. Files without a drift header are silently skipped (out-of-scope per this section). A drift-headered file with no `SCE-MAP:` marker fires `traceability/meta-generated-source-line-marker-missing` — a codegen-internal invariant violation indicating a template regressed (added a backend, removed a marker macro call) without anyone noticing.
+
+**Future extension — external sourcemap chaining.** When an SCE consumer eventually wraps SCE output behind an external meta-generator that the consumer wants in one resolution chain, the textbook path is a `deploy.yaml` `external_sourcemaps:` field listing each upstream tool's sourcemap path. `addr2sce` chains them at lookup time rather than merging them at emit time, preserving the boundary above. Until a consumer surfaces with that requirement, the field stays unbuilt per `feedback_planned_not_yagni.md`.

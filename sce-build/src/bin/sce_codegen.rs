@@ -1563,6 +1563,20 @@ fn cmd_generate(
         );
     }
 
+    // §5.O Atomic 1 follow-up — ownership-boundary walker. Every
+    // SCE-emitted file (one carrying a §6.2.6 drift header) must
+    // contain at least one `SCE-MAP:` marker per ARCHITECTURE.md
+    // "Traceability Ownership Boundary". External meta-generator
+    // output (no drift header) is silently out-of-scope. Fires
+    // `traceability/meta-generated-source-line-marker-missing` on
+    // codegen-internal regression — surfaces immediately rather than
+    // letting a broken template ship.
+    if let Err(err) = sce_build::forge::sourcemap::validate_emitted_files_have_markers(
+        Path::new(output_dir),
+    ) {
+        error_format.emit_and_exit(&err, "");
+    }
+
     emit_generate_manifest(&report);
 }
 
@@ -2409,6 +2423,18 @@ fn generate_w3c_unified(
                     .join(","),
             ),
         });
+    }
+
+    // §5.O Atomic 1 follow-up — ownership-boundary walker. Mirrors
+    // the cmd_generate hook: every drift-headered file under either
+    // the SM output base or the per-test harness directory must
+    // carry an `SCE-MAP:` marker. Non-drift-headered files (external
+    // meta-generator output, hand-authored sources) are silently
+    // skipped per ARCHITECTURE.md "Traceability Ownership Boundary".
+    for root in [backend.sm_output_base(), backend.test_output_dir()] {
+        if let Err(err) = sce_build::forge::sourcemap::validate_emitted_files_have_markers(root) {
+            current_error_format().emit_and_exit(&err, "");
+        }
     }
 }
 
