@@ -531,6 +531,53 @@ pub struct PlatformConfig {
     /// the default.
     #[serde(default)]
     pub strict_c99_identifiers: Option<bool>,
+    /// Watching-zenoh RFC §5.2 Round F-α — search root for `<sce:driver
+    /// href="..."/>` resolution. When set, `href` values are resolved
+    /// relative to this directory; otherwise resolution falls back to
+    /// the SCXML file's parent directory. Optional at parse time;
+    /// consumed by the driver-header resolver at compile-model time
+    /// alongside `mcu/driver-header-not-found`.
+    #[serde(default)]
+    pub driver_root: Option<String>,
+    /// Watching-zenoh RFC §5.2 Round F-α — C11-backend-only linker
+    /// section attribute injection. When `class` is set, every emitted
+    /// statechart function definition is prefixed with
+    /// `__attribute__((section("<class>")))`. When `driver` is set,
+    /// the same is true for emitted driver-glue functions (deferred to
+    /// F-β; F-α only emits the `class` half). Non-C11 backends reject
+    /// this section with `mcu/section-attribute-on-non-mcu-target`
+    /// (Q-Call-7 pattern). Only the GCC / Clang / Keil common
+    /// `__attribute__((section("...")))` syntax is emitted in F-α;
+    /// IAR's `@".name"` placement syntax is deferred to F-β.
+    #[serde(default)]
+    pub c11_section_attribute: Option<C11SectionAttribute>,
+}
+
+/// Watching-zenoh RFC §5.2 Round F-α — C11 linker section attribute
+/// injection knobs. Set on `machines.<n>.platform.c11_section_attribute`
+/// in `deploy.yaml`. `class` controls statechart function placement;
+/// `driver` is reserved for the F-β driver-glue half and is parsed but
+/// not yet consumed by F-α codegen.
+///
+/// Only the GCC / Clang / Keil common `__attribute__((section("...")))`
+/// syntax is emitted in F-α. IAR's `@".name"` placement syntax is
+/// deferred to F-β. Non-C11 backends (cpp / rust / kotlin / go / python)
+/// raise `mcu/section-attribute-on-non-mcu-target` when this section is
+/// present, matching the Q-Call-7 non-MCU reject pattern.
+#[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct C11SectionAttribute {
+    /// Section name for statechart class functions. When set, every
+    /// emitted statechart function definition is prefixed with
+    /// `__attribute__((section("<class>")))`. Examples: `.app_code`,
+    /// `.text.statechart`.
+    #[serde(default)]
+    pub class: Option<String>,
+    /// Section name for driver-glue functions. Parsed by F-α but
+    /// consumed by F-β codegen (driver glue emission is itself F-β
+    /// scope per [[project-round-f-scope-split]]). Reserved.
+    #[serde(default)]
+    pub driver: Option<String>,
 }
 
 /// Trust-class enum for `machines.<n>.links.<name>.domain_attrs.trust_class`

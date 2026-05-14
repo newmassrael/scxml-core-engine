@@ -238,6 +238,31 @@ pub fn check(kind: ForgeKind, lang: Language) -> Result<(), GenerateError> {
     }
 }
 
+/// Watching-zenoh RFC §5.2 Round F-α — Q-Round-F-D3 reject: when
+/// `deploy.yaml`'s `platform.c11_section_attribute` is present but the
+/// target codegen backend is not C11, surface
+/// `mcu/section-attribute-on-non-mcu-target`. The section attribute
+/// injects `__attribute__((section("...")))` which has no equivalent
+/// emit on the non-MCU backends (cpp / rust / kotlin / go / python);
+/// silently dropping it would let the directive vanish on a non-C11
+/// compile, matching the Q-Call-7 non-MCU reject pattern.
+///
+/// Caller-supplied flag: the section attribute lives on `deploy.yaml`
+/// not on `ForgeKind`, so this helper takes a boolean rather than a
+/// kind. Co-located with `check` so the codegen-matrix module owns
+/// every "this target rejects feature X" gate in one place.
+pub fn check_c11_section_attribute(
+    section_attribute_present: bool,
+    lang: Language,
+) -> Result<(), GenerateError> {
+    if !section_attribute_present || matches!(lang, Language::C11) {
+        return Ok(());
+    }
+    Err(GenerateError::McuSectionAttributeOnNonMcuTarget {
+        backend: language_wire_name(lang).to_string(),
+    })
+}
+
 /// Stable wire-name for a `Language`, matching `Language::from_str`
 /// accept-set so diagnostic `actual` values round-trip cleanly.
 const fn language_wire_name(lang: Language) -> &'static str {

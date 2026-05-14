@@ -504,6 +504,15 @@ impl SCXMLParser {
         // Parse Named Context declarations (must be before states for transforms)
         self.parse_sce_contexts(&root, &mut model, diag_label)?;
 
+        // Watching-zenoh RFC §5.2 Round F-α — top-level `<sce:driver
+        // href="..."/>` references. Resolution against `deploy.yaml`'s
+        // `platform.driver_root` happens at compile-model time; this
+        // pass only captures the verbatim author-written strings and
+        // their source positions so a missing `href` surfaces at parse
+        // time and the codegen-time `#include` emit has a stable
+        // document-order index.
+        self.parse_sce_drivers(&root, &mut model, diag_label)?;
+
         // Parse states recursively
         self.parse_states(&root, None, &mut model, base_dir, diag_label)?;
 
@@ -2625,6 +2634,67 @@ impl SCXMLParser {
                 kt_type,
             });
             model.context_object_ids.insert(ctx_id);
+        }
+        Ok(())
+    }
+
+    /// Watching-zenoh RFC §5.2 Round F-α — collect every top-level
+    /// `<sce:driver href="..."/>` element on the SCXML root. Each
+    /// declaration is captured in document order with its source
+    /// position so codegen can `#include` the resolved path into the
+    /// C11 `*_sm.c` and so a missing `href` surfaces
+    /// `validation/invalid-attribute` (via [`ValidationError::
+    /// MissingAttribute`]) before downstream stages.
+    ///
+    /// `href` resolution against `deploy.yaml`'s `platform.driver_root`
+    /// happens later at compile-model time — this method only stores
+    /// the verbatim author-written string. Strays under non-root
+    /// elements are ignored by design: the SCXML root content model
+    /// is `xs:any namespace="##any" lax`, mirroring the W3C
+    /// extension-element convention, so the parser walks only root
+    /// children (Q-Round-F-D6).
+    fn parse_sce_drivers(
+        &self,
+        root: &roxmltree::Node,
+        model: &mut SCXMLModel,
+        source_name: &str,
+    ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
+        use crate::forge::error::{Located, SourceLocation, ValidationError};
+        use crate::forge::model::SCE_NAMESPACE;
+        use crate::model::DriverRef;
+        let mut document_order: u32 = 0;
+        for child in root.children().filter(|n| n.is_element()) {
+            let is_sce_driver = child.tag_name().namespace() == Some(SCE_NAMESPACE)
+                && child.tag_name().name() == "driver";
+            if !is_sce_driver {
+                continue;
+            }
+            let href = child.attribute("href").ok_or_else(|| {
+                let pos = child.document().text_pos_at(child.range().start);
+                Located::new(
+                    ValidationError::MissingAttribute {
+                        element: "<sce:driver>".to_string(),
+                        attr: "href".to_string(),
+                    }
+                    .into(),
+                    source_name,
+                    Some(pos.row),
+                    Some(pos.col),
+                )
+            })?;
+            let pos = child.document().text_pos_at(child.range().start);
+            let source_location = Some(SourceLocation {
+                file: source_name.to_string(),
+                line: Some(pos.row),
+                col: Some(pos.col),
+            });
+            model.driver_refs.push(DriverRef {
+                href: href.to_string(),
+                resolved_path: None,
+                document_order,
+                source_location,
+            });
+            document_order = document_order.saturating_add(1);
         }
         Ok(())
     }

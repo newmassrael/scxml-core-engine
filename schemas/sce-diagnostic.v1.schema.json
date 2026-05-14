@@ -291,7 +291,9 @@
         "traceability/symbol-name-exceeds-c-identifier-limit",
         "traceability/sourcemap-source-hash-mismatch",
         "traceability/sce-map-attribute-stripped",
-        "traceability/meta-generated-source-line-marker-missing"
+        "traceability/meta-generated-source-line-marker-missing",
+        "mcu/driver-header-not-found",
+        "mcu/section-attribute-on-non-mcu-target"
       ]
     },
     "stage": {

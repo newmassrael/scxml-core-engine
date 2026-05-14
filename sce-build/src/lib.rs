@@ -195,6 +195,74 @@ pub fn resolve_source_path(model: &mut SCXMLModel, scxml_path: &str) {
     }
 }
 
+/// Watching-zenoh RFC §5.2 Round F-α — resolve every `<sce:driver
+/// href="..."/>` reference on the SCXML root against the SCXML file's
+/// parent directory (the Q-Round-F-D5 default root). Each successful
+/// resolution populates `DriverRef::resolved_path`; the first miss
+/// surfaces `mcu/driver-header-not-found` with the `Located`
+/// row/column from the parser-stamped source_location so authors land
+/// on the exact `<sce:driver>` element.
+///
+/// Absolute `href` values are passed through `Path::is_absolute` and
+/// not joined with the parent. The resolver intentionally does NOT
+/// parse the driver header — Q-Round-F-D2 delegates cross-TU symbol
+/// resolution to the C compiler. The only contract this helper
+/// enforces is filesystem existence, mirroring `XInclude` resolver
+/// behaviour for SCXML composition.
+///
+/// `deploy.yaml`'s `platform.driver_root` override is consumed by
+/// [`resolve_driver_refs_with_root`] (deploy-aware entry); this
+/// helper is the SCXML-only baseline.
+fn resolve_driver_refs(model: &mut SCXMLModel, scxml_path: &str) -> Result<(), CompileError> {
+    let parent_default = std::path::Path::new(scxml_path)
+        .parent()
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    resolve_driver_refs_with_root(model, scxml_path, &parent_default)
+}
+
+/// Watching-zenoh RFC §5.2 Round F-α — resolve every `<sce:driver>`
+/// against `root` (the override path supplied by `deploy.yaml`'s
+/// `platform.driver_root` per Q-Round-F-D5). The compile-model gate
+/// uses the SCXML file's parent directory; deploy-aware callers pass
+/// the resolved root explicitly so the override beats the default
+/// without re-walking from scratch. Absolute `href` values are
+/// honoured verbatim (not joined with `root`).
+pub fn resolve_driver_refs_with_root(
+    model: &mut SCXMLModel,
+    diag_label: &str,
+    root: &std::path::Path,
+) -> Result<(), CompileError> {
+    use forge::error::{Located, ValidationError};
+    for driver in model.driver_refs.iter_mut() {
+        let candidate = std::path::Path::new(&driver.href);
+        let resolved = if candidate.is_absolute() {
+            candidate.to_path_buf()
+        } else {
+            root.join(candidate)
+        };
+        if !resolved.exists() {
+            let (line, col) = driver
+                .source_location
+                .as_ref()
+                .map(|loc| (loc.line, loc.col))
+                .unwrap_or((None, None));
+            return Err(Located::new(
+                ValidationError::McuDriverHeaderNotFound {
+                    href: driver.href.clone(),
+                    resolved_dir: root.to_string_lossy().to_string(),
+                }
+                .into(),
+                diag_label,
+                line,
+                col,
+            ));
+        }
+        driver.resolved_path = Some(resolved.to_string_lossy().to_string());
+    }
+    Ok(())
+}
+
 /// Compile SCXML files to Rust source code in `OUT_DIR`.
 ///
 /// Generates `{name}_sm.rs` for each input SCXML file.
@@ -349,7 +417,30 @@ pub fn compile_scxml_lang_typed(
     template_dir: &Path,
     language: generator::Language,
 ) -> Result<generator::GeneratedOutput, CompileError> {
-    let model = compile_model(scxml_path)?;
+    compile_scxml_lang_typed_with_driver_root(scxml_path, template_dir, language, None)
+}
+
+/// Watching-zenoh RFC §5.2 Round F-α — deploy-aware variant of
+/// [`compile_scxml_lang_typed`] that honours `deploy.yaml`'s
+/// `platform.driver_root` override (Q-Round-F-D5). `driver_root: None`
+/// means "fall back to the SCXML file's parent directory" so this is
+/// a strict superset of the deploy-unaware entry — every existing
+/// caller route remains byte-stable when no override is in play. The
+/// orchestrator ([`compile_scxml_with_imports`]) selects the override
+/// per machine and threads it in; single-file callers pass `None`.
+pub fn compile_scxml_lang_typed_with_driver_root(
+    scxml_path: &str,
+    template_dir: &Path,
+    language: generator::Language,
+    driver_root: Option<&Path>,
+) -> Result<generator::GeneratedOutput, CompileError> {
+    let mut model = compile_model(scxml_path)?;
+    if !model.driver_refs.is_empty() {
+        match driver_root {
+            Some(root) => resolve_driver_refs_with_root(&mut model, scxml_path, root)?,
+            None => resolve_driver_refs(&mut model, scxml_path)?,
+        }
+    }
 
     let input_stem = Path::new(scxml_path)
         .file_stem()
@@ -2080,13 +2171,49 @@ pub fn compile_scxml_with_imports(
         outputs.push((basename.to_string(), out));
     }
 
+    // Watching-zenoh RFC §5.2 Round F-α — codegen-entry checks that
+    // depend on `deploy.yaml`. (i) Non-MCU backend reject of
+    // `platform.c11_section_attribute` (Q-Round-F-D3) fires before any
+    // SCXML codegen because the section attribute itself has no axis
+    // outside C11; the early exit keeps templates from emitting
+    // half-applied directives. (ii) `platform.driver_root` override
+    // (Q-Round-F-D5) is resolved per-machine and threaded into
+    // [`compile_scxml_lang_typed_with_driver_root`] so each statechart
+    // resolves `<sce:driver>` against the deploy-specified root. The
+    // first machine carrying the override wins per-orchestrator-run;
+    // the single-machine common case (one `deploy.yaml`, one `c11_*`
+    // backend target) is the only shape Q-Round-F-D5 commits.
+    let mut deploy_driver_root: Option<std::path::PathBuf> = None;
+    if let Some(deploy_cfg) = deploy {
+        for device in deploy_cfg.topology.values() {
+            for machine in device.machines.values() {
+                if let Some(platform) = machine.platform.as_ref() {
+                    if platform.c11_section_attribute.is_some() {
+                        forge::codegen_matrix::check_c11_section_attribute(true, language)
+                            .map_err(|e| Located::new(e.into(), "deploy.yaml", None, None))?;
+                    }
+                    if let Some(root) = platform.driver_root.as_deref() {
+                        if deploy_driver_root.is_none() {
+                            deploy_driver_root = Some(std::path::PathBuf::from(root));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     for scxml_path in scxml_files {
         let path_str = scxml_path.to_str().unwrap_or("");
         let basename = scxml_path
             .file_name()
             .and_then(|s| s.to_str())
             .unwrap_or(path_str);
-        let out = compile_scxml_lang_typed(path_str, template_dir, language)?;
+        let out = compile_scxml_lang_typed_with_driver_root(
+            path_str,
+            template_dir,
+            language,
+            deploy_driver_root.as_deref(),
+        )?;
         outputs.push((basename.to_string(), out));
     }
 

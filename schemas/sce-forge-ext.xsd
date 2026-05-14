@@ -1353,4 +1353,23 @@
     </xs:complexType>
   </xs:element>
 
+  <!-- watching-zenoh RFC §5.2 Round F-α: top-level driver-header
+       reference. Allowed only as a direct child of `<scxml>` root
+       (Q-Round-F-D6); the C11 backend emits `#include "<resolved>"`
+       at the top of the generated `*_sm.c` so cross-TU symbol
+       resolution is handled by the C compiler (Q-Round-F-D2). `href`
+       is required; the parser resolves it against
+       `deploy.yaml`'s `platform.driver_root` (or the SCXML file's
+       parent directory as fallback). Unresolved paths surface
+       `mcu/driver-header-not-found`. The SCXML root content model
+       in `sce-forge.xsd` is `xs:any namespace="##any" lax` so XSD
+       cannot strictly forbid misplacement; downstream codegen only
+       consumes top-level instances, matching the W3C lax-anywhere
+       pattern. -->
+  <xs:element name="driver">
+    <xs:complexType>
+      <xs:attribute name="href" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
 </xs:schema>

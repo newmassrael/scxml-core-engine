@@ -622,6 +622,44 @@ impl std::ops::DerefMut for HybridInvokeInfo {
 ///
 /// Q-OnSample-1 (Y) parser-AST extension; Q-OnSample-2 (a) valid only
 /// inside `<state>` and `<parallel>`; Q-OnSample-3 v1 attributes are
+/// Watching-zenoh RFC §5.2 Round F-α — top-level `<sce:driver
+/// href="..."/>` declaration on the SCXML root. References an
+/// externally-authored driver header that the C11 backend `#include`s
+/// into the emitted `*_sm.c`. Author-time reference only; SCE does not
+/// parse the driver header itself (Q-Round-F-D2 lock — cross-TU
+/// signature verification is delegated to the C compiler).
+///
+/// Resolution happens at compile-model time: each `href` is joined
+/// against `deploy.yaml`'s `platform.driver_root` (or the SCXML file's
+/// parent directory as fallback), and an unresolved path surfaces
+/// `mcu/driver-header-not-found`. Only the C11 backend consumes this
+/// field for codegen emission (Q-Round-F-D5 / D6 locks).
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct DriverRef {
+    /// `href="..."` — author-written path to the driver header. May be
+    /// absolute or relative to the resolved root directory. Stored
+    /// verbatim (no canonicalisation) so the original string can appear
+    /// in `actual` payloads of `mcu/driver-header-not-found`.
+    pub href: String,
+    /// Post-resolution absolute path of the driver header, populated by
+    /// the compile-model-time resolver (`crate::lib`-level entry points).
+    /// `None` immediately after parser exit; `Some(...)` once the
+    /// resolver has confirmed the file exists. Codegen consumes this
+    /// field — not `href` — when emitting `#include` lines so the
+    /// emitted path matches what was actually resolved.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolved_path: Option<String>,
+    /// 0-based document order within the SCXML root's `<sce:driver>`
+    /// declarations. Lets diagnostics quote a stable index when the
+    /// source file lacks reliable line numbers.
+    pub document_order: u32,
+    /// Source location of the `<sce:driver>` element (post-preprocessor
+    /// row/col). `None` when the parser cannot reconstruct the position
+    /// — diagnostics fall back to file-level anchoring in that case.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
+}
+
 /// `link` (forge link kind artifact name) + `event` (SCXML event name
 /// dispatched on Sample arrival), both required. B7-η' Atomic A2 adds
 /// optional `callback` attribute (Q-Callback-1 Option α + Q-Callback-2
@@ -759,6 +797,23 @@ pub struct SCXMLModel {
     /// concrete metadata type at template-render time).
     #[serde(skip_serializing_if = "BTreeSet::is_empty", default)]
     pub on_sample_links: BTreeSet<String>,
+    /// Watching-zenoh RFC §5.2 Round F-α — every top-level `<sce:driver
+    /// href="..."/>` reference on the document root, in document order.
+    /// Each entry is an externally-authored driver header that the C11
+    /// backend `#include`s into the emitted `*_sm.c` so cross-TU symbol
+    /// resolution is handled by the C compiler (Q-Round-F-D2 lock).
+    ///
+    /// Empty when the machine declares no driver dependencies (the
+    /// common case for non-MCU / hosted backends). Non-empty: each
+    /// `href` is resolved at compile-model time against
+    /// `deploy.yaml`'s `platform.driver_root` (or the SCXML file's
+    /// parent directory as fallback); unresolved paths surface
+    /// `mcu/driver-header-not-found`. Only the C11 backend consumes
+    /// this field; other backends emit the references unchanged into
+    /// their codegen context (no `#include` semantics translate
+    /// outside C).
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub driver_refs: Vec<DriverRef>,
     /// W3C SCXML 6.4 / test229: `true` iff any `<invoke>` in the document
     /// carries `autoforward="true"`. Drives codegen of the
     /// `forward_to_autoforward_children` helper + its call site in the

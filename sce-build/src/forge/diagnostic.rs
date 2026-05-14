@@ -2018,6 +2018,25 @@ pub enum DiagnosticCode {
     //    in the template that lost its `sce_map_marker` macro call.
     #[serde(rename = "traceability/meta-generated-source-line-marker-missing")]
     TraceabilityMetaGeneratedSourceLineMarkerMissing,
+
+    // ── Round F-α (watching-zenoh RFC §5.2) — MCU driver/class
+    //    boundary on the C11 backend. The two codes split along the
+    //    Q-Round-F-D2 + D3 locks:
+    //    `mcu/driver-header-not-found` fires at compile-model time
+    //    when `<sce:driver href="..."/>` cannot be resolved against
+    //    `deploy.yaml`'s `platform.driver_root` (or the SCXML file's
+    //    parent directory as fallback). Cross-TU signature checking
+    //    is delegated to the C compiler (Q-Round-F-D2); SCE only
+    //    confirms the file exists.
+    //    `mcu/section-attribute-on-non-mcu-target` fires at codegen
+    //    entry when `platform.c11_section_attribute` is set but the
+    //    target backend is not C11 — mirrors the Q-Call-7 non-MCU
+    //    reject pattern (Q-Round-F-D3) so the section directive does
+    //    not silently disappear on non-MCU compiles.
+    #[serde(rename = "mcu/driver-header-not-found")]
+    McuDriverHeaderNotFound,
+    #[serde(rename = "mcu/section-attribute-on-non-mcu-target")]
+    McuSectionAttributeOnNonMcuTarget,
 }
 
 /// Canonical enumeration of every `DiagnosticCode` variant.
@@ -2382,6 +2401,13 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // its SCE-MAP marker. ARCHITECTURE.md "Traceability Ownership
         // Boundary" defines the scope.
         TraceabilityMetaGeneratedSourceLineMarkerMissing,
+        // Round F-α (watching-zenoh RFC §5.2) — MCU driver/class
+        // boundary on the C11 backend. `mcu/driver-header-not-found`
+        // covers `<sce:driver href="..."/>` resolution failure;
+        // `mcu/section-attribute-on-non-mcu-target` covers Q-Round-F-D3
+        // non-MCU backend reject of `platform.c11_section_attribute`.
+        McuDriverHeaderNotFound,
+        McuSectionAttributeOnNonMcuTarget,
     ]
 };
 
@@ -2805,6 +2831,14 @@ impl DiagnosticCode {
             | TraceabilitySceMapAttributeStripped
             | TraceabilityMetaGeneratedSourceLineMarkerMissing => Some("watching-zenoh RFC §5.O"),
 
+            // ── Round F-α (watching-zenoh RFC §5.2) — MCU driver/class
+            //    boundary on the C11 backend. Both anchor at §5.2 per
+            //    Q-Round-F-D2/D3/D5/D6 locks (driver header reference
+            //    + non-MCU section attribute reject).
+            McuDriverHeaderNotFound | McuSectionAttributeOnNonMcuTarget => {
+                Some("watching-zenoh RFC §5.2")
+            }
+
             // ── No authoritative citation ────────────────────────
             //
             // Anchors are deliberately narrow: a code lands here when
@@ -3176,6 +3210,8 @@ impl DiagnosticCode {
             TraceabilityMetaGeneratedSourceLineMarkerMissing => {
                 "traceability/meta-generated-source-line-marker-missing"
             }
+            McuDriverHeaderNotFound => "mcu/driver-header-not-found",
+            McuSectionAttributeOnNonMcuTarget => "mcu/section-attribute-on-non-mcu-target",
         }
     }
 }
@@ -5338,6 +5374,23 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 key_fragments: vec![file.clone()],
             }
         }
+        // ── Round F-α (watching-zenoh RFC §5.2) — `<sce:driver href>`
+        //    resolution failure. `actual` carries the verbatim author-
+        //    written href so the diagnostic message round-trips the
+        //    original string; `key_fragments` include both href and
+        //    resolved_dir so two identical-named misses under different
+        //    search roots hash distinct wire-ids. Stage = Validation —
+        //    the diagnostic fires before codegen, at compile-model
+        //    time, matching the §5.O Atomic 1 stage for similar
+        //    compile-model-time codes.
+        ValidationError::McuDriverHeaderNotFound { href, resolved_dir } => DiagnosticPayload {
+            code: DiagnosticCode::McuDriverHeaderNotFound,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(href.clone()),
+            fix: None,
+            key_fragments: vec![href.clone(), resolved_dir.clone()],
+        },
     }
 }
 
@@ -5592,6 +5645,22 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             actual: None,
             fix: None,
             key_fragments: vec![kind.clone(), language.clone()],
+        },
+        // ── Round F-α (watching-zenoh RFC §5.2) — non-MCU backend
+        //    refuses `platform.c11_section_attribute` (Q-Round-F-D3).
+        //    `actual` carries the offending backend name (`cpp` /
+        //    `rust` / `kotlin` / `go` / `python`); `key_fragments`
+        //    use the same single value so the wire-id is stable per
+        //    backend across runs. Stage = Generate — the reject fires
+        //    inside the codegen-matrix walker, matching the existing
+        //    Q-Call-7 sibling.
+        GenerateError::McuSectionAttributeOnNonMcuTarget { backend } => DiagnosticPayload {
+            code: DiagnosticCode::McuSectionAttributeOnNonMcuTarget,
+            stage: Stage::Generate,
+            expected: None,
+            actual: Some(backend.clone()),
+            fix: None,
+            key_fragments: vec![backend.clone()],
         },
         GenerateError::CodegenNoStdScriptNotSupported { document, locations } => DiagnosticPayload {
             code: DiagnosticCode::CodegenNoStdScriptNotSupported,
@@ -7794,6 +7863,34 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:052d4d7f20b67021","code":"traceability/meta-generated-source-line-marker-missing","stage":"generate","spec":"watching-zenoh RFC §5.O","message":"emitted file 'out/test144/test144_sm.rs' carries a §6.2.6 drift header but no `SCE-MAP:` marker line. Per ARCHITECTURE.md \"Traceability Ownership Boundary\", every SCE-emitted file must carry at least one marker. Repair: a template under `tools/codegen/templates/` is missing its `sce_map_marker` macro call — report upstream","actual":"out/test144/test144_sm.rs"}"#,
             ),
+            // ── Round F-α (watching-zenoh RFC §5.2) — driver header
+            //    reference cannot be resolved against the platform
+            //    driver_root (or SCXML file's parent). `actual` carries
+            //    the verbatim href; `key_fragments` add both href and
+            //    resolved_dir so identical-named misses under distinct
+            //    roots hash distinct wire-ids.
+            (
+                "mcu/driver-header-not-found",
+                ValidationError::McuDriverHeaderNotFound {
+                    href: "missing.h".into(),
+                    resolved_dir: "/tmp/round_f_alpha".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:a887dfe8c01e0694","code":"mcu/driver-header-not-found","stage":"validation","spec":"watching-zenoh RFC §5.2","message":"driver header reference 'missing.h' could not be resolved (searched under '/tmp/round_f_alpha'). Repair: correct the `<sce:driver href=\"...\"/>` value, add the missing header, or set `platform.driver_root` in deploy.yaml so the relative path resolves.","actual":"missing.h"}"#,
+            ),
+            // ── Round F-α (watching-zenoh RFC §5.2) — non-MCU backend
+            //    refuses `platform.c11_section_attribute` (Q-Round-F-D3,
+            //    mirrors Q-Call-7). `actual` carries the offending
+            //    backend; `key_fragments` reuse the same single value
+            //    so the wire-id is stable per backend across runs.
+            (
+                "mcu/section-attribute-on-non-mcu-target",
+                crate::forge::error::GenerateError::McuSectionAttributeOnNonMcuTarget {
+                    backend: "rust".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:d9ee1c8383fc6b8f","code":"mcu/section-attribute-on-non-mcu-target","stage":"generate","spec":"watching-zenoh RFC §5.2","message":"platform.c11_section_attribute is set in deploy.yaml but the target backend is 'rust', not 'c11'. The section attribute injects `__attribute__((section(...)))` which only the C11 backend emits. Repair: remove the section attribute, switch the backend to 'c11', or split deploy configurations per target.","actual":"rust"}"#,
+            ),
         ]
     }
 
@@ -9841,7 +9938,17 @@ mod tests {
             //    fix is in the template that lost its SCE-MAP macro
             //    call. NeutralOrDeterministic since the diagnostic is
             //    informational toward upstream pipeline-bug repair. ──
-            | TraceabilityMetaGeneratedSourceLineMarkerMissing => NeutralOrDeterministic,
+            | TraceabilityMetaGeneratedSourceLineMarkerMissing
+            // ── Round F-α (watching-zenoh RFC §5.2) — both MCU
+            //    driver/class boundary codes ride NeutralOrDeterministic.
+            //    `mcu/driver-header-not-found`: author-domain repair
+            //    (fix href / add file / set driver_root) — no closed
+            //    candidate set. `mcu/section-attribute-on-non-mcu-target`:
+            //    multi-axis repair (remove the section / switch backend
+            //    to c11 / split deploys) — also open-ended. Both fall
+            //    outside FixCarriesCandidates by design.
+            | McuDriverHeaderNotFound
+            | McuSectionAttributeOnNonMcuTarget => NeutralOrDeterministic,
         }
     }
 
@@ -10275,7 +10382,12 @@ mod tests {
                 | TraceabilitySourcemapSourceHashMismatch
                 | TraceabilitySceMapAttributeStripped
                 // §5.O Atomic 1 follow-up — boundary walker
-                | TraceabilityMetaGeneratedSourceLineMarkerMissing => true,
+                | TraceabilityMetaGeneratedSourceLineMarkerMissing
+                // Round F-α (watching-zenoh RFC §5.2) — MCU driver/class
+                // boundary codes; both ride NeutralOrDeterministic per
+                // the non_overlap_class match above.
+                | McuDriverHeaderNotFound
+                | McuSectionAttributeOnNonMcuTarget => true,
             }
         }
         for &code in ALL_DIAGNOSTIC_CODES {
@@ -10287,7 +10399,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            270,
+            272,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
              expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
@@ -10886,7 +10998,22 @@ mod tests {
              boundary contract per ARCHITECTURE.md \"Traceability \
              Ownership Boundary\" (external meta-generator output is \
              silently out-of-scope by virtue of carrying no drift \
-             header). 269 → 270.",
+             header). 269 → 270. Then watching-zenoh RFC §5.2 Round F-α \
+             lands the MCU driver/class boundary pair: \
+             `mcu/driver-header-not-found` (NeutralOrDeterministic; \
+             author-domain repair) fires at compile-model time when a \
+             `<sce:driver href=\"...\"/>` reference cannot be resolved \
+             against `deploy.yaml`'s `platform.driver_root` (or the \
+             SCXML file's parent directory as fallback). \
+             `mcu/section-attribute-on-non-mcu-target` \
+             (NeutralOrDeterministic; multi-axis repair) fires at \
+             codegen entry when `platform.c11_section_attribute` is \
+             present but the target backend is not C11 — mirrors the \
+             Q-Call-7 non-MCU reject pattern (Q-Round-F-D3). Together \
+             they pin the §5.2 driver/class boundary policy on the \
+             C11 backend: SCE emits the statechart class + reference; \
+             cross-TU signature verification stays the C compiler's \
+             job (Q-Round-F-D2). 270 → 272.",
         );
     }
 

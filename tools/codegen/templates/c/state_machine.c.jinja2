@@ -20,6 +20,19 @@
 {{ sce_map.source_marker(model.source_location, "c", module_level=true) }}
 
 #include "{{ model.name }}_sm.h"
+{# Watching-zenoh RFC §5.2 Round F-α — author-declared driver headers.
+   Each top-level `<sce:driver href="..."/>` on the SCXML root is
+   resolved at compile-model time (`resolve_driver_refs` /
+   `resolve_driver_refs_with_root` in `sce-build/src/lib.rs`) against
+   either the SCXML file's parent directory (default per Q-Round-F-D5)
+   or `deploy.yaml`'s `platform.driver_root` (override). The resolver
+   confirms file existence only; cross-TU symbol verification is
+   delegated to the C compiler (Q-Round-F-D2 lock). Empty `driver_refs`
+   skips the loop entirely so the byte-stable output of every existing
+   fixture stays unchanged. #}
+{%- for d in model.driver_refs %}
+#include "{{ d.resolved_path or d.href }}"
+{%- endfor %}
 
 {% if (model.invokes | scxml_family) %}
 /* W3C SCXML 6.4: invoke lifecycle includes — sce/invoke.h supplies

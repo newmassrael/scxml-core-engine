@@ -2268,6 +2268,34 @@ pub enum ValidationError {
          `sce_map_marker` macro call — report upstream"
     )]
     TraceabilityMetaGeneratedSourceLineMarkerMissing { file: String },
+
+    /// Watching-zenoh RFC §5.2 Round F-α — a `<sce:driver href="..."/>`
+    /// reference cannot be resolved against `deploy.yaml`'s
+    /// `platform.driver_root` (or the SCXML file's parent directory
+    /// as fallback). The referenced header is the author's contract
+    /// with the C11 backend: `*_sm.c` `#include`s the resolved path,
+    /// so absence breaks cross-TU symbol resolution before any C
+    /// compiler can speak up. The diagnostic fires at compile-model
+    /// time, before codegen.
+    ///
+    /// Repair is author-domain — fix the `href` value, add the
+    /// missing file, or set `platform.driver_root` so the relative
+    /// path resolves. No closed candidate set; NeutralOrDeterministic.
+    #[error(
+        "driver header reference '{href}' could not be resolved \
+         (searched under '{resolved_dir}'). Repair: correct the \
+         `<sce:driver href=\"...\"/>` value, add the missing header, \
+         or set `platform.driver_root` in deploy.yaml so the relative \
+         path resolves."
+    )]
+    McuDriverHeaderNotFound {
+        /// Author-written `href` value, verbatim from the SCXML.
+        href: String,
+        /// Directory the resolver searched (resolved root or SCXML
+        /// file's parent).
+        resolved_dir: String,
+    },
+
 }
 
 /// watching-zenoh RFC §5.E B7-η' Atomic A2 callback-path failure
@@ -2507,6 +2535,24 @@ pub enum GenerateError {
          (watching-zenoh RFC §5.J.4 expects all six backends to emit)"
     )]
     CodegenGenericKindBackendEmitMissing { kind: String, language: String },
+
+    /// Watching-zenoh RFC §5.2 Round F-α (Q-Round-F-D3): `deploy.yaml`'s
+    /// `platform.c11_section_attribute` is present but the codegen
+    /// target backend is not C11. The section attribute injects
+    /// `__attribute__((section("...")))` which only the C11 emitter
+    /// understands; non-MCU backends (cpp / rust / kotlin / go /
+    /// python) have no equivalent contract and reject the field by
+    /// design, mirroring the Q-Call-7 non-MCU reject pattern so the
+    /// section directive does not silently disappear on a non-C11
+    /// compile. Producer: `forge::codegen_matrix::check_c11_section_attribute`.
+    #[error(
+        "platform.c11_section_attribute is set in deploy.yaml but the \
+         target backend is '{backend}', not 'c11'. The section attribute \
+         injects `__attribute__((section(...)))` which only the C11 \
+         backend emits. Repair: remove the section attribute, switch \
+         the backend to 'c11', or split deploy configurations per target."
+    )]
+    McuSectionAttributeOnNonMcuTarget { backend: String },
 
     /// Watching-zenoh RFC §5.J.2 (C3 Atomic B-β): the SCXML document
     /// is generated with `sce-codegen generate -l rust --no-std` but
