@@ -21,6 +21,8 @@ pub mod model;
 pub mod parser;
 pub mod pool_registry;
 pub mod provenance;
+pub mod sourcemap;
+pub mod symbol_mangling;
 pub mod target_plugin;
 pub mod types;
 pub mod type_ctx;

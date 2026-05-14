@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "source_hash": "f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9",
+  "template_hash": "0ae95bdc8568e54ab8b0becbe6b9dbf13fd2de6976e2b75ba52db7079781e01f",
+  "symbols": {
+    "test250_____machine": {
+      "scxml_file": "test250.scxml",
+      "scxml_state_path": "",
+      "scxml_xpath": "//scxml",
+      "line_range": [
+        7,
+        7
+      ],
+      "kind": "machine"
+    },
+    "test250__final___state_body": {
+      "scxml_file": "test250.scxml",
+      "scxml_state_path": "final",
+      "scxml_xpath": "//state[@id='final']",
+      "line_range": [
+        45,
+        45
+      ],
+      "kind": "state"
+    },
+    "test250__s0___on_entry_0_0": {
+      "scxml_file": "test250.scxml",
+      "scxml_state_path": "s0",
+      "scxml_xpath": "//state[@id='s0']/onentry",
+      "line_range": [
+        12,
+        12
+      ],
+      "kind": "on_entry"
+    },
+    "test250__s0___state_body": {
+      "scxml_file": "test250.scxml",
+      "scxml_state_path": "s0",
+      "scxml_xpath": "//state[@id='s0']",
+      "line_range": [
+        10,
+        10
+      ],
+      "kind": "state"
+    },
+    "test250__s0___transition_0": {
+      "scxml_file": "test250.scxml",
+      "scxml_state_path": "s0",
+      "scxml_xpath": "//state[@id='s0']/transition[1]",
+      "line_range": [
+        42,
+        42
+      ],
+      "kind": "transition"
+    }
+  }
+}

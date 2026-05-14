@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "source_hash": "f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9",
+  "template_hash": "0ae95bdc8568e54ab8b0becbe6b9dbf13fd2de6976e2b75ba52db7079781e01f",
+  "symbols": {
+    "test415_____machine": {
+      "scxml_file": "test415.scxml",
+      "scxml_state_path": "",
+      "scxml_xpath": "//scxml",
+      "line_range": [
+        8,
+        8
+      ],
+      "kind": "machine"
+    },
+    "test415__final___on_entry_0_0": {
+      "scxml_file": "test415.scxml",
+      "scxml_state_path": "final",
+      "scxml_xpath": "//state[@id='final']/onentry",
+      "line_range": [
+        11,
+        11
+      ],
+      "kind": "on_entry"
+    },
+    "test415__final___state_body": {
+      "scxml_file": "test415.scxml",
+      "scxml_state_path": "final",
+      "scxml_xpath": "//state[@id='final']",
+      "line_range": [
+        9,
+        9
+      ],
+      "kind": "state"
+    }
+  }
+}

@@ -519,6 +519,18 @@ pub struct PlatformConfig {
     /// Q-C13-6 (a).
     #[serde(default)]
     pub tlv_chain_per_entry_overhead_us: Option<f32>,
+    /// Watching-zenoh RFC §5.O Atomic 1 — escalation flag for the
+    /// `traceability/symbol-name-exceeds-c-identifier-limit`
+    /// diagnostic. Default `None` = warn-only (the sourcemap still
+    /// emits, the long identifier still ships to downstream compilers
+    /// that allow >31 chars). `Some(true)` = hard-error: codegen
+    /// refuses to write any artifact when any mangled symbol exceeds
+    /// the C99 §5.2.4.1 external-identifier limit. Authors needing
+    /// strict ANSI-C portability set this; targets with relaxed
+    /// linkers (modern GCC/Clang/MSVC all allow much longer) leave
+    /// the default.
+    #[serde(default)]
+    pub strict_c99_identifiers: Option<bool>,
 }
 
 /// Trust-class enum for `machines.<n>.links.<name>.domain_attrs.trust_class`

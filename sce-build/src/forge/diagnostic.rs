@@ -1968,6 +1968,44 @@ pub enum DiagnosticCode {
     //    silently-broken codegen.
     #[serde(rename = "traceability/scxml-line-range-missing")]
     TraceabilityScxmlLineRangeMissing,
+
+    // ── Traceability §5.O Atomic 1 — symbol mangling collision
+    //    detector. Spec lines 3055-3057 fix the per-symbol mangling
+    //    pattern (`<machine>__<state_path>__<artifact>`); XInclude or
+    //    `sce:template` composition can produce two distinct IR nodes
+    //    whose triples mangle to the same C identifier. The dual-
+    //    location payload pins both sites so authors can rename one
+    //    of the two states to break the collision.
+    #[serde(rename = "traceability/state-id-collision")]
+    TraceabilityStateIdCollision,
+
+    // ── Traceability §5.O Atomic 1 — mangled symbol exceeds the C99
+    //    §5.2.4.1 external identifier limit (31 chars). Default
+    //    rendering is warn; `platform.strict_c99_identifiers: true`
+    //    in deploy.yaml escalates to hard-error. The diagnostic
+    //    carries the offending mangled id + excess-char count so
+    //    authors see exactly what overflowed.
+    #[serde(rename = "traceability/symbol-name-exceeds-c-identifier-limit")]
+    TraceabilitySymbolNameExceedsCIdentifierLimit,
+
+    // ── Traceability §5.O Atomic 1 — sourcemap `source_hash` drift
+    //    against the §6.2.6 header. Spec lines 3321-3324 require
+    //    byte-equality between the sourcemap JSON's `source_hash`
+    //    field and the per-file `// source-hash:` header value;
+    //    drift indicates the sourcemap was emitted from a stale
+    //    snapshot or hand-edited.
+    #[serde(rename = "traceability/sourcemap-source-hash-mismatch")]
+    TraceabilitySourcemapSourceHashMismatch,
+
+    // ── Traceability §5.O Atomic 1 — Rust SCE-MAP marker preservation
+    //    guard (OQ-W16 (b)). Empirical: rustdoc may strip `#[doc]`
+    //    attributes under specific profile / no_std combinations.
+    //    Fires from `sce-codegen addr2sce` when the rustdoc JSON dump
+    //    lacks the expected `SCE-MAP:` `#[doc]` line; the `// SCE-MAP:`
+    //    line-comment fallback (dual-emit since Atomic 0c) covers the
+    //    miss. Diagnostic signals the fallback was needed.
+    #[serde(rename = "traceability/sce-map-attribute-stripped")]
+    TraceabilitySceMapAttributeStripped,
 }
 
 /// Canonical enumeration of every `DiagnosticCode` variant.
@@ -2320,6 +2358,13 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // Traceability §5.O Atomic 0 — IR provenance pre-emit guard
         // (watching-zenoh RFC §5.O lines 3289-3290).
         TraceabilityScxmlLineRangeMissing,
+        // Traceability §5.O Atomic 1 — symbol mangling + sourcemap
+        // contract (watching-zenoh RFC §5.O lines 3055-3057, 3219-3243,
+        // 3321-3324, OQ-W16 a/b locks).
+        TraceabilityStateIdCollision,
+        TraceabilitySymbolNameExceedsCIdentifierLimit,
+        TraceabilitySourcemapSourceHashMismatch,
+        TraceabilitySceMapAttributeStripped,
     ]
 };
 
@@ -2731,6 +2776,17 @@ impl DiagnosticCode {
             //    both consume.
             TraceabilityScxmlLineRangeMissing => Some("watching-zenoh RFC §5.O"),
 
+            // ── §5.O Atomic 1 — symbol mangling + sourcemap contract.
+            //    All 4 anchor at watching-zenoh RFC §5.O (the same
+            //    section heading) per Q-§5.O-9: spec lines 3055-3057
+            //    (mangling pattern), 3219-3243 (sourcemap JSON shape),
+            //    3321-3324 (source_hash byte-equality), OQ-W16 a/b
+            //    (escape encoding + `#[doc]` preservation).
+            TraceabilityStateIdCollision
+            | TraceabilitySymbolNameExceedsCIdentifierLimit
+            | TraceabilitySourcemapSourceHashMismatch
+            | TraceabilitySceMapAttributeStripped => Some("watching-zenoh RFC §5.O"),
+
             // ── No authoritative citation ────────────────────────
             //
             // Anchors are deliberately narrow: a code lands here when
@@ -3095,6 +3151,10 @@ impl DiagnosticCode {
             MeshIo => "mesh/io",
             ForgeSourceHashMismatch => "forge/source-hash-mismatch",
             TraceabilityScxmlLineRangeMissing => "traceability/scxml-line-range-missing",
+            TraceabilityStateIdCollision => "traceability/state-id-collision",
+            TraceabilitySymbolNameExceedsCIdentifierLimit => "traceability/symbol-name-exceeds-c-identifier-limit",
+            TraceabilitySourcemapSourceHashMismatch => "traceability/sourcemap-source-hash-mismatch",
+            TraceabilitySceMapAttributeStripped => "traceability/sce-map-attribute-stripped",
         }
     }
 }
@@ -5157,6 +5217,91 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: None,
             fix: None,
             key_fragments: vec![(*node_kind).into(), node_id.clone()],
+        },
+        // ── §5.O Atomic 1 — symbol mangling collision detector. The
+        //    dual-location payload rides `Fix::ReplaceOneOf` with the
+        //    two `<file>:<line>` strings as the closed candidate set:
+        //    the author picks whichever site to rename to break the
+        //    clash. `actual` carries the colliding mangled symbol so
+        //    the diagnostic message is self-describing.
+        ValidationError::TraceabilityStateIdCollision {
+            mangled,
+            first_file,
+            first_line,
+            second_file,
+            second_line,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::TraceabilityStateIdCollision,
+            stage: Stage::Generate,
+            expected: None,
+            actual: Some(mangled.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: vec![
+                    format!("{first_file}:{first_line}"),
+                    format!("{second_file}:{second_line}"),
+                ],
+            }),
+            key_fragments: vec![mangled.clone()],
+        },
+        // ── §5.O Atomic 1 — mangled symbol exceeds C99 identifier
+        //    limit. NeutralOrDeterministic: the author has multiple
+        //    repair axes (shorten machine id, shorten state id,
+        //    shorten artifact suffix, or relax the strict flag) so
+        //    no single canonical candidate list.
+        ValidationError::TraceabilitySymbolNameExceedsCIdentifierLimit {
+            mangled,
+            actual_len,
+            over_by,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::TraceabilitySymbolNameExceedsCIdentifierLimit,
+            stage: Stage::Generate,
+            expected: None,
+            actual: Some(mangled.clone()),
+            fix: None,
+            key_fragments: vec![
+                mangled.clone(),
+                actual_len.to_string(),
+                over_by.to_string(),
+            ],
+        },
+        // ── §5.O Atomic 1 — sourcemap source_hash drift against
+        //    §6.2.6 header. NeutralOrDeterministic: regenerate via
+        //    `sce-codegen generate` is the only repair.
+        ValidationError::TraceabilitySourcemapSourceHashMismatch {
+            file,
+            sourcemap_hash,
+            header_hash,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::TraceabilitySourcemapSourceHashMismatch,
+            stage: Stage::Generate,
+            expected: None,
+            actual: Some(sourcemap_hash.clone()),
+            fix: None,
+            key_fragments: vec![
+                file.clone(),
+                sourcemap_hash.clone(),
+                header_hash.clone(),
+            ],
+        },
+        // ── §5.O Atomic 1 — Rust SCE-MAP `#[doc]` preservation guard
+        //    (OQ-W16 b). NeutralOrDeterministic: the dual-emit
+        //    fallback `// SCE-MAP:` line comment already covers the
+        //    strip, so this is a heads-up rather than a hard error.
+        ValidationError::TraceabilitySceMapAttributeStripped {
+            crate_name,
+            function,
+            profile,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::TraceabilitySceMapAttributeStripped,
+            stage: Stage::Generate,
+            expected: None,
+            actual: Some(function.clone()),
+            fix: None,
+            key_fragments: vec![
+                crate_name.clone(),
+                function.clone(),
+                profile.clone(),
+            ],
         },
     }
 }
@@ -7542,6 +7687,65 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:c468c384e2af3fcf","code":"traceability/scxml-line-range-missing","stage":"generate","spec":"watching-zenoh RFC §5.O","message":"<state> 'S0': source_location not populated — §5.O Atomic 0 pre-emit guard (parser site missed)"}"#,
             ),
+            // ── §5.O Atomic 1 — symbol mangling + sourcemap contract goldens ──
+            //    Dual-location collision report. `actual` is the
+            //    colliding mangled symbol; the `Fix::ReplaceOneOf`
+            //    candidate list names the two offending sites so the
+            //    agent / human picks which to rename.
+            (
+                "traceability/state-id-collision",
+                ValidationError::TraceabilityStateIdCollision {
+                    mangled: "motor__armed___state_body".into(),
+                    first_file: "motor.scxml".into(),
+                    first_line: 10,
+                    second_file: "imports/armed.scxml".into(),
+                    second_line: 4,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:acb9750dd735a718","code":"traceability/state-id-collision","stage":"generate","spec":"watching-zenoh RFC §5.O","message":"symbol collision: 'motor__armed___state_body' maps to two IR nodes — motor.scxml:10 and imports/armed.scxml:4. Repair: rename one of the colliding ids so the mangled symbols differ","actual":"motor__armed___state_body","fix":{"kind":"replace_one_of","candidates":["motor.scxml:10","imports/armed.scxml:4"]}}"#,
+            ),
+            //    Symbol length cap (C99 §5.2.4.1, 31 chars). `actual`
+            //    is the offending mangled id; the key_fragments triple
+            //    keys the wire-id off the id + over_by count so two
+            //    distinct overflows hash to distinct records.
+            (
+                "traceability/symbol-name-exceeds-c-identifier-limit",
+                ValidationError::TraceabilitySymbolNameExceedsCIdentifierLimit {
+                    mangled: "very_long_machine__nested_state_path___state_body".into(),
+                    actual_len: 49,
+                    over_by: 18,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:9af98c119a0b235a","code":"traceability/symbol-name-exceeds-c-identifier-limit","stage":"generate","spec":"watching-zenoh RFC §5.O","message":"mangled symbol 'very_long_machine__nested_state_path___state_body' exceeds C99 external identifier limit by 18 char(s) (got 49, max 31). Repair: shorten one of the contributing names (machine id, state id, or artifact suffix) or enable `platform.strict_c99_identifiers: false` in deploy.yaml to suppress this warning","actual":"very_long_machine__nested_state_path___state_body"}"#,
+            ),
+            //    Sourcemap source_hash drift (codegen-invariant).
+            //    `actual` carries the sourcemap-recorded hex hash;
+            //    `header_hash` lives in the message body so the wire
+            //    payload doesn't violate the actual/expected non-overlap.
+            (
+                "traceability/sourcemap-source-hash-mismatch",
+                ValidationError::TraceabilitySourcemapSourceHashMismatch {
+                    file: "out/rust/sce_sourcemap.json".into(),
+                    sourcemap_hash: "abc123def456".into(),
+                    header_hash: "789aaaabbbb0".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:d7a5b77c40fb62ef","code":"traceability/sourcemap-source-hash-mismatch","stage":"generate","spec":"watching-zenoh RFC §5.O","message":"sourcemap source_hash drift: sourcemap recorded 'abc123def456' but §6.2.6 header recorded '789aaaabbbb0' on out/rust/sce_sourcemap.json. Repair: regenerate via `sce-codegen generate` to rebuild both sides from the same inputs","actual":"abc123def456"}"#,
+            ),
+            //    Rust SCE-MAP `#[doc]` preservation heads-up (OQ-W16 b).
+            //    `actual` is the function name; `crate_name` + `profile`
+            //    ride `key_fragments` so the wire-id distinguishes
+            //    distinct strip sites.
+            (
+                "traceability/sce-map-attribute-stripped",
+                ValidationError::TraceabilitySceMapAttributeStripped {
+                    crate_name: "sce_rust_tests".into(),
+                    function: "test144::on_entry_s0_0".into(),
+                    profile: "release".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:eefcdcd7864bca4d","code":"traceability/sce-map-attribute-stripped","stage":"generate","spec":"watching-zenoh RFC §5.O","message":"SCE-MAP `#[doc]` marker stripped from 'test144::on_entry_s0_0' in sce_rust_tests (release); falling back to `// SCE-MAP:` line comments. Repair: re-emit with the dual-marker form (default since §5.O Atomic 0c) or upstream the rustdoc fix","actual":"test144::on_entry_s0_0"}"#,
+            ),
         ]
     }
 
@@ -9145,7 +9349,15 @@ mod tests {
             // carries the union so authors get a single canonical
             // candidate list independent of which registry the
             // symbol originated in.
-            | MeshDeployStatelessAcceptExternNotWhitelisted => FixCarriesCandidates,
+            | MeshDeployStatelessAcceptExternNotWhitelisted
+            // ── §5.O Atomic 1 — symbol collision dual-location report.
+            //    The two `<file>:<line>` strings ride `Fix::ReplaceOneOf`
+            //    as the closed candidate set; the agent / author picks
+            //    which site to rename to break the clash. Two-element
+            //    closed set is the smallest legal FixCarriesCandidates
+            //    case but the choice surface (which of two sites to
+            //    rename) is real, not a degenerate dropdown.
+            | TraceabilityStateIdCollision => FixCarriesCandidates,
 
             // ── `expected` carries non-repair metadata ────────
             ExpressionParseMismatch | MeshExternalAmbiguousEventGroup => ExpectedIsMetadata,
@@ -9565,7 +9777,17 @@ mod tests {
             //    site that produced this node failed to attach a
             //    SourceLocation. No author repair — the fix lives in
             //    the parser site, not the document. ──
-            | TraceabilityScxmlLineRangeMissing => NeutralOrDeterministic,
+            | TraceabilityScxmlLineRangeMissing
+            // ── §5.O Atomic 1 — three of the four codes ride
+            //    NeutralOrDeterministic. Symbol-length: multi-axis
+            //    repair (shorten any of three contributing names OR
+            //    relax the strict flag). Sourcemap-source-hash drift:
+            //    regenerate via `sce-codegen generate`. SCE-MAP-attribute-
+            //    stripped: dual-emit fallback covers; the diagnostic is
+            //    a heads-up not a hard repair. ──
+            | TraceabilitySymbolNameExceedsCIdentifierLimit
+            | TraceabilitySourcemapSourceHashMismatch
+            | TraceabilitySceMapAttributeStripped => NeutralOrDeterministic,
         }
     }
 
@@ -9992,7 +10214,12 @@ mod tests {
                 // B9 §6.2.6 generated-source drift detection
                 | ForgeSourceHashMismatch
                 // §5.O Atomic 0 IR provenance pre-emit guard
-                | TraceabilityScxmlLineRangeMissing => true,
+                | TraceabilityScxmlLineRangeMissing
+                // §5.O Atomic 1 — symbol mangling + sourcemap contract
+                | TraceabilityStateIdCollision
+                | TraceabilitySymbolNameExceedsCIdentifierLimit
+                | TraceabilitySourcemapSourceHashMismatch
+                | TraceabilitySceMapAttributeStripped => true,
             }
         }
         for &code in ALL_DIAGNOSTIC_CODES {
@@ -10004,7 +10231,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            265,
+            269,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
              expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
@@ -10564,7 +10791,35 @@ mod tests {
              ([[feedback-silently-broken-hooks]]). Atomic 0 part B \
              will extend the validator surface alongside the per-\
              backend marker emission templates and the forge_\
-             conformance + sce-rust-tests goldens regen. 264 → 265.",
+             conformance + sce-rust-tests goldens regen. 264 → 265. \
+             Then watching-zenoh RFC §5.O Atomic 1 four codes lock the \
+             full per-symbol attribution + sourcemap JSON contract \
+             across all 6 backends. `traceability/state-id-collision` \
+             (FixCarriesCandidates over the two colliding `<file>:<line>` \
+             sites) fires when the cross-IR symbol-table walker finds \
+             two distinct nodes whose `<machine>__<state_path>__<artifact>` \
+             triples mangle to the same C identifier — typically \
+             XInclude or sce:template composition importing a state \
+             fragment whose id collides with a top-level state. \
+             `traceability/symbol-name-exceeds-c-identifier-limit` \
+             (NeutralOrDeterministic; multi-axis repair) fires when \
+             the mangled id exceeds 31 chars per C99 §5.2.4.1; default \
+             rendering is warn, escalated to hard-error by \
+             `platform.strict_c99_identifiers: true` in deploy.yaml. \
+             `traceability/sourcemap-source-hash-mismatch` \
+             (NeutralOrDeterministic; regenerate to repair) is the \
+             codegen-invariant check that the sourcemap JSON's \
+             `source_hash` field is byte-equal to the per-file §6.2.6 \
+             header's `source-hash` value (spec lines 3321-3324). \
+             `traceability/sce-map-attribute-stripped` \
+             (NeutralOrDeterministic; dual-emit fallback covers the \
+             strip) is the OQ-W16 (b) empirical preservation guard — \
+             fires from `sce-codegen addr2sce` when a rustdoc JSON dump \
+             contains no `#[doc = \"SCE-MAP: ...\"]` for a function \
+             whose sourcemap entry says one should exist. The \
+             `// SCE-MAP:` line-comment dual-emit path (default since \
+             §5.O Atomic 0c) is the fallback the diagnostic signals \
+             toward, not a hard failure. 265 → 269.",
         );
     }
 

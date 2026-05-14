@@ -2146,6 +2146,99 @@ pub enum ValidationError {
         node_kind: &'static str,
         node_id: String,
     },
+
+    /// Watching-zenoh RFC §5.O Atomic 1 — symbol-mangling collision.
+    /// Fires when the cross-IR symbol-table walker (`forge::
+    /// symbol_mangling::build_symbol_table`) finds two distinct IR
+    /// nodes whose `(machine, state_path, artifact)` triple mangles
+    /// to the same identifier. The common trigger is XInclude or
+    /// `sce:template` composition that imports a state fragment whose
+    /// id collides with a top-level state on the importer; the dual-
+    /// location payload pins both sites so the author can resolve the
+    /// clash by renaming one.
+    ///
+    /// `mangled` carries the colliding mangled id verbatim; `first_*`
+    /// + `second_*` describe the two offending sites by file:line. The
+    /// diagnostic carries no closed candidate set — the repair (rename
+    /// one of the two states) is author-domain — so it rides
+    /// `FixCarriesCandidates` with the empty-but-present second-site
+    /// pinned (one alternative, naming the second-site path).
+    #[error(
+        "symbol collision: '{mangled}' maps to two IR nodes — \
+         {first_file}:{first_line} and {second_file}:{second_line}. \
+         Repair: rename one of the colliding ids so the mangled symbols \
+         differ"
+    )]
+    TraceabilityStateIdCollision {
+        mangled: String,
+        first_file: String,
+        first_line: u32,
+        second_file: String,
+        second_line: u32,
+    },
+
+    /// Watching-zenoh RFC §5.O Atomic 1 — mangled symbol exceeds the
+    /// C99 §5.2.4.1 external-identifier length limit (31 chars).
+    /// Default rendering is warn; `platform.strict_c99_identifiers:
+    /// true` in deploy.yaml escalates to hard-error. `mangled` is the
+    /// offending identifier verbatim so the author can see exactly
+    /// what was emitted; `over_by` carries the excess char count.
+    #[error(
+        "mangled symbol '{mangled}' exceeds C99 external identifier \
+         limit by {over_by} char(s) (got {actual_len}, max 31). \
+         Repair: shorten one of the contributing names (machine id, \
+         state id, or artifact suffix) or enable \
+         `platform.strict_c99_identifiers: false` in deploy.yaml to \
+         suppress this warning"
+    )]
+    TraceabilitySymbolNameExceedsCIdentifierLimit {
+        mangled: String,
+        actual_len: u32,
+        over_by: u32,
+    },
+
+    /// Watching-zenoh RFC §5.O Atomic 1 — sourcemap `source_hash`
+    /// drift against the §6.2.6 header `source-hash`. Codegen-
+    /// invariant: every emitted `sce_sourcemap.json`'s
+    /// `source_hash` field MUST be byte-equal to the
+    /// `source-hash` value in the per-file §6.2.6 drift header.
+    /// Mismatch indicates the sourcemap was written from a stale
+    /// snapshot or a manual edit; `sce-codegen addr2sce` rejects
+    /// the sourcemap until the values match. No author repair —
+    /// regenerate via `sce-codegen generate`.
+    #[error(
+        "sourcemap source_hash drift: sourcemap recorded '{sourcemap_hash}' \
+         but §6.2.6 header recorded '{header_hash}' on {file}. \
+         Repair: regenerate via `sce-codegen generate` to rebuild both \
+         sides from the same inputs"
+    )]
+    TraceabilitySourcemapSourceHashMismatch {
+        file: String,
+        sourcemap_hash: String,
+        header_hash: String,
+    },
+
+    /// Watching-zenoh RFC §5.O Atomic 1 — Rust SCE-MAP marker
+    /// preservation guard (OQ-W16 (b)). Fires from `sce-codegen
+    /// addr2sce` when a rustdoc JSON dump for the generated crate
+    /// contains no `#[doc = "SCE-MAP: ..."]` attribute on a function
+    /// whose sourcemap entry says one should exist. The empirical
+    /// preservation test catches both `--release` strip mishaps and
+    /// future rustdoc behaviour changes. Author repair is to fall
+    /// back to the `// SCE-MAP:` line-comment form via the dual-emit
+    /// path (which is the default since Atomic 0c); this diagnostic
+    /// signals the fallback is needed.
+    #[error(
+        "SCE-MAP `#[doc]` marker stripped from '{function}' in \
+         {crate_name} ({profile}); falling back to `// SCE-MAP:` \
+         line comments. Repair: re-emit with the dual-marker form \
+         (default since §5.O Atomic 0c) or upstream the rustdoc fix"
+    )]
+    TraceabilitySceMapAttributeStripped {
+        crate_name: String,
+        function: String,
+        profile: String,
+    },
 }
 
 /// watching-zenoh RFC §5.E B7-η' Atomic A2 callback-path failure

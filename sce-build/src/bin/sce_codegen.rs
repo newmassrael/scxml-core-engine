@@ -215,6 +215,58 @@ fn write_if_changed_drift_aware(path: &Path, content: &str, ctx: &DriftContext) 
     write_if_changed(path, &final_content)
 }
 
+/// Watching-zenoh RFC §5.O Atomic 1 — emit the per-machine sourcemap
+/// JSON alongside the generated SM source. The output is
+/// byte-identical across the 6 backends (Q-§5.O-8) because:
+///
+///   - the symbol table is built from the SCXML model alone (no
+///     backend-specific data),
+///   - hash values come from the same `DriftContext` the §6.2.6
+///     header consumes (delegation guarantee, not duplication), and
+///   - JSON key ordering rides BTreeMap so iteration is deterministic.
+///
+/// `sce_sourcemap.json` deliberately does NOT get the §6.2.6 header
+/// because (a) JSON does not have a `//` comment syntax, and (b) the
+/// file's `source_hash` field IS the drift-detectable provenance.
+/// `sce-codegen verify` skips JSON in `is_drift_eligible_path`, so
+/// the file stays a plain JSON document.
+fn emit_sourcemap_for_machine(
+    model: &SCXMLModel,
+    target_dir: &Path,
+    drift_ctx: &DriftContext,
+) {
+    use sce_build::forge::sourcemap;
+    use sce_build::forge::symbol_mangling;
+
+    let symbols = match symbol_mangling::build_symbol_table(model, &[]) {
+        Ok(table) => table,
+        Err(_collision) => {
+            // Collision detection fires `traceability/state-id-
+            // collision` at the validate phase; reaching codegen
+            // means the model passed the walker, so this branch is
+            // unreachable in production. Defensive skip rather than
+            // panic so a future surprise stays observable as an
+            // empty sourcemap rather than a binary crash.
+            return;
+        }
+    };
+    let map = sourcemap::build(
+        &symbols,
+        drift_ctx.hashes.source_hex(),
+        drift_ctx.hashes.template_hex(),
+    );
+    let json = match sourcemap::to_json(&map) {
+        Ok(s) => s,
+        Err(_e) => return,
+    };
+    let path = target_dir.join("sce_sourcemap.json");
+    // Plain JSON write — bypass `write_if_changed_drift_aware` so the
+    // file does not receive the `// SCE-GENERATED` comment header
+    // (JSON has no line-comment syntax and the `source_hash` field
+    // already provides drift detection).
+    write_if_changed(&path, &json);
+}
+
 /// How diagnostics are rendered to stderr.
 ///
 /// `Human` is the default and preserves existing CLI output verbatim.
@@ -677,6 +729,48 @@ enum Commands {
         #[arg(long)]
         cargo_lock: Option<String>,
     },
+
+    /// Watching-zenoh RFC §5.O Atomic 1 — resolve a mangled symbol or
+    /// PC offset back to its originating SCXML coordinates.
+    ///
+    /// `--symbol <NAME>`  Look up a mangled `<machine>__<state_path>__
+    ///                     <artifact>` identifier in
+    ///                     `<sourcemap>/sce_sourcemap.json`.
+    /// `--pc <ADDR>`       Resolve an ELF program-counter address to a
+    ///                     function symbol via DWARF + then look that
+    ///                     symbol up in the sourcemap. Requires
+    ///                     `--elf <path>`.
+    /// `--hardfault`       Read newline-separated PC addresses from
+    ///                     stdin, resolve each through the same path
+    ///                     as `--pc`, emit one NDJSON record per
+    ///                     resolved frame.
+    ///
+    /// Spec lines 3253-3278 fix the tool's resolution contract:
+    /// PC → symbol → sourcemap → SCXML file:line + state_path. The
+    /// per-symbol attribution data ships in the sourcemap, not the
+    /// DWARF; addr2sce composes the two layers.
+    #[command(name = "addr2sce")]
+    Addr2Sce {
+        /// Directory containing `sce_sourcemap.json` (per-machine
+        /// output, e.g. `target/.../src/generated/test144/`).
+        sourcemap_dir: String,
+        /// Mangled symbol to look up directly (mutually exclusive
+        /// with `--pc` / `--hardfault`).
+        #[arg(long)]
+        symbol: Option<String>,
+        /// ELF program-counter address (hex with or without `0x`
+        /// prefix). Requires `--elf`.
+        #[arg(long)]
+        pc: Option<String>,
+        /// ELF binary path for DWARF lookup (required when `--pc` or
+        /// `--hardfault` is used).
+        #[arg(long)]
+        elf: Option<String>,
+        /// Read PC addresses from stdin (one per line) and resolve
+        /// each as `--pc` would.
+        #[arg(long, default_value_t = false)]
+        hardfault: bool,
+    },
 }
 
 fn main() {
@@ -785,6 +879,20 @@ fn main() {
             deploy.as_deref(),
             template_root.as_deref(),
             cargo_lock.as_deref(),
+            error_format,
+        ),
+        Commands::Addr2Sce {
+            sourcemap_dir,
+            symbol,
+            pc,
+            elf,
+            hardfault,
+        } => cmd_addr2sce(
+            &sourcemap_dir,
+            symbol.as_deref(),
+            pc.as_deref(),
+            elf.as_deref(),
+            hardfault,
             error_format,
         ),
     }
@@ -1312,6 +1420,13 @@ fn cmd_generate(
         report.artifacts.push(file_path.clone());
         output_paths.push(file_path);
     }
+
+    // Watching-zenoh RFC §5.O Atomic 1 — sourcemap JSON sidecar
+    // alongside the per-language SM output. The single-SCXML codegen
+    // path writes one sourcemap per emit; cross-backend byte-identity
+    // is preserved because the symbol table + hashes are language-
+    // agnostic (Q-§5.O-8).
+    emit_sourcemap_for_machine(&model, out_path, &drift_ctx);
 
     report.needs_script_engine = Some(model.needs_script_engine);
 
@@ -2095,6 +2210,11 @@ fn generate_w3c_unified(
 
                         // Post-write hook (e.g. Rust writes initial mod.rs)
                         backend.post_write_parent(test_id, &test_mod_dir, input_stem, &drift_ctx);
+
+                        // Watching-zenoh RFC §5.O Atomic 1 — sourcemap
+                        // JSON sidecar. Byte-identical across backends
+                        // for the same SCXML input (Q-§5.O-8).
+                        emit_sourcemap_for_machine(&model, &test_mod_dir, &drift_ctx);
 
                         // W3C SCXML 6.4: Generate hybrid SCXML stubs + child state machines
                         // (only for backends that use per-test subdirs; C++ handles children via CMake)
@@ -3361,4 +3481,106 @@ impl TestInfo {
     fn type_str(&self) -> &str {
         &self.test_type
     }
+}
+
+// ── Subcommand: addr2sce ───────────────────────────────────────
+//
+// Watching-zenoh RFC §5.O Atomic 1. Reverse-lookup from a mangled
+// symbol or PC address back to SCXML coordinates (file + state path +
+// line range).
+//
+// Three modes (spec lines 3253-3278):
+//   `--symbol <NAME>` — direct sourcemap key lookup. No DWARF needed.
+//   `--pc <ADDR>`     — ELF PC resolution. Deferred until a consumer
+//                        materialises (per [[feedback-silently-broken-
+//                        hooks]] we don't add the addr2line/gimli dep
+//                        until an MCU consumer tests it end-to-end).
+//   `--hardfault`     — bulk PC resolution from stdin. Same deferral
+//                        as `--pc`.
+//
+// Atomic 1 ships the `--symbol` path live (the sourcemap-only path
+// the foundation actually consumes — integration tests exercise it,
+// the sourcemap-source-hash-mismatch diagnostic fires when the
+// sidecar JSON drifts). `--pc` / `--hardfault` print a clear "deferred"
+// message so authors that try those modes see a documented gap rather
+// than an opaque crash.
+
+fn cmd_addr2sce(
+    sourcemap_dir: &str,
+    symbol: Option<&str>,
+    pc: Option<&str>,
+    elf: Option<&str>,
+    hardfault: bool,
+    error_format: ErrorFormat,
+) {
+    let map_path = Path::new(sourcemap_dir).join("sce_sourcemap.json");
+    let raw = match fs::read_to_string(&map_path) {
+        Ok(s) => s,
+        Err(e) => cli_exit(CliError::ReadInput {
+            path: map_path.display().to_string(),
+            source: e,
+        }),
+    };
+    let map: serde_json::Value = match serde_json::from_str(&raw) {
+        Ok(v) => v,
+        Err(e) => cli_exit(CliError::ReadInput {
+            path: map_path.display().to_string(),
+            source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
+        }),
+    };
+
+    // Mode dispatch: exactly one of `--symbol` / `--pc` / `--hardfault`.
+    match (symbol, pc, hardfault) {
+        (Some(name), None, false) => addr2sce_resolve_symbol(&map, name, &map_path),
+        (None, Some(_), false) | (None, None, true) => {
+            let _ = elf;
+            // Deferred — print a stable message so an automation
+            // consumer can detect the deferral without parsing
+            // human-readable prose. Exit non-zero so a CI gate that
+            // depends on resolution does not silently green.
+            eprintln!(
+                "addr2sce: --pc / --hardfault modes deferred to a follow-up atomic. \
+                 Atomic 1 ships --symbol only; add a consumer (e.g. an MCU JTAG \
+                 debugger config) to drive the addr2line / gimli dependency in."
+            );
+            std::process::exit(2);
+        }
+        _ => {
+            let _ = error_format;
+            eprintln!(
+                "addr2sce: exactly one of --symbol / --pc / --hardfault required \
+                 (use --symbol <NAME> for direct sourcemap lookup)"
+            );
+            std::process::exit(2);
+        }
+    }
+}
+
+/// Look `symbol` up in the loaded sourcemap and print the resolved
+/// SCXML coordinates as a single JSON line on stdout. Returns
+/// process exit 0 on a hit, 1 on a miss (so a CI gate using addr2sce
+/// to verify symbol presence can fail loudly).
+fn addr2sce_resolve_symbol(map: &serde_json::Value, symbol: &str, map_path: &Path) {
+    let Some(symbols) = map.get("symbols").and_then(|v| v.as_object()) else {
+        eprintln!(
+            "addr2sce: malformed sourcemap at {} (no `symbols` object)",
+            map_path.display()
+        );
+        std::process::exit(1);
+    };
+    let Some(entry) = symbols.get(symbol) else {
+        eprintln!(
+            "addr2sce: symbol '{symbol}' not found in {}",
+            map_path.display()
+        );
+        std::process::exit(1);
+    };
+    // Echo the entry as a JSON line with the mangled symbol pinned.
+    let out = serde_json::json!({
+        "v": 1,
+        "kind": "addr2sce",
+        "symbol": symbol,
+        "entry": entry,
+    });
+    println!("{}", out);
 }

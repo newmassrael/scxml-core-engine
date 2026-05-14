@@ -1,0 +1,307 @@
+{
+  "version": 1,
+  "source_hash": "f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9",
+  "template_hash": "0ae95bdc8568e54ab8b0becbe6b9dbf13fd2de6976e2b75ba52db7079781e01f",
+  "symbols": {
+    "test504_____machine": {
+      "scxml_file": "test504.scxml",
+      "scxml_state_path": "",
+      "scxml_xpath": "//scxml",
+      "line_range": [
+        5,
+        5
+      ],
+      "kind": "machine"
+    },
+    "test504__fail___state_body": {
+      "scxml_file": "test504.scxml",
+      "scxml_state_path": "fail",
+      "scxml_xpath": "//state[@id='fail']",
+      "line_range": [
+        77,
+        77
+      ],
+      "kind": "state"
+    },
+    "test504__p___on_exit_0_0": {
+      "scxml_file": "test504.scxml",
+      "scxml_state_path": "p",
+      "scxml_xpath": "//state[@id='p']/onexit",
+      "line_range": [
+        29,
+        29
+      ],
+      "kind": "on_exit"
+    },
+    "test504__p___state_body": {
+      "scxml_file": "test504.scxml",
+      "scxml_state_path": "p",
+      "scxml_xpath": "//state[@id='p']",
+      "line_range": [
+        27,
+        27
+      ],
+      "kind": "state"
+    },
+    "test504__p___transition_0": {
+      "scxml_file": "test504.scxml",
+      "scxml_state_path": "p",
+      "scxml_xpath": "//state[@id='p']/transition[1]",
+      "line_range": [
+        31,
+        31
+      ],
+      "kind": "transition"
+    },
+    "test504__p___transition_1": {
+      "scxml_file": "test504.scxml",
+      "scxml_state_path": "p",
+      "scxml_xpath": "//state[@id='p']/transition[2]",
+      "line_range": [
+        36,
+        36
+      ],
+      "kind": "transition"
+    },
+    "test504__p___transition_2": {
+      "scxml_file": "test504.scxml",
+      "scxml_state_path": "p",
+      "scxml_xpath": "//state[@id='p']/transition[3]",
+      "line_range": [
+        37,
+        37
+      ],
+      "kind": "transition"
+    },
+    "test504__pass___state_body": {
+      "scxml_file": "test504.scxml",
+      "scxml_state_path": "pass",
+      "scxml_xpath": "//state[@id='pass']",
+      "line_range": [
+        76,
+        76
+      ],
+      "kind": "state"
+    },
+    "test504__ps1___on_exit_0_0": {
+      "scxml_file": "test504.scxml",
+      "scxml_state_path": "ps1",
+      "scxml_xpath": "//state[@id='ps1']/onexit",
+      "line_range": [
+        41,
+        41
+      ],
+      "kind": "on_exit"
+    },
+    "test504__ps1___state_body": {
+      "scxml_file": "test504.scxml",
+      "scxml_state_path": "ps1",
+      "scxml_xpath": "//state[@id='ps1']",
+      "line_range": [
+        39,
+        39
+      ],
+      "kind": "state"
+    },
+    "test504__ps2___on_exit_0_0": {
+      "scxml_file": "test504.scxml",
+      "scxml_state_path": "ps2",
+      "scxml_xpath": "//state[@id='ps2']/onexit",
+      "line_range": [
+        46,
+        46
+      ],
+      "kind": "on_exit"
+    },
+    "test504__ps2___state_body": {
+      "scxml_file": "test504.scxml",
+      "scxml_state_path": "ps2",
+      "scxml_xpath": "//state[@id='ps2']",
+      "line_range": [
+        44,
+        44
+      ],
+      "kind": "state"
+    },
+    "test504__s1___on_entry_0_0": {
+      "scxml_file": "test504.scxml",
+      "scxml_state_path": "s1",
+      "scxml_xpath": "//state[@id='s1']/onentry",
+      "line_range": [
+        16,
+        16
+      ],
+      "kind": "on_entry"
+    },
+    "test504__s1___on_entry_0_1": {
+      "scxml_file": "test504.scxml",
+      "scxml_state_path": "s1",
+      "scxml_xpath": "//state[@id='s1']/onentry",
+      "line_range": [
+        17,
+        17
+      ],
+      "kind": "on_entry"
+    },
+    "test504__s1___state_body": {
+      "scxml_file": "test504.scxml",
+      "scxml_state_path": "s1",
+      "scxml_xpath": "//state[@id='s1']",
+      "line_range": [
+        14,
+        14
+      ],
+      "kind": "state"
+    },
+    "test504__s1___transition_0": {
+      "scxml_file": "test504.scxml",
+      "scxml_state_path": "s1",
+      "scxml_xpath": "//state[@id='s1']/transition[1]",
+      "line_range": [
+        19,
+        19
+      ],
+      "kind": "transition"
+    },
+    "test504__s2___on_exit_0_0": {
+      "scxml_file": "test504.scxml",
+      "scxml_state_path": "s2",
+      "scxml_xpath": "//state[@id='s2']/onexit",
+      "line_range": [
+        24,
+        24
+      ],
+      "kind": "on_exit"
+    },
+    "test504__s2___state_body": {
+      "scxml_file": "test504.scxml",
+      "scxml_state_path": "s2",
+      "scxml_xpath": "//state[@id='s2']",
+      "line_range": [
+        22,
+        22
+      ],
+      "kind": "state"
+    },
+    "test504__s3___state_body": {
+      "scxml_file": "test504.scxml",
+      "scxml_state_path": "s3",
+      "scxml_xpath": "//state[@id='s3']",
+      "line_range": [
+        52,
+        52
+      ],
+      "kind": "state"
+    },
+    "test504__s3___transition_0": {
+      "scxml_file": "test504.scxml",
+      "scxml_state_path": "s3",
+      "scxml_xpath": "//state[@id='s3']/transition[1]",
+      "line_range": [
+        54,
+        54
+      ],
+      "kind": "transition"
+    },
+    "test504__s3___transition_1": {
+      "scxml_file": "test504.scxml",
+      "scxml_state_path": "s3",
+      "scxml_xpath": "//state[@id='s3']/transition[2]",
+      "line_range": [
+        55,
+        55
+      ],
+      "kind": "transition"
+    },
+    "test504__s4___state_body": {
+      "scxml_file": "test504.scxml",
+      "scxml_state_path": "s4",
+      "scxml_xpath": "//state[@id='s4']",
+      "line_range": [
+        58,
+        58
+      ],
+      "kind": "state"
+    },
+    "test504__s4___transition_0": {
+      "scxml_file": "test504.scxml",
+      "scxml_state_path": "s4",
+      "scxml_xpath": "//state[@id='s4']/transition[1]",
+      "line_range": [
+        60,
+        60
+      ],
+      "kind": "transition"
+    },
+    "test504__s4___transition_1": {
+      "scxml_file": "test504.scxml",
+      "scxml_state_path": "s4",
+      "scxml_xpath": "//state[@id='s4']/transition[2]",
+      "line_range": [
+        61,
+        61
+      ],
+      "kind": "transition"
+    },
+    "test504__s5___state_body": {
+      "scxml_file": "test504.scxml",
+      "scxml_state_path": "s5",
+      "scxml_xpath": "//state[@id='s5']",
+      "line_range": [
+        64,
+        64
+      ],
+      "kind": "state"
+    },
+    "test504__s5___transition_0": {
+      "scxml_file": "test504.scxml",
+      "scxml_state_path": "s5",
+      "scxml_xpath": "//state[@id='s5']/transition[1]",
+      "line_range": [
+        66,
+        66
+      ],
+      "kind": "transition"
+    },
+    "test504__s5___transition_1": {
+      "scxml_file": "test504.scxml",
+      "scxml_state_path": "s5",
+      "scxml_xpath": "//state[@id='s5']/transition[2]",
+      "line_range": [
+        67,
+        67
+      ],
+      "kind": "transition"
+    },
+    "test504__s6___state_body": {
+      "scxml_file": "test504.scxml",
+      "scxml_state_path": "s6",
+      "scxml_xpath": "//state[@id='s6']",
+      "line_range": [
+        70,
+        70
+      ],
+      "kind": "state"
+    },
+    "test504__s6___transition_0": {
+      "scxml_file": "test504.scxml",
+      "scxml_state_path": "s6",
+      "scxml_xpath": "//state[@id='s6']/transition[1]",
+      "line_range": [
+        72,
+        72
+      ],
+      "kind": "transition"
+    },
+    "test504__s6___transition_1": {
+      "scxml_file": "test504.scxml",
+      "scxml_state_path": "s6",
+      "scxml_xpath": "//state[@id='s6']/transition[2]",
+      "line_range": [
+        73,
+        73
+      ],
+      "kind": "transition"
+    }
+  }
+}

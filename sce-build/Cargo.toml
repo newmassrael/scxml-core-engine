@@ -140,6 +140,28 @@ name = "s5_o_atomic_0c_markers"
 path = "tests/s5_o_atomic_0c_markers.rs"
 required-features = ["cli"]
 
+# Watching-zenoh RFC §5.O Atomic 1 — OQ-W16 (b) dual-emit preservation
+# guard. Confirms BOTH `#[doc = "SCE-MAP: ..."]` and `// SCE-MAP: ...`
+# forms reach the generated Rust source across the std + no_std
+# template paths. A template edit that drops one form regresses here
+# rather than silently breaking the line-comment fallback that exists
+# for future rustdoc strip scenarios.
+[[test]]
+name = "no_std_doc_preservation"
+path = "tests/no_std_doc_preservation.rs"
+required-features = ["cli"]
+
+# Watching-zenoh RFC §5.O Atomic 1 — full sourcemap + symbol mangling
+# + addr2sce contract test. Asserts (i) sourcemap JSON shape, (ii)
+# byte-identity across backends, (iii) source_hash byte-equal to drift
+# header, (iv) symbol-mangling round-trip, (v) each new diagnostic
+# fires on its synthetic offender, (vi) addr2sce resolves a known
+# symbol → SCXML coordinates.
+[[test]]
+name = "s5_o_atomic_1_sourcemap"
+path = "tests/s5_o_atomic_1_sourcemap.rs"
+required-features = ["cli"]
+
 
 
 [lints]
