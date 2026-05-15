@@ -1800,7 +1800,7 @@ fn cmd_generate_w3c(
         Language::Go => Box::new(GoBackend::new(&project_root)),
         Language::Kotlin => Box::new(KotlinBackend::new(&project_root)),
         Language::Cpp => Box::new(CppBackend::new(&project_root)),
-        Language::Python => cli_exit(CliError::UnsupportedLanguage { lang: "Python W3C".into() }),
+        Language::Python => Box::new(PythonBackend::new(&project_root)),
         Language::C11 => cli_exit(CliError::UnsupportedLanguage {
             lang: "C11 W3C (RFC §5.J.1, Phase A5 — M3+ statechart emitter)".into(),
         }),
@@ -2972,6 +2972,69 @@ impl W3cBackend for CppBackend {
         if self.output_dir.exists() {
             fs::remove_dir_all(&self.output_dir).ok();
             println!("Cleaned: {}", self.output_dir.display());
+        }
+    }
+}
+
+// ── PythonBackend ──────────────────────────────────────────────
+//
+// Emits AOT Python statechart modules through the existing
+// `sce_build::generator::generate_python` pipeline (γ-1..γ-5 surface).
+// `<invoke>` is still reject-walled by `reject_python_unsupported_features`
+// so any W3C fixture exercising invoke surfaces a clean InvalidConfig
+// at this layer and is reported as a generation failure rather than a
+// silent skip. Tests that pass the codegen filter land at
+// `sce-python-tests/generated/test{id}/test{id}_sm.py` and can be
+// driven by an external pytest harness (the harness wrapper itself
+// lands as a γ-6 follow-up — see the python_aot_gamma6_partial memo).
+
+struct PythonBackend {
+    sm_base: PathBuf,
+    tmpl_dir: PathBuf,
+}
+
+impl PythonBackend {
+    fn new(project_root: &Path) -> Self {
+        Self {
+            sm_base: project_root.join("sce-python-tests/generated"),
+            tmpl_dir: sce_build::find_template_dir_for(Language::Python),
+        }
+    }
+}
+
+impl W3cBackend for PythonBackend {
+    fn language_name(&self) -> &str { "Python" }
+    fn sm_output_base(&self) -> &Path { &self.sm_base }
+    fn test_output_dir(&self) -> &Path { &self.sm_base }
+
+    fn generate_sm(&self, model: &SCXMLModel, input_stem: &str) -> Result<Vec<(String, String)>, ForgeError> {
+        let code = sce_build::generator::generate_python(model, &self.tmpl_dir)
+            .map_err(ForgeError::from)?;
+        Ok(vec![(format!("{input_stem}_sm.py"), code)])
+    }
+
+    fn process_child(
+        &self,
+        _test_id: &str,
+        child_name: &str,
+        code: String,
+        test_mod_dir: &Path,
+        drift_ctx: &DriftContext,
+    ) {
+        let child_file = test_mod_dir.join(format!("{child_name}_sm.py"));
+        write_if_changed_drift_aware(&child_file, &code, drift_ctx);
+    }
+
+    // γ-6 minimum: ship the SM emit path without a pytest wrapper.
+    // The Python W3C harness runner (pytest + sce_runtime injection +
+    // pass/fail assertions) is recorded as a γ-6 follow-up so the test
+    // wrapper format can be finalised against an actual runner.
+    fn generates_test_files(&self) -> bool { false }
+
+    fn clean(&self) {
+        if self.sm_base.exists() {
+            fs::remove_dir_all(&self.sm_base).ok();
+            println!("Cleaned: {}", self.sm_base.display());
         }
     }
 }

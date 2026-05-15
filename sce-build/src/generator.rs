@@ -750,6 +750,27 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
             )));
         }
     }
+    // W3C SCXML 3.13 — `<transition event="*">` matches every external
+    // event except the eventless NULL sentinel; the codegen lowers it to
+    // `if event != Event.NULL` in `process_transition.py.jinja2`. Prefix
+    // matching (e.g. `event="error.*"`) is still on the γ follow-up list
+    // — reject loud-fail so the W3C harness summary attributes the skip
+    // honestly ([[feedback-silently-broken-hooks]]).
+    for (state_id, state) in &model.states {
+        for transition in &state.transitions {
+            if transition.event != "*"
+                && (transition.event.ends_with(".*")
+                    || transition.event.contains(' '))
+            {
+                return Err(GenerateError::InvalidConfig(format!(
+                    "Python codegen rejects `<transition event=\"{}\">` on `{}`: \
+                     prefix / multi-event matching is not yet supported; \
+                     deferred to a γ follow-up",
+                    transition.event, state_id
+                )));
+            }
+        }
+    }
     // γ-3b adds <send> / <cancel> to the γ-3a control-flow surface.
     // External targets, non-default `type`s, and `<param>` / `<content>`
     // payload synthesis remain γ-4 (invoke) territory because they

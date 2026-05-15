@@ -20,8 +20,17 @@
 {% if state.transitions %}
         if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
 {% for transition in state.transitions %}
+{% if transition.event == '*' %}
+{# W3C SCXML 3.13 — `event="*"` matches every event except the eventless
+   NULL sentinel. Emit a bare `event != NULL` guard so the runtime falls
+   through to a non-NULL match without needing a `WILDCARD` enum member
+   (which would distort `to_python_const` for transitions iterating in
+   document order). #}
+            if event != {{ machine_name }}Event.NULL{% if transition.cond %} and self._guard({{ transition.cond | py_string_literal }}){% endif %}:
+{% else %}
 {% set evt_const = ('NULL' if not transition.event or transition.event == '' else (transition.event | to_python_const)) %}
             if event == {{ machine_name }}Event.{{ evt_const }}{% if transition.cond %} and self._guard({{ transition.cond | py_string_literal }}){% endif %}:
+{% endif %}
                 return TransitionResult(
 {% if transition.target %}
                     target={{ machine_name }}State.{{ transition.target | to_python_const }},
