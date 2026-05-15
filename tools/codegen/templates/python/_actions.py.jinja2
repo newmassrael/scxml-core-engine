@@ -59,13 +59,20 @@
 {% elif action.target.startswith('!') %}
 {# W3C SCXML 6.2 — `target="!…"` is the SCXML test-suite's
    deliberate-invalid sentinel; dispatch fails and the processor
-   places `error.execution` on the internal queue. The early
-   `return` mirrors W3C 3.8 "an error in executable content causes
-   all subsequent elements in the same handler to be skipped" —
-   tests like test159 depend on the `<assign>` after the failing
-   send NOT running. #}
+   places `error.execution` on the internal queue. `_resolve_send_id`
+   runs first so `idlocation` writeback still happens (W3C 6.2: "if
+   the sending of the event causes an error, the Processor MUST place
+   the error on the internal queue" — but the sendid is generated
+   BEFORE dispatch, so it's available regardless of failure, and test
+   332 depends on the idlocation having been written). The resolved
+   sendid then rides on the `error.execution` event's metadata so the
+   matching transition's `<assign expr="_event.sendid">` reads back
+   the same value. The early `return` mirrors W3C 3.8 "an error in
+   executable content causes all subsequent elements in the same
+   handler to be skipped". #}
+{{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
 {% if 'error.execution' in model.events %}
-{{ indent }}engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }})
+{{ indent }}engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
 {{ indent }}return
 {% else %}
 {{ indent }}return  # W3C 6.2: invalid target — but document declares no error.execution descriptor
