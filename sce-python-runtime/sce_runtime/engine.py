@@ -15,6 +15,12 @@ Atomic γ-2: `<history>` (shallow + deep) — snapshot pre-exit
 configuration into `_history[history_id]`, replay it on the next entry
 through that history state, falling back to the document's default
 target (and its default `<transition>` actions) when no snapshot exists.
+Atomic γ-3a: `<log>`, `<if>`/`<elseif>`/`<else>`, and `<foreach>` lower
+into Python control flow inside the per-state action handlers.
+Atomic γ-3b: `<send>` (immediate + delayed) and `<cancel>` ride a pull
+scheduler with cancel-by-sendid (W3C SCXML 6.2 + 6.2.2). Virtual time
+advances via `Engine.advance_time(ms)`; callers needing wall-clock
+behaviour drive this from their own dispatch loop.
 """
 
 from __future__ import annotations
@@ -24,6 +30,7 @@ from typing import Dict, Generic, List, Optional, Set, TypeVar
 
 from .event import EventMetadata, EventWithMetadata
 from .policy import StatePolicy, TransitionResult
+from .scheduler import Scheduler
 
 S = TypeVar("S")
 E = TypeVar("E")
@@ -59,6 +66,16 @@ class Engine(Generic[S, E]):
         # the next entry through that history state without needing a
         # State enum member for the history element itself.
         self._history: Dict[str, List[S]] = {}
+        # W3C SCXML 6.2 — delayed-event scheduler + virtual clock.
+        # Callers advance time via `advance_time(ms)`; the scheduler is
+        # pull-based so the engine remains single-threaded.
+        self._scheduler: Scheduler[E] = Scheduler()
+        self._now_ms: int = 0
+        # Auto-generated sendid counter for `<send>` actions without an
+        # explicit `id` attribute (W3C SCXML 6.2 — implementations may
+        # generate any unique id; we use a deterministic counter so
+        # traces remain reproducible).
+        self._auto_send_seq: int = 0
 
     # ── Lifecycle ──────────────────────────────────────────────────
 
@@ -149,6 +166,60 @@ class Engine(Generic[S, E]):
         self._internal_queue.append(
             EventWithMetadata(event=event, metadata=metadata or EventMetadata())
         )
+
+    # ── <send> / <cancel> / scheduler API (W3C SCXML 6.2) ─────────
+
+    def send_external(self, event: E, sendid: str = "") -> None:
+        """W3C SCXML 6.2 — enqueue an external event with no delay.
+        Drained by the macrostep loop AFTER any pending internal events.
+        Unlike `raise_internal`, this does NOT immediately drive the
+        loop; it queues so that the current handler can finish first."""
+        metadata = EventMetadata(send_id=sendid, event_type="external")
+        self._external_queue.append(EventWithMetadata(event=event, metadata=metadata))
+
+    def schedule_send(self, event: E, delay_ms: int, sendid: str = "") -> None:
+        """W3C SCXML 6.2 — schedule `event` for delivery `delay_ms` after
+        the current virtual time. Callers later move time forward via
+        `advance_time(...)`; the scheduler is then drained into the
+        external queue."""
+        if delay_ms <= 0:
+            self.send_external(event, sendid)
+            return
+        self._scheduler.schedule(self._now_ms + delay_ms, sendid, event)
+
+    def cancel_send(self, sendid: str) -> None:
+        """W3C SCXML 6.2.2 — drop a previously scheduled `<send>` by id.
+        No-op on empty sendid (matches W3C: cancel requires an id)."""
+        self._scheduler.cancel(sendid)
+
+    def advance_time(self, ms: int) -> None:
+        """Move virtual time forward by `ms` milliseconds and drain every
+        scheduled event whose deadline has now passed. The drained
+        events go onto the external queue and the macrostep loop runs
+        until stable."""
+        if ms < 0:
+            raise ValueError("advance_time requires a non-negative delta")
+        self._now_ms += ms
+        drained_any = False
+        for entry in self._scheduler.drain_due(self._now_ms):
+            metadata = EventMetadata(send_id=entry.sendid, event_type="external")
+            self._external_queue.append(
+                EventWithMetadata(event=entry.event, metadata=metadata)
+            )
+            drained_any = True
+        if drained_any and self._is_running and not self._reached_final:
+            self._process_queues()
+
+    @property
+    def now_ms(self) -> int:
+        """Current virtual time in milliseconds since engine construction."""
+        return self._now_ms
+
+    def _next_auto_sendid(self) -> str:
+        """Generate a deterministic sendid for `<send>` actions that did
+        not specify an explicit `id`."""
+        self._auto_send_seq += 1
+        return f"_auto_send_{self._auto_send_seq}"
 
     # ── Microstep / macrostep core ────────────────────────────────
 

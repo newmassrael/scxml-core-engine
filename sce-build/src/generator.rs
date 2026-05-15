@@ -758,19 +758,19 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
             )));
         }
     }
-    // γ-3a accepts the control-flow / log triplet on top of β's
-    // <script>/<assign>/<raise>. <send> and <cancel> still reach
-    // γ-3b (their textbook implementation needs the W3C SCXML 6.2
-    // delayed-event scheduler with cancel-by-sendid). Reject up
-    // front so the generated module cannot end up dispatching through
-    // an action branch that emits `raise NotImplementedError` at
-    // runtime.
+    // γ-3b adds <send> / <cancel> to the γ-3a control-flow surface.
+    // External targets, non-default `type`s, and `<param>` / `<content>`
+    // payload synthesis remain γ-4 (invoke) territory because they
+    // require either the cross-session router or HTTP transport
+    // (BasicHTTPEventProcessor). Reject those forms loudly so the
+    // generated module cannot dispatch through a half-implemented
+    // branch.
     fn check_actions(
         actions: &[crate::model::Action],
         context: &str,
     ) -> Result<(), GenerateError> {
         const SUPPORTED_ACTIONS: &[&str] = &[
-            "script", "assign", "raise", "log", "if", "foreach",
+            "script", "assign", "raise", "log", "if", "foreach", "send", "cancel",
         ];
         for action in actions {
             if !SUPPORTED_ACTIONS.contains(&action.action_type.as_str()) {
@@ -778,6 +778,70 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
                     "Python codegen does not yet support <{}> in {}; deferred to Atomic γ",
                     action.action_type, context
                 )));
+            }
+            if action.action_type == "send" {
+                // γ-3b accepts only the simple in-machine send form.
+                if !action.target.is_empty()
+                    && action.target != "#_internal"
+                {
+                    return Err(GenerateError::InvalidConfig(format!(
+                        "Python codegen `<send target=\"{}\">` in {} is deferred \
+                         to Atomic γ-4 (invoke + external transport)",
+                        action.target, context
+                    )));
+                }
+                if !action.targetexpr.is_empty() {
+                    return Err(GenerateError::InvalidConfig(format!(
+                        "Python codegen `<send targetexpr>` in {} is deferred to Atomic γ-4",
+                        context
+                    )));
+                }
+                if !action.send_type.is_empty()
+                    && action.send_type != "http://www.w3.org/TR/scxml/#SCXMLEventProcessor"
+                {
+                    return Err(GenerateError::InvalidConfig(format!(
+                        "Python codegen `<send type=\"{}\">` in {} is deferred \
+                         to Atomic γ-4 (BasicHTTPEventProcessor)",
+                        action.send_type, context
+                    )));
+                }
+                if !action.namelist.is_empty()
+                    || !action.params.is_empty()
+                    || !action.content.is_empty()
+                    || !action.contentexpr.is_empty()
+                {
+                    return Err(GenerateError::InvalidConfig(format!(
+                        "Python codegen `<send>` with `<param>` / `<content>` / namelist in {} \
+                         is deferred to Atomic γ-4 (payload marshalling)",
+                        context
+                    )));
+                }
+                if !action.eventexpr.is_empty() {
+                    return Err(GenerateError::InvalidConfig(format!(
+                        "Python codegen `<send eventexpr>` in {} requires the \
+                         expression-rewriter pass scheduled for Atomic γ-4",
+                        context
+                    )));
+                }
+                if !action.delayexpr.is_empty() {
+                    return Err(GenerateError::InvalidConfig(format!(
+                        "Python codegen `<send delayexpr>` in {} requires the \
+                         expression-rewriter pass scheduled for Atomic γ-4",
+                        context
+                    )));
+                }
+                if !action.idlocation.is_empty() {
+                    return Err(GenerateError::InvalidConfig(format!(
+                        "Python codegen `<send idlocation>` in {} is deferred to Atomic γ-4",
+                        context
+                    )));
+                }
+                if action.event.is_empty() {
+                    return Err(GenerateError::InvalidConfig(format!(
+                        "Python codegen `<send>` in {} requires a static `event` attribute",
+                        context
+                    )));
+                }
             }
             // Walk into <if>/<foreach> bodies so a nested unsupported
             // action (e.g. <send> inside an <if>) is rejected at the

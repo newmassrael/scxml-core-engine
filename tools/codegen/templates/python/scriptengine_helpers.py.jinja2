@@ -67,6 +67,17 @@
             return enumerate(collection.items())
         return enumerate(collection)
 
+    def _eval_sendid(self, sendid_expr: str) -> str:
+        """W3C SCXML 6.2.2 `<cancel sendidexpr>` — evaluate `sendid_expr`
+        against the datamodel and coerce the result to a string. Empty
+        / missing values map to the empty string (matches the scheduler
+        contract that empty ids cannot be cancelled)."""
+        try:
+            value = eval(sendid_expr, self._ns)  # noqa: S307
+        except Exception:
+            return ""
+        return "" if value is None else str(value)
+
     def _foreach_values(self, array_expr: str):
         """W3C SCXML 4.6 `<foreach>` without index binding — yields each
         value in turn. Dict iteration yields keys (mirrors Python

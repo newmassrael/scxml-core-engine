@@ -12,12 +12,15 @@ through the C++ Interpreter via pybind11, not through this AOT runtime.
 from .engine import Engine
 from .event import Event, EventMetadata, EventWithMetadata
 from .policy import StatePolicy, TransitionResult
+from .scheduler import ScheduledEvent, Scheduler
 
 __all__ = [
     "Engine",
     "Event",
     "EventMetadata",
     "EventWithMetadata",
+    "ScheduledEvent",
+    "Scheduler",
     "StatePolicy",
     "TransitionResult",
 ]

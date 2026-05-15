@@ -36,6 +36,18 @@
 {{ indent }}else:
 {% for sub in action.else_actions %}{{ emit(sub, indent ~ '    ', machine_name) }}{% endfor %}
 {% endif %}
+{% elif action.type == 'send' -%}
+{% if action.delay_ms > 0 %}
+{{ indent }}engine.schedule_send({{ machine_name }}Event.{{ action.event | to_python_const }}, {{ action.delay_ms }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}engine._next_auto_sendid(){% endif %})
+{% else %}
+{{ indent }}engine.send_external({{ machine_name }}Event.{{ action.event | to_python_const }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
+{% endif %}
+{% elif action.type == 'cancel' -%}
+{% if action.sendid %}
+{{ indent }}engine.cancel_send({{ action.sendid | py_string_literal }})
+{% else %}
+{{ indent }}engine.cancel_send(self._eval_sendid({{ action.sendidexpr | py_string_literal }}))
+{% endif %}
 {% elif action.type == 'foreach' -%}
 {% if action.index %}
 {{ indent }}for {{ action.index }}_idx_, _item_ in self._foreach({{ action.array | py_string_literal }}):
