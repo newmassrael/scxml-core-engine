@@ -18,16 +18,16 @@
 {% elif action.type == 'raise' -%}
 {{ indent }}engine.raise_internal({{ machine_name }}Event.{{ action.event | to_python_const }})
 {% elif action.type == 'assign' -%}
-{{ indent }}self._assign(engine, {{ action.location | py_string_literal }}, {{ action.expr | py_string_literal }})
+{{ indent }}self._assign(engine, {{ action.location | py_string_literal }}, {{ action.expr | py_expr | py_string_literal }})
 {% elif action.type == 'log' -%}
-{{ indent }}self._log({{ action.label | py_string_literal }}, {{ action.expr | py_string_literal }})
+{{ indent }}self._log({{ action.label | py_string_literal }}, {{ action.expr | py_expr | py_string_literal }})
 {% elif action.type == 'if' -%}
-{{ indent }}if self._guard(engine, {{ action.cond | py_string_literal }}):
+{{ indent }}if self._guard(engine, {{ action.cond | py_expr | py_string_literal }}):
 {% for sub in action.then_actions %}{{ emit(sub, indent ~ '    ', machine_name) }}{% endfor %}
 {% if not action.then_actions %}{{ indent }}    pass
 {% endif %}
 {% for branch in action.elseif_branches %}
-{{ indent }}elif self._guard(engine, {{ branch.cond | py_string_literal }}):
+{{ indent }}elif self._guard(engine, {{ branch.cond | py_expr | py_string_literal }}):
 {% for sub in branch.actions %}{{ emit(sub, indent ~ '    ', machine_name) }}{% endfor %}
 {% if not branch.actions %}{{ indent }}    pass
 {% endif %}
@@ -116,12 +116,12 @@
 {{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
 {{ indent }}_http_params = self._build_http_params([
 {%- for param in action.params -%}
-({{ param.name | py_string_literal }}, {{ param.expr | py_string_literal }}),
+({{ param.name | py_string_literal }}, {{ param.expr | py_expr | py_string_literal }}),
 {%- endfor -%}
 ], {{ action.namelist | py_string_literal }})
 {% if action.contentexpr -%}
 {{ indent }}try:
-{{ indent }}    _http_content = str(eval({{ action.contentexpr | py_string_literal }}, self._ns))
+{{ indent }}    _http_content = str(eval({{ action.contentexpr | py_expr | py_string_literal }}, self._ns))
 {{ indent }}except Exception:
 {{ indent }}    _http_content = ""
 {% else -%}
@@ -129,7 +129,7 @@
 {% endif -%}
 {% if action.eventexpr -%}
 {{ indent }}try:
-{{ indent }}    _http_evt_name = str(eval({{ action.eventexpr | py_string_literal }}, self._ns))
+{{ indent }}    _http_evt_name = str(eval({{ action.eventexpr | py_expr | py_string_literal }}, self._ns))
 {{ indent }}except Exception:
 {{ indent }}    _http_evt_name = ""
 {% else -%}
@@ -148,18 +148,18 @@
    the same `targetexpr` can name any of them. #}
 {{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
 {{ indent }}try:
-{{ indent }}    _resolved_target = eval({{ action.targetexpr | py_string_literal }}, self._ns)
+{{ indent }}    _resolved_target = eval({{ action.targetexpr | py_expr | py_string_literal }}, self._ns)
 {{ indent }}except Exception:
 {{ indent }}    _resolved_target = None
 {{ indent }}_target_str = "" if _resolved_target is None else str(_resolved_target)
 {{ indent }}_data = self._eval_send_payload([
 {%- for param in action.params -%}
-({{ param.name | py_string_literal }}, {{ param.expr | py_string_literal }}),
+({{ param.name | py_string_literal }}, {{ param.expr | py_expr | py_string_literal }}),
 {%- endfor -%}
-], {{ action.content | py_string_literal }}, {{ action.contentexpr | py_string_literal }}, {{ action.namelist | py_string_literal }})
+], {{ action.content | py_string_literal }}, {{ action.contentexpr | py_expr | py_string_literal }}, {{ action.namelist | py_string_literal }})
 {% if action.eventexpr -%}
 {{ indent }}try:
-{{ indent }}    _dyn_evt_name = str(eval({{ action.eventexpr | py_string_literal }}, self._ns))
+{{ indent }}    _dyn_evt_name = str(eval({{ action.eventexpr | py_expr | py_string_literal }}, self._ns))
 {{ indent }}except Exception:
 {{ indent }}    _dyn_evt_name = ""
 {% else -%}
@@ -180,12 +180,12 @@
 {{ indent }}elif _target_str.startswith("http://") or _target_str.startswith("https://"):
 {{ indent }}    _http_params_dyn = self._build_http_params([
 {%- for param in action.params -%}
-({{ param.name | py_string_literal }}, {{ param.expr | py_string_literal }}),
+({{ param.name | py_string_literal }}, {{ param.expr | py_expr | py_string_literal }}),
 {%- endfor -%}
 ], {{ action.namelist | py_string_literal }})
 {% if action.contentexpr -%}
 {{ indent }}    try:
-{{ indent }}        _http_content_dyn = str(eval({{ action.contentexpr | py_string_literal }}, self._ns))
+{{ indent }}        _http_content_dyn = str(eval({{ action.contentexpr | py_expr | py_string_literal }}, self._ns))
 {{ indent }}    except Exception:
 {{ indent }}        _http_content_dyn = ""
 {% else -%}
@@ -226,7 +226,7 @@
 {% if has_dynamic -%}
 {{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
 {% if action.eventexpr -%}
-{{ indent }}_evt = self._eval_event_name({{ action.eventexpr | py_string_literal }})
+{{ indent }}_evt = self._eval_event_name({{ action.eventexpr | py_expr | py_string_literal }})
 {{ indent }}if _evt is None:
 {% if 'error.execution' in model.events %}
 {{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }})
@@ -241,11 +241,11 @@
 {% endif -%}
 {{ send_indent }}_data = self._eval_send_payload([
 {%- for param in action.params -%}
-({{ param.name | py_string_literal }}, {{ param.expr | py_string_literal }}),
+({{ param.name | py_string_literal }}, {{ param.expr | py_expr | py_string_literal }}),
 {%- endfor -%}
 ], {{ action.content | py_string_literal }}, {{ action.contentexpr | py_string_literal }}, {{ action.namelist | py_string_literal }})
 {% if action.delayexpr -%}
-{{ send_indent }}engine.schedule_send(_evt, self._eval_delay_ms({{ action.delayexpr | py_string_literal }}), _sid, _data)
+{{ send_indent }}engine.schedule_send(_evt, self._eval_delay_ms({{ action.delayexpr | py_expr | py_string_literal }}), _sid, _data)
 {% elif action.delay_ms > 0 -%}
 {{ send_indent }}engine.schedule_send(_evt, {{ action.delay_ms }}, _sid, _data)
 {% else -%}
@@ -264,15 +264,15 @@
 {% if action.sendid %}
 {{ indent }}engine.cancel_send({{ action.sendid | py_string_literal }})
 {% else %}
-{{ indent }}engine.cancel_send(self._eval_sendid({{ action.sendidexpr | py_string_literal }}))
+{{ indent }}engine.cancel_send(self._eval_sendid({{ action.sendidexpr | py_expr | py_string_literal }}))
 {% endif %}
 {% elif action.type == 'foreach' -%}
 {% if action.index %}
-{{ indent }}for {{ action.index }}_idx_, _item_ in self._foreach({{ action.array | py_string_literal }}):
+{{ indent }}for {{ action.index }}_idx_, _item_ in self._foreach({{ action.array | py_expr | py_string_literal }}):
 {{ indent }}    self._assign_runtime({{ action.item | py_string_literal }}, _item_)
 {{ indent }}    self._assign_runtime({{ action.index | py_string_literal }}, {{ action.index }}_idx_)
 {% else %}
-{{ indent }}for _item_ in self._foreach_values({{ action.array | py_string_literal }}):
+{{ indent }}for _item_ in self._foreach_values({{ action.array | py_expr | py_string_literal }}):
 {{ indent }}    self._assign_runtime({{ action.item | py_string_literal }}, _item_)
 {% endif %}
 {% for sub in action.actions %}{{ emit(sub, indent ~ '    ', machine_name) }}{% endfor %}

@@ -814,6 +814,7 @@ pub fn register_python_filters(env: &mut minijinja::Environment) {
     env.add_filter("to_snake_case", to_snake_case);
     env.add_filter("to_python_const", to_python_const);
     env.add_filter("py_string_literal", py_string_literal);
+    env.add_filter("py_expr", py_expr);
     env.add_filter("to_event_variant", to_event_variant);
     env.add_filter("to_state_variant", to_state_variant);
     env.add_filter("to_machine_name", to_pascal_case);
@@ -821,6 +822,50 @@ pub fn register_python_filters(env: &mut minijinja::Environment) {
     env.add_filter("split", filter_split);
     env.add_filter("slice_from", filter_slice_from);
     env.add_filter("extern_callback_path", filter_extern_callback_path);
+}
+
+/// Rewrite an ECMAScript-style author expression into the Python form
+/// the AOT runtime evaluates. SCXML B.3 documents specify
+/// `datamodel="ecmascript"` and the test suite uses ES idioms that
+/// have no bare Python translation:
+///
+///   - `typeof Var !== 'undefined'` → `(globals().get('Var') is not None)`
+///   - `typeof Var === 'undefined'` → `(globals().get('Var') is None)`
+///   - `===` → `==` (strict-equality elides type-check; SCXML data is
+///     never coerced cross-type by the engine itself, so loose `==`
+///     suffices for the spec's test fixtures)
+///   - `!==` → `!=`
+///
+/// Other ECMAScript-isms (`.indexOf`, loose coercion of `1 < "a"`,
+/// etc.) are out of scope — they need a full expression parser, not
+/// a token-level rewrite. The translator stays at the "drop-in
+/// substitution" tier so the rewritten source is still readable
+/// when a generated `*_sm.py` ends up in a stack trace.
+pub fn py_expr(expr: String) -> String {
+    use regex::Regex;
+    use std::sync::OnceLock;
+    static TYPEOF_NEQ: OnceLock<Regex> = OnceLock::new();
+    static TYPEOF_EQ: OnceLock<Regex> = OnceLock::new();
+    let typeof_neq = TYPEOF_NEQ.get_or_init(|| {
+        Regex::new(r#"typeof\s+([A-Za-z_][A-Za-z0-9_]*)\s*!==?\s*(?:'undefined'|"undefined")"#)
+            .expect("typeof !== rewrite regex")
+    });
+    let typeof_eq = TYPEOF_EQ.get_or_init(|| {
+        Regex::new(r#"typeof\s+([A-Za-z_][A-Za-z0-9_]*)\s*===?\s*(?:'undefined'|"undefined")"#)
+            .expect("typeof === rewrite regex")
+    });
+    let mut s = typeof_neq
+        .replace_all(&expr, "(globals().get('$1') is not None)")
+        .into_owned();
+    s = typeof_eq
+        .replace_all(&s, "(globals().get('$1') is None)")
+        .into_owned();
+    // Strict-equality → loose-equality. Order: 3-char strict ops first
+    // so `!==` doesn't get pre-shortened to `!=` and miss the strict
+    // semantic context.
+    s = s.replace("!==", "!=");
+    s = s.replace("===", "==");
+    s
 }
 
 /// Convert an SCXML identifier (state id / event name) into a Python `IntEnum`

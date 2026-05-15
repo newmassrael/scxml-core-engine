@@ -309,7 +309,7 @@
         # `init_state_datamodel`.
 {% for var in model.variables %}
 {% if var.expr %}
-        self._ns[{{ var.id | py_string_literal }}] = eval({{ var.expr | py_string_literal }}, self._ns)
+        self._ns[{{ var.id | py_string_literal }}] = eval({{ var.expr | py_expr | py_string_literal }}, self._ns)
 {% elif var.content %}
         self._ns[{{ var.id | py_string_literal }}] = {{ var.content | py_string_literal }}
 {% else %}
@@ -320,7 +320,7 @@
 {% for state_id, st in model.states | dictsort %}
 {% for var in st.datamodel %}
 {% if var.expr %}
-        self._ns[{{ var.id | py_string_literal }}] = eval({{ var.expr | py_string_literal }}, self._ns)
+        self._ns[{{ var.id | py_string_literal }}] = eval({{ var.expr | py_expr | py_string_literal }}, self._ns)
 {% elif var.content %}
         self._ns[{{ var.id | py_string_literal }}] = {{ var.content | py_string_literal }}
 {% else %}
@@ -342,7 +342,7 @@
         if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
 {% for var in st.datamodel %}
 {% if var.expr %}
-            self._ns[{{ var.id | py_string_literal }}] = eval({{ var.expr | py_string_literal }}, self._ns)
+            self._ns[{{ var.id | py_string_literal }}] = eval({{ var.expr | py_expr | py_string_literal }}, self._ns)
 {% elif var.content %}
             self._ns[{{ var.id | py_string_literal }}] = {{ var.content | py_string_literal }}
 {% else %}
