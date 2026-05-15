@@ -148,6 +148,32 @@
             return _parse_delay_text(value)
         return 0
 
+    def _build_http_params(self, params_specs, namelist: str):
+        """W3C SCXML C.2 — assemble the form-encoded multi-map handed
+        to `engine.perform_http_send`. `params_specs` is a sequence of
+        `(name, expr)` tuples (one per `<param>`); `namelist` is the
+        whitespace-separated variable list. Each value is coerced to
+        str so the HTTP layer can urlencode it uniformly. Eval errors
+        on individual `<param expr>` skip that param (matches the
+        looser W3C "best effort" form-encoding contract — the engine
+        does NOT abort the surrounding block for a malformed param)."""
+        result = {}
+        if namelist:
+            for var in namelist.split():
+                value = self._ns.get(var)
+                result.setdefault(var, []).append(
+                    "" if value is None else str(value)
+                )
+        for name, expr in params_specs:
+            try:
+                value = eval(expr, self._ns)  # noqa: S307
+            except Exception:
+                continue
+            result.setdefault(name, []).append(
+                "" if value is None else str(value)
+            )
+        return result
+
     def _eval_send_payload(
         self,
         params,

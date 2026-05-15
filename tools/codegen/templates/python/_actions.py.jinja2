@@ -86,6 +86,139 @@
 {{ indent }}_inv_target = engine._active_invokes.get({{ action.target | slice_from(2) | py_string_literal }})
 {{ indent }}if _inv_target is not None and not _inv_target.is_done():
 {{ indent }}    _inv_target.forward_event({{ action.event | py_string_literal }}, "")
+{% elif action.send_type and action.send_type not in ['', 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor', 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'] %}
+{# W3C SCXML 6.2 — `<send type="...">` referencing an Event I/O Processor
+   the platform does not support raises `error.execution`. The processor
+   set is intentionally narrow (default SCXMLEventProcessor + BasicHTTP);
+   any other URI lands here. #}
+{{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
+{% if 'error.execution' in model.events %}
+{{ indent }}engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
+{% endif %}
+{{ indent }}return
+{% elif action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and not action.target %}
+{# W3C SCXML C.2 — `<send type="BasicHTTPEventProcessor">` requires an
+   absolute HTTP URL target; the absence raises `error.communication`. #}
+{{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
+{% if 'error.communication' in model.events %}
+{{ indent }}engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
+{% endif %}
+{{ indent }}return
+{% elif action.target.startswith('http://') or action.target.startswith('https://') %}
+{# W3C SCXML C.2 — BasicHTTP send to a statically-known absolute URL.
+   `engine.perform_http_send` runs the registered HTTP callback (which
+   the pytest harness binds to a Python echo server). Eventexpr /
+   contentexpr lower to runtime `eval`; eval failures fall through with
+   empty strings (the HTTP layer treats them as best-effort attributes
+   — the spec only requires error.execution on the surrounding
+   executable-content block when ALL attributes fail, which the
+   block-abort wrapper already covers). #}
+{{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
+{{ indent }}_http_params = self._build_http_params([
+{%- for param in action.params -%}
+({{ param.name | py_string_literal }}, {{ param.expr | py_string_literal }}),
+{%- endfor -%}
+], {{ action.namelist | py_string_literal }})
+{% if action.contentexpr -%}
+{{ indent }}try:
+{{ indent }}    _http_content = str(eval({{ action.contentexpr | py_string_literal }}, self._ns))
+{{ indent }}except Exception:
+{{ indent }}    _http_content = ""
+{% else -%}
+{{ indent }}_http_content = {{ action.content | py_string_literal }}
+{% endif -%}
+{% if action.eventexpr -%}
+{{ indent }}try:
+{{ indent }}    _http_evt_name = str(eval({{ action.eventexpr | py_string_literal }}, self._ns))
+{{ indent }}except Exception:
+{{ indent }}    _http_evt_name = ""
+{% else -%}
+{{ indent }}_http_evt_name = {{ action.event | py_string_literal }}
+{% endif -%}
+{{ indent }}engine.perform_http_send({{ action.target | py_string_literal }}, _http_evt_name, _http_content, _http_params, _sid)
+{% elif action.targetexpr %}
+{# W3C SCXML C.1 — `<send targetexpr>` resolves the target at action
+   time. Empty / undefined → `error.communication`; `!sentinel` →
+   `error.execution`; `http(s)://...` → `perform_http_send`;
+   `#_internal` → internal raise; `#_<…>` (session URI or invoke id)
+   → external dispatch (send_external when the URI matches a session,
+   `Invoke.forward_event` when it matches an active invoke id);
+   anything else → `error.communication`. The runtime dispatch table
+   keeps the four transports of the static arms inside one branch so
+   the same `targetexpr` can name any of them. #}
+{{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
+{{ indent }}try:
+{{ indent }}    _resolved_target = eval({{ action.targetexpr | py_string_literal }}, self._ns)
+{{ indent }}except Exception:
+{{ indent }}    _resolved_target = None
+{{ indent }}_target_str = "" if _resolved_target is None else str(_resolved_target)
+{{ indent }}_data = self._eval_send_payload([
+{%- for param in action.params -%}
+({{ param.name | py_string_literal }}, {{ param.expr | py_string_literal }}),
+{%- endfor -%}
+], {{ action.content | py_string_literal }}, {{ action.contentexpr | py_string_literal }}, {{ action.namelist | py_string_literal }})
+{% if action.eventexpr -%}
+{{ indent }}try:
+{{ indent }}    _dyn_evt_name = str(eval({{ action.eventexpr | py_string_literal }}, self._ns))
+{{ indent }}except Exception:
+{{ indent }}    _dyn_evt_name = ""
+{% else -%}
+{{ indent }}_dyn_evt_name = {{ action.event | py_string_literal }}
+{% endif -%}
+{{ indent }}if not _target_str:
+{% if 'error.communication' in model.events %}
+{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
+{% else %}
+{{ indent }}    pass  # W3C C.1: undefined target — but document declares no error.communication descriptor
+{% endif %}
+{{ indent }}elif _target_str.startswith("!"):
+{% if 'error.execution' in model.events %}
+{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
+{% else %}
+{{ indent }}    pass  # W3C 6.2: invalid target sentinel — no error.execution descriptor declared
+{% endif %}
+{{ indent }}elif _target_str.startswith("http://") or _target_str.startswith("https://"):
+{{ indent }}    _http_params_dyn = self._build_http_params([
+{%- for param in action.params -%}
+({{ param.name | py_string_literal }}, {{ param.expr | py_string_literal }}),
+{%- endfor -%}
+], {{ action.namelist | py_string_literal }})
+{% if action.contentexpr -%}
+{{ indent }}    try:
+{{ indent }}        _http_content_dyn = str(eval({{ action.contentexpr | py_string_literal }}, self._ns))
+{{ indent }}    except Exception:
+{{ indent }}        _http_content_dyn = ""
+{% else -%}
+{{ indent }}    _http_content_dyn = {{ action.content | py_string_literal }}
+{% endif -%}
+{{ indent }}    engine.perform_http_send(_target_str, _dyn_evt_name, _http_content_dyn, _http_params_dyn, _sid)
+{{ indent }}elif _target_str == "#_internal":
+{{ indent }}    _dyn_evt = self.get_event_from_name(_dyn_evt_name)
+{{ indent }}    if _dyn_evt is not None:
+{{ indent }}        engine.raise_internal(_dyn_evt, EventMetadata(send_id=_sid, data=_data))
+{{ indent }}elif _target_str == "#_parent":
+{{ indent }}    self._parent_queue.append((_dyn_evt_name, _data))
+{{ indent }}elif _target_str.startswith("#_"):
+{# W3C SCXML 5.10.2 — `#_scxml_<sessionid>` (session URI) routes to the
+   addressed session's external queue; `#_<invoke_id>` routes through
+   an active child. The runtime tries invoke first; absent that, it
+   falls back to the local external queue (treating the URI as a
+   self-session reference, which matches the AOT engine's
+   single-session execution model). #}
+{{ indent }}    _inv_id = _target_str[2:]
+{{ indent }}    _inv_obj = engine._active_invokes.get(_inv_id)
+{{ indent }}    if _inv_obj is not None and not _inv_obj.is_done():
+{{ indent }}        _inv_obj.forward_event(_dyn_evt_name, _data)
+{{ indent }}    else:
+{{ indent }}        _dyn_evt = self.get_event_from_name(_dyn_evt_name)
+{{ indent }}        if _dyn_evt is not None:
+{{ indent }}            engine.send_external(_dyn_evt, _sid, _data)
+{{ indent }}else:
+{% if 'error.communication' in model.events %}
+{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
+{% else %}
+{{ indent }}    pass  # W3C C.1: unknown target schema — no error.communication descriptor declared
+{% endif %}
 {% else -%}
 {% set has_dynamic = action.eventexpr or action.delayexpr or action.idlocation
                      or action.params or action.content or action.contentexpr

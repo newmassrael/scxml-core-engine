@@ -802,40 +802,50 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
                 // to-child via `Invoke.forward_event`); γ-4b's first
                 // lift accepts `target="!…"` (the SCXML test-suite's
                 // deliberate-invalid sentinel — W3C 6.2: dispatch
-                // failure raises `error.execution`). HTTP transports
-                // and other absolute URLs stay deferred to the HTTP
-                // half of γ-4b.
+                // failure raises `error.execution`); γ-4b second lift
+                // accepts absolute http:// / https:// targets +
+                // `targetexpr` (runtime URL resolution) +
+                // `send_type="BasicHTTPEventProcessor"` (W3C C.2). All
+                // three lower through `engine.perform_http_send`.
                 if !action.target.is_empty()
                     && !action.target.starts_with("#_")
                     && !action.target.starts_with('!')
+                    && !action.target.starts_with("http://")
+                    && !action.target.starts_with("https://")
                 {
                     return Err(GenerateError::InvalidConfig(format!(
-                        "Python codegen `<send target=\"{}\">` in {} is deferred \
-                         to Atomic γ-4b (HTTP / external transport)",
+                        "Python codegen `<send target=\"{}\">` in {} is not a supported \
+                         transport (expected `#_internal`, `#_parent`, `#_<invoke>`, \
+                         `!sentinel`, or `http(s)://...`)",
                         action.target, context
                     )));
                 }
-                if !action.targetexpr.is_empty() {
-                    return Err(GenerateError::InvalidConfig(format!(
-                        "Python codegen `<send targetexpr>` in {} is deferred \
-                         to Atomic γ-4b (HTTP / external transport target resolution)",
-                        context
-                    )));
-                }
-                if !action.send_type.is_empty()
-                    && action.send_type != "http://www.w3.org/TR/scxml/#SCXMLEventProcessor"
-                {
-                    return Err(GenerateError::InvalidConfig(format!(
-                        "Python codegen `<send type=\"{}\">` in {} is deferred \
-                         to Atomic γ-4b (BasicHTTPEventProcessor)",
-                        action.send_type, context
-                    )));
-                }
+                // `targetexpr` resolves at action time to one of the
+                // supported transport schemas; the codegen emits a runtime
+                // dispatch table covering `#_internal` / `#_parent` /
+                // `#_<invoke>` / `!sentinel` / `http(s)://...` (W3C C.1).
+                // Empty / undefined resolutions raise `error.communication`.
                 // γ-4 send extensions accept `<send eventexpr>`,
                 // `<send delayexpr>`, `<send idlocation>`, and
                 // `<param>` / `<content>` / namelist payload
                 // marshalling — those rejects are intentionally absent.
-                if action.event.is_empty() && action.eventexpr.is_empty() {
+                //
+                // HTTP-targeted sends (`target="http(s)://…"` or
+                // `type=BasicHTTPEventProcessor`) carry the event name
+                // in the form payload (`_scxmleventname` param) or
+                // default to `HTTP.POST` (W3C C.2). The `event` /
+                // `eventexpr` attribute is therefore optional for the
+                // HTTP transport; the reject applies only to
+                // SCXML-internal/external dispatches that need a
+                // static or computed event identifier.
+                let is_http_send = action.target.starts_with("http://")
+                    || action.target.starts_with("https://")
+                    || action.send_type
+                        == "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor";
+                if action.event.is_empty()
+                    && action.eventexpr.is_empty()
+                    && !is_http_send
+                {
                     return Err(GenerateError::InvalidConfig(format!(
                         "Python codegen `<send>` in {} requires `event` or `eventexpr`",
                         context
