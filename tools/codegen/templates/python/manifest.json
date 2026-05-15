@@ -1,7 +1,7 @@
 {
   "language": "python",
-  "version": "0.2.0",
-  "description": "Atomic β — adds compound entry chain, early-binding datamodel (<data>/<assign>), ancestor-chain transition selection, and <raise>. Parallel/history/invoke land in γ.",
+  "version": "0.3.0",
+  "description": "Atomic γ-1 — adds <parallel> regions with active-set tracking, W3C SCXML 3.13 conflict resolution, and done.state.<parent> events for parallels whose regions all reach <final>. History / invoke / remaining executable content remain reject-walled.",
   "entry_template": "state_machine.py.jinja2",
   "runtime_dependency": "sce-python-runtime",
   "output_extension": ".py"

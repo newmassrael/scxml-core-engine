@@ -102,11 +102,29 @@ class StatePolicy(ABC, Generic[S, E]):
         """W3C SCXML 3.3 — true if `state` has child states."""
         return False
 
+    def is_parallel_state(self, state: S) -> bool:
+        """W3C SCXML 3.4 — true if `state` is a `<parallel>` element."""
+        return False
+
+    def get_parallel_regions(self, state: S) -> List[S]:
+        """W3C SCXML 3.4 — child regions of a `<parallel>` state in document
+        order. Empty list when `state` is not parallel."""
+        return []
+
+    def done_state_event(self, parallel_state: S) -> Optional[E]:
+        """W3C SCXML 3.7 — the `done.state.<id>` event raised when every
+        region of `parallel_state` has reached `<final>`. Returns `None`
+        when the document declares no transitions waiting on this event
+        (in which case the codegen omits the corresponding `Event` enum
+        member)."""
+        return None
+
     def get_initial_children(self, state: S) -> List[S]:
         """W3C SCXML 3.6 — for a compound `state`, the targets named by its
         `<initial>` element (or the first child in document order). Empty
-        list when `state` is atomic. β returns at most one entry (no
-        parallel regions); γ may return multiple for parallel entry."""
+        list when `state` is atomic. β returns at most one entry; γ keeps
+        single-child semantics for ordinary compounds (parallel branching
+        is handled by `get_parallel_regions`)."""
         return []
 
     def initialize_datamodel(self, engine: "Engine[S, E]") -> None:
