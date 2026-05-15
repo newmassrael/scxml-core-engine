@@ -1,0 +1,8 @@
+{
+  "language": "python",
+  "version": "0.1.0",
+  "description": "Atomic α — atomic states + basic transitions + onentry/onexit + scripts. Compound/parallel/history/invoke land in Atomic β/γ.",
+  "entry_template": "state_machine.py.jinja2",
+  "runtime_dependency": "sce-python-runtime",
+  "output_extension": ".py"
+}

@@ -791,3 +791,94 @@ pub fn to_event_class_name(name: String) -> String {
 fn to_state_class_name(name: String) -> String {
     to_state_variant(name)
 }
+
+// ── Python filters ──────────────────────────────────────────────
+
+/// Register all Python-specific filters on the minijinja environment.
+///
+/// Python AOT (Atomic α): state/event variants are `IntEnum` members named
+/// in UPPER_SNAKE_CASE (`State.IDLE`, `Event.TEMP_HIGH`). Identifiers from
+/// SCXML are normalised via `to_python_const`; script bodies are emitted
+/// as repr-quoted Python string literals via `py_string_literal` so the
+/// template never has to worry about embedded quotes / newlines / unicode.
+/// A `PYTHON_KEYWORDS` / `escape_python_keyword` pair is intentionally
+/// absent from Atomic α — every emitted identifier is UPPER_SNAKE_CASE
+/// (IntEnum member) so keyword collisions cannot occur at this layer.
+/// Atomic β will introduce datamodel variable names where keyword escape
+/// becomes load-bearing; the pair lands then alongside its first consumer
+/// to keep the cross-backend "filter + consumer atomic" rule
+/// ([[feedback-built-but-unconsumed]]).
+pub fn register_python_filters(env: &mut minijinja::Environment) {
+    register_invoke_filters(env);
+    env.add_filter("to_pascal_case", to_pascal_case);
+    env.add_filter("to_snake_case", to_snake_case);
+    env.add_filter("to_python_const", to_python_const);
+    env.add_filter("py_string_literal", py_string_literal);
+    env.add_filter("to_event_variant", to_event_variant);
+    env.add_filter("to_state_variant", to_state_variant);
+    env.add_filter("to_machine_name", to_pascal_case);
+    env.add_filter("normalize_ws", normalize_ws);
+    env.add_filter("split", filter_split);
+    env.add_filter("slice_from", filter_slice_from);
+    env.add_filter("extern_callback_path", filter_extern_callback_path);
+}
+
+/// Convert an SCXML identifier (state id / event name) into a Python `IntEnum`
+/// member name. The result is UPPER_SNAKE_CASE with `.` / `-` mapped to `_`.
+///
+/// Example: `"temp_high"` → `"TEMP_HIGH"`, `"error.execution"` → `"ERROR_EXECUTION"`,
+/// `"passingState"` → `"PASSING_STATE"`. Empty input maps to `"EMPTY"`.
+/// Names that collide with Python soft-keywords (`match`, `case`) or that
+/// happen to start with a digit get an underscore prefix so the resulting
+/// member is a valid identifier.
+pub fn to_python_const(name: String) -> String {
+    if name.is_empty() {
+        return "EMPTY".to_string();
+    }
+    let name = name.replace(['.', '-'], "_");
+    let chars: Vec<char> = name.chars().collect();
+    let mut result = String::with_capacity(name.len() + 4);
+    for (i, &ch) in chars.iter().enumerate() {
+        if i > 0 && ch.is_ascii_uppercase() {
+            let prev = chars[i - 1];
+            if prev.is_ascii_lowercase() || prev.is_ascii_digit() {
+                result.push('_');
+            }
+        }
+        result.push(ch);
+    }
+    let upper = result.to_uppercase();
+    let prefixed = if upper.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+        format!("_{upper}")
+    } else {
+        upper
+    };
+    // Avoid collisions with the manually-injected `NULL` sentinel.
+    if prefixed == "NULL" {
+        return "NULL_".to_string();
+    }
+    prefixed
+}
+
+/// Render a string as a Python source literal. Uses double-quoted form with
+/// backslash escapes — `repr` would also work but always picks single quotes
+/// for unicode-free strings, which clashes with the rest of the generated
+/// source's double-quote convention.
+pub fn py_string_literal(text: String) -> String {
+    let mut out = String::with_capacity(text.len() + 2);
+    out.push('"');
+    for ch in text.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\x{:02x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+

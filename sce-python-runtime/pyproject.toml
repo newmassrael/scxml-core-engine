@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sce-python-runtime"
+version = "0.1.0"
+description = "Pure-Python runtime for AOT-generated SCXML state machines"
+readme = "README.md"
+license = {text = "LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial"}
+requires-python = ">=3.9"
+authors = [
+    {name = "newmassrael", email = "newmassrael@gmail.com"},
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Libraries",
+]
+
+[tool.setuptools]
+packages = ["sce_runtime"]

@@ -382,16 +382,13 @@ pub fn compile_from_string_lang_typed(
                 files: vec![(format!("{scxml_name}_sm.go"), code)],
             })
         }
-        generator::Language::Python => Err(locate_codegen_error(
-            // Python statechart codegen is an un-implemented target,
-            // not a per-document configuration error — but at the
-            // library boundary the caller opted into an unsupported
-            // combination, so it lands here with a clear message.
-            forge::error::GenerateError::InvalidConfig(
-                "Python statechart codegen is not yet supported".into(),
-            ),
-            scxml_name,
-        )),
+        generator::Language::Python => {
+            let code = generator::generate_python_with_templates(&model, templates)
+                .map_err(|e| locate_codegen_error(e, scxml_name))?;
+            Ok(generator::GeneratedOutput {
+                files: vec![(format!("{scxml_name}_sm.py"), code)],
+            })
+        }
         generator::Language::C11 => {
             generator::generate_c11_with_templates(&model, templates, scxml_name)
                 .map_err(|e| locate_codegen_error(e, scxml_name))
@@ -501,12 +498,13 @@ pub fn compile_scxml_lang_typed_with_section(
                 files: vec![(format!("{input_stem}_sm.go"), code)],
             })
         }
-        generator::Language::Python => Err(locate_codegen_error(
-            forge::error::GenerateError::InvalidConfig(
-                "Python statechart codegen is not yet supported".into(),
-            ),
-            scxml_path,
-        )),
+        generator::Language::Python => {
+            let code = generator::generate_python(&model, template_dir)
+                .map_err(|e| locate_codegen_error(e, scxml_path))?;
+            Ok(generator::GeneratedOutput {
+                files: vec![(format!("{input_stem}_sm.py"), code)],
+            })
+        }
         generator::Language::C11 => generator::generate_c11(&model, template_dir, input_stem)
             .map_err(|e| locate_codegen_error(e, scxml_path)),
     }

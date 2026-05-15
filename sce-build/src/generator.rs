@@ -681,6 +681,104 @@ pub fn generate_go_with_templates(
     render_go(&env, model)
 }
 
+// ── Python generator ────────────────────────────────────────────
+//
+// Python AOT (Atomic α): atomic states + basic transitions + onentry/onexit
+// + transition guards. Compound / parallel / history / invoke / datamodel
+// land in Atomic β / γ. Generated `*_sm.py` modules depend on
+// `sce-python-runtime` (pure-Python W3C SCXML engine) — analogous to how
+// the Go backend depends on `sce-go-runtime` and Kotlin on its runtime
+// package. The pybind11 channel under `sce-python/` is a separate
+// (interpreter-mode) integration and is not used here.
+
+/// Generate Python code from an analyzed SCXMLModel (filesystem-based).
+pub fn generate_python(
+    model: &SCXMLModel,
+    template_dir: &Path,
+) -> Result<String, GenerateError> {
+    reject_mesh_rpc_in_unsupported_lang(model, "Python")?;
+    reject_python_unsupported_features(model)?;
+    let mut env = new_env();
+    load_templates(&mut env, template_dir)?;
+    filters::register_python_filters(&mut env);
+    render_python(&env, model)
+}
+
+/// Generate Python code using pre-loaded template strings (WASM-compatible).
+pub fn generate_python_with_templates(
+    model: &SCXMLModel,
+    templates: &[(&str, &str)],
+) -> Result<String, GenerateError> {
+    reject_mesh_rpc_in_unsupported_lang(model, "Python")?;
+    reject_python_unsupported_features(model)?;
+    let mut env = new_env();
+    load_template_strings(&mut env, templates)?;
+    filters::register_python_filters(&mut env);
+    render_python(&env, model)
+}
+
+/// Atomic α surface — explicitly reject features that the Python codegen
+/// does not yet implement. Failing loudly here keeps generated `*_sm.py`
+/// honest: every accepted document produces a working module instead of
+/// a silently degraded one. Atomic β / γ progressively widen the surface
+/// and remove the corresponding rejects.
+fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), GenerateError> {
+    if model.has_parallel_states {
+        return Err(GenerateError::InvalidConfig(
+            "Python codegen (Atomic α) does not yet support <parallel> regions; \
+             deferred to Atomic γ"
+                .into(),
+        ));
+    }
+    if model.has_history_states {
+        return Err(GenerateError::InvalidConfig(
+            "Python codegen (Atomic α) does not yet support <history> states; \
+             deferred to Atomic γ"
+                .into(),
+        ));
+    }
+    if !model.invokes.is_empty() {
+        return Err(GenerateError::InvalidConfig(
+            "Python codegen (Atomic α) does not yet support <invoke>; deferred to Atomic γ".into(),
+        ));
+    }
+    // Compound (non-leaf) states arrive in Atomic β alongside the full
+    // microstep / macrostep loop. α is locked to atomic-only fixtures.
+    for state in model.states.values() {
+        if !state.initial.is_empty() || !state.initial_children.is_empty() {
+            return Err(GenerateError::InvalidConfig(format!(
+                "Python codegen (Atomic α) does not yet support compound state `{}`; \
+                 deferred to Atomic β",
+                state.id
+            )));
+        }
+    }
+    if !model.variables.is_empty() {
+        return Err(GenerateError::InvalidConfig(
+            "Python codegen (Atomic α) does not yet support <data> / datamodel; \
+             deferred to Atomic β"
+                .into(),
+        ));
+    }
+    Ok(())
+}
+
+fn render_python(env: &Environment, model: &SCXMLModel) -> Result<String, GenerateError> {
+    let machine_name = filters::to_pascal_case(model.name.clone());
+
+    let tmpl = env
+        .get_template("state_machine.py.jinja2")
+        .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
+    let ctx = minijinja::context! {
+        model => minijinja::Value::from_serialize(model),
+        machine_name => machine_name,
+        license_config => minijinja::Value::from_serialize(&license_config()),
+    };
+    tmpl.render(ctx).map_err(render_error)
+}
+
+// ── Go generator ────────────────────────────────────────────────
+
 fn render_go(env: &Environment, model: &SCXMLModel) -> Result<String, GenerateError> {
     let machine_name = filters::to_pascal_case(model.name.clone());
 

@@ -1422,10 +1422,11 @@ fn cmd_generate(
             }
         }
         Language::Python => {
-            error_format.emit_and_exit(
-                &CliError::UnsupportedLanguage { lang: "Python statechart".into() },
-                "",
-            )
+            let code = sce_build::generator::generate_python(&model, &template_dir)
+                .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
+            GeneratedOutput {
+                files: vec![(format!("{input_stem}_sm.py"), code)],
+            }
         }
         Language::C11 => sce_build::generator::generate_c11(&model, &template_dir, input_stem)
             .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e))),
