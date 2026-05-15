@@ -1,7 +1,7 @@
 {
   "language": "python",
-  "version": "0.9.1",
-  "description": "ECMAScript builtin glue — `initialize_datamodel` setdefault-binds `false`/`true`/`null`/`undefined` into the user namespace so bare-name literals in `<cond>` / `<assign expr>` resolve to the standard ECMAScript values instead of raising `NameError`. Author `<data>` declarations still win (setdefault, not assignment). Lifts the most common pytest NameError class without changing the generated SM surface elsewhere.",
+  "version": "0.9.2",
+  "description": "γ-4g prefix-event matching — `<transition event=\"foo.*\">` and space-separated `<transition event=\"foo bar\">` lower through `_event_name_matches(descriptor, str(event))`, a W3C SCXML 3.13 token-prefix matcher (trailing `.*` is spec sugar, space-separated descriptors OR). The exact single-token fast path `event == Event.X` is untouched so existing goldens stay byte-stable; only documents that actually use prefix or multi-event descriptors take the new code path.",
   "entry_template": "state_machine.py.jinja2",
   "runtime_dependency": "sce-python-runtime",
   "output_extension": ".py"

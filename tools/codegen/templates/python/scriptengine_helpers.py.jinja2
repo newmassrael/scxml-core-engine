@@ -172,6 +172,31 @@
             self._ns[idlocation] = sid
         return sid
 
+    @staticmethod
+    def _event_name_matches(descriptor: str, name: str) -> bool:
+        """W3C SCXML 3.13 — a transition's event descriptor matches an
+        event when, for any space-separated sub-descriptor, the
+        descriptor's dot-tokens are a prefix of the event's dot-tokens.
+        Trailing `.*` is spec sugar (`foo.*` is identical to `foo`); a
+        bare `*` matches every event (the caller is responsible for
+        screening out the NULL eventless sentinel). Used only for
+        prefix / multi-token descriptors; exact single-token matches
+        keep the byte-stable `event == Event.X` fast path."""
+        name_tokens = name.split(".") if name else []
+        for desc in descriptor.split():
+            if desc == "*":
+                return True
+            if desc.endswith(".*"):
+                desc = desc[:-2]
+            desc_tokens = desc.split(".") if desc else []
+            if not desc_tokens:
+                continue
+            if len(desc_tokens) > len(name_tokens):
+                continue
+            if name_tokens[: len(desc_tokens)] == desc_tokens:
+                return True
+        return False
+
     def _foreach_values(self, array_expr: str):
         """W3C SCXML 4.6 `<foreach>` without index binding — yields each
         value in turn. Dict iteration yields keys (mirrors Python

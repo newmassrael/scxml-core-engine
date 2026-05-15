@@ -27,6 +27,12 @@
    (which would distort `to_python_const` for transitions iterating in
    document order). #}
             if event != {{ machine_name }}Event.NULL{% if transition.cond %} and self._guard({{ transition.cond | py_string_literal }}){% endif %}:
+{% elif transition.event.endswith('.*') or ' ' in transition.event %}
+{# W3C SCXML 3.13 token-prefix matching — `foo.*` matches `foo`, `foo.bar`;
+   space-separated `foo bar` is the OR of `foo` and `bar` (each
+   token-prefix). Lower through `_event_name_matches(descriptor, str(event))`
+   so the descriptor literal is the audit-trail for the match contract. #}
+            if event != {{ machine_name }}Event.NULL and self._event_name_matches({{ transition.event | py_string_literal }}, str(event)){% if transition.cond %} and self._guard({{ transition.cond | py_string_literal }}){% endif %}:
 {% else %}
 {% set evt_const = ('NULL' if not transition.event or transition.event == '' else (transition.event | to_python_const)) %}
             if event == {{ machine_name }}Event.{{ evt_const }}{% if transition.cond %} and self._guard({{ transition.cond | py_string_literal }}){% endif %}:
