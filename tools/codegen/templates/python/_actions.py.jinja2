@@ -14,20 +14,20 @@
 
 {%- macro emit(action, indent, machine_name) -%}
 {%- if action.type == 'script' -%}
-{{ indent }}self._exec({{ action.content | py_string_literal }})
+{{ indent }}self._exec(engine, {{ action.content | py_string_literal }})
 {% elif action.type == 'raise' -%}
 {{ indent }}engine.raise_internal({{ machine_name }}Event.{{ action.event | to_python_const }})
 {% elif action.type == 'assign' -%}
-{{ indent }}self._assign({{ action.location | py_string_literal }}, {{ action.expr | py_string_literal }})
+{{ indent }}self._assign(engine, {{ action.location | py_string_literal }}, {{ action.expr | py_string_literal }})
 {% elif action.type == 'log' -%}
 {{ indent }}self._log({{ action.label | py_string_literal }}, {{ action.expr | py_string_literal }})
 {% elif action.type == 'if' -%}
-{{ indent }}if self._guard({{ action.cond | py_string_literal }}):
+{{ indent }}if self._guard(engine, {{ action.cond | py_string_literal }}):
 {% for sub in action.then_actions %}{{ emit(sub, indent ~ '    ', machine_name) }}{% endfor %}
 {% if not action.then_actions %}{{ indent }}    pass
 {% endif %}
 {% for branch in action.elseif_branches %}
-{{ indent }}elif self._guard({{ branch.cond | py_string_literal }}):
+{{ indent }}elif self._guard(engine, {{ branch.cond | py_string_literal }}):
 {% for sub in branch.actions %}{{ emit(sub, indent ~ '    ', machine_name) }}{% endfor %}
 {% if not branch.actions %}{{ indent }}    pass
 {% endif %}

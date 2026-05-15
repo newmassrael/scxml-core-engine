@@ -80,13 +80,21 @@ class StatePolicy(ABC, Generic[S, E]):
         """W3C SCXML 3.13 — sentinel for eventless transition dispatch."""
 
     @abstractmethod
-    def select_transition(self, state: S, event: E) -> Optional[TransitionResult[S]]:
+    def select_transition(
+        self, state: S, event: E, engine: "Engine[S, E]"
+    ) -> Optional[TransitionResult[S]]:
         """W3C SCXML 3.13 — pick the enabled transition for (state, event), if any.
 
         Returns None if no transition is enabled. The runtime invokes this
         once per state in the ancestor chain (leaf first, then upward) so the
         generated implementation should match only transitions declared on
         the supplied `state` itself — not on its ancestors.
+
+        `engine` is threaded through so guard evaluation can raise
+        `error.execution` on the internal queue when a `<transition cond>`
+        expression fails (W3C SCXML 3.13: "if a `cond` evaluates to an
+        error the SCXML Processor MUST place error.execution on the
+        internal queue and treat the cond as having the value 'false'").
         """
 
     @abstractmethod

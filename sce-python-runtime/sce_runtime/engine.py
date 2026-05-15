@@ -413,7 +413,7 @@ class Engine(Generic[S, E]):
         not."""
         state: Optional[S] = leaf
         while state is not None:
-            result = self._policy.select_transition(state, event)
+            result = self._policy.select_transition(state, event, self)
             if result is not None:
                 if result.source is None:
                     result.source = state

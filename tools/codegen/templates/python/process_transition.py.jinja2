@@ -15,7 +15,7 @@
 
     # ── Transitions (W3C SCXML 3.13) ───────────────────────────────
 
-    def select_transition(self, state, event):
+    def select_transition(self, state, event, engine):
 {% for state_id, state in model.states | dictsort %}
 {% if state.transitions %}
         if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
@@ -26,7 +26,7 @@
    through to a non-NULL match without needing a `WILDCARD` enum member
    (which would distort `to_python_const` for transitions iterating in
    document order). #}
-            if event != {{ machine_name }}Event.NULL{% if transition.cond %} and self._guard({{ transition.cond | py_string_literal }}){% endif %}:
+            if event != {{ machine_name }}Event.NULL{% if transition.cond %} and self._guard(engine, {{ transition.cond | py_string_literal }}){% endif %}:
 {% elif transition.event.endswith('.*') or ' ' in transition.event or '.' in transition.event %}
 {# W3C SCXML 3.13 token-prefix matching — `foo.*` matches `foo`, `foo.bar`;
    space-separated `foo bar` is the OR of `foo` and `bar` (each
@@ -37,10 +37,10 @@
    `foo.bar` or `foo.bar.baz`."). Lower through `_event_name_matches(
    descriptor, str(event))` so the descriptor literal is the audit-trail
    for the match contract. #}
-            if event != {{ machine_name }}Event.NULL and self._event_name_matches({{ transition.event | py_string_literal }}, str(event)){% if transition.cond %} and self._guard({{ transition.cond | py_string_literal }}){% endif %}:
+            if event != {{ machine_name }}Event.NULL and self._event_name_matches({{ transition.event | py_string_literal }}, str(event)){% if transition.cond %} and self._guard(engine, {{ transition.cond | py_string_literal }}){% endif %}:
 {% else %}
 {% set evt_const = ('NULL' if not transition.event or transition.event == '' else (transition.event | to_python_const)) %}
-            if event == {{ machine_name }}Event.{{ evt_const }}{% if transition.cond %} and self._guard({{ transition.cond | py_string_literal }}){% endif %}:
+            if event == {{ machine_name }}Event.{{ evt_const }}{% if transition.cond %} and self._guard(engine, {{ transition.cond | py_string_literal }}){% endif %}:
 {% endif %}
                 return TransitionResult(
 {% if transition.target %}
@@ -64,15 +64,24 @@
     # ── Transition actions (W3C SCXML 3.13) ───────────────────────
 
     def execute_transition_action(self, state, transition_index: int, engine) -> None:
+{# W3C SCXML 3.8 — wrap each transition's action body in
+   `try/except _ActionAbort` so an `<assign>`/`<script>` eval failure
+   inside the block raises `error.execution` and skips subsequent
+   siblings without crashing the engine. One try-wrap per transition
+   so each transition is its own block (matches the spec's "executable
+   content block" granularity). #}
 {% for state_id, state in model.states | dictsort %}
 {% set transitions_with_action_here = state.transitions | selectattr('actions') | list %}
 {% if transitions_with_action_here %}
         if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
 {% for transition in transitions_with_action_here %}
             if transition_index == {{ transition.transition_index }}:
+                try:
 {% for action in transition.actions %}
-{{ actions.emit(action, '                ', machine_name) }}
+{{ actions.emit(action, '                    ', machine_name) }}
 {% endfor %}
+                except _ActionAbort:
+                    pass
                 return
 {% endfor %}
 {% endif %}

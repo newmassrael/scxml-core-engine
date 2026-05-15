@@ -15,19 +15,58 @@
 
     # ── Script helpers ─────────────────────────────────────────────
 
-    def _exec(self, script: str) -> None:
-        """Execute a script statement against the user-provided namespace."""
-        exec(script, self._ns)  # noqa: S102 — script source is statically baked
+    def _raise_error_execution(self, engine) -> None:
+        """W3C SCXML 3.8 — push `error.execution` onto the internal queue
+        when the running document declares the descriptor. Documents
+        without an `error.execution` transition still need block-abort
+        (per 3.8 "subsequent siblings in the same block are skipped"),
+        so the calling helper raises `_ActionAbort` independently of
+        whether this method enqueues anything."""
+        evt = self.get_event_from_name("error.execution")
+        if evt is not None:
+            engine.raise_internal(evt)
 
-    def _guard(self, expr: str) -> bool:
-        """Evaluate a transition guard expression and coerce to bool."""
-        return bool(eval(expr, self._ns))  # noqa: S307 — guard expression is statically baked
+    def _exec(self, engine, script: str) -> None:
+        """W3C SCXML 5.5 — execute a `<script>` statement against the
+        user-provided namespace. An uncaught Python exception raises
+        `error.execution` on the internal queue (W3C 3.8) and aborts the
+        current executable-content block via `_ActionAbort`."""
+        try:
+            exec(script, self._ns)  # noqa: S102 — script source is statically baked
+        except Exception:
+            self._raise_error_execution(engine)
+            raise _ActionAbort
 
-    def _assign(self, location: str, expr: str) -> None:
-        """W3C SCXML 5.3 — evaluate `expr` and bind the result at `location`
-        in the datamodel namespace. `location` is a Python identifier
-        (matching the `<data id>` set), so we assign by dict key."""
-        self._ns[location] = eval(expr, self._ns)  # noqa: S307
+    def _guard(self, engine, expr: str) -> bool:
+        """W3C SCXML 3.13 — evaluate a transition / `<if>` guard. On
+        evaluation error the spec requires `error.execution` to land on
+        the internal queue and the cond to be treated as `false`. We do
+        NOT abort the block here: the caller is either `select_transition`
+        (which has no block) or an `<if>`/`<elseif>` cascade (whose
+        next-branch evaluation is allowed to proceed per 4.2)."""
+        try:
+            return bool(eval(expr, self._ns))  # noqa: S307 — guard expression is statically baked
+        except Exception:
+            self._raise_error_execution(engine)
+            return False
+
+    def _assign(self, engine, location: str, expr: str) -> None:
+        """W3C SCXML 5.4 — evaluate `expr` and bind the result at
+        `location` in the datamodel. Two failure modes both surface as
+        `error.execution` + block-abort:
+          * `location` is not in `_DECLARED_VARS` (assignment to an
+            undeclared name — W3C 5.4 §2);
+          * the right-hand `expr` evaluation raises (e.g. attribute access
+            on `undefined`).
+        On success the namespace is updated in place."""
+        if location not in _DECLARED_VARS:
+            self._raise_error_execution(engine)
+            raise _ActionAbort
+        try:
+            self._ns[location] = eval(expr, self._ns)  # noqa: S307
+        except Exception:
+            self._raise_error_execution(engine)
+            raise _ActionAbort
 
     def _assign_runtime(self, location: str, value) -> None:
         """W3C SCXML 5.3 — assign a runtime value (already computed, not a

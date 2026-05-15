@@ -90,6 +90,34 @@ _EVENT_NAMES: Dict[{{ machine_name }}Event, str] = {
 _EVENT_BY_NAME: Dict[str, {{ machine_name }}Event] = {v: k for k, v in _EVENT_NAMES.items() if v}
 
 
+# W3C SCXML 5.4 — names declared by root `<datamodel>` and every state-local
+# `<datamodel>`. `<assign location>` against any other identifier raises
+# `error.execution` and aborts the surrounding executable-content block
+# (mirrors Go's `declaredVars` set + C++'s `Var{...}` enum). Under late
+# binding the runtime defers value-init until the owning state enters but
+# the name set is the document's static schema, so we emit it eagerly.
+_DECLARED_VARS: frozenset = frozenset({
+{% for var in model.variables %}    {{ var.id | py_string_literal }},
+{% endfor %}
+{% for state_id, st in model.states | dictsort %}
+{% for var in st.datamodel %}    {{ var.id | py_string_literal }},
+{% endfor %}
+{% endfor %}
+})
+
+
+class _ActionAbort(Exception):
+    """W3C SCXML 3.8 — sentinel raised by `_assign` / `_exec` when the
+    underlying `eval`/`exec` raises. Action-dispatch arms in
+    `execute_entry_actions` / `execute_exit_actions` /
+    `execute_transition_action` / `execute_history_default_actions`
+    catch this exception to stop processing subsequent siblings in the
+    same executable-content block. `error.execution` has already been
+    enqueued by the helper (when the document declares it) so the
+    caller does not raise it a second time."""
+    pass
+
+
 def _wrap_event_data(value: Any) -> Any:
     """W3C SCXML 5.10 — present `_event.data` as an ECMAScript-style
     object when the payload is a marshalled `<param>`/namelist dict, so
@@ -295,6 +323,9 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
         return "shallow"
 
     def execute_history_default_actions(self, history_id: str, engine) -> None:
+{# W3C SCXML 3.11 — history default-transition actions form their own
+   block; wrap in `try/except _ActionAbort` for the same reason as
+   entry/exit blocks. #}
 {% set hda = namespace(any=false) %}
 {% for history_id, info in model.history_states | dictsort %}
 {% if info.default_actions %}{% set hda.any = true %}{% endif %}
@@ -303,9 +334,12 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
 {% for history_id, info in model.history_states | dictsort %}
 {% if info.default_actions %}
         if history_id == {{ history_id | py_string_literal }}:
+            try:
 {% for action in info.default_actions %}
-{{ actions.emit(action, '            ', machine_name) }}
+{{ actions.emit(action, '                ', machine_name) }}
 {% endfor %}
+            except _ActionAbort:
+                pass
             return
 {% endif %}
 {% endfor %}

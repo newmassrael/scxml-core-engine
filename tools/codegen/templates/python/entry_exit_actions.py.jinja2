@@ -15,13 +15,21 @@
     # ── Entry actions (W3C SCXML 3.8) ─────────────────────────────
 
     def execute_entry_actions(self, state, engine) -> None:
+{# W3C SCXML 3.8 — every `<onentry>` block is wrapped in
+   `try/except _ActionAbort` so an `<assign>`/`<script>` failure
+   raises `error.execution` and skips the rest of THIS block, while
+   the next `<onentry>` block on the same state still runs (each
+   `<onentry>` is its own block per W3C 3.8.1). #}
 {% for state_id, state in model.states | dictsort %}
 {% if state.on_entry_blocks %}
         if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
 {% for block in state.on_entry_blocks %}
+            try:
 {% for action in block %}
-{{ actions.emit(action, '            ', machine_name) }}
+{{ actions.emit(action, '                ', machine_name) }}
 {% endfor %}
+            except _ActionAbort:
+                pass
 {% endfor %}
             return
 {% endif %}
@@ -31,13 +39,17 @@
     # ── Exit actions (W3C SCXML 3.9) ──────────────────────────────
 
     def execute_exit_actions(self, state, engine) -> None:
+{# W3C SCXML 3.9 — `<onexit>` block-abort symmetric to entry above. #}
 {% for state_id, state in model.states | dictsort %}
 {% if state.on_exit_blocks %}
         if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
 {% for block in state.on_exit_blocks %}
+            try:
 {% for action in block %}
-{{ actions.emit(action, '            ', machine_name) }}
+{{ actions.emit(action, '                ', machine_name) }}
 {% endfor %}
+            except _ActionAbort:
+                pass
 {% endfor %}
             return
 {% endif %}
