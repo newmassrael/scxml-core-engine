@@ -191,3 +191,56 @@ class StatePolicy(ABC, Generic[S, E]):
         read the event's name / type / send id / payload. Default
         no-op so generated policies opt in; concrete `*_sm.py`
         emits a binding into `self._ns["_event"]`."""
+
+    # ── Invoke hooks (W3C SCXML 6.4) ─────────────────────────────
+
+    def get_event_from_name(self, event_name: str) -> Optional[E]:
+        """W3C SCXML 5.10 — resolve a wire-format event name (`done.foo`,
+        `error.execution`, …) to the policy's concrete Event enum
+        member. Used by the runtime to lift child-raised and external
+        events onto the parent's queue. Default `None` (no lookup
+        table); generated policies for any SM with `<invoke>` or
+        external sends override against the module-level
+        `_EVENT_BY_NAME` dictionary."""
+        return None
+
+    def defer_invokes_on_entry(
+        self, state: S, engine: "Engine[S, E]"
+    ) -> None:
+        """W3C SCXML 6.4 — queue a `PendingInvoke` on `engine` for every
+        `<invoke>` declared on `state`. The engine drains the queue
+        after the current macrostep settles so the child observes a
+        stable parent configuration before it starts. Default no-op."""
+
+    def cancel_invokes_for_state(
+        self, state: S, engine: "Engine[S, E]"
+    ) -> None:
+        """W3C SCXML 6.4 — invoked just after `execute_exit_actions`
+        for a state that owned `<invoke>` elements. The hook cancels
+        any active children and drops their entries from
+        `engine._active_invokes`; still-pending entries that have not
+        started yet are pruned from `engine._pending_invokes`. Default
+        no-op (states without invokes never reach this hook
+        non-trivially)."""
+
+    def execute_pending_invokes(self, engine: "Engine[S, E]") -> None:
+        """W3C SCXML 6.4 — drain `engine._pending_invokes` by
+        instantiating each `<invoke>`'s child policy + engine, wrapping
+        the pair in an `Invoke`, calling `Invoke.start(engine)`, and
+        installing the result in `engine._active_invokes`. Generated
+        code emits one branch per invoke id. Default no-op."""
+
+    def forward_to_autoforward_children(
+        self, event_name: str, data, engine: "Engine[S, E]"
+    ) -> None:
+        """W3C SCXML 6.4.6 — for every active child whose `<invoke>`
+        declared `autoforward="true"`, deliver `event_name` into the
+        child via `Invoke.forward_event`. Default no-op."""
+
+    def execute_finalize_for_child_event(
+        self, event_with_meta, engine: "Engine[S, E]"
+    ) -> None:
+        """W3C SCXML 6.5 — run the `<finalize>` block associated with
+        the invoke that produced `event_with_meta`. The hook executes
+        in the parent's datamodel so the finalize body can write
+        child-derived values back. Default no-op."""

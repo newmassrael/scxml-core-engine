@@ -1,7 +1,7 @@
 {
   "language": "python",
-  "version": "0.9.2",
-  "description": "γ-4g prefix-event matching — `<transition event=\"foo.*\">` and space-separated `<transition event=\"foo bar\">` lower through `_event_name_matches(descriptor, str(event))`, a W3C SCXML 3.13 token-prefix matcher (trailing `.*` is spec sugar, space-separated descriptors OR). The exact single-token fast path `event == Event.X` is untouched so existing goldens stay byte-stable; only documents that actually use prefix or multi-event descriptors take the new code path.",
+  "version": "0.10.0",
+  "description": "Atomic γ-4a SCXML invoke — sce_runtime/invoke.py introduces Invoke ABC + ScxmlInvoke wrapper; Engine grows `_pending_invokes` / `_active_invokes` + the W3C 6.4 defer-execute lifecycle (defer at onentry, execute after macrostep settle, tick + drain children on advance_time, cancel on exit, autoforward on external dispatch). Generated policies override `defer_invokes_on_entry` / `execute_pending_invokes` / `cancel_invokes_for_state` / `forward_to_autoforward_children` / `get_event_from_name`, and `<send target=\"#_parent\">` lowers to a `_parent_queue` push (delay > 0 routes through the child's scheduler so terminated children drop pending parent sends per W3C 6.2). Hybrid (`srcexpr`/`contentexpr`) and mesh-rpc invokes stay reject-walled.",
   "entry_template": "state_machine.py.jinja2",
   "runtime_dependency": "sce-python-runtime",
   "output_extension": ".py"

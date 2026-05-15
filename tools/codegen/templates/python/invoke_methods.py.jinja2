@@ -1,0 +1,127 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{#
+    Invoke Methods (Python Jinja2)
+
+    W3C SCXML 6.4 — emits the four policy hooks the engine drives:
+      - `defer_invokes_on_entry`: queue a PendingInvoke per `<invoke>`
+        on the entered state.
+      - `execute_pending_invokes`: drain the engine's `_pending_invokes`,
+        instantiate each `<invoke>`'s child policy + engine, wrap in
+        ScxmlInvoke, register in `engine._active_invokes`. Children
+        that complete during their own `initialize()` raise
+        `done.invoke.<id>` immediately (per W3C 6.4 the parent must
+        observe the event in the same macrostep iteration).
+      - `cancel_invokes_for_state`: cancel + drop active invokes
+        owned by an exiting state; prune still-pending invokes that
+        haven't started yet.
+      - `forward_to_autoforward_children`: deliver external events
+        into every active child whose `<invoke>` declared
+        `autoforward="true"` (W3C 6.4.6).
+
+    `<finalize>` blocks (W3C 6.5) are not yet emitted — the W3C tests
+    in γ-4a's scope (test187 etc.) don't exercise finalize. Adding
+    finalize is a follow-up because it touches the action emit macro
+    AND needs a runtime hook for "finalize body runs in parent
+    datamodel" semantics; the default no-op hook in StatePolicy keeps
+    the contract sound until that lands.
+
+    Port-of-Go template: tools/codegen/templates/go/invoke_methods.go.jinja2.
+#}
+
+    # ── Invokes (W3C SCXML 6.4) ───────────────────────────────────
+
+    def defer_invokes_on_entry(self, state, engine) -> None:
+{% for state_id, state in model.states | dictsort %}
+{% set scxml_list = state.invokes | scxml | list %}
+{% if scxml_list %}
+        if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
+{% for inv in scxml_list %}
+            engine._pending_invokes.append(PendingInvoke(
+                invoke_id={{ inv.invoke_id | py_string_literal }},
+                owner_state_name={{ state_id | py_string_literal }},
+            ))
+{% endfor %}
+{% endif %}
+{% endfor %}
+        return
+
+    def execute_pending_invokes(self, engine) -> None:
+{% set ns_any = namespace(any=false) %}
+{% for state_id, state in model.states | dictsort %}
+{% for inv in state.invokes | scxml %}
+{% set ns_any.any = true %}
+{% endfor %}
+{% endfor %}
+{% if ns_any.any %}
+        # W3C SCXML 6.4 — copy-and-clear so child instantiation cannot
+        # observe its own pending entry in `_pending_invokes`.
+        pending = list(engine._pending_invokes)
+        engine._pending_invokes.clear()
+        for entry in pending:
+{% for state_id, state in model.states | dictsort %}
+{% for inv in state.invokes | scxml %}
+            if entry.invoke_id == {{ inv.invoke_id | py_string_literal }}:
+                import {{ inv.child_name }}_sm as _child_module_{{ inv.invoke_id | to_python_const }}
+                _child_policy = _child_module_{{ inv.invoke_id | to_python_const }}.Policy()
+                _child_engine = Engine(_child_policy)
+                _invoke = ScxmlInvoke(_child_engine, _child_policy._parent_queue)
+                _invoke.start(engine)
+                engine._active_invokes[entry.invoke_id] = _invoke
+                # W3C SCXML 6.4 — children that reach final during their
+                # own initialise produce `done.invoke.<id>` immediately.
+                if _invoke.is_done():
+                    engine.send_external_by_name(
+                        create_done_invoke_event_name(entry.invoke_id),
+                        data=_invoke.done_data() or "",
+                        invoke_id=entry.invoke_id,
+                    )
+                # Drain any `<send target="#_parent">` raised during the
+                # child's initialise onto the parent's external queue.
+                for _name, _data in _invoke.drain_events():
+                    engine.send_external_by_name(
+                        _name,
+                        data=_data,
+                        invoke_id=entry.invoke_id,
+                        origin_type="http://www.w3.org/TR/scxml/#SCXMLEventProcessor",
+                    )
+                continue
+{% endfor %}
+{% endfor %}
+{% endif %}
+        return
+
+    def cancel_invokes_for_state(self, state, engine) -> None:
+{% for state_id, state in model.states | dictsort %}
+{% set scxml_list = state.invokes | scxml | list %}
+{% if scxml_list %}
+        if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
+{% for inv in scxml_list %}
+            _inv = engine._active_invokes.pop({{ inv.invoke_id | py_string_literal }}, None)
+            if _inv is not None:
+                _inv.cancel()
+            engine._pending_invokes = [
+                p for p in engine._pending_invokes
+                if p.invoke_id != {{ inv.invoke_id | py_string_literal }}
+            ]
+{% endfor %}
+{% endif %}
+{% endfor %}
+        return
+
+    def forward_to_autoforward_children(self, event_name: str, data, engine) -> None:
+{% if ns_any.any %}
+        if is_platform_event(event_name):
+            return
+{% for state_id, state in model.states | dictsort %}
+{% for inv in state.invokes | scxml %}
+{% if inv.autoforward %}
+        _inv = engine._active_invokes.get({{ inv.invoke_id | py_string_literal }})
+        if _inv is not None and not _inv.is_done():
+            _inv.forward_event(event_name, data)
+{% endif %}
+{% endfor %}
+{% endfor %}
+{% endif %}
+        return

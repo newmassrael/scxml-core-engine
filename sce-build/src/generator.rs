@@ -726,10 +726,26 @@ pub fn generate_python_with_templates(
 /// lifted `<history>`; γ-3 lifts the remaining executable content;
 /// γ-4 lifts `<invoke>`).
 fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), GenerateError> {
-    if !model.invokes.is_empty() {
-        return Err(GenerateError::InvalidConfig(
-            "Python codegen does not yet support <invoke>; deferred to Atomic γ".into(),
-        ));
+    // γ-4a accepts `<invoke type="scxml">`. Hybrid (`srcexpr`/`contentexpr`)
+    // invokes still defer to γ-4b because they need runtime expression
+    // evaluation; mesh-rpc invokes are permanently rejected per the
+    // C++-first mesh policy (`mesh_cpp_first_policy.md`).
+    for inv in &model.invokes {
+        match inv {
+            crate::model::Invoke::Scxml(_) => {}
+            crate::model::Invoke::Hybrid(_) => {
+                return Err(GenerateError::InvalidConfig(
+                    "Python codegen does not yet support hybrid <invoke srcexpr>/<invoke contentexpr>; \
+                     deferred to Atomic γ-4b".into(),
+                ));
+            }
+            crate::model::Invoke::MeshRpc(_) => {
+                return Err(GenerateError::InvalidConfig(
+                    "Python codegen rejects <invoke type=\"sce:mesh-rpc\">: \
+                     mesh runtime is C++ alone (mesh_cpp_first_policy)".into(),
+                ));
+            }
+        }
     }
     // β datamodel storage uses dict-keyed `self._ns[name]`. User-written
     // `<script>` / `cond` / `expr` text references the same names as bare
@@ -781,13 +797,15 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
             if action.action_type == "send" {
                 // γ-3b kept only the simple in-machine send form; γ-4
                 // send extensions accept dynamic exprs + payload +
-                // idlocation but external transports stay deferred.
-                if !action.target.is_empty()
-                    && action.target != "#_internal"
-                {
+                // idlocation; γ-4a additionally accepts `target="#_parent"`
+                // (child-to-parent) and `target="#_<invoke_id>"` (parent-
+                // to-child via `Invoke.forward_event`). External transports
+                // (HTTP / arbitrary URLs) and the `!invalid` sentinel stay
+                // deferred to γ-4b.
+                if !action.target.is_empty() && !action.target.starts_with("#_") {
                     return Err(GenerateError::InvalidConfig(format!(
                         "Python codegen `<send target=\"{}\">` in {} is deferred \
-                         to Atomic γ-4 (invoke + external transport)",
+                         to Atomic γ-4b (HTTP / external transport)",
                         action.target, context
                     )));
                 }

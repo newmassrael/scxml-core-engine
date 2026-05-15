@@ -43,7 +43,29 @@
    happens in one place. Falls back to the original γ-3b fast path
    when none of the dynamic attrs are present (still `engine.send_external` /
    `engine.schedule_send` direct calls so simple sends keep the cheaper
-   code shape and the γ-3b byte goldens are unchanged). #}
+   code shape and the γ-3b byte goldens are unchanged).
+
+   `<send target="#_parent">` (W3C SCXML 6.4) lowers separately so it does
+   not collide with the dynamic/fast-path arms below. Delayed parent sends
+   ride the child's own scheduler — exactly like Go — so when the sending
+   session terminates the still-pending event is silently dropped, matching
+   the W3C 6.2 "if the sending session terminates first" clause. #}
+{% if action.target == '#_parent' %}
+{% if action.delay_ms > 0 %}
+{{ indent }}engine.schedule_send({{ machine_name }}Event.{{ action.event | to_python_const }}, {{ action.delay_ms }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}engine._next_auto_sendid(){% endif %})
+{% else %}
+{{ indent }}self._parent_queue.append(({{ action.event | py_string_literal }}, ""))
+{% endif %}
+{% elif action.target.startswith('#_') and action.target != '#_internal' %}
+{# W3C SCXML 6.4 — parent-to-child send. The active `Invoke` looks up
+   the wire-format event name on the child policy's enum and pushes
+   into the child's external queue via `Invoke.forward_event`. Unknown
+   invoke ids drop silently (W3C 5.10.1 "if no transition is enabled
+   the event is lost"). #}
+{{ indent }}_inv_target = engine._active_invokes.get({{ action.target | slice_from(2) | py_string_literal }})
+{{ indent }}if _inv_target is not None and not _inv_target.is_done():
+{{ indent }}    _inv_target.forward_event({{ action.event | py_string_literal }}, "")
+{% else -%}
 {% set has_dynamic = action.eventexpr or action.delayexpr or action.idlocation
                      or action.params or action.content or action.contentexpr
                      or action.namelist %}
@@ -81,6 +103,7 @@
 {{ indent }}engine.schedule_send({{ machine_name }}Event.{{ action.event | to_python_const }}, {{ action.delay_ms }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}engine._next_auto_sendid(){% endif %})
 {% else -%}
 {{ indent }}engine.send_external({{ machine_name }}Event.{{ action.event | to_python_const }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
+{% endif -%}
 {% endif -%}
 {% endif -%}
 {% elif action.type == 'cancel' -%}

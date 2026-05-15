@@ -11,18 +11,32 @@ through the C++ Interpreter via pybind11, not through this AOT runtime.
 
 from .engine import Engine
 from .event import Event, EventMetadata, EventWithMetadata
+from .invoke import (
+    ChildSession,
+    Invoke,
+    PendingInvoke,
+    ScxmlInvoke,
+    create_done_invoke_event_name,
+    is_platform_event,
+)
 from .policy import StatePolicy, TransitionResult
 from .scheduler import ScheduledEvent, Scheduler
 
 __all__ = [
+    "ChildSession",
     "Engine",
     "Event",
     "EventMetadata",
     "EventWithMetadata",
+    "Invoke",
+    "PendingInvoke",
     "ScheduledEvent",
     "Scheduler",
+    "ScxmlInvoke",
     "StatePolicy",
     "TransitionResult",
+    "create_done_invoke_event_name",
+    "is_platform_event",
 ]
 
 __version__ = "0.1.0"

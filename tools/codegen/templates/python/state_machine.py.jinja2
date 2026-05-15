@@ -25,9 +25,17 @@ remain reject-walled.
 from __future__ import annotations
 
 from enum import IntEnum
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
-from sce_runtime import Engine, StatePolicy, TransitionResult
+from sce_runtime import (
+    Engine,
+    PendingInvoke,
+    ScxmlInvoke,
+    StatePolicy,
+    TransitionResult,
+    create_done_invoke_event_name,
+    is_platform_event,
+)
 
 
 # ======================================================================
@@ -145,6 +153,14 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
 
     def __init__(self, *, script_namespace: Optional[Dict[str, Any]] = None) -> None:
         self._ns: Dict[str, Any] = dict(script_namespace or {})
+        # W3C SCXML 6.4 — when this policy runs as an invoked child its
+        # `<send target="#_parent">` actions push `(event_name, data)`
+        # tuples here; the parent's `ScxmlInvoke.drain_events()` lifts
+        # them onto the parent's external queue. Always present so
+        # generated `<send target="#_parent">` arms compile against the
+        # same field regardless of whether the document is ever
+        # actually invoked.
+        self._parent_queue: List[Tuple[str, Any]] = []
 
     # ── Structural metadata ────────────────────────────────────────
 
@@ -303,6 +319,13 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
     def get_event_name(self, event: {{ machine_name }}Event) -> str:
         return _EVENT_NAMES[event]
 
+    def get_event_from_name(self, event_name: str) -> Optional[{{ machine_name }}Event]:
+        # W3C SCXML 5.10 + 6.4 — reverse lookup so the runtime can lift
+        # wire-format names (`done.invoke.<id>`, `error.execution`, any
+        # child-raised `<send target="#_parent">` name) onto the
+        # generated `Event` enum.
+        return _EVENT_BY_NAME.get(event_name)
+
     def null_event(self) -> {{ machine_name }}Event:
         return {{ machine_name }}Event.NULL
 
@@ -315,6 +338,8 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
 {% include 'process_transition.py.jinja2' %}
 
 {% include 'entry_exit_actions.py.jinja2' %}
+
+{% include 'invoke_methods.py.jinja2' %}
 
 {% include 'scriptengine_helpers.py.jinja2' %}
 

@@ -32,6 +32,7 @@ from collections import deque
 from typing import Any, Dict, Generic, List, Optional, Set, TypeVar
 
 from .event import EventMetadata, EventWithMetadata
+from .invoke import Invoke, PendingInvoke, create_done_invoke_event_name
 from .policy import StatePolicy, TransitionResult
 from .scheduler import Scheduler
 
@@ -84,6 +85,17 @@ class Engine(Generic[S, E]):
         # the default early binding the policy initialises every state's
         # data up front and this set stays empty.
         self._initialized_states_data: Set[S] = set()
+        # W3C SCXML 6.4 — pending `<invoke>` queue: filled at onentry by
+        # `_policy.defer_invokes_on_entry`, drained after the current
+        # macrostep settles by `_start_pending_invokes`. Defer-execute
+        # is the spec-mandated ordering (entry actions of a compound
+        # observe a stable configuration BEFORE any child runs).
+        self._pending_invokes: List[PendingInvoke] = []
+        # W3C SCXML 6.4 — active invoke instances keyed on `invoke_id`.
+        # Populated by `_policy.execute_pending_invokes`; the engine
+        # drives lifecycle (tick + drain + cancel) but never instantiates
+        # the concrete `Invoke` itself.
+        self._active_invokes: Dict[str, Invoke[E]] = {}
 
     # ── Lifecycle ──────────────────────────────────────────────────
 
@@ -117,9 +129,21 @@ class Engine(Generic[S, E]):
         if self._reached_final or not self._is_running:
             return
         self._process_queues()
+        # W3C SCXML 6.4 — once the initialise macrostep is stable, any
+        # `<invoke>` deferred during onentry runs. Newly raised events
+        # (e.g. `done.invoke.<id>` from a child that completed during
+        # its own initialise) re-enter the macrostep loop so the parent
+        # observes them before returning.
+        self._start_pending_invokes()
 
     def stop(self) -> None:
         self._is_running = False
+        # W3C SCXML 6.4 — engine shutdown cancels every active invoke
+        # so child schedulers stop driving and external resources are
+        # released. Mirrors Go's `Engine.Stop` cancelling all children.
+        for invoke in list(self._active_invokes.values()):
+            invoke.cancel()
+        self._active_invokes.clear()
 
     # ── Public introspection ───────────────────────────────────────
 
@@ -147,6 +171,13 @@ class Engine(Generic[S, E]):
     @property
     def reached_final(self) -> bool:
         return self._reached_final
+
+    @property
+    def policy(self) -> StatePolicy[S, E]:
+        """W3C SCXML 6.4 — used by `Invoke` impls to resolve a child
+        engine's name→Event lookup. Stays read-only from outside the
+        engine; the runtime never mutates the policy itself."""
+        return self._policy
 
     def active_configuration(self) -> Set[S]:
         """W3C SCXML 3.3 — every active state (atomic + ancestors)."""
@@ -176,6 +207,47 @@ class Engine(Generic[S, E]):
         )
 
     # ── <send> / <cancel> / scheduler API (W3C SCXML 6.2) ─────────
+
+    def send_external_by_name(
+        self,
+        event_name: str,
+        data: Any = "",
+        sendid: str = "",
+        invoke_id: str = "",
+        origin: str = "",
+        origin_type: str = "",
+    ) -> None:
+        """W3C SCXML 5.10 + 6.4 — enqueue an external event addressed by
+        its wire name (`done.invoke.<id>`, `error.execution`, or any
+        child-raised `<send target="#_parent">` name). Unknown names
+        drop silently; matches W3C 5.10.1 ("if no transition is enabled
+        the event is lost"). Used by the runtime to lift child-raised
+        events onto the parent's external queue with the originating
+        invoke's metadata intact."""
+        if not self._is_running:
+            return
+        event = self._policy.get_event_from_name(event_name)
+        if event is None:
+            # W3C SCXML 3.13 / 6.3.1 — fall back through dot-token
+            # prefixes so a wire name like `done.invoke._invoke_0`
+            # surfaces on a document that only declares the generic
+            # `done.invoke` descriptor. Token-prefix matching at the
+            # transition layer then catches both forms uniformly.
+            parts = event_name.split(".") if event_name else []
+            while event is None and len(parts) > 1:
+                parts.pop()
+                event = self._policy.get_event_from_name(".".join(parts))
+            if event is None:
+                return
+        metadata = EventMetadata(
+            send_id=sendid,
+            event_type="external",
+            data=data,
+            invoke_id=invoke_id,
+            origin=origin,
+            origin_type=origin_type,
+        )
+        self._external_queue.append(EventWithMetadata(event=event, metadata=metadata))
 
     def send_external(self, event: E, sendid: str = "", data: Any = "") -> None:
         """W3C SCXML 6.2 — enqueue an external event with no delay.
@@ -211,10 +283,20 @@ class Engine(Generic[S, E]):
         """Move virtual time forward by `ms` milliseconds and drain every
         scheduled event whose deadline has now passed. The drained
         events go onto the external queue and the macrostep loop runs
-        until stable."""
+        until stable. Active invoke children are also ticked: their
+        schedulers share the parent's virtual-time progression so a
+        child `<send delay>` fires at the same absolute time on both
+        sides."""
         if ms < 0:
             raise ValueError("advance_time requires a non-negative delta")
         self._now_ms += ms
+        # W3C SCXML 6.4 — propagate the time delta to every active
+        # child so its scheduler stays in lock-step with the parent's
+        # virtual clock. Done BEFORE draining the parent scheduler so
+        # any child-raised `<send target="#_parent">` lands in the
+        # parent's external queue on the same tick the parent processes
+        # its own schedules.
+        self._drive_active_children(ms)
         drained_any = False
         for entry in self._scheduler.drain_due(self._now_ms):
             metadata = EventMetadata(
@@ -226,6 +308,10 @@ class Engine(Generic[S, E]):
             drained_any = True
         if drained_any and self._is_running and not self._reached_final:
             self._process_queues()
+        # W3C SCXML 6.4 — pending invokes deferred during the macrostep
+        # land after the queue is drained; their initialise-time
+        # outputs feed back into the macrostep on the next iteration.
+        self._start_pending_invokes()
 
     @property
     def now_ms(self) -> int:
@@ -278,6 +364,17 @@ class Engine(Generic[S, E]):
         # `_event` when the processor "selects an event for
         # processing".
         self._policy.set_current_event(evt.event, evt.metadata)
+        # W3C SCXML 6.5 — `<finalize>` runs before transition selection
+        # for events originating from invoked children, so the
+        # finalize body can write child-derived values back into the
+        # parent datamodel that subsequent guards then read.
+        if evt.metadata.invoke_id:
+            self._policy.execute_finalize_for_child_event(evt, self)
+        # W3C SCXML 6.4.6 — autoforward external events into every
+        # active child marked `autoforward="true"`. Done before
+        # transition selection so the child observes the event in the
+        # same iteration the parent does.
+        self._route_to_child(evt)
         transitions = self._select_transitions(evt.event)
         if not transitions:
             return
@@ -397,6 +494,11 @@ class Engine(Generic[S, E]):
         )
         for s in exit_list:
             self._policy.execute_exit_actions(s, self)
+            # W3C SCXML 6.4 — cancel any active invokes owned by the
+            # exiting state (and drop any still-pending ones queued by
+            # an earlier macrostep iteration that hadn't started yet).
+            # The policy delegate knows which state owns which invoke.
+            self._policy.cancel_invokes_for_state(s, self)
 
         # Drop exited leaves and any leaves whose proper ancestors were
         # exited (their region's leaf is gone). For parallel exits the
@@ -523,6 +625,12 @@ class Engine(Generic[S, E]):
             self._policy.init_state_datamodel(state, self)
             self._initialized_states_data.add(state)
         self._policy.execute_entry_actions(state, self)
+        # W3C SCXML 6.4 — every `<invoke>` on the entered state defers
+        # to the engine's pending list. Actual child instantiation
+        # happens after the macrostep settles via
+        # `_start_pending_invokes` so onentry observes a stable config
+        # before any child runs.
+        self._policy.defer_invokes_on_entry(state, self)
 
     def _enter_state(self, state: S) -> None:
         """Recursively enter `state`: run its entry actions, then descend
@@ -634,6 +742,90 @@ class Engine(Generic[S, E]):
             if self._policy.is_final_state(s):
                 return True
         return False
+
+    # ── Invoke drivers (W3C SCXML 6.4) ────────────────────────────
+
+    def _start_pending_invokes(self) -> None:
+        """W3C SCXML 6.4 — instantiate every invoke deferred during the
+        current macrostep. The policy hook walks `_pending_invokes`,
+        clears it, and inserts the resulting `Invoke` instances into
+        `_active_invokes`. Children that complete during their own
+        initialise re-enter the macrostep loop via the parent's
+        external queue so the parent observes `done.invoke.<id>` and
+        any child-raised `<send target="#_parent">` synchronously."""
+        if not self._pending_invokes:
+            return
+        self._policy.execute_pending_invokes(self)
+        if (
+            (self._external_queue or self._internal_queue)
+            and self._is_running
+            and not self._reached_final
+        ):
+            self._process_queues()
+
+    def _drive_active_children(self, ms: int) -> None:
+        """W3C SCXML 6.4 — tick every active child, propagating the
+        same virtual-time delta the parent received so their schedulers
+        stay synchronised, then promote any parent-bound events onto
+        the parent's external queue. Children that reach their final
+        configuration during this drive raise `done.invoke.<id>` once
+        and stay in the active map (marked done) until the owning
+        state exits and `cancel_invokes_for_state` removes them."""
+        if not self._active_invokes:
+            return
+        # Iterate over a snapshot so cancellation during the loop
+        # (e.g. parent transition triggered by a child-raised event)
+        # cannot mutate the dict we are walking.
+        for invoke_id, invoke in list(self._active_invokes.items()):
+            was_done = invoke.is_done()
+            if not was_done and ms > 0:
+                # Advance child clock to the parent's new wall time so
+                # any child `<send delay>` due at this tick promotes
+                # into the child's external queue.
+                self._advance_child_time(invoke, ms)
+            invoke.tick()
+            for event_name, data in invoke.drain_events():
+                self.send_external_by_name(
+                    event_name,
+                    data=data,
+                    invoke_id=invoke_id,
+                    origin_type="http://www.w3.org/TR/scxml/#SCXMLEventProcessor",
+                )
+            if invoke.is_done() and not was_done:
+                # W3C SCXML 6.3.1 — lift the child's terminal donedata
+                # onto `done.invoke.<id>._event.data`.
+                self.send_external_by_name(
+                    create_done_invoke_event_name(invoke_id),
+                    data=invoke.done_data() or "",
+                    invoke_id=invoke_id,
+                )
+
+    def _advance_child_time(self, invoke: Invoke[E], ms: int) -> None:
+        """Forward a virtual-time delta to a child engine if the
+        underlying `Invoke` exposes one. `ScxmlInvoke.child` returns
+        the wrapped child engine; HTTP / other invoke kinds don't
+        carry their own clock so the call is skipped silently."""
+        child = getattr(invoke, "child", None)
+        if child is None:
+            return
+        advance = getattr(child, "advance_time", None)
+        if advance is None:
+            return
+        advance(ms)
+
+    def _route_to_child(self, evt: EventWithMetadata[E]) -> None:
+        """W3C SCXML 6.4.6 — autoforward an external event into every
+        active child whose `<invoke autoforward="true"/>` requested it.
+        Skips internally-raised events (W3C 6.4.6 explicitly forwards
+        only externally-triggered ones) and platform `#_…` events."""
+        if evt.metadata.event_type != "external":
+            return
+        if not self._active_invokes:
+            return
+        name = self._policy.get_event_name(evt.event)
+        if not name:
+            return
+        self._policy.forward_to_autoforward_children(name, evt.metadata.data, self)
 
     # ── Hierarchy helpers ─────────────────────────────────────────
 
