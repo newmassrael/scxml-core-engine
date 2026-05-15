@@ -1,7 +1,7 @@
 {
   "language": "python",
-  "version": "0.8.0",
-  "description": "Atomic γ-4 send extensions — `<send eventexpr/delayexpr/sendidexpr>` resolve against the datamodel at action time; `<param>` / `<content>` / `<content expr>` / namelist marshal into `_event.data`; `<send idlocation>` writes the resolved sendid back into the datamodel. Outbound `<send>` external transport (HTTP / explicit URL targets / `BasicHTTPEventProcessor`) remains reject-walled for γ-4b. <invoke> remains reject-walled for γ-4a.",
+  "version": "0.9.0",
+  "description": "Atomic γ-4f W3C pytest harness — PythonBackend now emits a `test_w3c_{N}.py` wrapper alongside every generated `{N}_sm.py`. The wrapper imports the sibling SM via sys.path insertion (relative to the test directory, with `sce-python-runtime/` also added so `import sce_runtime` resolves without an installed package), drives `engine.advance_time(50)` until `reached_final`, and asserts the final state matches the W3C `pass` literal. SCHEDULED tests get up to 6 s of virtual time; SIMPLE tests resolve on the post-initialize macrostep.",
   "entry_template": "state_machine.py.jinja2",
   "runtime_dependency": "sce-python-runtime",
   "output_extension": ".py"
