@@ -181,3 +181,13 @@ class StatePolicy(ABC, Generic[S, E]):
     def needs_script_engine(self) -> bool:
         """Whether the policy uses scripts (informational)."""
         return False
+
+    def set_current_event(self, event: E, metadata) -> None:
+        """W3C SCXML 5.10 — bind `_event` into the datamodel for the
+        duration of the current microstep. The engine calls this once
+        per externally-triggered or internally-raised event, before
+        transition selection runs, so guards (`<transition cond="...">`)
+        and action expressions (`<assign expr="_event.data.foo">`) can
+        read the event's name / type / send id / payload. Default
+        no-op so generated policies opt in; concrete `*_sm.py`
+        emits a binding into `self._ns["_event"]`."""

@@ -1,7 +1,7 @@
 {
   "language": "python",
-  "version": "0.7.0",
-  "description": "Atomic γ-5 — adds `binding=\"late\"` lazy datamodel init (state-local <data> binds on first entry of owning state) on top of γ-3b. State-local datamodel under default early binding is now also bound at startup (was a β oversight). <invoke> remains reject-walled for γ-4.",
+  "version": "0.8.0",
+  "description": "Atomic γ-4 send extensions — `<send eventexpr/delayexpr/sendidexpr>` resolve against the datamodel at action time; `<param>` / `<content>` / `<content expr>` / namelist marshal into `_event.data`; `<send idlocation>` writes the resolved sendid back into the datamodel. Outbound `<send>` external transport (HTTP / explicit URL targets / `BasicHTTPEventProcessor`) remains reject-walled for γ-4b. <invoke> remains reject-walled for γ-4a.",
   "entry_template": "state_machine.py.jinja2",
   "runtime_dependency": "sce-python-runtime",
   "output_extension": ".py"

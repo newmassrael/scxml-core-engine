@@ -13,7 +13,7 @@ from __future__ import annotations
 import heapq
 import itertools
 from dataclasses import dataclass, field
-from typing import Generic, Iterator, List, Optional, Set, TypeVar
+from typing import Any, Generic, Iterator, List, Optional, Set, TypeVar
 
 E = TypeVar("E")
 
@@ -23,13 +23,17 @@ class ScheduledEvent(Generic[E]):
     """One entry in the scheduler's priority queue.
 
     `due_ms` and `seq` are the ordering keys (stable FIFO on ties);
-    `sendid` and `event` ride along but do not participate in comparison.
+    `sendid`, `event`, and `data` ride along but do not participate in
+    comparison. `data` is the marshalled `<send>` payload (W3C SCXML
+    5.10) preserved across the scheduler delay so it surfaces on
+    `_event.data` at delivery time.
     """
 
     due_ms: int
     seq: int
     sendid: str = field(compare=False)
     event: E = field(compare=False)
+    data: Any = field(default="", compare=False)
 
 
 class Scheduler(Generic[E]):
@@ -44,14 +48,21 @@ class Scheduler(Generic[E]):
         self._cancelled: Set[str] = set()
         self._counter = itertools.count(1)
 
-    def schedule(self, due_ms: int, sendid: str, event: E) -> None:
+    def schedule(self, due_ms: int, sendid: str, event: E, data: Any = "") -> None:
         """Queue `event` for delivery at `due_ms`. `sendid` identifies the
         entry for later `<cancel>` lookups; empty string ids cannot be
         cancelled (matches W3C SCXML 6.2.2 where `<cancel>` requires a
-        sendid)."""
+        sendid). `data` is the marshalled `<send>` payload preserved
+        across the delay."""
         heapq.heappush(
             self._heap,
-            ScheduledEvent(due_ms=due_ms, seq=next(self._counter), sendid=sendid, event=event),
+            ScheduledEvent(
+                due_ms=due_ms,
+                seq=next(self._counter),
+                sendid=sendid,
+                event=event,
+                data=data,
+            ),
         )
 
     def cancel(self, sendid: str) -> None:

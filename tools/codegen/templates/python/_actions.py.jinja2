@@ -37,11 +37,52 @@
 {% for sub in action.else_actions %}{{ emit(sub, indent ~ '    ', machine_name) }}{% endfor %}
 {% endif %}
 {% elif action.type == 'send' -%}
-{% if action.delay_ms > 0 %}
-{{ indent }}engine.schedule_send({{ machine_name }}Event.{{ action.event | to_python_const }}, {{ action.delay_ms }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}engine._next_auto_sendid(){% endif %})
+{# γ-4 send extensions: event/delay can be either statically baked or
+   resolved at runtime; payload is marshalled by `_eval_send_payload`;
+   sendid is resolved via `_resolve_send_id` so `idlocation` writeback
+   happens in one place. Falls back to the original γ-3b fast path
+   when none of the dynamic attrs are present (still `engine.send_external` /
+   `engine.schedule_send` direct calls so simple sends keep the cheaper
+   code shape and the γ-3b byte goldens are unchanged). #}
+{% set has_dynamic = action.eventexpr or action.delayexpr or action.idlocation
+                     or action.params or action.content or action.contentexpr
+                     or action.namelist %}
+{% if has_dynamic -%}
+{{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
+{% if action.eventexpr -%}
+{{ indent }}_evt = self._eval_event_name({{ action.eventexpr | py_string_literal }})
+{{ indent }}if _evt is None:
+{% if 'error.execution' in model.events %}
+{{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }})
 {% else %}
-{{ indent }}engine.send_external({{ machine_name }}Event.{{ action.event | to_python_const }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
+{{ indent }}    pass  # W3C SCXML 6.2: unresolved eventexpr — no error.execution declared
 {% endif %}
+{{ indent }}else:
+{% set send_indent = indent ~ '    ' %}
+{%- else -%}
+{% set send_indent = indent %}
+{{ indent }}_evt = {{ machine_name }}Event.{{ action.event | to_python_const }}
+{% endif -%}
+{{ send_indent }}_data = self._eval_send_payload([
+{%- for param in action.params -%}
+({{ param.name | py_string_literal }}, {{ param.expr | py_string_literal }}),
+{%- endfor -%}
+], {{ action.content | py_string_literal }}, {{ action.contentexpr | py_string_literal }}, {{ action.namelist | py_string_literal }})
+{% if action.delayexpr -%}
+{{ send_indent }}engine.schedule_send(_evt, self._eval_delay_ms({{ action.delayexpr | py_string_literal }}), _sid, _data)
+{% elif action.delay_ms > 0 -%}
+{{ send_indent }}engine.schedule_send(_evt, {{ action.delay_ms }}, _sid, _data)
+{% else -%}
+{{ send_indent }}engine.send_external(_evt, _sid, _data)
+{% endif -%}
+{% else -%}
+{# γ-3b fast path: no dynamic attrs, no payload, no idlocation. #}
+{% if action.delay_ms > 0 -%}
+{{ indent }}engine.schedule_send({{ machine_name }}Event.{{ action.event | to_python_const }}, {{ action.delay_ms }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}engine._next_auto_sendid(){% endif %})
+{% else -%}
+{{ indent }}engine.send_external({{ machine_name }}Event.{{ action.event | to_python_const }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
+{% endif -%}
+{% endif -%}
 {% elif action.type == 'cancel' -%}
 {% if action.sendid %}
 {{ indent }}engine.cancel_send({{ action.sendid | py_string_literal }})

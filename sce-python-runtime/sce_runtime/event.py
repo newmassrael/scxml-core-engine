@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Generic, Optional, TypeVar
+from typing import Any, Generic, TypeVar
 
 E = TypeVar("E")
 
@@ -14,7 +14,7 @@ E = TypeVar("E")
 class EventMetadata:
     """W3C SCXML 5.10 _event fields populated for the currently dispatching event."""
 
-    data: str = ""
+    data: Any = ""
     event_type: str = "external"
     send_id: str = ""
     origin: str = ""

@@ -29,7 +29,7 @@ each owning state instead of up-front at engine.initialize.
 from __future__ import annotations
 
 from collections import deque
-from typing import Dict, Generic, List, Optional, Set, TypeVar
+from typing import Any, Dict, Generic, List, Optional, Set, TypeVar
 
 from .event import EventMetadata, EventWithMetadata
 from .policy import StatePolicy, TransitionResult
@@ -177,23 +177,30 @@ class Engine(Generic[S, E]):
 
     # ── <send> / <cancel> / scheduler API (W3C SCXML 6.2) ─────────
 
-    def send_external(self, event: E, sendid: str = "") -> None:
+    def send_external(self, event: E, sendid: str = "", data: Any = "") -> None:
         """W3C SCXML 6.2 — enqueue an external event with no delay.
         Drained by the macrostep loop AFTER any pending internal events.
         Unlike `raise_internal`, this does NOT immediately drive the
-        loop; it queues so that the current handler can finish first."""
-        metadata = EventMetadata(send_id=sendid, event_type="external")
+        loop; it queues so that the current handler can finish first.
+        `data` carries the marshalled `<param>`/`<content>`/namelist
+        payload (W3C SCXML 5.10) — a `dict` for `<param>`/namelist
+        builds, the literal/expr result for `<content>`, or `""` when
+        the send had no payload."""
+        metadata = EventMetadata(send_id=sendid, event_type="external", data=data)
         self._external_queue.append(EventWithMetadata(event=event, metadata=metadata))
 
-    def schedule_send(self, event: E, delay_ms: int, sendid: str = "") -> None:
+    def schedule_send(
+        self, event: E, delay_ms: int, sendid: str = "", data: Any = ""
+    ) -> None:
         """W3C SCXML 6.2 — schedule `event` for delivery `delay_ms` after
         the current virtual time. Callers later move time forward via
         `advance_time(...)`; the scheduler is then drained into the
-        external queue."""
+        external queue. `data` is preserved across the scheduler delay
+        and surfaces on `_event.data` when the event is delivered."""
         if delay_ms <= 0:
-            self.send_external(event, sendid)
+            self.send_external(event, sendid, data)
             return
-        self._scheduler.schedule(self._now_ms + delay_ms, sendid, event)
+        self._scheduler.schedule(self._now_ms + delay_ms, sendid, event, data)
 
     def cancel_send(self, sendid: str) -> None:
         """W3C SCXML 6.2.2 — drop a previously scheduled `<send>` by id.
@@ -210,7 +217,9 @@ class Engine(Generic[S, E]):
         self._now_ms += ms
         drained_any = False
         for entry in self._scheduler.drain_due(self._now_ms):
-            metadata = EventMetadata(send_id=entry.sendid, event_type="external")
+            metadata = EventMetadata(
+                send_id=entry.sendid, event_type="external", data=entry.data
+            )
             self._external_queue.append(
                 EventWithMetadata(event=entry.event, metadata=metadata)
             )
@@ -261,6 +270,14 @@ class Engine(Generic[S, E]):
         return None
 
     def _dispatch(self, evt: EventWithMetadata[E]) -> None:
+        # W3C SCXML 5.10 — bind `_event` into the datamodel before the
+        # microstep so transition guards and action expressions can
+        # read `_event.name`, `_event.data`, etc. Eventless transitions
+        # do not update `_event` (handled separately in
+        # `_drain_eventless`), matching W3C 5.10.2 which only refreshes
+        # `_event` when the processor "selects an event for
+        # processing".
+        self._policy.set_current_event(evt.event, evt.metadata)
         transitions = self._select_transitions(evt.event)
         if not transitions:
             return

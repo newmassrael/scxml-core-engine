@@ -78,6 +78,100 @@
             return ""
         return "" if value is None else str(value)
 
+    def _eval_event_name(self, event_expr: str):
+        """W3C SCXML 6.2 `<send eventexpr>` — evaluate `event_expr`
+        against the datamodel and resolve the resulting name to an
+        Event enum member. Returns `None` when the name does not match
+        any declared event (callers raise `error.execution` per W3C
+        6.2)."""
+        try:
+            name = str(eval(event_expr, self._ns))  # noqa: S307
+        except Exception:
+            return None
+        return _EVENT_BY_NAME.get(name)
+
+    def _eval_delay_ms(self, delay_expr: str) -> int:
+        """W3C SCXML 6.2 `<send delayexpr>` — evaluate `delay_expr` and
+        coerce the result into milliseconds. Accepts:
+          * `int` / `float` — interpreted as milliseconds directly;
+          * `str` — parsed via `_parse_delay_text` ("5s", "500ms", "0");
+          * anything else — treated as `0` (matches W3C 6.2 "delay must
+            be a non-negative integer" with sensible fallback)."""
+        try:
+            value = eval(delay_expr, self._ns)  # noqa: S307
+        except Exception:
+            return 0
+        if isinstance(value, bool):
+            return 0
+        if isinstance(value, (int, float)):
+            return max(0, int(value))
+        if isinstance(value, str):
+            return _parse_delay_text(value)
+        return 0
+
+    def _eval_send_payload(
+        self,
+        params,
+        content: str,
+        content_expr: str,
+        namelist: str,
+    ):
+        """W3C SCXML 5.10 — marshal `<send>` payload into `_event.data`.
+
+        Precedence per W3C 6.2: `<content expr>` > `<content>` literal >
+        `<param>` + namelist hybrid. When all three are absent, returns
+        `""` so `_event.data` is the empty string (the W3C default).
+        `params` is a sequence of `(name, expr)` tuples; `namelist` is
+        whitespace-separated variable names whose current bindings join
+        the parameter dict."""
+        if content_expr:
+            try:
+                return eval(content_expr, self._ns)  # noqa: S307
+            except Exception:
+                return ""
+        if content:
+            return content
+        if not params and not namelist:
+            return ""
+        marshalled = {}
+        if namelist:
+            for var in namelist.split():
+                marshalled[var] = self._ns.get(var)
+        for name, expr in params:
+            try:
+                marshalled[name] = eval(expr, self._ns)  # noqa: S307
+            except Exception:
+                marshalled[name] = None
+        return marshalled
+
+    def set_current_event(self, event, metadata) -> None:
+        """W3C SCXML 5.10 — bind `_event` into the datamodel for the
+        current microstep so user expressions can read `_event.name`,
+        `_event.data.foo`, `_event.sendid`, etc. Engine dispatches one
+        call per externally-triggered / internally-raised event before
+        transition selection."""
+        from types import SimpleNamespace
+        self._ns["_event"] = SimpleNamespace(
+            name=_EVENT_NAMES.get(event, ""),
+            data=_wrap_event_data(metadata.data),
+            type=metadata.event_type,
+            sendid=metadata.send_id,
+            origin=metadata.origin,
+            origintype=metadata.origin_type,
+            invokeid=metadata.invoke_id,
+        )
+
+    def _resolve_send_id(self, engine, idlocation: str, explicit_id: str) -> str:
+        """W3C SCXML 6.2 — produce the canonical sendid for a `<send>`.
+        When `explicit_id` is non-empty it wins; otherwise the engine
+        generates a deterministic auto-id. When `idlocation` is set the
+        chosen id is written back into the datamodel so user code can
+        `<cancel sendid="..."/>` it later."""
+        sid = explicit_id if explicit_id else engine._next_auto_sendid()
+        if idlocation:
+            self._ns[idlocation] = sid
+        return sid
+
     def _foreach_values(self, array_expr: str):
         """W3C SCXML 4.6 `<foreach>` without index binding — yields each
         value in turn. Dict iteration yields keys (mirrors Python

@@ -82,6 +82,50 @@ _EVENT_NAMES: Dict[{{ machine_name }}Event, str] = {
 _EVENT_BY_NAME: Dict[str, {{ machine_name }}Event] = {v: k for k, v in _EVENT_NAMES.items() if v}
 
 
+def _wrap_event_data(value: Any) -> Any:
+    """W3C SCXML 5.10 — present `_event.data` as an ECMAScript-style
+    object when the payload is a marshalled `<param>`/namelist dict, so
+    user expressions can read `_event.data.aParam` via Python attribute
+    access. Scalar payloads (strings, numbers, None) pass through
+    untouched. Recursive dict wrapping mirrors the ECMAScript datamodel's
+    nested-object semantics — a single level handles the
+    common `<param>` case; nested dicts (from `<content expr>` returning
+    a dict-of-dicts) wrap recursively so `_event.data.outer.inner`
+    resolves."""
+    if isinstance(value, dict):
+        from types import SimpleNamespace
+        return SimpleNamespace(
+            **{k: _wrap_event_data(v) for k, v in value.items()}
+        )
+    return value
+
+
+def _parse_delay_text(text: str) -> int:
+    """W3C SCXML 6.2 — convert a `delayexpr` string ("5s", "500ms", "0",
+    bare-number) into milliseconds. Used by the policy's `_eval_delay_ms`
+    helper; lifted to module scope so an empty / invalid string returns
+    0 without needing a class instance.
+
+    Recognised suffixes are `ms` and `s` (case-insensitive); a bare
+    integer is interpreted as milliseconds, matching the most common
+    fixture convention. Unparseable values map to 0 so a broken
+    `delayexpr` never traps the engine (a corresponding error.execution
+    would belong on the calling site)."""
+    if not text:
+        return 0
+    s = text.strip().lower()
+    if not s:
+        return 0
+    try:
+        if s.endswith("ms"):
+            return max(0, int(float(s[:-2])))
+        if s.endswith("s"):
+            return max(0, int(float(s[:-1]) * 1000))
+        return max(0, int(float(s)))
+    except (ValueError, TypeError):
+        return 0
+
+
 # ======================================================================
 # Policy
 # ======================================================================

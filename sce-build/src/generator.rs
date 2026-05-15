@@ -771,13 +771,14 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
             }
         }
     }
-    // γ-3b adds <send> / <cancel> to the γ-3a control-flow surface.
-    // External targets, non-default `type`s, and `<param>` / `<content>`
-    // payload synthesis remain γ-4 (invoke) territory because they
-    // require either the cross-session router or HTTP transport
-    // (BasicHTTPEventProcessor). Reject those forms loudly so the
-    // generated module cannot dispatch through a half-implemented
-    // branch.
+    // γ-4 send extensions lift the eventexpr / delayexpr / payload /
+    // idlocation rejects: dynamic expressions evaluate against the
+    // datamodel at action time, payload marshalling runs through
+    // `_eval_send_payload`, and `idlocation` is written back by
+    // `_resolve_send_id`. External-target (`target="..."`) and
+    // `targetexpr` / non-default `send_type` remain reject-walled —
+    // those routes need the cross-session router or HTTP transport
+    // (BasicHTTPEventProcessor) that γ-4a/γ-4b lift.
     fn check_actions(
         actions: &[crate::model::Action],
         context: &str,
@@ -793,7 +794,9 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
                 )));
             }
             if action.action_type == "send" {
-                // γ-3b accepts only the simple in-machine send form.
+                // γ-3b kept only the simple in-machine send form; γ-4
+                // send extensions accept dynamic exprs + payload +
+                // idlocation but external transports stay deferred.
                 if !action.target.is_empty()
                     && action.target != "#_internal"
                 {
@@ -805,7 +808,8 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
                 }
                 if !action.targetexpr.is_empty() {
                     return Err(GenerateError::InvalidConfig(format!(
-                        "Python codegen `<send targetexpr>` in {} is deferred to Atomic γ-4",
+                        "Python codegen `<send targetexpr>` in {} is deferred \
+                         to Atomic γ-4b (HTTP / external transport target resolution)",
                         context
                     )));
                 }
@@ -814,44 +818,17 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
                 {
                     return Err(GenerateError::InvalidConfig(format!(
                         "Python codegen `<send type=\"{}\">` in {} is deferred \
-                         to Atomic γ-4 (BasicHTTPEventProcessor)",
+                         to Atomic γ-4b (BasicHTTPEventProcessor)",
                         action.send_type, context
                     )));
                 }
-                if !action.namelist.is_empty()
-                    || !action.params.is_empty()
-                    || !action.content.is_empty()
-                    || !action.contentexpr.is_empty()
-                {
+                // γ-4 send extensions accept `<send eventexpr>`,
+                // `<send delayexpr>`, `<send idlocation>`, and
+                // `<param>` / `<content>` / namelist payload
+                // marshalling — those rejects are intentionally absent.
+                if action.event.is_empty() && action.eventexpr.is_empty() {
                     return Err(GenerateError::InvalidConfig(format!(
-                        "Python codegen `<send>` with `<param>` / `<content>` / namelist in {} \
-                         is deferred to Atomic γ-4 (payload marshalling)",
-                        context
-                    )));
-                }
-                if !action.eventexpr.is_empty() {
-                    return Err(GenerateError::InvalidConfig(format!(
-                        "Python codegen `<send eventexpr>` in {} requires the \
-                         expression-rewriter pass scheduled for Atomic γ-4",
-                        context
-                    )));
-                }
-                if !action.delayexpr.is_empty() {
-                    return Err(GenerateError::InvalidConfig(format!(
-                        "Python codegen `<send delayexpr>` in {} requires the \
-                         expression-rewriter pass scheduled for Atomic γ-4",
-                        context
-                    )));
-                }
-                if !action.idlocation.is_empty() {
-                    return Err(GenerateError::InvalidConfig(format!(
-                        "Python codegen `<send idlocation>` in {} is deferred to Atomic γ-4",
-                        context
-                    )));
-                }
-                if action.event.is_empty() {
-                    return Err(GenerateError::InvalidConfig(format!(
-                        "Python codegen `<send>` in {} requires a static `event` attribute",
+                        "Python codegen `<send>` in {} requires `event` or `eventexpr`",
                         context
                     )));
                 }
