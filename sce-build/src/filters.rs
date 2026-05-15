@@ -815,6 +815,15 @@ pub fn register_python_filters(env: &mut minijinja::Environment) {
     env.add_filter("to_python_const", to_python_const);
     env.add_filter("py_string_literal", py_string_literal);
     env.add_filter("py_expr", py_expr);
+    // ECMAScript→Lua transformer filters — Python AOT now joins the
+    // Rust / Go / Kotlin / C11 / C++ family that emits Lua text and
+    // evaluates it through the IScriptEngine layer. The filters are
+    // identical to those backends; templates pipe author expressions
+    // through `| to_lua_expr | py_string_literal` so the generated
+    // module hands Lua text (not Python) to the script engine.
+    env.add_filter("to_lua_expr", to_lua_expr);
+    env.add_filter("to_lua_guard", to_lua_guard);
+    env.add_filter("to_lua_script", to_lua_script);
     env.add_filter("to_event_variant", to_event_variant);
     env.add_filter("to_state_variant", to_state_variant);
     env.add_filter("to_machine_name", to_pascal_case);
