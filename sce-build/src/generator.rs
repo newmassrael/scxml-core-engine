@@ -758,13 +758,20 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
             )));
         }
     }
-    // β supports `<script>`, `<assign>`, `<raise>` in onentry/onexit and
-    // transition action blocks. Other action kinds (`<send>`, `<log>`,
-    // `<if>`, `<foreach>`, `<cancel>`) reach γ. Reject up front so the
-    // generated module cannot end up dispatching through an action branch
-    // that emits `raise NotImplementedError` at runtime.
-    const SUPPORTED_ACTIONS: &[&str] = &["script", "assign", "raise"];
-    let check_actions = |actions: &[crate::model::Action], context: &str| -> Result<(), GenerateError> {
+    // γ-3a accepts the control-flow / log triplet on top of β's
+    // <script>/<assign>/<raise>. <send> and <cancel> still reach
+    // γ-3b (their textbook implementation needs the W3C SCXML 6.2
+    // delayed-event scheduler with cancel-by-sendid). Reject up
+    // front so the generated module cannot end up dispatching through
+    // an action branch that emits `raise NotImplementedError` at
+    // runtime.
+    fn check_actions(
+        actions: &[crate::model::Action],
+        context: &str,
+    ) -> Result<(), GenerateError> {
+        const SUPPORTED_ACTIONS: &[&str] = &[
+            "script", "assign", "raise", "log", "if", "foreach",
+        ];
         for action in actions {
             if !SUPPORTED_ACTIONS.contains(&action.action_type.as_str()) {
                 return Err(GenerateError::InvalidConfig(format!(
@@ -772,9 +779,21 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
                     action.action_type, context
                 )));
             }
+            // Walk into <if>/<foreach> bodies so a nested unsupported
+            // action (e.g. <send> inside an <if>) is rejected at the
+            // same fail-loud surface as a top-level <send>.
+            if action.action_type == "if" {
+                check_actions(&action.then_actions, context)?;
+                for branch in &action.elseif_branches {
+                    check_actions(&branch.actions, context)?;
+                }
+                check_actions(&action.else_actions, context)?;
+            } else if action.action_type == "foreach" {
+                check_actions(&action.actions, context)?;
+            }
         }
         Ok(())
-    };
+    }
     for (state_id, state) in &model.states {
         for block in &state.on_entry_blocks {
             check_actions(block, &format!("onentry of `{state_id}`"))?;

@@ -29,6 +29,54 @@
         (matching the `<data id>` set), so we assign by dict key."""
         self._ns[location] = eval(expr, self._ns)  # noqa: S307
 
+    def _assign_runtime(self, location: str, value) -> None:
+        """W3C SCXML 5.3 — assign a runtime value (already computed, not a
+        text expression) at `location`. Used by `<foreach>` to bind the
+        current item/index without re-evaluating it as source text."""
+        self._ns[location] = value
+
+    def _log(self, label: str, expr: str) -> None:
+        """W3C SCXML 6.4 `<log>` — evaluate `expr` against the datamodel
+        and dispatch through the policy's log hook. The default hook
+        writes a single line to stdout; callers wanting structured
+        logging should override `log_hook` in a subclass."""
+        try:
+            value = eval(expr, self._ns) if expr else ""  # noqa: S307
+        except Exception as exc:  # noqa: BLE001 — surface eval errors
+            value = f"<log eval error: {exc!r}>"
+        self.log_hook(label, value)
+
+    def log_hook(self, label: str, value) -> None:
+        """Override to redirect `<log>` output. Default prints to stdout
+        in the form `[label] value` (or just `value` when no label)."""
+        if label:
+            print(f"[{label}] {value}")
+        else:
+            print(value)
+
+    def _foreach(self, array_expr: str):
+        """W3C SCXML 4.6 `<foreach>` with index binding — yields
+        `(index, value)` pairs after evaluating `array_expr` against the
+        datamodel. Lists, tuples, and any iterable are accepted; mappings
+        iterate as `(key, value)` pairs in insertion order."""
+        try:
+            collection = eval(array_expr, self._ns)  # noqa: S307
+        except Exception:
+            return iter(())
+        if isinstance(collection, dict):
+            return enumerate(collection.items())
+        return enumerate(collection)
+
+    def _foreach_values(self, array_expr: str):
+        """W3C SCXML 4.6 `<foreach>` without index binding — yields each
+        value in turn. Dict iteration yields keys (mirrors Python
+        semantics for `for k in d`)."""
+        try:
+            collection = eval(array_expr, self._ns)  # noqa: S307
+        except Exception:
+            return iter(())
+        return iter(collection)
+
     def initialize_datamodel(self, engine) -> None:
 {% if model.variables %}
         # W3C SCXML 5.3: early-binding `<datamodel>` — all `<data>` elements

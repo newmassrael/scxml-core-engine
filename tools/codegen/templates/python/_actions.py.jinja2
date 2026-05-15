@@ -19,7 +19,36 @@
 {{ indent }}engine.raise_internal({{ machine_name }}Event.{{ action.event | to_python_const }})
 {% elif action.type == 'assign' -%}
 {{ indent }}self._assign({{ action.location | py_string_literal }}, {{ action.expr | py_string_literal }})
+{% elif action.type == 'log' -%}
+{{ indent }}self._log({{ action.label | py_string_literal }}, {{ action.expr | py_string_literal }})
+{% elif action.type == 'if' -%}
+{{ indent }}if self._guard({{ action.cond | py_string_literal }}):
+{% for sub in action.then_actions %}{{ emit(sub, indent ~ '    ', machine_name) }}{% endfor %}
+{% if not action.then_actions %}{{ indent }}    pass
+{% endif %}
+{% for branch in action.elseif_branches %}
+{{ indent }}elif self._guard({{ branch.cond | py_string_literal }}):
+{% for sub in branch.actions %}{{ emit(sub, indent ~ '    ', machine_name) }}{% endfor %}
+{% if not branch.actions %}{{ indent }}    pass
+{% endif %}
+{% endfor %}
+{% if action.else_actions %}
+{{ indent }}else:
+{% for sub in action.else_actions %}{{ emit(sub, indent ~ '    ', machine_name) }}{% endfor %}
+{% endif %}
+{% elif action.type == 'foreach' -%}
+{% if action.index %}
+{{ indent }}for {{ action.index }}_idx_, _item_ in self._foreach({{ action.array | py_string_literal }}):
+{{ indent }}    self._assign_runtime({{ action.item | py_string_literal }}, _item_)
+{{ indent }}    self._assign_runtime({{ action.index | py_string_literal }}, {{ action.index }}_idx_)
+{% else %}
+{{ indent }}for _item_ in self._foreach_values({{ action.array | py_string_literal }}):
+{{ indent }}    self._assign_runtime({{ action.item | py_string_literal }}, _item_)
+{% endif %}
+{% for sub in action.actions %}{{ emit(sub, indent ~ '    ', machine_name) }}{% endfor %}
+{% if not action.actions %}{{ indent }}    pass
+{% endif %}
 {% else -%}
-{{ indent }}raise NotImplementedError({{ ('Atomic β: action <' ~ action.type ~ '> not yet supported') | py_string_literal }})
+{{ indent }}raise NotImplementedError({{ ('Python codegen: action <' ~ action.type ~ '> not yet supported (deferred to γ-3b/γ-4)') | py_string_literal }})
 {% endif -%}
 {%- endmacro -%}
