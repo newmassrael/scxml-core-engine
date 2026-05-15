@@ -3047,7 +3047,7 @@ impl W3cBackend for PythonBackend {
         _machine_name: &str,
         pass_state: &str,
         _needs_script: bool,
-        _uses_http: bool,
+        uses_http: bool,
         test_type: &str,
         metadata: &TestMetadata,
     ) -> String {
@@ -3072,6 +3072,23 @@ impl W3cBackend for PythonBackend {
         // wrapper compares on that string, so we lowercase here.
         let pass_literal = pass_state.to_ascii_lowercase();
         let pass_literal = pass_literal.as_str();
+        // W3C SCXML C.2 — documents that use BasicHTTP transport take
+        // the `setup_http` fixture from sce-python-tests/conftest.py,
+        // which spawns the W3C echo server (port 8080) and registers
+        // the HTTP dispatch callback on the engine. Non-HTTP fixtures
+        // omit the parameter so the server only starts when actually
+        // needed.
+        let test_signature = if uses_http {
+            "test_w3c_{test_id}(setup_http) -> None:".to_string()
+        } else {
+            "test_w3c_{test_id}() -> None:".to_string()
+        };
+        let test_signature = test_signature.replace("{test_id}", test_id);
+        let setup_call = if uses_http {
+            "    setup_http(engine)\n"
+        } else {
+            ""
+        };
         format!(
             "# GENERATED -- DO NOT EDIT (sce-codegen)\n\
              # W3C SCXML {specnum}: {description}\n\
@@ -3093,8 +3110,9 @@ impl W3cBackend for PythonBackend {
              import {input_stem}_sm as _sm  # noqa: E402 — path inserted above\n\
              \n\
              \n\
-             def test_w3c_{test_id}() -> None:\n\
+             def {test_signature}\n\
              \x20   engine = _sm.create_engine()\n\
+             {setup_call}\
              \x20   engine.initialize()\n\
              \x20   elapsed = 0\n\
              \x20   while not engine.reached_final and elapsed < {max_ms}:\n\
