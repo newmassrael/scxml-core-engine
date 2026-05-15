@@ -5,12 +5,23 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sce-python-runtime"
 version = "0.1.0"
-description = "Pure-Python runtime for AOT-generated SCXML state machines"
+description = "Python runtime for AOT-generated SCXML state machines (Lua-backed ECMAScript datamodel)"
 readme = "README.md"
 license = {text = "LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial"}
 requires-python = ">=3.9"
 authors = [
     {name = "newmassrael", email = "newmassrael@gmail.com"},
+]
+# lupa is a hard dependency — the W3C SCXML B.3 ECMAScript datamodel
+# evaluates author expressions through the same ECMAScript→Lua
+# transformer that the C++ / Rust / Go / Kotlin / C11 backends use.
+# Cross-backend semantic parity (Lua 5.4) is the architectural
+# contract; Python AOT cannot honor it via Python `eval`. Users
+# wanting a different engine can register one via
+# `sce_runtime.scripting.set_script_engine(...)` before constructing
+# their first state machine.
+dependencies = [
+    "lupa>=2.0",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -20,4 +31,4 @@ classifiers = [
 ]
 
 [tool.setuptools]
-packages = ["sce_runtime"]
+packages = ["sce_runtime", "sce_runtime.scripting"]

@@ -9,6 +9,7 @@ that policy. The bindings package (`sce`) is a different channel — it routes
 through the C++ Interpreter via pybind11, not through this AOT runtime.
 """
 
+from . import scripting
 from .engine import Engine
 from .event import Event, EventMetadata, EventWithMetadata
 from .http import HttpSendRequest, HttpSendResponse
@@ -22,6 +23,13 @@ from .invoke import (
 )
 from .policy import StatePolicy, TransitionResult
 from .scheduler import ScheduledEvent, Scheduler
+from .scripting import (
+    IScriptEngine,
+    LuaScriptEngine,
+    ScriptError,
+    ScriptValue,
+    ScriptValueKind,
+)
 
 __all__ = [
     "ChildSession",
@@ -31,15 +39,21 @@ __all__ = [
     "EventWithMetadata",
     "HttpSendRequest",
     "HttpSendResponse",
+    "IScriptEngine",
     "Invoke",
+    "LuaScriptEngine",
     "PendingInvoke",
     "ScheduledEvent",
     "Scheduler",
+    "ScriptError",
+    "ScriptValue",
+    "ScriptValueKind",
     "ScxmlInvoke",
     "StatePolicy",
     "TransitionResult",
     "create_done_invoke_event_name",
     "is_platform_event",
+    "scripting",
 ]
 
 __version__ = "0.1.0"

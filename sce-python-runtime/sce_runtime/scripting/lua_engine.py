@@ -1,0 +1,391 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+"""LuaScriptEngine — lupa-backed implementation of `IScriptEngine`.
+
+Cross-backend parity:
+- C++ uses Lua 5.4 directly via the C API + ECMAScript→Lua transformer.
+- Rust uses `mlua` (PUC Lua bindings) + the same transformer.
+- Go uses `gopher-lua` + the same transformer.
+- Kotlin uses JNI bindings + the same transformer.
+- C11 uses Lua 5.4 directly.
+- Python AOT now uses `lupa` (PyPI: lupa) + the same transformer
+  (`to_lua_expr` / `to_lua_guard` / `to_lua_script` filters in
+  `sce-build/src/filters.rs`).
+
+Generated `*_sm.py` modules call `IScriptEngine.evaluate_expression(...)`
+with **Lua text** (already transformed at codegen time). The Lua engine
+runs that text against a per-session global table. Round-trip conversion
+between Python values and Lua values is centralised in `_python_to_lua`
+/ `_lua_to_python` so the rest of the runtime stays engine-agnostic.
+"""
+
+from __future__ import annotations
+
+from threading import RLock
+from typing import Any, Callable, Dict, List, Optional
+
+try:
+    import lupa  # type: ignore[import-not-found]
+except ImportError as _exc:  # pragma: no cover — surfaces during dependency install
+    raise ImportError(
+        "lupa is required for the SCE Python AOT runtime — install with `pip install lupa`"
+    ) from _exc
+
+from .i_script_engine import (
+    IScriptEngine,
+    NativeMethod,
+    ScriptError,
+    ScriptRuntimeError,
+    ScriptSyntaxError,
+    ScriptValue,
+    ScriptValueKind,
+    SessionNotFoundError,
+    StateQueryCallback,
+    VariableNotDeclaredError,
+)
+
+
+class _LuaSession:
+    """Per-state-machine Lua isolation. Holds the lupa runtime + the
+    set of declared variable names + the registered `In()` callback.
+
+    Each `Engine` instance owns one session id; the script engine's
+    session table maps that id to one of these. Sessions are created
+    by `create_session` and destroyed by `destroy_session`."""
+
+    __slots__ = ("runtime", "declared_vars", "state_query")
+
+    def __init__(self) -> None:
+        # lupa.LuaRuntime is the entry point — defaults to PUC Lua 5.x
+        # when the runtime can load it (Lua 5.4 in this project,
+        # matching other backends per `[[lua_engine_default]]`).
+        # `unpack_returned_tuples=True` so multi-return Lua functions
+        # (e.g., `string.find`) decompose naturally on the Python side.
+        self.runtime = lupa.LuaRuntime(unpack_returned_tuples=True)
+        self.declared_vars: set = set()
+        self.state_query: Optional[StateQueryCallback] = None
+
+
+class LuaScriptEngine(IScriptEngine):
+    """W3C SCXML 5.5 / 5.3 — Lua-backed ECMAScript datamodel.
+
+    Thread-safety: a single engine instance multiplexes across sessions.
+    Each method takes the session id and looks up the corresponding
+    `_LuaSession`. A coarse `RLock` guards the session registry; Lua
+    runtimes themselves are single-threaded (lupa pins one Lua state
+    to one OS thread under the hood, so multi-threaded callers should
+    keep one engine per thread or guard externally)."""
+
+    def __init__(self) -> None:
+        self._sessions: Dict[str, _LuaSession] = {}
+        self._global_funcs: Dict[str, NativeMethod] = {}
+        self._initialized: bool = False
+        self._lock = RLock()
+
+    # ── Engine lifecycle ───────────────────────────────────────────
+
+    def initialize(self) -> bool:
+        with self._lock:
+            self._initialized = True
+        return True
+
+    def shutdown(self) -> None:
+        with self._lock:
+            self._sessions.clear()
+            self._global_funcs.clear()
+            self._initialized = False
+
+    def is_initialized(self) -> bool:
+        return self._initialized
+
+    def reset(self) -> None:
+        self.shutdown()
+        self.initialize()
+
+    # ── Session lifecycle ─────────────────────────────────────────
+
+    def create_session(self, session_id: str) -> None:
+        with self._lock:
+            if session_id in self._sessions:
+                return
+            session = _LuaSession()
+            self._sessions[session_id] = session
+            # Surface previously-registered global functions into the
+            # new session — matches the C++ pattern where
+            # `registerGlobalFunction` applies to every existing AND
+            # future session.
+            for name, callback in self._global_funcs.items():
+                self._install_native_function(session, name, callback)
+
+    def destroy_session(self, session_id: str) -> None:
+        with self._lock:
+            self._sessions.pop(session_id, None)
+
+    def has_session(self, session_id: str) -> bool:
+        with self._lock:
+            return session_id in self._sessions
+
+    # ── Core script execution ──────────────────────────────────────
+
+    def execute_script(self, session_id: str, script: str) -> ScriptValue:
+        """W3C SCXML 5.5 — execute a `<script>` body. The text is
+        already Lua (transformed at codegen time via `to_lua_script`)
+        so we hand it straight to `lupa.execute`."""
+        session = self._require_session(session_id)
+        if not script:
+            return ScriptValue.null()
+        try:
+            result = session.runtime.execute(script)
+        except lupa.LuaSyntaxError as exc:
+            raise ScriptSyntaxError(str(exc)) from exc
+        except lupa.LuaError as exc:
+            raise ScriptRuntimeError(str(exc)) from exc
+        return _lua_to_script_value(result)
+
+    def evaluate_expression(self, session_id: str, expression: str) -> ScriptValue:
+        """W3C SCXML 5.3 — evaluate a single expression. Empty input
+        returns NULL (matches the C++ convention for omitted attrs)."""
+        session = self._require_session(session_id)
+        if not expression:
+            return ScriptValue.null()
+        try:
+            result = session.runtime.eval(expression)
+        except lupa.LuaSyntaxError as exc:
+            raise ScriptSyntaxError(str(exc)) from exc
+        except lupa.LuaError as exc:
+            raise ScriptRuntimeError(str(exc)) from exc
+        return _lua_to_script_value(result)
+
+    def validate_expression(self, session_id: str, expression: str) -> bool:
+        session = self._require_session(session_id)
+        if not expression:
+            return True
+        # lupa exposes `compile` via the underlying `load` builtin —
+        # wrap the expression as a return statement so we validate
+        # parse-only without running side effects.
+        try:
+            session.runtime.eval(f"function() return {expression} end")
+            return True
+        except (lupa.LuaSyntaxError, lupa.LuaError):
+            return False
+
+    # ── Variable management ────────────────────────────────────────
+
+    def declare_variable(
+        self, session_id: str, name: str, initial_value: ScriptValue
+    ) -> None:
+        session = self._require_session(session_id)
+        session.runtime.globals()[name] = _script_value_to_lua(
+            session, initial_value
+        )
+        session.declared_vars.add(name)
+
+    def set_variable(
+        self, session_id: str, name: str, value: ScriptValue
+    ) -> None:
+        session = self._require_session(session_id)
+        if name not in session.declared_vars and not name.startswith("_"):
+            # W3C SCXML 5.4 — assignment to an undeclared location
+            # raises error.execution. System variables (starting with
+            # `_`) are managed through `setup_system_variables` /
+            # `set_current_event` so they bypass the declared-vars
+            # check.
+            raise VariableNotDeclaredError(name)
+        session.runtime.globals()[name] = _script_value_to_lua(session, value)
+
+    def get_variable(self, session_id: str, name: str) -> ScriptValue:
+        session = self._require_session(session_id)
+        value = session.runtime.globals()[name]
+        return _lua_to_script_value(value)
+
+    def set_variable_as_dom(
+        self, session_id: str, name: str, xml_content: str
+    ) -> None:
+        # W3C SCXML B.2 — DOM datamodel support stub. Storing the raw
+        # XML text on the Lua side lets future XPath helpers run
+        # against it; an actual DOM tree binding lands with the B.2
+        # atomic. The variable name does not need to be in
+        # `declared_vars` if it was registered as DOM-only.
+        session = self._require_session(session_id)
+        session.runtime.globals()[name] = xml_content
+        session.declared_vars.add(name)
+
+    def has_variable(self, session_id: str, name: str) -> bool:
+        session = self._require_session(session_id)
+        return name in session.declared_vars
+
+    # ── SCXML-specific features ────────────────────────────────────
+
+    def setup_system_variables(
+        self,
+        session_id: str,
+        session_name: str,
+        io_processors: List[str],
+    ) -> None:
+        """W3C SCXML 5.10 — `_sessionid` / `_name` / `_ioprocessors`."""
+        session = self._require_session(session_id)
+        globals_ = session.runtime.globals()
+        globals_["_sessionid"] = session_id
+        globals_["_name"] = session_name
+        # `_ioprocessors` is a table keyed on the processor URI with a
+        # `location` field per W3C C.2. The lupa `table_from` builder
+        # produces a real Lua table the generated expressions can
+        # dot-access.
+        io_table = session.runtime.table_from(
+            {uri: session.runtime.table_from({"location": uri}) for uri in io_processors}
+        )
+        globals_["_ioprocessors"] = io_table
+
+    def set_current_event(
+        self,
+        session_id: str,
+        event_name: str,
+        event_data: str,
+        event_type: str,
+        send_id: str,
+        origin: str,
+        origin_type: str,
+        invoke_id: str,
+    ) -> None:
+        """W3C SCXML 5.10 — bind the `_event` table for the current
+        microstep. Mirrors the C++ `setCurrentEvent` signature."""
+        session = self._require_session(session_id)
+        # `_event.data` for ECMAScript fixtures is conventionally a
+        # parsed object when the payload was form-encoded / JSON, or
+        # the raw string for plain content. The Lua engine receives
+        # the literal `event_data` string; downstream codegen lifts
+        # primitive coercion via the `to_lua_expr` transformer's
+        # `_event.data.X` paths.
+        event_table = session.runtime.table_from(
+            {
+                "name": event_name,
+                "data": event_data,
+                "type": event_type,
+                "sendid": send_id,
+                "origin": origin,
+                "origintype": origin_type,
+                "invokeid": invoke_id,
+            }
+        )
+        session.runtime.globals()["_event"] = event_table
+
+    # ── Native bindings ────────────────────────────────────────────
+
+    def register_global_function(
+        self, function_name: str, callback: NativeMethod
+    ) -> bool:
+        with self._lock:
+            self._global_funcs[function_name] = callback
+            for session in self._sessions.values():
+                self._install_native_function(session, function_name, callback)
+        return True
+
+    def set_state_query_callback(
+        self, session_id: str, callback: Optional[StateQueryCallback]
+    ) -> None:
+        session = self._require_session(session_id)
+        session.state_query = callback
+        if callback is None:
+            session.runtime.globals()["In"] = None
+        else:
+            def _in_predicate(state_id: str) -> bool:
+                return bool(callback(state_id))
+            session.runtime.globals()["In"] = _in_predicate
+
+    # ── Engine info ────────────────────────────────────────────────
+
+    def get_engine_info(self) -> str:
+        try:
+            version = self._sessions[next(iter(self._sessions))].runtime.eval("_VERSION") if self._sessions else "lua"
+        except Exception:
+            version = "lua"
+        return f"LuaScriptEngine (lupa, {version})"
+
+    # ── Internals ──────────────────────────────────────────────────
+
+    def _require_session(self, session_id: str) -> _LuaSession:
+        with self._lock:
+            session = self._sessions.get(session_id)
+        if session is None:
+            raise SessionNotFoundError(session_id)
+        return session
+
+    @staticmethod
+    def _install_native_function(
+        session: _LuaSession, name: str, callback: NativeMethod
+    ) -> None:
+        def _bridge(*lua_args: Any) -> Any:
+            args = [_lua_to_script_value(arg) for arg in lua_args]
+            result = callback(args)
+            return _script_value_to_lua(session, result)
+        session.runtime.globals()[name] = _bridge
+
+
+# ── ScriptValue ↔ Lua type bridge ─────────────────────────────────
+
+
+def _script_value_to_lua(session: _LuaSession, value: ScriptValue) -> Any:
+    """Convert a `ScriptValue` into the Lua representation lupa expects.
+
+    Primitives ride the lupa auto-coercion path; arrays and objects are
+    built as real Lua tables via `runtime.table_from` so dotted-path
+    and ipairs/pairs access work from generated expressions."""
+    if value.kind is ScriptValueKind.NULL or value.kind is ScriptValueKind.UNDEFINED:
+        return None
+    if value.kind is ScriptValueKind.BOOL:
+        return value.bool_val
+    if value.kind is ScriptValueKind.INT:
+        return value.int_val
+    if value.kind is ScriptValueKind.DOUBLE:
+        return value.double_val
+    if value.kind is ScriptValueKind.STRING:
+        return value.string_val
+    if value.kind is ScriptValueKind.ARRAY:
+        return session.runtime.table_from(
+            [_script_value_to_lua(session, v) for v in value.array_val]
+        )
+    if value.kind is ScriptValueKind.OBJECT:
+        return session.runtime.table_from(
+            {k: _script_value_to_lua(session, v) for k, v in value.object_val.items()}
+        )
+    if value.kind is ScriptValueKind.DOM:
+        return value.dom_val
+    return None
+
+
+def _lua_to_script_value(value: Any) -> ScriptValue:
+    """Convert whatever lupa hands back into a `ScriptValue`. Tables are
+    detected via the lupa-specific type — keyed tables become OBJECT,
+    array-shaped tables become ARRAY (best-effort heuristic mirrors how
+    the C++ engine round-trips Lua values into `ScriptValue`)."""
+    if value is None:
+        return ScriptValue.null()
+    if isinstance(value, bool):
+        return ScriptValue(kind=ScriptValueKind.BOOL, bool_val=value)
+    if isinstance(value, int):
+        return ScriptValue(kind=ScriptValueKind.INT, int_val=value)
+    if isinstance(value, float):
+        return ScriptValue(kind=ScriptValueKind.DOUBLE, double_val=value)
+    if isinstance(value, str):
+        return ScriptValue(kind=ScriptValueKind.STRING, string_val=value)
+    # lupa exposes Lua tables as objects answering to `.keys()` /
+    # iteration. Test if every key is an integer 1..N (array shape) or
+    # arbitrary (object shape).
+    try:
+        keys = list(value.keys()) if hasattr(value, "keys") else list(value)
+    except Exception:
+        return ScriptValue(kind=ScriptValueKind.STRING, string_val=str(value))
+    if not keys:
+        # Empty Lua table — treat as empty object (matches C++ default).
+        return ScriptValue(kind=ScriptValueKind.OBJECT, object_val={})
+    if all(isinstance(k, int) for k in keys) and sorted(keys) == list(
+        range(1, len(keys) + 1)
+    ):
+        return ScriptValue(
+            kind=ScriptValueKind.ARRAY,
+            array_val=[_lua_to_script_value(value[i]) for i in sorted(keys)],
+        )
+    return ScriptValue(
+        kind=ScriptValueKind.OBJECT,
+        object_val={str(k): _lua_to_script_value(value[k]) for k in keys},
+    )
