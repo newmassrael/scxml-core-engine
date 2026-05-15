@@ -79,18 +79,28 @@ impl VerifyFixture {
     /// Invokes the `sce-codegen verify` binary as a subprocess and
     /// returns (exit_code, stdout, stderr).
     fn run_verify(&self) -> (i32, String, String) {
+        self.run_verify_from(None)
+    }
+
+    /// Variant that pins the spawned binary's working directory.
+    /// Avoids the parallel-test race where one test's
+    /// `set_current_dir` leaks into another test's
+    /// `locate_workspace_root` by mutating the shared process cwd.
+    fn run_verify_from(&self, cwd: Option<&Path>) -> (i32, String, String) {
         let bin = env_bin();
-        let output = Command::new(bin)
-            .arg("verify")
+        let mut cmd = Command::new(bin);
+        cmd.arg("verify")
             .arg(self.out_dir.to_str().unwrap())
             .arg("--input-root")
             .arg(self.input_root.to_str().unwrap())
             .arg("--template-root")
             .arg(self.template_root.to_str().unwrap())
             .arg("--cargo-lock")
-            .arg(self.cargo_lock.to_str().unwrap())
-            .output()
-            .expect("spawn sce-codegen");
+            .arg(self.cargo_lock.to_str().unwrap());
+        if let Some(dir) = cwd {
+            cmd.current_dir(dir);
+        }
+        let output = cmd.output().expect("spawn sce-codegen");
         let code = output.status.code().unwrap_or(-1);
         let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
         let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
@@ -221,17 +231,17 @@ fn helper_is_idempotent_across_two_invocations() {
 fn verify_passes_when_run_from_different_working_directory() {
     // The verify CLI walks upward for workspace root only as a
     // *default*; we override template_root + cargo_lock explicitly, so
-    // changing the working directory should not affect outcome.
+    // changing the working directory should not affect outcome. Pin
+    // the spawned binary's cwd via `Command::current_dir` instead of
+    // mutating the process-global cwd — `std::env::set_current_dir`
+    // would race with other parallel tests that rely on the workspace
+    // cwd to resolve `locate_workspace_root()`.
     let fix = VerifyFixture::new();
     let hashes = compute_hashes_for_fixture(&fix);
     fix.generate_headered_rust(&hashes, 0);
-    let orig_cwd = std::env::current_dir().unwrap();
-    // Switch to a clean directory inside the temp root and re-run.
     let alt_cwd = fix._root.path().join("alt-cwd");
     fs::create_dir_all(&alt_cwd).unwrap();
-    std::env::set_current_dir(&alt_cwd).unwrap();
-    let (code, _stdout, stderr) = fix.run_verify();
-    std::env::set_current_dir(&orig_cwd).unwrap();
+    let (code, _stdout, stderr) = fix.run_verify_from(Some(&alt_cwd));
     assert_eq!(code, 0, "verify with absolute paths must be cwd-independent. stderr: {stderr}");
 }
 
