@@ -64,6 +64,200 @@ class _LuaSession:
         self.runtime = lupa.LuaRuntime(unpack_returned_tuples=True)
         self.declared_vars: set = set()
         self.state_query: Optional[StateQueryCallback] = None
+        _install_ecmascript_builtins(self.runtime)
+
+
+# ── ECMAScript builtins (W3C SCXML B.2 semantics over Lua 5.4) ─────
+
+
+def _install_ecmascript_builtins(runtime: Any) -> None:
+    """Port of `sce-rust-lua::setup_builtins` (which itself is a port of
+    C++ `LuaEngine::setupBuiltins()`). Registers the global helpers the
+    ECMAScript→Lua transformer's emitted text expects to find:
+    `_scxml_truthy`, `_typeof`, `_isArray`, `_indexOf`, `_concat`,
+    `parseInt`, `parseFloat`, `_NULL` / `_UNDEFINED` sentinels, the
+    string `__add` concatenation metatable, and `Object.keys`. JSON
+    builtins are loaded from the shared `sce/include/scripting/
+    json_builtins.lua` file so Lua-side behaviour matches every other
+    backend bit-for-bit."""
+    globals_ = runtime.globals()
+
+    def _scxml_truthy(val: Any) -> bool:
+        if val is None or val is False:
+            return False
+        if isinstance(val, bool):
+            return val
+        if isinstance(val, int):
+            return val != 0
+        if isinstance(val, float):
+            return val != 0.0 and val == val  # NaN check
+        if isinstance(val, str):
+            return bool(val)
+        return True
+    globals_["_scxml_truthy"] = _scxml_truthy
+
+    def _typeof(val: Any) -> str:
+        if val is None:
+            return "undefined"
+        if isinstance(val, bool):
+            return "boolean"
+        if isinstance(val, (int, float)):
+            return "number"
+        if isinstance(val, str):
+            return "string"
+        # lupa exposes Lua functions as callable Python objects
+        if callable(val):
+            return "function"
+        return "object"
+    globals_["_typeof"] = _typeof
+
+    def _is_array(val: Any) -> bool:
+        if val is None:
+            return False
+        try:
+            keys = list(val.keys()) if hasattr(val, "keys") else None
+        except Exception:
+            return False
+        if keys is None:
+            return False
+        if not keys:
+            return True
+        return all(isinstance(k, int) for k in keys) and sorted(keys) == list(
+            range(1, len(keys) + 1)
+        )
+    globals_["_isArray"] = _is_array
+
+    def _index_of(*args: Any) -> int:
+        if not args:
+            return -1
+        haystack = args[0]
+        needle = args[1] if len(args) > 1 else None
+        start = int(args[2]) if len(args) > 2 and args[2] is not None else 0
+        if isinstance(haystack, str):
+            needle_str = "" if needle is None else str(needle)
+            if not needle_str:
+                return 0
+            try:
+                return haystack.index(needle_str, start)
+            except ValueError:
+                return -1
+        # Lua table (array) — 1-indexed, return 0-based result
+        if hasattr(haystack, "keys"):
+            try:
+                length = len(haystack)
+            except TypeError:
+                length = 0
+                for _ in haystack:
+                    length += 1
+            for i in range(start + 1, length + 1):
+                if haystack[i] == needle:
+                    return i - 1
+        return -1
+    globals_["_indexOf"] = _index_of
+
+    def _concat(arr1: Any, *rest: Any) -> Any:
+        out = []
+        if arr1 is not None and hasattr(arr1, "keys"):
+            for i in range(1, len(arr1) + 1):
+                out.append(arr1[i])
+        for arr2 in rest:
+            if arr2 is None:
+                continue
+            if hasattr(arr2, "keys"):
+                for i in range(1, len(arr2) + 1):
+                    out.append(arr2[i])
+            else:
+                out.append(arr2)
+        return runtime.table_from(out)
+    globals_["_concat"] = _concat
+
+    def _parse_int(val: Any, *rest: Any) -> Any:
+        radix = int(rest[0]) if rest and rest[0] is not None else 10
+        if isinstance(val, (int, float)):
+            return int(val)
+        if not isinstance(val, str):
+            return float("nan")
+        text = val.strip()
+        prefix = ""
+        if (radix == 16 or radix == 0) and (
+            text.lower().startswith("0x")
+        ):
+            prefix = text[:2]
+            text = text[2:]
+            radix = 16
+        elif radix == 0:
+            radix = 10
+        sign = ""
+        if text.startswith(("+", "-")):
+            sign = text[0]
+            text = text[1:]
+        digits = ""
+        for ch in text:
+            try:
+                int(ch, radix)
+                digits += ch
+            except ValueError:
+                break
+        if not digits:
+            return float("nan")
+        try:
+            return int(sign + digits, radix)
+        except ValueError:
+            return float("nan")
+    globals_["parseInt"] = _parse_int
+
+    def _parse_float(val: Any) -> Any:
+        if isinstance(val, (int, float)):
+            return float(val)
+        if not isinstance(val, str):
+            return float("nan")
+        text = val.strip()
+        try:
+            return float(text)
+        except ValueError:
+            return float("nan")
+    globals_["parseFloat"] = _parse_float
+
+    # ES `null` / `undefined` collapse to nil here (matches Rust port's
+    # documented "_NULL = nil, _UNDEFINED = nil"). The dedicated
+    # lightuserdata sentinels in C++ exist for array-element identity
+    # preservation in nested literals; lupa doesn't expose lightuserdata
+    # so we accept the same lossy-on-distinction trade-off Rust takes.
+    globals_["_NULL"] = None
+    globals_["_UNDEFINED"] = None
+
+    # ECMAScript string concatenation via `+` — install __add on the
+    # string metatable so `"a" + "b"` produces `"ab"` (Lua's native `+`
+    # is numeric only).
+    runtime.execute(
+        """
+        local mt = getmetatable("")
+        if mt then
+            mt.__add = function(a, b)
+                return tostring(a) .. tostring(b)
+            end
+        end
+        """
+    )
+
+    # Object.keys(table) → array of string keys.
+    def _object_keys(tbl: Any) -> Any:
+        if tbl is None or not hasattr(tbl, "keys"):
+            return runtime.table_from([])
+        return runtime.table_from([str(k) for k in tbl.keys()])
+    object_table = runtime.table_from({"keys": _object_keys})
+    globals_["Object"] = object_table
+
+    # JSON builtins shared with every other backend (single source of
+    # truth at sce/include/scripting/json_builtins.lua). Loaded
+    # opportunistically; absent from non-monorepo deployments is
+    # acceptable — the helpers are tested by JSON-using fixtures only.
+    import os
+    here = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+    json_lua = os.path.join(here, "sce", "include", "scripting", "json_builtins.lua")
+    if os.path.exists(json_lua):
+        with open(json_lua, "r", encoding="utf-8") as fh:
+            runtime.execute(fh.read())
 
 
 class LuaScriptEngine(IScriptEngine):
