@@ -11,6 +11,7 @@ through the C++ Interpreter via pybind11, not through this AOT runtime.
 
 from .engine import Engine
 from .event import Event, EventMetadata, EventWithMetadata
+from .http import HttpSendRequest, HttpSendResponse
 from .invoke import (
     ChildSession,
     Invoke,
@@ -28,6 +29,8 @@ __all__ = [
     "Event",
     "EventMetadata",
     "EventWithMetadata",
+    "HttpSendRequest",
+    "HttpSendResponse",
     "Invoke",
     "PendingInvoke",
     "ScheduledEvent",

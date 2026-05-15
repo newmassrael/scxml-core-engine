@@ -29,9 +29,10 @@ each owning state instead of up-front at engine.initialize.
 from __future__ import annotations
 
 from collections import deque
-from typing import Any, Dict, Generic, List, Optional, Set, TypeVar
+from typing import Any, Callable, Dict, Generic, List, Optional, Set, TypeVar
 
 from .event import EventMetadata, EventWithMetadata
+from .http import HttpSendRequest, HttpSendResponse
 from .invoke import Invoke, PendingInvoke, create_done_invoke_event_name
 from .policy import StatePolicy, TransitionResult
 from .scheduler import Scheduler
@@ -96,6 +97,15 @@ class Engine(Generic[S, E]):
         # drives lifecycle (tick + drain + cancel) but never instantiates
         # the concrete `Invoke` itself.
         self._active_invokes: Dict[str, Invoke[E]] = {}
+        # W3C SCXML C.2 — BasicHTTP Event I/O Processor dispatcher. The
+        # engine never links against an HTTP library; callers register a
+        # callback via `set_http_send_callback` that receives an
+        # `HttpSendRequest` and returns an optional `HttpSendResponse`.
+        # Used by `perform_http_send`; `None` means fire-and-forget for
+        # any HTTP send (matches Rust's "no callback configured" path).
+        self._http_send_callback: Optional[
+            Callable[[HttpSendRequest], Optional[HttpSendResponse]]
+        ] = None
 
     # ── Lifecycle ──────────────────────────────────────────────────
 
@@ -204,6 +214,58 @@ class Engine(Generic[S, E]):
         """W3C SCXML 4.4 `<raise>` — enqueue an internal event (drained before externals)."""
         self._internal_queue.append(
             EventWithMetadata(event=event, metadata=metadata or EventMetadata())
+        )
+
+    # ── BasicHTTP Event I/O Processor (W3C SCXML C.2) ─────────────
+
+    def set_http_send_callback(
+        self,
+        callback: Optional[
+            Callable[[HttpSendRequest], Optional[HttpSendResponse]]
+        ],
+    ) -> None:
+        """W3C SCXML C.2 — register the dispatcher used by generated
+        `<send type="BasicHTTPEventProcessor">` action arms. The
+        callback receives the resolved request payload (target URL,
+        event name, content, namelist/`<param>` map, sendid) and
+        returns the inbound response (`event_name` + `event_data`) the
+        engine should inject back onto the external queue. Returning
+        `None` is the fire-and-forget path. Passing `None` here clears
+        the callback so subsequent sends become no-ops. Mirrors
+        `sce_rust_runtime::Engine::set_http_send_callback`."""
+        self._http_send_callback = callback
+
+    def perform_http_send(
+        self,
+        target: str,
+        event_name: str,
+        content: str,
+        params: Dict[str, List[str]],
+        send_id: str,
+    ) -> None:
+        """W3C SCXML C.2 — dispatch a BasicHTTP send through the
+        registered callback. Builds the `HttpSendRequest`, invokes the
+        callback (no-op when no callback is configured), and if the
+        response carries an `event_name` that resolves on the running
+        policy's enum, injects the event onto the external queue with
+        `event_data` bound as `_event.data` (W3C 5.10.3). Mirrors
+        `sce_rust_runtime::Engine::perform_http_send` semantics."""
+        if self._http_send_callback is None:
+            return
+        request = HttpSendRequest(
+            target=target,
+            event_name=event_name,
+            content=content,
+            params=params,
+            send_id=send_id,
+        )
+        response = self._http_send_callback(request)
+        if response is None or not response.event_name:
+            return
+        self.send_external_by_name(
+            response.event_name,
+            data=response.event_data,
+            sendid=send_id,
         )
 
     # ── <send> / <cancel> / scheduler API (W3C SCXML 6.2) ─────────
