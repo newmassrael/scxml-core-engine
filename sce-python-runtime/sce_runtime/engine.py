@@ -7,16 +7,20 @@ Atomic β: compound entry chain (W3C SCXML 3.3 / 3.6 / 3.13), early-binding
 datamodel init (W3C 5.3), ancestor-chain transition selection
 (W3C Appendix D.2), LCCA-based exit/entry boundary (W3C 5.9.2), and
 `<raise>` (W3C 4.4) wired through `raise_internal`.
-Atomic γ: `<parallel>` regions with active-set tracking, atomic multi-
+Atomic γ-1: `<parallel>` regions with active-set tracking, atomic multi-
 transition microsteps with W3C SCXML 3.13 conflict resolution, and
 `done.state.<parent>` events raised when all regions of a `<parallel>`
 reach `<final>`.
+Atomic γ-2: `<history>` (shallow + deep) — snapshot pre-exit
+configuration into `_history[history_id]`, replay it on the next entry
+through that history state, falling back to the document's default
+target (and its default `<transition>` actions) when no snapshot exists.
 """
 
 from __future__ import annotations
 
 from collections import deque
-from typing import Generic, List, Optional, Set, TypeVar
+from typing import Dict, Generic, List, Optional, Set, TypeVar
 
 from .event import EventMetadata, EventWithMetadata
 from .policy import StatePolicy, TransitionResult
@@ -49,6 +53,12 @@ class Engine(Generic[S, E]):
         # `done.state.<id>` event has already been raised this run, so a
         # second region reaching `<final>` does not re-fire it.
         self._fired_done_state: Set[S] = set()
+        # W3C SCXML 3.11 — per-history-id snapshot of the active
+        # configuration taken when the owning compound exits. Keyed by
+        # the history element's string id so the engine can replay it on
+        # the next entry through that history state without needing a
+        # State enum member for the history element itself.
+        self._history: Dict[str, List[S]] = {}
 
     # ── Lifecycle ──────────────────────────────────────────────────
 
@@ -276,6 +286,12 @@ class Engine(Generic[S, E]):
         for t in transitions:
             combined_exit |= self._compute_exit_set(t)
 
+        # W3C SCXML 3.11 — snapshot history for every exiting compound
+        # BEFORE running onexit actions. The active configuration at this
+        # point is still the pre-exit one, which is exactly what shallow /
+        # deep history records.
+        self._snapshot_history(combined_exit)
+
         # W3C 3.13: exit in reverse document order (deepest descendants
         # leave first). Inside the same document-order rank, exit order
         # is unspecified — we use document order descending for determinism.
@@ -328,11 +344,32 @@ class Engine(Generic[S, E]):
 
     def _enter_target(self, transition: TransitionResult[S]) -> None:
         """Enter the LCA→target path, then descend through the target's
-        initial chain (with parallel branching at any `<parallel>`)."""
+        initial chain (with parallel branching at any `<parallel>`).
+
+        When `transition.history_id` is set and a snapshot exists, the
+        snapshot replaces `target` so the engine restores the
+        pre-exit configuration (W3C SCXML 3.11). When no snapshot
+        exists, the engine falls back to the parser-resolved default
+        target and runs the history element's default-transition
+        actions (also W3C 3.11).
+        """
         target: S = transition.target  # type: ignore[assignment]
         source: S = (
             transition.source if transition.source is not None else target
         )
+
+        # W3C SCXML 3.11 — replay history if available; otherwise the
+        # parser-resolved default target stands. Default-transition
+        # actions only run when falling back to the default.
+        history_entries: Optional[List[S]] = None
+        if transition.history_id is not None:
+            saved = self._history.get(transition.history_id)
+            if saved:
+                history_entries = list(saved)
+            else:
+                self._policy.execute_history_default_actions(
+                    transition.history_id, self
+                )
 
         # Find the boundary (LCCA). Internal transitions into a descendant
         # of source use `source` itself; otherwise use the standard LCCA.
@@ -341,14 +378,36 @@ class Engine(Generic[S, E]):
         else:
             boundary = self._find_lcca(source, target)
 
-        # Build the entry chain from `target` upward, stopping at `boundary`.
+        if history_entries:
+            # Enter every saved state, sorted by document order so the
+            # ancestor compound's onentry runs once even when multiple
+            # leaves are restored (each `_enter_target_step` call
+            # individually enters the ancestors that aren't already
+            # active).
+            for saved_state in sorted(
+                history_entries, key=self._policy.get_document_order
+            ):
+                self._enter_target_step(saved_state, boundary)
+                if self._reached_final or not self._is_running:
+                    return
+            return
+
+        self._enter_target_step(target, boundary)
+
+    def _enter_target_step(self, target: S, boundary: Optional[S]) -> None:
+        """Enter ancestors of `target` between `boundary` and `target`,
+        then descend into `target` via `_enter_state`. Shared by the
+        normal-target and history-restore paths so they cannot drift."""
         upward: List[S] = []
         state: Optional[S] = target
         while state is not None and state != boundary:
             upward.append(state)
             state = self._policy.get_parent(state)
+        already_active = self.active_configuration()
         # Enter from boundary-child down to target, then descend.
         for s in reversed(upward[1:]):
+            if s in already_active:
+                continue
             self._policy.execute_entry_actions(s, self)
             if self._policy.is_final_state(s):
                 self._active_leaves.append(s)
@@ -389,6 +448,36 @@ class Engine(Generic[S, E]):
             return
         # Atomic leaf — record in the active set.
         self._active_leaves.append(state)
+
+    def _snapshot_history(self, exiting: Set[S]) -> None:
+        """W3C SCXML 3.11 — for every compound about to exit, record its
+        history. `shallow` history captures the directly-active child of
+        the compound; `deep` history captures the active leaf descendant."""
+        if not exiting:
+            return
+        active = self.active_configuration()
+        for compound in exiting:
+            history_ids = self._policy.get_history_states_in(compound)
+            if not history_ids:
+                continue
+            for history_id in history_ids:
+                kind = self._policy.get_history_type(history_id)
+                if kind == "deep":
+                    snapshot = [
+                        leaf
+                        for leaf in self._active_leaves
+                        if self._is_proper_descendant(leaf, compound)
+                    ]
+                else:
+                    # shallow: the direct child(ren) of compound that
+                    # have an active descendant.
+                    snapshot = [
+                        state
+                        for state in active
+                        if self._policy.get_parent(state) == compound
+                    ]
+                if snapshot:
+                    self._history[history_id] = snapshot
 
     def _mark_root_final_if_top_level(self, final_state: S) -> None:
         """If a `<final>` at the top of the document is entered, the engine

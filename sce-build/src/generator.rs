@@ -718,19 +718,14 @@ pub fn generate_python_with_templates(
     render_python(&env, model)
 }
 
-/// Atomic γ-1 surface — explicitly reject features the Python codegen
+/// Atomic γ-2 surface — explicitly reject features the Python codegen
 /// does not yet implement. Failing loudly here keeps generated `*_sm.py`
 /// honest: every accepted document produces a working module instead of
 /// a silently degraded one. γ progressively widens the surface and
-/// removes the corresponding rejects (γ-1 lifts `<parallel>`; γ-2 lifts
-/// `<history>`; γ-3 lifts the remaining executable content; γ-4 lifts
-/// `<invoke>`).
+/// removes the corresponding rejects (γ-1 lifted `<parallel>`; γ-2
+/// lifted `<history>`; γ-3 lifts the remaining executable content;
+/// γ-4 lifts `<invoke>`).
 fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), GenerateError> {
-    if model.has_history_states {
-        return Err(GenerateError::InvalidConfig(
-            "Python codegen does not yet support <history> states; deferred to Atomic γ".into(),
-        ));
-    }
     if !model.invokes.is_empty() {
         return Err(GenerateError::InvalidConfig(
             "Python codegen does not yet support <invoke>; deferred to Atomic γ".into(),

@@ -31,6 +31,13 @@ class TransitionResult(Generic[S]):
     the configuration). `source` is the state the transition was matched on
     — required for compound bubbling because the source may be an ancestor
     of `Engine.current_state` (W3C SCXML Appendix D.2).
+
+    `history_id` is the string id of a `<history>` element when the
+    original `<transition>` targeted history (W3C SCXML 3.11). The parser
+    pre-resolves `target` to the history's default-leaf so the field is
+    populated only as a signal: if the runtime engine has a snapshot for
+    `history_id`, it enters the snapshot in place of `target`; otherwise
+    it enters `target` and runs the default-transition actions.
     """
 
     target: Optional[S]
@@ -38,6 +45,7 @@ class TransitionResult(Generic[S]):
     is_internal: bool = False
     targetless: bool = False
     source: Optional[S] = None
+    history_id: Optional[str] = None
 
 
 class StatePolicy(ABC, Generic[S, E]):
@@ -126,6 +134,26 @@ class StatePolicy(ABC, Generic[S, E]):
         single-child semantics for ordinary compounds (parallel branching
         is handled by `get_parallel_regions`)."""
         return []
+
+    def get_history_states_in(self, compound: S) -> List[str]:
+        """W3C SCXML 3.11 — string ids of every `<history>` element whose
+        `parent` is `compound`. Returned in document order so the engine
+        snapshots them deterministically on compound exit. Empty for
+        states with no nested history."""
+        return []
+
+    def get_history_type(self, history_id: str) -> str:
+        """W3C SCXML 3.11 — `"shallow"` (records the directly-active child)
+        or `"deep"` (records the leaf descendant). Empty/unknown for ids
+        that are not history states."""
+        return "shallow"
+
+    def execute_history_default_actions(
+        self, history_id: str, engine: "Engine[S, E]"
+    ) -> None:
+        """W3C SCXML 3.11 — run the action body of the history's default
+        `<transition>` when no snapshot is available and the engine falls
+        back to the default target. Default no-op."""
 
     def initialize_datamodel(self, engine: "Engine[S, E]") -> None:
         """W3C SCXML 5.3 — early-binding datamodel initialisation. Called

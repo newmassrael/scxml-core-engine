@@ -1,7 +1,7 @@
 {
   "language": "python",
-  "version": "0.3.0",
-  "description": "Atomic γ-1 — adds <parallel> regions with active-set tracking, W3C SCXML 3.13 conflict resolution, and done.state.<parent> events for parallels whose regions all reach <final>. History / invoke / remaining executable content remain reject-walled.",
+  "version": "0.4.0",
+  "description": "Atomic γ-2 — adds <history> shallow + deep with pre-exit snapshot + replay; default-transition actions fire on first entry when no snapshot exists. <invoke>, remaining executable content, and binding=late remain reject-walled.",
   "entry_template": "state_machine.py.jinja2",
   "runtime_dependency": "sce-python-runtime",
   "output_extension": ".py"

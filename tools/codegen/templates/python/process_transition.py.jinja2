@@ -32,6 +32,9 @@
                     is_internal={{ 'True' if transition.transition_type == 'internal' else 'False' }},
                     targetless={{ 'True' if not transition.target else 'False' }},
                     source={{ machine_name }}State.{{ state_id | to_python_const }},
+{% if transition.history_target %}
+                    history_id={{ transition.history_target | py_string_literal }},
+{% endif %}
                 )
 {% endfor %}
 {% endif %}
