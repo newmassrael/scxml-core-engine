@@ -1,0 +1,23 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{#
+    Conflict resolution (Python Jinja2)
+
+    W3C SCXML Appendix D.2 — `select_optimal_transitions` resolves conflicts
+    when multiple transitions are enabled inside one configuration. β has at
+    most one active leaf (no parallel regions; the codegen rejects
+    `<parallel>` documents up front), so the engine's leaf-first
+    `_select_with_ancestors` walk is unambiguous — the first match wins.
+    The Go/Kotlin file split keeps this file as a γ-ready hook; we emit
+    its meaningful payload (a runtime-visible note) so the include is not
+    a silently-empty hook [[feedback-silently-broken-hooks]].
+#}
+
+# ──────────────────────────────────────────────────────────────────
+# Conflict resolution (W3C SCXML Appendix D.2)
+# ──────────────────────────────────────────────────────────────────
+# Atomic β has no parallel regions: at most one active leaf at a time,
+# so transition conflicts cannot arise. The γ port will replace this
+# note with the `_select_optimal_transitions` body that ranks
+# competing transitions from sibling parallel regions.

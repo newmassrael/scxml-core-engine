@@ -1,0 +1,48 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{#
+    Script engine helpers (Python Jinja2)
+
+    Emits the script/guard execution helpers and the W3C SCXML 5.3 early-binding
+    datamodel initialiser. The Python backend evaluates `<script>`, `<assign
+    expr>`, and `cond` expressions directly against `self._ns` via `exec` /
+    `eval` — there is no separate script-engine indirection. Variable names
+    that collide with Python keywords are escaped with a trailing underscore
+    via the `escape_python_keyword` filter (load-bearing for `<data id="class"
+    expr="42"/>` style fixtures).
+#}
+
+    # ── Script helpers ─────────────────────────────────────────────
+
+    def _exec(self, script: str) -> None:
+        """Execute a script statement against the user-provided namespace."""
+        exec(script, self._ns)  # noqa: S102 — script source is statically baked
+
+    def _guard(self, expr: str) -> bool:
+        """Evaluate a transition guard expression and coerce to bool."""
+        return bool(eval(expr, self._ns))  # noqa: S307 — guard expression is statically baked
+
+    def _assign(self, location: str, expr: str) -> None:
+        """W3C SCXML 5.3 — evaluate `expr` and bind the result at `location`
+        in the datamodel namespace. `location` is a Python identifier
+        (matching the `<data id>` set), so we assign by dict key."""
+        self._ns[location] = eval(expr, self._ns)  # noqa: S307
+
+    def initialize_datamodel(self, engine) -> None:
+{% if model.variables %}
+        # W3C SCXML 5.3: early-binding `<datamodel>` — all `<data>` elements
+        # are initialised in document order before the first onentry fires.
+{% for var in model.variables %}
+{% if var.expr %}
+        self._ns[{{ var.id | py_string_literal }}] = eval({{ var.expr | py_string_literal }}, self._ns)
+{% elif var.content %}
+        self._ns[{{ var.id | py_string_literal }}] = {{ var.content | py_string_literal }}
+{% else %}
+        self._ns[{{ var.id | py_string_literal }}] = None
+{% endif %}
+{% endfor %}
+{% else %}
+        # No <datamodel> declared — nothing to initialise.
+        pass
+{% endif %}

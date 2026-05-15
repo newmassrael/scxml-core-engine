@@ -1,0 +1,45 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{#
+    Entry/Exit Actions (Python Jinja2)
+
+    W3C SCXML 3.8 / 3.9 — emits `execute_entry_actions` and
+    `execute_exit_actions`. Supported action kinds in β: `<script>`,
+    `<assign location expr>`, `<raise event>` (see `_actions.py.jinja2`).
+    Unsupported kinds fall through to an explicit raise so silent
+    degradation never occurs ([[feedback-silently-broken-hooks]]).
+#}
+{%- import '_actions.py.jinja2' as actions %}
+
+    # ── Entry actions (W3C SCXML 3.8) ─────────────────────────────
+
+    def execute_entry_actions(self, state, engine) -> None:
+{% for state_id, state in model.states | dictsort %}
+{% if state.on_entry_blocks %}
+        if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
+{% for block in state.on_entry_blocks %}
+{% for action in block %}
+{{ actions.emit(action, '            ', machine_name) }}
+{% endfor %}
+{% endfor %}
+            return
+{% endif %}
+{% endfor %}
+        return
+
+    # ── Exit actions (W3C SCXML 3.9) ──────────────────────────────
+
+    def execute_exit_actions(self, state, engine) -> None:
+{% for state_id, state in model.states | dictsort %}
+{% if state.on_exit_blocks %}
+        if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
+{% for block in state.on_exit_blocks %}
+{% for action in block %}
+{{ actions.emit(action, '            ', machine_name) }}
+{% endfor %}
+{% endfor %}
+            return
+{% endif %}
+{% endfor %}
+        return

@@ -1,7 +1,7 @@
 {
   "language": "python",
-  "version": "0.1.0",
-  "description": "Atomic α — atomic states + basic transitions + onentry/onexit + scripts. Compound/parallel/history/invoke land in Atomic β/γ.",
+  "version": "0.2.0",
+  "description": "Atomic β — adds compound entry chain, early-binding datamodel (<data>/<assign>), ancestor-chain transition selection, and <raise>. Parallel/history/invoke land in γ.",
   "entry_template": "state_machine.py.jinja2",
   "runtime_dependency": "sce-python-runtime",
   "output_extension": ".py"

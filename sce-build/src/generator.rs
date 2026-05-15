@@ -683,13 +683,14 @@ pub fn generate_go_with_templates(
 
 // ── Python generator ────────────────────────────────────────────
 //
-// Python AOT (Atomic α): atomic states + basic transitions + onentry/onexit
-// + transition guards. Compound / parallel / history / invoke / datamodel
-// land in Atomic β / γ. Generated `*_sm.py` modules depend on
-// `sce-python-runtime` (pure-Python W3C SCXML engine) — analogous to how
-// the Go backend depends on `sce-go-runtime` and Kotlin on its runtime
-// package. The pybind11 channel under `sce-python/` is a separate
-// (interpreter-mode) integration and is not used here.
+// Python AOT (Atomic β): atomic + compound states, basic + eventless
+// transitions, onentry/onexit, transition guards/actions, `<data>` early-
+// binding datamodel with `<assign>` updates, and `<raise>` for internal
+// events. Parallel / history / invoke land in Atomic γ. Generated `*_sm.py`
+// modules depend on `sce-python-runtime` (pure-Python W3C SCXML engine) —
+// analogous to how the Go backend depends on `sce-go-runtime` and Kotlin on
+// its runtime package. The pybind11 channel under `sce-python/` is a
+// separate (interpreter-mode) integration and is not used here.
 
 /// Generate Python code from an analyzed SCXMLModel (filesystem-based).
 pub fn generate_python(
@@ -717,51 +718,98 @@ pub fn generate_python_with_templates(
     render_python(&env, model)
 }
 
-/// Atomic α surface — explicitly reject features that the Python codegen
-/// does not yet implement. Failing loudly here keeps generated `*_sm.py`
+/// Atomic β surface — explicitly reject features the Python codegen does
+/// not yet implement. Failing loudly here keeps generated `*_sm.py`
 /// honest: every accepted document produces a working module instead of
-/// a silently degraded one. Atomic β / γ progressively widen the surface
-/// and remove the corresponding rejects.
+/// a silently degraded one. γ progressively widens the surface and
+/// removes the corresponding rejects.
 fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), GenerateError> {
     if model.has_parallel_states {
         return Err(GenerateError::InvalidConfig(
-            "Python codegen (Atomic α) does not yet support <parallel> regions; \
-             deferred to Atomic γ"
-                .into(),
+            "Python codegen does not yet support <parallel> regions; deferred to Atomic γ".into(),
         ));
     }
     if model.has_history_states {
         return Err(GenerateError::InvalidConfig(
-            "Python codegen (Atomic α) does not yet support <history> states; \
-             deferred to Atomic γ"
-                .into(),
+            "Python codegen does not yet support <history> states; deferred to Atomic γ".into(),
         ));
     }
     if !model.invokes.is_empty() {
         return Err(GenerateError::InvalidConfig(
-            "Python codegen (Atomic α) does not yet support <invoke>; deferred to Atomic γ".into(),
+            "Python codegen does not yet support <invoke>; deferred to Atomic γ".into(),
         ));
     }
-    // Compound (non-leaf) states arrive in Atomic β alongside the full
-    // microstep / macrostep loop. α is locked to atomic-only fixtures.
-    for state in model.states.values() {
-        if !state.initial.is_empty() || !state.initial_children.is_empty() {
+    // W3C SCXML 5.3: β implements early binding only — `binding="late"`
+    // moves state-local <datamodel> initialisation to first entry of the
+    // owning state, which the engine does not yet thread.
+    if model.binding == "late" {
+        return Err(GenerateError::InvalidConfig(
+            "Python codegen does not yet support `binding=\"late\"`; deferred to Atomic γ".into(),
+        ));
+    }
+    // β datamodel storage uses dict-keyed `self._ns[name]`. User-written
+    // `<script>` / `cond` / `expr` text references the same names as bare
+    // Python identifiers, which is parsed by `eval` directly. A `<data>`
+    // id that happens to be a Python keyword (`class`, `lambda`, ...)
+    // would silently break every user expression that referenced it (and
+    // mangling the storage key alone wouldn't help — the user's own
+    // expression text would still contain the bare keyword). We reject
+    // up front so the SCXML author hits a clear error instead of a
+    // SyntaxError at runtime [[feedback-silently-broken-hooks]]. γ may
+    // lift this once an expression-rewriter pass lands.
+    for var in &model.variables {
+        if PYTHON_KEYWORDS.contains(&var.id.as_str()) {
             return Err(GenerateError::InvalidConfig(format!(
-                "Python codegen (Atomic α) does not yet support compound state `{}`; \
-                 deferred to Atomic β",
-                state.id
+                "Python codegen rejects <data id=\"{}\">: name collides with a Python \
+                 keyword and would break user expressions referencing it",
+                var.id
             )));
         }
     }
-    if !model.variables.is_empty() {
-        return Err(GenerateError::InvalidConfig(
-            "Python codegen (Atomic α) does not yet support <data> / datamodel; \
-             deferred to Atomic β"
-                .into(),
-        ));
+    // β supports `<script>`, `<assign>`, `<raise>` in onentry/onexit and
+    // transition action blocks. Other action kinds (`<send>`, `<log>`,
+    // `<if>`, `<foreach>`, `<cancel>`) reach γ. Reject up front so the
+    // generated module cannot end up dispatching through an action branch
+    // that emits `raise NotImplementedError` at runtime.
+    const SUPPORTED_ACTIONS: &[&str] = &["script", "assign", "raise"];
+    let check_actions = |actions: &[crate::model::Action], context: &str| -> Result<(), GenerateError> {
+        for action in actions {
+            if !SUPPORTED_ACTIONS.contains(&action.action_type.as_str()) {
+                return Err(GenerateError::InvalidConfig(format!(
+                    "Python codegen does not yet support <{}> in {}; deferred to Atomic γ",
+                    action.action_type, context
+                )));
+            }
+        }
+        Ok(())
+    };
+    for (state_id, state) in &model.states {
+        for block in &state.on_entry_blocks {
+            check_actions(block, &format!("onentry of `{state_id}`"))?;
+        }
+        for block in &state.on_exit_blocks {
+            check_actions(block, &format!("onexit of `{state_id}`"))?;
+        }
+        for transition in &state.transitions {
+            check_actions(
+                &transition.actions,
+                &format!("transition from `{state_id}`"),
+            )?;
+        }
     }
     Ok(())
 }
+
+/// Python soft + hard keywords as of 3.12. `match`/`case` are soft
+/// keywords but conflict with the same syntactic positions; SCXML
+/// system variables (`_event`, `_sessionid`) are reserved by W3C
+/// SCXML 5.10 and are caught by the parser long before this point.
+const PYTHON_KEYWORDS: &[&str] = &[
+    "False", "None", "True", "and", "as", "assert", "async", "await", "break", "class",
+    "continue", "def", "del", "elif", "else", "except", "finally", "for", "from", "global",
+    "if", "import", "in", "is", "lambda", "nonlocal", "not", "or", "pass", "raise", "return",
+    "try", "while", "with", "yield", "match", "case",
+];
 
 fn render_python(env: &Environment, model: &SCXMLModel) -> Result<String, GenerateError> {
     let machine_name = filters::to_pascal_case(model.name.clone());

@@ -1,0 +1,25 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{#
+    Action dispatch macro (Python Jinja2)
+
+    Emits a single SCXML executable-content action as one indented Python line.
+    `indent` is the literal whitespace prefix the caller wants on the emitted
+    line; that lets onentry/onexit/transition contexts (which sit at different
+    Python nesting depths) share the same dispatch table. Unsupported action
+    types are emitted as an explicit `raise NotImplementedError` so silent
+    degradation never reaches runtime ([[feedback-silently-broken-hooks]]).
+#}
+
+{%- macro emit(action, indent, machine_name) -%}
+{%- if action.type == 'script' -%}
+{{ indent }}self._exec({{ action.content | py_string_literal }})
+{% elif action.type == 'raise' -%}
+{{ indent }}engine.raise_internal({{ machine_name }}Event.{{ action.event | to_python_const }})
+{% elif action.type == 'assign' -%}
+{{ indent }}self._assign({{ action.location | py_string_literal }}, {{ action.expr | py_string_literal }})
+{% else -%}
+{{ indent }}raise NotImplementedError({{ ('Atomic β: action <' ~ action.type ~ '> not yet supported') | py_string_literal }})
+{% endif -%}
+{%- endmacro -%}

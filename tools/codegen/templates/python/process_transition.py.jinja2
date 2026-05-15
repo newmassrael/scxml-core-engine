@@ -1,0 +1,57 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{#
+    Process Transition (Python Jinja2)
+
+    W3C SCXML 3.13 — emits `select_transition` and `execute_transition_action`.
+    The engine drives ancestor-chain selection: this template only emits the
+    per-state arm with the transitions declared on that state itself.
+    Eventless transitions (no `event` attribute) match against the NULL
+    sentinel; targetless transitions (no `target` attribute) flag
+    `targetless=True` so the engine fires the action without changing state.
+#}
+{%- import '_actions.py.jinja2' as actions %}
+
+    # ── Transitions (W3C SCXML 3.13) ───────────────────────────────
+
+    def select_transition(self, state, event):
+{% for state_id, state in model.states | dictsort %}
+{% if state.transitions %}
+        if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
+{% for transition in state.transitions %}
+{% set evt_const = ('NULL' if not transition.event or transition.event == '' else (transition.event | to_python_const)) %}
+            if event == {{ machine_name }}Event.{{ evt_const }}{% if transition.cond %} and self._guard({{ transition.cond | py_string_literal }}){% endif %}:
+                return TransitionResult(
+{% if transition.target %}
+                    target={{ machine_name }}State.{{ transition.target | to_python_const }},
+{% else %}
+                    target=None,
+{% endif %}
+                    transition_index={{ transition.transition_index }},
+                    is_internal={{ 'True' if transition.transition_type == 'internal' else 'False' }},
+                    targetless={{ 'True' if not transition.target else 'False' }},
+                    source={{ machine_name }}State.{{ state_id | to_python_const }},
+                )
+{% endfor %}
+{% endif %}
+{% endfor %}
+        return None
+
+    # ── Transition actions (W3C SCXML 3.13) ───────────────────────
+
+    def execute_transition_action(self, state, transition_index: int, engine) -> None:
+{% for state_id, state in model.states | dictsort %}
+{% set transitions_with_action_here = state.transitions | selectattr('actions') | list %}
+{% if transitions_with_action_here %}
+        if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
+{% for transition in transitions_with_action_here %}
+            if transition_index == {{ transition.transition_index }}:
+{% for action in transition.actions %}
+{{ actions.emit(action, '                ', machine_name) }}
+{% endfor %}
+                return
+{% endfor %}
+{% endif %}
+{% endfor %}
+        return
