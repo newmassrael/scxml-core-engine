@@ -156,9 +156,23 @@ class StatePolicy(ABC, Generic[S, E]):
         back to the default target. Default no-op."""
 
     def initialize_datamodel(self, engine: "Engine[S, E]") -> None:
-        """W3C SCXML 5.3 — early-binding datamodel initialisation. Called
-        exactly once by `Engine.initialize` before any onentry action
-        fires. Default no-op for documents without a `<datamodel>`."""
+        """W3C SCXML 5.3 — root datamodel + (early-binding) all state-local
+        datamodels. Called exactly once by `Engine.initialize` before any
+        onentry action fires. Late-binding documents init state-local data
+        on first entry of each owning state via `init_state_datamodel`
+        instead."""
+
+    def init_state_datamodel(self, state: S, engine: "Engine[S, E]") -> None:
+        """W3C SCXML 5.3 — state-local `<datamodel>` initialisation. Under
+        late binding the engine invokes this exactly once per state on
+        its first entry. Under early binding `initialize_datamodel` has
+        already run every state's init at startup so the engine does not
+        call this hook."""
+
+    def is_late_binding(self) -> bool:
+        """W3C SCXML 5.3 — `binding="late"` on the document root. False
+        for the default (`binding="early"`)."""
+        return False
 
     def get_document_order(self, state: S) -> int:
         """W3C SCXML Appendix D — used for deterministic ordering."""

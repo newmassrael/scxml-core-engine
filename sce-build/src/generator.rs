@@ -731,14 +731,6 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
             "Python codegen does not yet support <invoke>; deferred to Atomic γ".into(),
         ));
     }
-    // W3C SCXML 5.3: β implements early binding only — `binding="late"`
-    // moves state-local <datamodel> initialisation to first entry of the
-    // owning state, which the engine does not yet thread.
-    if model.binding == "late" {
-        return Err(GenerateError::InvalidConfig(
-            "Python codegen does not yet support `binding=\"late\"`; deferred to Atomic γ".into(),
-        ));
-    }
     // β datamodel storage uses dict-keyed `self._ns[name]`. User-written
     // `<script>` / `cond` / `expr` text references the same names as bare
     // Python identifiers, which is parsed by `eval` directly. A `<data>`

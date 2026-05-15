@@ -1,7 +1,7 @@
 {
   "language": "python",
-  "version": "0.6.0",
-  "description": "Atomic γ-3b — adds <send> (immediate + delayed) and <cancel> on top of γ-3a; pull-based scheduler with cancel-by-sendid (W3C SCXML 6.2 / 6.2.2). External targets, namelist, params, content, dynamic expressions, idlocation deferred to γ-4. <invoke> and binding=late remain reject-walled.",
+  "version": "0.7.0",
+  "description": "Atomic γ-5 — adds `binding=\"late\"` lazy datamodel init (state-local <data> binds on first entry of owning state) on top of γ-3b. State-local datamodel under default early binding is now also bound at startup (was a β oversight). <invoke> remains reject-walled for γ-4.",
   "entry_template": "state_machine.py.jinja2",
   "runtime_dependency": "sce-python-runtime",
   "output_extension": ".py"

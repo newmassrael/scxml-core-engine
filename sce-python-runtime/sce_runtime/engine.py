@@ -21,6 +21,9 @@ Atomic γ-3b: `<send>` (immediate + delayed) and `<cancel>` ride a pull
 scheduler with cancel-by-sendid (W3C SCXML 6.2 + 6.2.2). Virtual time
 advances via `Engine.advance_time(ms)`; callers needing wall-clock
 behaviour drive this from their own dispatch loop.
+Atomic γ-5: `binding="late"` — when the policy reports late binding,
+state-local `<datamodel>` blocks are initialised on the first entry of
+each owning state instead of up-front at engine.initialize.
 """
 
 from __future__ import annotations
@@ -76,6 +79,11 @@ class Engine(Generic[S, E]):
         # generate any unique id; we use a deterministic counter so
         # traces remain reproducible).
         self._auto_send_seq: int = 0
+        # W3C SCXML 5.3 — states whose local `<datamodel>` has already
+        # been initialised. Only consulted under `binding="late"`; under
+        # the default early binding the policy initialises every state's
+        # data up front and this set stays empty.
+        self._initialized_states_data: Set[S] = set()
 
     # ── Lifecycle ──────────────────────────────────────────────────
 
@@ -479,18 +487,31 @@ class Engine(Generic[S, E]):
         for s in reversed(upward[1:]):
             if s in already_active:
                 continue
-            self._policy.execute_entry_actions(s, self)
+            self._run_entry(s)
             if self._policy.is_final_state(s):
                 self._active_leaves.append(s)
                 self._mark_root_final_if_top_level(s)
                 return
         self._enter_state(target)
 
+    def _run_entry(self, state: S) -> None:
+        """W3C SCXML 5.3 + 3.8 — fire late-binding local datamodel init
+        (once per state) then run the state's onentry actions. Shared by
+        ancestor entry in `_enter_target_step` and target entry in
+        `_enter_state` so the two paths cannot drift."""
+        if (
+            self._policy.is_late_binding()
+            and state not in self._initialized_states_data
+        ):
+            self._policy.init_state_datamodel(state, self)
+            self._initialized_states_data.add(state)
+        self._policy.execute_entry_actions(state, self)
+
     def _enter_state(self, state: S) -> None:
         """Recursively enter `state`: run its entry actions, then descend
         through the appropriate child (single initial child for a compound,
         every region for a `<parallel>`)."""
-        self._policy.execute_entry_actions(state, self)
+        self._run_entry(state)
         if self._policy.is_final_state(state):
             self._active_leaves.append(state)
             self._mark_root_final_if_top_level(state)

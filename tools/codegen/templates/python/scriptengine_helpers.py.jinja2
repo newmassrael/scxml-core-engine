@@ -88,10 +88,20 @@
             return iter(())
         return iter(collection)
 
+    def is_late_binding(self) -> bool:
+        return {{ 'True' if model.binding == 'late' else 'False' }}
+
     def initialize_datamodel(self, engine) -> None:
-{% if model.variables %}
-        # W3C SCXML 5.3: early-binding `<datamodel>` — all `<data>` elements
-        # are initialised in document order before the first onentry fires.
+{% set ns_dm = namespace(any=false) %}
+{% if model.variables %}{% set ns_dm.any = true %}{% endif %}
+{% for state_id, st in model.states | dictsort %}
+{% if st.datamodel and model.binding != 'late' %}{% set ns_dm.any = true %}{% endif %}
+{% endfor %}
+{% if ns_dm.any %}
+        # W3C SCXML 5.3: root datamodel always inits at startup; state-local
+        # data joins it here under early binding (the default). Late
+        # binding initialises state-local data on first state entry via
+        # `init_state_datamodel`.
 {% for var in model.variables %}
 {% if var.expr %}
         self._ns[{{ var.id | py_string_literal }}] = eval({{ var.expr | py_string_literal }}, self._ns)
@@ -101,7 +111,44 @@
         self._ns[{{ var.id | py_string_literal }}] = None
 {% endif %}
 {% endfor %}
+{% if model.binding != 'late' %}
+{% for state_id, st in model.states | dictsort %}
+{% for var in st.datamodel %}
+{% if var.expr %}
+        self._ns[{{ var.id | py_string_literal }}] = eval({{ var.expr | py_string_literal }}, self._ns)
+{% elif var.content %}
+        self._ns[{{ var.id | py_string_literal }}] = {{ var.content | py_string_literal }}
+{% else %}
+        self._ns[{{ var.id | py_string_literal }}] = None
+{% endif %}
+{% endfor %}
+{% endfor %}
+{% endif %}
 {% else %}
         # No <datamodel> declared — nothing to initialise.
         pass
 {% endif %}
+
+    def init_state_datamodel(self, state, engine) -> None:
+{% set ns_local = namespace(any=false) %}
+{% for state_id, st in model.states | dictsort %}
+{% if st.datamodel %}{% set ns_local.any = true %}{% endif %}
+{% endfor %}
+{% if ns_local.any %}
+{% for state_id, st in model.states | dictsort %}
+{% if st.datamodel %}
+        if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
+{% for var in st.datamodel %}
+{% if var.expr %}
+            self._ns[{{ var.id | py_string_literal }}] = eval({{ var.expr | py_string_literal }}, self._ns)
+{% elif var.content %}
+            self._ns[{{ var.id | py_string_literal }}] = {{ var.content | py_string_literal }}
+{% else %}
+            self._ns[{{ var.id | py_string_literal }}] = None
+{% endif %}
+{% endfor %}
+            return
+{% endif %}
+{% endfor %}
+{% endif %}
+        return
