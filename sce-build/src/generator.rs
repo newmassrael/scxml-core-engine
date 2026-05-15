@@ -799,10 +799,16 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
                 // send extensions accept dynamic exprs + payload +
                 // idlocation; γ-4a additionally accepts `target="#_parent"`
                 // (child-to-parent) and `target="#_<invoke_id>"` (parent-
-                // to-child via `Invoke.forward_event`). External transports
-                // (HTTP / arbitrary URLs) and the `!invalid` sentinel stay
-                // deferred to γ-4b.
-                if !action.target.is_empty() && !action.target.starts_with("#_") {
+                // to-child via `Invoke.forward_event`); γ-4b's first
+                // lift accepts `target="!…"` (the SCXML test-suite's
+                // deliberate-invalid sentinel — W3C 6.2: dispatch
+                // failure raises `error.execution`). HTTP transports
+                // and other absolute URLs stay deferred to the HTTP
+                // half of γ-4b.
+                if !action.target.is_empty()
+                    && !action.target.starts_with("#_")
+                    && !action.target.starts_with('!')
+                {
                     return Err(GenerateError::InvalidConfig(format!(
                         "Python codegen `<send target=\"{}\">` in {} is deferred \
                          to Atomic γ-4b (HTTP / external transport)",

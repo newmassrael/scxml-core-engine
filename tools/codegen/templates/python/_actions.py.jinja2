@@ -56,6 +56,20 @@
 {% else %}
 {{ indent }}self._parent_queue.append(({{ action.event | py_string_literal }}, ""))
 {% endif %}
+{% elif action.target.startswith('!') %}
+{# W3C SCXML 6.2 — `target="!…"` is the SCXML test-suite's
+   deliberate-invalid sentinel; dispatch fails and the processor
+   places `error.execution` on the internal queue. The early
+   `return` mirrors W3C 3.8 "an error in executable content causes
+   all subsequent elements in the same handler to be skipped" —
+   tests like test159 depend on the `<assign>` after the failing
+   send NOT running. #}
+{% if 'error.execution' in model.events %}
+{{ indent }}engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }})
+{{ indent }}return
+{% else %}
+{{ indent }}return  # W3C 6.2: invalid target — but document declares no error.execution descriptor
+{% endif %}
 {% elif action.target.startswith('#_') and action.target != '#_internal' %}
 {# W3C SCXML 6.4 — parent-to-child send. The active `Invoke` looks up
    the wire-format event name on the child policy's enum and pushes
