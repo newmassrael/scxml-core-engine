@@ -1711,3 +1711,85 @@ The measure is: **one SCXML source generates correct, compilable code for all ta
 - Cross-file composition exposed to the numerical conformance harness (§7.2 pending item, 2 fixtures).
 - 3 `forge::expr::tests` failures in `sce-build` (`cpp_float_context_leaves_literal_alone`, `go_untyped_literal_not_promoted_in_float_context`, `python_float_context_leaves_literal_alone`) — known gap in float-literal non-promotion for three of the five languages; the generated code for every currently-supported fixture is unaffected, but the test failures remain as a reminder that the typed expression pipeline is not 100% complete (see `sce-build/src/forge/expr.rs`).
 - Timer fixtures excluded from the numerical harness because they require a platform `ITimer` mock that is outside the harness's scope.
+
+---
+
+## 10. Kind Catalog Admission Test
+
+As external consumers request new ForgeKind variants, the catalog's coherence depends on disciplined admission. This section formalizes the three-axis test that a candidate ForgeKind must pass before lifting into the catalog. The test was extracted from the 2026-05-15 pinion-gui GPU pipeline codegen request, which failed all three axes.
+
+A candidate kind is admitted **only when all three axes hold**. Failure on any single axis is rejection — the rule is 3-of-3, not 2-of-3.
+
+### Axis 1: Domain alignment
+
+The kind must operate within SCE's primary domain: **deterministic data layout + concurrency primitives + executable state, emitted at build time, behaviorally identical across all language backends**.
+
+This domain excludes:
+- Graphics resource lifecycle (GPU API state machines, driver-bound resource transitions).
+- Approximate computation (anything that admits "within tolerance" rather than byte-exact equality).
+- Anything where the abstraction unit is vendor-dependent (per-driver behavior differences are part of the contract).
+
+| Example | Domain-aligned? | Reasoning |
+|---|---|---|
+| `link` (byte-stream I/O endpoint) | YES | Deterministic framer + driver-agnostic stream abstraction |
+| `buffer-pool` (SRAM-placed DMA slot table) | YES | Deterministic memory layout; lifecycle FSM is closed-form |
+| `worker` (inbox-based SPSC task) | YES | Deterministic concurrency primitive; semantics identical across backends |
+| GPU pipeline (Vulkan/Metal/DX12 render pass) | NO | Graphics resource lifecycle; driver-bound semantics; pixel parity is "within tolerance" not byte-exact |
+| ML inference operator graph | borderline | Computation is deterministic, but operator catalogs are vendor-dependent (cuDNN, Metal Performance Shaders) — would require closed-set guarantees |
+
+### Axis 2: Futamura projection compatibility
+
+The kind's behavior must be expressible as **build-time code generation given build-time-known inputs**. Per-frame / per-request dynamic dispatch that depends on runtime-only data is not Futamura-projectable in any useful sense — generating code that handles all possible runtime states is equivalent to writing an interpreter, which defeats the purpose.
+
+Practical test: write a sample SCXML for the candidate kind and identify what is known at sce-build time vs at downstream-runtime. If the runtime-only portion dominates (>50% of the actual behavior is dynamic dispatch on runtime data), the kind fails this axis.
+
+| Example | Futamura-compatible? | Reasoning |
+|---|---|---|
+| `codec` (wire encode/decode) | YES | Field offsets + types known at build time; runtime input is just the byte stream |
+| `transform` (pure computation) | YES | All operations expressible from build-time-known formula |
+| `procedure` (sequential steps) | YES | Step sequence known at build; runtime branches on declared conditions |
+| GPU per-frame render loop | NO | Scene composition (mesh list, material assignment, transforms) is runtime-only; codegen cannot specialize without knowing the scene |
+| Network request routing with regex | borderline | Static routes Futamura-compatible; dynamic regex matching is not — split atomic |
+
+### Axis 3: Cross-domain reuse
+
+The kind must serve **at least three independent application domains** drawn from SCE's plausible consumer set. Single-domain kinds expand the catalog without expanding its utility — they belong in a consumer-side library, not in Forge.
+
+Reference domains (non-exhaustive): embedded telemetry, network protocols, game networking, GUI / scene state, MMORPG data plane, sensor pipelines, build / CI systems, ML inference, robotics control.
+
+| Example | Cross-domain reuse | Reasoning |
+|---|---|---|
+| `buffer-pool` | 4+ domains | zenoh wire buffer + GPU asset pool + game packet pool + sensor ring buffer |
+| `worker` | 5+ domains | zenoh receiver + GUI render thread + game tick scheduler + DMA task + ML inference worker |
+| `link` | 3+ domains | network endpoint + sensor stream + zenoh transport |
+| GPU pipeline | 1.5 domains | graphics + (some) GPGPU compute — vertical, not cross-domain |
+| Vulkan-specific descriptor heap | 1 domain | graphics-only; not generalizable |
+
+### Application: 2026-05-15 pinion-gui GPU pipeline request
+
+The request was: "add a ForgeKind variant for GPU pipeline (Vulkan/Metal/DX12/WebGPU 4-backend native emit)".
+
+Result:
+
+| Axis | Pass/Fail | Reason |
+|---|---|---|
+| Domain alignment | FAIL | Graphics resource lifecycle is outside SCE's deterministic data/concurrency domain; pixel parity is approximate |
+| Futamura projection compatibility | FAIL | Per-frame draw call sequence is runtime-data-bound (scene composition, frustum culling, LOD, batching, resource state) — not codegen-able |
+| Cross-domain reuse | FAIL | ~1.5 domains (graphics + partial GPGPU); does not reach the 3-domain threshold |
+
+Failed 3-of-3 axes; rejected. Counter-proposal: pinion uses existing kinds (`codec` for UBO/vertex/PSO layout, `buffer-pool` for GPU resource pools, `worker` for render thread) and pinion's own thin RHI (`pinion-render-rhi`) handles the per-frame dispatch and driver call sequence. Approved by pinion's Round 11 (`consumer_pinion_gui.md` memory entry).
+
+### When admission is borderline
+
+If a candidate fails one axis but passes two, the candidate is rejected from the Forge catalog and reconsidered as either:
+- A consumer-side library (lives in the requesting consumer's repository, not in SCE).
+- A scoped extension to an existing kind (e.g., `codec` gaining a layout-mode attribute extends the kind's reach without admitting a new kind).
+- A future RFC under a clearly named gating condition (e.g., "if N independent domains surface the same need, revisit").
+
+The default is **reject and document the gating condition**, not "provisionally accept and revisit". Provisional acceptance creates carve-outs that are hard to revoke; documented gating creates re-entry on objective evidence.
+
+### Related
+
+- `consumer_pinion_gui.md` (memory) — 2026-05-15 audit trail of the first admission test application.
+- `feedback_extend_forge_before_new_framework.md` (memory) — prior rule: exhaust existing kinds before proposing new kinds; complementary to this admission test.
+- `feedback_no_carveouts.md` (memory) — discipline against provisional / consumer-specific carve-outs.

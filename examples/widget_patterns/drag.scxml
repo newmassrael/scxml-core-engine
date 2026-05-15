@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Widget pattern: pointer drag with threshold-based activation.
+
+  The threshold (typically 4-8 pixels) is host-defined; host raises
+  drag_threshold_crossed when pointer displacement from the initial
+  pointer_down exceeds it. This keeps the state machine pixel-agnostic
+  and platform-portable.
+
+  Events in:
+    pointer_down              - pointer pressed, drag candidate begins
+    pointer_move              - pointer moved (only consumed while dragging)
+    pointer_up                - pointer released
+    pointer_cancel            - input system cancelled the gesture
+                                (focus lost, palm rejection, OS interrupt)
+    drag_threshold_crossed    - host signals displacement exceeded threshold
+
+  Events out (raised):
+    drag_start                - drag confirmed (after threshold crossed)
+    drag_move                 - subsequent pointer_move while dragging
+    drag_end                  - pointer released after drag confirmed
+
+  Tap suppression: pointer_up before drag_threshold_crossed returns to idle
+  without emitting drag_start/drag_end. Host can synthesize a tap/click event
+  separately from this state machine.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       name="DragGesture"
+       initial="idle">
+
+  <state id="idle">
+    <transition event="pointer_down" target="tracking"/>
+  </state>
+
+  <state id="tracking">
+    <transition event="drag_threshold_crossed" target="dragging">
+      <raise event="drag_start"/>
+    </transition>
+    <transition event="pointer_up" target="idle"/>
+    <transition event="pointer_cancel" target="idle"/>
+  </state>
+
+  <state id="dragging">
+    <transition event="pointer_move">
+      <raise event="drag_move"/>
+    </transition>
+    <transition event="pointer_up" target="idle">
+      <raise event="drag_end"/>
+    </transition>
+    <transition event="pointer_cancel" target="idle">
+      <raise event="drag_end"/>
+    </transition>
+  </state>
+</scxml>

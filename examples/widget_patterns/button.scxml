@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Widget pattern: pointer-driven button with hover / pressed / disabled states.
+
+  Events in:
+    pointer_enter   - pointer entered button bounds
+    pointer_leave   - pointer left button bounds
+    pointer_down    - pointer button pressed inside bounds
+    pointer_up      - pointer button released inside bounds
+    enable          - widget becomes interactive
+    disable         - widget becomes non-interactive
+
+  Events out (raised, observable via external queue):
+    click           - press-release sequence inside bounds (W3C SCXML 3.7)
+
+  Press-out semantics: pointer_leave during pressed cancels the press without
+  emitting click (matches common platform widget toolkit behavior).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       name="Button"
+       initial="enabled">
+
+  <state id="enabled" initial="idle">
+    <transition event="disable" target="disabled"/>
+
+    <state id="idle">
+      <transition event="pointer_enter" target="hover"/>
+    </state>
+
+    <state id="hover">
+      <transition event="pointer_leave" target="idle"/>
+      <transition event="pointer_down" target="pressed"/>
+    </state>
+
+    <state id="pressed">
+      <transition event="pointer_up" target="hover">
+        <raise event="click"/>
+      </transition>
+      <transition event="pointer_leave" target="idle"/>
+    </state>
+  </state>
+
+  <state id="disabled">
+    <transition event="enable" target="enabled"/>
+  </state>
+</scxml>

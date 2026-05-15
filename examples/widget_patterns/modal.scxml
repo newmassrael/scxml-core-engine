@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Widget pattern: modal dialog with enter / exit animation lifecycle.
+
+  Events in:
+    open                 - request to show the modal
+    close                - request to dismiss the modal
+    animation_complete   - host raises when its animation system finishes the
+                           current transition (enter or exit)
+
+  Events out (raised):
+    opened               - modal fully visible after enter animation
+    closed               - modal fully hidden after exit animation
+
+  Interruption: open during closing and close during opening both flip direction
+  immediately. Host is expected to honor the new direction (interrupt and reverse
+  the in-flight animation, or restart from current frame).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       name="Modal"
+       initial="closed">
+
+  <state id="closed">
+    <transition event="open" target="opening"/>
+  </state>
+
+  <state id="opening">
+    <transition event="animation_complete" target="open_visible">
+      <raise event="opened"/>
+    </transition>
+    <transition event="close" target="closing"/>
+  </state>
+
+  <state id="open_visible">
+    <transition event="close" target="closing"/>
+  </state>
+
+  <state id="closing">
+    <transition event="animation_complete" target="closed">
+      <raise event="closed"/>
+    </transition>
+    <transition event="open" target="opening"/>
+  </state>
+</scxml>
