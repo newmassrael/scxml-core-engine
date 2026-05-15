@@ -1,7 +1,7 @@
 {
   "language": "python",
-  "version": "0.9.0",
-  "description": "Atomic γ-4f W3C pytest harness — PythonBackend now emits a `test_w3c_{N}.py` wrapper alongside every generated `{N}_sm.py`. The wrapper imports the sibling SM via sys.path insertion (relative to the test directory, with `sce-python-runtime/` also added so `import sce_runtime` resolves without an installed package), drives `engine.advance_time(50)` until `reached_final`, and asserts the final state matches the W3C `pass` literal. SCHEDULED tests get up to 6 s of virtual time; SIMPLE tests resolve on the post-initialize macrostep.",
+  "version": "0.9.1",
+  "description": "ECMAScript builtin glue — `initialize_datamodel` setdefault-binds `false`/`true`/`null`/`undefined` into the user namespace so bare-name literals in `<cond>` / `<assign expr>` resolve to the standard ECMAScript values instead of raising `NameError`. Author `<data>` declarations still win (setdefault, not assignment). Lifts the most common pytest NameError class without changing the generated SM surface elsewhere.",
   "entry_template": "state_machine.py.jinja2",
   "runtime_dependency": "sce-python-runtime",
   "output_extension": ".py"

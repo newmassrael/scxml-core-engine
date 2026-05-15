@@ -186,6 +186,27 @@
         return {{ 'True' if model.binding == 'late' else 'False' }}
 
     def initialize_datamodel(self, engine) -> None:
+        # W3C SCXML B.3 ECMAScript datamodel — surface the four bare-name
+        # literals that SCXML expressions use in `<cond>` and `<assign expr>`.
+        # `setdefault` preserves any user `<data id="null"…>` override so the
+        # author still wins; absent that, eval finds the standard ECMAScript
+        # values instead of raising `NameError` on `null` / `undefined`.
+        self._ns.setdefault("false", False)
+        self._ns.setdefault("true", True)
+        self._ns.setdefault("null", None)
+        self._ns.setdefault("undefined", None)
+
+        # W3C SCXML 5.9.2 `In(state)` predicate — true when `state` (matched
+        # by the SCXML `id` text) is in the active configuration, including
+        # compound ancestors and parallel siblings. Captured against the
+        # engine so guard expressions like `In('s1')` resolve at evaluation
+        # time without threading the engine through every `_guard` call.
+        def _scxml_In(state_id):
+            for active in engine.active_configuration():
+                if str(active) == state_id:
+                    return True
+            return False
+        self._ns["In"] = _scxml_In
 {% set ns_dm = namespace(any=false) %}
 {% if model.variables %}{% set ns_dm.any = true %}{% endif %}
 {% for state_id, st in model.states | dictsort %}
@@ -218,9 +239,6 @@
 {% endfor %}
 {% endfor %}
 {% endif %}
-{% else %}
-        # No <datamodel> declared — nothing to initialise.
-        pass
 {% endif %}
 
     def init_state_datamodel(self, state, engine) -> None:
