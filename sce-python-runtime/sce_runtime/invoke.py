@@ -149,7 +149,19 @@ class ScxmlInvoke(Invoke):
         event = self._child.policy.get_event_from_name(event_name)
         if event is None:
             return
-        self._child.send_event(event)
+        # W3C SCXML C.1: parent→child delivery rides the SCXML Event
+        # I/O Processor, so the child sees `_event.origintype` = SCXML
+        # processor URI (test253). Imported lazily to avoid a cycle.
+        from .engine import SCXML_EVENT_PROCESSOR_URI
+        from .event import EventMetadata
+        self._child.send_event(
+            event,
+            EventMetadata(
+                event_type="external",
+                data=data,
+                origin_type=SCXML_EVENT_PROCESSOR_URI,
+            ),
+        )
 
     def cancel(self) -> None:
         # W3C SCXML 6.4.2 — terminate the child. Marking the engine

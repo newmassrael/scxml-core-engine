@@ -42,6 +42,11 @@ from .scheduler import Scheduler
 S = TypeVar("S")
 E = TypeVar("E")
 
+# W3C SCXML C.1 / C.2 — canonical Event I/O Processor URIs surfaced on
+# `_event.origintype` for events delivered via the corresponding processor.
+SCXML_EVENT_PROCESSOR_URI = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor"
+BASIC_HTTP_EVENT_PROCESSOR_URI = "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
+
 
 class Engine(Generic[S, E]):
     """Generic SCXML engine bound to a concrete StatePolicy.
@@ -164,9 +169,7 @@ class Engine(Generic[S, E]):
         # which registers `vec!["scxml".to_string()]` unconditionally.
         io_processors: List[str] = ["scxml"]
         if self._policy.needs_http_send():
-            io_processors.append(
-                "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
-            )
+            io_processors.append(BASIC_HTTP_EVENT_PROCESSOR_URI)
         self._script_engine.setup_system_variables(
             self._session_id,
             self._policy.machine_name(),
@@ -398,8 +401,17 @@ class Engine(Generic[S, E]):
         `data` carries the marshalled `<param>`/`<content>`/namelist
         payload (W3C SCXML 5.10) — a `dict` for `<param>`/namelist
         builds, the literal/expr result for `<content>`, or `""` when
-        the send had no payload."""
-        metadata = EventMetadata(send_id=sendid, event_type="external", data=data)
+        the send had no payload.
+
+        W3C SCXML C.1: this path is the SCXML Event I/O Processor's
+        own external delivery, so `_event.origintype` defaults to the
+        SCXML processor URI (test253, test352)."""
+        metadata = EventMetadata(
+            send_id=sendid,
+            event_type="external",
+            data=data,
+            origin_type=SCXML_EVENT_PROCESSOR_URI,
+        )
         self._external_queue.append(EventWithMetadata(event=event, metadata=metadata))
 
     def schedule_send(
@@ -439,8 +451,13 @@ class Engine(Generic[S, E]):
         # its own schedules.
         self._drive_active_children(ms)
         for entry in self._scheduler.drain_due(self._now_ms):
+            # W3C SCXML C.1: scheduler drain is the SCXML processor's
+            # delayed-delivery path — origintype mirrors send_external.
             metadata = EventMetadata(
-                send_id=entry.sendid, event_type="external", data=entry.data
+                send_id=entry.sendid,
+                event_type="external",
+                data=entry.data,
+                origin_type=SCXML_EVENT_PROCESSOR_URI,
             )
             self._external_queue.append(
                 EventWithMetadata(event=entry.event, metadata=metadata)
@@ -1000,7 +1017,7 @@ class Engine(Generic[S, E]):
                     event_name,
                     data=data,
                     invoke_id=invoke_id,
-                    origin_type="http://www.w3.org/TR/scxml/#SCXMLEventProcessor",
+                    origin_type=SCXML_EVENT_PROCESSOR_URI,
                 )
             # W3C SCXML 6.3.1 — lift the child's terminal donedata onto
             # `done.invoke.<id>._event.data`. Gated on the persistent
