@@ -653,6 +653,40 @@ sce-go-tests        W3C conformance (202/202)
 - **JSON Builtins**: `//go:embed json_builtins.lua` — shared with C++/Rust/Kotlin
 - **Test Generation**: `sce-codegen generate-w3c -l go` generates test files per W3C test
 
+### Python AOT Backend
+
+Python AOT generates native Python state machines from the same SCXML sources, mirroring Rust/Go/Kotlin/C11. Distinct from the **Python Bindings (pybind11)** channel above: that path runs the C++ Interpreter at runtime; this path runs Python code emitted at build time.
+
+```
+sce-python-runtime    Engine[S,E] generic execution + StatePolicy ABC + IScriptEngine
+                      └── sce_runtime/scripting/lua_engine.py   Lua 5.4 via lupa
+sce-python-tests      W3C conformance (202/202), pytest harness, in-process HTTP echo server
+sce-forge-runtime/    Non-MCU Forge kinds: codec / filter / interpolation / lookup /
+  python/             observer / procedure / timer (mirrors `sce-forge-runtime/rust/src/`)
+```
+
+**Channel separation (sce-python-runtime/README.md)**:
+
+| Package | Mode | Mechanism |
+|---|---|---|
+| `sce` (`sce-python/`) | **Interpreter** | pybind11 → C++ Interpreter parses SCXML at runtime |
+| `sce_runtime` (`sce-python-runtime/`) | **AOT** | Generated `*_sm.py` is the SM; this runtime is a generic driver |
+
+**Architecture**:
+- **Code Generator**: `sce-codegen generate-w3c -l python` + `tools/codegen/templates/python/*.py.jinja2`
+- **Template Parity**: 1:1 port of Rust templates (state_machine / entry_exit_actions / process_transition / scriptengine_helpers / conflict_resolution / invoke_methods). Per-action emission lives in `tools/codegen/templates/python/actions/{assign,cancel,log,raise,script,send}.py.jinja2`; recursive `<if>` / `<foreach>` stay in `_actions.py.jinja2` so nested children can recurse through `emit` without a circular Jinja2 macro import
+- **Scripting**: Lua 5.4 via `lupa` (PyPI), same ECMAScript→Lua transformer (`to_lua_expr` / `to_lua_guard` / `to_lua_script`) every other Lua-family backend uses. DOM bridge (`getElementsByTagName` / `getAttribute`) uses `xml.etree.ElementTree` + a thin `_DomElement` wrapper in `lua_engine.py`, mirroring `sce-rust-lua::dom::XmlRef`
+- **State/Event**: `IntEnum` members named in UPPER_SNAKE_CASE; identifiers normalised via `to_python_const` filter
+- **HTTP**: `sce-python-tests/conftest.py` spawns an in-process `http.server.HTTPServer` on port 8080 mirroring `tests/w3c/standalone_http_server.js` — no Node.js dependency in the AOT CI lane
+- **Mesh**: Permanently rejected at codegen via `reject_python_unsupported_features` per C++-first mesh policy (same as Go / Kotlin)
+- **Forge kinds**: Same admission as C++/Kotlin/Go — non-MCU kinds (Statechart / Transform / Lookup / Condition / Procedure / Aoi / Stream / BoundedCollection) ship; MCU-class kinds (Link / BufferPool / Worker) are rust+c11-only per `forge/codegen_matrix.rs::kind_class`
+
+**Build & Test**:
+- Codegen: `cargo build --bin sce-codegen --features cli --release -p sce-build && ./target/release/sce-codegen generate-w3c -l python`
+- Install runtime: `pip install -e sce-python-runtime/` (single hard dep: `lupa>=2.0`)
+- Run W3C suite: `pytest sce-python-tests/generated/` — 202/202, ~1.5 s wall clock
+- CI: `.github/workflows/w3c-tests.yml::test-python` (family-member AOT lane, sibling to `test-rust` / `test-kotlin` / `test-go`); the pybind channel rides `test-python-bindings`
+
 ---
 
 ## Key Principles
