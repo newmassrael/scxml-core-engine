@@ -56,11 +56,11 @@
    or compiler `-DSCE_SM_FN=...`. The `#ifndef` guard makes the
    override stable across includes / unity builds. */
 #ifndef SCE_SM_FN
-{%- if model.c11_section_attribute_class %}
+{% if model.c11_section_attribute_class %}
 #define SCE_SM_FN __attribute__((section("{{ model.c11_section_attribute_class }}")))
-{%- else %}
+{% else %}
 #define SCE_SM_FN
-{%- endif %}
+{% endif %}
 #endif
 
 {% if model.needs_script_engine %}
@@ -405,8 +405,7 @@ static {{ model.name }}_event_t SCE_SM_FN {{ model.name }}_event_from_name(const
             {{ model.name }}_event_with_meta_t _err_evt;
             memset(&_err_evt, 0, sizeof(_err_evt));
             _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-            strncpy(_err_evt.send_id, "{{ action.auto_send_id | escape_c }}", (size_t)SCE_MAX_ID_LEN - 1u);
-            _err_evt.send_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
+            sce_copy_bounded_id(_err_evt.send_id, "{{ action.auto_send_id | escape_c }}");
             {{ model.name }}_raise(sm, &_err_evt);
             return;
 {% elif action.event and action.idlocation and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr %}
@@ -425,8 +424,7 @@ static {{ model.name }}_event_t SCE_SM_FN {{ model.name }}_event_from_name(const
             {{ model.name }}_event_with_meta_t _send_evt;
             memset(&_send_evt, 0, sizeof(_send_evt));
             _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
-            strncpy(_send_evt.send_id, "{{ action.auto_send_id | escape_c }}", (size_t)SCE_MAX_ID_LEN - 1u);
-            _send_evt.send_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
+            sce_copy_bounded_id(_send_evt.send_id, "{{ action.auto_send_id | escape_c }}");
             {{ model.name }}_raise_external(sm, &_send_evt);
 {% elif (not in_foreach) and action.event and action.target and action.target.startswith('!') and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 6.2 (test159): static-event + invalid target whose
@@ -618,8 +616,7 @@ static {{ model.name }}_event_t SCE_SM_FN {{ model.name }}_event_from_name(const
             memset(&_send_evt, 0, sizeof(_send_evt));
             _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
             {% if action.id %}
-            strncpy(_send_evt.send_id, "{{ action.id | escape_c }}", (size_t)SCE_MAX_ID_LEN - 1u);
-            _send_evt.send_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
+            sce_copy_bounded_id(_send_evt.send_id, "{{ action.id | escape_c }}");
             {% endif %}
             {{ model.name }}_raise_external(sm, &_send_evt);
 {% elif action.event and action.params and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
@@ -1586,7 +1583,7 @@ SCE_SM_FN bool {{ model.name }}_is_final_state({{ model.name }}_state_t s) {
    state, no parent" from "self-parent" (which never occurs in well-formed
    SCXML but the contract is still explicit so callers do not need a
    sentinel value baked into the State enum). */
-static SCE_C_UNUSED SCE_SM_FN{{ model.name }}_state_t state_get_parent({{ model.name }}_state_t s, bool *has_parent) {
+static SCE_C_UNUSED SCE_SM_FN {{ model.name }}_state_t state_get_parent({{ model.name }}_state_t s, bool *has_parent) {
     *has_parent = true;
     switch (s) {
     {% for state_id, state in model.states | dictsort %}
@@ -1635,7 +1632,7 @@ static SCE_C_UNUSED SCE_SM_FN bool state_is_parallel({{ model.name }}_state_t s)
 
 /* W3C SCXML 3.6: Initial child of a compound state. Returns the state
    itself if not compound (callers loop until `child == self` for descend). */
-static SCE_C_UNUSED SCE_SM_FN{{ model.name }}_state_t state_get_initial_child({{ model.name }}_state_t s) {
+static SCE_C_UNUSED SCE_SM_FN {{ model.name }}_state_t state_get_initial_child({{ model.name }}_state_t s) {
     switch (s) {
     {% for state_id, state in model.states | dictsort %}
     {% if state.initial_children and state.initial_children | length > 0 %}
@@ -1684,7 +1681,7 @@ static SCE_C_UNUSED SCE_SM_FN bool is_descendant_of({{ model.name }}_state_t chi
    no active children (single-leaf invariant; <parallel> generalisation
    lands when its first fixture forces multi-leaf walking — at that point
    process_transition will iterate every leaf instead of just the first). */
-static SCE_C_UNUSED SCE_SM_FN{{ model.name }}_state_t config_leaf(uint32_t active) {
+static SCE_C_UNUSED SCE_SM_FN {{ model.name }}_state_t config_leaf(uint32_t active) {
     for (uint32_t s = 0u; s < (uint32_t){{ model.name | upper }}_STATE_COUNT; ++s) {
         if ((active & ((uint32_t)1u << s)) == 0u) {
             continue;
@@ -1995,8 +1992,7 @@ static void SCE_SM_FN execute_entry_actions({{ model.name }}_t *sm, {{ model.nam
             {% if invoke_info.invoke_id and not invoke_info.invoke_id.startswith('_invoke_') %}
             /* W3C SCXML 3.12.1: author-supplied id="{{ invoke_info.invoke_id }}"
                wins over the auto-generated format. */
-            strncpy(_invoke_id_buf, "{{ invoke_info.invoke_id }}", (size_t)SCE_MAX_ID_LEN - 1u);
-            _invoke_id_buf[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
+            sce_copy_bounded_id(_invoke_id_buf, "{{ invoke_info.invoke_id }}");
             {% else %}
             sce_invoke_format_id(_invoke_id_buf, sizeof(_invoke_id_buf),
                                  "{{ state_id }}", (const void *)sm, {{ loop.index0 }});
@@ -2450,7 +2446,7 @@ static void SCE_SM_FN execute_transition_actions({{ model.name }}_t *sm) {
    strict-descendant). compute_exit_set treats both with the same
    "exit everything active" semantics, matching cpp
    StaticExecutionEngine::handleHierarchicalTransition's no-LCA branch. */
-static SCE_C_UNUSED SCE_SM_FN{{ model.name }}_state_t find_lcca({{ model.name }}_state_t source,
+static SCE_C_UNUSED SCE_SM_FN {{ model.name }}_state_t find_lcca({{ model.name }}_state_t source,
                                                         {{ model.name }}_state_t target,
                                                         bool *out_has) {
     bool hp = false;
@@ -3079,12 +3075,7 @@ static void SCE_SM_FN scheduled_push({{ model.name }}_t *sm,
     {{ model.name }}_scheduled_entry_t *slot = &sm->scheduled_queue.buf[pos];
     slot->fire_time_ms = fire_time_ms;
     slot->event = event;
-    if (send_id != NULL) {
-        strncpy(slot->send_id, send_id, (size_t)SCE_MAX_ID_LEN - 1u);
-        slot->send_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
-    } else {
-        slot->send_id[0] = '\0';
-    }
+    sce_copy_bounded_id(slot->send_id, send_id);
 {% if model.needs_script_engine %}
     slot->payload_lua_ref = payload_lua_ref;
 {% endif %}
@@ -3132,12 +3123,7 @@ static void SCE_SM_FN scheduled_push_parent({{ model.name }}_t *sm,
     {{ model.name }}_scheduled_entry_t *slot = &sm->scheduled_queue.buf[pos];
     slot->fire_time_ms = fire_time_ms;
     slot->event = {{ model.name | upper }}_EVENT_NONE;
-    if (send_id != NULL) {
-        strncpy(slot->send_id, send_id, (size_t)SCE_MAX_ID_LEN - 1u);
-        slot->send_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
-    } else {
-        slot->send_id[0] = '\0';
-    }
+    sce_copy_bounded_id(slot->send_id, send_id);
 {% if model.needs_script_engine %}
     slot->payload_lua_ref = LUA_NOREF;
 {% endif %}
@@ -3426,8 +3412,7 @@ static void SCE_SM_FN process_event_queues({{ model.name }}_t *sm) {
     uint8_t count;
 
     while (event_queue_pop(&sm->internal_queue, &evt)) {
-        strncpy(sm->current_event_invoke_id, evt.invoke_id, (size_t)SCE_MAX_ID_LEN - 1u);
-        sm->current_event_invoke_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
+        sce_copy_bounded_id(sm->current_event_invoke_id, evt.invoke_id);
         {% if model.needs_script_engine %}
         /* W3C SCXML 5.10.1 (test331): seed `_event.type` carry — internal
            queue pop is the spec's 'internal' category. set_current_event's
@@ -3454,8 +3439,7 @@ static void SCE_SM_FN process_event_queues({{ model.name }}_t *sm) {
     }
 
     while (event_queue_pop(&sm->external_queue, &evt)) {
-        strncpy(sm->current_event_invoke_id, evt.invoke_id, (size_t)SCE_MAX_ID_LEN - 1u);
-        sm->current_event_invoke_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
+        sce_copy_bounded_id(sm->current_event_invoke_id, evt.invoke_id);
         {% if model.needs_script_engine %}
         /* W3C SCXML 5.10.1 (test331/336): seed `_event.type` /
            `_event.origin` / `_event.origintype` carry — external
@@ -3774,10 +3758,7 @@ SCE_SM_FN void {{ model.name }}_init_with_parent({{ model.name }}_t *sm,
        child's id at the parent's transition time (test338). */
     sm->parent_sm = parent_sm;
     sm->parent_dispatch = dispatch;
-    if (invoke_id != NULL) {
-        strncpy(sm->invoke_id, invoke_id, (size_t)SCE_MAX_ID_LEN - 1u);
-        sm->invoke_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
-    }
+    sce_copy_bounded_id(sm->invoke_id, invoke_id);
     sm->is_running = true;
     {% if model.needs_script_engine %}
     /* W3C SCXML 5.10: Open Lua engine and seed datamodel before any

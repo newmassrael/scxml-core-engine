@@ -88,4 +88,20 @@
 #define SCE_C_UNUSED
 #endif
 
+/* Bounded copy into an `SCE_MAX_ID_LEN`-sized buffer (`invoke_id` /
+   `send_id`). `snprintf` always NUL-terminates and never overflows
+   the destination, sidestepping gcc's `-Wstringop-truncation` false
+   positive on the equivalent `strncpy` + manual NUL pattern that
+   triggers `-Werror` on every test using `<invoke>` or delayed
+   `<send>`. NULL `src` is normalised to the empty string so callers
+   do not need a guard. Lives in `types.h` (not `invoke.h`) so the
+   delayed-send sites in `state_machine.c.jinja2` can call it
+   without dragging the invoke types into invoke-free fixtures. */
+#include <stddef.h>
+#include <stdio.h>
+SCE_C_UNUSED static inline void
+sce_copy_bounded_id(char *dst, const char *src) {
+    (void)snprintf(dst, (size_t)SCE_MAX_ID_LEN, "%s", src != NULL ? src : "");
+}
+
 #endif  // SCE_TYPES_H

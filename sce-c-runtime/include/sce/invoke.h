@@ -65,14 +65,7 @@ sce_invoke_pending_push(sce_invoke_pending_queue_t *q,
     }
     q->entries[q->count].state = state;
     q->entries[q->count].invoke_idx = invoke_idx;
-    if (invoke_id != NULL) {
-        strncpy(q->entries[q->count].invoke_id,
-                invoke_id,
-                (size_t)SCE_MAX_ID_LEN - 1u);
-        q->entries[q->count].invoke_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
-    } else {
-        q->entries[q->count].invoke_id[0] = '\0';
-    }
+    sce_copy_bounded_id(q->entries[q->count].invoke_id, invoke_id);
     q->count++;
 }
 

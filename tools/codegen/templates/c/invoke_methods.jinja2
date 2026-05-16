@@ -44,10 +44,7 @@ static void {{ model.name }}_dispatch_external_by_name(void *opaque, const char 
     {{ model.name }}_t *sm = ({{ model.name }}_t *)opaque;
     {{ model.name }}_event_with_meta_t evt;
     memset(&evt, 0, sizeof(evt));
-    if (invoke_id != NULL) {
-        strncpy(evt.invoke_id, invoke_id, (size_t)SCE_MAX_ID_LEN - 1u);
-        evt.invoke_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
-    }
+    sce_copy_bounded_id(evt.invoke_id, invoke_id);
     /* W3C SCXML 6.4 (test233): copy child-supplied `<send><param>` Lua-
        source string into `event_with_meta_t.data`. The dequeue path
        loads it into the parent's L state as `_event.data` before
@@ -164,9 +161,7 @@ static void {{ model.name }}_execute_pending_invokes({{ model.name }}_t *sm) {
                for async-final children whose own SM struct does not
                carry an `invoke_id` slot (test247-shape children with
                no `<send target="#_parent">`). */
-            strncpy(sm->child_{{ invoke_info.field_suffix }}_invoke_id, p->invoke_id,
-                    (size_t)SCE_MAX_ID_LEN - 1u);
-            sm->child_{{ invoke_info.field_suffix }}_invoke_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
+            sce_copy_bounded_id(sm->child_{{ invoke_info.field_suffix }}_invoke_id, p->invoke_id);
             {% if invoke_info.child_needs_script_engine and (invoke_info.params or invoke_info.namelist) %}
             /* W3C SCXML 6.4.1 (test226/240/241/243/244/245/276):
                `<param>` and `namelist` value passing. Evaluate each
@@ -259,8 +254,7 @@ static void {{ model.name }}_execute_pending_invokes({{ model.name }}_t *sm) {
                    the `Event::Done_invoke_<id>` vs `Event::Done_invoke`
                    ternary. */
                 _done_evt.event = {% if invoke_info.use_specific_event %}{{ model.name | upper }}_EVENT_DONE_INVOKE_{{ invoke_info.invoke_id | upper | replace('.', '_') | replace('-', '_') }}{% else %}{{ model.name | upper }}_EVENT_DONE_INVOKE{% endif %};
-                strncpy(_done_evt.invoke_id, p->invoke_id, (size_t)SCE_MAX_ID_LEN - 1u);
-                _done_evt.invoke_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
+                sce_copy_bounded_id(_done_evt.invoke_id, p->invoke_id);
                 {{ model.name }}_raise_external(sm, &_done_evt);
             }
             continue;
@@ -312,15 +306,12 @@ static void {{ model.name }}_execute_pending_invokes({{ model.name }}_t *sm) {
                `done.invoke` synchronously). */
             {{ invoke_info.child_name }}_init(&sm->child_{{ invoke_info.field_suffix }});
             sm->child_{{ invoke_info.field_suffix }}_active = true;
-            strncpy(sm->child_{{ invoke_info.field_suffix }}_invoke_id, p->invoke_id,
-                    (size_t)SCE_MAX_ID_LEN - 1u);
-            sm->child_{{ invoke_info.field_suffix }}_invoke_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
+            sce_copy_bounded_id(sm->child_{{ invoke_info.field_suffix }}_invoke_id, p->invoke_id);
             if ({{ invoke_info.child_name }}_is_in_final_state(&sm->child_{{ invoke_info.field_suffix }})) {
                 {{ model.name }}_event_with_meta_t _done_evt;
                 memset(&_done_evt, 0, sizeof(_done_evt));
                 _done_evt.event = {% if invoke_info.use_specific_event %}{{ model.name | upper }}_EVENT_DONE_INVOKE_{{ invoke_info.invoke_id | upper | replace('.', '_') | replace('-', '_') }}{% else %}{{ model.name | upper }}_EVENT_DONE_INVOKE{% endif %};
-                strncpy(_done_evt.invoke_id, p->invoke_id, (size_t)SCE_MAX_ID_LEN - 1u);
-                _done_evt.invoke_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
+                sce_copy_bounded_id(_done_evt.invoke_id, p->invoke_id);
                 {{ model.name }}_raise_external(sm, &_done_evt);
             }
             continue;
@@ -358,9 +349,7 @@ static void {{ model.name }}_drive_active_children({{ model.name }}_t *sm) {
             {{ model.name }}_event_with_meta_t _done_evt;
             memset(&_done_evt, 0, sizeof(_done_evt));
             _done_evt.event = {% if invoke_info.use_specific_event %}{{ model.name | upper }}_EVENT_DONE_INVOKE_{{ invoke_info.invoke_id | upper | replace('.', '_') | replace('-', '_') }}{% else %}{{ model.name | upper }}_EVENT_DONE_INVOKE{% endif %};
-            strncpy(_done_evt.invoke_id, sm->child_{{ invoke_info.field_suffix }}_invoke_id,
-                    (size_t)SCE_MAX_ID_LEN - 1u);
-            _done_evt.invoke_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
+            sce_copy_bounded_id(_done_evt.invoke_id, sm->child_{{ invoke_info.field_suffix }}_invoke_id);
             {{ model.name }}_raise_external(sm, &_done_evt);
         }
     }
@@ -397,9 +386,7 @@ static void {{ model.name }}_drive_active_children({{ model.name }}_t *sm) {
             {{ model.name }}_event_with_meta_t _done_evt;
             memset(&_done_evt, 0, sizeof(_done_evt));
             _done_evt.event = {% if invoke_info.use_specific_event %}{{ model.name | upper }}_EVENT_DONE_INVOKE_{{ invoke_info.invoke_id | upper | replace('.', '_') | replace('-', '_') }}{% else %}{{ model.name | upper }}_EVENT_DONE_INVOKE{% endif %};
-            strncpy(_done_evt.invoke_id, sm->child_{{ invoke_info.field_suffix }}_invoke_id,
-                    (size_t)SCE_MAX_ID_LEN - 1u);
-            _done_evt.invoke_id[(size_t)SCE_MAX_ID_LEN - 1u] = '\0';
+            sce_copy_bounded_id(_done_evt.invoke_id, sm->child_{{ invoke_info.field_suffix }}_invoke_id);
             {{ model.name }}_raise_external(sm, &_done_evt);
         }
     }
