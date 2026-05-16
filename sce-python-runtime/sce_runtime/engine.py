@@ -182,25 +182,18 @@ class Engine(Generic[S, E]):
         # W3C SCXML 5.3 early binding: datamodel initialisation runs before
         # any onentry action fires.
         self._policy.initialize_datamodel(self)
-        # W3C SCXML 3.3: build the entry path root-first by walking up
-        # from the parser-resolved initial leaf. For documents that contain
-        # `<parallel>` on the initial path, `_enter_state` automatically
-        # branches into every region instead of following the parser's
-        # single-leaf resolution.
+        # W3C SCXML 3.3: enter the parser-resolved initial leaf by
+        # walking its ancestor chain root-first. At each compound on
+        # the path the child on the way to the leaf wins over the
+        # compound's default initial child (test388 — root
+        # `<scxml initial="s012">` lands at s012, not s01's default
+        # s011); at each parallel ancestor the path-side region
+        # follows the leaf path while the OTHER regions enter via
+        # their default `get_initial_children` (test413). Mirrors
+        # Rust's `build_entry_chain` + per-state generated parallel
+        # recursion at `sce-rust-runtime/src/engine.rs`.
         initial_leaf = self._policy.initial_state()
-        chain = []
-        state: Optional[S] = initial_leaf
-        while state is not None:
-            chain.append(state)
-            state = self._policy.get_parent(state)
-        chain.reverse()
-        # Enter from the top of the document; the recursive entry handles
-        # parallel branching and the initial-child chain on its own.
-        root = chain[0]
-        # Re-target descent to the topmost compound so parallel branching
-        # at any depth is honoured, regardless of where the parser's
-        # `initial_leaf` lands.
-        self._enter_state(root)
+        self._enter_initial_path(initial_leaf)
         if self._reached_final or not self._is_running:
             return
         self._process_queues()
@@ -782,6 +775,62 @@ class Engine(Generic[S, E]):
         # `_start_pending_invokes` so onentry observes a stable config
         # before any child runs.
         self._policy.defer_invokes_on_entry(state, self)
+
+    def _enter_initial_path(self, leaf: S) -> None:
+        """W3C SCXML 3.3 — enter the explicit document-level initial
+        leaf, branching parallel regions but following the path-side
+        child at every compound ancestor. Companion to `_enter_state`
+        (which descends via default `get_initial_children` at every
+        compound); separated because the document's `<scxml initial=>`
+        attribute makes the path explicit only at the leaf, while
+        every compound between root and leaf still needs path-aware
+        descent so the explicit leaf is reached rather than the
+        compound's parser-default first child."""
+        upward: List[S] = []
+        state: Optional[S] = leaf
+        while state is not None:
+            upward.append(state)
+            state = self._policy.get_parent(state)
+        path = list(reversed(upward))
+        path_child: Dict[S, S] = {
+            path[i]: path[i + 1] for i in range(len(path) - 1)
+        }
+        self._descend_initial_path(path[0], path_child)
+
+    def _descend_initial_path(self, state: S, path_child: Dict[S, S]) -> None:
+        self._run_entry(state)
+        if self._policy.is_final_state(state):
+            self._active_leaves.append(state)
+            self._mark_root_final_if_top_level(state)
+            return
+        if self._policy.is_parallel_state(state):
+            regions = sorted(
+                self._policy.get_parallel_regions(state),
+                key=self._policy.get_document_order,
+            )
+            on_path = path_child.get(state)
+            for region in regions:
+                if region == on_path:
+                    self._descend_initial_path(region, path_child)
+                else:
+                    # Sibling regions follow their parser-resolved default
+                    # entry chain (which `_enter_state` walks).
+                    self._enter_state(region)
+                if self._reached_final or not self._is_running:
+                    return
+            return
+        if self._policy.is_compound_state(state):
+            on_path = path_child.get(state)
+            if on_path is not None:
+                self._descend_initial_path(on_path, path_child)
+                return
+            children = self._policy.get_initial_children(state)
+            if not children:
+                self._active_leaves.append(state)
+                return
+            self._enter_state(children[0])
+            return
+        self._active_leaves.append(state)
 
     def _enter_state(self, state: S) -> None:
         """Recursively enter `state`: run its entry actions, then descend
