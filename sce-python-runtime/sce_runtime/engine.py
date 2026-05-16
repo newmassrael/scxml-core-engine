@@ -756,12 +756,19 @@ class Engine(Generic[S, E]):
         then descend into `target` via `_enter_state`. Shared by the
         normal-target and history-restore paths so they cannot drift.
 
-        W3C SCXML Appendix D.2 `addDescendantStatesToEnter` — when an
+        W3C SCXML Appendix D.2 `addDescendantStatesToEnter` — when any
         ancestor on the entry path is a `<parallel>`, every sibling
         region (not the one on the target's path) must also be entered
-        via its default initial chain (test504/505/533). Without this,
-        an external transition that re-enters a parallel through one of
-        its descendants would silently drop the sibling regions."""
+        via its default initial chain. This covers both:
+          - parallel ancestor freshly entered as part of `upward`
+            (target descends into a not-yet-active parallel ancestor);
+          - parallel ancestor that is the transition boundary itself
+            (sibling-to-sibling transition under a parallel: the
+            parallel stays active, but its other regions were exited
+            and must be re-entered — test403c, test364).
+        Mirrors the Rust template's `is_parallel_state(*state)`
+        re-entry fan-out at
+        `tools/codegen/templates/rust/conflict_resolution.rs.jinja2`."""
         upward: List[S] = []
         state: Optional[S] = target
         while state is not None and state != boundary:
@@ -774,6 +781,11 @@ class Engine(Generic[S, E]):
         path_child: Dict[S, S] = {}
         for i in range(len(upward) - 1):
             path_child[upward[i + 1]] = upward[i]
+        # Boundary itself participates in path_child so the fan-out
+        # below knows which child of the boundary lies on the target's
+        # path when the boundary is a still-active parallel.
+        if boundary is not None and upward:
+            path_child[boundary] = upward[-1]
         # Enter from boundary-child down to target, then descend.
         for s in reversed(upward[1:]):
             if s in already_active:
@@ -784,18 +796,37 @@ class Engine(Generic[S, E]):
                 self._mark_root_final_if_top_level(s)
                 return
             if self._policy.is_parallel_state(s):
-                on_path = path_child.get(s)
-                regions = sorted(
-                    self._policy.get_parallel_regions(s),
-                    key=self._policy.get_document_order,
-                )
-                for region in regions:
-                    if region == on_path:
-                        continue
-                    self._enter_state(region)
-                    if self._reached_final or not self._is_running:
-                        return
+                self._fanout_parallel_siblings(s, path_child, already_active)
+                if self._reached_final or not self._is_running:
+                    return
+        if (
+            boundary is not None
+            and self._policy.is_parallel_state(boundary)
+        ):
+            self._fanout_parallel_siblings(boundary, path_child, already_active)
+            if self._reached_final or not self._is_running:
+                return
         self._enter_state(target)
+
+    def _fanout_parallel_siblings(
+        self, parallel_state: S, path_child: Dict[S, S], already_active: Set[S]
+    ) -> None:
+        """W3C SCXML Appendix D.2 — for each region of `parallel_state`
+        not already active and not on the target's path, enter via the
+        region's default initial chain."""
+        on_path = path_child.get(parallel_state)
+        regions = sorted(
+            self._policy.get_parallel_regions(parallel_state),
+            key=self._policy.get_document_order,
+        )
+        for region in regions:
+            if region == on_path:
+                continue
+            if region in already_active:
+                continue
+            self._enter_state(region)
+            if self._reached_final or not self._is_running:
+                return
 
     def _run_entry(self, state: S) -> None:
         """W3C SCXML 5.3 + 3.8 — fire late-binding local datamodel init
@@ -872,7 +903,14 @@ class Engine(Generic[S, E]):
             if not children:
                 self._active_leaves.append(state)
                 return
-            self._enter_state(children[0])
+            # W3C SCXML 3.3: `initial="s1 s2"` (multi-target initial) pre-
+            # resolves to a leaf list that may descend through several
+            # ancestors. `_enter_target_step` walks the full ancestor
+            # chain from the leaf back up to `state`; the parallel
+            # fan-out it performs uses each region's parser-rewritten
+            # default initial (test364), which the parser has already
+            # set to the sibling target leaf.
+            self._enter_target_step(children[0], state)
             return
 
     def _enter_state(self, state: S) -> None:
@@ -916,7 +954,11 @@ class Engine(Generic[S, E]):
                 # Defensive: well-formed compound has at least one child.
                 self._active_leaves.append(state)
                 return
-            self._enter_state(children[0])
+            # W3C SCXML 3.3: multi-target initial — walk through ancestors
+            # via `_enter_target_step` so the parallel fan-out hits each
+            # region's parser-rewritten default (test364). Single-target
+            # case naturally degenerates to a one-leg `_enter_state` call.
+            self._enter_target_step(children[0], state)
             return
 
     def _snapshot_history(self, exiting: Set[S]) -> None:
