@@ -1190,10 +1190,24 @@ fn cmd_generate(
         let out = Path::new(output_dir);
         let pascal = crate::filters::to_pascal_case(input_stem.to_string());
 
+        // §5.O traceability — every drift-headered file must carry an
+        // `SCE-MAP:` marker, otherwise `validate_emitted_files_have_markers`
+        // fires `traceability/meta-generated-source-line-marker-missing`
+        // on the next codegen call in the same output dir. Rejection
+        // stubs go through `write_drift_aware` (which prepends the
+        // §6.2.6 header), so they MUST include a marker line too. Use
+        // the SCXML basename + line 1 — the document was rejected at
+        // parse time, no finer location is available.
+        let scxml_basename = Path::new(scxml_path)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown.scxml");
+
         match lang {
             Language::Cpp => {
                 let header = format!(
                     "// W3C SCXML 5.8: Document rejected\n\
+                     // SCE-MAP: {scxml_basename}:1\n\
                      #pragma once\n\
                      #define SCE_DOCUMENT_REJECTED 1\n\
                      namespace SCE::Generated::{name} {{\n\
@@ -1207,13 +1221,17 @@ fn cmd_generate(
                 write_drift_aware(error_format, out.join(format!("{input_stem}_sm.inl")), inl, &drift_ctx);
             }
             Language::Rust => {
-                let stub = "// W3C SCXML 5.8: Document rejected\n\
-                     // This state machine was rejected at parse time.\n";
-                write_drift_aware(error_format, out.join(format!("{input_stem}_sm.rs")), stub, &drift_ctx);
+                let stub = format!(
+                    "// W3C SCXML 5.8: Document rejected\n\
+                     // SCE-MAP: {scxml_basename}:1\n\
+                     // This state machine was rejected at parse time.\n"
+                );
+                write_drift_aware(error_format, out.join(format!("{input_stem}_sm.rs")), &stub, &drift_ctx);
             }
             Language::Kotlin => {
                 let stub = format!(
                     "// W3C SCXML 5.8: Document rejected\n\
+                     // SCE-MAP: {scxml_basename}:1\n\
                      package com.sce.generated.{name}\n",
                     name = input_stem
                 );
@@ -1222,14 +1240,18 @@ fn cmd_generate(
             Language::Go => {
                 let stub = format!(
                     "// W3C SCXML 5.8: Document rejected\n\
+                     // SCE-MAP: {scxml_basename}:1\n\
                      package {name}\n",
                     name = input_stem
                 );
                 write_drift_aware(error_format, out.join(format!("{input_stem}_sm.go")), &stub, &drift_ctx);
             }
             Language::Python => {
-                let stub = "# W3C SCXML 5.8: Document rejected\n";
-                write_drift_aware(error_format, out.join(format!("{input_stem}_sm.py")), stub, &drift_ctx);
+                let stub = format!(
+                    "# W3C SCXML 5.8: Document rejected\n\
+                     # SCE-MAP: {scxml_basename}:1\n"
+                );
+                write_drift_aware(error_format, out.join(format!("{input_stem}_sm.py")), &stub, &drift_ctx);
             }
             Language::C11 => {
                 // RFC §5.J.1: C11 statechart stub. M1 emits a header-only
@@ -1245,6 +1267,7 @@ fn cmd_generate(
                 let guard = filters::to_snake_case(input_stem.to_string()).to_uppercase();
                 let header = format!(
                     "/* W3C SCXML 5.8: Document rejected */\n\
+                     // SCE-MAP: {scxml_basename}:1\n\
                      #ifndef SCE_GEN_{guard}_SM_H\n\
                      #define SCE_GEN_{guard}_SM_H\n\
                      #define SCE_DOCUMENT_REJECTED 1\n\
@@ -1255,6 +1278,7 @@ fn cmd_generate(
                 );
                 let body = format!(
                     "/* W3C SCXML 5.8: Document rejected */\n\
+                     // SCE-MAP: {scxml_basename}:1\n\
                      #include \"{input_stem}_sm.h\"\n\
                      const int sce_document_rejected_{stem} = 1;\n",
                     input_stem = input_stem,
