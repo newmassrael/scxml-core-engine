@@ -104,6 +104,23 @@
 {% else %}
 {{ indent }}return  # W3C 6.2: invalid target — but document declares no error.execution descriptor
 {% endif %}
+{% elif action.target == '#_internal' %}
+{# W3C SCXML 6.2 (test189, test495): static `<send target="#_internal">`
+   enqueues onto the current session's internal queue. Internal events
+   drain before externals (Appendix D.2), so the internal-targeted
+   send overtakes any external sends raised in the same macrostep.
+   Mirrors `tools/codegen/templates/rust/actions/send.rs.jinja2:227`. #}
+{% set _int_has_payload = action.params or action.content or action.contentexpr or action.namelist %}
+{% if _int_has_payload -%}
+{{ indent }}_int_data = self._eval_send_payload(engine, [
+{%- for param in action.params -%}
+({{ param.name | py_string_literal }}, {{ param.expr | to_lua_expr | py_string_literal }}),
+{%- endfor -%}
+], {{ action.content | py_string_literal }}, {{ action.contentexpr | to_lua_expr | py_string_literal }}, {{ action.namelist | py_string_literal }})
+{{ indent }}engine.raise_internal({{ machine_name }}Event.{{ action.event | to_python_const }}, EventMetadata(data=_int_data))
+{% else -%}
+{{ indent }}engine.raise_internal({{ machine_name }}Event.{{ action.event | to_python_const }})
+{% endif -%}
 {% elif action.target.startswith('#_') and action.target != '#_internal' %}
 {# W3C SCXML 6.4 — parent-to-child send. The active `Invoke` looks up
    the wire-format event name on the child policy's enum and pushes
