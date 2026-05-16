@@ -67,6 +67,45 @@ class _LuaSession:
         _install_ecmascript_builtins(self.runtime)
 
 
+# ── Undeclared-identifier detection (ECMAScript ReferenceError parity) ──
+
+_LUA_KEYWORDS = frozenset({
+    "and", "break", "do", "else", "elseif", "end", "false", "for",
+    "function", "goto", "if", "in", "local", "nil", "not", "or",
+    "repeat", "return", "then", "true", "until", "while",
+})
+
+
+def _is_undeclared_simple_variable(expr: str, session: "_LuaSession") -> bool:
+    """Detect references to undeclared globals in the way C++ /
+    Rust / Go / Kotlin / C11 do (W3C B.2 ReferenceError parity).
+    Handles bare identifiers (`Var1`) and member access
+    (`Var1.foo`, `Var1["x"]`) by examining the base name only.
+    Returns False for expressions whose base name is a Lua keyword,
+    a declared SCXML variable, or a Lua standard-library global."""
+    if not expr:
+        return False
+    first = expr[0]
+    if not (first.isalpha() or first == "_"):
+        return False
+    base_end = len(expr)
+    for i, ch in enumerate(expr):
+        if not (ch.isalnum() or ch == "_"):
+            base_end = i
+            break
+    if base_end == 0:
+        return False
+    base = expr[:base_end]
+    if base in _LUA_KEYWORDS:
+        return False
+    if base in session.declared_vars:
+        return False
+    # Lua standard-library globals (`table`, `string`, `math`, …) and
+    # SCE-installed builtins (`_scxml_truthy`, `_event`, `_ioprocessors`,
+    # …) are non-nil in the session's global table.
+    return session.runtime.globals()[base] is None
+
+
 # ── ECMAScript builtins (W3C SCXML B.2 semantics over Lua 5.4) ─────
 
 
@@ -338,10 +377,23 @@ class LuaScriptEngine(IScriptEngine):
 
     def evaluate_expression(self, session_id: str, expression: str) -> ScriptValue:
         """W3C SCXML 5.3 — evaluate a single expression. Empty input
-        returns NULL (matches the C++ convention for omitted attrs)."""
+        returns NULL (matches the C++ convention for omitted attrs).
+
+        ECMAScript semantics for undeclared globals (W3C B.2): JavaScript
+        throws ReferenceError, Lua silently returns nil. C++ / Rust /
+        Go / Kotlin / C11 all detect the simple-identifier case before
+        eval and surface ReferenceError. Mirrors
+        `sce-rust-lua/src/lib.rs::is_undeclared_simple_variable` so
+        `<send namelist=...>` / `<donedata><param expr=...>` / `<assign
+        expr=...>` raise `error.execution` on undeclared reads (test343,
+        test553, etc.)."""
         session = self._require_session(session_id)
         if not expression:
             return ScriptValue.null()
+        if _is_undeclared_simple_variable(expression, session):
+            raise ScriptRuntimeError(
+                f"ReferenceError: {expression} is not defined"
+            )
         try:
             result = session.runtime.eval(expression)
         except lupa.LuaSyntaxError as exc:
