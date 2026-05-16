@@ -339,14 +339,27 @@
         `""` so `_event.data` is the empty string (W3C default).
         `params` is a sequence of `(name, lua_expr)` tuples; `namelist`
         is whitespace-separated variable names whose current bindings
-        join the parameter dict."""
+        join the parameter dict.
+
+        W3C SCXML 6.2: "If the evaluation of `<send>`'s arguments produces
+        an error, the Processor MUST discard the message without
+        attempting to deliver it. Furthermore, it MUST place the error
+        'error.execution' on the internal event queue." Implemented by
+        raising `error.execution` + `_ActionAbort` so the caller's outer
+        `try/except _ActionAbort: pass` swallows the rest of THIS block
+        (W3C 3.8) and the surrounding `engine.send_external(...)` call
+        does not run. Mirrors the Rust template's `_send_aborted` flag
+        in `tools/codegen/templates/rust/actions/send.rs.jinja2`, but
+        unified with the W3C 3.8 block-abort contract every other
+        Python-AOT helper already uses (`_assign`, `_exec`, `_guard`)."""
         if lua_content_expr:
             try:
                 return engine._script_engine.evaluate_expression(
                     self._session_id, lua_content_expr
                 ).to_python()
             except _ScriptError:
-                return ""
+                self._raise_error_execution(engine)
+                raise _ActionAbort
         if content:
             return content
         if not params and not namelist:
@@ -354,19 +367,26 @@
         marshalled = {}
         if namelist:
             for var in namelist.split():
+                if not engine._script_engine.has_variable(
+                    self._session_id, var
+                ):
+                    self._raise_error_execution(engine)
+                    raise _ActionAbort
                 try:
                     marshalled[var] = engine._script_engine.get_variable(
                         self._session_id, var
                     ).to_python()
                 except _ScriptError:
-                    marshalled[var] = None
+                    self._raise_error_execution(engine)
+                    raise _ActionAbort
         for name, lua_expr in params:
             try:
                 marshalled[name] = engine._script_engine.evaluate_expression(
                     self._session_id, lua_expr
                 ).to_python()
             except _ScriptError:
-                marshalled[name] = None
+                self._raise_error_execution(engine)
+                raise _ActionAbort
         return marshalled
 
     def set_current_event(self, event, metadata) -> None:
