@@ -7,6 +7,13 @@
 #
 # Gates:
 #   1. cargo build sce-codegen               — every downstream gate uses it
+#   1b. Rust mod.rs ↔ subdir drift check     — fail fast on orphaned modules
+#                                              before Stage 2 spends ~30s
+#                                              compiling to the same error
+#                                              (reproduces the
+#                                              donedata_local_invoke
+#                                              integration/ tree split push
+#                                              failure)
 #   2. cargo test --workspace --release      — Rust unit + integration suite
 #                                              (covers forge goldens, mesh,
 #                                              diagnostic contract tests)
@@ -58,6 +65,65 @@ trap cleanup EXIT
 log_step "Stage 1/5 — cargo build sce-codegen --release"
 cargo build --bin sce-codegen --features cli --release -p sce-build \
     || fail_step "Stage 1 (sce-codegen build)"
+
+# ── Stage 1b: Rust mod.rs ↔ subdir drift check ────────────────────
+# Catch the exact failure mode that motivated the integration/ tree
+# split: a `pub mod X;` in an aggregator mod.rs whose `X/` subdir is
+# missing (rustc → E0432 "unresolved import"), or an `X/` subdir on
+# disk that the aggregator forgot to `pub mod` (silently dead code OR
+# downstream E0432 from a test that imports it). Either way Stage 2's
+# `cargo test --workspace` catches it eventually — but only after
+# ~30 s of compilation; this fast structural check fails in under a
+# second with a precise diff that points at the offending file.
+log_step "Stage 1b/5 — Rust mod.rs ↔ subdir drift check"
+check_mod_tree() {
+    local mod_file="$1"
+    local parent_dir
+    parent_dir="$(dirname "$mod_file")"
+    [[ -f "$mod_file" ]] || { printf '  SKIP: %s (missing)\n' "$mod_file" >&2; return 0; }
+
+    # `pub mod X;` lines in mod.rs (ignore commented-out / nested
+    # forms — the aggregator convention is a flat top-level list).
+    local listed
+    listed="$(grep -E '^pub mod [a-zA-Z_][a-zA-Z0-9_]*;' "$mod_file" \
+        | sed -E 's/^pub mod ([a-zA-Z_][a-zA-Z0-9_]*);.*/\1/' \
+        | sort)"
+
+    # Subdirectories sitting next to mod.rs. Every codegen-output
+    # subdir here is a Rust module by convention (carries its own
+    # mod.rs). A future non-module sibling dir would need a small
+    # exclusion list; flag it loudly rather than ignore silently.
+    local on_disk
+    on_disk="$(find "$parent_dir" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort)"
+
+    # Symmetric diff: line 1 = mod.rs entries with no dir; line 2 = dirs
+    # with no `pub mod` entry. `comm -3` prints both lines indented so
+    # the location of each drift type is clear from the report.
+    local listed_only on_disk_only
+    listed_only="$(comm -23 <(echo "$listed") <(echo "$on_disk"))"
+    on_disk_only="$(comm -13 <(echo "$listed") <(echo "$on_disk"))"
+    if [[ -n "$listed_only" || -n "$on_disk_only" ]]; then
+        printf '  FAIL: %s\n' "$mod_file" >&2
+        [[ -n "$listed_only" ]] && {
+            printf '    pub mod entries with no matching subdir (rustc E0432):\n' >&2
+            printf '      %s\n' $listed_only >&2
+        }
+        [[ -n "$on_disk_only" ]] && {
+            printf '    subdirs not registered in mod.rs (orphaned modules):\n' >&2
+            printf '      %s\n' $on_disk_only >&2
+        }
+        return 1
+    fi
+    return 0
+}
+
+drift_count=0
+for mod_file in \
+    sce-rust-tests/src/generated/mod.rs \
+    sce-rust-tests/src/integration/mod.rs; do
+    check_mod_tree "$mod_file" || drift_count=$((drift_count + 1))
+done
+(( drift_count == 0 )) || fail_step "Stage 1b ($drift_count mod.rs drift)"
 
 # ── W3C HTTP test server (mirror w3c-tests.yml:379) ───────────────
 # Rust integration tests for W3C SCXML C.2 BasicHTTPEventProcessor
