@@ -158,9 +158,10 @@
         """W3C SCXML 5.2.2 — initialise a `<data>` element whose content
         is inline text. Mirrors Rust's `eval_or_set_string` (Atomic γ-3a,
         helpers/datamodel_init.rs:107): try Lua eval first, fall back to
-        JSON.parse for `[...]` / `{...}` payloads, then to a
-        whitespace-normalised string. Used by templates emitting
-        `<data id="X">[1,2,3]</data>` style content."""
+        JSON.parse for `[...]` / `{...}` payloads, then XML→DOM
+        (`set_variable_as_dom`) for `<…>` content per W3C B.2 (test557 +
+        test557 via `src=`), and finally to a whitespace-normalised
+        string."""
         try:
             value = engine._script_engine.evaluate_expression(
                 self._session_id, lua_expr
@@ -178,6 +179,19 @@
                 )
                 engine._script_engine.declare_variable(
                     self._session_id, var_id, value
+                )
+                return
+            except _ScriptError:
+                pass
+        if trimmed.startswith("<"):
+            # W3C SCXML B.2 — XML inline content / `src="file:*.xml"`
+            # loaded text binds as a DOM-style value so generated
+            # guards can call `:getElementsByTagName(...)` /
+            # `:getAttribute(...)`. Mirrors Rust template's
+            # `datamodel_macros.rs.jinja2:62-69` XML branch.
+            try:
+                engine._script_engine.set_variable_as_dom(
+                    self._session_id, var_id, trimmed
                 )
                 return
             except _ScriptError:

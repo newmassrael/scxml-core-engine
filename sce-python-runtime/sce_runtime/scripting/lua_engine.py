@@ -21,6 +21,7 @@ between Python values and Lua values is centralised in `_python_to_lua`
 
 from __future__ import annotations
 
+import xml.etree.ElementTree as _ET
 from threading import RLock
 from typing import Any, Callable, Dict, List, Optional
 
@@ -448,13 +449,23 @@ class LuaScriptEngine(IScriptEngine):
     def set_variable_as_dom(
         self, session_id: str, name: str, xml_content: str
     ) -> None:
-        # W3C SCXML B.2 — DOM datamodel support stub. Storing the raw
-        # XML text on the Lua side lets future XPath helpers run
-        # against it; an actual DOM tree binding lands with the B.2
-        # atomic. The variable name does not need to be in
-        # `declared_vars` if it was registered as DOM-only.
+        # W3C SCXML B.2 — parse `xml_content` and bind the resulting DOM
+        # root at `name`. The DOM is reachable from Lua expressions via
+        # `:getElementsByTagName(tag)` / `:getAttribute(name)` /
+        # `:getTagName()` per the ECMAScript data-model contract
+        # (test557, test561). Mirrors `sce-rust-lua::set_variable_as_dom`
+        # which wraps the parsed tree in an `XmlRef` userdata — the
+        # Python side uses `_DomElement` whose bound methods give
+        # identical observable behaviour via lupa's colon-call sugar.
+        # Parse failure leaves the variable bound to a whitespace-
+        # normalised string per W3C B.2 (matches cpp `LuaDOMBinding::
+        # pushDOMObject` on `XMLDocument::isValid()` = false).
         session = self._require_session(session_id)
-        session.runtime.globals()[name] = xml_content
+        dom = _parse_xml_to_dom(xml_content, session.runtime)
+        if dom is None:
+            session.runtime.globals()[name] = " ".join(xml_content.split())
+        else:
+            session.runtime.globals()[name] = dom
         session.declared_vars.add(name)
 
     def has_variable(self, session_id: str, name: str) -> bool:
@@ -618,8 +629,82 @@ def _coerce_event_data_to_lua(runtime: Any, event_data: str) -> Any:
             return runtime.eval(converted)
         except Exception:
             pass
-    # Path 3 — whitespace-normalised string fallback (W3C B.2).
+    # Path 3 — XML payload (W3C SCXML B.2 ECMAScript data model).
+    # `<send><content>XML</content></send>` lands `_event.data` as a
+    # DOM-style object exposing `getElementsByTagName` / `getAttribute`
+    # (test561). Mirrors the Rust `set_current_event` DOM path —
+    # `sce-rust-lua::lib::set_current_event` builds an `XmlRef`
+    # userdata for the same case.
+    if text.startswith("<"):
+        dom = _parse_xml_to_dom(text, runtime)
+        if dom is not None:
+            return dom
+    # Path 4 — whitespace-normalised string fallback (W3C B.2).
     return " ".join(event_data.split())
+
+
+# ── XML DOM (W3C SCXML B.2 ECMAScript data model) ─────────────────
+
+
+class _DomElement:
+    """W3C SCXML B.2 — Lua-facing wrapper around an
+    `xml.etree.ElementTree.Element`. Exposes the three methods the
+    ECMAScript data-model contract requires:
+
+    * `getElementsByTagName(tag)` — Document refkind matches the root
+      inclusively (mirrors cpp `XMLDocument::getElementsByTagName`);
+      Element refkind only descends into proper descendants (mirrors
+      cpp `XMLElement::getElementsByTagName`).
+    * `getAttribute(name)` — attribute value or empty string.
+    * `getTagName()` — element local name.
+
+    Lupa's bound-method calling convention lets generated Lua text
+    `dom:getElementsByTagName('book')` resolve naturally to the
+    Python method (the colon-passed `self` is absorbed by the bound
+    method — verified across PUC Lua / mlua via the test557/561
+    fixtures). Mirrors `sce-rust-lua::dom::XmlRef`."""
+
+    __slots__ = ("_elem", "_is_document", "_runtime")
+
+    def __init__(self, elem: _ET.Element, is_document: bool, runtime: Any) -> None:
+        self._elem = elem
+        self._is_document = is_document
+        self._runtime = runtime
+
+    def getElementsByTagName(self, tag: str) -> Any:
+        if self._is_document:
+            matches = list(self._elem.iter(tag))
+        else:
+            matches: List[_ET.Element] = []
+            for child in self._elem:
+                matches.extend(child.iter(tag))
+        return self._runtime.table_from(
+            [_DomElement(e, False, self._runtime) for e in matches]
+        )
+
+    def getAttribute(self, name: str) -> str:
+        return self._elem.get(name) or ""
+
+    def getTagName(self) -> str:
+        return self._elem.tag
+
+
+def _parse_xml_to_dom(xml_text: str, runtime: Any) -> Optional["_DomElement"]:
+    """Parse `xml_text` and return a Document-refkind `_DomElement`
+    wrapping the root, bound to `runtime` for downstream
+    `table_from` calls in `getElementsByTagName`. Returns `None` on
+    parse failure so callers fall through to the W3C B.2 string
+    fallback (matches cpp `XMLDocument::isValid()`-false behaviour)."""
+    if not xml_text:
+        return None
+    stripped = xml_text.strip()
+    if not stripped.startswith("<"):
+        return None
+    try:
+        root = _ET.fromstring(stripped)
+    except _ET.ParseError:
+        return None
+    return _DomElement(root, True, runtime)
 
 
 def _json_to_lua_table(text: str) -> Optional[str]:
