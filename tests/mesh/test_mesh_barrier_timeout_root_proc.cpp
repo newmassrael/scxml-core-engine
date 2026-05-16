@@ -30,7 +30,7 @@
 #include <string>
 #include <thread>
 
-namespace gen = SCE::Generated::motor_partition;
+namespace gen = SCE::Generated::motor_partition::P_motor_left;
 
 namespace {
 

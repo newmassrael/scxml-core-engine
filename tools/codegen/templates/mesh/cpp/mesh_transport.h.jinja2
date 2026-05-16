@@ -473,7 +473,12 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 #include <memory>
 {% endif %}
 
-namespace SCE::Generated::{{ machine_name }} {
+{# SCE_MESH §16.8 arch-debt #4: mirror the per-partition inner namespace
+   emitted by state_machine.jinja2 so transport types live in the same
+   namespace as the SM class. `partition_wire21_self` is the empty
+   string in the non-partition path, preserving the flat
+   `SCE::Generated::<machine>` shape used by every existing consumer. #}
+namespace SCE::Generated::{{ machine_name }}{% if partition_wire21_self %}::P_{{ partition_wire21_self }}{% endif %} {
 
 {# ── (B) Per-target constants (NEW TRANSPORT: add block if needed) ── #}
 {% if "shm" in transport_types %}
@@ -967,7 +972,7 @@ struct TransportRouter {
     /// spawned by remote invokes.
     class WorkerSessionHost {
     public:
-        using ChildEngine = ::SCE::Generated::{{ machine_name }}::{{ machine_name }};
+        using ChildEngine = ::SCE::Generated::{{ machine_name }}{% if partition_wire21_self %}::P_{{ partition_wire21_self }}{% endif %}::{{ machine_name }};
         using ChildAdapter = ::SCE::Mesh::ChildSessionAdapter<ChildEngine>;
 
         explicit WorkerSessionHost(std::string host_machine_name)
@@ -2464,12 +2469,12 @@ struct TransportRouter {
         // until start() flushes them, so post-start registration would
         // miss the initial peer-availability anchor edge.
         {{ someip_sce_app_field }}->offer_service(
-            SCE::Generated::{{ machine_name }}::SCE_LIVENESS_SERVICE_SELF,
-            SCE::Generated::{{ machine_name }}::SCE_LIVENESS_INSTANCE);
+            SCE::Generated::{{ machine_name }}{% if partition_wire21_self %}::P_{{ partition_wire21_self }}{% endif %}::SCE_LIVENESS_SERVICE_SELF,
+            SCE::Generated::{{ machine_name }}{% if partition_wire21_self %}::P_{{ partition_wire21_self }}{% endif %}::SCE_LIVENESS_INSTANCE);
 {%   for peer in someip_liveness_service_ids_peers %}
         {{ someip_sce_app_field }}->register_availability_handler(
-            SCE::Generated::{{ machine_name }}::SCE_LIVENESS_SERVICE_PEER_{{ peer.partition_upper }},
-            SCE::Generated::{{ machine_name }}::SCE_LIVENESS_INSTANCE,
+            SCE::Generated::{{ machine_name }}{% if partition_wire21_self %}::P_{{ partition_wire21_self }}{% endif %}::SCE_LIVENESS_SERVICE_PEER_{{ peer.partition_upper }},
+            SCE::Generated::{{ machine_name }}{% if partition_wire21_self %}::P_{{ partition_wire21_self }}{% endif %}::SCE_LIVENESS_INSTANCE,
             [this](vsomeip::service_t, vsomeip::instance_t, bool is_available) {
                 // Only the loss edge raises (REGION_PARTITIONED);
                 // initial NOT_AVAILABLE→AVAILABLE is steady-state setup,
@@ -2500,12 +2505,12 @@ struct TransportRouter {
         // see `available=false` only when the LAST partition exits —
         // matching §10.9 invariant 4 "any session up = machine alive".
         {{ someip_sce_app_field }}->offer_service(
-            SCE::Generated::{{ machine_name }}::SCE_MACHINE_LIVENESS_SERVICE_SELF,
-            SCE::Generated::{{ machine_name }}::SCE_MACHINE_LIVENESS_INSTANCE);
+            SCE::Generated::{{ machine_name }}{% if partition_wire21_self %}::P_{{ partition_wire21_self }}{% endif %}::SCE_MACHINE_LIVENESS_SERVICE_SELF,
+            SCE::Generated::{{ machine_name }}{% if partition_wire21_self %}::P_{{ partition_wire21_self }}{% endif %}::SCE_MACHINE_LIVENESS_INSTANCE);
 {%   for peer in someip_machine_liveness_service_ids_peers %}
         {{ someip_sce_app_field }}->register_availability_handler(
-            SCE::Generated::{{ machine_name }}::SCE_MACHINE_LIVENESS_SERVICE_PEER_{{ peer.machine_upper }},
-            SCE::Generated::{{ machine_name }}::SCE_MACHINE_LIVENESS_INSTANCE,
+            SCE::Generated::{{ machine_name }}{% if partition_wire21_self %}::P_{{ partition_wire21_self }}{% endif %}::SCE_MACHINE_LIVENESS_SERVICE_PEER_{{ peer.machine_upper }},
+            SCE::Generated::{{ machine_name }}{% if partition_wire21_self %}::P_{{ partition_wire21_self }}{% endif %}::SCE_MACHINE_LIVENESS_INSTANCE,
             [this](vsomeip::service_t, vsomeip::instance_t, bool is_available) {
                 // Only the loss edge raises (PEER_PARTITIONED); initial
                 // NOT_AVAILABLE→AVAILABLE is steady-state setup, not a
@@ -4673,4 +4678,4 @@ struct TransportRouter {
 {% endif %}
 };
 
-}  // namespace SCE::Generated::{{ machine_name }}
+}  // namespace SCE::Generated::{{ machine_name }}{% if partition_wire21_self %}::P_{{ partition_wire21_self }}{% endif %}

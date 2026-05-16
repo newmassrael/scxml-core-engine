@@ -12,15 +12,15 @@
 // form exists so adding a new partition is "drop a header and link"
 // rather than "edit the dispatcher".
 //
-// Namespace scope: the codegen baked into `testXXX_sm.h` emits
-// `namespace SCE::Generated::testXXX::testXXX`. Two partitions of the
-// same test generate headers with the SAME namespace but DIFFERENT
-// class bodies (Root vs NonRoot branches). Including both headers in
-// one TU is an ODR violation — so the seed harness follows the
-// rule-12 fork+exec precedent (§16.8 arch-debt #4 remains gated on
-// per-partition namespace baking). The runtime dispatch through this
-// registry therefore targets one entry per binary; runtime selection
-// across partitions requires a second resolved via fork+exec.
+// Namespace scope: codegen bakes the partition name into an inner
+// namespace when `--partition` is supplied, emitting
+// `namespace SCE::Generated::testXXX::P_<partition>::testXXX`. Two
+// partitions of the same test therefore live in disjoint namespaces
+// and CAN be ODR-co-included in the same TU. The seed harness still
+// uses a per-partition binary + fork+exec orchestration for symmetry
+// with the rule-12 precedent, but the registry's `(test_id,
+// partition_name)` key shape already supports a future single-runner
+// shape that holds many partitions of many tests.
 
 #pragma once
 
@@ -49,8 +49,9 @@ public:
 /// registration is the pattern `AotTestRegistrar` uses for the W3C
 /// AOT suite; the key widening to a pair is the only semantic change
 /// because one physical binary may carry many partitions of
-/// different tests (future S5+ once textbook debt #4 closes) or
-/// today's one-entry-per-binary fork+exec shape.
+/// different tests (future S5+ single-runner shape, now unblocked by
+/// per-partition namespace baking) or today's one-entry-per-binary
+/// fork+exec shape.
 class PartitionRegistry {
 public:
     using Key = std::pair<std::string, std::string>;

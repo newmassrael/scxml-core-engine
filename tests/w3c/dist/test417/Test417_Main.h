@@ -40,7 +40,7 @@ struct Test417_Main : public PartitionBase {
     static constexpr const char *PARTITION = "test417_main";
 
     int run(const std::string & /*deploy_dir*/) override {
-        namespace gen = SCE::Generated::test417;
+        namespace gen = SCE::Generated::test417::P_test417_main;
 
         gen::test417 sm;
         // Router ctor opens the inbound wire-21 shm channel in

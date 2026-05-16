@@ -24,7 +24,7 @@
 #include <cstdio>
 #include <thread>
 
-namespace gen = SCE::Generated::motor_partition;
+namespace gen = SCE::Generated::motor_partition::P_motor_right;
 
 int main() {
     gen::motor_partition sm;

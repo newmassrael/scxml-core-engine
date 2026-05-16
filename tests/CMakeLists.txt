@@ -6094,11 +6094,11 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
     #   2. Run sce-codegen twice with `--partition test${TEST_NUM}_main`
     #      and `--partition test${TEST_NUM}_worker`, emitting per-
     #      partition `test${TEST_NUM}_sm.h`/`_transport.h` into disjoint
-    #      subdirs (main/, worker/). Per-partition namespaces collide if
-    #      included in the same TU — §16.8 arch-debt #4 tracks the
-    #      per-partition namespace rename that would unlock a single
-    #      runner binary; until then the shm fork+exec shape below is
-    #      the rule-12 precedent.
+    #      subdirs (main/, worker/). Per-partition namespaces are
+    #      now baked as inner segments (`SCE::Generated::testXXX::
+    #      P_<partition>`), so both headers can be ODR-co-included in
+    #      a future single-runner binary. The shm fork+exec shape
+    #      below is retained for symmetry with the rule-12 precedent.
     #   3. Build one partition binary per partition from the shared
     #      `w3c_dist_partition_runner.cpp` source with a per-target
     #      `SCE_W3C_DIST_PARTITION_HEADER=` define that selects which

@@ -44,7 +44,12 @@
 #include <cstdio>
 
 int main() {
-    namespace brake_gen = SCE::Generated::brake_region_liveness;
+#ifdef SCE_LIVENESS_PARTITION_LEFT
+    namespace brake_gen = SCE::Generated::brake_region_liveness::P_brake_left_part;
+#endif
+#ifdef SCE_LIVENESS_PARTITION_RIGHT
+    namespace brake_gen = SCE::Generated::brake_region_liveness::P_brake_right_part;
+#endif
 
     static_assert(
         brake_gen::SCE_LIVENESS_SERVICE_SELF >= 0x8180 &&

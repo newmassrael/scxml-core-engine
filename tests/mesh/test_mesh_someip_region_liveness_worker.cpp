@@ -47,7 +47,7 @@ int main() {
     SCE::Test::Mesh::wipe_stale_vsomeip_sockets();
 
     using namespace SCE::Test::Mesh;
-    namespace brake_gen = SCE::Generated::brake_region_liveness;
+    namespace brake_gen = SCE::Generated::brake_region_liveness::P_brake_right_part;
     using RouterT = brake_gen::TransportRouter<TestSenderEngine>;
 
     TestSenderEngine sender;

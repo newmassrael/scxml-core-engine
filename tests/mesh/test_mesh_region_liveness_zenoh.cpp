@@ -50,7 +50,7 @@ using namespace SCE::Test::Mesh;
 // peer in this test binds the listen so brake's generated Zenoh
 // session can connect and hear the wildcard subscriber samples.
 constexpr const char* kListen =
-    SCE::Generated::brake_region_liveness::ZENOH_CONNECT_ENDPOINTS[0];
+    SCE::Generated::brake_region_liveness::P_brake_left_part::ZENOH_CONNECT_ENDPOINTS[0];
 
 // deploy_zenoh_region_liveness.yaml lease_ms. DELETE-sample delivery
 // budget is `lease_ms + small zenoh-internal jitter`. 3× lease_ms
@@ -58,7 +58,7 @@ constexpr const char* kListen =
 constexpr int kLeaseMs = 200;
 
 int run_test() {
-    namespace brake_gen = SCE::Generated::brake_region_liveness;
+    namespace brake_gen = SCE::Generated::brake_region_liveness::P_brake_left_part;
     using RouterT = brake_gen::TransportRouter<TestSenderEngine>;
 
     TestSenderEngine sender;

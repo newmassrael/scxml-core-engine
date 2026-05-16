@@ -30,7 +30,7 @@ struct Test417_Worker : public PartitionBase {
     static constexpr const char *PARTITION = "test417_worker";
 
     int run(const std::string & /*deploy_dir*/) override {
-        namespace gen = SCE::Generated::test417;
+        namespace gen = SCE::Generated::test417::P_test417_worker;
 
         gen::test417 sm;
         // Router ctor creates the outbound wire-21 shm channel in

@@ -29,7 +29,7 @@
 #include <string>
 #include <thread>
 
-namespace gen = SCE::Generated::motor_partition;
+namespace gen = SCE::Generated::motor_partition::P_motor_right;
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {

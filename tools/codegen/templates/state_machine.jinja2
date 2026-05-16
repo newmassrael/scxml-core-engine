@@ -213,7 +213,12 @@
 {% set _has_tpl = _tpl_params | length > 0 %}
 {% set _has_sm_tpl = _sm_tpl_params | length > 0 %}
 
-namespace SCE::Generated::{{ model.name }} {
+{# SCE_MESH §16.8 arch-debt #4: when --partition is supplied, bake the
+   partition name as an inner namespace so two partition headers of the
+   same machine can be ODR-co-included in one binary (e.g. the §16.8
+   single-runner shape). The non-partition path keeps the flat
+   `SCE::Generated::<machine>` shape used by every existing consumer. #}
+namespace SCE::Generated::{{ model.name }}{% if model.partition_self_name %}::P_{{ model.partition_self_name }}{% endif %} {
 
 {# Forward declaration #}
 {% if _has_sm_tpl %}
@@ -263,8 +268,8 @@ struct TransitionInfo {
 template <{{ _tpl_params | join(', ') }}>
 {% endif %}
 struct {{ model.name }}Policy {
-    using State = ::SCE::Generated::{{ model.name }}::State;
-    using Event = ::SCE::Generated::{{ model.name }}::Event;
+    using State = ::SCE::Generated::{{ model.name }}{% if model.partition_self_name %}::P_{{ model.partition_self_name }}{% endif %}::State;
+    using Event = ::SCE::Generated::{{ model.name }}{% if model.partition_self_name %}::P_{{ model.partition_self_name }}{% endif %}::Event;
 {% for ctx in model.context_objects %}
     using {{ ctx.id | capitalize }}Type = {{ ctx.cpp_type if ctx.cpp_type else (ctx.id | capitalize + 'T') }};
 {% endfor %}
@@ -849,4 +854,4 @@ static_assert(::SCE::Core::ParallelStatePolicy<{{ model.name }}Policy>,
 #endif
 {% endif %}
 
-} // namespace SCE::Generated::{{ model.name }}
+} // namespace SCE::Generated::{{ model.name }}{% if model.partition_self_name %}::P_{{ model.partition_self_name }}{% endif %}
