@@ -1,0 +1,16 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# W3C SCXML 5.4 — `<assign>` may carry either `expr` (most common)
+   or inline content (XML body or literal text). When `expr` is set,
+   route through the standard `_assign` path; otherwise hand the
+   content to `_assign_content` which mirrors `_init_data_with_content`'s
+   eval-then-string fallback so XML payloads (W3C B.2 test530) and
+   literal-text content land in the datamodel correctly. #}
+{%- macro emit(action, indent, machine_name, model) -%}
+{% if action.expr -%}
+{{ indent }}self._assign(engine, {{ action.location | py_string_literal }}, {{ action.expr | to_lua_expr | py_string_literal }})
+{% else -%}
+{{ indent }}self._assign_content(engine, {{ action.location | py_string_literal }}, {{ action.content | to_lua_expr | py_string_literal }}, {{ action.content | normalize_ws | py_string_literal }})
+{% endif -%}
+{% endmacro -%}

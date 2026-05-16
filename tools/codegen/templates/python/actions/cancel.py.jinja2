@@ -1,0 +1,15 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# W3C SCXML 6.2.2 — `<cancel sendid|sendidexpr>` removes a pending
+   delayed send from the engine scheduler. Static `sendid` skips the
+   eval; `sendidexpr` evaluates against the datamodel via the
+   `_eval_sendid` helper (empty / unparseable values are treated as
+   the empty string, which the scheduler cannot match). #}
+{%- macro emit(action, indent, machine_name, model) -%}
+{% if action.sendid %}
+{{ indent }}engine.cancel_send({{ action.sendid | py_string_literal }})
+{% else %}
+{{ indent }}engine.cancel_send(self._eval_sendid(engine, {{ action.sendidexpr | to_lua_expr | py_string_literal }}))
+{% endif %}
+{% endmacro -%}

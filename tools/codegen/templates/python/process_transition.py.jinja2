@@ -77,7 +77,7 @@
             if transition_index == {{ transition.transition_index }}:
                 try:
 {% for action in transition.actions %}
-{{ actions.emit(action, '                    ', machine_name) }}
+{{ actions.emit(action, '                    ', machine_name, model) }}
 {% endfor %}
                 except _ActionAbort:
                     pass

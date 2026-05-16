@@ -1,0 +1,10 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# W3C SCXML 5.5 — `<script>` body. The text was rewritten from
+   ECMAScript to Lua at codegen time (`to_lua_script`); the runtime
+   `_exec` helper handles eval failures via `error.execution` +
+   block-abort per W3C 3.8. #}
+{%- macro emit(action, indent, machine_name, model) -%}
+{{ indent }}self._exec(engine, {{ action.content | to_lua_script | py_string_literal }})
+{% endmacro -%}

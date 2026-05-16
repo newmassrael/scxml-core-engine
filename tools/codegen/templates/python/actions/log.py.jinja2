@@ -1,0 +1,9 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# W3C SCXML 6.4 — `<log>` evaluates `expr` against the datamodel and
+   dispatches through the policy's `log_hook`. The default hook writes
+   one line to stdout; subclasses can override for structured output. #}
+{%- macro emit(action, indent, machine_name, model) -%}
+{{ indent }}self._log(engine, {{ action.label | py_string_literal }}, {{ action.expr | to_lua_expr | py_string_literal }})
+{% endmacro -%}

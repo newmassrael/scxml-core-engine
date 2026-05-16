@@ -1,0 +1,9 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# W3C SCXML 3.8.1 — `<raise event="…">` enqueues an internal event.
+   `engine.raise_internal` is the central internal-queue API; metadata
+   defaults to `event_type="internal"`. #}
+{%- macro emit(action, indent, machine_name, model) -%}
+{{ indent }}engine.raise_internal({{ machine_name }}Event.{{ action.event | to_python_const }})
+{% endmacro -%}

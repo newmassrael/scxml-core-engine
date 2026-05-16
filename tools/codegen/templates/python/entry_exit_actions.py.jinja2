@@ -39,7 +39,7 @@
 {% for block in state.on_entry_blocks %}
             try:
 {% for action in block %}
-{{ actions.emit(action, '                ', machine_name) }}
+{{ actions.emit(action, '                ', machine_name, model) }}
 {% endfor %}
             except _ActionAbort:
                 pass
@@ -52,7 +52,7 @@
             # discards the remaining actions in this block only.
             try:
 {% for action in state.initial_transition_actions %}
-{{ actions.emit(action, '                ', machine_name) }}
+{{ actions.emit(action, '                ', machine_name, model) }}
 {% endfor %}
             except _ActionAbort:
                 pass
@@ -68,7 +68,7 @@
             if not engine._history.get({{ state.initial_history_id | py_string_literal }}):
                 try:
 {% for action in state.initial_history_default_actions %}
-{{ actions.emit(action, '                    ', machine_name) }}
+{{ actions.emit(action, '                    ', machine_name, model) }}
 {% endfor %}
                 except _ActionAbort:
                     pass
@@ -175,7 +175,7 @@
 {% for block in state.on_exit_blocks %}
             try:
 {% for action in block %}
-{{ actions.emit(action, '                ', machine_name) }}
+{{ actions.emit(action, '                ', machine_name, model) }}
 {% endfor %}
             except _ActionAbort:
                 pass

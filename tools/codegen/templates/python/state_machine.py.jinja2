@@ -367,7 +367,7 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
         if history_id == {{ history_id | py_string_literal }}:
             try:
 {% for action in info.default_actions %}
-{{ actions.emit(action, '                ', machine_name) }}
+{{ actions.emit(action, '                ', machine_name, model) }}
 {% endfor %}
             except _ActionAbort:
                 pass
