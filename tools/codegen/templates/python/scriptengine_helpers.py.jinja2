@@ -121,16 +121,36 @@
 
     def _assign_runtime(self, engine, location: str, value) -> None:
         """W3C SCXML 4.6 / 5.3 — assign a runtime-computed value (e.g.
-        a `<foreach>` iteration item/index) at `location`. An empty or
-        read-only location is illegal per W3C 4.6 (test 152 case:
-        `<foreach item="" …>` must raise `error.execution` + abort the
-        block)."""
-        if not location or location in _READONLY_SYSTEM_VARS:
+        a `<foreach>` iteration item/index) at `location`. An empty,
+        read-only, or syntactically illegal identifier is illegal per
+        W3C 4.6 (test152: `<foreach item="" …>`; test457: `<foreach
+        item="'continue'" …>` — quote chars make the name unusable as
+        a datamodel location). Mirrors `sce-rust-runtime::helpers::
+        foreach::is_legal_variable_name`."""
+        if (
+            not location
+            or location in _READONLY_SYSTEM_VARS
+            or not self._is_legal_identifier(location)
+        ):
             self._raise_error_execution(engine)
             raise _ActionAbort
         engine._script_engine.set_variable(
             self._session_id, location, _ScriptValue.of(value)
         )
+
+    @staticmethod
+    def _is_legal_identifier(name: str) -> bool:
+        """W3C SCXML 4.6 — ECMAScript IdentifierName: leading
+        letter/underscore/dollar, then alnum/underscore/dollar."""
+        if not name:
+            return False
+        first = name[0]
+        if not (first.isalpha() or first == "_" or first == "$"):
+            return False
+        for ch in name[1:]:
+            if not (ch.isalnum() or ch == "_" or ch == "$"):
+                return False
+        return True
 
     def _init_data_with_content(
         self, engine, var_id: str, lua_expr: str, fallback: str
@@ -469,6 +489,19 @@
         # first state entry via `init_state_datamodel`.
 {% for var in model.variables %}
 {% if var.expr %}
+{% if (var.expr | trim) is startingwith('function') %}
+        # W3C SCXML B.2: function-as-expression. ScriptValue cannot
+        # round-trip a Lua function, so install it directly via
+        # `execute_script` (`var = function(...) ... end`) — mirrors
+        # `tools/codegen/templates/rust/datamodel_macros.rs.jinja2:45`.
+        try:
+            engine._script_engine.execute_script(
+                self._session_id,
+                {{ (var.id ~ ' = ' ~ var.expr) | to_lua_script | py_string_literal }},
+            )
+        except _ScriptError:
+            self._raise_error_execution(engine)
+{% else %}
         try:
             _init_val = engine._script_engine.evaluate_expression(
                 self._session_id, {{ var.expr | to_lua_expr | py_string_literal }}
@@ -479,6 +512,7 @@
         engine._script_engine.declare_variable(
             self._session_id, {{ var.id | py_string_literal }}, _init_val
         )
+{% endif %}
 {% elif var.src %}
 {# W3C SCXML 5.2.2: `<data src="file:...">` content is inlined at
    codegen time via the `read_data_src` filter (same pattern as the
