@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Generic, List, Optional, TypeVar
+from typing import TYPE_CHECKING, Any, Dict, Generic, List, Optional, TypeVar
 
 S = TypeVar("S")
 E = TypeVar("E")
@@ -67,6 +67,20 @@ class StatePolicy(ABC, Generic[S, E]):
     # IScriptEngine migration and takes no `engine` parameter) can
     # still reach the script engine session.
     _engine_ref: Optional[Any] = None
+
+    # W3C SCXML 6.4.1 — staging dict for `<invoke>` param/namelist
+    # values that must seed the child's datamodel before its first
+    # macrostep. The parent's `execute_pending_invokes` template
+    # assigns a fresh dict on the child policy (so the class-level
+    # default stays `None` and instances never share state); the
+    # child's `initialize_datamodel` applies the overlay as the
+    # final step so the staged values win over any default-init for
+    # the same `<data>` id. Mirrors the Rust child policy's
+    # `set_param_in_script_engine` ordering — there the pre-init runs
+    # via `ensure_script_engine` BEFORE the data-init macros, here
+    # the overlay runs AFTER because Python's Engine constructs the
+    # session up front and data init is part of `initialize_datamodel`.
+    _pre_init_vars: Optional[Dict[str, Any]] = None
 
     @abstractmethod
     def initial_state(self) -> S:

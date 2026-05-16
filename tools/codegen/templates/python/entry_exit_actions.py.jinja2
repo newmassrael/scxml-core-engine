@@ -19,9 +19,21 @@
    `try/except _ActionAbort` so an `<assign>`/`<script>` failure
    raises `error.execution` and skips the rest of THIS block, while
    the next `<onentry>` block on the same state still runs (each
-   `<onentry>` is its own block per W3C 3.8.1). #}
+   `<onentry>` is its own block per W3C 3.8.1).
+
+   W3C SCXML 5.5 + 3.7 + 6.3.1 — `<final>` states with `<donedata>`
+   evaluate the data in the final's onentry and either:
+     - top-level `<final>` (no parent): stash on the engine so the
+       invoking parent's `ScxmlInvoke.done_data()` can lift it into
+       `done.invoke.<id>._event.data`;
+     - nested `<final>` (parent compound): raise the parent's
+       `done.state.<parent>` event with the evaluated data as
+       `_event.data` so the parent's transition can read it (test294).
+   Mirrors `tools/codegen/templates/rust/entry_exit_actions.rs.jinja2`
+   donedata evaluation + done.state branching. #}
 {% for state_id, state in model.states | dictsort %}
-{% if state.on_entry_blocks %}
+{% set _has_donedata = state.is_final and state.donedata and (state.donedata.params or state.donedata.content.kind != 'none') %}
+{% if state.on_entry_blocks or _has_donedata %}
         if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
 {% for block in state.on_entry_blocks %}
             try:
@@ -31,6 +43,76 @@
             except _ActionAbort:
                 pass
 {% endfor %}
+{% if _has_donedata %}
+            # W3C SCXML 5.5: Build donedata as Lua source text so the
+            # downstream `set_current_event` dispatch reconstructs an
+            # equivalent Lua value via its `return <text>` parse path —
+            # `to_lua_literal()` preserves string identity (`'foo'`
+            # round-trips, not the bare identifier `foo`). Mirrors the
+            # Rust template's `done_event_data = val.to_lua_literal()`
+            # at `tools/codegen/templates/rust/entry_exit_actions.rs.jinja2:180`.
+            _done_data_ok = True
+            _done_data: str = ""
+{% if state.donedata.params %}
+            _done_parts: List[str] = []
+{% for param in state.donedata.params %}
+{% set _pexpr = param.expr or param.location %}
+{% if not _pexpr %}
+            # W3C SCXML 5.7: `<param>` with empty expr/location is a
+            # structural error — raise error.execution and skip stash.
+            self._raise_error_execution(engine)
+            _done_data_ok = False
+{% else %}
+            try:
+                _done_parts.append(
+                    '[{{ param.name | py_string_literal }}] = '
+                    + engine._script_engine.evaluate_expression(
+                        self._session_id,
+                        {{ _pexpr | to_lua_expr | py_string_literal }},
+                    ).to_lua_literal()
+                )
+            except _ScriptError:
+                self._raise_error_execution(engine)
+{% endif %}
+{% endfor %}
+            if _done_data_ok:
+                _done_data = "{" + ", ".join(_done_parts) + "}"
+{% elif state.donedata.content.kind == "expression" %}
+            try:
+                _done_data = engine._script_engine.evaluate_expression(
+                    self._session_id,
+                    {{ state.donedata.content.text | to_lua_expr | py_string_literal }},
+                ).to_lua_literal()
+            except _ScriptError:
+                _done_data_ok = False
+                self._raise_error_execution(engine)
+{% elif state.donedata.content.kind == "literal" %}
+            # W3C SCXML 5.5: `<content>` literal text is used as the
+            # raw `_event.data` value. Wrap the text in a Lua string
+            # literal at runtime via `_ScriptValue.of(...).to_lua_literal()`
+            # so the dispatch's `return <text>` eval reconstructs an
+            # identical string regardless of which characters the
+            # literal contains.
+            _done_data = _ScriptValue.of(
+                {{ state.donedata.content.text | py_string_literal }}
+            ).to_lua_literal()
+{% endif %}
+{% if state.parent and ('done.state.' ~ state.parent) in model.events %}
+            if _done_data_ok:
+                engine.raise_internal(
+                    {{ machine_name }}Event.{{ ('done.state.' ~ state.parent) | to_python_const }},
+                    EventMetadata(data=_done_data, event_type="internal"),
+                )
+{% endif %}
+{% if not state.parent %}
+            # W3C SCXML 5.5 + 6.3.1: top-level `<final>` stashes
+            # donedata onto the engine; the invoking parent's
+            # `ScxmlInvoke.done_data()` lifts it into
+            # `done.invoke.<id>._event.data`.
+            if _done_data_ok:
+                engine.done_data = _done_data
+{% endif %}
+{% endif %}
             return
 {% endif %}
 {% endfor %}

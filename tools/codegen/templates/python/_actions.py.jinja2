@@ -70,7 +70,18 @@
 {% if action.delay_ms > 0 %}
 {{ indent }}engine.schedule_send({{ machine_name }}Event.{{ action.event | to_python_const }}, {{ action.delay_ms }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}engine._next_auto_sendid(){% endif %})
 {% else %}
-{{ indent }}self._parent_queue.append(({{ action.event | py_string_literal }}, ""))
+{# W3C SCXML 6.2 (test233/234): `<send target="#_parent">` must
+   marshal the same `<param>` / `<content>` / `namelist` payload onto
+   `_event.data` that any other `<send>` would. Skipping the eval
+   here would land an empty `_event.data` on the parent, so the
+   parent's `<finalize>` body (`<assign expr="_event.data.aParam"/>`)
+   would silently no-op. #}
+{{ indent }}_parent_data = self._eval_send_payload(engine, [
+{%- for param in action.params -%}
+({{ param.name | py_string_literal }}, {{ param.expr | to_lua_expr | py_string_literal }}),
+{%- endfor -%}
+], {{ action.content | py_string_literal }}, {{ action.contentexpr | to_lua_expr | py_string_literal }}, {{ action.namelist | py_string_literal }})
+{{ indent }}self._parent_queue.append(({{ action.event | py_string_literal }}, _parent_data))
 {% endif %}
 {% elif action.target.startswith('!') %}
 {# W3C SCXML 6.2 — `target="!…"` is the SCXML test-suite's
@@ -167,6 +178,15 @@
 {{ indent }}    _resolved_target = engine._script_engine.evaluate_expression(self._session_id, {{ action.targetexpr | to_lua_expr | py_string_literal }}).to_python()
 {{ indent }}except _ScriptError:
 {{ indent }}    _resolved_target = None
+{# W3C SCXML 5.10.1 (test336): the `targetexpr` evaluated to an empty
+   STRING is W3C-equivalent to the `target` attribute being absent —
+   the send goes to the current session's external queue. Only a
+   Lua nil / ECMAScript undefined target triggers W3C C.1
+   `error.communication`. Mirrors the Rust generated arm in
+   `tools/codegen/templates/rust/actions/send.rs.jinja2` where the
+   `ScriptValue::Null | Undefined` match arm is the sole
+   error.communication trigger, not the empty-string case. #}
+{{ indent }}_target_missing = _resolved_target is None
 {{ indent }}_target_str = "" if _resolved_target is None else str(_resolved_target)
 {{ indent }}_data = self._eval_send_payload(engine, [
 {%- for param in action.params -%}
@@ -181,12 +201,17 @@
 {% else -%}
 {{ indent }}_dyn_evt_name = {{ action.event | py_string_literal }}
 {% endif -%}
-{{ indent }}if not _target_str:
+{{ indent }}if _target_missing:
 {% if 'error.communication' in model.events %}
 {{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
 {% else %}
 {{ indent }}    pass  # W3C C.1: undefined target — but document declares no error.communication descriptor
 {% endif %}
+{{ indent }}elif not _target_str:
+{{ indent }}    # W3C SCXML 6.2 — empty string target = same-session external queue
+{{ indent }}    _dyn_evt = self.get_event_from_name(_dyn_evt_name)
+{{ indent }}    if _dyn_evt is not None:
+{{ indent }}        engine.send_external(_dyn_evt, _sid, _data)
 {{ indent }}elif _target_str.startswith("!"):
 {% if 'error.execution' in model.events %}
 {{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))

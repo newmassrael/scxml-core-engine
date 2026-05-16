@@ -114,6 +114,39 @@ class ScriptValue:
             return self.dom_val
         return None
 
+    def to_lua_literal(self) -> str:
+        """W3C SCXML 5.5: Render this value as Lua source text. Mirrors
+        Rust `ScriptValue::to_lua_literal` (used by the AOT donedata
+        emit). The output is re-eval'd by `set_current_event` when the
+        parent's `done.state.<id>` / `done.invoke.<id>` event is
+        dispatched, so the round trip must preserve string identity
+        (test294: `<content>'foo'</content>` must surface on
+        `_event.data` as the string `"foo"`, not the global lookup of
+        an identifier `foo`)."""
+        if self.kind is ScriptValueKind.NULL or self.kind is ScriptValueKind.UNDEFINED:
+            return "nil"
+        if self.kind is ScriptValueKind.BOOL:
+            return "true" if self.bool_val else "false"
+        if self.kind is ScriptValueKind.INT:
+            return str(self.int_val)
+        if self.kind is ScriptValueKind.DOUBLE:
+            return repr(self.double_val)
+        if self.kind is ScriptValueKind.STRING:
+            escaped = self.string_val.replace("\\", "\\\\").replace("'", "\\'")
+            return f"'{escaped}'"
+        if self.kind is ScriptValueKind.ARRAY:
+            return "{" + ", ".join(v.to_lua_literal() for v in self.array_val) + "}"
+        if self.kind is ScriptValueKind.OBJECT:
+            return (
+                "{"
+                + ", ".join(
+                    f'["{k}"] = {v.to_lua_literal()}'
+                    for k, v in self.object_val.items()
+                )
+                + "}"
+            )
+        return "nil"
+
     def to_bool(self) -> bool:
         """W3C SCXML B.2.3 — ECMAScript truthiness. Falsy: null,
         undefined, false, 0, NaN, empty string. Everything else truthy.

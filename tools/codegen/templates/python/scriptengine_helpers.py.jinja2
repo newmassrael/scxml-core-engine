@@ -441,9 +441,6 @@
 {% for state_id, st in model.states | dictsort %}
 {% if st.datamodel and model.binding != 'late' %}{% set ns_dm.any = true %}{% endif %}
 {% endfor %}
-{% if not ns_dm.any %}
-        return
-{% endif %}
 {% if ns_dm.any %}
         # W3C SCXML 5.3 — declare every static `<data>` against the
         # script-engine session. Root-level data always binds at
@@ -461,6 +458,20 @@
             self._raise_error_execution(engine)
         engine._script_engine.declare_variable(
             self._session_id, {{ var.id | py_string_literal }}, _init_val
+        )
+{% elif var.src %}
+{# W3C SCXML 5.2.2: `<data src="file:...">` content is inlined at
+   codegen time via the `read_data_src` filter (same pattern as the
+   C11 backend at `tools/codegen/templates/c/scriptengine.jinja2:272`)
+   and threaded through `_init_data_with_content` so loaded text
+   picks up the same Lua-eval → JSON.parse → whitespace-string
+   fallback chain inline `<data>` content uses (test446, test558). #}
+{% set _src_content = var.src | read_data_src(model.scxml_base_path) %}
+        self._init_data_with_content(
+            engine,
+            {{ var.id | py_string_literal }},
+            {{ _src_content | to_lua_expr | py_string_literal }},
+            {{ _src_content | normalize_ws | py_string_literal }},
         )
 {% elif var.content %}
         self._init_data_with_content(
@@ -490,6 +501,14 @@
             self._raise_error_execution(engine)
         engine._script_engine.declare_variable(
             self._session_id, {{ var.id | py_string_literal }}, _init_val
+        )
+{% elif var.src %}
+{% set _src_content_local = var.src | read_data_src(model.scxml_base_path) %}
+        self._init_data_with_content(
+            engine,
+            {{ var.id | py_string_literal }},
+            {{ _src_content_local | to_lua_expr | py_string_literal }},
+            {{ _src_content_local | normalize_ws | py_string_literal }},
         )
 {% elif var.content %}
         self._init_data_with_content(
@@ -528,6 +547,15 @@
             self._raise_error_execution(engine)
 {% endfor %}
 {% endif %}
+        # W3C SCXML 6.4.1 — invoke `<param>` / `namelist` overlay. The
+        # parent's `execute_pending_invokes` stages name→ScriptValue
+        # entries on `_pre_init_vars` between Engine construction and
+        # `_invoke.start()`; applying it last lets the staged values
+        # override any `<data>` default for the same id. Mirrors the
+        # Rust child policy's `set_param_in_script_engine` ordering.
+        if self._pre_init_vars:
+            for _name, _val in self._pre_init_vars.items():
+                engine._script_engine.set_variable(self._session_id, _name, _val)
 
     def init_state_datamodel(self, state, engine) -> None:
 {% set ns_local = namespace(any=false) %}
@@ -549,6 +577,14 @@
                 self._raise_error_execution(engine)
             engine._script_engine.declare_variable(
                 self._session_id, {{ var.id | py_string_literal }}, _init_val
+            )
+{% elif var.src %}
+{% set _src_content_st = var.src | read_data_src(model.scxml_base_path) %}
+            self._init_data_with_content(
+                engine,
+                {{ var.id | py_string_literal }},
+                {{ _src_content_st | to_lua_expr | py_string_literal }},
+                {{ _src_content_st | normalize_ws | py_string_literal }},
             )
 {% elif var.content %}
             self._init_data_with_content(

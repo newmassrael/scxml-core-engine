@@ -38,8 +38,26 @@
 {% if scxml_list %}
         if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
 {% for inv in scxml_list %}
+            # W3C SCXML 6.4.1: Generate the runtime invoke id with the
+            # `<state_id>.<instance>.<element_id>` shape (test224 checks
+            # the `stateid.` prefix; test338 compares an `idlocation`
+            # binding against `_event.invokeid` on a child-raised event,
+            # so both must share the same runtime id). Mirrors Rust's
+            # `format!("{}.{}.{invoke_id}", state_id, self as *const _ as usize)`
+            # in `tools/codegen/templates/rust/entry_exit_actions.rs.jinja2`.
+            _runtime_invoke_id = f"{{ state_id }}.{id(self)}.{{ inv.invoke_id }}"
+{% if inv.idlocation %}
+            # W3C SCXML 6.4.1: Store the generated id in the datamodel
+            # so author expressions (`<assign>` from `_event.invokeid`,
+            # transition `cond="Var1==Var2"`) can match against it.
+            engine._script_engine.set_variable(
+                self._session_id,
+                {{ inv.idlocation | py_string_literal }},
+                _ScriptValue.of(_runtime_invoke_id),
+            )
+{% endif %}
             engine._pending_invokes.append(PendingInvoke(
-                invoke_id={{ inv.invoke_id | py_string_literal }},
+                invoke_id=_runtime_invoke_id,
                 owner_state_name={{ state_id | py_string_literal }},
             ))
 {% endfor %}
@@ -62,29 +80,123 @@
         for entry in pending:
 {% for state_id, state in model.states | dictsort %}
 {% for inv in state.invokes | scxml_family %}
-            if entry.invoke_id == {{ inv.invoke_id | py_string_literal }}:
+            # W3C SCXML 6.4.1: Match by `.<element_id>` suffix because
+            # `defer_invokes_on_entry` decorates the static id with the
+            # owning-state + instance prefix (Rust `contains(".{id}")` parity).
+            if entry.invoke_id.endswith({{ ('.' + inv.invoke_id) | py_string_literal }}):
+{% if inv.namelist %}
+                # W3C SCXML 6.4.1: Validate namelist variables in PARENT
+                # before instantiating the child. Missing names raise
+                # error.execution and skip the invoke entirely
+                # (mirrors `tools/codegen/templates/rust/invoke_methods.rs.jinja2`
+                # namelist-validation block).
+                _namelist_ok = True
+{% for vname in inv.namelist | split %}
+                if not engine._script_engine.has_variable(
+                    self._session_id, {{ vname | py_string_literal }}
+                ):
+                    self._raise_error_execution(engine)
+                    _namelist_ok = False
+{% endfor %}
+                if not _namelist_ok:
+                    continue
+{% endif %}
                 import {{ inv.child_name }}_sm as _child_module_{{ inv.invoke_id | to_python_const }}
                 _child_policy = _child_module_{{ inv.invoke_id | to_python_const }}.Policy()
                 _child_engine = Engine(_child_policy)
+{% if inv.namelist or inv.params %}
+                # W3C SCXML 6.4.1: Stage namelist + `<param>` values for
+                # the child's datamodel. The dict is applied by the
+                # child's `initialize_datamodel` as a final overlay so
+                # any `<data>` default for the same id is overwritten —
+                # matches the Rust child policy's
+                # `set_param_in_script_engine` semantics
+                # (parent-eval → child-side `set_variable`).
+                _pre_init: Dict[str, _ScriptValue] = {}
+{% if inv.namelist %}
+{% if inv.child_datamodel_vars is defined %}
+                # W3C SCXML 6.3.2: Only seed names that the child
+                # actually declares in its `<datamodel>`.
+                _child_vars = { {% for cv in inv.child_datamodel_vars %}{{ cv | py_string_literal }}{{ ", " if not loop.last }}{% endfor %} }
+{% for vname in inv.namelist | split %}
+                if {{ vname | py_string_literal }} in _child_vars:
+                    try:
+                        _pre_init[{{ vname | py_string_literal }}] = (
+                            engine._script_engine.evaluate_expression(
+                                self._session_id, {{ vname | py_string_literal }}
+                            )
+                        )
+                    except _ScriptError:
+                        pass
+{% endfor %}
+{% else %}
+{% for vname in inv.namelist | split %}
+                try:
+                    _pre_init[{{ vname | py_string_literal }}] = (
+                        engine._script_engine.evaluate_expression(
+                            self._session_id, {{ vname | py_string_literal }}
+                        )
+                    )
+                except _ScriptError:
+                    pass
+{% endfor %}
+{% endif %}
+{% endif %}
+{% if inv.params %}
+{% for param in inv.params %}
+                try:
+                    _pre_init[{{ param.name | py_string_literal }}] = (
+                        engine._script_engine.evaluate_expression(
+                            self._session_id,
+                            {{ param.expr | to_lua_expr | py_string_literal }},
+                        )
+                    )
+                except _ScriptError:
+                    pass
+{% endfor %}
+{% endif %}
+                _child_policy._pre_init_vars = _pre_init
+{% endif %}
                 _invoke = ScxmlInvoke(_child_engine, _child_policy._parent_queue)
                 _invoke.start(engine)
-                engine._active_invokes[entry.invoke_id] = _invoke
-                # W3C SCXML 6.4 — children that reach final during their
-                # own initialise produce `done.invoke.<id>` immediately.
-                if _invoke.is_done():
-                    engine.send_external_by_name(
-                        create_done_invoke_event_name(entry.invoke_id),
-                        data=_invoke.done_data() or "",
-                        invoke_id=entry.invoke_id,
-                    )
+                # W3C SCXML 6.4: key `_active_invokes` by the static
+                # element id so `<send target="#_<id>">` (explicit id
+                # path, test228) resolves regardless of which spawn
+                # raised the event. The runtime id only feeds
+                # `_event.invokeid` (`_invoke_id_field` below) for the
+                # idlocation case (test338).
+                engine._active_invokes[{{ inv.invoke_id | py_string_literal }}] = _invoke
+{% if inv.idlocation %}
+                _invoke_id_field = entry.invoke_id
+{% else %}
+                _invoke_id_field = {{ inv.invoke_id | py_string_literal }}
+{% endif %}
                 # Drain any `<send target="#_parent">` raised during the
-                # child's initialise onto the parent's external queue.
+                # child's initialise onto the parent's external queue
+                # BEFORE the done.invoke notification: W3C SCXML 6.3.1
+                # transition actions (e.g. `<send target="#_parent"
+                # event="varBound"/>`) raise their event on the way to
+                # `<final>`, which is what triggers `done.invoke.<id>`
+                # — the parent's queue must see them in that order so
+                # an `event="varBound"` transition wins over the generic
+                # `event="*"` fallback (test226). Mirrors the Rust
+                # template's drain-then-raise sequence in
+                # `tools/codegen/templates/rust/invoke_methods.rs.jinja2`.
                 for _name, _data in _invoke.drain_events():
                     engine.send_external_by_name(
                         _name,
                         data=_data,
-                        invoke_id=entry.invoke_id,
+                        invoke_id=_invoke_id_field,
                         origin_type="http://www.w3.org/TR/scxml/#SCXMLEventProcessor",
+                    )
+                # W3C SCXML 6.4 — children that reach final during their
+                # own initialise produce `done.invoke.<id>` last, after
+                # any `<send target=#_parent>` raised on the way there.
+                if _invoke.is_done():
+                    engine.send_external_by_name(
+                        create_done_invoke_event_name(_invoke_id_field),
+                        data=_invoke.done_data() or "",
+                        invoke_id=_invoke_id_field,
                     )
                 continue
 {% endfor %}
@@ -98,12 +210,17 @@
 {% if scxml_list %}
         if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
 {% for inv in scxml_list %}
+            # W3C SCXML 6.4.2: `_active_invokes` is keyed by the static
+            # element id; `_pending_invokes` carries the runtime
+            # `<state>.<instance>.<id>` id (defer_invokes_on_entry),
+            # so the pending prune matches by suffix.
             _inv = engine._active_invokes.pop({{ inv.invoke_id | py_string_literal }}, None)
             if _inv is not None:
                 _inv.cancel()
+            _suffix = {{ ('.' + inv.invoke_id) | py_string_literal }}
             engine._pending_invokes = [
                 p for p in engine._pending_invokes
-                if p.invoke_id != {{ inv.invoke_id | py_string_literal }}
+                if not p.invoke_id.endswith(_suffix)
             ]
 {% endfor %}
 {% endif %}
@@ -125,3 +242,43 @@
 {% endfor %}
 {% endif %}
         return
+
+{% set ns_fin = namespace(any=false) %}
+{% for state_id, state in model.states | dictsort %}
+{% for inv in state.invokes | scxml_family %}
+{% if inv.finalize_content %}
+{% set ns_fin.any = true %}
+{% endif %}
+{% endfor %}
+{% endfor %}
+{% if ns_fin.any %}
+    def execute_finalize_for_child_event(self, event_with_meta, engine) -> None:
+        # W3C SCXML 6.5: `<finalize>` runs in the parent's datamodel
+        # before transition selection for events originating from the
+        # invoked child, so the finalize body can write child-derived
+        # values back into the parent (`<assign location="Var1"
+        # expr="_event.data.aParam"/>`). The finalize body was
+        # rewritten to JavaScript at parse time
+        # (`sce-build/src/parser.rs` `actions_to_javascript`) and is
+        # threaded through the ECMAScript→Lua transformer here, the
+        # same way Rust / C++ / Go / Kotlin / C11 backends do.
+        _ivk = event_with_meta.metadata.invoke_id
+        if not _ivk:
+            return
+{% for state_id, state in model.states | dictsort %}
+{% for inv in state.invokes | scxml_family %}
+{% if inv.finalize_content %}
+        if _ivk == {{ inv.invoke_id | py_string_literal }} or _ivk.endswith({{ ('.' + inv.invoke_id) | py_string_literal }}):
+            try:
+                engine._script_engine.execute_script(
+                    self._session_id,
+                    {{ inv.finalize_content | to_lua_script | py_string_literal }},
+                )
+            except _ScriptError:
+                self._raise_error_execution(engine)
+            return
+{% endif %}
+{% endfor %}
+{% endfor %}
+        return
+{% endif %}

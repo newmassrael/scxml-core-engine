@@ -830,6 +830,12 @@ pub fn register_python_filters(env: &mut minijinja::Environment) {
     env.add_filter("split", filter_split);
     env.add_filter("slice_from", filter_slice_from);
     env.add_filter("extern_callback_path", filter_extern_callback_path);
+    // W3C SCXML 5.2.2: `<data src="file:...">` inlining at codegen time —
+    // same filter the C11 backend uses (see
+    // `tools/codegen/templates/c/scriptengine.jinja2:272`) so Python
+    // can route loaded text through `_init_data_with_content` instead
+    // of a runtime `fopen`.
+    env.add_filter("read_data_src", read_data_src);
 }
 
 /// Convert an SCXML identifier (state id / event name) into a Python `IntEnum`

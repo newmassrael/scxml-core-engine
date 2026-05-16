@@ -130,6 +130,12 @@ class Engine(Generic[S, E]):
         self._http_send_callback: Optional[
             Callable[[HttpSendRequest], Optional[HttpSendResponse]]
         ] = None
+        # W3C SCXML 5.5 + 6.3.1 — donedata stashed when a top-level
+        # `<final>` is entered. The invoking parent's `ScxmlInvoke`
+        # reads this via `getattr(child, "done_data", None)` so it can
+        # lift the value onto `done.invoke.<id>._event.data`. None when
+        # the document never set donedata or the final wasn't reached.
+        self.done_data: Any = None
 
     # ── Lifecycle ──────────────────────────────────────────────────
 
