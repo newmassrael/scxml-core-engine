@@ -33,7 +33,8 @@
    donedata evaluation + done.state branching. #}
 {% for state_id, state in model.states | dictsort %}
 {% set _has_donedata = state.is_final and state.donedata and (state.donedata.params or state.donedata.content.kind != 'none') %}
-{% if state.on_entry_blocks or _has_donedata %}
+{% set _final_with_parent = state.is_final and state.parent and (('done.state.' ~ state.parent) in model.events) %}
+{% if state.on_entry_blocks or _has_donedata or _final_with_parent %}
         if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
 {% for block in state.on_entry_blocks %}
             try:
@@ -104,14 +105,26 @@
                     EventMetadata(data=_done_data, event_type="internal"),
                 )
 {% endif %}
-{% if not state.parent %}
+{% endif %}
+{% if state.is_final and not _has_donedata and state.parent and (('done.state.' ~ state.parent) in model.events) %}
+            # W3C SCXML 3.7: entering a `<final>` raises
+            # `done.state.<parent_id>` even when no `<donedata>` is
+            # present. The engine separately fires
+            # `done.state.<parallel_id>` from `_check_done_state_events`
+            # once every region of a parallel reaches its final, so
+            # this raise covers only the immediate parent (test372).
+            engine.raise_internal(
+                {{ machine_name }}Event.{{ ('done.state.' ~ state.parent) | to_python_const }},
+                EventMetadata(event_type="internal"),
+            )
+{% endif %}
+{% if state.is_final and _has_donedata and not state.parent %}
             # W3C SCXML 5.5 + 6.3.1: top-level `<final>` stashes
             # donedata onto the engine; the invoking parent's
             # `ScxmlInvoke.done_data()` lifts it into
             # `done.invoke.<id>._event.data`.
             if _done_data_ok:
                 engine.done_data = _done_data
-{% endif %}
 {% endif %}
             return
 {% endif %}
