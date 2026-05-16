@@ -253,12 +253,16 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseAbstractDocument(std::sh
         throw SCE::parsing::ParseNoRootElement("No root element found");
     }
 
-    // Check if root element is 'scxml'. Mirrors the Rust-side
-    // `XmlError::WrongRootElement` producer in
-    // `sce-build/src/parser.rs::SCXMLParser::parse_impl` —
-    // both engines surface the same `xml/wrong-root-element`
-    // wire code so consumers dispatch identically across pipelines.
-    if (!ParsingCommon::matchNodeName(rootElement->getName(), "scxml")) {
+    // Check if root element is 'scxml' AND in the W3C SCXML namespace
+    // (or unnamespaced — lenient on legacy fixtures per `isScxmlNamespace`).
+    // Mirrors the Rust-side `XmlError::WrongRootElement` producer in
+    // `sce-build/src/parser.rs::SCXMLParser::parse_impl` — both engines
+    // surface the same `xml/wrong-root-element` wire code so consumers
+    // dispatch identically across pipelines. The namespace gate
+    // additionally rejects `<framework:scxml>` roots that would
+    // otherwise be matched by local-name-only dispatch.
+    if (!ParsingCommon::matchNodeName(rootElement->getName(), "scxml") ||
+        !ParsingCommon::isScxmlNamespace(rootElement)) {
         throw SCE::parsing::ParseWrongRootElement(
             "Root element is not 'scxml', found: " + rootElement->getName());
     }

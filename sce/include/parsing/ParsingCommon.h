@@ -39,18 +39,37 @@ public:
     static bool matchNodeName(const std::string &nodeName, const std::string &baseName);
 
     /**
-     * @brief Find child elements with specified name (considering namespace)
+     * @brief True when `element`'s namespace URI is the W3C SCXML
+     *        namespace, or empty (legacy/test fixtures that omit the
+     *        `xmlns="http://www.w3.org/2005/07/scxml"` declaration).
+     *
+     * Lenient on empty namespace mirrors the AOT-side parser
+     * (`sce-build/src/parser.rs::is_scxml_ns`) so both engines apply
+     * identical foreign-namespace policy per `SCE_FORGE.md` §3.1.
+     * Prefixed foreign-NS elements like `<framework:onentry>` are
+     * correctly rejected because their resolved namespace URI is
+     * `http://example.com/framework`, not the SCXML URI.
+     */
+    static bool isScxmlNamespace(const std::shared_ptr<IXMLElement> &element);
+
+    /**
+     * @brief Find child elements with matching local name AND the W3C
+     *        SCXML namespace (`isScxmlNamespace`). Filters out foreign-
+     *        namespace elements whose local name collides with a W3C
+     *        element (e.g. `<framework:onentry>`).
      * @param element Parent element
-     * @param childName Child name to find
+     * @param childName Child local name to find
      * @return Found child elements
      */
     static std::vector<std::shared_ptr<IXMLElement>> findChildElements(const std::shared_ptr<IXMLElement> &element,
                                                                        const std::string &childName);
 
     /**
-     * @brief Find first child element with specified name (considering namespace)
+     * @brief Find first child element with matching local name AND the
+     *        W3C SCXML namespace. See `findChildElements` for the
+     *        namespace-filter contract.
      * @param element Parent element
-     * @param childName Child name to find
+     * @param childName Child local name to find
      * @return Found child element, nullptr if not found
      */
     static std::shared_ptr<IXMLElement> findFirstChildElement(const std::shared_ptr<IXMLElement> &element,

@@ -29,6 +29,21 @@ bool ParsingCommon::matchNodeName(const std::string &nodeName, const std::string
     return false;
 }
 
+bool ParsingCommon::isScxmlNamespace(const std::shared_ptr<IXMLElement> &element) {
+    if (!element) {
+        return false;
+    }
+    // W3C SCXML §3.5 requires the namespace declaration on root —
+    // strict matches the Rust AOT pipeline where `xsd_validator`
+    // rejects xmlns-less documents at the parser boundary. The C++
+    // Interpreter has no XSD step today (tracked separately as a
+    // follow-up to add full pipeline symmetry), so the root-namespace
+    // check in `SCXMLParser::parseInternal` carries the equivalent
+    // load: an xmlns-less `<scxml>` root surfaces `ParseWrongRootElement`
+    // before this predicate is consulted for any child filtering.
+    return element->getNamespace() == Constants::SCXML_NAMESPACE;
+}
+
 std::vector<std::shared_ptr<IXMLElement>> ParsingCommon::findChildElements(const std::shared_ptr<IXMLElement> &element,
                                                                            const std::string &childName) {
     if (!element) {
@@ -39,7 +54,7 @@ std::vector<std::shared_ptr<IXMLElement>> ParsingCommon::findChildElements(const
     auto children = element->getChildren();
 
     for (const auto &child : children) {
-        if (matchNodeName(child->getName(), childName)) {
+        if (matchNodeName(child->getName(), childName) && isScxmlNamespace(child)) {
             result.push_back(child);
         }
     }
@@ -56,7 +71,7 @@ std::shared_ptr<IXMLElement> ParsingCommon::findFirstChildElement(const std::sha
     auto children = element->getChildren();
 
     for (const auto &child : children) {
-        if (matchNodeName(child->getName(), childName)) {
+        if (matchNodeName(child->getName(), childName) && isScxmlNamespace(child)) {
             return child;
         }
     }

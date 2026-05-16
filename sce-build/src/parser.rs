@@ -2960,22 +2960,17 @@ fn is_scxml_state_element(node: &roxmltree::Node) -> bool {
     matches!(name, "state" | "parallel" | "final")
 }
 
-/// True when `node`'s namespace is the W3C SCXML namespace, or the
-/// node has no namespace (legacy/test SCXML documents that omit the
-/// `xmlns="http://www.w3.org/2005/07/scxml"` declaration on the root).
+/// True when `node`'s namespace is the W3C SCXML namespace.
 ///
-/// Lenient `None` acceptance: roxmltree returns `None` for elements
-/// in documents without a default namespace declaration. W3C SCXML
-/// requires the namespace, but a handful of older fixtures predate
-/// the strict-namespace convention and several W3C IRP tests in
-/// in-house repos elide it. Accepting `None` preserves their parse
-/// behavior while still rejecting prefixed foreign-namespace elements
-/// like `<framework:onentry>` (which carry `Some("http://example.com/framework")`).
+/// W3C SCXML §3.5 requires every SCXML document to declare the
+/// namespace on the root, and `xsd_validator::validate_or_skip`
+/// (run on every input at `parse_impl` boundary) rejects documents
+/// that omit the declaration before this predicate is ever consulted.
+/// A `None` namespace at this point therefore signals a foreign-NS
+/// element inside an otherwise-valid SCXML document, not a malformed
+/// root — strict `Some(SCXML_NAMESPACE)` is correct.
 fn is_scxml_ns(node: &roxmltree::Node<'_, '_>) -> bool {
-    match node.tag_name().namespace() {
-        Some(ns) => ns == crate::model::SCXML_NAMESPACE,
-        None => true,
-    }
+    node.tag_name().namespace() == Some(crate::model::SCXML_NAMESPACE)
 }
 
 /// Find SCXML-namespaced children with a given local name.

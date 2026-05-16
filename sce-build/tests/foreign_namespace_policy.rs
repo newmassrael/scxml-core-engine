@@ -86,6 +86,45 @@ fn foreign_ns_attribute_and_unique_local_name_child_pass_xsd_and_drop_from_ir() 
     );
 }
 
+/// Strict-namespace enforcement: an SCXML document that omits the
+/// root `xmlns="http://www.w3.org/2005/07/scxml"` declaration MUST
+/// be rejected. W3C SCXML §3.5 requires the namespace, and
+/// `xsd_validator::validate_or_skip` (run on every input at the
+/// `parse_impl` boundary) raises `xml/schema-validation` before the
+/// parser-helper namespace filter is ever consulted. If a future
+/// refactor relaxes this — for example, by skipping XSD on some path
+/// or making `is_scxml_ns` lenient on `None` — this test will pass
+/// when it should fail; at that point the strictness chain in both
+/// SCE_FORGE.md §3.1 and the parser must be re-examined.
+#[test]
+fn scxml_without_xmlns_declaration_is_rejected_by_xsd() {
+    let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml version="1.0" initial="s1">
+  <state id="s1">
+    <transition event="go" target="s2"/>
+  </state>
+  <final id="s2"/>
+</scxml>
+"##;
+
+    let dir = tempdir().expect("tempdir");
+    let path = write_doc(dir.path(), "no_xmlns_decl.scxml", scxml);
+    let tdir = template_dir();
+
+    // `GeneratedOutput` is not Debug, so `expect_err` doesn't apply;
+    // hand-roll the Ok-rejection so the error string is still in scope.
+    let result = compile_scxml_lang(path.to_str().unwrap(), &tdir, Language::Rust);
+    let err = match result {
+        Ok(_) => panic!("SCXML without xmlns must be rejected by XSD validation, but compile succeeded"),
+        Err(e) => e,
+    };
+    assert!(
+        err.contains("No matching global declaration") || err.to_lowercase().contains("xmlns")
+            || err.to_lowercase().contains("validation"),
+        "expected schema-validation error citing xmlns / global declaration, got: {err}"
+    );
+}
+
 /// Doc claim #2 (collision case): a foreign-namespace element whose
 /// local name collides with a W3C SCXML element (`onentry`) is
 /// dropped by the parser, because `scxml_child` / `scxml_children`

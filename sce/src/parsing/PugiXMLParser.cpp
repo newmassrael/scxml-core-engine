@@ -72,9 +72,40 @@ std::string PugiXMLElement::getNamespace() const {
         return "";
     }
 
-    // WASM limitation: pugixml doesn't support namespace URIs directly
-    // W3C SCXML: Namespace support not required for current test suite
-    // Future: Implement xmlns extraction if WASM builds require namespace-aware parsing
+    // pugixml exposes no namespace-resolution API directly — XML namespace
+    // declarations (`xmlns` / `xmlns:prefix`) are surfaced only as ordinary
+    // attributes on the declaring element. To return the namespace URI for
+    // this node we have to walk up the ancestor chain looking for the
+    // matching `xmlns` attribute. Mirrors the Rust AOT pipeline's lookup
+    // (roxmltree does this for free) so both engines apply identical
+    // namespace semantics, closing the foreign-NS local-name collision
+    // footgun documented in `SCE_FORGE.md` §3.1.
+    std::string name = node_.name();
+    size_t colonPos = name.find(':');
+    std::string xmlnsAttrName;
+    if (colonPos == std::string::npos) {
+        // Unprefixed element: inherits the default namespace from the
+        // nearest ancestor declaring `xmlns="..."`.
+        xmlnsAttrName = "xmlns";
+    } else {
+        // Prefixed element: look for the `xmlns:<prefix>="..."` binding
+        // in the nearest declaring ancestor.
+        xmlnsAttrName = "xmlns:" + name.substr(0, colonPos);
+    }
+
+    for (pugi::xml_node ancestor = node_; ancestor; ancestor = ancestor.parent()) {
+        pugi::xml_attribute decl = ancestor.attribute(xmlnsAttrName.c_str());
+        if (decl) {
+            return decl.value();
+        }
+    }
+
+    // No declaration found — the document omitted the namespace binding.
+    // Returning empty is honest about what pugixml saw; the rejection of
+    // unnamespaced SCXML happens in `ParsingCommon::isScxmlNamespace`
+    // (strict against `Constants::SCXML_NAMESPACE`) and surfaces at the
+    // `SCXMLParser::parseInternal` root-namespace check as
+    // `ParseWrongRootElement`, matching the AOT pipeline's XSD rejection.
     return "";
 }
 
