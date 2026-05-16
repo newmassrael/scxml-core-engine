@@ -8,6 +8,14 @@
 # the declarations whose defining file lives under embed/include/. The
 # merged, deduplicated, sorted result is the embed API surface manifest.
 #
+# Self-contained invariant: every header must compile standalone (one TU
+# per header). On any clang parse error the script aborts — see
+# process_one's fail-fast block — because clang's degraded AST silently
+# substitutes placeholder types for unresolved templates and would yield
+# a manifest that varies with the parse environment's include path.
+# scripts/test_emit_manifest_fail_fast.sh is the regression TC; pre-push
+# Stage 1c invokes it.
+#
 # Consumers vendoring embed/ compare the old vs new MANIFEST.json via
 # `diff` to spot upstream API changes before re-sync; see docs/EMBED_MANIFEST.md.
 #
@@ -103,14 +111,12 @@ echo "Scanning ${#HEADERS[@]} headers with ${CLANG} (JOBS=${JOBS})..."
 
 TMP_WORK_DIR="$(mktemp -d --suffix=.embed-manifest)"
 TMP_LINES="$(mktemp --suffix=.jsonl)"
-TMP_PARSE_ERRORS="$(mktemp --suffix=.txt)"
-trap 'rm -rf "${TMP_WORK_DIR}"; rm -f "${TMP_LINES}" "${TMP_PARSE_ERRORS}"' EXIT
+trap 'rm -rf "${TMP_WORK_DIR}"; rm -f "${TMP_LINES}"' EXIT
 
-# clang emits a complete AST even when a header is not self-contained
-# (missing transitive include, forward-decl collision, etc.), so the
-# manifest still captures symbols from partially-parsed inputs. The
-# headers that produced diagnostics are recorded verbatim in the manifest
-# so consumers can tell which entries may have degraded member layouts.
+# Each header is parsed standalone (one TU per header) and must compile
+# cleanly — see process_one's fail-fast block below. Aborting on clang
+# parse error keeps the manifest a pure function of the source headers
+# rather than the parse environment's system include path.
 #
 # Workers write per-header outputs into TMP_WORK_DIR so xargs -P >1 has no
 # shared-file race; the merge below appends in deterministic HEADERS order
@@ -126,10 +132,20 @@ process_one() {
     local rel="${header#${include_dir}/}"
     local key="${rel//\//__}"
     local out_lines="${work_dir}/${key}.jsonl"
-    local out_error="${work_dir}/${key}.err"
     local clang_stderr
     clang_stderr="$(mktemp)"
     set +e
+    # -I "${SCE_ROOT}/third_party/quickjs": embed/include/scripting/JSEngine.h
+    # transitively #include "quickjs.h" but the embed package does not vendor
+    # QuickJS (it's a consumer-provided scripting tier dep, see
+    # package_embed.sh §3 comment). Without this -I the standalone parse of
+    # JSEngine.h fails on hosts without QuickJS in their system include path
+    # — historically that included GitHub Actions ubuntu-latest, where
+    # clang's degraded AST produced placeholder types (int instead of
+    # std::vector<...>) and yielded a manifest that drifted from the
+    # committer's. The manifest emitter is a source-repo tool (lives in
+    # scripts/ and reads SCE_ROOT), so reaching into sce/third_party/ here
+    # is a deliberate coupling, not a layering break.
     "${clang_bin}" \
         -Xclang -ast-dump=json \
         -fsyntax-only \
@@ -138,6 +154,7 @@ process_one() {
         -I "${include_dir}" \
         -I "${embed_dir}/third_party/nlohmann_json/include" \
         -I "${embed_dir}/third_party/pugixml/src" \
+        -I "${SCE_ROOT}/third_party/quickjs" \
         "${header}" 2>"${clang_stderr}" \
         | python3 "${filter}" "${include_dir}" > "${out_lines}"
     local pipe_status=("${PIPESTATUS[@]}")
@@ -147,8 +164,30 @@ process_one() {
         rm -f "${clang_stderr}"
         return 1
     fi
+    # Fail-fast on clang parse error rather than silently consuming the
+    # degraded AST that clang still emits. The prior behaviour (record the
+    # header in non_self_contained_headers and keep going) made the manifest
+    # a function of the parse environment — locally-clean parses on a host
+    # with quickjs.h on the system path produced a smaller, "correct" manifest
+    # than CI parses without quickjs.h, where clang fell back to placeholder
+    # types (int for std::vector<std::string>) and emitted ghost duplicate
+    # symbols. See scripts/test_emit_manifest_fail_fast.sh for the regression
+    # TC; pre-push Stage 1c gates against silent re-introduction.
     if [[ "${pipe_status[0]}" != "0" ]]; then
-        printf '%s\n' "${rel}" > "${out_error}"
+        cat "${clang_stderr}" >&2
+        rm -f "${clang_stderr}"
+        echo "" >&2
+        echo "ERROR: clang failed to parse standalone header: ${rel}" >&2
+        echo "       The embed manifest requires every public header to be" >&2
+        echo "       self-contained when compiled in isolation. Fix one of:" >&2
+        echo "         1. Add the missing -I to scripts/emit_embed_manifest.sh" >&2
+        echo "            (this script is the source-repo tool, so reaching" >&2
+        echo "            into sce/third_party/ is allowed)" >&2
+        echo "         2. Vendor the missing dep into embed/third_party/" >&2
+        echo "            (only if it becomes part of the embed package)" >&2
+        echo "         3. Make the header self-contained (forward-decl or" >&2
+        echo "            move the include into the .cpp)" >&2
+        return 1
     fi
     rm -f "${clang_stderr}"
 }
@@ -168,20 +207,17 @@ for header in "${HEADERS[@]}"; do
     if [[ -s "${TMP_WORK_DIR}/${key}.jsonl" ]]; then
         cat "${TMP_WORK_DIR}/${key}.jsonl" >> "${TMP_LINES}"
     fi
-    if [[ -s "${TMP_WORK_DIR}/${key}.err" ]]; then
-        cat "${TMP_WORK_DIR}/${key}.err" >> "${TMP_PARSE_ERRORS}"
-    fi
 done
 
 # Collapse per-header lines into the final manifest with deterministic
 # ordering; python handles unicode + sort_keys canonicalisation.
-python3 - "${TMP_LINES}" "${MANIFEST}" "${EMBED_DIR}" "${CLANG}" "${TMP_PARSE_ERRORS}" << 'PY'
+python3 - "${TMP_LINES}" "${MANIFEST}" "${EMBED_DIR}" "${CLANG}" << 'PY'
 import json
 import os
 import subprocess
 import sys
 
-tmp_lines, manifest_path, embed_dir, clang_bin, tmp_parse_errors = sys.argv[1:6]
+tmp_lines, manifest_path, embed_dir, clang_bin = sys.argv[1:5]
 
 lines = []
 with open(tmp_lines, encoding="utf-8") as fh:
@@ -196,10 +232,12 @@ with open(tmp_lines, encoding="utf-8") as fh:
 unique_sorted = sorted(set(lines))
 symbols = [json.loads(s) for s in unique_sorted]
 
+# Always [] by construction: process_one fails-fast on any non-self-contained
+# header, so emit only reaches this point when every header parsed cleanly.
+# The field is kept in the manifest for sce-embed-manifest.v1 schema
+# stability — consumers checking schema compliance would break if we
+# removed the key, and the [] value is unambiguous.
 parse_errors = []
-if os.path.exists(tmp_parse_errors):
-    with open(tmp_parse_errors, encoding="utf-8") as fh:
-        parse_errors = sorted({line.strip() for line in fh if line.strip()})
 
 # embed_version: reuse embed/VERSION if packaged, else fall back to "unknown".
 version_path = os.path.join(embed_dir, "VERSION")
@@ -234,5 +272,5 @@ with open(manifest_path, "w", encoding="utf-8") as fh:
     fh.write("\n")
 
 print(f"Wrote {manifest_path} ({len(symbols)} symbols, "
-      f"{len(parse_errors)} header(s) not self-contained)")
+      "all headers self-contained)")
 PY

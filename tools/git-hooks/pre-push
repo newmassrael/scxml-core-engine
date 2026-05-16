@@ -125,6 +125,25 @@ for mod_file in \
 done
 (( drift_count == 0 )) || fail_step "Stage 1b ($drift_count mod.rs drift)"
 
+# ── Stage 1c: emit_embed_manifest.sh fail-fast regression TC ──────
+# Reproduces the May 2026 embed-vendor-smoke CI failure where
+# emit_embed_manifest.sh silently consumed clang's degraded AST when
+# JSEngine.h's transitive quickjs.h was unresolvable on the runner.
+# The result: a manifest that was a function of the parse environment
+# (locally clean, CI broken) instead of the source tree, and a
+# verify_embed_manifest.sh diff with ghost duplicate symbols carrying
+# placeholder types like `int` for `std::vector<std::string>`.
+#
+# The fix (commit window: 2026-05-16) moved emit to fail-fast on any
+# clang parse error. This TC plants a synthetic header that includes a
+# nonexistent file, runs emit, and asserts non-zero exit + diagnostic
+# present + no manifest written. Runs in ~1s, no toolchain beyond
+# clang-19 already required by Stage 4. Catches the silent-degrade
+# pattern's reintroduction before any developer pays the CI round-trip.
+log_step "Stage 1c/5 — emit_embed_manifest.sh fail-fast regression TC"
+bash scripts/test_emit_manifest_fail_fast.sh \
+    || fail_step "Stage 1c (emit_embed_manifest fail-fast TC)"
+
 # ── W3C HTTP test server (mirror w3c-tests.yml:379) ───────────────
 # Rust integration tests for W3C SCXML C.2 BasicHTTPEventProcessor
 # (test_201, test_509, test_513, test_518-520, test_532, test_534,
