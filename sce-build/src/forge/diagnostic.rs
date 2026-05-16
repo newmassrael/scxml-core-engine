@@ -1512,6 +1512,8 @@ pub enum DiagnosticCode {
     MeshDeployPartitionMachineNotListed,
     #[serde(rename = "mesh/deploy-partition-empty")]
     MeshDeployPartitionEmpty,
+    #[serde(rename = "mesh/deploy-partition-name-not-identifier")]
+    MeshDeployPartitionNameNotIdentifier,
     #[serde(rename = "mesh/deploy-partition-synth-infix-collision")]
     MeshDeployPartitionSynthInfixCollision,
     #[serde(rename = "mesh/deploy-partition-uncovered-unit")]
@@ -2293,6 +2295,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployPartitionUnitDuplicate,
         MeshDeployPartitionMachineNotListed,
         MeshDeployPartitionEmpty,
+        MeshDeployPartitionNameNotIdentifier,
         MeshDeployPartitionSynthInfixCollision,
         MeshDeployPartitionUncoveredUnit,
         MeshDeployPartitionPartialCoverageRequiresDefault,
@@ -2723,6 +2726,7 @@ impl DiagnosticCode {
             | MeshDeployPartitionUnitDuplicate
             | MeshDeployPartitionMachineNotListed
             | MeshDeployPartitionEmpty
+            | MeshDeployPartitionNameNotIdentifier
             | MeshDeployPartitionSynthInfixCollision
             | MeshDeployPartitionUncoveredUnit
             | MeshDeployPartitionPartialCoverageRequiresDefault
@@ -3120,6 +3124,7 @@ impl DiagnosticCode {
             MeshDeployPartitionUnitDuplicate => "mesh/deploy-partition-unit-duplicate",
             MeshDeployPartitionMachineNotListed => "mesh/deploy-partition-machine-not-listed",
             MeshDeployPartitionEmpty => "mesh/deploy-partition-empty",
+            MeshDeployPartitionNameNotIdentifier => "mesh/deploy-partition-name-not-identifier",
             MeshDeployPartitionSynthInfixCollision => "mesh/deploy-partition-synth-infix-collision",
             MeshDeployPartitionUncoveredUnit => "mesh/deploy-partition-uncovered-unit",
             MeshDeployPartitionPartialCoverageRequiresDefault => "mesh/deploy-partition-partial-coverage-requires-default",
@@ -8164,6 +8169,16 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:5c3f22193c998160","code":"mesh/deploy-partition-empty","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"partition 'empty_part' is empty (no `contains.parallel_regions:` and no `contains.invokes:`). Empty partitions have no runtime purpose (SCE_MESH.md §14 rule 10); either add the units this partition hosts or delete the entry.","actual":"empty_part"}"#,
             ),
             (
+                "mesh/deploy-partition-name-not-identifier",
+                DeployError::PartitionNameNotIdentifier {
+                    partition: "motor-left".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion
+                // on first run; shape + message are the contract.
+                r#"{"v":1,"id":"fnv1a:f34df70fd07c3a96","code":"mesh/deploy-partition-name-not-identifier","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"partition 'motor-left' is not a valid C++ identifier: must start with a letter or underscore and contain only letters, digits, and underscores. Codegen bakes this name into `SCE::Generated::<machine>::P_motor-left` (SCE_MESH.md §14 arch-debt #4 closure) — non-identifier characters would emit non-compiling C++. Rename the partition in deploy.yaml.","actual":"motor-left"}"#,
+            ),
+            (
                 "mesh/deploy-partition-synth-infix-collision",
                 DeployError::PartitionSynthInfixCollision {
                     machine: "parent__sce_synth_invoke__child".into(),
@@ -9799,6 +9814,7 @@ mod tests {
             | MeshDeployPartitionUnitDuplicate
             | MeshDeployPartitionMachineNotListed
             | MeshDeployPartitionEmpty
+            | MeshDeployPartitionNameNotIdentifier
             | MeshDeployPartitionSynthInfixCollision
             | MeshDeployPartitionUncoveredUnit
             | MeshDeployPartitionPartialCoverageRequiresDefault
@@ -10301,6 +10317,7 @@ mod tests {
                 | MeshDeployPartitionUnitDuplicate
                 | MeshDeployPartitionMachineNotListed
                 | MeshDeployPartitionEmpty
+                | MeshDeployPartitionNameNotIdentifier
                 | MeshDeployPartitionSynthInfixCollision
                 | MeshDeployPartitionUncoveredUnit
                 | MeshDeployPartitionPartialCoverageRequiresDefault
@@ -10399,7 +10416,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            272,
+            273,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
              expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \

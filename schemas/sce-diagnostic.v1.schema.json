@@ -204,6 +204,7 @@
         "mesh/deploy-partition-unit-duplicate",
         "mesh/deploy-partition-machine-not-listed",
         "mesh/deploy-partition-empty",
+        "mesh/deploy-partition-name-not-identifier",
         "mesh/deploy-partition-synth-infix-collision",
         "mesh/deploy-partition-uncovered-unit",
         "mesh/deploy-partition-partial-coverage-requires-default",

@@ -3689,6 +3689,23 @@ pub const SYNTH_INVOKE_INFIX: &str = "__sce_synth_invoke__";
 /// nested-parallel partitioning) require SCXML inspection and land
 /// in a later phase. This validator is a no-op when `partitions:` is
 /// absent.
+/// SCE_MESH §14 arch-debt #4 closure helper — partition names are
+/// emitted as a C++ namespace segment (`P_<partition>`) by codegen, so
+/// they must be valid C++ identifiers. Mirrors the C/C++ identifier
+/// rule: first character is a letter (ASCII) or underscore, subsequent
+/// characters are letters, digits, or underscores. Unicode identifiers
+/// (`u8R"(..."` syntax) are intentionally not accepted — the underlying
+/// codegen also emits machine names verbatim, so partition naming
+/// should follow the same conservative subset.
+fn is_cpp_identifier(s: &str) -> bool {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
 fn validate_partitions_schema(cfg: &DeployConfig) -> Result<(), DeployError> {
     let Some(partitions) = &cfg.partitions else {
         return Ok(());
@@ -3731,6 +3748,18 @@ fn validate_partitions_schema(cfg: &DeployConfig) -> Result<(), DeployError> {
     let mut unit_owners: BTreeMap<String, Vec<String>> = BTreeMap::new();
 
     for (partition_name, decl) in partitions.iter() {
+        // SCE_MESH §14 arch-debt #4 closure — codegen bakes the
+        // partition name into `SCE::Generated::<machine>::P_<partition>`.
+        // A name that is not a legal C++ identifier (starts with a
+        // digit, contains hyphens / dots / spaces / etc.) would emit
+        // non-compiling generated code. Detected at deploy parse so
+        // the failure surfaces before codegen rather than at gcc.
+        if !is_cpp_identifier(partition_name) {
+            return Err(DeployError::PartitionNameNotIdentifier {
+                partition: partition_name.clone(),
+            });
+        }
+
         // Rule 10 — empty partition. Checked first so it pre-empts the
         // rule-9 check (which would read no entries and pass vacuously).
         if decl.contains.parallel_regions.is_empty() && decl.contains.invokes.is_empty() {

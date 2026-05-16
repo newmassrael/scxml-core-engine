@@ -480,6 +480,21 @@ pub enum DeployError {
              §14 rule 10); either add the units this partition hosts or delete the entry.")]
     PartitionEmpty { partition: String },
 
+    /// A partition name contains characters that are not legal in a
+    /// C++ identifier (SCE_MESH.md §14 partition shape). Codegen bakes
+    /// each partition name into the generated namespace path
+    /// (`SCE::Generated::<machine>::P_<partition>`) per arch-debt
+    /// #4 closure; a name like `motor-left` or `0worker` would emit
+    /// non-compiling C++. Detected at deploy parse so the failure
+    /// surfaces before codegen rather than at the downstream C++
+    /// compiler.
+    #[error("partition '{partition}' is not a valid C++ identifier: must start with a \
+             letter or underscore and contain only letters, digits, and underscores. \
+             Codegen bakes this name into `SCE::Generated::<machine>::P_{partition}` \
+             (SCE_MESH.md §14 arch-debt #4 closure) — non-identifier characters would \
+             emit non-compiling C++. Rename the partition in deploy.yaml.")]
+    PartitionNameNotIdentifier { partition: String },
+
     /// An author-declared machine id contains the reserved
     /// `__sce_synth_invoke__` infix (SCE_MESH.md §14 rule 5 + §9.6.6).
     /// The infix is used to name machines synthesised from
@@ -2347,6 +2362,17 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             stage: Stage::MeshDeploy,
             actual: Some(partition.clone()),
             expected: None,
+            fix: None,
+            key_fragments: vec![partition.clone()],
+        },
+        DeployError::PartitionNameNotIdentifier { partition } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployPartitionNameNotIdentifier,
+            stage: Stage::MeshDeploy,
+            actual: Some(partition.clone()),
+            expected: None,
+            // Repair is "rename the partition" — no mechanical edit
+            // sce-build can pre-compute because legal substitutes
+            // depend on author intent.
             fix: None,
             key_fragments: vec![partition.clone()],
         },
