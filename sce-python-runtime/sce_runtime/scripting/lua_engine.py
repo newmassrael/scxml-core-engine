@@ -475,11 +475,16 @@ class LuaScriptEngine(IScriptEngine):
         globals_["_sessionid"] = session_id
         globals_["_name"] = session_name
         # `_ioprocessors` is a table keyed on the processor URI with a
-        # `location` field per W3C C.2. The lupa `table_from` builder
-        # produces a real Lua table the generated expressions can
-        # dot-access.
+        # `location` field per W3C C.2. Location uses the `#<name>`
+        # form Rust's LuaScriptEngine emits at `sce-rust-lua/src/lib.rs`
+        # so generated expressions are byte-portable across backends.
+        # The lupa `table_from` builder produces a real Lua table the
+        # generated expressions can dot-access.
         io_table = session.runtime.table_from(
-            {uri: session.runtime.table_from({"location": uri}) for uri in io_processors}
+            {
+                uri: session.runtime.table_from({"location": f"#{uri}"})
+                for uri in io_processors
+            }
         )
         globals_["_ioprocessors"] = io_table
 

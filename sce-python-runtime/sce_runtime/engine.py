@@ -156,10 +156,13 @@ class Engine(Generic[S, E]):
         self._is_running = True
         # W3C SCXML 5.10 — bind `_sessionid` / `_name` / `_ioprocessors`
         # into the script-engine session before any datamodel `<data>`
-        # is registered. Documents with `<send type=BasicHTTP>` get the
-        # processor URI surfaced under `_ioprocessors`; documents that
-        # never use HTTP get an empty table (matches the C++ default).
-        io_processors: List[str] = []
+        # is registered. The SCXML Event I/O Processor is always
+        # present (C.1: "every SCXML Processor MUST support the SCXML
+        # Event I/O Processor"); BasicHTTP is added only when the
+        # generated policy reports a `<send type=BasicHTTP>` need.
+        # Mirrors `tools/codegen/templates/rust/scriptengine_helpers.rs.jinja2`
+        # which registers `vec!["scxml".to_string()]` unconditionally.
+        io_processors: List[str] = ["scxml"]
         if self._policy.needs_http_send():
             io_processors.append(
                 "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
