@@ -177,3 +177,42 @@ fn foreign_ns_w3c_local_name_collision_is_still_dropped() {
          namespace filter on scxml_child/scxml_children has regressed"
     );
 }
+
+/// Root-level namespace gate: a foreign-namespace element with the
+/// W3C local name `scxml` (e.g. `<framework:scxml>`) MUST NOT be
+/// accepted as a valid SCXML root, even after XSD validation might
+/// pass on some permissive path. `parse_impl` checks both local name
+/// and `is_scxml_ns(root)` for the root, mirroring
+/// `sce/src/parsing/SCXMLParser.cpp::parseInternal`. Without this
+/// gate, the parser would walk the foreign tree and silently emit
+/// an empty model — exactly the `feedback_silently_broken_hooks`
+/// anti-pattern the line-413 comment warns about.
+#[test]
+fn foreign_ns_w3c_local_name_root_is_rejected() {
+    let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<framework:scxml xmlns:framework="http://example.com/framework"
+                 xmlns="http://example.com/framework"
+                 version="1.0" initial="s1">
+  <state id="s1">
+    <transition event="go" target="s2"/>
+  </state>
+  <final id="s2"/>
+</framework:scxml>
+"##;
+
+    let dir = tempdir().expect("tempdir");
+    let path = write_doc(dir.path(), "foreign_ns_root.scxml", scxml);
+    let tdir = template_dir();
+
+    // Compile must fail. The error may surface from XSD upstream
+    // (root not in SCXML namespace) or from the explicit root NS
+    // gate in `parse_impl` — both are valid rejection paths under
+    // the strict-namespace policy. What matters is that the parser
+    // does NOT silently produce an empty model.
+    let result = compile_scxml_lang(path.to_str().unwrap(), &tdir, Language::Rust);
+    assert!(
+        result.is_err(),
+        "<framework:scxml> root must be rejected (XSD or explicit root NS gate), \
+         but compile succeeded — the strict-NS root check has regressed"
+    );
+}

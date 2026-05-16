@@ -404,13 +404,19 @@ impl SCXMLParser {
 
         // RFC §W4 D2: catch the previously-silent failure mode where
         // the SCXML pipeline is asked to compile a non-SCXML document
-        // (root tag isn't `<scxml>`). Without this check, `parse_states`
-        // walks an unrecognised tree and yields an empty model — a
-        // `feedback_silently_broken_hooks.md` situation. The
-        // `classify_document` router upstream sends `<sce:codec>` etc.
-        // to the Forge pipeline before they reach here, so this guard
-        // only fires for genuinely-misclassified or hand-mangled input.
-        if root.tag_name().name() != "scxml" {
+        // (root tag isn't `<scxml>` in the SCXML namespace). Without
+        // this check, `parse_states` walks an unrecognised tree and
+        // yields an empty model — a `feedback_silently_broken_hooks.md`
+        // situation. The `classify_document` router upstream sends
+        // `<sce:codec>` etc. to the Forge pipeline before they reach
+        // here, so this guard only fires for genuinely-misclassified
+        // or hand-mangled input. The namespace gate (parallels
+        // `sce/src/parsing/SCXMLParser.cpp::parseInternal`) rejects
+        // `<framework:scxml>` foreign-NS roots that share the local
+        // name; XSD validation upstream catches most of these but
+        // this is defense-in-depth and documents the invariant in
+        // code at the model-construction boundary.
+        if root.tag_name().name() != "scxml" || !is_scxml_ns(&root) {
             return Err(Located::new(
                 ForgeError::Xml(XmlError::WrongRootElement {
                     found: root.tag_name().name().to_string(),
