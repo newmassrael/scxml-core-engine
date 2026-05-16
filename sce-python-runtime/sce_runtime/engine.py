@@ -643,19 +643,17 @@ class Engine(Generic[S, E]):
             # an earlier macrostep iteration that hadn't started yet).
             # The policy delegate knows which state owns which invoke.
             self._policy.cancel_invokes_for_state(s, self)
-
-        # Drop exited leaves and any leaves whose proper ancestors were
-        # exited (their region's leaf is gone). For parallel exits the
-        # ancestor parallel state is in `combined_exit`, which sweeps
-        # every region's leaf.
-        self._active_leaves = [
-            leaf
-            for leaf in self._active_leaves
-            if leaf not in combined_exit
-            and not any(
-                self._is_proper_descendant(leaf, exited) for exited in combined_exit
-            )
-        ]
+            # W3C SCXML 3.9 (test409): the just-exited state must drop
+            # out of the active configuration BEFORE the next state's
+            # onexit runs, so an outer `<onexit>` reading `In(child)`
+            # observes the child as already inactive. Mirrors the per-
+            # state active-set mutation Rust / C++ do as part of their
+            # `execute_exit_actions` loop.
+            self._active_leaves = [
+                leaf
+                for leaf in self._active_leaves
+                if leaf != s and not self._is_proper_descendant(leaf, s)
+            ]
 
         # Run transition actions in document order of their source.
         for t in sorted(
@@ -798,12 +796,16 @@ class Engine(Generic[S, E]):
         self._descend_initial_path(path[0], path_child)
 
     def _descend_initial_path(self, state: S, path_child: Dict[S, S]) -> None:
-        self._run_entry(state)
-        if self._policy.is_final_state(state):
+        is_final = self._policy.is_final_state(state)
+        is_parallel = self._policy.is_parallel_state(state)
+        is_compound = self._policy.is_compound_state(state)
+        if is_final or not (is_parallel or is_compound):
             self._active_leaves.append(state)
+        self._run_entry(state)
+        if is_final:
             self._mark_root_final_if_top_level(state)
             return
-        if self._policy.is_parallel_state(state):
+        if is_parallel:
             regions = sorted(
                 self._policy.get_parallel_regions(state),
                 key=self._policy.get_document_order,
@@ -819,7 +821,7 @@ class Engine(Generic[S, E]):
                 if self._reached_final or not self._is_running:
                     return
             return
-        if self._policy.is_compound_state(state):
+        if is_compound:
             on_path = path_child.get(state)
             if on_path is not None:
                 self._descend_initial_path(on_path, path_child)
@@ -830,18 +832,29 @@ class Engine(Generic[S, E]):
                 return
             self._enter_state(children[0])
             return
-        self._active_leaves.append(state)
 
     def _enter_state(self, state: S) -> None:
         """Recursively enter `state`: run its entry actions, then descend
         through the appropriate child (single initial child for a compound,
-        every region for a `<parallel>`)."""
-        self._run_entry(state)
-        if self._policy.is_final_state(state):
+        every region for a `<parallel>`).
+
+        W3C SCXML 3.8: a state is part of the active configuration BEFORE
+        its `<onentry>` runs — so a guard like `In(s)` evaluated inside
+        `s`'s own onentry returns True (test411). Atomic / final leaves
+        are appended here ahead of `_run_entry`; compound and parallel
+        states acquire their active status automatically once any of
+        their descendants land in `_active_leaves` (active_configuration
+        walks parents)."""
+        is_final = self._policy.is_final_state(state)
+        is_parallel = self._policy.is_parallel_state(state)
+        is_compound = self._policy.is_compound_state(state)
+        if is_final or not (is_parallel or is_compound):
             self._active_leaves.append(state)
+        self._run_entry(state)
+        if is_final:
             self._mark_root_final_if_top_level(state)
             return
-        if self._policy.is_parallel_state(state):
+        if is_parallel:
             # W3C SCXML 3.4 — enter every region in document order. The
             # policy provides regions in declaration-time order (which may
             # be alphabetical for some codegen paths); sort here so the
@@ -855,7 +868,7 @@ class Engine(Generic[S, E]):
                 if self._reached_final or not self._is_running:
                     return
             return
-        if self._policy.is_compound_state(state):
+        if is_compound:
             children = self._policy.get_initial_children(state)
             if not children:
                 # Defensive: well-formed compound has at least one child.
@@ -863,8 +876,6 @@ class Engine(Generic[S, E]):
                 return
             self._enter_state(children[0])
             return
-        # Atomic leaf — record in the active set.
-        self._active_leaves.append(state)
 
     def _snapshot_history(self, exiting: Set[S]) -> None:
         """W3C SCXML 3.11 — for every compound about to exit, record its
