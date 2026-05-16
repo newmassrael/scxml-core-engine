@@ -94,16 +94,17 @@
    332 depends on the idlocation having been written). The resolved
    sendid then rides on the `error.execution` event's metadata so the
    matching transition's `<assign expr="_event.sendid">` reads back
-   the same value. The early `return` mirrors W3C 3.8 "an error in
+   the same value. `raise _ActionAbort` mirrors W3C 3.8 "an error in
    executable content causes all subsequent elements in the same
-   handler to be skipped". #}
+   block to be skipped" — but onentry siblings are separate blocks
+   per 3.8.1, so the abort sentinel (caught by the per-block
+   try/except in `entry_exit_actions.py.jinja2`) is what test376
+   relies on, not a `return` that would also skip the next block. #}
 {{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
 {% if 'error.execution' in model.events %}
 {{ indent }}engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
-{{ indent }}return
-{% else %}
-{{ indent }}return  # W3C 6.2: invalid target — but document declares no error.execution descriptor
 {% endif %}
+{{ indent }}raise _ActionAbort
 {% elif action.target == '#_internal' %}
 {# W3C SCXML 6.2 (test189, test495): static `<send target="#_internal">`
    enqueues onto the current session's internal queue. Internal events
