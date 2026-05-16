@@ -112,11 +112,16 @@
             ).to_lua_literal()
 {% endif %}
 {% if state.parent and ('done.state.' ~ state.parent) in model.events %}
-            if _done_data_ok:
-                engine.raise_internal(
-                    {{ machine_name }}Event.{{ ('done.state.' ~ state.parent) | to_python_const }},
-                    EventMetadata(data=_done_data, event_type="internal"),
-                )
+            # W3C SCXML 5.5 + 3.7: a donedata eval failure raises
+            # `error.execution` AND still fires `done.state.<parent>`
+            # with empty `_event.data` (test528). The error.execution
+            # has already been raised inline; here we always raise the
+            # done event, supplying empty data on the failure path so
+            # the surrounding transition can still match.
+            engine.raise_internal(
+                {{ machine_name }}Event.{{ ('done.state.' ~ state.parent) | to_python_const }},
+                EventMetadata(data=_done_data if _done_data_ok else "", event_type="internal"),
+            )
 {% endif %}
 {% endif %}
 {% if state.is_final and not _has_donedata and state.parent and (('done.state.' ~ state.parent) in model.events) %}

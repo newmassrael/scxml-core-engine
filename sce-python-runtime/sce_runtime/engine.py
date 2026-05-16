@@ -754,13 +754,26 @@ class Engine(Generic[S, E]):
     def _enter_target_step(self, target: S, boundary: Optional[S]) -> None:
         """Enter ancestors of `target` between `boundary` and `target`,
         then descend into `target` via `_enter_state`. Shared by the
-        normal-target and history-restore paths so they cannot drift."""
+        normal-target and history-restore paths so they cannot drift.
+
+        W3C SCXML Appendix D.2 `addDescendantStatesToEnter` — when an
+        ancestor on the entry path is a `<parallel>`, every sibling
+        region (not the one on the target's path) must also be entered
+        via its default initial chain (test504/505/533). Without this,
+        an external transition that re-enters a parallel through one of
+        its descendants would silently drop the sibling regions."""
         upward: List[S] = []
         state: Optional[S] = target
         while state is not None and state != boundary:
             upward.append(state)
             state = self._policy.get_parent(state)
         already_active = self.active_configuration()
+        # Build the path-child map so parallel ancestors can identify
+        # the on-path region (which the next loop iteration enters) vs
+        # the sibling regions (entered here via default descent).
+        path_child: Dict[S, S] = {}
+        for i in range(len(upward) - 1):
+            path_child[upward[i + 1]] = upward[i]
         # Enter from boundary-child down to target, then descend.
         for s in reversed(upward[1:]):
             if s in already_active:
@@ -770,6 +783,18 @@ class Engine(Generic[S, E]):
                 self._active_leaves.append(s)
                 self._mark_root_final_if_top_level(s)
                 return
+            if self._policy.is_parallel_state(s):
+                on_path = path_child.get(s)
+                regions = sorted(
+                    self._policy.get_parallel_regions(s),
+                    key=self._policy.get_document_order,
+                )
+                for region in regions:
+                    if region == on_path:
+                        continue
+                    self._enter_state(region)
+                    if self._reached_final or not self._is_running:
+                        return
         self._enter_state(target)
 
     def _run_entry(self, state: S) -> None:
