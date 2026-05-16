@@ -255,7 +255,13 @@ engine.performMeshSend("#_parent", "{{ action.event }}", "", sendId, "");
 {% set field_suffix = scxml_list[0].field_suffix %}
 {% set child_name = scxml_list[0].child_name %}
 if (child_{{ field_suffix }}_) {
-    // W3C SCXML 6.4.1: Send event to child using child's Event enum
+    // W3C SCXML 6.4.1: Send event to child using child's Event enum.
+    // SCE_MESH §14 arch-debt #4 caveat: partition-naive namespace
+    // ref — assumes child machine emits to the flat
+    // `SCE::Generated::<child_name>` shape, not the partitioned
+    // `::P_<part>` form. No cross-partition invoke consumer today;
+    // a future consumer threads `child_partition` through the
+    // model + gates a `::P_<part>` segment here.
     using ChildEvent = ::SCE::Generated::{{ child_name }}::Event;
     AOT_DEBUG("Sending event {{ action.event }} to child {{ invoke_id }}");
     child_{{ field_suffix }}_->raiseExternal(ChildEvent::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }});
@@ -280,7 +286,9 @@ if (::SCE::SendHelper::isChildInvokeTarget("{{ action.target }}")) {
 {% if loop.first %}
     if (invokeId == "{{ invoke.invoke_id }}") {
         if (child_{{ invoke.field_suffix }}_) {
-            // W3C SCXML 6.4: Send event to child using child's Event enum
+            // W3C SCXML 6.4: Send event to child using child's Event enum.
+            // SCE_MESH §14 arch-debt #4 caveat: partition-naive ref —
+            // see the sibling targeted-send site above for the lift path.
             using ChildEvent = ::SCE::Generated::{{ invoke.child_name }}::Event;
             AOT_DEBUG("Sending event {{ action.event }} to child {}", invokeId);
             child_{{ invoke.field_suffix }}_->raiseExternal(ChildEvent::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }});

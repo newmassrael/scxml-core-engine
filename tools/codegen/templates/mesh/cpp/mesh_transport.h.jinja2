@@ -2469,12 +2469,12 @@ struct TransportRouter {
         // until start() flushes them, so post-start registration would
         // miss the initial peer-availability anchor edge.
         {{ someip_sce_app_field }}->offer_service(
-            SCE::Generated::{{ machine_name }}{% if partition_wire21_self %}::P_{{ partition_wire21_self }}{% endif %}::SCE_LIVENESS_SERVICE_SELF,
-            SCE::Generated::{{ machine_name }}{% if partition_wire21_self %}::P_{{ partition_wire21_self }}{% endif %}::SCE_LIVENESS_INSTANCE);
+            SCE_LIVENESS_SERVICE_SELF,
+            SCE_LIVENESS_INSTANCE);
 {%   for peer in someip_liveness_service_ids_peers %}
         {{ someip_sce_app_field }}->register_availability_handler(
-            SCE::Generated::{{ machine_name }}{% if partition_wire21_self %}::P_{{ partition_wire21_self }}{% endif %}::SCE_LIVENESS_SERVICE_PEER_{{ peer.partition_upper }},
-            SCE::Generated::{{ machine_name }}{% if partition_wire21_self %}::P_{{ partition_wire21_self }}{% endif %}::SCE_LIVENESS_INSTANCE,
+            SCE_LIVENESS_SERVICE_PEER_{{ peer.partition_upper }},
+            SCE_LIVENESS_INSTANCE,
             [this](vsomeip::service_t, vsomeip::instance_t, bool is_available) {
                 // Only the loss edge raises (REGION_PARTITIONED);
                 // initial NOT_AVAILABLE→AVAILABLE is steady-state setup,
@@ -2505,12 +2505,12 @@ struct TransportRouter {
         // see `available=false` only when the LAST partition exits —
         // matching §10.9 invariant 4 "any session up = machine alive".
         {{ someip_sce_app_field }}->offer_service(
-            SCE::Generated::{{ machine_name }}{% if partition_wire21_self %}::P_{{ partition_wire21_self }}{% endif %}::SCE_MACHINE_LIVENESS_SERVICE_SELF,
-            SCE::Generated::{{ machine_name }}{% if partition_wire21_self %}::P_{{ partition_wire21_self }}{% endif %}::SCE_MACHINE_LIVENESS_INSTANCE);
+            SCE_MACHINE_LIVENESS_SERVICE_SELF,
+            SCE_MACHINE_LIVENESS_INSTANCE);
 {%   for peer in someip_machine_liveness_service_ids_peers %}
         {{ someip_sce_app_field }}->register_availability_handler(
-            SCE::Generated::{{ machine_name }}{% if partition_wire21_self %}::P_{{ partition_wire21_self }}{% endif %}::SCE_MACHINE_LIVENESS_SERVICE_PEER_{{ peer.machine_upper }},
-            SCE::Generated::{{ machine_name }}{% if partition_wire21_self %}::P_{{ partition_wire21_self }}{% endif %}::SCE_MACHINE_LIVENESS_INSTANCE,
+            SCE_MACHINE_LIVENESS_SERVICE_PEER_{{ peer.machine_upper }},
+            SCE_MACHINE_LIVENESS_INSTANCE,
             [this](vsomeip::service_t, vsomeip::instance_t, bool is_available) {
                 // Only the loss edge raises (PEER_PARTITIONED); initial
                 // NOT_AVAILABLE→AVAILABLE is steady-state setup, not a

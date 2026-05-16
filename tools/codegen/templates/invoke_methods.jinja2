@@ -87,7 +87,20 @@
                         // Format: "parentSessionId.invokeId" (e.g., "session123._invoke_0")
                         std::string childSessionId = (sessionId_.has_value() ? sessionId_.value() : "") + "." + pending.invokeId;
 
-                        // Create child instance with parent pointer, invokeId, and childSessionId
+                        // Create child instance with parent pointer, invokeId, and childSessionId.
+                        //
+                        // SCE_MESH §14 arch-debt #4 caveat: this namespace
+                        // reference is partition-naive — it assumes the
+                        // child machine emits its SM class into the flat
+                        // `SCE::Generated::<child_name>` shape, not the
+                        // partitioned `SCE::Generated::<child_name>::P_<p>`
+                        // shape. Cross-partition `<invoke>` (a partitioned
+                        // machine spawned via `<invoke type="scxml">`) is
+                        // not a current consumer, so the partition-aware
+                        // form would be untested code. When a consumer
+                        // arrives, thread `invoke_info.child_partition`
+                        // through the model and gate the `::P_<part>`
+                        // segment here.
                         child_{{ invoke_info.field_suffix }}_ = std::make_shared<::SCE::Generated::{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>>(self_, pending.invokeId, childSessionId);
 
                         {% if invoke_info.namelist %}
@@ -212,7 +225,11 @@
                         // W3C SCXML 6.5: Generate child session ID
                         std::string childSessionId = (sessionId_.has_value() ? sessionId_.value() : "") + "." + pending.invokeId;
 
-                        // W3C SCXML 6.4: Create pre-generated AOT child (pure AOT — no Interpreter dependency)
+                        // W3C SCXML 6.4: Create pre-generated AOT child (pure AOT — no Interpreter dependency).
+                        // SCE_MESH §14 arch-debt #4 caveat: partition-naive
+                        // namespace ref — see the sibling create-child site
+                        // above for the lift path when a partitioned child
+                        // becomes a consumer.
                         child_{{ invoke_info.field_suffix }}_ = std::make_shared<::SCE::Generated::{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>>(self_, pending.invokeId, childSessionId);
 
                         // W3C SCXML 6.4.6: Track active invoke session
