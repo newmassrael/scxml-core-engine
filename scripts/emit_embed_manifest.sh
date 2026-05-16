@@ -146,6 +146,12 @@ process_one() {
     # committer's. The manifest emitter is a source-repo tool (lives in
     # scripts/ and reads SCE_ROOT), so reaching into sce/third_party/ here
     # is a deliberate coupling, not a layering break.
+    # -I "${SCE_ROOT}/third_party/cpp-httplib": embed/include/events/
+    # HttpResponseUtils.h transitively `#include <httplib.h>`. Like
+    # quickjs (see the comment above), httplib is a consumer-provided
+    # HTTP client tier — embed does not vendor it. The manifest emitter
+    # is a source-repo tool, so the -I into sce/third_party/ here is
+    # deliberate (same precedent as the quickjs -I).
     "${clang_bin}" \
         -Xclang -ast-dump=json \
         -fsyntax-only \
@@ -155,6 +161,7 @@ process_one() {
         -I "${embed_dir}/third_party/nlohmann_json/include" \
         -I "${embed_dir}/third_party/pugixml/src" \
         -I "${SCE_ROOT}/third_party/quickjs" \
+        -I "${SCE_ROOT}/third_party/cpp-httplib" \
         "${header}" 2>"${clang_stderr}" \
         | python3 "${filter}" "${include_dir}" > "${out_lines}"
     local pipe_status=("${PIPESTATUS[@]}")
