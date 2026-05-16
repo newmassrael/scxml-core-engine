@@ -290,6 +290,14 @@ Adding a new utility or template group means editing `sce_codegen_assets.cmake` 
 - Transparent hybrid: user doesn't choose, generator decides
 - Template-based: easy to modify and extend
 
+### Stability and Library Use
+
+`sce-build` is published as both `rlib` and `cdylib` (`sce-build/Cargo.toml`). Downstream Rust crates may depend on it as a library — workspace runtime crates and `build.rs` helpers already do so, and `sce-codegen` is one binary that consumes the same library surface.
+
+**Until SCE 1.0, every `pub` item in `sce-build` is unstable and may change between commits without notice or migration path.** This includes `forge::model`, `forge::parser`, `forge::provenance`, `forge::sourcemap`, `forge::diagnostic`, `forge::xsd_validator`, and `forge::target_plugin`. This is policy, not oversight: 5-backend codegen parity and the v1 diagnostic wire contract are still consolidating, and freezing the surface before they settle would force a back-compat shim later.
+
+A public stability tier (stable / unstable / hidden) will be declared in a future SCE release alongside the 1.0 cut. Until then, downstream consumers should pin a specific SCE commit and treat the parser/IR surface as private-by-policy even though it is `pub` for workspace reasons. The `--error-format=json` NDJSON wire contract (`SCE_ERROR_CONTRACT.md` §8 "Evolution policy") and the `sce-codegen` CLI flags are the only surfaces with their own explicit pre-1.0 governance today.
+
 **ECMAScript Expression Handling** (Static Hybrid):
 - Detects ECMAScript features (`typeof`, `_event`, `In()`) automatically
 - Generates JSEngine/LuaEngine-embedded code for expression evaluation

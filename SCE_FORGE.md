@@ -171,6 +171,20 @@ W3C SCXML Section 3.1 explicitly allows elements and attributes from foreign nam
 </scxml>
 ```
 
+#### Foreign Namespace Policy (non-`sce:` extensions)
+
+SCE accepts foreign-namespace elements and attributes (other than `sce:`) per W3C SCXML §3.1. The behavior is split across stages and documented here so downstream tooling can rely on it:
+
+| Stage | Behavior on foreign-namespace nodes |
+|-------|-------------------------------------|
+| XSD validation (`schemas/sce-forge.xsd`) | **Preserve.** `<xs:any namespace="##any" processContents="lax">` and `<xs:anyAttribute namespace="##other" processContents="lax"/>` mean foreign nodes pass schema validation untouched, no diagnostic raised. |
+| SCXML → IR parsing (`sce-build/src/parser.rs`) | **Drop.** The parser dispatches children by **local element name** against the W3C SCXML vocabulary (`state`, `transition`, `data`, …). Foreign-NS elements whose local names are outside that vocabulary have no model slot and are silently skipped. (Caveat: a foreign-NS element whose local name collides with a W3C name — e.g. `<framework:state>` — would currently be matched as if it were the W3C element; foreign-NS prefixes should avoid the W3C local-name set.) |
+| Forge kind parsing (`sce-build/src/forge/parser.rs`) | **Drop.** Kind-bound parsers explicitly filter children to `Some(SCE_NAMESPACE)` when scanning for kind-specific content. |
+
+**Implication for downstream consumers**: a foreign-namespace annotation survives XSD validation without raising a diagnostic, but does **not** appear in `SCXMLModel` or `ForgeDocument`. Downstream frameworks that want to consume framework-specific annotations on SCXML nodes must read them out of the source document themselves; SCE does not preserve them in its IR.
+
+This shape is **current behavior**, not a stability commitment. The pre-1.0 policy for the parser/IR surface lives in `ARCHITECTURE.md` → "Stability and Library Use".
+
 ### 3.2 The `sce:kind` Attribute
 
 `sce:kind` operates at two levels: **document-level** (on `<scxml>` root) and **inline** (on `<data>` elements within a statechart). The distinction drives codegen architecture.
