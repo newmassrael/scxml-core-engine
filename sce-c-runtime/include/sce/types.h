@@ -89,19 +89,26 @@
 #endif
 
 /* Bounded copy into an `SCE_MAX_ID_LEN`-sized buffer (`invoke_id` /
-   `send_id`). `snprintf` always NUL-terminates and never overflows
-   the destination, sidestepping gcc's `-Wstringop-truncation` false
-   positive on the equivalent `strncpy` + manual NUL pattern that
-   triggers `-Werror` on every test using `<invoke>` or delayed
-   `<send>`. NULL `src` is normalised to the empty string so callers
-   do not need a guard. Lives in `types.h` (not `invoke.h`) so the
-   delayed-send sites in `state_machine.c.jinja2` can call it
-   without dragging the invoke types into invoke-free fixtures. */
+   `send_id`). Manual length scan + `memcpy` + explicit NUL keeps the
+   helper standalone C11 (no `strnlen` POSIX dependency, no
+   `<stdio.h>` surface for freestanding MCU fixtures) and still
+   NUL-terminates without tripping gcc's `-Wstringop-truncation`
+   false positive on the equivalent `strncpy` pattern. NULL `src`
+   is normalised to the empty string so callers do not need a guard.
+   Lives in `types.h` (not `invoke.h`) so the delayed-send sites in
+   `state_machine.c.jinja2` can call it without dragging the invoke
+   types into invoke-free fixtures. */
 #include <stddef.h>
-#include <stdio.h>
+#include <string.h>
 SCE_C_UNUSED static inline void
 sce_copy_bounded_id(char *dst, const char *src) {
-    (void)snprintf(dst, (size_t)SCE_MAX_ID_LEN, "%s", src != NULL ? src : "");
+    const char *s = src != NULL ? src : "";
+    size_t n = 0;
+    while (n < (size_t)SCE_MAX_ID_LEN - 1u && s[n] != '\0') {
+        n++;
+    }
+    memcpy(dst, s, n);
+    dst[n] = '\0';
 }
 
 #endif  // SCE_TYPES_H
