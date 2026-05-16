@@ -172,6 +172,17 @@ name = "s5_o_atomic_1_sourcemap"
 path = "tests/s5_o_atomic_1_sourcemap.rs"
 required-features = ["cli"]
 
+# CLI meta + workspace-root resolution regression. Pins --version
+# output, --help freshness (no stale "M2+" c11 line), and the four-
+# layer workspace-root resolution chain that DriftContext relies on
+# for §6.2.6 template-hash embedding. Surfaced from a vendored-binary
+# (watching-zenoh R30→R53) zero-hash regression that the legacy
+# walk-up-from-cwd resolver triggered silently.
+[[test]]
+name = "cli_meta_and_workspace_root"
+path = "tests/cli_meta_and_workspace_root.rs"
+required-features = ["cli"]
+
 
 
 [lints]

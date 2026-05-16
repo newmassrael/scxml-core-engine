@@ -130,7 +130,8 @@ impl DriftContext {
                 );
                 [0u8; 32]
             });
-        let template_hash = match locate_workspace_root() {
+        let explicit = current_workspace_root_override();
+        let template_hash = match locate_workspace_root(explicit.as_deref()) {
             Some(ws) => {
                 let tpl = ws.join("tools").join("codegen").join("templates");
                 let lock = ws.join("Cargo.lock");
@@ -144,7 +145,10 @@ impl DriftContext {
             }
             None => {
                 eprintln!(
-                    "sce-codegen: workspace root not detected; template-hash embedded as zero",
+                    "sce-codegen: workspace root not detected (tried --workspace-root, \
+                     $SCE_WORKSPACE_ROOT, CARGO_MANIFEST_DIR/.., cwd-walk); \
+                     template-hash embedded as zero — pass --workspace-root <PATH> \
+                     to fix",
                 );
                 [0u8; 32]
             }
@@ -296,6 +300,24 @@ fn current_error_format() -> ErrorFormat {
     ERROR_FORMAT.get().copied().unwrap_or(ErrorFormat::Human)
 }
 
+/// Globally-resolved `--workspace-root` override. Mirrors
+/// [`ERROR_FORMAT`]: installed once at the top of `main` so every
+/// site that needs the SCE workspace location (DriftContext template
+/// hashing, the `verify` subcommand) can consult one source of truth
+/// without each call having to thread the flag through its
+/// signature. Unset when the user neither passed `--workspace-root`
+/// nor `SCE_WORKSPACE_ROOT` — in which case the resolution falls
+/// through to `CARGO_MANIFEST_DIR`'s parent and cwd-walk per
+/// [`locate_workspace_root`].
+static WORKSPACE_ROOT_OVERRIDE: OnceLock<PathBuf> = OnceLock::new();
+
+/// Read the installed override, if any. Callers pair this with
+/// [`locate_workspace_root`] to honour the global flag without
+/// having to plumb it through their signatures.
+fn current_workspace_root_override() -> Option<PathBuf> {
+    WORKSPACE_ROOT_OVERRIDE.get().cloned()
+}
+
 impl ErrorFormat {
     /// Emit any [`ToDiagnostics`] error and terminate with its exit
     /// code. Generic over the error family so ForgeError, MeshError,
@@ -418,8 +440,25 @@ fn emit_generate_manifest(report: &GenerateReport) {
 // ── CLI Definition ──────────────────────────────────────────────
 
 #[derive(Parser)]
-#[command(name = "sce-codegen", about = "SCE SCXML Code Generator")]
+#[command(
+    name = "sce-codegen",
+    about = "SCE SCXML Code Generator",
+    version = env!("CARGO_PKG_VERSION"),
+)]
 struct Cli {
+    /// Override the SCE workspace root. The workspace root is the
+    /// directory carrying `tools/codegen/templates/` and the
+    /// `Cargo.lock` that feed the §6.2.6 `template-hash`. Resolution
+    /// priority: this flag → `SCE_WORKSPACE_ROOT` env var →
+    /// `CARGO_MANIFEST_DIR/..` (compile-time, used for vendored
+    /// builds where cwd lives in the consumer workspace) → walk up
+    /// from cwd. Set this when an automated build (vendored or
+    /// otherwise) cannot rely on the default resolution and you want
+    /// the embedded `template-hash` to be the real one rather than
+    /// the zero fallback. Global — applies to every subcommand.
+    #[arg(long, global = true, value_name = "PATH")]
+    workspace_root: Option<PathBuf>,
+
     /// Diagnostic output format on stderr. `human` (default) preserves
     /// the existing CLI text. `json` emits one NDJSON record per error
     /// for machine consumption; stdout output is unchanged. The flag
@@ -464,7 +503,7 @@ enum Commands {
     Generate {
         /// Input SCXML file path
         scxml: String,
-        /// Target language (rust, cpp, kotlin, go, c11). C11 is RFC §5.J.1 foundation only — emitter lands in M2+.
+        /// Target language (rust, cpp, kotlin, go, c11).
         #[arg(short, long, default_value = "cpp")]
         language: String,
         /// Output directory
@@ -604,7 +643,7 @@ enum Commands {
     },
     /// Batch generate W3C test state machines and test classes
     GenerateW3c {
-        /// Target language (rust, cpp, kotlin, go, c11). C11 is RFC §5.J.1 foundation only — emitter lands in M2+.
+        /// Target language (rust, cpp, kotlin, go, c11).
         #[arg(short, long)]
         language: String,
         /// Path to tests/CMakeLists.txt (test registry)
@@ -798,6 +837,13 @@ fn main() {
     // launch the binary inherit this install via the normal CLI
     // parse; in-process helpers never run before this point.
     let _ = ERROR_FORMAT.set(error_format);
+    // Same OnceLock pattern for the workspace-root override so
+    // DriftContext::compute and cmd_verify can both consult one
+    // source of truth without growing parallel `workspace_root: Option<&Path>`
+    // params on every helper signature.
+    if let Some(p) = cli.workspace_root {
+        let _ = WORKSPACE_ROOT_OVERRIDE.set(p);
+    }
     match cli.command {
         Commands::Generate {
             scxml,
@@ -3368,10 +3414,14 @@ fn cmd_verify(
     let input_path = Path::new(input_root);
     let deploy_path = deploy.map(Path::new);
 
-    // Defaults for template_root / cargo_lock: probe upwards from
-    // the current working directory until we find a `Cargo.toml`
-    // that names `sce-build` member or until we hit filesystem root.
-    let workspace_root = locate_workspace_root()
+    // Defaults for template_root / cargo_lock: consult the same
+    // resolution chain DriftContext uses (--workspace-root override
+    // → SCE_WORKSPACE_ROOT → CARGO_MANIFEST_DIR/.. → cwd-walk) so
+    // `sce-codegen verify` matches whatever workspace produced the
+    // emit. Falls back to cwd only if every layer fails, mirroring
+    // the pre-2026-05 forgiving behaviour for ad-hoc invocations.
+    let explicit_root = current_workspace_root_override();
+    let workspace_root = locate_workspace_root(explicit_root.as_deref())
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")));
     let tpl_root_default = workspace_root.join("tools").join("codegen").join("templates");
     let lock_default = workspace_root.join("Cargo.lock");
@@ -3479,18 +3529,85 @@ fn collect_generated_files(out_dir: &Path) -> Vec<std::path::PathBuf> {
     out.into_iter().collect()
 }
 
-/// Walks upward from the current directory looking for a directory
-/// containing a `Cargo.toml` AND a `tools/codegen/templates` subdir
-/// (the workspace root signature). Returns `None` if the walk
-/// exhausts the filesystem without a match — callers either treat
-/// that as an error (DriftContext template-hash fallback) or fall
-/// back to the cwd (verify's I/O-error surface).
-fn locate_workspace_root() -> Option<std::path::PathBuf> {
+/// Locate the SCE workspace root — the directory carrying
+/// `tools/codegen/templates/` + the workspace `Cargo.lock` that feed
+/// the §6.2.6 `template-hash`. Resolution priority (each layer must
+/// validate the `tools/codegen/templates/` shape — paths failing the
+/// check fall through to the next layer rather than silently
+/// embedding the wrong root):
+///
+///   1. `explicit` argument — surfaced as `--workspace-root <PATH>`
+///      on the CLI; takes precedence so vendored consumers can pin
+///      the location from a build.rs / Makefile without relying on
+///      env vars or process layout.
+///   2. `SCE_WORKSPACE_ROOT` env var — mirrors the `SCE_TEMPLATE_DIR`
+///      escape hatch already documented for [`sce_build::find_template_base`].
+///   3. `CARGO_MANIFEST_DIR`'s parent — baked at compile time to the
+///      `sce-build/` crate root inside whichever workspace built this
+///      binary. For both in-repo and `path = "vendor/sce/sce-build"`
+///      consumer builds this resolves to the SCE workspace that
+///      shipped the matching template tree. This is the layer the
+///      walk-up-from-cwd path (used pre-2026-05) missed for vendored
+///      binaries — cwd lives in the consumer workspace while the
+///      vendored SCE tree sits *below* it under `vendor/sce/`.
+///   4. Walk upward from the current directory looking for a
+///      `tools/codegen/templates/` directory. Last-resort path for
+///      ad-hoc invocations from inside the SCE workspace tree.
+///
+/// Returns `None` only if every layer fails. Callers treat that as
+/// either a recoverable warning (DriftContext template-hash falls
+/// back to all-zero) or an error (`verify` surfaces an I/O failure).
+fn locate_workspace_root(explicit: Option<&Path>) -> Option<std::path::PathBuf> {
+    fn validates(candidate: &Path) -> bool {
+        candidate
+            .join("tools")
+            .join("codegen")
+            .join("templates")
+            .exists()
+    }
+
+    if let Some(p) = explicit {
+        if validates(p) {
+            return Some(p.to_path_buf());
+        }
+        // Explicit override that does not validate is a user mistake
+        // worth surfacing — the DriftContext call site already emits
+        // a zero-hash warning when this function returns None.
+        eprintln!(
+            "sce-codegen: --workspace-root '{}' does not contain tools/codegen/templates/",
+            p.display(),
+        );
+    }
+
+    if let Ok(env_root) = std::env::var("SCE_WORKSPACE_ROOT") {
+        let candidate = std::path::PathBuf::from(env_root);
+        if validates(&candidate) {
+            return Some(candidate);
+        }
+        eprintln!(
+            "sce-codegen: SCE_WORKSPACE_ROOT '{}' does not contain tools/codegen/templates/",
+            candidate.display(),
+        );
+    }
+
+    // `CARGO_MANIFEST_DIR` is baked at compile time to the sce-build
+    // crate's directory inside the workspace that built the binary —
+    // including vendored builds where the consumer's
+    // `path = "vendor/sce/sce-build"` dependency makes the parent
+    // (`vendor/sce/`) the canonical SCE workspace root.
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    if let Some(parent) = crate_dir.parent() {
+        if validates(parent) {
+            return Some(parent.to_path_buf());
+        }
+    }
+
+    // Last resort: walk upward from cwd. Kept for ad-hoc invocations
+    // from inside the SCE workspace; vendored binaries normally hit
+    // the `CARGO_MANIFEST_DIR` layer above before reaching here.
     let mut cursor = std::env::current_dir().ok()?;
     loop {
-        if cursor.join("Cargo.toml").exists()
-            && cursor.join("tools").join("codegen").join("templates").exists()
-        {
+        if validates(&cursor) {
             return Some(cursor);
         }
         if !cursor.pop() {
