@@ -538,10 +538,12 @@ jobs:
         if-no-files-found: ignore
 
   # ============================================================
-  # Python Bindings (pybind11) — 202 tests
+  # Python Bindings (pybind11 → C++ Interpreter) — 202 tests
+  # Distinct from the AOT family member (`test-python`); this job
+  # exercises the runtime-interpreter channel via pybind11 wrappers.
   # ============================================================
-  test-python:
-    name: Python W3C Tests
+  test-python-bindings:
+    name: Python Bindings (pybind) W3C Tests
     runs-on: ubuntu-latest
 
     steps:
@@ -607,10 +609,110 @@ jobs:
 
     - name: Run W3C Tests
       run: |
-        echo "=== Python W3C SCXML Conformance Tests ==="
+        echo "=== Python Bindings W3C SCXML Conformance Tests ==="
         SPDLOG_LEVEL=off \
         PYTHONPATH=build_python/sce-python:sce-python/python \
-          python3 sce-python/tests/test_w3c.py 2>&1 | tee python_test_output.log
+          python3 sce-python/tests/test_w3c.py 2>&1 | tee python_bindings_test_output.log
+
+    - name: Upload Test Log
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: w3c-test-output-python-bindings
+        path: python_bindings_test_output.log
+        retention-days: 30
+
+    - name: Generate Test Summary
+      if: always()
+      run: |
+        echo "## W3C SCXML Test Results (Python Bindings)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        if [ -f python_bindings_test_output.log ]; then
+          # Parse Python test runner output
+          pass_line=$(grep "PASS:" python_bindings_test_output.log | tail -1)
+          fail_line=$(grep "FAIL:" python_bindings_test_output.log | tail -1)
+          if [ -n "$pass_line" ]; then
+            passed=$(echo "$pass_line" | grep -oP '\d+(?=/)')
+            total=$(echo "$pass_line" | grep -oP '(?<=/)\d+')
+            failed=$(grep "FAIL:" python_bindings_test_output.log | tail -1 | grep -oP '\d+(?=/)' || echo "0")
+            echo "| Metric | Count |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Passed | $passed |" >> $GITHUB_STEP_SUMMARY
+            echo "| Failed | ${failed:-0} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Total | $total |" >> $GITHUB_STEP_SUMMARY
+            echo "{\"passed\":$passed,\"failed\":${failed:-0},\"total\":$total}" > python_bindings_results.json
+          else
+            echo "Could not parse test results" >> $GITHUB_STEP_SUMMARY
+          fi
+        fi
+
+    - name: Upload Results JSON
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: backend-results-python-bindings
+        path: python_bindings_results.json
+        retention-days: 7
+        if-no-files-found: ignore
+
+  # ============================================================
+  # Python AOT (sce-codegen → *_sm.py + lupa runtime) — 202 tests
+  # Mirrors test-rust / test-kotlin / test-go: same codegen pipeline,
+  # same family-member AOT lane. The `test-python-bindings` job above
+  # is the special-case channel (pybind11 → C++ Interpreter).
+  # ============================================================
+  test-python:
+    name: Python W3C Tests
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+
+    - name: Cache Cargo (codegen)
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('sce-build/Cargo.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-codegen-
+
+    - name: Build sce-codegen
+      run: cargo build --bin sce-codegen --features cli --release -p sce-build
+
+    - name: Generate Python W3C Tests
+      run: ./target/release/sce-codegen generate-w3c -l python
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install Python Runtime
+      run: |
+        python3 -m pip install --upgrade pip
+        python3 -m pip install lupa pytest
+        # sce-python-runtime ships its own lupa dep; install it editable so
+        # the harness imports the engine module directly from the working
+        # tree (matches how sce-python-tests/conftest.py shims sys.path).
+        python3 -m pip install -e sce-python-runtime/
+
+    - name: Run W3C Tests
+      run: |
+        echo "=== Python W3C SCXML Conformance Tests ==="
+        # conftest.py spawns its own HTTP echo server on port 8080 for
+        # BasicHTTP fixtures — no Node.js standalone_http_server.js needed.
+        python3 -m pytest sce-python-tests/generated/ --no-header -v 2>&1 | tee python_test_output.log
+        echo "Exit code: $?"
 
     - name: Upload Test Log
       uses: actions/upload-artifact@v4
@@ -627,13 +729,11 @@ jobs:
         echo "" >> $GITHUB_STEP_SUMMARY
 
         if [ -f python_test_output.log ]; then
-          # Parse Python test runner output
-          pass_line=$(grep "PASS:" python_test_output.log | tail -1)
-          fail_line=$(grep "FAIL:" python_test_output.log | tail -1)
-          if [ -n "$pass_line" ]; then
-            passed=$(echo "$pass_line" | grep -oP '\d+(?=/)')
-            total=$(echo "$pass_line" | grep -oP '(?<=/)\d+')
-            failed=$(grep "FAIL:" python_test_output.log | tail -1 | grep -oP '\d+(?=/)' || echo "0")
+          # pytest's `-v` output: one `PASSED` / `FAILED` per test.
+          passed=$(grep -c " PASSED" python_test_output.log || true)
+          failed=$(grep -c " FAILED" python_test_output.log || true)
+          total=$((passed + failed))
+          if [ "$total" -gt 0 ] 2>/dev/null; then
             echo "| Metric | Count |" >> $GITHUB_STEP_SUMMARY
             echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
             echo "| Passed | $passed |" >> $GITHUB_STEP_SUMMARY
@@ -763,7 +863,7 @@ jobs:
   report:
     name: Unified Report
     runs-on: ubuntu-latest
-    needs: [test-cpp, test-rust, test-kotlin, test-python, test-go]
+    needs: [test-cpp, test-rust, test-kotlin, test-python-bindings, test-python, test-go]
     if: always()
     permissions:
       contents: write
@@ -779,11 +879,18 @@ jobs:
 
     - name: Merge Backend Results
       run: |
-        # Combine Rust/Kotlin/Python JSON results into one file
+        # Combine Rust/Kotlin/Python (AOT + bindings)/Go JSON results into
+        # one file. `python` is the AOT family-member channel
+        # (sce-codegen → *_sm.py + lupa runtime); `python-bindings` is the
+        # special pybind11 → C++ Interpreter channel.
         echo '{' > backend_results.json
         first=true
-        for backend in rust kotlin python go; do
-          json_file="artifacts/backend-results-${backend}/${backend}_results.json"
+        for backend in rust kotlin python python-bindings go; do
+          # Result files use the same key the artifact uses (e.g.
+          # python_bindings_results.json). The artifact directory
+          # follows the same hyphen convention.
+          file_key=$(echo "$backend" | tr '-' '_')
+          json_file="artifacts/backend-results-${backend}/${file_key}_results.json"
           if [ -f "$json_file" ]; then
             if [ "$first" = true ]; then first=false; else echo ',' >> backend_results.json; fi
             echo "\"${backend}\": $(cat "$json_file")" >> backend_results.json
