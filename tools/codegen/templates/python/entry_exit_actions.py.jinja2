@@ -34,7 +34,7 @@
 {% for state_id, state in model.states | dictsort %}
 {% set _has_donedata = state.is_final and state.donedata and (state.donedata.params or state.donedata.content.kind != 'none') %}
 {% set _final_with_parent = state.is_final and state.parent and (('done.state.' ~ state.parent) in model.events) %}
-{% if state.on_entry_blocks or state.initial_transition_actions or _has_donedata or _final_with_parent %}
+{% if state.on_entry_blocks or state.initial_transition_actions or state.initial_history_default_actions or _has_donedata or _final_with_parent %}
         if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
 {% for block in state.on_entry_blocks %}
             try:
@@ -56,6 +56,22 @@
 {% endfor %}
             except _ActionAbort:
                 pass
+{% endif %}
+{% if state.initial_history_id and state.initial_history_default_actions %}
+            # W3C SCXML 3.11 — `<initial>` targets `<history id="{{ state.initial_history_id }}">`:
+            # the history element's default `<transition>` executable
+            # content runs only when no snapshot exists. Subsequent
+            # entries replay from `engine._history[...]` via the engine's
+            # `_enter_from_history_snapshot` so the default actions are
+            # suppressed once the compound has been exited at least once.
+            # Mirrors Rust template's `entry_exit_actions.rs.jinja2:72-80`.
+            if not engine._history.get({{ state.initial_history_id | py_string_literal }}):
+                try:
+{% for action in state.initial_history_default_actions %}
+{{ actions.emit(action, '                    ', machine_name) }}
+{% endfor %}
+                except _ActionAbort:
+                    pass
 {% endif %}
 {% if _has_donedata %}
             # W3C SCXML 5.5: Build donedata as Lua source text so the

@@ -899,6 +899,8 @@ class Engine(Generic[S, E]):
             if on_path is not None:
                 self._descend_initial_path(on_path, path_child)
                 return
+            if self._enter_from_history_snapshot(state):
+                return
             children = self._policy.get_initial_children(state)
             if not children:
                 self._active_leaves.append(state)
@@ -949,6 +951,8 @@ class Engine(Generic[S, E]):
                     return
             return
         if is_compound:
+            if self._enter_from_history_snapshot(state):
+                return
             children = self._policy.get_initial_children(state)
             if not children:
                 # Defensive: well-formed compound has at least one child.
@@ -960,6 +964,29 @@ class Engine(Generic[S, E]):
             # case naturally degenerates to a one-leg `_enter_state` call.
             self._enter_target_step(children[0], state)
             return
+
+    def _enter_from_history_snapshot(self, state: S) -> bool:
+        """W3C SCXML 3.11 — when `state`'s `<initial>` element targets a
+        `<history>` pseudo-state and a snapshot exists in `_history`,
+        descend into the snapshot's saved leaves (sorted by document
+        order) and return `True`. Returns `False` when there is no
+        history-targeting `<initial>` or the snapshot is empty — the
+        caller then falls back to the parser-resolved default initial
+        children. The history element's default `<transition>` actions
+        are emitted by `execute_entry_actions` and guarded by the same
+        snapshot-emptiness check, so the entry-action side stays in
+        sync with the descent decision."""
+        history_id = self._policy.get_initial_history_id(state)
+        if history_id is None:
+            return False
+        snapshot = self._history.get(history_id)
+        if not snapshot:
+            return False
+        for saved in sorted(snapshot, key=self._policy.get_document_order):
+            self._enter_target_step(saved, state)
+            if self._reached_final or not self._is_running:
+                return True
+        return True
 
     def _snapshot_history(self, exiting: Set[S]) -> None:
         """W3C SCXML 3.11 — for every compound about to exit, record its

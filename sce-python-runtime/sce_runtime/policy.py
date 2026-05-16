@@ -170,6 +170,17 @@ class StatePolicy(ABC, Generic[S, E]):
         is handled by `get_parallel_regions`)."""
         return []
 
+    def get_initial_history_id(self, state: S) -> Optional[str]:
+        """W3C SCXML 3.11 — when `state`'s `<initial>` element targets a
+        `<history>` pseudo-state, returns that history element's string
+        id. Returns `None` for compounds whose `<initial>` targets a
+        regular state (or which have no explicit `<initial>` at all).
+        Used by the engine to decide between snapshot replay and default
+        initial descent at compound entry; complemented by the template's
+        emission of the history element's default `<transition>` actions
+        guarded by the same snapshot-emptiness check."""
+        return None
+
     def get_history_states_in(self, compound: S) -> List[str]:
         """W3C SCXML 3.11 — string ids of every `<history>` element whose
         `parent` is `compound`. Returned in document order so the engine

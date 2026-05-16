@@ -274,6 +274,20 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
 {% endfor %}
         return []
 
+    def get_initial_history_id(self, state: {{ machine_name }}State) -> Optional[str]:
+{# W3C SCXML 3.11 — flag compounds whose `<initial>` element targets a
+   `<history>` pseudo-state. The engine uses this to decide between
+   snapshot replay (when `_history[id]` is non-empty) and default
+   initial descent. Mirrors the Rust state_machine template's
+   `get_initial_or_history_child` history branch. #}
+{% for state_id, st in model.states | dictsort %}
+{% if st.initial_history_id %}
+        if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
+            return {{ st.initial_history_id | py_string_literal }}
+{% endif %}
+{% endfor %}
+        return None
+
 {% if model.has_parallel_states %}
     def is_parallel_state(self, state: {{ machine_name }}State) -> bool:
         return state in {
