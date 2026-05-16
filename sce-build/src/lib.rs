@@ -5045,6 +5045,7 @@ pub fn compile_mesh_transport(
         &someip_invoke_service_ids,
         &someip_liveness_service_ids,
         &someip_machine_liveness_service_ids,
+        model.source_location.as_ref(),
         language,
         &template_base,
     )?;

@@ -24,6 +24,7 @@
 //! `Option<T>` field, consult that docstring before picking a shape.
 
 use crate::filters;
+use crate::forge::error::SourceLocation;
 use crate::generator::{GeneratedOutput, Language};
 use crate::mesh::deploy::{
     CustomTcpTransportConfig, LivelinessConfig, OrderingTimings, SomeipTransportConfig,
@@ -818,6 +819,7 @@ pub fn generate_mesh(
     someip_invoke_service_ids: &BTreeMap<String, u16>,
     someip_liveness_service_ids: &BTreeMap<String, u16>,
     someip_machine_liveness_service_ids: &BTreeMap<String, u16>,
+    source_location: Option<&SourceLocation>,
     language: Language,
     template_base: &Path,
 ) -> Result<GeneratedOutput, CodegenError> {
@@ -868,6 +870,7 @@ pub fn generate_mesh(
             someip_invoke_service_ids,
             someip_liveness_service_ids,
             someip_machine_liveness_service_ids,
+            source_location,
             template_base,
         ),
         _ => Err(CodegenError::UnsupportedLanguage(format!("{:?}", language))),
@@ -1003,6 +1006,7 @@ fn generate_cpp_mesh(
     someip_invoke_service_ids: &BTreeMap<String, u16>,
     someip_liveness_service_ids: &BTreeMap<String, u16>,
     someip_machine_liveness_service_ids: &BTreeMap<String, u16>,
+    source_location: Option<&SourceLocation>,
     template_base: &Path,
 ) -> Result<GeneratedOutput, CodegenError> {
     // Validate: every target's transport must be in the registry AND
@@ -1351,7 +1355,23 @@ fn generate_cpp_mesh(
             source: e,
         })?;
 
+    // Watching-zenoh RFC §5.O Atomic 0b: the transport template imports
+    // the shared SCE-MAP marker macro. The mesh codegen builds its own
+    // minijinja env (the public `load_templates` helper isn't reachable
+    // from inside crate::mesh), so the macro file is loaded explicitly
+    // here under the same `_macros/sce_map_marker.jinja2` path callers
+    // use in their `{% import %}` statements.
+    let macro_template_name = "_macros/sce_map_marker.jinja2";
+    let macro_template_path = template_base.join(macro_template_name);
+    let macro_template_content =
+        std::fs::read_to_string(&macro_template_path).map_err(|e| CodegenError::TemplateRead {
+            path: macro_template_path.display().to_string(),
+            source: e,
+        })?;
+
     let mut env = minijinja::Environment::new();
+    env.add_template_owned(macro_template_name.to_string(), macro_template_content)
+        .map_err(|e| CodegenError::TemplateRender(e.to_string()))?;
     env.add_template("mesh_transport.h.jinja2", &template_content)
         .map_err(|e| CodegenError::TemplateRender(e.to_string()))?;
 
@@ -1597,6 +1617,7 @@ fn generate_cpp_mesh(
         someip_sce_app_field => someip_sce_app_field,
         someip_sce_app_thread => someip_sce_app_thread,
         someip_sce_app_vsomeip_name => someip_sce_app_vsomeip_name,
+        source_location => source_location,
     };
 
     let code = tmpl
