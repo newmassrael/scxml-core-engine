@@ -15,4 +15,10 @@
 
 #include <string>
 
+// libstdc++ places basic_string<char> in the inline `__cxx11` ABI namespace,
+// and libstdc++.so is what ships the matching explicit instantiation we rely
+// on here. Other standard libraries (libc++ on Clang/Emscripten, MSVC STL)
+// don't have that namespace, so the optimization is a no-op there.
+#if defined(__GLIBCXX__)
 extern template class std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char>>;
+#endif
