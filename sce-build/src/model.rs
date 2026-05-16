@@ -36,6 +36,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::forge::error::SourceLocation;
 use crate::forge::model::InlineKind;
 
+/// W3C SCXML default namespace URI (W3C SCXML §3.5). Mirrors
+/// [`crate::forge::model::SCE_NAMESPACE`] for the sce: extension axis —
+/// used by the parser's element-dispatch helpers to filter children
+/// by namespace as well as local name, closing the foreign-NS local-name
+/// collision footgun previously documented in `SCE_FORGE.md` §3.1.
+pub const SCXML_NAMESPACE: &str = "http://www.w3.org/2005/07/scxml";
+
 /// W3C SCXML 3.3: Transition element
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct Transition {

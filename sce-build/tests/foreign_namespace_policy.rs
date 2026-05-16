@@ -3,26 +3,21 @@
 //
 // Foreign-namespace handling — locks the behavior documented in
 // `SCE_FORGE.md` §3.1 "Foreign Namespace Policy (non-`sce:` extensions)".
-// The doc table makes three concrete claims:
+// The doc table makes two concrete claims:
 //
 //   1. XSD validation preserves foreign-namespace elements / attributes
 //      (`<xs:any namespace="##any" processContents="lax">` + matching
 //      `<xs:anyAttribute>`). No diagnostic is raised.
 //
-//   2. SCXML → IR parsing drops foreign-namespace elements whose local
-//      name is outside the W3C SCXML vocabulary, because the parser
-//      dispatches by local element name and has no model slot for
-//      unrecognised children.
+//   2. SCXML → IR parsing drops foreign-namespace elements unconditionally,
+//      whether their local name is outside the W3C vocabulary OR collides
+//      with a W3C element name. Filtering happens at the parser-helper
+//      level (`scxml_child` / `scxml_children` in `parser.rs`) by both
+//      local name AND namespace via `is_scxml_ns`.
 //
-//   3. Caveat: a foreign-namespace element whose local name COLLIDES
-//      with a W3C name (e.g. `<framework:onentry>`) is currently
-//      matched as if it were the W3C element. This is documented as a
-//      footgun, not a bug to be silently fixed — if it changes, the
-//      doc must change with it.
-//
-// Without these tests a later parser refactor could silently invert any
-// of the three claims while the doc keeps asserting them. The doc
-// becomes a regression vector rather than a contract.
+// Without these tests a later parser refactor could silently invert
+// either claim while the doc keeps asserting them. The doc becomes a
+// regression vector rather than a contract.
 
 use std::fs;
 use std::path::Path;
@@ -91,25 +86,26 @@ fn foreign_ns_attribute_and_unique_local_name_child_pass_xsd_and_drop_from_ir() 
     );
 }
 
-/// Doc claim #3 (collision caveat): a foreign-namespace element whose
+/// Doc claim #2 (collision case): a foreign-namespace element whose
 /// local name collides with a W3C SCXML element (`onentry`) is
-/// currently matched by the parser as if it were the W3C element,
-/// because dispatch is by local name only. The `<log>` action inside
-/// it therefore reaches the generated code.
+/// dropped by the parser, because `scxml_child` / `scxml_children`
+/// filter by namespace via [`is_scxml_ns`] in addition to local
+/// name. The `<log>` action inside it therefore does NOT reach the
+/// generated code, identically to the non-colliding case above.
 ///
-/// This test LOCKS the documented footgun. If the parser is later
-/// hardened to filter by namespace, this test will fail; at that
-/// point the SCE_FORGE.md §3.1 caveat row must be updated in the
-/// same change so the doc and code stay consistent.
+/// This test locks the namespace-filter contract. If a parser
+/// refactor regresses this — e.g. by reverting the helpers to local-
+/// name-only matching — this assertion will fail; at that point the
+/// regression must be fixed at the helper, not by adjusting the test.
 #[test]
-fn foreign_ns_w3c_local_name_collision_is_matched_as_w3c_element() {
+fn foreign_ns_w3c_local_name_collision_is_still_dropped() {
     let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:framework="http://example.com/framework"
        version="1.0" initial="s1">
   <state id="s1">
     <framework:onentry>
-      <log expr="'collision-caveat-locked'"/>
+      <log expr="'collision-marker-must-not-leak'"/>
     </framework:onentry>
     <transition event="go" target="s2"/>
   </state>
@@ -122,7 +118,7 @@ fn foreign_ns_w3c_local_name_collision_is_matched_as_w3c_element() {
     let tdir = template_dir();
 
     let out = compile_scxml_lang(path.to_str().unwrap(), &tdir, Language::Rust)
-        .expect("compile must succeed for collision case (parser does not reject)");
+        .expect("compile must succeed — foreign-NS elements are dropped, not rejected");
 
     let code = out
         .files
@@ -130,15 +126,15 @@ fn foreign_ns_w3c_local_name_collision_is_matched_as_w3c_element() {
         .map(|(_, content)| content.as_str())
         .collect::<String>();
 
-    // Expect the action body to leak through because the parser
-    // matches `<framework:onentry>` as W3C `<onentry>`. If this
-    // assertion ever fails because the marker is absent, foreign-NS
-    // filtering has been tightened — update SCE_FORGE.md §3.1
-    // caveat row before adjusting.
+    // The action body must NOT leak. <framework:onentry> is in a
+    // foreign namespace and `scxml_children(state, "onentry")`
+    // filters it out before its `<log>` is visited. If this marker
+    // ever appears in generated code, the namespace filter in
+    // `parser.rs::is_scxml_ns` / `scxml_child` / `scxml_children`
+    // has regressed.
     assert!(
-        code.contains("collision-caveat-locked"),
-        "expected the <log> inside <framework:onentry> to be picked up as a W3C <onentry> action; \
-         if this assertion now fails, the parser has been hardened to filter by namespace and \
-         SCE_FORGE.md §3.1 caveat row must be updated to match"
+        !code.contains("collision-marker-must-not-leak"),
+        "<log> inside <framework:onentry> leaked into generated code; \
+         namespace filter on scxml_child/scxml_children has regressed"
     );
 }

@@ -2960,21 +2960,45 @@ fn is_scxml_state_element(node: &roxmltree::Node) -> bool {
     matches!(name, "state" | "parallel" | "final")
 }
 
-/// Find SCXML-namespaced children with a given local name
+/// True when `node`'s namespace is the W3C SCXML namespace, or the
+/// node has no namespace (legacy/test SCXML documents that omit the
+/// `xmlns="http://www.w3.org/2005/07/scxml"` declaration on the root).
+///
+/// Lenient `None` acceptance: roxmltree returns `None` for elements
+/// in documents without a default namespace declaration. W3C SCXML
+/// requires the namespace, but a handful of older fixtures predate
+/// the strict-namespace convention and several W3C IRP tests in
+/// in-house repos elide it. Accepting `None` preserves their parse
+/// behavior while still rejecting prefixed foreign-namespace elements
+/// like `<framework:onentry>` (which carry `Some("http://example.com/framework")`).
+fn is_scxml_ns(node: &roxmltree::Node<'_, '_>) -> bool {
+    match node.tag_name().namespace() {
+        Some(ns) => ns == crate::model::SCXML_NAMESPACE,
+        None => true,
+    }
+}
+
+/// Find SCXML-namespaced children with a given local name.
+///
+/// Filters by both local name AND namespace — a foreign-namespace
+/// element whose local name collides with a W3C element (e.g.
+/// `<framework:onentry>`) is correctly skipped. Lenient on missing
+/// namespace via [`is_scxml_ns`].
 fn scxml_children<'a>(
     parent: &'a roxmltree::Node<'a, 'a>,
     tag: &'a str,
 ) -> impl Iterator<Item = roxmltree::Node<'a, 'a>> {
     parent
         .children()
-        .filter(move |c| c.is_element() && c.tag_name().name() == tag)
+        .filter(move |c| c.is_element() && c.tag_name().name() == tag && is_scxml_ns(c))
 }
 
-/// Find first SCXML-namespaced child
+/// Find first SCXML-namespaced child with a given local name. See
+/// [`scxml_children`] for the namespace-filter contract.
 fn scxml_child<'a>(parent: &'a roxmltree::Node<'a, 'a>, tag: &str) -> Option<roxmltree::Node<'a, 'a>> {
     parent
         .children()
-        .find(|c| c.is_element() && c.tag_name().name() == tag)
+        .find(|c| c.is_element() && c.tag_name().name() == tag && is_scxml_ns(c))
 }
 
 /// watching-zenoh RFC §5.E B7-η' helper: collect all `<sce:on-sample>`
