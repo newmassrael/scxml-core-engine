@@ -34,7 +34,7 @@
 {% for state_id, state in model.states | dictsort %}
 {% set _has_donedata = state.is_final and state.donedata and (state.donedata.params or state.donedata.content.kind != 'none') %}
 {% set _final_with_parent = state.is_final and state.parent and (('done.state.' ~ state.parent) in model.events) %}
-{% if state.on_entry_blocks or _has_donedata or _final_with_parent %}
+{% if state.on_entry_blocks or state.initial_transition_actions or _has_donedata or _final_with_parent %}
         if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
 {% for block in state.on_entry_blocks %}
             try:
@@ -44,6 +44,19 @@
             except _ActionAbort:
                 pass
 {% endfor %}
+{% if state.initial_transition_actions %}
+            # W3C SCXML 3.3.2 — `<initial>` transition's executable content
+            # runs AFTER the compound's `<onentry>` and BEFORE descent into
+            # the default initial child (test412). Block-aborts symmetric
+            # to onentry: a failing action raises `error.execution` and
+            # discards the remaining actions in this block only.
+            try:
+{% for action in state.initial_transition_actions %}
+{{ actions.emit(action, '                ', machine_name) }}
+{% endfor %}
+            except _ActionAbort:
+                pass
+{% endif %}
 {% if _has_donedata %}
             # W3C SCXML 5.5: Build donedata as Lua source text so the
             # downstream `set_current_event` dispatch reconstructs an
