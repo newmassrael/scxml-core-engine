@@ -198,6 +198,12 @@
                         data=_invoke.done_data() or "",
                         invoke_id=_invoke_id_field,
                     )
+                    # W3C SCXML 6.4 — mark the persistent flag so
+                    # `_drive_active_children` does not re-raise the
+                    # same `done.invoke.<id>` on the next macrostep
+                    # tick. The map is keyed by the same id used in
+                    # `_active_invokes` (static element id).
+                    engine._done_invoke_emitted[{{ inv.invoke_id | py_string_literal }}] = True
                 continue
 {% endfor %}
 {% endfor %}
@@ -217,6 +223,7 @@
             _inv = engine._active_invokes.pop({{ inv.invoke_id | py_string_literal }}, None)
             if _inv is not None:
                 _inv.cancel()
+            engine._done_invoke_emitted.pop({{ inv.invoke_id | py_string_literal }}, None)
             _suffix = {{ ('.' + inv.invoke_id) | py_string_literal }}
             engine._pending_invokes = [
                 p for p in engine._pending_invokes

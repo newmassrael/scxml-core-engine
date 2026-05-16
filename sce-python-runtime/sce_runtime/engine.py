@@ -121,6 +121,16 @@ class Engine(Generic[S, E]):
         # drives lifecycle (tick + drain + cancel) but never instantiates
         # the concrete `Invoke` itself.
         self._active_invokes: Dict[str, Invoke[E]] = {}
+        # W3C SCXML 6.4 — per-invoke "done.invoke.<id> already raised"
+        # flag. Persistent across `_drive_active_children` calls so the
+        # event is raised exactly once even when the child becomes done
+        # synchronously during a `forward_event` (parent send to
+        # `target="#_<id>"`): the flag is also set by the init-time
+        # emission path in `execute_pending_invokes`, and cleared when
+        # the invoke is canceled or the engine stops. Mirrors the Rust
+        # codegen's `pending_done_invoke_<id>` per-field bool in
+        # `tools/codegen/templates/rust/invoke_methods.rs.jinja2`.
+        self._done_invoke_emitted: Dict[str, bool] = {}
         # W3C SCXML C.2 — BasicHTTP Event I/O Processor dispatcher. The
         # engine never links against an HTTP library; callers register a
         # callback via `set_http_send_callback` that receives an
@@ -206,6 +216,7 @@ class Engine(Generic[S, E]):
         for invoke in list(self._active_invokes.values()):
             invoke.cancel()
         self._active_invokes.clear()
+        self._done_invoke_emitted.clear()
         # Release the script-engine session so its Lua runtime memory
         # is collectable. Matches Rust's `Drop` impl on Engine.
         if self._session_id:
@@ -431,7 +442,6 @@ class Engine(Generic[S, E]):
         # parent's external queue on the same tick the parent processes
         # its own schedules.
         self._drive_active_children(ms)
-        drained_any = False
         for entry in self._scheduler.drain_due(self._now_ms):
             metadata = EventMetadata(
                 send_id=entry.sendid, event_type="external", data=entry.data
@@ -439,8 +449,12 @@ class Engine(Generic[S, E]):
             self._external_queue.append(
                 EventWithMetadata(event=entry.event, metadata=metadata)
             )
-            drained_any = True
-        if drained_any and self._is_running and not self._reached_final:
+        # W3C SCXML 6.2 — `_drive_active_children` and the scheduler
+        # drain both append onto `_external_queue`; the parent's
+        # macrostep must run whenever either produced an event so the
+        # parent observes `done.invoke.<id>` and any child-raised
+        # `<send target="#_parent">` on the same tick (test347, test236).
+        if (self._external_queue or self._internal_queue) and self._is_running and not self._reached_final:
             self._process_queues()
         # W3C SCXML 6.4 — pending invokes deferred during the macrostep
         # land after the queue is drained; their initialise-time
@@ -911,8 +925,8 @@ class Engine(Generic[S, E]):
         # (e.g. parent transition triggered by a child-raised event)
         # cannot mutate the dict we are walking.
         for invoke_id, invoke in list(self._active_invokes.items()):
-            was_done = invoke.is_done()
-            if not was_done and ms > 0:
+            already_done = invoke.is_done()
+            if not already_done and ms > 0:
                 # Advance child clock to the parent's new wall time so
                 # any child `<send delay>` due at this tick promotes
                 # into the child's external queue.
@@ -925,14 +939,20 @@ class Engine(Generic[S, E]):
                     invoke_id=invoke_id,
                     origin_type="http://www.w3.org/TR/scxml/#SCXMLEventProcessor",
                 )
-            if invoke.is_done() and not was_done:
-                # W3C SCXML 6.3.1 — lift the child's terminal donedata
-                # onto `done.invoke.<id>._event.data`.
+            # W3C SCXML 6.3.1 — lift the child's terminal donedata onto
+            # `done.invoke.<id>._event.data`. Gated on the persistent
+            # `_done_invoke_emitted` map (not a local `was_done` snapshot)
+            # so the event is raised exactly once even when the child
+            # became done synchronously during a parent `<send target=
+            # "#_<id>">` (its `forward_event` runs the child's macrostep
+            # to completion before this driver is next entered).
+            if invoke.is_done() and not self._done_invoke_emitted.get(invoke_id, False):
                 self.send_external_by_name(
                     create_done_invoke_event_name(invoke_id),
                     data=invoke.done_data() or "",
                     invoke_id=invoke_id,
                 )
+                self._done_invoke_emitted[invoke_id] = True
 
     def _advance_child_time(self, invoke: Invoke[E], ms: int) -> None:
         """Forward a virtual-time delta to a child engine if the
