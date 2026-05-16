@@ -34,7 +34,7 @@
 
     def defer_invokes_on_entry(self, state, engine) -> None:
 {% for state_id, state in model.states | dictsort %}
-{% set scxml_list = state.invokes | scxml | list %}
+{% set scxml_list = state.invokes | scxml_family | list %}
 {% if scxml_list %}
         if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
 {% for inv in scxml_list %}
@@ -50,7 +50,7 @@
     def execute_pending_invokes(self, engine) -> None:
 {% set ns_any = namespace(any=false) %}
 {% for state_id, state in model.states | dictsort %}
-{% for inv in state.invokes | scxml %}
+{% for inv in state.invokes | scxml_family %}
 {% set ns_any.any = true %}
 {% endfor %}
 {% endfor %}
@@ -61,7 +61,7 @@
         engine._pending_invokes.clear()
         for entry in pending:
 {% for state_id, state in model.states | dictsort %}
-{% for inv in state.invokes | scxml %}
+{% for inv in state.invokes | scxml_family %}
             if entry.invoke_id == {{ inv.invoke_id | py_string_literal }}:
                 import {{ inv.child_name }}_sm as _child_module_{{ inv.invoke_id | to_python_const }}
                 _child_policy = _child_module_{{ inv.invoke_id | to_python_const }}.Policy()
@@ -94,7 +94,7 @@
 
     def cancel_invokes_for_state(self, state, engine) -> None:
 {% for state_id, state in model.states | dictsort %}
-{% set scxml_list = state.invokes | scxml | list %}
+{% set scxml_list = state.invokes | scxml_family | list %}
 {% if scxml_list %}
         if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
 {% for inv in scxml_list %}
@@ -115,7 +115,7 @@
         if is_platform_event(event_name):
             return
 {% for state_id, state in model.states | dictsort %}
-{% for inv in state.invokes | scxml %}
+{% for inv in state.invokes | scxml_family %}
 {% if inv.autoforward %}
         _inv = engine._active_invokes.get({{ inv.invoke_id | py_string_literal }})
         if _inv is not None and not _inv.is_done():

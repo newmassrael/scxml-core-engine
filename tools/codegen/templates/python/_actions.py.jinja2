@@ -10,24 +10,40 @@
     Python nesting depths) share the same dispatch table. Unsupported action
     types are emitted as an explicit `raise NotImplementedError` so silent
     degradation never reaches runtime ([[feedback-silently-broken-hooks]]).
+
+    Author expressions are run through `to_lua_expr` / `to_lua_guard` /
+    `to_lua_script` so the generated module hands Lua text (not Python) to
+    the script engine. The helpers in `scriptengine_helpers.py.jinja2`
+    accept the Lua text and route it through `IScriptEngine` — the same
+    layer every other backend (Rust / Go / Kotlin / C11 / C++) uses.
 #}
 
 {%- macro emit(action, indent, machine_name) -%}
 {%- if action.type == 'script' -%}
-{{ indent }}self._exec(engine, {{ action.content | py_string_literal }})
+{{ indent }}self._exec(engine, {{ action.content | to_lua_script | py_string_literal }})
 {% elif action.type == 'raise' -%}
 {{ indent }}engine.raise_internal({{ machine_name }}Event.{{ action.event | to_python_const }})
 {% elif action.type == 'assign' -%}
-{{ indent }}self._assign(engine, {{ action.location | py_string_literal }}, {{ action.expr | py_expr | py_string_literal }})
+{# W3C SCXML 5.4 — `<assign>` may carry either `expr` (most common) or
+   inline content (XML body or literal text). When `expr` is set, route
+   through the standard `_assign` path; otherwise hand the content to
+   `_assign_content` which mirrors `_init_data_with_content`'s
+   eval-then-string fallback so XML payloads (W3C B.2 test530) and
+   literal-text content land in the datamodel correctly. #}
+{% if action.expr -%}
+{{ indent }}self._assign(engine, {{ action.location | py_string_literal }}, {{ action.expr | to_lua_expr | py_string_literal }})
+{% else -%}
+{{ indent }}self._assign_content(engine, {{ action.location | py_string_literal }}, {{ action.content | to_lua_expr | py_string_literal }}, {{ action.content | normalize_ws | py_string_literal }})
+{% endif -%}
 {% elif action.type == 'log' -%}
-{{ indent }}self._log({{ action.label | py_string_literal }}, {{ action.expr | py_expr | py_string_literal }})
+{{ indent }}self._log(engine, {{ action.label | py_string_literal }}, {{ action.expr | to_lua_expr | py_string_literal }})
 {% elif action.type == 'if' -%}
-{{ indent }}if self._guard(engine, {{ action.cond | py_expr | py_string_literal }}):
+{{ indent }}if self._guard(engine, {{ action.cond | to_lua_guard | py_string_literal }}):
 {% for sub in action.then_actions %}{{ emit(sub, indent ~ '    ', machine_name) }}{% endfor %}
 {% if not action.then_actions %}{{ indent }}    pass
 {% endif %}
 {% for branch in action.elseif_branches %}
-{{ indent }}elif self._guard(engine, {{ branch.cond | py_expr | py_string_literal }}):
+{{ indent }}elif self._guard(engine, {{ branch.cond | to_lua_guard | py_string_literal }}):
 {% for sub in branch.actions %}{{ emit(sub, indent ~ '    ', machine_name) }}{% endfor %}
 {% if not branch.actions %}{{ indent }}    pass
 {% endif %}
@@ -108,29 +124,29 @@
 {# W3C SCXML C.2 — BasicHTTP send to a statically-known absolute URL.
    `engine.perform_http_send` runs the registered HTTP callback (which
    the pytest harness binds to a Python echo server). Eventexpr /
-   contentexpr lower to runtime `eval`; eval failures fall through with
-   empty strings (the HTTP layer treats them as best-effort attributes
-   — the spec only requires error.execution on the surrounding
+   contentexpr lower to script-engine evaluation; eval failures fall
+   through with empty strings (the HTTP layer treats them as best-effort
+   attributes — the spec only requires error.execution on the surrounding
    executable-content block when ALL attributes fail, which the
    block-abort wrapper already covers). #}
 {{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
-{{ indent }}_http_params = self._build_http_params([
+{{ indent }}_http_params = self._build_http_params(engine, [
 {%- for param in action.params -%}
-({{ param.name | py_string_literal }}, {{ param.expr | py_expr | py_string_literal }}),
+({{ param.name | py_string_literal }}, {{ param.expr | to_lua_expr | py_string_literal }}),
 {%- endfor -%}
 ], {{ action.namelist | py_string_literal }})
 {% if action.contentexpr -%}
 {{ indent }}try:
-{{ indent }}    _http_content = str(eval({{ action.contentexpr | py_expr | py_string_literal }}, self._ns))
-{{ indent }}except Exception:
+{{ indent }}    _http_content = str(engine._script_engine.evaluate_expression(self._session_id, {{ action.contentexpr | to_lua_expr | py_string_literal }}).to_python())
+{{ indent }}except _ScriptError:
 {{ indent }}    _http_content = ""
 {% else -%}
 {{ indent }}_http_content = {{ action.content | py_string_literal }}
 {% endif -%}
 {% if action.eventexpr -%}
 {{ indent }}try:
-{{ indent }}    _http_evt_name = str(eval({{ action.eventexpr | py_expr | py_string_literal }}, self._ns))
-{{ indent }}except Exception:
+{{ indent }}    _http_evt_name = str(engine._script_engine.evaluate_expression(self._session_id, {{ action.eventexpr | to_lua_expr | py_string_literal }}).to_python())
+{{ indent }}except _ScriptError:
 {{ indent }}    _http_evt_name = ""
 {% else -%}
 {{ indent }}_http_evt_name = {{ action.event | py_string_literal }}
@@ -148,19 +164,19 @@
    the same `targetexpr` can name any of them. #}
 {{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
 {{ indent }}try:
-{{ indent }}    _resolved_target = eval({{ action.targetexpr | py_expr | py_string_literal }}, self._ns)
-{{ indent }}except Exception:
+{{ indent }}    _resolved_target = engine._script_engine.evaluate_expression(self._session_id, {{ action.targetexpr | to_lua_expr | py_string_literal }}).to_python()
+{{ indent }}except _ScriptError:
 {{ indent }}    _resolved_target = None
 {{ indent }}_target_str = "" if _resolved_target is None else str(_resolved_target)
-{{ indent }}_data = self._eval_send_payload([
+{{ indent }}_data = self._eval_send_payload(engine, [
 {%- for param in action.params -%}
-({{ param.name | py_string_literal }}, {{ param.expr | py_expr | py_string_literal }}),
+({{ param.name | py_string_literal }}, {{ param.expr | to_lua_expr | py_string_literal }}),
 {%- endfor -%}
-], {{ action.content | py_string_literal }}, {{ action.contentexpr | py_expr | py_string_literal }}, {{ action.namelist | py_string_literal }})
+], {{ action.content | py_string_literal }}, {{ action.contentexpr | to_lua_expr | py_string_literal }}, {{ action.namelist | py_string_literal }})
 {% if action.eventexpr -%}
 {{ indent }}try:
-{{ indent }}    _dyn_evt_name = str(eval({{ action.eventexpr | py_expr | py_string_literal }}, self._ns))
-{{ indent }}except Exception:
+{{ indent }}    _dyn_evt_name = str(engine._script_engine.evaluate_expression(self._session_id, {{ action.eventexpr | to_lua_expr | py_string_literal }}).to_python())
+{{ indent }}except _ScriptError:
 {{ indent }}    _dyn_evt_name = ""
 {% else -%}
 {{ indent }}_dyn_evt_name = {{ action.event | py_string_literal }}
@@ -178,15 +194,15 @@
 {{ indent }}    pass  # W3C 6.2: invalid target sentinel — no error.execution descriptor declared
 {% endif %}
 {{ indent }}elif _target_str.startswith("http://") or _target_str.startswith("https://"):
-{{ indent }}    _http_params_dyn = self._build_http_params([
+{{ indent }}    _http_params_dyn = self._build_http_params(engine, [
 {%- for param in action.params -%}
-({{ param.name | py_string_literal }}, {{ param.expr | py_expr | py_string_literal }}),
+({{ param.name | py_string_literal }}, {{ param.expr | to_lua_expr | py_string_literal }}),
 {%- endfor -%}
 ], {{ action.namelist | py_string_literal }})
 {% if action.contentexpr -%}
 {{ indent }}    try:
-{{ indent }}        _http_content_dyn = str(eval({{ action.contentexpr | py_expr | py_string_literal }}, self._ns))
-{{ indent }}    except Exception:
+{{ indent }}        _http_content_dyn = str(engine._script_engine.evaluate_expression(self._session_id, {{ action.contentexpr | to_lua_expr | py_string_literal }}).to_python())
+{{ indent }}    except _ScriptError:
 {{ indent }}        _http_content_dyn = ""
 {% else -%}
 {{ indent }}    _http_content_dyn = {{ action.content | py_string_literal }}
@@ -226,7 +242,7 @@
 {% if has_dynamic -%}
 {{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
 {% if action.eventexpr -%}
-{{ indent }}_evt = self._eval_event_name({{ action.eventexpr | py_expr | py_string_literal }})
+{{ indent }}_evt = self._eval_event_name(engine, {{ action.eventexpr | to_lua_expr | py_string_literal }})
 {{ indent }}if _evt is None:
 {% if 'error.execution' in model.events %}
 {{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }})
@@ -239,13 +255,13 @@
 {% set send_indent = indent %}
 {{ indent }}_evt = {{ machine_name }}Event.{{ action.event | to_python_const }}
 {% endif -%}
-{{ send_indent }}_data = self._eval_send_payload([
+{{ send_indent }}_data = self._eval_send_payload(engine, [
 {%- for param in action.params -%}
-({{ param.name | py_string_literal }}, {{ param.expr | py_expr | py_string_literal }}),
+({{ param.name | py_string_literal }}, {{ param.expr | to_lua_expr | py_string_literal }}),
 {%- endfor -%}
-], {{ action.content | py_string_literal }}, {{ action.contentexpr | py_string_literal }}, {{ action.namelist | py_string_literal }})
+], {{ action.content | py_string_literal }}, {{ action.contentexpr | to_lua_expr | py_string_literal }}, {{ action.namelist | py_string_literal }})
 {% if action.delayexpr -%}
-{{ send_indent }}engine.schedule_send(_evt, self._eval_delay_ms({{ action.delayexpr | py_expr | py_string_literal }}), _sid, _data)
+{{ send_indent }}engine.schedule_send(_evt, self._eval_delay_ms(engine, {{ action.delayexpr | to_lua_expr | py_string_literal }}), _sid, _data)
 {% elif action.delay_ms > 0 -%}
 {{ send_indent }}engine.schedule_send(_evt, {{ action.delay_ms }}, _sid, _data)
 {% else -%}
@@ -264,16 +280,16 @@
 {% if action.sendid %}
 {{ indent }}engine.cancel_send({{ action.sendid | py_string_literal }})
 {% else %}
-{{ indent }}engine.cancel_send(self._eval_sendid({{ action.sendidexpr | py_expr | py_string_literal }}))
+{{ indent }}engine.cancel_send(self._eval_sendid(engine, {{ action.sendidexpr | to_lua_expr | py_string_literal }}))
 {% endif %}
 {% elif action.type == 'foreach' -%}
 {% if action.index %}
-{{ indent }}for {{ action.index }}_idx_, _item_ in self._foreach({{ action.array | py_expr | py_string_literal }}):
-{{ indent }}    self._assign_runtime({{ action.item | py_string_literal }}, _item_)
-{{ indent }}    self._assign_runtime({{ action.index | py_string_literal }}, {{ action.index }}_idx_)
+{{ indent }}for {{ action.index }}_idx_, _item_ in self._foreach(engine, {{ action.array | to_lua_expr | py_string_literal }}):
+{{ indent }}    self._assign_runtime(engine, {{ action.item | py_string_literal }}, _item_)
+{{ indent }}    self._assign_runtime(engine, {{ action.index | py_string_literal }}, {{ action.index }}_idx_)
 {% else %}
-{{ indent }}for _item_ in self._foreach_values({{ action.array | py_expr | py_string_literal }}):
-{{ indent }}    self._assign_runtime({{ action.item | py_string_literal }}, _item_)
+{{ indent }}for _item_ in self._foreach_values(engine, {{ action.array | to_lua_expr | py_string_literal }}):
+{{ indent }}    self._assign_runtime(engine, {{ action.item | py_string_literal }}, _item_)
 {% endif %}
 {% for sub in action.actions %}{{ emit(sub, indent ~ '    ', machine_name) }}{% endfor %}
 {% if not action.actions %}{{ indent }}    pass

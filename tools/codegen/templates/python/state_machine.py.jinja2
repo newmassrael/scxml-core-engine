@@ -37,6 +37,10 @@ from sce_runtime import (
     create_done_invoke_event_name,
     is_platform_event,
 )
+from sce_runtime.scripting import (
+    ScriptError as _ScriptError,
+    ScriptValue as _ScriptValue,
+)
 
 
 # ======================================================================
@@ -91,25 +95,23 @@ _EVENT_NAMES: Dict[{{ machine_name }}Event, str] = {
 _EVENT_BY_NAME: Dict[str, {{ machine_name }}Event] = {v: k for k, v in _EVENT_NAMES.items() if v}
 
 
-# W3C SCXML 5.4 — names declared by root `<datamodel>` and every state-local
-# `<datamodel>`. `<assign location>` against any other identifier raises
-# `error.execution` and aborts the surrounding executable-content block
-# (mirrors Go's `declaredVars` set + C++'s `Var{...}` enum). Under late
-# binding the runtime defers value-init until the owning state enters but
-# the name set is the document's static schema, so we emit it eagerly.
-_DECLARED_VARS: frozenset = frozenset({
-{% for var in model.variables %}    {{ var.id | py_string_literal }},
-{% endfor %}
-{% for state_id, st in model.states | dictsort %}
-{% for var in st.datamodel %}    {{ var.id | py_string_literal }},
-{% endfor %}
-{% endfor %}
+# W3C SCXML B.2 — names the document author MAY NOT overwrite via
+# `<assign>`. Mirrors the C++ `AssignHelper::isValidLocation` blocklist
+# and the Rust assign template's codegen-time check
+# (`tools/codegen/templates/rust/actions/assign.rs.jinja2:21`). Empty
+# string also falls through this branch in `_assign` because `not
+# location` short-circuits before the membership test.
+_READONLY_SYSTEM_VARS: frozenset = frozenset({
+    "_event",
+    "_sessionid",
+    "_name",
+    "_ioprocessors",
 })
 
 
 class _ActionAbort(Exception):
     """W3C SCXML 3.8 — sentinel raised by `_assign` / `_exec` when the
-    underlying `eval`/`exec` raises. Action-dispatch arms in
+    script engine raises. Action-dispatch arms in
     `execute_entry_actions` / `execute_exit_actions` /
     `execute_transition_action` / `execute_history_default_actions`
     catch this exception to stop processing subsequent siblings in the
@@ -119,22 +121,36 @@ class _ActionAbort(Exception):
     pass
 
 
-def _wrap_event_data(value: Any) -> Any:
-    """W3C SCXML 5.10 — present `_event.data` as an ECMAScript-style
-    object when the payload is a marshalled `<param>`/namelist dict, so
-    user expressions can read `_event.data.aParam` via Python attribute
-    access. Scalar payloads (strings, numbers, None) pass through
-    untouched. Recursive dict wrapping mirrors the ECMAScript datamodel's
-    nested-object semantics — a single level handles the
-    common `<param>` case; nested dicts (from `<content expr>` returning
-    a dict-of-dicts) wrap recursively so `_event.data.outer.inner`
-    resolves."""
-    if isinstance(value, dict):
-        from types import SimpleNamespace
-        return SimpleNamespace(
-            **{k: _wrap_event_data(v) for k, v in value.items()}
-        )
-    return value
+def _coerce_event_data_str(data: Any) -> str:
+    """W3C SCXML 5.10 — the script engine's `set_current_event` takes
+    `event_data` as a single string (the Lua-side parser then tries
+    `return <text>` → JSON-to-Lua → string fallback). Generated Python
+    code marshals `<send>` payloads as a dict of named params or a
+    bare scalar; we re-serialise them here so the script engine sees
+    the same wire format every other backend produces.
+
+    - dict / list → JSON encode (so `_event.data.foo` becomes a real
+      Lua table member at the engine's parse stage);
+    - str → returned unchanged (the script engine handles the
+      `return <text>` round-trip natively);
+    - int / float / bool → `str(value)` so a numeric payload still
+      parses back to a Lua number;
+    - None → `""` so the Lua side leaves `_event.data` unbound."""
+    if data is None:
+        return ""
+    if isinstance(data, str):
+        return data
+    if isinstance(data, bool):
+        return "true" if data else "false"
+    if isinstance(data, (int, float)):
+        return str(data)
+    if isinstance(data, (dict, list)):
+        import json
+        try:
+            return json.dumps(data)
+        except (TypeError, ValueError):
+            return str(data)
+    return str(data)
 
 
 def _parse_delay_text(text: str) -> int:
@@ -170,18 +186,18 @@ def _parse_delay_text(text: str) -> int:
 class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_name }}Event]):
     """Generated policy for `{{ model.name }}`.
 
-    Pass a `script_namespace` dict mapping script identifiers (callable
-    names, function references) to Python callables. `<script>`, `<assign
-    expr>`, and transition `cond` expressions are evaluated against this
-    namespace via Python `exec`/`eval` at execution time — there is no
-    separate script-engine indirection in the Python backend. The
-    `<data>` elements declared by the source document are initialised
-    into the same namespace by `initialize_datamodel` (W3C SCXML 5.3
-    early binding) before the first onentry fires.
+    Author expressions (`<assign expr>`, `<transition cond>`,
+    `<script>`, `<send eventexpr>` / `<send delayexpr>` / …) are
+    rewritten from ECMAScript to Lua at codegen time and evaluated
+    against the process-wide `LuaScriptEngine` (see
+    `sce_runtime.scripting`). The W3C SCXML 5.3 datamodel lives inside
+    that engine's per-session global table — there is no Python-side
+    namespace dict in this backend. The owning `Engine` allocates the
+    session id at construction and binds it back into this policy via
+    `self._session_id`.
     """
 
-    def __init__(self, *, script_namespace: Optional[Dict[str, Any]] = None) -> None:
-        self._ns: Dict[str, Any] = dict(script_namespace or {})
+    def __init__(self) -> None:
         # W3C SCXML 6.4 — when this policy runs as an invoked child its
         # `<send target="#_parent">` actions push `(event_name, data)`
         # tuples here; the parent's `ScxmlInvoke.drain_events()` lifts
@@ -370,6 +386,12 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
     def needs_script_engine(self) -> bool:
         return {{ 'True' if model.needs_script_engine else 'False' }}
 
+    def needs_http_send(self) -> bool:
+        return {{ 'True' if model.needs_http_send else 'False' }}
+
+    def machine_name(self) -> str:
+        return {{ model.name | py_string_literal }}
+
 {% include 'process_transition.py.jinja2' %}
 
 {% include 'entry_exit_actions.py.jinja2' %}
@@ -395,11 +417,9 @@ _DOCUMENT_ORDER: Dict[{{ machine_name }}State, int] = {
 # Convenience factory
 # ======================================================================
 
-def create_engine(
-    *, script_namespace: Optional[Dict[str, Any]] = None
-) -> Engine[{{ machine_name }}State, {{ machine_name }}Event]:
+def create_engine() -> Engine[{{ machine_name }}State, {{ machine_name }}Event]:
     """Construct a runnable engine bound to a fresh policy instance."""
-    policy = {{ machine_name }}Policy(script_namespace=script_namespace)
+    policy = {{ machine_name }}Policy()
     return Engine(policy)
 
 

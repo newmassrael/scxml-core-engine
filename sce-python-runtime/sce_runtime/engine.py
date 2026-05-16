@@ -28,9 +28,11 @@ each owning state instead of up-front at engine.initialize.
 
 from __future__ import annotations
 
+import uuid
 from collections import deque
 from typing import Any, Callable, Dict, Generic, List, Optional, Set, TypeVar
 
+from . import scripting
 from .event import EventMetadata, EventWithMetadata
 from .http import HttpSendRequest, HttpSendResponse
 from .invoke import Invoke, PendingInvoke, create_done_invoke_event_name
@@ -49,6 +51,28 @@ class Engine(Generic[S, E]):
 
     def __init__(self, policy: StatePolicy[S, E]) -> None:
         self._policy = policy
+        # W3C SCXML 5.10 — each engine owns one script-engine session.
+        # The id is allocated up front so the policy can reference it
+        # immediately (helpers like `_assign` / `_guard` thread it back
+        # into the IScriptEngine without an Optional check). The
+        # session itself is created here so generated policies can
+        # declare variables during `initialize_datamodel` without a
+        # later `create_session` step. Mirrors the Rust / Go / Kotlin /
+        # C++ pattern where Engine construction implicitly owns one
+        # script-engine session.
+        self._session_id: str = uuid.uuid4().hex
+        self._script_engine = scripting.get()
+        self._script_engine.create_session(self._session_id)
+        # Back-ref so the policy's helpers (which run as instance
+        # methods on the generated module) can find the engine's
+        # session without an extra parameter on every call site.
+        # The `set_current_event` hook reads `_engine_ref` to reach
+        # the script engine since its protocol signature predates
+        # the IScriptEngine migration; the back-ref creates a
+        # legitimate cycle that Python's GC collects on engine
+        # destruction.
+        policy._session_id = self._session_id
+        policy._engine_ref = self
         # W3C SCXML 3.3: active configuration tracked as the ordered list
         # of currently-active leaf states. For non-parallel machines this
         # list has at most one entry. For machines containing
@@ -114,6 +138,28 @@ class Engine(Generic[S, E]):
         if self._is_running:
             return
         self._is_running = True
+        # W3C SCXML 5.10 — bind `_sessionid` / `_name` / `_ioprocessors`
+        # into the script-engine session before any datamodel `<data>`
+        # is registered. Documents with `<send type=BasicHTTP>` get the
+        # processor URI surfaced under `_ioprocessors`; documents that
+        # never use HTTP get an empty table (matches the C++ default).
+        io_processors: List[str] = []
+        if self._policy.needs_http_send():
+            io_processors.append(
+                "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
+            )
+        self._script_engine.setup_system_variables(
+            self._session_id,
+            self._policy.machine_name(),
+            io_processors,
+        )
+        # W3C SCXML 5.9.2 — register the `In(state)` predicate against
+        # this engine's active configuration. The Lua engine surfaces
+        # `In` as a global function in the session scope.
+        self._script_engine.set_state_query_callback(
+            self._session_id,
+            lambda state_id: self._policy.is_state_active(state_id, self),
+        )
         # W3C SCXML 5.3 early binding: datamodel initialisation runs before
         # any onentry action fires.
         self._policy.initialize_datamodel(self)
@@ -154,6 +200,19 @@ class Engine(Generic[S, E]):
         for invoke in list(self._active_invokes.values()):
             invoke.cancel()
         self._active_invokes.clear()
+        # Release the script-engine session so its Lua runtime memory
+        # is collectable. Matches Rust's `Drop` impl on Engine.
+        if self._session_id:
+            self._script_engine.destroy_session(self._session_id)
+            self._session_id = ""
+
+    def __del__(self) -> None:
+        try:
+            if getattr(self, "_session_id", ""):
+                self._script_engine.destroy_session(self._session_id)
+                self._session_id = ""
+        except Exception:
+            pass
 
     # ── Public introspection ───────────────────────────────────────
 
@@ -211,9 +270,16 @@ class Engine(Generic[S, E]):
         self._process_queues()
 
     def raise_internal(self, event: E, metadata: Optional[EventMetadata] = None) -> None:
-        """W3C SCXML 4.4 `<raise>` — enqueue an internal event (drained before externals)."""
+        """W3C SCXML 4.4 `<raise>` — enqueue an internal event (drained
+        before externals). When no metadata is supplied the event type
+        defaults to `"internal"` so guards reading `_event.type` see
+        the correct W3C 5.10 classification (`<raise>` events are
+        internal-origin, distinct from `external` and `platform`)."""
         self._internal_queue.append(
-            EventWithMetadata(event=event, metadata=metadata or EventMetadata())
+            EventWithMetadata(
+                event=event,
+                metadata=metadata or EventMetadata(event_type="internal"),
+            )
         )
 
     # ── BasicHTTP Event I/O Processor (W3C SCXML C.2) ─────────────

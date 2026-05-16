@@ -377,15 +377,16 @@ class LuaScriptEngine(IScriptEngine):
     def set_variable(
         self, session_id: str, name: str, value: ScriptValue
     ) -> None:
+        """W3C SCXML 5.4 — bind a value to a datamodel location. Matches
+        the Rust + C++ + Go Lua engines: `set_variable` is always
+        allowed (any identifier is a legal location under ECMAScript
+        rules), and the side-effect of declaring the name happens here
+        too. The W3C "undeclared identifier raises ReferenceError" case
+        is handled on the read side (`evaluate_expression`) — see the
+        C++ `isUndeclaredSimpleVariable` short-circuit."""
         session = self._require_session(session_id)
-        if name not in session.declared_vars and not name.startswith("_"):
-            # W3C SCXML 5.4 — assignment to an undeclared location
-            # raises error.execution. System variables (starting with
-            # `_`) are managed through `setup_system_variables` /
-            # `set_current_event` so they bypass the declared-vars
-            # check.
-            raise VariableNotDeclaredError(name)
         session.runtime.globals()[name] = _script_value_to_lua(session, value)
+        session.declared_vars.add(name)
 
     def get_variable(self, session_id: str, name: str) -> ScriptValue:
         session = self._require_session(session_id)
@@ -442,25 +443,32 @@ class LuaScriptEngine(IScriptEngine):
         invoke_id: str,
     ) -> None:
         """W3C SCXML 5.10 — bind the `_event` table for the current
-        microstep. Mirrors the C++ `setCurrentEvent` signature."""
+        microstep. Mirrors the C++ `setCurrentEvent` signature and the
+        Rust `set_current_event` parsing chain: Lua-eval the payload
+        first (so JSON-like dict text becomes a Lua table whose `.foo`
+        members are dot-accessible from generated expressions); fall
+        back to whitespace-normalised string when neither parse path
+        succeeds. Empty payloads bind no `data` field at all so
+        guards reading `_event.data` get Lua nil (== ES `undefined`)."""
         session = self._require_session(session_id)
-        # `_event.data` for ECMAScript fixtures is conventionally a
-        # parsed object when the payload was form-encoded / JSON, or
-        # the raw string for plain content. The Lua engine receives
-        # the literal `event_data` string; downstream codegen lifts
-        # primitive coercion via the `to_lua_expr` transformer's
-        # `_event.data.X` paths.
-        event_table = session.runtime.table_from(
-            {
-                "name": event_name,
-                "data": event_data,
-                "type": event_type,
-                "sendid": send_id,
-                "origin": origin,
-                "origintype": origin_type,
-                "invokeid": invoke_id,
-            }
-        )
+        event_table = session.runtime.table()
+        event_table["name"] = event_name
+        if event_data:
+            data_value: Any = _coerce_event_data_to_lua(
+                session.runtime, event_data
+            )
+            event_table["data"] = data_value
+        if event_type:
+            event_table["type"] = event_type
+        if send_id:
+            event_table["sendid"] = send_id
+        # W3C SCXML 5.10.1 — always set origin/origintype so
+        # `targetexpr="_event.origin"` evaluates to "" (not nil) when
+        # origin is unset (test 336).
+        event_table["origin"] = origin
+        event_table["origintype"] = origin_type
+        if invoke_id:
+            event_table["invokeid"] = invoke_id
         session.runtime.globals()["_event"] = event_table
 
     # ── Native bindings ────────────────────────────────────────────
@@ -513,6 +521,98 @@ class LuaScriptEngine(IScriptEngine):
             result = callback(args)
             return _script_value_to_lua(session, result)
         session.runtime.globals()[name] = _bridge
+
+
+# ── Event payload coercion ───────────────────────────────────────
+
+
+def _coerce_event_data_to_lua(runtime: Any, event_data: str) -> Any:
+    """W3C SCXML 5.10 — turn the raw `event_data` string into the Lua
+    value `_event.data` should expose.
+
+    Mirrors the Rust `set_current_event` parsing chain
+    (`sce_rust_lua::lib::set_current_event`): try `return <text>` as Lua
+    first (so a Lua/JSON-like table literal becomes a real table); when
+    that fails, fall back to JSON-to-Lua syntax rewriting (so payloads
+    that round-tripped through `json.dumps` still produce a table); when
+    that also fails, treat the bytes as a string with whitespace
+    normalised (W3C B.2 test562). The chain order is identical across
+    backends so `_event.data.foo` resolves consistently."""
+    if not event_data:
+        return None
+    text = event_data.strip()
+    if not text:
+        return event_data
+    # Path 1 — Lua eval (covers `{a=1}` produced by a previous
+    # roundtrip + bare numbers + bare strings the user already
+    # quoted in the payload).
+    try:
+        return runtime.eval(text)
+    except Exception:
+        pass
+    # Path 2 — JSON-style `{"key": val}` rewritten into Lua
+    # syntax `{["key"] = val}`. The transform is intentionally
+    # narrow: it swaps `:` for `=` only inside object literals
+    # and quotes the key. Handles the common case where the
+    # event payload was serialised by `json.dumps(dict)`.
+    converted = _json_to_lua_table(text)
+    if converted is not None:
+        try:
+            return runtime.eval(converted)
+        except Exception:
+            pass
+    # Path 3 — whitespace-normalised string fallback (W3C B.2).
+    return " ".join(event_data.split())
+
+
+def _json_to_lua_table(text: str) -> Optional[str]:
+    """Best-effort JSON→Lua table-literal rewriter. Returns None when
+    the input doesn't look like a JSON object/array, so the caller
+    knows to fall through to the string fallback."""
+    stripped = text.strip()
+    if not stripped:
+        return None
+    if not (stripped.startswith("{") or stripped.startswith("[")):
+        return None
+    try:
+        import json
+
+        parsed = json.loads(stripped)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    return _python_to_lua_literal(parsed)
+
+
+def _python_to_lua_literal(value: Any) -> str:
+    """Render a Python value as the corresponding Lua source text. Used
+    by `_coerce_event_data_to_lua` for the JSON-to-Lua fallback so the
+    Lua runtime sees a real table when the source payload was
+    JSON-encoded."""
+    if value is None:
+        return "nil"
+    if value is True:
+        return "true"
+    if value is False:
+        return "false"
+    if isinstance(value, (int, float)):
+        return repr(value)
+    if isinstance(value, str):
+        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    if isinstance(value, list):
+        return "{" + ", ".join(_python_to_lua_literal(v) for v in value) + "}"
+    if isinstance(value, dict):
+        parts: List[str] = []
+        for k, v in value.items():
+            key = (
+                f"[{_python_to_lua_literal(k)}]"
+                if not isinstance(k, str)
+                or not k.replace("_", "").isalnum()
+                or (k[:1].isdigit() if k else True)
+                else k
+            )
+            parts.append(f"{key} = {_python_to_lua_literal(v)}")
+        return "{" + ", ".join(parts) + "}"
+    return _python_to_lua_literal(str(value))
 
 
 # ── ScriptValue ↔ Lua type bridge ─────────────────────────────────

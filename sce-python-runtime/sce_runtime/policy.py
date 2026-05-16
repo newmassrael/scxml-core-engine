@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Generic, List, Optional, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, List, Optional, TypeVar
 
 S = TypeVar("S")
 E = TypeVar("E")
@@ -54,6 +54,19 @@ class StatePolicy(ABC, Generic[S, E]):
     Generated `*_sm.py` modules subclass this and provide concrete State/Event
     enum types. The Engine drives all algorithm logic against these hooks.
     """
+
+    # W3C SCXML 5.10 — script-engine session id, populated by `Engine`
+    # at construction. Concrete policies thread it through helper
+    # methods (`_assign`, `_guard`, `_exec`, …) so each one can call
+    # `IScriptEngine.evaluate_expression(self._session_id, …)`. Empty
+    # string before the engine binds (e.g. during static analysis).
+    _session_id: str = ""
+
+    # Back-reference to the owning `Engine`, set in `Engine.__init__`
+    # so `set_current_event` (whose protocol signature pre-dates the
+    # IScriptEngine migration and takes no `engine` parameter) can
+    # still reach the script engine session.
+    _engine_ref: Optional[Any] = None
 
     @abstractmethod
     def initial_state(self) -> S:
@@ -188,6 +201,30 @@ class StatePolicy(ABC, Generic[S, E]):
 
     def needs_script_engine(self) -> bool:
         """Whether the policy uses scripts (informational)."""
+        return False
+
+    def needs_http_send(self) -> bool:
+        """W3C SCXML C.2 — true when the document declares at least one
+        `<send type="BasicHTTPEventProcessor">` or HTTP-target `<send>`,
+        so the engine surfaces the BasicHTTP processor URI under
+        `_ioprocessors`. Generated `*_sm.py` overrides against the
+        codegen-time `model.needs_http_send` flag."""
+        return False
+
+    def machine_name(self) -> str:
+        """W3C SCXML 5.10 — `_name` system variable. Generated `*_sm.py`
+        overrides to return the source document's `name` attribute (or
+        the module's machine name when the attribute was absent)."""
+        return ""
+
+    def is_state_active(self, state_id: str, engine: "Engine[S, E]") -> bool:
+        """W3C SCXML 5.9.2 — backing predicate for the script engine's
+        `In(state)` callback. Generated `*_sm.py` resolves `state_id`
+        against its State enum and walks the engine's active
+        configuration. Empty / unknown ids return False."""
+        for active in engine.active_configuration():
+            if self.get_state_name(active) == state_id:
+                return True
         return False
 
     def set_current_event(self, event: E, metadata) -> None:

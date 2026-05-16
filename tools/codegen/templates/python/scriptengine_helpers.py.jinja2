@@ -4,84 +4,182 @@
 {#
     Script engine helpers (Python Jinja2)
 
-    Emits the script/guard execution helpers and the W3C SCXML 5.3 early-binding
-    datamodel initialiser. The Python backend evaluates `<script>`, `<assign
-    expr>`, and `cond` expressions directly against `self._ns` via `exec` /
-    `eval` — there is no separate script-engine indirection. Variable names
-    that collide with Python keywords are escaped with a trailing underscore
-    via the `escape_python_keyword` filter (load-bearing for `<data id="class"
-    expr="42"/>` style fixtures).
+    Emits the executable-content helpers and the W3C SCXML 5.3 early-binding
+    datamodel initialiser. The Python backend now matches every other backend
+    (Rust / Go / Kotlin / C11 / C++) by routing every author expression through
+    the IScriptEngine boundary: each helper hands a Lua text string (the
+    `to_lua_expr` / `to_lua_guard` / `to_lua_script` transform output) to the
+    process-wide LuaScriptEngine and unwraps the result into a Python value.
+    `self._session_id` is bound by the engine at construction so helpers can
+    address the right session without an extra parameter on every call site.
 #}
 
     # ── Script helpers ─────────────────────────────────────────────
 
     def _raise_error_execution(self, engine) -> None:
         """W3C SCXML 3.8 — push `error.execution` onto the internal queue
-        when the running document declares the descriptor. Documents
-        without an `error.execution` transition still need block-abort
-        (per 3.8 "subsequent siblings in the same block are skipped"),
-        so the calling helper raises `_ActionAbort` independently of
-        whether this method enqueues anything."""
+        when the running document declares the descriptor. The event is
+        platform-generated (`<assign>` or `<script>` eval failure), so
+        the metadata `event_type` is `"platform"` per W3C 5.10 — guards
+        reading `_event.type` distinguish this from `<raise>`-internal
+        events (test 331). Documents without an `error.execution`
+        transition still need block-abort (W3C 3.8 "subsequent siblings
+        in the same block are skipped"), so the calling helper raises
+        `_ActionAbort` independently of whether this method enqueues
+        anything."""
         evt = self.get_event_from_name("error.execution")
         if evt is not None:
-            engine.raise_internal(evt)
+            engine.raise_internal(evt, EventMetadata(event_type="platform"))
 
-    def _exec(self, engine, script: str) -> None:
-        """W3C SCXML 5.5 — execute a `<script>` statement against the
-        user-provided namespace. An uncaught Python exception raises
-        `error.execution` on the internal queue (W3C 3.8) and aborts the
-        current executable-content block via `_ActionAbort`."""
+    def _exec(self, engine, lua_script: str) -> None:
+        """W3C SCXML 5.5 — execute a `<script>` body. The text was
+        rewritten from ECMAScript to Lua at codegen time
+        (`to_lua_script`). Runtime / syntax errors raise
+        `error.execution` and abort the surrounding executable-content
+        block via `_ActionAbort` (W3C 3.8)."""
+        if not lua_script:
+            return
         try:
-            exec(script, self._ns)  # noqa: S102 — script source is statically baked
-        except Exception:
+            engine._script_engine.execute_script(self._session_id, lua_script)
+        except _ScriptError:
             self._raise_error_execution(engine)
             raise _ActionAbort
 
-    def _guard(self, engine, expr: str) -> bool:
-        """W3C SCXML 3.13 — evaluate a transition / `<if>` guard. On
-        evaluation error the spec requires `error.execution` to land on
-        the internal queue and the cond to be treated as `false`. We do
-        NOT abort the block here: the caller is either `select_transition`
-        (which has no block) or an `<if>`/`<elseif>` cascade (whose
-        next-branch evaluation is allowed to proceed per 4.2)."""
+    def _guard(self, engine, lua_expr: str) -> bool:
+        """W3C SCXML 3.13 — evaluate a transition / `<if>` guard. The
+        spec requires `error.execution` on eval failure plus a `False`
+        return; the block-abort sentinel is NOT raised here so an
+        `<if>`/`<elseif>` cascade's next branch keeps the opportunity
+        to evaluate (W3C 4.2)."""
+        if not lua_expr:
+            return True
         try:
-            return bool(eval(expr, self._ns))  # noqa: S307 — guard expression is statically baked
-        except Exception:
+            result = engine._script_engine.evaluate_expression(
+                self._session_id, lua_expr
+            )
+        except _ScriptError:
             self._raise_error_execution(engine)
             return False
+        return result.to_bool()
 
-    def _assign(self, engine, location: str, expr: str) -> None:
-        """W3C SCXML 5.4 — evaluate `expr` and bind the result at
-        `location` in the datamodel. Two failure modes both surface as
+    def _assign(self, engine, location: str, lua_expr: str) -> None:
+        """W3C SCXML 5.4 — evaluate `lua_expr` and bind the result at
+        `location` in the datamodel. Three failure modes surface as
         `error.execution` + block-abort:
-          * `location` is not in `_DECLARED_VARS` (assignment to an
-            undeclared name — W3C 5.4 §2);
-          * the right-hand `expr` evaluation raises (e.g. attribute access
-            on `undefined`).
-        On success the namespace is updated in place."""
-        if location not in _DECLARED_VARS:
+          * `location` is empty or names a read-only system variable
+            (`_event` / `_sessionid` / `_name` / `_ioprocessors`) per
+            W3C B.2 — mirrors the Rust assign template's codegen-time
+            check at `tools/codegen/templates/rust/actions/assign.rs.jinja2:21`;
+          * `lua_expr` is empty (W3C 5.4 — `<assign>` requires expr);
+          * the script engine raises during the `<loc> = <expr>` assign.
+        Implementation uses `execute_script` (not `set_variable`) so Lua
+        reference identity is preserved across the assign — `Var2 =
+        _event` keeps `Var2` and `_event` pointing at the same Lua
+        table (W3C SCXML test 329 depends on this)."""
+        if not location or location in _READONLY_SYSTEM_VARS:
+            self._raise_error_execution(engine)
+            raise _ActionAbort
+        if not lua_expr:
             self._raise_error_execution(engine)
             raise _ActionAbort
         try:
-            self._ns[location] = eval(expr, self._ns)  # noqa: S307
-        except Exception:
+            engine._script_engine.execute_script(
+                self._session_id, f"{location} = {lua_expr}"
+            )
+        except _ScriptError:
             self._raise_error_execution(engine)
             raise _ActionAbort
 
-    def _assign_runtime(self, location: str, value) -> None:
-        """W3C SCXML 5.3 — assign a runtime value (already computed, not a
-        text expression) at `location`. Used by `<foreach>` to bind the
-        current item/index without re-evaluating it as source text."""
-        self._ns[location] = value
-
-    def _log(self, label: str, expr: str) -> None:
-        """W3C SCXML 6.4 `<log>` — evaluate `expr` against the datamodel
-        and dispatch through the policy's log hook. The default hook
-        writes a single line to stdout; callers wanting structured
-        logging should override `log_hook` in a subclass."""
+    def _assign_content(
+        self, engine, location: str, lua_expr: str, fallback: str
+    ) -> None:
+        """W3C SCXML 5.4 — `<assign>` with inline content (XML body or
+        literal text). Mirrors `_init_data_with_content`: try Lua eval
+        first; on failure (XML element / freeform text) bind the
+        whitespace-normalised string. Read-only system vars + empty
+        location still raise `error.execution` like the expr-form
+        `_assign`."""
+        if not location or location in _READONLY_SYSTEM_VARS:
+            self._raise_error_execution(engine)
+            raise _ActionAbort
         try:
-            value = eval(expr, self._ns) if expr else ""  # noqa: S307
-        except Exception as exc:  # noqa: BLE001 — surface eval errors
+            engine._script_engine.execute_script(
+                self._session_id, f"{location} = {lua_expr}"
+            )
+            return
+        except _ScriptError:
+            pass
+        # W3C SCXML B.2 — fallback to whitespace-normalised string
+        # (covers XML element content per test530).
+        try:
+            engine._script_engine.set_variable(
+                self._session_id, location, _ScriptValue.of(fallback)
+            )
+        except _ScriptError:
+            self._raise_error_execution(engine)
+            raise _ActionAbort
+
+    def _assign_runtime(self, engine, location: str, value) -> None:
+        """W3C SCXML 4.6 / 5.3 — assign a runtime-computed value (e.g.
+        a `<foreach>` iteration item/index) at `location`. An empty or
+        read-only location is illegal per W3C 4.6 (test 152 case:
+        `<foreach item="" …>` must raise `error.execution` + abort the
+        block)."""
+        if not location or location in _READONLY_SYSTEM_VARS:
+            self._raise_error_execution(engine)
+            raise _ActionAbort
+        engine._script_engine.set_variable(
+            self._session_id, location, _ScriptValue.of(value)
+        )
+
+    def _init_data_with_content(
+        self, engine, var_id: str, lua_expr: str, fallback: str
+    ) -> None:
+        """W3C SCXML 5.2.2 — initialise a `<data>` element whose content
+        is inline text. Mirrors Rust's `eval_or_set_string` (Atomic γ-3a,
+        helpers/datamodel_init.rs:107): try Lua eval first, fall back to
+        JSON.parse for `[...]` / `{...}` payloads, then to a
+        whitespace-normalised string. Used by templates emitting
+        `<data id="X">[1,2,3]</data>` style content."""
+        try:
+            value = engine._script_engine.evaluate_expression(
+                self._session_id, lua_expr
+            )
+            engine._script_engine.declare_variable(self._session_id, var_id, value)
+            return
+        except _ScriptError:
+            pass
+        trimmed = lua_expr.strip() if lua_expr else ""
+        if trimmed.startswith(("[", "{")):
+            try:
+                value = engine._script_engine.evaluate_expression(
+                    self._session_id,
+                    f"JSON.parse([==[{trimmed}]==])",
+                )
+                engine._script_engine.declare_variable(
+                    self._session_id, var_id, value
+                )
+                return
+            except _ScriptError:
+                pass
+        # W3C SCXML B.2 — final fallback to whitespace-normalised string.
+        engine._script_engine.declare_variable(
+            self._session_id, var_id, _ScriptValue.of(fallback)
+        )
+
+    def _log(self, engine, label: str, lua_expr: str) -> None:
+        """W3C SCXML 6.4 `<log>` — evaluate `lua_expr` against the
+        datamodel and dispatch through the policy's log hook. The
+        default hook writes a single line to stdout; callers wanting
+        structured logging should override `log_hook` in a subclass."""
+        if not lua_expr:
+            self.log_hook(label, "")
+            return
+        try:
+            value = engine._script_engine.evaluate_expression(
+                self._session_id, lua_expr
+            ).to_python()
+        except _ScriptError as exc:
             value = f"<log eval error: {exc!r}>"
         self.log_hook(label, value)
 
@@ -93,52 +191,98 @@
         else:
             print(value)
 
-    def _foreach(self, array_expr: str):
+    def _foreach(self, engine, lua_array_expr: str):
         """W3C SCXML 4.6 `<foreach>` with index binding — yields
-        `(index, value)` pairs after evaluating `array_expr` against the
-        datamodel. Lists, tuples, and any iterable are accepted; mappings
-        iterate as `(key, value)` pairs in insertion order."""
+        `(index, value)` pairs after evaluating `lua_array_expr`
+        against the datamodel. Per the spec, an invalid / non-iterable
+        array raises `error.execution` and aborts the surrounding
+        executable-content block (the test 152 case)."""
+        if not lua_array_expr:
+            self._raise_error_execution(engine)
+            raise _ActionAbort
         try:
-            collection = eval(array_expr, self._ns)  # noqa: S307
-        except Exception:
-            return iter(())
+            collection = engine._script_engine.evaluate_expression(
+                self._session_id, lua_array_expr
+            ).to_python()
+        except _ScriptError:
+            self._raise_error_execution(engine)
+            raise _ActionAbort
+        if collection is None:
+            self._raise_error_execution(engine)
+            raise _ActionAbort
         if isinstance(collection, dict):
             return enumerate(collection.items())
-        return enumerate(collection)
-
-    def _eval_sendid(self, sendid_expr: str) -> str:
-        """W3C SCXML 6.2.2 `<cancel sendidexpr>` — evaluate `sendid_expr`
-        against the datamodel and coerce the result to a string. Empty
-        / missing values map to the empty string (matches the scheduler
-        contract that empty ids cannot be cancelled)."""
         try:
-            value = eval(sendid_expr, self._ns)  # noqa: S307
-        except Exception:
+            return enumerate(collection)
+        except TypeError:
+            self._raise_error_execution(engine)
+            raise _ActionAbort
+
+    def _foreach_values(self, engine, lua_array_expr: str):
+        """W3C SCXML 4.6 `<foreach>` without index binding — yields
+        each value in turn. Invalid array semantics match `_foreach`
+        (raises `error.execution` + block-abort)."""
+        if not lua_array_expr:
+            self._raise_error_execution(engine)
+            raise _ActionAbort
+        try:
+            collection = engine._script_engine.evaluate_expression(
+                self._session_id, lua_array_expr
+            ).to_python()
+        except _ScriptError:
+            self._raise_error_execution(engine)
+            raise _ActionAbort
+        if collection is None:
+            self._raise_error_execution(engine)
+            raise _ActionAbort
+        try:
+            return iter(collection)
+        except TypeError:
+            self._raise_error_execution(engine)
+            raise _ActionAbort
+
+    def _eval_sendid(self, engine, lua_sendid_expr: str) -> str:
+        """W3C SCXML 6.2.2 `<cancel sendidexpr>` — evaluate the Lua
+        expression and coerce the result to a string. Empty / missing
+        values map to the empty string (matches the scheduler contract
+        that empty ids cannot be cancelled)."""
+        if not lua_sendid_expr:
+            return ""
+        try:
+            value = engine._script_engine.evaluate_expression(
+                self._session_id, lua_sendid_expr
+            ).to_python()
+        except _ScriptError:
             return ""
         return "" if value is None else str(value)
 
-    def _eval_event_name(self, event_expr: str):
-        """W3C SCXML 6.2 `<send eventexpr>` — evaluate `event_expr`
-        against the datamodel and resolve the resulting name to an
-        Event enum member. Returns `None` when the name does not match
-        any declared event (callers raise `error.execution` per W3C
-        6.2)."""
+    def _eval_event_name(self, engine, lua_event_expr: str):
+        """W3C SCXML 6.2 `<send eventexpr>` — evaluate the Lua
+        expression and resolve the resulting name to an Event enum
+        member. Returns `None` when the name does not match any
+        declared event (callers raise `error.execution` per W3C 6.2)."""
         try:
-            name = str(eval(event_expr, self._ns))  # noqa: S307
-        except Exception:
+            value = engine._script_engine.evaluate_expression(
+                self._session_id, lua_event_expr
+            ).to_python()
+        except _ScriptError:
             return None
-        return _EVENT_BY_NAME.get(name)
+        if value is None:
+            return None
+        return _EVENT_BY_NAME.get(str(value))
 
-    def _eval_delay_ms(self, delay_expr: str) -> int:
-        """W3C SCXML 6.2 `<send delayexpr>` — evaluate `delay_expr` and
-        coerce the result into milliseconds. Accepts:
+    def _eval_delay_ms(self, engine, lua_delay_expr: str) -> int:
+        """W3C SCXML 6.2 `<send delayexpr>` — evaluate the Lua
+        expression and coerce the result into milliseconds. Accepts:
           * `int` / `float` — interpreted as milliseconds directly;
           * `str` — parsed via `_parse_delay_text` ("5s", "500ms", "0");
           * anything else — treated as `0` (matches W3C 6.2 "delay must
             be a non-negative integer" with sensible fallback)."""
         try:
-            value = eval(delay_expr, self._ns)  # noqa: S307
-        except Exception:
+            value = engine._script_engine.evaluate_expression(
+                self._session_id, lua_delay_expr
+            ).to_python()
+        except _ScriptError:
             return 0
         if isinstance(value, bool):
             return 0
@@ -148,26 +292,32 @@
             return _parse_delay_text(value)
         return 0
 
-    def _build_http_params(self, params_specs, namelist: str):
+    def _build_http_params(self, engine, params_specs, namelist: str):
         """W3C SCXML C.2 — assemble the form-encoded multi-map handed
         to `engine.perform_http_send`. `params_specs` is a sequence of
-        `(name, expr)` tuples (one per `<param>`); `namelist` is the
-        whitespace-separated variable list. Each value is coerced to
-        str so the HTTP layer can urlencode it uniformly. Eval errors
-        on individual `<param expr>` skip that param (matches the
-        looser W3C "best effort" form-encoding contract — the engine
-        does NOT abort the surrounding block for a malformed param)."""
+        `(name, lua_expr)` tuples (one per `<param>`); `namelist` is
+        the whitespace-separated variable list. Eval errors on
+        individual `<param>` skip that param (W3C "best effort"
+        form-encoding contract — the engine does NOT abort the
+        surrounding block for a malformed param)."""
         result = {}
         if namelist:
             for var in namelist.split():
-                value = self._ns.get(var)
+                try:
+                    value = engine._script_engine.get_variable(
+                        self._session_id, var
+                    ).to_python()
+                except _ScriptError:
+                    continue
                 result.setdefault(var, []).append(
                     "" if value is None else str(value)
                 )
-        for name, expr in params_specs:
+        for name, lua_expr in params_specs:
             try:
-                value = eval(expr, self._ns)  # noqa: S307
-            except Exception:
+                value = engine._script_engine.evaluate_expression(
+                    self._session_id, lua_expr
+                ).to_python()
+            except _ScriptError:
                 continue
             result.setdefault(name, []).append(
                 "" if value is None else str(value)
@@ -176,23 +326,26 @@
 
     def _eval_send_payload(
         self,
+        engine,
         params,
         content: str,
-        content_expr: str,
+        lua_content_expr: str,
         namelist: str,
     ):
         """W3C SCXML 5.10 — marshal `<send>` payload into `_event.data`.
 
         Precedence per W3C 6.2: `<content expr>` > `<content>` literal >
         `<param>` + namelist hybrid. When all three are absent, returns
-        `""` so `_event.data` is the empty string (the W3C default).
-        `params` is a sequence of `(name, expr)` tuples; `namelist` is
-        whitespace-separated variable names whose current bindings join
-        the parameter dict."""
-        if content_expr:
+        `""` so `_event.data` is the empty string (W3C default).
+        `params` is a sequence of `(name, lua_expr)` tuples; `namelist`
+        is whitespace-separated variable names whose current bindings
+        join the parameter dict."""
+        if lua_content_expr:
             try:
-                return eval(content_expr, self._ns)  # noqa: S307
-            except Exception:
+                return engine._script_engine.evaluate_expression(
+                    self._session_id, lua_content_expr
+                ).to_python()
+            except _ScriptError:
                 return ""
         if content:
             return content
@@ -201,29 +354,40 @@
         marshalled = {}
         if namelist:
             for var in namelist.split():
-                marshalled[var] = self._ns.get(var)
-        for name, expr in params:
+                try:
+                    marshalled[var] = engine._script_engine.get_variable(
+                        self._session_id, var
+                    ).to_python()
+                except _ScriptError:
+                    marshalled[var] = None
+        for name, lua_expr in params:
             try:
-                marshalled[name] = eval(expr, self._ns)  # noqa: S307
-            except Exception:
+                marshalled[name] = engine._script_engine.evaluate_expression(
+                    self._session_id, lua_expr
+                ).to_python()
+            except _ScriptError:
                 marshalled[name] = None
         return marshalled
 
     def set_current_event(self, event, metadata) -> None:
-        """W3C SCXML 5.10 — bind `_event` into the datamodel for the
-        current microstep so user expressions can read `_event.name`,
-        `_event.data.foo`, `_event.sendid`, etc. Engine dispatches one
-        call per externally-triggered / internally-raised event before
-        transition selection."""
-        from types import SimpleNamespace
-        self._ns["_event"] = SimpleNamespace(
-            name=_EVENT_NAMES.get(event, ""),
-            data=_wrap_event_data(metadata.data),
-            type=metadata.event_type,
-            sendid=metadata.send_id,
-            origin=metadata.origin,
-            origintype=metadata.origin_type,
-            invokeid=metadata.invoke_id,
+        """W3C SCXML 5.10 — bind `_event` into the script-engine session
+        for the current microstep. The Lua-side `_event` is a real Lua
+        table so generated expressions like `_event.data.foo` resolve
+        via native dot-access; the engine bridges Python values into
+        Lua tables at the `set_current_event` boundary so the runtime
+        contract matches every other backend."""
+        engine_ref = getattr(self, "_engine_ref", None)
+        if engine_ref is None or not self._session_id:
+            return
+        engine_ref._script_engine.set_current_event(
+            self._session_id,
+            _EVENT_NAMES.get(event, ""),
+            _coerce_event_data_str(metadata.data),
+            metadata.event_type,
+            metadata.send_id,
+            metadata.origin,
+            metadata.origin_type,
+            metadata.invoke_id,
         )
 
     def _resolve_send_id(self, engine, idlocation: str, explicit_id: str) -> str:
@@ -234,7 +398,12 @@
         `<cancel sendid="..."/>` it later."""
         sid = explicit_id if explicit_id else engine._next_auto_sendid()
         if idlocation:
-            self._ns[idlocation] = sid
+            try:
+                engine._script_engine.set_variable(
+                    self._session_id, idlocation, _ScriptValue.of(sid)
+                )
+            except _ScriptError:
+                pass
         return sid
 
     @staticmethod
@@ -262,73 +431,102 @@
                 return True
         return False
 
-    def _foreach_values(self, array_expr: str):
-        """W3C SCXML 4.6 `<foreach>` without index binding — yields each
-        value in turn. Dict iteration yields keys (mirrors Python
-        semantics for `for k in d`)."""
-        try:
-            collection = eval(array_expr, self._ns)  # noqa: S307
-        except Exception:
-            return iter(())
-        return iter(collection)
-
     def is_late_binding(self) -> bool:
         return {{ 'True' if model.binding == 'late' else 'False' }}
 
     def initialize_datamodel(self, engine) -> None:
-        # W3C SCXML B.3 ECMAScript datamodel — surface the four bare-name
-        # literals that SCXML expressions use in `<cond>` and `<assign expr>`.
-        # `setdefault` preserves any user `<data id="null"…>` override so the
-        # author still wins; absent that, eval finds the standard ECMAScript
-        # values instead of raising `NameError` on `null` / `undefined`.
-        self._ns.setdefault("false", False)
-        self._ns.setdefault("true", True)
-        self._ns.setdefault("null", None)
-        self._ns.setdefault("undefined", None)
-
-        # W3C SCXML 5.9.2 `In(state)` predicate — true when `state` (matched
-        # by the SCXML `id` text) is in the active configuration, including
-        # compound ancestors and parallel siblings. Captured against the
-        # engine so guard expressions like `In('s1')` resolve at evaluation
-        # time without threading the engine through every `_guard` call.
-        def _scxml_In(state_id):
-            for active in engine.active_configuration():
-                if str(active) == state_id:
-                    return True
-            return False
-        self._ns["In"] = _scxml_In
 {% set ns_dm = namespace(any=false) %}
 {% if model.variables %}{% set ns_dm.any = true %}{% endif %}
+{% if model.global_scripts %}{% set ns_dm.any = true %}{% endif %}
 {% for state_id, st in model.states | dictsort %}
 {% if st.datamodel and model.binding != 'late' %}{% set ns_dm.any = true %}{% endif %}
 {% endfor %}
+{% if not ns_dm.any %}
+        return
+{% endif %}
 {% if ns_dm.any %}
-        # W3C SCXML 5.3: root datamodel always inits at startup; state-local
-        # data joins it here under early binding (the default). Late
-        # binding initialises state-local data on first state entry via
-        # `init_state_datamodel`.
+        # W3C SCXML 5.3 — declare every static `<data>` against the
+        # script-engine session. Root-level data always binds at
+        # startup; state-local data joins it here under early binding
+        # (the default). Late binding initialises state-local data on
+        # first state entry via `init_state_datamodel`.
 {% for var in model.variables %}
 {% if var.expr %}
-        self._ns[{{ var.id | py_string_literal }}] = eval({{ var.expr | py_expr | py_string_literal }}, self._ns)
+        try:
+            _init_val = engine._script_engine.evaluate_expression(
+                self._session_id, {{ var.expr | to_lua_expr | py_string_literal }}
+            )
+        except _ScriptError:
+            _init_val = _ScriptValue.undefined()
+            self._raise_error_execution(engine)
+        engine._script_engine.declare_variable(
+            self._session_id, {{ var.id | py_string_literal }}, _init_val
+        )
 {% elif var.content %}
-        self._ns[{{ var.id | py_string_literal }}] = {{ var.content | py_string_literal }}
+        self._init_data_with_content(
+            engine,
+            {{ var.id | py_string_literal }},
+            {{ var.content | to_lua_expr | py_string_literal }},
+            {{ var.content | normalize_ws | py_string_literal }},
+        )
 {% else %}
-        self._ns[{{ var.id | py_string_literal }}] = None
+        engine._script_engine.declare_variable(
+            self._session_id,
+            {{ var.id | py_string_literal }},
+            _ScriptValue.undefined(),
+        )
 {% endif %}
 {% endfor %}
 {% if model.binding != 'late' %}
 {% for state_id, st in model.states | dictsort %}
 {% for var in st.datamodel %}
 {% if var.expr %}
-        self._ns[{{ var.id | py_string_literal }}] = eval({{ var.expr | py_expr | py_string_literal }}, self._ns)
+        try:
+            _init_val = engine._script_engine.evaluate_expression(
+                self._session_id, {{ var.expr | to_lua_expr | py_string_literal }}
+            )
+        except _ScriptError:
+            _init_val = _ScriptValue.undefined()
+            self._raise_error_execution(engine)
+        engine._script_engine.declare_variable(
+            self._session_id, {{ var.id | py_string_literal }}, _init_val
+        )
 {% elif var.content %}
-        self._ns[{{ var.id | py_string_literal }}] = {{ var.content | py_string_literal }}
+        self._init_data_with_content(
+            engine,
+            {{ var.id | py_string_literal }},
+            {{ var.content | to_lua_expr | py_string_literal }},
+            {{ var.content | normalize_ws | py_string_literal }},
+        )
 {% else %}
-        self._ns[{{ var.id | py_string_literal }}] = None
+        engine._script_engine.declare_variable(
+            self._session_id,
+            {{ var.id | py_string_literal }},
+            _ScriptValue.undefined(),
+        )
 {% endif %}
 {% endfor %}
 {% endfor %}
 {% endif %}
+{% endif %}
+{% if model.global_scripts %}
+        # W3C SCXML 5.8 — top-level `<script>` blocks run once at
+        # engine startup, after the document's static datamodel is
+        # declared but before any onentry fires. The script body is
+        # already Lua text (rewritten at codegen time); failures here
+        # raise `error.execution` on the internal queue but do NOT
+        # abort initialisation (the engine still enters the initial
+        # configuration; the error event will be dequeued in the
+        # first macrostep).
+{% for script in model.global_scripts %}
+        try:
+            engine._script_engine.execute_script(
+                self._session_id,
+                {{ script.content | to_lua_script | py_string_literal }},
+            )
+        except _ScriptError:
+            self._raise_error_execution(engine)
+{% endfor %}
 {% endif %}
 
     def init_state_datamodel(self, state, engine) -> None:
@@ -342,11 +540,29 @@
         if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
 {% for var in st.datamodel %}
 {% if var.expr %}
-            self._ns[{{ var.id | py_string_literal }}] = eval({{ var.expr | py_expr | py_string_literal }}, self._ns)
+            try:
+                _init_val = engine._script_engine.evaluate_expression(
+                    self._session_id, {{ var.expr | to_lua_expr | py_string_literal }}
+                )
+            except _ScriptError:
+                _init_val = _ScriptValue.undefined()
+                self._raise_error_execution(engine)
+            engine._script_engine.declare_variable(
+                self._session_id, {{ var.id | py_string_literal }}, _init_val
+            )
 {% elif var.content %}
-            self._ns[{{ var.id | py_string_literal }}] = {{ var.content | py_string_literal }}
+            self._init_data_with_content(
+                engine,
+                {{ var.id | py_string_literal }},
+                {{ var.content | to_lua_expr | py_string_literal }},
+                {{ var.content | normalize_ws | py_string_literal }},
+            )
 {% else %}
-            self._ns[{{ var.id | py_string_literal }}] = None
+            engine._script_engine.declare_variable(
+                self._session_id,
+                {{ var.id | py_string_literal }},
+                _ScriptValue.undefined(),
+            )
 {% endif %}
 {% endfor %}
             return

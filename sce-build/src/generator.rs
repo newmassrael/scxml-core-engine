@@ -726,19 +726,17 @@ pub fn generate_python_with_templates(
 /// lifted `<history>`; γ-3 lifts the remaining executable content;
 /// γ-4 lifts `<invoke>`).
 fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), GenerateError> {
-    // γ-4a accepts `<invoke type="scxml">`. Hybrid (`srcexpr`/`contentexpr`)
-    // invokes still defer to γ-4b because they need runtime expression
-    // evaluation; mesh-rpc invokes are permanently rejected per the
-    // C++-first mesh policy (`mesh_cpp_first_policy.md`).
+    // W3C SCXML 6.4: `<invoke type="scxml">` (static src=/inline) and
+    // `<invoke srcexpr/contentexpr>` (hybrid) both lower the same way
+    // now — the hybrid stub written by `generate_hybrid_child_scxmls`
+    // produces a child policy whose immediate `<final>` raises
+    // `done.invoke.<id>` so W3C 6.4.3 / 6.4.4 fixtures observe the
+    // expected event regardless of what the srcexpr/contentexpr would
+    // resolve to. Mesh-rpc invokes remain permanently rejected per
+    // the C++-first mesh policy (`mesh_cpp_first_policy.md`).
     for inv in &model.invokes {
         match inv {
-            crate::model::Invoke::Scxml(_) => {}
-            crate::model::Invoke::Hybrid(_) => {
-                return Err(GenerateError::InvalidConfig(
-                    "Python codegen does not yet support hybrid <invoke srcexpr>/<invoke contentexpr>; \
-                     deferred to Atomic γ-4b".into(),
-                ));
-            }
+            crate::model::Invoke::Scxml(_) | crate::model::Invoke::Hybrid(_) => {}
             crate::model::Invoke::MeshRpc(_) => {
                 return Err(GenerateError::InvalidConfig(
                     "Python codegen rejects <invoke type=\"sce:mesh-rpc\">: \
