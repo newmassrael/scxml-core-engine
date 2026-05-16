@@ -745,25 +745,16 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
             }
         }
     }
-    // β datamodel storage uses dict-keyed `self._ns[name]`. User-written
-    // `<script>` / `cond` / `expr` text references the same names as bare
-    // Python identifiers, which is parsed by `eval` directly. A `<data>`
-    // id that happens to be a Python keyword (`class`, `lambda`, ...)
-    // would silently break every user expression that referenced it (and
-    // mangling the storage key alone wouldn't help — the user's own
-    // expression text would still contain the bare keyword). We reject
-    // up front so the SCXML author hits a clear error instead of a
-    // SyntaxError at runtime [[feedback-silently-broken-hooks]]. γ may
-    // lift this once an expression-rewriter pass lands.
-    for var in &model.variables {
-        if PYTHON_KEYWORDS.contains(&var.id.as_str()) {
-            return Err(GenerateError::InvalidConfig(format!(
-                "Python codegen rejects <data id=\"{}\">: name collides with a Python \
-                 keyword and would break user expressions referencing it",
-                var.id
-            )));
-        }
-    }
+    // W3C SCXML 5.3 — Python AOT used to reject `<data id>` names that
+    // collide with Python keywords (`class`, `lambda`, …) because the β
+    // datamodel stored values as bare Python identifiers parsed by
+    // `eval` directly. Post-Lua-migration the datamodel lives inside
+    // the `IScriptEngine` session and is accessed exclusively via
+    // string-keyed `declare_variable` / `set_variable` / `<assign
+    // location>` calls; user expressions go through the
+    // ECMAScript→Lua transformer (`to_lua_expr` / `to_lua_guard` /
+    // `to_lua_script`) so the SCXML author's identifier never reaches
+    // a Python parser. No keyword reject is needed.
     // W3C SCXML 3.13 — `<transition event="*">` matches every external
     // event except the eventless NULL sentinel; the codegen lowers it to
     // `if event != Event.NULL` in `process_transition.py.jinja2`. Prefix
@@ -881,17 +872,6 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
     }
     Ok(())
 }
-
-/// Python soft + hard keywords as of 3.12. `match`/`case` are soft
-/// keywords but conflict with the same syntactic positions; SCXML
-/// system variables (`_event`, `_sessionid`) are reserved by W3C
-/// SCXML 5.10 and are caught by the parser long before this point.
-const PYTHON_KEYWORDS: &[&str] = &[
-    "False", "None", "True", "and", "as", "assert", "async", "await", "break", "class",
-    "continue", "def", "del", "elif", "else", "except", "finally", "for", "from", "global",
-    "if", "import", "in", "is", "lambda", "nonlocal", "not", "or", "pass", "raise", "return",
-    "try", "while", "with", "yield", "match", "case",
-];
 
 fn render_python(env: &Environment, model: &SCXMLModel) -> Result<String, GenerateError> {
     let machine_name = filters::to_pascal_case(model.name.clone());
