@@ -953,9 +953,17 @@ class Engine(Generic[S, E]):
         """If a `<final>` at the top of the document is entered, the engine
         terminates (W3C SCXML 3.7). `<final>` inside a parallel region only
         marks that region done — termination is governed by
-        `_check_done_state_events`."""
+        `_check_done_state_events`.
+
+        W3C SCXML Appendix D.2 `exitInterpreter` — the final state's
+        own `<onexit>` actions still execute as the engine winds down
+        (test236: a child invoke's `<final><onexit><send target=
+        "#_parent">` must reach the parent). The final state stays in
+        `_active_leaves` so `current_state` post-termination still
+        reports the reached final."""
         parent = self._policy.get_parent(final_state)
         if parent is None:
+            self._policy.execute_exit_actions(final_state, self)
             self._reached_final = True
             self._is_running = False
 
