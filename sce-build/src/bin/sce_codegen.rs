@@ -2616,6 +2616,13 @@ impl W3cBackend for RustBackend {
         // marker line. This aggregator mod.rs has no single source SCXML;
         // reference the first registered test as the index entry point
         // so addr2sce still maps back into the generated tree.
+        //
+        // Hand-curated non-W3C-IRP fixtures live under
+        // `sce-rust-tests/src/integration/` with their own hand-authored
+        // `mod.rs`, so this aggregator only owns the W3C suite — the
+        // generated/ tree is "codegen output, full overwrite" and the
+        // integration/ tree is "hand-authored mod.rs over codegen-
+        // emitted bodies".
         let first_id = &generated_ids[0];
         let mut mod_lines = vec![
             "// GENERATED -- DO NOT EDIT (sce-codegen)".to_string(),

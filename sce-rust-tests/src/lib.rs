@@ -8,7 +8,12 @@
 //!   function, `linkme`-based registrar) modeled on the C++
 //!   `SimpleAotTest<Derived, Num>` pattern documented in `CLAUDE.md`.
 //! - [`generated`]: per-test generated state machines produced by
-//!   `sce-codegen generate -l rust` (via `build.rs`).
+//!   `sce-codegen generate -l rust` (via `build.rs`). Fully overwritten
+//!   on every `sce-codegen generate-w3c -l rust` run.
+//! - [`integration`]: hand-curated non-W3C-IRP fixtures regenerated via
+//!   per-fixture scripts (e.g. `scripts/regen_donedata_local_invoke.sh`).
+//!   The `mod.rs` is hand-authored so the W3C regen pipeline never
+//!   touches it.
 //!
 //! ## Running
 //!
@@ -22,3 +27,4 @@
 
 pub mod generated;
 pub mod harness;
+pub mod integration;

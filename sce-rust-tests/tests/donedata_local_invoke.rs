@@ -25,7 +25,7 @@
 
 use std::time::Duration;
 
-use sce_rust_tests::generated::donedata_local_invoke::{
+use sce_rust_tests::integration::donedata_local_invoke::{
     DonedataLocalInvokePolicy, DonedataLocalInvokeState,
 };
 

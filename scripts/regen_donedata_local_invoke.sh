@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
-# Regenerate sce-rust-tests/src/generated/donedata_local_invoke/ from the
+# Regenerate sce-rust-tests/src/integration/donedata_local_invoke/ from the
 # hand-authored fixture at sce-rust-tests/fixtures/donedata_local_invoke.scxml.
 #
 # Why a script (vs the per-test ad-hoc workflow): SCE Mesh §9.6.6 rule 1
@@ -16,7 +16,7 @@
 # This script wraps the documented per-test workflow (`tests/donedata_local_invoke.rs`
 # header comment) so regen-ability isn't lost: copy the fixture into a tmp
 # directory, run the parent generate + per-child --as-child passes there,
-# copy only the `*.rs` artefacts back into the tracked generated/ tree,
+# copy only the `*.rs` artefacts back into the tracked integration/ tree,
 # then discard the tmp.
 #
 # Usage (from repo root):
@@ -32,7 +32,7 @@ cd "$REPO_ROOT"
 
 CODEGEN="target/release/sce-codegen"
 FIXTURE="sce-rust-tests/fixtures/donedata_local_invoke.scxml"
-GENERATED_DIR="sce-rust-tests/src/generated/donedata_local_invoke"
+GENERATED_DIR="sce-rust-tests/src/integration/donedata_local_invoke"
 STEM="donedata_local_invoke"
 
 # Step 1: build sce-codegen in release mode if absent.
@@ -54,7 +54,7 @@ cp "$FIXTURE" "$TMP/$STEM.scxml"
 # `--input-root` overrides the default §6.2.6 source-hash root (the
 # SCXML file's parent) so the embedded hash reflects the tracked
 # fixture location instead of the transient $TMP path — a stranger
-# running `sce-codegen verify sce-rust-tests/src/generated/donedata_local_invoke
+# running `sce-codegen verify sce-rust-tests/src/integration/donedata_local_invoke
 # --input-root sce-rust-tests/fixtures` then reproduces the same hash.
 INPUT_ROOT="sce-rust-tests/fixtures"
 "$CODEGEN" generate "$TMP/$STEM.scxml" -l rust -o "$TMP/" \
@@ -80,10 +80,10 @@ done
 mkdir -p "$GENERATED_DIR"
 find "$GENERATED_DIR" -maxdepth 1 -name '*_sm.rs' -delete
 
-# Step 6: copy only the Rust artefacts back into the tracked generated/
+# Step 6: copy only the Rust artefacts back into the tracked integration/
 # tree. The SCXML side files in $TMP are intentionally left behind; this
 # script's contract is that fixtures/ stays a one-file hand-authored
-# surface (parent only) and generated/ stays the codegen output tree
+# surface (parent only) and integration/ stays the codegen output tree
 # (Rust files only).
 #
 # The Rust backend's template embeds the absolute path of the input
