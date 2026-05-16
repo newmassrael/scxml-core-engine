@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+
+<scxml version="1.0" initial="subFinal1" datamodel="ecmascript"  xmlns="http://www.w3.org/2005/07/scxml">
+          <final id="subFinal1">
+           <onentry>
+            <send target="#_parent" event="childToParent">
+            <param name="aParam" expr="2"/>
+          </send> 
+         </onentry> 
+          </final>
+            </scxml>

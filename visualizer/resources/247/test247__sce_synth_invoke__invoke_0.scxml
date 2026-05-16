@@ -1,0 +1,5 @@
+<?xml version="1.0"?>
+
+<scxml version="1.0" initial="subFinal" datamodel="ecmascript"  xmlns="http://www.w3.org/2005/07/scxml">
+           <final id="subFinal"/>
+           </scxml>
