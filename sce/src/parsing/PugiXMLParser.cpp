@@ -219,13 +219,83 @@ std::string PugiXMLElement::serializeChildContent() const {
         return "";
     }
 
-    // W3C SCXML B.2: Full XML serialization preserving structure
-    // Use pugixml's print() to serialize all child nodes
-    std::ostringstream oss;
+    // W3C SCXML B.2: Full XML serialization preserving structure.
+    // Use pugixml's print() to serialize each child node compactly.
+    //
+    // Namespace propagation across the serialization boundary:
+    // pugixml exposes xmlns declarations only as ordinary attributes
+    // on the declaring element, so a child that inherits the default
+    // xmlns from `node_` (or any ancestor above it) has no xmlns
+    // attribute of its own and `pugi::xml_node::print()` therefore
+    // omits the binding from the serialized fragment. Without
+    // injection the round-trip `<invoke><content><scxml>` → string
+    // → `loadSCXMLFromString` re-parse fails the strict
+    // `ParsingCommon::isScxmlNamespace` gate landed in a46d2c27
+    // (the re-parsed `<scxml>` has no namespace, so it is rejected
+    // as `ParseWrongRootElement` even though the original document
+    // bound it via the ancestor's `xmlns="http://www.w3.org/2005/07/scxml"`).
+    // The fix mirrors the same ancestor-walk `getNamespace()`
+    // performs: pre-compute the default xmlns visible at `node_`,
+    // then inject it onto each unprefixed element child whose own
+    // tag does not already declare a default. Prefixed children
+    // (`<framework:foo>`) and children that ship their own
+    // `xmlns="..."` are left untouched.
+    std::string inheritedDefaultXmlns;
+    for (pugi::xml_node ancestor = node_; ancestor; ancestor = ancestor.parent()) {
+        pugi::xml_attribute decl = ancestor.attribute("xmlns");
+        if (decl) {
+            inheritedDefaultXmlns = decl.value();
+            break;
+        }
+    }
 
+    std::ostringstream oss;
     for (const auto &child : node_.children()) {
-        // pugi::format_raw: No indentation, no line breaks (compact serialization)
-        child.print(oss, "", pugi::format_raw);
+        if (child.type() != pugi::node_element || inheritedDefaultXmlns.empty()) {
+            // Text / CDATA / comment children round-trip verbatim;
+            // the no-inherited-xmlns case has nothing to inject.
+            child.print(oss, "", pugi::format_raw);
+            continue;
+        }
+
+        std::string childName = child.name();
+        bool childIsPrefixed = childName.find(':') != std::string::npos;
+        bool childHasOwnXmlns = static_cast<bool>(child.attribute("xmlns"));
+        if (childIsPrefixed || childHasOwnXmlns) {
+            child.print(oss, "", pugi::format_raw);
+            continue;
+        }
+
+        // Patch `xmlns="<inherited>"` into the child's opening tag.
+        // Serialize to a temporary buffer first because pugixml has
+        // no API to inject an attribute on a const node; the
+        // alternative — mutating the document tree — would risk
+        // surprising the rest of the parser. The opening tag begins
+        // at byte 0 with `<` followed by the local name; the
+        // insertion point is the byte immediately after the local
+        // name (before any whitespace, `/`, or `>`).
+        std::ostringstream child_oss;
+        child.print(child_oss, "", pugi::format_raw);
+        std::string serialized = child_oss.str();
+        if (serialized.size() < 2 || serialized[0] != '<') {
+            // Defensive fallback for unexpected shape (no malformed
+            // root has reached this point in practice, but pugixml's
+            // print contract does not formally guarantee `<` at
+            // byte 0 for every pathological tree).
+            oss << serialized;
+            continue;
+        }
+        size_t pos = 1;
+        while (pos < serialized.size()) {
+            char c = serialized[pos];
+            if (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '/' || c == '>') {
+                break;
+            }
+            ++pos;
+        }
+        std::string injection = " xmlns=\"" + inheritedDefaultXmlns + "\"";
+        serialized.insert(pos, injection);
+        oss << serialized;
     }
 
     return oss.str();
