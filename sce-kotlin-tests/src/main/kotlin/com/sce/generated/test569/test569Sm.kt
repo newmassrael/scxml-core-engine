@@ -1,7 +1,12 @@
+// SCE-GENERATED — DO NOT EDIT
+// source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
+// template-hash: 9faef2370910e1d1b12ff0b00a3d63d3578977b6f3f2045b8b014f47fa072349
+// generated-at: 1778932425
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/569/test569.scxml
 // Generator: SCE Kotlin Code Generator v1.0
+// SCE-MAP: test569.scxml:7
 
 package com.sce.generated.test569
 
@@ -207,7 +212,9 @@ class Test569StateMachine(
     // --- Per-State Event Handlers ---
 
 
+
     // Entry Actions (W3C SCXML 3.8)
+    // SCE-MAP: test569.scxml:7
     override fun onEntry(state: Test569State) {
         when (state) {
             is Test569State.Fail -> {
@@ -230,6 +237,7 @@ class Test569StateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
+    // SCE-MAP: test569.scxml:7
     override fun onExit(state: Test569State) {
         when (state) {
             is Test569State.Fail -> {
@@ -244,7 +252,9 @@ class Test569StateMachine(
         }
     }
 
+
     // Transition Actions (W3C SCXML 3.13)
+    // SCE-MAP: test569.scxml:7
     override fun executeTransitionActions(
         source: Test569State,
         event: Test569Event?

@@ -1,7 +1,12 @@
+// SCE-GENERATED — DO NOT EDIT
+// source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
+// template-hash: 9faef2370910e1d1b12ff0b00a3d63d3578977b6f3f2045b8b014f47fa072349
+// generated-at: 1778932425
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/529/test529.scxml
 // Generator: SCE Kotlin Code Generator v1.0
+// SCE-MAP: test529.scxml:4
 
 package com.sce.generated.test529
 
@@ -256,7 +261,9 @@ class Test529StateMachine(
     }
 
 
+
     // Entry Actions (W3C SCXML 3.8)
+    // SCE-MAP: test529.scxml:4
     override fun onEntry(state: Test529State) {
         when (state) {
             is Test529State.Fail -> {
@@ -304,6 +311,7 @@ class Test529StateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
+    // SCE-MAP: test529.scxml:4
     override fun onExit(state: Test529State) {
         when (state) {
             is Test529State.Fail -> {
@@ -324,7 +332,9 @@ class Test529StateMachine(
         }
     }
 
+
     // Transition Actions (W3C SCXML 3.13)
+    // SCE-MAP: test529.scxml:4
     override fun executeTransitionActions(
         source: Test529State,
         event: Test529Event?

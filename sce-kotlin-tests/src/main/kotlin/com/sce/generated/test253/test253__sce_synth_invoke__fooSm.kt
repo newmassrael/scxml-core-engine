@@ -1,7 +1,12 @@
+// SCE-GENERATED — DO NOT EDIT
+// source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
+// template-hash: 9faef2370910e1d1b12ff0b00a3d63d3578977b6f3f2045b8b014f47fa072349
+// generated-at: 1778932425
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/253/test253__sce_synth_invoke__foo.scxml
 // Generator: SCE Kotlin Code Generator v1.0
+// SCE-MAP: test253__sce_synth_invoke__foo.scxml:3
 
 package com.sce.generated.test253
 
@@ -236,7 +241,9 @@ class Test253SceSynthInvokeFooStateMachine(
     }
 
 
+
     // Entry Actions (W3C SCXML 3.8)
+    // SCE-MAP: test253__sce_synth_invoke__foo.scxml:3
     override fun onEntry(state: Test253SceSynthInvokeFooState) {
         when (state) {
             is Test253SceSynthInvokeFooState.Sub0 -> {
@@ -261,6 +268,7 @@ class Test253SceSynthInvokeFooStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
+    // SCE-MAP: test253__sce_synth_invoke__foo.scxml:3
     override fun onExit(state: Test253SceSynthInvokeFooState) {
         when (state) {
             is Test253SceSynthInvokeFooState.Sub0 -> {
@@ -275,7 +283,9 @@ class Test253SceSynthInvokeFooStateMachine(
         }
     }
 
+
     // Transition Actions (W3C SCXML 3.13)
+    // SCE-MAP: test253__sce_synth_invoke__foo.scxml:3
     override fun executeTransitionActions(
         source: Test253SceSynthInvokeFooState,
         event: Test253SceSynthInvokeFooEvent?

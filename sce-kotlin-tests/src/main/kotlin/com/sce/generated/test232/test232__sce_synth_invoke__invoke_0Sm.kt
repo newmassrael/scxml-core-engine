@@ -1,7 +1,12 @@
+// SCE-GENERATED — DO NOT EDIT
+// source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
+// template-hash: 9faef2370910e1d1b12ff0b00a3d63d3578977b6f3f2045b8b014f47fa072349
+// generated-at: 1778932425
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/232/test232__sce_synth_invoke__invoke_0.scxml
 // Generator: SCE Kotlin Code Generator v1.0
+// SCE-MAP: test232__sce_synth_invoke__invoke_0.scxml:3
 
 package com.sce.generated.test232
 
@@ -85,7 +90,9 @@ class Test232SceSynthInvokeInvoke0StateMachine(
     // --- Per-State Event Handlers ---
 
 
+
     // Entry Actions (W3C SCXML 3.8)
+    // SCE-MAP: test232__sce_synth_invoke__invoke_0.scxml:3
     override fun onEntry(state: Test232SceSynthInvokeInvoke0State) {
         when (state) {
             is Test232SceSynthInvokeInvoke0State.SubFinal -> {
@@ -106,6 +113,7 @@ class Test232SceSynthInvokeInvoke0StateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
+    // SCE-MAP: test232__sce_synth_invoke__invoke_0.scxml:3
     override fun onExit(state: Test232SceSynthInvokeInvoke0State) {
         when (state) {
             is Test232SceSynthInvokeInvoke0State.SubFinal -> {
@@ -114,7 +122,9 @@ class Test232SceSynthInvokeInvoke0StateMachine(
         }
     }
 
+
     // Transition Actions (W3C SCXML 3.13)
+    // SCE-MAP: test232__sce_synth_invoke__invoke_0.scxml:3
     override fun executeTransitionActions(
         source: Test232SceSynthInvokeInvoke0State,
         event: Test232SceSynthInvokeInvoke0Event?

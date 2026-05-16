@@ -2507,8 +2507,15 @@ impl W3cBackend for RustBackend {
         // Suppressions live on the generated `*_sm.rs` itself (see
         // `state_machine.rs.jinja2` header comment); the parent mod.rs no
         // longer needs to redundantly wrap the declaration in `#[allow(...)]`.
+        //
+        // §5.O traceability — `write_if_changed_drift_aware` prepends the
+        // §6.2.6 header, so the ownership-boundary walker requires this
+        // file to carry at least one `SCE-MAP:` marker line. The mod.rs
+        // is the entry point for the test's generated module; point the
+        // marker at the source SCXML so addr2sce traces back to it.
         let mod_content = format!(
-            "// GENERATED -- DO NOT EDIT (sce-codegen)\n\n\
+            "// GENERATED -- DO NOT EDIT (sce-codegen)\n\
+             // SCE-MAP: {input_stem}.scxml:1\n\n\
              mod {input_stem}_sm;\n\
              pub use {input_stem}_sm::*;\n"
         );
@@ -2548,7 +2555,7 @@ impl W3cBackend for RustBackend {
     fn generate_test_file(
         &self,
         test_id: &str,
-        _input_stem: &str,
+        input_stem: &str,
         machine_name: &str,
         pass_state: &str,
         needs_script: bool,
@@ -2572,6 +2579,7 @@ impl W3cBackend for RustBackend {
 
         format!(
             "// GENERATED -- DO NOT EDIT (sce-codegen)\n\
+             // SCE-MAP: {input_stem}.scxml:1\n\
              use std::time::Duration;\n\
              \n\
              #[test]\n\
@@ -2603,8 +2611,15 @@ impl W3cBackend for RustBackend {
         if generated_ids.is_empty() {
             return;
         }
+        // §5.O traceability — `write_if_changed_drift_aware` prepends the
+        // §6.2.6 header, so the ownership-boundary walker requires a
+        // marker line. This aggregator mod.rs has no single source SCXML;
+        // reference the first registered test as the index entry point
+        // so addr2sce still maps back into the generated tree.
+        let first_id = &generated_ids[0];
         let mut mod_lines = vec![
             "// GENERATED -- DO NOT EDIT (sce-codegen)".to_string(),
+            format!("// SCE-MAP: test{first_id}.scxml:1"),
             format!("//! Generated W3C SCXML conformance test state machines ({} tests).\n", generated_ids.len()),
         ];
         for id in generated_ids {
@@ -2682,7 +2697,7 @@ impl W3cBackend for GoBackend {
     fn generate_test_file(
         &self,
         test_id: &str,
-        _input_stem: &str,
+        input_stem: &str,
         machine_name: &str,
         pass_state: &str,
         needs_script: bool,
@@ -2715,6 +2730,7 @@ impl W3cBackend for GoBackend {
 
         format!(
             "// GENERATED -- DO NOT EDIT (sce-codegen)\n\
+             // SCE-MAP: {input_stem}.scxml:1\n\
              // W3C SCXML {specnum}: {description}\n\
              package test{test_id}\n\
              \n\
@@ -2821,6 +2837,7 @@ impl W3cBackend for KotlinBackend {
         let child_class = to_pascal_case(child_name);
         let stub = format!(
             "// GENERATED STUB -- child codegen failed (no-op)\n\
+             // SCE-MAP: {child_name}.scxml:1\n\
              package com.sce.generated.{parent_package}\n\n\
              import com.sce.runtime.*\n\n\
              sealed interface {child_class}State : State {{\n\
@@ -2844,7 +2861,7 @@ impl W3cBackend for KotlinBackend {
     fn generate_test_file(
         &self,
         test_id: &str,
-        _input_stem: &str,
+        input_stem: &str,
         _machine_name: &str,
         pass_state: &str,
         needs_script: bool,
@@ -2874,6 +2891,7 @@ impl W3cBackend for KotlinBackend {
 
         format!(
             "// GENERATED -- DO NOT EDIT (sce-codegen)\n\
+             // SCE-MAP: {input_stem}.scxml:1\n\
              package com.sce.w3c\n\
              \n\
              import com.sce.generated.{sm_package}.{sm_class}Event\n\

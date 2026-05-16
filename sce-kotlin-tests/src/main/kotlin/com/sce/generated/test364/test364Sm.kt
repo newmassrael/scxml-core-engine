@@ -1,7 +1,12 @@
+// SCE-GENERATED — DO NOT EDIT
+// source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
+// template-hash: 9faef2370910e1d1b12ff0b00a3d63d3578977b6f3f2045b8b014f47fa072349
+// generated-at: 1778932425
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/364/test364.scxml
 // Generator: SCE Kotlin Code Generator v1.0
+// SCE-MAP: test364.scxml:7
 
 package com.sce.generated.test364
 
@@ -91,14 +96,14 @@ class Test364StateMachine(
 
     // W3C SCXML 3.3/3.4: Resolve compound/parallel state to initial leaf state
     override fun resolveLeafState(state: Test364State): Test364State = when (state) {
-        is Test364State.S11 -> Test364State.S111
-        is Test364State.S11p1 -> Test364State.S11p111
-        is Test364State.S11p11 -> Test364State.S11p111
-        is Test364State.S11p12 -> Test364State.S11p121
-        is Test364State.S21 -> Test364State.S211
-        is Test364State.S21p1 -> Test364State.S21p111
-        is Test364State.S21p11 -> Test364State.S21p111
-        is Test364State.S21p12 -> Test364State.S21p121
+        is Test364State.S11 -> Test364State.S11p112
+        is Test364State.S11p1 -> Test364State.S11p112
+        is Test364State.S11p11 -> Test364State.S11p112
+        is Test364State.S11p12 -> Test364State.S11p122
+        is Test364State.S21 -> Test364State.S21p112
+        is Test364State.S21p1 -> Test364State.S21p112
+        is Test364State.S21p11 -> Test364State.S21p112
+        is Test364State.S21p12 -> Test364State.S21p122
         is Test364State.S3 -> Test364State.S3111
         is Test364State.S31 -> Test364State.S3111
         is Test364State.S311 -> Test364State.S3111
@@ -426,7 +431,9 @@ class Test364StateMachine(
     }
 
 
+
     // Entry Actions (W3C SCXML 3.8)
+    // SCE-MAP: test364.scxml:7
     override fun onEntry(state: Test364State) {
         when (state) {
             is Test364State.Fail -> {
@@ -462,7 +469,7 @@ class Test364StateMachine(
                 if (!activeStateIds.add("s11")) return
                 if (!suppressChildEntry) {
                     // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                    onEntry(Test364State.S111)
+                    onEntry(Test364State.S11p1)
                 }
             }
             is Test364State.S111 -> {
@@ -482,7 +489,7 @@ class Test364StateMachine(
                 if (!activeStateIds.add("s11p11")) return
                 if (!suppressChildEntry) {
                     // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                    onEntry(Test364State.S11p111)
+                    onEntry(Test364State.S11p112)
                 }
             }
             is Test364State.S11p111 -> {
@@ -500,7 +507,7 @@ class Test364StateMachine(
                 if (!activeStateIds.add("s11p12")) return
                 if (!suppressChildEntry) {
                     // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                    onEntry(Test364State.S11p121)
+                    onEntry(Test364State.S11p122)
                 }
             }
             is Test364State.S11p121 -> {
@@ -529,7 +536,7 @@ class Test364StateMachine(
                 if (!activeStateIds.add("s21")) return
                 if (!suppressChildEntry) {
                     // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                    onEntry(Test364State.S211)
+                    onEntry(Test364State.S21p1)
                 }
             }
             is Test364State.S211 -> {
@@ -549,7 +556,7 @@ class Test364StateMachine(
                 if (!activeStateIds.add("s21p11")) return
                 if (!suppressChildEntry) {
                     // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                    onEntry(Test364State.S21p111)
+                    onEntry(Test364State.S21p112)
                 }
             }
             is Test364State.S21p111 -> {
@@ -567,7 +574,7 @@ class Test364StateMachine(
                 if (!activeStateIds.add("s21p12")) return
                 if (!suppressChildEntry) {
                     // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                    onEntry(Test364State.S21p121)
+                    onEntry(Test364State.S21p122)
                 }
             }
             is Test364State.S21p121 -> {
@@ -622,6 +629,7 @@ class Test364StateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
+    // SCE-MAP: test364.scxml:7
     override fun onExit(state: Test364State) {
         when (state) {
             is Test364State.Fail -> {
@@ -770,7 +778,9 @@ class Test364StateMachine(
         }
     }
 
+
     // Transition Actions (W3C SCXML 3.13)
+    // SCE-MAP: test364.scxml:7
     override fun executeTransitionActions(
         source: Test364State,
         event: Test364Event?

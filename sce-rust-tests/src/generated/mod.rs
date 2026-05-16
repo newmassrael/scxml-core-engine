@@ -1,17 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: 0ae95bdc8568e54ab8b0becbe6b9dbf13fd2de6976e2b75ba52db7079781e01f
-// generated-at: 0
+// template-hash: 9faef2370910e1d1b12ff0b00a3d63d3578977b6f3f2045b8b014f47fa072349
+// generated-at: 1778932418
 // GENERATED -- DO NOT EDIT (sce-codegen)
+// SCE-MAP: test144.scxml:1
 //! Generated W3C SCXML conformance test state machines (202 tests).
-
-// Hand-authored integration fixtures (non-W3C-IRP). Regenerated via:
-//   target/release/sce-codegen generate sce-rust-tests/fixtures/<stem>.scxml \
-//       -l rust -o sce-rust-tests/src/generated/<stem>/
-// followed by `--as-child --parent-stem <stem>` passes for each emitted
-// `<stem>_childN.scxml`. Keep these modules separate from the test144..test580
-// W3C IRP block below so the W3C regeneration pipeline is not contaminated.
-pub mod donedata_local_invoke;
 
 pub mod test144;
 pub mod test147;
@@ -86,11 +79,7 @@ pub mod test286;
 pub mod test287;
 pub mod test294;
 pub mod test298;
-// test301 removed in b3d991c0 — W3C SCXML §5.8 mandates rejection of documents
-// with nonexistent <script src>; generate-w3c batch path emits it anyway because
-// `generate_w3c_unified` does not honour `document_rejected`, but the artifact
-// is intentionally untracked so the integration test stays consistent with the
-// W3C-mandated rejection outcome.
+pub mod test301;
 pub mod test302;
 pub mod test303;
 pub mod test304;
