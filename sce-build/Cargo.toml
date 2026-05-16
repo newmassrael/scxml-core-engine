@@ -66,7 +66,17 @@ syn = { version = "2", features = ["parsing", "full"] }
 tempfile = "3"
 
 [lib]
-crate-type = ["cdylib", "rlib"]
+# `rlib` only for native builds. Native consumers (workspace runtime
+# crates, downstream `build.rs` users like sce-forge-runtime/rust)
+# link as a regular Rust library, so producing a `cdylib` here in
+# the default configuration only invites cargo issue #6313 output-
+# path collisions when the same package gets compiled twice (once
+# as a dependency, once for its own tests). WASM builds that need
+# the `cdylib` form (the `wasm` feature gates `wasm-bindgen`) must
+# pass `--crate-type cdylib` on the `cargo build` invocation
+# directly — there is no in-tree consumer of the cdylib today, so
+# unconditionally producing it was dead artifact.
+crate-type = ["rlib"]
 
 [[bin]]
 name = "sce-codegen"

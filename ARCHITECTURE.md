@@ -292,7 +292,7 @@ Adding a new utility or template group means editing `sce_codegen_assets.cmake` 
 
 ### Stability and Library Use
 
-`sce-build` is published as both `rlib` and `cdylib` (`sce-build/Cargo.toml`). Downstream Rust crates may depend on it as a library — workspace runtime crates and `build.rs` helpers already do so, and `sce-codegen` is one binary that consumes the same library surface.
+`sce-build` is published as an `rlib` (`sce-build/Cargo.toml`). Downstream Rust crates depend on it as a regular library — workspace runtime crates and `build.rs` helpers already do so, and `sce-codegen` is one binary that consumes the same library surface. WASM builds that need a `cdylib` form (gated on the `wasm` feature) must pass `--crate-type cdylib` on the `cargo build` invocation explicitly; unconditional `cdylib` in the default crate-type set produced no in-tree consumer but did trip cargo issue #6313 output-path collisions, so it was removed.
 
 **Until SCE 1.0, every `pub` item in `sce-build` is unstable and may change between commits without notice or migration path.** This includes `forge::model`, `forge::parser`, `forge::provenance`, `forge::sourcemap`, `forge::diagnostic`, `forge::xsd_validator`, and `forge::target_plugin`. This is policy, not oversight: 5-backend codegen parity and the v1 diagnostic wire contract are still consolidating, and freezing the surface before they settle would force a back-compat shim later.
 
