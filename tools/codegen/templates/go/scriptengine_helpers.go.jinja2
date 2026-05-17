@@ -10,13 +10,19 @@
 {% if model.needs_script_engine %}
 
 // ensureScriptEngine lazily initializes the script engine session.
+//
+// Engine DI Parity RFC: panics if ScriptEngine was not set on the policy
+// before Initialize() — mirrors Kotlin's mandatory constructor parameter
+// contract. Silent no-op would otherwise turn missed injection into a
+// hidden runtime regression (every <assign>/<log>/guard becomes a no-op
+// and the SM walks to its default-state final without diagnostic).
 func (p *{{ machine_name }}Policy) ensureScriptEngine() {
 	if p.scriptEngineInitialized {
 		return
 	}
 	engine := p.ScriptEngine
 	if engine == nil {
-		return
+		panic("{{ machine_name }}Policy: ScriptEngine field must be set before Initialize()")
 	}
 	sessionID := p.SessionID
 	if sessionID == "" {
@@ -49,9 +55,6 @@ func (p *{{ machine_name }}Policy) ensureScriptEngine() {
 func (p *{{ machine_name }}Policy) InitializeDataModel(eng *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) {
 	p.ensureScriptEngine()
 	engine := p.ScriptEngine
-	if engine == nil {
-		return
-	}
 	sessionID := p.SessionID
 
 	// W3C SCXML 5.3: Initialize _sessionid
@@ -192,11 +195,8 @@ func (p *{{ machine_name }}Policy) InitializeDataModel(eng *sce.Engine[{{ machin
 // W3C SCXML 4.3.2: If a condition expression cannot be evaluated, the processor
 // MUST treat it as false and MUST raise error.execution.
 func (p *{{ machine_name }}Policy) evaluateGuard(guard string, eng *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) bool {
-	engine := p.ScriptEngine
-	if engine == nil {
-		return false
-	}
 	p.ensureScriptEngine()
+	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
 {% if 'error.execution' in model.events %}
@@ -209,21 +209,15 @@ func (p *{{ machine_name }}Policy) evaluateGuard(guard string, eng *sce.Engine[{
 
 // executeScript executes a script block via script engine.
 func (p *{{ machine_name }}Policy) executeScript(script string) error {
-	engine := p.ScriptEngine
-	if engine == nil {
-		return fmt.Errorf("no script engine")
-	}
 	p.ensureScriptEngine()
+	engine := p.ScriptEngine
 	return engine.ExecuteScript(p.SessionID, script)
 }
 
 // setCurrentEvent binds _event system variable (W3C SCXML 5.10).
 func (p *{{ machine_name }}Policy) setCurrentEvent(name string) {
-	engine := p.ScriptEngine
-	if engine == nil {
-		return
-	}
 	p.ensureScriptEngine()
+	engine := p.ScriptEngine
 {% if model.needs_event_data %}
 	data := p.pendingEventData
 {% else %}
@@ -259,22 +253,16 @@ func (p *{{ machine_name }}Policy) setCurrentEvent(name string) {
 
 // assignVariable assigns a value to a datamodel variable via script engine.
 func (p *{{ machine_name }}Policy) assignVariable(location, expr string) error {
-	engine := p.ScriptEngine
-	if engine == nil {
-		return fmt.Errorf("no script engine")
-	}
 	p.ensureScriptEngine()
+	engine := p.ScriptEngine
 	script := location + " = " + expr
 	return engine.ExecuteScript(p.SessionID, script)
 }
 
 // getVariable reads a datamodel variable from the script engine.
 func (p *{{ machine_name }}Policy) getVariable(name string) interface{} {
-	engine := p.ScriptEngine
-	if engine == nil {
-		return nil
-	}
 	p.ensureScriptEngine()
+	engine := p.ScriptEngine
 	result, err := engine.GetVariable(p.SessionID, name)
 	if err != nil {
 		return nil
