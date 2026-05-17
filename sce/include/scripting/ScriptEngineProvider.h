@@ -9,7 +9,7 @@
 namespace SCE {
 
 /**
- * @brief Compile-time configured provider for script engine instances
+ * @brief Compile-time configured accessor for the build's script engine
  *
  * Engine selection is determined at build time via CMake SCE_SCRIPT_ENGINE option.
  * All engine-specific dispatch is consolidated in ScriptEngineProvider.cpp.
@@ -22,6 +22,15 @@ namespace SCE {
  *   1. Implement IScriptEngine + ISessionManager
  *   2. Add #elif block in ScriptEngineProvider.cpp
  *   3. Add CMake option/definition in sce/CMakeLists.txt
+ *
+ * Intent:
+ *   This class names the build-configured script engine. It is NOT a
+ *   dependency-injection default. Call sites must not branch on
+ *   "explicit-engine vs. provider-fallback". Helpers that need to honor
+ *   build configuration (AOT test harness, build-config-aware tools)
+ *   call getScriptEngine() directly. Runtime constructors that expose an
+ *   engine parameter to callers fail when the caller omits it rather
+ *   than silently substituting this accessor.
  *
  * Zero overhead: no mutex, no std::function, no runtime factory.
  * Each call resolves to a direct singleton reference at compile time.

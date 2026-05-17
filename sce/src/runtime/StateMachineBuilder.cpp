@@ -2,16 +2,19 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "runtime/StateMachineBuilder.h"
-#include "scripting/ScriptEngineProvider.h"
+
+#include <stdexcept>
 
 namespace SCE {
 
 std::shared_ptr<StateMachine> StateMachineBuilder::build() {
-    // Resolve script engine: explicit injection or configured provider default
-    IScriptEngine &engine = scriptEngine_ ? *scriptEngine_ : ScriptEngineProvider::getScriptEngine();
+    if (!scriptEngine_) {
+        throw std::runtime_error(
+            "StateMachineBuilder::build: withScriptEngine() must be called before build()");
+    }
 
     // Create StateMachine with engine injection
-    auto stateMachine = std::make_shared<StateMachine>(engine, sessionId_);
+    auto stateMachine = std::make_shared<StateMachine>(*scriptEngine_, sessionId_);
 
     // Inject dependencies after construction
     if (eventDispatcher_) {
