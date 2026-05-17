@@ -250,8 +250,11 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
     session.scxmlContent = scxmlContent;  // W3C SCXML 3.11: Store SCXML content for snapshot restoration
 
     // Build StateMachine with dependency injection, then wrap in RAII context
+    // Inherit the parent's script engine — child invokes share the engine
+    // instance so cross-session evaluation honors a single registry.
     StateMachineBuilder builder;
-    auto stateMachine = builder.withSessionId(childSessionId)
+    auto stateMachine = builder.withScriptEngine(scriptEngine_)
+                            .withSessionId(childSessionId)
                             .withEventDispatcher(eventDispatcher)
                             .withEventRaiser(childEventRaiser)
                             .build();
