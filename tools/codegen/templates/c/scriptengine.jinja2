@@ -343,7 +343,7 @@
            (datamodel_macros.jinja2:22-24 lambda → engine.raise). The
            top-level loop above and this state-local loop both lift to the
            rc-checked shape (spec-mirror parity carve-out per
-           feedback_built_but_unconsumed.md — reference backend's branch is
+           feedback_spec_mirror_parity.md — reference backend's branch is
            the contract). No current corpus fixture has a state-local <data>
            with an illegal expr (test277 only forces top-level), but cpp
            emits the same lambda raise for both top-level and state-local
@@ -442,7 +442,7 @@
    Init-failure semantics: rc-checked, mirrors cpp
    `DataModelInitHelper::initializeVariableFromExpr` errorCallback
    (datamodel_macros.jinja2:22-24 lambda → engine.raise(Error_execution)).
-   Spec-mirror parity carve-out per feedback_built_but_unconsumed.md — the
+   Spec-mirror parity carve-out per feedback_spec_mirror_parity.md — the
    reference backend's branch IS the contract, missing it would be silent
    semantic drift / coincidence-match. No current corpus fixture has a
    state-local <data> with an illegal expr that drives binding="late" (only

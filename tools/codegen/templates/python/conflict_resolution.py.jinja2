@@ -18,8 +18,8 @@
     visible note documenting which branch of the algorithm is active for
     the current machine. The parallel-regions data itself is already
     surfaced via `Policy.get_parallel_regions(...)` above, so we do not
-    re-emit the same table here to avoid a built-but-unconsumed module
-    constant ([[feedback-built-but-unconsumed]]).
+    re-emit the same table here to avoid an unconsumed module
+    constant ([[feedback-spec-mirror-parity]]).
 #}
 
 {% if model.has_parallel_states %}

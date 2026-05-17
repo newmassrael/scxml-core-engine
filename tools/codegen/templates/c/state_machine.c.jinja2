@@ -1006,7 +1006,7 @@ static {{ model.name }}_event_t SCE_SM_FN {{ model.name }}_event_from_name(const
                applies the same shape (`scriptengine.jinja2` lines 397-416).
                No fixture in the C11 batch forces this arm yet; lifted now
                for spec-mirror parity since the cpp branch is the contract
-               (`feedback_built_but_unconsumed.md` carve-out: reference
+               (`feedback_spec_mirror_parity.md` carve-out: reference
                backend's branch ≡ contract). First force fixture exercises
                the path. */
             {{ se.lua_eval_donedata_content_expr(action.contentexpr) }}
@@ -1438,7 +1438,7 @@ static {{ model.name }}_event_t SCE_SM_FN {{ model.name }}_event_from_name(const
            Mirrors cpp `actions/log.jinja2:19-21`'s no-script-engine path —
            single-quote → double-quote substitution turns SCXML's JS-style
            `'hello'` into a valid C string literal, then fprintf to stderr.
-           Spec-mirror parity per `feedback_built_but_unconsumed.md`: emit
+           Spec-mirror parity per `feedback_spec_mirror_parity.md`: emit
            the cpp shape 1:1 even without a current corpus fixture forcing
            the path, so the first MCU/null-datamodel consumer sees aligned
            behaviour with cpp. */
@@ -3229,7 +3229,7 @@ static SCE_C_UNUSED SCE_SM_FN void scheduled_cancel({{ model.name }}_t *sm, cons
 
    The other W3C 5.10.1 metadata fields (.type/.sendid/.origin/
    .origintype/.invokeid) land with the first fixture that reads them
-   (built-but-unconsumed carve-out per feedback_built_but_unconsumed.md).
+   (spec-mirror parity carve-out per feedback_spec_mirror_parity.md).
    The helper is emitted only when the fixture uses the script engine;
    datamodel-less fixtures have no lua_State and no consumer for _event.
    The (void) casts keep the helper warning-free under -Wextra when the
@@ -3292,7 +3292,7 @@ static void SCE_SM_FN set_current_event(lua_State *L, const {{ model.name }}_eve
        milestone activates (cpp `Event::setInvokeId(invokeId)` at
        the invoke handler is the seed site to mirror). Lifted as
        spec-mirror parity rather than waiting for the first
-       force fixture (feedback_built_but_unconsumed.md
+       force fixture (feedback_spec_mirror_parity.md
        §"Spec-mirror parity (N-backend codegen)" — cpp's branch
        is the contract; missing the field would be silent
        semantic drift on the W3C 5.10.1 metadata family. */
