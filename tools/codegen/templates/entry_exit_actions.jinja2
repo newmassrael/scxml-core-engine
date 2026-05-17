@@ -481,14 +481,15 @@
                 }
 {% endif %}
 {% if model.states[state.parent].parent and model.states[model.states[state.parent].parent].is_parallel %}
-{# SCE_MESH.md §14 rule 12 scaffolding carve-out (L2844):           #}
+{# SCE_MESH.md §14 rule 12 (landed 2026-04-20, atomic bundle):       #}
 {# delegate <parallel>-final completion emission to                 #}
 {# `mesh/cpp/parallel_final.jinja2` when the machine is listed in   #}
 {# any `partitions.<name>.machines:` entry. The delegate's P0 body  #}
 {# is byte-identical to the inline branch below; the partition-     #}
-{# aware rewrite lands atomically with §16.5 and the rule 12        #}
-{# validator. The guard is pure existence — no partition value is   #}
-{# read here — to stay within the carve-out.                         #}
+{# aware rewrite landed atomically with §16.5 and the rule 12       #}
+{# validator. The guard reads only existence — no partition value   #}
+{# is needed here since the branch decision is binary               #}
+{# (delegate / inline) per partition_context_present.               #}
 {% if model.partition_context_present %}
 {% include 'mesh/cpp/parallel_final.jinja2' %}
 {% else %}
