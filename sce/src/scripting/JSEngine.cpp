@@ -695,8 +695,14 @@ void JSEngine::setupSystemVariables(JSContext *ctx) {
     }
 
     // SCXML W3C Section 5.9.2: In() predicate function
+    // Recover this-engine via context opaque (set in setupQuickJSContext).
+    auto *engine = static_cast<JSEngine *>(JS_GetContextOpaque(ctx));
+    if (!engine) {
+        JS_FreeCString(ctx, stateName);
+        return JS_ThrowInternalError(ctx, "JSEngine instance not bound to context");
+    }
     std::string stateNameStr(stateName);
-    bool result = JSEngine::instance().checkStateActive(stateNameStr);
+    bool result = engine->checkStateActive(stateNameStr);
 
     JS_FreeCString(ctx, stateName);
     return JS_NewBool(ctx, result);
@@ -736,9 +742,14 @@ void JSEngine::setupSystemVariables(JSContext *ctx) {
     const char *eventName = JS_ToCString(ctx, argv[1]);
 
     if (sessionId && eventName) {
-        // Get JSEngine instance through static access (SOLID: Dependency Inversion)
-        JSEngine::instance().queueInternalEvent(std::string(sessionId), std::string(eventName));
-        SCE_LOG_DEBUG("JSEngine: Queued internal event '{}' for session '{}'", eventName, sessionId);
+        // Recover this-engine via context opaque (set in setupQuickJSContext).
+        auto *engine = static_cast<JSEngine *>(JS_GetContextOpaque(ctx));
+        if (engine) {
+            engine->queueInternalEvent(std::string(sessionId), std::string(eventName));
+            SCE_LOG_DEBUG("JSEngine: Queued internal event '{}' for session '{}'", eventName, sessionId);
+        } else {
+            SCE_LOG_ERROR("JSEngine: queueErrorEventWrapper called with no engine bound to JSContext");
+        }
     }
 
     if (sessionId) {
