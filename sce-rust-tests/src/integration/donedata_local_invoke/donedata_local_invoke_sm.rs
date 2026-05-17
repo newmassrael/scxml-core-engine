@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: cac69c732f2e5b3d2b5ee3223aea0fd4b0caf7dd324b85b30ef3dcac4ab6cefe
-// template-hash: 0ae95bdc8568e54ab8b0becbe6b9dbf13fd2de6976e2b75ba52db7079781e01f
-// generated-at: 0
+// template-hash: 94a6daf42142517c0ee9ba49a95e1db9d84d30a097beabea83a903e1d7ba88bf
+// generated-at: 1779020075
 
 
 // SPDX-License-Identifier: MIT
@@ -138,6 +138,11 @@ pub struct DonedataLocalInvokePolicy {
     param_ok: bool,
     // W3C SCXML 5.10: Session ID (script engine + invoke tracking)
     pub session_id: Option<String>,
+    // Engine DI Parity RFC (Path B+): per-instance script engine, replaces
+    // the global `ScriptEngineProvider` singleton. Constructor parameter is
+    // mandatory whenever `model.needs_script_engine` is true, mirroring the
+    // Kotlin `StateMachineEngine(scriptEngine)` shape.
+    pub script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>,
     script_engine_initialized: bool,
     // W3C SCXML 6.4: Pending invoke queue (deferred until macrostep end)
     pending_invokes: Vec<sce_rust_runtime::invoke::PendingInvoke<DonedataLocalInvokeState>>,
@@ -162,8 +167,9 @@ pub struct DonedataLocalInvokePolicy {
 }
 
 impl DonedataLocalInvokePolicy {
-    pub fn new() -> Self {
+    pub fn new(script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>) -> Self {
         Self {
+            script_engine,
             last_transition_is_internal: false,
             last_transition_is_targetless: false,
             last_transition_source_state: DonedataLocalInvokeState::PhaseParam,
@@ -211,7 +217,8 @@ impl DonedataLocalInvokePolicy {
         }
         self.ensure_session_id();
         let sid = self.session_id.as_ref().unwrap().clone();
-        let se = sce_rust_runtime::ScriptEngineProvider::get();
+        let se = self.script_engine.clone();
+        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         se.create_session(&sid);
 
         // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
@@ -242,7 +249,8 @@ impl DonedataLocalInvokePolicy {
         }
         self.ensure_session_id();
         let sid = self.session_id.as_ref().unwrap().clone();
-        let se = sce_rust_runtime::ScriptEngineProvider::get();
+        let se = self.script_engine.clone();
+        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         se.create_session(&sid);
 
         // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
@@ -270,7 +278,8 @@ impl DonedataLocalInvokePolicy {
     fn safe_evaluate_guard(&mut self, cond: &str, engine: &mut Engine<Self>) -> bool {
         self.ensure_script_engine();
         let sid = self.session_id.as_ref().unwrap().clone();
-        let se = sce_rust_runtime::ScriptEngineProvider::get();
+        let se = self.script_engine.clone();
+        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         match se.evaluate_expression(&sid, cond) {
             Ok(val) => val.to_bool(),
             Err(e) => {
@@ -285,7 +294,8 @@ impl DonedataLocalInvokePolicy {
     fn set_current_event_in_script_engine(&self, event_name: &str, event_data: &str,
             event_type: &str, send_id: &str, origin: &str, origin_type: &str, invoke_id: &str) {
         if let Some(ref sid) = self.session_id {
-            let se = sce_rust_runtime::ScriptEngineProvider::get();
+            let se = self.script_engine.clone();
+            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
             let _ = se.set_current_event(sid, event_name, event_data, event_type,
                 send_id, origin, origin_type, invoke_id);
         }
@@ -297,7 +307,8 @@ impl DonedataLocalInvokePolicy {
     pub fn set_param_in_script_engine(&mut self, name: &str, expr: &str) {
         self.ensure_script_engine();
         let sid = self.session_id.as_ref().unwrap().clone();
-        let se = sce_rust_runtime::ScriptEngineProvider::get();
+        let se = self.script_engine.clone();
+        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         match se.evaluate_expression(&sid, expr) {
             Ok(val) => { let _ = se.set_variable(&sid, name, val); }
             Err(_) => {
@@ -327,7 +338,9 @@ impl DonedataLocalInvokePolicy {
                     &pending.invoke_id);
 
                 // W3C SCXML 6.4: Create child state machine
-                let mut child_policy = super::donedata_local_invoke__sce_synth_invoke__inv_content_sm::DonedataLocalInvokeSceSynthInvokeInvContentPolicy::new();
+                // Engine DI Parity RFC: forward parent's script engine to child when the
+                // child Policy was generated with `model.needs_script_engine = true`.
+                let mut child_policy = super::donedata_local_invoke__sce_synth_invoke__inv_content_sm::DonedataLocalInvokeSceSynthInvokeInvContentPolicy::new(self.script_engine.clone());
                 // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
                 child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                 child_policy.invoke_id = pending.invoke_id.clone();
@@ -397,7 +410,9 @@ impl DonedataLocalInvokePolicy {
                     &pending.invoke_id);
 
                 // W3C SCXML 6.4: Create child state machine
-                let mut child_policy = super::donedata_local_invoke__sce_synth_invoke__inv_param_sm::DonedataLocalInvokeSceSynthInvokeInvParamPolicy::new();
+                // Engine DI Parity RFC: forward parent's script engine to child when the
+                // child Policy was generated with `model.needs_script_engine = true`.
+                let mut child_policy = super::donedata_local_invoke__sce_synth_invoke__inv_param_sm::DonedataLocalInvokeSceSynthInvokeInvParamPolicy::new(self.script_engine.clone());
                 // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
                 child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                 child_policy.invoke_id = pending.invoke_id.clone();
@@ -546,11 +561,6 @@ impl DonedataLocalInvokePolicy {
 
 }
 
-impl Default for DonedataLocalInvokePolicy {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 // ======================================================================
 // StatePolicy trait implementation
@@ -892,7 +902,8 @@ impl StatePolicy for DonedataLocalInvokePolicy {
     // W3C SCXML 5.3: <assign location="param_ok">
     self.ensure_script_engine();
     let sid = self.session_id.as_ref().unwrap().clone();
-    let se = sce_rust_runtime::ScriptEngineProvider::get();
+    let se = self.script_engine.clone();
+    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
     let expr = "true";
     // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
     // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going

@@ -7,7 +7,8 @@
     // W3C SCXML 3.8.6: <script>
     self.ensure_script_engine();
     let sid = self.session_id.as_ref().unwrap().clone();
-    let se = sce_rust_runtime::ScriptEngineProvider::get();
+    let se = self.script_engine.clone();
+    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
     if let Err(e) = se.execute_script(&sid, "{{ action.content | to_lua_script | escape_rust }}") {
         log::error!("Script execution failed: {}", e);
 {% if 'error.execution' in model.events %}

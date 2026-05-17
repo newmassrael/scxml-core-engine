@@ -216,6 +216,11 @@ pub struct {{ machine_name }}Policy {
     // W3C SCXML 5.10: Session ID (script engine + invoke tracking)
     pub session_id: Option<String>,
 {% if model.needs_script_engine %}
+    // Engine DI Parity RFC (Path B+): per-instance script engine, replaces
+    // the global `ScriptEngineProvider` singleton. Constructor parameter is
+    // mandatory whenever `model.needs_script_engine` is true, mirroring the
+    // Kotlin `StateMachineEngine(scriptEngine)` shape.
+    pub script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>,
     script_engine_initialized: bool,
 {% if model.has_parallel_states or model.uses_in_predicate %}
     // W3C SCXML 5.9.2: Shared active state list for In() predicate callback
@@ -253,9 +258,16 @@ pub struct {{ machine_name }}Policy {
 }
 
 impl {{ machine_name }}Policy {
+{% if model.needs_script_engine %}
+    pub fn new(script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>) -> Self {
+        Self {
+            script_engine,
+            last_transition_is_internal: false,
+{% else %}
     pub fn new() -> Self {
         Self {
             last_transition_is_internal: false,
+{% endif %}
             last_transition_is_targetless: false,
             last_transition_source_state: {{ machine_name }}State::{{ model.initial_leaf | default(model.initial) | to_state_variant }},
 {% if model.has_transition_actions %}
@@ -344,11 +356,13 @@ impl {{ machine_name }}Policy {
 {% include 'invoke_methods.rs.jinja2' %}
 }
 
+{% if not model.needs_script_engine %}
 impl Default for {{ machine_name }}Policy {
     fn default() -> Self {
         Self::new()
     }
 }
+{% endif %}
 
 // ======================================================================
 // StatePolicy trait implementation

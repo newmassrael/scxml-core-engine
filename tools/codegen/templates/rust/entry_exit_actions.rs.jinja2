@@ -45,7 +45,8 @@
                 {
                     self.ensure_script_engine();
                     let sid = self.session_id.as_ref().unwrap().clone();
-                    let se = sce_rust_runtime::ScriptEngineProvider::get();
+                    let se = self.script_engine.clone();
+                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
 {{ initialize_state_datamodel(state, state_id, true, machine_name, model) }}
                 }
 {% endif %}
@@ -91,7 +92,8 @@
                     self.ensure_script_engine();
                     {
                         let sid = self.session_id.as_ref().unwrap().clone();
-                        let se = sce_rust_runtime::ScriptEngineProvider::get();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                         let _ = se.set_variable(&sid, "{{ invoke_info.idlocation }}",
                             sce_rust_runtime::ScriptValue::String(generated_invoke_id.clone()));
                     }
@@ -114,7 +116,8 @@
                     self.ensure_script_engine();
                     {
                         let sid = self.session_id.as_ref().unwrap().clone();
-                        let se = sce_rust_runtime::ScriptEngineProvider::get();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                         let _ = se.set_variable(&sid, "{{ invoke_info.idlocation }}",
                             sce_rust_runtime::ScriptValue::String(generated_invoke_id.clone()));
                     }
@@ -137,7 +140,8 @@
                 {
                     self.ensure_script_engine();
                     let sid = self.session_id.as_ref().unwrap().clone();
-                    let se = sce_rust_runtime::ScriptEngineProvider::get();
+                    let se = self.script_engine.clone();
+                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                     let mut json_parts: Vec<String> = Vec::new();
 {% for param in state.donedata.params %}
 {% set param_expr = param.expr if param.expr else param.location %}
@@ -175,7 +179,8 @@
                     // W3C SCXML 5.5: <content expr="..."/> MUST be evaluated against the datamodel.
                     self.ensure_script_engine();
                     let sid = self.session_id.as_ref().unwrap().clone();
-                    let se = sce_rust_runtime::ScriptEngineProvider::get();
+                    let se = self.script_engine.clone();
+                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                     match se.evaluate_expression(&sid, "{{ state.donedata.content.text | to_lua_expr | escape_rust }}") {
                         Ok(val) => { done_event_data = val.to_lua_literal(); }
                         Err(e) => {

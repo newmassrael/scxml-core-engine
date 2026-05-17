@@ -10,7 +10,8 @@
     // W3C SCXML 5.6: <foreach array="{{ action.array | default("") }}" item="{{ action.item | default("") }}">
     self.ensure_script_engine();
     let sid = self.session_id.as_ref().unwrap().clone();
-    let se = sce_rust_runtime::ScriptEngineProvider::get();
+    let se = self.script_engine.clone();
+    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
 
     // Validate item attribute (1:1 with C++ ForeachHelper::isLegalVariableName).
     // The empty-`item` case is decided at codegen time and never reaches the

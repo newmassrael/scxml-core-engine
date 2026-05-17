@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: c1736039ea6628ae1068e428522a9d89bbe2ccef2705503db256c49ec169955e
-// generated-at: 1778994568
+// template-hash: 94a6daf42142517c0ee9ba49a95e1db9d84d30a097beabea83a903e1d7ba88bf
+// generated-at: 1779020074
 
 
 // SPDX-License-Identifier: MIT
@@ -183,6 +183,8 @@ impl Test207Policy {
                     &pending.invoke_id);
 
                 // W3C SCXML 6.4: Create child state machine
+                // Engine DI Parity RFC: forward parent's script engine to child when the
+                // child Policy was generated with `model.needs_script_engine = true`.
                 let mut child_policy = super::test207__sce_synth_invoke__invoke_0_sm::Test207SceSynthInvokeInvoke0Policy::new();
                 // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
                 child_policy.parent_external_queue = Some(engine.get_external_queue_handle());

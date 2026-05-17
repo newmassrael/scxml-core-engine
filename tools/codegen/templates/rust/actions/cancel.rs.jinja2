@@ -12,7 +12,8 @@
 {
     self.ensure_script_engine();
     let sid = self.session_id.as_ref().unwrap().clone();
-    let se = sce_rust_runtime::ScriptEngineProvider::get();
+    let se = self.script_engine.clone();
+    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
     match se.evaluate_expression(&sid, "{{ action.sendidexpr | to_lua_expr | escape_rust }}") {
         Ok(sce_rust_runtime::ScriptValue::String(send_id_val)) => {
             engine.cancel_event(&send_id_val);

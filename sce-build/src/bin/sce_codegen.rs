@@ -2610,11 +2610,16 @@ impl W3cBackend for RustBackend {
         _metadata: &TestMetadata,
     ) -> String {
         let timeout_secs = if test_type == "SCHEDULED" || test_type == "HTTP" { 5 } else { 3 };
-        let lua_register = if needs_script {
-            "    let _ = sce_rust_lua::register();\n"
+        // Engine DI Parity RFC (Path B+): instantiate LuaEngine per-test and pass it
+        // to `Policy::new(engine)` instead of registering a process-global singleton.
+        let policy_ctor = if needs_script {
+            "    let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> = \
+             std::sync::Arc::new(sce_rust_lua::LuaEngine::new());\n\
+             \x20   let policy = sce_rust_tests::generated::test"
         } else {
-            ""
+            "    let policy = sce_rust_tests::generated::test"
         };
+        let policy_args = if needs_script { "(script_engine)" } else { "()" };
         let is_http = test_type == "HTTP" && uses_http;
         let http_setup = if is_http {
             "    sce_rust_tests::harness::setup_http_test(&mut engine);\n"
@@ -2630,8 +2635,7 @@ impl W3cBackend for RustBackend {
              \n\
              #[test]\n\
              fn test_{test_id}() {{\n\
-             {lua_register}\
-             \x20   let policy = sce_rust_tests::generated::test{test_id}::{machine_name}Policy::new();\n\
+             {policy_ctor}{test_id}::{machine_name}Policy::new{policy_args};\n\
              \x20   let mut engine = sce_rust_runtime::Engine::new(policy);\n\
              {http_setup}\
              \x20   engine.initialize();\n\

@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: c1736039ea6628ae1068e428522a9d89bbe2ccef2705503db256c49ec169955e
-// generated-at: 1778994568
+// template-hash: 94a6daf42142517c0ee9ba49a95e1db9d84d30a097beabea83a903e1d7ba88bf
+// generated-at: 1779020074
 
 
 // SPDX-License-Identifier: MIT
@@ -131,6 +131,11 @@ pub struct Test216Policy {
     // W3C SCXML 5.3: Datamodel variables
     // W3C SCXML 5.10: Session ID (script engine + invoke tracking)
     pub session_id: Option<String>,
+    // Engine DI Parity RFC (Path B+): per-instance script engine, replaces
+    // the global `ScriptEngineProvider` singleton. Constructor parameter is
+    // mandatory whenever `model.needs_script_engine` is true, mirroring the
+    // Kotlin `StateMachineEngine(scriptEngine)` shape.
+    pub script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>,
     script_engine_initialized: bool,
     // W3C SCXML 6.4: Pending invoke queue (deferred until macrostep end)
     pending_invokes: Vec<sce_rust_runtime::invoke::PendingInvoke<Test216State>>,
@@ -152,8 +157,9 @@ pub struct Test216Policy {
 }
 
 impl Test216Policy {
-    pub fn new() -> Self {
+    pub fn new(script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>) -> Self {
         Self {
+            script_engine,
             last_transition_is_internal: false,
             last_transition_is_targetless: false,
             last_transition_source_state: Test216State::S0,
@@ -196,7 +202,8 @@ impl Test216Policy {
         }
         self.ensure_session_id();
         let sid = self.session_id.as_ref().unwrap().clone();
-        let se = sce_rust_runtime::ScriptEngineProvider::get();
+        let se = self.script_engine.clone();
+        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         se.create_session(&sid);
 
         // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
@@ -227,7 +234,8 @@ impl Test216Policy {
         }
         self.ensure_session_id();
         let sid = self.session_id.as_ref().unwrap().clone();
-        let se = sce_rust_runtime::ScriptEngineProvider::get();
+        let se = self.script_engine.clone();
+        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         se.create_session(&sid);
 
         // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
@@ -255,7 +263,8 @@ impl Test216Policy {
     fn safe_evaluate_guard(&mut self, cond: &str, engine: &mut Engine<Self>) -> bool {
         self.ensure_script_engine();
         let sid = self.session_id.as_ref().unwrap().clone();
-        let se = sce_rust_runtime::ScriptEngineProvider::get();
+        let se = self.script_engine.clone();
+        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         match se.evaluate_expression(&sid, cond) {
             Ok(val) => val.to_bool(),
             Err(e) => {
@@ -270,7 +279,8 @@ impl Test216Policy {
     fn set_current_event_in_script_engine(&self, event_name: &str, event_data: &str,
             event_type: &str, send_id: &str, origin: &str, origin_type: &str, invoke_id: &str) {
         if let Some(ref sid) = self.session_id {
-            let se = sce_rust_runtime::ScriptEngineProvider::get();
+            let se = self.script_engine.clone();
+            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
             let _ = se.set_current_event(sid, event_name, event_data, event_type,
                 send_id, origin, origin_type, invoke_id);
         }
@@ -282,7 +292,8 @@ impl Test216Policy {
     pub fn set_param_in_script_engine(&mut self, name: &str, expr: &str) {
         self.ensure_script_engine();
         let sid = self.session_id.as_ref().unwrap().clone();
-        let se = sce_rust_runtime::ScriptEngineProvider::get();
+        let se = self.script_engine.clone();
+        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         match se.evaluate_expression(&sid, expr) {
             Ok(val) => { let _ = se.set_variable(&sid, name, val); }
             Err(_) => {
@@ -309,7 +320,8 @@ impl Test216Policy {
                 // W3C SCXML 6.4.3: Evaluate srcexpr at runtime
                 self.ensure_script_engine();
                 let sid = self.session_id.as_ref().unwrap().clone();
-                let se = sce_rust_runtime::ScriptEngineProvider::get();
+                let se = self.script_engine.clone();
+                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                 match se.evaluate_expression(&sid, "Var1") {
                     Ok(sce_rust_runtime::ScriptValue::Null) | Err(_) => {
                         log::error!("Hybrid invoke: srcexpr 'Var1' evaluation failed");
@@ -328,6 +340,7 @@ impl Test216Policy {
                     &pending.invoke_id);
 
                 // W3C SCXML 6.4: Create pre-generated child (Rust AOT: child resolved at codegen time)
+                // Engine DI Parity RFC: pass parent's script engine when child needs it.
                 let mut child_policy = super::test216_hybrid0_sm::Test216Hybrid0Policy::new();
                 child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                 child_policy.invoke_id = pending.invoke_id.clone();
@@ -421,11 +434,6 @@ impl Test216Policy {
 
 }
 
-impl Default for Test216Policy {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 // ======================================================================
 // StatePolicy trait implementation
@@ -643,7 +651,8 @@ impl StatePolicy for Test216Policy {
     // W3C SCXML 5.3: <assign location="Var1">
     self.ensure_script_engine();
     let sid = self.session_id.as_ref().unwrap().clone();
-    let se = sce_rust_runtime::ScriptEngineProvider::get();
+    let se = self.script_engine.clone();
+    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
     let expr = "'file:test216sub1.scxml'";
     // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
     // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going

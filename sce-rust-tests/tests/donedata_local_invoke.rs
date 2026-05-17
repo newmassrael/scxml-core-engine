@@ -31,8 +31,12 @@ use sce_rust_tests::integration::donedata_local_invoke::{
 
 #[test]
 fn parent_observes_donedata_on_done_invoke() {
-    let _ = sce_rust_lua::register();
-    let policy = DonedataLocalInvokePolicy::new();
+    // Engine DI Parity RFC (Path B+): construct Lua engine per-test and inject
+    // via Policy::new(engine) instead of relying on the process-global
+    // ScriptEngineProvider singleton (deleted in step #6).
+    let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> =
+        std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
+    let policy = DonedataLocalInvokePolicy::new(script_engine);
     let mut engine = sce_rust_runtime::Engine::new(policy);
     engine.initialize();
 

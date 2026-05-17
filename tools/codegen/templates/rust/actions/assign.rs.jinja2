@@ -15,7 +15,8 @@ self.{{ action.location | to_snake_case }} = {{ action.content | to_rust_string_
     // W3C SCXML 5.3: <assign location="{{ action.location | default("") }}">
     self.ensure_script_engine();
     let sid = self.session_id.as_ref().unwrap().clone();
-    let se = sce_rust_runtime::ScriptEngineProvider::get();
+    let se = self.script_engine.clone();
+    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
 {% set loc = action.location | default("") %}
 {# W3C SCXML B.2: System variables are read-only (1:1 with C++ AssignHelper::isValidLocation) #}
 {% if not loc or loc in ('_sessionid', '_event', '_name', '_ioprocessors') %}

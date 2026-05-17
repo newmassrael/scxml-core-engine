@@ -49,7 +49,8 @@
         }
         self.ensure_session_id();
         let sid = self.session_id.as_ref().unwrap().clone();
-        let se = sce_rust_runtime::ScriptEngineProvider::get();
+        let se = self.script_engine.clone();
+        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         se.create_session(&sid);
 
         // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
@@ -93,7 +94,8 @@
         }
         self.ensure_session_id();
         let sid = self.session_id.as_ref().unwrap().clone();
-        let se = sce_rust_runtime::ScriptEngineProvider::get();
+        let se = self.script_engine.clone();
+        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         se.create_session(&sid);
 
         // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
@@ -136,7 +138,8 @@
     fn safe_evaluate_guard(&mut self, cond: &str, engine: &mut Engine<Self>) -> bool {
         self.ensure_script_engine();
         let sid = self.session_id.as_ref().unwrap().clone();
-        let se = sce_rust_runtime::ScriptEngineProvider::get();
+        let se = self.script_engine.clone();
+        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         match se.evaluate_expression(&sid, cond) {
             Ok(val) => val.to_bool(),
             Err(e) => {
@@ -153,7 +156,8 @@
     fn set_current_event_in_script_engine(&self, event_name: &str, event_data: &str,
             event_type: &str, send_id: &str, origin: &str, origin_type: &str, invoke_id: &str) {
         if let Some(ref sid) = self.session_id {
-            let se = sce_rust_runtime::ScriptEngineProvider::get();
+            let se = self.script_engine.clone();
+            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
             let _ = se.set_current_event(sid, event_name, event_data, event_type,
                 send_id, origin, origin_type, invoke_id);
         }
@@ -171,7 +175,8 @@
     pub fn set_param_in_script_engine(&mut self, name: &str, expr: &str) {
         self.ensure_script_engine();
         let sid = self.session_id.as_ref().unwrap().clone();
-        let se = sce_rust_runtime::ScriptEngineProvider::get();
+        let se = self.script_engine.clone();
+        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         match se.evaluate_expression(&sid, expr) {
             Ok(val) => { let _ = se.set_variable(&sid, name, val); }
             Err(_) => {

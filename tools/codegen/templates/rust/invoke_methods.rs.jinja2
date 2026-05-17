@@ -32,7 +32,8 @@
                 {
                     self.ensure_script_engine();
                     let sid = self.session_id.as_ref().unwrap().clone();
-                    let se = sce_rust_runtime::ScriptEngineProvider::get();
+                    let se = self.script_engine.clone();
+                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                     let mut namelist_valid = true;
 {% for var_name in invoke_info.namelist | split %}
                     if !se.has_variable(&sid, "{{ var_name }}") {
@@ -57,7 +58,13 @@
                     &pending.invoke_id);
 
                 // W3C SCXML 6.4: Create child state machine
+                // Engine DI Parity RFC: forward parent's script engine to child when the
+                // child Policy was generated with `model.needs_script_engine = true`.
+{% if invoke_info.child_needs_script_engine %}
+                let mut child_policy = super::{{ invoke_info.child_name }}_sm::{{ invoke_info.child_name | to_machine_name }}Policy::new(self.script_engine.clone());
+{% else %}
                 let mut child_policy = super::{{ invoke_info.child_name }}_sm::{{ invoke_info.child_name | to_machine_name }}Policy::new();
+{% endif %}
                 // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
                 child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                 child_policy.invoke_id = pending.invoke_id.clone();
@@ -76,7 +83,8 @@
 {% if invoke_info.child_needs_script_engine %}
                 {
                     let sid = self.session_id.as_ref().unwrap().clone();
-                    let se = sce_rust_runtime::ScriptEngineProvider::get();
+                    let se = self.script_engine.clone();
+                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
 {% if invoke_info.child_datamodel_vars is defined %}
                     let child_vars: &[&str] = &[{% for cv in invoke_info.child_datamodel_vars %}"{{ cv }}"{{ ", " if not loop.last }}{% endfor %}];
 {% for var_name in invoke_info.namelist | split %}
@@ -103,7 +111,8 @@
                 {
                     self.ensure_script_engine();
                     let sid = self.session_id.as_ref().unwrap().clone();
-                    let se = sce_rust_runtime::ScriptEngineProvider::get();
+                    let se = self.script_engine.clone();
+                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
 {% for param in invoke_info.params %}
                     if let Ok(val) = se.evaluate_expression(&sid, "{{ param.expr | to_lua_expr | escape_rust }}") {
                         child_policy.set_param_in_script_engine("{{ param.name }}", &val.to_lua_literal());
@@ -177,7 +186,8 @@
                 // W3C SCXML 6.4.3: Evaluate srcexpr at runtime
                 self.ensure_script_engine();
                 let sid = self.session_id.as_ref().unwrap().clone();
-                let se = sce_rust_runtime::ScriptEngineProvider::get();
+                let se = self.script_engine.clone();
+                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                 match se.evaluate_expression(&sid, "{{ invoke_info.srcexpr | to_lua_expr | escape_rust }}") {
                     Ok(sce_rust_runtime::ScriptValue::Null) | Err(_) => {
                         log::error!("Hybrid invoke: srcexpr '{{ invoke_info.srcexpr }}' evaluation failed");
@@ -195,7 +205,8 @@
                 // W3C SCXML 6.4.4: Evaluate contentexpr at runtime
                 self.ensure_script_engine();
                 let sid = self.session_id.as_ref().unwrap().clone();
-                let se = sce_rust_runtime::ScriptEngineProvider::get();
+                let se = self.script_engine.clone();
+                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                 match se.evaluate_expression(&sid, "{{ invoke_info.contentexpr | to_lua_expr | escape_rust }}") {
                     Ok(sce_rust_runtime::ScriptValue::Null) | Ok(sce_rust_runtime::ScriptValue::Int(_)) | Err(_) => {
                         log::error!("Hybrid invoke: contentexpr '{{ invoke_info.contentexpr }}' evaluation failed");
@@ -217,7 +228,12 @@
                     &pending.invoke_id);
 
                 // W3C SCXML 6.4: Create pre-generated child (Rust AOT: child resolved at codegen time)
+                // Engine DI Parity RFC: pass parent's script engine when child needs it.
+{% if invoke_info.child_needs_script_engine %}
+                let mut child_policy = super::{{ invoke_info.child_name }}_sm::{{ invoke_info.child_name | to_machine_name }}Policy::new(self.script_engine.clone());
+{% else %}
                 let mut child_policy = super::{{ invoke_info.child_name }}_sm::{{ invoke_info.child_name | to_machine_name }}Policy::new();
+{% endif %}
                 child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                 child_policy.invoke_id = pending.invoke_id.clone();
                 child_policy.child_session_id = child_session_id.clone();
@@ -402,7 +418,8 @@
             // W3C SCXML 6.5: Execute finalize with _event set to child's event
             self.ensure_script_engine();
             let sid = self.session_id.as_ref().unwrap().clone();
-            let se = sce_rust_runtime::ScriptEngineProvider::get();
+            let se = self.script_engine.clone();
+            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
             // W3C SCXML 6.5: Set _event metadata before executing finalize
             let event_name = Self::get_event_name(event_with_meta.event);
             let _ = se.set_current_event(

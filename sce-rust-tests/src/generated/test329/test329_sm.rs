@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: c1736039ea6628ae1068e428522a9d89bbe2ccef2705503db256c49ec169955e
-// generated-at: 1778994568
+// template-hash: 94a6daf42142517c0ee9ba49a95e1db9d84d30a097beabea83a903e1d7ba88bf
+// generated-at: 1779020074
 
 
 // SPDX-License-Identifier: MIT
@@ -133,6 +133,11 @@ pub struct Test329Policy {
     // W3C SCXML 5.3: Datamodel variables
     // W3C SCXML 5.10: Session ID (script engine + invoke tracking)
     pub session_id: Option<String>,
+    // Engine DI Parity RFC (Path B+): per-instance script engine, replaces
+    // the global `ScriptEngineProvider` singleton. Constructor parameter is
+    // mandatory whenever `model.needs_script_engine` is true, mirroring the
+    // Kotlin `StateMachineEngine(scriptEngine)` shape.
+    pub script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>,
     script_engine_initialized: bool,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated under std — any SM can be invoked as a child. Under
@@ -147,8 +152,9 @@ pub struct Test329Policy {
 }
 
 impl Test329Policy {
-    pub fn new() -> Self {
+    pub fn new(script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>) -> Self {
         Self {
+            script_engine,
             last_transition_is_internal: false,
             last_transition_is_targetless: false,
             last_transition_source_state: Test329State::S0,
@@ -187,7 +193,8 @@ impl Test329Policy {
         }
         self.ensure_session_id();
         let sid = self.session_id.as_ref().unwrap().clone();
-        let se = sce_rust_runtime::ScriptEngineProvider::get();
+        let se = self.script_engine.clone();
+        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         se.create_session(&sid);
 
         // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
@@ -224,7 +231,8 @@ impl Test329Policy {
         }
         self.ensure_session_id();
         let sid = self.session_id.as_ref().unwrap().clone();
-        let se = sce_rust_runtime::ScriptEngineProvider::get();
+        let se = self.script_engine.clone();
+        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         se.create_session(&sid);
 
         // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
@@ -257,7 +265,8 @@ impl Test329Policy {
     fn safe_evaluate_guard(&mut self, cond: &str, engine: &mut Engine<Self>) -> bool {
         self.ensure_script_engine();
         let sid = self.session_id.as_ref().unwrap().clone();
-        let se = sce_rust_runtime::ScriptEngineProvider::get();
+        let se = self.script_engine.clone();
+        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         match se.evaluate_expression(&sid, cond) {
             Ok(val) => val.to_bool(),
             Err(e) => {
@@ -272,7 +281,8 @@ impl Test329Policy {
     fn set_current_event_in_script_engine(&self, event_name: &str, event_data: &str,
             event_type: &str, send_id: &str, origin: &str, origin_type: &str, invoke_id: &str) {
         if let Some(ref sid) = self.session_id {
-            let se = sce_rust_runtime::ScriptEngineProvider::get();
+            let se = self.script_engine.clone();
+            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
             let _ = se.set_current_event(sid, event_name, event_data, event_type,
                 send_id, origin, origin_type, invoke_id);
         }
@@ -284,7 +294,8 @@ impl Test329Policy {
     pub fn set_param_in_script_engine(&mut self, name: &str, expr: &str) {
         self.ensure_script_engine();
         let sid = self.session_id.as_ref().unwrap().clone();
-        let se = sce_rust_runtime::ScriptEngineProvider::get();
+        let se = self.script_engine.clone();
+        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         match se.evaluate_expression(&sid, expr) {
             Ok(val) => { let _ = se.set_variable(&sid, name, val); }
             Err(_) => {
@@ -297,11 +308,6 @@ impl Test329Policy {
 
 }
 
-impl Default for Test329Policy {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 // ======================================================================
 // StatePolicy trait implementation
@@ -502,7 +508,8 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test329Event::Foo));
     // W3C SCXML 5.3: <assign location="Var1">
     self.ensure_script_engine();
     let sid = self.session_id.as_ref().unwrap().clone();
-    let se = sce_rust_runtime::ScriptEngineProvider::get();
+    let se = self.script_engine.clone();
+    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
     let expr = "_sessionid";
     // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
     // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
@@ -522,7 +529,8 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test329Event::Foo));
     // W3C SCXML 5.3: <assign location="_sessionid">
     self.ensure_script_engine();
     let sid = self.session_id.as_ref().unwrap().clone();
-    let se = sce_rust_runtime::ScriptEngineProvider::get();
+    let se = self.script_engine.clone();
+    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
     // W3C SCXML 5.3/B.2: Invalid or read-only location "_sessionid"
     log::error!("W3C SCXML 5.3: Invalid assign location '_sessionid'");
     engine.raise(sce_rust_runtime::EventWithMetadata::new(Test329Event::ErrorExecution));
@@ -539,7 +547,8 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test329Event::Foo));
     // W3C SCXML 5.3: <assign location="Var2">
     self.ensure_script_engine();
     let sid = self.session_id.as_ref().unwrap().clone();
-    let se = sce_rust_runtime::ScriptEngineProvider::get();
+    let se = self.script_engine.clone();
+    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
     let expr = "_event";
     // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
     // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
@@ -559,7 +568,8 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test329Event::Foo));
     // W3C SCXML 5.3: <assign location="_event">
     self.ensure_script_engine();
     let sid = self.session_id.as_ref().unwrap().clone();
-    let se = sce_rust_runtime::ScriptEngineProvider::get();
+    let se = self.script_engine.clone();
+    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
     // W3C SCXML 5.3/B.2: Invalid or read-only location "_event"
     log::error!("W3C SCXML 5.3: Invalid assign location '_event'");
     engine.raise(sce_rust_runtime::EventWithMetadata::new(Test329Event::ErrorExecution));
@@ -576,7 +586,8 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test329Event::Foo));
     // W3C SCXML 5.3: <assign location="Var3">
     self.ensure_script_engine();
     let sid = self.session_id.as_ref().unwrap().clone();
-    let se = sce_rust_runtime::ScriptEngineProvider::get();
+    let se = self.script_engine.clone();
+    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
     let expr = "_name";
     // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
     // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
@@ -596,7 +607,8 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test329Event::Foo));
     // W3C SCXML 5.3: <assign location="_name">
     self.ensure_script_engine();
     let sid = self.session_id.as_ref().unwrap().clone();
-    let se = sce_rust_runtime::ScriptEngineProvider::get();
+    let se = self.script_engine.clone();
+    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
     // W3C SCXML 5.3/B.2: Invalid or read-only location "_name"
     log::error!("W3C SCXML 5.3: Invalid assign location '_name'");
     engine.raise(sce_rust_runtime::EventWithMetadata::new(Test329Event::ErrorExecution));
@@ -613,7 +625,8 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test329Event::Foo));
     // W3C SCXML 5.3: <assign location="Var4">
     self.ensure_script_engine();
     let sid = self.session_id.as_ref().unwrap().clone();
-    let se = sce_rust_runtime::ScriptEngineProvider::get();
+    let se = self.script_engine.clone();
+    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
     let expr = "_ioprocessors";
     // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
     // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
@@ -633,7 +646,8 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test329Event::Foo));
     // W3C SCXML 5.3: <assign location="_ioprocessors">
     self.ensure_script_engine();
     let sid = self.session_id.as_ref().unwrap().clone();
-    let se = sce_rust_runtime::ScriptEngineProvider::get();
+    let se = self.script_engine.clone();
+    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
     // W3C SCXML 5.3/B.2: Invalid or read-only location "_ioprocessors"
     log::error!("W3C SCXML 5.3: Invalid assign location '_ioprocessors'");
     engine.raise(sce_rust_runtime::EventWithMetadata::new(Test329Event::ErrorExecution));

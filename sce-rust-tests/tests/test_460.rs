@@ -1,15 +1,15 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: c1736039ea6628ae1068e428522a9d89bbe2ccef2705503db256c49ec169955e
-// generated-at: 1778994568
+// template-hash: 94a6daf42142517c0ee9ba49a95e1db9d84d30a097beabea83a903e1d7ba88bf
+// generated-at: 1779020074
 // GENERATED -- DO NOT EDIT (sce-codegen)
 // SCE-MAP: test460.scxml:1
 use std::time::Duration;
 
 #[test]
 fn test_460() {
-    let _ = sce_rust_lua::register();
-    let policy = sce_rust_tests::generated::test460::Test460Policy::new();
+    let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> = std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
+    let policy = sce_rust_tests::generated::test460::Test460Policy::new(script_engine);
     let mut engine = sce_rust_runtime::Engine::new(policy);
     engine.initialize();
     let completed = engine.run_until_completion(

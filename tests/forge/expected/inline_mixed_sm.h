@@ -209,6 +209,12 @@ public:
         this->policy_.setParamInScriptEngine(paramName, paramExpr);
     }
 
+    // W3C SCXML B.1: Wrapper for script engine handle injection (delegates to policy)
+    // Path B+ RFC Q1=(d) C++=std::shared_ptr; Q5=(a) instance member on policy.
+    void setScriptEngine(::std::shared_ptr<::SCE::IScriptEngine> engine) const {
+        this->policy_.setScriptEngine(::std::move(engine));
+    }
+
 };
 
 // W3C SCXML: Compile-time StatePolicy interface verification

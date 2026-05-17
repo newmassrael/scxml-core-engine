@@ -10,7 +10,8 @@ log::info!("{% if action.label %}{{ action.label | escape_rust }}: {% endif %}{}
 {
     self.ensure_script_engine();
     let sid = self.session_id.as_ref().unwrap().clone();
-    let se = sce_rust_runtime::ScriptEngineProvider::get();
+    let se = self.script_engine.clone();
+    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
     match se.evaluate_expression(&sid, "{{ action.expr | to_lua_expr | escape_rust }}") {
         Ok(val) => log::info!("{% if action.label %}{{ action.label | escape_rust }}: {% endif %}{:?}", val),
         Err(e) => log::error!("Log expression eval failed: {}", e),
