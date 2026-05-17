@@ -54,7 +54,7 @@ class Engine(Generic[S, E]):
     Single-threaded; callers needing concurrency must guard with a lock.
     """
 
-    def __init__(self, policy: StatePolicy[S, E]) -> None:
+    def __init__(self, policy: StatePolicy[S, E], script_engine: "Optional[IScriptEngine]" = None) -> None:
         self._policy = policy
         # W3C SCXML 5.10 — each engine owns one script-engine session.
         # The id is allocated up front so the policy can reference it
@@ -66,7 +66,10 @@ class Engine(Generic[S, E]):
         # C++ pattern where Engine construction implicitly owns one
         # script-engine session.
         self._session_id: str = uuid.uuid4().hex
-        self._script_engine = scripting.get()
+        # Path B+ RFC Q1=(d) Python=duck-typed ref; Q5=(a) instance member.
+        # When script_engine is None, fall back to global provider (transitional;
+        # external consumers may pin Path B+ pre-cleanup pin point).
+        self._script_engine = script_engine if script_engine is not None else scripting.get()
         self._script_engine.create_session(self._session_id)
         # Back-ref so the policy's helpers (which run as instance
         # methods on the generated module) can find the engine's
