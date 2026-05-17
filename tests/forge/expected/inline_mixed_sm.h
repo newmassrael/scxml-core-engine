@@ -26,7 +26,7 @@
 #include "core/HistoryHelper.h"
 #include "core/StateEntryHelper.h"
 #include "core/TransitionHelper.h"
-#include "scripting/ScriptEngineProvider.h"
+#include "scripting/IScriptEngine.h"
 #include "scripting/ScriptResultUtils.h"
 #include "static/StaticExecutionEngine.h"
 #include <cstdint>
@@ -209,8 +209,8 @@ public:
         this->policy_.setParamInScriptEngine(paramName, paramExpr);
     }
 
-    // W3C SCXML B.1: Wrapper for script engine handle injection (delegates to policy)
-    // Path B+ RFC Q1=(d) C++=std::shared_ptr; Q5=(a) instance member on policy.
+    // W3C SCXML B.1: forward per-instance script engine injection to the policy
+    // (mirrors Kotlin StateMachineEngine(scriptEngine) constructor parameter).
     void setScriptEngine(::std::shared_ptr<::SCE::IScriptEngine> engine) const {
         this->policy_.setScriptEngine(::std::move(engine));
     }

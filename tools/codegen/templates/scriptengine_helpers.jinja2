@@ -9,8 +9,10 @@
     }
 
 {% if model.needs_script_engine %}
-    // W3C SCXML B.1: Script engine handle (per-instance, set via setScriptEngine)
-    // Path B+ RFC Q1=(d) C++=std::shared_ptr; Q5=(a) instance member.
+    // W3C SCXML B.1: per-instance script engine handle, set before initialize()
+    // via setScriptEngine(). Mirrors the Kotlin StateMachineEngine(scriptEngine)
+    // constructor-injection contract — generated machines never reach back into
+    // a process-global singleton.
     mutable ::std::shared_ptr<::SCE::IScriptEngine> scriptEngine_;
 
     void setScriptEngine(::std::shared_ptr<::SCE::IScriptEngine> engine) const {
@@ -18,7 +20,12 @@
     }
 
     ::SCE::IScriptEngine& getScriptEngine() const {
-        return scriptEngine_ ? *scriptEngine_ : ::SCE::ScriptEngineProvider::getScriptEngine();
+        if (!scriptEngine_) {
+            throw ::std::runtime_error(
+                "{{ model.name }}Policy::getScriptEngine: "
+                "setScriptEngine() must be called before initialize()");
+        }
+        return *scriptEngine_;
     }
 
     // Helper: Ensure JSEngine is initialized (lazy initialization)
