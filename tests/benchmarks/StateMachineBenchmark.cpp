@@ -4,6 +4,7 @@
 #include "events/EventDescriptor.h"
 #include "runtime/StateMachine.h"
 #include "runtime/StateMachineBuilder.h"
+#include "scripting/ScriptEngineProvider.h"
 #include <atomic>
 #include <benchmark/benchmark.h>
 #include <memory>
@@ -123,7 +124,9 @@ protected:
         std::string sessionId = generateUniqueSessionId();
 
         StateMachineBuilder builder;
-        auto sm = builder.withSessionId(sessionId).build();
+        auto sm = builder.withScriptEngine(SCE::ScriptEngineProvider::getScriptEngine())
+                      .withSessionId(sessionId)
+                      .build();
 
         if (sm && sm->loadSCXMLFromString(scxmlContent) && sm->start()) {
             return sm;

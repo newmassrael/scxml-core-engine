@@ -27,7 +27,9 @@ protected:
         auto eventRaiser = std::make_shared<EventRaiserImpl>();
 
         StateMachineBuilder builder;
-        auto stateMachine = builder.withEventRaiser(eventRaiser).build();
+        auto stateMachine = builder.withScriptEngine(SCE::ScriptEngineProvider::getScriptEngine())
+                                .withEventRaiser(eventRaiser)
+                                .build();
 
         // Wrap in StateMachineContext for RAII cleanup
         smContext_ = std::make_unique<StateMachineContext>(std::move(stateMachine));

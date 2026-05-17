@@ -152,6 +152,7 @@ std::unique_ptr<ITestExecutor> TestComponentFactory::createExecutor() {
 
                 // Build StateMachine with resource injection, then wrap in RAII context
                 auto stateMachineUnique = SCE::StateMachineBuilder()
+                                              .withScriptEngine(SCE::ScriptEngineProvider::getScriptEngine())
                                               .withEventDispatcher(resources->eventDispatcher)
                                               .withEventRaiser(resources->eventRaiser)
                                               .build();
@@ -254,6 +255,7 @@ std::unique_ptr<ITestExecutor> TestComponentFactory::createExecutor() {
 
                 // Build StateMachine with resource injection, then wrap in RAII context
                 auto stateMachineUnique = SCE::StateMachineBuilder()
+                                              .withScriptEngine(SCE::ScriptEngineProvider::getScriptEngine())
                                               .withEventDispatcher(resources->eventDispatcher)
                                               .withEventRaiser(resources->eventRaiser)
                                               .build();
@@ -1892,6 +1894,7 @@ TestReport W3CTestRunner::runSingleTestWithHttpServer(const std::string &testDir
 
             // Build StateMachine with resource injection, then wrap in RAII context
             auto stateMachineUnique = SCE::StateMachineBuilder()
+                                          .withScriptEngine(SCE::ScriptEngineProvider::getScriptEngine())
                                           .withEventDispatcher(resources->eventDispatcher)
                                           .withEventRaiser(resources->eventRaiser)
                                           .build();
@@ -2319,6 +2322,7 @@ TestReport W3CTestRunner::runManualTest178(const std::string &testDirectory, Tes
 
         // Build StateMachine with resource injection
         auto stateMachineUnique = SCE::StateMachineBuilder()
+                                      .withScriptEngine(SCE::ScriptEngineProvider::getScriptEngine())
                                       .withEventDispatcher(resources->eventDispatcher)
                                       .withEventRaiser(resources->eventRaiser)
                                       .build();
