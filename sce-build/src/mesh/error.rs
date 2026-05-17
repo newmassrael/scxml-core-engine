@@ -1191,6 +1191,47 @@ pub enum DeployError {
         driver_floor: u32,
     },
 
+    /// Watching-zenoh RFC §5.C lines 765-771 + §8 Q8 line 3747 —
+    /// the forge `<sce:link-class>` value declared on the link doc
+    /// does not match the protocol class implied by the deploy.yaml
+    /// `driver:` allowlist entry. Each core driver implements
+    /// exactly one class (`lwip_udp`→udp, `lwip_tcp`→tcp,
+    /// `serial_uart`→serial, `websocket_tcp`→websocket); a mismatch
+    /// would compile but produce a wrapper whose `LINK_CLASS` const
+    /// disagrees with the bound driver impl, surfacing at runtime
+    /// as framer/decode errors. C11-WebSocket follow-up RFC §5.1 +
+    /// parent C11 RFC §5.2 named this hook for closure once the
+    /// driver matrix reached 4×4; `60fba30c` (C11-WebSocket
+    /// landing) satisfied the trigger.
+    #[error("machine '{machine}': link '{link_name}' declares forge \
+             `<sce:link-class>{declared_class}</sce:link-class>` but \
+             deploy.yaml binds `driver: {driver}` which implements \
+             class '{expected_class}'. watching-zenoh RFC §5.C lines \
+             765-771 + §8 Q8 line 3747 \
+             (`deploy/link-driver-class-mismatch`) — each core \
+             driver implements exactly one protocol class. Repair: \
+             change `driver:` to the entry matching the declared \
+             class, or change `<sce:link-class>` to match the bound \
+             driver.")]
+    LinkDriverClassMismatch {
+        machine: String,
+        link_name: String,
+        driver: String,
+        /// `<sce:link-class>` value as authored on the forge side.
+        declared_class: String,
+        /// Driver-implied class per the KNOWN_DRIVERS allowlist.
+        expected_class: String,
+        /// 1-element vec carrying the driver name that matches the
+        /// declared class (the inverse map from class → driver).
+        /// `Fix::ReplaceOneOf` single-axis repair — the deploy-side
+        /// driver swap. The forge-side class swap is a parallel
+        /// valid path the prose names but the structured fix only
+        /// carries one axis per non-overlap-class invariant.
+        driver_candidates: Vec<String>,
+        /// Cached pretty-print of `driver_candidates`.
+        driver_candidates_list: String,
+    },
+
     /// Watching-zenoh RFC §5.K line 2446-2448
     /// (`deploy/link-expected-p99-exceeds-mtu`).
     /// `expected_p99_bytes > mtu_bytes`; the p99 message would always
@@ -2882,6 +2923,29 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 link_name.clone(),
                 driver.clone(),
                 declared_mtu.to_string(),
+            ],
+        },
+        DeployError::LinkDriverClassMismatch {
+            machine,
+            link_name,
+            driver,
+            declared_class,
+            expected_class,
+            driver_candidates,
+            driver_candidates_list: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployLinkDriverClassMismatch,
+            stage: Stage::MeshDeploy,
+            actual: Some(declared_class.clone()),
+            expected: Some(vec![expected_class.clone()]),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: driver_candidates.clone(),
+            }),
+            key_fragments: vec![
+                machine.clone(),
+                link_name.clone(),
+                driver.clone(),
+                declared_class.clone(),
             ],
         },
         DeployError::LinkExpectedP99ExceedsMtu {

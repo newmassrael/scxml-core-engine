@@ -237,6 +237,7 @@
         "deploy/link-driver-unknown",
         "deploy/link-mtu-missing-on-fragmenting-link",
         "deploy/link-mtu-below-driver-floor",
+        "deploy/link-driver-class-mismatch",
         "deploy/link-expected-p99-exceeds-mtu",
         "deploy/link-burst-pps-missing-on-isr-dispatch",
         "deploy/link-not-declared-in-deploy",

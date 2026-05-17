@@ -18,6 +18,7 @@
 // settings pass through to Jinja2 templates without the parser needing
 // to know every key.
 
+use crate::forge::model::LinkClass;
 use crate::mesh::error::{DeployError, PartitionTransportBindingFailure};
 use crate::mesh::target::TargetId;
 use serde::{Deserialize, Serialize};
@@ -2379,41 +2380,57 @@ fn validate_pool_defaults(cfg: &DeployConfig) -> Result<(), DeployError> {
 /// `deploy/link-burst-absorption-insufficient` + `deploy/link-rx-
 /// dispatch-worker-tick-on-high-burst` defer to C13-α-2 — both
 /// require RX pool slot_count cross-doc resolution.
+/// Known-driver baseline carrying protocol class + min-MTU floor.
+///
+/// Single source of truth for the driver allowlist. Each core driver
+/// implements exactly one protocol class (per RFC §5.C lines 765-771
+/// + §8 Q8 line 3747); co-locating the class with the driver name
+/// keeps `KNOWN_DRIVERS` the authoritative source — no parallel map
+/// to drift against.
+///
+/// IP-stack drivers carry an IP-encapsulation floor:
+///   - `lwip_udp = 28` (IPv4 minimum header)
+///   - `lwip_tcp = 40` (IPv4 + TCP minimum)
+///   - `websocket_tcp = 40` (runs over IPv4 + TCP — same
+///     encapsulation floor as `lwip_tcp`; the per-frame
+///     WebSocket header is application-protocol framing
+///     carried by the §5.B framer codec, not by the driver
+///     MTU floor. Spec §8 Q8 line 3747 names the driver;
+///     spec §5.C row 4 (line 770) names the class).
+///
+/// Non-IP drivers carry floor `0` to mark "skip floor check"
+/// explicitly — the §5.B framer codec carries the frame-size
+/// invariant at the protocol-decoder layer instead:
+///   - `serial_uart = 0` (UART has no IP-stack overhead;
+///     watching-zenoh RFC §5.C line 729 + spec C11 atomic)
+///
+/// Unknown drivers fall through to forge cross-doc registry
+/// lookup in the orchestrator pass; the parse-time validator
+/// silent-skips the floor check for them.
+const KNOWN_DRIVERS: &[(&str, LinkClass, u32)] = &[
+    ("lwip_tcp", LinkClass::Tcp, 40),
+    ("lwip_udp", LinkClass::Udp, 28),
+    ("serial_uart", LinkClass::Serial, 0),
+    ("websocket_tcp", LinkClass::Websocket, 40),
+];
+
+fn known_driver_floor(driver: &str) -> Option<u32> {
+    KNOWN_DRIVERS
+        .iter()
+        .find_map(|(name, _class, floor)| if *name == driver { Some(*floor) } else { None })
+}
+
+/// Returns the protocol class implemented by `driver`, or `None` if
+/// the driver is not in the SCE-side allowlist. Target-plugin
+/// drivers (declared via `extern_symbols.target_plugin`) are
+/// silent-skipped — their class-check rides §5.I plugin contract.
+fn known_driver_class(driver: &str) -> Option<LinkClass> {
+    KNOWN_DRIVERS
+        .iter()
+        .find_map(|(name, class, _floor)| if *name == driver { Some(*class) } else { None })
+}
+
 fn validate_links(cfg: &DeployConfig) -> Result<(), DeployError> {
-    /// Known-driver baseline carrying min-MTU floor.
-    ///
-    /// IP-stack drivers carry an IP-encapsulation floor:
-    ///   - `lwip_udp = 28` (IPv4 minimum header)
-    ///   - `lwip_tcp = 40` (IPv4 + TCP minimum)
-    ///   - `websocket_tcp = 40` (runs over IPv4 + TCP — same
-    ///     encapsulation floor as `lwip_tcp`; the per-frame
-    ///     WebSocket header is application-protocol framing
-    ///     carried by the §5.B framer codec, not by the driver
-    ///     MTU floor. Spec §8 Q8 line 3747 names the driver;
-    ///     spec §5.C row 4 (line 770) names the class).
-    ///
-    /// Non-IP drivers carry floor `0` to mark "skip floor check"
-    /// explicitly — the §5.B framer codec carries the frame-size
-    /// invariant at the protocol-decoder layer instead:
-    ///   - `serial_uart = 0` (UART has no IP-stack overhead;
-    ///     watching-zenoh RFC §5.C line 729 + spec C11 atomic)
-    ///
-    /// Unknown drivers fall through to forge cross-doc registry
-    /// lookup in the orchestrator pass; the parse-time validator
-    /// silent-skips the floor check for them.
-    const KNOWN_DRIVERS: &[(&str, u32)] = &[
-        ("lwip_tcp", 40),
-        ("lwip_udp", 28),
-        ("serial_uart", 0),
-        ("websocket_tcp", 40),
-    ];
-
-    fn known_driver_floor(driver: &str) -> Option<u32> {
-        KNOWN_DRIVERS
-            .iter()
-            .find_map(|(name, floor)| if *name == driver { Some(*floor) } else { None })
-    }
-
     for device in cfg.topology.values() {
         for (machine_name, machine) in device.machines.iter() {
             for (link_name, link) in machine.links.iter() {
@@ -2426,8 +2443,10 @@ fn validate_links(cfg: &DeployConfig) -> Result<(), DeployError> {
                 if known_driver_floor(&link.driver).is_none() {
                     // Stable candidate baseline (sorted). Orchestrator
                     // pass adds forge link-doc names if available.
-                    let mut candidates: Vec<String> =
-                        KNOWN_DRIVERS.iter().map(|(n, _)| (*n).to_string()).collect();
+                    let mut candidates: Vec<String> = KNOWN_DRIVERS
+                        .iter()
+                        .map(|(n, _class, _floor)| (*n).to_string())
+                        .collect();
                     candidates.sort();
                     let candidates_list = candidates.join(", ");
                     return Err(DeployError::LinkDriverUnknown {
@@ -2746,6 +2765,64 @@ pub fn validate_links_cross_doc(
         }
     }
 
+    Ok(())
+}
+
+/// Watching-zenoh RFC §5.C lines 765-771 + §8 Q8 line 3747 cross-
+/// doc consistency check between forge `<sce:link-class>` and the
+/// deploy.yaml `driver:` allowlist entry.
+///
+/// Each entry in [`KNOWN_DRIVERS`] declares its implemented class;
+/// this validator joins the deploy-side driver string against the
+/// forge-side `LinkModel.class` and fires
+/// `deploy/link-driver-class-mismatch` when they disagree.
+///
+/// Silent-skip cases (per `[[feedback-silently-broken-hooks]]` —
+/// "data unavailable" must not synthesize false errors):
+///   - Driver not in `KNOWN_DRIVERS` — falls through to target-
+///     plugin path; class-check rides §5.I plugin contract there.
+///   - No matching forge `LinkModel` for the deploy link name —
+///     `validate_links_cross_doc` already gates this case as
+///     `deploy/link-not-declared-in-forge`; reaching this point
+///     implies the join succeeds.
+///
+/// Iteration order: devices → machines → links in declaration
+/// order. First failure short-circuits.
+pub fn validate_link_driver_class_consistency(
+    cfg: &DeployConfig,
+    forge_link_models: &std::collections::HashMap<String, &crate::forge::model::LinkModel>,
+) -> Result<(), DeployError> {
+    for device in cfg.topology.values() {
+        for (machine_name, machine) in device.machines.iter() {
+            for (link_name, link) in machine.links.iter() {
+                let Some(expected_class) = known_driver_class(&link.driver) else {
+                    continue;
+                };
+                let Some(forge_link) = forge_link_models.get(link_name) else {
+                    continue;
+                };
+                let declared_class = forge_link.class;
+                if declared_class == expected_class {
+                    continue;
+                }
+                let driver_candidates: Vec<String> = KNOWN_DRIVERS
+                    .iter()
+                    .filter(|(_, class, _)| *class == declared_class)
+                    .map(|(name, _, _)| (*name).to_string())
+                    .collect();
+                let driver_candidates_list = driver_candidates.join(", ");
+                return Err(DeployError::LinkDriverClassMismatch {
+                    machine: machine_name.clone(),
+                    link_name: link_name.clone(),
+                    driver: link.driver.clone(),
+                    declared_class: declared_class.to_string(),
+                    expected_class: expected_class.to_string(),
+                    driver_candidates,
+                    driver_candidates_list,
+                });
+            }
+        }
+    }
     Ok(())
 }
 

@@ -380,7 +380,7 @@ no typed interpretation or are explicitly excluded:
 
 ---
 
-## Appendix — `DiagnosticCode` index (265 codes)
+## Appendix — `DiagnosticCode` index (274 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -605,6 +605,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `deploy/link-not-declared-in-forge` | Mesh Deploy |
 | `deploy/link-burst-absorption-insufficient` | Mesh Deploy |
 | `deploy/link-rx-dispatch-worker-tick-on-high-burst` | Mesh Deploy |
+| `deploy/link-driver-class-mismatch` | Mesh Deploy |
 | `pool/stage-copy-policy-error` | Validation |
 | `pool/stage-copy-accept-rejected-under-forbid` | Validation |
 | `deploy/stage-copy-policy-unknown` | Mesh Deploy |

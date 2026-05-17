@@ -1990,6 +1990,13 @@ pub fn compile_scxml_with_imports(
         .map_err(mesh::error::MeshError::Deploy)
         .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
 
+        mesh::deploy::validate_link_driver_class_consistency(
+            deploy_cfg,
+            &forge_link_models_view,
+        )
+        .map_err(mesh::error::MeshError::Deploy)
+        .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
+
         mesh::deploy::validate_reassembly_cross_doc(
             deploy_cfg,
             &forge_link_models_view,

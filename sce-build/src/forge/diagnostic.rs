@@ -1657,6 +1657,24 @@ pub enum DiagnosticCode {
     #[serde(rename = "deploy/link-mtu-below-driver-floor")]
     MeshDeployLinkMtuBelowDriverFloor,
 
+    /// Watching-zenoh RFC §5.C lines 765-771 + §8 Q8 line 3747
+    /// (`deploy/link-driver-class-mismatch`). The forge
+    /// `<sce:link-class>` value on the link doc does not match the
+    /// protocol class implied by the deploy.yaml `driver:` allowlist
+    /// entry. C11-WebSocket follow-up RFC §5.1 + parent C11 RFC §5.2
+    /// named this sibling atomic; `60fba30c` (C11-WebSocket landing)
+    /// satisfied the 4×4 matrix trigger.
+    ///
+    /// `Fix::ReplaceOneOf` single-element candidate set = the driver
+    /// name whose KNOWN_DRIVERS class matches the declared forge
+    /// class. The forge-side class swap is a parallel valid repair
+    /// path the prose names but the structured fix carries only the
+    /// deploy-side axis (one axis per non-overlap shape; the
+    /// `LinkClassUnsupportedOnTarget` precedent at §5.C uses the
+    /// same single-axis Fix discipline).
+    #[serde(rename = "deploy/link-driver-class-mismatch")]
+    MeshDeployLinkDriverClassMismatch,
+
     /// Watching-zenoh RFC §5.K line 2446-2448 verbatim
     /// (`deploy/link-expected-p99-exceeds-mtu`). `expected_p99_bytes >
     /// mtu_bytes` AND no reassembly pool is bound to the link (precise
@@ -2330,6 +2348,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployLinkDriverUnknown,
         MeshDeployLinkMtuMissingOnFragmentingLink,
         MeshDeployLinkMtuBelowDriverFloor,
+        MeshDeployLinkDriverClassMismatch,
         MeshDeployLinkExpectedP99ExceedsMtu,
         MeshDeployLinkBurstPpsMissingOnIsrDispatch,
         MeshDeployLinkNotDeclaredInDeploy,
@@ -2758,6 +2777,7 @@ impl DiagnosticCode {
             | MeshDeployLinkNotDeclaredInForge
             | MeshDeployLinkBurstAbsorptionInsufficient
             | MeshDeployLinkRxDispatchWorkerTickOnHighBurst
+            | MeshDeployLinkDriverClassMismatch
             // C13-γ pool_defaults.stage_copy_policy (RFC §5.K lines
             // 2350-2369 + 2504-2519). Three codes share §5.K anchor.
             | PoolStageCopyPolicyError
@@ -3157,6 +3177,7 @@ impl DiagnosticCode {
             MeshDeployLinkDriverUnknown => "deploy/link-driver-unknown",
             MeshDeployLinkMtuMissingOnFragmentingLink => "deploy/link-mtu-missing-on-fragmenting-link",
             MeshDeployLinkMtuBelowDriverFloor => "deploy/link-mtu-below-driver-floor",
+            MeshDeployLinkDriverClassMismatch => "deploy/link-driver-class-mismatch",
             MeshDeployLinkExpectedP99ExceedsMtu => "deploy/link-expected-p99-exceeds-mtu",
             MeshDeployLinkBurstPpsMissingOnIsrDispatch => "deploy/link-burst-pps-missing-on-isr-dispatch",
             MeshDeployLinkNotDeclaredInDeploy => "deploy/link-not-declared-in-deploy",
@@ -8538,6 +8559,26 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:b923c818f30343df","code":"deploy/link-mtu-below-driver-floor","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_data' declares `mtu_bytes: 20` which is below driver 'lwip_udp's minimum payload floor (28). watching-zenoh RFC §5.K line 2443-2445 (`deploy/link-mtu-below-driver-floor`) — the driver's default minimum would override the declared value silently. Repair: raise `mtu_bytes` to >= 28, or change the driver to one with a smaller header floor.","expected":["28"],"actual":"20"}"#,
             ),
             (
+                // C11-WebSocket follow-up sibling — driver↔class
+                // cross-validator. Forge declares `websocket` but
+                // deploy binds `lwip_tcp` whose class is `tcp`;
+                // the validator surfaces the mismatch with the
+                // candidate driver list (single-element: the
+                // driver implementing `websocket` = `websocket_tcp`).
+                "deploy/link-driver-class-mismatch",
+                DeployError::LinkDriverClassMismatch {
+                    machine: "mcu_node".into(),
+                    link_name: "ws_control".into(),
+                    driver: "lwip_tcp".into(),
+                    declared_class: "websocket".into(),
+                    expected_class: "tcp".into(),
+                    driver_candidates: vec!["websocket_tcp".into()],
+                    driver_candidates_list: "websocket_tcp".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:4ac5fbe980bb4938","code":"deploy/link-driver-class-mismatch","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'ws_control' declares forge `<sce:link-class>websocket</sce:link-class>` but deploy.yaml binds `driver: lwip_tcp` which implements class 'tcp'. watching-zenoh RFC §5.C lines 765-771 + §8 Q8 line 3747 (`deploy/link-driver-class-mismatch`) — each core driver implements exactly one protocol class. Repair: change `driver:` to the entry matching the declared class, or change `<sce:link-class>` to match the bound driver.","expected":["tcp"],"actual":"websocket","fix":{"kind":"replace_one_of","candidates":["websocket_tcp"]}}"#,
+            ),
+            (
                 "deploy/link-expected-p99-exceeds-mtu",
                 DeployError::LinkExpectedP99ExceedsMtu {
                     machine: "mcu_node".into(),
@@ -9496,6 +9537,14 @@ mod tests {
             | MeshDeployLinkDriverUnknown
             | MeshDeployLinkNotDeclaredInDeploy
             | MeshDeployLinkNotDeclaredInForge
+            // C11-WebSocket follow-up sibling — driver↔class
+            // cross-validator. `Fix::ReplaceOneOf` 1-element
+            // candidate set = the driver name whose KNOWN_DRIVERS
+            // class matches the declared forge `<sce:link-class>`.
+            // Single-axis deploy-side repair; the parallel forge-
+            // side class swap is named in prose but stays out of
+            // the structured Fix per non-overlap invariant.
+            | MeshDeployLinkDriverClassMismatch
             // C13-γ deploy/stage-copy-policy-unknown — closed set
             // {warn, error, forbid} (RFC §5.K line 2351 + 2517-2519
             // verbatim, single source of truth at
@@ -10356,6 +10405,7 @@ mod tests {
                 | MeshDeployLinkNotDeclaredInForge
                 | MeshDeployLinkBurstAbsorptionInsufficient
                 | MeshDeployLinkRxDispatchWorkerTickOnHighBurst
+                | MeshDeployLinkDriverClassMismatch
                 | PoolStageCopyPolicyError
                 | PoolStageCopyAcceptRejectedUnderForbid
                 | MeshDeployStageCopyPolicyUnknown
@@ -10416,7 +10466,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            273,
+            274,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
              expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
