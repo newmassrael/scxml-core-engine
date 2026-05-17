@@ -365,6 +365,11 @@ set_tests_properties(benchmark_timer_accuracy_quick PROPERTIES
     LABELS "benchmark;quick;performance;timer;accuracy"
     TIMEOUT 300
     COST 1000
+    # Timer-accuracy assertions sample wall-clock against a fixed
+    # tolerance; running concurrently with CPU-heavy peers under
+    # `ctest -j` starves scheduling and flakes the bound. Force serial
+    # so the measurement runs against a quiet machine.
+    RUN_SERIAL TRUE
 )
 
 set_tests_properties(benchmark_luaengine_quick PROPERTIES

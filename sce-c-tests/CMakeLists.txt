@@ -389,6 +389,10 @@ set_target_properties(sce_c_http_client_unit_test PROPERTIES
 )
 add_test(NAME c11_unit_http_client COMMAND sce_c_http_client_unit_test)
 set_tests_properties(c11_unit_http_client PROPERTIES
-    TIMEOUT 10
+    TIMEOUT 30
     LABELS "unit;c11"
+    # In-process loopback pthread server with a 5s client recv timeout —
+    # CPU-heavy peers under `ctest -j` starve scheduling and flake the
+    # bound. Force serial so the round-trip runs unimpeded.
+    RUN_SERIAL TRUE
 )

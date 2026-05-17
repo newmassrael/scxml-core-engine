@@ -246,9 +246,11 @@ static void *stub_server_thread(void *arg) {
     if (client < 0) {
         return NULL;
     }
-    /* Read until we see end of headers + Content-Length bytes (or
-       until the buffer fills). For unit-test simplicity we just
-       drain whatever the client sends in a few recv calls. */
+    /* Read until headers complete AND Content-Length bytes drained.
+       Header/body split arrives on a single recv() under a quiet
+       machine, but CPU-heavy peers under `ctest -j` schedule the
+       kernel net stack apart and split the request across calls —
+       breaking out as soon as `\r\n\r\n` is seen drops the body. */
     while (s->captured_len + 1u < sizeof(s->captured)) {
         ssize_t n = recv(client, s->captured + s->captured_len,
                           sizeof(s->captured) - s->captured_len - 1u, 0);
@@ -257,15 +259,28 @@ static void *stub_server_thread(void *arg) {
         }
         s->captured_len += (size_t)n;
         s->captured[s->captured_len] = '\0';
-        /* End condition: full headers received + body satisfied.
-           For the test bodies we ship, the request fits in one recv
-           call most of the time; loop just in case the kernel
-           splits. We exit when we've drained for one round-trip. */
-        if (strstr(s->captured, "\r\n\r\n") != NULL) {
-            /* Headers in; assume body fits. Real correctness would
-               require parsing Content-Length, but the test bodies
-               are small enough that the kernel hands them over in
-               the same recv. */
+
+        /* Find end-of-headers; without it we cannot know body length. */
+        const char *headers_end = strstr(s->captured, "\r\n\r\n");
+        if (headers_end == NULL) {
+            continue;
+        }
+
+        /* Parse Content-Length out of the headers. Case-insensitive
+           per RFC 7230 §3.2, but the production client only emits the
+           canonical capitalisation, so an exact match is sufficient
+           for this unit fixture. Absent header → body length 0. */
+        size_t content_length = 0;
+        const char *cl_key = "Content-Length:";
+        const char *cl_pos = strstr(s->captured, cl_key);
+        if (cl_pos != NULL && cl_pos < headers_end) {
+            cl_pos += strlen(cl_key);
+            content_length = (size_t)strtoul(cl_pos, NULL, 10);
+        }
+
+        size_t body_received = s->captured_len -
+                               (size_t)(headers_end + 4 - s->captured);
+        if (body_received >= content_length) {
             break;
         }
     }
