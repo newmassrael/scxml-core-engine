@@ -1409,15 +1409,14 @@ static {{ model.name }}_event_t SCE_SM_FN {{ model.name }}_event_from_name(const
            `actions/log.jinja2`: success path emits the evaluated expression
            via the host log sink (fprintf to stderr, the C11 equivalent of
            cpp's `SCE_LOG_INFO`); evaluation failure emits an error line so
-           a fixture's log output remains diagnosable. Read-from-_event
-           metadata fields (`_event.raw`, `_event.invokeid`) match cpp's
-           TODO carve-out — comment-only emit until the first reader
-           fixture lifts both backends together. */
+           a fixture's log output remains diagnosable. `_event.raw` and
+           `_event.invokeid` route through the same Lua eval path — the
+           `set_current_event` helper binds both fields onto `_event` from
+           the `_pending_event_raw`/`_pending_event_invokeid` globals
+           seeded above so the script engine sees them like any other
+           `_event` member. */
 {% if action.expr %}
-{% if '_event.raw' in action.expr or '_event.invokeid' in action.expr %}
-        /* TODO: log {{ action.expr }} — _event.raw / _event.invokeid carve-out
-           (mirrors cpp `actions/log.jinja2` line 6-7). */
-{% elif model.needs_script_engine %}
+{% if model.needs_script_engine %}
         {
             char _log_buf[256];
             bool _log_ok;
@@ -3319,6 +3318,20 @@ static void SCE_SM_FN set_current_event(lua_State *L, const {{ model.name }}_eve
         lua_pushnil(L);
     }
     lua_setglobal(L, "_pending_event_invokeid");
+    /* W3C SCXML testing extension (.raw): cpp `JSEngineImpl.cpp:510` sets
+       `_event.raw` to the unparsed event data string before donedata
+       evaluation rewrites the slot into a typed table. C11 mirrors via
+       `_pending_event_raw` seeded from `evt->data` (the raw bounded
+       string buffer in `event_with_meta_t`); the per-enum chunk below
+       binds it onto `_event.raw`. Empty data buffer maps to lua nil so
+       `_event.raw` reads as the same falsy contract cpp surfaces for
+       events arrived without a data payload. */
+    if (evt->data[0] != '\0') {
+        lua_pushstring(L, evt->data);
+    } else {
+        lua_pushnil(L);
+    }
+    lua_setglobal(L, "_pending_event_raw");
     switch (evt->event) {
     {% for event_name in model.events | sort %}
     case {{ model.name | upper }}_EVENT_{{ event_name | upper | replace('.', '_') | replace('-', '_') }}:
@@ -3333,13 +3346,15 @@ static void SCE_SM_FN set_current_event(lua_State *L, const {{ model.name }}_eve
               "origintype = _pending_event_origintype, "
               "invokeid = _pending_event_invokeid, "
               "data = _pending_donedata, "
+              "raw = _pending_event_raw, "
               "sendid = _pending_send_id}; "
             "_pending_donedata = nil; "
             "_pending_send_id = nil; "
             "_pending_event_type = nil; "
             "_pending_event_origin = nil; "
             "_pending_event_origintype = nil; "
-            "_pending_event_invokeid = nil");
+            "_pending_event_invokeid = nil; "
+            "_pending_event_raw = nil");
         break;
     {% endfor %}
     default:

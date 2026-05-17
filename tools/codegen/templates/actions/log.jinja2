@@ -3,9 +3,7 @@
 
 // W3C SCXML 3.8.8: <log>
 {% if action.expr %}
-{% if '_event.raw' in action.expr or '_event.invokeid' in action.expr %}
-// TODO: log {{ action.expr }}
-{% elif model.needs_script_engine %}
+{% if model.needs_script_engine %}
 {
     this->ensureScriptEngine();
     auto& scriptEngine = getScriptEngine();
