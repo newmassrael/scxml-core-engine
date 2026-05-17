@@ -157,6 +157,26 @@ target_link_libraries(benchmark_static_execution_engine
         Threads::Threads
 )
 
+# Wire21 sender dispatch benchmark (next_session_mesh_aot_textbook_debt
+# item #5 regression-guard half — measures the NonRoot wire-21 5-layer
+# indirection cost so the memo's gate (b) "wire-21 latency budget regresses"
+# has an observable signal. Mirrors state_machine.jinja2:778-836 NonRoot
+# block; sync this bench when that template changes. Mesh-gated since
+# MeshEnvelope lives in sce_mesh_common.
+if(SCE_ENABLE_MESH)
+    add_executable(benchmark_wire21_sender
+        Wire21SenderBenchmark.cpp
+    )
+    target_link_libraries(benchmark_wire21_sender
+        PRIVATE
+            sce_runtime
+            sce_mesh_common
+            benchmark::benchmark
+            benchmark::benchmark_main
+            Threads::Threads
+    )
+endif()
+
 # ============================================================================
 # CTest Integration
 # ============================================================================
@@ -278,6 +298,21 @@ add_test(
     COMMAND benchmark_static_execution_engine
 )
 
+# Wire21 sender quick — both microbenchmarks at 0.1s min_time so a
+# developer can sanity-check the indirection cost in under a second.
+if(SCE_ENABLE_MESH)
+    add_test(
+        NAME benchmark_wire21_sender_quick
+        COMMAND benchmark_wire21_sender
+            --benchmark_min_time=0.1s
+            --benchmark_format=console
+    )
+    add_test(
+        NAME benchmark_wire21_sender_full
+        COMMAND benchmark_wire21_sender
+    )
+endif()
+
 # Configure test properties
 # CTest executes tests with higher COST first, so quick (1000) runs before full (500)
 set_tests_properties(benchmark_event_scheduler_quick PROPERTIES
@@ -376,6 +411,20 @@ set_tests_properties(benchmark_static_execution_engine_full PROPERTIES
     COST 500
     DISABLED TRUE
 )
+
+if(SCE_ENABLE_MESH)
+    set_tests_properties(benchmark_wire21_sender_quick PROPERTIES
+        LABELS "benchmark;quick;performance;mesh;wire21;dispatch"
+        TIMEOUT 300
+        COST 1000
+    )
+    set_tests_properties(benchmark_wire21_sender_full PROPERTIES
+        LABELS "benchmark;full;performance;mesh;wire21;dispatch;manual"
+        TIMEOUT 600
+        COST 500
+        DISABLED TRUE
+    )
+endif()
 
 # ============================================================================
 # Custom Benchmark Targets
