@@ -24,6 +24,12 @@
 #include <string>
 #include <string_view>
 #include <vector>
+// W3C SCXML B.1: every generated SM exposes setScriptEngine(IScriptEngine&)
+// (no-op when NEEDS_SCRIPT_ENGINE=false) so generic callers — mesh worker
+// hosts, invoke child instantiation, test fixtures — can inject without
+// member-detection traits. The handle must be visible even when this
+// machine itself does not consult a script engine.
+#include "scripting/IScriptEngine.h"
 
 // Conditional debug logging for generated code
 #ifndef NDEBUG
@@ -157,6 +163,16 @@ public:
         typename ::SCE::Static::StaticExecutionEngine<inline_codecPolicy>::EventWithMetadata;
 
     inline_codec() = default;
+
+    // W3C SCXML B.1: forward per-instance script engine injection to the policy
+    // (mirrors Kotlin StateMachineEngine(scriptEngine) constructor parameter).
+    // Always emitted so generic callers (mesh `WorkerSessionHost::onWire14`,
+    // invoke `child_->initialize()` sites, test fixtures) can inject without
+    // member-detection traits. When `NEEDS_SCRIPT_ENGINE=false` the body is a
+    // no-op — the engine is not consulted, so accepting the handle then
+    // discarding it preserves the same observable state.
+    void setScriptEngine([[maybe_unused]] ::std::shared_ptr<::SCE::IScriptEngine> engine) const {
+    }
 
 };
 
