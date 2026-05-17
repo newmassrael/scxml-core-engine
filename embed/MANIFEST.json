@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250114103320+cd708029e0b2-1~exp1~20250114103432.75)",
-  "embed_version": "4e751b48",
+  "embed_version": "529c40e9",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 206,
+  "symbol_count": 237,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -1482,6 +1482,429 @@
       "kind": "class",
       "members": [],
       "name": "SCE::XMLElement"
+    },
+    {
+      "header": "states/ConcurrentEventBroadcaster.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::ConcurrentEventBroadcaster"
+    },
+    {
+      "header": "states/ConcurrentEventTypes.h",
+      "kind": "enum",
+      "name": "SCE::EventBroadcastPriority",
+      "values": [
+        "LOW",
+        "NORMAL",
+        "HIGH",
+        "CRITICAL"
+      ]
+    },
+    {
+      "header": "states/ConcurrentEventTypes.h",
+      "kind": "enum",
+      "name": "SCE::EventBroadcastScope",
+      "values": [
+        "ALL_ACTIVE_REGIONS",
+        "SELECTED_REGIONS",
+        "CONDITIONAL_REGIONS"
+      ]
+    },
+    {
+      "header": "states/ConcurrentEventTypes.h",
+      "kind": "struct",
+      "members": [
+        "field EventBroadcastPriority defaultPriority",
+        "field EventBroadcastScope defaultScope",
+        "field bool parallelProcessing",
+        "field bool recordProcessingTime",
+        "field bool stopOnFirstFailure",
+        "field bool validateRegionState",
+        "field std::chrono::milliseconds timeoutPerRegion",
+        "field std::chrono::milliseconds totalTimeout",
+        "method EventBroadcastConfig &(EventBroadcastConfig &&) operator=",
+        "method EventBroadcastConfig &(const EventBroadcastConfig &) operator=",
+        "method void () noexcept ~EventBroadcastConfig",
+        "method void (EventBroadcastConfig &&) EventBroadcastConfig",
+        "method void (const EventBroadcastConfig &) EventBroadcastConfig"
+      ],
+      "name": "SCE::EventBroadcastConfig"
+    },
+    {
+      "header": "states/ConcurrentEventTypes.h",
+      "kind": "struct",
+      "members": [
+        "field EventBroadcastPriority defaultPriority",
+        "field EventBroadcastScope defaultScope",
+        "field bool parallelProcessing",
+        "field bool recordProcessingTime",
+        "field bool stopOnFirstFailure",
+        "field bool validateRegionState",
+        "field std::chrono::milliseconds timeoutPerRegion",
+        "field std::chrono::milliseconds totalTimeout",
+        "method EventBroadcastConfig &(EventBroadcastConfig &&) operator=",
+        "method EventBroadcastConfig &(const EventBroadcastConfig &) operator=",
+        "method void () ~EventBroadcastConfig",
+        "method void (EventBroadcastConfig &&) EventBroadcastConfig",
+        "method void (const EventBroadcastConfig &) EventBroadcastConfig"
+      ],
+      "name": "SCE::EventBroadcastConfig"
+    },
+    {
+      "header": "states/ConcurrentEventTypes.h",
+      "kind": "struct",
+      "members": [
+        "field EventBroadcastPriority priority",
+        "field EventBroadcastScope scope",
+        "field EventDescriptor event",
+        "field std::chrono::system_clock::time_point timestamp",
+        "field std::function<bool (const std::shared_ptr<IConcurrentRegion> &)> regionFilter",
+        "field std::string correlationId",
+        "field std::string sourceRegion",
+        "field std::vector<std::string> targetRegions",
+        "method EventBroadcastRequest &(EventBroadcastRequest &&) operator=",
+        "method EventBroadcastRequest &(const EventBroadcastRequest &) operator=",
+        "method void () ~EventBroadcastRequest",
+        "method void (EventBroadcastRequest &&) EventBroadcastRequest",
+        "method void (const EventBroadcastRequest &) EventBroadcastRequest"
+      ],
+      "name": "SCE::EventBroadcastRequest"
+    },
+    {
+      "header": "states/ConcurrentEventTypes.h",
+      "kind": "struct",
+      "members": [
+        "field bool isSuccess",
+        "field std::chrono::milliseconds processingTime",
+        "field std::string errorMessage",
+        "field std::vector<std::string> failedRegions",
+        "field std::vector<std::string> skippedRegions",
+        "field std::vector<std::string> successfulRegions",
+        "method EventBroadcastResult &(EventBroadcastResult &&) operator=",
+        "method EventBroadcastResult &(const EventBroadcastResult &) operator=",
+        "method EventBroadcastResult (const std::string &, const std::vector<std::string> &, const std::vector<std::string> &) failure",
+        "method EventBroadcastResult (const std::vector<std::string> &, const std::vector<std::string> &, const std::string &) partial",
+        "method EventBroadcastResult (const std::vector<std::string> &, std::chrono::milliseconds) success",
+        "method void () ~EventBroadcastResult",
+        "method void (EventBroadcastResult &&) EventBroadcastResult",
+        "method void (const EventBroadcastResult &) EventBroadcastResult"
+      ],
+      "name": "SCE::EventBroadcastResult"
+    },
+    {
+      "header": "states/ConcurrentEventTypes.h",
+      "kind": "struct",
+      "members": [
+        "field size_t failedEvents",
+        "field size_t partialEvents",
+        "field size_t successfulEvents",
+        "field size_t totalEvents",
+        "field std::chrono::milliseconds averageProcessingTime",
+        "field std::chrono::milliseconds maxProcessingTime",
+        "field std::chrono::milliseconds minProcessingTime",
+        "field std::chrono::milliseconds totalProcessingTime",
+        "field std::vector<size_t> eventsByPriority",
+        "method EventBroadcastStatistics &(EventBroadcastStatistics &&) operator=",
+        "method EventBroadcastStatistics &(const EventBroadcastStatistics &) operator=",
+        "method double () const getAverageRegionsPerEvent",
+        "method double () const getSuccessRate",
+        "method void () noexcept ~EventBroadcastStatistics",
+        "method void () reset",
+        "method void (EventBroadcastStatistics &&) EventBroadcastStatistics",
+        "method void (const EventBroadcastResult &, EventBroadcastPriority) recordEvent",
+        "method void (const EventBroadcastStatistics &) EventBroadcastStatistics"
+      ],
+      "name": "SCE::EventBroadcastStatistics"
+    },
+    {
+      "header": "states/ConcurrentEventTypes.h",
+      "kind": "struct",
+      "members": [
+        "field size_t failedEvents",
+        "field size_t partialEvents",
+        "field size_t successfulEvents",
+        "field size_t totalEvents",
+        "field std::chrono::milliseconds averageProcessingTime",
+        "field std::chrono::milliseconds maxProcessingTime",
+        "field std::chrono::milliseconds minProcessingTime",
+        "field std::chrono::milliseconds totalProcessingTime",
+        "field std::vector<size_t> eventsByPriority",
+        "method EventBroadcastStatistics &(EventBroadcastStatistics &&) operator=",
+        "method EventBroadcastStatistics &(const EventBroadcastStatistics &) operator=",
+        "method double () const getAverageRegionsPerEvent",
+        "method double () const getSuccessRate",
+        "method void () reset",
+        "method void () ~EventBroadcastStatistics",
+        "method void (EventBroadcastStatistics &&) EventBroadcastStatistics",
+        "method void (const EventBroadcastResult &, EventBroadcastPriority) recordEvent",
+        "method void (const EventBroadcastStatistics &) EventBroadcastStatistics"
+      ],
+      "name": "SCE::EventBroadcastStatistics"
+    },
+    {
+      "header": "states/ConcurrentRegion.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::ConcurrentRegion"
+    },
+    {
+      "header": "states/ConcurrentStateNode.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::ConcurrentStateNode"
+    },
+    {
+      "header": "states/ConcurrentStateNode.h",
+      "kind": "typedef",
+      "name": "SCE::ParallelStateCompletionCallback",
+      "type": "std::function<void (const std::string &)>"
+    },
+    {
+      "header": "states/ConcurrentStateTypes.h",
+      "kind": "enum",
+      "name": "SCE::ConcurrentRegionStatus",
+      "values": [
+        "INACTIVE",
+        "ACTIVE",
+        "FINAL",
+        "ERROR"
+      ]
+    },
+    {
+      "header": "states/ConcurrentStateTypes.h",
+      "kind": "struct",
+      "members": [
+        "field ConcurrentRegionStatus status",
+        "field bool isInFinalState",
+        "field std::string currentState",
+        "field std::string id",
+        "field std::vector<std::string> activeStates",
+        "method ConcurrentRegionInfo &(ConcurrentRegionInfo &&) operator=",
+        "method ConcurrentRegionInfo &(const ConcurrentRegionInfo &) operator=",
+        "method void () ~ConcurrentRegionInfo",
+        "method void (ConcurrentRegionInfo &&) ConcurrentRegionInfo",
+        "method void (const ConcurrentRegionInfo &) ConcurrentRegionInfo"
+      ],
+      "name": "SCE::ConcurrentRegionInfo"
+    },
+    {
+      "header": "states/ConcurrentStateTypes.h",
+      "kind": "struct",
+      "members": [
+        "field bool _reserved_for_future_scxml_extensions",
+        "method ConcurrentStateConfig &(ConcurrentStateConfig &&) operator=",
+        "method ConcurrentStateConfig &(const ConcurrentStateConfig &) operator=",
+        "method void () noexcept ~ConcurrentStateConfig",
+        "method void (ConcurrentStateConfig &&) ConcurrentStateConfig",
+        "method void (const ConcurrentStateConfig &) ConcurrentStateConfig"
+      ],
+      "name": "SCE::ConcurrentStateConfig"
+    },
+    {
+      "header": "states/ConcurrentStateTypes.h",
+      "kind": "struct",
+      "members": [
+        "field bool _reserved_for_future_scxml_extensions"
+      ],
+      "name": "SCE::ConcurrentStateConfig"
+    },
+    {
+      "header": "states/ConcurrentStateTypes.h",
+      "kind": "struct",
+      "members": [
+        "field bool hasActions",
+        "field bool isExternal",
+        "field bool isInternal",
+        "field int transitionIndex",
+        "field std::string event",
+        "field std::string source",
+        "field std::string target",
+        "field std::vector<std::string> exitSet",
+        "method TransitionDescriptorString &(TransitionDescriptorString &&) operator=",
+        "method TransitionDescriptorString &(const TransitionDescriptorString &) operator=",
+        "method void () TransitionDescriptorString",
+        "method void () noexcept ~TransitionDescriptorString",
+        "method void (TransitionDescriptorString &&) TransitionDescriptorString",
+        "method void (const TransitionDescriptorString &) TransitionDescriptorString",
+        "method void (std::string, std::string, std::string, int, bool, bool, bool) TransitionDescriptorString"
+      ],
+      "name": "SCE::TransitionDescriptorString"
+    },
+    {
+      "header": "states/ConcurrentStateTypes.h",
+      "kind": "struct",
+      "members": [
+        "field bool isSuccess",
+        "field std::string errorMessage",
+        "field std::string externalTransitionEvent",
+        "field std::string externalTransitionSource",
+        "field std::string externalTransitionTarget",
+        "field std::string regionId",
+        "field std::vector<TransitionDescriptorString> enabledTransitions",
+        "method ConcurrentOperationResult &(ConcurrentOperationResult &&) operator=",
+        "method ConcurrentOperationResult &(const ConcurrentOperationResult &) operator=",
+        "method ConcurrentOperationResult (const std::string &) success",
+        "method ConcurrentOperationResult (const std::string &, const std::string &) failure",
+        "method ConcurrentOperationResult (const std::string &, const std::string &, const std::string &, const std::string &) externalTransition",
+        "method void () noexcept ConcurrentOperationResult",
+        "method void () noexcept ~ConcurrentOperationResult",
+        "method void (ConcurrentOperationResult &&) noexcept ConcurrentOperationResult",
+        "method void (const ConcurrentOperationResult &) ConcurrentOperationResult"
+      ],
+      "name": "SCE::ConcurrentOperationResult"
+    },
+    {
+      "header": "states/ExternalTransitionHandler.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::ExternalTransitionHandler"
+    },
+    {
+      "header": "states/IConcurrentEventBroadcaster.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::IConcurrentEventBroadcaster"
+    },
+    {
+      "header": "states/IConcurrentRegion.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::IConcurrentRegion"
+    },
+    {
+      "header": "states/IStateExitHandler.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::IStateExitHandler"
+    },
+    {
+      "header": "states/ParallelRegionOrchestrator.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::ParallelRegionOrchestrator"
+    },
+    {
+      "header": "states/SCXMLParallelTypes.h",
+      "kind": "enum",
+      "name": "SCE::CompletionEventType",
+      "values": [
+        "PARALLEL_STATE_COMPLETED",
+        "REGION_COMPLETED",
+        "COMPLETION_ERROR"
+      ]
+    },
+    {
+      "header": "states/SCXMLParallelTypes.h",
+      "kind": "enum",
+      "name": "SCE::ParallelCompletionCriteria",
+      "values": [
+        "ALL_REGIONS_FINAL",
+        "ANY_REGION_FINAL",
+        "MAJORITY_REGIONS_FINAL"
+      ]
+    },
+    {
+      "header": "states/SCXMLParallelTypes.h",
+      "kind": "struct",
+      "members": [
+        "field CompletionEventType type",
+        "field std::chrono::steady_clock::time_point timestamp",
+        "field std::string errorMessage",
+        "field std::string parallelStateId",
+        "field std::vector<std::string> completedRegions",
+        "method CompletionEvent &(CompletionEvent &&) operator=",
+        "method CompletionEvent &(const CompletionEvent &) operator=",
+        "method EventDescriptor () const toDoneStateEvent",
+        "method void () ~CompletionEvent",
+        "method void (CompletionEvent &&) CompletionEvent",
+        "method void (const CompletionEvent &) CompletionEvent"
+      ],
+      "name": "SCE::CompletionEvent"
+    },
+    {
+      "header": "states/SCXMLParallelTypes.h",
+      "kind": "struct",
+      "members": [
+        "field ParallelCompletionCriteria completionCriteria",
+        "field bool isComplete",
+        "field size_t completedRegions",
+        "field size_t totalRegions",
+        "field std::chrono::steady_clock::time_point completionTime",
+        "field std::string doneEventName",
+        "field std::string parallelStateId",
+        "field std::unordered_map<std::string, std::string> doneData",
+        "field std::vector<RegionCompletionInfo> regionCompletions",
+        "method ParallelStateCompletionInfo &(ParallelStateCompletionInfo &&) operator=",
+        "method ParallelStateCompletionInfo &(const ParallelStateCompletionInfo &) operator=",
+        "method void () ~ParallelStateCompletionInfo",
+        "method void (ParallelStateCompletionInfo &&) ParallelStateCompletionInfo",
+        "method void (const ParallelStateCompletionInfo &) ParallelStateCompletionInfo"
+      ],
+      "name": "SCE::ParallelStateCompletionInfo"
+    },
+    {
+      "header": "states/SCXMLParallelTypes.h",
+      "kind": "struct",
+      "members": [
+        "field ParallelCompletionCriteria criteria",
+        "field bool collectDetailedStatistics",
+        "field bool generateDoneEvents",
+        "field bool validateStateConsistency",
+        "field double weightedThreshold",
+        "field std::chrono::milliseconds monitoringInterval",
+        "field std::unordered_map<std::string, double> regionWeights",
+        "method ParallelMonitoringConfig &(ParallelMonitoringConfig &&) operator=",
+        "method ParallelMonitoringConfig &(const ParallelMonitoringConfig &) operator=",
+        "method void () ~ParallelMonitoringConfig",
+        "method void (ParallelMonitoringConfig &&) ParallelMonitoringConfig",
+        "method void (const ParallelMonitoringConfig &) ParallelMonitoringConfig"
+      ],
+      "name": "SCE::ParallelMonitoringConfig"
+    },
+    {
+      "header": "states/SCXMLParallelTypes.h",
+      "kind": "struct",
+      "members": [
+        "field bool isCurrentlyComplete",
+        "field size_t doneEventsGenerated",
+        "field size_t stateConsistencyViolations",
+        "field size_t totalCompletionEvents",
+        "field size_t totalRegionsRegistered",
+        "field size_t totalStatusQueries",
+        "field std::chrono::microseconds averageCompletionCheckTime",
+        "field std::chrono::steady_clock::time_point monitoringStartTime",
+        "method MonitoringStatistics &(MonitoringStatistics &&) operator=",
+        "method MonitoringStatistics &(const MonitoringStatistics &) operator=",
+        "method void () ~MonitoringStatistics",
+        "method void (MonitoringStatistics &&) MonitoringStatistics",
+        "method void (const MonitoringStatistics &) MonitoringStatistics"
+      ],
+      "name": "SCE::MonitoringStatistics"
+    },
+    {
+      "header": "states/SCXMLParallelTypes.h",
+      "kind": "struct",
+      "members": [
+        "field bool isInFinalState",
+        "field std::chrono::steady_clock::time_point completionTime",
+        "field std::chrono::steady_clock::time_point lastUpdateTime",
+        "field std::string currentStateId",
+        "field std::string regionId",
+        "field std::vector<std::string> activeStateIds",
+        "field std::vector<std::string> finalStateIds",
+        "method RegionCompletionInfo &(RegionCompletionInfo &&) operator=",
+        "method RegionCompletionInfo &(const RegionCompletionInfo &) operator=",
+        "method void () ~RegionCompletionInfo",
+        "method void (RegionCompletionInfo &&) RegionCompletionInfo",
+        "method void (const RegionCompletionInfo &) RegionCompletionInfo"
+      ],
+      "name": "SCE::RegionCompletionInfo"
+    },
+    {
+      "header": "states/StateExitExecutor.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::StateExitExecutor"
     },
     {
       "header": "static/StaticExecutionEngine.h",

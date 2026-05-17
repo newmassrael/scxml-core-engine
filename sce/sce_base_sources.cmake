@@ -50,4 +50,5 @@ set(SCE_BASE_INCLUDE_DIRS
     backends
     model
     actions
+    states
 )

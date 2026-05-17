@@ -184,7 +184,18 @@ process_one() {
     # HTTP client tier — embed does not vendor it. The manifest emitter
     # is a source-repo tool, so the -I into sce/third_party/ here is
     # deliberate (same precedent as the quickjs -I).
+    # -H: clang writes the include tree to stderr (lines like
+    # `. /path/to/header.h`). After a successful parse we scan that trace
+    # for paths under /usr/local/include — see the pollution check below
+    # the parse — so a host with a stale `make install`'d SCE at
+    # /usr/local/include/ can no longer mask a missing entry in
+    # SCE_BASE_INCLUDE_DIRS. Without this guard the local emit silently
+    # falls through to /usr/local/include/<dir>/X.h when embed/include/
+    # is missing <dir>, and CI (no /usr/local/include/SCE/) is the first
+    # to notice. The check enforces identical include-resolution rules
+    # locally and on CI.
     "${clang_bin}" \
+        -H \
         -Xclang -ast-dump=json \
         -fsyntax-only \
         -std=c++17 \
@@ -213,7 +224,10 @@ process_one() {
     # symbols. See scripts/test_emit_manifest_fail_fast.sh for the regression
     # TC; pre-push Stage 1c gates against silent re-introduction.
     if [[ "${pipe_status[0]}" != "0" ]]; then
-        cat "${clang_stderr}" >&2
+        # -H writes the include tree to the same stderr as parse errors;
+        # strip those lines (leading "." dots) so the user sees only the
+        # actual clang diagnostic, not 200 lines of include trace.
+        grep -v -E '^\.+ ' "${clang_stderr}" >&2 || true
         rm -f "${clang_stderr}"
         echo "" >&2
         echo "ERROR: clang failed to parse standalone header: ${rel}" >&2
@@ -226,6 +240,33 @@ process_one() {
         echo "            (only if it becomes part of the embed package)" >&2
         echo "         3. Make the header self-contained (forward-decl or" >&2
         echo "            move the include into the .cpp)" >&2
+        return 1
+    fi
+    # Parse succeeded — check the -H trace for resolves that pollute the
+    # manifest. clang's default search path includes /usr/local/include,
+    # and a host with a stale `make install`'d SCE there will silently
+    # resolve `#include "states/X.h"` (and friends) to
+    # /usr/local/include/states/X.h when SCE_BASE_INCLUDE_DIRS is missing
+    # `states`. That makes the local emit succeed on a packaging gap that
+    # CI (clean ubuntu-latest, no /usr/local/include/SCE/) rejects. The
+    # guard below makes local and CI agree: any include resolving under
+    # /usr/local/include/ for an SCE-internal directory fails the parse
+    # with the same fix-paths as a true clang parse error.
+    if grep -qE '^\.+ /usr/local/include/' "${clang_stderr}"; then
+        echo "ERROR: header ${rel} resolved through /usr/local/include/" >&2
+        echo "       Your host has stale SCE/dependency headers at /usr/local/include," >&2
+        echo "       which masks missing entries in SCE_BASE_INCLUDE_DIRS — the" >&2
+        echo "       local emit succeeds via the system path fallback, then CI" >&2
+        echo "       (no /usr/local/include/SCE/) fails the same parse. Resolve by:" >&2
+        echo "         1. Adding the missing subdir to SCE_BASE_INCLUDE_DIRS in" >&2
+        echo "            sce/sce_base_sources.cmake (so package_embed.sh ships it" >&2
+        echo "            under embed/include/ and the include resolves locally), or" >&2
+        echo "         2. sudo rm -rf the stale /usr/local/include/ SCE install" >&2
+        echo "            (if you no longer need a system-wide build of SCE)." >&2
+        echo "" >&2
+        echo "       Offending include trace (from clang -H):" >&2
+        grep -E '^\.+ /usr/local/include/' "${clang_stderr}" >&2
+        rm -f "${clang_stderr}"
         return 1
     fi
     rm -f "${clang_stderr}"
