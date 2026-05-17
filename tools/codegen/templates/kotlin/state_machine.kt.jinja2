@@ -43,8 +43,12 @@ class {{ machine_name }}StateMachine(
 {% for ctx in model.context_objects %}
     val {{ ctx.id | to_camel_case }}: {{ ctx.kt_type if ctx.kt_type else 'Any' }},
 {% endfor %}
-    scriptEngine: ScxmlScriptEngine? = null
+{% if model.needs_script_engine %}
+    scriptEngine: ScxmlScriptEngine,
 ) : StateMachineEngine<{{ machine_name }}State, {{ machine_name }}Event>(scriptEngine) {
+{% else %}
+) : StateMachineEngine<{{ machine_name }}State, {{ machine_name }}Event>() {
+{% endif %}
 {% if model.variables %}
 
     // Datamodel (W3C SCXML 5.3)

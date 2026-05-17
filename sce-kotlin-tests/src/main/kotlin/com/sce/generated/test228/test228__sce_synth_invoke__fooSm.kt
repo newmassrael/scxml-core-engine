@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: 9faef2370910e1d1b12ff0b00a3d63d3578977b6f3f2045b8b014f47fa072349
-// generated-at: 1778932425
+// template-hash: c1736039ea6628ae1068e428522a9d89bbe2ccef2705503db256c49ec169955e
+// generated-at: 1778992486
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/228/test228__sce_synth_invoke__foo.scxml
@@ -27,8 +27,7 @@ sealed interface Test228SceSynthInvokeFooEvent : Event {
 // --- State Machine (W3C SCXML) ---
 
 class Test228SceSynthInvokeFooStateMachine(
-    scriptEngine: ScxmlScriptEngine? = null
-) : StateMachineEngine<Test228SceSynthInvokeFooState, Test228SceSynthInvokeFooEvent>(scriptEngine) {
+) : StateMachineEngine<Test228SceSynthInvokeFooState, Test228SceSynthInvokeFooEvent>() {
 
     override val initialState: Test228SceSynthInvokeFooState = Test228SceSynthInvokeFooState.SubFinal
 

@@ -9,8 +9,8 @@
 {% else %}
             run {
                 ensureScriptEngine()
-                val engine = scriptEngine ?: return@run
-                val sid = scriptSessionId ?: return@run
+                val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
                     engine.executeForeach(sid, "{{ action.array | escape_kotlin }}", "{{ action.item }}", "{{ action.index }}") {
 {% for body_action in action.actions %}

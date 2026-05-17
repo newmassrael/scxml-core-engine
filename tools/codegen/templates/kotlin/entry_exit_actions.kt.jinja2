@@ -50,8 +50,8 @@
                 // W3C SCXML 5.3: Late binding — initialize state-level datamodel on entry
                 run {
                     ensureScriptEngine()
-                    val engine = scriptEngine ?: return@run
-                    val sid = scriptSessionId ?: return@run
+                    val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                    val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
 {% for dm_var in state.datamodel %}
 {% if dm_var.expr %}
                     try {
@@ -100,8 +100,8 @@
                     val generatedInvokeId = "{{ inv.state_id }}.${System.identityHashCode(this)}.{{ inv.invoke_id }}"
                     deferInvoke(state, generatedInvokeId) {
                         ensureScriptEngine()
-                        val eng = scriptEngine ?: return@deferInvoke
-                        val sid = scriptSessionId ?: return@deferInvoke
+                        val eng = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                         try {
 {% if inv.srcexpr %}
                             // W3C SCXML 6.4.3: Evaluate srcexpr → file path → load SCXML → create child
@@ -138,8 +138,8 @@
 {% if (inv.params or inv.namelist) and model.needs_script_engine %}
                     // W3C SCXML 6.4: Evaluate params at defer time (parent context)
                     ensureScriptEngine()
-                    val engineInv = scriptEngine ?: return@run
-                    val sidInv = scriptSessionId ?: return@run
+                    val engineInv = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                    val sidInv = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                     val invokeParams = mutableMapOf<String, Any?>()
 {% for param in inv.params %}
 {% if param.expr %}
@@ -163,7 +163,11 @@
 {% endif %}
 {% endif %}
                     deferInvoke(state, generatedInvokeId) {
-                        val childSM = {{ inv.child_class }}StateMachine(scriptEngine)
+{% if inv.child_needs_script_engine %}
+                        val childSM = {{ inv.child_class }}StateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+{% else %}
+                        val childSM = {{ inv.child_class }}StateMachine()
+{% endif %}
 {% if (inv.params or inv.namelist) and model.needs_script_engine %}
                         setInvokeParams(childSM, invokeParams)
 {% endif %}
@@ -192,8 +196,8 @@
                 // W3C SCXML 5.5: Evaluate donedata for final state
                 run {
                     ensureScriptEngine()
-                    val engineDD = scriptEngine ?: return@run
-                    val sidDD = scriptSessionId ?: return@run
+                    val engineDD = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                    val sidDD = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                     var doneEventData = ""
 {% if state.donedata.content.kind == "expression" %}
                     // W3C SCXML 5.5: Evaluate <content expr="..."/>

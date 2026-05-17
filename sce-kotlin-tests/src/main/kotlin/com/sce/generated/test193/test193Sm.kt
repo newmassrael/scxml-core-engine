@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: 9faef2370910e1d1b12ff0b00a3d63d3578977b6f3f2045b8b014f47fa072349
-// generated-at: 1778932425
+// template-hash: c1736039ea6628ae1068e428522a9d89bbe2ccef2705503db256c49ec169955e
+// generated-at: 1778992486
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/193/test193.scxml
@@ -35,8 +35,7 @@ sealed interface Test193Event : Event {
 // --- State Machine (W3C SCXML) ---
 
 class Test193StateMachine(
-    scriptEngine: ScxmlScriptEngine? = null
-) : StateMachineEngine<Test193State, Test193Event>(scriptEngine) {
+) : StateMachineEngine<Test193State, Test193Event>() {
 
     override val initialState: Test193State = Test193State.S0
 

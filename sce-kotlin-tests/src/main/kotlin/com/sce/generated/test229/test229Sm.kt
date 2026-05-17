@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: 9faef2370910e1d1b12ff0b00a3d63d3578977b6f3f2045b8b014f47fa072349
-// generated-at: 1778932425
+// template-hash: c1736039ea6628ae1068e428522a9d89bbe2ccef2705503db256c49ec169955e
+// generated-at: 1778992486
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/229/test229.scxml
@@ -40,8 +40,7 @@ sealed interface Test229Event : Event {
 // --- State Machine (W3C SCXML) ---
 
 class Test229StateMachine(
-    scriptEngine: ScxmlScriptEngine? = null
-) : StateMachineEngine<Test229State, Test229Event>(scriptEngine) {
+) : StateMachineEngine<Test229State, Test229Event>() {
 
     override val initialState: Test229State = Test229State.S0
 
@@ -151,7 +150,7 @@ class Test229StateMachine(
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
                     val generatedInvokeId = "s0.${System.identityHashCode(this)}._invoke_0"
                     deferInvoke(state, generatedInvokeId) {
-                        val childSM = Test229SceSynthInvokeInvoke0StateMachine(scriptEngine)
+                        val childSM = Test229SceSynthInvokeInvoke0StateMachine()
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                         startInvoke("_invoke_0", childSM, true, Test229Event.Done.Invoke, "", generatedInvokeId)
                     }

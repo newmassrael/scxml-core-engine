@@ -12,8 +12,8 @@
             // W3C SCXML 6.3: Dynamic sendid evaluation (test210)
             run {
                 ensureScriptEngine()
-                val engineCancel = scriptEngine ?: return@run
-                val sidCancel = scriptSessionId ?: return@run
+                val engineCancel = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                val sidCancel = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
                     val v = engineCancel.evaluateExpr(sidCancel, "{{ action.sendidexpr | escape_kotlin }}")
                     val sendidToCancel = v?.toString() ?: ""

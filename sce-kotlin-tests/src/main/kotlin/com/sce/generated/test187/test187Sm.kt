@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: 9faef2370910e1d1b12ff0b00a3d63d3578977b6f3f2045b8b014f47fa072349
-// generated-at: 1778932425
+// template-hash: c1736039ea6628ae1068e428522a9d89bbe2ccef2705503db256c49ec169955e
+// generated-at: 1778992486
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/187/test187.scxml
@@ -39,8 +39,7 @@ sealed interface Test187Event : Event {
 // --- State Machine (W3C SCXML) ---
 
 class Test187StateMachine(
-    scriptEngine: ScxmlScriptEngine? = null
-) : StateMachineEngine<Test187State, Test187Event>(scriptEngine) {
+) : StateMachineEngine<Test187State, Test187Event>() {
 
     override val initialState: Test187State = Test187State.S0
 
@@ -147,7 +146,7 @@ class Test187StateMachine(
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
                     val generatedInvokeId = "s0.${System.identityHashCode(this)}._invoke_0"
                     deferInvoke(state, generatedInvokeId) {
-                        val childSM = Test187SceSynthInvokeInvoke0StateMachine(scriptEngine)
+                        val childSM = Test187SceSynthInvokeInvoke0StateMachine()
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                         startInvoke("_invoke_0", childSM, false, Test187Event.Done.Invoke, "", generatedInvokeId)
                     }

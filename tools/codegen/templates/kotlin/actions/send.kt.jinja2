@@ -9,8 +9,8 @@
             // W3C SCXML 6.2.4: Store sendid in idlocation (test183, test332)
             run {
                 ensureScriptEngine()
-                val eng = scriptEngine ?: return@run
-                val sid = scriptSessionId ?: return@run
+                val eng = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try { eng.setVariable(sid, "{{ action.idlocation }}", "{{ action.auto_send_id }}") } catch (_: Exception) {}
             }
 {% endif %}
@@ -22,8 +22,8 @@
             var _resolvedTarget: String? = null
             run resolveTarget@{
                 ensureScriptEngine()
-                val eng = scriptEngine ?: return@resolveTarget
-                val sid = scriptSessionId ?: return@resolveTarget
+                val eng = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
                     val v = eng.evaluateExpr(sid, "{{ action.targetexpr | escape_kotlin }}")
                     val target = v?.toString() ?: ""
@@ -74,8 +74,8 @@
             // W3C SCXML 6.2: Dynamic event name evaluation (test172)
             run {
                 ensureScriptEngine()
-                val engine = scriptEngine ?: return@run
-                val sid = scriptSessionId ?: return@run
+                val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val dynamicEventName: String
                 try {
                     val v = engine.evaluateExpr(sid, "{{ action.eventexpr | escape_kotlin }}")
@@ -100,8 +100,8 @@
             // W3C SCXML 5.10: Evaluate params for parent send (test233)
             run {
                 ensureScriptEngine()
-                val engineP = scriptEngine ?: return@run
-                val sidP = scriptSessionId ?: return@run
+                val engineP = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                val sidP = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val paramsP = mutableMapOf<String, Any?>()
 {% for param in action.params %}
 {% if param.is_static_literal %}
@@ -170,8 +170,8 @@
 {% if needs_params and model.needs_script_engine %}
             run {
                 ensureScriptEngine()
-                val engineT = scriptEngine ?: return@run
-                val sidT = scriptSessionId ?: return@run
+                val engineT = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                val sidT = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val paramsT = mutableMapOf<String, Any?>()
 {% for param in action.params %}
 {% if param.is_static_literal %}
@@ -227,8 +227,8 @@
             // W3C SCXML 6.2: Dynamic delay + dynamic target — schedule locally (C++ pattern: delay before target routing)
             run {
                 ensureScriptEngine()
-                val engineDly = scriptEngine ?: return@run
-                val sidDly = scriptSessionId ?: return@run
+                val engineDly = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                val sidDly = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val delayStrT: String
                 try {
                     val v = engineDly.evaluateExpr(sidDly, "{{ action.delayexpr | escape_kotlin }}")
@@ -262,8 +262,8 @@
             // W3C SCXML 5.10: Evaluate params/namelist for event data
             run {
                 ensureScriptEngine()
-                val engineE = scriptEngine ?: return@run
-                val sidE = scriptSessionId ?: return@run
+                val engineE = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                val sidE = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val paramsE = mutableMapOf<String, Any?>()
 {% for param in action.params %}
 {% if param.is_static_literal %}
@@ -305,8 +305,8 @@
             // W3C SCXML 5.10: Evaluate content expression
             run {
                 ensureScriptEngine()
-                val engineC = scriptEngine ?: return@run
-                val sidC = scriptSessionId ?: return@run
+                val engineC = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                val sidC = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val contentData: String
                 try {
                     val v = engineC.evaluateExpr(sidC, "{{ action.contentexpr | escape_kotlin }}")
@@ -327,8 +327,8 @@
             // W3C SCXML 6.2: Dynamic delay evaluation
             run {
                 ensureScriptEngine()
-                val engineDly = scriptEngine ?: return@run
-                val sidDly = scriptSessionId ?: return@run
+                val engineDly = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                val sidDly = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val delayStrE: String
                 try {
                     val v = engineDly.evaluateExpr(sidDly, "{{ action.delayexpr | escape_kotlin }}")

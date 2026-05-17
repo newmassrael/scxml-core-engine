@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: 9faef2370910e1d1b12ff0b00a3d63d3578977b6f3f2045b8b014f47fa072349
-// generated-at: 1778932425
+// template-hash: c1736039ea6628ae1068e428522a9d89bbe2ccef2705503db256c49ec169955e
+// generated-at: 1778992486
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/155/test155.scxml
@@ -31,7 +31,7 @@ sealed interface Test155Event : Event {
 // --- State Machine (W3C SCXML) ---
 
 class Test155StateMachine(
-    scriptEngine: ScxmlScriptEngine? = null
+    scriptEngine: ScxmlScriptEngine,
 ) : StateMachineEngine<Test155State, Test155Event>(scriptEngine) {
 
     // Datamodel (W3C SCXML 5.3)
@@ -92,7 +92,7 @@ class Test155StateMachine(
     // W3C SCXML B.1: Lazy script engine initialization
     private fun ensureScriptEngine() {
         if (scriptEngineInitialized) return
-        val engine = scriptEngine ?: return
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = allocateScriptSession()
         engine.createSession(sid)
 
@@ -139,8 +139,8 @@ class Test155StateMachine(
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
     private fun safeEvaluateGuard(guardExpr: String): Boolean {
         ensureScriptEngine()
-        val engine = scriptEngine ?: return false
-        val sid = scriptSessionId ?: return false
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
@@ -152,8 +152,8 @@ class Test155StateMachine(
     // W3C SCXML 5.3: Assignment via script engine
     private fun executeAssign(location: String, expr: String) {
         ensureScriptEngine()
-        val engine = scriptEngine ?: return
-        val sid = scriptSessionId ?: return
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
         try {
             engine.assign(sid, location, expr)
         } catch (e: Exception) {
@@ -164,8 +164,8 @@ class Test155StateMachine(
     // W3C SCXML 3.8.6: Script block execution
     private fun executeScriptBlock(script: String) {
         ensureScriptEngine()
-        val engine = scriptEngine ?: return
-        val sid = scriptSessionId ?: return
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
         try {
             engine.executeScript(sid, script)
         } catch (e: Exception) {
@@ -176,8 +176,8 @@ class Test155StateMachine(
     // W3C SCXML 5.10: Set _event before event processing
     private fun setCurrentEventInScriptEngine(event: Test155Event) {
         ensureScriptEngine()
-        val engine = scriptEngine ?: return
-        val sid = scriptSessionId ?: return
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
         val eventName = eventNameOf(event) ?: return
         val meta = currentEventMetadata
         // W3C SCXML 5.10.1: C++ classifyEventType — platform events override type
@@ -257,8 +257,8 @@ class Test155StateMachine(
 
             run {
                 ensureScriptEngine()
-                val engine = scriptEngine ?: return@run
-                val sid = scriptSessionId ?: return@run
+                val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 try {
                     engine.executeForeach(sid, "Var3", "Var2", "") {
 

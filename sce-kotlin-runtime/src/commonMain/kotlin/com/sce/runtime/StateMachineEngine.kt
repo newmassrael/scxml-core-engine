@@ -1251,8 +1251,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
         val metadata = currentEventMetadata
         if (metadata.origin.isEmpty()) return
 
-        val engine = scriptEngine ?: return
-        val sid = scriptSessionId ?: return
+        val engine = scriptEngine ?: error("scriptEngine is required for executeFinalizeForChildEvent (codegen invariant: state machine has active invokes ⇒ needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
 
         for ((_, entry) in activeInvokes) {
             if (entry.finalizeScript.isNotEmpty() &&

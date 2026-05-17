@@ -18,8 +18,8 @@
             // W3C SCXML C.2: BasicHTTP send with script engine evaluation
             run {
                 ensureScriptEngine()
-                val {{ http_engine }} = scriptEngine ?: return@run
-                val {{ http_sid }} = scriptSessionId ?: return@run
+                val {{ http_engine }} = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                val {{ http_sid }} = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
 {% endif %}
                 val httpParams = mutableMapOf<String, List<String>>()
 {% for param in action.params %}
