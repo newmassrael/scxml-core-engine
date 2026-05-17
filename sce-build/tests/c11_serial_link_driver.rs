@@ -151,14 +151,16 @@ fn unknown_serial_typo_lists_serial_uart_in_candidates() {
     assert_eq!(machine, "mcu_node");
     assert_eq!(link_name, "uart_typo");
     assert_eq!(driver, "serial_xyz");
-    // Sorted KNOWN_DRIVERS baseline after spec C11 expansion:
-    // lwip_tcp / lwip_udp / serial_uart.
+    // Sorted KNOWN_DRIVERS baseline after spec C11 serial +
+    // WebSocket follow-up: lwip_tcp / lwip_udp / serial_uart /
+    // websocket_tcp.
     assert_eq!(
         candidates,
         vec![
             "lwip_tcp".to_string(),
             "lwip_udp".to_string(),
             "serial_uart".to_string(),
+            "websocket_tcp".to_string(),
         ]
     );
 }

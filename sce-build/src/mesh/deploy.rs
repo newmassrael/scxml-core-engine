@@ -2385,6 +2385,12 @@ fn validate_links(cfg: &DeployConfig) -> Result<(), DeployError> {
     /// IP-stack drivers carry an IP-encapsulation floor:
     ///   - `lwip_udp = 28` (IPv4 minimum header)
     ///   - `lwip_tcp = 40` (IPv4 + TCP minimum)
+    ///   - `websocket_tcp = 40` (runs over IPv4 + TCP — same
+    ///     encapsulation floor as `lwip_tcp`; the per-frame
+    ///     WebSocket header is application-protocol framing
+    ///     carried by the §5.B framer codec, not by the driver
+    ///     MTU floor. Spec §8 Q8 line 3747 names the driver;
+    ///     spec §5.C row 4 (line 770) names the class).
     ///
     /// Non-IP drivers carry floor `0` to mark "skip floor check"
     /// explicitly — the §5.B framer codec carries the frame-size
@@ -2399,6 +2405,7 @@ fn validate_links(cfg: &DeployConfig) -> Result<(), DeployError> {
         ("lwip_tcp", 40),
         ("lwip_udp", 28),
         ("serial_uart", 0),
+        ("websocket_tcp", 40),
     ];
 
     fn known_driver_floor(driver: &str) -> Option<u32> {
