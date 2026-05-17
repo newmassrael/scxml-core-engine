@@ -150,18 +150,30 @@ public:
         : expected_count_(expected_region_count),
           on_complete_(std::move(on_complete)),
           timer_hooks_(),
+          missing_(),
           fired_(false),
           timer_armed_(false) {}
 
     /// Construct a tracker with §16.5 L3500 barrier-timeout hooks. The
     /// SM ctor passes a populated [`TimerHooks`] when deploy.yaml
     /// declares `barrier_timeout_ms:` on the root-claiming partition.
+    ///
+    /// `missing_` is seeded from `timer_hooks_.expected_region_ids` (the
+    /// member is initialized after `timer_hooks_` per the declaration
+    /// order, so the moved-in roster is observable here). Maintaining
+    /// `missing_` incrementally as completions arrive replaces a per-
+    /// re-arm O(N) recomputation with O(log N) per completion — see
+    /// `computeMissingRegions` for the read path. Empty
+    /// `expected_region_ids` (the threshold-only ctor + the disabled
+    /// timer case) leaves `missing_` empty, preserving the
+    /// pre-incremental behaviour bit-for-bit.
     ParallelCompletionTracker(std::size_t expected_region_count,
                               OnCompleteCallback on_complete,
                               TimerHooks timer_hooks)
         : expected_count_(expected_region_count),
           on_complete_(std::move(on_complete)),
           timer_hooks_(std::move(timer_hooks)),
+          missing_(timer_hooks_.expected_region_ids),
           fired_(false),
           timer_armed_(false) {}
 
@@ -182,10 +194,14 @@ public:
     /// Reset for a fresh `<parallel>` activation (§16.5 L3498). Called
     /// from the generated SM's `<parallel>` entry branch before any
     /// region can report completion. Cancels any barrier timer still
-    /// armed from a prior activation.
+    /// armed from a prior activation. Re-seeds `missing_` from the
+    /// roster so the incremental invariant
+    /// (`missing_ == expected_region_ids - completed_`) is restored
+    /// for the fresh activation.
     void reset() {
         cancelBarrierTimerIfArmed();
         completed_.clear();
+        missing_ = timer_hooks_.expected_region_ids;
         fired_ = false;
     }
 
@@ -208,6 +224,13 @@ private:
     void onRegionComplete(const std::string &region_id) {
         // §16.5 L3498 single-shot: duplicate inserts are a no-op.
         completed_.insert(region_id);
+        // Mirror into the incremental missing-set so re-arm is O(log N)
+        // rather than O(N) per completion (was O(N²) over a full barrier
+        // lifecycle). Erase is a no-op when `region_id` is not in
+        // `missing_` (already-completed duplicate, or completion for an
+        // id not in the timer roster — both legal under the at-least-once
+        // transport contract).
+        missing_.erase(region_id);
 
         if (completed_.size() >= expected_count_) {
             cancelBarrierTimerIfArmed();
@@ -215,10 +238,9 @@ private:
             return;
         }
 
-        // Not yet threshold. Re-arm the barrier timer with a fresh
-        // `missing_regions` so the eventual fire carries an accurate
-        // `_event.data`. Cheap: a single re-arm per completion, and
-        // `<parallel>` width is typically small.
+        // Not yet threshold. Re-arm the barrier timer with the current
+        // `missing_` snapshot so the captured `_event.data.missing_regions`
+        // matches the tracker's post-completion state.
         rearmBarrierTimer();
     }
 
@@ -231,19 +253,18 @@ private:
         if (on_complete_) on_complete_();
     }
 
-    /// Compute the set difference `expected_region_ids - completed_`.
-    /// Returned as a sorted `std::vector` (deterministic iteration via
-    /// `std::set`) so the arm callback's captured JSON payload is
-    /// byte-stable across parses.
+    /// Snapshot the incrementally-maintained `missing_` set as a sorted
+    /// `std::vector`. The invariant
+    /// (`missing_ == expected_region_ids - completed_`, refreshed by
+    /// `onRegionComplete` and `reset`) replaces the original O(N)
+    /// recomputation with a single O(N) copy on the dump side and a
+    /// single O(log N) erase on the update side — turning a full
+    /// barrier lifecycle from O(N² log N) to O(N log N). Disabled-timer
+    /// short-circuit preserves the pre-incremental contract (no payload
+    /// to deliver when no arm callback is installed).
     std::vector<std::string> computeMissingRegions() const {
-        std::vector<std::string> missing;
-        if (!timer_hooks_.enabled()) return missing;
-        for (const auto &id : timer_hooks_.expected_region_ids) {
-            if (completed_.find(id) == completed_.end()) {
-                missing.push_back(id);
-            }
-        }
-        return missing;
+        if (!timer_hooks_.enabled()) return {};
+        return std::vector<std::string>(missing_.begin(), missing_.end());
     }
 
     /// Cancel + re-arm with fresh `missing_regions`. No-op when
@@ -269,6 +290,13 @@ private:
     OnCompleteCallback on_complete_;
     TimerHooks timer_hooks_;
     std::set<std::string> completed_;
+    /// Incremental mirror of `expected_region_ids - completed_`. Seeded
+    /// from `timer_hooks_.expected_region_ids` at construction and on
+    /// `reset()`; shrunk by one element per `onRegionComplete` call.
+    /// Empty whenever `timer_hooks_` carries no roster (threshold-only
+    /// tracker or default-constructed `TimerHooks`), in which case
+    /// `computeMissingRegions` short-circuits before reading this set.
+    std::set<std::string> missing_;
     bool fired_;
     bool timer_armed_;
 };
