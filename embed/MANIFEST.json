@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250114103320+cd708029e0b2-1~exp1~20250114103432.75)",
-  "embed_version": "5a228597",
+  "embed_version": "4e751b48",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 195,
+  "symbol_count": 206,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -34,6 +34,85 @@
       "kind": "function",
       "name": "SCE::getSCXMLVersion",
       "signature": "std::string SCE::getSCXMLVersion()"
+    },
+    {
+      "header": "actions/AssignAction.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::AssignAction"
+    },
+    {
+      "header": "actions/BaseAction.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::BaseAction"
+    },
+    {
+      "header": "actions/CancelAction.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::CancelAction"
+    },
+    {
+      "header": "actions/ForeachAction.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::ForeachAction"
+    },
+    {
+      "header": "actions/IActionNode.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::IActionNode"
+    },
+    {
+      "header": "actions/IActionNode.h",
+      "kind": "struct",
+      "members": [
+        "field bool success",
+        "field std::string actionId",
+        "field std::string actionType",
+        "field std::string errorMessage",
+        "method ActionResult &(ActionResult &&) operator=",
+        "method ActionResult &(const ActionResult &) operator=",
+        "method void () ActionResult",
+        "method void () ~ActionResult",
+        "method void (ActionResult &&) ActionResult",
+        "method void (bool) ActionResult",
+        "method void (bool, const std::string &, const std::string &, const std::string &) ActionResult",
+        "method void (const ActionResult &) ActionResult"
+      ],
+      "name": "SCE::ActionResult"
+    },
+    {
+      "header": "actions/IfAction.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::IfAction"
+    },
+    {
+      "header": "actions/LogAction.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::LogAction"
+    },
+    {
+      "header": "actions/RaiseAction.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::RaiseAction"
+    },
+    {
+      "header": "actions/ScriptAction.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::ScriptAction"
+    },
+    {
+      "header": "actions/SendAction.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::SendAction"
     },
     {
       "header": "backends/DefaultBackend.h",

@@ -102,6 +102,30 @@ if [[ ${#HEADERS[@]} -eq 0 ]]; then
     exit 1
 fi
 
+# Source-repo third_party deps the embed package does not vendor but the
+# manifest emit -I's into (quickjs for scripting/, cpp-httplib for
+# events/HttpResponseUtils.h). Verifying them upfront fails fast with a
+# concrete fix-path when:
+#   1. The git submodule has not been initialised (`git submodule update
+#      --init --recursive`), or
+#   2. A future refactor breaks SCE_ROOT propagation into the xargs
+#      worker shell — that bug silently fell through to the system
+#      include path on hosts where the headers happened to be installed
+#      (committer's machine: yes; ubuntu-latest CI: no), masking the
+#      defect locally and surfacing it only at PR-merge time.
+# Cheap directory probe, runs once before parallel emit kicks off.
+for dep_dir in "${SCE_ROOT}/third_party/quickjs" \
+               "${SCE_ROOT}/third_party/cpp-httplib"; do
+    if [[ ! -d "${dep_dir}" ]]; then
+        echo "ERROR: required third_party include root missing: ${dep_dir}" >&2
+        echo "       The manifest emitter -I's into sce/third_party/ for" >&2
+        echo "       headers the embed package does not vendor (quickjs," >&2
+        echo "       cpp-httplib). Initialise submodules with:" >&2
+        echo "         git submodule update --init --recursive" >&2
+        exit 1
+    fi
+done
+
 # Default to 4 parallel jobs; clang -ast-dump is memory-heavy (one TU per
 # header pulling the full transitive closure), so capping avoids OOM on
 # many-core machines. Override via JOBS=N to tune for the host.
@@ -127,7 +151,8 @@ process_one() {
     local clang_bin="$3"
     local filter="$4"
     local work_dir="$5"
-    local header="$6"
+    local sce_root="$6"
+    local header="$7"
 
     local rel="${header#${include_dir}/}"
     local key="${rel//\//__}"
@@ -135,7 +160,7 @@ process_one() {
     local clang_stderr
     clang_stderr="$(mktemp)"
     set +e
-    # -I "${SCE_ROOT}/third_party/quickjs": embed/include/scripting/JSEngine.h
+    # -I "${sce_root}/third_party/quickjs": embed/include/scripting/JSEngine.h
     # transitively #include "quickjs.h" but the embed package does not vendor
     # QuickJS (it's a consumer-provided scripting tier dep, see
     # package_embed.sh §3 comment). Without this -I the standalone parse of
@@ -146,7 +171,14 @@ process_one() {
     # committer's. The manifest emitter is a source-repo tool (lives in
     # scripts/ and reads SCE_ROOT), so reaching into sce/third_party/ here
     # is a deliberate coupling, not a layering break.
-    # -I "${SCE_ROOT}/third_party/cpp-httplib": embed/include/events/
+    # sce_root is passed in as a positional parameter rather than read from
+    # the parent shell's SCE_ROOT — xargs spawns a fresh `bash -c` for each
+    # worker, and that subshell does not inherit unexported variables, so an
+    # ambient ${SCE_ROOT} would expand to empty and the -I would become
+    # `-I /third_party/quickjs`. Locally that silently fell through to the
+    # system include path (when clang already had quickjs/httplib resolved);
+    # on CI it surfaced as "fatal error: 'quickjs.h' file not found".
+    # -I "${sce_root}/third_party/cpp-httplib": embed/include/events/
     # HttpResponseUtils.h transitively `#include <httplib.h>`. Like
     # quickjs (see the comment above), httplib is a consumer-provided
     # HTTP client tier — embed does not vendor it. The manifest emitter
@@ -160,8 +192,8 @@ process_one() {
         -I "${include_dir}" \
         -I "${embed_dir}/third_party/nlohmann_json/include" \
         -I "${embed_dir}/third_party/pugixml/src" \
-        -I "${SCE_ROOT}/third_party/quickjs" \
-        -I "${SCE_ROOT}/third_party/cpp-httplib" \
+        -I "${sce_root}/third_party/quickjs" \
+        -I "${sce_root}/third_party/cpp-httplib" \
         "${header}" 2>"${clang_stderr}" \
         | python3 "${filter}" "${include_dir}" > "${out_lines}"
     local pipe_status=("${PIPESTATUS[@]}")
@@ -203,7 +235,7 @@ export -f process_one
 printf '%s\0' "${HEADERS[@]}" \
     | xargs -0 -n1 -P "${JOBS}" \
         bash -c 'process_one "$@"' _ \
-            "${INCLUDE_DIR}" "${EMBED_DIR}" "${CLANG}" "${FILTER}" "${TMP_WORK_DIR}"
+            "${INCLUDE_DIR}" "${EMBED_DIR}" "${CLANG}" "${FILTER}" "${TMP_WORK_DIR}" "${SCE_ROOT}"
 
 # Merge per-worker outputs in HEADERS order. The python merger below dedups
 # and sorts anyway, so order is not load-bearing — but preserving it keeps
