@@ -30,6 +30,7 @@
 // tears down the Server, accept thread, and reader threads in RAII
 // order.
 
+#include "common/TestScriptEngine.h"
 #include "worker_session_f_wired_sm.h"
 #include "worker_session_f_wired_transport.h"
 
@@ -49,6 +50,7 @@ int main() {
 
     using WorkerEngine = SCE::Generated::worker_session_f_wired::worker_session_f_wired;
     WorkerEngine worker;
+    SCE::Test::inject_build_engine(worker);
     worker.initialize();
     SCE::Generated::worker_session_f_wired::TransportRouter<WorkerEngine> router({&worker});
     if (!router.init()) {

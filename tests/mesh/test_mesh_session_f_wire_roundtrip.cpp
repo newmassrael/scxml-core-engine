@@ -18,6 +18,7 @@
 // the machine reaches `pass` — the shortest success path through the
 // §9.6 parent/child lifecycle exercised end-to-end.
 
+#include "common/TestScriptEngine.h"
 #include "parent_session_f_wired_sm.h"
 #include "parent_session_f_wired_transport.h"
 #include "worker_session_f_wired_sm.h"
@@ -34,6 +35,7 @@ int main() {
     // startup race is benign.
     using WorkerEngine = SCE::Generated::worker_session_f_wired::worker_session_f_wired;
     WorkerEngine worker;
+    SCE::Test::inject_build_engine(worker);
     worker.initialize();
     SCE::Generated::worker_session_f_wired::TransportRouter<WorkerEngine> worker_router({&worker});
 
@@ -45,6 +47,7 @@ int main() {
     // enters `waiting`, the remote-invoke onentry calls
     // `engine.performScxmlInvokeStart("worker_session_f_wired", ...)`
     // which publishes wire-14 on the `p2c_to_worker_session_f_wired_` channel.
+    SCE::Test::inject_build_engine(parent);
     parent.initialize();
 
     using State = SCE::Generated::parent_session_f_wired::State;

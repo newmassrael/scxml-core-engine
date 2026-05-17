@@ -34,6 +34,7 @@
 // vsomeip-backed fixture and is out of scope for the srcexpr
 // invariant this test pins.
 
+#include "common/TestScriptEngine.h"
 #include "srcexpr_miss_sm.h"
 #include "motor_srcexpr_sm.h"
 #include "srcexpr_miss_transport.h"
@@ -50,6 +51,7 @@ int main() {
         decltype(machine), decltype(phantom_peer)>;
     Router router({&machine}, phantom_peer);
 
+    SCE::Test::inject_build_engine(machine);
     machine.initialize();
 
     // probe.go drives idle → calling_miss. The calling_miss entry

@@ -43,6 +43,7 @@
 // returned empty) and the f3aa83ba (void)donedata marker in the
 // wire-18 receive branch.
 
+#include "common/TestScriptEngine.h"
 #include "parent_session_f_donedata_sm.h"
 #include "parent_session_f_donedata_transport.h"
 #include "worker_session_f_donedata_param_sm.h"
@@ -62,18 +63,21 @@ int main() {
     // startup-race handling as the other §9.6 fixtures.
     using ParamWorker = SCE::Generated::worker_session_f_donedata_param::worker_session_f_donedata_param;
     ParamWorker worker_param;
+    SCE::Test::inject_build_engine(worker_param);
     worker_param.initialize();
     SCE::Generated::worker_session_f_donedata_param::TransportRouter<ParamWorker>
         worker_param_router({&worker_param});
 
     using ContentWorker = SCE::Generated::worker_session_f_donedata_content::worker_session_f_donedata_content;
     ContentWorker worker_content;
+    SCE::Test::inject_build_engine(worker_content);
     worker_content.initialize();
     SCE::Generated::worker_session_f_donedata_content::TransportRouter<ContentWorker>
         worker_content_router({&worker_content});
 
     using NestedWorker = SCE::Generated::worker_session_f_donedata_nested::worker_session_f_donedata_nested;
     NestedWorker worker_nested;
+    SCE::Test::inject_build_engine(worker_nested);
     worker_nested.initialize();
     SCE::Generated::worker_session_f_donedata_nested::TransportRouter<NestedWorker>
         worker_nested_router({&worker_nested});
@@ -81,6 +85,7 @@ int main() {
     using ParentEngine = SCE::Generated::parent_session_f_donedata::parent_session_f_donedata;
     ParentEngine parent;
     SCE::Generated::parent_session_f_donedata::TransportRouter<ParentEngine> parent_router({&parent});
+    SCE::Test::inject_build_engine(parent);
     parent.initialize();
 
     using ParentState = SCE::Generated::parent_session_f_donedata::State;

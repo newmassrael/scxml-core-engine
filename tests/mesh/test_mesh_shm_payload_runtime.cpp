@@ -16,6 +16,7 @@
 // This closes the "wire format defined" → "data reaches SCXML guards" gap.
 // Without this test, prior "data forwarding" work was not verified E2E.
 
+#include "common/TestScriptEngine.h"
 #include "brake_payload_sm.h"
 #include "motor_payload_sm.h"
 #include "brake_payload_transport.h"
@@ -61,6 +62,7 @@ int runReceiver() {
         }
 
         SCE::Generated::motor_payload::motor_payload motor;
+        SCE::Test::inject_build_engine(motor);
         motor.initialize();
 
         for (int drain = 0; drain < DRAIN_RETRIES; ++drain) {
@@ -102,6 +104,7 @@ int main() {
     }
 
     SCE::Generated::brake_payload::brake_payload brake;
+    SCE::Test::inject_build_engine(brake);
     brake.initialize();
 
     using BrakeEngine = SCE::Generated::brake_payload::brake_payload;

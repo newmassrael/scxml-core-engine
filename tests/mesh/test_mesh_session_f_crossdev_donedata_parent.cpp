@@ -28,6 +28,7 @@
 // Timeout budget: 10s covers three sequential invokes including the
 // Client retry budget (Stage A1 documented 1s per dial).
 
+#include "common/TestScriptEngine.h"
 #include "parent_session_f_donedata_sm.h"
 #include "parent_session_f_donedata_transport.h"
 
@@ -62,6 +63,7 @@ TEST(CrossdevDonedata, ThreeShapesSurviveWire18OverCustomTcp) {
            "bind collision on SCE_TEST_CROSSDEV_DONEDATA_PORT (parallel "
            "ctest holding the RESOURCE_LOCK?)";
 
+    SCE::Test::inject_build_engine(parent);
     parent.initialize();
 
     using clock = std::chrono::steady_clock;

@@ -19,6 +19,7 @@
 // The parent's `MeshDispatch` raises `done.invoke.remote_inv`, the
 // pass transition fires, and we reach `State::Pass`.
 
+#include "common/TestScriptEngine.h"
 #include "parent_session_f_autoforward_sm.h"
 #include "parent_session_f_autoforward_transport.h"
 #include "worker_session_f_autoforward_sm.h"
@@ -31,6 +32,7 @@
 int main() {
     using WorkerEngine = SCE::Generated::worker_session_f_autoforward::worker_session_f_autoforward;
     WorkerEngine worker;
+    SCE::Test::inject_build_engine(worker);
     worker.initialize();
     SCE::Generated::worker_session_f_autoforward::TransportRouter<WorkerEngine> worker_router({&worker});
 
@@ -38,6 +40,7 @@ int main() {
     ParentEngine parent;
     SCE::Generated::parent_session_f_autoforward::TransportRouter<ParentEngine> parent_router({&parent});
 
+    SCE::Test::inject_build_engine(parent);
     parent.initialize();
 
     // The parent is now in `waiting` and has emitted wire-14 `InvokeStart`.

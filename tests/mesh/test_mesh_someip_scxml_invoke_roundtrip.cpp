@@ -21,6 +21,7 @@
 // namespace so parallel ctest does not race sibling mesh_someip_*
 // fixtures).
 
+#include "common/TestScriptEngine.h"
 #include "scxml_invoke_someip_parent_sm.h"
 #include "scxml_invoke_someip_parent_transport.h"
 #include "scxml_invoke_someip_worker_sm.h"
@@ -54,6 +55,7 @@ int main() {
     using WorkerEngine =
         SCE::Generated::scxml_invoke_someip_worker::scxml_invoke_someip_worker;
     WorkerEngine worker;
+    SCE::Test::inject_build_engine(worker);
     worker.initialize();
     SCE::Generated::scxml_invoke_someip_worker::TransportRouter<WorkerEngine>
         worker_router({&worker});
@@ -80,6 +82,7 @@ int main() {
     // below drains the queue, instantiates the child, observes
     // `isFinal()==true` at the end of `initialize()`, and publishes
     // wire-15 + wire-18 in a single tick.
+    SCE::Test::inject_build_engine(parent);
     parent.initialize();
 
     using State = SCE::Generated::scxml_invoke_someip_parent::State;

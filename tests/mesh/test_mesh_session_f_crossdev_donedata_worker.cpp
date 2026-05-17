@@ -22,6 +22,7 @@
 // wire-ready workers stay idle until they see their own wire-14, so a
 // naive round-robin pump is free of priority inversion.
 
+#include "common/TestScriptEngine.h"
 #include "worker_session_f_donedata_param_sm.h"
 #include "worker_session_f_donedata_param_transport.h"
 #include "worker_session_f_donedata_content_sm.h"
@@ -48,6 +49,7 @@ int main() {
     using NestedWorker = SCE::Generated::worker_session_f_donedata_nested::worker_session_f_donedata_nested;
 
     ParamWorker w_param;
+    SCE::Test::inject_build_engine(w_param);
     w_param.initialize();
     SCE::Generated::worker_session_f_donedata_param::TransportRouter<ParamWorker> r_param({&w_param});
     if (!r_param.init()) {
@@ -61,6 +63,7 @@ int main() {
     }
 
     ContentWorker w_content;
+    SCE::Test::inject_build_engine(w_content);
     w_content.initialize();
     SCE::Generated::worker_session_f_donedata_content::TransportRouter<ContentWorker> r_content({&w_content});
     if (!r_content.init()) {
@@ -74,6 +77,7 @@ int main() {
     }
 
     NestedWorker w_nested;
+    SCE::Test::inject_build_engine(w_nested);
     w_nested.initialize();
     SCE::Generated::worker_session_f_donedata_nested::TransportRouter<NestedWorker> r_nested({&w_nested});
     if (!r_nested.init()) {

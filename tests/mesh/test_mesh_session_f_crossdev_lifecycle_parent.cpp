@@ -28,6 +28,7 @@
 // was wrong) and the 5s timeout (parent never observed
 // `done.invoke.*`, likely a framing or dispatch regression).
 
+#include "common/TestScriptEngine.h"
 #include "parent_session_f_wired_sm.h"
 #include "parent_session_f_wired_transport.h"
 
@@ -64,6 +65,7 @@ TEST(CrossdevLifecycle, WireDoneRoundTripLandsOverCustomTcp) {
     // `performScxmlInvokeStart` — this publishes wire-14 on the
     // overridden `p2c_to_worker_session_f_wired_` Client, which dials
     // the worker's ephemeral endpoint.
+    SCE::Test::inject_build_engine(parent);
     parent.initialize();
 
     using clock = std::chrono::steady_clock;

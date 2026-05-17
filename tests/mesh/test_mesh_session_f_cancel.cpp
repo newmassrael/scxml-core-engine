@@ -12,6 +12,7 @@
 // the session. The parent reaches `cancelled` without ever seeing
 // `error.execution`, which is the observable success signal.
 
+#include "common/TestScriptEngine.h"
 #include "parent_session_f_cancel_sm.h"
 #include "parent_session_f_cancel_transport.h"
 #include "worker_session_f_cancel_sm.h"
@@ -24,6 +25,7 @@
 int main() {
     using WorkerEngine = SCE::Generated::worker_session_f_cancel::worker_session_f_cancel;
     WorkerEngine worker;
+    SCE::Test::inject_build_engine(worker);
     worker.initialize();
     SCE::Generated::worker_session_f_cancel::TransportRouter<WorkerEngine> worker_router({&worker});
 
@@ -31,6 +33,7 @@ int main() {
     ParentEngine parent;
     SCE::Generated::parent_session_f_cancel::TransportRouter<ParentEngine> parent_router({&parent});
 
+    SCE::Test::inject_build_engine(parent);
     parent.initialize();
 
     using ParentState = SCE::Generated::parent_session_f_cancel::State;

@@ -103,6 +103,18 @@
                         // segment here.
                         child_{{ invoke_info.field_suffix }}_ = std::make_shared<::SCE::Generated::{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>>(self_, pending.invokeId, childSessionId);
 
+                        // W3C SCXML B.1: Forward the build-configured script engine
+                        // to the child BEFORE namelist/params evaluation. The
+                        // child's setParamInScriptEngine() and downstream
+                        // initialize() both consult Policy::getScriptEngine(),
+                        // which throws when unset. Aliasing shared_ptr + no-op
+                        // deleter: lifetime is owned by ScriptEngineProvider.
+                        {% if invoke_info.child_needs_script_engine %}
+                        child_{{ invoke_info.field_suffix }}_->setScriptEngine(::std::shared_ptr<::SCE::IScriptEngine>(
+                            &::SCE::ScriptEngineProvider::getScriptEngine(),
+                            [](::SCE::IScriptEngine*){}));
+                        {% endif %}
+
                         {% if invoke_info.namelist %}
                         // W3C SCXML 6.4.1: Pass namelist values to child datamodel (Step 2)
                         {% if invoke_info.child_needs_script_engine %}
@@ -231,6 +243,15 @@
                         // above for the lift path when a partitioned child
                         // becomes a consumer.
                         child_{{ invoke_info.field_suffix }}_ = std::make_shared<::SCE::Generated::{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>>(self_, pending.invokeId, childSessionId);
+
+                        // W3C SCXML B.1: Forward the build-configured script
+                        // engine to the child before initialize() — generated
+                        // Policy::getScriptEngine() throws when unset.
+                        {% if invoke_info.child_needs_script_engine %}
+                        child_{{ invoke_info.field_suffix }}_->setScriptEngine(::std::shared_ptr<::SCE::IScriptEngine>(
+                            &::SCE::ScriptEngineProvider::getScriptEngine(),
+                            [](::SCE::IScriptEngine*){}));
+                        {% endif %}
 
                         // W3C SCXML 6.4.6: Track active invoke session
                         activeInvokes_["{{ invoke_info.invoke_id }}"] = ChildSession{

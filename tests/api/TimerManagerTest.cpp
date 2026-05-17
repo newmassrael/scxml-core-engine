@@ -4,6 +4,7 @@
 // TimerManager API Tests
 
 #include "wrappers/TimerManager.h"
+#include "common/TestScriptEngine.h"
 #include "timer_test_sm.h"
 #include <chrono>
 #include <gtest/gtest.h>
@@ -39,6 +40,10 @@ protected:
     void SetUp() override {
         sm_ = std::make_unique<TimerTestSM>();
         timers_ = std::make_unique<SCE::Wrappers::TimerManager<TimerTestSM>>(*sm_);
+
+        // Inject the build-configured script engine before initialize() —
+        // generated Policy::getScriptEngine() throws when unset.
+        SCE::Test::inject_build_engine(*sm_);
 
         // Initialize state machine
         sm_->initialize();

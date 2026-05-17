@@ -21,6 +21,7 @@
 // has already left `waiting` so the event falls on the floor — which
 // is exactly the §9.6 cancel contract (no observable failure).
 
+#include "common/TestScriptEngine.h"
 #include "parent_session_f_eventful_sm.h"
 #include "parent_session_f_eventful_transport.h"
 #include "worker_session_f_eventful_sm.h"
@@ -36,6 +37,7 @@ int main() {
     // reopen so the startup race is benign (same pattern as session_f_wired).
     using WorkerEngine = SCE::Generated::worker_session_f_eventful::worker_session_f_eventful;
     WorkerEngine worker;
+    SCE::Test::inject_build_engine(worker);
     worker.initialize();
     SCE::Generated::worker_session_f_eventful::TransportRouter<WorkerEngine> worker_router({&worker});
 
@@ -45,6 +47,7 @@ int main() {
 
     // Parent ctor installed wire-14/17/19 send callbacks and the Lua
     // script engine initialiser runs on the first datamodel touch.
+    SCE::Test::inject_build_engine(parent);
     parent.initialize();
 
     using State = SCE::Generated::parent_session_f_eventful::State;

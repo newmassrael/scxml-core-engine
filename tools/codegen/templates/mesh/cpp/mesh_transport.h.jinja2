@@ -341,6 +341,11 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 {% if scxml_remote_inbound_peers %}
 #include "mesh/ChildSessionAdapter.h"
 #include "mesh/IChildSession.h"
+// W3C SCXML B.1: WorkerSessionHost::onWire14 forwards the build-configured
+// script engine to each spawned child adapter before initialize() —
+// generated Policy::getScriptEngine() throws when unset.
+#include "scripting/IScriptEngine.h"
+#include "scripting/ScriptEngineProvider.h"
 #include <memory>
 #include <unordered_map>
 {% endif %}
@@ -1013,6 +1018,17 @@ struct TransportRouter {
             started.subject = invoke_id_str;
             started.child_session_id = session_id;
             (void)send_ctp(started);
+
+            // W3C SCXML B.1: Forward the build-configured script engine to the
+            // child adapter before initialize() — generated
+            // Policy::getScriptEngine() throws when unset. The host owns no
+            // engine of its own, so it routes through ScriptEngineProvider
+            // (compile-time selected). Aliasing shared_ptr + no-op deleter:
+            // lifetime is owned by the provider singleton. The setter is a
+            // no-op when ChildEngine does not need a script engine.
+            adapter->engine().setScriptEngine(::std::shared_ptr<::SCE::IScriptEngine>(
+                &::SCE::ScriptEngineProvider::getScriptEngine(),
+                [](::SCE::IScriptEngine*){}));
 
             adapter->engine().initialize();
 

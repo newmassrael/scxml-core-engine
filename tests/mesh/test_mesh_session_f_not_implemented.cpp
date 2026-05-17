@@ -23,12 +23,14 @@
 // fallback chain: classifier → template filter → raise → internal event
 // queue → transition → final state.
 
+#include "common/TestScriptEngine.h"
 #include "parent_session_f_sm.h"
 
 #include <cstdio>
 
 int main() {
     SCE::Generated::parent_session_f::parent_session_f sm;
+    SCE::Test::inject_build_engine(sm);
     sm.initialize();
 
     using State = SCE::Generated::parent_session_f::State;

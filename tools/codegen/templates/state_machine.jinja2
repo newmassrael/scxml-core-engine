@@ -114,6 +114,13 @@
 #include <vector>
 #include <cstring>
 {% endif %}
+// W3C SCXML B.1: every generated SM exposes setScriptEngine(IScriptEngine&)
+// (no-op when NEEDS_SCRIPT_ENGINE=false) so generic callers — mesh worker
+// hosts, invoke child instantiation, test fixtures — can inject without
+// member-detection traits. The handle must be visible even when this
+// machine itself does not consult a script engine.
+#include "scripting/IScriptEngine.h"
+
 {% if model.needs_script_engine %}
 #include "common/DataModelInitHelper.h"
 #include "common/EventTypeHelper.h"
@@ -121,7 +128,11 @@
 #include <optional>
 {% endif %}
 #include "common/Logger.h"
-#include "scripting/IScriptEngine.h"
+{% if model.invokes %}
+// W3C SCXML B.1: invoke child needs the build-configured engine handle
+// for setScriptEngine() before initialize() (see invoke_methods.jinja2).
+#include "scripting/ScriptEngineProvider.h"
+{% endif %}
 #include "scripting/ScriptResultUtils.h"
 #include "common/AssignHelper.h"
 #include "common/AssignmentExecutionHelper.h"
@@ -658,13 +669,20 @@ public:
     void setParamInScriptEngine(const std::string& paramName, const std::string& paramExpr) {
         this->policy_.setParamInScriptEngine(paramName, paramExpr);
     }
+{% endif %}
 
     // W3C SCXML B.1: forward per-instance script engine injection to the policy
     // (mirrors Kotlin StateMachineEngine(scriptEngine) constructor parameter).
-    void setScriptEngine(::std::shared_ptr<::SCE::IScriptEngine> engine) const {
+    // Always emitted so generic callers (mesh `WorkerSessionHost::onWire14`,
+    // invoke `child_->initialize()` sites, test fixtures) can inject without
+    // member-detection traits. When `NEEDS_SCRIPT_ENGINE=false` the body is a
+    // no-op — the engine is not consulted, so accepting the handle then
+    // discarding it preserves the same observable state.
+    void setScriptEngine([[maybe_unused]] ::std::shared_ptr<::SCE::IScriptEngine> engine) const {
+{% if model.needs_script_engine %}
         this->policy_.setScriptEngine(::std::move(engine));
-    }
 {% endif %}
+    }
 
 {# ── SCE_MESH.md §14 rule 12 / §16.5 per-`<parallel>` role members ── #}
 {% set _role_stats = namespace(has_root=false, has_nonroot=false) %}

@@ -77,6 +77,13 @@ function(apply_sce_test_policies target_name)
             -include ${CMAKE_SOURCE_DIR}/sce/include/common/DisableStdOut.h
     )
 
+    # Expose the tests/ root so any target may include shared test-only
+    # headers (e.g. common/TestUtils.h, common/TestScriptEngine.h).
+    target_include_directories(${target_name}
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/tests
+    )
+
     # SCE test policy definitions
     target_compile_definitions(${target_name}
         PRIVATE
