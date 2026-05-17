@@ -73,7 +73,7 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 {% if state.donedata.params %}
 		{
 			p.ensureScriptEngine()
-			se := sce.GetScriptEngine()
+			se := p.ScriptEngine
 			if se != nil {
 				var jsonParts []string
 {% for param in state.donedata.params %}
@@ -103,7 +103,7 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 		{
 			// W3C SCXML 5.5: <content expr="..."/> MUST be evaluated against the datamodel.
 			p.ensureScriptEngine()
-			se := sce.GetScriptEngine()
+			se := p.ScriptEngine
 			if se != nil {
 				if val, err := se.EvaluateExpression(p.SessionID, `{{ state.donedata.content.text | to_lua_expr | escape_go }}`); err == nil {
 					doneEventData = sce.ToLuaLiteral(val)
@@ -186,7 +186,7 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 {% if invoke_info.idlocation %}
 			// W3C SCXML 6.4.1: Store generated invokeId in datamodel via idlocation
 			p.ensureScriptEngine()
-			se := sce.GetScriptEngine()
+			se := p.ScriptEngine
 			if se != nil {
 				_ = se.SetVariable(p.SessionID, "{{ invoke_info.idlocation }}", generatedInvokeID)
 			}
@@ -202,7 +202,7 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 			generatedInvokeID := fmt.Sprintf("%s.%d.{{ invoke_info.invoke_id }}", "{{ state_id }}", sce.NextInvokeCounter())
 {% if invoke_info.idlocation %}
 			p.ensureScriptEngine()
-			se := sce.GetScriptEngine()
+			se := p.ScriptEngine
 			if se != nil {
 				_ = se.SetVariable(p.SessionID, "{{ invoke_info.idlocation }}", generatedInvokeID)
 			}

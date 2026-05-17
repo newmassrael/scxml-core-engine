@@ -11,7 +11,7 @@
 			engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
 {% endif %}
 		} else {
-			foreachArrVal, foreachErr := sce.GetScriptEngine().EvaluateExpression(p.SessionID, `{{ action.array | to_lua_expr }}`)
+			foreachArrVal, foreachErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.array | to_lua_expr }}`)
 			if foreachErr != nil {
 {% if 'error.execution' in model.events %}
 				engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
@@ -20,12 +20,12 @@
 				foreachSuccess := true
 				for foreachIdx, foreachItem := range foreachArr {
 					_ = foreachIdx
-					if err := sce.GetScriptEngine().SetVariable(p.SessionID, foreachItemName, foreachItem); err != nil {
+					if err := p.ScriptEngine.SetVariable(p.SessionID, foreachItemName, foreachItem); err != nil {
 						foreachSuccess = false
 						break
 					}
 {% if action.index %}
-					if err := sce.GetScriptEngine().SetVariable(p.SessionID, "{{ action.index }}", int64(foreachIdx+1)); err != nil {
+					if err := p.ScriptEngine.SetVariable(p.SessionID, "{{ action.index }}", int64(foreachIdx+1)); err != nil {
 						foreachSuccess = false
 						break
 					}

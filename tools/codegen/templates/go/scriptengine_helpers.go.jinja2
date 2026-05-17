@@ -14,7 +14,7 @@ func (p *{{ machine_name }}Policy) ensureScriptEngine() {
 	if p.scriptEngineInitialized {
 		return
 	}
-	engine := sce.GetScriptEngine()
+	engine := p.ScriptEngine
 	if engine == nil {
 		return
 	}
@@ -48,7 +48,7 @@ func (p *{{ machine_name }}Policy) ensureScriptEngine() {
 // InitializeDataModel sets up datamodel via script engine (W3C SCXML 5.3).
 func (p *{{ machine_name }}Policy) InitializeDataModel(eng *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) {
 	p.ensureScriptEngine()
-	engine := sce.GetScriptEngine()
+	engine := p.ScriptEngine
 	if engine == nil {
 		return
 	}
@@ -192,7 +192,7 @@ func (p *{{ machine_name }}Policy) InitializeDataModel(eng *sce.Engine[{{ machin
 // W3C SCXML 4.3.2: If a condition expression cannot be evaluated, the processor
 // MUST treat it as false and MUST raise error.execution.
 func (p *{{ machine_name }}Policy) evaluateGuard(guard string, eng *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) bool {
-	engine := sce.GetScriptEngine()
+	engine := p.ScriptEngine
 	if engine == nil {
 		return false
 	}
@@ -209,7 +209,7 @@ func (p *{{ machine_name }}Policy) evaluateGuard(guard string, eng *sce.Engine[{
 
 // executeScript executes a script block via script engine.
 func (p *{{ machine_name }}Policy) executeScript(script string) error {
-	engine := sce.GetScriptEngine()
+	engine := p.ScriptEngine
 	if engine == nil {
 		return fmt.Errorf("no script engine")
 	}
@@ -219,7 +219,7 @@ func (p *{{ machine_name }}Policy) executeScript(script string) error {
 
 // setCurrentEvent binds _event system variable (W3C SCXML 5.10).
 func (p *{{ machine_name }}Policy) setCurrentEvent(name string) {
-	engine := sce.GetScriptEngine()
+	engine := p.ScriptEngine
 	if engine == nil {
 		return
 	}
@@ -259,7 +259,7 @@ func (p *{{ machine_name }}Policy) setCurrentEvent(name string) {
 
 // assignVariable assigns a value to a datamodel variable via script engine.
 func (p *{{ machine_name }}Policy) assignVariable(location, expr string) error {
-	engine := sce.GetScriptEngine()
+	engine := p.ScriptEngine
 	if engine == nil {
 		return fmt.Errorf("no script engine")
 	}
@@ -270,7 +270,7 @@ func (p *{{ machine_name }}Policy) assignVariable(location, expr string) error {
 
 // getVariable reads a datamodel variable from the script engine.
 func (p *{{ machine_name }}Policy) getVariable(name string) interface{} {
-	engine := sce.GetScriptEngine()
+	engine := p.ScriptEngine
 	if engine == nil {
 		return nil
 	}

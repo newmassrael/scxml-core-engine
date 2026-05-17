@@ -2766,6 +2766,7 @@ impl W3cBackend for GoBackend {
                 "\tpolicy := New{machine_name}Policy()\n\
                  \tpolicy.SessionID = sce.GenerateSessionID()\n\
                  \tscegotest.RegisterLuaEngine()\n\
+                 \tpolicy.ScriptEngine = sce.GetScriptEngine()\n\
                  \tengine := sce.NewEngine[{machine_name}State, {machine_name}Event](&policy)"
             )
         } else {

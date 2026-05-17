@@ -164,6 +164,8 @@ type {{ machine_name }}Policy struct {
 	// W3C SCXML 5.10: Session ID
 	SessionID string
 {% if model.needs_script_engine %}
+	// W3C SCXML B.1: Script engine handle (per-instance, Path B+ Q1=(d) Go=interface ref)
+	ScriptEngine sce.IScriptEngine
 	scriptEngineInitialized bool
 {% if model.has_parallel_states or model.uses_in_predicate %}
 	inPredicateStates []string

@@ -4,7 +4,7 @@
 {# W3C SCXML 3.8.8: Log action #}
 {% if action.expr and model.needs_script_engine %}
 	{
-		logResult, logErr := sce.GetScriptEngine().EvaluateExpression(p.SessionID, `{{ action.expr | to_lua_expr }}`)
+		logResult, logErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.expr | to_lua_expr }}`)
 		if logErr == nil {
 			fmt.Printf("{{ action.label | default('') }}%v\n", logResult)
 		}

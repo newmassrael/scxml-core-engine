@@ -33,7 +33,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 {% if model.needs_script_engine %}
 			{
 				p.ensureScriptEngine()
-				se := sce.GetScriptEngine()
+				se := p.ScriptEngine
 				namelistValid := true
 {% for var_name in invoke_info.namelist | split %}
 				if !se.HasVariable(p.SessionID, "{{ var_name }}") {
@@ -55,6 +55,9 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 
 			// W3C SCXML 6.4: Create child state machine
 			childPolicy := New{{ invoke_info.child_name | to_machine_name }}Policy()
+{% if invoke_info.child_needs_script_engine %}
+			childPolicy.ScriptEngine = p.ScriptEngine
+{% endif %}
 			parentQueue := make(chan sce.ParentEvent, 100)
 			childPolicy.ParentExternalQueue = parentQueue
 			childPolicy.InvokeID = pending.InvokeID
@@ -65,7 +68,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			// W3C SCXML 6.4.1: Pass validated namelist values to child datamodel
 {% if invoke_info.child_needs_script_engine %}
 			{
-				se := sce.GetScriptEngine()
+				se := p.ScriptEngine
 {% for var_name in invoke_info.namelist | split %}
 				if val, err := se.EvaluateExpression(p.SessionID, "{{ var_name }}"); err == nil {
 					childPolicy.SetParamInScriptEngine("{{ var_name }}", sce.ToLuaLiteral(val))
@@ -80,7 +83,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 {% if invoke_info.child_needs_script_engine %}
 			{
 				p.ensureScriptEngine()
-				se := sce.GetScriptEngine()
+				se := p.ScriptEngine
 {% for param in invoke_info.params %}
 				if val, err := se.EvaluateExpression(p.SessionID, `{{ param.expr | to_lua_expr | escape_go }}`); err == nil {
 					childPolicy.SetParamInScriptEngine("{{ param.name }}", sce.ToLuaLiteral(val))
@@ -135,7 +138,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			// W3C SCXML 6.4.3: Evaluate srcexpr at runtime
 			p.ensureScriptEngine()
 			{
-				se := sce.GetScriptEngine()
+				se := p.ScriptEngine
 				if _, err := se.EvaluateExpression(p.SessionID, `{{ invoke_info.srcexpr | to_lua_expr | escape_go }}`); err != nil {
 {% if 'error.execution' in model.events %}
 					engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
@@ -147,7 +150,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			// W3C SCXML 6.4.4: Evaluate contentexpr at runtime
 			p.ensureScriptEngine()
 			{
-				se := sce.GetScriptEngine()
+				se := p.ScriptEngine
 				if _, err := se.EvaluateExpression(p.SessionID, `{{ invoke_info.contentexpr | to_lua_expr | escape_go }}`); err != nil {
 {% if 'error.execution' in model.events %}
 					engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
@@ -161,6 +164,9 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
 
 			childPolicy := New{{ invoke_info.child_name | to_machine_name }}Policy()
+{% if invoke_info.child_needs_script_engine %}
+			childPolicy.ScriptEngine = p.ScriptEngine
+{% endif %}
 			parentQueue := make(chan sce.ParentEvent, 100)
 			childPolicy.ParentExternalQueue = parentQueue
 			childPolicy.InvokeID = pending.InvokeID
@@ -268,7 +274,7 @@ func (p *{{ machine_name }}Policy) ExecuteFinalizeForChildEvent(eventWithMeta *s
 	if finalizeScript != "" {
 {% if model.needs_script_engine %}
 		p.ensureScriptEngine()
-		se := sce.GetScriptEngine()
+		se := p.ScriptEngine
 		if se != nil {
 			eventName := p.GetEventName(eventWithMeta.Event)
 			_ = se.SetCurrentEvent(

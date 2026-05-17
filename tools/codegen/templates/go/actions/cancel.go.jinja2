@@ -11,7 +11,7 @@
 	engine.CancelEvent("{{ action.sendid | escape_go }}")
 {% elif action.sendidexpr and model.needs_script_engine %}
 	{
-		cancelSendIDVal, cancelErr := sce.GetScriptEngine().EvaluateExpression(p.SessionID, `{{ action.sendidexpr | to_lua_expr }}`)
+		cancelSendIDVal, cancelErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.sendidexpr | to_lua_expr }}`)
 		if cancelErr == nil && cancelSendIDVal != nil {
 			engine.CancelEvent(fmt.Sprintf("%v", cancelSendIDVal))
 		}

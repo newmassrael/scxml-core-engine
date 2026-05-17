@@ -26,7 +26,7 @@
 		sendAborted := false
 {% endif %}
 		p.ensureScriptEngine()
-		se := sce.GetScriptEngine()
+		se := p.ScriptEngine
 		parts := make([]string, 0)
 {% if has_params %}
 {% for param in action.params %}
@@ -124,7 +124,7 @@
 	// W3C SCXML C.2: BasicHTTP send
 	{
 {% if action.targetexpr and model.needs_script_engine %}
-		httpTargetVal, httpTargetErr := sce.GetScriptEngine().EvaluateExpression(p.SessionID, `{{ action.targetexpr | to_lua_expr }}`)
+		httpTargetVal, httpTargetErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.targetexpr | to_lua_expr }}`)
 		httpTarget := ""
 		if httpTargetErr == nil && httpTargetVal != nil {
 			httpTarget = fmt.Sprintf("%v", httpTargetVal)
@@ -135,7 +135,7 @@
 		httpTarget := ""
 {% endif %}
 {% if action.eventexpr and model.needs_script_engine %}
-		httpEvtVal, _ := sce.GetScriptEngine().EvaluateExpression(p.SessionID, `{{ action.eventexpr | to_lua_expr }}`)
+		httpEvtVal, _ := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.eventexpr | to_lua_expr }}`)
 		httpEvtName := fmt.Sprintf("%v", httpEvtVal)
 {% elif action.event %}
 		httpEvtName := "{{ action.event | escape_go }}"
@@ -166,12 +166,12 @@
 {% if param.is_static_literal %}
 			httpParams["{{ param.name }}"] = append(httpParams["{{ param.name }}"], "{{ param.static_value | escape_go }}")
 {% elif param.expr and model.needs_script_engine %}
-			if httpParamVal, httpParamErr := sce.GetScriptEngine().EvaluateExpression(p.SessionID, `{{ param.expr | to_lua_expr }}`); httpParamErr == nil {
+			if httpParamVal, httpParamErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ param.expr | to_lua_expr }}`); httpParamErr == nil {
 				trimmed := strings.Trim(sce.ToLuaLiteral(httpParamVal), "'\"")
 				httpParams["{{ param.name }}"] = append(httpParams["{{ param.name }}"], trimmed)
 			}
 {% elif param.location and model.needs_script_engine %}
-			if httpParamVal, httpParamErr := sce.GetScriptEngine().EvaluateExpression(p.SessionID, `{{ param.location }}`); httpParamErr == nil {
+			if httpParamVal, httpParamErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ param.location }}`); httpParamErr == nil {
 				trimmed := strings.Trim(sce.ToLuaLiteral(httpParamVal), "'\"")
 				httpParams["{{ param.name }}"] = append(httpParams["{{ param.name }}"], trimmed)
 			}
@@ -180,7 +180,7 @@
 {% endif %}
 {% if has_namelist %}
 {% for name in action.namelist | split %}
-			if httpNlVal, httpNlErr := sce.GetScriptEngine().EvaluateExpression(p.SessionID, `{{ name }}`); httpNlErr == nil {
+			if httpNlVal, httpNlErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ name }}`); httpNlErr == nil {
 				trimmed := strings.Trim(sce.ToLuaLiteral(httpNlVal), "'\"")
 				httpParams["{{ name }}"] = append(httpParams["{{ name }}"], trimmed)
 			}
@@ -205,7 +205,7 @@
 	// W3C SCXML 6.2: Delayed send
 	{
 {% if action.delayexpr and model.needs_script_engine %}
-		delayVal, _ := sce.GetScriptEngine().EvaluateExpression(p.SessionID, `{{ action.delayexpr | to_lua_expr }}`)
+		delayVal, _ := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.delayexpr | to_lua_expr }}`)
 		delayDur := sce.ParseDelay(fmt.Sprintf("%v", delayVal))
 {% elif action.delay %}
 		delayDur := sce.ParseDelay("{{ action.delay }}")
@@ -213,7 +213,7 @@
 		delayDur := time.Duration(0)
 {% endif %}
 {% if action.eventexpr and model.needs_script_engine %}
-		delayEvtVal, _ := sce.GetScriptEngine().EvaluateExpression(p.SessionID, `{{ action.eventexpr | to_lua_expr }}`)
+		delayEvtVal, _ := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.eventexpr | to_lua_expr }}`)
 		delayEvtName := fmt.Sprintf("%v", delayEvtVal)
 {% elif action.event %}
 		delayEvtName := "{{ action.event | escape_go }}"
@@ -243,7 +243,7 @@
 		p.child{{ invoke_info.invoke_id | to_pascal_case }}.RaiseExternalByName("{{ action.event | escape_go }}", eventDataStr)
 {% elif action.eventexpr and model.needs_script_engine %}
 		{
-			childEvtVal, _ := sce.GetScriptEngine().EvaluateExpression(p.SessionID, `{{ action.eventexpr | to_lua_expr }}`)
+			childEvtVal, _ := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.eventexpr | to_lua_expr }}`)
 			p.child{{ invoke_info.invoke_id | to_pascal_case }}.RaiseExternalByName(fmt.Sprintf("%v", childEvtVal), eventDataStr)
 		}
 {% endif %}
@@ -265,7 +265,7 @@
 {% if action.targetexpr and model.needs_script_engine %}
 	{
 		// W3C SCXML 6.2: Evaluate targetexpr at runtime
-		sendTargetVal, sendTargetErr := sce.GetScriptEngine().EvaluateExpression(p.SessionID, `{{ action.targetexpr | to_lua_expr }}`)
+		sendTargetVal, sendTargetErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.targetexpr | to_lua_expr }}`)
 		if sendTargetErr != nil || sendTargetVal == nil || fmt.Sprintf("%v", sendTargetVal) == "<nil>" {
 			// W3C SCXML 6.2.4: If target is not valid, raise error.communication
 {% if 'error.communication' in model.events %}
@@ -279,7 +279,7 @@
 {% endif %}
 		} else {
 {% if action.eventexpr and model.needs_script_engine %}
-			sendEvtVal, _ := sce.GetScriptEngine().EvaluateExpression(p.SessionID, `{{ action.eventexpr | to_lua_expr }}`)
+			sendEvtVal, _ := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.eventexpr | to_lua_expr }}`)
 			sendEvtName := fmt.Sprintf("%v", sendEvtVal)
 {% elif action.event %}
 			sendEvtName := "{{ action.event | escape_go }}"
@@ -296,7 +296,7 @@
 	}
 {% elif action.eventexpr and model.needs_script_engine %}
 	{
-		sendEvtVal, _ := sce.GetScriptEngine().EvaluateExpression(p.SessionID, `{{ action.eventexpr | to_lua_expr }}`)
+		sendEvtVal, _ := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.eventexpr | to_lua_expr }}`)
 		sendEvtName := fmt.Sprintf("%v", sendEvtVal)
 		if sendEvt, sendOk := p.GetEventFromName(sendEvtName); sendOk {
 			meta := sce.NewEventWithMetadata(sendEvt)
