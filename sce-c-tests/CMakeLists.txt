@@ -338,7 +338,64 @@ foreach(TEST_NUM ${W3C_C_AOT_TESTS})
         TIMEOUT 30
         LABELS "w3c;c11;aot"
     )
+    if(${TEST_NUM} IN_LIST W3C_C_AOT_TESTS_NEEDS_HTTP)
+        set_tests_properties(w3c_c_aot_${TEST_NUM} PROPERTIES
+            FIXTURES_REQUIRED w3c_c_http_server
+        )
+    endif()
 endforeach()
+
+# ─── BasicHTTP fixture: standalone Node server lifecycle ────────────
+#
+# The W3C SCXML C.2 corpus addresses `http://localhost:8080/test` on the
+# fixture-side and expects a server to echo events back. The cpp side's
+# `w3c_test_cli` runs the same expectation via in-process orchestration
+# (`tests/w3c/standalone_http_server.js` spawned by the WASM polyfill;
+# native cpp uses the in-process httplib server). C11 fixtures run as
+# bare ctest executables with no orchestrator, so without this ctest
+# FIXTURES_SETUP every NEEDS_HTTP `w3c_c_aot_<N>` test would hit a dead
+# socket and time out in `sce_test_http_post`.
+#
+# The setup arm launches `node tests/w3c/standalone_http_server.js
+# 8080 /test`, waits for the `[READY]` line on stdout (capped at 5s),
+# and records the pid. The cleanup arm reads the pid and SIGTERMs it
+# (KILL fallback after 2s). Both arms are idempotent so a partial-run
+# `ctest -R w3c_c_aot_513` followed by another ctest invocation does
+# not stack server instances.
+if(W3C_C_AOT_TESTS_NEEDS_HTTP)
+    find_program(SCE_TEST_NODE_EXECUTABLE node)
+    if(SCE_TEST_NODE_EXECUTABLE)
+        set(_http_fixture_pid "${CMAKE_CURRENT_BINARY_DIR}/w3c_http_server.pid")
+        set(_http_fixture_sh "${CMAKE_SOURCE_DIR}/tests/w3c/http_server_fixture.sh")
+        set(_http_server_js "${CMAKE_SOURCE_DIR}/tests/w3c/standalone_http_server.js")
+
+        add_test(NAME w3c_c_http_server_setup
+            COMMAND bash "${_http_fixture_sh}" start
+                "${SCE_TEST_NODE_EXECUTABLE}" "${_http_server_js}"
+                8080 /test "${_http_fixture_pid}"
+        )
+        set_tests_properties(w3c_c_http_server_setup PROPERTIES
+            FIXTURES_SETUP w3c_c_http_server
+            TIMEOUT 15
+            LABELS "w3c;c11;aot;fixture"
+        )
+
+        add_test(NAME w3c_c_http_server_cleanup
+            COMMAND bash "${_http_fixture_sh}" stop "${_http_fixture_pid}"
+        )
+        set_tests_properties(w3c_c_http_server_cleanup PROPERTIES
+            FIXTURES_CLEANUP w3c_c_http_server
+            TIMEOUT 10
+            LABELS "w3c;c11;aot;fixture"
+        )
+    else()
+        message(WARNING
+            "node not found on PATH; W3C SCXML C.2 BasicHTTP fixtures "
+            "(${W3C_C_AOT_TESTS_NEEDS_HTTP}) will time out at runtime. "
+            "Install Node.js or use ctest -E w3c_c_aot_'(201|509|510|513|"
+            "518|519|520|522|531|532|534|567)$' to skip.")
+    endif()
+endif()
 
 # ─── DOM helper unit tests ──────────────────────────────────────────
 #
