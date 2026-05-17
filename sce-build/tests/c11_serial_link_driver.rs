@@ -1,7 +1,7 @@
 //! Spec C11 — Serial link driver (`serial_uart`) deploy.yaml allowlist.
 //!
-//! watching-zenoh RFC §5.C line 729 names `serial_uart` as the lwIP
-//! crate's UART driver alongside `lwip_udp` + `lwip_tcp` + `raw_eth`.
+//! watching-zenoh RFC §5.J names `serial_uart` as the lwIP crate's
+//! UART driver alongside `lwip_udp` + `lwip_tcp` + `websocket_tcp`.
 //! Spec §7 line 3615 ("Serial + WebSocket link drivers") commits this
 //! to Phase C atomic #11.
 //!
