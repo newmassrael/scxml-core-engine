@@ -24,15 +24,14 @@
 mod dom;
 
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
 use mlua::prelude::*;
 
 use dom::{XmlDoc, XmlRef};
 
 use sce_rust_runtime::scripting::{
-    set_script_engine, IScriptEngine, NativeMethod, ScriptEngineAlreadyRegistered, ScriptError,
-    ScriptResult, ScriptValue,
+    IScriptEngine, NativeMethod, ScriptError, ScriptResult, ScriptValue,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -381,17 +380,6 @@ impl Default for LuaEngine {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// Get the process-wide LuaEngine singleton reference.
-pub fn lua_engine_singleton() -> &'static LuaEngine {
-    static SINGLETON: OnceLock<LuaEngine> = OnceLock::new();
-    SINGLETON.get_or_init(LuaEngine::new)
-}
-
-/// Register the LuaEngine singleton with the runtime's ScriptEngineProvider.
-pub fn register() -> Result<(), ScriptEngineAlreadyRegistered> {
-    set_script_engine(lua_engine_singleton())
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

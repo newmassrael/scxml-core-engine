@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: 94a6daf42142517c0ee9ba49a95e1db9d84d30a097beabea83a903e1d7ba88bf
-// generated-at: 1779020074
+// template-hash: 73644a8c52ee83b6af224889edefc07c66120d6db7d21a41c918be4815ed8509
+// generated-at: 1779022531
 
 
 // SPDX-License-Identifier: MIT
@@ -130,10 +130,9 @@ pub struct Test460Policy {
     var2: i64,
     // W3C SCXML 5.10: Session ID (script engine + invoke tracking)
     pub session_id: Option<String>,
-    // Engine DI Parity RFC (Path B+): per-instance script engine, replaces
-    // the global `ScriptEngineProvider` singleton. Constructor parameter is
-    // mandatory whenever `model.needs_script_engine` is true, mirroring the
-    // Kotlin `StateMachineEngine(scriptEngine)` shape.
+    // Engine DI Parity RFC (Path B+): per-instance script engine. The
+    // constructor parameter is mandatory whenever `model.needs_script_engine`
+    // is true, mirroring the Kotlin `StateMachineEngine(scriptEngine)` shape.
     pub script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>,
     script_engine_initialized: bool,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing

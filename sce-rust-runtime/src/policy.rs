@@ -95,7 +95,8 @@ pub trait StatePolicy: Sized + 'static {
     ///
     /// When `true`, the engine will call [`initialize_data_model`](StatePolicy::initialize_data_model)
     /// during [`Engine::initialize`](crate::Engine::initialize) and the generated code
-    /// will lazy-initialize a script session via [`ScriptEngineProvider`](crate::ScriptEngineProvider).
+    /// will lazy-initialize a script session against the `IScriptEngine` instance
+    /// the policy received via `Policy::new(script_engine)` (Engine DI Parity RFC).
     const NEEDS_SCRIPT_ENGINE: bool = false;
 
     /// Whether the document has any `<datamodel>` variables requiring script-engine initialization.

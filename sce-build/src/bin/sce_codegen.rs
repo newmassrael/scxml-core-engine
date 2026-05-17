@@ -2766,11 +2766,13 @@ impl W3cBackend for GoBackend {
         let timeout = if test_type == "SCHEDULED" { "5 * time.Second" } else { "3 * time.Second" };
 
         let engine_setup = if needs_script {
+            // Engine DI Parity RFC (Path B+): each test owns its LuaEngine; the
+            // process-global `RegisterLuaEngine` / `GetScriptEngine` singleton
+            // pair was deleted in the step #6 cleanup.
             format!(
                 "\tpolicy := New{machine_name}Policy()\n\
                  \tpolicy.SessionID = sce.GenerateSessionID()\n\
-                 \tscegotest.RegisterLuaEngine()\n\
-                 \tpolicy.ScriptEngine = sce.GetScriptEngine()\n\
+                 \tpolicy.ScriptEngine = scegotest.NewLuaEngine()\n\
                  \tengine := sce.NewEngine[{machine_name}State, {machine_name}Event](&policy)"
             )
         } else {

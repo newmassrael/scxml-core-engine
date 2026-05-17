@@ -20,7 +20,6 @@ import (
 	"sync"
 
 	lua "github.com/Shopify/go-lua"
-	sce "github.com/newmassrael/sce-go-runtime"
 )
 
 //go:embed json_builtins.lua
@@ -46,12 +45,6 @@ func NewLuaEngine() *LuaEngine {
 		sessions: make(map[string]*session),
 		globals:  make(map[string]func(args ...interface{}) (interface{}, error)),
 	}
-}
-
-// Register registers the LuaEngine as the global script engine.
-func Register() {
-	engine := NewLuaEngine()
-	sce.RegisterScriptEngine(engine)
 }
 
 func (e *LuaEngine) Initialize() error {

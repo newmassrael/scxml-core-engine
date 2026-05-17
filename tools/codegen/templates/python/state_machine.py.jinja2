@@ -38,6 +38,7 @@ from sce_runtime import (
     is_platform_event,
 )
 from sce_runtime.scripting import (
+    LuaScriptEngine as _LuaScriptEngine,
     ScriptError as _ScriptError,
     ScriptValue as _ScriptValue,
 )
@@ -431,10 +432,19 @@ _DOCUMENT_ORDER: Dict[{{ machine_name }}State, int] = {
 # Convenience factory
 # ======================================================================
 
-def create_engine() -> Engine[{{ machine_name }}State, {{ machine_name }}Event]:
-    """Construct a runnable engine bound to a fresh policy instance."""
+def create_engine(script_engine=None) -> Engine[{{ machine_name }}State, {{ machine_name }}Event]:
+    """Construct a runnable engine bound to a fresh policy instance.
+
+    Engine DI Parity RFC (Path B+): every Engine instance owns its script
+    engine. `create_engine()` instantiates a default `LuaScriptEngine` when
+    no engine is supplied; callers swap implementations (QuickJS, test
+    stubs) by passing one explicitly.
+    """
     policy = {{ machine_name }}Policy()
-    return Engine(policy)
+    if script_engine is None:
+        script_engine = _LuaScriptEngine()
+        script_engine.initialize()
+    return Engine(policy, script_engine=script_engine)
 
 
 # Re-export for callers that only know the module-level name.

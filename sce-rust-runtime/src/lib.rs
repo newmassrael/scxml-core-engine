@@ -43,10 +43,11 @@
 //!
 //! ## Script Engine Access
 //!
-//! Script engines are selected at **compile time** via Cargo features
-//! (`script-engine-lua`, `script-engine-quickjs`, `no-script`). This matches
-//! the C++ `ScriptEngineProvider` pattern — there is no runtime dependency
-//! injection of script engines. Access through [`scripting::ScriptEngineProvider`].
+//! Engine DI Parity RFC (Path B+): script engines are constructed per
+//! [`Engine`] instance and injected via the generated `Policy::new(engine)`
+//! constructor. Pick a backend by depending on the relevant crate
+//! (`sce-rust-lua`, future `sce-rust-quickjs`) and pass `Arc::new(LuaEngine::new())`
+//! to your machine's `Policy::new`. No process-global singleton is involved.
 //!
 //! ## Example
 //!
@@ -80,20 +81,6 @@ compile_error!(
     "`no_std` and `http-send` are mutually exclusive: tokio/reqwest are std-coupled. \
      Either drop `http-send` (and any `<send type=\"BasicHTTPEventProcessor\">` from \
      your SCXML), or drop `no_std`. Watching-zenoh RFC §5.J.2 line 1983."
-);
-
-#[cfg(all(feature = "no_std", feature = "script-engine-lua"))]
-compile_error!(
-    "`no_std` and `script-engine-lua` are mutually exclusive: the Lua interpreter requires \
-     `alloc`, which `no_std` forbids per RFC §5.J.2 line 1989 (zero `alloc` dependency). \
-     Either drop `script-engine-lua` (and any `<script>` from your SCXML), or drop `no_std`."
-);
-
-#[cfg(all(feature = "no_std", feature = "script-engine-quickjs"))]
-compile_error!(
-    "`no_std` and `script-engine-quickjs` are mutually exclusive: QuickJS requires `alloc`, \
-     which `no_std` forbids per RFC §5.J.2 line 1989. Either drop `script-engine-quickjs` \
-     (and any `<script>` from your SCXML), or drop `no_std`."
 );
 
 // ── Bounded-collection type aliases (watching-zenoh RFC §5.J.2) ──────
@@ -258,4 +245,4 @@ pub use hal::{Hal, NoOpHal, StdHal};
 pub use http::{HttpSendRequest, HttpSendResponse};
 pub use policy::StatePolicy;
 #[cfg(not(feature = "no_std"))]
-pub use scripting::{IScriptEngine, ScriptEngineProvider, ScriptError, ScriptResult, ScriptValue};
+pub use scripting::{IScriptEngine, ScriptError, ScriptResult, ScriptValue};

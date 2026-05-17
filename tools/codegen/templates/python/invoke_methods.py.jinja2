@@ -103,7 +103,10 @@
 {% endif %}
                 import {{ inv.child_name }}_sm as _child_module_{{ inv.invoke_id | to_python_const }}
                 _child_policy = _child_module_{{ inv.invoke_id | to_python_const }}.Policy()
-                _child_engine = Engine(_child_policy)
+                # Engine DI Parity RFC (Path B+): forward the parent's
+                # script engine so the child shares the same Lua VM /
+                # session manager, mirroring Rust + Kotlin invoke parity.
+                _child_engine = Engine(_child_policy, script_engine=engine._script_engine)
 {% if inv.namelist or inv.params %}
                 # W3C SCXML 6.4.1: Stage namelist + `<param>` values for
                 # the child's datamodel. The dict is applied by the

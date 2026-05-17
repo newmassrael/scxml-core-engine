@@ -17,9 +17,9 @@ authors = [
 # transformer that the C++ / Rust / Go / Kotlin / C11 backends use.
 # Cross-backend semantic parity (Lua 5.4) is the architectural
 # contract; Python AOT cannot honor it via Python `eval`. Users
-# wanting a different engine can register one via
-# `sce_runtime.scripting.set_script_engine(...)` before constructing
-# their first state machine.
+# wanting a different engine pass it to
+# `Engine(policy, script_engine=<my engine>)` or to the generated
+# `create_engine(script_engine=...)` factory.
 dependencies = [
     "lupa>=2.0",
 ]

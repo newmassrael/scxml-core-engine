@@ -12,14 +12,13 @@ authors.workspace = true
 description = "SCXML Core Engine — Rust runtime (policy trait, Engine<P>, helpers, IScriptEngine)"
 
 [features]
-# Default: Lua 5.4 via sce-rust-lua (matches C++ SCE_SCRIPT_ENGINE=lua default)
-default = ["script-engine-lua", "http-send"]
-
-# Script engine selection — mutually exclusive, exactly one active
-# Matches C++ ScriptEngineProvider compile-time selection
-script-engine-lua = []
-script-engine-quickjs = []
-no-script = []
+# Engine DI Parity RFC (Path B+): the pre-cleanup `script-engine-lua` /
+# `script-engine-quickjs` Cargo feature pair selected a process-global
+# `ScriptEngineProvider` singleton at compile time. With per-instance
+# engine injection that mechanism is gone — consumers pick an engine
+# crate (`sce-rust-lua`, future `sce-rust-quickjs`) by depending on it
+# and constructing an instance.
+default = ["http-send"]
 
 # HTTP send callback wiring (W3C SCXML C.2 BasicHTTPEventProcessor)
 http-send = []

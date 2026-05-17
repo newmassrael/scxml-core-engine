@@ -21,9 +21,12 @@ import (
 	scelua "github.com/newmassrael/sce-go-lua"
 )
 
-// RegisterLuaEngine registers the Lua script engine for tests requiring it.
-func RegisterLuaEngine() {
-	scelua.Register()
+// NewLuaEngine returns a fresh Lua script engine instance for tests.
+//
+// Engine DI Parity RFC (Path B+): each test owns its engine, replacing the
+// pre-cleanup `RegisterLuaEngine` + `sce.GetScriptEngine` singleton pair.
+func NewLuaEngine() sce.IScriptEngine {
+	return scelua.NewLuaEngine()
 }
 
 // AssertFinalState checks that the engine reached the expected final state.

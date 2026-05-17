@@ -5,8 +5,8 @@
 1:1 family port of the C++ / Rust / Go / Kotlin / C11 ScriptEngine
 pattern. Generated `*_sm.py` modules route every author expression
 through this layer instead of Python `eval()`. The default backend is
-`LuaScriptEngine` (lupa); users can swap implementations via
-`set_script_engine` before any state machine is constructed."""
+`LuaScriptEngine` (lupa); consumers construct an instance and pass it
+to `Engine(policy, script_engine=...)` (Engine DI Parity RFC)."""
 
 from .i_script_engine import (
     IScriptEngine,
@@ -22,19 +22,12 @@ from .i_script_engine import (
     VariableNotDeclaredError,
 )
 from .lua_engine import LuaScriptEngine
-from .provider import (
-    ScriptEngineAlreadyRegisteredError,
-    get,
-    reset_for_tests,
-    set_script_engine,
-)
 
 __all__ = [
     "IScriptEngine",
     "LuaScriptEngine",
     "NativeMethod",
     "ReadOnlySystemVariableError",
-    "ScriptEngineAlreadyRegisteredError",
     "ScriptError",
     "ScriptRuntimeError",
     "ScriptSyntaxError",
@@ -43,7 +36,4 @@ __all__ = [
     "SessionNotFoundError",
     "StateQueryCallback",
     "VariableNotDeclaredError",
-    "get",
-    "reset_for_tests",
-    "set_script_engine",
 ]

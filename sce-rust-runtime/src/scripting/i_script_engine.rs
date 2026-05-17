@@ -156,9 +156,9 @@ pub type StateQueryCallback = Box<dyn Fn(&str) -> bool + Send + Sync>;
 /// The script engine trait — 1:1 port of C++ `SCE::IScriptEngine`.
 ///
 /// Implementations (`sce-rust-lua`, future `sce-rust-quickjs`) provide ECMAScript
-/// evaluation for W3C SCXML B.1 datamodel support. Generated state machine code
-/// invokes this trait through [`ScriptEngineProvider`](crate::ScriptEngineProvider)
-/// — there is no runtime dependency injection.
+/// evaluation for W3C SCXML B.1 datamodel support. Engine DI Parity RFC
+/// (Path B+): consumers pass an `Arc<dyn IScriptEngine>` to the generated
+/// `Policy::new(engine)` constructor; there is no process-global singleton.
 pub trait IScriptEngine: Send + Sync {
     // ════════════════════════════════════════
     // Core Script Execution

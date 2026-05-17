@@ -305,15 +305,3 @@ type IScriptEngine interface {
 	// Global functions
 	RegisterGlobalFunction(name string, fn func(args ...interface{}) (interface{}, error))
 }
-
-var globalScriptEngine IScriptEngine
-
-// RegisterScriptEngine registers a global script engine.
-func RegisterScriptEngine(engine IScriptEngine) {
-	globalScriptEngine = engine
-}
-
-// GetScriptEngine returns the registered global script engine.
-func GetScriptEngine() IScriptEngine {
-	return globalScriptEngine
-}

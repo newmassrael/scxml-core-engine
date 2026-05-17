@@ -22,7 +22,7 @@
 //   cp sce-go-tests/fixtures/donedata_local_invoke.scxml "$TMP/"
 //   target/release/sce-codegen generate \
 //       "$TMP/donedata_local_invoke.scxml" -l go -o "$TMP/"
-//   for child in "$TMP"/donedata_local_invoke_child*.scxml; do
+//   for child in "$TMP"/donedata_local_invoke__sce_synth_invoke__*.scxml; do
 //       target/release/sce-codegen generate "$child" \
 //           --as-child --parent-stem donedata_local_invoke \
 //           -l go -o "$TMP/"
@@ -45,9 +45,11 @@ import (
 )
 
 func TestParentObservesDonedataOnDoneInvoke(t *testing.T) {
-	scegotest.RegisterLuaEngine()
+	// Engine DI Parity RFC (Path B+): per-test LuaEngine, replacing the
+	// pre-cleanup `RegisterLuaEngine` + `sce.GetScriptEngine()` singleton pair.
 	policy := NewDonedataLocalInvokePolicy()
 	policy.SessionID = sce.GenerateSessionID()
+	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[DonedataLocalInvokeState, DonedataLocalInvokeEvent](&policy)
 	engine.Initialize()
 
