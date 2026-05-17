@@ -9,9 +9,16 @@
     }
 
 {% if model.needs_script_engine %}
-    // Script engine accessor (pluggable: override for alternative engines like Lua)
-    static ::SCE::IScriptEngine& getScriptEngine() {
-        return ::SCE::ScriptEngineProvider::getScriptEngine();
+    // W3C SCXML B.1: Script engine handle (per-instance, set via setScriptEngine)
+    // Path B+ RFC Q1=(d) C++=std::shared_ptr; Q5=(a) instance member.
+    mutable ::std::shared_ptr<::SCE::IScriptEngine> scriptEngine_;
+
+    void setScriptEngine(::std::shared_ptr<::SCE::IScriptEngine> engine) const {
+        scriptEngine_ = ::std::move(engine);
+    }
+
+    ::SCE::IScriptEngine& getScriptEngine() const {
+        return scriptEngine_ ? *scriptEngine_ : ::SCE::ScriptEngineProvider::getScriptEngine();
     }
 
     // Helper: Ensure JSEngine is initialized (lazy initialization)

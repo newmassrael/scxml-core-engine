@@ -16,7 +16,9 @@
 #endif
 #include "static/StaticExecutionEngine.h"
 #include "common/TestUtils.h"
+#include "scripting/ScriptEngineProvider.h"
 #include <chrono>
+#include <memory>
 #include <thread>
 
 namespace SCE::W3C::AotTests {
@@ -57,6 +59,12 @@ public:
 
         using SM = typename Derived::SM;
         SM sm;
+        // W3C SCXML B.1: Inject script engine handle (Path B+ Q1=(d) C++=shared_ptr).
+        if constexpr (SM::PolicyType::NEEDS_SCRIPT_ENGINE) {
+            sm.setScriptEngine(::std::shared_ptr<::SCE::IScriptEngine>(
+                &::SCE::ScriptEngineProvider::getScriptEngine(),
+                [](::SCE::IScriptEngine*){}));
+        }
 
         // W3C SCXML C.2: Create and start HTTP server
         W3C::W3CHttpTestServer httpServer(8080, "/test");

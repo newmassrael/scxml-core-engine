@@ -6,6 +6,8 @@
 #include "AotTestBase.h"
 #include "core/LogMacros.h"
 #include "AotTestRegistry.h"
+#include "scripting/ScriptEngineProvider.h"
+#include <memory>
 #include <thread>
 
 namespace SCE::W3C::AotTests {
@@ -35,6 +37,14 @@ public:
     bool run() override {
         using SM = typename Derived::SM;
         SM sm;
+        // W3C SCXML B.1: Inject script engine handle (Path B+ Q1=(d) C++=shared_ptr).
+        // Aliasing constructor + no-op deleter — engine lifetime is owned by
+        // ScriptEngineProvider singleton, shared_ptr is a non-owning view.
+        if constexpr (SM::PolicyType::NEEDS_SCRIPT_ENGINE) {
+            sm.setScriptEngine(::std::shared_ptr<::SCE::IScriptEngine>(
+                &::SCE::ScriptEngineProvider::getScriptEngine(),
+                [](::SCE::IScriptEngine*){}));
+        }
         sm.initialize();
         auto finalState = sm.getCurrentState();
         bool isFinished = sm.isInFinalState();

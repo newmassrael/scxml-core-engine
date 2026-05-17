@@ -5,7 +5,9 @@
 #include "AotTestBase.h"
 #include "core/LogMacros.h"
 #include "AotTestRegistry.h"
+#include "scripting/ScriptEngineProvider.h"
 #include "test329_sm.h"
+#include <memory>
 
 namespace SCE::W3C::AotTests {
 
@@ -29,6 +31,12 @@ struct Test329 : public AotTestBase {
 
     bool run() override {
         SM sm;
+        // W3C SCXML B.1: Inject script engine handle (Path B+ Q1=(d) C++=shared_ptr).
+        if constexpr (SM::PolicyType::NEEDS_SCRIPT_ENGINE) {
+            sm.setScriptEngine(::std::shared_ptr<::SCE::IScriptEngine>(
+                &::SCE::ScriptEngineProvider::getScriptEngine(),
+                [](::SCE::IScriptEngine*){}));
+        }
 
         SCE_LOG_DEBUG("Test329 Debug: Before initialize");
         sm.initialize();
