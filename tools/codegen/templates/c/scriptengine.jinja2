@@ -180,6 +180,51 @@
            swaps the per-event payload for a lua-side stash to avoid widening
            every event_with_meta_t entry with a typed-value union. */
         (void)luaL_dostring(sm->L, "_pending_donedata = nil");
+        /* W3C SCXML 6.2 + 5.10.1 (.raw): ordered (name, value) capture for
+           `<send>`'s `<param>` / `namelist` evaluation. cpp builds
+           `std::map<string, vector<string>>` to preserve duplicate keys
+           (W3C 6.2 mandate) and serialises via
+           `EventDataHelper::buildEventDataJson` for `_event.raw`.
+           `_pending_donedata` (the Lua table) cannot hold dup keys, so a
+           parallel ordered list captures the eval sequence; the
+           `_sce_event_data_json()` builder groups by name and emits the
+           same shape cpp surfaces on `Event::dataStr`. The bounded
+           string then lands on `event_with_meta_t::data[]` and
+           `set_current_event` lifts it onto `_event.raw` for the
+           receiving transition / log.
+           Pairs reset per <send> arm so successive sends in one onentry
+           do not bleed into each other's raw payload. */
+        (void)luaL_dostring(sm->L,
+            "_sce_send_data_pairs = {}\n"
+            "function _sce_event_data_json()\n"
+            "  if not _sce_send_data_pairs or #_sce_send_data_pairs == 0 then\n"
+            "    return ''\n"
+            "  end\n"
+            "  local order, groups = {}, {}\n"
+            "  for _, p in ipairs(_sce_send_data_pairs) do\n"
+            "    local k, v = p[1], p[2]\n"
+            "    if groups[k] == nil then groups[k] = {}; table.insert(order, k) end\n"
+            "    table.insert(groups[k], tostring(v))\n"
+            "  end\n"
+            "  local function _q(s)\n"
+            "    s = s:gsub('\\\\', '\\\\\\\\'):gsub('\"', '\\\\\"')\n"
+            "    return '\"' .. s .. '\"'\n"
+            "  end\n"
+            "  local parts = {}\n"
+            "  for _, k in ipairs(order) do\n"
+            "    local vs = groups[k]\n"
+            "    local val\n"
+            "    if #vs == 1 then\n"
+            "      val = _q(vs[1])\n"
+            "    else\n"
+            "      local arr = {}\n"
+            "      for _, v in ipairs(vs) do table.insert(arr, _q(v)) end\n"
+            "      val = '[' .. table.concat(arr, ',') .. ']'\n"
+            "    end\n"
+            "    table.insert(parts, _q(k) .. ':' .. val)\n"
+            "  end\n"
+            "  return '{' .. table.concat(parts, ',') .. '}'\n"
+            "end");
         {% if model.needs_donedata_helper or model.needs_namelist_helper %}
         /* W3C SCXML 5.7 + C.1 (test343, test553): donedata `<param>` and
            `<send namelist>` evaluation both need to detect ECMAScript
@@ -917,9 +962,38 @@
    not need to declare `_scxml_declared`. #}
 {% macro lua_eval_send_param_expr(param_name, expr) %}
     if (luaL_dostring(sm->L,
-        "_pending_donedata.{{ param_name }} = ({{ expr | to_lua_expr | escape_c }})") != 0) {
+        "do local _v = ({{ expr | to_lua_expr | escape_c }}); "
+        "_pending_donedata.{{ param_name }} = _v; "
+        "table.insert(_sce_send_data_pairs, {'{{ param_name }}', _v}) end") != 0) {
         lua_pop(sm->L, 1);
         (void)luaL_dostring(sm->L,
-            "_pending_donedata.{{ param_name }} = ''");
+            "_pending_donedata.{{ param_name }} = ''; "
+            "table.insert(_sce_send_data_pairs, {'{{ param_name }}', ''})");
+    }
+{% endmacro %}
+
+{# W3C SCXML 6.2 + 5.10.1 (.raw): marshal the param/namelist eval pairs
+   captured in `_sce_send_data_pairs` (see `lua_eval_send_param_expr` /
+   `lua_eval_namelist_var`) into the JSON shape cpp surfaces on
+   `Event::dataStr`, then copy the bounded string onto the event's
+   `data[]` buffer. The carry survives `event_queue_push` (struct-copy)
+   and `set_current_event` lifts it onto `_event.raw` on dequeue. The
+   buffer-overflow guard truncates to `SCE_MAX_DATA_LEN - 1`; the W3C
+   manual-test corpus (test178) fits well under that bound. #}
+{% macro lua_marshal_send_event_data(send_evt_var) %}
+    (void)luaL_dostring(sm->L, "_pending_event_data_json = _sce_event_data_json()");
+    {
+        size_t _raw_n = 0;
+        lua_getglobal(sm->L, "_pending_event_data_json");
+        if (lua_isstring(sm->L, -1)) {
+            const char *_raw = lua_tostring(sm->L, -1);
+            _raw_n = strlen(_raw);
+            if (_raw_n >= sizeof(({{ send_evt_var }}).data)) {
+                _raw_n = sizeof(({{ send_evt_var }}).data) - 1;
+            }
+            memcpy(({{ send_evt_var }}).data, _raw, _raw_n);
+        }
+        ({{ send_evt_var }}).data[_raw_n] = '\0';
+        lua_pop(sm->L, 1);
     }
 {% endmacro %}

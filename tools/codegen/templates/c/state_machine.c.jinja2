@@ -647,13 +647,15 @@ static {{ model.name }}_event_t SCE_SM_FN {{ model.name }}_event_from_name(const
                Param eval failure: silent-drop with empty-string fallback
                per cpp send (W3C 6.2 ≠ 5.7); see
                `scriptengine.jinja2::lua_eval_send_param_expr` docstring. */
-            (void)luaL_dostring(sm->L, "_pending_donedata = {}");
+            (void)luaL_dostring(sm->L,
+                "_pending_donedata = {}; _sce_send_data_pairs = {}");
             {% for param in action.params %}
             {{ se.lua_eval_send_param_expr(param.name, param.expr) }}
             {% endfor %}
             {{ model.name }}_event_with_meta_t _send_evt;
             memset(&_send_evt, 0, sizeof(_send_evt));
             _send_evt.event = {{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
+            {{ se.lua_marshal_send_event_data('_send_evt') }}
             {{ model.name }}_raise_external(sm, &_send_evt);
 {% elif (not in_foreach) and action.event and action.namelist and action.params and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 5.10 + 6.2 + C.1 (test354): static-event with both
