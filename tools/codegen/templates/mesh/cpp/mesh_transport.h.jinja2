@@ -2491,6 +2491,8 @@ struct TransportRouter {
                     return;
                 }
             });
+        scxml_invoke_to_{{ peer.name }}_.setDecodeErrorHandler(
+            [this]() {{ raise_envelope_corrupt_lambda("someip") }});
         if (!scxml_invoke_to_{{ peer.name }}_.start()) {
             shutdown();
             return false;
@@ -2518,6 +2520,8 @@ struct TransportRouter {
                     return;
                 }
             });
+        scxml_invoke_to_{{ peer.name }}_.setDecodeErrorHandler(
+            [this]() {{ raise_envelope_corrupt_lambda("someip") }});
         if (!scxml_invoke_to_{{ peer.name }}_.start()) {
             shutdown();
             return false;
@@ -2769,6 +2773,8 @@ struct TransportRouter {
                         return;
                     }
                 });
+            scxml_invoke_to_{{ peer.name }}_->setDecodeErrorHandler(
+                [this]() {{ raise_envelope_corrupt_lambda("zenoh") }});
             if (!scxml_invoke_to_{{ peer.name }}_->start()) {
                 shutdown();
                 return false;
@@ -2802,6 +2808,8 @@ struct TransportRouter {
                         return;
                     }
                 });
+            scxml_invoke_to_{{ peer.name }}_->setDecodeErrorHandler(
+                [this]() {{ raise_envelope_corrupt_lambda("zenoh") }});
             if (!scxml_invoke_to_{{ peer.name }}_->start()) {
                 shutdown();
                 return false;

@@ -202,6 +202,15 @@ static_assert(methodForPattern(PatternKind::ParallelRegionDone) == 0);
 /// callback-thread dispatch convention).
 using ReceiveCallback = std::function<void(const SCE::Mesh::MeshEnvelope&)>;
 
+/// Decode-error callback signature: invoked on the vsomeip callback
+/// thread once per inbound message whose CBOR decode failed. Codegen
+/// wires this to `raiseCommunicationError(ENVELOPE_CORRUPT,
+/// transport="someip")` so the §16.7 row 4 catalog row fires at this
+/// hand-written endpoint tier the same way codegen `decodeEnvelope`
+/// sites do. The callback runs on the same vsomeip thread the
+/// message handler does; per §14.4, it MUST be cheap and re-entrant.
+using DecodeErrorCallback = std::function<void()>;
+
 /// RFC F.X-2 D8: defense-in-depth try-catch at the vsomeip → SCE callback
 /// boundary. The consolidated `<machine>[_<partition>]_sce` app hosts every
 /// SCE-reserved subsystem's callbacks on a single vsomeip callback thread;
@@ -319,6 +328,16 @@ public:
         on_receive_ = std::move(handler);
     }
 
+    /// Install the decode-error handler (§16.7 row 4). Invoked on the
+    /// vsomeip callback thread per inbound message whose CBOR decode
+    /// fails. Caller wires this to
+    /// `raiseCommunicationError(ENVELOPE_CORRUPT, transport="someip")`.
+    /// May be left unset — in that case decode failures revert to
+    /// the pre-row-4 silent-drop semantics.
+    void setDecodeErrorHandler(DecodeErrorCallback handler) {
+        on_decode_error_ = std::move(handler);
+    }
+
     /// Wire offer_service + per-wire register_message_handler for own_svc,
     /// and request_service for peer_svc. Idempotent — second call is a
     /// no-op (started_ guards). Returns false if the application is null
@@ -408,7 +427,13 @@ private:
                         payload->get_data(),
                         static_cast<std::size_t>(payload->get_length()),
                         env)) {
-                    return;  // malformed envelope — drop, defence-in-depth
+                    // §16.7 row 4: malformed CBOR. Surface via
+                    // on_decode_error_ before dropping so SCXML
+                    // authors observe the catalog row instead of a
+                    // silent drop. Callback may be unset in fixtures
+                    // that explicitly opt out.
+                    if (on_decode_error_) on_decode_error_();
+                    return;
                 }
                 // RFC F.X-2 D8: catch any exception at the vsomeip → SCE
                 // callback boundary. The consolidated SCE app hosts every
@@ -422,6 +447,7 @@ private:
     vsomeip::service_t own_svc_;
     vsomeip::service_t peer_svc_;
     ReceiveCallback on_receive_;
+    DecodeErrorCallback on_decode_error_;
     bool started_ = false;
 };
 

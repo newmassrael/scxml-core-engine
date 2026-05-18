@@ -161,6 +161,16 @@ inline std::string keyExprC2P(std::string_view child_machine,
 /// callback-thread dispatch convention).
 using ReceiveCallback = std::function<void(const SCE::Mesh::MeshEnvelope&)>;
 
+/// Decode-error callback signature: invoked on the Zenoh runtime
+/// callback thread once per inbound sample whose CBOR decode failed.
+/// Codegen wires this to `raiseCommunicationError(ENVELOPE_CORRUPT,
+/// transport="zenoh")` so the §16.7 row 4 catalog row fires at this
+/// hand-written endpoint tier the same way codegen `decodeEnvelope`
+/// sites do. The callback runs on the same thread the subscriber's
+/// on_sample fires on; per §14.4 callback-thread dispatch, it MUST
+/// be cheap and re-entrant.
+using DecodeErrorCallback = std::function<void()>;
+
 /// Per-peer §9.6 Zenoh endpoint. Declares ONE Publisher on the
 /// own-direction key (so we can publish wires the local role emits)
 /// and ONE Subscriber on the peer-direction key (so we receive wires
@@ -219,6 +229,17 @@ public:
         on_receive_ = std::move(handler);
     }
 
+    /// Install the decode-error handler (§16.7 row 4). Invoked on a
+    /// Zenoh runtime callback thread per inbound sample whose CBOR
+    /// decode fails. Caller wires this to
+    /// `raiseCommunicationError(ENVELOPE_CORRUPT, transport="zenoh")`.
+    /// May be left unset — in that case decode failures revert to the
+    /// pre-row-4 silent-drop semantics, which is acceptable for
+    /// fixtures that explicitly do not need the catalog row.
+    void setDecodeErrorHandler(DecodeErrorCallback handler) {
+        on_decode_error_ = std::move(handler);
+    }
+
     /// Declare the Publisher on `own_pub_key_` (with reliability
     /// options pinned for §9.6 lifecycle traffic) and the Subscriber
     /// on `peer_sub_key_`. Idempotent — second call is a no-op
@@ -266,7 +287,12 @@ public:
                 auto bytes = sample.get_payload().as_vector();
                 SCE::Mesh::MeshEnvelope env;
                 if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), env)) {
-                    return;  // malformed envelope — drop, defence-in-depth
+                    // §16.7 row 4: malformed CBOR. Surface via
+                    // on_decode_error_ before dropping the sample so
+                    // SCXML authors observe the catalog row instead
+                    // of a silent drop.
+                    if (on_decode_error_) on_decode_error_();
+                    return;
                 }
                 on_receive_(env);
             },
@@ -296,6 +322,7 @@ private:
     std::string own_pub_key_;
     std::string peer_sub_key_;
     ReceiveCallback on_receive_;
+    DecodeErrorCallback on_decode_error_;
     std::optional<::zenoh::Publisher> publisher_;
     std::optional<::zenoh::Subscriber<void>> subscriber_;
     bool started_ = false;
