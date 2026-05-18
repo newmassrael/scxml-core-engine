@@ -179,6 +179,48 @@ public:
         }
     }
 
+    /// Cancel every outstanding entry whose `target` equals `peer` and
+    /// invoke `on_each` once per erased entry with the entry's `uuid`.
+    /// Same erase-without-delivery semantics as `cancelAllPending` —
+    /// the deliver callback is NOT fired; `on_each` is the caller's
+    /// parallel notification hook. Entries for OTHER targets stay
+    /// live. Returns the number of entries erased.
+    ///
+    /// SCE_MESH.md §16.7 row 5 post-init peer-drop fast-path: when a
+    /// peer transitions Active→Disconnected (Zenoh liveliness DELETE
+    /// or SOME/IP availability=false) the outstanding §9.5 mesh-rpc
+    /// invokes targeting that peer cannot complete; failing them
+    /// here is strictly sooner than waiting for the full
+    /// `TransportRouter::shutdown` Lifecycle:Shutdown sweep.
+    ///
+    /// Same lock-discipline as `cancelAllPending`: snapshot under the
+    /// mutex, release, fire `on_each` per snapshot entry. Two-pass
+    /// loop because `std::unordered_map::erase(const Key&)` invalidates
+    /// the iterator into a heterogeneous-key bucket; collect keys
+    /// first, then erase.
+    std::size_t cancelAllPendingForTarget(
+        const std::string& peer,
+        const std::function<void(const Key&)>& on_each) {
+        std::vector<Key> snapshot;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            for (const auto& [uuid, entry] : pending_) {
+                if (entry.target == peer) {
+                    snapshot.push_back(uuid);
+                }
+            }
+            for (const Key& uuid : snapshot) {
+                pending_.erase(uuid);
+            }
+        }
+        if (on_each) {
+            for (const Key& uuid : snapshot) {
+                on_each(uuid);
+            }
+        }
+        return snapshot.size();
+    }
+
 private:
     /// FNV-1a over 16 bytes. Cheaper than SipHash and adequate here:
     /// the map only holds actively in-flight invokes, bounded by how

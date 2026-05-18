@@ -252,6 +252,78 @@ TEST(InvokeCorrelation, CancelAllPending_NullCallback_IsTolerated) {
     EXPECT_EQ(sink.calls, 0);
 }
 
+TEST(InvokeCorrelation, CancelAllPendingForTarget_OnlyErasesMatchingTarget) {
+    // §16.7 row 5 post-init peer-drop fast-path: a Zenoh liveliness
+    // DELETE or SOMEIP availability=false for peer X fails outstanding
+    // §9.5 mesh-rpc entries targeting X without disturbing entries
+    // targeting other peers. Pins:
+    //   1. on_each fires exactly once per matching entry.
+    //   2. return value matches the erased count.
+    //   3. non-matching entries stay live and still deliverable.
+    //   4. deliver callbacks for erased entries do NOT fire (same
+    //      erase-without-delivery semantics as handleCancel).
+    InvokeCorrelation table;
+    Sink sinkMotorA;
+    Sink sinkMotorB;
+    Sink sinkBrake;
+    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", sinkMotorA.callback()));
+    // kUuidB is a different uuid; alias kUuidC manufactured locally.
+    InvokeCorrelation::Key kUuidC = kUuidA;
+    kUuidC[0] = 0xff;
+    ASSERT_TRUE(table.registerInvoke(kUuidC, "motor", sinkMotorB.callback()));
+    ASSERT_TRUE(table.registerInvoke(kUuidB, "brake", sinkBrake.callback()));
+    EXPECT_EQ(table.size(), 3u);
+
+    std::vector<InvokeCorrelation::Key> seen;
+    const std::size_t erased = table.cancelAllPendingForTarget(
+        "motor",
+        [&](const InvokeCorrelation::Key& uuid) {
+            seen.push_back(uuid);
+        });
+
+    EXPECT_EQ(erased, 2u) << "two motor entries erased";
+    EXPECT_EQ(seen.size(), 2u);
+    EXPECT_EQ(table.size(), 1u) << "brake entry survives";
+    EXPECT_EQ(sinkMotorA.calls, 0) << "deliver NOT fired (cancel-style)";
+    EXPECT_EQ(sinkMotorB.calls, 0);
+
+    // The surviving brake entry must still be deliverable.
+    EXPECT_TRUE(table.handleReply(kUuidB, RpcStatus::Ok, {0x01}));
+    EXPECT_EQ(sinkBrake.calls, 1);
+    EXPECT_EQ(sinkBrake.status, RpcStatus::Ok);
+}
+
+TEST(InvokeCorrelation, CancelAllPendingForTarget_NoMatch_ReturnsZero) {
+    // Peer-down for a target with no outstanding invokes: the call
+    // is a no-op, returns 0, fires the callback 0 times. Lets the
+    // codegen wire the cancel call unconditionally for every
+    // declared peer without checking whether the table has entries.
+    InvokeCorrelation table;
+    Sink sink;
+    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", sink.callback()));
+
+    int callback_count = 0;
+    const std::size_t erased = table.cancelAllPendingForTarget(
+        "unknown_peer",
+        [&](const InvokeCorrelation::Key&) { ++callback_count; });
+
+    EXPECT_EQ(erased, 0u);
+    EXPECT_EQ(callback_count, 0);
+    EXPECT_EQ(table.size(), 1u) << "motor entry untouched";
+}
+
+TEST(InvokeCorrelation, CancelAllPendingForTarget_NullCallback_IsTolerated) {
+    // Null callback contract mirrors cancelAllPending: erase still
+    // runs, callback skipped silently. Allows the codegen to wire
+    // the erase path before the notification target is hooked up.
+    InvokeCorrelation table;
+    Sink sink;
+    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", sink.callback()));
+    EXPECT_EQ(table.cancelAllPendingForTarget("motor", {}), 1u);
+    EXPECT_EQ(table.size(), 0u);
+    EXPECT_EQ(sink.calls, 0);
+}
+
 TEST(InvokeCorrelation, ConcurrentReplyVsCancel_AtMostOneWinsExactlyOnce) {
     // §9.5 cancel-vs-reply race. The correlation table must ensure
     // that across two threads racing on the same uuid, at most one

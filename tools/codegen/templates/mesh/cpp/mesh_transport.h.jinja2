@@ -2602,6 +2602,28 @@ struct TransportRouter {
                         err.reason = "PEER_PARTITIONED";
                         err.target = "{{ peer.machine }}";
                         raiseCommunicationError(std::move(err));
+{% if has_mesh_rpc.v %}
+                        // SCE Mesh §16.7 row 5 post-init peer-drop
+                        // fast-path: outstanding §9.5 mesh-rpc entries
+                        // targeting this peer cannot complete; fail
+                        // them now rather than waiting for
+                        // TransportRouter::shutdown's catalog sweep
+                        // (which only fires on full router teardown).
+                        // `cancelAllPendingForTarget` uses
+                        // erase-without-delivery semantics (§9.5
+                        // cancel contract); INVOKE_CHILD_LOST is
+                        // raised once per erased entry as the
+                        // parallel notification.
+                        invoke_correlation_.cancelAllPendingForTarget(
+                            "{{ peer.machine }}",
+                            [this](const SCE::Mesh::InvokeCorrelation::Key& uuid) {
+                                SCE::Mesh::CommunicationError row5;
+                                row5.reason = "INVOKE_CHILD_LOST";
+                                row5.invoke_id = SCE::uuid::to_string(uuid);
+                                row5.target = "{{ peer.machine }}";
+                                raiseCommunicationError(std::move(row5));
+                            });
+{% endif %}
                     });
             });
 {%   endfor %}
@@ -2997,6 +3019,18 @@ struct TransportRouter {
                         }
                     }
                     SCE::Mesh::CommunicationError err;
+{% if has_mesh_rpc.v %}
+                    // Capture the row-8 peer name BEFORE moving
+                    // remainder into err.target so the §9.5 fast-path
+                    // below can address the InvokeCorrelation table by
+                    // peer. Empty for the region-level branch (row 13
+                    // is partition-keyed, not machine-keyed) — the
+                    // fast-path is conditionally gated below.
+                    std::string peer_for_mesh_rpc;
+                    if (!is_region_level) {
+                        peer_for_mesh_rpc = remainder;
+                    }
+{% endif %}
                     if (is_region_level) {
                         // `remainder` is "<machine>/<partition>"; split
                         // on the single internal '/' identified above.
@@ -3011,6 +3045,28 @@ struct TransportRouter {
                         err.last_seen_ms_ago = *last_seen_ms_ago;
                     }
                     raiseCommunicationError(std::move(err));
+{% if has_mesh_rpc.v %}
+                    if (!peer_for_mesh_rpc.empty()) {
+                        // SCE Mesh §16.7 row 5 post-init peer-drop
+                        // fast-path: liveliness DELETE on a machine-
+                        // identity key fails outstanding §9.5 mesh-rpc
+                        // entries targeting this peer immediately
+                        // rather than waiting for TransportRouter
+                        // shutdown. Region-level DELETE (row 13) is
+                        // partition-keyed and orthogonal to mesh-rpc
+                        // targeting, so the §9.5 fast-path runs only
+                        // on the row-8 (machine) branch.
+                        invoke_correlation_.cancelAllPendingForTarget(
+                            peer_for_mesh_rpc,
+                            [this, &peer_for_mesh_rpc](const SCE::Mesh::InvokeCorrelation::Key& uuid) {
+                                SCE::Mesh::CommunicationError row5;
+                                row5.reason = "INVOKE_CHILD_LOST";
+                                row5.invoke_id = SCE::uuid::to_string(uuid);
+                                row5.target = peer_for_mesh_rpc;
+                                raiseCommunicationError(std::move(row5));
+                            });
+                    }
+{% endif %}
 {% else %}
                     // Non-partitioned machines only emit row 8. A
                     // 3-segment sample here would be a rogue token
@@ -3040,6 +3096,12 @@ struct TransportRouter {
                             peer_last_seen_.erase(it);
                         }
                     }
+{% if has_mesh_rpc.v %}
+                    // Capture peer name BEFORE move so the §9.5
+                    // fast-path below can address InvokeCorrelation
+                    // by target after err has consumed remainder.
+                    const std::string peer_for_mesh_rpc = remainder;
+{% endif %}
                     SCE::Mesh::CommunicationError err;
                     err.reason = "PEER_PARTITIONED";
                     err.target = std::move(remainder);
@@ -3047,6 +3109,24 @@ struct TransportRouter {
                         err.last_seen_ms_ago = *last_seen_ms_ago;
                     }
                     raiseCommunicationError(std::move(err));
+{% if has_mesh_rpc.v %}
+                    // SCE Mesh §16.7 row 5 post-init peer-drop
+                    // fast-path: §9.5 mesh-rpc entries targeting the
+                    // dropped peer fail immediately rather than
+                    // waiting for TransportRouter shutdown. Non-
+                    // partitioned branch — every DELETE here is
+                    // machine-identity (row 8), so no region-level
+                    // gating is required.
+                    invoke_correlation_.cancelAllPendingForTarget(
+                        peer_for_mesh_rpc,
+                        [this, &peer_for_mesh_rpc](const SCE::Mesh::InvokeCorrelation::Key& uuid) {
+                            SCE::Mesh::CommunicationError row5;
+                            row5.reason = "INVOKE_CHILD_LOST";
+                            row5.invoke_id = SCE::uuid::to_string(uuid);
+                            row5.target = peer_for_mesh_rpc;
+                            raiseCommunicationError(std::move(row5));
+                        });
+{% endif %}
 {% endif %}
                 },
                 // Liveliness subscriber on_drop: zenoh invokes this once
