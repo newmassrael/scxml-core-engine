@@ -457,6 +457,8 @@ Codes that the author can avoid by writing a better SCXML /
 | `algorithm/const-yield-type-mismatch` | Generate |
 | `codec/variant-arm-unreachable` | Validation |
 | `codec/variant-duplicate-default-arm` | Validation |
+| `codec/variant-default-arm-mid-mismatch` | Validation |
+| `codec/variant-arm-inner-mid-undeclared` | Validation |
 | `codec/present-if-refs-later-field` | Validation |
 | `codec/repeat-count-refs-later-field` | Validation |
 | `algorithm/test-vector-unsupported-kind` | Validation |

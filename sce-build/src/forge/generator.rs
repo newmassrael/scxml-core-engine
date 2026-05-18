@@ -1228,6 +1228,12 @@ fn render_codec(
         // + bit + width) with every arm body codec's first
         // `<sce:flags>`-bearing field at offset 0.
         validate_cross_codec_peek_byte(m, v, imports)?;
+        // RFC variant-default-uniformity Atomic γ-1: when an arm is
+        // marked `default="true"`, the inner codec it selects must
+        // declare a wire-MID constant whose value matches the outer
+        // arm's declared value, so `T::default().encode().decode()`
+        // round-trips into the same arm.
+        validate_cross_codec_variant_default_arm(m, v, imports)?;
     }
 
     // RFC §5.B B5-γ closures complete: all six backends (Rust / Cpp /
@@ -3341,6 +3347,163 @@ fn validate_cross_codec_peek_byte(
                         ),
                     },
                 ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// RFC variant-default-uniformity Atomic γ-1: cross-doc validator
+/// for the `<sce:arm default="true"/>` marker.
+///
+/// When a variant arm is marked `default="true"`, the inner codec
+/// it selects determines what `T::default()` decodes back to. For
+/// round-trip safety:
+///
+/// 1. The inner codec MUST declare a wire-MID constant on its
+///    matching peek-byte flag (`<sce:flag name=X value=V/>`).
+///    Without it, the inner's `Default::default()` zero-fills the
+///    dispatch byte and the round-trip lands in the catch-all (or
+///    a mismatched) arm. Fires `CodecVariantArmInnerMidUndeclared`.
+/// 2. The declared inner value V MUST equal the outer arm's
+///    declared value X. Mismatch means the peek-byte read on
+///    `T::default().encode()` yields V (not X), so the decoder's
+///    dispatch table sends it to whichever arm has `value="V"` —
+///    a different arm than the one Default named. Fires
+///    `CodecVariantDefaultArmMidMismatch`.
+///
+/// Only runs when the variant declares `<sce:peek-byte>`: that's
+/// the only dispatch shape where the outer arm value and the
+/// inner first byte are guaranteed to be the same wire byte. For
+/// streaming-prefix and plain-field dispatch the outer encodes
+/// the tag from its own field, so the inner codec's Default does
+/// not participate in the dispatch read — no Default-time
+/// invariant to verify.
+fn validate_cross_codec_variant_default_arm(
+    parent: &CodecModel,
+    variant: &CodecVariant,
+    imports: &[ImportContext],
+) -> Result<(), ForgeError> {
+    use crate::forge::error::ValidationError;
+
+    let peek = match &variant.peek_byte {
+        Some(p) => p,
+        None => return Ok(()),
+    };
+
+    // Find the marked-default arm (at most one — parse-time
+    // `CodecVariantDuplicateDefaultArm` already guarded this).
+    let default_arm = match variant.arms.iter().find(|a| a.is_default) {
+        Some(a) => a,
+        None => return Ok(()), // No marked default — no Default contract to verify
+    };
+
+    // Identify the inner codec by import alias.
+    let imp = match imports.iter().find(|i| i.alias == default_arm.body_alias) {
+        Some(i) => i,
+        None => return Ok(()), // upstream variant body resolution will reject
+    };
+
+    // The inner codec must declare a `<sce:flags>` carrier at
+    // byte_offset = 0 for the peek byte to map onto its first
+    // wire byte. Without that carrier the peek-byte cross-codec
+    // validator above already accepts (B5-η-stripped leaves), but
+    // there's no flag layout to verify Default against. We treat
+    // this as a separate failure mode because the marked-default
+    // semantics require a declared MID — even on a stripped leaf
+    // the inner must surface its wire byte to compose with Default.
+    let body_flags = match &imp.codec_first_flags {
+        Some((_id, flags)) => flags.as_slice(),
+        None => {
+            // No flags carrier at all on the inner — the inner
+            // can't declare a wire-MID, so the round-trip contract
+            // can't hold. Author resolves by adding a
+            // <sce:flags>-bearing first field to the inner codec.
+            return Err(ForgeError::Validation(
+                ValidationError::CodecVariantArmInnerMidUndeclared {
+                    codec: parent.name.clone(),
+                    arm_value: default_arm.value,
+                    inner_codec: default_arm.body_alias.clone(),
+                    // Use the peek-byte's first dispatch flag name
+                    // as the expected location — that's where the
+                    // inner needs to declare its constant.
+                    expected_flag: peek
+                        .flags
+                        .first()
+                        .map(|f| f.name.clone())
+                        .unwrap_or_default(),
+                },
+            ));
+        }
+    };
+
+    // For every peek-byte dispatch flag, find the matching inner
+    // flag (peek-byte cross-codec validator already proved name +
+    // bit + width agree, so a same-named flag exists). Verify that
+    // matching flag declares `value=`.
+    for peek_flag in &peek.flags {
+        let body_flag = match body_flags.iter().find(|f| f.name == peek_flag.name) {
+            Some(f) => f,
+            // No matching flag on the inner — the peek-byte
+            // validator already accepts this case (the arm body
+            // may skip naming dispatch flags), but Default
+            // contract still needs the inner to declare its MID
+            // somehow. Surface as MidUndeclared with the peek-byte
+            // flag name as the expected location.
+            None => {
+                return Err(ForgeError::Validation(
+                    ValidationError::CodecVariantArmInnerMidUndeclared {
+                        codec: parent.name.clone(),
+                        arm_value: default_arm.value,
+                        inner_codec: default_arm.body_alias.clone(),
+                        expected_flag: peek_flag.name.clone(),
+                    },
+                ));
+            }
+        };
+        match body_flag.value {
+            None => {
+                return Err(ForgeError::Validation(
+                    ValidationError::CodecVariantArmInnerMidUndeclared {
+                        codec: parent.name.clone(),
+                        arm_value: default_arm.value,
+                        inner_codec: default_arm.body_alias.clone(),
+                        expected_flag: peek_flag.name.clone(),
+                    },
+                ));
+            }
+            Some(inner_value) => {
+                // Compare the inner flag's declared value against
+                // the bit-range slice of the outer arm value at
+                // this flag's bit position. The outer arm declares
+                // the full peek-byte tag (e.g. `value="0x02"` for
+                // the entire dispatched byte); each inner flag
+                // declares its own bit-range constant. For the
+                // common case where the dispatch flag spans bits
+                // 0..width and width == 8, the two are equal. For
+                // multi-flag dispatch the inner flag's value must
+                // match the bit-range slice of the outer arm
+                // value. Compute the expected slice:
+                //   mask  = ((1 << width) - 1)
+                //   slice = (arm_value >> bit) & mask
+                let mask: u64 = if peek_flag.width >= 64 {
+                    u64::MAX
+                } else {
+                    (1u64 << peek_flag.width) - 1
+                };
+                let expected_slice =
+                    (default_arm.value >> peek_flag.bit) & mask;
+                if inner_value != expected_slice {
+                    return Err(ForgeError::Validation(
+                        ValidationError::CodecVariantDefaultArmMidMismatch {
+                            codec: parent.name.clone(),
+                            arm_value: default_arm.value,
+                            inner_codec: default_arm.body_alias.clone(),
+                            inner_flag: peek_flag.name.clone(),
+                            inner_flag_value: inner_value,
+                        },
+                    ));
+                }
             }
         }
     }

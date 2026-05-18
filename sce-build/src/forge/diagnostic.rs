@@ -569,6 +569,22 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/variant-duplicate-default-arm")]
     CodecVariantDuplicateDefaultArm,
 
+    // ── RFC variant-default-uniformity Atomic γ-1: cross-doc check
+    //    that the outer `<sce:arm default="true" value="X"/>` and
+    //    the inner codec's matching peek-byte `<sce:flag value="Y"/>`
+    //    declare the same wire constant. Mismatch lands the wrong
+    //    arm at decode time. Stage = Validation. ──
+    #[serde(rename = "codec/variant-default-arm-mid-mismatch")]
+    CodecVariantDefaultArmMidMismatch,
+
+    // ── RFC variant-default-uniformity Atomic γ-1: cross-doc check
+    //    that the inner codec selected by a default-marked outer
+    //    arm declares a wire-MID constant via `<sce:flag value="..."/>`.
+    //    Absence means the inner's Default zero-fills the dispatch
+    //    byte and round-trip breaks. Stage = Validation. ──
+    #[serde(rename = "codec/variant-arm-inner-mid-undeclared")]
+    CodecVariantArmInnerMidUndeclared,
+
     // ── §5.B present-if primitive (watching-zenoh RFC §5.B, B1-δ).
     //    Build-time check on `<sce:field sce:present-if="X.Y"/>`: the
     //    referenced field `X` must be declared earlier in the same
@@ -2203,6 +2219,10 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CodecVariantArmUnreachable,
         // RFC variant-default-uniformity Atomic α — duplicate default-arm marker
         CodecVariantDuplicateDefaultArm,
+        // RFC variant-default-uniformity Atomic γ-1 — cross-doc MID mismatch
+        CodecVariantDefaultArmMidMismatch,
+        // RFC variant-default-uniformity Atomic γ-1 — inner codec missing wire-MID constant
+        CodecVariantArmInnerMidUndeclared,
         // Codec §5.B present-if primitive (watching-zenoh RFC §5.B, B1-δ)
         CodecPresentIfRefsLaterField,
         // Codec §5.B repeat primitive (watching-zenoh RFC §5.B, B2)
@@ -2563,6 +2583,8 @@ impl DiagnosticCode {
             // ── Codec §5.B variant + present-if + repeat + tlv-chain + dma-align primitives (B1-β/δ + B2 + B3) ─
             CodecVariantArmUnreachable
             | CodecVariantDuplicateDefaultArm
+            | CodecVariantDefaultArmMidMismatch
+            | CodecVariantArmInnerMidUndeclared
             | CodecPresentIfRefsLaterField
             | CodecRepeatCountRefsLaterField
             | AlgorithmTestVectorUnsupportedKind
@@ -3066,6 +3088,8 @@ impl DiagnosticCode {
             AlgorithmConstYieldTypeMismatch => "algorithm/const-yield-type-mismatch",
             CodecVariantArmUnreachable => "codec/variant-arm-unreachable",
             CodecVariantDuplicateDefaultArm => "codec/variant-duplicate-default-arm",
+            CodecVariantDefaultArmMidMismatch => "codec/variant-default-arm-mid-mismatch",
+            CodecVariantArmInnerMidUndeclared => "codec/variant-arm-inner-mid-undeclared",
             CodecPresentIfRefsLaterField => "codec/present-if-refs-later-field",
             CodecRepeatCountRefsLaterField => "codec/repeat-count-refs-later-field",
             AlgorithmTestVectorUnsupportedKind => "algorithm/test-vector-unsupported-kind",
@@ -4128,6 +4152,57 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 codec.clone(),
                 format!("{first_arm_value:#x}"),
                 format!("{second_arm_value:#x}"),
+            ],
+        },
+        ValidationError::CodecVariantDefaultArmMidMismatch {
+            codec,
+            arm_value,
+            inner_codec,
+            inner_flag,
+            inner_flag_value,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CodecVariantDefaultArmMidMismatch,
+            stage: Stage::Validation,
+            // Repair is "align outer arm value with inner flag value"
+            // — author-domain (which side is canonical), not a closed
+            // candidate set, so `fix` stays `None`. The 4-tuple
+            // (codec, arm_value, inner_codec, inner_flag_value) keys
+            // the violation across multiple variants and multiple
+            // arms that might trip the same diagnostic.
+            expected: Some(vec![format!("{arm_value:#x}")]),
+            actual: Some(format!("{inner_flag_value:#x}")),
+            fix: None,
+            key_fragments: vec![
+                codec.clone(),
+                format!("{arm_value:#x}"),
+                inner_codec.clone(),
+                inner_flag.clone(),
+                format!("{inner_flag_value:#x}"),
+            ],
+        },
+        ValidationError::CodecVariantArmInnerMidUndeclared {
+            codec,
+            arm_value,
+            inner_codec,
+            expected_flag,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CodecVariantArmInnerMidUndeclared,
+            stage: Stage::Validation,
+            // Repair is "add <sce:flag value=> to the inner codec's
+            // dispatch field" — concrete location (inner_codec +
+            // expected_flag) and concrete value (arm_value), but the
+            // author still chooses whether to edit the inner codec
+            // or the outer arm reference, so `fix` stays `None`.
+            // Key triple (codec, arm_value, inner_codec) is enough
+            // to distinguish overlapping violations.
+            expected: Some(vec![format!("{arm_value:#x}")]),
+            actual: Some(inner_codec.clone()),
+            fix: None,
+            key_fragments: vec![
+                codec.clone(),
+                format!("{arm_value:#x}"),
+                inner_codec.clone(),
+                expected_flag.clone(),
             ],
         },
         ValidationError::CodecRepeatCountRefsLaterField {
@@ -7624,6 +7699,31 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:e0a8b8b88b736596","code":"codec/variant-duplicate-default-arm","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': <sce:variant> declares more than one <sce:arm default=\"true\"/> (first arm value=0x1, second arm value=0x2) — only one arm may be marked the Default-trait starting value; remove default=\"true\" from all but the intended arm. (The catch-all <sce:default> element is unrelated and still permitted once.)","actual":"session_envelope"}"#,
             ),
+            // ── RFC variant-default-uniformity Atomic γ-1 — outer arm vs inner flag mismatch ─
+            (
+                "forge/codec-variant-default-arm-mid-mismatch",
+                ValidationError::CodecVariantDefaultArmMidMismatch {
+                    codec: "session_envelope".into(),
+                    arm_value: 0x02,
+                    inner_codec: "session_put".into(),
+                    inner_flag: "mid".into(),
+                    inner_flag_value: 0x01,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:290bd7d238ce9d7c","code":"codec/variant-default-arm-mid-mismatch","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': default <sce:arm value=0x2/> selects inner codec 'session_put' but that codec declares <sce:flag name='mid' value=0x1/> on its dispatch field — outer arm value and inner flag value must match for round-trip dispatch to resolve to the same arm; align one to the other","expected":["0x2"],"actual":"0x1"}"#,
+            ),
+            // ── RFC variant-default-uniformity Atomic γ-1 — inner codec missing wire-MID ─
+            (
+                "forge/codec-variant-arm-inner-mid-undeclared",
+                ValidationError::CodecVariantArmInnerMidUndeclared {
+                    codec: "session_envelope".into(),
+                    arm_value: 0x02,
+                    inner_codec: "session_put".into(),
+                    expected_flag: "mid".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:0bf3318e19f672aa","code":"codec/variant-arm-inner-mid-undeclared","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': default <sce:arm value=0x2/> selects inner codec 'session_put', but 'session_put' does not declare a <sce:flag value=\"...\"/> constant on its dispatch field — the inner's Default would zero-fill the wire byte and break round-trip; add <sce:flag name='mid' value=0x2/> to 'session_put'","expected":["0x2"],"actual":"session_put"}"#,
+            ),
             // ── §5.B present-if primitive (watching-zenoh RFC §5.B, B1-δ) ─
             (
                 "forge/codec-present-if-refs-later-field",
@@ -9874,6 +9974,8 @@ mod tests {
             | AlgorithmConstYieldTypeMismatch
             | CodecVariantArmUnreachable
             | CodecVariantDuplicateDefaultArm
+            | CodecVariantDefaultArmMidMismatch
+            | CodecVariantArmInnerMidUndeclared
             | CodecPresentIfRefsLaterField
             | CodecRepeatCountRefsLaterField
             | AlgorithmTestVectorUnsupportedKind
@@ -10335,6 +10437,8 @@ mod tests {
                 | AlgorithmConstYieldTypeMismatch
                 | CodecVariantArmUnreachable
                 | CodecVariantDuplicateDefaultArm
+                | CodecVariantDefaultArmMidMismatch
+                | CodecVariantArmInnerMidUndeclared
                 | CodecPresentIfRefsLaterField
                 | CodecRepeatCountRefsLaterField
                 | AlgorithmTestVectorUnsupportedKind
@@ -10519,8 +10623,8 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            275,
-            "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
+            277,
+            "ALL_DIAGNOSTIC_CODES has duplicates or missing entries —\
              expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
@@ -11144,7 +11248,15 @@ mod tests {
              the `FlagDef.value: Option<u64>` + `VariantArm.is_default: \
              bool` model fields are parsed but no cross-doc validation \
              or codegen change yet; Atomic β/γ build on this baseline. \
-             274 → 275.",
+             274 → 275. \
+             Then RFC variant-default-uniformity Atomic γ-1 added two \
+             cross-doc validators: CodecVariantDefaultArmMidMismatch fires \
+             when the outer marked-default arm's value differs from the \
+             inner codec's matching peek-byte <sce:flag value=>, and \
+             CodecVariantArmInnerMidUndeclared fires when the inner codec \
+             selected by a marked-default arm declares no wire-MID flag \
+             at all. Both gate emission of the new β-chain Default \
+             contracts on round-trip safety. 275 → 277.",
         );
     }
 

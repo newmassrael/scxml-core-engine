@@ -3831,6 +3831,141 @@ fn forge_codec_variant_duplicate_default_arm_rejects() {
     );
 }
 
+/// RFC variant-default-uniformity Atomic γ-1: when the outer
+/// `<sce:arm default="true" value="X"/>` selects an inner codec
+/// that declares `<sce:flag value="Y"/>` on its matching peek-byte
+/// flag with X ≠ Y, codegen rejects with `codec/variant-default-
+/// arm-mid-mismatch`. The inner codec's `Default::default()` would
+/// emit Y; the outer's dispatch table at decode time would route
+/// Y to whichever arm has `value="Y"` — not the marked-default
+/// arm — so round-trip is broken.
+#[test]
+fn forge_codec_variant_default_arm_mid_mismatch_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+
+    // codec_default_marker_arm_a declares <sce:flag name="kind"
+    // value="0x01"/>. Mark a hypothetical outer arm with
+    // value="0x03" default="true" → expected slice 0x03 vs inner
+    // 0x01 → mismatch.
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="mid_mismatch_outer">
+  <sce:import src="codec_default_marker_arm_a.scxml" kind="codec" as="codec_default_marker_arm_a"/>
+  <sce:import src="codec_default_marker_arm_b.scxml" kind="codec" as="codec_default_marker_arm_b"/>
+  <datamodel>
+    <sce:variant tag="peek.kind">
+      <sce:peek-byte id="peek" sce:type="uint8">
+        <sce:flag name="kind" bit="0" width="2"/>
+      </sce:peek-byte>
+      <sce:arm value="0x03" type="codec_default_marker_arm_a" default="true"/>
+      <sce:arm value="0x02" type="codec_default_marker_arm_b"/>
+      <sce:default type="codec_default_marker_arm_b"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#;
+    let result = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("mid_mismatch_outer"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "outer arm value 0x03 vs inner flag value 0x01 must reject \
+             with codec/variant-default-arm-mid-mismatch"
+        ),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            err.error,
+            ForgeError::Validation(ValidationError::CodecVariantDefaultArmMidMismatch {
+                ref codec,
+                arm_value: 0x03,
+                ref inner_codec,
+                ref inner_flag,
+                inner_flag_value: 0x01,
+            }) if codec == "mid_mismatch_outer"
+                && inner_codec == "codec_default_marker_arm_a"
+                && inner_flag == "kind"
+        ),
+        "must surface as ValidationError::CodecVariantDefaultArmMidMismatch \
+         with the 4-tuple (codec, arm_value, inner_codec, inner_flag_value); \
+         got: {:?}",
+        err.error
+    );
+}
+
+/// RFC variant-default-uniformity Atomic γ-1: when the outer
+/// `<sce:arm default="true"/>` selects an inner codec that does
+/// NOT declare `<sce:flag value="..."/>` on its dispatch field —
+/// either because the inner has no flags carrier at offset 0
+/// (B5-η-stripped leaf) or because the matching flag is declared
+/// without a value — codegen rejects with `codec/variant-arm-
+/// inner-mid-undeclared`. Without the wire-MID baked into the
+/// inner's Default, round-trip would zero-fill the dispatch byte
+/// and land in the catch-all arm.
+#[test]
+fn forge_codec_variant_arm_inner_mid_undeclared_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+
+    // codec_variant_session_open has a uint16 field at offset 0
+    // (no <sce:flags> carrier), so the inner has no
+    // codec_first_flags → my validator's first early-return path
+    // fires with the peek-byte's flag name as the expected
+    // location.
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="inner_mid_undeclared_outer">
+  <sce:import src="codec_variant_session_open.scxml" kind="codec" as="codec_variant_session_open"/>
+  <sce:import src="codec_variant_session_close.scxml" kind="codec" as="codec_variant_session_close"/>
+  <datamodel>
+    <sce:variant tag="peek.kind">
+      <sce:peek-byte id="peek" sce:type="uint8">
+        <sce:flag name="kind" bit="0" width="2"/>
+      </sce:peek-byte>
+      <sce:arm value="0x01" type="codec_variant_session_open" default="true"/>
+      <sce:arm value="0x02" type="codec_variant_session_close"/>
+      <sce:default type="codec_variant_session_close"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#;
+    let result = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("inner_mid_undeclared_outer"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "inner codec with no <sce:flag value=> must reject with \
+             codec/variant-arm-inner-mid-undeclared when an outer arm \
+             selects it as default"
+        ),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            err.error,
+            ForgeError::Validation(ValidationError::CodecVariantArmInnerMidUndeclared {
+                ref codec,
+                arm_value: 0x01,
+                ref inner_codec,
+                ref expected_flag,
+            }) if codec == "inner_mid_undeclared_outer"
+                && inner_codec == "codec_variant_session_open"
+                && expected_flag == "kind"
+        ),
+        "must surface as ValidationError::CodecVariantArmInnerMidUndeclared \
+         keyed on (codec, arm_value, inner_codec, expected_flag); got: {:?}",
+        err.error
+    );
+}
+
 /// RFC variant-default-uniformity Atomic α: `default="..."` on
 /// `<sce:arm>` is typed as `xs:boolean` in the XSD, so a misspelling
 /// like `default="yes"` is caught at the structural XSD layer before
