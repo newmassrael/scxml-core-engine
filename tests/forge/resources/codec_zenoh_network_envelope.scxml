@@ -78,7 +78,7 @@
       <sce:arm value="0x1c" type="codec_zenoh_request"/>
       <sce:arm value="0x1d" type="codec_zenoh_push"/>
       <sce:arm value="0x1e" type="codec_zenoh_declare"/>
-      <sce:arm value="0x1f" type="codec_zenoh_oam"/>
+      <sce:arm value="0x1f" type="codec_zenoh_oam" default="true"/>
       <sce:default type="codec_zenoh_oam"/>
     </sce:variant>
   </datamodel>

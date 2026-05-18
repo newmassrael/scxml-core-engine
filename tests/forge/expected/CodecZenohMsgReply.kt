@@ -15,7 +15,7 @@ import com.sce.generated.codec_zenoh_push_body.*
 // `CodecZenohMsgReply()` before any encode()/decode() call. Defaults
 // mirror the zero-initialized shape that decode() fills in on success.
 data class CodecZenohMsgReply(
-    var header: UByte = 0.toUByte(),
+    var header: UByte = 0x04.toUByte(),
     var consolidation: UByte? = null,
     var extensions: MutableList<CodecZenohExtEntry>? = null,
     var body: CodecZenohPushBody = CodecZenohPushBody()

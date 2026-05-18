@@ -34,6 +34,19 @@ typedef struct {
     uint8_t payload[256];
 } codec_zenoh_msg_put_t;
 
+/* RFC variant-default-uniformity Atomic β-c11: designated-initializer
+ * macro carrying the codec's wire-MID-baked defaults. C has no Default
+ * trait — round-trip safety (`codec_zenoh_msg_put_t x = CODEC_ZENOH_MSG_PUT_DEFAULT_INIT;
+ * codec_zenoh_msg_put_t_encode(&x)` decodes back to the same arm)
+ * requires using this macro rather than the zero-initializer `{0}`,
+ * which would leave the dispatch tag at zero and (for variant codecs)
+ * land in the catch-all arm or a mismatched union slot. Unspecified
+ * fields zero-initialize per C11 §6.7.9 ¶21, so the macro names only
+ * the wire-MID-bearing members. */
+#define CODEC_ZENOH_MSG_PUT_DEFAULT_INIT { \
+    .header = 0x01u, \
+}
+
 typedef struct {
     uint8_t bytes[CODEC_ZENOH_MSG_PUT_MAX_BYTES];
     size_t  len;

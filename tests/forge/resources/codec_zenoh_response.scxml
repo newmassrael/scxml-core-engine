@@ -100,7 +100,7 @@
       <sce:peek-byte id="peek" sce:type="uint8">
         <sce:flag name="mid" bit="0" width="5"/>
       </sce:peek-byte>
-      <sce:arm value="0x04" type="codec_zenoh_msg_reply"/>
+      <sce:arm value="0x04" type="codec_zenoh_msg_reply" default="true"/>
       <sce:arm value="0x05" type="codec_zenoh_msg_err"/>
       <sce:default type="codec_zenoh_msg_reply"/>
     </sce:variant>

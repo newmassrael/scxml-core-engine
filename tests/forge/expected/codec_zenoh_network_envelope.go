@@ -45,6 +45,21 @@ type CodecZenohNetworkEnvelope struct {
 	Body CodecZenohNetworkEnvelopeVariant
 }
 
+// NewCodecZenohNetworkEnvelope returns a CodecZenohNetworkEnvelope initialized with the
+// declared wire-MID defaults. Go has no Default trait — round-trip
+// safety (`NewCodecZenohNetworkEnvelope().Encode()` decodes back to the same
+// arm) requires using this constructor rather than the bare struct
+// literal `CodecZenohNetworkEnvelope{}`, which would zero-init every field
+// (and leave every Variant arm pointer nil for variant codecs).
+// RFC variant-default-uniformity Atomic β-go.
+func NewCodecZenohNetworkEnvelope() *CodecZenohNetworkEnvelope {
+	return &CodecZenohNetworkEnvelope{
+		Body: CodecZenohNetworkEnvelopeVariant{
+			CodecZenohOam: codec_zenoh_oam.NewCodecZenohOam(),
+		},
+	}
+}
+
 // DecodeCodecZenohNetworkEnvelope decodes the next frame from cursor.
 // On success the cursor advances past the consumed bytes; returns
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail

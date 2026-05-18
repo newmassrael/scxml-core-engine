@@ -21,7 +21,7 @@
 namespace SCE::Generated::CodecZenohMsgPut {
 
 struct CodecZenohMsgPut {
-    uint8_t header;
+    uint8_t header{0x01u};
     std::optional<::SCE::Generated::CodecZenohTimestamp::CodecZenohTimestamp> timestamp;
     std::optional<::SCE::Generated::CodecZenohEncoding::CodecZenohEncoding> encoding;
     std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions;

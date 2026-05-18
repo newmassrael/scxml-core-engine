@@ -17,7 +17,7 @@ from typing import Optional, List
 
 @dataclass
 class CodecZenohMsgPut:
-    header: int = 0
+    header: int = 0x01
     timestamp: Optional[CodecZenohTimestamp] = None
     encoding: Optional[CodecZenohEncoding] = None
     extensions: Optional[List[CodecZenohExtEntry]] = b""

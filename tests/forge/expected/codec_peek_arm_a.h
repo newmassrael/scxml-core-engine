@@ -18,7 +18,7 @@
 namespace SCE::Generated::CodecPeekArmA {
 
 struct CodecPeekArmA {
-    uint8_t header;
+    uint8_t header{0x00u};
     uint8_t payload;
 
     /// Decode the next frame from `cursor`. On success the cursor

@@ -16,7 +16,7 @@ from typing import Optional, List
 
 @dataclass
 class CodecZenohMsgReply:
-    header: int = 0
+    header: int = 0x04
     consolidation: Optional[int] = None
     extensions: Optional[List[CodecZenohExtEntry]] = b""
     body: CodecZenohPushBody = b""

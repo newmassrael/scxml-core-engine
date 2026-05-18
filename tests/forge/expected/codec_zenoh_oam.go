@@ -41,6 +41,19 @@ type CodecZenohOam struct {
 	Body CodecZenohOamVariant
 }
 
+// NewCodecZenohOam returns a CodecZenohOam initialized with the
+// declared wire-MID defaults. Go has no Default trait — round-trip
+// safety (`NewCodecZenohOam().Encode()` decodes back to the same
+// arm) requires using this constructor rather than the bare struct
+// literal `CodecZenohOam{}`, which would zero-init every field
+// (and leave every Variant arm pointer nil for variant codecs).
+// RFC variant-default-uniformity Atomic β-go.
+func NewCodecZenohOam() *CodecZenohOam {
+	return &CodecZenohOam{
+		Header: uint8(0x1f),
+	}
+}
+
 // DecodeCodecZenohOam decodes the next frame from cursor.
 // On success the cursor advances past the consumed bytes; returns
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail

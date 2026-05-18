@@ -30,7 +30,7 @@ sealed class CodecZenohOamVariant {
 // `CodecZenohOam()` before any encode()/decode() call. Defaults
 // mirror the zero-initialized shape that decode() fills in on success.
 data class CodecZenohOam(
-    var header: UByte = 0.toUByte(),
+    var header: UByte = 0x1f.toUByte(),
     var id: UShort = 0.toUShort(),
     var extensions: MutableList<CodecZenohExtEntry>? = null,
     var body: CodecZenohOamVariant = CodecZenohOamVariant.CodecZenohExtUnit(com.sce.generated.codec_zenoh_ext_unit.CodecZenohExtUnit())

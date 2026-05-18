@@ -16,7 +16,7 @@ import com.sce.generated.codec_zenoh_ext_entry.*
 // `CodecZenohMsgPut()` before any encode()/decode() call. Defaults
 // mirror the zero-initialized shape that decode() fills in on success.
 data class CodecZenohMsgPut(
-    var header: UByte = 0.toUByte(),
+    var header: UByte = 0x01.toUByte(),
     var timestamp: CodecZenohTimestamp? = null,
     var encoding: CodecZenohEncoding? = null,
     var extensions: MutableList<CodecZenohExtEntry>? = null,

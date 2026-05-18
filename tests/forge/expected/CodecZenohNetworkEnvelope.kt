@@ -37,7 +37,12 @@ sealed class CodecZenohNetworkEnvelopeVariant {
 // `CodecZenohNetworkEnvelope()` before any encode()/decode() call. Defaults
 // mirror the zero-initialized shape that decode() fills in on success.
 data class CodecZenohNetworkEnvelope(
-    var body: CodecZenohNetworkEnvelopeVariant = CodecZenohNetworkEnvelopeVariant.CodecZenohInterest(com.sce.generated.codec_zenoh_interest.CodecZenohInterest())
+    // RFC variant-default-uniformity Atomic β-kotlin: pick the declared
+    // default arm (`<sce:arm default="true"/>`) instead of the first
+    // alternative so a freshly-constructed envelope round-trips byte-
+    // exactly through `encode() -> decode()`. Paired with the inner
+    // codec's `<sce:flag value=>`-baked default fields above.
+    var body: CodecZenohNetworkEnvelopeVariant = CodecZenohNetworkEnvelopeVariant.CodecZenohOam(com.sce.generated.codec_zenoh_oam.CodecZenohOam())
 ) {
     fun encode(): ByteArray {
         // RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:

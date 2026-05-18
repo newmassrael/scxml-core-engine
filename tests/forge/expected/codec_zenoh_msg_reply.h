@@ -20,7 +20,7 @@
 namespace SCE::Generated::CodecZenohMsgReply {
 
 struct CodecZenohMsgReply {
-    uint8_t header;
+    uint8_t header{0x04u};
     std::optional<uint8_t> consolidation;
     std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions;
     ::SCE::Generated::CodecZenohPushBody::CodecZenohPushBody body;

@@ -15,7 +15,7 @@
        sce:kind="codec" sce:default-endian="big" name="codec_peek_arm_a">
   <datamodel>
     <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
-      <sce:flag name="kind" bit="0" width="1"/>
+      <sce:flag name="kind" bit="0" width="1" value="0x00"/>
     </sce:flags>
     <sce:field id="payload" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
   </datamodel>

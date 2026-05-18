@@ -38,7 +38,7 @@ using CodecZenohOamVariant = std::variant<
 >;
 
 struct CodecZenohOam {
-    uint8_t header;
+    uint8_t header{0x1fu};
     uint16_t id;
     std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions;
     CodecZenohOamVariant body;

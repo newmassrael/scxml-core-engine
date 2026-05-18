@@ -41,6 +41,22 @@ typedef struct {
     codec_variant_peek_basic_variant_t body;
 } codec_variant_peek_basic_t;
 
+/* RFC variant-default-uniformity Atomic β-c11: designated-initializer
+ * macro carrying the codec's wire-MID-baked defaults. C has no Default
+ * trait — round-trip safety (`codec_variant_peek_basic_t x = CODEC_VARIANT_PEEK_BASIC_DEFAULT_INIT;
+ * codec_variant_peek_basic_t_encode(&x)` decodes back to the same arm)
+ * requires using this macro rather than the zero-initializer `{0}`,
+ * which would leave the dispatch tag at zero and (for variant codecs)
+ * land in the catch-all arm or a mismatched union slot. Unspecified
+ * fields zero-initialize per C11 §6.7.9 ¶21, so the macro names only
+ * the wire-MID-bearing members. */
+#define CODEC_VARIANT_PEEK_BASIC_DEFAULT_INIT { \
+    .body = { \
+        .kind = CODEC_VARIANT_PEEK_BASIC_BODY_KIND_CODEC_PEEK_ARM_A, \
+        .arm = { .codec_peek_arm_a = CODEC_PEEK_ARM_A_DEFAULT_INIT } \
+    }, \
+}
+
 typedef struct {
     uint8_t bytes[CODEC_VARIANT_PEEK_BASIC_MAX_BYTES];
     size_t  len;

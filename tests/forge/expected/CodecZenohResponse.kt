@@ -34,6 +34,11 @@ data class CodecZenohResponse(
     var suffix_len: ULong? = null,
     var suffix: String? = null,
     var extensions: MutableList<CodecZenohExtEntry>? = null,
+    // RFC variant-default-uniformity Atomic β-kotlin: pick the declared
+    // default arm (`<sce:arm default="true"/>`) instead of the first
+    // alternative so a freshly-constructed envelope round-trips byte-
+    // exactly through `encode() -> decode()`. Paired with the inner
+    // codec's `<sce:flag value=>`-baked default fields above.
     var body: CodecZenohResponseVariant = CodecZenohResponseVariant.CodecZenohMsgReply(com.sce.generated.codec_zenoh_msg_reply.CodecZenohMsgReply())
 ) {
     // RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over

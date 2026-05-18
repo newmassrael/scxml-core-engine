@@ -36,7 +36,7 @@ class CodecZenohOamVariant:
 
 @dataclass
 class CodecZenohOam:
-    header: int = 0
+    header: int = 0x1f
     id: int = 0
     extensions: Optional[List[CodecZenohExtEntry]] = b""
     body: CodecZenohOamVariant = field(default_factory=CodecZenohOamVariant)

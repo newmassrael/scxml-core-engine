@@ -26,17 +26,21 @@ class CodecZenohNetworkEnvelopeVariant:
     matching ``Optional`` field carries the decoded body. ``default_tag``
     preserves the runtime tag value when the default arm fires so encode
     can round-trip it back onto the wire."""
-    # Default to the first declared arm (or "Default" when arms is empty)
-    # so a freshly-constructed envelope round-trips through encode without
-    # needing the caller to populate the body explicitly.
-    kind: str = "CodecZenohInterest"
+    # RFC variant-default-uniformity Atomic β-python: pick the declared
+    # default arm (``<sce:arm default="true"/>``) when present so a
+    # freshly-constructed envelope round-trips byte-exactly through
+    # ``encode() -> decode()``. The corresponding arm body field uses a
+    # default_factory so ``Variant()`` actually populates it (rather
+    # than leaving every arm field ``None`` while ``kind`` names one of
+    # them, which is the latent inconsistency this RFC closes).
+    kind: str = "CodecZenohOam"
     codec_zenoh_interest: Optional[CodecZenohInterest] = None
     codec_zenoh_response_final: Optional[CodecZenohResponseFinal] = None
     codec_zenoh_response: Optional[CodecZenohResponse] = None
     codec_zenoh_request: Optional[CodecZenohRequest] = None
     codec_zenoh_push: Optional[CodecZenohPush] = None
     codec_zenoh_declare: Optional[CodecZenohDeclare] = None
-    codec_zenoh_oam: Optional[CodecZenohOam] = None
+    codec_zenoh_oam: Optional[CodecZenohOam] = field(default_factory=CodecZenohOam)
     default_body: Optional[CodecZenohOam] = None
     default_tag: int = 0
 

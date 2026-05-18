@@ -36,7 +36,7 @@
       <sce:peek-byte id="peek" sce:type="uint8">
         <sce:flag name="kind" bit="0" width="1"/>
       </sce:peek-byte>
-      <sce:arm value="0x00" type="codec_peek_arm_a"/>
+      <sce:arm value="0x00" type="codec_peek_arm_a" default="true"/>
       <sce:arm value="0x01" type="codec_peek_arm_b"/>
     </sce:variant>
   </datamodel>

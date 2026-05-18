@@ -62,7 +62,7 @@
   <sce:import src="codec_zenoh_ext_zbuf.scxml"  kind="codec" as="codec_zenoh_ext_zbuf"/>
   <datamodel>
     <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
-      <sce:flag name="mid" bit="0" width="5"/>
+      <sce:flag name="mid" bit="0" width="5" value="0x1f"/>
       <sce:flag name="enc" bit="5" width="2"/>
       <sce:flag name="Z"   bit="7"/>
     </sce:flags>

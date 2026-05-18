@@ -13,7 +13,7 @@ import com.sce.forge.runtime.SceCursor
 // `CodecPeekArmA()` before any encode()/decode() call. Defaults
 // mirror the zero-initialized shape that decode() fills in on success.
 data class CodecPeekArmA(
-    var header: UByte = 0.toUByte(),
+    var header: UByte = 0x00.toUByte(),
     var payload: UByte = 0.toUByte()
 ) {
     // RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
