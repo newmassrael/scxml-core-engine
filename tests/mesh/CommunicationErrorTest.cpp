@@ -21,6 +21,7 @@
 //   * DedupWindowOverflowShape
 //   * TransportUnavailableShape
 //   * SendFailedShape
+//   * SendFailedShapeWithTransportError
 //   * InvokeChildLostShape
 // since those pin byte-exact output.
 
@@ -263,14 +264,13 @@ TEST(CommunicationErrorTest, SendFailedShape) {
     // ready+empty, markReady drains under `mu_`) — there is never a
     // non-empty queue at the moment of an Active→Disconnected edge.
     //
-    // Only `target` and `transport` are populated today. A future
-    // Stage 2 atomic enriches the dispatcher signature so the
-    // underlying API error string (errno, vsomeip return code,
-    // zenoh exception message) flows through as `transport_error`
-    // and lands as a struct field at the same commit as its
-    // consumer; that atomic also handles Zenoh's `publisher.put`
-    // exception capture (today the Zenoh dispatcher always returns
-    // true so its api-fail path is silent under Stage 1).
+    // Minimal shape — `target` and `transport` only. The dispatcher
+    // can decline without a transport-API message attached (e.g. an
+    // app-pointer null check inside the SOME/IP dispatcher closure),
+    // in which case `transport_error` stays absent and the JSON
+    // wire shape contains the bare row-2 baseline. The
+    // `SendFailedShapeWithTransportError` test below pins the
+    // populated variant.
     //
     // Authors guard on `_event.data.reason == 'SEND_FAILED' &&
     //  _event.data.target == '<peer>'` to react to dropped outbound
@@ -286,6 +286,33 @@ TEST(CommunicationErrorTest, SendFailedShape) {
               "\"reason\":\"SEND_FAILED\","
               "\"target\":\"motor\","
               "\"transport\":\"someip\"}");
+}
+
+TEST(CommunicationErrorTest, SendFailedShapeWithTransportError) {
+    // §16.7 row 2 Stage 2: the dispatcher's `SendResult::transport_error`
+    // (vsomeip "app.send returned false" sentinel, zenoh
+    // `ZException::what()`) is relayed verbatim into
+    // `CommunicationError::transport_error` so the SCXML author can
+    // correlate the loss with transport telemetry. JSON insertion
+    // order: `transport` precedes `transport_error` per the source
+    // order of the assignments inside `toJsonBytes`.
+    //
+    // Authors guard on `_event.data.reason == 'SEND_FAILED' &&
+    //  _event.data.transport_error == '<api-decline>'` to react to
+    // a specific underlying API failure.
+    CommunicationError err;
+    err.reason = "SEND_FAILED";
+    err.target = "motor";
+    err.transport = "zenoh";
+    err.transport_error = "ZException: closed session";
+
+    const auto out = bytes_to_string(err.toJsonBytes());
+    EXPECT_EQ(out,
+              "{\"errorName\":\"communication\","
+              "\"reason\":\"SEND_FAILED\","
+              "\"target\":\"motor\","
+              "\"transport\":\"zenoh\","
+              "\"transport_error\":\"ZException: closed session\"}");
 }
 
 TEST(CommunicationErrorTest, TransportUnavailableShape) {

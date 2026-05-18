@@ -21,19 +21,18 @@
 //     state does NOT emit on the first `markNotReady`: no Active phase
 //     preceded it, so no transition fires.
 //   * §16.7 row 2 SEND_FAILED (per-send api-fail half):
-//     The dispatcher returns `false` either at `admit`'s fast path
-//     (direct send under ready_=true + empty queue) or per envelope
-//     in `markReady`'s drain loop. Each false return raises one
-//     `error.communication` with `reason="SEND_FAILED"`. The
-//     §10.4.1 disconnect-drain clause is satisfied vacuously by
+//     The dispatcher returns a non-ok `SendResult` either at
+//     `admit`'s fast path (direct send under ready_=true + empty
+//     queue) or per envelope in `markReady`'s drain loop. Each
+//     non-ok return raises one `error.communication` with
+//     `reason="SEND_FAILED"`; the dispatcher's `transport_error`
+//     (when populated) is relayed into
+//     `CommunicationError::transport_error` so the SCXML author can
+//     correlate the loss with transport telemetry. The §10.4.1
+//     disconnect-drain clause is satisfied vacuously by
 //     OutboundBuffer's "ready_=true ⟹ queue empty" invariant — the
 //     queue at the Active→Disconnected edge is empty by construction
-//     so `markNotReady` emits Row 1 only. A future Stage 2 atomic
-//     enriches the dispatcher signature so the transport's API
-//     error string flows through as a `transport_error` field; that
-//     atomic also adds Zenoh-side capture (today's Zenoh dispatcher
-//     always returns true because `publisher.put` has no boolean
-//     return surface).
+//     so `markNotReady` emits Row 1 only.
 //
 // The byte-shape unit pins for the raised errors live in
 // `CommunicationErrorTest::BackpressureDropShape`,
@@ -50,10 +49,12 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 
 using SCE::Mesh::CommunicationError;
 using SCE::Mesh::MeshEnvelope;
 using SCE::Mesh::OutboundBuffer;
+using SCE::Mesh::SendResult;
 
 namespace {
 
@@ -84,7 +85,7 @@ TEST(OutboundBufferTest, BackpressureOverflowRaisesRow9) {
         /* target          */ "motor",
         /* max_pending     */ 2,
         /* transport_name  */ "someip",
-        /* dispatch        */ [](const MeshEnvelope&) { return true; },
+        /* dispatch        */ [](const MeshEnvelope&) { return SendResult::success(); },
         /* raise_error     */ std::ref(sink));
 
     MeshEnvelope env{};
@@ -119,7 +120,7 @@ TEST(OutboundBufferTest, SustainedOverflowRaisesPerAdmit) {
     ErrorSink sink;
     OutboundBuffer buf(
         "motor", /*max_pending*/ 1, "zenoh",
-        [](const MeshEnvelope&) { return true; },
+        [](const MeshEnvelope&) { return SendResult::success(); },
         std::ref(sink));
 
     MeshEnvelope env{};
@@ -143,7 +144,7 @@ TEST(OutboundBufferTest, MarkNotReadyFromInitialStateDoesNotRaise) {
     ErrorSink sink;
     OutboundBuffer buf(
         "motor", /*max_pending*/ 4, "someip",
-        [](const MeshEnvelope&) { return true; },
+        [](const MeshEnvelope&) { return SendResult::success(); },
         std::ref(sink));
 
     buf.markNotReady();   // initial false → false: no transition
@@ -168,7 +169,7 @@ TEST(OutboundBufferTest, MarkNotReadyAfterReadyRaisesRow1) {
     ErrorSink sink;
     OutboundBuffer buf(
         "motor", /*max_pending*/ 4, "zenoh",
-        [](const MeshEnvelope&) { return true; },
+        [](const MeshEnvelope&) { return SendResult::success(); },
         std::ref(sink));
 
     buf.markReady();                     // Ready → Active anchor
@@ -201,7 +202,7 @@ TEST(OutboundBufferTest, AdmitFastPathDispatchFailRaisesRow2) {
         /* target          */ "motor",
         /* max_pending     */ 4,
         /* transport_name  */ "someip",
-        /* dispatch        */ [](const MeshEnvelope&) { return false; },
+        /* dispatch        */ [](const MeshEnvelope&) { return SendResult::failure(); },
         /* raise_error     */ std::ref(sink));
 
     buf.markReady();  // Ready→Active so admit takes fast path
@@ -216,6 +217,34 @@ TEST(OutboundBufferTest, AdmitFastPathDispatchFailRaisesRow2) {
     EXPECT_EQ(*sink.last->target, "motor");
     ASSERT_TRUE(sink.last->transport.has_value());
     EXPECT_EQ(*sink.last->transport, "someip");
+    EXPECT_FALSE(sink.last->transport_error.has_value())
+        << "dispatcher returned bare failure(): transport_error stays absent";
+}
+
+TEST(OutboundBufferTest, AdmitFastPathDispatchFailRelaysTransportError) {
+    // §16.7 row 2 Stage 2: the dispatcher's SendResult::transport_error
+    // (vsomeip "app.send returned false" sentinel, zenoh
+    // ZException::what(), etc.) is relayed verbatim into the raised
+    // CommunicationError::transport_error field. Authors guard on
+    // `_event.data.transport_error` to surface the raw API decline in
+    // log / telemetry pipelines without losing fidelity through
+    // SCE-authored prose.
+    ErrorSink sink;
+    OutboundBuffer buf(
+        "motor", /*max_pending*/ 4, "zenoh",
+        [](const MeshEnvelope&) {
+            return SendResult::failure("ZException: closed session");
+        },
+        std::ref(sink));
+
+    buf.markReady();
+    MeshEnvelope env{};
+    EXPECT_FALSE(buf.admit(env));
+
+    ASSERT_EQ(sink.call_count, 1);
+    EXPECT_EQ(sink.last->reason, "SEND_FAILED");
+    ASSERT_TRUE(sink.last->transport_error.has_value());
+    EXPECT_EQ(*sink.last->transport_error, "ZException: closed session");
 }
 
 TEST(OutboundBufferTest, AdmitFastPathDispatchSuccessDoesNotRaise) {
@@ -226,7 +255,7 @@ TEST(OutboundBufferTest, AdmitFastPathDispatchSuccessDoesNotRaise) {
     ErrorSink sink;
     OutboundBuffer buf(
         "motor", /*max_pending*/ 4, "someip",
-        [](const MeshEnvelope&) { return true; },
+        [](const MeshEnvelope&) { return SendResult::success(); },
         std::ref(sink));
 
     buf.markReady();
@@ -245,7 +274,7 @@ TEST(OutboundBufferTest, MarkReadyDrainDispatchFailRaisesRow2PerEnvelope) {
     ErrorSink sink;
     OutboundBuffer buf(
         "motor", /*max_pending*/ 8, "someip",
-        [](const MeshEnvelope&) { return false; },  // always declines
+        [](const MeshEnvelope&) { return SendResult::failure(); },  // always declines
         std::ref(sink));
 
     // Seed three envelopes under ready_=false. They wait for the
@@ -268,6 +297,46 @@ TEST(OutboundBufferTest, MarkReadyDrainDispatchFailRaisesRow2PerEnvelope) {
     EXPECT_EQ(*sink.last->transport, "someip");
 }
 
+TEST(OutboundBufferTest, MarkReadyDrainDispatchFailRelaysPerEnvelopeTransportError) {
+    // §16.7 row 2 Stage 2 drain coverage: each declined envelope's
+    // transport_error string is captured one-to-one with the drain
+    // order and relayed verbatim into the matching post-drain
+    // CommunicationError::transport_error field. Sequence-tagged
+    // errors prove the §10.10 capture-then-emit ordering does not
+    // collapse or reorder per-envelope diagnostics.
+    int call_index = 0;
+    ErrorSink sink;
+    std::vector<std::optional<std::string>> captured_errors;
+    OutboundBuffer buf(
+        "motor", /*max_pending*/ 8, "zenoh",
+        [&](const MeshEnvelope&) {
+            const int idx = call_index++;
+            return SendResult::failure(
+                "ZException env#" + std::to_string(idx));
+        },
+        [&](CommunicationError err) {
+            captured_errors.push_back(err.transport_error);
+            sink(std::move(err));
+        });
+
+    MeshEnvelope env{};
+    EXPECT_TRUE(buf.admit(env));
+    EXPECT_TRUE(buf.admit(env));
+    EXPECT_TRUE(buf.admit(env));
+    EXPECT_EQ(buf.queue_depth(), 3u);
+
+    buf.markReady();
+
+    ASSERT_EQ(sink.call_count, 3);
+    ASSERT_EQ(captured_errors.size(), 3u);
+    ASSERT_TRUE(captured_errors[0].has_value());
+    EXPECT_EQ(*captured_errors[0], "ZException env#0");
+    ASSERT_TRUE(captured_errors[1].has_value());
+    EXPECT_EQ(*captured_errors[1], "ZException env#1");
+    ASSERT_TRUE(captured_errors[2].has_value());
+    EXPECT_EQ(*captured_errors[2], "ZException env#2");
+}
+
 TEST(OutboundBufferTest, MarkReadyDrainMixedSuccessAndFailureRaisesPerFailure) {
     // Drain through a dispatcher whose result depends on envelope
     // sequence (alternating succeed/fail). Pins that the failure-
@@ -280,7 +349,9 @@ TEST(OutboundBufferTest, MarkReadyDrainMixedSuccessAndFailureRaisesPerFailure) {
         "motor", /*max_pending*/ 8, "someip",
         [&](const MeshEnvelope&) {
             // Indices: 0=ok, 1=fail, 2=ok, 3=fail
-            return (call_index++ % 2) == 0;
+            return ((call_index++ % 2) == 0)
+                       ? SendResult::success()
+                       : SendResult::failure();
         },
         std::ref(sink));
 
@@ -308,7 +379,7 @@ TEST(OutboundBufferTest, RepeatedMarkNotReadyRaisesPerTransitionOnly) {
     ErrorSink sink;
     OutboundBuffer buf(
         "motor", /*max_pending*/ 4, "someip",
-        [](const MeshEnvelope&) { return true; },
+        [](const MeshEnvelope&) { return SendResult::success(); },
         std::ref(sink));
 
     buf.markReady();

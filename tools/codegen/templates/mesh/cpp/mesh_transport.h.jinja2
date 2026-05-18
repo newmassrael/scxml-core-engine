@@ -1672,11 +1672,21 @@ struct TransportRouter {
     runtime primitive. #}
 {%- if machine_outbound_buffer %}
 {%-   for target in targets if target.state.kind in ("someip", "zenoh") %}
+{#- SCE_MESH.md §16.7 row 2 SEND_FAILED Stage 2: the dispatcher lambda
+    returns a `SendResult` whose `transport_error` (when populated)
+    surfaces through `OutboundBuffer` into
+    `CommunicationError::transport_error`. SOME/IP stamps a sentinel
+    when `app.send()` returns false (vsomeip exposes no errno
+    equivalent); Zenoh's `Publisher::put` throws `zenoh::ZException` on
+    transport-API failure, so the lambda wraps the call in try/catch
+    and surfaces `e.what()` as the transport_error. The pre-call null
+    check (publisher/app not yet initialized) is also classified as a
+    transport-API decline. #}
 {%-     if target.state.kind == "someip" %}
-{%-       set dispatch = "[this](const SCE::Mesh::MeshEnvelope& env) -> bool { if (!" ~ target.target_snake ~ "_app_) return false; return send_to_" ~ target.target_snake ~ "(*" ~ target.target_snake ~ "_app_, env); }" %}
+{%-       set dispatch = "[this](const SCE::Mesh::MeshEnvelope& env) -> SCE::Mesh::SendResult { if (!" ~ target.target_snake ~ "_app_) return SCE::Mesh::SendResult::failure(\"vsomeip app not initialized\"); return send_to_" ~ target.target_snake ~ "(*" ~ target.target_snake ~ "_app_, env) ? SCE::Mesh::SendResult::success() : SCE::Mesh::SendResult::failure(\"vsomeip app.send returned false\"); }" %}
 {%-       set transport_literal = "\"someip\"" %}
 {%-     else %}
-{%-       set dispatch = "[this](const SCE::Mesh::MeshEnvelope& env) -> bool { if (!" ~ target.target_snake ~ "_publisher_) return false; " ~ target.target_snake ~ "_publisher_->put(zenoh::Bytes(SCE::Mesh::encodeEnvelope(env))); return true; }" %}
+{%-       set dispatch = "[this](const SCE::Mesh::MeshEnvelope& env) -> SCE::Mesh::SendResult { if (!" ~ target.target_snake ~ "_publisher_) return SCE::Mesh::SendResult::failure(\"zenoh publisher not initialized\"); try { " ~ target.target_snake ~ "_publisher_->put(zenoh::Bytes(SCE::Mesh::encodeEnvelope(env))); return SCE::Mesh::SendResult::success(); } catch (const zenoh::ZException& e) { return SCE::Mesh::SendResult::failure(e.what()); } }" %}
 {%-       set transport_literal = "\"zenoh\"" %}
 {%-     endif %}
 {%-     set init = target.target_snake ~ "_outbound_(\"" ~ target.target ~ "\", " ~ machine_outbound_buffer.max_pending_per_target ~ ", " ~ transport_literal ~ ", " ~ dispatch ~ ", [this](SCE::Mesh::CommunicationError err) { raiseCommunicationError(std::move(err)); })" %}

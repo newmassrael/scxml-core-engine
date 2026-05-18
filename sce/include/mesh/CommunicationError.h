@@ -20,10 +20,11 @@
 // timeout_ms), the §16.7 row-13 `REGION_PARTITIONED` extras
 // (machine / partition, reusing last_seen_ms_ago), the §16.7
 // row-4 `ENVELOPE_CORRUPT` extras (transport / codec / position),
-// and the §16.7 row-5 `INVOKE_CHILD_LOST` extras (invoke_id,
-// reusing target). Each raise site populates only the extras named
-// in its row of the catalog; the remainder stay empty and are
-// skipped on render.
+// the §16.7 row-5 `INVOKE_CHILD_LOST` extras (invoke_id, reusing
+// target), and the §16.7 row-2 `SEND_FAILED` extras
+// (transport_error, reusing transport / target). Each raise site
+// populates only the extras named in its row of the catalog; the
+// remainder stay empty and are skipped on render.
 //
 // Design notes:
 //   * Pure header; the canonical JSON render uses
@@ -105,6 +106,19 @@ struct CommunicationError {
     /// etc.) whose plumbing observed the condition. The target-keyed
     /// extra reuses the `target` member above.
     std::optional<std::string> transport;
+
+    /// §16.7 row 2 (SEND_FAILED): underlying transport-API error
+    /// message captured by the dispatcher at the moment of decline.
+    /// SOME/IP populates a sentinel string when `app.send()` returns
+    /// `false` (vsomeip exposes no errno equivalent); Zenoh populates
+    /// `ZException::what()` when `Publisher::put` throws; both keep
+    /// the field absent on the happy path. Distinct from the
+    /// human-readable `detail` field (§10.7.1 baseline): `detail` is
+    /// SCE-authored prose, `transport_error` is the raw API surface
+    /// the SCXML author may want to log or correlate to transport
+    /// telemetry. Pairs with `transport` (which names the binding)
+    /// and `target` (which names the peer that declined).
+    std::optional<std::string> transport_error;
 
     /// §16.7 row 4 (ENVELOPE_CORRUPT): payload codec name of the
     /// inbound envelope whose deserialization failed. Spec restricts
@@ -220,6 +234,9 @@ struct CommunicationError {
         }
         if (transport) {
             j["transport"] = *transport;
+        }
+        if (transport_error) {
+            j["transport_error"] = *transport_error;
         }
         if (codec) {
             j["codec"] = *codec;

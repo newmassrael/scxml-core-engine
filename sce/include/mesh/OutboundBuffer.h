@@ -32,12 +32,13 @@
 // `queue.empty()` (the fast path dispatches; the drain holds `mu_`
 // for its entire scope so admits cannot enqueue mid-drain). There is
 // therefore no non-empty queue at the moment of `markNotReady`;
-// `markNotReady` emits Row 1 only. The per-send api-fail half today
-// captures SOME/IP `app.send()` boolean returns; Zenoh `publisher.put`
-// has no boolean return (the dispatcher always reports success today)
-// and its api-fail observation lands with the Stage 2 atomic that
-// also adds the `transport_error` field for the underlying API
-// error string.
+// `markNotReady` emits Row 1 only. The dispatcher closure surfaces
+// the underlying transport-API decline through `SendResult` (whose
+// `transport_error` value populates the §16.7 row 2
+// `CommunicationError::transport_error` field): SOME/IP stamps a
+// sentinel when `app.send()` returns false (vsomeip exposes no errno
+// equivalent), Zenoh stamps `ZException::what()` when
+// `Publisher::put` throws.
 //
 // OutboundBuffer is the third generic SCE mesh primitive, a sibling of
 // §10.5 `DedupRouter` (inbound duplicate suppression) and §10.6
@@ -92,10 +93,48 @@
 #include <deque>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace SCE::Mesh {
+
+/// Dispatcher result for an attempted outbound send.
+///
+/// SCE_MESH.md §16.7 row 2 SEND_FAILED carries a `transport_error`
+/// extra naming the underlying transport-API error surface so the
+/// SCXML author can correlate the loss with transport telemetry. The
+/// dispatcher closure populates `transport_error` on failure (vsomeip
+/// `app.send()` returning false yields a sentinel; zenoh
+/// `Publisher::put` throwing yields `ZException::what()`); the
+/// OutboundBuffer relays it untouched into the
+/// `CommunicationError::transport_error` field at the raise site.
+///
+/// On the happy path a dispatcher returns `success()` and the
+/// transport_error stays empty — the field is therefore opt-in:
+/// successful sends never allocate a string.
+struct SendResult {
+    bool ok = false;
+    /// Populated only when `!ok`. Absent when the dispatcher cannot
+    /// surface a transport-API message (rare; e.g. SOME/IP returns
+    /// false with no errno mapping today — the codegen lambda still
+    /// stamps a sentinel so this stays populated, but the field
+    /// remains optional for future dispatchers that can't).
+    std::optional<std::string> transport_error;
+
+    [[nodiscard]] static SendResult success() {
+        return SendResult{true, std::nullopt};
+    }
+
+    [[nodiscard]] static SendResult failure(std::string err) {
+        return SendResult{false, std::move(err)};
+    }
+
+    [[nodiscard]] static SendResult failure() {
+        return SendResult{false, std::nullopt};
+    }
+};
 
 /// Per-target readiness-gated outbound admit layer.
 ///
@@ -110,11 +149,14 @@ namespace SCE::Mesh {
 /// reference router-scoped state; the router owns the buffer by value.
 class OutboundBuffer {
 public:
-    /// Transport-specific send. Returns `true` on accepted-by-transport
-    /// (a later transport failure surfaces through its own error path,
-    /// not by a delayed return). Called under the buffer mutex for
-    /// FIFO preservation — see class-level thread-safety note.
-    using Dispatcher = std::function<bool(const MeshEnvelope&)>;
+    /// Transport-specific send. Returns a `SendResult` whose `ok`
+    /// flag indicates whether the transport accepted the envelope and
+    /// whose `transport_error` (when present) names the underlying
+    /// API decline so the SCE_MESH.md §16.7 row 2 raise can populate
+    /// `CommunicationError::transport_error`. Called under the buffer
+    /// mutex for FIFO preservation — see class-level thread-safety
+    /// note.
+    using Dispatcher = std::function<SendResult(const MeshEnvelope&)>;
 
     /// Error raise closure. Called when admit observes buffer overflow
     /// (queue depth >= `max_pending`). Invoked OUTSIDE the mutex so a
@@ -147,10 +189,13 @@ public:
     ///     preserve FIFO; the in-progress drain will release it.
     ///
     /// SCE_MESH.md §16.7 row 2: when the fast path's dispatcher
-    /// returns `false`, `error.communication` with
+    /// returns a non-ok `SendResult`, `error.communication` with
     /// `reason = "SEND_FAILED"` is raised — the transport API said
     /// no, the envelope is gone, and the SCXML author must observe
-    /// the loss. Raised OUTSIDE the buffer mutex.
+    /// the loss. The dispatcher's `transport_error` (when populated)
+    /// is relayed into the raised `CommunicationError::transport_error`
+    /// field for transport-telemetry correlation. Raised OUTSIDE the
+    /// buffer mutex.
     ///
     /// Returns `true` if the envelope was dispatched-or-buffered
     /// successfully; `false` if it was dropped on overflow OR if
@@ -159,6 +204,7 @@ public:
         bool overflow = false;
         std::size_t depth_at_overflow = 0;
         bool send_failed = false;
+        std::optional<std::string> send_failed_transport_error;
         bool accepted = false;
         {
             std::lock_guard<std::mutex> lock(mu_);
@@ -166,9 +212,12 @@ public:
                 // Fast path: dispatch under the lock so a racing
                 // markReady cannot slip buffered envelopes past this
                 // direct send out of FIFO.
-                accepted = dispatch_(env);
-                if (!accepted) {
+                SendResult result = dispatch_(env);
+                accepted = result.ok;
+                if (!result.ok) {
                     send_failed = true;
+                    send_failed_transport_error =
+                        std::move(result.transport_error);
                 }
             } else if (queue_.size() >= max_pending_) {
                 overflow = true;
@@ -192,6 +241,10 @@ public:
             err.reason = "SEND_FAILED";
             err.target = target_;
             err.transport = transport_name_;
+            if (send_failed_transport_error) {
+                err.transport_error =
+                    std::move(*send_failed_transport_error);
+            }
             raise_error_(std::move(err));
         }
         return accepted;
@@ -202,35 +255,49 @@ public:
     /// already-ready buffer is a no-op (queue is empty by invariant).
     ///
     /// SCE_MESH.md §16.7 row 2: each drained envelope whose dispatcher
-    /// returns `false` raises `error.communication` with
-    /// `reason = "SEND_FAILED"`. The raises run OUTSIDE the buffer
-    /// mutex (after the drain releases `mu_`), preserving §10.10
-    /// lock-discipline; the per-failure count is captured under the
-    /// mutex during the drain and the raises are emitted in a single
-    /// post-drain loop.
+    /// returns a non-ok `SendResult` raises `error.communication`
+    /// with `reason = "SEND_FAILED"` and the dispatcher's
+    /// `transport_error` (when populated) is relayed into the raised
+    /// `CommunicationError::transport_error` field. The raises run
+    /// OUTSIDE the buffer mutex (after the drain releases `mu_`),
+    /// preserving §10.10 lock-discipline; the per-envelope
+    /// transport_error strings are captured into a vector under the
+    /// mutex during the drain and the raises are emitted one-to-one
+    /// in a single post-drain loop.
     ///
     /// The dispatcher runs under the mutex so a concurrent `admit` whose
     /// fast path would otherwise race ahead cannot interleave with the
     /// drain. See class-level thread-safety note for the rationale that
     /// this does not become a throughput bottleneck in practice.
     void markReady() {
-        std::size_t failed_count = 0;
+        // §10.10 lock-discipline: capture per-envelope transport_error
+        // strings under the mutex during drain, emit the raises after
+        // the mutex releases. A vector<optional<string>> preserves the
+        // "this envelope's API decline had a message" / "this one did
+        // not" distinction one-to-one with the drain sequence, so each
+        // post-drain raise carries the correct (or absent)
+        // transport_error.
+        std::vector<std::optional<std::string>> failures;
         {
             std::lock_guard<std::mutex> lock(mu_);
             ready_ = true;
             while (!queue_.empty()) {
                 MeshEnvelope env = std::move(queue_.front());
                 queue_.pop_front();
-                if (!dispatch_(env)) {
-                    ++failed_count;
+                SendResult result = dispatch_(env);
+                if (!result.ok) {
+                    failures.push_back(std::move(result.transport_error));
                 }
             }
         }
-        for (std::size_t i = 0; i < failed_count; ++i) {
+        for (auto& transport_error : failures) {
             CommunicationError err;
             err.reason = "SEND_FAILED";
             err.target = target_;
             err.transport = transport_name_;
+            if (transport_error) {
+                err.transport_error = std::move(*transport_error);
+            }
             raise_error_(std::move(err));
         }
     }
