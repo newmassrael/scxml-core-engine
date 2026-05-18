@@ -48,7 +48,7 @@ type CodecZenohExtEntry struct {
 func NewCodecZenohExtEntry() *CodecZenohExtEntry {
 	return &CodecZenohExtEntry{
 		Body: CodecZenohExtEntryVariant{
-			CodecZenohExtUnit: codec_zenoh_ext_unit.NewCodecZenohExtUnit(),
+			CodecZenohExtUnit: &codec_zenoh_ext_unit.CodecZenohExtUnit{},
 		},
 	}
 }

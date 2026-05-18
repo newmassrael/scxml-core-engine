@@ -56,7 +56,7 @@ type CodecTransportEnvelope struct {
 func NewCodecTransportEnvelope() *CodecTransportEnvelope {
 	return &CodecTransportEnvelope{
 		Body: CodecTransportEnvelopeVariant{
-			CodecZenohClose: codec_zenoh_close.NewCodecZenohClose(),
+			CodecZenohClose: &codec_zenoh_close.CodecZenohClose{},
 		},
 	}
 }

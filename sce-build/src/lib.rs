@@ -2606,6 +2606,26 @@ fn validate_and_enrich_imports(
                     .iter()
                     .find(|f| !f.flags.is_empty() && f.byte_offset == 0)
                     .map(|f| (f.id.clone(), f.flags.clone()));
+                // RFC variant-default-uniformity Atomic γ-3b-go: the
+                // imported codec emits a `NewT()` constructor iff its
+                // own β-go gate fires — either any field declares a
+                // `<sce:flag value=>` wire-MID, or it carries a
+                // `<sce:variant>` whose marked-default arm steers a
+                // non-zero Variant body pointer. Mirrors the
+                // `has_flag_default or (has_variant and ns.default_arm)`
+                // condition in `tools/codegen/templates/forge/go/codec.go.jinja2`
+                // so cross-doc inner.NewT() calls stay name-stable.
+                let inner_has_flag_default = cm
+                    .fields
+                    .iter()
+                    .any(|f| f.flags.iter().any(|fl| fl.value.is_some()));
+                let inner_has_default_arm = cm
+                    .variant
+                    .as_ref()
+                    .map(|v| v.arms.iter().any(|a| a.is_default))
+                    .unwrap_or(false);
+                ctx.codec_emits_default_ctor =
+                    inner_has_flag_default || inner_has_default_arm;
             }
             // RFC §5.C B6-α' cross-resolution: the link kind's
             // `<sce:rx-pool>` / `<sce:tx-pool>` cross-validator

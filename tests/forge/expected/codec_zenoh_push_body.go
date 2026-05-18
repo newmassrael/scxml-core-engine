@@ -46,7 +46,7 @@ type CodecZenohPushBody struct {
 func NewCodecZenohPushBody() *CodecZenohPushBody {
 	return &CodecZenohPushBody{
 		Body: CodecZenohPushBodyVariant{
-			CodecZenohPut: codec_zenoh_put.NewCodecZenohPut(),
+			CodecZenohPut: &codec_zenoh_put.CodecZenohPut{},
 		},
 	}
 }

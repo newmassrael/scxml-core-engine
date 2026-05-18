@@ -60,7 +60,7 @@ type CodecZenohDeclaration struct {
 func NewCodecZenohDeclaration() *CodecZenohDeclaration {
 	return &CodecZenohDeclaration{
 		Body: CodecZenohDeclarationVariant{
-			CodecDeclFinal: codec_decl_final.NewCodecDeclFinal(),
+			CodecDeclFinal: &codec_decl_final.CodecDeclFinal{},
 		},
 	}
 }

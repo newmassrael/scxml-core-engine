@@ -78,7 +78,11 @@ func New{{ struct_name }}() *{{ struct_name }} {
 {% endfor %}
 {% if has_variant and ns.default_arm %}
 		Body: {{ struct_name }}Variant{
+{% if ns.default_arm.go_inner_emits_ctor %}
 			{{ ns.default_arm.variant_name }}: {{ ns.default_arm.go_body_constructor }}(),
+{% else %}
+			{{ ns.default_arm.variant_name }}: &{{ ns.default_arm.go_body_type_zero }}{},
+{% endif %}
 		},
 {% endif %}
 	}

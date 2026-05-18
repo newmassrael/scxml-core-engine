@@ -44,7 +44,7 @@ type CodecInitSynEnvelope struct {
 func NewCodecInitSynEnvelope() *CodecInitSynEnvelope {
 	return &CodecInitSynEnvelope{
 		Body: CodecInitSynEnvelopeVariant{
-			CodecInitSynBody: codec_init_syn_body.NewCodecInitSynBody(),
+			CodecInitSynBody: &codec_init_syn_body.CodecInitSynBody{},
 		},
 	}
 }

@@ -52,7 +52,7 @@ func NewCodecZenohOam() *CodecZenohOam {
 	return &CodecZenohOam{
 		Header: uint8(0x1f),
 		Body: CodecZenohOamVariant{
-			CodecZenohExtUnit: codec_zenoh_ext_unit.NewCodecZenohExtUnit(),
+			CodecZenohExtUnit: &codec_zenoh_ext_unit.CodecZenohExtUnit{},
 		},
 	}
 }

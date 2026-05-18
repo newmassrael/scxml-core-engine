@@ -46,7 +46,7 @@ type CodecVariantDispatch struct {
 func NewCodecVariantDispatch() *CodecVariantDispatch {
 	return &CodecVariantDispatch{
 		Body: CodecVariantDispatchVariant{
-			CodecVariantSessionClose: codec_variant_session_close.NewCodecVariantSessionClose(),
+			CodecVariantSessionClose: &codec_variant_session_close.CodecVariantSessionClose{},
 		},
 	}
 }

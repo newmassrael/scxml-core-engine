@@ -134,6 +134,19 @@ pub struct ImportContext {
     #[serde(skip)]
     pub codec_first_flags: Option<(String, Vec<crate::forge::model::FlagDef>)>,
 
+    /// RFC variant-default-uniformity Atomic γ-3b-go: `true` when the
+    /// imported codec emits a `NewT()` constructor — either because any
+    /// of its fields declares `<sce:flag value=>` (β-go inner-default
+    /// branch) or because it carries a variant with `<sce:arm
+    /// default="true"/>` (β-go outer-default branch). The Go template
+    /// uses this to decide whether the outer codec's own `NewT()` can
+    /// call `inner.NewT()` (round-trip-safe) or must fall back to
+    /// `&inner.InnerType{}` zero-init (legacy path — inner has no
+    /// wire-MID to bake). `false` for non-codec imports and codec
+    /// imports whose model failed to parse during enrichment.
+    #[serde(skip)]
+    pub codec_emits_default_ctor: bool,
+
     /// For buffer-pool imports: the imported pool's `<sce:slot-size>`
     /// body (bytes), captured at enrichment time from the parsed
     /// [`BufferPoolModel`]. Consumed by the §5.C B6-α' cross-resolver
@@ -295,6 +308,7 @@ fn resolve_single_import(
                 codec_max_bytes: None,
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
+                codec_emits_default_ctor: false,
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
             }
@@ -327,6 +341,7 @@ fn resolve_single_import(
                 codec_max_bytes: None,
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
+                codec_emits_default_ctor: false,
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
             }
@@ -361,6 +376,7 @@ fn resolve_single_import(
                 codec_max_bytes: None,
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
+                codec_emits_default_ctor: false,
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
             }
@@ -421,6 +437,7 @@ fn resolve_single_import(
                 codec_max_bytes: None,
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
+                codec_emits_default_ctor: false,
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
             }
@@ -455,6 +472,7 @@ fn resolve_single_import(
                 codec_max_bytes: None,
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
+                codec_emits_default_ctor: false,
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
             }
@@ -490,6 +508,7 @@ fn resolve_single_import(
                 codec_max_bytes: None,
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
+                codec_emits_default_ctor: false,
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
             }
@@ -2632,6 +2651,32 @@ fn render_codec(
                     obj.insert(
                         "go_body_constructor".into(),
                         format!("{snake}.New{pascal}").into(),
+                    );
+                    // Inner-codec NewT() emit flag: when the imported
+                    // codec opts into the RFC γ-3b contract (any
+                    // <sce:flag value=> or its own marked-default arm),
+                    // call inner.NewT(). Otherwise the inner has no
+                    // NewT() symbol to call and the outer's ctor must
+                    // fall back to a zero-value struct literal — see
+                    // `tools/codegen/templates/forge/go/codec.go.jinja2`
+                    // which branches on this flag.
+                    let inner_emits_ctor = imports
+                        .iter()
+                        .find(|i| i.alias == arm.body_alias)
+                        .map(|i| i.codec_emits_default_ctor)
+                        .unwrap_or(false);
+                    obj.insert(
+                        "go_inner_emits_ctor".into(),
+                        inner_emits_ctor.into(),
+                    );
+                    // Bare element-type reference for the zero-value
+                    // fallback (`&snake.Pascal{}`) when the inner has
+                    // no NewT(). Pre-computed here so the template
+                    // does not need to know the body_type's package/
+                    // type split.
+                    obj.insert(
+                        "go_body_type_zero".into(),
+                        format!("{snake}.{pascal}").into(),
                     );
                 }
                 // RFC variant-default-uniformity Atomic β-c11: macro
@@ -18118,6 +18163,7 @@ mod tests {
                 codec_max_bytes: None,
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
+                codec_emits_default_ctor: false,
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
             },
@@ -18139,6 +18185,7 @@ mod tests {
                 codec_max_bytes: None,
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
+                codec_emits_default_ctor: false,
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
             },
