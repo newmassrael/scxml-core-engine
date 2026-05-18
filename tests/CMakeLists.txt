@@ -2441,6 +2441,80 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     add_test(NAME mesh_session_f_cancel
              COMMAND mesh_session_f_cancel_test)
 
+    # ── SCE_MESH §16.7 row 5 sub-atomic C peer-down emit ──────────
+    # Parent has a §9.6 `<invoke type="scxml">` and an
+    # `<transition event="error.communication" target="lost"/>`. The
+    # test driver calls `failScxmlRemoteInvokesForPeer` directly on
+    # the parent Policy — the same entry point the TransportRouter
+    # peer-down handlers (Zenoh liveliness DELETE, SOMEIP machine
+    # availability) reach in production. Verifies the policy method
+    # contract: erase activeInvokes_ entry, raise
+    # `error.communication{INVOKE_CHILD_LOST,...}` on the external
+    # queue, idempotent on repeat call.
+    set(MESH_SESSION_F_PEER_DROP_OUTPUT_DIR
+        "${CMAKE_CURRENT_BINARY_DIR}/mesh_session_f_peer_drop_generated")
+
+    add_custom_command(
+        OUTPUT "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}/parent_session_f_peer_drop_sm.h"
+               "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}/parent_session_f_peer_drop_transport.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/parent_session_f_peer_drop.scxml"
+                -l cpp -o "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}"
+                --deploy "${MESH_TEST_DIR}/deploy_session_f_peer_drop.yaml"
+                --write-deps "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}/parent_session_f_peer_drop_sm.h.d"
+        DEPENDS "${MESH_TEST_DIR}/parent_session_f_peer_drop.scxml"
+                "${MESH_TEST_DIR}/worker_session_f_peer_drop.scxml"
+                "${MESH_TEST_DIR}/deploy_session_f_peer_drop.yaml"
+                "${SCE_CODEGEN}"
+        DEPFILE "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}/parent_session_f_peer_drop_sm.h.d"
+        COMMENT "Mesh §16.7 row 5 sub-atomic C: Generating parent_session_f_peer_drop_{sm,transport}.h"
+        VERBATIM
+    )
+
+    add_custom_command(
+        OUTPUT "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}/worker_session_f_peer_drop_sm.h"
+               "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}/worker_session_f_peer_drop_transport.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/worker_session_f_peer_drop.scxml"
+                -l cpp -o "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}"
+                --deploy "${MESH_TEST_DIR}/deploy_session_f_peer_drop.yaml"
+                --write-deps "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}/worker_session_f_peer_drop_sm.h.d"
+        DEPENDS "${MESH_TEST_DIR}/parent_session_f_peer_drop.scxml"
+                "${MESH_TEST_DIR}/worker_session_f_peer_drop.scxml"
+                "${MESH_TEST_DIR}/deploy_session_f_peer_drop.yaml"
+                "${SCE_CODEGEN}"
+        DEPFILE "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}/worker_session_f_peer_drop_sm.h.d"
+        COMMENT "Mesh §16.7 row 5 sub-atomic C: Generating worker_session_f_peer_drop_{sm,transport}.h"
+        VERBATIM
+    )
+
+    add_executable(mesh_session_f_peer_drop_test
+        mesh/test_mesh_session_f_peer_drop.cpp
+        "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}/parent_session_f_peer_drop_sm.h"
+        "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}/parent_session_f_peer_drop_transport.h"
+        "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}/worker_session_f_peer_drop_sm.h"
+        "${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}/worker_session_f_peer_drop_transport.h"
+    )
+
+    target_include_directories(mesh_session_f_peer_drop_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${MESH_SESSION_F_PEER_DROP_OUTPUT_DIR}
+    )
+
+    target_link_libraries(mesh_session_f_peer_drop_test
+        PRIVATE
+            sce_runtime
+            sce_mesh_common
+    )
+
+    target_compile_features(mesh_session_f_peer_drop_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_session_f_peer_drop_test)
+
+    add_test(NAME mesh_session_f_peer_drop
+             COMMAND mesh_session_f_peer_drop_test)
+
     # ── SCE_MESH §9.6.2 wire-18 donedata (W3C SCXML 5.5 / 6.3.1) ──
     # Three machines: parent sequentially invokes one worker whose
     # `<donedata>` is a `<param>` and a second worker whose `<donedata>`

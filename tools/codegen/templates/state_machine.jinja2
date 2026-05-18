@@ -55,6 +55,10 @@
 // (onInvokeStarted / onInvokeDone) reference MeshEnvelope fields.
 #include "mesh/MeshEnvelope.h"
 #include "mesh/PatternKind.h"
+// SCE_MESH.md §16.7 row 5 sub-atomic C — failScxmlRemoteInvokesForPeer
+// raises `error.communication{INVOKE_CHILD_LOST}` events built from
+// `CommunicationError::toJsonBytes()`.
+#include "mesh/CommunicationError.h"
 {% endif %}
 {% if model.needs_send_helper %}
 #include "common/SendHelper.h"
@@ -464,6 +468,17 @@ struct {{ model.name }}Policy {
     // match by compile-time invoke_id regardless of whether the child engine
     // lives in-process or on a remote worker).
     mutable std::unordered_map<std::string, ChildSession> activeInvokes_;
+    // SCE_MESH.md §16.7 row 5 sub-atomic C — activeInvokes_ is read and
+    // written from both the engine thread (W3C event-handler context:
+    // entry/exit, autoforward, finalize) and from transport callback
+    // threads (`onInvokeStarted` reached via `MeshDispatch::dispatchEnvelope`
+    // on wire-15 receipt, `failScxmlRemoteInvokesForPeer` reached from
+    // Zenoh liveliness DELETE / SOMEIP availability=false). Both classes
+    // of access must hold this mutex. Emitted for every Policy carrying
+    // any `<invoke>` (local, hybrid, or scxml_remote) so the latent
+    // wire-15 race on `onInvokeStarted` is also covered — cheap when
+    // uncontended, mandatory for correctness when contended.
+    mutable std::mutex activeInvokesMutex_;
     // W3C SCXML 6.4: Pending invokes (deferred until macrostep end)
     mutable std::vector<PendingInvoke> pendingInvokes_;
     {% endif %}

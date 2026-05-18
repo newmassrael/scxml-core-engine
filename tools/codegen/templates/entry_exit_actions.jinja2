@@ -163,13 +163,18 @@
                         // child's events via the same sessionId the local
                         // path uses. `sessionId` is filled by onInvokeStarted
                         // when wire-15 arrives (§9.6.3 L1463).
-                        activeInvokes_["{{ invoke_info.invoke_id }}"] = ChildSession{
-                            "",  // filled on wire-15 InvokeStarted
-                            "{{ invoke_info.invoke_id }}",
-                            sessionId_.has_value() ? sessionId_.value() : "",
-                            {{ 'true' if invoke_info.autoforward else 'false' }},
-                            "{{ invoke_info.finalize_content | replace('"', '\"') }}"
-                        };
+                        // SCE_MESH.md §16.7 row 5 sub-atomic C — guard the
+                        // write against concurrent peer-down callbacks.
+                        {
+                            std::lock_guard<std::mutex> __sce_active_invokes_lk(activeInvokesMutex_);
+                            activeInvokes_["{{ invoke_info.invoke_id }}"] = ChildSession{
+                                "",  // filled on wire-15 InvokeStarted
+                                "{{ invoke_info.invoke_id }}",
+                                sessionId_.has_value() ? sessionId_.value() : "",
+                                {{ 'true' if invoke_info.autoforward else 'false' }},
+                                "{{ invoke_info.finalize_content | replace('"', '\"') }}"
+                            };
+                        }
                         pendingDoneInvoke_{{ invoke_info.invoke_id }}_ = false;
                     } else {
                         // Transport-absent deployment — raise locally with
@@ -681,7 +686,12 @@
 {% endif %}
                     child_{{ invoke_info.field_suffix }}_.reset();
                 }
-                activeInvokes_.erase("{{ invoke_info.invoke_id }}");
+                // SCE_MESH.md §16.7 row 5 sub-atomic C — erase is shared
+                // with the peer-down callback path; guard with the mutex.
+                {
+                    std::lock_guard<std::mutex> __sce_active_invokes_lk(activeInvokesMutex_);
+                    activeInvokes_.erase("{{ invoke_info.invoke_id }}");
+                }
 {% endfor %}
                 {% for invoke_info in state.invokes | hybrid %}
                 if (child_{{ invoke_info.field_suffix }}_) {
@@ -692,7 +702,11 @@
 {% endif %}
                     child_{{ invoke_info.field_suffix }}_.reset();
                 }
-                activeInvokes_.erase("{{ invoke_info.invoke_id }}");
+                // SCE_MESH.md §16.7 row 5 sub-atomic C — see comment above.
+                {
+                    std::lock_guard<std::mutex> __sce_active_invokes_lk(activeInvokesMutex_);
+                    activeInvokes_.erase("{{ invoke_info.invoke_id }}");
+                }
 {% endfor %}
 {% endif %}
 {% if state.invokes | scxml_remote %}
@@ -703,13 +717,30 @@
                 // earlier this macrostep) — the session is gone on the
                 // worker side, sending a cancel would be a benign no-op but
                 // the transport send is skipped for cleanliness.
+                // SCE_MESH.md §16.7 row 5 sub-atomic C — peer-down may have
+                // erased the entry concurrently; snapshot was-active under
+                // the mutex and erase atomically, then issue wire-19 only
+                // when the local exit observed the entry as live (a peer-
+                // down erase already raised INVOKE_CHILD_LOST in lieu of
+                // done.invoke / error.invoke, so sending a cancel envelope
+                // to an unreachable peer is wasted wire).
                 {% for invoke_info in state.invokes | scxml_remote %}
-                if (activeInvokes_.find("{{ invoke_info.invoke_id }}") != activeInvokes_.end() && !pendingDoneInvoke_{{ invoke_info.invoke_id }}_) {
-                    (void)engine.performScxmlInvokeCancel(
-                        "{{ invoke_info.remote_mesh_target }}",
-                        "{{ invoke_info.invoke_id }}");
+                {
+                    bool __sce_remote_was_active = false;
+                    {
+                        std::lock_guard<std::mutex> __sce_active_invokes_lk(activeInvokesMutex_);
+                        auto __sce_it = activeInvokes_.find("{{ invoke_info.invoke_id }}");
+                        if (__sce_it != activeInvokes_.end()) {
+                            __sce_remote_was_active = true;
+                            activeInvokes_.erase(__sce_it);
+                        }
+                    }
+                    if (__sce_remote_was_active && !pendingDoneInvoke_{{ invoke_info.invoke_id }}_) {
+                        (void)engine.performScxmlInvokeCancel(
+                            "{{ invoke_info.remote_mesh_target }}",
+                            "{{ invoke_info.invoke_id }}");
+                    }
                 }
-                activeInvokes_.erase("{{ invoke_info.invoke_id }}");
                 {% endfor %}
 {% endif %}
 {% if state.invokes | mesh_rpc %}

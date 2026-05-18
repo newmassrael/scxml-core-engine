@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §16.7 row 5 sub-atomic C verification: §9.6 scxml-invoke
+     peer-down emit reaches the parent's external queue as
+     `error.communication{reason: INVOKE_CHILD_LOST, invoke_id, target}`.
+
+     The parent invokes a remote worker, then the test driver calls
+     `getPolicy().failScxmlRemoteInvokesForPeer(peer, engine)` directly —
+     the same entry point exercised by the Zenoh liveliness DELETE
+     handler and the SOMEIP machine-level availability handler
+     (mesh/cpp/mesh_transport.h.jinja2). The transition for
+     `error.communication` routes the parent into `lost`; a second
+     `failScxml…` call must be a no-op (activeInvokes_ is empty), so the
+     unguarded transition does not re-fire and the parent stays in
+     `lost`.
+
+     The transition is unguarded by `_event.data.reason` because the
+     parent has exactly one `error.communication` source in this
+     fixture (no `liveliness:` / `barrier_timeout_ms:` / `<send>`
+     mesh-target). A real consumer would guard on
+     `_event.data.reason == 'INVOKE_CHILD_LOST'`. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" initial="invoking" name="parent_session_f_peer_drop">
+    <state id="invoking">
+        <invoke type="scxml" src="#worker_session_f_peer_drop" id="remote_inv"/>
+        <transition event="error.communication" target="lost"/>
+        <transition event="done.invoke" target="pass"/>
+        <transition event="done.invoke.remote_inv" target="pass"/>
+        <transition event="error.execution" target="fail"/>
+    </state>
+    <final id="pass"/>
+    <final id="fail"/>
+    <final id="lost"/>
+</scxml>

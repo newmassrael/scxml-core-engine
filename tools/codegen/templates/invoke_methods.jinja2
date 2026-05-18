@@ -154,13 +154,19 @@
 
                         // W3C SCXML 6.4.6: Track active invoke session BEFORE initialize
                         // Child may send events during initialize() that need autoforward
-                        activeInvokes_["{{ invoke_info.invoke_id }}"] = ChildSession{
-                            childSessionId,  // W3C SCXML 6.5: Child session ID for finalize origin matching
-                            "{{ invoke_info.invoke_id }}",
-                            sessionId_.has_value() ? sessionId_.value() : "",  // Parent session ID
-                            {{ 'true' if invoke_info.autoforward else 'false' }},  // W3C SCXML 6.4.6: autoforward
-                            "{{ invoke_info.finalize_content | replace('"', '\"') }}"  // W3C SCXML 6.5: finalize
-                        };
+                        // SCE_MESH.md §16.7 row 5 sub-atomic C — activeInvokes_
+                        // is shared with peer-down callback threads; engine-
+                        // thread writes also hold activeInvokesMutex_.
+                        {
+                            std::lock_guard<std::mutex> __sce_active_invokes_lk(activeInvokesMutex_);
+                            activeInvokes_["{{ invoke_info.invoke_id }}"] = ChildSession{
+                                childSessionId,  // W3C SCXML 6.5: Child session ID for finalize origin matching
+                                "{{ invoke_info.invoke_id }}",
+                                sessionId_.has_value() ? sessionId_.value() : "",  // Parent session ID
+                                {{ 'true' if invoke_info.autoforward else 'false' }},  // W3C SCXML 6.4.6: autoforward
+                                "{{ invoke_info.finalize_content | replace('"', '\"') }}"  // W3C SCXML 6.5: finalize
+                            };
+                        }
 
                         // W3C SCXML 6.4: Register completion callback BEFORE initialize
                         // Child may reach final state during initialize() and needs callback ready
@@ -254,13 +260,18 @@
                         {% endif %}
 
                         // W3C SCXML 6.4.6: Track active invoke session
-                        activeInvokes_["{{ invoke_info.invoke_id }}"] = ChildSession{
-                            childSessionId,
-                            "{{ invoke_info.invoke_id }}",
-                            sessionId_.has_value() ? sessionId_.value() : "",
-                            {{ 'true' if invoke_info.autoforward else 'false' }},
-                            ""  // No finalize for hybrid invokes
-                        };
+                        // SCE_MESH.md §16.7 row 5 sub-atomic C — same shared-
+                        // access discipline as the scxml-local insert above.
+                        {
+                            std::lock_guard<std::mutex> __sce_active_invokes_lk(activeInvokesMutex_);
+                            activeInvokes_["{{ invoke_info.invoke_id }}"] = ChildSession{
+                                childSessionId,
+                                "{{ invoke_info.invoke_id }}",
+                                sessionId_.has_value() ? sessionId_.value() : "",
+                                {{ 'true' if invoke_info.autoforward else 'false' }},
+                                ""  // No finalize for hybrid invokes
+                            };
+                        }
 
                         // W3C SCXML 6.4: Register completion callback BEFORE initialize
                         child_{{ invoke_info.field_suffix }}_->setCompletionCallback([this]() {
@@ -333,15 +344,26 @@
         {% for invoke_info in state.invokes | scxml %}
         // Check if child {{ invoke_info.invoke_id }} has autoforward enabled
         {
-            auto it = activeInvokes_.find("{{ invoke_info.invoke_id }}");
-            AOT_DEBUG("AOT autoforward check: invokeId='{{ invoke_info.invoke_id }}', found={}, autoforward={}, childPtr={}",
-                      (it != activeInvokes_.end()),
-                      (it != activeInvokes_.end() ? it->second.autoforward : false),
-                      (child_{{ invoke_info.field_suffix }}_ != nullptr));
-
-            if (it != activeInvokes_.end() && it->second.autoforward && child_{{ invoke_info.field_suffix }}_) {
+            // SCE_MESH.md §16.7 row 5 sub-atomic C — snapshot autoforward
+            // under activeInvokesMutex_ and release before delegating to
+            // the child's `raiseExternal`. Holding our mutex across the
+            // child's queue lock would risk nested-mutex ordering vs the
+            // peer-down handler that also touches activeInvokes_. The
+            // child pointer (`child_<suffix>_`) is a Policy member with
+            // engine-thread-only lifetime, independent of activeInvokes_.
+            bool __sce_autoforward_active = false;
+            {
+                std::lock_guard<std::mutex> __sce_active_invokes_lk(activeInvokesMutex_);
+                auto it = activeInvokes_.find("{{ invoke_info.invoke_id }}");
+                __sce_autoforward_active =
+                    (it != activeInvokes_.end() && it->second.autoforward);
+                AOT_DEBUG("AOT autoforward check: invokeId='{{ invoke_info.invoke_id }}', found={}, autoforward={}, childPtr={}",
+                          (it != activeInvokes_.end()),
+                          __sce_autoforward_active,
+                          (child_{{ invoke_info.field_suffix }}_ != nullptr));
+            }
+            if (__sce_autoforward_active && child_{{ invoke_info.field_suffix }}_) {
                 AOT_DEBUG("AOT autoforward: Forwarding event '{}' to child {{ invoke_info.invoke_id }}", eventName);
-
                 // W3C SCXML 6.4.6: Forward by event name string to child
                 // Child's raiseExternal(string) will convert to its Event enum and handle gracefully if not found
                 child_{{ invoke_info.field_suffix }}_->raiseExternal(eventName);
@@ -359,8 +381,19 @@
         // ready to receive wire-17 either way because it was instantiated
         // at wire-14 dispatch.
         {
-            auto it = activeInvokes_.find("{{ invoke_info.invoke_id }}");
-            if (it != activeInvokes_.end() && it->second.autoforward) {
+            // SCE_MESH.md §16.7 row 5 sub-atomic C — snapshot autoforward
+            // under activeInvokesMutex_ and release before reaching into
+            // the engine's mesh-send path. Same mutex-discipline rationale
+            // as the local-scxml branch above; the peer-down callback may
+            // be removing this entry concurrently with this read.
+            bool __sce_autoforward_active = false;
+            {
+                std::lock_guard<std::mutex> __sce_active_invokes_lk(activeInvokesMutex_);
+                auto it = activeInvokes_.find("{{ invoke_info.invoke_id }}");
+                __sce_autoforward_active =
+                    (it != activeInvokes_.end() && it->second.autoforward);
+            }
+            if (__sce_autoforward_active) {
                 (void)engine.performScxmlInvokeParentEvent(
                     "{{ invoke_info.remote_mesh_target }}",
                     "{{ invoke_info.invoke_id }}",
@@ -390,37 +423,51 @@
             return;  // Not from a child
         }
 
-        // Find which invoke sent this event by matching child session ID
-        for (const auto& [invokeId, childSession] : activeInvokes_) {
-            if (childSession.sessionId == eventWithMeta.origin && !childSession.finalizeScript.empty()) {
-                AOT_DEBUG("AOT finalize: Executing finalize for invoke '{}' before processing event", invokeId);
+        // Find which invoke sent this event by matching child session ID.
+        // SCE_MESH.md §16.7 row 5 sub-atomic C — snapshot matched invokeId
+        // + finalize script under activeInvokesMutex_, release, then run
+        // FinalizeHelper without the mutex held. FinalizeHelper enters
+        // the script engine on the engine thread and may recurse into
+        // raiseExternal; holding our mutex across that span would block
+        // peer-down callbacks (and could trip nested-mutex ordering).
+        std::string __sce_matched_invoke_id;
+        std::string __sce_matched_finalize_script;
+        {
+            std::lock_guard<std::mutex> __sce_active_invokes_lk(activeInvokesMutex_);
+            for (const auto& [invokeId, childSession] : activeInvokes_) {
+                if (childSession.sessionId == eventWithMeta.origin && !childSession.finalizeScript.empty()) {
+                    __sce_matched_invoke_id = invokeId;
+                    __sce_matched_finalize_script = childSession.finalizeScript;
+                    break;
+                }
+            }
+        }
+        if (!__sce_matched_invoke_id.empty()) {
+            AOT_DEBUG("AOT finalize: Executing finalize for invoke '{}' before processing event", __sce_matched_invoke_id);
 
 {% if model.needs_script_engine %}
-                // W3C SCXML 6.5: Use FinalizeHelper (ARCHITECTURE.md Zero Duplication)
-                // Single Source of Truth for finalize execution shared with Interpreter
-                std::string eventName = this->getEventName(eventWithMeta.event);
+            // W3C SCXML 6.5: Use FinalizeHelper (ARCHITECTURE.md Zero Duplication)
+            // Single Source of Truth for finalize execution shared with Interpreter
+            std::string eventName = this->getEventName(eventWithMeta.event);
 
-                this->ensureScriptEngine();
-                auto& scriptEngine = getScriptEngine();
+            this->ensureScriptEngine();
+            auto& scriptEngine = getScriptEngine();
 
-                ::SCE::FinalizeHelper::executeFinalizeWithEvent(
-                    scriptEngine,
-                    sessionId_.value(),
-                    childSession.finalizeScript,
-                    eventName,
-                    eventWithMeta.data,
-                    eventWithMeta.sendId,
-                    eventWithMeta.origin,
-                    eventWithMeta.originType,
-                    eventWithMeta.invokeId
-                );
+            ::SCE::FinalizeHelper::executeFinalizeWithEvent(
+                scriptEngine,
+                sessionId_.value(),
+                __sce_matched_finalize_script,
+                eventName,
+                eventWithMeta.data,
+                eventWithMeta.sendId,
+                eventWithMeta.origin,
+                eventWithMeta.originType,
+                eventWithMeta.invokeId
+            );
 {% else %}
-                // Pure Static: finalize script should be empty (no ECMAScript expressions)
-                SCE_LOG_WARN("AOT finalize: Finalize script present but JSEngine not available for invoke '{}'", invokeId);
+            // Pure Static: finalize script should be empty (no ECMAScript expressions)
+            SCE_LOG_WARN("AOT finalize: Finalize script present but JSEngine not available for invoke '{}'", __sce_matched_invoke_id);
 {% endif %}
-
-                return;  // Found and executed
-            }
         }
     }
 {% endif %}
@@ -437,6 +484,16 @@
             AOT_DEBUG("AOT onInvokeStarted: envelope missing subject/child_session_id — drop");
             return;
         }
+        // SCE_MESH.md §16.7 row 5 sub-atomic C — this hook runs on the
+        // transport callback thread (Zenoh queryable / SOMEIP receive /
+        // shm pump / custom_tcp Server receive), distinct from the
+        // engine thread that drives every other activeInvokes_ access.
+        // Hold activeInvokesMutex_ across the find + sessionId stamp so
+        // a concurrent peer-down handler cannot erase the entry mid-
+        // write, and so engine-thread autoforward/finalize readers
+        // observe either the pre-wire-15 ChildSession (sessionId="")
+        // or the fully-stamped row, never a torn write.
+        std::lock_guard<std::mutex> __sce_active_invokes_lk(activeInvokesMutex_);
         auto it = activeInvokes_.find(*env.subject);
         if (it == activeInvokes_.end()) {
             AOT_DEBUG("AOT onInvokeStarted: no active invoke matching subject='{}' — drop", *env.subject);
@@ -488,6 +545,80 @@
         }
         {% endfor %}
         AOT_DEBUG("AOT onInvokeDone: no remote invoke matching subject='{}' — drop", subject);
+    }
+
+    // SCE_MESH.md §16.7 row 5 sub-atomic C — §9.6 scxml-invoke peer-down
+    // emit. Called from `TransportRouter` peer-down handlers (Zenoh
+    // liveliness DELETE on a row-8 machine key; SOMEIP machine-level
+    // `register_availability_handler` on `is_available=false`) once per
+    // dropped peer, per session. For every statically-declared §9.6
+    // invoke whose `remote_mesh_target == peer`, atomically erase the
+    // matching `activeInvokes_` entry under `activeInvokesMutex_` and
+    // snapshot its `invoke_id` for the post-lock raise loop. Each
+    // snapshotted id then raises a single
+    // `error.communication{INVOKE_CHILD_LOST, invoke_id, target: peer}`
+    // event into THIS session's external queue via `engine.raiseExternal`
+    // — `EventQueueManager::raise` is mutex-protected so the
+    // callback-thread origin is safe (W3C SCXML 5.10 unhandled events
+    // silently drop, so sessions whose state has already passed the
+    // invoking state see a benign no-op). `pendingDoneInvoke_*_` flags
+    // are intentionally untouched: INVOKE_CHILD_LOST is the spec-named
+    // replacement for `done.invoke.<id>` / `error.invoke.<id>` when the
+    // child becomes unreachable, so further state cleanup would
+    // duplicate the author's transition contract. Non-active invoke
+    // targeting `peer` (never started, or already cleaned up via
+    // onexit) is a silent no-op — the §16.7 emit contract is
+    // "one per active entry that becomes unreachable", not "one per
+    // statically-declared invoke targeting the peer".
+    //
+    // Event-enum resolution is deliberately runtime via
+    // `getEventFromName("error.communication")` — symmetric with
+    // `MeshDispatch::dispatchEnvelope` (FireForget pattern) and
+    // `raiseCommunicationError`, both of which already silently drop
+    // when the Policy's Event enum has no `error.communication`
+    // mapping (author chose not to write a transition for it). This
+    // keeps sub-atomic C from forcing a static enum dependency on
+    // every §9.6 outbound fixture; the existing W3C silent-drop
+    // semantics for unhandled events handle the no-transition case.
+    template <typename Engine>
+    void failScxmlRemoteInvokesForPeer(const std::string& peer, Engine& engine) {
+        std::vector<std::string> erased_invoke_ids;
+        {
+            std::lock_guard<std::mutex> lock(activeInvokesMutex_);
+            {% for invoke_info in model.invokes | scxml_remote %}
+            if (peer == "{{ invoke_info.remote_mesh_target }}") {
+                if (auto it = activeInvokes_.find("{{ invoke_info.invoke_id }}");
+                    it != activeInvokes_.end()) {
+                    activeInvokes_.erase(it);
+                    erased_invoke_ids.emplace_back("{{ invoke_info.invoke_id }}");
+                }
+            }
+            {% endfor %}
+        }
+        if (erased_invoke_ids.empty()) {
+            return;
+        }
+        auto event_opt = getEventFromName("error.communication");
+        if (!event_opt) {
+            AOT_DEBUG("AOT failScxmlRemoteInvokesForPeer: Policy has no "
+                      "Event::Error_communication mapping — silent drop of "
+                      "{} entries (peer='{}')", erased_invoke_ids.size(), peer);
+            return;
+        }
+        for (const auto& iid : erased_invoke_ids) {
+            ::SCE::Mesh::CommunicationError err;
+            err.reason = "INVOKE_CHILD_LOST";
+            err.invoke_id = iid;
+            err.target = peer;
+            const auto json_bytes = err.toJsonBytes();
+            typename Engine::EventWithMetadata meta;
+            meta.event = *event_opt;
+            meta.data = std::string(json_bytes.begin(), json_bytes.end());
+            engine.raiseExternal(std::move(meta));
+            AOT_DEBUG("AOT failScxmlRemoteInvokesForPeer: raised "
+                      "error.communication INVOKE_CHILD_LOST for invoke='{}' target='{}'",
+                      iid, peer);
+        }
     }
 {% endif %}
 

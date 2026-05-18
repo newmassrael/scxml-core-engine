@@ -1,0 +1,17 @@
+# SCE Mesh §16.7 row 5 sub-atomic C verification fixture.
+#
+# Single-device deploy: shm transport between parent and worker is
+# sufficient because the test driver does not exercise actual transport
+# peer-drop signals — it calls `failScxmlRemoteInvokesForPeer` directly
+# on the parent Policy. The transport-router peer-down handlers (Zenoh
+# liveliness DELETE, SOMEIP machine-level availability) call the same
+# method in production; their wiring is verified by golden goldens
+# rather than by spawning live transports here.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      parent_session_f_peer_drop:
+        source: parent_session_f_peer_drop.scxml
+      worker_session_f_peer_drop:
+        source: worker_session_f_peer_drop.scxml

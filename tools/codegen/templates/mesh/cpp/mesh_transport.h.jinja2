@@ -2624,6 +2624,28 @@ struct TransportRouter {
                                 raiseCommunicationError(std::move(row5));
                             });
 {% endif %}
+{% if scxml_remote_outbound_peers %}
+                        // SCE Mesh §16.7 row 5 §9.6 scxml-invoke peer-
+                        // drop fast-path: this binary holds activeInvokes_
+                        // entries on parent sessions whose `<invoke
+                        // type="scxml" src="machine://{{ peer.machine }}">`
+                        // targets the just-dropped peer. The §9.5
+                        // fast-path above broadcasts INVOKE_CHILD_LOST
+                        // via `raiseCommunicationError`, but §9.6
+                        // requires per-session targeting (each session's
+                        // `activeInvokes_` is the source of truth, and
+                        // a session that never invoked this peer must
+                        // not see a spurious INVOKE_CHILD_LOST). Per-
+                        // session call into the Policy method below
+                        // erases matching entries under the activeInvokes_
+                        // mutex and injects INVOKE_CHILD_LOST into THAT
+                        // session's external queue via raiseExternal;
+                        // sessions with no matching entry see a no-op.
+                        for (std::size_t i = 0; i < N_SESSIONS; ++i) {
+                            sessions_[i]->getPolicy().failScxmlRemoteInvokesForPeer(
+                                "{{ peer.machine }}", *sessions_[i]);
+                        }
+{% endif %}
                     });
             });
 {%   endfor %}
@@ -3067,6 +3089,22 @@ struct TransportRouter {
                             });
                     }
 {% endif %}
+{% if scxml_remote_outbound_peers %}
+                    if (!peer_for_mesh_rpc.empty()) {
+                        // SCE Mesh §16.7 row 5 §9.6 scxml-invoke peer-
+                        // drop fast-path (region-aware Zenoh branch):
+                        // same machine-keyed semantics as the §9.5
+                        // path above. Region-level DELETE (row 13) is
+                        // partition-keyed and never reaches this gate
+                        // because §9.6 addresses by machine; the empty-
+                        // peer guard mirrors the §9.5 path so a
+                        // partition DELETE silently falls through.
+                        for (std::size_t i = 0; i < N_SESSIONS; ++i) {
+                            sessions_[i]->getPolicy().failScxmlRemoteInvokesForPeer(
+                                peer_for_mesh_rpc, *sessions_[i]);
+                        }
+                    }
+{% endif %}
 {% else %}
                     // Non-partitioned machines only emit row 8. A
                     // 3-segment sample here would be a rogue token
@@ -3126,6 +3164,17 @@ struct TransportRouter {
                             row5.target = peer_for_mesh_rpc;
                             raiseCommunicationError(std::move(row5));
                         });
+{% endif %}
+{% if scxml_remote_outbound_peers %}
+                    // SCE Mesh §16.7 row 5 §9.6 scxml-invoke peer-drop
+                    // fast-path (non-partitioned Zenoh branch):
+                    // machine-keyed identical to the §9.5 path above.
+                    // Every DELETE here is machine-identity, so no
+                    // empty-peer guard is required.
+                    for (std::size_t i = 0; i < N_SESSIONS; ++i) {
+                        sessions_[i]->getPolicy().failScxmlRemoteInvokesForPeer(
+                            peer_for_mesh_rpc, *sessions_[i]);
+                    }
 {% endif %}
 {% endif %}
                 },

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §16.7 row 5 sub-atomic C placeholder worker. The test
+     short-circuits the worker by calling
+     `failScxmlRemoteInvokesForPeer` on the parent directly, so the
+     worker never needs to reach `<final>`. A single state with no
+     transitions is sufficient to keep the §9.6 codegen pipeline
+     happy (it needs SOMETHING to invoke). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" initial="waiting" name="worker_session_f_peer_drop">
+    <state id="waiting"/>
+</scxml>
