@@ -14,7 +14,7 @@ from typing import Optional
 
 @dataclass
 class CodecPeekArmB:
-    header: int = 0
+    header: int = 0x01
     payload: int = 0
 
     @classmethod

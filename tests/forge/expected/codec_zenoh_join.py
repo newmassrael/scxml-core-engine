@@ -1,4 +1,4 @@
-# SCE-MAP: codec_zenoh_join:40
+# SCE-MAP: codec_zenoh_join:41
 
 # SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 # Runtime: none
@@ -66,7 +66,7 @@ class CodecZenohJoin:
                 sn_res = None
             if (parent_flags & 0x40) != 0:
                 raw = cursor.peek_slice(2)
-                _v = (raw[0] << 8) | raw[1]
+                _v = raw[0] | (raw[1] << 8)
                 cursor.advance(2)
                 batch_size = _v
             else:
@@ -125,8 +125,8 @@ class CodecZenohJoin:
         if self.sn_res is not None:
             r.append(self.sn_res & 0xFF)
         if self.batch_size is not None:
-            r.append((self.batch_size >> 8) & 0xFF)
             r.append(self.batch_size & 0xFF)
+            r.append((self.batch_size >> 8) & 0xFF)
         _w = int(self.lease)
         while _w >= 0x80:
             r.append((_w & 0x7F) | 0x80)

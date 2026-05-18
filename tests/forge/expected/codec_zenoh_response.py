@@ -38,7 +38,7 @@ class CodecZenohResponseVariant:
 
 @dataclass
 class CodecZenohResponse:
-    header: int = 0
+    header: int = 0x1b
     request_id: int = 0
     key_id: int = 0
     suffix_len: Optional[int] = None

@@ -14,7 +14,7 @@ import com.sce.generated.codec_zenoh_ext_entry.*
 // `CodecZenohResponseFinal()` before any encode()/decode() call. Defaults
 // mirror the zero-initialized shape that decode() fills in on success.
 data class CodecZenohResponseFinal(
-    var header: UByte = 0.toUByte(),
+    var header: UByte = 0x1a.toUByte(),
     var request_id: ULong = 0uL,
     var extensions: MutableList<CodecZenohExtEntry>? = null
 ) {

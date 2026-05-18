@@ -43,6 +43,7 @@ type CodecZenohPush struct {
 // RFC variant-default-uniformity Atomic β-go.
 func NewCodecZenohPush() *CodecZenohPush {
 	return &CodecZenohPush{
+		Header: uint8(0x1d),
 		Body: CodecZenohPushVariant{
 			CodecZenohPushBody: codec_zenoh_push_body.NewCodecZenohPushBody(),
 		},

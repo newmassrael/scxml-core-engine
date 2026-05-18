@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: codec_zenoh_init_body:41"]
-// SCE-MAP: codec_zenoh_init_body:41
+#![doc = "SCE-MAP: codec_zenoh_init_body:42"]
+// SCE-MAP: codec_zenoh_init_body:42
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -86,7 +86,7 @@ impl CodecZenohInitBody {
         };
         let batch_size = if (parent_flags & 0x40u8) != 0 {
             let raw = cursor.peek_slice(2)?;
-            let _v = ((raw[0] as u16) << 8) | raw[1] as u16;
+            let _v = raw[0] as u16 | ((raw[1] as u16) << 8);
             cursor.advance(2)?;
             Some(_v)
         } else {
@@ -164,8 +164,8 @@ impl CodecZenohInitBody {
             r.push(_v);
         }
         if let Some(_v) = self.batch_size {
-            r.push((_v >> 8) as u8);
             r.push(_v as u8);
+            r.push((_v >> 8) as u8);
         }
         if let Some(_v) = self.cookie_len {
         {

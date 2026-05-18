@@ -574,8 +574,8 @@ pub enum DiagnosticCode {
     //    the inner codec's matching peek-byte `<sce:flag value="Y"/>`
     //    declare the same wire constant. Mismatch lands the wrong
     //    arm at decode time. Stage = Validation. ──
-    #[serde(rename = "codec/variant-default-arm-mid-mismatch")]
-    CodecVariantDefaultArmMidMismatch,
+    #[serde(rename = "codec/variant-arm-mid-mismatch")]
+    CodecVariantArmMidMismatch,
 
     // ── RFC variant-default-uniformity Atomic γ-1: cross-doc check
     //    that the inner codec selected by a default-marked outer
@@ -2224,7 +2224,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // RFC variant-default-uniformity Atomic α — duplicate default-arm marker
         CodecVariantDuplicateDefaultArm,
         // RFC variant-default-uniformity Atomic γ-1 — cross-doc MID mismatch
-        CodecVariantDefaultArmMidMismatch,
+        CodecVariantArmMidMismatch,
         // RFC variant-default-uniformity Atomic γ-1 — inner codec missing wire-MID constant
         CodecVariantArmInnerMidUndeclared,
         // RFC variant-default-uniformity Atomic γ-3 — every variant must mark a default arm
@@ -2589,7 +2589,7 @@ impl DiagnosticCode {
             // ── Codec §5.B variant + present-if + repeat + tlv-chain + dma-align primitives (B1-β/δ + B2 + B3) ─
             CodecVariantArmUnreachable
             | CodecVariantDuplicateDefaultArm
-            | CodecVariantDefaultArmMidMismatch
+            | CodecVariantArmMidMismatch
             | CodecVariantArmInnerMidUndeclared
             | CodecVariantNoDefaultArm
             | CodecPresentIfRefsLaterField
@@ -3095,7 +3095,7 @@ impl DiagnosticCode {
             AlgorithmConstYieldTypeMismatch => "algorithm/const-yield-type-mismatch",
             CodecVariantArmUnreachable => "codec/variant-arm-unreachable",
             CodecVariantDuplicateDefaultArm => "codec/variant-duplicate-default-arm",
-            CodecVariantDefaultArmMidMismatch => "codec/variant-default-arm-mid-mismatch",
+            CodecVariantArmMidMismatch => "codec/variant-arm-mid-mismatch",
             CodecVariantArmInnerMidUndeclared => "codec/variant-arm-inner-mid-undeclared",
             CodecVariantNoDefaultArm => "codec/variant-no-default-arm",
             CodecPresentIfRefsLaterField => "codec/present-if-refs-later-field",
@@ -4257,14 +4257,14 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 format!("{second_arm_value:#x}"),
             ],
         },
-        ValidationError::CodecVariantDefaultArmMidMismatch {
+        ValidationError::CodecVariantArmMidMismatch {
             codec,
             arm_value,
             inner_codec,
             inner_flag,
             inner_flag_value,
         } => DiagnosticPayload {
-            code: DiagnosticCode::CodecVariantDefaultArmMidMismatch,
+            code: DiagnosticCode::CodecVariantArmMidMismatch,
             stage: Stage::Validation,
             // Repair is "align outer arm value with inner flag value"
             // — author-domain (which side is canonical), not a closed
@@ -7798,8 +7798,8 @@ mod tests {
             ),
             // ── RFC variant-default-uniformity Atomic γ-1 — outer arm vs inner flag mismatch ─
             (
-                "forge/codec-variant-default-arm-mid-mismatch",
-                ValidationError::CodecVariantDefaultArmMidMismatch {
+                "forge/codec-variant-arm-mid-mismatch",
+                ValidationError::CodecVariantArmMidMismatch {
                     codec: "session_envelope".into(),
                     arm_value: 0x02,
                     inner_codec: "session_put".into(),
@@ -7807,7 +7807,7 @@ mod tests {
                     inner_flag_value: 0x01,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:290bd7d238ce9d7c","code":"codec/variant-default-arm-mid-mismatch","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': default <sce:arm value=0x2/> selects inner codec 'session_put' but that codec declares <sce:flag name='mid' value=0x1/> on its dispatch field — outer arm value and inner flag value must match for round-trip dispatch to resolve to the same arm; align one to the other","expected":["0x2"],"actual":"0x1"}"#,
+                r#"{"v":1,"id":"fnv1a:27db9fad022a4f48","code":"codec/variant-arm-mid-mismatch","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': <sce:arm value=0x2/> selects inner codec 'session_put' but that codec declares <sce:flag name='mid' value=0x1/> on its dispatch field — outer arm value and inner flag value must match for round-trip dispatch to resolve to the same arm; align one to the other","expected":["0x2"],"actual":"0x1"}"#,
             ),
             // ── RFC variant-default-uniformity Atomic γ-1 — inner codec missing wire-MID ─
             (
@@ -7819,7 +7819,7 @@ mod tests {
                     expected_flag: "mid".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:0bf3318e19f672aa","code":"codec/variant-arm-inner-mid-undeclared","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': default <sce:arm value=0x2/> selects inner codec 'session_put', but 'session_put' does not declare a <sce:flag value=\"...\"/> constant on its dispatch field — the inner's Default would zero-fill the wire byte and break round-trip; add <sce:flag name='mid' value=0x2/> to 'session_put'","expected":["0x2"],"actual":"session_put"}"#,
+                r#"{"v":1,"id":"fnv1a:0bf3318e19f672aa","code":"codec/variant-arm-inner-mid-undeclared","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': <sce:arm value=0x2/> selects inner codec 'session_put', but 'session_put' does not declare a <sce:flag value=\"...\"/> constant on its dispatch field — the inner's Default would zero-fill the wire byte and break round-trip; add <sce:flag name='mid' value=0x2/> to 'session_put'","expected":["0x2"],"actual":"session_put"}"#,
             ),
             // ── RFC variant-default-uniformity Atomic γ-3 — no default arm declared ─
             (
@@ -10078,7 +10078,7 @@ mod tests {
             | AlgorithmConstYieldTypeMismatch
             | CodecVariantArmUnreachable
             | CodecVariantDuplicateDefaultArm
-            | CodecVariantDefaultArmMidMismatch
+            | CodecVariantArmMidMismatch
             | CodecVariantArmInnerMidUndeclared
             | CodecVariantNoDefaultArm
             | CodecPresentIfRefsLaterField
@@ -10538,7 +10538,7 @@ mod tests {
                 | AlgorithmConstYieldTypeMismatch
                 | CodecVariantArmUnreachable
                 | CodecVariantDuplicateDefaultArm
-                | CodecVariantDefaultArmMidMismatch
+                | CodecVariantArmMidMismatch
                 | CodecVariantArmInnerMidUndeclared
                 | CodecVariantNoDefaultArm
                 | CodecPresentIfRefsLaterField
@@ -11352,13 +11352,16 @@ mod tests {
              or codegen change yet; Atomic β/γ build on this baseline. \
              274 → 275. \
              Then RFC variant-default-uniformity Atomic γ-1 added two \
-             cross-doc validators: CodecVariantDefaultArmMidMismatch fires \
-             when the outer marked-default arm's value differs from the \
-             inner codec's matching peek-byte <sce:flag value=>, and \
+             cross-doc validators: CodecVariantArmMidMismatch fires \
+             when an outer arm's value differs from the inner codec's \
+             matching peek-byte <sce:flag value=>, and \
              CodecVariantArmInnerMidUndeclared fires when the inner codec \
-             selected by a marked-default arm declares no wire-MID flag \
-             at all. Both gate emission of the new β-chain Default \
-             contracts on round-trip safety. 275 → 277. \
+             selected by an arm declares no wire-MID flag at all. The \
+             checks apply to every arm — the wire-MID is intrinsic to \
+             the inner codec's identity, not gated on the arm carrying \
+             default=\"true\". Both gate emission of the β-chain Default \
+             contracts on round-trip safety for the default-trait arm \
+             and on standalone-encode correctness for the rest. 275 → 277. \
              Then RFC variant-default-uniformity Atomic γ-3 added \
              CodecVariantNoDefaultArm (Q-V4 (a)) requiring every \
              `<sce:variant>` to carry a deliberate <sce:arm default=\"true\"/> \

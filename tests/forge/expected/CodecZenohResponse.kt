@@ -28,7 +28,7 @@ sealed class CodecZenohResponseVariant {
 // `CodecZenohResponse()` before any encode()/decode() call. Defaults
 // mirror the zero-initialized shape that decode() fills in on success.
 data class CodecZenohResponse(
-    var header: UByte = 0.toUByte(),
+    var header: UByte = 0x1b.toUByte(),
     var request_id: ULong = 0uL,
     var key_id: UInt = 0u,
     var suffix_len: ULong? = null,

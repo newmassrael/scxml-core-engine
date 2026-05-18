@@ -14,7 +14,7 @@ import com.sce.generated.codec_zenoh_ext_entry.*
 // `CodecZenohQuery()` before any encode()/decode() call. Defaults
 // mirror the zero-initialized shape that decode() fills in on success.
 data class CodecZenohQuery(
-    var header: UByte = 0.toUByte(),
+    var header: UByte = 0x03.toUByte(),
     var consolidation: UByte? = null,
     var parameters_len: ULong? = null,
     var parameters: ByteArray? = null,

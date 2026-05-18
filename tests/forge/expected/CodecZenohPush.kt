@@ -25,7 +25,7 @@ sealed class CodecZenohPushVariant {
 // `CodecZenohPush()` before any encode()/decode() call. Defaults
 // mirror the zero-initialized shape that decode() fills in on success.
 data class CodecZenohPush(
-    var header: UByte = 0.toUByte(),
+    var header: UByte = 0x1d.toUByte(),
     // RFC variant-default-uniformity Atomic β-kotlin: pick the declared
     // default arm (`<sce:arm default="true"/>`) instead of the first
     // alternative so a freshly-constructed envelope round-trips byte-

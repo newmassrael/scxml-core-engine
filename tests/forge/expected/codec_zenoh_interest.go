@@ -20,6 +20,19 @@ type CodecZenohInterest struct {
 	Extensions []codec_zenoh_ext_entry.CodecZenohExtEntry
 }
 
+// NewCodecZenohInterest returns a CodecZenohInterest initialized with the
+// declared wire-MID defaults. Go has no Default trait — round-trip
+// safety (`NewCodecZenohInterest().Encode()` decodes back to the same
+// arm) requires using this constructor rather than the bare struct
+// literal `CodecZenohInterest{}`, which would zero-init every field
+// (and leave every Variant arm pointer nil for variant codecs).
+// RFC variant-default-uniformity Atomic β-go.
+func NewCodecZenohInterest() *CodecZenohInterest {
+	return &CodecZenohInterest{
+		Header: uint8(0x19),
+	}
+}
+
 // DecodeCodecZenohInterest decodes the next frame from cursor.
 // On success the cursor advances past the consumed bytes; returns
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail

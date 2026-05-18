@@ -3913,14 +3913,14 @@ fn forge_codec_variant_default_arm_mid_mismatch_rejects() {
     let err = match result {
         Ok(_) => panic!(
             "outer arm value 0x03 vs inner flag value 0x01 must reject \
-             with codec/variant-default-arm-mid-mismatch"
+             with codec/variant-arm-mid-mismatch"
         ),
         Err(e) => e,
     };
     assert!(
         matches!(
             err.error,
-            ForgeError::Validation(ValidationError::CodecVariantDefaultArmMidMismatch {
+            ForgeError::Validation(ValidationError::CodecVariantArmMidMismatch {
                 ref codec,
                 arm_value: 0x03,
                 ref inner_codec,
@@ -3930,7 +3930,7 @@ fn forge_codec_variant_default_arm_mid_mismatch_rejects() {
                 && inner_codec == "codec_default_marker_arm_a"
                 && inner_flag == "kind"
         ),
-        "must surface as ValidationError::CodecVariantDefaultArmMidMismatch \
+        "must surface as ValidationError::CodecVariantArmMidMismatch \
          with the 4-tuple (codec, arm_value, inner_codec, inner_flag_value); \
          got: {:?}",
         err.error
@@ -9020,3 +9020,4 @@ fn rust_golden_syn_gate() {
         );
     }
 }
+

@@ -16,7 +16,7 @@ from typing import Optional, List
 
 @dataclass
 class CodecZenohMsgDel:
-    header: int = 0
+    header: int = 0x02
     timestamp: Optional[CodecZenohTimestamp] = None
     extensions: Optional[List[CodecZenohExtEntry]] = b""
 

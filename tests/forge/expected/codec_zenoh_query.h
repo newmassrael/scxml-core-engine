@@ -19,7 +19,7 @@
 namespace SCE::Generated::CodecZenohQuery {
 
 struct CodecZenohQuery {
-    uint8_t header;
+    uint8_t header{0x03u};
     std::optional<uint8_t> consolidation;
     std::optional<uint64_t> parameters_len;
     std::optional<std::vector<uint8_t>> parameters;

@@ -18,6 +18,19 @@ type CodecZenohResponseFinal struct {
 	Extensions []codec_zenoh_ext_entry.CodecZenohExtEntry
 }
 
+// NewCodecZenohResponseFinal returns a CodecZenohResponseFinal initialized with the
+// declared wire-MID defaults. Go has no Default trait — round-trip
+// safety (`NewCodecZenohResponseFinal().Encode()` decodes back to the same
+// arm) requires using this constructor rather than the bare struct
+// literal `CodecZenohResponseFinal{}`, which would zero-init every field
+// (and leave every Variant arm pointer nil for variant codecs).
+// RFC variant-default-uniformity Atomic β-go.
+func NewCodecZenohResponseFinal() *CodecZenohResponseFinal {
+	return &CodecZenohResponseFinal{
+		Header: uint8(0x1a),
+	}
+}
+
 // DecodeCodecZenohResponseFinal decodes the next frame from cursor.
 // On success the cursor advances past the consumed bytes; returns
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail

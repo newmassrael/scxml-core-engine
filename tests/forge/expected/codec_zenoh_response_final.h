@@ -19,7 +19,7 @@
 namespace SCE::Generated::CodecZenohResponseFinal {
 
 struct CodecZenohResponseFinal {
-    uint8_t header;
+    uint8_t header{0x1au};
     uint64_t request_id;
     std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions;
 

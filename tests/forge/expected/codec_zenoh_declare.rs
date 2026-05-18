@@ -15,12 +15,29 @@ use super::codec_zenoh_declaration::CodecZenohDeclaration;
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
-#[derive(Default)]
 pub struct CodecZenohDeclare {
     pub header: u8,
     pub interest_id: Option<u32>,
     pub extensions: Option<Vec<CodecZenohExtEntry>>,
     pub declaration: CodecZenohDeclaration,
+}
+
+// RFC variant-default-uniformity Atomic β: at least one field's
+// `<sce:flags>` carrier declares a wire-MID constant via
+// `<sce:flag value="N"/>`. Manual `impl Default` bakes the OR of
+// every declared `(value & mask) << bit` into that carrier so a
+// freshly-constructed instance carries the wire-MID for its own
+// dispatch tag. Fields without declared values fall through to
+// `Default::default()` (preserving derive(Default) semantics).
+impl Default for CodecZenohDeclare {
+    fn default() -> Self {
+        Self {
+            header: 0x1eu8,
+            interest_id: Default::default(),
+            extensions: Default::default(),
+            declaration: Default::default(),
+        }
+    }
 }
 
 #[allow(dead_code)]

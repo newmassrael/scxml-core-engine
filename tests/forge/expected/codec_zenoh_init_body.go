@@ -1,4 +1,4 @@
-// SCE-MAP: codec_zenoh_init_body:41
+// SCE-MAP: codec_zenoh_init_body:42
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -86,7 +86,7 @@ func DecodeCodecZenohInitBody(cursor *codec.SceCursor, parentFlags byte) (*Codec
 		if err != nil {
 			return nil, err
 		}
-		_v := uint16(raw[0])<<8 | uint16(raw[1])
+		_v := uint16(raw[0]) | uint16(raw[1])<<8
 		if err := cursor.Advance(2); err != nil {
 			return nil, err
 		}
@@ -164,8 +164,8 @@ func (s *CodecZenohInitBody) Encode(parentFlags byte) []byte {
 	}
 	if s.BatchSize != nil {
 		_v := *s.BatchSize
-		r = append(r, byte(_v>>8))
 		r = append(r, byte(_v))
+		r = append(r, byte(_v>>8))
 	}
 	if s.CookieLen != nil {
 		_v := *s.CookieLen

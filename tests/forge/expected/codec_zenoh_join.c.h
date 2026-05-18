@@ -1,4 +1,4 @@
-// SCE-MAP: codec_zenoh_join:40
+// SCE-MAP: codec_zenoh_join:41
 
 /* SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec") */
 /* Runtime: none */
@@ -90,7 +90,7 @@ static inline sce_forge_codec_status_t codec_zenoh_join_decode(sce_forge_cursor_
     if ((parent_flags & 0x40) != 0) {
         const uint8_t *raw = sce_forge_cursor_peek(cursor, 2);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        out->batch_size = (uint16_t)(((uint16_t)raw[0] << 8) | raw[1]);
+        out->batch_size = (uint16_t)(raw[0] | ((uint16_t)raw[1] << 8));
         if (!sce_forge_cursor_advance(cursor, 2)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
         out->batch_size = 0;
@@ -133,8 +133,8 @@ static inline codec_zenoh_join_encoded_t codec_zenoh_join_encode(const codec_zen
         r.bytes[r.len++] = self->sn_res;
     }
     if ((parent_flags & 0x40) != 0) {
-        r.bytes[r.len++] = (uint8_t)((self->batch_size >> 8) & 0xFF);
         r.bytes[r.len++] = (uint8_t)(self->batch_size & 0xFF);
+        r.bytes[r.len++] = (uint8_t)((self->batch_size >> 8) & 0xFF);
     }
     {
         uint64_t _w = (uint64_t)(self->lease);

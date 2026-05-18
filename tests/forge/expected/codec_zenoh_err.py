@@ -16,7 +16,7 @@ from typing import Optional, List
 
 @dataclass
 class CodecZenohErr:
-    header: int = 0
+    header: int = 0x05
     encoding: Optional[CodecZenohEncoding] = None
     extensions: Optional[List[CodecZenohExtEntry]] = b""
     payload_len: int = 0

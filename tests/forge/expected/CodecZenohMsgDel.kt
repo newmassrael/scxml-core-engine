@@ -15,7 +15,7 @@ import com.sce.generated.codec_zenoh_ext_entry.*
 // `CodecZenohMsgDel()` before any encode()/decode() call. Defaults
 // mirror the zero-initialized shape that decode() fills in on success.
 data class CodecZenohMsgDel(
-    var header: UByte = 0.toUByte(),
+    var header: UByte = 0x02.toUByte(),
     var timestamp: CodecZenohTimestamp? = null,
     var extensions: MutableList<CodecZenohExtEntry>? = null
 ) {

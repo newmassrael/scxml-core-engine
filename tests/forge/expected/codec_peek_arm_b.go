@@ -16,6 +16,19 @@ type CodecPeekArmB struct {
 	Payload uint16
 }
 
+// NewCodecPeekArmB returns a CodecPeekArmB initialized with the
+// declared wire-MID defaults. Go has no Default trait — round-trip
+// safety (`NewCodecPeekArmB().Encode()` decodes back to the same
+// arm) requires using this constructor rather than the bare struct
+// literal `CodecPeekArmB{}`, which would zero-init every field
+// (and leave every Variant arm pointer nil for variant codecs).
+// RFC variant-default-uniformity Atomic β-go.
+func NewCodecPeekArmB() *CodecPeekArmB {
+	return &CodecPeekArmB{
+		Header: uint8(0x01),
+	}
+}
+
 // DecodeCodecPeekArmB decodes the next frame from cursor.
 // On success the cursor advances past the consumed bytes; returns
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail

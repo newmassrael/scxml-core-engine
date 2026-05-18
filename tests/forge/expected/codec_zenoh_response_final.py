@@ -15,7 +15,7 @@ from typing import Optional, List
 
 @dataclass
 class CodecZenohResponseFinal:
-    header: int = 0
+    header: int = 0x1a
     request_id: int = 0
     extensions: Optional[List[CodecZenohExtEntry]] = b""
 

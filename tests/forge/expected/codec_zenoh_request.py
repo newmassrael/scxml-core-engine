@@ -41,7 +41,7 @@ class CodecZenohRequestVariant:
 
 @dataclass
 class CodecZenohRequest:
-    header: int = 0
+    header: int = 0x1c
     rid: int = 0
     keyexpr: CodecZenohWireexpr = b""
     extensions: Optional[List[CodecZenohExtEntry]] = b""

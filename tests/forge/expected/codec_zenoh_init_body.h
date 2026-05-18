@@ -1,4 +1,4 @@
-// SCE-MAP: codec_zenoh_init_body:41
+// SCE-MAP: codec_zenoh_init_body:42
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -80,7 +80,7 @@ struct CodecZenohInitBody {
         if ((parent_flags & 0x40) != 0) {
             const std::uint8_t* raw = cursor.peek_slice(2);
             if (raw == nullptr) return std::nullopt;
-            batch_size = static_cast<uint16_t>(static_cast<uint16_t>((static_cast<uint16_t>(raw[0]) << 8) | raw[1]));
+            batch_size = static_cast<uint16_t>(static_cast<uint16_t>(raw[0] | (static_cast<uint16_t>(raw[1]) << 8)));
             if (!cursor.advance(2)) return std::nullopt;
         }
         std::optional<uint64_t> cookie_len;
@@ -172,8 +172,8 @@ struct CodecZenohInitBody {
         }
         if (batch_size.has_value()) {
             auto _v = *batch_size;
-            r.push_back(static_cast<std::uint8_t>(_v >> 8));
             r.push_back(static_cast<std::uint8_t>(_v));
+            r.push_back(static_cast<std::uint8_t>(_v >> 8));
         }
         if (cookie_len.has_value()) {
             auto _v = *cookie_len;

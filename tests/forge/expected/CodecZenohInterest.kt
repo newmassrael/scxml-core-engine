@@ -15,7 +15,7 @@ import com.sce.generated.codec_zenoh_interest_body.*
 // `CodecZenohInterest()` before any encode()/decode() call. Defaults
 // mirror the zero-initialized shape that decode() fills in on success.
 data class CodecZenohInterest(
-    var header: UByte = 0.toUByte(),
+    var header: UByte = 0x19.toUByte(),
     var id: ULong = 0uL,
     var body: CodecZenohInterestBody? = null,
     var extensions: MutableList<CodecZenohExtEntry>? = null

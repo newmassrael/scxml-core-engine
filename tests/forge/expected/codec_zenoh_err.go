@@ -21,6 +21,19 @@ type CodecZenohErr struct {
 	Payload []byte
 }
 
+// NewCodecZenohErr returns a CodecZenohErr initialized with the
+// declared wire-MID defaults. Go has no Default trait — round-trip
+// safety (`NewCodecZenohErr().Encode()` decodes back to the same
+// arm) requires using this constructor rather than the bare struct
+// literal `CodecZenohErr{}`, which would zero-init every field
+// (and leave every Variant arm pointer nil for variant codecs).
+// RFC variant-default-uniformity Atomic β-go.
+func NewCodecZenohErr() *CodecZenohErr {
+	return &CodecZenohErr{
+		Header: uint8(0x05),
+	}
+}
+
 // DecodeCodecZenohErr decodes the next frame from cursor.
 // On success the cursor advances past the consumed bytes; returns
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail

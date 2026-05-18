@@ -547,22 +547,25 @@ pub enum ValidationError {
         second_arm_value: u64,
     },
 
-    /// RFC variant-default-uniformity Atomic γ-1: the outer
-    /// `<sce:arm value="X" default="true"/>` declares X as the
-    /// wire-dispatch value, but the inner codec it points at
-    /// declares a different `<sce:flag value="Y"/>` on its
-    /// matching peek-byte flag. Round-trip would land the wrong
-    /// arm at decode time (peek byte = Y ≠ X). Author resolves
-    /// by aligning either the outer arm value or the inner flag
-    /// value.
+    /// RFC variant-default-uniformity Atomic γ-1: an outer
+    /// `<sce:arm value="X"/>` declares X as the wire-dispatch
+    /// value, but the inner codec it points at declares a
+    /// different `<sce:flag value="Y"/>` on its matching
+    /// peek-byte flag. Round-trip would land the wrong arm at
+    /// decode time (peek byte = Y ≠ X) for any default-constructed
+    /// inner instance. Applies to every arm — the wire-MID baked
+    /// on the inner codec is intrinsic to its identity, not to
+    /// whether it is the variant's Default-trait starting arm.
+    /// Author resolves by aligning either the outer arm value or
+    /// the inner flag value.
     #[error(
-        "codec '{codec}': default <sce:arm value={arm_value:#x}/> selects inner codec \
+        "codec '{codec}': <sce:arm value={arm_value:#x}/> selects inner codec \
          '{inner_codec}' but that codec declares <sce:flag name='{inner_flag}' \
          value={inner_flag_value:#x}/> on its dispatch field — outer arm value and \
          inner flag value must match for round-trip dispatch to resolve to the same \
          arm; align one to the other"
     )]
-    CodecVariantDefaultArmMidMismatch {
+    CodecVariantArmMidMismatch {
         codec: String,
         arm_value: u64,
         inner_codec: String,
@@ -570,17 +573,21 @@ pub enum ValidationError {
         inner_flag_value: u64,
     },
 
-    /// RFC variant-default-uniformity Atomic γ-1: the outer
-    /// `<sce:arm default="true"/>` selects an inner codec, but
-    /// that codec's matching peek-byte flag does NOT declare a
+    /// RFC variant-default-uniformity Atomic γ-1: an outer
+    /// `<sce:arm value="X"/>` selects an inner codec, but that
+    /// codec's matching peek-byte flag does NOT declare a
     /// `value="..."` constant. Without a baked wire-MID the
     /// inner's `Default::default()` zero-fills the dispatch byte
-    /// and the round-trip lands in the catch-all (or a different)
+    /// and a standalone encode of the default-constructed inner
+    /// produces wire bytes that decode into the catch-all (or a
+    /// different) arm. Applies to every arm — the inner codec's
+    /// wire-MID is intrinsic to its identity, not gated on
+    /// whether the arm is the variant's Default-trait starting
     /// arm. Author resolves by adding `value="..."` to the inner
     /// codec's flag whose bit-range matches the variant's peek
     /// byte.
     #[error(
-        "codec '{codec}': default <sce:arm value={arm_value:#x}/> selects inner codec \
+        "codec '{codec}': <sce:arm value={arm_value:#x}/> selects inner codec \
          '{inner_codec}', but '{inner_codec}' does not declare a <sce:flag value=\"...\"/> \
          constant on its dispatch field — the inner's Default would zero-fill the wire byte \
          and break round-trip; add <sce:flag name='{expected_flag}' value={arm_value:#x}/> \

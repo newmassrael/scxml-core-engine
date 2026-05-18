@@ -20,7 +20,7 @@
 namespace SCE::Generated::CodecZenohInterest {
 
 struct CodecZenohInterest {
-    uint8_t header;
+    uint8_t header{0x19u};
     uint64_t id;
     std::optional<::SCE::Generated::CodecZenohInterestBody::CodecZenohInterestBody> body;
     std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions;

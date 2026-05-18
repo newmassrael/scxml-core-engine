@@ -41,7 +41,6 @@ impl Default for CodecZenohResponseVariant {
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
-#[derive(Default)]
 pub struct CodecZenohResponse {
     pub header: u8,
     pub request_id: u64,
@@ -50,6 +49,27 @@ pub struct CodecZenohResponse {
     pub suffix: Option<String>,
     pub extensions: Option<Vec<CodecZenohExtEntry>>,
     pub body: CodecZenohResponseVariant,
+}
+
+// RFC variant-default-uniformity Atomic β: at least one field's
+// `<sce:flags>` carrier declares a wire-MID constant via
+// `<sce:flag value="N"/>`. Manual `impl Default` bakes the OR of
+// every declared `(value & mask) << bit` into that carrier so a
+// freshly-constructed instance carries the wire-MID for its own
+// dispatch tag. Fields without declared values fall through to
+// `Default::default()` (preserving derive(Default) semantics).
+impl Default for CodecZenohResponse {
+    fn default() -> Self {
+        Self {
+            header: 0x1bu8,
+            request_id: Default::default(),
+            key_id: Default::default(),
+            suffix_len: Default::default(),
+            suffix: Default::default(),
+            extensions: Default::default(),
+            body: CodecZenohResponseVariant::default(),
+        }
+    }
 }
 
 #[allow(dead_code)]

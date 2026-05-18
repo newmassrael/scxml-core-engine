@@ -38,10 +38,25 @@ impl Default for CodecZenohPushVariant {
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
-#[derive(Default)]
 pub struct CodecZenohPush {
     pub header: u8,
     pub body: CodecZenohPushVariant,
+}
+
+// RFC variant-default-uniformity Atomic β: at least one field's
+// `<sce:flags>` carrier declares a wire-MID constant via
+// `<sce:flag value="N"/>`. Manual `impl Default` bakes the OR of
+// every declared `(value & mask) << bit` into that carrier so a
+// freshly-constructed instance carries the wire-MID for its own
+// dispatch tag. Fields without declared values fall through to
+// `Default::default()` (preserving derive(Default) semantics).
+impl Default for CodecZenohPush {
+    fn default() -> Self {
+        Self {
+            header: 0x1du8,
+            body: CodecZenohPushVariant::default(),
+        }
+    }
 }
 
 #[allow(dead_code)]

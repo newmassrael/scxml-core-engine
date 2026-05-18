@@ -39,7 +39,7 @@ using CodecZenohRequestVariant = std::variant<
 >;
 
 struct CodecZenohRequest {
-    uint8_t header;
+    uint8_t header{0x1cu};
     uint64_t rid;
     ::SCE::Generated::CodecZenohWireexpr::CodecZenohWireexpr keyexpr;
     std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions;

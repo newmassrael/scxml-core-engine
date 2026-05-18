@@ -23,7 +23,8 @@
        byte 1   : cbyte                (uint8 flags: whatami:2 + zid_len_m1:4)
        byte 2+  : zid                  (bytes, length=cbyte.zid_len_m1+1, max=16, always)
        parent.S : sn_res               (uint8, host decomposes)
-                  batch_size           (uint16 BE)
+                  batch_size           (uint16 LE — zenoh-pico _z_uint16_encode
+                                        writes LSB then MSB per codec.c:82-85)
        always   : lease                (VLE u64; T-flag is host-only)
                   next_sn_reliable     (VLE u64)
                   next_sn_best_effort  (VLE u64)
@@ -39,7 +40,7 @@
          next_sn_best_effort=99 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_join">
+       sce:kind="codec" sce:default-endian="little" name="codec_zenoh_join">
   <sce:requires-parent-flags carrier="header">
     <sce:flag name="S" bit="6"/>
   </sce:requires-parent-flags>

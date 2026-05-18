@@ -15,7 +15,7 @@ from typing import Optional, List
 
 @dataclass
 class CodecZenohQuery:
-    header: int = 0
+    header: int = 0x03
     consolidation: Optional[int] = None
     parameters_len: Optional[int] = None
     parameters: Optional[bytes] = None

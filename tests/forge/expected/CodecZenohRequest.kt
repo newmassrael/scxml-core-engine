@@ -31,7 +31,7 @@ sealed class CodecZenohRequestVariant {
 // `CodecZenohRequest()` before any encode()/decode() call. Defaults
 // mirror the zero-initialized shape that decode() fills in on success.
 data class CodecZenohRequest(
-    var header: UByte = 0.toUByte(),
+    var header: UByte = 0x1c.toUByte(),
     var rid: ULong = 0uL,
     var keyexpr: CodecZenohWireexpr = CodecZenohWireexpr(),
     var extensions: MutableList<CodecZenohExtEntry>? = null,

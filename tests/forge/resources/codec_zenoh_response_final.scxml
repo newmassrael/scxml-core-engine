@@ -44,7 +44,7 @@
   <sce:import src="codec_zenoh_ext_entry.scxml" kind="codec" as="codec_zenoh_ext_entry"/>
   <datamodel>
     <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
-      <sce:flag name="mid" bit="0" width="5"/>
+      <sce:flag name="mid" bit="0" width="5" value="0x1a"/>
       <sce:flag name="Z"   bit="7"/>
     </sce:flags>
     <sce:field id="request_id" sce:type="uint64" sce:byte="1" sce:bit-size="vle"/>

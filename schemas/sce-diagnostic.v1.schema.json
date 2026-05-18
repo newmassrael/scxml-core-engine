@@ -110,7 +110,7 @@
         "algorithm/const-yield-type-mismatch",
         "codec/variant-arm-unreachable",
         "codec/variant-duplicate-default-arm",
-        "codec/variant-default-arm-mid-mismatch",
+        "codec/variant-arm-mid-mismatch",
         "codec/variant-arm-inner-mid-undeclared",
         "codec/variant-no-default-arm",
         "codec/present-if-refs-later-field",

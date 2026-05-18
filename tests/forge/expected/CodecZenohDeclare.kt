@@ -15,7 +15,7 @@ import com.sce.generated.codec_zenoh_declaration.*
 // `CodecZenohDeclare()` before any encode()/decode() call. Defaults
 // mirror the zero-initialized shape that decode() fills in on success.
 data class CodecZenohDeclare(
-    var header: UByte = 0.toUByte(),
+    var header: UByte = 0x1e.toUByte(),
     var interest_id: UInt? = null,
     var extensions: MutableList<CodecZenohExtEntry>? = null,
     var declaration: CodecZenohDeclaration = CodecZenohDeclaration()

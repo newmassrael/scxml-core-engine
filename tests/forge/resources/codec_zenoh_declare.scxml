@@ -53,7 +53,7 @@
   <sce:import src="codec_zenoh_declaration.scxml" kind="codec" as="codec_zenoh_declaration"/>
   <datamodel>
     <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
-      <sce:flag name="mid" bit="0" width="5"/>
+      <sce:flag name="mid" bit="0" width="5" value="0x1e"/>
       <sce:flag name="I"   bit="5"/>
       <sce:flag name="Z"   bit="7"/>
     </sce:flags>

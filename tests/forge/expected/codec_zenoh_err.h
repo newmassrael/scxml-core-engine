@@ -20,7 +20,7 @@
 namespace SCE::Generated::CodecZenohErr {
 
 struct CodecZenohErr {
-    uint8_t header;
+    uint8_t header{0x05u};
     std::optional<::SCE::Generated::CodecZenohEncoding::CodecZenohEncoding> encoding;
     std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions;
     uint64_t payload_len;

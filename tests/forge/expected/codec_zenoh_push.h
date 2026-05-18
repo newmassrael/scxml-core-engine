@@ -33,7 +33,7 @@ using CodecZenohPushVariant = std::variant<
 >;
 
 struct CodecZenohPush {
-    uint8_t header;
+    uint8_t header{0x1du};
     // RFC variant-default-uniformity Atomic β-cpp: the
     // `std::in_place_index_t<N>{}` tag-type selects the arm marked
     // `<sce:arm default="true"/>` by index so a freshly-constructed

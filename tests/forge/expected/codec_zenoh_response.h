@@ -37,7 +37,7 @@ using CodecZenohResponseVariant = std::variant<
 >;
 
 struct CodecZenohResponse {
-    uint8_t header;
+    uint8_t header{0x1bu};
     uint64_t request_id;
     uint32_t key_id;
     std::optional<uint64_t> suffix_len;

@@ -77,7 +77,7 @@
   <sce:import src="codec_zenoh_interest_body.scxml"  kind="codec" as="codec_zenoh_interest_body"/>
   <datamodel>
     <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
-      <sce:flag name="mid"     bit="0" width="5"/>
+      <sce:flag name="mid"     bit="0" width="5" value="0x19"/>
       <sce:flag name="CURRENT" bit="5"/>
       <sce:flag name="FUTURE"  bit="6"/>
       <sce:flag name="Z"       bit="7"/>

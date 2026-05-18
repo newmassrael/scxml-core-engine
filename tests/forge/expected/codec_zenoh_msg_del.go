@@ -19,6 +19,19 @@ type CodecZenohMsgDel struct {
 	Extensions []codec_zenoh_ext_entry.CodecZenohExtEntry
 }
 
+// NewCodecZenohMsgDel returns a CodecZenohMsgDel initialized with the
+// declared wire-MID defaults. Go has no Default trait — round-trip
+// safety (`NewCodecZenohMsgDel().Encode()` decodes back to the same
+// arm) requires using this constructor rather than the bare struct
+// literal `CodecZenohMsgDel{}`, which would zero-init every field
+// (and leave every Variant arm pointer nil for variant codecs).
+// RFC variant-default-uniformity Atomic β-go.
+func NewCodecZenohMsgDel() *CodecZenohMsgDel {
+	return &CodecZenohMsgDel{
+		Header: uint8(0x02),
+	}
+}
+
 // DecodeCodecZenohMsgDel decodes the next frame from cursor.
 // On success the cursor advances past the consumed bytes; returns
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail

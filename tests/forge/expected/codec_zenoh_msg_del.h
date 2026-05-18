@@ -20,7 +20,7 @@
 namespace SCE::Generated::CodecZenohMsgDel {
 
 struct CodecZenohMsgDel {
-    uint8_t header;
+    uint8_t header{0x02u};
     std::optional<::SCE::Generated::CodecZenohTimestamp::CodecZenohTimestamp> timestamp;
     std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions;
 

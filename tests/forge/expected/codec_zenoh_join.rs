@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: codec_zenoh_join:40"]
-// SCE-MAP: codec_zenoh_join:40
+#![doc = "SCE-MAP: codec_zenoh_join:41"]
+// SCE-MAP: codec_zenoh_join:41
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -87,7 +87,7 @@ impl CodecZenohJoin {
         };
         let batch_size = if (parent_flags & 0x40u8) != 0 {
             let raw = cursor.peek_slice(2)?;
-            let _v = ((raw[0] as u16) << 8) | raw[1] as u16;
+            let _v = raw[0] as u16 | ((raw[1] as u16) << 8);
             cursor.advance(2)?;
             Some(_v)
         } else {
@@ -154,8 +154,8 @@ impl CodecZenohJoin {
             r.push(_v);
         }
         if let Some(_v) = self.batch_size {
-            r.push((_v >> 8) as u8);
             r.push(_v as u8);
+            r.push((_v >> 8) as u8);
         }
         {
             let mut _w = self.lease as u64;

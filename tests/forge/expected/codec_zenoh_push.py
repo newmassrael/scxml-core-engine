@@ -35,7 +35,7 @@ class CodecZenohPushVariant:
 
 @dataclass
 class CodecZenohPush:
-    header: int = 0
+    header: int = 0x1d
     body: CodecZenohPushVariant = field(default_factory=CodecZenohPushVariant)
 
     @classmethod

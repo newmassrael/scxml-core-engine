@@ -1,4 +1,4 @@
-# SCE-MAP: codec_zenoh_init_body:41
+# SCE-MAP: codec_zenoh_init_body:42
 
 # SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 # Runtime: none
@@ -65,7 +65,7 @@ class CodecZenohInitBody:
                 sn_res = None
             if (parent_flags & 0x40) != 0:
                 raw = cursor.peek_slice(2)
-                _v = (raw[0] << 8) | raw[1]
+                _v = raw[0] | (raw[1] << 8)
                 cursor.advance(2)
                 batch_size = _v
             else:
@@ -133,8 +133,8 @@ class CodecZenohInitBody:
         if self.sn_res is not None:
             r.append(self.sn_res & 0xFF)
         if self.batch_size is not None:
-            r.append((self.batch_size >> 8) & 0xFF)
             r.append(self.batch_size & 0xFF)
+            r.append((self.batch_size >> 8) & 0xFF)
         if self.cookie_len is not None:
             _w = int(self.cookie_len)
             while _w >= 0x80:

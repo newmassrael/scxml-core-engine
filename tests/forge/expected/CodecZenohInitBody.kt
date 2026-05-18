@@ -1,4 +1,4 @@
-// SCE-MAP: codec_zenoh_init_body:41
+// SCE-MAP: codec_zenoh_init_body:42
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
@@ -66,8 +66,8 @@ data class CodecZenohInitBody(
             r.add(_v.toByte())
         }
         this.batch_size?.let { _v ->
-            r.add((_v.toInt() ushr 8 and 0xFF).toByte())
             r.add((_v.toInt() and 0xFF).toByte())
+            r.add((_v.toInt() ushr 8 and 0xFF).toByte())
         }
         this.cookie_len?.let { _v ->
         run {
@@ -129,7 +129,7 @@ data class CodecZenohInitBody(
             }
             val batch_size = if ((parentFlags.toInt() and 0x40) != 0) {
                 val raw = cursor.peekSlice(2) ?: return null
-                val _v = (((raw[0].toInt() and 0xFF) shl 8) or (raw[1].toInt() and 0xFF)).toUShort()
+                val _v = ((raw[0].toInt() and 0xFF) or ((raw[1].toInt() and 0xFF) shl 8)).toUShort()
                 if (!cursor.advance(2)) return null
                 _v
             } else {

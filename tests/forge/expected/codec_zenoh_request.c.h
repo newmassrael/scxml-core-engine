@@ -66,6 +66,7 @@ typedef struct {
  * fields zero-initialize per C11 §6.7.9 ¶21, so the macro names only
  * the wire-MID-bearing members. */
 #define CODEC_ZENOH_REQUEST_DEFAULT_INIT { \
+    .header = 0x1cu, \
     .body = { \
         .kind = CODEC_ZENOH_REQUEST_BODY_KIND_CODEC_ZENOH_MSG_PUT, \
         .arm = { .codec_zenoh_msg_put = CODEC_ZENOH_MSG_PUT_DEFAULT_INIT } \

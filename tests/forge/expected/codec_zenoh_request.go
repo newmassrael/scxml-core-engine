@@ -52,6 +52,7 @@ type CodecZenohRequest struct {
 // RFC variant-default-uniformity Atomic β-go.
 func NewCodecZenohRequest() *CodecZenohRequest {
 	return &CodecZenohRequest{
+		Header: uint8(0x1c),
 		Body: CodecZenohRequestVariant{
 			CodecZenohMsgPut: codec_zenoh_msg_put.NewCodecZenohMsgPut(),
 		},

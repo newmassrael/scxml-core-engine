@@ -15,7 +15,7 @@ import com.sce.generated.codec_zenoh_ext_entry.*
 // `CodecZenohErr()` before any encode()/decode() call. Defaults
 // mirror the zero-initialized shape that decode() fills in on success.
 data class CodecZenohErr(
-    var header: UByte = 0.toUByte(),
+    var header: UByte = 0x05.toUByte(),
     var encoding: CodecZenohEncoding? = null,
     var extensions: MutableList<CodecZenohExtEntry>? = null,
     var payload_len: ULong = 0uL,

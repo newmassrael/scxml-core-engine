@@ -16,7 +16,7 @@ from typing import Optional, List
 
 @dataclass
 class CodecZenohInterest:
-    header: int = 0
+    header: int = 0x19
     id: int = 0
     body: Optional[CodecZenohInterestBody] = None
     extensions: Optional[List[CodecZenohExtEntry]] = b""
