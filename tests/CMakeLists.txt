@@ -1600,9 +1600,14 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     set(MESH_PARTITION_RULE12_LEFT_DIR  "${CMAKE_CURRENT_BINARY_DIR}/mesh_partition_rule12_left_generated")
     set(MESH_PARTITION_RULE12_RIGHT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_partition_rule12_right_generated")
 
+    # Pattern C split (mesh_open_issues.md Issue 2 follow-up): each
+    # (sm.h + transport.h) emit is two commands so a transport-only
+    # edit (deploy.yaml change) doesn't churn the sm.h mtime and
+    # cascade rebuilds. SM emit stays --deploy-aware so its model
+    # mutations (server-response, partition, queue capacity) match
+    # what the transport emit produces.
     add_custom_command(
         OUTPUT  "${MESH_PARTITION_RULE12_LEFT_DIR}/motor_partition_sm.h"
-                "${MESH_PARTITION_RULE12_LEFT_DIR}/motor_partition_transport.h"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_PARTITION_RULE12_LEFT_DIR}"
         COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_partition.scxml"
                 -l cpp -o "${MESH_PARTITION_RULE12_LEFT_DIR}"
@@ -1611,15 +1616,31 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
                 --write-deps "${MESH_PARTITION_RULE12_LEFT_DIR}/motor_partition_sm.h.d"
         DEPENDS "${MESH_TEST_DIR}/motor_partition.scxml"
                 "${MESH_TEST_DIR}/deploy_partitions.yaml"
-                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                "${SCE_CODEGEN}"
         DEPFILE "${MESH_PARTITION_RULE12_LEFT_DIR}/motor_partition_sm.h.d"
-        COMMENT "Mesh rule 12: Generating motor_partition (Root partition motor_left)"
+        COMMENT "Mesh rule 12: Generating motor_partition_sm.h (Root partition motor_left)"
+        VERBATIM
+    )
+
+    add_custom_command(
+        OUTPUT  "${MESH_PARTITION_RULE12_LEFT_DIR}/motor_partition_transport.h"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_partition.scxml"
+                -l cpp -o "${MESH_PARTITION_RULE12_LEFT_DIR}"
+                --deploy "${MESH_TEST_DIR}/deploy_partitions.yaml"
+                --transport-only
+                --partition motor_left
+                --write-deps "${MESH_PARTITION_RULE12_LEFT_DIR}/motor_partition_transport.h.d"
+        DEPENDS "${MESH_TEST_DIR}/motor_partition.scxml"
+                "${MESH_TEST_DIR}/deploy_partitions.yaml"
+                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                "${MESH_PARTITION_RULE12_LEFT_DIR}/motor_partition_sm.h"
+        DEPFILE "${MESH_PARTITION_RULE12_LEFT_DIR}/motor_partition_transport.h.d"
+        COMMENT "Mesh rule 12: Generating motor_partition_transport.h (Root partition motor_left)"
         VERBATIM
     )
 
     add_custom_command(
         OUTPUT  "${MESH_PARTITION_RULE12_RIGHT_DIR}/motor_partition_sm.h"
-                "${MESH_PARTITION_RULE12_RIGHT_DIR}/motor_partition_transport.h"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_PARTITION_RULE12_RIGHT_DIR}"
         COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_partition.scxml"
                 -l cpp -o "${MESH_PARTITION_RULE12_RIGHT_DIR}"
@@ -1628,9 +1649,26 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
                 --write-deps "${MESH_PARTITION_RULE12_RIGHT_DIR}/motor_partition_sm.h.d"
         DEPENDS "${MESH_TEST_DIR}/motor_partition.scxml"
                 "${MESH_TEST_DIR}/deploy_partitions.yaml"
-                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                "${SCE_CODEGEN}"
         DEPFILE "${MESH_PARTITION_RULE12_RIGHT_DIR}/motor_partition_sm.h.d"
-        COMMENT "Mesh rule 12: Generating motor_partition (NonRoot partition motor_right)"
+        COMMENT "Mesh rule 12: Generating motor_partition_sm.h (NonRoot partition motor_right)"
+        VERBATIM
+    )
+
+    add_custom_command(
+        OUTPUT  "${MESH_PARTITION_RULE12_RIGHT_DIR}/motor_partition_transport.h"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_partition.scxml"
+                -l cpp -o "${MESH_PARTITION_RULE12_RIGHT_DIR}"
+                --deploy "${MESH_TEST_DIR}/deploy_partitions.yaml"
+                --transport-only
+                --partition motor_right
+                --write-deps "${MESH_PARTITION_RULE12_RIGHT_DIR}/motor_partition_transport.h.d"
+        DEPENDS "${MESH_TEST_DIR}/motor_partition.scxml"
+                "${MESH_TEST_DIR}/deploy_partitions.yaml"
+                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                "${MESH_PARTITION_RULE12_RIGHT_DIR}/motor_partition_sm.h"
+        DEPFILE "${MESH_PARTITION_RULE12_RIGHT_DIR}/motor_partition_transport.h.d"
+        COMMENT "Mesh rule 12: Generating motor_partition_transport.h (NonRoot partition motor_right)"
         VERBATIM
     )
 
@@ -1708,7 +1746,6 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
 
     add_custom_command(
         OUTPUT  "${MESH_BARRIER_TIMEOUT_LEFT_DIR}/motor_partition_sm.h"
-                "${MESH_BARRIER_TIMEOUT_LEFT_DIR}/motor_partition_transport.h"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_BARRIER_TIMEOUT_LEFT_DIR}"
         COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_partition.scxml"
                 -l cpp -o "${MESH_BARRIER_TIMEOUT_LEFT_DIR}"
@@ -1717,15 +1754,31 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
                 --write-deps "${MESH_BARRIER_TIMEOUT_LEFT_DIR}/motor_partition_sm.h.d"
         DEPENDS "${MESH_TEST_DIR}/motor_partition.scxml"
                 "${MESH_TEST_DIR}/deploy_partitions_barrier_fast.yaml"
-                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                "${SCE_CODEGEN}"
         DEPFILE "${MESH_BARRIER_TIMEOUT_LEFT_DIR}/motor_partition_sm.h.d"
-        COMMENT "Mesh §16.5 barrier-timeout: Generating motor_partition (Root motor_left, fast)"
+        COMMENT "Mesh §16.5 barrier-timeout: Generating motor_partition_sm.h (Root motor_left, fast)"
+        VERBATIM
+    )
+
+    add_custom_command(
+        OUTPUT  "${MESH_BARRIER_TIMEOUT_LEFT_DIR}/motor_partition_transport.h"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_partition.scxml"
+                -l cpp -o "${MESH_BARRIER_TIMEOUT_LEFT_DIR}"
+                --deploy "${MESH_TEST_DIR}/deploy_partitions_barrier_fast.yaml"
+                --transport-only
+                --partition motor_left
+                --write-deps "${MESH_BARRIER_TIMEOUT_LEFT_DIR}/motor_partition_transport.h.d"
+        DEPENDS "${MESH_TEST_DIR}/motor_partition.scxml"
+                "${MESH_TEST_DIR}/deploy_partitions_barrier_fast.yaml"
+                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                "${MESH_BARRIER_TIMEOUT_LEFT_DIR}/motor_partition_sm.h"
+        DEPFILE "${MESH_BARRIER_TIMEOUT_LEFT_DIR}/motor_partition_transport.h.d"
+        COMMENT "Mesh §16.5 barrier-timeout: Generating motor_partition_transport.h (Root motor_left, fast)"
         VERBATIM
     )
 
     add_custom_command(
         OUTPUT  "${MESH_BARRIER_TIMEOUT_RIGHT_DIR}/motor_partition_sm.h"
-                "${MESH_BARRIER_TIMEOUT_RIGHT_DIR}/motor_partition_transport.h"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_BARRIER_TIMEOUT_RIGHT_DIR}"
         COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_partition.scxml"
                 -l cpp -o "${MESH_BARRIER_TIMEOUT_RIGHT_DIR}"
@@ -1734,9 +1787,26 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
                 --write-deps "${MESH_BARRIER_TIMEOUT_RIGHT_DIR}/motor_partition_sm.h.d"
         DEPENDS "${MESH_TEST_DIR}/motor_partition.scxml"
                 "${MESH_TEST_DIR}/deploy_partitions_barrier_fast.yaml"
-                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                "${SCE_CODEGEN}"
         DEPFILE "${MESH_BARRIER_TIMEOUT_RIGHT_DIR}/motor_partition_sm.h.d"
-        COMMENT "Mesh §16.5 barrier-timeout: Generating motor_partition (NonRoot motor_right, fast)"
+        COMMENT "Mesh §16.5 barrier-timeout: Generating motor_partition_sm.h (NonRoot motor_right, fast)"
+        VERBATIM
+    )
+
+    add_custom_command(
+        OUTPUT  "${MESH_BARRIER_TIMEOUT_RIGHT_DIR}/motor_partition_transport.h"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_partition.scxml"
+                -l cpp -o "${MESH_BARRIER_TIMEOUT_RIGHT_DIR}"
+                --deploy "${MESH_TEST_DIR}/deploy_partitions_barrier_fast.yaml"
+                --transport-only
+                --partition motor_right
+                --write-deps "${MESH_BARRIER_TIMEOUT_RIGHT_DIR}/motor_partition_transport.h.d"
+        DEPENDS "${MESH_TEST_DIR}/motor_partition.scxml"
+                "${MESH_TEST_DIR}/deploy_partitions_barrier_fast.yaml"
+                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                "${MESH_BARRIER_TIMEOUT_RIGHT_DIR}/motor_partition_sm.h"
+        DEPFILE "${MESH_BARRIER_TIMEOUT_RIGHT_DIR}/motor_partition_transport.h.d"
+        COMMENT "Mesh §16.5 barrier-timeout: Generating motor_partition_transport.h (NonRoot motor_right, fast)"
         VERBATIM
     )
 
@@ -6224,7 +6294,6 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         # between tracker-owning (Root) and remote-send-callback (NonRoot).
         add_custom_command(
             OUTPUT "${main_out}/test${TEST_NUM}_sm.h"
-                   "${main_out}/test${TEST_NUM}_transport.h"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${main_out}"
             COMMAND "${SCE_CODEGEN}" generate "${staged_scxml}"
                     -l cpp -o "${main_out}"
@@ -6233,13 +6302,27 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
                     --write-deps "${main_out}/test${TEST_NUM}_sm.h.d"
             DEPENDS "${staged_scxml}" "${staged_deploy}" "${SCE_CODEGEN}"
             DEPFILE "${main_out}/test${TEST_NUM}_sm.h.d"
-            COMMENT "§16.8 seed: codegen test${TEST_NUM} main (Root) partition"
+            COMMENT "§16.8 seed: codegen test${TEST_NUM}_sm.h main (Root) partition"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${main_out}/test${TEST_NUM}_transport.h"
+            COMMAND "${SCE_CODEGEN}" generate "${staged_scxml}"
+                    -l cpp -o "${main_out}"
+                    --deploy "${staged_deploy}"
+                    --transport-only
+                    --partition "test${TEST_NUM}_main"
+                    --write-deps "${main_out}/test${TEST_NUM}_transport.h.d"
+            DEPENDS "${staged_scxml}" "${staged_deploy}" "${SCE_CODEGEN}"
+                    "${main_out}/test${TEST_NUM}_sm.h"
+            DEPFILE "${main_out}/test${TEST_NUM}_transport.h.d"
+            COMMENT "§16.8 seed: codegen test${TEST_NUM}_transport.h main (Root) partition"
             VERBATIM
         )
 
         add_custom_command(
             OUTPUT "${worker_out}/test${TEST_NUM}_sm.h"
-                   "${worker_out}/test${TEST_NUM}_transport.h"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${worker_out}"
             COMMAND "${SCE_CODEGEN}" generate "${staged_scxml}"
                     -l cpp -o "${worker_out}"
@@ -6248,7 +6331,22 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
                     --write-deps "${worker_out}/test${TEST_NUM}_sm.h.d"
             DEPENDS "${staged_scxml}" "${staged_deploy}" "${SCE_CODEGEN}"
             DEPFILE "${worker_out}/test${TEST_NUM}_sm.h.d"
-            COMMENT "§16.8 seed: codegen test${TEST_NUM} worker (NonRoot) partition"
+            COMMENT "§16.8 seed: codegen test${TEST_NUM}_sm.h worker (NonRoot) partition"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${worker_out}/test${TEST_NUM}_transport.h"
+            COMMAND "${SCE_CODEGEN}" generate "${staged_scxml}"
+                    -l cpp -o "${worker_out}"
+                    --deploy "${staged_deploy}"
+                    --transport-only
+                    --partition "test${TEST_NUM}_worker"
+                    --write-deps "${worker_out}/test${TEST_NUM}_transport.h.d"
+            DEPENDS "${staged_scxml}" "${staged_deploy}" "${SCE_CODEGEN}"
+                    "${worker_out}/test${TEST_NUM}_sm.h"
+            DEPFILE "${worker_out}/test${TEST_NUM}_transport.h.d"
+            COMMENT "§16.8 seed: codegen test${TEST_NUM}_transport.h worker (NonRoot) partition"
             VERBATIM
         )
 
