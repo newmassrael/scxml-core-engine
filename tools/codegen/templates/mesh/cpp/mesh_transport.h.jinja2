@@ -313,13 +313,16 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
    subscriber), §10.10 OutboundBuffer-path raises (BACKPRESSURE_DROP
    via admit overflow), SomeIP region-liveness raises
    (REGION_PARTITIONED via `register_availability_handler`, RFC F.X-3),
-   and §16.7 row 4 envelope-decode raises (ENVELOPE_CORRUPT at every
-   inbound `decodeEnvelope` failure) all share this helper, so it
-   and its include live behind a single flag rather than each caller
-   gate. Keeps `raiseCommunicationError` a single definition
-   regardless of which callers fire. Any router with someip or zenoh
-   transports has decode sites and therefore needs the helper. #}
-{% set raises_communication_error = has_ordered_binding or has_zenoh_liveliness or machine_outbound_buffer or someip_liveness_service_id_self_hex or someip_machine_liveness_service_id_self_hex or ("someip" in transport_types) or ("zenoh" in transport_types) %}
+   §16.7 row 4 envelope-decode raises (ENVELOPE_CORRUPT at every
+   inbound `decodeEnvelope` failure), and §16.7 row 5 mesh-rpc
+   shutdown raises (INVOKE_CHILD_LOST per outstanding correlation
+   entry, §10.4.1 row 1704) all share this helper, so it and its
+   include live behind a single flag rather than each caller gate.
+   Keeps `raiseCommunicationError` a single definition regardless of
+   which callers fire. Any router with someip or zenoh transports
+   has decode sites and therefore needs the helper; any router with
+   mesh-rpc has the row-5 shutdown emit. #}
+{% set raises_communication_error = has_ordered_binding or has_zenoh_liveliness or machine_outbound_buffer or someip_liveness_service_id_self_hex or someip_machine_liveness_service_id_self_hex or ("someip" in transport_types) or ("zenoh" in transport_types) or has_mesh_rpc.v %}
 
 {# CorrelationKey/Hash are needed by SOME/IP client correlation AND/OR
    server pending-request storage. Emit once if either usage is present. #}
@@ -3335,6 +3338,34 @@ struct TransportRouter {
             ordering_tick_thread_.join();
         }
 {% endif %}
+{% if has_mesh_rpc.v %}
+        // SCE_MESH.md §10.4.1 row 1704 + §16.7 row 5: every outstanding
+        // `<invoke type="sce:mesh-rpc">` whose reply has not yet
+        // arrived is failed with `error.communication` carrying
+        // `reason="INVOKE_CHILD_LOST"` + `invoke_id` + `target`. Runs
+        // BEFORE transport teardown so the sender engine's external
+        // queue still accepts the event (transports are still up at
+        // this point; only the ordering tick has joined). The
+        // `cancelAllPending` callback receives `(uuid, target)` per
+        // entry; deliver callbacks are NOT fired (cancel-style erase
+        // semantics, no synthetic `done.invoke.<id>` / `error.invoke.<id>`).
+        // Also drops the matching `active_invokes_` site entries so a
+        // racing state-exit `cancelMeshRpc` is a no-op on already-failed
+        // invokes.
+        invoke_correlation_.cancelAllPending(
+            [this](const SCE::Mesh::InvokeCorrelation::Key& uuid,
+                   const std::string& target) {
+                SCE::Mesh::CommunicationError err;
+                err.reason = "INVOKE_CHILD_LOST";
+                err.invoke_id = uuid;
+                err.target = target;
+                raiseCommunicationError(std::move(err));
+            });
+        {
+            std::lock_guard<std::mutex> lock(active_invokes_mutex_);
+            active_invokes_.clear();
+        }
+{% endif %}
 {% if machine_subscriptions %}
         // Machine-lifetime unsubscribe (reverse of init subscriptions).
 {% for sub in machine_subscriptions %}
@@ -4164,7 +4195,7 @@ struct TransportRouter {
         // codegen, so `sessions_[0]` is the sole session here.
         SenderEngine* sender_ptr = sessions_[0];
         std::string captured_invoke_id = invokeId;
-        invoke_correlation_.registerInvoke(uuid,
+        invoke_correlation_.registerInvoke(uuid, target,
             [sender_ptr, captured_invoke_id](
                 SCE::Mesh::RpcStatus status,
                 std::vector<std::uint8_t> payload) {

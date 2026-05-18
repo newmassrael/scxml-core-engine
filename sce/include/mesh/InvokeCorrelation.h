@@ -15,8 +15,13 @@
 // codegen (F3) populates it on invoke entry and consults it on reply
 // / cancel / deadline; the class itself knows nothing about codegen,
 // envelopes, or schedulers — its only job is to keep a thread-safe
-// map of `uuid → deliver` callbacks and invoke each callback at most
-// once with the right `RpcStatus`.
+// map of `uuid → {target, deliver}` entries and invoke each deliver
+// callback at most once with the right `RpcStatus`. The `target`
+// field is the deploy.yaml peer machine name the invoke is bound to
+// — carried alongside the callback so the §10.4.1 row 1704
+// shutdown-time §16.7 row 5 `INVOKE_CHILD_LOST` raise can surface
+// it per outstanding entry without the caller having to maintain a
+// parallel reverse index.
 //
 // Thread-safety: one mutex guards the whole map. Reply and deadline
 // arrive on transport / scheduler threads; `<cancel>` runs on the
@@ -35,6 +40,7 @@
 #include <cstdint>
 #include <functional>
 #include <mutex>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -68,13 +74,19 @@ public:
     using DeliverCallback =
         std::function<void(RpcStatus, std::vector<std::uint8_t>)>;
 
-    /// Register an in-flight invoke. Returns `false` if `uuid` is
-    /// already registered — that is a caller contract violation (an
-    /// invoke id must be unique per parent), and the duplicate is
-    /// dropped without disturbing the first registration.
-    bool registerInvoke(const Key& uuid, DeliverCallback deliver) {
+    /// Register an in-flight invoke. `target` is the deploy.yaml peer
+    /// machine name the invoke is bound to — stored alongside the
+    /// callback so the §10.4.1 row 1704 shutdown-time §16.7 row 5
+    /// `INVOKE_CHILD_LOST` raise can surface it without a parallel
+    /// reverse index. Returns `false` if `uuid` is already registered
+    /// — that is a caller contract violation (an invoke id must be
+    /// unique per parent), and the duplicate is dropped without
+    /// disturbing the first registration.
+    bool registerInvoke(const Key& uuid, std::string target,
+                        DeliverCallback deliver) {
         std::lock_guard<std::mutex> lock(mutex_);
-        auto [it, inserted] = pending_.emplace(uuid, std::move(deliver));
+        auto [it, inserted] = pending_.emplace(
+            uuid, Entry{std::move(target), std::move(deliver)});
         (void)it;
         return inserted;
     }
@@ -97,7 +109,7 @@ public:
             if (it == pending_.end()) {
                 return false;
             }
-            cb = std::move(it->second);
+            cb = std::move(it->second.deliver);
             pending_.erase(it);
         }
         if (cb) {
@@ -132,6 +144,41 @@ public:
         return pending_.find(uuid) != pending_.end();
     }
 
+    /// Cancel every outstanding entry and invoke `on_each` once per
+    /// erased entry with the entry's `(uuid, target)`. The deliver
+    /// callbacks are NOT fired (same erase-without-delivery semantics
+    /// as `handleCancel`) — `on_each` is the caller's parallel
+    /// notification hook. The map is empty when this method returns.
+    ///
+    /// SCE_MESH.md §10.4.1 row 1704: transport-shutdown failure of
+    /// outstanding RPC entries. The caller (TransportRouter::shutdown)
+    /// uses `on_each` to raise §16.7 row 5 `INVOKE_CHILD_LOST` per
+    /// outstanding entry, carrying `invoke_id` (uuid) and `target`.
+    ///
+    /// All entries are moved out of `pending_` under the mutex into
+    /// a local snapshot, the mutex is released, and `on_each` is
+    /// invoked per snapshot entry. This avoids holding `mutex_` while
+    /// the caller-supplied notification runs (which may invoke
+    /// SCXML-side raise paths that grab unrelated locks), preserving
+    /// §10.10 lock-discipline.
+    void cancelAllPending(
+        const std::function<void(const Key&,
+                                 const std::string& target)>& on_each) {
+        std::vector<std::pair<Key, std::string>> snapshot;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            snapshot.reserve(pending_.size());
+            for (auto& [uuid, entry] : pending_) {
+                snapshot.emplace_back(uuid, std::move(entry.target));
+            }
+            pending_.clear();
+        }
+        if (!on_each) return;
+        for (const auto& [uuid, target] : snapshot) {
+            on_each(uuid, target);
+        }
+    }
+
 private:
     /// FNV-1a over 16 bytes. Cheaper than SipHash and adequate here:
     /// the map only holds actively in-flight invokes, bounded by how
@@ -150,8 +197,18 @@ private:
         }
     };
 
+    /// Per-entry payload: the peer machine name the invoke is bound
+    /// to plus the deliver callback. Target is stored explicitly
+    /// (not closed over in the callback) so `cancelAllPending` can
+    /// surface it for §16.7 row 5 emit without the caller maintaining
+    /// a parallel reverse index from uuid → target.
+    struct Entry {
+        std::string target;
+        DeliverCallback deliver;
+    };
+
     mutable std::mutex mutex_;
-    std::unordered_map<Key, DeliverCallback, KeyHash> pending_;
+    std::unordered_map<Key, Entry, KeyHash> pending_;
 };
 
 }  // namespace SCE::Mesh

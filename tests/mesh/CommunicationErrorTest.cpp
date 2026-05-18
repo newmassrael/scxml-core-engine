@@ -21,6 +21,7 @@
 //   * DedupWindowOverflowShape
 //   * TransportUnavailableShape
 //   * SendFailedShape
+//   * InvokeChildLostShape
 // since those pin byte-exact output.
 
 #include "mesh/CommunicationError.h"
@@ -213,6 +214,42 @@ TEST(CommunicationErrorTest, EnvelopeCorruptShapeWithPosition) {
               "\"transport\":\"zenoh\","
               "\"codec\":\"cbor\","
               "\"position\":42}");
+}
+
+TEST(CommunicationErrorTest, InvokeChildLostShape) {
+    // §16.7 row 5 — INVOKE_CHILD_LOST carries invoke_id + target.
+    // Raised by TransportRouter::shutdown when iterating
+    // `invoke_correlation_`'s outstanding entries via
+    // `cancelAllPending` (per §10.4.1 row 1704 "Outstanding RPC
+    // entries are cancelled with reason: INVOKE_CHILD_LOST" on
+    // transport Shutdown). `invoke_id` renders as the RFC 4122
+    // canonical UUID string (mirrors `envelope_id`'s shape so
+    // authors using either field key follow the same parsing
+    // discipline). Field order on the wire follows
+    // `CommunicationError`'s declaration order: `invoke_id` precedes
+    // `target`. Authors guard on `_event.data.reason ==
+    // 'INVOKE_CHILD_LOST' && _event.data.target == '<peer>'` to
+    // react to a specific child device disappearing.
+    //
+    // Contrast with §9.6 L1393 `error.execution(reason=
+    // SESSION_F_TRANSPORT_UNAVAILABLE)`: that case fires at invoke
+    // entry-time when no deploy.yaml binding exists for the peer
+    // (init-time configuration absence). Row 5 fires AFTER a
+    // binding was active and the transport reached Shutdown with
+    // outstanding work.
+    CommunicationError err;
+    err.reason = "INVOKE_CHILD_LOST";
+    err.invoke_id = std::array<std::uint8_t, 16>{
+        0x01, 0x82, 0x0b, 0xc0, 0xde, 0xad, 0x7e, 0x50,
+        0x81, 0xab, 0xca, 0xfe, 0xba, 0xbe, 0xbe, 0xef};
+    err.target = "motor";
+
+    const auto out = bytes_to_string(err.toJsonBytes());
+    EXPECT_EQ(out,
+              "{\"errorName\":\"communication\","
+              "\"reason\":\"INVOKE_CHILD_LOST\","
+              "\"invoke_id\":\"01820bc0-dead-7e50-81ab-cafebabebeef\","
+              "\"target\":\"motor\"}");
 }
 
 TEST(CommunicationErrorTest, SendFailedShape) {

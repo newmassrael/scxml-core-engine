@@ -64,7 +64,7 @@ TEST(InvokeCorrelation, RegisterThenReplyOk_FiresCallbackWithPayload) {
     InvokeCorrelation table;
     Sink sink;
 
-    EXPECT_TRUE(table.registerInvoke(kUuidA, sink.callback()));
+    EXPECT_TRUE(table.registerInvoke(kUuidA, "motor", sink.callback()));
     EXPECT_EQ(table.size(), 1u);
     EXPECT_TRUE(table.contains(kUuidA));
 
@@ -81,7 +81,7 @@ TEST(InvokeCorrelation, RegisterThenReplyOk_FiresCallbackWithPayload) {
 TEST(InvokeCorrelation, RegisterThenReplyError_PropagatesStatus) {
     InvokeCorrelation table;
     Sink sink;
-    ASSERT_TRUE(table.registerInvoke(kUuidA, sink.callback()));
+    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", sink.callback()));
 
     EXPECT_TRUE(table.handleReply(kUuidA, RpcStatus::Unavailable, {}));
 
@@ -94,7 +94,7 @@ TEST(InvokeCorrelation, RegisterThenReplyError_PropagatesStatus) {
 TEST(InvokeCorrelation, DeadlineFires_DeliveredAsDeadlineExceeded) {
     InvokeCorrelation table;
     Sink sink;
-    ASSERT_TRUE(table.registerInvoke(kUuidA, sink.callback()));
+    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", sink.callback()));
 
     EXPECT_TRUE(table.handleDeadline(kUuidA));
 
@@ -107,7 +107,7 @@ TEST(InvokeCorrelation, DeadlineFires_DeliveredAsDeadlineExceeded) {
 TEST(InvokeCorrelation, CancelErasesWithoutFiringCallback) {
     InvokeCorrelation table;
     Sink sink;
-    ASSERT_TRUE(table.registerInvoke(kUuidA, sink.callback()));
+    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", sink.callback()));
 
     EXPECT_TRUE(table.handleCancel(kUuidA));
 
@@ -120,7 +120,7 @@ TEST(InvokeCorrelation, CancelErasesWithoutFiringCallback) {
 TEST(InvokeCorrelation, LateReplyAfterCancel_IsSilentlyDropped) {
     InvokeCorrelation table;
     Sink sink;
-    ASSERT_TRUE(table.registerInvoke(kUuidA, sink.callback()));
+    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", sink.callback()));
     ASSERT_TRUE(table.handleCancel(kUuidA));
 
     // Reply arrives after cancel — the entry is gone, so nothing
@@ -132,7 +132,7 @@ TEST(InvokeCorrelation, LateReplyAfterCancel_IsSilentlyDropped) {
 TEST(InvokeCorrelation, LateReplyAfterDeadline_IsSilentlyDropped) {
     InvokeCorrelation table;
     Sink sink;
-    ASSERT_TRUE(table.registerInvoke(kUuidA, sink.callback()));
+    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", sink.callback()));
     ASSERT_TRUE(table.handleDeadline(kUuidA));
     ASSERT_EQ(sink.calls, 1);  // deadline fired
 
@@ -147,8 +147,8 @@ TEST(InvokeCorrelation, DuplicateRegister_IsContractViolationReturningFalse) {
     Sink first;
     Sink second;
 
-    ASSERT_TRUE(table.registerInvoke(kUuidA, first.callback()));
-    EXPECT_FALSE(table.registerInvoke(kUuidA, second.callback()));
+    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", first.callback()));
+    EXPECT_FALSE(table.registerInvoke(kUuidA, "motor", second.callback()));
 
     // The first registration is preserved. A reply fires only the
     // first callback, not the duplicate.
@@ -162,8 +162,8 @@ TEST(InvokeCorrelation, IndependentUuids_DoNotInterfere) {
     Sink sinkA;
     Sink sinkB;
 
-    ASSERT_TRUE(table.registerInvoke(kUuidA, sinkA.callback()));
-    ASSERT_TRUE(table.registerInvoke(kUuidB, sinkB.callback()));
+    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", sinkA.callback()));
+    ASSERT_TRUE(table.registerInvoke(kUuidB, "brake", sinkB.callback()));
     EXPECT_EQ(table.size(), 2u);
 
     // Reply to A leaves B untouched.
@@ -177,11 +177,79 @@ TEST(InvokeCorrelation, IndependentUuids_DoNotInterfere) {
 TEST(InvokeCorrelation, HandleReply_OnUnknownId_ReturnsFalse) {
     InvokeCorrelation table;
     Sink sink;
-    ASSERT_TRUE(table.registerInvoke(kUuidA, sink.callback()));
+    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", sink.callback()));
 
     EXPECT_FALSE(table.handleReply(kUuidB, RpcStatus::Ok, {0xff}));
     EXPECT_EQ(sink.calls, 0);
     EXPECT_EQ(table.size(), 1u);
+}
+
+TEST(InvokeCorrelation, CancelAllPending_IteratesEntriesWithTargetAndErases) {
+    // §10.4.1 row 1704 + §16.7 row 5: the TransportRouter shutdown
+    // path needs an enumerate-and-cancel API that delivers
+    // `(uuid, target)` per outstanding entry so the row-5 raise can
+    // surface both fields without a parallel reverse index. Pins:
+    //   1. on_each fires once per registered entry.
+    //   2. the captured target matches what registerInvoke received.
+    //   3. neither deliver callback fires (cancelAllPending follows
+    //      handleCancel's erase-without-delivery contract).
+    //   4. the table is empty after the call.
+    InvokeCorrelation table;
+    Sink sinkA;
+    Sink sinkB;
+    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", sinkA.callback()));
+    ASSERT_TRUE(table.registerInvoke(kUuidB, "brake", sinkB.callback()));
+    EXPECT_EQ(table.size(), 2u);
+
+    std::vector<std::pair<InvokeCorrelation::Key, std::string>> seen;
+    table.cancelAllPending(
+        [&](const InvokeCorrelation::Key& uuid, const std::string& target) {
+            seen.emplace_back(uuid, target);
+        });
+
+    EXPECT_EQ(table.size(), 0u) << "table empty after cancelAllPending";
+    EXPECT_EQ(sinkA.calls, 0) << "deliver callbacks NOT fired (cancel-style)";
+    EXPECT_EQ(sinkB.calls, 0);
+    ASSERT_EQ(seen.size(), 2u);
+
+    // Order across the unordered_map is implementation-defined, so
+    // assert membership rather than positional equality.
+    bool found_a = false;
+    bool found_b = false;
+    for (const auto& [uuid, target] : seen) {
+        if (uuid == kUuidA && target == "motor") found_a = true;
+        if (uuid == kUuidB && target == "brake") found_b = true;
+    }
+    EXPECT_TRUE(found_a) << "kUuidA → motor surfaced";
+    EXPECT_TRUE(found_b) << "kUuidB → brake surfaced";
+}
+
+TEST(InvokeCorrelation, CancelAllPending_OnEmptyTable_IsNoOp) {
+    // No-op contract: calling cancelAllPending on an empty registry
+    // does not fire the callback. Used by TransportRouter::shutdown
+    // when no mesh-rpcs were ever issued — the shutdown path should
+    // not synthesize spurious row-5 events.
+    InvokeCorrelation table;
+    int callback_count = 0;
+    table.cancelAllPending(
+        [&](const InvokeCorrelation::Key&, const std::string&) {
+            ++callback_count;
+        });
+    EXPECT_EQ(callback_count, 0);
+    EXPECT_EQ(table.size(), 0u);
+}
+
+TEST(InvokeCorrelation, CancelAllPending_NullCallback_IsTolerated) {
+    // Tolerant contract: passing an empty std::function still erases
+    // the entries (the cancel-like erase semantic is unconditional);
+    // the null callback is silently skipped. Lets callers wire the
+    // erase path even before they have a notification target wired.
+    InvokeCorrelation table;
+    Sink sink;
+    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", sink.callback()));
+    table.cancelAllPending({});
+    EXPECT_EQ(table.size(), 0u);
+    EXPECT_EQ(sink.calls, 0);
 }
 
 TEST(InvokeCorrelation, ConcurrentReplyVsCancel_AtMostOneWinsExactlyOnce) {
@@ -202,7 +270,8 @@ TEST(InvokeCorrelation, ConcurrentReplyVsCancel_AtMostOneWinsExactlyOnce) {
         uuid[0] = static_cast<std::uint8_t>(i & 0xff);
         uuid[1] = static_cast<std::uint8_t>((i >> 8) & 0xff);
 
-        ASSERT_TRUE(table.registerInvoke(uuid, [&](RpcStatus, auto) {
+        ASSERT_TRUE(table.registerInvoke(uuid, "motor",
+                                         [&](RpcStatus, auto) {
             ++deliver_calls;
         }));
 
