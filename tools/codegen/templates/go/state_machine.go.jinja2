@@ -430,11 +430,6 @@ func (p *{{ machine_name }}Policy) SetLastTransitionSourceState(state {{ machine
 func (p *{{ machine_name }}Policy) GetActiveStates() []{{ machine_name }}State {
 	return p.activeStates
 }
-
-// SetActiveStates updates the active state configuration.
-func (p *{{ machine_name }}Policy) SetActiveStates(states []{{ machine_name }}State) {
-	p.activeStates = states
-}
 {% endif %}
 
 {% if model.needs_external_flag %}
@@ -481,7 +476,6 @@ func (p *{{ machine_name }}Policy) HasAutoforward() bool { return false }
 {% if not model.has_parallel_states and not model.uses_in_predicate %}
 func (p *{{ machine_name }}Policy) HasActiveStates() bool { return false }
 func (p *{{ machine_name }}Policy) GetActiveStates() []{{ machine_name }}State { return nil }
-func (p *{{ machine_name }}Policy) SetActiveStates(_ []{{ machine_name }}State) {}
 {% else %}
 func (p *{{ machine_name }}Policy) HasActiveStates() bool { return true }
 {% endif %}
