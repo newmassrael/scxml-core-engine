@@ -62,6 +62,16 @@ namespace SCE::Mesh::CustomTcp {
 /// engine; this layer does no policy interpretation.
 using ReceiveCallback = std::function<void(const SCE::Mesh::MeshEnvelope&)>;
 
+/// Decode-error callback signature: invoked on a per-connection read
+/// thread when an inbound frame's CBOR decode fails. Codegen wires
+/// this to `raiseCommunicationError(ENVELOPE_CORRUPT,
+/// transport="custom_tcp")` so the §16.7 row 4 catalog row fires at
+/// this hand-written endpoint tier the same way codegen
+/// `decodeEnvelope` sites do. Distinct from a stream-level fault
+/// (`ReadResult::SocketClosed`) which tears down the connection
+/// silently — a single bad envelope leaves the connection alive.
+using DecodeErrorCallback = std::function<void()>;
+
 /// Runtime override for endpoints the generated TransportRouter::init()
 /// would otherwise take from codegen-baked deploy.yaml values. The
 /// two-process cross-device harness populates this before calling
@@ -161,20 +171,38 @@ inline bool write_exact(int fd, const void* buf, std::size_t n) {
 /// the buffer grows monotonically toward the largest seen envelope and
 /// then becomes amortized-free for subsequent reads of equal-or-smaller
 /// size.
-inline bool read_envelope(int fd, SCE::Mesh::MeshEnvelope& out,
-                          std::vector<uint8_t>& scratch) {
+/// Three-state result for an inbound frame attempt: a successful decode
+/// (continue the loop), a clean socket close (exit the loop, no error),
+/// or a CBOR decode failure on a successfully-read frame (continue the
+/// loop AFTER raising §16.7 row 4 ENVELOPE_CORRUPT). The
+/// SocketClosed/StreamFramingError split lets the read loop continue
+/// on a recoverable decode error rather than dropping the connection,
+/// while keeping the catalog-row raise distinguishable from a peer
+/// hangup. A framing-level fault (length validation, partial read)
+/// is reported as SocketClosed because the stream is no longer
+/// trustable — the loop must tear down.
+enum class ReadResult {
+    Ok,
+    SocketClosed,
+    DecodeError,
+};
+
+inline ReadResult read_envelope(int fd, SCE::Mesh::MeshEnvelope& out,
+                                std::vector<uint8_t>& scratch) {
     uint32_t net_len = 0;
-    if (!read_exact(fd, &net_len, sizeof(net_len))) return false;
+    if (!read_exact(fd, &net_len, sizeof(net_len))) return ReadResult::SocketClosed;
     uint32_t len = ntohl(net_len);
     // Cap at a sane upper bound. The harness only carries small test
     // envelopes; a multi-megabyte length is almost certainly a framing
     // bug or hostile peer. 16 MiB matches the practical SOME/IP payload
     // ceiling and is far above any envelope the harness will ever emit.
     constexpr uint32_t kMaxPayload = 16u * 1024u * 1024u;
-    if (len == 0 || len > kMaxPayload) return false;
+    if (len == 0 || len > kMaxPayload) return ReadResult::SocketClosed;
     scratch.resize(len);
-    if (!read_exact(fd, scratch.data(), len)) return false;
-    return SCE::Mesh::decodeEnvelope(scratch.data(), scratch.size(), out);
+    if (!read_exact(fd, scratch.data(), len)) return ReadResult::SocketClosed;
+    return SCE::Mesh::decodeEnvelope(scratch.data(), scratch.size(), out)
+               ? ReadResult::Ok
+               : ReadResult::DecodeError;
 }
 
 /// Encode `env` and write it as a length-prefixed frame on `fd`.
@@ -325,13 +353,41 @@ private:
         // Lives on this thread's stack, so no synchronization needed and
         // it is freed automatically when the reader exits.
         std::vector<uint8_t> scratch;
-        while (!stopping_.load() && detail::read_envelope(fd, env, scratch)) {
+        while (!stopping_.load()) {
+            auto result = detail::read_envelope(fd, env, scratch);
+            if (result == detail::ReadResult::SocketClosed) break;
+            if (result == detail::ReadResult::DecodeError) {
+                // §16.7 row 4: malformed CBOR on a successfully-read
+                // frame. Raise then keep the connection alive — a
+                // single bad envelope is recoverable; only a framing-
+                // level fault (reported as SocketClosed) tears down
+                // the stream.
+                if (on_decode_error_) on_decode_error_();
+                env = {};
+                continue;
+            }
             if (on_receive_) on_receive_(env);
             env = {};
         }
     }
 
+public:
+    /// Install the decode-error handler (§16.7 row 4). Invoked on
+    /// per-connection read threads when an inbound frame decodes
+    /// to malformed CBOR. Caller wires this to
+    /// `raiseCommunicationError(ENVELOPE_CORRUPT, transport="custom_tcp")`.
+    /// Per `Server`'s thread-safety contract, the handler MUST be
+    /// installed BEFORE any client connects (i.e. before accept
+    /// returns the first connection). May be left unset — in that
+    /// case decode failures revert to the pre-row-4 silent-drop
+    /// (still keeping the connection alive).
+    void setDecodeErrorHandler(DecodeErrorCallback handler) {
+        on_decode_error_ = std::move(handler);
+    }
+
+private:
     ReceiveCallback on_receive_;
+    DecodeErrorCallback on_decode_error_;
     int listen_fd_ = -1;
     bool valid_ = false;
     std::atomic<bool> stopping_{false};
@@ -435,12 +491,36 @@ private:
         int fd_snapshot = fd_;
         SCE::Mesh::MeshEnvelope env;
         std::vector<uint8_t> scratch;  // reused across iterations
-        while (!stopping_.load() && fd_snapshot >= 0
-               && detail::read_envelope(fd_snapshot, env, scratch)) {
+        while (!stopping_.load() && fd_snapshot >= 0) {
+            auto result = detail::read_envelope(fd_snapshot, env, scratch);
+            if (result == detail::ReadResult::SocketClosed) break;
+            if (result == detail::ReadResult::DecodeError) {
+                // §16.7 row 4: malformed CBOR on a successfully-read
+                // frame. Raise then keep the connection alive — see
+                // Server::readLoop for the same rationale.
+                if (on_decode_error_) on_decode_error_();
+                env = {};
+                continue;
+            }
             on_receive_(env);
             env = {};
         }
     }
+
+public:
+    /// Install the decode-error handler (§16.7 row 4). Invoked on the
+    /// reader thread when an inbound frame's CBOR decode fails.
+    /// Wires to `raiseCommunicationError(ENVELOPE_CORRUPT,
+    /// transport="custom_tcp")`. Must be installed BEFORE any
+    /// `send()` that triggers the lazy `connect()` so the reader
+    /// thread sees the handler when it starts. May be left unset
+    /// — in that case decode failures revert to the pre-row-4
+    /// silent-drop (connection kept alive).
+    void setDecodeErrorHandler(DecodeErrorCallback handler) {
+        on_decode_error_ = std::move(handler);
+    }
+
+private:
 
     /// Caller MUST hold `send_mutex_`. Idempotent; safe to call from
     /// shutdown() and the failure path of send().
@@ -478,6 +558,7 @@ private:
 
     std::string connect_endpoint_;
     ReceiveCallback on_receive_;
+    DecodeErrorCallback on_decode_error_;
     std::mutex send_mutex_;
     std::atomic<bool> stopping_{false};
     int fd_ = -1;
