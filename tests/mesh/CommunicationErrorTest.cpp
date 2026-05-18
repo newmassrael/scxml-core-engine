@@ -14,6 +14,7 @@
 //   * MissingSequenceMinimalShape
 //   * OrderingGapFullShape
 //   * PeerPartitionedShape
+//   * BarrierTimeoutShape
 // since those pin byte-exact output.
 
 #include "mesh/CommunicationError.h"
@@ -85,6 +86,31 @@ TEST(CommunicationErrorTest, PeerPartitionedShape) {
               "\"reason\":\"PEER_PARTITIONED\","
               "\"target\":\"motor\","
               "\"last_seen_ms_ago\":142}");
+}
+
+TEST(CommunicationErrorTest, BarrierTimeoutShape) {
+    // §16.7 row 6 — PARALLEL_BARRIER_TIMEOUT carries parallel_id +
+    // missing_regions + timeout_ms. No `source` / `envelope_id`
+    // because the raise is timer-driven, not inbound-envelope-driven.
+    // The runtime raise site lives in `state_machine.jinja2`
+    // TimerHooks::arm; this test pins the on-the-wire JSON shape that
+    // SCXML authors guard on
+    // (`<transition event="error.communication"
+    //   cond="_event.data.reason == 'PARALLEL_BARRIER_TIMEOUT' &&
+    //         _event.data.parallel_id == 'root'">`).
+    CommunicationError err;
+    err.reason = "PARALLEL_BARRIER_TIMEOUT";
+    err.parallel_id = "root";
+    err.missing_regions = std::vector<std::string>{"right"};
+    err.timeout_ms = 150;
+
+    const auto out = bytes_to_string(err.toJsonBytes());
+    EXPECT_EQ(out,
+              "{\"errorName\":\"communication\","
+              "\"reason\":\"PARALLEL_BARRIER_TIMEOUT\","
+              "\"parallel_id\":\"root\","
+              "\"missing_regions\":[\"right\"],"
+              "\"timeout_ms\":150}");
 }
 
 TEST(CommunicationErrorTest, OptionalFieldsAbsentAreSkipped) {
