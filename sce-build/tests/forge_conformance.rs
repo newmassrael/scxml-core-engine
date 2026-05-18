@@ -4167,6 +4167,75 @@ fn forge_codec_variant_default_marker_outer_emits_declared_arm_kotlin() {
     );
 }
 
+/// RFC variant-default-uniformity Atomic β (Python): the inner arm
+/// body codec with `<sce:flag value="0x02"/>` on its dispatch flag
+/// must emit a Python-int default `header: int = 0x02` on the
+/// `@dataclass` so a freshly-constructed instance carries the
+/// wire-MID for its dispatch tag. Python's `int` is unbounded so
+/// the literal needs no carrier-width suffix.
+#[test]
+fn forge_codec_default_marker_arm_b_emits_baked_default_python() {
+    let scxml_path = resource_dir().join("codec_default_marker_arm_b.scxml");
+    let content = std::fs::read_to_string(&scxml_path)
+        .expect("codec_default_marker_arm_b.scxml must exist");
+    let output = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("codec_default_marker_arm_b"),
+        sce_build::generator::Language::Python,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .expect("forge codegen for arm B fixture must succeed (python)");
+    let (_, generated) = &output.files[0];
+    assert!(
+        generated.contains("header: int = 0x02"),
+        "arm B's @dataclass must declare `header: int = 0x02` \
+         (value=\"0x02\" shifted by bit=0). Generated source:\n{generated}"
+    );
+}
+
+/// RFC variant-default-uniformity Atomic β (Python): the outer
+/// codec's `Variant` @dataclass must (a) select the declared default
+/// arm via `kind = "<ArmName>"` AND (b) populate that arm's body
+/// field via `field(default_factory=ArmType)`. Without (b) the body
+/// would remain `None` even though `kind` names the arm — a latent
+/// inconsistency the RFC closes alongside the dispatch fix.
+#[test]
+fn forge_codec_variant_default_marker_outer_emits_declared_arm_python() {
+    let scxml_path = resource_dir().join("codec_variant_default_marker.scxml");
+    let content = std::fs::read_to_string(&scxml_path)
+        .expect("codec_variant_default_marker.scxml must exist");
+    let output = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("codec_variant_default_marker"),
+        sce_build::generator::Language::Python,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .expect("forge codegen for outer marker fixture must succeed (python)");
+    let (_, generated) = &output.files[0];
+    assert!(
+        generated.contains("kind: str = \"CodecDefaultMarkerArmB\""),
+        "outer Variant must select kind=CodecDefaultMarkerArmB (the \
+         arm marked default=\"true\"). Generated source:\n{generated}"
+    );
+    assert!(
+        generated.contains(
+            "codec_default_marker_arm_b: Optional[CodecDefaultMarkerArmB] = \
+             field(default_factory=CodecDefaultMarkerArmB)"
+        ),
+        "the declared default arm's body field must be populated via \
+         field(default_factory=CodecDefaultMarkerArmB), not left None. \
+         Generated source:\n{generated}"
+    );
+    assert!(
+        !generated.contains("kind: str = \"CodecDefaultMarkerArmA\""),
+        "outer Variant must NOT select kind=CodecDefaultMarkerArmA (the \
+         first declared arm) when another arm is marked default. \
+         Generated source:\n{generated}"
+    );
+}
+
 /// RFC variant-default-uniformity Atomic β (Rust): the outer codec's
 /// `*Variant::default()` must pick the arm marked `default="true"`
 /// (not the first declared arm). Combined with the inner manual

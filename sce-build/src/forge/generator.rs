@@ -1924,6 +1924,18 @@ fn render_codec(
                     _        => format!("0x{:02x}.toUByte()",  acc),
                 };
                 obj.insert("kt_flag_default_literal".into(), kt_literal.into());
+                // Python integer literal: Python's `int` is unbounded so
+                // no carrier-width suffix is needed. Hex digit count
+                // matches the Rust / Cpp / Kotlin emit for visual
+                // alignment when grepping across backend outputs.
+                let py_literal = match f.sce_type.int_bit_width() {
+                    Some(8)  => format!("0x{:02x}",  acc),
+                    Some(16) => format!("0x{:04x}",  acc),
+                    Some(32) => format!("0x{:08x}",  acc),
+                    Some(64) => format!("0x{:016x}", acc),
+                    _        => format!("0x{:02x}",  acc),
+                };
+                obj.insert("py_flag_default_literal".into(), py_literal.into());
             }
 
             // RFC §5.B B1-δ present-if primitive: when the codec has
