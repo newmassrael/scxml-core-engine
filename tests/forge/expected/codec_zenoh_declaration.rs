@@ -7,15 +7,15 @@
 
 use sce_forge_runtime::codec::{CodecError, SceCursor};
 
-use super::codec_zenoh_decl_keyexpr::CodecZenohDeclKeyexpr;
-use super::codec_zenoh_undecl_keyexpr::CodecZenohUndeclKeyexpr;
+use super::codec_zenoh_decl_kexpr::CodecZenohDeclKexpr;
+use super::codec_zenoh_undecl_kexpr::CodecZenohUndeclKexpr;
 use super::codec_zenoh_decl_subscriber::CodecZenohDeclSubscriber;
 use super::codec_zenoh_undecl_subscriber::CodecZenohUndeclSubscriber;
 use super::codec_zenoh_decl_queryable::CodecZenohDeclQueryable;
 use super::codec_zenoh_undecl_queryable::CodecZenohUndeclQueryable;
 use super::codec_zenoh_decl_token::CodecZenohDeclToken;
 use super::codec_zenoh_undecl_token::CodecZenohUndeclToken;
-use super::codec_decl_final::CodecDeclFinal;
+use super::codec_zenoh_decl_final::CodecZenohDeclFinal;
 
 // RFC §5.B variant primitive (B1-β): discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
@@ -23,18 +23,18 @@ use super::codec_decl_final::CodecDeclFinal;
 // alongside its catch-all body.
 #[allow(dead_code)]
 pub enum CodecZenohDeclarationVariant {
-    CodecZenohDeclKeyexpr(CodecZenohDeclKeyexpr),
-    CodecZenohUndeclKeyexpr(CodecZenohUndeclKeyexpr),
+    CodecZenohDeclKexpr(CodecZenohDeclKexpr),
+    CodecZenohUndeclKexpr(CodecZenohUndeclKexpr),
     CodecZenohDeclSubscriber(CodecZenohDeclSubscriber),
     CodecZenohUndeclSubscriber(CodecZenohUndeclSubscriber),
     CodecZenohDeclQueryable(CodecZenohDeclQueryable),
     CodecZenohUndeclQueryable(CodecZenohUndeclQueryable),
     CodecZenohDeclToken(CodecZenohDeclToken),
     CodecZenohUndeclToken(CodecZenohUndeclToken),
-    CodecDeclFinal(CodecDeclFinal),
+    CodecZenohDeclFinal(CodecZenohDeclFinal),
     Default {
         tag: u8,
-        body: CodecDeclFinal,
+        body: CodecZenohDeclFinal,
     },
 }
 
@@ -45,7 +45,7 @@ impl Default for CodecZenohDeclarationVariant {
         // envelope round-trips byte-exactly through `encode() ->
         // decode()` — pairs with the inner codec's `<sce:flag value=>`
         // -baked `Default::default()` to close the dispatch loop.
-        Self::CodecDeclFinal(CodecDeclFinal::default())
+        Self::CodecZenohDeclFinal(CodecZenohDeclFinal::default())
     }
 }
 
@@ -85,18 +85,18 @@ impl CodecZenohDeclaration {
         // runtime tag value so encode can round-trip it back onto the
         // wire.
         let body = match ((header >> 0) & (0x1F as u8)) as u8 {
-            0u8 => CodecZenohDeclarationVariant::CodecZenohDeclKeyexpr(CodecZenohDeclKeyexpr::decode(cursor, header)?),
-            1u8 => CodecZenohDeclarationVariant::CodecZenohUndeclKeyexpr(CodecZenohUndeclKeyexpr::decode(cursor)?),
+            0u8 => CodecZenohDeclarationVariant::CodecZenohDeclKexpr(CodecZenohDeclKexpr::decode(cursor, header)?),
+            1u8 => CodecZenohDeclarationVariant::CodecZenohUndeclKexpr(CodecZenohUndeclKexpr::decode(cursor)?),
             2u8 => CodecZenohDeclarationVariant::CodecZenohDeclSubscriber(CodecZenohDeclSubscriber::decode(cursor, header)?),
             3u8 => CodecZenohDeclarationVariant::CodecZenohUndeclSubscriber(CodecZenohUndeclSubscriber::decode(cursor, header)?),
             4u8 => CodecZenohDeclarationVariant::CodecZenohDeclQueryable(CodecZenohDeclQueryable::decode(cursor, header)?),
             5u8 => CodecZenohDeclarationVariant::CodecZenohUndeclQueryable(CodecZenohUndeclQueryable::decode(cursor, header)?),
             6u8 => CodecZenohDeclarationVariant::CodecZenohDeclToken(CodecZenohDeclToken::decode(cursor, header)?),
             7u8 => CodecZenohDeclarationVariant::CodecZenohUndeclToken(CodecZenohUndeclToken::decode(cursor, header)?),
-            26u8 => CodecZenohDeclarationVariant::CodecDeclFinal(CodecDeclFinal::decode(cursor)?),
+            26u8 => CodecZenohDeclarationVariant::CodecZenohDeclFinal(CodecZenohDeclFinal::decode(cursor)?),
             other => CodecZenohDeclarationVariant::Default {
                 tag: other,
-                body: CodecDeclFinal::decode(cursor)?,
+                body: CodecZenohDeclFinal::decode(cursor)?,
             },
         };
         Ok(Self {
@@ -167,10 +167,10 @@ impl CodecZenohDeclaration {
         r.push(self.header);
         // Append the active arm's encoded bytes.
         match &self.body {
-            CodecZenohDeclarationVariant::CodecZenohDeclKeyexpr(b) => {
+            CodecZenohDeclarationVariant::CodecZenohDeclKexpr(b) => {
                 r.extend(b.encode(self.header));
             }
-            CodecZenohDeclarationVariant::CodecZenohUndeclKeyexpr(b) => {
+            CodecZenohDeclarationVariant::CodecZenohUndeclKexpr(b) => {
                 r.extend(b.encode());
             }
             CodecZenohDeclarationVariant::CodecZenohDeclSubscriber(b) => {
@@ -191,7 +191,7 @@ impl CodecZenohDeclaration {
             CodecZenohDeclarationVariant::CodecZenohUndeclToken(b) => {
                 r.extend(b.encode(self.header));
             }
-            CodecZenohDeclarationVariant::CodecDeclFinal(b) => {
+            CodecZenohDeclarationVariant::CodecZenohDeclFinal(b) => {
                 r.extend(b.encode());
             }
             CodecZenohDeclarationVariant::Default { body, .. } => {

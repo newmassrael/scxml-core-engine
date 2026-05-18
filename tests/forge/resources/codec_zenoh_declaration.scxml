@@ -25,16 +25,16 @@
                   the existing Y1 sub-codec wire shapes, unchanged).
 
      Arm coverage (mirrors `_Z_DECL_*_MID` / `_Z_UNDECL_*_MID`):
-       0x00 → codec_zenoh_decl_keyexpr      (Y1, parent.N)
-       0x01 → codec_zenoh_undecl_keyexpr    (Y1, no parent flags)
+       0x00 → codec_zenoh_decl_kexpr      (Y1, parent.N)
+       0x01 → codec_zenoh_undecl_kexpr    (Y1, no parent flags)
        0x02 → codec_zenoh_decl_subscriber   (Y1, parent.N+M+Z)
        0x03 → codec_zenoh_undecl_subscriber (Y1)
        0x04 → codec_zenoh_decl_queryable    (Y1, parent.N+M+Z)
        0x05 → codec_zenoh_undecl_queryable  (Y1)
        0x06 → codec_zenoh_decl_token        (Y1, parent.N+M+Z)
        0x07 → codec_zenoh_undecl_token      (Y1)
-       0x1a → codec_decl_final              (Y1, empty body)
-       <sce:default> → codec_decl_final     (catch-all preserves
+       0x1a → codec_zenoh_decl_final              (Y1, empty body)
+       <sce:default> → codec_zenoh_decl_final     (catch-all preserves
                                              runtime mid for round-trip)
 
      Composition: B1-γ flags (header) + B5-β multi-bit-flag variant
@@ -54,15 +54,15 @@
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="codec_zenoh_declaration">
-  <sce:import src="codec_zenoh_decl_keyexpr.scxml"      kind="codec" as="codec_zenoh_decl_keyexpr"/>
-  <sce:import src="codec_zenoh_undecl_keyexpr.scxml"    kind="codec" as="codec_zenoh_undecl_keyexpr"/>
+  <sce:import src="codec_zenoh_decl_kexpr.scxml"      kind="codec" as="codec_zenoh_decl_kexpr"/>
+  <sce:import src="codec_zenoh_undecl_kexpr.scxml"    kind="codec" as="codec_zenoh_undecl_kexpr"/>
   <sce:import src="codec_zenoh_decl_subscriber.scxml"   kind="codec" as="codec_zenoh_decl_subscriber"/>
   <sce:import src="codec_zenoh_undecl_subscriber.scxml" kind="codec" as="codec_zenoh_undecl_subscriber"/>
   <sce:import src="codec_zenoh_decl_queryable.scxml"    kind="codec" as="codec_zenoh_decl_queryable"/>
   <sce:import src="codec_zenoh_undecl_queryable.scxml"  kind="codec" as="codec_zenoh_undecl_queryable"/>
   <sce:import src="codec_zenoh_decl_token.scxml"        kind="codec" as="codec_zenoh_decl_token"/>
   <sce:import src="codec_zenoh_undecl_token.scxml"      kind="codec" as="codec_zenoh_undecl_token"/>
-  <sce:import src="codec_decl_final.scxml"              kind="codec" as="codec_decl_final"/>
+  <sce:import src="codec_zenoh_decl_final.scxml"              kind="codec" as="codec_zenoh_decl_final"/>
   <datamodel>
     <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
       <sce:flag name="mid" bit="0" width="5"/>
@@ -71,16 +71,16 @@
       <sce:flag name="Z"   bit="7"/>
     </sce:flags>
     <sce:variant tag="header.mid">
-      <sce:arm value="0x00" type="codec_zenoh_decl_keyexpr"/>
-      <sce:arm value="0x01" type="codec_zenoh_undecl_keyexpr"/>
+      <sce:arm value="0x00" type="codec_zenoh_decl_kexpr"/>
+      <sce:arm value="0x01" type="codec_zenoh_undecl_kexpr"/>
       <sce:arm value="0x02" type="codec_zenoh_decl_subscriber"/>
       <sce:arm value="0x03" type="codec_zenoh_undecl_subscriber"/>
       <sce:arm value="0x04" type="codec_zenoh_decl_queryable"/>
       <sce:arm value="0x05" type="codec_zenoh_undecl_queryable"/>
       <sce:arm value="0x06" type="codec_zenoh_decl_token"/>
       <sce:arm value="0x07" type="codec_zenoh_undecl_token"/>
-      <sce:arm value="0x1a" type="codec_decl_final" default="true"/>
-      <sce:default type="codec_decl_final"/>
+      <sce:arm value="0x1a" type="codec_zenoh_decl_final" default="true"/>
+      <sce:default type="codec_zenoh_decl_final"/>
     </sce:variant>
   </datamodel>
 </scxml>

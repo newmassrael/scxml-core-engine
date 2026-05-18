@@ -819,7 +819,7 @@ fn forge_codec_zenoh_locator_python_no_sidecar_until_closure() {
 // per-fixture sidecar `*_test.rs` / `*_test.c.h` is emitted on Rust +
 // C11. cpp/kotlin/go/python remain gated until B5-θ closures land
 // (mirrors the close/frame/locator rotation pattern from B5-θ trunk).
-// codec_decl_final has an empty body and no test vectors, so it emits
+// codec_zenoh_decl_final has an empty body and no test vectors, so it emits
 // no sidecar on any backend. codec_zenoh_open_body's gated cookie
 // pair precludes inline `<sce:test-vector>` until B5-θ-optional lands
 // absent-vs-present markers (same constraint as codec_zenoh_scout).
@@ -1297,8 +1297,8 @@ fn forge_codec_zenoh_fragment_cpp() {
 }
 
 #[test]
-fn forge_codec_decl_final_cpp() {
-    assert_standalone_forge("codec_decl_final", "codec_decl_final.h");
+fn forge_codec_zenoh_decl_final_cpp() {
+    assert_standalone_forge("codec_zenoh_decl_final", "codec_zenoh_decl_final.h");
 }
 
 // ── RFC §5.B B5-κ Surface L dotted-path length-field (cpp) ─────
@@ -1592,8 +1592,8 @@ fn forge_codec_embed_basic_cpp() {
 // suffix-by-implicit-length inner — new design surface scoped to Y0b).
 
 #[test]
-fn forge_codec_zenoh_decl_keyexpr_cpp() {
-    assert_standalone_forge("codec_zenoh_decl_keyexpr", "codec_zenoh_decl_keyexpr.h");
+fn forge_codec_zenoh_decl_kexpr_cpp() {
+    assert_standalone_forge("codec_zenoh_decl_kexpr", "codec_zenoh_decl_kexpr.h");
 }
 
 #[test]
@@ -1615,8 +1615,8 @@ fn forge_codec_zenoh_decl_token_cpp() {
 }
 
 #[test]
-fn forge_codec_zenoh_undecl_keyexpr_cpp() {
-    assert_standalone_forge("codec_zenoh_undecl_keyexpr", "codec_zenoh_undecl_keyexpr.h");
+fn forge_codec_zenoh_undecl_kexpr_cpp() {
+    assert_standalone_forge("codec_zenoh_undecl_kexpr", "codec_zenoh_undecl_kexpr.h");
 }
 
 // ── RFC §5.B Wire RFC Phase B Y0b — TLV envelope foundation ────
@@ -1885,7 +1885,7 @@ fn forge_c11_codec_zenoh_query() {
 }
 
 // ── RFC §5.B Wire RFC Phase B Y3 atomic 2b — sub-codec atomic
-// `codec_zenoh_msg_reply` mirrors zenoh-pico `_z_reply_encode/decode`
+// `codec_zenoh_reply` mirrors zenoh-pico `_z_reply_encode/decode`
 // (message.c:507-543) at envelope-level wire fidelity. Response body
 // variant arm for Z_REPLY (atomic 2b consumer codec_zenoh_response).
 // First realistic consumer of Y3 atomic 1's entry-flag chain
@@ -1893,70 +1893,70 @@ fn forge_c11_codec_zenoh_query() {
 // exhaust-or-depth would not detect the body boundary.
 
 #[test]
-fn forge_codec_zenoh_msg_reply_cpp() {
-    assert_standalone_forge("codec_zenoh_msg_reply", "codec_zenoh_msg_reply.h");
+fn forge_codec_zenoh_reply_cpp() {
+    assert_standalone_forge("codec_zenoh_reply", "codec_zenoh_reply.h");
 }
 
 #[test]
-fn forge_codec_zenoh_msg_reply_kotlin() {
-    assert_standalone_forge_kotlin("codec_zenoh_msg_reply", "CodecZenohMsgReply.kt");
+fn forge_codec_zenoh_reply_kotlin() {
+    assert_standalone_forge_kotlin("codec_zenoh_reply", "CodecZenohReply.kt");
 }
 
 #[test]
-fn forge_codec_zenoh_msg_reply_rust() {
-    assert_standalone_forge_rust("codec_zenoh_msg_reply", "codec_zenoh_msg_reply.rs");
+fn forge_codec_zenoh_reply_rust() {
+    assert_standalone_forge_rust("codec_zenoh_reply", "codec_zenoh_reply.rs");
 }
 
 #[test]
-fn forge_codec_zenoh_msg_reply_go() {
-    assert_standalone_forge_go("codec_zenoh_msg_reply", "codec_zenoh_msg_reply.go");
+fn forge_codec_zenoh_reply_go() {
+    assert_standalone_forge_go("codec_zenoh_reply", "codec_zenoh_reply.go");
 }
 
 #[test]
-fn forge_codec_zenoh_msg_reply_python() {
-    assert_standalone_forge_python("codec_zenoh_msg_reply", "codec_zenoh_msg_reply.py");
+fn forge_codec_zenoh_reply_python() {
+    assert_standalone_forge_python("codec_zenoh_reply", "codec_zenoh_reply.py");
 }
 
 #[test]
-fn forge_c11_codec_zenoh_msg_reply() {
-    assert_standalone_forge_c("codec_zenoh_msg_reply", "codec_zenoh_msg_reply.c.h");
+fn forge_c11_codec_zenoh_reply() {
+    assert_standalone_forge_c("codec_zenoh_reply", "codec_zenoh_reply.c.h");
 }
 
 // ── RFC §5.B Wire RFC Phase B Y3 atomic 2b — sub-codec atomic
-// `codec_zenoh_msg_err` mirrors zenoh-pico `_z_err_encode/decode`
+// `codec_zenoh_err` mirrors zenoh-pico `_z_err_encode/decode`
 // (message.c:545-595) at envelope-level wire fidelity. Response body
 // variant arm for Z_ERR. Encoding wire is the Q1(b) simplification
 // (inline VLE u32 encoding_id, schema-less subset) — full encoding
 // wire (VLE-LSB-as-flag) deferred to a follow-up atomic.
 
 #[test]
-fn forge_codec_zenoh_msg_err_cpp() {
-    assert_standalone_forge("codec_zenoh_msg_err", "codec_zenoh_msg_err.h");
+fn forge_codec_zenoh_err_cpp() {
+    assert_standalone_forge("codec_zenoh_err", "codec_zenoh_err.h");
 }
 
 #[test]
-fn forge_codec_zenoh_msg_err_kotlin() {
-    assert_standalone_forge_kotlin("codec_zenoh_msg_err", "CodecZenohMsgErr.kt");
+fn forge_codec_zenoh_err_kotlin() {
+    assert_standalone_forge_kotlin("codec_zenoh_err", "CodecZenohErr.kt");
 }
 
 #[test]
-fn forge_codec_zenoh_msg_err_rust() {
-    assert_standalone_forge_rust("codec_zenoh_msg_err", "codec_zenoh_msg_err.rs");
+fn forge_codec_zenoh_err_rust() {
+    assert_standalone_forge_rust("codec_zenoh_err", "codec_zenoh_err.rs");
 }
 
 #[test]
-fn forge_codec_zenoh_msg_err_go() {
-    assert_standalone_forge_go("codec_zenoh_msg_err", "codec_zenoh_msg_err.go");
+fn forge_codec_zenoh_err_go() {
+    assert_standalone_forge_go("codec_zenoh_err", "codec_zenoh_err.go");
 }
 
 #[test]
-fn forge_codec_zenoh_msg_err_python() {
-    assert_standalone_forge_python("codec_zenoh_msg_err", "codec_zenoh_msg_err.py");
+fn forge_codec_zenoh_err_python() {
+    assert_standalone_forge_python("codec_zenoh_err", "codec_zenoh_err.py");
 }
 
 #[test]
-fn forge_c11_codec_zenoh_msg_err() {
-    assert_standalone_forge_c("codec_zenoh_msg_err", "codec_zenoh_msg_err.c.h");
+fn forge_c11_codec_zenoh_err() {
+    assert_standalone_forge_c("codec_zenoh_err", "codec_zenoh_err.c.h");
 }
 
 // ── RFC §5.B Wire RFC Phase B Y3 atomic 2b — sub-codec atomic
@@ -2085,7 +2085,7 @@ fn forge_c11_codec_zenoh_timestamp() {
 // the same idiom every other Zenoh codec uses (raw carrier byte +
 // named bit accessors; see codec_zenoh_request.header u8 with N/M/Z
 // accessors). First reachable consumer = codec_zenoh_msg_put /
-// codec_zenoh_msg_err E-gated embed (replaces the prior Q1(b)
+// codec_zenoh_err E-gated embed (replaces the prior Q1(b)
 // inline VLE u32 encoding_id field).
 
 #[test]
@@ -2124,7 +2124,7 @@ fn forge_c11_codec_zenoh_encoding() {
 // (lines 257-348). Request body variant arm for Z_PUT (MID 0x01).
 // Encoding wire is the Q1(b) simplification (inline VLE u32
 // encoding_id placeholder, schema-less subset only) mirroring
-// codec_zenoh_msg_err verbatim — full encoding wire (VLE-LSB-as-flag
+// codec_zenoh_err verbatim — full encoding wire (VLE-LSB-as-flag
 // per `_z_encoding_encode` codec.c:356-367) deferred to atomic
 // 2b-iii-α follow-up.
 
@@ -4945,8 +4945,8 @@ fn forge_kotlin_codec_zenoh_fragment() {
 }
 
 #[test]
-fn forge_kotlin_codec_decl_final() {
-    assert_standalone_forge_kotlin("codec_decl_final", "CodecDeclFinal.kt");
+fn forge_kotlin_codec_zenoh_decl_final() {
+    assert_standalone_forge_kotlin("codec_zenoh_decl_final", "CodecZenohDeclFinal.kt");
 }
 
 // ── RFC §5.B B5-κ Surface L dotted-path length-field (Kotlin) ──
@@ -5110,8 +5110,8 @@ fn forge_kotlin_codec_embed_basic() {
 }
 
 #[test]
-fn forge_kotlin_codec_zenoh_decl_keyexpr() {
-    assert_standalone_forge_kotlin("codec_zenoh_decl_keyexpr", "CodecZenohDeclKeyexpr.kt");
+fn forge_kotlin_codec_zenoh_decl_kexpr() {
+    assert_standalone_forge_kotlin("codec_zenoh_decl_kexpr", "CodecZenohDeclKexpr.kt");
 }
 
 #[test]
@@ -5130,8 +5130,8 @@ fn forge_kotlin_codec_zenoh_decl_token() {
 }
 
 #[test]
-fn forge_kotlin_codec_zenoh_undecl_keyexpr() {
-    assert_standalone_forge_kotlin("codec_zenoh_undecl_keyexpr", "CodecZenohUndeclKeyexpr.kt");
+fn forge_kotlin_codec_zenoh_undecl_kexpr() {
+    assert_standalone_forge_kotlin("codec_zenoh_undecl_kexpr", "CodecZenohUndeclKexpr.kt");
 }
 
 // ── RFC §5.B Wire RFC Phase B Y0b — TLV envelope foundation ────
@@ -5459,8 +5459,8 @@ fn forge_rust_codec_zenoh_fragment() {
 }
 
 #[test]
-fn forge_rust_codec_decl_final() {
-    assert_standalone_forge_rust("codec_decl_final", "codec_decl_final.rs");
+fn forge_rust_codec_zenoh_decl_final() {
+    assert_standalone_forge_rust("codec_zenoh_decl_final", "codec_zenoh_decl_final.rs");
 }
 
 // ── RFC §5.B B5-κ Surface L dotted-path length-field (Rust) ────
@@ -5610,8 +5610,8 @@ fn forge_rust_codec_embed_basic() {
 }
 
 #[test]
-fn forge_rust_codec_zenoh_decl_keyexpr() {
-    assert_standalone_forge_rust("codec_zenoh_decl_keyexpr", "codec_zenoh_decl_keyexpr.rs");
+fn forge_rust_codec_zenoh_decl_kexpr() {
+    assert_standalone_forge_rust("codec_zenoh_decl_kexpr", "codec_zenoh_decl_kexpr.rs");
 }
 
 #[test]
@@ -5636,10 +5636,10 @@ fn forge_rust_codec_zenoh_decl_token() {
 }
 
 #[test]
-fn forge_rust_codec_zenoh_undecl_keyexpr() {
+fn forge_rust_codec_zenoh_undecl_kexpr() {
     assert_standalone_forge_rust(
-        "codec_zenoh_undecl_keyexpr",
-        "codec_zenoh_undecl_keyexpr.rs",
+        "codec_zenoh_undecl_kexpr",
+        "codec_zenoh_undecl_kexpr.rs",
     );
 }
 
@@ -5935,8 +5935,8 @@ fn forge_go_codec_zenoh_fragment() {
 }
 
 #[test]
-fn forge_go_codec_decl_final() {
-    assert_standalone_forge_go("codec_decl_final", "codec_decl_final.go");
+fn forge_go_codec_zenoh_decl_final() {
+    assert_standalone_forge_go("codec_zenoh_decl_final", "codec_zenoh_decl_final.go");
 }
 
 // ── RFC §5.B B5-κ Surface L dotted-path length-field (Go) ──────
@@ -6114,8 +6114,8 @@ fn forge_go_codec_embed_basic() {
 }
 
 #[test]
-fn forge_go_codec_zenoh_decl_keyexpr() {
-    assert_standalone_forge_go("codec_zenoh_decl_keyexpr", "codec_zenoh_decl_keyexpr.go");
+fn forge_go_codec_zenoh_decl_kexpr() {
+    assert_standalone_forge_go("codec_zenoh_decl_kexpr", "codec_zenoh_decl_kexpr.go");
 }
 
 #[test]
@@ -6140,10 +6140,10 @@ fn forge_go_codec_zenoh_decl_token() {
 }
 
 #[test]
-fn forge_go_codec_zenoh_undecl_keyexpr() {
+fn forge_go_codec_zenoh_undecl_kexpr() {
     assert_standalone_forge_go(
-        "codec_zenoh_undecl_keyexpr",
-        "codec_zenoh_undecl_keyexpr.go",
+        "codec_zenoh_undecl_kexpr",
+        "codec_zenoh_undecl_kexpr.go",
     );
 }
 
@@ -6410,8 +6410,8 @@ fn forge_python_codec_zenoh_fragment() {
 }
 
 #[test]
-fn forge_python_codec_decl_final() {
-    assert_standalone_forge_python("codec_decl_final", "codec_decl_final.py");
+fn forge_python_codec_zenoh_decl_final() {
+    assert_standalone_forge_python("codec_zenoh_decl_final", "codec_zenoh_decl_final.py");
 }
 
 // ── RFC §5.B B5-κ Surface L dotted-path length-field (Python) ──
@@ -6589,8 +6589,8 @@ fn forge_python_codec_embed_basic() {
 }
 
 #[test]
-fn forge_python_codec_zenoh_decl_keyexpr() {
-    assert_standalone_forge_python("codec_zenoh_decl_keyexpr", "codec_zenoh_decl_keyexpr.py");
+fn forge_python_codec_zenoh_decl_kexpr() {
+    assert_standalone_forge_python("codec_zenoh_decl_kexpr", "codec_zenoh_decl_kexpr.py");
 }
 
 #[test]
@@ -6615,10 +6615,10 @@ fn forge_python_codec_zenoh_decl_token() {
 }
 
 #[test]
-fn forge_python_codec_zenoh_undecl_keyexpr() {
+fn forge_python_codec_zenoh_undecl_kexpr() {
     assert_standalone_forge_python(
-        "codec_zenoh_undecl_keyexpr",
-        "codec_zenoh_undecl_keyexpr.py",
+        "codec_zenoh_undecl_kexpr",
+        "codec_zenoh_undecl_kexpr.py",
     );
 }
 
@@ -6815,8 +6815,8 @@ fn forge_c11_codec_zenoh_fragment() {
 }
 
 #[test]
-fn forge_c11_codec_decl_final() {
-    assert_standalone_forge_c("codec_decl_final", "codec_decl_final.c.h");
+fn forge_c11_codec_zenoh_decl_final() {
+    assert_standalone_forge_c("codec_zenoh_decl_final", "codec_zenoh_decl_final.c.h");
 }
 
 // ── RFC §5.B B5-κ Surface L dotted-path length-field (C11) ─────
@@ -7023,8 +7023,8 @@ fn forge_c11_codec_embed_basic() {
 }
 
 #[test]
-fn forge_c11_codec_zenoh_decl_keyexpr() {
-    assert_standalone_forge_c("codec_zenoh_decl_keyexpr", "codec_zenoh_decl_keyexpr.c.h");
+fn forge_c11_codec_zenoh_decl_kexpr() {
+    assert_standalone_forge_c("codec_zenoh_decl_kexpr", "codec_zenoh_decl_kexpr.c.h");
 }
 
 #[test]
@@ -7049,10 +7049,10 @@ fn forge_c11_codec_zenoh_decl_token() {
 }
 
 #[test]
-fn forge_c11_codec_zenoh_undecl_keyexpr() {
+fn forge_c11_codec_zenoh_undecl_kexpr() {
     assert_standalone_forge_c(
-        "codec_zenoh_undecl_keyexpr",
-        "codec_zenoh_undecl_keyexpr.c.h",
+        "codec_zenoh_undecl_kexpr",
+        "codec_zenoh_undecl_kexpr.c.h",
     );
 }
 

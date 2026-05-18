@@ -17,8 +17,8 @@
 
 #include "sce/forge/codec.h"
 #include "codec_zenoh_ext_entry.h"
-#include "codec_zenoh_msg_reply.h"
-#include "codec_zenoh_msg_err.h"
+#include "codec_zenoh_reply.h"
+#include "codec_zenoh_err.h"
 
 namespace SCE::Generated::CodecZenohResponse {
 
@@ -28,11 +28,11 @@ namespace SCE::Generated::CodecZenohResponse {
 // struct that bundles the runtime tag value with the catch-all body.
 struct CodecZenohResponseDefault {
     uint8_t tag;
-    ::SCE::Generated::CodecZenohMsgReply::CodecZenohMsgReply body;
+    ::SCE::Generated::CodecZenohReply::CodecZenohReply body;
 };
 using CodecZenohResponseVariant = std::variant<
-    ::SCE::Generated::CodecZenohMsgReply::CodecZenohMsgReply,
-    ::SCE::Generated::CodecZenohMsgErr::CodecZenohMsgErr,
+    ::SCE::Generated::CodecZenohReply::CodecZenohReply,
+    ::SCE::Generated::CodecZenohErr::CodecZenohErr,
     CodecZenohResponseDefault
 >;
 
@@ -118,19 +118,19 @@ struct CodecZenohResponse {
         CodecZenohResponseVariant body;
         switch (static_cast<uint8_t>((_peek >> 0) & static_cast<uint8_t>(0x1F))) {
             case 4: {
-                auto _arm = ::SCE::Generated::CodecZenohMsgReply::CodecZenohMsgReply::decode(cursor);
+                auto _arm = ::SCE::Generated::CodecZenohReply::CodecZenohReply::decode(cursor);
                 if (!_arm.has_value()) return std::nullopt;
                 body = *_arm;
                 break;
             }
             case 5: {
-                auto _arm = ::SCE::Generated::CodecZenohMsgErr::CodecZenohMsgErr::decode(cursor);
+                auto _arm = ::SCE::Generated::CodecZenohErr::CodecZenohErr::decode(cursor);
                 if (!_arm.has_value()) return std::nullopt;
                 body = *_arm;
                 break;
             }
             default: {
-                auto _arm = ::SCE::Generated::CodecZenohMsgReply::CodecZenohMsgReply::decode(cursor);
+                auto _arm = ::SCE::Generated::CodecZenohReply::CodecZenohReply::decode(cursor);
                 if (!_arm.has_value()) return std::nullopt;
                 body = CodecZenohResponseDefault{
                     .tag = static_cast<uint8_t>((_peek >> 0) & static_cast<uint8_t>(0x1F)),
@@ -260,11 +260,11 @@ struct CodecZenohResponse {
             }
         }
         // Append the active arm body's encoded bytes.
-        if (auto _p = std::get_if<::SCE::Generated::CodecZenohMsgReply::CodecZenohMsgReply>(&body)) {
+        if (auto _p = std::get_if<::SCE::Generated::CodecZenohReply::CodecZenohReply>(&body)) {
             auto _sub = _p->encode();
             r.insert(r.end(), _sub.begin(), _sub.end());
         }
-        if (auto _p = std::get_if<::SCE::Generated::CodecZenohMsgErr::CodecZenohMsgErr>(&body)) {
+        if (auto _p = std::get_if<::SCE::Generated::CodecZenohErr::CodecZenohErr>(&body)) {
             auto _sub = _p->encode();
             r.insert(r.end(), _sub.begin(), _sub.end());
         }

@@ -12,15 +12,15 @@
 #include <stddef.h>
 
 #include "sce/forge/codec.h"
-#include "codec_zenoh_decl_keyexpr.h"
-#include "codec_zenoh_undecl_keyexpr.h"
+#include "codec_zenoh_decl_kexpr.h"
+#include "codec_zenoh_undecl_kexpr.h"
 #include "codec_zenoh_decl_subscriber.h"
 #include "codec_zenoh_undecl_subscriber.h"
 #include "codec_zenoh_decl_queryable.h"
 #include "codec_zenoh_undecl_queryable.h"
 #include "codec_zenoh_decl_token.h"
 #include "codec_zenoh_undecl_token.h"
-#include "codec_decl_final.h"
+#include "codec_zenoh_decl_final.h"
 
 #define CODEC_ZENOH_DECLARATION_MIN_BYTES 1
 #define CODEC_ZENOH_DECLARATION_MAX_BYTES 275
@@ -31,15 +31,15 @@
  * union holds one body slot per arm (per-arm fields keep the template
  * straight when two arms share a body type). */
 typedef enum {
-    CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_DECL_KEYEXPR,
-    CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_UNDECL_KEYEXPR,
+    CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_DECL_KEXPR,
+    CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_UNDECL_KEXPR,
     CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_DECL_SUBSCRIBER,
     CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_UNDECL_SUBSCRIBER,
     CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_DECL_QUERYABLE,
     CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_UNDECL_QUERYABLE,
     CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_DECL_TOKEN,
     CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_UNDECL_TOKEN,
-    CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_DECL_FINAL,
+    CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_DECL_FINAL,
     CODEC_ZENOH_DECLARATION_BODY_KIND_DEFAULT,
 } codec_zenoh_declaration_body_kind_t;
 
@@ -47,16 +47,16 @@ typedef struct {
     codec_zenoh_declaration_body_kind_t kind;
     uint8_t default_tag;  /* valid only when kind == ..._DEFAULT */
     union {
-        codec_zenoh_decl_keyexpr_t codec_zenoh_decl_keyexpr;
-        codec_zenoh_undecl_keyexpr_t codec_zenoh_undecl_keyexpr;
+        codec_zenoh_decl_kexpr_t codec_zenoh_decl_kexpr;
+        codec_zenoh_undecl_kexpr_t codec_zenoh_undecl_kexpr;
         codec_zenoh_decl_subscriber_t codec_zenoh_decl_subscriber;
         codec_zenoh_undecl_subscriber_t codec_zenoh_undecl_subscriber;
         codec_zenoh_decl_queryable_t codec_zenoh_decl_queryable;
         codec_zenoh_undecl_queryable_t codec_zenoh_undecl_queryable;
         codec_zenoh_decl_token_t codec_zenoh_decl_token;
         codec_zenoh_undecl_token_t codec_zenoh_undecl_token;
-        codec_decl_final_t codec_decl_final;
-        codec_decl_final_t default_body;
+        codec_zenoh_decl_final_t codec_zenoh_decl_final;
+        codec_zenoh_decl_final_t default_body;
     } arm;
 } codec_zenoh_declaration_variant_t;
 
@@ -76,8 +76,8 @@ typedef struct {
  * the wire-MID-bearing members. */
 #define CODEC_ZENOH_DECLARATION_DEFAULT_INIT { \
     .body = { \
-        .kind = CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_DECL_FINAL, \
-        .arm = { .codec_decl_final = CODEC_DECL_FINAL_DEFAULT_INIT } \
+        .kind = CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_DECL_FINAL, \
+        .arm = { .codec_zenoh_decl_final = CODEC_ZENOH_DECL_FINAL_DEFAULT_INIT } \
     }, \
 }
 
@@ -104,13 +104,13 @@ static inline sce_forge_codec_status_t codec_zenoh_declaration_decode(sce_forge_
     sce_forge_codec_status_t _arm_st;
     switch ((uint8_t)((out->header >> 0) & (uint8_t)0x1F)) {
         case 0:
-            out->body.kind = CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_DECL_KEYEXPR;
-            _arm_st = codec_zenoh_decl_keyexpr_decode(cursor, &out->body.arm.codec_zenoh_decl_keyexpr, out->header);
+            out->body.kind = CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_DECL_KEXPR;
+            _arm_st = codec_zenoh_decl_kexpr_decode(cursor, &out->body.arm.codec_zenoh_decl_kexpr, out->header);
             if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
             break;
         case 1:
-            out->body.kind = CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_UNDECL_KEYEXPR;
-            _arm_st = codec_zenoh_undecl_keyexpr_decode(cursor, &out->body.arm.codec_zenoh_undecl_keyexpr);
+            out->body.kind = CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_UNDECL_KEXPR;
+            _arm_st = codec_zenoh_undecl_kexpr_decode(cursor, &out->body.arm.codec_zenoh_undecl_kexpr);
             if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
             break;
         case 2:
@@ -144,14 +144,14 @@ static inline sce_forge_codec_status_t codec_zenoh_declaration_decode(sce_forge_
             if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
             break;
         case 26:
-            out->body.kind = CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_DECL_FINAL;
-            _arm_st = codec_decl_final_decode(cursor, &out->body.arm.codec_decl_final);
+            out->body.kind = CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_DECL_FINAL;
+            _arm_st = codec_zenoh_decl_final_decode(cursor, &out->body.arm.codec_zenoh_decl_final);
             if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
             break;
         default:
             out->body.kind = CODEC_ZENOH_DECLARATION_BODY_KIND_DEFAULT;
             out->body.default_tag = (uint8_t)((out->header >> 0) & (uint8_t)0x1F);
-            _arm_st = codec_decl_final_decode(cursor, &out->body.arm.default_body);
+            _arm_st = codec_zenoh_decl_final_decode(cursor, &out->body.arm.default_body);
             if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
             break;
     }
@@ -168,16 +168,16 @@ static inline codec_zenoh_declaration_encoded_t codec_zenoh_declaration_encode(c
     r.bytes[0] = self->header;
     /* Append the active arm body's encoded bytes. */
     switch (self->body.kind) {
-        case CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_DECL_KEYEXPR: {
-            codec_zenoh_decl_keyexpr_encoded_t _sub = codec_zenoh_decl_keyexpr_encode(&self->body.arm.codec_zenoh_decl_keyexpr, self->header);
+        case CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_DECL_KEXPR: {
+            codec_zenoh_decl_kexpr_encoded_t _sub = codec_zenoh_decl_kexpr_encode(&self->body.arm.codec_zenoh_decl_kexpr, self->header);
             if (r.len + _sub.len <= CODEC_ZENOH_DECLARATION_MAX_BYTES) {
                 for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
                 r.len += _sub.len;
             }
             break;
         }
-        case CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_UNDECL_KEYEXPR: {
-            codec_zenoh_undecl_keyexpr_encoded_t _sub = codec_zenoh_undecl_keyexpr_encode(&self->body.arm.codec_zenoh_undecl_keyexpr);
+        case CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_UNDECL_KEXPR: {
+            codec_zenoh_undecl_kexpr_encoded_t _sub = codec_zenoh_undecl_kexpr_encode(&self->body.arm.codec_zenoh_undecl_kexpr);
             if (r.len + _sub.len <= CODEC_ZENOH_DECLARATION_MAX_BYTES) {
                 for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
                 r.len += _sub.len;
@@ -232,8 +232,8 @@ static inline codec_zenoh_declaration_encoded_t codec_zenoh_declaration_encode(c
             }
             break;
         }
-        case CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_DECL_FINAL: {
-            codec_decl_final_encoded_t _sub = codec_decl_final_encode(&self->body.arm.codec_decl_final);
+        case CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_DECL_FINAL: {
+            codec_zenoh_decl_final_encoded_t _sub = codec_zenoh_decl_final_encode(&self->body.arm.codec_zenoh_decl_final);
             if (r.len + _sub.len <= CODEC_ZENOH_DECLARATION_MAX_BYTES) {
                 for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
                 r.len += _sub.len;
@@ -241,7 +241,7 @@ static inline codec_zenoh_declaration_encoded_t codec_zenoh_declaration_encode(c
             break;
         }
         case CODEC_ZENOH_DECLARATION_BODY_KIND_DEFAULT: {
-            codec_decl_final_encoded_t _sub = codec_decl_final_encode(&self->body.arm.default_body);
+            codec_zenoh_decl_final_encoded_t _sub = codec_zenoh_decl_final_encode(&self->body.arm.default_body);
             if (r.len + _sub.len <= CODEC_ZENOH_DECLARATION_MAX_BYTES) {
                 for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
                 r.len += _sub.len;

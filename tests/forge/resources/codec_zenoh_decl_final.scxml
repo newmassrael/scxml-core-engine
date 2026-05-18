@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh declare-final body (RFC §5.B B5-ι —
+     cross-codec composition fixture authoring the ~30 zenoh messages
+     end-to-end on B1-B5 primitives).
+
+     Upstream zenoh-pico shape (`_z_decl_final_t` in
+     include/zenoh-pico/protocol/definitions/declarations.h:81-86):
+     a placeholder boolean kept only for future-proofing extension
+     points; the wire body itself is empty. DeclFinal is one of the
+     nine sub-variants of `_z_declaration_t`'s tag union (the others
+     are Decl/UndeclKeyExpr, Decl/UndeclSubscriber, Decl/UndeclQueryable,
+     Decl/UndeclToken with their own bodies). The 1-byte declaration
+     header carrying the sub-variant tag is written outside this body
+     codec, so the body scope is empty.
+
+     Mirrors codec_zenoh_keep_alive's empty-body shape; B5-α already
+     lifted parser.rs's zero-field codec rejection so this fixture is
+     pure composition with no new IR/parser/template surface. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_decl_final">
+  <datamodel/>
+</scxml>

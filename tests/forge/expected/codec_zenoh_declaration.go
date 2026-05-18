@@ -8,15 +8,15 @@ package codec_zenoh_declaration
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
-	"example.com/sce-forge/codec_zenoh_decl_keyexpr"
-	"example.com/sce-forge/codec_zenoh_undecl_keyexpr"
+	"example.com/sce-forge/codec_zenoh_decl_kexpr"
+	"example.com/sce-forge/codec_zenoh_undecl_kexpr"
 	"example.com/sce-forge/codec_zenoh_decl_subscriber"
 	"example.com/sce-forge/codec_zenoh_undecl_subscriber"
 	"example.com/sce-forge/codec_zenoh_decl_queryable"
 	"example.com/sce-forge/codec_zenoh_undecl_queryable"
 	"example.com/sce-forge/codec_zenoh_decl_token"
 	"example.com/sce-forge/codec_zenoh_undecl_token"
-	"example.com/sce-forge/codec_decl_final"
+	"example.com/sce-forge/codec_zenoh_decl_final"
 )
 
 // CodecZenohDeclarationDefault bundles the runtime
@@ -24,7 +24,7 @@ import (
 // observed tag back onto the wire (RFC §5.B variant primitive B1-β).
 type CodecZenohDeclarationDefault struct {
 	Tag uint8
-	Body codec_decl_final.CodecDeclFinal
+	Body codec_zenoh_decl_final.CodecZenohDeclFinal
 }
 
 // CodecZenohDeclarationVariant is a discriminated-union body for the codec's
@@ -32,15 +32,15 @@ type CodecZenohDeclarationDefault struct {
 // the pointer fields is non-nil at a time; the active arm is the one
 // that matches the current tag value.
 type CodecZenohDeclarationVariant struct {
-	CodecZenohDeclKeyexpr *codec_zenoh_decl_keyexpr.CodecZenohDeclKeyexpr
-	CodecZenohUndeclKeyexpr *codec_zenoh_undecl_keyexpr.CodecZenohUndeclKeyexpr
+	CodecZenohDeclKexpr *codec_zenoh_decl_kexpr.CodecZenohDeclKexpr
+	CodecZenohUndeclKexpr *codec_zenoh_undecl_kexpr.CodecZenohUndeclKexpr
 	CodecZenohDeclSubscriber *codec_zenoh_decl_subscriber.CodecZenohDeclSubscriber
 	CodecZenohUndeclSubscriber *codec_zenoh_undecl_subscriber.CodecZenohUndeclSubscriber
 	CodecZenohDeclQueryable *codec_zenoh_decl_queryable.CodecZenohDeclQueryable
 	CodecZenohUndeclQueryable *codec_zenoh_undecl_queryable.CodecZenohUndeclQueryable
 	CodecZenohDeclToken *codec_zenoh_decl_token.CodecZenohDeclToken
 	CodecZenohUndeclToken *codec_zenoh_undecl_token.CodecZenohUndeclToken
-	CodecDeclFinal *codec_decl_final.CodecDeclFinal
+	CodecZenohDeclFinal *codec_zenoh_decl_final.CodecZenohDeclFinal
 	Default *CodecZenohDeclarationDefault
 }
 
@@ -60,7 +60,7 @@ type CodecZenohDeclaration struct {
 func NewCodecZenohDeclaration() *CodecZenohDeclaration {
 	return &CodecZenohDeclaration{
 		Body: CodecZenohDeclarationVariant{
-			CodecDeclFinal: &codec_decl_final.CodecDeclFinal{},
+			CodecZenohDeclFinal: &codec_zenoh_decl_final.CodecZenohDeclFinal{},
 		},
 	}
 }
@@ -86,17 +86,17 @@ func DecodeCodecZenohDeclaration(cursor *codec.SceCursor) (*CodecZenohDeclaratio
 	body := CodecZenohDeclarationVariant{}
 	switch uint8((Header >> 0) & 0x1F) {
 	case 0:
-		_arm, err := codec_zenoh_decl_keyexpr.DecodeCodecZenohDeclKeyexpr(cursor, Header)
+		_arm, err := codec_zenoh_decl_kexpr.DecodeCodecZenohDeclKexpr(cursor, Header)
 		if err != nil {
 			return nil, err
 		}
-		body.CodecZenohDeclKeyexpr = _arm
+		body.CodecZenohDeclKexpr = _arm
 	case 1:
-		_arm, err := codec_zenoh_undecl_keyexpr.DecodeCodecZenohUndeclKeyexpr(cursor)
+		_arm, err := codec_zenoh_undecl_kexpr.DecodeCodecZenohUndeclKexpr(cursor)
 		if err != nil {
 			return nil, err
 		}
-		body.CodecZenohUndeclKeyexpr = _arm
+		body.CodecZenohUndeclKexpr = _arm
 	case 2:
 		_arm, err := codec_zenoh_decl_subscriber.DecodeCodecZenohDeclSubscriber(cursor, Header)
 		if err != nil {
@@ -134,13 +134,13 @@ func DecodeCodecZenohDeclaration(cursor *codec.SceCursor) (*CodecZenohDeclaratio
 		}
 		body.CodecZenohUndeclToken = _arm
 	case 26:
-		_arm, err := codec_decl_final.DecodeCodecDeclFinal(cursor)
+		_arm, err := codec_zenoh_decl_final.DecodeCodecZenohDeclFinal(cursor)
 		if err != nil {
 			return nil, err
 		}
-		body.CodecDeclFinal = _arm
+		body.CodecZenohDeclFinal = _arm
 	default:
-		_arm, err := codec_decl_final.DecodeCodecDeclFinal(cursor)
+		_arm, err := codec_zenoh_decl_final.DecodeCodecZenohDeclFinal(cursor)
 		if err != nil {
 			return nil, err
 		}
@@ -217,10 +217,10 @@ func (s *CodecZenohDeclaration) Encode() []byte {
 	r = append(r, byte(s.Header))
 	// Append the active arm body's encoded bytes.
 	switch {
-	case s.Body.CodecZenohDeclKeyexpr != nil:
-		r = append(r, s.Body.CodecZenohDeclKeyexpr.Encode(s.Header)...)
-	case s.Body.CodecZenohUndeclKeyexpr != nil:
-		r = append(r, s.Body.CodecZenohUndeclKeyexpr.Encode()...)
+	case s.Body.CodecZenohDeclKexpr != nil:
+		r = append(r, s.Body.CodecZenohDeclKexpr.Encode(s.Header)...)
+	case s.Body.CodecZenohUndeclKexpr != nil:
+		r = append(r, s.Body.CodecZenohUndeclKexpr.Encode()...)
 	case s.Body.CodecZenohDeclSubscriber != nil:
 		r = append(r, s.Body.CodecZenohDeclSubscriber.Encode(s.Header)...)
 	case s.Body.CodecZenohUndeclSubscriber != nil:
@@ -233,8 +233,8 @@ func (s *CodecZenohDeclaration) Encode() []byte {
 		r = append(r, s.Body.CodecZenohDeclToken.Encode(s.Header)...)
 	case s.Body.CodecZenohUndeclToken != nil:
 		r = append(r, s.Body.CodecZenohUndeclToken.Encode(s.Header)...)
-	case s.Body.CodecDeclFinal != nil:
-		r = append(r, s.Body.CodecDeclFinal.Encode()...)
+	case s.Body.CodecZenohDeclFinal != nil:
+		r = append(r, s.Body.CodecZenohDeclFinal.Encode()...)
 	case s.Body.Default != nil:
 		r = append(r, s.Body.Default.Body.Encode()...)
 	}

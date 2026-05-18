@@ -7,15 +7,15 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import CodecError, NeedMoreBytes, SceCursor
-from .codec_zenoh_decl_keyexpr import CodecZenohDeclKeyexpr
-from .codec_zenoh_undecl_keyexpr import CodecZenohUndeclKeyexpr
+from .codec_zenoh_decl_kexpr import CodecZenohDeclKexpr
+from .codec_zenoh_undecl_kexpr import CodecZenohUndeclKexpr
 from .codec_zenoh_decl_subscriber import CodecZenohDeclSubscriber
 from .codec_zenoh_undecl_subscriber import CodecZenohUndeclSubscriber
 from .codec_zenoh_decl_queryable import CodecZenohDeclQueryable
 from .codec_zenoh_undecl_queryable import CodecZenohUndeclQueryable
 from .codec_zenoh_decl_token import CodecZenohDeclToken
 from .codec_zenoh_undecl_token import CodecZenohUndeclToken
-from .codec_decl_final import CodecDeclFinal
+from .codec_zenoh_decl_final import CodecZenohDeclFinal
 
 from dataclasses import dataclass, field
 from typing import Optional
@@ -35,17 +35,17 @@ class CodecZenohDeclarationVariant:
     # default_factory so ``Variant()`` actually populates it (rather
     # than leaving every arm field ``None`` while ``kind`` names one of
     # them, which is the latent inconsistency this RFC closes).
-    kind: str = "CodecDeclFinal"
-    codec_zenoh_decl_keyexpr: Optional[CodecZenohDeclKeyexpr] = None
-    codec_zenoh_undecl_keyexpr: Optional[CodecZenohUndeclKeyexpr] = None
+    kind: str = "CodecZenohDeclFinal"
+    codec_zenoh_decl_kexpr: Optional[CodecZenohDeclKexpr] = None
+    codec_zenoh_undecl_kexpr: Optional[CodecZenohUndeclKexpr] = None
     codec_zenoh_decl_subscriber: Optional[CodecZenohDeclSubscriber] = None
     codec_zenoh_undecl_subscriber: Optional[CodecZenohUndeclSubscriber] = None
     codec_zenoh_decl_queryable: Optional[CodecZenohDeclQueryable] = None
     codec_zenoh_undecl_queryable: Optional[CodecZenohUndeclQueryable] = None
     codec_zenoh_decl_token: Optional[CodecZenohDeclToken] = None
     codec_zenoh_undecl_token: Optional[CodecZenohUndeclToken] = None
-    codec_decl_final: Optional[CodecDeclFinal] = field(default_factory=CodecDeclFinal)
-    default_body: Optional[CodecDeclFinal] = None
+    codec_zenoh_decl_final: Optional[CodecZenohDeclFinal] = field(default_factory=CodecZenohDeclFinal)
+    default_body: Optional[CodecZenohDeclFinal] = None
     default_tag: int = 0
 
 
@@ -77,17 +77,17 @@ class CodecZenohDeclaration:
         # wire.
         body = CodecZenohDeclarationVariant()
         if ((header >> 0) & 0x1F) == 0:
-            body.kind = "CodecZenohDeclKeyexpr"
-            _arm = CodecZenohDeclKeyexpr.decode(cursor, header)
+            body.kind = "CodecZenohDeclKexpr"
+            _arm = CodecZenohDeclKexpr.decode(cursor, header)
             if _arm is None:
                 return None
-            body.codec_zenoh_decl_keyexpr = _arm
+            body.codec_zenoh_decl_kexpr = _arm
         elif ((header >> 0) & 0x1F) == 1:
-            body.kind = "CodecZenohUndeclKeyexpr"
-            _arm = CodecZenohUndeclKeyexpr.decode(cursor)
+            body.kind = "CodecZenohUndeclKexpr"
+            _arm = CodecZenohUndeclKexpr.decode(cursor)
             if _arm is None:
                 return None
-            body.codec_zenoh_undecl_keyexpr = _arm
+            body.codec_zenoh_undecl_kexpr = _arm
         elif ((header >> 0) & 0x1F) == 2:
             body.kind = "CodecZenohDeclSubscriber"
             _arm = CodecZenohDeclSubscriber.decode(cursor, header)
@@ -125,15 +125,15 @@ class CodecZenohDeclaration:
                 return None
             body.codec_zenoh_undecl_token = _arm
         elif ((header >> 0) & 0x1F) == 26:
-            body.kind = "CodecDeclFinal"
-            _arm = CodecDeclFinal.decode(cursor)
+            body.kind = "CodecZenohDeclFinal"
+            _arm = CodecZenohDeclFinal.decode(cursor)
             if _arm is None:
                 return None
-            body.codec_decl_final = _arm
+            body.codec_zenoh_decl_final = _arm
         else:
             body.kind = "Default"
             body.default_tag = ((header >> 0) & 0x1F)
-            _arm = CodecDeclFinal.decode(cursor)
+            _arm = CodecZenohDeclFinal.decode(cursor)
             if _arm is None:
                 return None
             body.default_body = _arm
@@ -192,10 +192,10 @@ class CodecZenohDeclaration:
         r = bytearray()
         r.append(self.header & 0xFF)
         # Append the active arm body's encoded bytes.
-        if self.body.kind == "CodecZenohDeclKeyexpr":
-            r.extend(self.body.codec_zenoh_decl_keyexpr.encode(self.header))
-        elif self.body.kind == "CodecZenohUndeclKeyexpr":
-            r.extend(self.body.codec_zenoh_undecl_keyexpr.encode())
+        if self.body.kind == "CodecZenohDeclKexpr":
+            r.extend(self.body.codec_zenoh_decl_kexpr.encode(self.header))
+        elif self.body.kind == "CodecZenohUndeclKexpr":
+            r.extend(self.body.codec_zenoh_undecl_kexpr.encode())
         elif self.body.kind == "CodecZenohDeclSubscriber":
             r.extend(self.body.codec_zenoh_decl_subscriber.encode(self.header))
         elif self.body.kind == "CodecZenohUndeclSubscriber":
@@ -208,8 +208,8 @@ class CodecZenohDeclaration:
             r.extend(self.body.codec_zenoh_decl_token.encode(self.header))
         elif self.body.kind == "CodecZenohUndeclToken":
             r.extend(self.body.codec_zenoh_undecl_token.encode(self.header))
-        elif self.body.kind == "CodecDeclFinal":
-            r.extend(self.body.codec_decl_final.encode())
+        elif self.body.kind == "CodecZenohDeclFinal":
+            r.extend(self.body.codec_zenoh_decl_final.encode())
         elif self.body.kind == "Default":
             r.extend(self.body.default_body.encode())
         return bytes(r)

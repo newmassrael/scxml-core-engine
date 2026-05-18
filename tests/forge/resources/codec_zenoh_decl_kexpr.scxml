@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh declare-keyexpr body (RFC §5.B Wire RFC
+     Phase B Y1). First wireexpr-bearing declare body — composes Y0a
+     wireexpr through Y0c embed grammar with B5-γ Parent-scope parent-
+     flag threading (Case B: pass-through `parent_flags`).
+
+     Mirrors zenoh-pico `_z_decl_kexpr_encode` (src/protocol/codec/
+     declarations.c lines 52-63) verbatim. Encoder writes only the N
+     flag in the per-MID header byte (declarations.h:25-26 —
+     `_Z_DECL_KEXPR_MID = 0`, `_Z_DECL_KEXPR_FLAG_N = 0x20` at bit 5);
+     M and Z are unused for this MID. The body is the VLE u16 decl id
+     followed by an embedded wireexpr; the wireexpr's optional UTF-8
+     suffix is gated on the same parent.N bit that the encoder set.
+
+     The 1-byte per-MID header (MID + N) is written by the OUTER
+     declaration envelope (a future codec_zenoh_declaration analogous
+     to codec_transport_envelope), NOT by this body codec — same
+     pattern as codec_zenoh_init_body / codec_zenoh_open_body where
+     the transport envelope writes the message header before
+     dispatching to the body codec.
+
+     Wire shape (1+ bytes):
+       VLE id      (uint16, decl_kexpr declaration id)
+       wireexpr    (Y0c embed; embedded codec's wire is 1+ bytes:
+                    VLE id always + parent.N-gated VLE suffix_len +
+                    UTF-8 suffix — the wireexpr's parent.N read is
+                    threaded through this body's `parent_flags`)
+
+     Parent-flag threading (Case B): this body declares
+     `<sce:requires-parent-flags carrier="header"><sce:flag name="N"
+     bit="5"/>` matching wireexpr's identical declaration. The codec's
+     own `parent_flags: u8` parameter passes through to the embedded
+     wireexpr's decode/encode as-is — no local carrier is needed since
+     the upstream MID header carrier lives in the outer envelope.
+
+     Composition: B1-α VLE u16 id + Y0c embed (codec_zenoh_wireexpr) +
+     B5-γ Parent-scope parent_flags pass-through. No new primitive
+     surface beyond Y0c's embed grammar.
+
+     Wrap shape per language (always-present nested struct):
+       Rust:   `u16` id + `CodecZenohWireexpr` wireexpr
+       Cpp:    `uint16_t` + `codec_zenoh_wireexpr_t`
+       Kotlin: `UShort` + `CodecZenohWireexpr`
+       Go:     `uint16` + `codec_zenoh_wireexpr.T`
+       Python: `int` + `CodecZenohWireexpr`
+       C11:    `uint16_t id` + `codec_zenoh_wireexpr_t wireexpr` -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_decl_kexpr">
+  <sce:import src="codec_zenoh_wireexpr.scxml" kind="codec" as="codec_zenoh_wireexpr"/>
+  <sce:requires-parent-flags carrier="header">
+    <sce:flag name="N" bit="5"/>
+  </sce:requires-parent-flags>
+  <datamodel>
+    <sce:field id="id" sce:type="uint16" sce:byte="0" sce:bit-size="vle"/>
+    <sce:embed id="wireexpr" type="codec_zenoh_wireexpr" sce:byte="1"/>
+  </datamodel>
+</scxml>

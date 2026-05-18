@@ -8,8 +8,8 @@
 use sce_forge_runtime::codec::{CodecError, SceCursor};
 
 use super::codec_zenoh_ext_entry::CodecZenohExtEntry;
-use super::codec_zenoh_msg_reply::CodecZenohMsgReply;
-use super::codec_zenoh_msg_err::CodecZenohMsgErr;
+use super::codec_zenoh_reply::CodecZenohReply;
+use super::codec_zenoh_err::CodecZenohErr;
 
 // RFC §5.B variant primitive (B1-β): discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
@@ -17,11 +17,11 @@ use super::codec_zenoh_msg_err::CodecZenohMsgErr;
 // alongside its catch-all body.
 #[allow(dead_code)]
 pub enum CodecZenohResponseVariant {
-    CodecZenohMsgReply(CodecZenohMsgReply),
-    CodecZenohMsgErr(CodecZenohMsgErr),
+    CodecZenohReply(CodecZenohReply),
+    CodecZenohErr(CodecZenohErr),
     Default {
         tag: u8,
-        body: CodecZenohMsgReply,
+        body: CodecZenohReply,
     },
 }
 
@@ -32,7 +32,7 @@ impl Default for CodecZenohResponseVariant {
         // envelope round-trips byte-exactly through `encode() ->
         // decode()` — pairs with the inner codec's `<sce:flag value=>`
         // -baked `Default::default()` to close the dispatch loop.
-        Self::CodecZenohMsgReply(CodecZenohMsgReply::default())
+        Self::CodecZenohReply(CodecZenohReply::default())
     }
 }
 
@@ -118,11 +118,11 @@ impl CodecZenohResponse {
         // runtime tag value so encode can round-trip it back onto the
         // wire.
         let body = match ((_peek >> 0) & (0x1F as u8)) as u8 {
-            4u8 => CodecZenohResponseVariant::CodecZenohMsgReply(CodecZenohMsgReply::decode(cursor)?),
-            5u8 => CodecZenohResponseVariant::CodecZenohMsgErr(CodecZenohMsgErr::decode(cursor)?),
+            4u8 => CodecZenohResponseVariant::CodecZenohReply(CodecZenohReply::decode(cursor)?),
+            5u8 => CodecZenohResponseVariant::CodecZenohErr(CodecZenohErr::decode(cursor)?),
             other => CodecZenohResponseVariant::Default {
                 tag: other,
-                body: CodecZenohMsgReply::decode(cursor)?,
+                body: CodecZenohReply::decode(cursor)?,
             },
         };
         Ok(Self {
@@ -234,10 +234,10 @@ impl CodecZenohResponse {
         }
         // Append the active arm's encoded bytes.
         match &self.body {
-            CodecZenohResponseVariant::CodecZenohMsgReply(b) => {
+            CodecZenohResponseVariant::CodecZenohReply(b) => {
                 r.extend(b.encode());
             }
-            CodecZenohResponseVariant::CodecZenohMsgErr(b) => {
+            CodecZenohResponseVariant::CodecZenohErr(b) => {
                 r.extend(b.encode());
             }
             CodecZenohResponseVariant::Default { body, .. } => {

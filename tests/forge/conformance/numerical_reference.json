@@ -2912,7 +2912,7 @@
         }
       ]
     },
-    "codec_decl_final": {
+    "codec_zenoh_decl_final": {
       "fixture": "CodecDeclFinal",
       "signature": "(raw: &[u8]) <-> {} (zero-byte body)",
       "description": "Zenoh declare-final body (RFC §5.B B5-ι). Empty body — the enclosing declaration header byte carries the DeclFinal sub-variant tag and the body codec emits zero wire bytes. DeclFinal is one of nine `_z_declaration_t` sub-variants (Decl/UndeclKeyExpr, Decl/UndeclSubscriber, Decl/UndeclQueryable, Decl/UndeclToken plus DeclFinal). Upstream parity: `_z_decl_final_t` in zenoh-pico include/zenoh-pico/protocol/definitions/declarations.h:81-86 — placeholder bool kept for future-proofing; wire body is empty.",

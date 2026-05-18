@@ -7,15 +7,15 @@
 package com.sce.generated.codec_zenoh_declaration
 
 import com.sce.forge.runtime.SceCursor
-import com.sce.generated.codec_zenoh_decl_keyexpr.*
-import com.sce.generated.codec_zenoh_undecl_keyexpr.*
+import com.sce.generated.codec_zenoh_decl_kexpr.*
+import com.sce.generated.codec_zenoh_undecl_kexpr.*
 import com.sce.generated.codec_zenoh_decl_subscriber.*
 import com.sce.generated.codec_zenoh_undecl_subscriber.*
 import com.sce.generated.codec_zenoh_decl_queryable.*
 import com.sce.generated.codec_zenoh_undecl_queryable.*
 import com.sce.generated.codec_zenoh_decl_token.*
 import com.sce.generated.codec_zenoh_undecl_token.*
-import com.sce.generated.codec_decl_final.*
+import com.sce.generated.codec_zenoh_decl_final.*
 
 // RFC §5.B variant primitive (B1-β): discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
@@ -24,16 +24,16 @@ import com.sce.generated.codec_decl_final.*
 // (defensive — wildcard imports could otherwise surface an ambiguity if
 // two imported codecs declare same-named inner classes).
 sealed class CodecZenohDeclarationVariant {
-    data class CodecZenohDeclKeyexpr(val body: com.sce.generated.codec_zenoh_decl_keyexpr.CodecZenohDeclKeyexpr) : CodecZenohDeclarationVariant()
-    data class CodecZenohUndeclKeyexpr(val body: com.sce.generated.codec_zenoh_undecl_keyexpr.CodecZenohUndeclKeyexpr) : CodecZenohDeclarationVariant()
+    data class CodecZenohDeclKexpr(val body: com.sce.generated.codec_zenoh_decl_kexpr.CodecZenohDeclKexpr) : CodecZenohDeclarationVariant()
+    data class CodecZenohUndeclKexpr(val body: com.sce.generated.codec_zenoh_undecl_kexpr.CodecZenohUndeclKexpr) : CodecZenohDeclarationVariant()
     data class CodecZenohDeclSubscriber(val body: com.sce.generated.codec_zenoh_decl_subscriber.CodecZenohDeclSubscriber) : CodecZenohDeclarationVariant()
     data class CodecZenohUndeclSubscriber(val body: com.sce.generated.codec_zenoh_undecl_subscriber.CodecZenohUndeclSubscriber) : CodecZenohDeclarationVariant()
     data class CodecZenohDeclQueryable(val body: com.sce.generated.codec_zenoh_decl_queryable.CodecZenohDeclQueryable) : CodecZenohDeclarationVariant()
     data class CodecZenohUndeclQueryable(val body: com.sce.generated.codec_zenoh_undecl_queryable.CodecZenohUndeclQueryable) : CodecZenohDeclarationVariant()
     data class CodecZenohDeclToken(val body: com.sce.generated.codec_zenoh_decl_token.CodecZenohDeclToken) : CodecZenohDeclarationVariant()
     data class CodecZenohUndeclToken(val body: com.sce.generated.codec_zenoh_undecl_token.CodecZenohUndeclToken) : CodecZenohDeclarationVariant()
-    data class CodecDeclFinal(val body: com.sce.generated.codec_decl_final.CodecDeclFinal) : CodecZenohDeclarationVariant()
-    data class Default(val tag: UByte, val body: com.sce.generated.codec_decl_final.CodecDeclFinal) : CodecZenohDeclarationVariant()
+    data class CodecZenohDeclFinal(val body: com.sce.generated.codec_zenoh_decl_final.CodecZenohDeclFinal) : CodecZenohDeclarationVariant()
+    data class Default(val tag: UByte, val body: com.sce.generated.codec_zenoh_decl_final.CodecZenohDeclFinal) : CodecZenohDeclarationVariant()
 }
 
 // Default-valued primary constructor: the generated procedure_l2 code
@@ -47,7 +47,7 @@ data class CodecZenohDeclaration(
     // alternative so a freshly-constructed envelope round-trips byte-
     // exactly through `encode() -> decode()`. Paired with the inner
     // codec's `<sce:flag value=>`-baked default fields above.
-    var body: CodecZenohDeclarationVariant = CodecZenohDeclarationVariant.CodecDeclFinal(com.sce.generated.codec_decl_final.CodecDeclFinal())
+    var body: CodecZenohDeclarationVariant = CodecZenohDeclarationVariant.CodecZenohDeclFinal(com.sce.generated.codec_zenoh_decl_final.CodecZenohDeclFinal())
 ) {
     // RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-
@@ -106,15 +106,15 @@ data class CodecZenohDeclaration(
         r.add(header.toByte())
         // Append the active arm body's encoded bytes.
         when (val _b = this.body) {
-            is CodecZenohDeclarationVariant.CodecZenohDeclKeyexpr -> r.addAll(_b.body.encode(this.header).toList())
-            is CodecZenohDeclarationVariant.CodecZenohUndeclKeyexpr -> r.addAll(_b.body.encode().toList())
+            is CodecZenohDeclarationVariant.CodecZenohDeclKexpr -> r.addAll(_b.body.encode(this.header).toList())
+            is CodecZenohDeclarationVariant.CodecZenohUndeclKexpr -> r.addAll(_b.body.encode().toList())
             is CodecZenohDeclarationVariant.CodecZenohDeclSubscriber -> r.addAll(_b.body.encode(this.header).toList())
             is CodecZenohDeclarationVariant.CodecZenohUndeclSubscriber -> r.addAll(_b.body.encode(this.header).toList())
             is CodecZenohDeclarationVariant.CodecZenohDeclQueryable -> r.addAll(_b.body.encode(this.header).toList())
             is CodecZenohDeclarationVariant.CodecZenohUndeclQueryable -> r.addAll(_b.body.encode(this.header).toList())
             is CodecZenohDeclarationVariant.CodecZenohDeclToken -> r.addAll(_b.body.encode(this.header).toList())
             is CodecZenohDeclarationVariant.CodecZenohUndeclToken -> r.addAll(_b.body.encode(this.header).toList())
-            is CodecZenohDeclarationVariant.CodecDeclFinal -> r.addAll(_b.body.encode().toList())
+            is CodecZenohDeclarationVariant.CodecZenohDeclFinal -> r.addAll(_b.body.encode().toList())
             is CodecZenohDeclarationVariant.Default -> r.addAll(_b.body.encode().toList())
         }
         return r.toByteArray()
@@ -136,12 +136,12 @@ data class CodecZenohDeclaration(
             // onto the wire.
             val body: CodecZenohDeclarationVariant = when (((header.toInt() shr 0) and 0x1F)) {
                 0 -> {
-                    val _arm = com.sce.generated.codec_zenoh_decl_keyexpr.CodecZenohDeclKeyexpr.decode(cursor, header) ?: return null
-                    CodecZenohDeclarationVariant.CodecZenohDeclKeyexpr(_arm)
+                    val _arm = com.sce.generated.codec_zenoh_decl_kexpr.CodecZenohDeclKexpr.decode(cursor, header) ?: return null
+                    CodecZenohDeclarationVariant.CodecZenohDeclKexpr(_arm)
                 }
                 1 -> {
-                    val _arm = com.sce.generated.codec_zenoh_undecl_keyexpr.CodecZenohUndeclKeyexpr.decode(cursor) ?: return null
-                    CodecZenohDeclarationVariant.CodecZenohUndeclKeyexpr(_arm)
+                    val _arm = com.sce.generated.codec_zenoh_undecl_kexpr.CodecZenohUndeclKexpr.decode(cursor) ?: return null
+                    CodecZenohDeclarationVariant.CodecZenohUndeclKexpr(_arm)
                 }
                 2 -> {
                     val _arm = com.sce.generated.codec_zenoh_decl_subscriber.CodecZenohDeclSubscriber.decode(cursor, header) ?: return null
@@ -168,11 +168,11 @@ data class CodecZenohDeclaration(
                     CodecZenohDeclarationVariant.CodecZenohUndeclToken(_arm)
                 }
                 26 -> {
-                    val _arm = com.sce.generated.codec_decl_final.CodecDeclFinal.decode(cursor) ?: return null
-                    CodecZenohDeclarationVariant.CodecDeclFinal(_arm)
+                    val _arm = com.sce.generated.codec_zenoh_decl_final.CodecZenohDeclFinal.decode(cursor) ?: return null
+                    CodecZenohDeclarationVariant.CodecZenohDeclFinal(_arm)
                 }
                 else -> {
-                    val _arm = com.sce.generated.codec_decl_final.CodecDeclFinal.decode(cursor) ?: return null
+                    val _arm = com.sce.generated.codec_zenoh_decl_final.CodecZenohDeclFinal.decode(cursor) ?: return null
                     CodecZenohDeclarationVariant.Default(tag = ((header.toInt() shr 0) and 0x1F).toUByte(), body = _arm)
                 }
             }

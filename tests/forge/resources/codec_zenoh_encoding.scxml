@@ -61,7 +61,7 @@
          fn set_has_schema(v: bool) { ... }
        }
 
-     First reachable consumer: codec_zenoh_msg_put / codec_zenoh_msg_err
+     First reachable consumer: codec_zenoh_msg_put / codec_zenoh_err
      E-gated encoding embed (replaces the prior Q1(b) inline VLE u32
      encoding_id field; was deferred at atomic 2b-iii landing pending
      the composition demo's own consumer registration). -->

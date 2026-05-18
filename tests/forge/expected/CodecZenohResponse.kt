@@ -8,8 +8,8 @@ package com.sce.generated.codec_zenoh_response
 
 import com.sce.forge.runtime.SceCursor
 import com.sce.generated.codec_zenoh_ext_entry.*
-import com.sce.generated.codec_zenoh_msg_reply.*
-import com.sce.generated.codec_zenoh_msg_err.*
+import com.sce.generated.codec_zenoh_reply.*
+import com.sce.generated.codec_zenoh_err.*
 
 // RFC §5.B variant primitive (B1-β): discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
@@ -18,9 +18,9 @@ import com.sce.generated.codec_zenoh_msg_err.*
 // (defensive — wildcard imports could otherwise surface an ambiguity if
 // two imported codecs declare same-named inner classes).
 sealed class CodecZenohResponseVariant {
-    data class CodecZenohMsgReply(val body: com.sce.generated.codec_zenoh_msg_reply.CodecZenohMsgReply) : CodecZenohResponseVariant()
-    data class CodecZenohMsgErr(val body: com.sce.generated.codec_zenoh_msg_err.CodecZenohMsgErr) : CodecZenohResponseVariant()
-    data class Default(val tag: UByte, val body: com.sce.generated.codec_zenoh_msg_reply.CodecZenohMsgReply) : CodecZenohResponseVariant()
+    data class CodecZenohReply(val body: com.sce.generated.codec_zenoh_reply.CodecZenohReply) : CodecZenohResponseVariant()
+    data class CodecZenohErr(val body: com.sce.generated.codec_zenoh_err.CodecZenohErr) : CodecZenohResponseVariant()
+    data class Default(val tag: UByte, val body: com.sce.generated.codec_zenoh_reply.CodecZenohReply) : CodecZenohResponseVariant()
 }
 
 // Default-valued primary constructor: the generated procedure_l2 code
@@ -39,7 +39,7 @@ data class CodecZenohResponse(
     // alternative so a freshly-constructed envelope round-trips byte-
     // exactly through `encode() -> decode()`. Paired with the inner
     // codec's `<sce:flag value=>`-baked default fields above.
-    var body: CodecZenohResponseVariant = CodecZenohResponseVariant.CodecZenohMsgReply(com.sce.generated.codec_zenoh_msg_reply.CodecZenohMsgReply())
+    var body: CodecZenohResponseVariant = CodecZenohResponseVariant.CodecZenohReply(com.sce.generated.codec_zenoh_reply.CodecZenohReply())
 ) {
     // RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-
@@ -134,8 +134,8 @@ data class CodecZenohResponse(
         }
         // Append the active arm body's encoded bytes.
         when (val _b = this.body) {
-            is CodecZenohResponseVariant.CodecZenohMsgReply -> r.addAll(_b.body.encode().toList())
-            is CodecZenohResponseVariant.CodecZenohMsgErr -> r.addAll(_b.body.encode().toList())
+            is CodecZenohResponseVariant.CodecZenohReply -> r.addAll(_b.body.encode().toList())
+            is CodecZenohResponseVariant.CodecZenohErr -> r.addAll(_b.body.encode().toList())
             is CodecZenohResponseVariant.Default -> r.addAll(_b.body.encode().toList())
         }
         return r.toByteArray()
@@ -199,15 +199,15 @@ data class CodecZenohResponse(
             // onto the wire.
             val body: CodecZenohResponseVariant = when (((_peek.toInt() shr 0) and 0x1F)) {
                 4 -> {
-                    val _arm = com.sce.generated.codec_zenoh_msg_reply.CodecZenohMsgReply.decode(cursor) ?: return null
-                    CodecZenohResponseVariant.CodecZenohMsgReply(_arm)
+                    val _arm = com.sce.generated.codec_zenoh_reply.CodecZenohReply.decode(cursor) ?: return null
+                    CodecZenohResponseVariant.CodecZenohReply(_arm)
                 }
                 5 -> {
-                    val _arm = com.sce.generated.codec_zenoh_msg_err.CodecZenohMsgErr.decode(cursor) ?: return null
-                    CodecZenohResponseVariant.CodecZenohMsgErr(_arm)
+                    val _arm = com.sce.generated.codec_zenoh_err.CodecZenohErr.decode(cursor) ?: return null
+                    CodecZenohResponseVariant.CodecZenohErr(_arm)
                 }
                 else -> {
-                    val _arm = com.sce.generated.codec_zenoh_msg_reply.CodecZenohMsgReply.decode(cursor) ?: return null
+                    val _arm = com.sce.generated.codec_zenoh_reply.CodecZenohReply.decode(cursor) ?: return null
                     CodecZenohResponseVariant.Default(tag = ((_peek.toInt() shr 0) and 0x1F).toUByte(), body = _arm)
                 }
             }

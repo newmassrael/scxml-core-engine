@@ -15,15 +15,15 @@
 #include <variant>
 
 #include "sce/forge/codec.h"
-#include "codec_zenoh_decl_keyexpr.h"
-#include "codec_zenoh_undecl_keyexpr.h"
+#include "codec_zenoh_decl_kexpr.h"
+#include "codec_zenoh_undecl_kexpr.h"
 #include "codec_zenoh_decl_subscriber.h"
 #include "codec_zenoh_undecl_subscriber.h"
 #include "codec_zenoh_decl_queryable.h"
 #include "codec_zenoh_undecl_queryable.h"
 #include "codec_zenoh_decl_token.h"
 #include "codec_zenoh_undecl_token.h"
-#include "codec_decl_final.h"
+#include "codec_zenoh_decl_final.h"
 
 namespace SCE::Generated::CodecZenohDeclaration {
 
@@ -33,18 +33,18 @@ namespace SCE::Generated::CodecZenohDeclaration {
 // struct that bundles the runtime tag value with the catch-all body.
 struct CodecZenohDeclarationDefault {
     uint8_t tag;
-    ::SCE::Generated::CodecDeclFinal::CodecDeclFinal body;
+    ::SCE::Generated::CodecZenohDeclFinal::CodecZenohDeclFinal body;
 };
 using CodecZenohDeclarationVariant = std::variant<
-    ::SCE::Generated::CodecZenohDeclKeyexpr::CodecZenohDeclKeyexpr,
-    ::SCE::Generated::CodecZenohUndeclKeyexpr::CodecZenohUndeclKeyexpr,
+    ::SCE::Generated::CodecZenohDeclKexpr::CodecZenohDeclKexpr,
+    ::SCE::Generated::CodecZenohUndeclKexpr::CodecZenohUndeclKexpr,
     ::SCE::Generated::CodecZenohDeclSubscriber::CodecZenohDeclSubscriber,
     ::SCE::Generated::CodecZenohUndeclSubscriber::CodecZenohUndeclSubscriber,
     ::SCE::Generated::CodecZenohDeclQueryable::CodecZenohDeclQueryable,
     ::SCE::Generated::CodecZenohUndeclQueryable::CodecZenohUndeclQueryable,
     ::SCE::Generated::CodecZenohDeclToken::CodecZenohDeclToken,
     ::SCE::Generated::CodecZenohUndeclToken::CodecZenohUndeclToken,
-    ::SCE::Generated::CodecDeclFinal::CodecDeclFinal,
+    ::SCE::Generated::CodecZenohDeclFinal::CodecZenohDeclFinal,
     CodecZenohDeclarationDefault
 >;
 
@@ -78,13 +78,13 @@ struct CodecZenohDeclaration {
         CodecZenohDeclarationVariant body;
         switch (static_cast<uint8_t>((header >> 0) & static_cast<uint8_t>(0x1F))) {
             case 0: {
-                auto _arm = ::SCE::Generated::CodecZenohDeclKeyexpr::CodecZenohDeclKeyexpr::decode(cursor, header);
+                auto _arm = ::SCE::Generated::CodecZenohDeclKexpr::CodecZenohDeclKexpr::decode(cursor, header);
                 if (!_arm.has_value()) return std::nullopt;
                 body = *_arm;
                 break;
             }
             case 1: {
-                auto _arm = ::SCE::Generated::CodecZenohUndeclKeyexpr::CodecZenohUndeclKeyexpr::decode(cursor);
+                auto _arm = ::SCE::Generated::CodecZenohUndeclKexpr::CodecZenohUndeclKexpr::decode(cursor);
                 if (!_arm.has_value()) return std::nullopt;
                 body = *_arm;
                 break;
@@ -126,13 +126,13 @@ struct CodecZenohDeclaration {
                 break;
             }
             case 26: {
-                auto _arm = ::SCE::Generated::CodecDeclFinal::CodecDeclFinal::decode(cursor);
+                auto _arm = ::SCE::Generated::CodecZenohDeclFinal::CodecZenohDeclFinal::decode(cursor);
                 if (!_arm.has_value()) return std::nullopt;
                 body = *_arm;
                 break;
             }
             default: {
-                auto _arm = ::SCE::Generated::CodecDeclFinal::CodecDeclFinal::decode(cursor);
+                auto _arm = ::SCE::Generated::CodecZenohDeclFinal::CodecZenohDeclFinal::decode(cursor);
                 if (!_arm.has_value()) return std::nullopt;
                 body = CodecZenohDeclarationDefault{
                     .tag = static_cast<uint8_t>((header >> 0) & static_cast<uint8_t>(0x1F)),
@@ -214,11 +214,11 @@ struct CodecZenohDeclaration {
         r.reserve(275);
         r.push_back(header);
         // Append the active arm body's encoded bytes.
-        if (auto _p = std::get_if<::SCE::Generated::CodecZenohDeclKeyexpr::CodecZenohDeclKeyexpr>(&body)) {
+        if (auto _p = std::get_if<::SCE::Generated::CodecZenohDeclKexpr::CodecZenohDeclKexpr>(&body)) {
             auto _sub = _p->encode(header);
             r.insert(r.end(), _sub.begin(), _sub.end());
         }
-        if (auto _p = std::get_if<::SCE::Generated::CodecZenohUndeclKeyexpr::CodecZenohUndeclKeyexpr>(&body)) {
+        if (auto _p = std::get_if<::SCE::Generated::CodecZenohUndeclKexpr::CodecZenohUndeclKexpr>(&body)) {
             auto _sub = _p->encode();
             r.insert(r.end(), _sub.begin(), _sub.end());
         }
@@ -246,7 +246,7 @@ struct CodecZenohDeclaration {
             auto _sub = _p->encode(header);
             r.insert(r.end(), _sub.begin(), _sub.end());
         }
-        if (auto _p = std::get_if<::SCE::Generated::CodecDeclFinal::CodecDeclFinal>(&body)) {
+        if (auto _p = std::get_if<::SCE::Generated::CodecZenohDeclFinal::CodecZenohDeclFinal>(&body)) {
             auto _sub = _p->encode();
             r.insert(r.end(), _sub.begin(), _sub.end());
         }

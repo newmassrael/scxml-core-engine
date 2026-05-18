@@ -9,7 +9,7 @@
      (declarations.c:229-239 + 268-272). The 1-byte per-MID header
      (MID + Z bit) is written by the OUTER declaration envelope (a
      future codec_zenoh_declaration mirroring the Y0c/Y1 / outer-
-     envelope precedent set by codec_zenoh_decl_keyexpr); this body
+     envelope precedent set by codec_zenoh_decl_kexpr); this body
      codec carries only the post-header payload.
 
      Wire shape (1+ bytes):

@@ -742,7 +742,7 @@
       ]
     },
     {
-      "name": "codec_decl_final",
+      "name": "codec_zenoh_decl_final",
       "kind": "codec",
       "ref_section": "codecs",
       "fields": []
@@ -1035,7 +1035,7 @@
       "fields": []
     },
     {
-      "name": "codec_zenoh_decl_keyexpr",
+      "name": "codec_zenoh_decl_kexpr",
       "kind": "codec",
       "ref_section": "codecs",
       "oracle_eligible": false,
@@ -1161,7 +1161,7 @@
       "fields": []
     },
     {
-      "name": "codec_zenoh_msg_err",
+      "name": "codec_zenoh_err",
       "kind": "codec",
       "ref_section": "codecs",
       "oracle_eligible": false,
@@ -1175,7 +1175,7 @@
       "fields": []
     },
     {
-      "name": "codec_zenoh_msg_reply",
+      "name": "codec_zenoh_reply",
       "kind": "codec",
       "ref_section": "codecs",
       "oracle_eligible": false,
@@ -1280,7 +1280,7 @@
       "fields": []
     },
     {
-      "name": "codec_zenoh_undecl_keyexpr",
+      "name": "codec_zenoh_undecl_kexpr",
       "kind": "codec",
       "ref_section": "codecs",
       "oracle_eligible": false,

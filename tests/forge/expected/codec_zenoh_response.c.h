@@ -14,8 +14,8 @@
 
 #include "sce/forge/codec.h"
 #include "codec_zenoh_ext_entry.h"
-#include "codec_zenoh_msg_reply.h"
-#include "codec_zenoh_msg_err.h"
+#include "codec_zenoh_reply.h"
+#include "codec_zenoh_err.h"
 
 #define CODEC_ZENOH_RESPONSE_MIN_BYTES 1
 #define CODEC_ZENOH_RESPONSE_MAX_BYTES 977
@@ -26,8 +26,8 @@
  * union holds one body slot per arm (per-arm fields keep the template
  * straight when two arms share a body type). */
 typedef enum {
-    CODEC_ZENOH_RESPONSE_BODY_KIND_CODEC_ZENOH_MSG_REPLY,
-    CODEC_ZENOH_RESPONSE_BODY_KIND_CODEC_ZENOH_MSG_ERR,
+    CODEC_ZENOH_RESPONSE_BODY_KIND_CODEC_ZENOH_REPLY,
+    CODEC_ZENOH_RESPONSE_BODY_KIND_CODEC_ZENOH_ERR,
     CODEC_ZENOH_RESPONSE_BODY_KIND_DEFAULT,
 } codec_zenoh_response_body_kind_t;
 
@@ -35,9 +35,9 @@ typedef struct {
     codec_zenoh_response_body_kind_t kind;
     uint8_t default_tag;  /* valid only when kind == ..._DEFAULT */
     union {
-        codec_zenoh_msg_reply_t codec_zenoh_msg_reply;
-        codec_zenoh_msg_err_t codec_zenoh_msg_err;
-        codec_zenoh_msg_reply_t default_body;
+        codec_zenoh_reply_t codec_zenoh_reply;
+        codec_zenoh_err_t codec_zenoh_err;
+        codec_zenoh_reply_t default_body;
     } arm;
 } codec_zenoh_response_variant_t;
 
@@ -69,8 +69,8 @@ typedef struct {
  * the wire-MID-bearing members. */
 #define CODEC_ZENOH_RESPONSE_DEFAULT_INIT { \
     .body = { \
-        .kind = CODEC_ZENOH_RESPONSE_BODY_KIND_CODEC_ZENOH_MSG_REPLY, \
-        .arm = { .codec_zenoh_msg_reply = CODEC_ZENOH_MSG_REPLY_DEFAULT_INIT } \
+        .kind = CODEC_ZENOH_RESPONSE_BODY_KIND_CODEC_ZENOH_REPLY, \
+        .arm = { .codec_zenoh_reply = CODEC_ZENOH_REPLY_DEFAULT_INIT } \
     }, \
 }
 
@@ -153,19 +153,19 @@ static inline sce_forge_codec_status_t codec_zenoh_response_decode(sce_forge_cur
     sce_forge_codec_status_t _arm_st;
     switch ((uint8_t)((_peek >> 0) & (uint8_t)0x1F)) {
         case 4:
-            out->body.kind = CODEC_ZENOH_RESPONSE_BODY_KIND_CODEC_ZENOH_MSG_REPLY;
-            _arm_st = codec_zenoh_msg_reply_decode(cursor, &out->body.arm.codec_zenoh_msg_reply);
+            out->body.kind = CODEC_ZENOH_RESPONSE_BODY_KIND_CODEC_ZENOH_REPLY;
+            _arm_st = codec_zenoh_reply_decode(cursor, &out->body.arm.codec_zenoh_reply);
             if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
             break;
         case 5:
-            out->body.kind = CODEC_ZENOH_RESPONSE_BODY_KIND_CODEC_ZENOH_MSG_ERR;
-            _arm_st = codec_zenoh_msg_err_decode(cursor, &out->body.arm.codec_zenoh_msg_err);
+            out->body.kind = CODEC_ZENOH_RESPONSE_BODY_KIND_CODEC_ZENOH_ERR;
+            _arm_st = codec_zenoh_err_decode(cursor, &out->body.arm.codec_zenoh_err);
             if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
             break;
         default:
             out->body.kind = CODEC_ZENOH_RESPONSE_BODY_KIND_DEFAULT;
             out->body.default_tag = (uint8_t)((_peek >> 0) & (uint8_t)0x1F);
-            _arm_st = codec_zenoh_msg_reply_decode(cursor, &out->body.arm.default_body);
+            _arm_st = codec_zenoh_reply_decode(cursor, &out->body.arm.default_body);
             if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
             break;
     }
@@ -222,16 +222,16 @@ static inline codec_zenoh_response_encoded_t codec_zenoh_response_encode(const c
     }
     /* Append the active arm body's encoded bytes. */
     switch (self->body.kind) {
-        case CODEC_ZENOH_RESPONSE_BODY_KIND_CODEC_ZENOH_MSG_REPLY: {
-            codec_zenoh_msg_reply_encoded_t _sub = codec_zenoh_msg_reply_encode(&self->body.arm.codec_zenoh_msg_reply);
+        case CODEC_ZENOH_RESPONSE_BODY_KIND_CODEC_ZENOH_REPLY: {
+            codec_zenoh_reply_encoded_t _sub = codec_zenoh_reply_encode(&self->body.arm.codec_zenoh_reply);
             if (r.len + _sub.len <= CODEC_ZENOH_RESPONSE_MAX_BYTES) {
                 for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
                 r.len += _sub.len;
             }
             break;
         }
-        case CODEC_ZENOH_RESPONSE_BODY_KIND_CODEC_ZENOH_MSG_ERR: {
-            codec_zenoh_msg_err_encoded_t _sub = codec_zenoh_msg_err_encode(&self->body.arm.codec_zenoh_msg_err);
+        case CODEC_ZENOH_RESPONSE_BODY_KIND_CODEC_ZENOH_ERR: {
+            codec_zenoh_err_encoded_t _sub = codec_zenoh_err_encode(&self->body.arm.codec_zenoh_err);
             if (r.len + _sub.len <= CODEC_ZENOH_RESPONSE_MAX_BYTES) {
                 for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
                 r.len += _sub.len;
@@ -239,7 +239,7 @@ static inline codec_zenoh_response_encoded_t codec_zenoh_response_encode(const c
             break;
         }
         case CODEC_ZENOH_RESPONSE_BODY_KIND_DEFAULT: {
-            codec_zenoh_msg_reply_encoded_t _sub = codec_zenoh_msg_reply_encode(&self->body.arm.default_body);
+            codec_zenoh_reply_encoded_t _sub = codec_zenoh_reply_encode(&self->body.arm.default_body);
             if (r.len + _sub.len <= CODEC_ZENOH_RESPONSE_MAX_BYTES) {
                 for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
                 r.len += _sub.len;

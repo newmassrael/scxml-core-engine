@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from sce_forge_runtime.codec import CodecError, InvalidUtf8, NeedMoreBytes, SceCursor, TlvChainOverflow
 from .codec_zenoh_ext_entry import CodecZenohExtEntry
-from .codec_zenoh_msg_reply import CodecZenohMsgReply
-from .codec_zenoh_msg_err import CodecZenohMsgErr
+from .codec_zenoh_reply import CodecZenohReply
+from .codec_zenoh_err import CodecZenohErr
 
 from dataclasses import dataclass, field
 from typing import Optional, List
@@ -29,10 +29,10 @@ class CodecZenohResponseVariant:
     # default_factory so ``Variant()`` actually populates it (rather
     # than leaving every arm field ``None`` while ``kind`` names one of
     # them, which is the latent inconsistency this RFC closes).
-    kind: str = "CodecZenohMsgReply"
-    codec_zenoh_msg_reply: Optional[CodecZenohMsgReply] = field(default_factory=CodecZenohMsgReply)
-    codec_zenoh_msg_err: Optional[CodecZenohMsgErr] = None
-    default_body: Optional[CodecZenohMsgReply] = None
+    kind: str = "CodecZenohReply"
+    codec_zenoh_reply: Optional[CodecZenohReply] = field(default_factory=CodecZenohReply)
+    codec_zenoh_err: Optional[CodecZenohErr] = None
+    default_body: Optional[CodecZenohReply] = None
     default_tag: int = 0
 
 
@@ -102,21 +102,21 @@ class CodecZenohResponse:
         # wire.
         body = CodecZenohResponseVariant()
         if ((_peek >> 0) & 0x1F) == 4:
-            body.kind = "CodecZenohMsgReply"
-            _arm = CodecZenohMsgReply.decode(cursor)
+            body.kind = "CodecZenohReply"
+            _arm = CodecZenohReply.decode(cursor)
             if _arm is None:
                 return None
-            body.codec_zenoh_msg_reply = _arm
+            body.codec_zenoh_reply = _arm
         elif ((_peek >> 0) & 0x1F) == 5:
-            body.kind = "CodecZenohMsgErr"
-            _arm = CodecZenohMsgErr.decode(cursor)
+            body.kind = "CodecZenohErr"
+            _arm = CodecZenohErr.decode(cursor)
             if _arm is None:
                 return None
-            body.codec_zenoh_msg_err = _arm
+            body.codec_zenoh_err = _arm
         else:
             body.kind = "Default"
             body.default_tag = ((_peek >> 0) & 0x1F)
-            _arm = CodecZenohMsgReply.decode(cursor)
+            _arm = CodecZenohReply.decode(cursor)
             if _arm is None:
                 return None
             body.default_body = _arm
@@ -203,10 +203,10 @@ class CodecZenohResponse:
             for _e in self.extensions:
                 r.extend(_e.encode())
         # Append the active arm body's encoded bytes.
-        if self.body.kind == "CodecZenohMsgReply":
-            r.extend(self.body.codec_zenoh_msg_reply.encode())
-        elif self.body.kind == "CodecZenohMsgErr":
-            r.extend(self.body.codec_zenoh_msg_err.encode())
+        if self.body.kind == "CodecZenohReply":
+            r.extend(self.body.codec_zenoh_reply.encode())
+        elif self.body.kind == "CodecZenohErr":
+            r.extend(self.body.codec_zenoh_err.encode())
         elif self.body.kind == "Default":
             r.extend(self.body.default_body.encode())
         return bytes(r)

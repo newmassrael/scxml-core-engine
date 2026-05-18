@@ -10,8 +10,8 @@ import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
 	"unicode/utf8"
 	"example.com/sce-forge/codec_zenoh_ext_entry"
-	"example.com/sce-forge/codec_zenoh_msg_reply"
-	"example.com/sce-forge/codec_zenoh_msg_err"
+	"example.com/sce-forge/codec_zenoh_reply"
+	"example.com/sce-forge/codec_zenoh_err"
 )
 
 // CodecZenohResponseDefault bundles the runtime
@@ -19,7 +19,7 @@ import (
 // observed tag back onto the wire (RFC §5.B variant primitive B1-β).
 type CodecZenohResponseDefault struct {
 	Tag uint8
-	Body codec_zenoh_msg_reply.CodecZenohMsgReply
+	Body codec_zenoh_reply.CodecZenohReply
 }
 
 // CodecZenohResponseVariant is a discriminated-union body for the codec's
@@ -27,8 +27,8 @@ type CodecZenohResponseDefault struct {
 // the pointer fields is non-nil at a time; the active arm is the one
 // that matches the current tag value.
 type CodecZenohResponseVariant struct {
-	CodecZenohMsgReply *codec_zenoh_msg_reply.CodecZenohMsgReply
-	CodecZenohMsgErr *codec_zenoh_msg_err.CodecZenohMsgErr
+	CodecZenohReply *codec_zenoh_reply.CodecZenohReply
+	CodecZenohErr *codec_zenoh_err.CodecZenohErr
 	Default *CodecZenohResponseDefault
 }
 
@@ -53,7 +53,7 @@ type CodecZenohResponse struct {
 func NewCodecZenohResponse() *CodecZenohResponse {
 	return &CodecZenohResponse{
 		Body: CodecZenohResponseVariant{
-			CodecZenohMsgReply: codec_zenoh_msg_reply.NewCodecZenohMsgReply(),
+			CodecZenohReply: codec_zenoh_reply.NewCodecZenohReply(),
 		},
 	}
 }
@@ -135,19 +135,19 @@ func DecodeCodecZenohResponse(cursor *codec.SceCursor) (*CodecZenohResponse, err
 	body := CodecZenohResponseVariant{}
 	switch uint8((_peek >> 0) & 0x1F) {
 	case 4:
-		_arm, err := codec_zenoh_msg_reply.DecodeCodecZenohMsgReply(cursor)
+		_arm, err := codec_zenoh_reply.DecodeCodecZenohReply(cursor)
 		if err != nil {
 			return nil, err
 		}
-		body.CodecZenohMsgReply = _arm
+		body.CodecZenohReply = _arm
 	case 5:
-		_arm, err := codec_zenoh_msg_err.DecodeCodecZenohMsgErr(cursor)
+		_arm, err := codec_zenoh_err.DecodeCodecZenohErr(cursor)
 		if err != nil {
 			return nil, err
 		}
-		body.CodecZenohMsgErr = _arm
+		body.CodecZenohErr = _arm
 	default:
-		_arm, err := codec_zenoh_msg_reply.DecodeCodecZenohMsgReply(cursor)
+		_arm, err := codec_zenoh_reply.DecodeCodecZenohReply(cursor)
 		if err != nil {
 			return nil, err
 		}
@@ -264,10 +264,10 @@ func (s *CodecZenohResponse) Encode() []byte {
 	}
 	// Append the active arm body's encoded bytes.
 	switch {
-	case s.Body.CodecZenohMsgReply != nil:
-		r = append(r, s.Body.CodecZenohMsgReply.Encode()...)
-	case s.Body.CodecZenohMsgErr != nil:
-		r = append(r, s.Body.CodecZenohMsgErr.Encode()...)
+	case s.Body.CodecZenohReply != nil:
+		r = append(r, s.Body.CodecZenohReply.Encode()...)
+	case s.Body.CodecZenohErr != nil:
+		r = append(r, s.Body.CodecZenohErr.Encode()...)
 	case s.Body.Default != nil:
 		r = append(r, s.Body.Default.Body.Encode()...)
 	}

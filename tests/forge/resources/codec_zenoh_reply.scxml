@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh REPLY envelope (RFC §5.B Wire RFC
+     Phase B Y3 atomic 2b — sub-codec, response body variant arm).
+
+     Mirrors zenoh-pico `_z_reply_encode` / `_z_reply_decode`
+     (src/protocol/codec/message.c:507-543) at envelope-level wire
+     fidelity. The inner push_body bytes are emitted by the embedded
+     codec_zenoh_push_body (B5-η stripped-down: 1B push_header MID
+     selector + per-arm body — the inner timestamp/encoding/source_info
+     ext wire stays simplified per Q1(b) of atomic 2b dispatch; full
+     wire fidelity for those primitives is deferred to a follow-up
+     atomic that lifts SCE primitives for VLE-LSB-as-flag and bit-
+     shifted length-prefix carriers).
+
+     Wire shape (1+ bytes):
+       byte 0   : header     (MID 0x04 in bits 0..4 + R_C@5 + X@6 + Z@7)
+                              — header.C gates the inline consolidation
+                              byte; header.Z signals the ext chain
+                              follows. X@6 stays reserved (upstream
+                              `_Z_FLAG_Z_X = 0x00`).
+       R_C-gated:
+         byte 1 : consolidation (uint8 0..3, mirrors
+                                 `z_consolidation_mode_t`)
+       Z-gated:
+         chain  : codec_zenoh_ext_entry tlv-chain (entry-flag
+                  termination on entry header.Z — Y3 atomic 1 grammar;
+                  chain is followed by the push_body embed so the
+                  exhaust-or-depth termination would not detect the
+                  body boundary. max-depth=4 covers reply's actual
+                  ext slots — upstream defines none mandatory but
+                  the wire allows source_info per `_Z_MSG_EXT_ENC_ZBUF`
+                  conventions).
+       embed:
+         bytes  : codec_zenoh_push_body (1B push_header MID selector +
+                  per-arm body bytes — push_body's own byte 0 is the
+                  push_header, mirroring zenoh-pico `_z_reply_decode`
+                  line 540 where the put_header is read just before
+                  `_z_push_body_decode` consumes the body bytes).
+
+     Composition: B1-γ flags (header) + B1-δ present-if-on-fields
+     (R_C gate) + Y3 atomic 2a present-if-on-tlv-chain (header.Z gate)
+     + Y3 atomic 1 entry-flag termination (chain followed by body
+     field — first realistic consumer of entry-flag termination) +
+     B5-ε surface G (chain element = codec_zenoh_ext_entry variant) +
+     Y0c <sce:embed> (push_body inner variant, recursive sum-type via
+     B5-η Surface I).
+
+     Body variant arm contract: invoked by codec_zenoh_response when
+     the inner-MID byte after the response header reads 0x04 (Z_REPLY).
+     The response envelope reads its own per-MID header before
+     dispatching, so codec_zenoh_reply does NOT re-read the inner
+     dispatch header — the wire byte 0 here IS the response body's
+     dispatch header from the response envelope's perspective. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_reply">
+  <sce:import src="codec_zenoh_ext_entry.scxml" kind="codec" as="codec_zenoh_ext_entry"/>
+  <sce:import src="codec_zenoh_push_body.scxml" kind="codec" as="codec_zenoh_push_body"/>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="mid" bit="0" width="5" value="0x04"/>
+      <sce:flag name="C"   bit="5"/>
+      <sce:flag name="X"   bit="6"/>
+      <sce:flag name="Z"   bit="7"/>
+    </sce:flags>
+    <sce:field id="consolidation" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="header.C"/>
+    <sce:tlv-chain id="extensions" type="codec_zenoh_ext_entry" sce:byte="2"
+                   max-depth="4" on-overflow="reject"
+                   sce:present-if="header.Z"
+                   terminate-on="entry-flag" entry-flag-name="Z"/>
+    <sce:embed id="body" type="codec_zenoh_push_body" sce:byte="3"/>
+  </datamodel>
+</scxml>

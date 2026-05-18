@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: Zenoh undeclare-keyexpr body (RFC §5.B
+     Wire RFC Phase B Y1). The trivial undecl — header byte + VLE id
+     only, no wireexpr.
+
+     Mirrors zenoh-pico `_z_undecl_kexpr_encode` (src/protocol/codec/
+     declarations.c lines 86-89) which writes the per-MID header
+     (`_Z_UNDECL_KEXPR` declaration tag, value 1, doubling as
+     `_Z_UNDECL_KEXPR_MID = 1` from declarations.h:27) followed by
+     the VLE u16 declaration id. No wireexpr, no ext.
+
+     The decoder (declarations.c:192-200) accepts an optional Z-flagged
+     ext skip but the encoder never sets Z, and SCE-side body codec
+     scope is just the VLE id — the per-MID header byte (with any
+     forward-compat Z bit) lives in the outer declaration envelope.
+
+     The other three undecl_* (subscriber/queryable/token) carry an
+     OPTIONAL ext_keyexpr payload via the parent.Z gate; that ext
+     uses the TLV envelope shape (length-prefixed outer + inline-
+     suffix-by-implicit-length inner) which is its own design surface
+     (Y0b territory). Y1 ships only the trivial undecl_keyexpr; the
+     three optional-ext undecls defer to a separate atomic after Y0b
+     primitives land.
+
+     This codec has NO `<sce:requires-parent-flags>` because the body
+     scope contains no parent-gated fields. It is also harness-
+     eligible (no parent-flag dep, no embed) — so it could land in
+     numerical_reference.json with oracle cases. Y1 keeps it
+     byte-golden-only for uniformity with the four wireexpr-bearing
+     siblings; harness coverage can land in a follow-up cleanup
+     atomic alongside the deferred undecl_subscriber/queryable/token.
+
+     Wire shape:
+       VLE id      (uint16, declaration id) -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_zenoh_undecl_kexpr">
+  <datamodel>
+    <sce:field id="id" sce:type="uint16" sce:byte="0" sce:bit-size="vle"/>
+  </datamodel>
+</scxml>

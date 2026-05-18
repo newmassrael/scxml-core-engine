@@ -41,9 +41,9 @@
                               header.
 
      Peek-byte arm coverage (per zenoh-pico response.network.h MIDs):
-       0x04 → codec_zenoh_msg_reply (Z_REPLY arm — atomic 2b-i sub-codec)
-       0x05 → codec_zenoh_msg_err   (Z_ERR arm — atomic 2b-i sub-codec)
-       <sce:default> → codec_zenoh_msg_reply (catch-all preserves
+       0x04 → codec_zenoh_reply (Z_REPLY arm — atomic 2b-i sub-codec)
+       0x05 → codec_zenoh_err   (Z_ERR arm — atomic 2b-i sub-codec)
+       <sce:default> → codec_zenoh_reply (catch-all preserves
        runtime mid for round-trip; in production a non-reply / non-err
        MID under Z_RESPONSE is a wire-protocol violation, so default
        arm is a defensive recovery shape rather than a routine path).
@@ -60,8 +60,8 @@
      msg_err already inherit the Q1(b) envelope-only scoping).
 
      Cross-codec validator (RFC §5.B Y3 atomic 2b-ii peek-byte)
-     confirms: codec_zenoh_msg_reply.header.mid (bit=0 width=5) +
-     codec_zenoh_msg_err.header.mid (bit=0 width=5) match this
+     confirms: codec_zenoh_reply.header.mid (bit=0 width=5) +
+     codec_zenoh_err.header.mid (bit=0 width=5) match this
      peek-byte's mid declaration. The arm body codecs' additional
      flag declarations (R_C / X / E_E / Z at bits 5/6/7) sit outside
      the dispatch bit-range — peek-byte doesn't constrain them.
@@ -76,8 +76,8 @@
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="codec_zenoh_response">
   <sce:import src="codec_zenoh_ext_entry.scxml" kind="codec" as="codec_zenoh_ext_entry"/>
-  <sce:import src="codec_zenoh_msg_reply.scxml" kind="codec" as="codec_zenoh_msg_reply"/>
-  <sce:import src="codec_zenoh_msg_err.scxml"   kind="codec" as="codec_zenoh_msg_err"/>
+  <sce:import src="codec_zenoh_reply.scxml" kind="codec" as="codec_zenoh_reply"/>
+  <sce:import src="codec_zenoh_err.scxml"   kind="codec" as="codec_zenoh_err"/>
   <datamodel>
     <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
       <sce:flag name="mid" bit="0" width="5"/>
@@ -100,9 +100,9 @@
       <sce:peek-byte id="peek" sce:type="uint8">
         <sce:flag name="mid" bit="0" width="5"/>
       </sce:peek-byte>
-      <sce:arm value="0x04" type="codec_zenoh_msg_reply" default="true"/>
-      <sce:arm value="0x05" type="codec_zenoh_msg_err"/>
-      <sce:default type="codec_zenoh_msg_reply"/>
+      <sce:arm value="0x04" type="codec_zenoh_reply" default="true"/>
+      <sce:arm value="0x05" type="codec_zenoh_err"/>
+      <sce:default type="codec_zenoh_reply"/>
     </sce:variant>
   </datamodel>
 </scxml>
