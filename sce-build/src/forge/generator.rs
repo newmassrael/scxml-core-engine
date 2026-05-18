@@ -1893,6 +1893,20 @@ fn render_codec(
                 };
                 let rs_literal = format!("0x{:0w$x}{}", acc, suffix_rust, w = hex_digits);
                 obj.insert("rs_flag_default_literal".into(), rs_literal.into());
+                // C++ default member initializer: `T id{0x02u};`. C++ has
+                // no Default trait — the equivalent of Rust's manual
+                // `impl Default` is a brace-enclosed init right on the
+                // field declaration. Suffix mirrors stdint typedef
+                // semantics (uint8_t accepts unsigned literals via the
+                // `u` suffix; widening occurs implicitly).
+                let cpp_literal = match f.sce_type.int_bit_width() {
+                    Some(8)  => format!("{{0x{:02x}u}}", acc),
+                    Some(16) => format!("{{0x{:04x}u}}", acc),
+                    Some(32) => format!("{{0x{:08x}u}}", acc),
+                    Some(64) => format!("{{0x{:016x}uLL}}", acc),
+                    _        => format!("{{0x{:02x}u}}", acc),
+                };
+                obj.insert("cpp_flag_default_init".into(), cpp_literal.into());
             }
 
             // RFC §5.B B1-δ present-if primitive: when the codec has
@@ -2803,6 +2817,19 @@ fn render_codec(
             variant_obj.insert(
                 "kt_zero_tag_literal".into(),
                 format!("0.{zero_method}()").into(),
+            );
+        }
+        // RFC variant-default-uniformity Atomic β: surface the index of
+        // the declared-default arm (the one marked `default="true"`) so
+        // language templates whose Default-equivalent is positional —
+        // e.g. C++ `std::variant`'s `std::in_place_index<N>{}` — can
+        // pick it without re-scanning the arm list. `None` when no arm
+        // is marked default; the template falls back to the language's
+        // natural default (first alternative for `std::variant`).
+        if let Some(idx) = v.arms.iter().position(|a| a.is_default) {
+            variant_obj.insert(
+                "default_arm_index".into(),
+                serde_json::Value::Number(idx.into()),
             );
         }
         variant_obj.insert("arms".into(), serde_json::Value::Array(arm_ctx));

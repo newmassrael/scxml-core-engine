@@ -4033,6 +4033,65 @@ fn forge_codec_default_marker_arm_b_emits_baked_default_rust() {
         .unwrap_or_else(|e| panic!("generated arm B source must parse as valid Rust: {e}"));
 }
 
+/// RFC variant-default-uniformity Atomic β (C++): the inner arm body
+/// codec with `<sce:flag value="0x02"/>` on its dispatch flag must
+/// emit a default member initializer `std::uint8_t header{0x02u}` so
+/// a freshly-constructed instance carries the wire-MID for its
+/// dispatch tag. C++'s analog of Rust's manual `impl Default` is a
+/// brace-init right on the field declaration.
+#[test]
+fn forge_codec_default_marker_arm_b_emits_baked_default_cpp() {
+    let scxml_path = resource_dir().join("codec_default_marker_arm_b.scxml");
+    let content = std::fs::read_to_string(&scxml_path)
+        .expect("codec_default_marker_arm_b.scxml must exist");
+    let output = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("codec_default_marker_arm_b"),
+        sce_build::generator::Language::Cpp,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .expect("forge codegen for arm B fixture must succeed (cpp)");
+    let (_, generated) = &output.files[0];
+    assert!(
+        generated.contains("header{0x02u}"),
+        "arm B's struct must declare `header` with a default member \
+         initializer `{{0x02u}}` (value=\"0x02\" shifted by bit=0). \
+         Generated source:\n{generated}"
+    );
+}
+
+/// RFC variant-default-uniformity Atomic β (C++): the outer codec's
+/// `body` `std::variant` member must use `std::in_place_index<N>{}`
+/// to select the declared default arm — `N` is the 0-based index of
+/// the arm marked `default="true"`. Without this, `std::variant`'s
+/// default constructor would pick the first alternative (arm A,
+/// index 0), and the round-trip dispatch would land in the wrong
+/// arm.
+#[test]
+fn forge_codec_variant_default_marker_outer_emits_declared_arm_cpp() {
+    let scxml_path = resource_dir().join("codec_variant_default_marker.scxml");
+    let content = std::fs::read_to_string(&scxml_path)
+        .expect("codec_variant_default_marker.scxml must exist");
+    let output = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("codec_variant_default_marker"),
+        sce_build::generator::Language::Cpp,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .expect("forge codegen for outer marker fixture must succeed (cpp)");
+    let (_, generated) = &output.files[0];
+    // Arm B is the second declared (index 1) — value=0x02 marked
+    // default="true". The outer body member must select index 1, not
+    // 0 (the legacy std::variant default).
+    assert!(
+        generated.contains("body{std::in_place_index<1>{}}"),
+        "outer body must use `std::in_place_index<1>{{}}` to select \
+         the declared-default arm B. Generated source:\n{generated}"
+    );
+}
+
 /// RFC variant-default-uniformity Atomic β (Rust): the outer codec's
 /// `*Variant::default()` must pick the arm marked `default="true"`
 /// (not the first declared arm). Combined with the inner manual

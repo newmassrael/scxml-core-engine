@@ -47,21 +47,22 @@ pub enum {{ struct_name }}Variant {
 {% endif %}
 }
 
-impl Default for {{ struct_name }}Variant {
-    fn default() -> Self {
-        // RFC variant-default-uniformity: pick the declared default
-        // arm (`<sce:arm default="true"/>`) when present so a
-        // freshly-constructed envelope round-trips byte-exactly
-        // through `encode() -> decode()` — pairs with the inner
-        // codec's `<sce:flag value=>`-baked `Default::default()` to
-        // close the dispatch loop. When no arm is marked default,
-        // fall back to the first declared arm (legacy behavior, kept
-        // for codecs that pre-date the marker).
 {% set ns = namespace(default_arm=none) %}
 {% for arm in variant.arms %}{% if arm.is_default %}{% set ns.default_arm = arm %}{% endif %}{% endfor %}
+impl Default for {{ struct_name }}Variant {
+    fn default() -> Self {
 {% if ns.default_arm %}
+        // RFC variant-default-uniformity: pick the declared default
+        // arm (`<sce:arm default="true"/>`) so a freshly-constructed
+        // envelope round-trips byte-exactly through `encode() ->
+        // decode()` — pairs with the inner codec's `<sce:flag value=>`
+        // -baked `Default::default()` to close the dispatch loop.
         Self::{{ ns.default_arm.variant_name }}({{ ns.default_arm.body_type }}::default())
 {% elif variant.arms %}
+        // Default to the first declared arm's body — every imported
+        // codec is `#[derive(Default)]`, so this is infallible. A
+        // freshly-constructed envelope is overwritten by `decode()` or
+        // by an explicit user assignment before any `encode()` call.
         Self::{{ variant.arms[0].variant_name }}({{ variant.arms[0].body_type }}::default())
 {% else %}
         Self::{{ variant.default_arm.variant_name }} {
@@ -77,8 +78,10 @@ impl Default for {{ struct_name }}Variant {
 // §6 codec). The kind-agnostic conformance harness only references a
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
 // trigger dead_code on every codec build.
-{% set ns = namespace(has_flag_default=false) %}
-{% for field in fields %}{% if field.rs_flag_default_literal is defined %}{% set ns.has_flag_default = true %}{% endif %}{% endfor %}
+{% set ns = namespace(has_flag_default=false) -%}
+{% for field in fields -%}
+{% if field.rs_flag_default_literal is defined %}{% set ns.has_flag_default = true %}{% endif -%}
+{% endfor -%}
 #[allow(dead_code)]
 {% if not ns.has_flag_default %}
 #[derive(Default)]
@@ -91,8 +94,8 @@ pub struct {{ struct_name }} {
     pub body: {{ struct_name }}Variant,
 {% endif %}
 }
-
 {% if ns.has_flag_default %}
+
 // RFC variant-default-uniformity Atomic β: at least one field's
 // `<sce:flags>` carrier declares a wire-MID constant via
 // `<sce:flag value="N"/>`. Manual `impl Default` bakes the OR of

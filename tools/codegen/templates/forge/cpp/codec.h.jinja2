@@ -55,10 +55,20 @@ using {{ struct_name }}Variant = std::variant<
 {% endif %}
 struct {{ struct_name }} {
 {% for field in fields %}
-    {{ field.cpp_type }} {{ field.id }};
+    {{ field.cpp_type }} {{ field.id }}{% if field.cpp_flag_default_init is defined %}{{ field.cpp_flag_default_init }}{% endif %};
 {% endfor %}
 {% if has_variant %}
+{% if variant.default_arm_index is defined %}
+    // RFC variant-default-uniformity Atomic β-cpp: the
+    // `std::in_place_index<N>{}` tag selects the arm marked
+    // `<sce:arm default="true"/>` by index so a freshly-constructed
+    // envelope holds that arm (not the first declared alternative
+    // which `std::variant`'s default constructor would otherwise
+    // pick), encoding its wire-MID for byte-exact round-trip.
+    {{ struct_name }}Variant body{std::in_place_index<{{ variant.default_arm_index }}>{}};
+{% else %}
     {{ struct_name }}Variant body;
+{% endif %}
 {% endif %}
 
     /// Decode the next frame from `cursor`. On success the cursor
