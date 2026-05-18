@@ -124,6 +124,8 @@
         "codec/tlv-chain-depth-unspecified",
         "codec/dma-alignment-unsatisfiable",
         "codec/parent-flag-mismatch",
+        "codec/parent-flag-chain-unresolved",
+        "codec/parent-flag-chain-bit-drift",
         "link/framer-missing",
         "link/link-class-unknown",
         "link/backpressure-undeclared",

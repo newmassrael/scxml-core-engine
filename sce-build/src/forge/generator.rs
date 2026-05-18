@@ -2254,7 +2254,12 @@ fn render_codec(
     // RFC §5.B B5-ν Phase B — locals block; `b5_nu_derivations` was
     // computed at the top of `compile_codec` so it could feed the
     // field-meta builder's per-field encode-block suffix injection.
-    let b5_nu_derivation_block_str = b5_nu_derivation_block(&b5_nu_derivations, lang);
+    // The block now threads `m` + `imports` so the C11 emitter can
+    // render `sce:present-if` predicates and every backend can look
+    // up `imp.type_name` for the embed's variant enum (consumer-
+    // parity Gap 2 + Gap 3 closure).
+    let b5_nu_derivation_block_str =
+        b5_nu_derivation_block(&b5_nu_derivations, m, imports, lang);
 
     // Apply B5-ν OR suffix to the encode_exprs simple-path emit. The
     // simple path is selected when the codec has no streaming-prefix
@@ -3365,6 +3370,40 @@ fn resolve_variant_arm_body_type(
 /// Imports without parsed model (failed enrichment) skip — the
 /// diagnostic that surfaces is the upstream parse/import error, not
 /// this layout check.
+/// RFC §5.B B5-γ × B5-ν consumer-parity — flag-carrier resolution
+/// source for a parent codec. The validator chains through:
+///
+/// * `Terminal` — parent has its own `<sce:flags id="X">` carrier.
+/// * `Forwarding` — parent declares `<sce:requires-parent-flags
+///   carrier="X">` and the chain continues upward at the grandparent.
+///
+/// `None` from `resolve_flag_layout_source` means the body's
+/// declared carrier is unresolved at this level (chain-unresolved
+/// diagnostic).
+enum FlagLayoutSource<'a> {
+    Terminal { carrier_field: &'a CodecField },
+    Forwarding(&'a RequiresParentFlags),
+}
+
+fn resolve_flag_layout_source<'a>(
+    parent: &'a CodecModel,
+    carrier_name: &str,
+) -> Option<FlagLayoutSource<'a>> {
+    if let Some(f) = parent
+        .fields
+        .iter()
+        .find(|f| f.id == carrier_name && f.is_flags_carrier())
+    {
+        return Some(FlagLayoutSource::Terminal { carrier_field: f });
+    }
+    if let Some(rpf) = parent.requires_parent_flags.as_ref() {
+        if rpf.carrier == carrier_name {
+            return Some(FlagLayoutSource::Forwarding(rpf));
+        }
+    }
+    None
+}
+
 fn validate_cross_codec_parent_flags(
     parent: &CodecModel,
     variant: &CodecVariant,
@@ -3401,77 +3440,131 @@ fn validate_cross_codec_parent_flags(
             })
         };
 
-        // (a) parent must have a field named `<carrier>`.
-        let carrier = match parent.fields.iter().find(|f| f.id == body_req.carrier) {
-            Some(f) => f,
+        let source = match resolve_flag_layout_source(parent, &body_req.carrier) {
+            Some(s) => s,
             None => {
-                let known: Vec<&str> = parent.fields.iter().map(|f| f.id.as_str()).collect();
-                return Err(mismatch(format!(
-                    "body declares <sce:requires-parent-flags carrier=\"{}\"> but \
-                     parent codec has no field named '{}' (known parent fields: \
-                     [{}])",
-                    body_req.carrier,
-                    body_req.carrier,
-                    known.join(", ")
-                )));
+                // Distinguish "field exists but wrong shape" (legacy
+                // case b) from "no source at all" (new chain-unresolved
+                // diagnostic). When parent has a non-flags field with
+                // the carrier name, the existing typed mismatch retains
+                // its precise repair guidance.
+                if let Some(plain) = parent.fields.iter().find(|f| f.id == body_req.carrier) {
+                    if !plain.is_flags_carrier() {
+                        return Err(mismatch(format!(
+                            "body declares <sce:requires-parent-flags carrier=\"{}\"> but \
+                             parent's '{}' is a plain field (not a <sce:flags> container) — \
+                             declare the carrier as <sce:flags id=\"{}\" sce:type=\"uint8\" \
+                             sce:byte=\"...\"> with named-bit children to expose its flags",
+                            body_req.carrier, body_req.carrier, body_req.carrier
+                        )));
+                    }
+                }
+                let known: Vec<&str> =
+                    parent.fields.iter().map(|f| f.id.as_str()).collect();
+                return Err(ForgeError::Validation(
+                    ValidationError::CodecParentFlagChainUnresolved {
+                        body_codec: body_codec_name.to_string(),
+                        parent_codec: parent_codec_name.to_string(),
+                        carrier: body_req.carrier.clone(),
+                        known_parent_fields: known.join(", "),
+                        parent_has_rpf: parent.requires_parent_flags.is_some(),
+                    },
+                ));
             }
         };
 
-        // (b) carrier must be a flags-bearing field of uint8 (v1 lock-in).
-        if !carrier.is_flags_carrier() {
-            return Err(mismatch(format!(
-                "body declares <sce:requires-parent-flags carrier=\"{}\"> but \
-                 parent's '{}' is a plain field (not a <sce:flags> container) — \
-                 declare the carrier as <sce:flags id=\"{}\" sce:type=\"uint8\" \
-                 sce:byte=\"...\"> with named-bit children to expose its flags",
-                body_req.carrier, body_req.carrier, body_req.carrier
-            )));
-        }
-        if !matches!(carrier.sce_type, SceType::Uint8) {
-            return Err(mismatch(format!(
-                "body declares <sce:requires-parent-flags carrier=\"{}\"> but \
-                 parent's '{}' is sce:type=\"{:?}\"; v1 fixes parent flag carrier \
-                 type at uint8 (Zenoh transport pattern — widening defers to a \
-                 reachable consumer)",
-                body_req.carrier, body_req.carrier, carrier.sce_type
-            )));
-        }
-
-        // (c) every body-declared flag must match parent's layout exactly.
-        for body_flag in &body_req.flags {
-            let parent_flag = match carrier.flags.iter().find(|f| f.name == body_flag.name) {
-                Some(f) => f,
-                None => {
-                    let known: Vec<&str> = carrier.flags.iter().map(|f| f.name.as_str()).collect();
+        // Per-source layout check. The Terminal arm additionally
+        // enforces v1's uint8 carrier-type lock-in; Forwarding defers
+        // the type check to the grandparent's own validation pass.
+        match source {
+            FlagLayoutSource::Terminal { carrier_field } => {
+                if !matches!(carrier_field.sce_type, SceType::Uint8) {
                     return Err(mismatch(format!(
-                        "body declares <sce:flag name=\"{}\" bit=\"{}\"/> but \
-                         parent's <sce:flags id=\"{}\"> has no flag named '{}' \
-                         (known flags: [{}])",
-                        body_flag.name,
-                        body_flag.bit,
-                        body_req.carrier,
-                        body_flag.name,
-                        known.join(", ")
+                        "body declares <sce:requires-parent-flags carrier=\"{}\"> but \
+                         parent's '{}' is sce:type=\"{:?}\"; v1 fixes parent flag carrier \
+                         type at uint8 (Zenoh transport pattern — widening defers to a \
+                         reachable consumer)",
+                        body_req.carrier, body_req.carrier, carrier_field.sce_type
                     )));
                 }
-            };
-            if parent_flag.bit != body_flag.bit {
-                return Err(mismatch(format!(
-                    "body declares <sce:flag name=\"{}\" bit=\"{}\"/> but parent's \
-                     <sce:flags id=\"{}\"> places '{}' at bit={} — fix one side \
-                     to align (the parent's bit position is the wire-format \
-                     truth)",
-                    body_flag.name,
-                    body_flag.bit,
-                    body_req.carrier,
-                    body_flag.name,
-                    parent_flag.bit
-                )));
+                for body_flag in &body_req.flags {
+                    let pf = match carrier_field
+                        .flags
+                        .iter()
+                        .find(|f| f.name == body_flag.name)
+                    {
+                        Some(f) => f,
+                        None => {
+                            let known: Vec<&str> =
+                                carrier_field.flags.iter().map(|f| f.name.as_str()).collect();
+                            return Err(mismatch(format!(
+                                "body declares <sce:flag name=\"{}\" bit=\"{}\"/> but \
+                                 parent's <sce:flags id=\"{}\"> has no flag named '{}' \
+                                 (known flags: [{}])",
+                                body_flag.name,
+                                body_flag.bit,
+                                body_req.carrier,
+                                body_flag.name,
+                                known.join(", ")
+                            )));
+                        }
+                    };
+                    if pf.bit != body_flag.bit {
+                        return Err(ForgeError::Validation(
+                            ValidationError::CodecParentFlagChainBitDrift {
+                                body_codec: body_codec_name.to_string(),
+                                parent_codec: parent_codec_name.to_string(),
+                                carrier: body_req.carrier.clone(),
+                                flag: body_flag.name.clone(),
+                                body_bit: body_flag.bit,
+                                parent_bit: pf.bit,
+                            },
+                        ));
+                    }
+                    // v1 single-bit only on the body side (parser
+                    // enforced width=1 in parse_requires_parent_flags);
+                    // the parent can have a wider declaration but the
+                    // body's bit-test still uses width=1, so width-
+                    // mismatch is not an error.
+                }
             }
-            // v1 single-bit only on the body side (parser enforced
-            // width=1 in parse_requires_parent_flags); the parent
-            // can have a wider declaration but the body's bit-test
-            // still uses width=1, so width-mismatch is not an error.
+            FlagLayoutSource::Forwarding(parent_rpf) => {
+                for body_flag in &body_req.flags {
+                    let pf = match parent_rpf
+                        .flags
+                        .iter()
+                        .find(|f| f.name == body_flag.name)
+                    {
+                        Some(f) => f,
+                        None => {
+                            let known: Vec<&str> =
+                                parent_rpf.flags.iter().map(|f| f.name.as_str()).collect();
+                            return Err(mismatch(format!(
+                                "body declares <sce:flag name=\"{}\" bit=\"{}\"/> but \
+                                 parent's forwarding <sce:requires-parent-flags carrier=\"{}\"> \
+                                 has no flag named '{}' (known forwarded flags: [{}])",
+                                body_flag.name,
+                                body_flag.bit,
+                                body_req.carrier,
+                                body_flag.name,
+                                known.join(", ")
+                            )));
+                        }
+                    };
+                    if pf.bit != body_flag.bit {
+                        return Err(ForgeError::Validation(
+                            ValidationError::CodecParentFlagChainBitDrift {
+                                body_codec: body_codec_name.to_string(),
+                                parent_codec: parent_codec_name.to_string(),
+                                carrier: body_req.carrier.clone(),
+                                flag: body_flag.name.clone(),
+                                body_bit: body_flag.bit,
+                                parent_bit: pf.bit,
+                            },
+                        ));
+                    }
+                }
+            }
         }
     }
     Ok(())
@@ -9285,11 +9378,11 @@ fn collect_b5_nu_derivations(
         // and Q-6 (carrier declared before the embedded field), so
         // this collector trusts the parent's flags-carrier exists and
         // the order is sound.
-        let (flag, (bit, width)) = match (
+        let (bit, width) = match (
             imp.codec_b5_nu_parent_tag_flag.as_ref(),
             imp.codec_b5_nu_parent_tag_bit_width,
         ) {
-            (Some(f), Some(bw)) => (f.clone(), bw),
+            (Some(_), Some(bw)) => bw,
             _ => continue,
         };
         if imp.codec_b5_nu_variant_arms.is_empty() {
@@ -9303,46 +9396,64 @@ fn collect_b5_nu_derivations(
         out.push(B5NuDerivation {
             embed_field_id: f.id.clone(),
             embed_alias: alias.clone(),
-            embed_type_pascal: filters::to_pascal_case(alias.clone()),
             carrier_field_id: carrier,
-            flag_name: flag,
             bit,
             width,
+            present_if: f.present_if.clone(),
             arms: imp.codec_b5_nu_variant_arms.clone(),
         });
     }
     out
 }
 
-/// RFC §5.B B5-ν Phase B — one (embed → carrier) derivation. A parent
-/// codec produces zero or more of these; carriers with multiple
-/// derivations are OR-combined into a single `_derived_<carrier>`
-/// local before the carrier byte is emitted.
+/// RFC §5.B B5-ν — one (embed → carrier) derivation. A parent codec
+/// produces zero or more of these; carriers with multiple derivations
+/// are OR-combined into a single `_derived_<carrier>` local before the
+/// carrier byte is emitted.
+///
+/// `embed_alias` is the lookup key into the parent's `ImportContext`
+/// list — the emitted variant enum type name lives in `imp.type_name`
+/// (the dispatcher codec's stem-derived PascalCase). This struct
+/// deliberately does NOT cache the resolved type name; emitters look
+/// up `imp.type_name` at emit time so the cross-codec naming path has
+/// a single source of truth.
+///
+/// When `present_if` is `Some(..)`, the parent embed field is gated by
+/// `sce:present-if`. Five backends (Rust/Cpp/Kotlin/Go/Python) wrap
+/// the encode-side match in their native Optional/nullable handling
+/// and read `present_if.is_some()` only. C11 (which encodes presence
+/// via a carrier flag bit, not a wrapper) renders the predicate
+/// through `present_if_test_literal_encode`. Absent embed → derived
+/// carrier bit = 0 (RFC §5.B B5-ν consumer-parity textbook rule).
 #[derive(Debug, Clone)]
 struct B5NuDerivation {
     embed_field_id: String,
-    #[allow(dead_code)]
     embed_alias: String,
-    embed_type_pascal: String,
     carrier_field_id: String,
-    #[allow(dead_code)]
-    flag_name: String,
     bit: u32,
     width: u32,
+    present_if: Option<PresentIfPredicate>,
     /// `(body_alias_snake, arm_value, is_default)` for each embedded
     /// variant arm in declaration order.
     arms: Vec<(String, u64, bool)>,
 }
 
-/// RFC §5.B B5-ν Phase B — emit per-language locals at the parent
-/// codec's `encode` entry that derive each carrier's B5-ν bits from
-/// the active embed-variant arm. Returns the empty string when the
-/// codec has no derivations; templates render the result verbatim.
+/// RFC §5.B B5-ν — emit per-language locals at the parent codec's
+/// `encode` entry that derive each carrier's B5-ν bits from the active
+/// embed-variant arm. Returns the empty string when the codec has no
+/// derivations; templates render the result verbatim.
+///
+/// `m` is the parent codec model — required so the C11 emitter can
+/// resolve `sce:present-if` predicates against the parent's flags
+/// fields via `present_if_test_literal_encode`. `imports` resolves the
+/// embed alias to the dispatcher codec's emitted PascalCase type name
+/// via `imp.type_name` (Gap 2 single-source-of-truth fix).
 fn b5_nu_derivation_block(
     derivations: &[B5NuDerivation],
+    m: &CodecModel,
+    imports: &[ImportContext],
     lang: crate::generator::Language,
 ) -> String {
-    use crate::generator::Language;
     if derivations.is_empty() {
         return String::new();
     }
@@ -9359,22 +9470,19 @@ fn b5_nu_derivation_block(
     }
     let mut out = String::new();
     for (carrier, items) in &by_carrier {
-        out.push_str(&b5_nu_derivation_local_for_carrier(carrier, items, lang));
-        if !matches!(lang, Language::Go | Language::C11) {
-            // Rust/Cpp/Kotlin/Python locals end with semicolon/newline
-            // already inside the helper; Go/C11 emit multi-line switch
-            // statements that close themselves.
-        }
+        out.push_str(&b5_nu_derivation_local_for_carrier(carrier, items, m, imports, lang));
     }
     out
 }
 
-/// RFC §5.B B5-ν Phase B — single carrier's derivation local. Joins
-/// each embed's shifted+masked arm value with bitwise OR so the
-/// parent's carrier field is patched in a single step.
+/// RFC §5.B B5-ν — single carrier's derivation local. Joins each
+/// embed's shifted+masked arm value with bitwise OR so the parent's
+/// carrier field is patched in a single step.
 fn b5_nu_derivation_local_for_carrier(
     carrier: &str,
     items: &[&B5NuDerivation],
+    m: &CodecModel,
+    imports: &[ImportContext],
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
@@ -9384,26 +9492,25 @@ fn b5_nu_derivation_local_for_carrier(
     let local_camel = format!("_derived{carrier_pascal}");
     match lang {
         Language::Rust => {
-            // Each item is an exhaustive `match &self.<embed>.body` over the
-            // embedded codec's variant. Multi-derivation carriers OR the
-            // per-embed terms; Rust accepts inline match expressions as
-            // operands of `|` so the local is a single `let ... = expr;`.
             let terms: Vec<String> = items
                 .iter()
-                .map(|d| b5_nu_match_term_rust(d))
+                .map(|d| b5_nu_match_term_rust(d, imports))
                 .collect();
             let joined = terms.join(" | ");
             format!("        let {local_rust}: u8 = {joined};\n")
         }
         Language::Cpp => {
-            let terms: Vec<String> = items.iter().map(|d| b5_nu_match_term_cpp(d)).collect();
+            let terms: Vec<String> = items
+                .iter()
+                .map(|d| b5_nu_match_term_cpp(d, imports))
+                .collect();
             let joined = terms.join(" | ");
             format!("        const std::uint8_t {local_rust} = static_cast<std::uint8_t>({joined});\n")
         }
         Language::Kotlin => {
             let terms: Vec<String> = items
                 .iter()
-                .map(|d| b5_nu_match_term_kotlin(d))
+                .map(|d| b5_nu_match_term_kotlin(d, imports))
                 .collect();
             // Kotlin uses Int arithmetic then narrows back to UByte for
             // the carrier OR; each term is already an `Int`, joined with
@@ -9417,14 +9524,14 @@ fn b5_nu_derivation_local_for_carrier(
             // carriers OR each switch result into the local sequentially.
             let mut block = format!("\tvar {local_camel} byte = 0\n");
             for d in items {
-                block.push_str(&b5_nu_switch_block_go(d, &local_camel));
+                block.push_str(&b5_nu_switch_block_go(d, &local_camel, imports));
             }
             block
         }
         Language::Python => {
             let terms: Vec<String> = items
                 .iter()
-                .map(|d| b5_nu_match_term_python(d))
+                .map(|d| b5_nu_match_term_python(d, imports))
                 .collect();
             let joined = terms.join(" | ");
             format!("        _derived_{carrier_snake} = {joined}\n")
@@ -9432,46 +9539,78 @@ fn b5_nu_derivation_local_for_carrier(
         Language::C11 => {
             // C11 has no expression-form switch; emit a switch per embed
             // that ORs into a pre-declared local. uint8_t carrier per
-            // v1 lock-in.
+            // v1 rpf lock-in.
             let mut block =
                 format!("    uint8_t _derived_{carrier_snake} = 0u;\n");
             for d in items {
-                block.push_str(&b5_nu_switch_block_c11(d, &format!("_derived_{carrier_snake}")));
+                block.push_str(&b5_nu_switch_block_c11(
+                    d,
+                    &format!("_derived_{carrier_snake}"),
+                    m,
+                    imports,
+                ));
             }
             block
         }
     }
 }
 
+/// Look up the dispatcher codec's emitted type name (the PascalCase
+/// stem) for a B5-ν embed alias. Panics on miss because the cross-doc
+/// validator (`validate_cross_codec_variant_parent_tag`) and the
+/// `collect_b5_nu_derivations` precondition together guarantee every
+/// derivation's alias resolves in `imports`.
+fn b5_nu_embed_pascal<'a>(d: &B5NuDerivation, imports: &'a [ImportContext]) -> &'a str {
+    imports
+        .iter()
+        .find(|i| i.alias == d.embed_alias)
+        .map(|i| i.type_name.as_str())
+        .expect("B5-ν embed alias must resolve in parent imports (cross-doc validator guarantees)")
+}
+
 /// Single-embed match-expression term for Rust. Result is a `u8`
 /// value carrying the shifted+masked bit pattern for the active arm.
-fn b5_nu_match_term_rust(d: &B5NuDerivation) -> String {
+/// When the parent field is `present-if`-gated, wraps the match in
+/// `Option` handling — the absent branch contributes 0 to the derived
+/// carrier bits.
+fn b5_nu_match_term_rust(d: &B5NuDerivation, imports: &[ImportContext]) -> String {
     let snake = filters::to_snake_case(d.embed_field_id.clone());
+    let embed_pascal = b5_nu_embed_pascal(d, imports);
     let mut arms = Vec::with_capacity(d.arms.len());
     let mask: u64 = (1u64 << d.width) - 1;
     for (alias, val, _) in &d.arms {
         let variant = filters::to_pascal_case(alias.clone());
         let shifted = ((val & mask) << d.bit) & 0xFF;
         arms.push(format!(
-            "{embed_pascal}Variant::{variant}(_) => 0x{shifted:02X}u8",
-            embed_pascal = d.embed_type_pascal,
-            variant = variant,
-            shifted = shifted,
+            "{embed_pascal}Variant::{variant}(_) => 0x{shifted:02X}u8"
         ));
     }
-    format!(
-        "match &self.{snake}.body {{ {} }}",
-        arms.join(", ")
-    )
+    let arms_str = arms.join(", ");
+    if d.present_if.is_some() {
+        format!(
+            "match &self.{snake} {{ Some(x) => match &x.body {{ {arms_str} }}, None => 0u8 }}"
+        )
+    } else {
+        format!("match &self.{snake}.body {{ {arms_str} }}")
+    }
 }
 
 /// Single-embed match-expression term for Cpp. Uses std::variant
 /// alternative index dispatch via a chained ternary so the result
-/// type is `std::uint8_t` without needing `std::visit` or
-/// overloaded helpers.
-fn b5_nu_match_term_cpp(d: &B5NuDerivation) -> String {
+/// type is `std::uint8_t` without needing `std::visit` or overloaded
+/// helpers. Optional embeds add a `has_value()` gate; absent → 0.
+fn b5_nu_match_term_cpp(d: &B5NuDerivation, imports: &[ImportContext]) -> String {
+    // imp lookup ensures the embed alias resolves (parity with the
+    // other backends); Cpp's variant dispatch is by `.index()` so the
+    // type name itself isn't spelled in the emit body.
+    let _ = b5_nu_embed_pascal(d, imports);
     let snake = filters::to_snake_case(d.embed_field_id.clone());
     let mask: u64 = (1u64 << d.width) - 1;
+    let body_access = if d.present_if.is_some() {
+        format!("(*{snake}).body.index()")
+    } else {
+        format!("{snake}.body.index()")
+    };
     let mut chain = String::new();
     for (idx, (_alias, val, _is_default)) in d.arms.iter().enumerate() {
         let shifted = ((val & mask) << d.bit) & 0xFF;
@@ -9480,37 +9619,49 @@ fn b5_nu_match_term_cpp(d: &B5NuDerivation) -> String {
             // Final arm is the fallthrough — saves one comparison.
             chain.push_str(&literal);
         } else {
-            chain.push_str(&format!("{snake}.body.index() == {idx} ? {literal} : "));
+            chain.push_str(&format!("{body_access} == {idx} ? {literal} : "));
         }
     }
-    // Wrap once so the outer `... | ...` chain in `b5_nu_derivation_local_for_carrier`
-    // composes without surprise precedence.
-    format!("({chain})")
+    if d.present_if.is_some() {
+        format!("({snake}.has_value() ? ({chain}) : static_cast<std::uint8_t>(0))")
+    } else {
+        // Wrap once so the outer `... | ...` chain in
+        // `b5_nu_derivation_local_for_carrier` composes without
+        // surprise precedence.
+        format!("({chain})")
+    }
 }
 
 /// Single-embed match-expression term for Kotlin. Uses `when` over the
-/// sealed variant body and produces an `Int` (the bit pattern).
-fn b5_nu_match_term_kotlin(d: &B5NuDerivation) -> String {
+/// sealed variant body and produces an `Int` (the bit pattern). For a
+/// nullable embed, safe-call + Elvis collapses the absent case to 0.
+fn b5_nu_match_term_kotlin(d: &B5NuDerivation, imports: &[ImportContext]) -> String {
     let snake = filters::to_snake_case(d.embed_field_id.clone());
+    let embed_pascal = b5_nu_embed_pascal(d, imports);
     let mask: u64 = (1u64 << d.width) - 1;
     let mut arms = Vec::with_capacity(d.arms.len());
     for (alias, val, _) in &d.arms {
         let variant = filters::to_pascal_case(alias.clone());
         let shifted = ((val & mask) << d.bit) & 0xFF;
         arms.push(format!(
-            "is {embed_pascal}Variant.{variant} -> 0x{shifted:02X}",
-            embed_pascal = d.embed_type_pascal,
-            variant = variant,
-            shifted = shifted,
+            "is {embed_pascal}Variant.{variant} -> 0x{shifted:02X}"
         ));
     }
-    format!("(when (this.{snake}.body) {{ {} }})", arms.join(" "))
+    let arms_str = arms.join(" ");
+    if d.present_if.is_some() {
+        format!("(this.{snake}?.body?.let {{ when (it) {{ {arms_str} }} }} ?: 0)")
+    } else {
+        format!("(when (this.{snake}.body) {{ {arms_str} }})")
+    }
 }
 
 /// Single-embed match-expression term for Python. Uses `isinstance`
 /// chained conditional expressions which mirror the Cpp ternary chain.
-fn b5_nu_match_term_python(d: &B5NuDerivation) -> String {
+/// Optional embeds add an `is not None` guard with 0 in the absent
+/// branch.
+fn b5_nu_match_term_python(d: &B5NuDerivation, imports: &[ImportContext]) -> String {
     let snake = filters::to_snake_case(d.embed_field_id.clone());
+    let embed_pascal = b5_nu_embed_pascal(d, imports);
     let mask: u64 = (1u64 << d.width) - 1;
     let mut chain = String::new();
     for (idx, (alias, val, _)) in d.arms.iter().enumerate() {
@@ -9521,51 +9672,81 @@ fn b5_nu_match_term_python(d: &B5NuDerivation) -> String {
             chain.push_str(&literal);
         } else {
             chain.push_str(&format!(
-                "({literal} if isinstance(self.{snake}.body, {embed}.{variant}) else ",
-                embed = d.embed_type_pascal,
+                "({literal} if isinstance(self.{snake}.body, {embed_pascal}.{variant}) else "
             ));
         }
     }
-    // Close the parens opened above (one per non-final arm).
     for _ in 0..d.arms.len().saturating_sub(1) {
         chain.push(')');
     }
-    format!("({chain})")
+    let inner = format!("({chain})");
+    if d.present_if.is_some() {
+        format!("({inner} if self.{snake} is not None else 0)")
+    } else {
+        inner
+    }
 }
 
 /// Single-embed type-switch for Go. Writes into the named local via
 /// bitwise OR so multiple embeds combine cleanly on the same carrier.
-fn b5_nu_switch_block_go(d: &B5NuDerivation, local: &str) -> String {
+/// Optional embeds nil-check the pointer field; nil → no contribution.
+fn b5_nu_switch_block_go(d: &B5NuDerivation, local: &str, imports: &[ImportContext]) -> String {
+    // imp lookup ensures the embed alias resolves (parity with the
+    // expression-form backends); Go's type-switch is on the body
+    // interface so the dispatcher's struct name isn't spelled here.
+    let _ = b5_nu_embed_pascal(d, imports);
     let pascal = filters::to_pascal_case(d.embed_field_id.clone());
     let mask: u64 = (1u64 << d.width) - 1;
-    let mut block = format!("\tswitch s.{pascal}.Body.(type) {{\n");
+    let mut switch_block = format!("\tswitch s.{pascal}.Body.(type) {{\n");
     for (alias, val, _) in &d.arms {
         let arm_pascal = filters::to_pascal_case(alias.clone());
         let shifted = ((val & mask) << d.bit) & 0xFF;
-        block.push_str(&format!(
+        switch_block.push_str(&format!(
             "\tcase *{arm_pascal}:\n\t\t{local} |= 0x{shifted:02X}\n"
         ));
     }
-    block.push_str("\t}\n");
-    block
+    switch_block.push_str("\t}\n");
+    if d.present_if.is_some() {
+        format!("\tif s.{pascal} != nil {{\n{switch_block}\t}}\n")
+    } else {
+        switch_block
+    }
 }
 
 /// Single-embed switch for C11. Mirrors the Go shape with the tagged-
-/// union `body.kind` discriminant.
-fn b5_nu_switch_block_c11(d: &B5NuDerivation, local: &str) -> String {
+/// union `body.kind` discriminant. C11 has no nullable wrapper for
+/// `present-if`-gated fields — presence is encoded by a carrier flag
+/// bit, so the gate test reuses `present_if_test_literal_encode`.
+fn b5_nu_switch_block_c11(
+    d: &B5NuDerivation,
+    local: &str,
+    m: &CodecModel,
+    imports: &[ImportContext],
+) -> String {
+    let embed_pascal = b5_nu_embed_pascal(d, imports);
     let snake = filters::to_snake_case(d.embed_field_id.clone());
     let mask: u64 = (1u64 << d.width) - 1;
-    let embed_upper = to_upper_snake(&d.embed_type_pascal);
-    let mut block = format!("    switch (self->{snake}.body.kind) {{\n");
+    let embed_upper = to_upper_snake(embed_pascal);
+    let mut switch_block = format!("    switch (self->{snake}.body.kind) {{\n");
     for (alias, val, _) in &d.arms {
         let arm_upper = to_upper_snake(alias);
         let shifted = ((val & mask) << d.bit) & 0xFF;
-        block.push_str(&format!(
+        switch_block.push_str(&format!(
             "    case {embed_upper}_BODY_KIND_{arm_upper}: {local} |= 0x{shifted:02X}u; break;\n"
         ));
     }
-    block.push_str("    default: break;\n    }\n");
-    block
+    switch_block.push_str("    default: break;\n    }\n");
+    if let Some(p) = &d.present_if {
+        let test = present_if_test_literal_encode(
+            &m.fields,
+            m.requires_parent_flags.as_ref(),
+            p,
+            crate::generator::Language::C11,
+        );
+        format!("    if ({test}) {{\n{switch_block}    }}\n")
+    } else {
+        switch_block
+    }
 }
 
 /// RFC §5.B B5-ν Phase B — given a codec's derivations, build a map

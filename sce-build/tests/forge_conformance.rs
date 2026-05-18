@@ -8963,15 +8963,27 @@ fn forge_codec_parent_flag_bit_mismatch_rejects() {
         &sce_build::ForgeCompileOptions::default(),
     );
     let err = match result {
-        Ok(_) => panic!("parent flag bit-mismatch must reject with codec/parent-flag-mismatch"),
+        Ok(_) => panic!(
+            "parent flag bit-mismatch must reject with codec/parent-flag-chain-bit-drift"
+        ),
         Err(e) => e,
     };
+    // RFC B5-ν consumer-parity (claudedocs/rfc-b5-nu-consumer-parity.md)
+    // unified Terminal + Forwarding bit-drift onto a single typed
+    // variant. The legacy CodecParentFlagMismatch path stays for
+    // wrong-shape / wrong-type / flag-name-not-found cases; pure bit-
+    // position divergence now routes to the chain-bit-drift variant.
     assert!(
         matches!(
             &err.error,
-            ForgeError::Validation(ValidationError::CodecParentFlagMismatch { .. })
+            ForgeError::Validation(ValidationError::CodecParentFlagChainBitDrift {
+                ref flag,
+                ref body_bit,
+                ref parent_bit,
+                ..
+            }) if flag == "S" && *body_bit == 6 && *parent_bit == 5
         ),
-        "must surface CodecParentFlagMismatch; got: {:?}",
+        "must surface CodecParentFlagChainBitDrift; got: {:?}",
         err.error
     );
 }
@@ -9591,5 +9603,515 @@ fn forge_b5_nu_parent_tag_variant_before_carrier_rejects() {
         "got: {:?}",
         err.error
     );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// RFC §5.B B5-ν consumer-parity (claudedocs/rfc-b5-nu-consumer-parity.md)
+// — three independent gaps surfaced by watching-zenoh R125c against
+// pin `b719ee3e`. Tests below pin the textbook closures:
+//
+// * Gap 2 (`forge_b5_nu_consumer_parity_alias_neq_stem_rust`) —
+//   parent imports the dispatcher with `as="renamed_alias"` distinct
+//   from the dispatcher's stem; the encode-side match must reference
+//   the dispatcher's stem-derived variant enum, not the alias's
+//   PascalCase. The Phase B regression `forge_b5_nu_round_trip_local_
+//   nonlocal_rust` happens to use `as == stem`, which masked this bug.
+//
+// * Gap 3 (`forge_b5_nu_consumer_parity_present_if_gated_rust`) —
+//   parent gates the dispatcher embed with `sce:present-if`; the
+//   encode-side derivation must wrap the match in `Option` handling
+//   (`if let Some` for Rust; absent → derived carrier bit = 0).
+//
+// * Gap 1 positive (`forge_b5_nu_consumer_parity_chain_forwarding_
+//   resolves`) — dispatcher itself has `<sce:requires-parent-flags>`
+//   forwarding the carrier; arm bodies' RPF must resolve against the
+//   forwarding source.
+//
+// * Gap 1 negatives (`..._chain_unresolved_rejects` +
+//   `..._chain_bit_drift_rejects`) — neither Terminal nor Forwarding
+//   covers the body's carrier (ChainUnresolved); Forwarding has the
+//   flag at a different bit than the body (ChainBitDrift).
+
+/// RFC B5-ν consumer-parity Gap 2 — alias ≠ stem at the parent's
+/// import. The dispatcher's stem (`b5nu_consumer_disp`) drives the
+/// emitted variant enum type (`B5nuConsumerDispVariant`); the parent
+/// imports it under `as="renamed_alias"`. Regression: Phase B's
+/// `embed_type_pascal: filters::to_pascal_case(alias.clone())` would
+/// have emitted `RenamedAliasVariant::...` — failing to compile.
+#[test]
+fn forge_b5_nu_consumer_parity_alias_neq_stem_rust() {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let dir = std::env::temp_dir().join(format!("sce_b5nu_alias_neq_stem_{pid}_{id}"));
+    std::fs::create_dir_all(&dir).expect("mkdir fixture");
+
+    let parent = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="b5nu_consumer_parent" sce:default-endian="big">
+  <sce:import src="b5nu_consumer_disp.scxml" kind="codec" as="renamed_alias"/>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="mid" bit="0" width="5" value="0x1d"/>
+      <sce:flag name="M" bit="6"/>
+    </sce:flags>
+    <sce:embed id="key" type="renamed_alias" sce:byte="1"/>
+  </datamodel>
+</scxml>"#;
+
+    let disp = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="b5nu_consumer_disp" sce:default-endian="big">
+  <sce:import src="b5nu_consumer_local.scxml" kind="codec" as="b5nu_consumer_local"/>
+  <sce:import src="b5nu_consumer_nonlocal.scxml" kind="codec" as="b5nu_consumer_nonlocal"/>
+  <sce:requires-parent-flags carrier="header">
+    <sce:flag name="M" bit="6"/>
+  </sce:requires-parent-flags>
+  <datamodel>
+    <sce:variant tag="parent.M">
+      <sce:arm value="0x00" type="b5nu_consumer_nonlocal" default="true"/>
+      <sce:arm value="0x01" type="b5nu_consumer_local"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#;
+
+    let local = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="b5nu_consumer_local" sce:default-endian="big">
+  <datamodel>
+    <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+  </datamodel>
+</scxml>"#;
+
+    let nonlocal = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="b5nu_consumer_nonlocal" sce:default-endian="big">
+  <datamodel>
+    <sce:field id="payload" sce:type="uint16" sce:byte="0" sce:bit-size="16"/>
+  </datamodel>
+</scxml>"#;
+
+    std::fs::write(dir.join("b5nu_consumer_parent.scxml"), parent).expect("write parent");
+    std::fs::write(dir.join("b5nu_consumer_disp.scxml"), disp).expect("write disp");
+    std::fs::write(dir.join("b5nu_consumer_local.scxml"), local).expect("write local");
+    std::fs::write(dir.join("b5nu_consumer_nonlocal.scxml"), nonlocal).expect("write nonlocal");
+
+    let output = sce_build::compile_forge_with_imports(
+        parent,
+        sce_build::DocumentLabel::symmetric("b5nu_consumer_parent"),
+        sce_build::generator::Language::Rust,
+        &dir,
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .expect("codegen must succeed when alias differs from dispatcher stem");
+
+    let parent_rust = output
+        .files
+        .iter()
+        .find(|(name, _)| name.contains("b5nu_consumer_parent"))
+        .map(|(_, body)| body.clone())
+        .expect("parent codec emit");
+
+    // The emit MUST reference the dispatcher's stem-derived variant
+    // enum (`B5nuConsumerDispVariant`), NOT the consumer's alias
+    // PascalCased (`RenamedAliasVariant`).
+    assert!(
+        parent_rust.contains("B5nuConsumerDispVariant::B5nuConsumerLocal(_) => 0x40u8"),
+        "match must use dispatcher's stem-derived variant enum name; \
+         got:\n{parent_rust}"
+    );
+    assert!(
+        parent_rust.contains("B5nuConsumerDispVariant::B5nuConsumerNonlocal(_) => 0x00u8"),
+        "match must reference Nonlocal arm via stem-derived enum; \
+         got:\n{parent_rust}"
+    );
+    assert!(
+        !parent_rust.contains("RenamedAliasVariant"),
+        "emit must NOT contain alias-derived `RenamedAliasVariant` \
+         (Gap 2 regression);\n{parent_rust}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// RFC B5-ν consumer-parity Gap 3 — parent gates the dispatcher embed
+/// with `sce:present-if`. Encode-side derivation wraps the match in
+/// `Option` handling; absent embed → derived carrier bit = 0
+/// (deterministic extension of derivation to the don't-care case).
+/// Regression: Phase B emitted `match &self.<f>.body { ... }`
+/// unconditionally — fails to compile when `<f>` is `Option<T>`.
+#[test]
+fn forge_b5_nu_consumer_parity_present_if_gated_rust() {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let dir = std::env::temp_dir().join(format!("sce_b5nu_present_if_{pid}_{id}"));
+    std::fs::create_dir_all(&dir).expect("mkdir fixture");
+
+    // Parent has header.R (presence gate) AND header.M (variant tag).
+    // The dispatcher embed `key` is gated by header.R; when R=0 the
+    // keyexpr field is absent on the wire, and the derived header
+    // contribution must default to 0 in the encode.
+    let parent = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="b5nu_consumer_gated_parent" sce:default-endian="big">
+  <sce:import src="b5nu_consumer_gated_disp.scxml" kind="codec" as="b5nu_consumer_gated_disp"/>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="R" bit="4"/>
+      <sce:flag name="M" bit="6"/>
+    </sce:flags>
+    <sce:embed id="key" type="b5nu_consumer_gated_disp" sce:byte="1" sce:present-if="header.R"/>
+  </datamodel>
+</scxml>"#;
+
+    let disp = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="b5nu_consumer_gated_disp" sce:default-endian="big">
+  <sce:import src="b5nu_consumer_gated_local.scxml" kind="codec" as="b5nu_consumer_gated_local"/>
+  <sce:import src="b5nu_consumer_gated_nonlocal.scxml" kind="codec" as="b5nu_consumer_gated_nonlocal"/>
+  <sce:requires-parent-flags carrier="header">
+    <sce:flag name="M" bit="6"/>
+  </sce:requires-parent-flags>
+  <datamodel>
+    <sce:variant tag="parent.M">
+      <sce:arm value="0x00" type="b5nu_consumer_gated_nonlocal" default="true"/>
+      <sce:arm value="0x01" type="b5nu_consumer_gated_local"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#;
+
+    let local = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="b5nu_consumer_gated_local" sce:default-endian="big">
+  <datamodel>
+    <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+  </datamodel>
+</scxml>"#;
+
+    let nonlocal = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="b5nu_consumer_gated_nonlocal" sce:default-endian="big">
+  <datamodel>
+    <sce:field id="payload" sce:type="uint16" sce:byte="0" sce:bit-size="16"/>
+  </datamodel>
+</scxml>"#;
+
+    std::fs::write(dir.join("b5nu_consumer_gated_parent.scxml"), parent).expect("write parent");
+    std::fs::write(dir.join("b5nu_consumer_gated_disp.scxml"), disp).expect("write disp");
+    std::fs::write(dir.join("b5nu_consumer_gated_local.scxml"), local).expect("write local");
+    std::fs::write(dir.join("b5nu_consumer_gated_nonlocal.scxml"), nonlocal).expect("write nonlocal");
+
+    let output = sce_build::compile_forge_with_imports(
+        parent,
+        sce_build::DocumentLabel::symmetric("b5nu_consumer_gated_parent"),
+        sce_build::generator::Language::Rust,
+        &dir,
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .expect("codegen must succeed when dispatcher embed is present-if-gated");
+
+    let parent_rust = output
+        .files
+        .iter()
+        .find(|(name, _)| name.contains("b5nu_consumer_gated_parent"))
+        .map(|(_, body)| body.clone())
+        .expect("parent codec emit");
+
+    // The match must wrap in Option handling — `Some(x) => match
+    // &x.body { ... }, None => 0u8`. Without the wrap the emit
+    // accesses `.body` on an Option<T> and fails to compile.
+    assert!(
+        parent_rust.contains("Some(x) => match &x.body"),
+        "match must wrap the present-if-gated embed in `Some(x) => match &x.body` \
+         pattern;\n{parent_rust}"
+    );
+    assert!(
+        parent_rust.contains("None => 0u8"),
+        "absent branch must contribute 0 to derived carrier bits \
+         (textbook absent → 0 rule);\n{parent_rust}"
+    );
+    // Defensive — Phase B's unconditional pattern must not appear.
+    assert!(
+        !parent_rust.contains("match &self.key.body {"),
+        "emit must NOT use the unconditional `match &self.key.body` shape \
+         (Gap 3 regression);\n{parent_rust}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// RFC B5-ν consumer-parity Gap 1 positive — dispatcher itself
+/// declares `<sce:requires-parent-flags>` forwarding the carrier; an
+/// arm body that consults a sibling parent flag (other than the
+/// variant tag flag) resolves against the dispatcher's forwarding
+/// source. Regression: Phase B's `validate_cross_codec_parent_flags`
+/// would have errored with the legacy "no field named X" message.
+#[test]
+fn forge_b5_nu_consumer_parity_chain_forwarding_resolves() {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let dir = std::env::temp_dir().join(format!("sce_b5nu_chain_pos_{pid}_{id}"));
+    std::fs::create_dir_all(&dir).expect("mkdir fixture");
+
+    // dispatcher forwards `header.{M, N}` to its arm bodies via its
+    // own RPF; the variant tag is M (parent.M), the auxiliary flag N
+    // is consulted by arm_a's body via the chain.
+    let dispatcher = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="b5nu_chain_disp" sce:default-endian="big">
+  <sce:import src="b5nu_chain_arm_a.scxml" kind="codec" as="b5nu_chain_arm_a"/>
+  <sce:import src="b5nu_chain_arm_b.scxml" kind="codec" as="b5nu_chain_arm_b"/>
+  <sce:requires-parent-flags carrier="header">
+    <sce:flag name="N" bit="5"/>
+    <sce:flag name="M" bit="6"/>
+  </sce:requires-parent-flags>
+  <datamodel>
+    <sce:variant tag="parent.M">
+      <sce:arm value="0x00" type="b5nu_chain_arm_b" default="true"/>
+      <sce:arm value="0x01" type="b5nu_chain_arm_a"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#;
+
+    // arm_a declares RPF for header.N — the parent (dispatcher) must
+    // satisfy this via its forwarding RPF.
+    let arm_a = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="b5nu_chain_arm_a" sce:default-endian="big">
+  <sce:requires-parent-flags carrier="header">
+    <sce:flag name="N" bit="5"/>
+  </sce:requires-parent-flags>
+  <datamodel>
+    <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8" sce:present-if="parent.N"/>
+  </datamodel>
+</scxml>"#;
+
+    let arm_b = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="b5nu_chain_arm_b" sce:default-endian="big">
+  <datamodel>
+    <sce:field id="payload" sce:type="uint16" sce:byte="0" sce:bit-size="16"/>
+  </datamodel>
+</scxml>"#;
+
+    std::fs::write(dir.join("b5nu_chain_disp.scxml"), dispatcher).expect("write disp");
+    std::fs::write(dir.join("b5nu_chain_arm_a.scxml"), arm_a).expect("write arm_a");
+    std::fs::write(dir.join("b5nu_chain_arm_b.scxml"), arm_b).expect("write arm_b");
+
+    // Cross-doc validator at the dispatcher level walks each arm
+    // body's RPF and resolves them against the dispatcher (parent).
+    // With the chain-aware validator, the Forwarding source covers
+    // arm_a's `header.N` need. Codegen for the dispatcher itself
+    // succeeds (independent of any grandparent's embedding).
+    let _ = sce_build::compile_forge_with_imports(
+        dispatcher,
+        sce_build::DocumentLabel::symmetric("b5nu_chain_disp"),
+        sce_build::generator::Language::Rust,
+        &dir,
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .expect("chain-forwarding source must resolve arm body's RPF");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// RFC B5-ν consumer-parity Gap 1 negative — neither parent's own
+/// `<sce:flags>` nor its `<sce:requires-parent-flags>` declares the
+/// carrier the arm body's RPF requires. ChainUnresolved fires.
+#[test]
+fn forge_b5_nu_consumer_parity_chain_unresolved_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let dir = std::env::temp_dir().join(format!("sce_b5nu_chain_unres_{pid}_{id}"));
+    std::fs::create_dir_all(&dir).expect("mkdir fixture");
+
+    // Dispatcher's own RPF declares ONLY `header.M` (the variant tag);
+    // arm_a's body needs `header.N`, which the dispatcher does not
+    // forward. The chain cannot resolve here.
+    let dispatcher = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="b5nu_chain_unres_disp" sce:default-endian="big">
+  <sce:import src="b5nu_chain_unres_arm_a.scxml" kind="codec" as="b5nu_chain_unres_arm_a"/>
+  <sce:import src="b5nu_chain_unres_arm_b.scxml" kind="codec" as="b5nu_chain_unres_arm_b"/>
+  <sce:requires-parent-flags carrier="header">
+    <sce:flag name="M" bit="6"/>
+  </sce:requires-parent-flags>
+  <datamodel>
+    <sce:variant tag="parent.M">
+      <sce:arm value="0x00" type="b5nu_chain_unres_arm_b" default="true"/>
+      <sce:arm value="0x01" type="b5nu_chain_unres_arm_a"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#;
+
+    let arm_a = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="b5nu_chain_unres_arm_a" sce:default-endian="big">
+  <sce:requires-parent-flags carrier="trailer">
+    <sce:flag name="X" bit="3"/>
+  </sce:requires-parent-flags>
+  <datamodel>
+    <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8" sce:present-if="parent.X"/>
+  </datamodel>
+</scxml>"#;
+
+    let arm_b = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="b5nu_chain_unres_arm_b" sce:default-endian="big">
+  <datamodel>
+    <sce:field id="payload" sce:type="uint16" sce:byte="0" sce:bit-size="16"/>
+  </datamodel>
+</scxml>"#;
+
+    std::fs::write(dir.join("b5nu_chain_unres_disp.scxml"), dispatcher).expect("write disp");
+    std::fs::write(dir.join("b5nu_chain_unres_arm_a.scxml"), arm_a).expect("write arm_a");
+    std::fs::write(dir.join("b5nu_chain_unres_arm_b.scxml"), arm_b).expect("write arm_b");
+
+    let err = match sce_build::compile_forge_with_imports(
+        dispatcher,
+        sce_build::DocumentLabel::symmetric("b5nu_chain_unres_disp"),
+        sce_build::generator::Language::Rust,
+        &dir,
+        &sce_build::ForgeCompileOptions::default(),
+    ) {
+        Ok(_) => panic!("validator must reject unresolved carrier chain"),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            err.error,
+            ForgeError::Validation(
+                ValidationError::CodecParentFlagChainUnresolved {
+                    ref body_codec,
+                    ref parent_codec,
+                    ref carrier,
+                    parent_has_rpf,
+                    ..
+                }
+            ) if body_codec == "b5nu_chain_unres_arm_a"
+                && parent_codec == "b5nu_chain_unres_disp"
+                && carrier == "trailer"
+                && parent_has_rpf
+        ),
+        "got: {:?}",
+        err.error
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// RFC B5-ν consumer-parity Gap 1 negative — dispatcher forwards the
+/// carrier but the flag's bit position diverges between body and
+/// forwarding RPF. ChainBitDrift fires (Forwarding-source path).
+#[test]
+fn forge_b5_nu_consumer_parity_chain_bit_drift_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let dir = std::env::temp_dir().join(format!("sce_b5nu_chain_drift_{pid}_{id}"));
+    std::fs::create_dir_all(&dir).expect("mkdir fixture");
+
+    // Dispatcher forwards `header.N` at bit=4; arm_a's RPF declares
+    // `header.N` at bit=5 — the body and parent layouts disagree.
+    let dispatcher = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="b5nu_chain_drift_disp" sce:default-endian="big">
+  <sce:import src="b5nu_chain_drift_arm_a.scxml" kind="codec" as="b5nu_chain_drift_arm_a"/>
+  <sce:import src="b5nu_chain_drift_arm_b.scxml" kind="codec" as="b5nu_chain_drift_arm_b"/>
+  <sce:requires-parent-flags carrier="header">
+    <sce:flag name="N" bit="4"/>
+    <sce:flag name="M" bit="6"/>
+  </sce:requires-parent-flags>
+  <datamodel>
+    <sce:variant tag="parent.M">
+      <sce:arm value="0x00" type="b5nu_chain_drift_arm_b" default="true"/>
+      <sce:arm value="0x01" type="b5nu_chain_drift_arm_a"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#;
+
+    let arm_a = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="b5nu_chain_drift_arm_a" sce:default-endian="big">
+  <sce:requires-parent-flags carrier="header">
+    <sce:flag name="N" bit="5"/>
+  </sce:requires-parent-flags>
+  <datamodel>
+    <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8" sce:present-if="parent.N"/>
+  </datamodel>
+</scxml>"#;
+
+    let arm_b = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="b5nu_chain_drift_arm_b" sce:default-endian="big">
+  <datamodel>
+    <sce:field id="payload" sce:type="uint16" sce:byte="0" sce:bit-size="16"/>
+  </datamodel>
+</scxml>"#;
+
+    std::fs::write(dir.join("b5nu_chain_drift_disp.scxml"), dispatcher).expect("write disp");
+    std::fs::write(dir.join("b5nu_chain_drift_arm_a.scxml"), arm_a).expect("write arm_a");
+    std::fs::write(dir.join("b5nu_chain_drift_arm_b.scxml"), arm_b).expect("write arm_b");
+
+    let err = match sce_build::compile_forge_with_imports(
+        dispatcher,
+        sce_build::DocumentLabel::symmetric("b5nu_chain_drift_disp"),
+        sce_build::generator::Language::Rust,
+        &dir,
+        &sce_build::ForgeCompileOptions::default(),
+    ) {
+        Ok(_) => panic!("validator must reject Forwarding-source bit drift"),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            err.error,
+            ForgeError::Validation(
+                ValidationError::CodecParentFlagChainBitDrift {
+                    ref body_codec,
+                    ref parent_codec,
+                    ref carrier,
+                    ref flag,
+                    body_bit,
+                    parent_bit,
+                }
+            ) if body_codec == "b5nu_chain_drift_arm_a"
+                && parent_codec == "b5nu_chain_drift_disp"
+                && carrier == "header"
+                && flag == "N"
+                && body_bit == 5
+                && parent_bit == 4
+        ),
+        "got: {:?}",
+        err.error
+    );
+
     let _ = std::fs::remove_dir_all(&dir);
 }

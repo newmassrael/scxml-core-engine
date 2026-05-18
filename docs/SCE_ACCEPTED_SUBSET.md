@@ -468,7 +468,7 @@ no typed interpretation or are explicitly excluded:
 
 ---
 
-## Appendix — `DiagnosticCode` index (283 codes)
+## Appendix — `DiagnosticCode` index (285 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -559,6 +559,8 @@ Codes that the author can avoid by writing a better SCXML /
 | `codec/tlv-chain-depth-unspecified` | Validation |
 | `codec/dma-alignment-unsatisfiable` | Validation |
 | `codec/parent-flag-mismatch` | Validation |
+| `codec/parent-flag-chain-unresolved` | Validation |
+| `codec/parent-flag-chain-bit-drift` | Validation |
 | `link/framer-missing` | Validation |
 | `link/link-class-unknown` | Validation |
 | `link/backpressure-undeclared` | Validation |
