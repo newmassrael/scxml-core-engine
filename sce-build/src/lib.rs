@@ -762,7 +762,25 @@ pub fn compile_forge_with_deploy(
                 )
             })?;
     let extern_decls = parsed.extern_declarations.clone();
-    let doc = parsed.document;
+    let mut doc = parsed.document;
+
+    // RFC variant-default-overlay Atomic A — apply deploy.yaml
+    // `variant_defaults:` onto the parsed IR before downstream
+    // validators see it. The overlay flips `<sce:arm>` `is_default`
+    // flags so the existing γ-3 `CodecVariantNoDefaultArm` validator
+    // and the codegen-time arm-selection logic see a single
+    // effective source of truth ("overlay if present, SCXML
+    // `default=\"true\"` otherwise"). When deploy is `None`, the
+    // SCXML's own `is_default` markers carry the choice unchanged —
+    // the 107 `compile_forge_with_imports` call sites compile
+    // identically.
+    if let Some(cfg) = deploy {
+        forge::variant_default_overlay::apply_variant_default_overlay(
+            &mut doc,
+            cfg,
+            label.diagnostic_label,
+        )?;
+    }
 
     // Watching-zenoh RFC §5.O Atomic 0c — forge IR provenance pre-emit
     // guard. Runs before deploy-aware validators so the wire payload

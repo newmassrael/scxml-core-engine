@@ -30,4 +30,5 @@ pub mod target_plugin;
 pub mod type_ctx;
 pub mod types;
 pub mod validate;
+pub mod variant_default_overlay;
 pub mod xsd_validator;

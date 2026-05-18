@@ -47,6 +47,7 @@ fn deploy_with_plugin(path: std::path::PathBuf) -> DeployConfig {
         extern_symbols: Some(ExternSymbolsConfig {
             target_plugin: Some(path),
         }),
+        variant_defaults: std::collections::BTreeMap::new(),
     }
 }
 
@@ -293,6 +294,7 @@ fn deploy_without_plugin_preserves_baseline_only_semantics() {
         partitions: None,
         distributability: None,
         extern_symbols: None,
+        variant_defaults: std::collections::BTreeMap::new(),
     };
 
     let scxml = fixture_transform_with_externs(

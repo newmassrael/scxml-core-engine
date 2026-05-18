@@ -247,6 +247,41 @@ across all devices (`mesh/deploy-duplicate-machine`). The
 referenced from `bindings:` follow the rules in §2.5 and must resolve
 in full (`mesh/external-unresolved-names`).
 
+#### §2.8.1 `variant_defaults:` (RFC variant-default-overlay Atomic A)
+
+Optional top-level map carrying per-codec default-arm overrides for
+`<sce:variant>` peek-byte dispatch. Wire-spec invariants (bit
+positions and `<sce:flag value=...>` MID constants) stay in the
+SCXML — they are shared by every consumer. The *choice* of which
+arm a freshly-constructed `Default::default()` dispatches to is
+per-consumer convention and lives here instead:
+
+```yaml
+variant_defaults:
+  codec_zenoh_request: 0x03    # client convention: query is the default
+  codec_zenoh_response: 0x04   # reply is the default response body
+```
+
+Resolution order at codegen time:
+1. If `variant_defaults` names the codec, the overlay value selects
+   the default arm. `<sce:arm value="V"/>` matching `V == overlay
+   value` becomes the Default-trait body; all peer arms have any
+   SCXML-side `default="true"` marker cleared.
+2. Otherwise the SCXML's own `<sce:arm default="true"/>` marker
+   selects the default arm (legacy Atomic α-γ path, unchanged).
+3. Otherwise `codec/variant-no-default-arm` fires at the cross-doc
+   gate (§5.B Atomic γ-3 contract).
+
+Overlay entries naming a value that no `<sce:arm value=...>`
+declares fire `codec/variant-default-overlay-arm-not-declared`;
+the `Fix::ReplaceOneOf` candidate set is the codec's declared
+arm values (sorted, hex-formatted).
+
+Backward-compat: deploy paths that omit `variant_defaults` (or
+omit a specific codec entry) preserve the SCXML's existing
+`default="true"` markers byte-identically. The 107 existing
+`compile_forge_with_imports` call sites (no deploy) are unaffected.
+
 ### §2.9 Composition extensions — `<sce:template>`
 
 `<sce:template>` / `<sce:use>` / `<sce:param>` add parameterised XML
@@ -380,7 +415,7 @@ no typed interpretation or are explicitly excluded:
 
 ---
 
-## Appendix — `DiagnosticCode` index (274 codes)
+## Appendix — `DiagnosticCode` index (279 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -460,6 +495,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `codec/variant-arm-mid-mismatch` | Validation |
 | `codec/variant-arm-inner-mid-undeclared` | Validation |
 | `codec/variant-no-default-arm` | Validation |
+| `codec/variant-default-overlay-arm-not-declared` | Validation |
 | `codec/present-if-refs-later-field` | Validation |
 | `codec/repeat-count-refs-later-field` | Validation |
 | `algorithm/test-vector-unsupported-kind` | Validation |

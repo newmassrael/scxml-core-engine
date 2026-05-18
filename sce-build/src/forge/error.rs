@@ -618,6 +618,40 @@ pub enum ValidationError {
     )]
     CodecVariantNoDefaultArm { codec: String },
 
+    /// RFC variant-default-overlay Atomic A: the `deploy.yaml`
+    /// `variant_defaults:` overlay names a codec and an arm value,
+    /// but the codec either has no `<sce:variant>` to dispatch over
+    /// (the overlay can't apply) or has a variant whose declared
+    /// `<sce:arm value="V"/>` set does not contain the overlay's
+    /// chosen value. Author resolves by aligning the overlay entry
+    /// with a declared arm value, or removing the overlay entry if
+    /// the codec is not meant to carry a per-consumer default
+    /// choice. The candidates axis lists every declared arm value
+    /// on the codec — empty when the codec has no variant at all.
+    #[error(
+        "codec '{codec}': deploy.yaml variant_defaults names arm value \
+         {overlay_arm_value:#x}, but the codec declares no matching <sce:arm value=...> — \
+         {declared_summary}; align the overlay entry with one of the declared values \
+         or remove it from variant_defaults",
+        declared_summary = if declared_arms.is_empty() {
+            "the codec has no <sce:variant> at all".to_string()
+        } else {
+            format!(
+                "declared arms: [{}]",
+                declared_arms
+                    .iter()
+                    .map(|v| format!("{v:#x}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        }
+    )]
+    CodecVariantDefaultOverlayArmNotDeclared {
+        codec: String,
+        overlay_arm_value: u64,
+        declared_arms: Vec<u64>,
+    },
+
     /// RFC §5.B present-if primitive (B1-δ): the predicate on a
     /// `sce:present-if` attribute references a field that is **not**
     /// declared earlier in the same codec — either declared later

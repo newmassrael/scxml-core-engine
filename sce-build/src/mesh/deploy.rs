@@ -89,6 +89,36 @@ pub struct DeployConfig {
     /// plugin authored for a future Atomic C without a schema bump.
     #[serde(default)]
     pub extern_symbols: Option<ExternSymbolsConfig>,
+
+    /// RFC variant-default-overlay Atomic A — consumer-shaped default
+    /// arm choice for `<sce:variant>` peek-byte dispatch.
+    ///
+    /// SCE-side SCXMLs declare wire-spec invariants only — the bit
+    /// positions and MID values of each codec's header are wire facts
+    /// shared by every consumer. But the *choice* of which arm a
+    /// freshly-constructed `Default::default()` instance dispatches to
+    /// is a per-consumer convention: a zenoh client may default a
+    /// request to query (0x03), a zenoh router may default to push
+    /// (0x1d), and neither choice contradicts the wire spec.
+    ///
+    /// `variant_defaults` carries this per-codec convention out of the
+    /// SCXML and into the deploy overlay. Map keys are codec names
+    /// (matching the SCXML root `name="..."`); values are the chosen
+    /// arm's discriminator value (matching a declared `<sce:arm
+    /// value="X"/>`).
+    ///
+    /// Resolution order at codegen time:
+    ///   1. If `variant_defaults` names this codec, that arm wins.
+    ///   2. Otherwise the SCXML's `<sce:arm default="true"/>` marker
+    ///      wins (Atomic α-γ legacy path — unchanged).
+    ///   3. Otherwise `codec/variant-no-default-arm` fires.
+    ///
+    /// Codec names listed here that do not exist in the doc set fire
+    /// `codec/variant-default-overlay-codec-not-found` at deploy
+    /// validation time. Absent ⇒ legacy path only, all existing
+    /// fixtures and consumers compile unchanged.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub variant_defaults: BTreeMap<String, u64>,
 }
 
 /// `extern_symbols:` block in deploy.yaml. Atomic B carries one

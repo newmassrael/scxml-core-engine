@@ -585,6 +585,15 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/variant-arm-inner-mid-undeclared")]
     CodecVariantArmInnerMidUndeclared,
 
+    // ── RFC variant-default-overlay Atomic A: deploy.yaml
+    //    `variant_defaults:` names a codec + arm value, but the codec
+    //    has no <sce:variant> or its declared arms do not include the
+    //    overlay value. Stage = Validation. Fix carries the declared
+    //    arm value list as candidates so authors see what the legal
+    //    choices are. ──
+    #[serde(rename = "codec/variant-default-overlay-arm-not-declared")]
+    CodecVariantDefaultOverlayArmNotDeclared,
+
     // ── RFC variant-default-uniformity Atomic γ-3 (Q-V4 (a)): every
     //    `<sce:variant>` must declare an `<sce:arm default="true"/>`
     //    marker. Without it codegen would silently re-introduce the
@@ -2229,6 +2238,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CodecVariantArmInnerMidUndeclared,
         // RFC variant-default-uniformity Atomic γ-3 — every variant must mark a default arm
         CodecVariantNoDefaultArm,
+        // RFC variant-default-overlay Atomic A — deploy.yaml overlay names an undeclared arm
+        CodecVariantDefaultOverlayArmNotDeclared,
         // Codec §5.B present-if primitive (watching-zenoh RFC §5.B, B1-δ)
         CodecPresentIfRefsLaterField,
         // Codec §5.B repeat primitive (watching-zenoh RFC §5.B, B2)
@@ -2592,6 +2603,7 @@ impl DiagnosticCode {
             | CodecVariantArmMidMismatch
             | CodecVariantArmInnerMidUndeclared
             | CodecVariantNoDefaultArm
+            | CodecVariantDefaultOverlayArmNotDeclared
             | CodecPresentIfRefsLaterField
             | CodecRepeatCountRefsLaterField
             | AlgorithmTestVectorUnsupportedKind
@@ -3098,6 +3110,9 @@ impl DiagnosticCode {
             CodecVariantArmMidMismatch => "codec/variant-arm-mid-mismatch",
             CodecVariantArmInnerMidUndeclared => "codec/variant-arm-inner-mid-undeclared",
             CodecVariantNoDefaultArm => "codec/variant-no-default-arm",
+            CodecVariantDefaultOverlayArmNotDeclared => {
+                "codec/variant-default-overlay-arm-not-declared"
+            }
             CodecPresentIfRefsLaterField => "codec/present-if-refs-later-field",
             CodecRepeatCountRefsLaterField => "codec/repeat-count-refs-later-field",
             AlgorithmTestVectorUnsupportedKind => "algorithm/test-vector-unsupported-kind",
@@ -4295,6 +4310,34 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: Some(codec.clone()),
             fix: None,
             key_fragments: vec![codec.clone()],
+        },
+        ValidationError::CodecVariantDefaultOverlayArmNotDeclared {
+            codec,
+            overlay_arm_value,
+            declared_arms,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CodecVariantDefaultOverlayArmNotDeclared,
+            stage: Stage::Validation,
+            // Repair is "pick one of the declared arm values for the
+            // overlay entry" — closed candidate set (FixCarriesCandidates
+            // class). The candidate axis is the codec's declared arm
+            // values sorted, surfaced via `fix: Some(ReplaceOneOf)` so
+            // tooling can offer them as a typed pick list. Empty list
+            // when the codec has no variant at all — in that case the
+            // candidate set degenerates to "remove the overlay entry".
+            expected: Some(vec![format!("{overlay_arm_value:#x}")]),
+            actual: Some(codec.clone()),
+            fix: if declared_arms.is_empty() {
+                None
+            } else {
+                Some(Fix::ReplaceOneOf {
+                    candidates: declared_arms
+                        .iter()
+                        .map(|v| format!("{v:#x}"))
+                        .collect(),
+                })
+            },
+            key_fragments: vec![codec.clone(), format!("{overlay_arm_value:#x}")],
         },
         ValidationError::CodecVariantArmInnerMidUndeclared {
             codec,
@@ -7830,6 +7873,17 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:9778351f6ba08771","code":"codec/variant-no-default-arm","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': <sce:variant> declares no <sce:arm default=\"true\"/> — every variant must mark one arm as the deliberate Default-trait starting value so codegen does not implicitly pick the first declared arm; add default=\"true\" to the intended arm. (The catch-all <sce:default> element is a separate concept and does not satisfy this requirement.)","actual":"session_envelope"}"#,
             ),
+            // ── RFC variant-default-overlay Atomic A — deploy.yaml overlay ─
+            (
+                "forge/codec-variant-default-overlay-arm-not-declared",
+                ValidationError::CodecVariantDefaultOverlayArmNotDeclared {
+                    codec: "session_envelope".into(),
+                    overlay_arm_value: 0xff,
+                    declared_arms: vec![0x01, 0x02, 0x03],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:eeb51f3d4f6560b6","code":"codec/variant-default-overlay-arm-not-declared","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': deploy.yaml variant_defaults names arm value 0xff, but the codec declares no matching <sce:arm value=...> — declared arms: [0x1, 0x2, 0x3]; align the overlay entry with one of the declared values or remove it from variant_defaults","expected":["0xff"],"actual":"session_envelope","fix":{"kind":"replace_one_of","candidates":["0x1","0x2","0x3"]}}"#,
+            ),
             // ── §5.B present-if primitive (watching-zenoh RFC §5.B, B1-δ) ─
             (
                 "forge/codec-present-if-refs-later-field",
@@ -9821,7 +9875,16 @@ mod tests {
             //    closed set is the smallest legal FixCarriesCandidates
             //    case but the choice surface (which of two sites to
             //    rename) is real, not a degenerate dropdown.
-            | TraceabilityStateIdCollision => FixCarriesCandidates,
+            | TraceabilityStateIdCollision
+            // ── RFC variant-default-overlay Atomic A — closed set =
+            //    the codec's declared `<sce:arm value=...>` values
+            //    (sorted, hex-formatted). Author replaces their
+            //    overlay entry with one of these or removes the
+            //    entry. Degenerate empty-set case (codec has no
+            //    variant) drops `fix` to `None` per-instance; the
+            //    code-level class stays FixCarriesCandidates since
+            //    the dominant case carries the closed set.
+            | CodecVariantDefaultOverlayArmNotDeclared => FixCarriesCandidates,
 
             // ── `expected` carries non-repair metadata ────────
             ExpressionParseMismatch | MeshExternalAmbiguousEventGroup => ExpectedIsMetadata,
@@ -10541,6 +10604,7 @@ mod tests {
                 | CodecVariantArmMidMismatch
                 | CodecVariantArmInnerMidUndeclared
                 | CodecVariantNoDefaultArm
+                | CodecVariantDefaultOverlayArmNotDeclared
                 | CodecPresentIfRefsLaterField
                 | CodecRepeatCountRefsLaterField
                 | AlgorithmTestVectorUnsupportedKind
@@ -10725,7 +10789,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            278,
+            279,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries —\
              expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \

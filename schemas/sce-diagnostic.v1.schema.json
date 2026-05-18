@@ -113,6 +113,7 @@
         "codec/variant-arm-mid-mismatch",
         "codec/variant-arm-inner-mid-undeclared",
         "codec/variant-no-default-arm",
+        "codec/variant-default-overlay-arm-not-declared",
         "codec/present-if-refs-later-field",
         "codec/repeat-count-refs-later-field",
         "algorithm/test-vector-unsupported-kind",

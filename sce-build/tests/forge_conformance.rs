@@ -9021,3 +9021,175 @@ fn rust_golden_syn_gate() {
     }
 }
 
+// ────────────────────────────────────────────────────────────────────
+// RFC variant-default-overlay Atomic A — deploy.yaml-overrides-SCXML
+// tests.
+//
+// The wire-spec invariants (bit positions, MID values) stay in the
+// SCXML; the *choice* of which arm a default-constructed instance
+// dispatches to moves into the deploy overlay so consumers pick
+// their own default without forking the codec. These tests exercise
+// the three observable outcomes:
+//
+//   1. Overlay names a codec + valid arm value → that arm becomes
+//      the Default-trait starting arm, overriding any SCXML-side
+//      `default="true"` marker.
+//   2. Overlay is absent (compile-without-deploy path) → SCXML's
+//      own `default="true"` marker carries the choice unchanged.
+//      Preserves backward compat for the 107 existing
+//      `compile_forge_with_imports` call sites.
+//   3. Overlay names a value that no `<sce:arm value=...>` declares
+//      → `codec/variant-default-overlay-arm-not-declared` fires
+//      with a `Fix::ReplaceOneOf` carrying the declared arm values.
+// ────────────────────────────────────────────────────────────────────
+
+/// Build a minimal deploy YAML carrying only `variant_defaults:`.
+/// `topology: {}` is the smallest legal value (HashMap<_, _>::new()
+/// shape) — overlay-only tests do not need machines/platforms.
+fn deploy_with_variant_defaults(entries: &[(&str, u64)]) -> String {
+    let mut yaml = String::from("version: \"1.0\"\ntopology: {}\nvariant_defaults:\n");
+    for (codec, arm_value) in entries {
+        yaml.push_str(&format!("  {codec}: {arm_value:#x}\n"));
+    }
+    yaml
+}
+
+/// Compile `codec_variant_default_marker` with no deploy overlay —
+/// the SCXML's `<sce:arm value="0x02" default="true"/>` marker is
+/// the only signal. The generated Rust output bakes 0x02 into the
+/// `Default::default()` call site for the outer codec's variant.
+#[test]
+fn forge_variant_default_overlay_absent_falls_back_to_scxml_marker() {
+    let scxml_path = resource_dir().join("codec_variant_default_marker.scxml");
+    let content = std::fs::read_to_string(&scxml_path).expect("read fixture");
+
+    let output = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("codec_variant_default_marker"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .expect("compile without deploy must succeed — SCXML marker is sole signal");
+
+    let (_, generated) = &output.files[0];
+    // The SCXML marker picks arm 0x02 (codec_default_marker_arm_b)
+    // as Default. Verify the generated Default impl references arm_b's
+    // body type — the C++/Kotlin equivalent literals would also work,
+    // but the Rust template emits `CodecDefaultMarkerArmB::default()`
+    // verbatim in the variant's Default impl.
+    assert!(
+        generated.contains("CodecDefaultMarkerArmB"),
+        "SCXML default marker selects arm 0x02 (arm_b); generated code must \
+         reference CodecDefaultMarkerArmB. Output excerpt:\n{}",
+        &generated[..generated.len().min(2000)]
+    );
+}
+
+/// Parse `codec_variant_default_marker` and apply a deploy overlay
+/// picking arm 0x01. Verify the parsed IR's `is_default` flag flips
+/// from the SCXML-declared arm (0x02) to the overlay-declared arm
+/// (0x01). This bypasses codegen so the test doesn't need the
+/// orchestrator-level import resolution — the overlay step is
+/// itself an IR mutation and is observable at the parser exit.
+#[test]
+fn forge_variant_default_overlay_overrides_scxml_marker() {
+    use sce_build::forge::model::ForgeDocument;
+    use sce_build::forge::parser::parse_forge_with_imports;
+    use sce_build::forge::variant_default_overlay::apply_variant_default_overlay;
+    use sce_build::mesh::deploy::parse_deploy_str;
+
+    let scxml_path = resource_dir().join("codec_variant_default_marker.scxml");
+    let content = std::fs::read_to_string(&scxml_path).expect("read fixture");
+
+    let mut parsed = parse_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("codec_variant_default_marker"),
+    )
+    .expect("parse succeeds")
+    .expect("forge document parsed");
+
+    // SCXML side baseline: arm 0x02 carries `default="true"`.
+    {
+        let variant = match &parsed.document {
+            ForgeDocument::Codec(c) => c.variant.as_ref().expect("codec has variant"),
+            _ => panic!("expected codec document"),
+        };
+        let arm_a = variant.arms.iter().find(|a| a.value == 0x01).unwrap();
+        let arm_b = variant.arms.iter().find(|a| a.value == 0x02).unwrap();
+        assert!(!arm_a.is_default, "pre-overlay: arm_a (0x01) not default");
+        assert!(arm_b.is_default, "pre-overlay: arm_b (0x02) is default");
+    }
+
+    let deploy_yaml = deploy_with_variant_defaults(&[("codec_variant_default_marker", 0x01)]);
+    let deploy = parse_deploy_str(&deploy_yaml).expect("deploy parses");
+
+    apply_variant_default_overlay(
+        &mut parsed.document,
+        &deploy,
+        "codec_variant_default_marker",
+    )
+    .expect("overlay applies cleanly when arm value is declared");
+
+    // Post-overlay: arm_a (0x01) becomes default, arm_b (0x02) loses
+    // its SCXML-side default flag.
+    let variant = match &parsed.document {
+        ForgeDocument::Codec(c) => c.variant.as_ref().expect("codec still has variant"),
+        _ => panic!("expected codec document"),
+    };
+    let arm_a = variant.arms.iter().find(|a| a.value == 0x01).unwrap();
+    let arm_b = variant.arms.iter().find(|a| a.value == 0x02).unwrap();
+    assert!(
+        arm_a.is_default,
+        "overlay 0x01 must set is_default on arm_a"
+    );
+    assert!(
+        !arm_b.is_default,
+        "overlay 0x01 must clear is_default on arm_b (SCXML marker overridden)"
+    );
+}
+
+/// Compile `codec_variant_default_marker` with a deploy overlay whose
+/// arm value is not declared by any `<sce:arm value=...>` —
+/// `codec/variant-default-overlay-arm-not-declared` fires with the
+/// declared arm values as a `Fix::ReplaceOneOf` candidate set.
+#[test]
+fn forge_variant_default_overlay_unknown_arm_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+    use sce_build::mesh::deploy::parse_deploy_str;
+
+    let scxml_path = resource_dir().join("codec_variant_default_marker.scxml");
+    let content = std::fs::read_to_string(&scxml_path).expect("read fixture");
+
+    // 0xff is not declared by any arm — the codec's variant only
+    // names 0x01 and 0x02.
+    let deploy_yaml = deploy_with_variant_defaults(&[("codec_variant_default_marker", 0xff)]);
+    let deploy = parse_deploy_str(&deploy_yaml).expect("deploy parses");
+
+    let result = sce_build::compile_forge_with_deploy(
+        &content,
+        sce_build::DocumentLabel::symmetric("codec_variant_default_marker"),
+        sce_build::generator::Language::Rust,
+        Some(&deploy),
+        None,
+    );
+    let err = match result {
+        Ok(_) => panic!("overlay names arm value 0xff that no <sce:arm> declares — must reject"),
+        Err(e) => e,
+    };
+
+    assert!(
+        matches!(
+            err.error,
+            ForgeError::Validation(ValidationError::CodecVariantDefaultOverlayArmNotDeclared {
+                ref codec,
+                overlay_arm_value: 0xff,
+                ref declared_arms,
+            }) if codec == "codec_variant_default_marker"
+                && declared_arms == &[0x01u64, 0x02u64]
+        ),
+        "must surface as ValidationError::CodecVariantDefaultOverlayArmNotDeclared \
+         with declared_arms = [0x01, 0x02]; got: {:?}",
+        err.error
+    );
+}
