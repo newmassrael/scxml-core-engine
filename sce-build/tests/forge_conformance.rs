@@ -9735,6 +9735,16 @@ fn forge_b5_nu_consumer_parity_alias_neq_stem_rust() {
         "emit must NOT contain alias-derived `RenamedAliasVariant` \
          (Gap 2 regression);\n{parent_rust}"
     );
+    // RFC B5-ν dispatcher-self-gen Gap 6 — when the imported codec is
+    // a B5-ν dispatcher, the `use` statement must brace-list both the
+    // struct and the variant enum so the consumer's encode-match
+    // resolves at rustc-time. Phase B / atomic 11287248 emitted only
+    // the struct import.
+    assert!(
+        parent_rust.contains("use super::b5nu_consumer_disp::{B5nuConsumerDisp, B5nuConsumerDispVariant};"),
+        "use statement must brace-list both the struct and Variant enum; \
+         got:\n{parent_rust}"
+    );
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -9919,7 +9929,7 @@ fn forge_b5_nu_consumer_parity_chain_forwarding_resolves() {
     // With the chain-aware validator, the Forwarding source covers
     // arm_a's `header.N` need. Codegen for the dispatcher itself
     // succeeds (independent of any grandparent's embedding).
-    let _ = sce_build::compile_forge_with_imports(
+    let output = sce_build::compile_forge_with_imports(
         dispatcher,
         sce_build::DocumentLabel::symmetric("b5nu_chain_disp"),
         sce_build::generator::Language::Rust,
@@ -9927,6 +9937,40 @@ fn forge_b5_nu_consumer_parity_chain_forwarding_resolves() {
         &sce_build::ForgeCompileOptions::default(),
     )
     .expect("chain-forwarding source must resolve arm body's RPF");
+
+    // RFC B5-ν dispatcher-self-gen Gap 4 + 5 — the dispatcher's own
+    // generated decode/encode must pass `parent_flags` (the dispatcher's
+    // function parameter) to arm bodies, NOT a bare `header` identifier
+    // (which would reference a nonexistent local at decode and a
+    // nonexistent field at encode).
+    let disp_rust = output
+        .files
+        .iter()
+        .find(|(name, _)| name.contains("b5nu_chain_disp"))
+        .map(|(_, body)| body.clone())
+        .expect("dispatcher codec emit");
+    // Decode site (Gap 4): arm body's decode receives parent_flags.
+    assert!(
+        disp_rust.contains("B5nuChainArmA::decode(cursor, parent_flags)"),
+        "dispatcher decode must pass `parent_flags` to arm_a; got:\n{disp_rust}"
+    );
+    assert!(
+        !disp_rust.contains("B5nuChainArmA::decode(cursor, header)"),
+        "dispatcher decode must NOT pass bare `header` (Gap 4 regression);\n{disp_rust}"
+    );
+    // Encode site (Gap 5): arm body's encode invocation reads
+    // parent_flags from the dispatcher's encode parameter, NOT
+    // `self.header` (no such field on the Forwarding dispatcher).
+    assert!(
+        disp_rust.contains("b.encode(parent_flags)"),
+        "dispatcher encode must pass `parent_flags` to arm body; \
+         got:\n{disp_rust}"
+    );
+    assert!(
+        !disp_rust.contains("b.encode(self.header)"),
+        "dispatcher encode must NOT reference `self.header` \
+         (no such field on Forwarding dispatcher; Gap 5 regression);\n{disp_rust}"
+    );
 
     let _ = std::fs::remove_dir_all(&dir);
 }

@@ -2699,74 +2699,42 @@ fn render_codec(
                     .find(|i| i.alias == arm.body_alias)
                     .and_then(|i| i.codec_requires_parent_flags.as_ref())
                     .map(|r| r.carrier.clone());
+                // RFC §5.B B5-γ × B5-ν dispatcher-self-gen — the
+                // substitution branches on whether THIS parent codec
+                // (the dispatcher) resolves the carrier as a Terminal
+                // `<sce:flags>` field or as a Forwarding
+                // `<sce:requires-parent-flags>`. Terminal: read from
+                // local (decode) / struct receiver (encode). Forwarding:
+                // read from the dispatcher's own `parent_flags` /
+                // `parentFlags` parameter — there is no local nor field
+                // with the carrier id on the dispatcher. Cross-doc
+                // validator (chain-unresolved) already gates the
+                // None case at parse time, so emit trusts the resolver.
+                let body_parent_flags_source = body_parent_flags_carrier
+                    .as_ref()
+                    .and_then(|c| resolve_flag_layout_source(m, c.as_str()))
+                    .map(|s| matches!(s, FlagLayoutSource::Forwarding(_)));
                 let body_parent_flags_arg = body_parent_flags_carrier
                     .as_ref()
-                    .map(|c| match lang {
-                        // Rust / Cpp / Kotlin: the just-decoded local
-                        // matches the snake_case carrier id verbatim,
-                        // so a bare id reads correctly at the call site.
-                        crate::generator::Language::Rust
-                        | crate::generator::Language::Cpp
-                        | crate::generator::Language::Kotlin => format!(", {}", c),
-                        // Go: the just-decoded prefix-field local is
-                        // PascalCase (`Header := raw[0]`) — the variant
-                        // arm decode site reads from that same local, so
-                        // the carrier id needs the PascalCase conversion.
-                        crate::generator::Language::Go => {
-                            format!(", {}", filters::to_pascal_case(c.clone()))
-                        }
-                        // C11: prefix-field decode writes directly into
-                        // `out->{snake_carrier}` (no separate local), so
-                        // the variant arm dispatcher reads the
-                        // just-written value from the same path.
-                        crate::generator::Language::C11 => {
-                            format!(", out->{}", filters::to_snake_case(c.clone()))
-                        }
-                        // Python: the just-decoded local at line
-                        // `{{ field.id }} = {{ field.decode_expr }}` is
-                        // snake_case — bare id reads correctly.
-                        crate::generator::Language::Python => {
-                            format!(", {}", filters::to_snake_case(c.clone()))
-                        }
+                    .map(|c| {
+                        let v = body_parent_flags_value_expr(
+                            c,
+                            lang,
+                            ArgSite::Decode,
+                            body_parent_flags_source.unwrap_or(false),
+                        );
+                        format!(", {v}")
                     })
                     .unwrap_or_default();
                 let body_parent_flags_arg_first = body_parent_flags_carrier
                     .as_ref()
-                    .map(|c| match lang {
-                        crate::generator::Language::Rust => format!("self.{}", c),
-                        crate::generator::Language::Cpp => c.clone(),
-                        // Kotlin: variant arm encode lives inside the parent
-                        // codec's `encode()` method (an instance fn on the
-                        // data class), so `this.<carrier>` reads the parent's
-                        // flags-carrier field. Field id stays as the snake_case
-                        // form Kotlin codecs already use (mirrors the existing
-                        // template's `r.add({{ expr }})` and `this.<id>`
-                        // accessor sites).
-                        crate::generator::Language::Kotlin => format!("this.{}", c),
-                        // Go: variant arm encode is a method on `*Foo`
-                        // (receiver `s`), so the carrier reads through
-                        // `s.<Pascal>`. PascalCase mirrors the parent
-                        // struct's exported field naming.
-                        crate::generator::Language::Go => {
-                            format!("s.{}", filters::to_pascal_case(c.clone()))
-                        }
-                        // C11 encode arm dispatcher already has a
-                        // preceding `&self->body.arm.<field>` arg, so
-                        // the parent_flags arg lands AFTER it with a
-                        // leading comma through `body_parent_flags_arg_encode`.
-                        // `_arg_first` stays populated for symmetry but
-                        // unused in the C11 template.
-                        crate::generator::Language::C11 => {
-                            format!("self->{}", filters::to_snake_case(c.clone()))
-                        }
-                        // Python: variant arm encode is an instance
-                        // method, so the carrier reads through
-                        // `self.<snake>`. The encode-site lands inside
-                        // an empty `()` (no preceding arg), so `_first`
-                        // is consumed directly without a leading comma.
-                        crate::generator::Language::Python => {
-                            format!("self.{}", filters::to_snake_case(c.clone()))
-                        }
+                    .map(|c| {
+                        body_parent_flags_value_expr(
+                            c,
+                            lang,
+                            ArgSite::Encode,
+                            body_parent_flags_source.unwrap_or(false),
+                        )
                     })
                     .unwrap_or_default();
                 // RFC §5.B B5-γ C11 closure: encode-site arm dispatcher
@@ -2779,7 +2747,13 @@ fn render_codec(
                     .as_ref()
                     .map(|c| match lang {
                         crate::generator::Language::C11 => {
-                            format!(", self->{}", filters::to_snake_case(c.clone()))
+                            let v = body_parent_flags_value_expr(
+                                c,
+                                lang,
+                                ArgSite::Encode,
+                                body_parent_flags_source.unwrap_or(false),
+                            );
+                            format!(", {v}")
                         }
                         // Other languages still consume `_arg_first`
                         // (no leading comma) at the encode site; this
@@ -2894,45 +2868,47 @@ fn render_codec(
                     .find(|i| i.alias == d.body_alias)
                     .and_then(|i| i.codec_requires_parent_flags.as_ref())
                     .map(|r| r.carrier.clone());
+                // RFC §5.B B5-γ × B5-ν dispatcher-self-gen — see
+                // enumerated arm branch above for rationale. Default arm
+                // path mirrors the same substitution shape.
+                let body_parent_flags_source = body_parent_flags_carrier
+                    .as_ref()
+                    .and_then(|c| resolve_flag_layout_source(m, c.as_str()))
+                    .map(|s| matches!(s, FlagLayoutSource::Forwarding(_)));
                 let body_parent_flags_arg = body_parent_flags_carrier
                     .as_ref()
-                    .map(|c| match lang {
-                        crate::generator::Language::Rust
-                        | crate::generator::Language::Cpp
-                        | crate::generator::Language::Kotlin => format!(", {}", c),
-                        crate::generator::Language::Go => {
-                            format!(", {}", filters::to_pascal_case(c.clone()))
-                        }
-                        crate::generator::Language::C11 => {
-                            format!(", out->{}", filters::to_snake_case(c.clone()))
-                        }
-                        crate::generator::Language::Python => {
-                            format!(", {}", filters::to_snake_case(c.clone()))
-                        }
+                    .map(|c| {
+                        let v = body_parent_flags_value_expr(
+                            c,
+                            lang,
+                            ArgSite::Decode,
+                            body_parent_flags_source.unwrap_or(false),
+                        );
+                        format!(", {v}")
                     })
                     .unwrap_or_default();
                 let body_parent_flags_arg_first = body_parent_flags_carrier
                     .as_ref()
-                    .map(|c| match lang {
-                        crate::generator::Language::Rust => format!("self.{}", c),
-                        crate::generator::Language::Cpp => c.clone(),
-                        crate::generator::Language::Kotlin => format!("this.{}", c),
-                        crate::generator::Language::Go => {
-                            format!("s.{}", filters::to_pascal_case(c.clone()))
-                        }
-                        crate::generator::Language::C11 => {
-                            format!("self->{}", filters::to_snake_case(c.clone()))
-                        }
-                        crate::generator::Language::Python => {
-                            format!("self.{}", filters::to_snake_case(c.clone()))
-                        }
+                    .map(|c| {
+                        body_parent_flags_value_expr(
+                            c,
+                            lang,
+                            ArgSite::Encode,
+                            body_parent_flags_source.unwrap_or(false),
+                        )
                     })
                     .unwrap_or_default();
                 let body_parent_flags_arg_encode = body_parent_flags_carrier
                     .as_ref()
                     .map(|c| match lang {
                         crate::generator::Language::C11 => {
-                            format!(", self->{}", filters::to_snake_case(c.clone()))
+                            let v = body_parent_flags_value_expr(
+                                c,
+                                lang,
+                                ArgSite::Encode,
+                                body_parent_flags_source.unwrap_or(false),
+                            );
+                            format!(", {v}")
                         }
                         crate::generator::Language::Rust
                         | crate::generator::Language::Cpp
@@ -3402,6 +3378,68 @@ fn resolve_flag_layout_source<'a>(
         }
     }
     None
+}
+
+/// RFC §5.B B5-γ × B5-ν dispatcher-self-gen — which side of the
+/// variant arm call substitution is being constructed. Decode reads
+/// the carrier value from a just-decoded local (or `out->` field on
+/// C11); encode reads from the parent codec's struct receiver. The
+/// Forwarding case unifies both sides on the dispatcher's own
+/// `parent_flags` / `parentFlags` parameter — same identifier whether
+/// the call is decode-site or encode-site.
+#[derive(Copy, Clone)]
+enum ArgSite {
+    Decode,
+    Encode,
+}
+
+/// RFC §5.B B5-γ × B5-ν dispatcher-self-gen — per-call-site value
+/// expression for the variant arm body's parent_flags argument. When
+/// `is_forwarding` is true, the parent codec resolves the carrier via
+/// its own `<sce:requires-parent-flags>` (no local nor field with the
+/// carrier id), so all 6 backends read from the threaded parameter
+/// (`parent_flags` / `parentFlags`). When false, the parent is a
+/// Terminal source and the existing per-language substitution applies
+/// (decode → local, encode → receiver).
+fn body_parent_flags_value_expr(
+    carrier: &str,
+    lang: crate::generator::Language,
+    site: ArgSite,
+    is_forwarding: bool,
+) -> String {
+    use crate::generator::Language;
+    if is_forwarding {
+        // Dispatcher's own parameter name — matches the convention used
+        // at `parent_flags_param_decl` and `tag_match_expr`.
+        return match lang {
+            Language::Kotlin | Language::Go => "parentFlags".to_string(),
+            _ => "parent_flags".to_string(),
+        };
+    }
+    match (site, lang) {
+        // Decode-site: just-decoded local matches the carrier id.
+        (ArgSite::Decode, Language::Rust)
+        | (ArgSite::Decode, Language::Cpp)
+        | (ArgSite::Decode, Language::Kotlin) => carrier.to_string(),
+        (ArgSite::Decode, Language::Go) => filters::to_pascal_case(carrier.to_string()),
+        (ArgSite::Decode, Language::C11) => {
+            format!("out->{}", filters::to_snake_case(carrier.to_string()))
+        }
+        (ArgSite::Decode, Language::Python) => filters::to_snake_case(carrier.to_string()),
+        // Encode-site: struct receiver convention.
+        (ArgSite::Encode, Language::Rust) => format!("self.{}", carrier),
+        (ArgSite::Encode, Language::Cpp) => carrier.to_string(),
+        (ArgSite::Encode, Language::Kotlin) => format!("this.{}", carrier),
+        (ArgSite::Encode, Language::Go) => {
+            format!("s.{}", filters::to_pascal_case(carrier.to_string()))
+        }
+        (ArgSite::Encode, Language::C11) => {
+            format!("self->{}", filters::to_snake_case(carrier.to_string()))
+        }
+        (ArgSite::Encode, Language::Python) => {
+            format!("self.{}", filters::to_snake_case(carrier.to_string()))
+        }
+    }
 }
 
 fn validate_cross_codec_parent_flags(

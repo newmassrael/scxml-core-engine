@@ -2756,6 +2756,30 @@ fn validate_and_enrich_imports(
                                 (arm.body_alias.clone(), arm.value, arm.is_default)
                             })
                             .collect();
+                        // RFC B5-ν dispatcher-self-gen Gap 6 — Rust
+                        // requires explicit `use` for each item from a
+                        // module; the dispatcher emits both the
+                        // `<Stem>` struct AND the `<Stem>Variant` enum
+                        // and consumers reference both (the struct as
+                        // the embed field type, the enum at the
+                        // `b5_nu_derivation_block` match site). Collapse
+                        // to brace-list `use super::{snake}::{Stem, StemVariant};`
+                        // when the imported codec is B5-ν. Other 5
+                        // backends already pull the variant enum via
+                        // header inclusion / wildcard import / package
+                        // qualifier — no augmentation needed.
+                        if matches!(*language, generator::Language::Rust) {
+                            let snake = std::path::Path::new(&imp.src)
+                                .file_stem()
+                                .and_then(|s| s.to_str())
+                                .map(|s| filters::to_snake_case(s.to_string()))
+                                .unwrap_or_else(|| ctx.alias.clone());
+                            ctx.include_stmt = format!(
+                                "use super::{snake}::{{{pascal}, {pascal}Variant}};",
+                                snake = snake,
+                                pascal = ctx.type_name,
+                            );
+                        }
                     }
                 }
             }
