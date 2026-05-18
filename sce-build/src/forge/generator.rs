@@ -159,6 +159,27 @@ pub struct ImportContext {
     #[serde(skip)]
     pub codec_b5_nu_parent_tag_flag: Option<String>,
 
+    /// RFC §5.B B5-ν Phase B: for codec imports with parent-tag-
+    /// dispatched variants, the parent flag's bit position and width
+    /// within the parent carrier. Populated alongside
+    /// `codec_b5_nu_parent_tag_flag` so the parent codec's encode-side
+    /// derivation pass can shift the active arm's tag value into the
+    /// correct bit range before ORing it into the carrier byte. `None`
+    /// for non-B5-ν imports. Stored as `(bit, width)`; both match
+    /// `FlagDef`'s u32 representation.
+    #[serde(skip)]
+    pub codec_b5_nu_parent_tag_bit_width: Option<(u32, u32)>,
+
+    /// RFC §5.B B5-ν Phase B: for codec imports with parent-tag-
+    /// dispatched variants, the variant arm metadata needed for the
+    /// parent's encode-side derivation match expression. Each tuple is
+    /// `(body_alias_snake, arm_value, is_default)`. Empty for non-B5-ν
+    /// imports. Order matches the embedded codec's `<sce:arm>`
+    /// declaration order so the emitted match preserves authoring
+    /// intent.
+    #[serde(skip)]
+    pub codec_b5_nu_variant_arms: Vec<(String, u64, bool)>,
+
     /// For buffer-pool imports: the imported pool's `<sce:slot-size>`
     /// body (bytes), captured at enrichment time from the parsed
     /// [`BufferPoolModel`]. Consumed by the §5.C B6-α' cross-resolver
@@ -320,6 +341,8 @@ fn resolve_single_import(
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
                 codec_b5_nu_parent_tag_flag: None,
+                codec_b5_nu_parent_tag_bit_width: None,
+                codec_b5_nu_variant_arms: Vec::new(),
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
             }
@@ -354,6 +377,8 @@ fn resolve_single_import(
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
                 codec_b5_nu_parent_tag_flag: None,
+                codec_b5_nu_parent_tag_bit_width: None,
+                codec_b5_nu_variant_arms: Vec::new(),
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
             }
@@ -390,6 +415,8 @@ fn resolve_single_import(
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
                 codec_b5_nu_parent_tag_flag: None,
+                codec_b5_nu_parent_tag_bit_width: None,
+                codec_b5_nu_variant_arms: Vec::new(),
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
             }
@@ -452,6 +479,8 @@ fn resolve_single_import(
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
                 codec_b5_nu_parent_tag_flag: None,
+                codec_b5_nu_parent_tag_bit_width: None,
+                codec_b5_nu_variant_arms: Vec::new(),
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
             }
@@ -488,6 +517,8 @@ fn resolve_single_import(
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
                 codec_b5_nu_parent_tag_flag: None,
+                codec_b5_nu_parent_tag_bit_width: None,
+                codec_b5_nu_variant_arms: Vec::new(),
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
             }
@@ -525,6 +556,8 @@ fn resolve_single_import(
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
                 codec_b5_nu_parent_tag_flag: None,
+                codec_b5_nu_parent_tag_bit_width: None,
+                codec_b5_nu_variant_arms: Vec::new(),
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
             }
@@ -1374,6 +1407,14 @@ fn render_codec(
     let has_present_if_fields = m.has_present_if_fields();
     let has_repeat_fields = m.has_repeat_fields();
 
+    // RFC §5.B B5-ν Phase B — compute derivations BEFORE the field-meta
+    // builder so per-field encode blocks can append the `| _derived_<carrier>`
+    // suffix at the carrier field. The locals block lives in the codec
+    // emit ctx (rendered at `encode()` entry); the suffix lives per-
+    // field encode block via `inject_b5_nu_carrier_suffix` below.
+    let b5_nu_derivations = collect_b5_nu_derivations(m, imports);
+    let b5_nu_carrier_or_suffix = b5_nu_carrier_or_suffix_map(&b5_nu_derivations, lang);
+
     let fields: Vec<serde_json::Value> = m
         .fields
         .iter()
@@ -2103,17 +2144,22 @@ fn render_codec(
                     )
                     .into(),
                 );
-                obj.insert(
-                    "present_if_encode_block".into(),
-                    present_if_streaming_encode_block(
-                        f,
-                        &m.fields,
-                        m.requires_parent_flags.as_ref(),
-                        m.default_endian,
-                        lang,
-                    )
-                    .into(),
+                let mut encode_block = present_if_streaming_encode_block(
+                    f,
+                    &m.fields,
+                    m.requires_parent_flags.as_ref(),
+                    m.default_endian,
+                    lang,
                 );
+                // RFC §5.B B5-ν Phase B — inject `| _derived_<carrier>`
+                // into the single-byte carrier emit so the derived bits
+                // land in the outgoing stream. Carrier is uint8 per v1
+                // rpf lock-in (single-byte field), so the substitution
+                // targets the n==1 shape of each backend's encode helper.
+                if let Some(suffix) = b5_nu_carrier_or_suffix.get(&f.id) {
+                    encode_block = inject_b5_nu_carrier_suffix(&encode_block, &f.id, suffix, lang);
+                }
+                obj.insert("present_if_encode_block".into(), encode_block.into());
                 // RFC §5.B B5-μ — Repeat-with-present-if fields wrap
                 // their imported-codec list type in the dedicated
                 // `is_repeat` branch above (Option<Vec<T>> /
@@ -2204,6 +2250,30 @@ fn render_codec(
         .collect::<Result<Vec<_>, _>>()?;
 
     let encode_exprs = generate_encode_exprs(&m.fields, m.default_endian, lang);
+
+    // RFC §5.B B5-ν Phase B — locals block; `b5_nu_derivations` was
+    // computed at the top of `compile_codec` so it could feed the
+    // field-meta builder's per-field encode-block suffix injection.
+    let b5_nu_derivation_block_str = b5_nu_derivation_block(&b5_nu_derivations, lang);
+
+    // Apply B5-ν OR suffix to the encode_exprs simple-path emit. The
+    // simple path is selected when the codec has no streaming-prefix
+    // / present-if / variant / embed / repeat fields (rare in
+    // practice for B5-ν consumers — they almost always have an embed
+    // field driving the derivation — but the helper preserves the
+    // codec's behavioural surface when the configuration permits).
+    let encode_exprs: Vec<String> = if b5_nu_carrier_or_suffix.is_empty() {
+        encode_exprs
+    } else {
+        // Map per-byte: each simple-path encode entry corresponds to
+        // a single carrier byte. Identify the carrier whose field id
+        // matches and patch.
+        encode_exprs
+            .into_iter()
+            .enumerate()
+            .map(|(i, e)| b5_nu_apply_simple_path_suffix(&e, i, &m.fields, &b5_nu_carrier_or_suffix, lang))
+            .collect()
+    };
 
     let mut ctx = l.base_context(&m.name);
     ctx.insert("fields".into(), serde_json::json!(fields));
@@ -2422,6 +2492,24 @@ fn render_codec(
         parent_flags_param_first.into(),
     );
     ctx.insert("encode_exprs".into(), serde_json::json!(encode_exprs));
+    // RFC §5.B B5-ν Phase B — per-codec derivation locals block.
+    // Templates render `{{ parent_tag_derivation_block }}` immediately
+    // inside `encode()` so the locals are in scope before any field
+    // emits its bytes. Empty string when the codec has no B5-ν
+    // derivations (which keeps existing goldens byte-stable).
+    ctx.insert(
+        "parent_tag_derivation_block".into(),
+        b5_nu_derivation_block_str.into(),
+    );
+    // RFC §5.B B5-ν Phase B — flag the codec as a B5-ν encode parent so
+    // templates can branch (e.g., emit a deterministic blank line
+    // after the locals block when present). Useful for templates that
+    // would otherwise eat the leading whitespace when the locals are
+    // absent.
+    ctx.insert(
+        "has_parent_tag_derivation".into(),
+        (!b5_nu_derivations.is_empty()).into(),
+    );
 
     // RFC §5.B variant primitive (B1-β trunk): build per-arm rendering
     // context. Each arm's `body_alias` resolves against the codec's
@@ -2437,33 +2525,16 @@ fn render_codec(
     // form (B1-β) `tag_flag` is `None` and the effective tag type is
     // the carrier's full type (whole-field dispatch — back-compat).
     if let Some(v) = &m.variant {
-        // RFC §5.B B5-ν Phase A: parser + validators land in the same
-        // atomic as the model surface; codegen across 6 backends
-        // (Rust/Cpp/Kotlin/Go/Python/C11) is Phase B. Until Phase B
-        // lands, codegen fails fast with a typed `GenerateError` so
-        // authors get a clear "infrastructure ready, codegen pending"
-        // signal instead of broken generated code that would otherwise
-        // result from the existing local-scope codegen path treating
-        // the rpf carrier as a self field (which doesn't exist in
-        // `m.fields`). The fail-fast site is the entry of variant
-        // codegen so no partial codegen artifact is produced.
-        if v.tag_scope == crate::forge::model::TagScope::Parent {
-            return Err(ForgeError::Generate(
-                crate::forge::error::GenerateError::UnsupportedFeature(format!(
-                    "codec '{}': B5-ν parent-tag variant codegen is staged for Phase B \
-                     (parser, validators, and diagnostics land in Phase A; per-backend \
-                     decode/encode emission across the 6-backend matrix is the follow-up \
-                     atomic). Use a local-scope tag (`tag=\"<self_field>.<flag>\"` or \
-                     `tag=\"<self_field>\"`) until Phase B lands.",
-                    m.name
-                )),
-            ));
-        }
         // Y3 atomic 2b-ii peek-byte: peek-byte mode resolves the carrier
         // from `<sce:peek-byte>` instead of a real codec field.
         // `carrier_type` is fixed at uint8 (peek width is single-byte
         // v1); `flag_def` is the named flag in `peek_byte.flags`.
-        let (carrier_type, peek_flag_def) = if let Some(peek) = &v.peek_byte {
+        // RFC §5.B B5-ν: parent-scope variants resolve the carrier
+        // through `<sce:requires-parent-flags>` instead of `m.fields`;
+        // `carrier_type` is uint8 (rpf carrier v1 lock-in), the flag
+        // def comes from `rpf.flags`.
+        let parent_scope = v.tag_scope == crate::forge::model::TagScope::Parent;
+        let (carrier_type, peek_flag_def, rpf_flag_def) = if let Some(peek) = &v.peek_byte {
             let flag_name = v
                 .tag_flag
                 .as_ref()
@@ -2473,17 +2544,32 @@ fn render_codec(
                 .iter()
                 .find(|f| f.name == *flag_name)
                 .expect("parser validated tag_flag references a peek-byte flag");
-            (SceType::Uint8, Some(flag_def))
+            (SceType::Uint8, Some(flag_def), None)
+        } else if parent_scope {
+            let rpf = m
+                .requires_parent_flags
+                .as_ref()
+                .expect("parser enforces requires-parent-flags for parent-scope variants");
+            let flag_name = v
+                .tag_flag
+                .as_ref()
+                .expect("parser enforces dotted tag in parent scope");
+            let flag_def = rpf
+                .flags
+                .iter()
+                .find(|f| f.name == *flag_name)
+                .expect("parser validated parent.tag_flag references an rpf flag");
+            (SceType::Uint8, None, Some(flag_def))
         } else {
             let carrier_field = m
                 .fields
                 .iter()
                 .find(|f| f.id == v.tag_field)
                 .expect("parser validated tag_field references an existing field");
-            (carrier_field.sce_type.clone(), None)
+            (carrier_field.sce_type.clone(), None, None)
         };
-        let (tag_type, tag_flag_def) = match (&v.peek_byte, &v.tag_flag) {
-            (Some(_), _) => {
+        let (tag_type, tag_flag_def) = match (&v.peek_byte, parent_scope, &v.tag_flag) {
+            (Some(_), _, _) => {
                 let flag_def =
                     peek_flag_def.expect("peek mode always carries a flag def per parser");
                 let width = flag_def.width.max(1);
@@ -2498,8 +2584,23 @@ fn render_codec(
                 };
                 (result_type, Some(flag_def))
             }
-            (None, None) => (carrier_type.clone(), None),
-            (None, Some(flag_name)) => {
+            (None, true, _) => {
+                let flag_def =
+                    rpf_flag_def.expect("parent scope always carries an rpf flag def per parser");
+                let width = flag_def.width.max(1);
+                let result_type = if width <= 8 {
+                    SceType::Uint8
+                } else if width <= 16 {
+                    SceType::Uint16
+                } else if width <= 32 {
+                    SceType::Uint32
+                } else {
+                    SceType::Uint64
+                };
+                (result_type, Some(flag_def))
+            }
+            (None, false, None) => (carrier_type.clone(), None),
+            (None, false, Some(flag_name)) => {
                 let carrier_field = m
                     .fields
                     .iter()
@@ -2875,14 +2976,32 @@ fn render_codec(
         // `let _peek = cursor.peek_slice(1)?[0];` (per-language idiom)
         // before the dispatch when `variant.peek_byte` is set.
         let peek_mode = v.peek_byte.is_some();
+        // RFC §5.B B5-ν Phase B: parent-scope variants read the carrier
+        // from the codec's `parent_flags` parameter (already threaded
+        // by B5-γ at all 6 backends). Identifier varies per language:
+        // snake_case `parent_flags` for Rust/Cpp/C11/Python, camelCase
+        // `parentFlags` for Kotlin/Go (matches the param decl built
+        // at `parent_flags_param_decl`).
         let carrier_id = if peek_mode {
             "_peek".to_string()
+        } else if parent_scope {
+            match lang {
+                crate::generator::Language::Kotlin | crate::generator::Language::Go => {
+                    "parentFlags".to_string()
+                }
+                _ => "parent_flags".to_string(),
+            }
         } else {
             l.codec_field_id(&v.tag_field)
         };
         // C11 own-field mode reads from `out->{field}` (the codec's
-        // output struct member); peek mode reads from a bare local var.
-        let c11_carrier_qualifier = if peek_mode { "" } else { "out->" };
+        // output struct member); peek mode and parent-scope mode read
+        // from bare locals/parameters.
+        let c11_carrier_qualifier = if peek_mode || parent_scope {
+            ""
+        } else {
+            "out->"
+        };
         let (tag_match_expr, tag_store_expr) = match (&tag_flag_def, lang) {
             // ── Whole-field (B1-β back-compat) ──────────────────────
             (None, crate::generator::Language::Rust) => (carrier_id.clone(), carrier_id.clone()),
@@ -9130,6 +9249,467 @@ fn decode_multibyte_unified(
         format!("static_cast<{target}>({joined})")
     } else {
         joined
+    }
+}
+
+/// RFC §5.B B5-ν Phase B — analyze a parent codec's embed fields to
+/// discover which (carrier, flag) pairs need encode-time derivation
+/// from an embedded B5-ν variant arm.
+///
+/// Walks `m.fields` for `BitSize::Embed` entries, joins to
+/// `ImportContext::codec_b5_nu_parent_tag_flag` to detect the parent-
+/// tag dispatch, and records one [`B5NuDerivation`] per derivation.
+/// Multiple embeds OR-ing onto the same parent carrier are grouped
+/// downstream by `b5_nu_derivation_block` and `b5_nu_carrier_or_suffix`
+/// so each carrier emits exactly one local + one OR injection site.
+fn collect_b5_nu_derivations(
+    m: &CodecModel,
+    imports: &[ImportContext],
+) -> Vec<B5NuDerivation> {
+    let mut out = Vec::new();
+    for f in &m.fields {
+        if !f.is_embed() {
+            continue;
+        }
+        let alias = match &f.embed_body_alias {
+            Some(a) => a,
+            None => continue,
+        };
+        let imp = match imports.iter().find(|i| i.alias == *alias) {
+            Some(i) => i,
+            None => continue,
+        };
+        // Three populated metadata fields together signal B5-ν.
+        // Phase A's cross-doc validator (`validate_cross_codec_variant_parent_tag`)
+        // has already enforced Q-3 (no `value=` on the derived flag)
+        // and Q-6 (carrier declared before the embedded field), so
+        // this collector trusts the parent's flags-carrier exists and
+        // the order is sound.
+        let (flag, (bit, width)) = match (
+            imp.codec_b5_nu_parent_tag_flag.as_ref(),
+            imp.codec_b5_nu_parent_tag_bit_width,
+        ) {
+            (Some(f), Some(bw)) => (f.clone(), bw),
+            _ => continue,
+        };
+        if imp.codec_b5_nu_variant_arms.is_empty() {
+            continue;
+        }
+        // Carrier name lives in the embedded codec's rpf declaration.
+        let carrier = match imp.codec_requires_parent_flags.as_ref() {
+            Some(rpf) => rpf.carrier.clone(),
+            None => continue,
+        };
+        out.push(B5NuDerivation {
+            embed_field_id: f.id.clone(),
+            embed_alias: alias.clone(),
+            embed_type_pascal: filters::to_pascal_case(alias.clone()),
+            carrier_field_id: carrier,
+            flag_name: flag,
+            bit,
+            width,
+            arms: imp.codec_b5_nu_variant_arms.clone(),
+        });
+    }
+    out
+}
+
+/// RFC §5.B B5-ν Phase B — one (embed → carrier) derivation. A parent
+/// codec produces zero or more of these; carriers with multiple
+/// derivations are OR-combined into a single `_derived_<carrier>`
+/// local before the carrier byte is emitted.
+#[derive(Debug, Clone)]
+struct B5NuDerivation {
+    embed_field_id: String,
+    #[allow(dead_code)]
+    embed_alias: String,
+    embed_type_pascal: String,
+    carrier_field_id: String,
+    #[allow(dead_code)]
+    flag_name: String,
+    bit: u32,
+    width: u32,
+    /// `(body_alias_snake, arm_value, is_default)` for each embedded
+    /// variant arm in declaration order.
+    arms: Vec<(String, u64, bool)>,
+}
+
+/// RFC §5.B B5-ν Phase B — emit per-language locals at the parent
+/// codec's `encode` entry that derive each carrier's B5-ν bits from
+/// the active embed-variant arm. Returns the empty string when the
+/// codec has no derivations; templates render the result verbatim.
+fn b5_nu_derivation_block(
+    derivations: &[B5NuDerivation],
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    if derivations.is_empty() {
+        return String::new();
+    }
+    // Group by carrier; each carrier produces exactly one OR-combined
+    // local. Preserve insertion order via BTreeMap on the carrier name
+    // so emitted goldens are deterministic.
+    let mut by_carrier: std::collections::BTreeMap<String, Vec<&B5NuDerivation>> =
+        std::collections::BTreeMap::new();
+    for d in derivations {
+        by_carrier
+            .entry(d.carrier_field_id.clone())
+            .or_default()
+            .push(d);
+    }
+    let mut out = String::new();
+    for (carrier, items) in &by_carrier {
+        out.push_str(&b5_nu_derivation_local_for_carrier(carrier, items, lang));
+        if !matches!(lang, Language::Go | Language::C11) {
+            // Rust/Cpp/Kotlin/Python locals end with semicolon/newline
+            // already inside the helper; Go/C11 emit multi-line switch
+            // statements that close themselves.
+        }
+    }
+    out
+}
+
+/// RFC §5.B B5-ν Phase B — single carrier's derivation local. Joins
+/// each embed's shifted+masked arm value with bitwise OR so the
+/// parent's carrier field is patched in a single step.
+fn b5_nu_derivation_local_for_carrier(
+    carrier: &str,
+    items: &[&B5NuDerivation],
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    let carrier_snake = filters::to_snake_case(carrier.to_string());
+    let carrier_pascal = filters::to_pascal_case(carrier.to_string());
+    let local_rust = format!("_derived_{carrier_snake}");
+    let local_camel = format!("_derived{carrier_pascal}");
+    match lang {
+        Language::Rust => {
+            // Each item is an exhaustive `match &self.<embed>.body` over the
+            // embedded codec's variant. Multi-derivation carriers OR the
+            // per-embed terms; Rust accepts inline match expressions as
+            // operands of `|` so the local is a single `let ... = expr;`.
+            let terms: Vec<String> = items
+                .iter()
+                .map(|d| b5_nu_match_term_rust(d))
+                .collect();
+            let joined = terms.join(" | ");
+            format!("        let {local_rust}: u8 = {joined};\n")
+        }
+        Language::Cpp => {
+            let terms: Vec<String> = items.iter().map(|d| b5_nu_match_term_cpp(d)).collect();
+            let joined = terms.join(" | ");
+            format!("        const std::uint8_t {local_rust} = static_cast<std::uint8_t>({joined});\n")
+        }
+        Language::Kotlin => {
+            let terms: Vec<String> = items
+                .iter()
+                .map(|d| b5_nu_match_term_kotlin(d))
+                .collect();
+            // Kotlin uses Int arithmetic then narrows back to UByte for
+            // the carrier OR; each term is already an `Int`, joined with
+            // `or` infix.
+            let joined = terms.join(" or ");
+            format!("        val {local_camel}: UByte = ({joined}).toUByte()\n")
+        }
+        Language::Go => {
+            // Go has no value-returning switch; emit a typed-switch per
+            // embed that writes into a pre-declared local. Multi-embed
+            // carriers OR each switch result into the local sequentially.
+            let mut block = format!("\tvar {local_camel} byte = 0\n");
+            for d in items {
+                block.push_str(&b5_nu_switch_block_go(d, &local_camel));
+            }
+            block
+        }
+        Language::Python => {
+            let terms: Vec<String> = items
+                .iter()
+                .map(|d| b5_nu_match_term_python(d))
+                .collect();
+            let joined = terms.join(" | ");
+            format!("        _derived_{carrier_snake} = {joined}\n")
+        }
+        Language::C11 => {
+            // C11 has no expression-form switch; emit a switch per embed
+            // that ORs into a pre-declared local. uint8_t carrier per
+            // v1 lock-in.
+            let mut block =
+                format!("    uint8_t _derived_{carrier_snake} = 0u;\n");
+            for d in items {
+                block.push_str(&b5_nu_switch_block_c11(d, &format!("_derived_{carrier_snake}")));
+            }
+            block
+        }
+    }
+}
+
+/// Single-embed match-expression term for Rust. Result is a `u8`
+/// value carrying the shifted+masked bit pattern for the active arm.
+fn b5_nu_match_term_rust(d: &B5NuDerivation) -> String {
+    let snake = filters::to_snake_case(d.embed_field_id.clone());
+    let mut arms = Vec::with_capacity(d.arms.len());
+    let mask: u64 = (1u64 << d.width) - 1;
+    for (alias, val, _) in &d.arms {
+        let variant = filters::to_pascal_case(alias.clone());
+        let shifted = ((val & mask) << d.bit) & 0xFF;
+        arms.push(format!(
+            "{embed_pascal}Variant::{variant}(_) => 0x{shifted:02X}u8",
+            embed_pascal = d.embed_type_pascal,
+            variant = variant,
+            shifted = shifted,
+        ));
+    }
+    format!(
+        "match &self.{snake}.body {{ {} }}",
+        arms.join(", ")
+    )
+}
+
+/// Single-embed match-expression term for Cpp. Uses std::variant
+/// alternative index dispatch via a chained ternary so the result
+/// type is `std::uint8_t` without needing `std::visit` or
+/// overloaded helpers.
+fn b5_nu_match_term_cpp(d: &B5NuDerivation) -> String {
+    let snake = filters::to_snake_case(d.embed_field_id.clone());
+    let mask: u64 = (1u64 << d.width) - 1;
+    let mut chain = String::new();
+    for (idx, (_alias, val, _is_default)) in d.arms.iter().enumerate() {
+        let shifted = ((val & mask) << d.bit) & 0xFF;
+        let literal = format!("static_cast<std::uint8_t>(0x{shifted:02X})");
+        if idx + 1 == d.arms.len() {
+            // Final arm is the fallthrough — saves one comparison.
+            chain.push_str(&literal);
+        } else {
+            chain.push_str(&format!("{snake}.body.index() == {idx} ? {literal} : "));
+        }
+    }
+    // Wrap once so the outer `... | ...` chain in `b5_nu_derivation_local_for_carrier`
+    // composes without surprise precedence.
+    format!("({chain})")
+}
+
+/// Single-embed match-expression term for Kotlin. Uses `when` over the
+/// sealed variant body and produces an `Int` (the bit pattern).
+fn b5_nu_match_term_kotlin(d: &B5NuDerivation) -> String {
+    let snake = filters::to_snake_case(d.embed_field_id.clone());
+    let mask: u64 = (1u64 << d.width) - 1;
+    let mut arms = Vec::with_capacity(d.arms.len());
+    for (alias, val, _) in &d.arms {
+        let variant = filters::to_pascal_case(alias.clone());
+        let shifted = ((val & mask) << d.bit) & 0xFF;
+        arms.push(format!(
+            "is {embed_pascal}Variant.{variant} -> 0x{shifted:02X}",
+            embed_pascal = d.embed_type_pascal,
+            variant = variant,
+            shifted = shifted,
+        ));
+    }
+    format!("(when (this.{snake}.body) {{ {} }})", arms.join(" "))
+}
+
+/// Single-embed match-expression term for Python. Uses `isinstance`
+/// chained conditional expressions which mirror the Cpp ternary chain.
+fn b5_nu_match_term_python(d: &B5NuDerivation) -> String {
+    let snake = filters::to_snake_case(d.embed_field_id.clone());
+    let mask: u64 = (1u64 << d.width) - 1;
+    let mut chain = String::new();
+    for (idx, (alias, val, _)) in d.arms.iter().enumerate() {
+        let variant = filters::to_pascal_case(alias.clone());
+        let shifted = ((val & mask) << d.bit) & 0xFF;
+        let literal = format!("0x{shifted:02X}");
+        if idx + 1 == d.arms.len() {
+            chain.push_str(&literal);
+        } else {
+            chain.push_str(&format!(
+                "({literal} if isinstance(self.{snake}.body, {embed}.{variant}) else ",
+                embed = d.embed_type_pascal,
+            ));
+        }
+    }
+    // Close the parens opened above (one per non-final arm).
+    for _ in 0..d.arms.len().saturating_sub(1) {
+        chain.push(')');
+    }
+    format!("({chain})")
+}
+
+/// Single-embed type-switch for Go. Writes into the named local via
+/// bitwise OR so multiple embeds combine cleanly on the same carrier.
+fn b5_nu_switch_block_go(d: &B5NuDerivation, local: &str) -> String {
+    let pascal = filters::to_pascal_case(d.embed_field_id.clone());
+    let mask: u64 = (1u64 << d.width) - 1;
+    let mut block = format!("\tswitch s.{pascal}.Body.(type) {{\n");
+    for (alias, val, _) in &d.arms {
+        let arm_pascal = filters::to_pascal_case(alias.clone());
+        let shifted = ((val & mask) << d.bit) & 0xFF;
+        block.push_str(&format!(
+            "\tcase *{arm_pascal}:\n\t\t{local} |= 0x{shifted:02X}\n"
+        ));
+    }
+    block.push_str("\t}\n");
+    block
+}
+
+/// Single-embed switch for C11. Mirrors the Go shape with the tagged-
+/// union `body.kind` discriminant.
+fn b5_nu_switch_block_c11(d: &B5NuDerivation, local: &str) -> String {
+    let snake = filters::to_snake_case(d.embed_field_id.clone());
+    let mask: u64 = (1u64 << d.width) - 1;
+    let embed_upper = to_upper_snake(&d.embed_type_pascal);
+    let mut block = format!("    switch (self->{snake}.body.kind) {{\n");
+    for (alias, val, _) in &d.arms {
+        let arm_upper = to_upper_snake(alias);
+        let shifted = ((val & mask) << d.bit) & 0xFF;
+        block.push_str(&format!(
+            "    case {embed_upper}_BODY_KIND_{arm_upper}: {local} |= 0x{shifted:02X}u; break;\n"
+        ));
+    }
+    block.push_str("    default: break;\n    }\n");
+    block
+}
+
+/// RFC §5.B B5-ν Phase B — given a codec's derivations, build a map
+/// from carrier field id → per-language OR suffix string (e.g.,
+/// `" | _derived_header"`). Encode helpers consult this map when
+/// emitting the carrier byte so the derived bits land in the
+/// outgoing byte stream.
+fn b5_nu_carrier_or_suffix_map(
+    derivations: &[B5NuDerivation],
+    lang: crate::generator::Language,
+) -> std::collections::HashMap<String, String> {
+    use crate::generator::Language;
+    let mut out = std::collections::HashMap::new();
+    if derivations.is_empty() {
+        return out;
+    }
+    let mut seen: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
+    for d in derivations {
+        if !seen.insert(d.carrier_field_id.clone()) {
+            continue;
+        }
+        let snake = filters::to_snake_case(d.carrier_field_id.clone());
+        let pascal = filters::to_pascal_case(d.carrier_field_id.clone());
+        let suffix = match lang {
+            Language::Rust | Language::Cpp | Language::C11 | Language::Python => {
+                format!(" | _derived_{snake}")
+            }
+            Language::Kotlin => format!(" or _derived{pascal}"),
+            Language::Go => format!(" | _derived{pascal}"),
+        };
+        out.insert(d.carrier_field_id.clone(), suffix);
+    }
+    out
+}
+
+/// RFC §5.B B5-ν Phase B — splice the OR suffix into a streaming
+/// per-field encode block emitted by `streaming_fixed_field_encode_*`.
+/// The carrier is uint8 per v1 rpf lock-in, so each backend's `n == 1`
+/// shape is patched here without touching the multi-byte path.
+fn inject_b5_nu_carrier_suffix(
+    block: &str,
+    field_id: &str,
+    or_suffix: &str,
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    // `or_suffix` already begins with ` | ` / ` or ` per language.
+    match lang {
+        Language::Rust => {
+            // `        r.push(self.<id>);` → `        r.push(self.<id> | _derived_<id>);`
+            let needle = format!("r.push(self.{field_id});");
+            let replacement = format!("r.push(self.{field_id}{or_suffix});");
+            block.replace(&needle, &replacement)
+        }
+        Language::Cpp => {
+            // `        r.push_back(<id>);` → `        r.push_back(<id> | _derived_<id>);`
+            let needle = format!("r.push_back({field_id});");
+            let replacement = format!("r.push_back({field_id}{or_suffix});");
+            block.replace(&needle, &replacement)
+        }
+        Language::Kotlin => {
+            // `        r.add(this.<id>.toByte())` → `        r.add((this.<id> or _derived<Id>).toByte())`
+            let needle = format!("r.add(this.{field_id}.toByte())");
+            let replacement = format!("r.add((this.{field_id}{or_suffix}).toByte())");
+            block.replace(&needle, &replacement)
+        }
+        Language::Go => {
+            // `\tr = append(r, s.<Pascal>)` → `\tr = append(r, s.<Pascal> | _derived<Pascal>)`
+            let pascal = filters::to_pascal_case(field_id.to_string());
+            let needle = format!("r = append(r, s.{pascal})");
+            let replacement = format!("r = append(r, s.{pascal}{or_suffix})");
+            block.replace(&needle, &replacement)
+        }
+        Language::C11 => {
+            // `    r.bytes[r.len++] = self-><snake>;` → `    r.bytes[r.len++] = self-><snake> | _derived_<snake>;`
+            let snake = filters::to_snake_case(field_id.to_string());
+            let needle = format!("r.bytes[r.len++] = self->{snake};");
+            let replacement = format!("r.bytes[r.len++] = self->{snake}{or_suffix};");
+            block.replace(&needle, &replacement)
+        }
+        Language::Python => {
+            // `        r.append(self.<snake> & 0xFF)` → `        r.append((self.<snake> | _derived_<snake>) & 0xFF)`
+            let snake = filters::to_snake_case(field_id.to_string());
+            let needle = format!("r.append(self.{snake} & 0xFF)");
+            let replacement = format!("r.append((self.{snake}{or_suffix}) & 0xFF)");
+            block.replace(&needle, &replacement)
+        }
+    }
+}
+
+/// RFC §5.B B5-ν Phase B — splice the OR suffix into a simple-path
+/// `encode_exprs` entry that emits the carrier byte. The simple path
+/// uses `byte_groups` keyed by `byte_offset`; we walk codec fields to
+/// recover which carrier (if any) owns the byte at this position and
+/// patch the entry with `| _derived_<carrier>` when it matches.
+fn b5_nu_apply_simple_path_suffix(
+    expr: &str,
+    entry_idx: usize,
+    fields: &[CodecField],
+    or_suffix: &std::collections::HashMap<String, String>,
+    lang: crate::generator::Language,
+) -> String {
+    if or_suffix.is_empty() {
+        return expr.to_string();
+    }
+    // Reproduce `generate_encode_exprs`'s ordering: fixed-length fields
+    // grouped by `byte_offset`, walked via BTreeMap. The entry index
+    // therefore maps back to the i-th distinct byte_offset.
+    let mut byte_offsets: std::collections::BTreeSet<u32> =
+        std::collections::BTreeSet::new();
+    for f in fields {
+        if !f.is_variable_length() {
+            byte_offsets.insert(f.byte_offset);
+        }
+    }
+    let target_offset = byte_offsets.into_iter().nth(entry_idx);
+    let offset = match target_offset {
+        Some(o) => o,
+        None => return expr.to_string(),
+    };
+    // Pick the (single) carrier field at this offset; B5-ν derivation
+    // targets a uint8 carrier per v1 lock-in, which always occupies
+    // its byte exclusively.
+    let carrier = fields
+        .iter()
+        .find(|f| f.byte_offset == offset && or_suffix.contains_key(&f.id));
+    let suffix = match carrier.and_then(|c| or_suffix.get(&c.id)) {
+        Some(s) => s.clone(),
+        None => return expr.to_string(),
+    };
+    // Kotlin's simple-path wraps the field ref in `.toByte()`; the OR
+    // must apply BEFORE the narrowing cast so the derived bits land in
+    // the byte. All other backends append the suffix verbatim.
+    use crate::generator::Language;
+    match lang {
+        Language::Kotlin => {
+            if let Some(stem) = expr.strip_suffix(".toByte()") {
+                format!("({stem}{suffix}).toByte()")
+            } else {
+                format!("{expr}{suffix}")
+            }
+        }
+        _ => format!("{expr}{suffix}"),
     }
 }
 
@@ -18615,6 +19195,8 @@ mod tests {
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
                 codec_b5_nu_parent_tag_flag: None,
+                codec_b5_nu_parent_tag_bit_width: None,
+                codec_b5_nu_variant_arms: Vec::new(),
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
             },
@@ -18638,6 +19220,8 @@ mod tests {
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
                 codec_b5_nu_parent_tag_flag: None,
+                codec_b5_nu_parent_tag_bit_width: None,
+                codec_b5_nu_variant_arms: Vec::new(),
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
             },

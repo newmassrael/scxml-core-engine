@@ -9291,61 +9291,305 @@ fn forge_b5_nu_parent_tag_flag_not_in_rpf_rejects() {
     );
 }
 
-/// B5-ν Phase B codegen guard: a parsed parent-tag variant codec
-/// reaches codegen and fails fast with a typed
-/// `GenerateError::UnsupportedFeature` whose message names Phase B.
-/// This proves the infrastructure rejects unimplemented codegen
-/// instead of silently producing broken generated code.
-#[test]
-fn forge_b5_nu_codegen_phase_b_guard_fires() {
-    use sce_build::forge::error::{ForgeError, GenerateError};
+// RFC §5.B B5-ν: Phase A's `forge_b5_nu_codegen_phase_b_guard_fires`
+// proved the parser+validator entry rejected unimplemented codegen
+// cleanly. Phase B drops the guard and replaces this assertion with a
+// positive round-trip test (`forge_b5_nu_round_trip_local_nonlocal`
+// below) that exercises the full encode → decode → encode chain on a
+// 2-arm parent-tag variant. The negative-path coverage now lives in
+// the four parse-time / cross-doc diagnostics:
+// `forge_b5_nu_parent_tag_without_rpf_rejects`,
+// `forge_b5_nu_parent_tag_flag_not_in_rpf_rejects`,
+// `forge_b5_nu_parent_flag_derivation_conflict_rejects` (Q-3),
+// `forge_b5_nu_parent_tag_variant_before_carrier_rejects` (Q-6).
 
-    let content = r#"<?xml version="1.0"?>
+/// Write a B5-ν cross-codec fixture set to a fresh temp directory and
+/// return the directory + the parent codec's SCXML path. Layout:
+/// - `codec_b5nu_parent.scxml`     — parent envelope (header flags + embed)
+/// - `codec_b5nu_keyexpr.scxml`    — parent-tag-dispatched variant carrier
+/// - `codec_b5nu_local.scxml`      — Local arm body (1-byte payload)
+/// - `codec_b5nu_nonlocal.scxml`   — Nonlocal arm body (2-byte payload)
+/// Each fixture is independently parseable; cross-doc validation runs
+/// when the parent resolves its imports through the temp directory.
+fn b5_nu_write_round_trip_fixture(
+    parent_extra_field: &str,
+    parent_header_static: &str,
+) -> (std::path::PathBuf, std::path::PathBuf) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let dir = std::env::temp_dir().join(format!("sce_b5nu_fixture_{pid}_{id}"));
+    std::fs::create_dir_all(&dir).expect("mkdir fixture");
+
+    let parent = format!(
+        r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big">
+       sce:kind="codec" sce:codec-id="codec_b5nu_parent" sce:default-endian="big">
+  <sce:import src="codec_b5nu_keyexpr.scxml" kind="codec" as="codec_b5nu_keyexpr"/>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="mid" bit="0" width="5" value="0x1d"/>
+      <sce:flag name="M" bit="6"{parent_header_static}/>
+    </sce:flags>
+    {parent_extra_field}
+    <sce:embed id="key" type="codec_b5nu_keyexpr" sce:byte="1"/>
+  </datamodel>
+</scxml>"#
+    );
+
+    let keyexpr = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_b5nu_keyexpr" sce:default-endian="big">
+  <sce:import src="codec_b5nu_local.scxml" kind="codec" as="codec_b5nu_local"/>
+  <sce:import src="codec_b5nu_nonlocal.scxml" kind="codec" as="codec_b5nu_nonlocal"/>
   <sce:requires-parent-flags carrier="header">
     <sce:flag name="M" bit="6"/>
   </sce:requires-parent-flags>
   <datamodel>
-    <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
     <sce:variant tag="parent.M">
-      <sce:arm value="0x00" type="codec_zenoh_keyexpr_nonlocal" default="true"/>
-      <sce:arm value="0x01" type="codec_zenoh_keyexpr_local"/>
+      <sce:arm value="0x00" type="codec_b5nu_nonlocal" default="true"/>
+      <sce:arm value="0x01" type="codec_b5nu_local"/>
     </sce:variant>
   </datamodel>
 </scxml>"#;
 
-    // compile_forge_with_imports drives the full pipeline; the codegen
-    // guard fires at the variant emit entry. We don't need real arm
-    // body codecs because the guard runs before import resolution
-    // surfaces missing-arm-body errors.
-    let result = sce_build::compile_forge_with_imports(
-        content,
-        sce_build::DocumentLabel::symmetric("codec_b5_nu_codegen_guard"),
+    let local = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_b5nu_local" sce:default-endian="big">
+  <datamodel>
+    <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+  </datamodel>
+</scxml>"#;
+
+    let nonlocal = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_b5nu_nonlocal" sce:default-endian="big">
+  <datamodel>
+    <sce:field id="payload" sce:type="uint16" sce:byte="0" sce:bit-size="16"/>
+  </datamodel>
+</scxml>"#;
+
+    std::fs::write(dir.join("codec_b5nu_parent.scxml"), &parent).expect("write parent");
+    std::fs::write(dir.join("codec_b5nu_keyexpr.scxml"), keyexpr).expect("write keyexpr");
+    std::fs::write(dir.join("codec_b5nu_local.scxml"), local).expect("write local");
+    std::fs::write(dir.join("codec_b5nu_nonlocal.scxml"), nonlocal).expect("write nonlocal");
+
+    let parent_path = dir.join("codec_b5nu_parent.scxml");
+    (dir, parent_path)
+}
+
+/// B5-ν Phase B positive round-trip — a parent codec embeds a parent-tag-
+/// dispatched variant codec. Codegen succeeds for Rust; emitted code
+/// contains the `parent_flags`-driven decode dispatch and the encode-
+/// side `_derived_header` local that OR's the active arm's bit into
+/// the carrier byte. This exercises the full Phase B surface end-to-
+/// end (variant_obj Parent branch + `b5_nu_derivation_block` +
+/// `inject_b5_nu_carrier_suffix`).
+#[test]
+fn forge_b5_nu_round_trip_local_nonlocal_rust() {
+    let (dir, parent_path) = b5_nu_write_round_trip_fixture("", "");
+
+    let content = std::fs::read_to_string(&parent_path).expect("read parent");
+    let output = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("codec_b5nu_parent"),
         sce_build::generator::Language::Rust,
-        &std::env::temp_dir(),
+        &dir,
         &sce_build::ForgeCompileOptions::default(),
+    )
+    .expect("Phase B codegen must succeed for valid parent-tag variant");
+
+    // Parent codec's encode emits a `_derived_header` local before any
+    // byte append, and the carrier emit ORs it into `self.header`.
+    let parent_rust = output
+        .files
+        .iter()
+        .find(|(name, _)| name.contains("codec_b5nu_parent"))
+        .map(|(_, body)| body.clone())
+        .expect("parent codec emit");
+    assert!(
+        parent_rust.contains("let _derived_header: u8 ="),
+        "parent encode must declare `_derived_header: u8`\n{parent_rust}"
     );
-    let err = match result {
-        Ok(_) => panic!("codegen must fail with Phase B guard"),
+    assert!(
+        parent_rust.contains("CodecB5nuKeyexprVariant::CodecB5nuLocal(_) => 0x40u8"),
+        "match must shift Local arm value 0x01 into bit 6 (0x40)\n{parent_rust}"
+    );
+    assert!(
+        parent_rust.contains("CodecB5nuKeyexprVariant::CodecB5nuNonlocal(_) => 0x00u8"),
+        "match must shift Nonlocal arm value 0x00 into bit 6 (0x00)\n{parent_rust}"
+    );
+    assert!(
+        parent_rust.contains("r.push(self.header | _derived_header);"),
+        "carrier emit must OR in _derived_header\n{parent_rust}"
+    );
+
+    // Child variant codec's decode dispatches on parent_flags.
+    let keyexpr_rust = sce_build::compile_forge_with_imports(
+        &std::fs::read_to_string(dir.join("codec_b5nu_keyexpr.scxml")).unwrap(),
+        sce_build::DocumentLabel::symmetric("codec_b5nu_keyexpr"),
+        sce_build::generator::Language::Rust,
+        &dir,
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .expect("keyexpr codegen must succeed")
+    .files
+    .iter()
+    .find(|(name, _)| name.contains("codec_b5nu_keyexpr"))
+    .map(|(_, body)| body.clone())
+    .expect("keyexpr codec emit");
+    assert!(
+        keyexpr_rust.contains("match ((parent_flags >> 6) & (0x01 as u8)) as u8 {"),
+        "child variant decode must dispatch on `(parent_flags >> 6) & 0x01`\n{keyexpr_rust}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// B5-ν Q-3 cross-doc: parent's `<sce:flag name="M" value="1"/>` static
+/// constant conflicts with the embedded codec's parent-tag derivation.
+/// Cross-doc validator surfaces `codec/parent-flag-derivation-conflict`.
+#[test]
+fn forge_b5_nu_parent_flag_derivation_conflict_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+
+    let (dir, parent_path) = b5_nu_write_round_trip_fixture(
+        "", // no extra middle field
+        r#" value="0x01""#, // STATIC value= on M flag conflicts with derivation
+    );
+
+    let content = std::fs::read_to_string(&parent_path).expect("read parent");
+    let err = match sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("codec_b5nu_parent"),
+        sce_build::generator::Language::Rust,
+        &dir,
+        &sce_build::ForgeCompileOptions::default(),
+    ) {
+        Ok(_) => panic!("cross-doc validator must reject Q-3 conflict"),
         Err(e) => e,
     };
-    let msg = match err.error {
-        ForgeError::Generate(GenerateError::UnsupportedFeature(feature)) => feature,
-        other => panic!(
-            "expected GenerateError::UnsupportedFeature; got: {:?}",
-            other
+
+    assert!(
+        matches!(
+            err.error,
+            ForgeError::Validation(
+                ValidationError::CodecParentFlagDerivationConflict {
+                    ref parent_codec,
+                    ref embedded_codec,
+                    ref flag,
+                    ..
+                }
+            ) if parent_codec == "codec_b5nu_parent"
+                && embedded_codec == "codec_b5nu_keyexpr"
+                && flag == "M"
         ),
+        "got: {:?}",
+        err.error
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// B5-ν Q-6 cross-doc: a parent that declares its B5-ν embed field
+/// BEFORE the flags carrier field violates the carrier-before-variant
+/// declaration order rule. Cross-doc validator surfaces
+/// `codec/parent-tag-variant-before-carrier`.
+#[test]
+fn forge_b5_nu_parent_tag_variant_before_carrier_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let dir = std::env::temp_dir().join(format!("sce_b5nu_q6_{pid}_{id}"));
+    std::fs::create_dir_all(&dir).expect("mkdir fixture");
+
+    // Parent puts the embed field BEFORE the flags-carrier header field
+    // — Q-6 order violation. The embed sits at byte 0, header at byte 2
+    // (after the embed's worst-case width). Keyexpr/local/nonlocal
+    // fixtures reuse the shape from the round-trip helper, written
+    // inline here so the helper's defaults stay consistent.
+    let parent = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_b5nu_q6_parent" sce:default-endian="big">
+  <sce:import src="codec_b5nu_q6_keyexpr.scxml" kind="codec" as="codec_b5nu_q6_keyexpr"/>
+  <datamodel>
+    <sce:embed id="key" type="codec_b5nu_q6_keyexpr" sce:byte="0"/>
+    <sce:flags id="header" sce:type="uint8" sce:byte="2" sce:bit-size="8">
+      <sce:flag name="M" bit="6"/>
+    </sce:flags>
+  </datamodel>
+</scxml>"#;
+    let keyexpr = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_b5nu_q6_keyexpr" sce:default-endian="big">
+  <sce:import src="codec_b5nu_q6_local.scxml" kind="codec" as="codec_b5nu_q6_local"/>
+  <sce:import src="codec_b5nu_q6_nonlocal.scxml" kind="codec" as="codec_b5nu_q6_nonlocal"/>
+  <sce:requires-parent-flags carrier="header">
+    <sce:flag name="M" bit="6"/>
+  </sce:requires-parent-flags>
+  <datamodel>
+    <sce:variant tag="parent.M">
+      <sce:arm value="0x00" type="codec_b5nu_q6_nonlocal" default="true"/>
+      <sce:arm value="0x01" type="codec_b5nu_q6_local"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#;
+    let local = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_b5nu_q6_local" sce:default-endian="big">
+  <datamodel>
+    <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+  </datamodel>
+</scxml>"#;
+    let nonlocal = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_b5nu_q6_nonlocal" sce:default-endian="big">
+  <datamodel>
+    <sce:field id="payload" sce:type="uint16" sce:byte="0" sce:bit-size="16"/>
+  </datamodel>
+</scxml>"#;
+    std::fs::write(dir.join("codec_b5nu_q6_parent.scxml"), parent).expect("write parent");
+    std::fs::write(dir.join("codec_b5nu_q6_keyexpr.scxml"), keyexpr).expect("write keyexpr");
+    std::fs::write(dir.join("codec_b5nu_q6_local.scxml"), local).expect("write local");
+    std::fs::write(dir.join("codec_b5nu_q6_nonlocal.scxml"), nonlocal).expect("write nonlocal");
+
+    let err = match sce_build::compile_forge_with_imports(
+        parent,
+        sce_build::DocumentLabel::symmetric("codec_b5nu_q6_parent"),
+        sce_build::generator::Language::Rust,
+        &dir,
+        &sce_build::ForgeCompileOptions::default(),
+    ) {
+        Ok(_) => panic!("cross-doc validator must reject Q-6 order violation"),
+        Err(e) => e,
     };
     assert!(
-        msg.contains("B5-ν parent-tag variant codegen is staged for Phase B"),
-        "guard message must name Phase B: {}",
-        msg
+        matches!(
+            err.error,
+            ForgeError::Validation(
+                ValidationError::CodecVariantParentTagBeforeCarrier {
+                    ref parent_codec,
+                    ref embedded_codec,
+                    ref carrier,
+                    ..
+                }
+            ) if parent_codec == "codec_b5nu_q6_parent"
+                && embedded_codec == "codec_b5nu_q6_keyexpr"
+                && carrier == "header"
+        ),
+        "got: {:?}",
+        err.error
     );
-    assert!(
-        msg.contains("codec_b5_nu_codegen_guard"),
-        "guard message must name the codec: {}",
-        msg
-    );
+    let _ = std::fs::remove_dir_all(&dir);
 }

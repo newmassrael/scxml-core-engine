@@ -316,6 +316,13 @@ func (s *{{ struct_name }}) {{ fl.name_set }}(v bool) {
 {% endif %}
 // Encode serializes the {{ struct_name }} into raw bytes.
 func (s *{{ struct_name }}) Encode({{ parent_flags_param_first }}) []byte {
+{% if has_parent_tag_derivation %}
+	// RFC §5.B B5-ν Phase B — derive carrier bits from each embedded
+	// parent-tag variant's active arm before the carrier byte is
+	// emitted. Each `_derived<Carrier>` local is OR'd into the
+	// carrier's encode site.
+{{ parent_tag_derivation_block }}
+{% endif %}
 {% if has_no_fields %}
 	// RFC §5.B B5-α empty body — zero-byte payload.
 	return []byte{}

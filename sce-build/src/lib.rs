@@ -2726,6 +2726,38 @@ fn validate_and_enrich_imports(
                         None
                     }
                 });
+                // RFC §5.B B5-ν Phase B: surface the bit/width of the
+                // parent-tag flag plus the variant arms (alias + arm
+                // value + is_default) so the parent codec's encode-side
+                // derivation pass can emit a per-language match over
+                // `self.<embed_field>.body` that ORs the active arm's
+                // tag bits into the parent carrier byte before the
+                // carrier emits. The rpf lookup uses the codec's own
+                // `requires_parent_flags` (parser-validated to declare
+                // the named flag) — `expect` is safe because the
+                // matched flag name is the same one Phase A's parser
+                // resolved against this list.
+                if let Some(v) = cm.variant.as_ref() {
+                    if v.tag_scope == forge::model::TagScope::Parent {
+                        if let (Some(flag_name), Some(rpf)) =
+                            (v.tag_flag.as_ref(), cm.requires_parent_flags.as_ref())
+                        {
+                            if let Some(fd) =
+                                rpf.flags.iter().find(|f| f.name == *flag_name)
+                            {
+                                ctx.codec_b5_nu_parent_tag_bit_width =
+                                    Some((fd.bit, fd.width.max(1)));
+                            }
+                        }
+                        ctx.codec_b5_nu_variant_arms = v
+                            .arms
+                            .iter()
+                            .map(|arm| {
+                                (arm.body_alias.clone(), arm.value, arm.is_default)
+                            })
+                            .collect();
+                    }
+                }
             }
             // RFC §5.C B6-α' cross-resolution: the link kind's
             // `<sce:rx-pool>` / `<sce:tx-pool>` cross-validator
