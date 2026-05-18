@@ -15,6 +15,7 @@
 //   * OrderingGapFullShape
 //   * PeerPartitionedShape
 //   * BarrierTimeoutShape
+//   * RegionPartitionedShape
 // since those pin byte-exact output.
 
 #include "mesh/CommunicationError.h"
@@ -111,6 +112,32 @@ TEST(CommunicationErrorTest, BarrierTimeoutShape) {
               "\"parallel_id\":\"root\","
               "\"missing_regions\":[\"right\"],"
               "\"timeout_ms\":150}");
+}
+
+TEST(CommunicationErrorTest, RegionPartitionedShape) {
+    // §16.7 row 13 — REGION_PARTITIONED carries machine + partition,
+    // plus the optional last_seen_ms_ago reused from row 8. Orthogonal
+    // to row 8: row 8 is machine identity, row 13 is the machine +
+    // partition pair surfaced by per-partition liveness. Runtime raise
+    // sites live in mesh_transport.h.jinja2 (Zenoh 3-segment
+    // `sce/live/<machine>/<partition>` DELETE + SOME/IP region-level
+    // availability handler). Authors guard on
+    // `_event.data.reason == 'REGION_PARTITIONED' &&
+    //  _event.data.machine == '<m>' &&
+    //  _event.data.partition == '<p>'`.
+    CommunicationError err;
+    err.reason = "REGION_PARTITIONED";
+    err.last_seen_ms_ago = 142;
+    err.machine = "motor";
+    err.partition = "motor_right";
+
+    const auto out = bytes_to_string(err.toJsonBytes());
+    EXPECT_EQ(out,
+              "{\"errorName\":\"communication\","
+              "\"reason\":\"REGION_PARTITIONED\","
+              "\"last_seen_ms_ago\":142,"
+              "\"machine\":\"motor\","
+              "\"partition\":\"motor_right\"}");
 }
 
 TEST(CommunicationErrorTest, OptionalFieldsAbsentAreSkipped) {
