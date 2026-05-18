@@ -269,12 +269,14 @@ data class {{ struct_name }}(
             {{ variant.peek_byte_decode_stmt }}
 {% endif %}
 {% else %}
+{% if fields %}
             // Decode fixed prefix (RFC §5.B variant B1-β: fields before tag suffix).
             val raw = cursor.peekSlice({{ min_bytes }}) ?: return null
 {% for field in fields %}
             val {{ field.id }} = {{ field.decode_expr }}
 {% endfor %}
             if (!cursor.advance({{ min_bytes }})) return null
+{% endif %}
 {% endif %}
             // Dispatch on the tag field; each arm decodes its body codec
             // from the cursor. The default arm (when declared) carries

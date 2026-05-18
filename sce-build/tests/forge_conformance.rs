@@ -9459,6 +9459,20 @@ fn forge_b5_nu_round_trip_local_nonlocal_rust() {
         keyexpr_rust.contains("match ((parent_flags >> 6) & (0x01 as u8)) as u8 {"),
         "child variant decode must dispatch on `(parent_flags >> 6) & 0x01`\n{keyexpr_rust}"
     );
+    // RFC B5-ν dispatcher self-gen cosmetic Gap — variant-only
+    // dispatchers (no own `<sce:field>` siblings before the variant)
+    // must NOT emit the dead prefix-decode block. Watching-zenoh R125c2
+    // follow-up: under `warnings = "deny"`, the unused `let raw = ...`
+    // would trip rustc's `unused_variables` lint. Negative assertion
+    // mirrors the atomic 11287248 / b35dbb66 substring-pattern.
+    assert!(
+        !keyexpr_rust.contains("let raw = cursor.peek_slice(0)?;"),
+        "variant-only dispatcher must NOT emit dead prefix-decode `let raw`\n{keyexpr_rust}"
+    );
+    assert!(
+        !keyexpr_rust.contains("cursor.advance(0)?;"),
+        "variant-only dispatcher must NOT emit no-op `cursor.advance(0)`\n{keyexpr_rust}"
+    );
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -10387,6 +10401,14 @@ path = "src/lib.rs"
 sce-forge-runtime = {{ path = "{}", default-features = false }}
 
 [workspace]
+
+# RFC §5.B B5-ν dispatcher self-gen Q-DSG-3 — mirror the strictness
+# watching-zenoh applies in their workspace (`warnings = "deny"`).
+# Lint regressions like dead `let raw` bindings for variant-only
+# dispatchers (R125c2 cosmetic Gap) become hard compile errors here,
+# so the harness catches them at SCE-side fixture time.
+[lints.rust]
+warnings = "deny"
 "#,
         forge_runtime.display(),
     );

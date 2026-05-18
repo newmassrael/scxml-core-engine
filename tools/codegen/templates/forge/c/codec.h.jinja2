@@ -203,6 +203,7 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
     {{ variant.peek_byte_decode_stmt }}
 {% endif %}
 {% else %}
+{% if fields %}
     /* Decode fixed prefix (RFC §5.B variant B1-β: fields before tag suffix). */
     const uint8_t *raw = sce_forge_cursor_peek(cursor, {{ c_min_bytes_macro }});
     if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
@@ -210,6 +211,7 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
     out->{{ field.id }} = {{ field.decode_expr }};
 {% endfor %}
     if (!sce_forge_cursor_advance(cursor, {{ c_min_bytes_macro }})) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+{% endif %}
 {% endif %}
     /* Dispatch on the tag field; each arm decodes its body codec from
      * the cursor. The default arm (when declared) carries the runtime

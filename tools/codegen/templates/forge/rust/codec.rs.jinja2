@@ -173,6 +173,7 @@ impl {{ struct_name }} {
         {{ variant.peek_byte_decode_stmt }}
 {% endif %}
 {% else %}
+{% if fields %}
         // Decode fixed prefix (RFC §5.B variant primitive B1-β: fields
         // sit before the variant suffix on the wire).
         let raw = cursor.peek_slice({{ min_bytes }})?;
@@ -180,6 +181,7 @@ impl {{ struct_name }} {
         let {{ field.id }} = {{ field.decode_expr }};
 {% endfor %}
         cursor.advance({{ min_bytes }})?;
+{% endif %}
 {% endif %}
         // Dispatch on the tag field; each arm decodes its body codec
         // from the cursor. The default arm (when declared) carries the

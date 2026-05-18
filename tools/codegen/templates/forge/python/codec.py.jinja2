@@ -131,6 +131,7 @@ class {{ struct_name }}:
         except NeedMoreBytes:
             return None
 {% else %}
+{% if fields %}
         # Decode fixed prefix (RFC §5.B variant B1-β: fields before tag suffix).
         try:
             raw = cursor.peek_slice({{ min_bytes }})
@@ -143,6 +144,7 @@ class {{ struct_name }}:
             cursor.advance({{ min_bytes }})
         except NeedMoreBytes:
             return None
+{% endif %}
 {% endif %}
         # Dispatch on the tag field; each arm decodes its body codec
         # from the cursor. The default arm (when declared) carries the

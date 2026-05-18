@@ -121,6 +121,7 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor{{ parent_flags_param_decl }
 	{{ variant.peek_byte_decode_stmt }}
 {% endif %}
 {% else %}
+{% if fields %}
 	// Decode fixed prefix (RFC §5.B variant B1-β: fields before tag suffix).
 	raw, err := cursor.PeekSlice({{ min_bytes }})
 	if err != nil {
@@ -132,6 +133,7 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor{{ parent_flags_param_decl }
 	if err := cursor.Advance({{ min_bytes }}); err != nil {
 		return nil, err
 	}
+{% endif %}
 {% endif %}
 	// Dispatch on the tag field; each arm decodes its body codec from
 	// the cursor. The default arm (when declared) carries the runtime
