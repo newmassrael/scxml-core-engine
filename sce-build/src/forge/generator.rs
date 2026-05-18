@@ -9693,13 +9693,25 @@ fn b5_nu_match_term_kotlin(d: &B5NuDerivation, imports: &[ImportContext]) -> Str
     }
 }
 
-/// Single-embed match-expression term for Python. Uses `isinstance`
-/// chained conditional expressions which mirror the Cpp ternary chain.
+/// Single-embed match-expression term for Python. Discriminates the
+/// active arm via the variant body's `kind` string attribute (Python
+/// codec template's actual representation — see lines 28-50 and 154
+/// of `tools/codegen/templates/forge/python/codec.py.jinja2` where
+/// `body.kind` is set at decode time and matched at encode time).
 /// Optional embeds add an `is not None` guard with 0 in the absent
 /// branch.
+///
+/// Earlier `isinstance` shape (atomic `11287248`) was structurally
+/// incorrect — Python's variant body is NOT a class hierarchy; there
+/// is no nested arm class on the variant to isinstance-check against.
+/// The `.kind` string dispatch matches the existing Python variant
+/// encode template.
 fn b5_nu_match_term_python(d: &B5NuDerivation, imports: &[ImportContext]) -> String {
+    // imp lookup ensures the embed alias resolves (parity with the
+    // other backends); Python's variant dispatch reads `.kind` on the
+    // body so the dispatcher's struct name isn't spelled here.
+    let _ = b5_nu_embed_pascal(d, imports);
     let snake = filters::to_snake_case(d.embed_field_id.clone());
-    let embed_pascal = b5_nu_embed_pascal(d, imports);
     let mask: u64 = (1u64 << d.width) - 1;
     let mut chain = String::new();
     for (idx, (alias, val, _)) in d.arms.iter().enumerate() {
@@ -9710,7 +9722,7 @@ fn b5_nu_match_term_python(d: &B5NuDerivation, imports: &[ImportContext]) -> Str
             chain.push_str(&literal);
         } else {
             chain.push_str(&format!(
-                "({literal} if isinstance(self.{snake}.body, {embed_pascal}.{variant}) else "
+                "({literal} if self.{snake}.body.kind == \"{variant}\" else "
             ));
         }
     }
@@ -9725,22 +9737,31 @@ fn b5_nu_match_term_python(d: &B5NuDerivation, imports: &[ImportContext]) -> Str
     }
 }
 
-/// Single-embed type-switch for Go. Writes into the named local via
+/// Single-embed dispatch for Go. Writes into the named local via
 /// bitwise OR so multiple embeds combine cleanly on the same carrier.
-/// Optional embeds nil-check the pointer field; nil → no contribution.
+/// Optional embeds nil-check the embed pointer; nil → no contribution.
+///
+/// Go's variant body is a struct with one `*<ArmBodyType>` field per
+/// arm — exactly one is non-nil at a time. Dispatch is by field
+/// presence, NOT by `.(type)` type-switch (which compiles only against
+/// an interface). The arm-field-name happens to match the body alias's
+/// PascalCase, mirroring the existing Go variant encode template's
+/// `switch { case s.Body.<Arm> != nil: }` shape — so no arm body type
+/// name is spelled at the dispatch site, sidestepping the
+/// cross-package qualification problem entirely.
 fn b5_nu_switch_block_go(d: &B5NuDerivation, local: &str, imports: &[ImportContext]) -> String {
     // imp lookup ensures the embed alias resolves (parity with the
-    // expression-form backends); Go's type-switch is on the body
-    // interface so the dispatcher's struct name isn't spelled here.
+    // expression-form backends); the dispatcher's struct name isn't
+    // spelled here — only field access through the variant body.
     let _ = b5_nu_embed_pascal(d, imports);
     let pascal = filters::to_pascal_case(d.embed_field_id.clone());
     let mask: u64 = (1u64 << d.width) - 1;
-    let mut switch_block = format!("\tswitch s.{pascal}.Body.(type) {{\n");
+    let mut switch_block = String::from("\tswitch {\n");
     for (alias, val, _) in &d.arms {
-        let arm_pascal = filters::to_pascal_case(alias.clone());
+        let arm_variant = filters::to_pascal_case(alias.clone());
         let shifted = ((val & mask) << d.bit) & 0xFF;
         switch_block.push_str(&format!(
-            "\tcase *{arm_pascal}:\n\t\t{local} |= 0x{shifted:02X}\n"
+            "\tcase s.{pascal}.Body.{arm_variant} != nil:\n\t\t{local} |= 0x{shifted:02X}\n"
         ));
     }
     switch_block.push_str("\t}\n");

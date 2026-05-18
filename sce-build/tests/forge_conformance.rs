@@ -9746,6 +9746,22 @@ fn forge_b5_nu_consumer_parity_alias_neq_stem_rust() {
          got:\n{parent_rust}"
     );
 
+    // RFC §5.B dispatcher self-gen Q-DSG-3 — end-to-end rustc-compile
+    // verification of the full 4-codec emit (parent + dispatcher + 2
+    // arm bodies). Substring assertions above check shape; this proves
+    // composition into a compilable crate.
+    rustc_compile_codec_set(
+        &dir,
+        &[
+            "b5nu_consumer_parent.scxml",
+            "b5nu_consumer_disp.scxml",
+            "b5nu_consumer_local.scxml",
+            "b5nu_consumer_nonlocal.scxml",
+        ],
+        "alias_neq_stem",
+    )
+    .expect("alias-neq-stem fixture must rustc-compile clean (Q-DSG-3)");
+
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -9972,6 +9988,21 @@ fn forge_b5_nu_consumer_parity_chain_forwarding_resolves() {
          (no such field on Forwarding dispatcher; Gap 5 regression);\n{disp_rust}"
     );
 
+    // RFC §5.B dispatcher self-gen Q-DSG-3 — end-to-end rustc-compile
+    // verification of the dispatcher + 2 arm bodies. Validates Gap
+    // 4/5's Forwarding-source argument substitution produces actually
+    // compilable Rust (not just shape-correct strings).
+    rustc_compile_codec_set(
+        &dir,
+        &[
+            "b5nu_chain_disp.scxml",
+            "b5nu_chain_arm_a.scxml",
+            "b5nu_chain_arm_b.scxml",
+        ],
+        "chain_forwarding",
+    )
+    .expect("chain-forwarding dispatcher must rustc-compile clean (Q-DSG-3)");
+
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -10155,6 +10186,551 @@ fn forge_b5_nu_consumer_parity_chain_bit_drift_rejects() {
         ),
         "got: {:?}",
         err.error
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// RFC §5.B B5-ν dispatcher self-gen (claudedocs/rfc-b5-nu-dispatcher-
+// self-gen.md) — per-backend regression fixtures for the variant arm
+// dispatch substitution when the dispatcher resolves the flag carrier
+// via Forwarding (own `<sce:requires-parent-flags>`). Each fixture
+// reuses the same dispatcher + arm body fixture set and asserts the
+// language-specific emit shape catches Gap 4/5 (Forwarding-source
+// argument substitution) + per-backend variant body discrimination
+// (Gap 7 Go field-presence, Gap 8 Python `.kind` string).
+
+/// Helper — write the standard B5-ν dispatcher-self-gen fixture set:
+/// dispatcher with own RPF carrier="header" + flag M (variant tag)
+/// + flag N (forwarded to arm_a's body which gates a payload byte
+/// on `parent.N`), plus arm_a (with RPF on N) and arm_b (plain).
+fn b5_nu_dsg_write_fixture(
+    namespace: &str,
+) -> (std::path::PathBuf, String, String, String) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let dir = std::env::temp_dir().join(format!("sce_b5nu_dsg_{namespace}_{pid}_{id}"));
+    std::fs::create_dir_all(&dir).expect("mkdir dsg fixture");
+
+    let disp_id = format!("b5nu_dsg_{namespace}_disp");
+    let arm_a_id = format!("b5nu_dsg_{namespace}_arm_a");
+    let arm_b_id = format!("b5nu_dsg_{namespace}_arm_b");
+
+    let dispatcher = format!(
+        r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="{disp_id}" sce:default-endian="big">
+  <sce:import src="{arm_a_id}.scxml" kind="codec" as="{arm_a_id}"/>
+  <sce:import src="{arm_b_id}.scxml" kind="codec" as="{arm_b_id}"/>
+  <sce:requires-parent-flags carrier="header">
+    <sce:flag name="N" bit="5"/>
+    <sce:flag name="M" bit="6"/>
+  </sce:requires-parent-flags>
+  <datamodel>
+    <sce:variant tag="parent.M">
+      <sce:arm value="0x00" type="{arm_b_id}" default="true"/>
+      <sce:arm value="0x01" type="{arm_a_id}"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#
+    );
+
+    let arm_a = format!(
+        r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="{arm_a_id}" sce:default-endian="big">
+  <sce:requires-parent-flags carrier="header">
+    <sce:flag name="N" bit="5"/>
+  </sce:requires-parent-flags>
+  <datamodel>
+    <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8" sce:present-if="parent.N"/>
+  </datamodel>
+</scxml>"#
+    );
+
+    let arm_b = format!(
+        r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="{arm_b_id}" sce:default-endian="big">
+  <datamodel>
+    <sce:field id="payload" sce:type="uint16" sce:byte="0" sce:bit-size="16"/>
+  </datamodel>
+</scxml>"#
+    );
+
+    std::fs::write(dir.join(format!("{disp_id}.scxml")), &dispatcher).expect("write disp");
+    std::fs::write(dir.join(format!("{arm_a_id}.scxml")), &arm_a).expect("write arm_a");
+    std::fs::write(dir.join(format!("{arm_b_id}.scxml")), &arm_b).expect("write arm_b");
+
+    (dir, disp_id, arm_a_id, arm_b_id)
+}
+
+/// Helper — invoke `compile_forge_with_imports` on the dispatcher SCXML
+/// and return the dispatcher's emitted source. Uses `golden_options`
+/// so per-language requirements (e.g. Go's `go_module_prefix`) are
+/// satisfied. The file lookup tolerates Kotlin's nested package-path
+/// emit by searching both the disp_id stem and a PascalCase variant.
+fn b5_nu_dsg_compile_disp(
+    dir: &std::path::Path,
+    disp_id: &str,
+    lang: sce_build::generator::Language,
+) -> String {
+    let src = std::fs::read_to_string(dir.join(format!("{disp_id}.scxml")))
+        .expect("read dispatcher SCXML");
+    let output = sce_build::compile_forge_with_imports(
+        &src,
+        sce_build::DocumentLabel::symmetric(disp_id),
+        lang,
+        dir,
+        &golden_options(lang),
+    )
+    .expect("dispatcher codegen must succeed (B5-ν chain-forwarding fixture)");
+    let pascal = b5_nu_id_to_pascal(disp_id);
+    output
+        .files
+        .iter()
+        .find(|(name, _)| name.contains(disp_id) || name.contains(&pascal))
+        .map(|(_, body)| body.clone())
+        .unwrap_or_else(|| {
+            let names: Vec<&str> = output.files.iter().map(|(n, _)| n.as_str()).collect();
+            panic!("dispatcher codec emit not found; available files: {names:?}");
+        })
+}
+
+fn b5_nu_id_to_pascal(id: &str) -> String {
+    id.split('_')
+        .map(|s| {
+            let mut c = s.chars();
+            match c.next() {
+                Some(ch) => ch.to_uppercase().chain(c).collect::<String>(),
+                None => String::new(),
+            }
+        })
+        .collect()
+}
+
+/// RFC §5.B B5-ν dispatcher self-gen Q-DSG-3 — rustc-compile harness.
+/// Compile every SCXML in `scxml_filenames` to Rust via
+/// `compile_forge_with_imports`, write the emitted `.rs` files into a
+/// standalone temp Cargo project that depends on the workspace's
+/// `sce-forge-runtime` via path, and invoke `cargo build`. The harness
+/// closes the systemic learning that `feedback_byte_goldens_not_compile`
+/// captured for byte goldens — substring assertions check shape, but
+/// only an end-to-end rustc invocation proves the emit actually
+/// composes into a compilable crate. Returns `Ok(())` on clean build
+/// and `Err(stderr-with-stdout)` on any failure.
+fn rustc_compile_codec_set(
+    dir: &std::path::Path,
+    scxml_filenames: &[&str],
+    test_id: &str,
+) -> Result<(), String> {
+    use std::collections::HashSet;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    // Compile each SCXML to Rust and gather every `.rs` file the
+    // emit produced. A B5-ν dispatcher fixture typically emits 4
+    // files (parent + dispatcher + 2 arm bodies); test-vector
+    // sidecars and helper files are also included verbatim.
+    let lang = sce_build::generator::Language::Rust;
+    let opts = golden_options(lang);
+    let mut all_files: Vec<(String, String)> = Vec::new();
+    for filename in scxml_filenames {
+        let src = std::fs::read_to_string(dir.join(filename))
+            .map_err(|e| format!("read {filename}: {e}"))?;
+        let stem = filename.trim_end_matches(".scxml");
+        let output = sce_build::compile_forge_with_imports(
+            &src,
+            sce_build::DocumentLabel::symmetric(stem),
+            lang,
+            dir,
+            &opts,
+        )
+        .map_err(|e| format!("codegen {filename}: {e:?}"))?;
+        all_files.extend(output.files.into_iter());
+    }
+
+    // Standalone temp Cargo project. `[workspace]` empty section
+    // detaches it from the enclosing SCE workspace's `[workspace]`
+    // root so its target dir / resolver / member set is isolated.
+    let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let proj_dir = std::env::temp_dir().join(format!(
+        "sce_rustc_check_{test_id}_{pid}_{counter}"
+    ));
+    std::fs::create_dir_all(proj_dir.join("src"))
+        .map_err(|e| format!("mkdir src: {e}"))?;
+
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let forge_runtime = std::path::Path::new(manifest_dir)
+        .join("..")
+        .join("sce-forge-runtime")
+        .join("rust")
+        .canonicalize()
+        .map_err(|e| format!("canonicalize sce-forge-runtime: {e}"))?;
+
+    let cargo_toml = format!(
+        r#"[package]
+name = "sce_rustc_check_{test_id}"
+version = "0.0.1"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+sce-forge-runtime = {{ path = "{}", default-features = false }}
+
+[workspace]
+"#,
+        forge_runtime.display(),
+    );
+    std::fs::write(proj_dir.join("Cargo.toml"), cargo_toml)
+        .map_err(|e| format!("write Cargo.toml: {e}"))?;
+
+    // Write each generated `.rs` file under src/ and declare it in
+    // src/lib.rs. Multiple compile_forge_with_imports invocations on
+    // sibling SCXML may emit identical sidecar/helper files (test
+    // vectors etc.); the dedupe set keeps src/ tidy and lib.rs's
+    // `pub mod` declarations unique. Non-`.rs` emits (e.g. test JSON
+    // sidecars) are filtered out — they're not source modules.
+    let mut lib_rs = String::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    for (filename, content) in &all_files {
+        let path = std::path::Path::new(filename);
+        let ext_is_rs = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e == "rs")
+            .unwrap_or(false);
+        if !ext_is_rs {
+            continue;
+        }
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .ok_or_else(|| format!("invalid filename: {filename}"))?;
+        // Test-vector sidecar conventionally ends with `_test`. Including
+        // it as a `pub mod` would force its `#[test]` items into the
+        // sce_rustc_check_<id> crate's test surface — we just want to
+        // verify it compiles, not run it. Treat it as a non-public
+        // module so the items are reachable for type-check but not
+        // exported.
+        let is_test_sidecar = stem.ends_with("_test");
+        if !seen.insert(stem.to_string()) {
+            continue;
+        }
+        std::fs::write(proj_dir.join("src").join(format!("{stem}.rs")), content)
+            .map_err(|e| format!("write {stem}.rs: {e}"))?;
+        if is_test_sidecar {
+            lib_rs.push_str(&format!("#[cfg(test)]\nmod {stem};\n"));
+        } else {
+            lib_rs.push_str(&format!("pub mod {stem};\n"));
+        }
+    }
+    std::fs::write(proj_dir.join("src/lib.rs"), lib_rs)
+        .map_err(|e| format!("write lib.rs: {e}"))?;
+
+    // Share the workspace's cargo target dir to avoid re-downloading /
+    // re-building sce-forge-runtime for every test invocation. CARGO
+    // creates a sibling subdir under target/sce_rustc_check_<id> so
+    // concurrent test runs don't collide.
+    let workspace_target = std::path::Path::new(manifest_dir)
+        .join("..")
+        .join("target")
+        .join("sce_rustc_check");
+
+    let output = std::process::Command::new("cargo")
+        .arg("build")
+        .arg("--quiet")
+        .current_dir(&proj_dir)
+        .env("CARGO_TARGET_DIR", &workspace_target)
+        .output()
+        .map_err(|e| format!("cargo build invocation: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        return Err(format!(
+            "rustc-compile FAILED for {test_id}\nproj_dir: {}\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}",
+            proj_dir.display()
+        ));
+    }
+
+    let _ = std::fs::remove_dir_all(&proj_dir);
+    Ok(())
+}
+
+/// RFC B5-ν dispatcher self-gen — Cpp dispatcher emit threads
+/// `parent_flags` to arm body decode/encode calls.
+#[test]
+fn forge_b5_nu_dispatcher_self_gen_cpp() {
+    let (dir, disp_id, arm_a_id, _) = b5_nu_dsg_write_fixture("cpp");
+    let disp = b5_nu_dsg_compile_disp(&dir, &disp_id, sce_build::generator::Language::Cpp);
+    let arm_a_pascal = b5_nu_id_to_pascal(&arm_a_id);
+    assert!(
+        disp.contains(&format!("{arm_a_pascal}::decode(cursor, parent_flags)")),
+        "Cpp dispatcher decode must pass parent_flags to arm_a; got:\n{disp}"
+    );
+    assert!(
+        !disp.contains(&format!("{arm_a_pascal}::decode(cursor, header)")),
+        "Cpp dispatcher decode must NOT pass bare `header` (Gap 4);\n{disp}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// RFC B5-ν dispatcher self-gen — Kotlin dispatcher emit threads
+/// `parentFlags` (camelCase) to arm body encode calls.
+#[test]
+fn forge_b5_nu_dispatcher_self_gen_kotlin() {
+    let (dir, disp_id, _, _) = b5_nu_dsg_write_fixture("kotlin");
+    let disp = b5_nu_dsg_compile_disp(&dir, &disp_id, sce_build::generator::Language::Kotlin);
+    assert!(
+        disp.contains("parentFlags"),
+        "Kotlin dispatcher must reference parentFlags param; got:\n{disp}"
+    );
+    assert!(
+        !disp.contains("this.header"),
+        "Kotlin dispatcher must NOT reference this.header on Forwarding-source dispatcher (Gap 5);\n{disp}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// RFC B5-ν dispatcher self-gen — Go dispatcher emit threads
+/// `parentFlags` (camelCase) at arm calls.
+#[test]
+fn forge_b5_nu_dispatcher_self_gen_go() {
+    let (dir, disp_id, arm_a_id, _) = b5_nu_dsg_write_fixture("go");
+    let disp = b5_nu_dsg_compile_disp(&dir, &disp_id, sce_build::generator::Language::Go);
+    let arm_a_pascal = b5_nu_id_to_pascal(&arm_a_id);
+    assert!(
+        disp.contains(&format!("Decode{arm_a_pascal}(cursor, parentFlags)")),
+        "Go dispatcher decode must pass parentFlags to arm_a; got:\n{disp}"
+    );
+    assert!(
+        disp.contains(".Encode(parentFlags)"),
+        "Go dispatcher encode must pass parentFlags to arm body; got:\n{disp}"
+    );
+    assert!(
+        !disp.contains("s.Header"),
+        "Go dispatcher must NOT reference s.Header on Forwarding-source dispatcher;\n{disp}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// RFC B5-ν dispatcher self-gen — C11 dispatcher emit threads
+/// `parent_flags` (snake_case) at arm calls.
+#[test]
+fn forge_b5_nu_dispatcher_self_gen_c11() {
+    let (dir, disp_id, _, _) = b5_nu_dsg_write_fixture("c11");
+    let disp = b5_nu_dsg_compile_disp(&dir, &disp_id, sce_build::generator::Language::C11);
+    assert!(
+        disp.contains("parent_flags"),
+        "C11 dispatcher must reference parent_flags param; got:\n{disp}"
+    );
+    assert!(
+        !disp.contains("decode(cursor, out->header)") && !disp.contains("decode(cursor, self->header)"),
+        "C11 dispatcher must NOT reference out->/self->header at arm calls on Forwarding-source dispatcher;\n{disp}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// RFC B5-ν dispatcher self-gen Gap 7 — Go consumer's b5_nu_switch_block
+/// uses field-presence Body.<Arm> != nil dispatch, NOT `.(type)` type-
+/// switch (invalid for the variant struct rep) and NOT bare arm body
+/// type names (which would lack package qualifier when arm bodies live
+/// in separate packages).
+#[test]
+fn forge_b5_nu_consumer_field_presence_dispatch_go() {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let dir = std::env::temp_dir().join(format!("sce_b5nu_go_consumer_{pid}_{id}"));
+    std::fs::create_dir_all(&dir).expect("mkdir fixture");
+
+    let parent = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="b5nu_go_parent" sce:default-endian="big">
+  <sce:import src="b5nu_go_disp.scxml" kind="codec" as="b5nu_go_disp"/>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="mid" bit="0" width="5" value="0x1d"/>
+      <sce:flag name="M" bit="6"/>
+    </sce:flags>
+    <sce:embed id="key" type="b5nu_go_disp" sce:byte="1"/>
+  </datamodel>
+</scxml>"#;
+    let disp = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="b5nu_go_disp" sce:default-endian="big">
+  <sce:import src="b5nu_go_local.scxml" kind="codec" as="b5nu_go_local"/>
+  <sce:import src="b5nu_go_nonlocal.scxml" kind="codec" as="b5nu_go_nonlocal"/>
+  <sce:requires-parent-flags carrier="header">
+    <sce:flag name="M" bit="6"/>
+  </sce:requires-parent-flags>
+  <datamodel>
+    <sce:variant tag="parent.M">
+      <sce:arm value="0x00" type="b5nu_go_nonlocal" default="true"/>
+      <sce:arm value="0x01" type="b5nu_go_local"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#;
+    let local = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="b5nu_go_local" sce:default-endian="big">
+  <datamodel>
+    <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+  </datamodel>
+</scxml>"#;
+    let nonlocal = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="b5nu_go_nonlocal" sce:default-endian="big">
+  <datamodel>
+    <sce:field id="payload" sce:type="uint16" sce:byte="0" sce:bit-size="16"/>
+  </datamodel>
+</scxml>"#;
+    std::fs::write(dir.join("b5nu_go_parent.scxml"), parent).expect("write parent");
+    std::fs::write(dir.join("b5nu_go_disp.scxml"), disp).expect("write disp");
+    std::fs::write(dir.join("b5nu_go_local.scxml"), local).expect("write local");
+    std::fs::write(dir.join("b5nu_go_nonlocal.scxml"), nonlocal).expect("write nonlocal");
+
+    let output = sce_build::compile_forge_with_imports(
+        parent,
+        sce_build::DocumentLabel::symmetric("b5nu_go_parent"),
+        sce_build::generator::Language::Go,
+        &dir,
+        &golden_options(sce_build::generator::Language::Go),
+    )
+    .expect("Go consumer codegen must succeed");
+    let parent_go = output
+        .files
+        .iter()
+        .find(|(name, _)| name.contains("b5nu_go_parent"))
+        .map(|(_, body)| body.clone())
+        .expect("parent codec emit");
+
+    assert!(
+        parent_go.contains("case s.Key.Body.B5nuGoLocal != nil:"),
+        "Go consumer must use field-presence dispatch on Body.<Arm>; got:\n{parent_go}"
+    );
+    assert!(
+        parent_go.contains("case s.Key.Body.B5nuGoNonlocal != nil:"),
+        "Go consumer must dispatch on Nonlocal arm field-presence; got:\n{parent_go}"
+    );
+    assert!(
+        !parent_go.contains("s.Key.Body.(type)"),
+        "Go consumer must NOT use `.(type)` type-switch on the variant struct (Gap 7);\n{parent_go}"
+    );
+    assert!(
+        !parent_go.contains("case *B5nuGoLocal:"),
+        "Go consumer must NOT use bare `case *<Arm>:` (Gap 7);\n{parent_go}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// RFC B5-ν dispatcher self-gen Gap 8 — Python consumer dispatches via
+/// `.body.kind == "<ArmName>"` string equality (matches Python codec
+/// template's `body.kind` discriminator at lines 28-50 + 154), NOT
+/// `isinstance(body, X.Y)` against a class hierarchy (Python variant
+/// body has no nested arm classes).
+#[test]
+fn forge_b5_nu_consumer_kind_string_dispatch_python() {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let dir = std::env::temp_dir().join(format!("sce_b5nu_py_consumer_{pid}_{id}"));
+    std::fs::create_dir_all(&dir).expect("mkdir fixture");
+
+    let parent = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="b5nu_py_parent" sce:default-endian="big">
+  <sce:import src="b5nu_py_disp.scxml" kind="codec" as="b5nu_py_disp"/>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="mid" bit="0" width="5" value="0x1d"/>
+      <sce:flag name="M" bit="6"/>
+    </sce:flags>
+    <sce:embed id="key" type="b5nu_py_disp" sce:byte="1"/>
+  </datamodel>
+</scxml>"#;
+    let disp = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="b5nu_py_disp" sce:default-endian="big">
+  <sce:import src="b5nu_py_local.scxml" kind="codec" as="b5nu_py_local"/>
+  <sce:import src="b5nu_py_nonlocal.scxml" kind="codec" as="b5nu_py_nonlocal"/>
+  <sce:requires-parent-flags carrier="header">
+    <sce:flag name="M" bit="6"/>
+  </sce:requires-parent-flags>
+  <datamodel>
+    <sce:variant tag="parent.M">
+      <sce:arm value="0x00" type="b5nu_py_nonlocal" default="true"/>
+      <sce:arm value="0x01" type="b5nu_py_local"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#;
+    let local = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="b5nu_py_local" sce:default-endian="big">
+  <datamodel>
+    <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+  </datamodel>
+</scxml>"#;
+    let nonlocal = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="b5nu_py_nonlocal" sce:default-endian="big">
+  <datamodel>
+    <sce:field id="payload" sce:type="uint16" sce:byte="0" sce:bit-size="16"/>
+  </datamodel>
+</scxml>"#;
+    std::fs::write(dir.join("b5nu_py_parent.scxml"), parent).expect("write parent");
+    std::fs::write(dir.join("b5nu_py_disp.scxml"), disp).expect("write disp");
+    std::fs::write(dir.join("b5nu_py_local.scxml"), local).expect("write local");
+    std::fs::write(dir.join("b5nu_py_nonlocal.scxml"), nonlocal).expect("write nonlocal");
+
+    let output = sce_build::compile_forge_with_imports(
+        parent,
+        sce_build::DocumentLabel::symmetric("b5nu_py_parent"),
+        sce_build::generator::Language::Python,
+        &dir,
+        &golden_options(sce_build::generator::Language::Python),
+    )
+    .expect("Python consumer codegen must succeed");
+    let parent_py = output
+        .files
+        .iter()
+        .find(|(name, _)| name.contains("b5nu_py_parent"))
+        .map(|(_, body)| body.clone())
+        .expect("parent codec emit");
+
+    // Gap 8: emit must dispatch via `.body.kind == "<ArmName>"` string
+    // equality. Arms emit in declaration order with the LAST arm as
+    // ternary fallthrough — at least one arm name must appear in the
+    // explicit `if ... ==` clause(s).
+    assert!(
+        parent_py.contains("self.key.body.kind == \"B5nuPyNonlocal\"")
+            || parent_py.contains("self.key.body.kind == \"B5nuPyLocal\""),
+        "Python consumer must dispatch via .kind string equality on one of \
+         the variant arms; got:\n{parent_py}"
+    );
+    assert!(
+        !parent_py.contains("isinstance(self.key.body,"),
+        "Python consumer must NOT use isinstance (Gap 8 regression);\n{parent_py}"
     );
 
     let _ = std::fs::remove_dir_all(&dir);
