@@ -1134,6 +1134,7 @@ fn parse_requires_parent_flags(
             name,
             bit,
             width: 1,
+            value: None,
         });
     }
     if flags.is_empty() {
@@ -1565,7 +1566,11 @@ fn parse_peek_byte_from_variant_node(
             ));
         }
         occupied |= range_mask;
-        flag_defs.push(FlagDef { name, bit, width });
+        // peek-byte flags declare layout only — the actual dispatch
+        // value comes from the inner codec's MID flag, so peek-byte
+        // flags never carry the `value=` wire-constant (RFC
+        // variant-default-uniformity Atomic α).
+        flag_defs.push(FlagDef { name, bit, width, value: None });
     }
 
     if flag_defs.is_empty() {
@@ -1817,6 +1822,12 @@ fn parse_codec_variant(
 
     let mut arms: Vec<VariantArm> = Vec::new();
     let mut default_arm: Option<VariantArm> = None;
+    // RFC variant-default-uniformity Atomic α: at most one
+    // `<sce:arm default="true"/>` per variant. Tracked across the
+    // arm-iteration loop so the second occurrence raises
+    // `codec/variant-duplicate-default-arm` with the offending
+    // arm's value preserved for the repair hint.
+    let mut default_arm_marker_seen: Option<u64> = None;
 
     for child in variant_node.children().filter(|n| n.is_element()) {
         let local = child.tag_name().name();
@@ -1861,7 +1872,47 @@ fn parse_codec_variant(
                         )
                     })?
                     .to_string();
-                arms.push(VariantArm { value, body_alias });
+                // RFC variant-default-uniformity Atomic α: optional
+                // `default="true"` marks this arm as the one chosen
+                // by the outer codec's `Default::default()`. Distinct
+                // from the catch-all `<sce:default>` element (whose
+                // body fires on decode for unknown tag values) —
+                // this attribute only steers the Default-trait
+                // starting value. Any value other than the literal
+                // "true" / "false" / omitted is rejected so authors
+                // don't quietly mis-spell into the falsy branch.
+                let is_default = match child.attribute("default") {
+                    None | Some("false") => false,
+                    Some("true") => {
+                        if let Some(prev_value) = default_arm_marker_seen {
+                            return Err(located(
+                                &child,
+                                label.diagnostic_label,
+                                ValidationError::CodecVariantDuplicateDefaultArm {
+                                    codec: label.identifier.to_string(),
+                                    first_arm_value: prev_value,
+                                    second_arm_value: value,
+                                },
+                            ));
+                        }
+                        default_arm_marker_seen = Some(value);
+                        true
+                    }
+                    Some(other) => {
+                        return Err(located(
+                            &child,
+                            label.diagnostic_label,
+                            ValidationError::InvalidAttribute {
+                                element: format!("<sce:arm value=\"{value_str}\">"),
+                                attr: "default".into(),
+                                value: other.to_string(),
+                                expected: "\"true\" or \"false\" (or omit the attribute)"
+                                    .into(),
+                            },
+                        ));
+                    }
+                };
+                arms.push(VariantArm { value, body_alias, is_default });
             }
             "default" => {
                 if default_arm.is_some() {
@@ -1892,7 +1943,10 @@ fn parse_codec_variant(
                 // sum-type variant by the codegen. v1 stores `value: 0`
                 // as a sentinel — codegen never reads this field for
                 // default arms (it dispatches via the catch-all branch).
-                default_arm = Some(VariantArm { value: 0, body_alias });
+                // The catch-all is never the Default-trait starting
+                // arm (RFC variant-default-uniformity §3 Q-V3 (a) —
+                // catch-all and default arm are distinct concepts).
+                default_arm = Some(VariantArm { value: 0, body_alias, is_default: false });
             }
             // Y3 atomic 2b-ii peek-byte: peek-byte was already parsed
             // pre-pass — skip it here so the unknown-child fallback
@@ -2599,7 +2653,57 @@ fn parse_codec_flags_from_node(
             ));
         }
         occupied |= range_mask;
-        flag_defs.push(FlagDef { name, bit, width });
+        // RFC variant-default-uniformity Atomic α: optional
+        // `value="..."` wire-constant baked into the carrier's
+        // `Default::default()`. Authors declare this on an inner
+        // codec's MID flag so the codec's default instance is
+        // wire-valid for its own dispatch tag. Constant must fit
+        // the declared bit-range — `(value & ((1 << width) - 1)) ==
+        // value` — otherwise the high bits would silently
+        // disappear into adjacent flags' ranges. Stored verbatim
+        // as `u64`; codegen masks-and-shifts into the carrier at
+        // Default-emit time.
+        let value: Option<u64> = match child.attribute("value") {
+            None => None,
+            Some(s) => {
+                let v = parse_int_u64(s).ok_or_else(|| {
+                    located(
+                        &child,
+                        doc_name,
+                        ValidationError::NumericParse {
+                            element: format!("<sce:flag name='{name}'>"),
+                            attr: "value".into(),
+                            value: s.to_string(),
+                            detail: "expected non-negative integer \
+                                     (decimal or 0x-hex)"
+                                .into(),
+                        },
+                    )
+                })?;
+                let domain_mask: u64 = if width == 64 {
+                    u64::MAX
+                } else {
+                    (1u64 << width) - 1
+                };
+                if v & !domain_mask != 0 {
+                    return Err(located(
+                        &child,
+                        doc_name,
+                        ValidationError::InvalidAttribute {
+                            element: format!("<sce:flag name='{name}'>"),
+                            attr: "value".into(),
+                            value: s.to_string(),
+                            expected: format!(
+                                "value must fit the declared bit-range \
+                                 (width={width}; max={domain_mask:#x})"
+                            ),
+                        },
+                    ));
+                }
+                Some(v)
+            }
+        };
+        flag_defs.push(FlagDef { name, bit, width, value });
     }
 
     if flag_defs.is_empty() {

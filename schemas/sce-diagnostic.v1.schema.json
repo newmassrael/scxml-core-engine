@@ -109,6 +109,7 @@
         "algorithm/const-fold-budget-exceeded",
         "algorithm/const-yield-type-mismatch",
         "codec/variant-arm-unreachable",
+        "codec/variant-duplicate-default-arm",
         "codec/present-if-refs-later-field",
         "codec/repeat-count-refs-later-field",
         "algorithm/test-vector-unsupported-kind",

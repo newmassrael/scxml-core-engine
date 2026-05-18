@@ -541,6 +541,28 @@ pub enum ValidationError {
         domain_size: Option<u64>,
     },
 
+    /// RFC variant-default-uniformity Atomic α: more than one
+    /// `<sce:arm default="true"/>` declared inside the same
+    /// `<sce:variant>`. The `default` attribute steers the outer
+    /// codec's `Default::default()` to a single deliberately-chosen
+    /// arm — two declarations are ambiguous and the parser refuses
+    /// to silently pick one. Author resolves by removing the
+    /// `default="true"` from all but the intended arm. Distinct
+    /// from `<sce:default>` (catch-all for unknown tag values),
+    /// which the parser still permits at most once per RFC §5.B.
+    #[error(
+        "codec '{codec}': <sce:variant> declares more than one <sce:arm default=\"true\"/> \
+         (first arm value={first_arm_value:#x}, second arm value={second_arm_value:#x}) — \
+         only one arm may be marked the Default-trait starting value; remove \
+         default=\"true\" from all but the intended arm. (The catch-all \
+         <sce:default> element is unrelated and still permitted once.)"
+    )]
+    CodecVariantDuplicateDefaultArm {
+        codec: String,
+        first_arm_value: u64,
+        second_arm_value: u64,
+    },
+
     /// RFC §5.B present-if primitive (B1-δ): the predicate on a
     /// `sce:present-if` attribute references a field that is **not**
     /// declared earlier in the same codec — either declared later

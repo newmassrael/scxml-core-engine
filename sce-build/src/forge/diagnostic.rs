@@ -556,6 +556,19 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/variant-arm-unreachable")]
     CodecVariantArmUnreachable,
 
+    // ── RFC variant-default-uniformity Atomic α (claudedocs/
+    //    rfc-variant-default-uniformity.md). Parse-time check on
+    //    `<sce:variant>` children: at most one `<sce:arm>` may
+    //    declare `default="true"`. The marker steers the outer
+    //    codec's `Default::default()` to a single deliberately-
+    //    chosen arm; two declarations are ambiguous so the parser
+    //    refuses to silently pick one. Distinct from the catch-all
+    //    `<sce:default>` element (forward-compat for unknown tag
+    //    values) — both may coexist on the same variant. Stage =
+    //    Validation. ──
+    #[serde(rename = "codec/variant-duplicate-default-arm")]
+    CodecVariantDuplicateDefaultArm,
+
     // ── §5.B present-if primitive (watching-zenoh RFC §5.B, B1-δ).
     //    Build-time check on `<sce:field sce:present-if="X.Y"/>`: the
     //    referenced field `X` must be declared earlier in the same
@@ -2188,6 +2201,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         AlgorithmConstYieldTypeMismatch,
         // Codec §5.B variant primitive (watching-zenoh RFC §5.B, B1-β)
         CodecVariantArmUnreachable,
+        // RFC variant-default-uniformity Atomic α — duplicate default-arm marker
+        CodecVariantDuplicateDefaultArm,
         // Codec §5.B present-if primitive (watching-zenoh RFC §5.B, B1-δ)
         CodecPresentIfRefsLaterField,
         // Codec §5.B repeat primitive (watching-zenoh RFC §5.B, B2)
@@ -2547,6 +2562,7 @@ impl DiagnosticCode {
 
             // ── Codec §5.B variant + present-if + repeat + tlv-chain + dma-align primitives (B1-β/δ + B2 + B3) ─
             CodecVariantArmUnreachable
+            | CodecVariantDuplicateDefaultArm
             | CodecPresentIfRefsLaterField
             | CodecRepeatCountRefsLaterField
             | AlgorithmTestVectorUnsupportedKind
@@ -3049,6 +3065,7 @@ impl DiagnosticCode {
             AlgorithmConstFoldBudgetExceeded => "algorithm/const-fold-budget-exceeded",
             AlgorithmConstYieldTypeMismatch => "algorithm/const-yield-type-mismatch",
             CodecVariantArmUnreachable => "codec/variant-arm-unreachable",
+            CodecVariantDuplicateDefaultArm => "codec/variant-duplicate-default-arm",
             CodecPresentIfRefsLaterField => "codec/present-if-refs-later-field",
             CodecRepeatCountRefsLaterField => "codec/repeat-count-refs-later-field",
             AlgorithmTestVectorUnsupportedKind => "algorithm/test-vector-unsupported-kind",
@@ -4089,6 +4106,29 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: Some(field.clone()),
             fix: None,
             key_fragments: vec![codec.clone(), field.clone(), refers_to.clone()],
+        },
+        ValidationError::CodecVariantDuplicateDefaultArm {
+            codec,
+            first_arm_value,
+            second_arm_value,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CodecVariantDuplicateDefaultArm,
+            stage: Stage::Validation,
+            // Repair is "remove default=\"true\" from all but one arm" —
+            // author-domain (which arm is the intended default), not a
+            // closed candidate set, so `fix` stays `None`. The triple
+            // (codec, first_arm_value, second_arm_value) keys the
+            // violation across multiple variants that might trip the
+            // same diagnostic. Values format as hex to match the
+            // user-facing arm-value convention.
+            expected: None,
+            actual: Some(codec.clone()),
+            fix: None,
+            key_fragments: vec![
+                codec.clone(),
+                format!("{first_arm_value:#x}"),
+                format!("{second_arm_value:#x}"),
+            ],
         },
         ValidationError::CodecRepeatCountRefsLaterField {
             codec,
@@ -7573,6 +7613,17 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:fb2f4b7fefc04603","code":"codec/variant-arm-unreachable","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': variant on tag 'msg_id' (type uint8) has 3 arm(s) but no <sce:default> declared (tag type domain has 256 values) — at least one tag value would have no matching arm at runtime; add <sce:default type=\"...\"/> or enumerate the missing values explicitly","actual":"msg_id"}"#,
             ),
+            // ── RFC variant-default-uniformity Atomic α — duplicate default-arm marker ─
+            (
+                "forge/codec-variant-duplicate-default-arm",
+                ValidationError::CodecVariantDuplicateDefaultArm {
+                    codec: "session_envelope".into(),
+                    first_arm_value: 0x01,
+                    second_arm_value: 0x02,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:e0a8b8b88b736596","code":"codec/variant-duplicate-default-arm","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': <sce:variant> declares more than one <sce:arm default=\"true\"/> (first arm value=0x1, second arm value=0x2) — only one arm may be marked the Default-trait starting value; remove default=\"true\" from all but the intended arm. (The catch-all <sce:default> element is unrelated and still permitted once.)","actual":"session_envelope"}"#,
+            ),
             // ── §5.B present-if primitive (watching-zenoh RFC §5.B, B1-δ) ─
             (
                 "forge/codec-present-if-refs-later-field",
@@ -9822,6 +9873,7 @@ mod tests {
             | AlgorithmConstFoldBudgetExceeded
             | AlgorithmConstYieldTypeMismatch
             | CodecVariantArmUnreachable
+            | CodecVariantDuplicateDefaultArm
             | CodecPresentIfRefsLaterField
             | CodecRepeatCountRefsLaterField
             | AlgorithmTestVectorUnsupportedKind
@@ -10282,6 +10334,7 @@ mod tests {
                 | AlgorithmConstFoldBudgetExceeded
                 | AlgorithmConstYieldTypeMismatch
                 | CodecVariantArmUnreachable
+                | CodecVariantDuplicateDefaultArm
                 | CodecPresentIfRefsLaterField
                 | CodecRepeatCountRefsLaterField
                 | AlgorithmTestVectorUnsupportedKind
@@ -10466,7 +10519,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            274,
+            275,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
              expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
@@ -11080,7 +11133,18 @@ mod tests {
              they pin the §5.2 driver/class boundary policy on the \
              C11 backend: SCE emits the statechart class + reference; \
              cross-TU signature verification stays the C compiler's \
-             job (Q-Round-F-D2). 270 → 272.",
+             job (Q-Round-F-D2). 270 → 272. Then RFC variant-default-\
+             uniformity Atomic α (claudedocs/rfc-variant-default-\
+             uniformity.md) lands the parse-time duplicate-default-arm \
+             guard: `codec/variant-duplicate-default-arm` \
+             (NeutralOrDeterministic; both offending arm values ride \
+             `key_fragments`) fires inside `parse_codec_variant` when \
+             two `<sce:arm default=\"true\"/>` are declared on the \
+             same `<sce:variant>`. Atomic α surface is schema-only — \
+             the `FlagDef.value: Option<u64>` + `VariantArm.is_default: \
+             bool` model fields are parsed but no cross-doc validation \
+             or codegen change yet; Atomic β/γ build on this baseline. \
+             274 → 275.",
         );
     }
 

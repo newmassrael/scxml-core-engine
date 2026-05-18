@@ -3779,6 +3779,218 @@ fn forge_codec_variant_missing_default_rejects() {
     );
 }
 
+/// RFC variant-default-uniformity Atomic α: `<sce:arm default="true"/>`
+/// is accepted on at most one arm — a second declaration raises
+/// `codec/variant-duplicate-default-arm` with both offending arm
+/// values preserved on the diagnostic so authors can identify
+/// which arm to demote. Independent of the catch-all `<sce:default>`
+/// element (per RFC §3 Q-V3 (a) the two are distinct concepts).
+#[test]
+fn forge_codec_variant_duplicate_default_arm_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="dup_default_arm">
+  <sce:import src="codec_variant_session_open.scxml" kind="codec" as="codec_variant_session_open"/>
+  <sce:import src="codec_variant_session_close.scxml" kind="codec" as="codec_variant_session_close"/>
+  <datamodel>
+    <data id="msg_id" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:variant tag="msg_id">
+      <sce:arm value="0x01" type="codec_variant_session_open" default="true"/>
+      <sce:arm value="0x02" type="codec_variant_session_close" default="true"/>
+      <sce:default type="codec_variant_session_open"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#;
+    let result = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("dup_default_arm"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "two <sce:arm default=\"true\"/> must reject with codec/variant-duplicate-default-arm"
+        ),
+        Err(e) => e,
+    };
+    let inner = err.error;
+    assert!(
+        matches!(
+            inner,
+            ForgeError::Validation(ValidationError::CodecVariantDuplicateDefaultArm {
+                ref codec,
+                first_arm_value: 0x01,
+                second_arm_value: 0x02,
+            }) if codec == "dup_default_arm"
+        ),
+        "must surface as ValidationError::CodecVariantDuplicateDefaultArm with both arm values; got: {inner:?}"
+    );
+}
+
+/// RFC variant-default-uniformity Atomic α: `default="..."` on
+/// `<sce:arm>` is typed as `xs:boolean` in the XSD, so a misspelling
+/// like `default="yes"` is caught at the structural XSD layer before
+/// the parser runs. The parser's own fallback (rejecting non-"true"/
+/// "false" tokens) provides defense-in-depth for paths where the
+/// XSD validator is not invoked, but in the production pipeline the
+/// schema layer always fires first.
+#[test]
+fn forge_codec_variant_arm_invalid_default_value_rejects() {
+    use sce_build::forge::error::ForgeError;
+
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="bad_default_value">
+  <sce:import src="codec_variant_session_open.scxml" kind="codec" as="codec_variant_session_open"/>
+  <datamodel>
+    <data id="msg_id" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:variant tag="msg_id">
+      <sce:arm value="0x01" type="codec_variant_session_open" default="yes"/>
+      <sce:default type="codec_variant_session_open"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#;
+    let result = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("bad_default_value"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!("non-boolean default= attribute must reject"),
+        Err(e) => e,
+    };
+    let inner = err.error;
+    assert!(
+        matches!(&inner, ForgeError::Xml(_)),
+        "must surface at the XSD layer (xs:boolean rejects 'yes'); got: {inner:?}"
+    );
+}
+
+/// RFC variant-default-uniformity Atomic α: `<sce:flag value="N"/>`
+/// must fit the declared bit-range — values exceeding
+/// `(1 << width) - 1` reject because the high bits would silently
+/// overlap adjacent flags' ranges. The `priority` field in
+/// `codec_qos_byte` is width=3, so any value > 7 must reject.
+#[test]
+fn forge_codec_flag_value_out_of_range_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="flag_value_oor">
+  <datamodel>
+    <sce:flags id="qos" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="priority" bit="0" width="3" value="0x10"/>
+      <sce:flag name="reliable" bit="3"/>
+    </sce:flags>
+  </datamodel>
+</scxml>"#;
+    let result = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("flag_value_oor"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!("<sce:flag value=> exceeding (1<<width)-1 must reject"),
+        Err(e) => e,
+    };
+    let inner = err.error;
+    assert!(
+        matches!(
+            &inner,
+            ForgeError::Validation(ValidationError::InvalidAttribute { attr, .. })
+                if attr == "value"
+        ),
+        "must surface as ValidationError::InvalidAttribute on the value attribute; got: {inner:?}"
+    );
+}
+
+/// RFC variant-default-uniformity Atomic α: `<sce:flag value="N"/>`
+/// must parse as an unsigned integer (decimal or 0x-hex). A
+/// non-numeric token rejects with the same `validation/numeric-parse`
+/// shape as the existing `bit=`/`width=` parser.
+#[test]
+fn forge_codec_flag_value_malformed_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="flag_value_bad">
+  <datamodel>
+    <sce:flags id="qos" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="priority" bit="0" width="3" value="abc"/>
+      <sce:flag name="reliable" bit="3"/>
+    </sce:flags>
+  </datamodel>
+</scxml>"#;
+    let result = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("flag_value_bad"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!("<sce:flag value=> non-numeric must reject"),
+        Err(e) => e,
+    };
+    let inner = err.error;
+    assert!(
+        matches!(
+            &inner,
+            ForgeError::Validation(ValidationError::NumericParse { attr, .. })
+                if attr == "value"
+        ),
+        "must surface as ValidationError::NumericParse on the value attribute; got: {inner:?}"
+    );
+}
+
+/// RFC variant-default-uniformity Atomic α: happy path — a single
+/// arm with `default="true"` AND a catch-all `<sce:default>`
+/// coexist without conflict (Q-V3 (a) lock — the two declarations
+/// answer independent questions). Verifies that codegen still
+/// succeeds end-to-end; the Atomic α surface is parse-only so
+/// no emission shape changes here.
+#[test]
+fn forge_codec_variant_default_arm_and_catch_all_coexist() {
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="default_arm_with_catch_all">
+  <sce:import src="codec_variant_session_open.scxml" kind="codec" as="codec_variant_session_open"/>
+  <sce:import src="codec_variant_session_close.scxml" kind="codec" as="codec_variant_session_close"/>
+  <datamodel>
+    <data id="msg_id" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:variant tag="msg_id">
+      <sce:arm value="0x01" type="codec_variant_session_open" default="true"/>
+      <sce:arm value="0x02" type="codec_variant_session_close"/>
+      <sce:default type="codec_variant_session_open"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#;
+    sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("default_arm_with_catch_all"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .expect(
+        "default=\"true\" on one arm + <sce:default> catch-all must coexist (RFC Q-V3 (a))"
+    );
+}
+
 /// RFC §5.B B5-β multi-bit-flag dispatch: `<sce:variant
 /// tag="<carrier>.<flag>"/>` requires the carrier to be a
 /// `<sce:flags>`-bearing field. Pointing at a plain field rejects

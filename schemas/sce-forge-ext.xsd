@@ -388,6 +388,13 @@
       <!-- Body codec alias; must resolve to an <sce:import as="alias"/>
            in the same document. Resolution happens at codegen time. -->
       <xs:attribute name="type" type="xs:NCName" use="required"/>
+      <!-- RFC variant-default-uniformity Atomic α: optional
+           default="true" marker selects this arm as the body chosen
+           by the outer codec's Default::default(). Parser enforces
+           at-most-one per <sce:variant> via
+           codec/variant-duplicate-default-arm. Distinct from the
+           <sce:default> sibling element (unknown-tag catch-all). -->
+      <xs:attribute name="default" type="xs:boolean" use="optional"/>
     </xs:complexType>
   </xs:element>
 
@@ -489,6 +496,14 @@
            fits the range. `bit + width <= carrier_bit_width` and no
            overlap with sibling flags — both enforced by sce-build. -->
       <xs:attribute name="width" type="xs:positiveInteger" use="optional"/>
+      <!-- RFC variant-default-uniformity Atomic α: optional
+           wire-constant baked into the carrier's Default::default().
+           Decimal or 0x-hex unsigned integer (parsed via parse_int_u64);
+           sce-build rejects values that exceed `(1 << width) - 1`. Used
+           by inner codecs that are referenced as a variant arm body so
+           the codec's default instance is wire-valid for its own
+           dispatch tag. -->
+      <xs:attribute name="value" type="xs:string" use="optional"/>
     </xs:complexType>
   </xs:element>
 

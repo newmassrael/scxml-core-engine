@@ -996,11 +996,27 @@ pub enum BitSize {
 /// B5-α multi-bit accessors like Zenoh's `_z_n_qos_t._val.priority:3`).
 /// `bit + width <= carrier_int_bit_width` is parser-enforced; per-flag
 /// bit-ranges within the same carrier may not overlap.
+///
+/// `value` is the optional wire-constant baked into the carrier's
+/// `Default::default()` (RFC variant-default-uniformity Atomic α).
+/// Authors declare this on an inner codec's MID flag so the codec's
+/// default instance is wire-valid for its own dispatch tag — required
+/// for round-trip uniformity when the codec is referenced as the
+/// declared default arm of an outer `<sce:variant>`. The masked
+/// constant `(value & ((1 << width) - 1)) << bit` ORs into the
+/// carrier's Default. `None` ⇒ no constant, Default zero-fills the
+/// bit-range (back-compat with pre-Atomic-α goldens). Stored as
+/// `u64` to fit any carrier width up to uint64.
 #[derive(Debug, Clone, Serialize)]
 pub struct FlagDef {
     pub name: String,
     pub bit: u32,
     pub width: u32,
+    /// Optional wire-constant — see field doc. Skipped from
+    /// serialization when `None` so pre-Atomic-α goldens
+    /// (which never carry this attribute) keep their on-disk shape.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<u64>,
 }
 
 /// RFC §5.B B5-γ present-if predicate scope — distinguishes the
@@ -1326,6 +1342,19 @@ pub struct VariantArm {
     pub value: u64,
     /// Import alias naming the body codec for this arm.
     pub body_alias: String,
+    /// `default="true"` marker — declares this arm as the default
+    /// chosen by the outer codec's `Default::default()` (RFC
+    /// variant-default-uniformity Atomic α). Distinct from the
+    /// catch-all `<sce:default>` arm (`CodecVariant::default_arm`) —
+    /// that one fires on decode for unknown tag values; this flag
+    /// only picks which `<sce:arm>`'s body type becomes the
+    /// Default-trait starting value. At most one arm per variant
+    /// may set this (parser-enforced via
+    /// `codec/variant-duplicate-default-arm`). `false` ⇒ not the
+    /// default arm; serialized only when `true` to keep
+    /// pre-Atomic-α goldens byte-identical.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_default: bool,
 }
 
 /// RFC §5.B Y3 atomic 2b-ii peek-byte — peek-byte dispatch shape on a
