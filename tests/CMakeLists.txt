@@ -1347,6 +1347,37 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
 
     add_test(NAME mesh_ordering_buffer_verification COMMAND mesh_ordering_buffer_test)
 
+    # ── OutboundBuffer unit tests (SCE_MESH.md §10.10 + §16.7 row 9) ─
+    # Pure unit tests on the per-target readiness-gated admit layer.
+    # Sibling DedupRouter / OrderingBuffer tests cover their inbound
+    # invariants; this one closes the §16.7 row 9 BACKPRESSURE_DROP
+    # contract — admit-time overflow drops the newest envelope and
+    # raises `error.communication`. Existing E2E fixtures
+    # (`mesh_someip_late_boot`, `mesh_zenoh_publisher_first`) cover
+    # the orthogonal drain path; together they pin the §10.10
+    # OutboundBuffer surface end-to-end.
+    add_executable(mesh_outbound_buffer_test
+        mesh/OutboundBufferTest.cpp
+    )
+
+    target_include_directories(mesh_outbound_buffer_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+    )
+
+    target_link_libraries(mesh_outbound_buffer_test
+        PRIVATE
+            sce_mesh_common
+            GTest::gtest_main
+            pthread
+    )
+
+    target_compile_features(mesh_outbound_buffer_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_outbound_buffer_test)
+
+    add_test(NAME mesh_outbound_buffer_verification COMMAND mesh_outbound_buffer_test)
+
     # ── CommunicationError unit tests (SCE_MESH.md §10.10.1 + §16.7) ─
     # Pins the JSON render shape of `_event.data` for `error.communication`
     # events raised by the mesh runtime (MISSING_SEQUENCE + ORDERING_GAP
