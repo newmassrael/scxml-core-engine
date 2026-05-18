@@ -187,6 +187,66 @@ val generateForgeFixtures by tasks.registering(GenerateForgeFixtures::class) {
     outputDir.set(layout.buildDirectory.dir("generated/conformance/kotlin"))
 }
 
+// RFC variant-default-uniformity Atomic γ-3 (kotlin half) — generate
+// the 3 default-marker codec fixtures into a separate output dir wired
+// into jvmTest. Lives outside the numerical-conformance manifest because
+// the marker fixtures are contract testing (Default emission), not
+// oracle comparison. Mirrors the cpp/python/go round-trip atomics.
+abstract class GenerateRoundTripFixtures : DefaultTask() {
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.ABSOLUTE)
+    abstract val sceCodegen: RegularFileProperty
+
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val resourceDir: DirectoryProperty
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @get:Inject
+    abstract val execOperations: ExecOperations
+
+    @TaskAction
+    fun generate() {
+        val bin = sceCodegen.get().asFile
+        if (!bin.canExecute()) {
+            throw GradleException(
+                "sce-codegen binary not found or not executable at ${bin.absolutePath}. " +
+                "Build it first: " +
+                "`cargo build --bin sce-codegen --features cli --release -p sce-build`",
+            )
+        }
+        val res = resourceDir.get().asFile
+        val out = outputDir.get().asFile
+        out.deleteRecursively()
+        out.mkdirs()
+        val fixtures = listOf(
+            "codec_default_marker_arm_a",
+            "codec_default_marker_arm_b",
+            "codec_variant_default_marker",
+        )
+        for (fixture in fixtures) {
+            execOperations.exec {
+                commandLine(
+                    bin.absolutePath,
+                    "generate",
+                    res.resolve("$fixture.scxml").absolutePath,
+                    "--language", "kotlin",
+                    "--output-dir", out.absolutePath,
+                )
+            }
+        }
+    }
+}
+
+val generateRoundTripFixtures by tasks.registering(GenerateRoundTripFixtures::class) {
+    dependsOn(buildSceCodegen)
+    sceCodegen.set(rootProject.layout.projectDirectory.file("target/release/sce-codegen"))
+    resourceDir.set(rootProject.layout.projectDirectory.dir("tests/forge/resources"))
+    outputDir.set(layout.buildDirectory.dir("generated/round_trip/kotlin"))
+}
+
 kotlin {
     jvmToolchain(17)
     jvm()
@@ -206,6 +266,7 @@ kotlin {
                 implementation(libs.kotlinx.serialization.json)
             }
             kotlin.srcDir(generateForgeFixtures.map { it.outputDir })
+            kotlin.srcDir(generateRoundTripFixtures.map { it.outputDir })
         }
     }
 }
