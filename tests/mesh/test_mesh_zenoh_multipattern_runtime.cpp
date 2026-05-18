@@ -51,13 +51,16 @@ int run_test() {
     TestSenderEngine sender;
     RouterT router({&sender});
 
-    // ── Order matters: bring up the listener first, then the connector,
-    //    so the TCP endpoint is accepting before the peer dials. ──────
-    auto motor_session = open_peer(/*connect=*/"", /*listen=*/kListen);
+    // ── Order matters: bring up the listener first, then declare every
+    //    motor-side receive resource (subscriber + queryable), then dial
+    //    the connectors. Zenoh's connect-handshake synchronously syncs
+    //    the listener's resource state into the dialer; declaring
+    //    AFTER the dialer connected would push the declarations
+    //    asynchronously over the established link with no completion
+    //    signal, leaving a race window where brake_router's first
+    //    session.get / session.put runs against a stale routing table. ─
 
-    // router.init() opens brake's zenoh session with the mode/connect
-    // endpoints generated from deploy_zenoh_multi.yaml (ecu_brake device).
-    MESH_TEST_REQUIRE(router.init(), "router.init() failed");
+    auto motor_session = open_peer(/*connect=*/"", /*listen=*/kListen);
 
     // FireForget / FieldWrite receive point — plain subscriber on the
     // motor key. Record whatever arrives so the test can assert on it.
@@ -94,6 +97,13 @@ int run_test() {
             query.reply(zenoh::KeyExpr(kMotorKey), zenoh::Bytes(std::move(bytes)));
         },
         [] {});
+
+    // router.init() opens brake's zenoh session with the mode/connect
+    // endpoints generated from deploy_zenoh_multi.yaml (ecu_brake device).
+    // Motor's subscriber + queryable are already in place; the
+    // brake_router → motor connect handshake hands them over as part of
+    // initial state exchange.
+    MESH_TEST_REQUIRE(router.init(), "router.init() failed");
 
     // Deterministic peer-mesh handshake via a liveliness token exchanged
     // with a throwaway peer on the same listen endpoint. Brake's router
