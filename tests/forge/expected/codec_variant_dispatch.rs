@@ -26,11 +26,12 @@ pub enum CodecVariantDispatchVariant {
 
 impl Default for CodecVariantDispatchVariant {
     fn default() -> Self {
-        // Default to the first declared arm's body — every imported
-        // codec is `#[derive(Default)]`, so this is infallible. A
-        // freshly-constructed envelope is overwritten by `decode()` or
-        // by an explicit user assignment before any `encode()` call.
-        Self::CodecVariantSessionOpen(CodecVariantSessionOpen::default())
+        // RFC variant-default-uniformity: pick the declared default
+        // arm (`<sce:arm default="true"/>`) so a freshly-constructed
+        // envelope round-trips byte-exactly through `encode() ->
+        // decode()` — pairs with the inner codec's `<sce:flag value=>`
+        // -baked `Default::default()` to close the dispatch loop.
+        Self::CodecVariantSessionClose(CodecVariantSessionClose::default())
     }
 }
 

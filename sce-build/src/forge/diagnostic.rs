@@ -585,6 +585,14 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/variant-arm-inner-mid-undeclared")]
     CodecVariantArmInnerMidUndeclared,
 
+    // ── RFC variant-default-uniformity Atomic γ-3 (Q-V4 (a)): every
+    //    `<sce:variant>` must declare an `<sce:arm default="true"/>`
+    //    marker. Without it codegen would silently re-introduce the
+    //    "first declared arm" implicit fallback that the RFC closes.
+    //    Stage = Validation. ──
+    #[serde(rename = "codec/variant-no-default-arm")]
+    CodecVariantNoDefaultArm,
+
     // ── §5.B present-if primitive (watching-zenoh RFC §5.B, B1-δ).
     //    Build-time check on `<sce:field sce:present-if="X.Y"/>`: the
     //    referenced field `X` must be declared earlier in the same
@@ -2223,6 +2231,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CodecVariantDefaultArmMidMismatch,
         // RFC variant-default-uniformity Atomic γ-1 — inner codec missing wire-MID constant
         CodecVariantArmInnerMidUndeclared,
+        // RFC variant-default-uniformity Atomic γ-3 — every variant must mark a default arm
+        CodecVariantNoDefaultArm,
         // Codec §5.B present-if primitive (watching-zenoh RFC §5.B, B1-δ)
         CodecPresentIfRefsLaterField,
         // Codec §5.B repeat primitive (watching-zenoh RFC §5.B, B2)
@@ -2585,6 +2595,7 @@ impl DiagnosticCode {
             | CodecVariantDuplicateDefaultArm
             | CodecVariantDefaultArmMidMismatch
             | CodecVariantArmInnerMidUndeclared
+            | CodecVariantNoDefaultArm
             | CodecPresentIfRefsLaterField
             | CodecRepeatCountRefsLaterField
             | AlgorithmTestVectorUnsupportedKind
@@ -3090,6 +3101,7 @@ impl DiagnosticCode {
             CodecVariantDuplicateDefaultArm => "codec/variant-duplicate-default-arm",
             CodecVariantDefaultArmMidMismatch => "codec/variant-default-arm-mid-mismatch",
             CodecVariantArmInnerMidUndeclared => "codec/variant-arm-inner-mid-undeclared",
+            CodecVariantNoDefaultArm => "codec/variant-no-default-arm",
             CodecPresentIfRefsLaterField => "codec/present-if-refs-later-field",
             CodecRepeatCountRefsLaterField => "codec/repeat-count-refs-later-field",
             AlgorithmTestVectorUnsupportedKind => "algorithm/test-vector-unsupported-kind",
@@ -4179,6 +4191,19 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 inner_flag.clone(),
                 format!("{inner_flag_value:#x}"),
             ],
+        },
+        ValidationError::CodecVariantNoDefaultArm { codec } => DiagnosticPayload {
+            code: DiagnosticCode::CodecVariantNoDefaultArm,
+            stage: Stage::Validation,
+            // Repair is "add default=\"true\" to the intended arm" —
+            // author-domain (which arm is the intended default), not
+            // a closed candidate set, so `fix` stays `None`. The
+            // codec name alone keys the violation; one variant per
+            // codec means at most one occurrence per source.
+            expected: None,
+            actual: Some(codec.clone()),
+            fix: None,
+            key_fragments: vec![codec.clone()],
         },
         ValidationError::CodecVariantArmInnerMidUndeclared {
             codec,
@@ -7724,6 +7749,15 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:0bf3318e19f672aa","code":"codec/variant-arm-inner-mid-undeclared","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': default <sce:arm value=0x2/> selects inner codec 'session_put', but 'session_put' does not declare a <sce:flag value=\"...\"/> constant on its dispatch field — the inner's Default would zero-fill the wire byte and break round-trip; add <sce:flag name='mid' value=0x2/> to 'session_put'","expected":["0x2"],"actual":"session_put"}"#,
             ),
+            // ── RFC variant-default-uniformity Atomic γ-3 — no default arm declared ─
+            (
+                "forge/codec-variant-no-default-arm",
+                ValidationError::CodecVariantNoDefaultArm {
+                    codec: "session_envelope".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:9778351f6ba08771","code":"codec/variant-no-default-arm","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': <sce:variant> declares no <sce:arm default=\"true\"/> — every variant must mark one arm as the deliberate Default-trait starting value so codegen does not implicitly pick the first declared arm; add default=\"true\" to the intended arm. (The catch-all <sce:default> element is a separate concept and does not satisfy this requirement.)","actual":"session_envelope"}"#,
+            ),
             // ── §5.B present-if primitive (watching-zenoh RFC §5.B, B1-δ) ─
             (
                 "forge/codec-present-if-refs-later-field",
@@ -9976,6 +10010,7 @@ mod tests {
             | CodecVariantDuplicateDefaultArm
             | CodecVariantDefaultArmMidMismatch
             | CodecVariantArmInnerMidUndeclared
+            | CodecVariantNoDefaultArm
             | CodecPresentIfRefsLaterField
             | CodecRepeatCountRefsLaterField
             | AlgorithmTestVectorUnsupportedKind
@@ -10439,6 +10474,7 @@ mod tests {
                 | CodecVariantDuplicateDefaultArm
                 | CodecVariantDefaultArmMidMismatch
                 | CodecVariantArmInnerMidUndeclared
+                | CodecVariantNoDefaultArm
                 | CodecPresentIfRefsLaterField
                 | CodecRepeatCountRefsLaterField
                 | AlgorithmTestVectorUnsupportedKind
@@ -10623,7 +10659,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            277,
+            278,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries —\
              expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
@@ -11256,7 +11292,12 @@ mod tests {
              CodecVariantArmInnerMidUndeclared fires when the inner codec \
              selected by a marked-default arm declares no wire-MID flag \
              at all. Both gate emission of the new β-chain Default \
-             contracts on round-trip safety. 275 → 277.",
+             contracts on round-trip safety. 275 → 277. \
+             Then RFC variant-default-uniformity Atomic γ-3 added \
+             CodecVariantNoDefaultArm (Q-V4 (a)) requiring every \
+             `<sce:variant>` to carry a deliberate <sce:arm default=\"true\"/> \
+             marker — fires after γ-2 fixture audit migrated every \
+             SCE-internal variant. 277 → 278.",
         );
     }
 

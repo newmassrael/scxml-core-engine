@@ -72,7 +72,7 @@
                    sce:present-if="header.Z"
                    terminate-on="entry-flag" entry-flag-name="Z"/>
     <sce:variant tag="header.enc">
-      <sce:arm value="0x00" type="codec_zenoh_ext_unit"/>
+      <sce:arm value="0x00" type="codec_zenoh_ext_unit" default="true"/>
       <sce:arm value="0x01" type="codec_zenoh_ext_zint"/>
       <sce:arm value="0x02" type="codec_zenoh_ext_zbuf"/>
       <sce:default type="codec_zenoh_ext_unit"/>

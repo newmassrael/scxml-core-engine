@@ -47,6 +47,22 @@ typedef struct {
     codec_zenoh_ext_entry_variant_t body;
 } codec_zenoh_ext_entry_t;
 
+/* RFC variant-default-uniformity Atomic β-c11: designated-initializer
+ * macro carrying the codec's wire-MID-baked defaults. C has no Default
+ * trait — round-trip safety (`codec_zenoh_ext_entry_t x = CODEC_ZENOH_EXT_ENTRY_DEFAULT_INIT;
+ * codec_zenoh_ext_entry_t_encode(&x)` decodes back to the same arm)
+ * requires using this macro rather than the zero-initializer `{0}`,
+ * which would leave the dispatch tag at zero and (for variant codecs)
+ * land in the catch-all arm or a mismatched union slot. Unspecified
+ * fields zero-initialize per C11 §6.7.9 ¶21, so the macro names only
+ * the wire-MID-bearing members. */
+#define CODEC_ZENOH_EXT_ENTRY_DEFAULT_INIT { \
+    .body = { \
+        .kind = CODEC_ZENOH_EXT_ENTRY_BODY_KIND_CODEC_ZENOH_EXT_UNIT, \
+        .arm = { .codec_zenoh_ext_unit = CODEC_ZENOH_EXT_UNIT_DEFAULT_INIT } \
+    }, \
+}
+
 typedef struct {
     uint8_t bytes[CODEC_ZENOH_EXT_ENTRY_MAX_BYTES];
     size_t  len;

@@ -26,13 +26,17 @@ class CodecTransportEnvelopeVariant:
     matching ``Optional`` field carries the decoded body. ``default_tag``
     preserves the runtime tag value when the default arm fires so encode
     can round-trip it back onto the wire."""
-    # Default to the first declared arm (or "Default" when arms is empty)
-    # so a freshly-constructed envelope round-trips through encode without
-    # needing the caller to populate the body explicitly.
-    kind: str = "CodecZenohInitBody"
+    # RFC variant-default-uniformity Atomic β-python: pick the declared
+    # default arm (``<sce:arm default="true"/>``) when present so a
+    # freshly-constructed envelope round-trips byte-exactly through
+    # ``encode() -> decode()``. The corresponding arm body field uses a
+    # default_factory so ``Variant()`` actually populates it (rather
+    # than leaving every arm field ``None`` while ``kind`` names one of
+    # them, which is the latent inconsistency this RFC closes).
+    kind: str = "CodecZenohClose"
     codec_zenoh_init_body: Optional[CodecZenohInitBody] = None
     codec_zenoh_open_body: Optional[CodecZenohOpenBody] = None
-    codec_zenoh_close: Optional[CodecZenohClose] = None
+    codec_zenoh_close: Optional[CodecZenohClose] = field(default_factory=CodecZenohClose)
     codec_zenoh_keep_alive: Optional[CodecZenohKeepAlive] = None
     codec_zenoh_frame: Optional[CodecZenohFrame] = None
     codec_zenoh_fragment: Optional[CodecZenohFragment] = None

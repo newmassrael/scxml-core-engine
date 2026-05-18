@@ -3966,6 +3966,58 @@ fn forge_codec_variant_arm_inner_mid_undeclared_rejects() {
     );
 }
 
+/// RFC variant-default-uniformity Atomic γ-3 (Q-V4 (a)): every
+/// `<sce:variant>` must declare an `<sce:arm default="true"/>` —
+/// codegen rejects the legacy "no marker = pick first declared
+/// arm" implicit fallback that led to the watching-zenoh R87
+/// defect. The catch-all `<sce:default>` is a separate concept
+/// and does not satisfy the requirement (Q-V3 (a)).
+#[test]
+fn forge_codec_variant_no_default_arm_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="no_default_arm">
+  <sce:import src="codec_variant_session_open.scxml" kind="codec" as="codec_variant_session_open"/>
+  <sce:import src="codec_variant_session_close.scxml" kind="codec" as="codec_variant_session_close"/>
+  <datamodel>
+    <data id="msg_id" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:variant tag="msg_id">
+      <sce:arm value="0x01" type="codec_variant_session_open"/>
+      <sce:arm value="0x02" type="codec_variant_session_close"/>
+      <sce:default type="codec_variant_session_close"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#;
+    let result = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("no_default_arm"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "variant with no <sce:arm default=\"true\"/> must reject with \
+             codec/variant-no-default-arm even when <sce:default> catch-all \
+             is declared"
+        ),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            err.error,
+            ForgeError::Validation(ValidationError::CodecVariantNoDefaultArm {
+                ref codec,
+            }) if codec == "no_default_arm"
+        ),
+        "must surface as ValidationError::CodecVariantNoDefaultArm; got: {:?}",
+        err.error
+    );
+}
+
 /// RFC variant-default-uniformity Atomic α: `default="..."` on
 /// `<sce:arm>` is typed as `xs:boolean` in the XSD, so a misspelling
 /// like `default="yes"` is caught at the structural XSD layer before

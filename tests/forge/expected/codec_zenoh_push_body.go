@@ -36,6 +36,21 @@ type CodecZenohPushBody struct {
 	Body CodecZenohPushBodyVariant
 }
 
+// NewCodecZenohPushBody returns a CodecZenohPushBody initialized with the
+// declared wire-MID defaults. Go has no Default trait — round-trip
+// safety (`NewCodecZenohPushBody().Encode()` decodes back to the same
+// arm) requires using this constructor rather than the bare struct
+// literal `CodecZenohPushBody{}`, which would zero-init every field
+// (and leave every Variant arm pointer nil for variant codecs).
+// RFC variant-default-uniformity Atomic β-go.
+func NewCodecZenohPushBody() *CodecZenohPushBody {
+	return &CodecZenohPushBody{
+		Body: CodecZenohPushBodyVariant{
+			CodecZenohPut: codec_zenoh_put.NewCodecZenohPut(),
+		},
+	}
+}
+
 // DecodeCodecZenohPushBody decodes the next frame from cursor.
 // On success the cursor advances past the consumed bytes; returns
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail

@@ -86,7 +86,7 @@
     <sce:variant tag="header.mid">
       <sce:arm value="0x01" type="codec_zenoh_init_body"/>
       <sce:arm value="0x02" type="codec_zenoh_open_body"/>
-      <sce:arm value="0x03" type="codec_zenoh_close"/>
+      <sce:arm value="0x03" type="codec_zenoh_close" default="true"/>
       <sce:arm value="0x04" type="codec_zenoh_keep_alive"/>
       <sce:arm value="0x05" type="codec_zenoh_frame"/>
       <sce:arm value="0x06" type="codec_zenoh_fragment"/>

@@ -46,7 +46,13 @@ using CodecTransportEnvelopeVariant = std::variant<
 
 struct CodecTransportEnvelope {
     uint8_t header;
-    CodecTransportEnvelopeVariant body;
+    // RFC variant-default-uniformity Atomic β-cpp: the
+    // `std::in_place_index<N>{}` tag selects the arm marked
+    // `<sce:arm default="true"/>` by index so a freshly-constructed
+    // envelope holds that arm (not the first declared alternative
+    // which `std::variant`'s default constructor would otherwise
+    // pick), encoding its wire-MID for byte-exact round-trip.
+    CodecTransportEnvelopeVariant body{std::in_place_index<2>{}};
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor

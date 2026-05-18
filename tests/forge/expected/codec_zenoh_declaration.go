@@ -50,6 +50,21 @@ type CodecZenohDeclaration struct {
 	Body CodecZenohDeclarationVariant
 }
 
+// NewCodecZenohDeclaration returns a CodecZenohDeclaration initialized with the
+// declared wire-MID defaults. Go has no Default trait — round-trip
+// safety (`NewCodecZenohDeclaration().Encode()` decodes back to the same
+// arm) requires using this constructor rather than the bare struct
+// literal `CodecZenohDeclaration{}`, which would zero-init every field
+// (and leave every Variant arm pointer nil for variant codecs).
+// RFC variant-default-uniformity Atomic β-go.
+func NewCodecZenohDeclaration() *CodecZenohDeclaration {
+	return &CodecZenohDeclaration{
+		Body: CodecZenohDeclarationVariant{
+			CodecDeclFinal: codec_decl_final.NewCodecDeclFinal(),
+		},
+	}
+}
+
 // DecodeCodecZenohDeclaration decodes the next frame from cursor.
 // On success the cursor advances past the consumed bytes; returns
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail

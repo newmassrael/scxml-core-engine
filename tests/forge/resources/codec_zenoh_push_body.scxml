@@ -38,7 +38,7 @@
       <sce:flag name="rest" bit="5" width="3"/>
     </sce:flags>
     <sce:variant tag="header.mid">
-      <sce:arm value="0x01" type="codec_zenoh_put"/>
+      <sce:arm value="0x01" type="codec_zenoh_put" default="true"/>
       <sce:arm value="0x02" type="codec_zenoh_del"/>
       <sce:default type="codec_zenoh_put"/>
     </sce:variant>

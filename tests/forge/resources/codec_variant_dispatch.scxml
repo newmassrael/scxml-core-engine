@@ -14,7 +14,7 @@
     <data id="msg_id" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
     <sce:variant tag="msg_id">
       <sce:arm value="0x01" type="codec_variant_session_open"/>
-      <sce:arm value="0x02" type="codec_variant_session_close"/>
+      <sce:arm value="0x02" type="codec_variant_session_close" default="true"/>
       <sce:default type="codec_variant_session_close"/>
     </sce:variant>
   </datamodel>

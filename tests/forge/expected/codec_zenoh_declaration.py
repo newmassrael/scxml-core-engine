@@ -28,10 +28,14 @@ class CodecZenohDeclarationVariant:
     matching ``Optional`` field carries the decoded body. ``default_tag``
     preserves the runtime tag value when the default arm fires so encode
     can round-trip it back onto the wire."""
-    # Default to the first declared arm (or "Default" when arms is empty)
-    # so a freshly-constructed envelope round-trips through encode without
-    # needing the caller to populate the body explicitly.
-    kind: str = "CodecZenohDeclKeyexpr"
+    # RFC variant-default-uniformity Atomic β-python: pick the declared
+    # default arm (``<sce:arm default="true"/>``) when present so a
+    # freshly-constructed envelope round-trips byte-exactly through
+    # ``encode() -> decode()``. The corresponding arm body field uses a
+    # default_factory so ``Variant()`` actually populates it (rather
+    # than leaving every arm field ``None`` while ``kind`` names one of
+    # them, which is the latent inconsistency this RFC closes).
+    kind: str = "CodecDeclFinal"
     codec_zenoh_decl_keyexpr: Optional[CodecZenohDeclKeyexpr] = None
     codec_zenoh_undecl_keyexpr: Optional[CodecZenohUndeclKeyexpr] = None
     codec_zenoh_decl_subscriber: Optional[CodecZenohDeclSubscriber] = None
@@ -40,7 +44,7 @@ class CodecZenohDeclarationVariant:
     codec_zenoh_undecl_queryable: Optional[CodecZenohUndeclQueryable] = None
     codec_zenoh_decl_token: Optional[CodecZenohDeclToken] = None
     codec_zenoh_undecl_token: Optional[CodecZenohUndeclToken] = None
-    codec_decl_final: Optional[CodecDeclFinal] = None
+    codec_decl_final: Optional[CodecDeclFinal] = field(default_factory=CodecDeclFinal)
     default_body: Optional[CodecDeclFinal] = None
     default_tag: int = 0
 

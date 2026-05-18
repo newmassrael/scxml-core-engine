@@ -459,6 +459,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `codec/variant-duplicate-default-arm` | Validation |
 | `codec/variant-default-arm-mid-mismatch` | Validation |
 | `codec/variant-arm-inner-mid-undeclared` | Validation |
+| `codec/variant-no-default-arm` | Validation |
 | `codec/present-if-refs-later-field` | Validation |
 | `codec/repeat-count-refs-later-field` | Validation |
 | `algorithm/test-vector-unsupported-kind` | Validation |

@@ -59,6 +59,22 @@ typedef struct {
     codec_transport_envelope_variant_t body;
 } codec_transport_envelope_t;
 
+/* RFC variant-default-uniformity Atomic β-c11: designated-initializer
+ * macro carrying the codec's wire-MID-baked defaults. C has no Default
+ * trait — round-trip safety (`codec_transport_envelope_t x = CODEC_TRANSPORT_ENVELOPE_DEFAULT_INIT;
+ * codec_transport_envelope_t_encode(&x)` decodes back to the same arm)
+ * requires using this macro rather than the zero-initializer `{0}`,
+ * which would leave the dispatch tag at zero and (for variant codecs)
+ * land in the catch-all arm or a mismatched union slot. Unspecified
+ * fields zero-initialize per C11 §6.7.9 ¶21, so the macro names only
+ * the wire-MID-bearing members. */
+#define CODEC_TRANSPORT_ENVELOPE_DEFAULT_INIT { \
+    .body = { \
+        .kind = CODEC_TRANSPORT_ENVELOPE_BODY_KIND_CODEC_ZENOH_CLOSE, \
+        .arm = { .codec_zenoh_close = CODEC_ZENOH_CLOSE_DEFAULT_INIT } \
+    }, \
+}
+
 typedef struct {
     uint8_t bytes[CODEC_TRANSPORT_ENVELOPE_MAX_BYTES];
     size_t  len;

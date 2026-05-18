@@ -38,7 +38,12 @@ sealed class CodecTransportEnvelopeVariant {
 // mirror the zero-initialized shape that decode() fills in on success.
 data class CodecTransportEnvelope(
     var header: UByte = 0.toUByte(),
-    var body: CodecTransportEnvelopeVariant = CodecTransportEnvelopeVariant.CodecZenohInitBody(com.sce.generated.codec_zenoh_init_body.CodecZenohInitBody())
+    // RFC variant-default-uniformity Atomic β-kotlin: pick the declared
+    // default arm (`<sce:arm default="true"/>`) instead of the first
+    // alternative so a freshly-constructed envelope round-trips byte-
+    // exactly through `encode() -> decode()`. Paired with the inner
+    // codec's `<sce:flag value=>`-baked default fields above.
+    var body: CodecTransportEnvelopeVariant = CodecTransportEnvelopeVariant.CodecZenohClose(com.sce.generated.codec_zenoh_close.CodecZenohClose())
 ) {
     // RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-

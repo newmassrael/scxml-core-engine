@@ -609,6 +609,26 @@ pub enum ValidationError {
         expected_flag: String,
     },
 
+    /// RFC variant-default-uniformity Atomic γ-3 (Q-V4 (a)): the
+    /// `<sce:variant>` declares no `<sce:arm default="true"/>` —
+    /// every variant must name a deliberate default arm so the
+    /// outer codec's `Default::default()` does not fall back to
+    /// the implicit "first declared arm" convention (which led to
+    /// the watching-zenoh R87 defect). Author resolves by adding
+    /// `default="true"` to the intended arm. Distinct from
+    /// `<sce:default>` (catch-all for unknown tag values), which
+    /// may or may not coexist on the same variant.
+    #[error(
+        "codec '{codec}': <sce:variant> declares no <sce:arm default=\"true\"/> — \
+         every variant must mark one arm as the deliberate Default-trait starting \
+         value so codegen does not implicitly pick the first declared arm; add \
+         default=\"true\" to the intended arm. (The catch-all <sce:default> \
+         element is a separate concept and does not satisfy this requirement.)"
+    )]
+    CodecVariantNoDefaultArm {
+        codec: String,
+    },
+
     /// RFC §5.B present-if primitive (B1-δ): the predicate on a
     /// `sce:present-if` attribute references a field that is **not**
     /// declared earlier in the same codec — either declared later

@@ -64,6 +64,10 @@ typedef struct {
  * the wire-MID-bearing members. */
 #define CODEC_ZENOH_OAM_DEFAULT_INIT { \
     .header = 0x1fu, \
+    .body = { \
+        .kind = CODEC_ZENOH_OAM_BODY_KIND_CODEC_ZENOH_EXT_UNIT, \
+        .arm = { .codec_zenoh_ext_unit = CODEC_ZENOH_EXT_UNIT_DEFAULT_INIT } \
+    }, \
 }
 
 typedef struct {

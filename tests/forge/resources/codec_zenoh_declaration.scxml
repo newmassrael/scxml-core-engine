@@ -79,7 +79,7 @@
       <sce:arm value="0x05" type="codec_zenoh_undecl_queryable"/>
       <sce:arm value="0x06" type="codec_zenoh_decl_token"/>
       <sce:arm value="0x07" type="codec_zenoh_undecl_token"/>
-      <sce:arm value="0x1a" type="codec_decl_final"/>
+      <sce:arm value="0x1a" type="codec_decl_final" default="true"/>
       <sce:default type="codec_decl_final"/>
     </sce:variant>
   </datamodel>

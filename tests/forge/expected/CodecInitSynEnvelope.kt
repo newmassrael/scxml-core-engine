@@ -26,6 +26,11 @@ sealed class CodecInitSynEnvelopeVariant {
 // mirror the zero-initialized shape that decode() fills in on success.
 data class CodecInitSynEnvelope(
     var header: UByte = 0.toUByte(),
+    // RFC variant-default-uniformity Atomic β-kotlin: pick the declared
+    // default arm (`<sce:arm default="true"/>`) instead of the first
+    // alternative so a freshly-constructed envelope round-trips byte-
+    // exactly through `encode() -> decode()`. Paired with the inner
+    // codec's `<sce:flag value=>`-baked default fields above.
     var body: CodecInitSynEnvelopeVariant = CodecInitSynEnvelopeVariant.CodecInitSynBody(com.sce.generated.codec_init_syn_body.CodecInitSynBody())
 ) {
     // RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over

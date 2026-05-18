@@ -28,7 +28,12 @@ sealed class CodecVariantDispatchVariant {
 // mirror the zero-initialized shape that decode() fills in on success.
 data class CodecVariantDispatch(
     var msg_id: UByte = 0.toUByte(),
-    var body: CodecVariantDispatchVariant = CodecVariantDispatchVariant.CodecVariantSessionOpen(com.sce.generated.codec_variant_session_open.CodecVariantSessionOpen())
+    // RFC variant-default-uniformity Atomic β-kotlin: pick the declared
+    // default arm (`<sce:arm default="true"/>`) instead of the first
+    // alternative so a freshly-constructed envelope round-trips byte-
+    // exactly through `encode() -> decode()`. Paired with the inner
+    // codec's `<sce:flag value=>`-baked default fields above.
+    var body: CodecVariantDispatchVariant = CodecVariantDispatchVariant.CodecVariantSessionClose(com.sce.generated.codec_variant_session_close.CodecVariantSessionClose())
 ) {
     fun encode(): ByteArray {
         // Encode fixed prefix (tag field bytes are part of the prefix).

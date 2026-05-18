@@ -38,6 +38,21 @@ type CodecZenohExtEntry struct {
 	Body CodecZenohExtEntryVariant
 }
 
+// NewCodecZenohExtEntry returns a CodecZenohExtEntry initialized with the
+// declared wire-MID defaults. Go has no Default trait — round-trip
+// safety (`NewCodecZenohExtEntry().Encode()` decodes back to the same
+// arm) requires using this constructor rather than the bare struct
+// literal `CodecZenohExtEntry{}`, which would zero-init every field
+// (and leave every Variant arm pointer nil for variant codecs).
+// RFC variant-default-uniformity Atomic β-go.
+func NewCodecZenohExtEntry() *CodecZenohExtEntry {
+	return &CodecZenohExtEntry{
+		Body: CodecZenohExtEntryVariant{
+			CodecZenohExtUnit: codec_zenoh_ext_unit.NewCodecZenohExtUnit(),
+		},
+	}
+}
+
 // DecodeCodecZenohExtEntry decodes the next frame from cursor.
 // On success the cursor advances past the consumed bytes; returns
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail

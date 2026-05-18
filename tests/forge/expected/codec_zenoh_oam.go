@@ -51,6 +51,9 @@ type CodecZenohOam struct {
 func NewCodecZenohOam() *CodecZenohOam {
 	return &CodecZenohOam{
 		Header: uint8(0x1f),
+		Body: CodecZenohOamVariant{
+			CodecZenohExtUnit: codec_zenoh_ext_unit.NewCodecZenohExtUnit(),
+		},
 	}
 }
 

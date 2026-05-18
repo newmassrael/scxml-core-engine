@@ -36,11 +36,12 @@ pub enum CodecTransportEnvelopeVariant {
 
 impl Default for CodecTransportEnvelopeVariant {
     fn default() -> Self {
-        // Default to the first declared arm's body — every imported
-        // codec is `#[derive(Default)]`, so this is infallible. A
-        // freshly-constructed envelope is overwritten by `decode()` or
-        // by an explicit user assignment before any `encode()` call.
-        Self::CodecZenohInitBody(CodecZenohInitBody::default())
+        // RFC variant-default-uniformity: pick the declared default
+        // arm (`<sce:arm default="true"/>`) so a freshly-constructed
+        // envelope round-trips byte-exactly through `encode() ->
+        // decode()` — pairs with the inner codec's `<sce:flag value=>`
+        // -baked `Default::default()` to close the dispatch loop.
+        Self::CodecZenohClose(CodecZenohClose::default())
     }
 }
 

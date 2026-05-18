@@ -1234,6 +1234,18 @@ fn render_codec(
         // arm's declared value, so `T::default().encode().decode()`
         // round-trips into the same arm.
         validate_cross_codec_variant_default_arm(m, v, imports)?;
+        // RFC variant-default-uniformity Atomic γ-3 (Q-V4 (a)):
+        // every variant must mark exactly one arm as the deliberate
+        // Default-trait starting value. Runs after the duplicate /
+        // mismatch / undeclared checks so authors see the most
+        // specific failure mode first.
+        if !v.arms.iter().any(|a| a.is_default) {
+            return Err(ForgeError::Validation(
+                crate::forge::error::ValidationError::CodecVariantNoDefaultArm {
+                    codec: m.name.clone(),
+                },
+            ));
+        }
     }
 
     // RFC §5.B B5-γ closures complete: all six backends (Rust / Cpp /

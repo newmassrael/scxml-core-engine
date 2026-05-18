@@ -31,7 +31,7 @@
       <sce:flag name="S"   bit="6"/>
     </sce:flags>
     <sce:variant tag="header.mid">
-      <sce:arm value="0x01" type="codec_init_syn_body"/>
+      <sce:arm value="0x01" type="codec_init_syn_body" default="true"/>
       <sce:default type="codec_init_syn_body"/>
     </sce:variant>
   </datamodel>

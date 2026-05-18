@@ -52,7 +52,7 @@
       <sce:flag name="rest" bit="5" width="3"/>
     </sce:flags>
     <sce:variant tag="header.mid">
-      <sce:arm value="0x1d" type="codec_zenoh_push_body"/>
+      <sce:arm value="0x1d" type="codec_zenoh_push_body" default="true"/>
       <sce:default type="codec_zenoh_push_body"/>
     </sce:variant>
   </datamodel>
