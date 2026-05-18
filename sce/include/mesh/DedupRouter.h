@@ -94,24 +94,49 @@ public:
 
     using Id = std::array<std::uint8_t, 16>;
 
-    /// Returns true iff `id` is novel. Inserts on true.
-    ///
-    /// Complexity: O(kCapacity). Linear scan over a 4 KiB array beats
-    /// hash-set overhead at this size, and there is no sorting to
-    /// maintain: the ring is append-only with head-rotation.
-    [[nodiscard]] bool observe(const Id& id) noexcept {
+    /// SCE_MESH.md §16.7 row 7 — distinguishes "novel id, fresh slot"
+    /// from "novel id, evicted an existing entry". The DEDUP_WINDOW_OVERFLOW
+    /// raise condition the catalog defines maps to NovelWithEviction
+    /// — the runtime has no oracle for "leaked duplicate older than
+    /// kCapacity events", so eviction at full capacity is the closest
+    /// observable proxy for "sustained rate exceeds window capacity".
+    enum class Result {
+        Duplicate,
+        Novel,
+        NovelWithEviction,
+    };
+
+    /// Rich result variant of `observe`. Returns NovelWithEviction iff
+    /// the ring was already wrapped (i.e. at capacity) AND the new id
+    /// is novel — meaning an existing slot was overwritten by this
+    /// call. Novel iff the ring still had unused slots before this
+    /// insert. Duplicate iff the id matched any populated slot.
+    [[nodiscard]] Result observeWithSignal(const Id& id) noexcept {
         const std::size_t filled = wrapped_ ? kCapacity : head_;
         for (std::size_t i = 0; i < filled; ++i) {
             if (recent_ids_[i] == id) {
-                return false;
+                return Result::Duplicate;
             }
         }
+        const bool eviction = wrapped_;
         recent_ids_[head_] = id;
         head_ = (head_ + 1) % kCapacity;
         if (head_ == 0) {
             wrapped_ = true;
         }
-        return true;
+        return eviction ? Result::NovelWithEviction : Result::Novel;
+    }
+
+    /// Backward-compatible bool wrapper. Returns true iff `id` was
+    /// novel (NovelWithEviction collapses to true — the dedup-filter
+    /// contract is unchanged for callers that do not need the row 7
+    /// signal).
+    ///
+    /// Complexity: O(kCapacity). Linear scan over a 4 KiB array beats
+    /// hash-set overhead at this size, and there is no sorting to
+    /// maintain: the ring is append-only with head-rotation.
+    [[nodiscard]] bool observe(const Id& id) noexcept {
+        return observeWithSignal(id) != Result::Duplicate;
     }
 
 private:
@@ -138,11 +163,21 @@ public:
     /// Returns false iff the (source, id) pair was already observed
     /// within the window and the envelope should be dropped.
     [[nodiscard]] bool admit(const std::string& source, const Id& id) {
+        return admitWithSignal(source, id) != DedupWindow::Result::Duplicate;
+    }
+
+    /// Rich variant — surfaces the §16.7 row 7 DEDUP_WINDOW_OVERFLOW
+    /// signal (NovelWithEviction). Codegen call sites that own a
+    /// `raiseCommunicationError` helper switch on this enum to
+    /// (a) drop on Duplicate, (b) proceed silently on Novel,
+    /// (c) proceed AND raise DEDUP_WINDOW_OVERFLOW on
+    ///     NovelWithEviction.
+    [[nodiscard]] DedupWindow::Result admitWithSignal(const std::string& source, const Id& id) {
         std::lock_guard<std::mutex> lock(mutex_);
         // `operator[]` value-initializes the window on first insert,
         // i.e. an all-zero ring with head_ = 0 — any non-zero UUID is
         // novel on first observation, which is the intended behavior.
-        return windows_[source].observe(id);
+        return windows_[source].observeWithSignal(id);
     }
 
 private:

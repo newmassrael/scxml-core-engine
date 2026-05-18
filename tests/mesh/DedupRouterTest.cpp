@@ -134,6 +134,54 @@ TEST(DedupRouter, EachSenderGetsFullCapacity) {
     EXPECT_FALSE(r.admit("brake", id_of(1)));
 }
 
+TEST(DedupWindow, ObserveWithSignalEnumPathing) {
+    // §16.7 row 7 (DEDUP_WINDOW_OVERFLOW): pre-wrap novel inserts
+    // return Novel; the (kCapacity + 1)-th distinct id returns
+    // NovelWithEviction because it overwrites slot 0; a re-observed
+    // recent id returns Duplicate. All three enum arms must be
+    // reachable from a single window instance so the codegen call
+    // site has a closed switch.
+    DedupWindow w;
+    for (std::uint32_t n = 1; n <= DedupWindow::kCapacity; ++n) {
+        ASSERT_EQ(w.observeWithSignal(id_of(n)), DedupWindow::Result::Novel)
+            << "id " << n << " inside pre-wrap window must be Novel";
+    }
+    EXPECT_EQ(w.observeWithSignal(id_of(DedupWindow::kCapacity + 1)),
+              DedupWindow::Result::NovelWithEviction)
+        << "first eviction must surface NovelWithEviction";
+    EXPECT_EQ(w.observeWithSignal(id_of(DedupWindow::kCapacity)),
+              DedupWindow::Result::Duplicate)
+        << "still-resident recent id must surface Duplicate";
+}
+
+TEST(DedupRouter, AdmitWithSignalRaisesOverflowOnFirstEviction) {
+    // The DedupRouter wraps admitWithSignal — the codegen TransportRouter
+    // calls this and stamps `error.communication / DEDUP_WINDOW_OVERFLOW`
+    // when the result is NovelWithEviction.
+    DedupRouter r;
+    for (std::uint32_t n = 1; n <= DedupWindow::kCapacity; ++n) {
+        ASSERT_EQ(r.admitWithSignal("motor", id_of(n)),
+                  DedupWindow::Result::Novel);
+    }
+    EXPECT_EQ(r.admitWithSignal("motor", id_of(DedupWindow::kCapacity + 1)),
+              DedupWindow::Result::NovelWithEviction);
+}
+
+TEST(DedupRouter, BoolAdmitContractUnchanged) {
+    // The legacy bool admit() collapses NovelWithEviction to true, so
+    // existing call sites that just check "should I dispatch?" keep
+    // their behaviour. Regression guard against a refactor that flips
+    // the eviction case to false.
+    DedupRouter r;
+    for (std::uint32_t n = 1; n <= DedupWindow::kCapacity + 1; ++n) {
+        EXPECT_TRUE(r.admit("motor", id_of(n)))
+            << "bool admit must accept all novel ids including the "
+               "post-wrap (kCapacity+1)-th";
+    }
+    EXPECT_FALSE(r.admit("motor", id_of(DedupWindow::kCapacity)))
+        << "still-resident recent id must be filtered";
+}
+
 TEST(DedupRouter, ConcurrentAdmitsNeverDoubleAdmit) {
     // Stress the internal mutex: many threads all observe the same
     // 256-id batch. Every (source, id) pair must be admitted exactly

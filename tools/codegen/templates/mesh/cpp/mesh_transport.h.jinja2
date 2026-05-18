@@ -3691,8 +3691,26 @@ struct TransportRouter {
     /// @return true iff the envelope was novel AND MeshDispatch accepted it
     [[nodiscard]] bool admitInbound(const SCE::Mesh::MeshEnvelope& env,
                                     std::size_t session_idx) {
-        if (!dedup_.admit(env.source, env.id)) {
+        const auto dedup_result = dedup_.admitWithSignal(env.source, env.id);
+        if (dedup_result == ::SCE::Mesh::DedupWindow::Result::Duplicate) {
             return false;
+        }
+        if (dedup_result == ::SCE::Mesh::DedupWindow::Result::NovelWithEviction) {
+            // SCE_MESH.md §16.7 row 7 — DEDUP_WINDOW_OVERFLOW. The
+            // sender's sustained novel-id rate exceeded this
+            // receiver's 256-slot per-sender ring; the spec calls
+            // this operationally as "eviction happened", surfaced
+            // here as the closest in-bounds signal of the
+            // underlying fault. Authors guard on `_event.data.reason
+            // == 'DEDUP_WINDOW_OVERFLOW' && _event.data.source ==
+            // '<peer>'` to react to the specific peer overrunning
+            // the window.
+            ::SCE::Mesh::CommunicationError __sce_dedup_err;
+            __sce_dedup_err.reason = "DEDUP_WINDOW_OVERFLOW";
+            __sce_dedup_err.source = env.source;
+            __sce_dedup_err.window_size =
+                static_cast<std::int64_t>(::SCE::Mesh::DedupWindow::kCapacity);
+            raiseCommunicationError(std::move(__sce_dedup_err));
         }
         return dispatchToSession(env, session_idx);
     }
@@ -3788,7 +3806,19 @@ struct TransportRouter {
             // §10.5 dedup chained after ordering, same rationale as
             // admitOrdered: needs_ordering implies needs_dedup for
             // every registry transport today.
-            if (!dedup_.admit(env.source, env.id)) continue;
+            const auto __sce_dedup_after_ordering =
+                dedup_.admitWithSignal(env.source, env.id);
+            if (__sce_dedup_after_ordering == ::SCE::Mesh::DedupWindow::Result::Duplicate) continue;
+            if (__sce_dedup_after_ordering == ::SCE::Mesh::DedupWindow::Result::NovelWithEviction) {
+                // §16.7 row 7 — same overflow surface as admitInbound
+                // (separate dispatch entry, identical raise contract).
+                ::SCE::Mesh::CommunicationError __sce_dedup_err;
+                __sce_dedup_err.reason = "DEDUP_WINDOW_OVERFLOW";
+                __sce_dedup_err.source = env.source;
+                __sce_dedup_err.window_size =
+                    static_cast<std::int64_t>(::SCE::Mesh::DedupWindow::kCapacity);
+                raiseCommunicationError(std::move(__sce_dedup_err));
+            }
 {% endif %}
             // session_idx is `0`: SCE_MESH.md §10.6 scopes
             // `ordering: required` to client-target bindings, and the

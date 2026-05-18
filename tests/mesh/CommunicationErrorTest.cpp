@@ -18,6 +18,7 @@
 //   * RegionPartitionedShape
 //   * BackpressureDropShape
 //   * EnvelopeCorruptShape
+//   * DedupWindowOverflowShape
 // since those pin byte-exact output.
 
 #include "mesh/CommunicationError.h"
@@ -210,6 +211,28 @@ TEST(CommunicationErrorTest, EnvelopeCorruptShapeWithPosition) {
               "\"transport\":\"zenoh\","
               "\"codec\":\"cbor\","
               "\"position\":42}");
+}
+
+TEST(CommunicationErrorTest, DedupWindowOverflowShape) {
+    // §16.7 row 7 — DEDUP_WINDOW_OVERFLOW carries source + window_size.
+    // Raised by the codegen TransportRouter's dedup call site when
+    // `DedupRouter::admitWithSignal` returns NovelWithEviction —
+    // the spec's "sustained rate exceeds window capacity" condition
+    // is observed operationally as "novel id evicted an existing
+    // entry". `window_size` echoes `DedupWindow::kCapacity` (256)
+    // so authors can correlate the raise with the configured ring
+    // depth without parsing extra context.
+    CommunicationError err;
+    err.reason = "DEDUP_WINDOW_OVERFLOW";
+    err.source = "motor";
+    err.window_size = 256;
+
+    const auto out = bytes_to_string(err.toJsonBytes());
+    EXPECT_EQ(out,
+              "{\"errorName\":\"communication\","
+              "\"reason\":\"DEDUP_WINDOW_OVERFLOW\","
+              "\"source\":\"motor\","
+              "\"window_size\":256}");
 }
 
 TEST(CommunicationErrorTest, OptionalFieldsAbsentAreSkipped) {

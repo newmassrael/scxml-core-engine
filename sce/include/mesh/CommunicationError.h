@@ -119,6 +119,16 @@ struct CommunicationError {
     /// `last_seen_ms_ago`; depth is never negative in practice.
     std::optional<std::int64_t> queue_depth;
 
+    /// §16.7 row 7 (DEDUP_WINDOW_OVERFLOW): per-sender dedup ring
+    /// capacity (`DedupWindow::kCapacity`, 256 at HEAD) at the moment
+    /// an eviction was observed. The "sustained rate exceeds capacity"
+    /// condition the spec names is detected operationally as
+    /// "novel-id insert evicted an existing entry" — the runtime
+    /// cannot retain unbounded history to confirm a leaked duplicate,
+    /// so eviction is the closest in-bounds signal of the underlying
+    /// fault.
+    std::optional<std::int64_t> window_size;
+
     /// §16.7 row 12 (ORDERING_GAP): inclusive low end of the fast-
     /// forwarded sequence range.
     std::optional<std::uint64_t> lost_seq_lo;
@@ -205,6 +215,9 @@ struct CommunicationError {
         }
         if (queue_depth) {
             j["queue_depth"] = *queue_depth;
+        }
+        if (window_size) {
+            j["window_size"] = *window_size;
         }
         if (lost_seq_lo) {
             j["lost_seq_lo"] = *lost_seq_lo;
