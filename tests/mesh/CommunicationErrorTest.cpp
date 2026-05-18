@@ -16,6 +16,7 @@
 //   * PeerPartitionedShape
 //   * BarrierTimeoutShape
 //   * RegionPartitionedShape
+//   * BackpressureDropShape
 // since those pin byte-exact output.
 
 #include "mesh/CommunicationError.h"
@@ -138,6 +139,32 @@ TEST(CommunicationErrorTest, RegionPartitionedShape) {
               "\"last_seen_ms_ago\":142,"
               "\"machine\":\"motor\","
               "\"partition\":\"motor_right\"}");
+}
+
+TEST(CommunicationErrorTest, BackpressureDropShape) {
+    // §16.7 row 9 — BACKPRESSURE_DROP carries transport + target +
+    // queue_depth. Raised by `OutboundBuffer::admit` when the per-
+    // target queue is full (§10.10 `max_pending_per_target`). Field
+    // order on the wire follows CommunicationError's declaration
+    // order — target precedes transport, not the catalog row's
+    // textual order. Authors guard on
+    // `_event.data.reason == 'BACKPRESSURE_DROP' &&
+    //  _event.data.target == '<peer>'` to react to a specific peer
+    // backing up; `queue_depth` carries the observed buffer depth
+    // at the moment of overflow for diagnostics.
+    CommunicationError err;
+    err.reason = "BACKPRESSURE_DROP";
+    err.target = "motor";
+    err.transport = "someip";
+    err.queue_depth = 1024;
+
+    const auto out = bytes_to_string(err.toJsonBytes());
+    EXPECT_EQ(out,
+              "{\"errorName\":\"communication\","
+              "\"reason\":\"BACKPRESSURE_DROP\","
+              "\"target\":\"motor\","
+              "\"transport\":\"someip\","
+              "\"queue_depth\":1024}");
 }
 
 TEST(CommunicationErrorTest, OptionalFieldsAbsentAreSkipped) {
