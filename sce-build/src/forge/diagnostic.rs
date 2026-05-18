@@ -620,6 +620,18 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/variant-parent-tag-flag-not-declared")]
     CodecVariantParentTagFlagNotDeclared,
 
+    // ── RFC §5.B B5-ν default-arm rejection: parent-scope dispatch
+    //    (`tag="parent.<flag>"`) reads a uint8 carrier flag whose
+    //    width ≤ 8, so the tag domain is `1 << width` (≤ 256) and
+    //    always practically enumerable via explicit `<sce:arm>`.
+    //    `<sce:default>` catch-all is structurally unreachable in
+    //    this dispatch form; admitting it would emit dead encode-side
+    //    branches and shadow the std::variant last-alternative slot.
+    //    Distinct from the `<sce:arm default="true"/>` attribute
+    //    (Default-trait marker; valid here). Stage = Validation. ──
+    #[serde(rename = "codec/b5-nu-dispatcher-default-arm-forbidden")]
+    CodecVariantParentScopeDefaultArmForbidden,
+
     // ── RFC §5.B B5-ν Q-3: a parent codec has a static
     //    `<sce:flag value="..."/>` constant on a flag carrier, AND
     //    an embedded variant codec uses that same flag for B5-ν
@@ -2294,9 +2306,10 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CodecVariantNoDefaultArm,
         // RFC variant-default-overlay Atomic A — deploy.yaml overlay names an undeclared arm
         CodecVariantDefaultOverlayArmNotDeclared,
-        // RFC §5.B B5-ν — variant parent-tag dispatch (4 codes)
+        // RFC §5.B B5-ν — variant parent-tag dispatch (5 codes)
         CodecVariantParentTagWithoutRequiresParentFlags,
         CodecVariantParentTagFlagNotDeclared,
+        CodecVariantParentScopeDefaultArmForbidden,
         CodecParentFlagDerivationConflict,
         CodecVariantParentTagBeforeCarrier,
         // Codec §5.B present-if primitive (watching-zenoh RFC §5.B, B1-δ)
@@ -2668,6 +2681,7 @@ impl DiagnosticCode {
             | CodecVariantDefaultOverlayArmNotDeclared
             | CodecVariantParentTagWithoutRequiresParentFlags
             | CodecVariantParentTagFlagNotDeclared
+            | CodecVariantParentScopeDefaultArmForbidden
             | CodecParentFlagDerivationConflict
             | CodecVariantParentTagBeforeCarrier
             | CodecPresentIfRefsLaterField
@@ -3186,6 +3200,9 @@ impl DiagnosticCode {
             }
             CodecVariantParentTagFlagNotDeclared => {
                 "codec/variant-parent-tag-flag-not-declared"
+            }
+            CodecVariantParentScopeDefaultArmForbidden => {
+                "codec/b5-nu-dispatcher-default-arm-forbidden"
             }
             CodecParentFlagDerivationConflict => "codec/parent-flag-derivation-conflict",
             CodecVariantParentTagBeforeCarrier => {
@@ -4453,6 +4470,20 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                         .collect(),
                 })
             },
+            key_fragments: vec![codec.clone(), carrier.clone(), flag.clone()],
+        },
+        ValidationError::CodecVariantParentScopeDefaultArmForbidden {
+            codec,
+            flag,
+            carrier,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CodecVariantParentScopeDefaultArmForbidden,
+            stage: Stage::Validation,
+            expected: Some(vec![format!(
+                "<sce:arm value=\"...\"/> entries covering all 2^width tag values"
+            )]),
+            actual: Some(format!("<sce:default> on tag=\"parent.{flag}\"")),
+            fix: None,
             key_fragments: vec![codec.clone(), carrier.clone(), flag.clone()],
         },
         ValidationError::CodecParentFlagDerivationConflict {
@@ -8114,6 +8145,16 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:aee7c96daa3197ae","code":"codec/variant-parent-tag-flag-not-declared","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'codec_zenoh_keyexpr': <sce:variant tag=\"parent.X\"> references a flag that is not declared in <sce:requires-parent-flags carrier=\"header\"> — declared flags on this codec's rpf block: [M, N]. Add <sce:flag name=\"X\" bit=\"...\"/> to the rpf block, or correct the tag attribute.","expected":["parent.X"],"actual":"codec_zenoh_keyexpr","fix":{"kind":"replace_one_of","candidates":["parent.M","parent.N"]}}"#,
             ),
             (
+                "forge/codec-b5-nu-dispatcher-default-arm-forbidden",
+                ValidationError::CodecVariantParentScopeDefaultArmForbidden {
+                    codec: "codec_zenoh_keyexpr".into(),
+                    flag: "M".into(),
+                    carrier: "header".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:cb8cf2368699c25e","code":"codec/b5-nu-dispatcher-default-arm-forbidden","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'codec_zenoh_keyexpr': <sce:variant tag=\"parent.M\"> uses B5-ν parent-scope dispatch (carrier 'header' is uint8 with bounded flag width), but the variant declares a <sce:default> catch-all element — parent-scope dispatch reads from a fully-enumerable flag domain (1 << width values), so the catch-all is structurally unreachable. Remove the <sce:default> child and enumerate all 2^width tag values via <sce:arm value=\"...\"/> entries; codec/variant-arm-unreachable will surface any gap in the enumeration.","expected":["<sce:arm value=\"...\"/> entries covering all 2^width tag values"],"actual":"<sce:default> on tag=\"parent.M\""}"#,
+            ),
+            (
                 "forge/codec-parent-flag-derivation-conflict",
                 ValidationError::CodecParentFlagDerivationConflict {
                     parent_codec: "codec_zenoh_push".into(),
@@ -10430,11 +10471,13 @@ mod tests {
             | CodecVariantArmMidMismatch
             | CodecVariantArmInnerMidUndeclared
             | CodecVariantNoDefaultArm
-            // RFC §5.B B5-ν — three of the four codes are
-            // deterministic-fix (add rpf block / remove value= /
-            // reorder fields); CodecVariantParentTagFlagNotDeclared
-            // carries the rpf flag candidates (handled above).
+            // RFC §5.B B5-ν — four of the five codes are
+            // deterministic-fix (add rpf block / remove <sce:default>
+            // / remove value= / reorder fields);
+            // CodecVariantParentTagFlagNotDeclared carries the rpf
+            // flag candidates (handled above).
             | CodecVariantParentTagWithoutRequiresParentFlags
+            | CodecVariantParentScopeDefaultArmForbidden
             | CodecParentFlagDerivationConflict
             | CodecVariantParentTagBeforeCarrier
             | CodecPresentIfRefsLaterField
@@ -10902,6 +10945,7 @@ mod tests {
                 | CodecVariantDefaultOverlayArmNotDeclared
                 | CodecVariantParentTagWithoutRequiresParentFlags
                 | CodecVariantParentTagFlagNotDeclared
+                | CodecVariantParentScopeDefaultArmForbidden
                 | CodecParentFlagDerivationConflict
                 | CodecVariantParentTagBeforeCarrier
                 | CodecPresentIfRefsLaterField
@@ -11090,7 +11134,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            285,
+            286,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries —\
              expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
@@ -11748,7 +11792,17 @@ mod tests {
              or Forwarding source has the flag at a different bit \
              position than the body's declaration. Both ride \
              `NeutralOrDeterministic` (deterministic structural repair). \
-             283 → 285.",
+             283 → 285. Then RFC B5-ν default-arm rejection (claudedocs/\
+             rfc-b5-nu-default-arm-rejection.md) adds \
+             `codec/b5-nu-dispatcher-default-arm-forbidden` — parser-time \
+             rejection of `<sce:default>` catch-all child on parent-scope \
+             dispatchers (`tag=\"parent.<flag>\"`); the carrier's flag \
+             domain is `1 << width` ≤ 256 and always practically \
+             enumerable via `<sce:arm>`, so the catch-all is structurally \
+             unreachable. NeutralOrDeterministic — author removes the \
+             `<sce:default>` element; existing \
+             `codec/variant-arm-unreachable` covers any gap in the \
+             enumeration. 285 → 286.",
         );
     }
 

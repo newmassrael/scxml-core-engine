@@ -335,6 +335,21 @@ A `parent.<flag>` form on a 3-bit flag dispatches over 8 arm
 values; B5-β's existing `codec/variant-arm-unreachable` covers
 exhaustiveness without special-casing.
 
+Default-arm rule: `<sce:variant tag="parent.<flag>">` reads from
+a uint8 carrier with bounded flag width (≤ 8 per
+`<sce:requires-parent-flags>` lock), so the tag domain is
+`1 << width` ≤ 256 and always practically enumerable via explicit
+`<sce:arm>` declarations. A `<sce:default>` catch-all child is
+therefore structurally unreachable in this dispatch form;
+admitting it would let codegen emit dead encode-side fallback
+branches and shadow an enumerated arm at the std::variant
+last-alternative slot. Parser rejects with
+`codec/b5-nu-dispatcher-default-arm-forbidden`. Distinct from
+the `<sce:arm default="true"/>` attribute (Default-trait
+starting-value marker) which remains valid in this form. Any
+gap in the enumeration surfaces via the existing
+`codec/variant-arm-unreachable`.
+
 ### §2.9 Composition extensions — `<sce:template>`
 
 `<sce:template>` / `<sce:use>` / `<sce:param>` add parameterised XML
@@ -468,7 +483,7 @@ no typed interpretation or are explicitly excluded:
 
 ---
 
-## Appendix — `DiagnosticCode` index (285 codes)
+## Appendix — `DiagnosticCode` index (286 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -551,6 +566,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `codec/variant-default-overlay-arm-not-declared` | Validation |
 | `codec/variant-parent-tag-without-requires-parent-flags` | Validation |
 | `codec/variant-parent-tag-flag-not-declared` | Validation |
+| `codec/b5-nu-dispatcher-default-arm-forbidden` | Validation |
 | `codec/parent-flag-derivation-conflict` | Validation |
 | `codec/parent-tag-variant-before-carrier` | Validation |
 | `codec/present-if-refs-later-field` | Validation |

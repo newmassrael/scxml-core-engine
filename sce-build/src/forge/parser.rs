@@ -2040,6 +2040,28 @@ fn parse_codec_variant(
                 });
             }
             "default" => {
+                // RFC §5.B B5-ν default-arm rejection: parent-scope
+                // dispatch (`tag="parent.<flag>"`) reads from a
+                // uint8 carrier with bounded flag width (≤ 8 per
+                // `<sce:requires-parent-flags>` lock), so the tag
+                // domain is `1 << width` (≤ 256) and always
+                // practically enumerable. The catch-all is
+                // structurally unreachable; admitting it would let
+                // codegen emit dead encode-side fallback branches
+                // and shadow an enumerated arm at the std::variant
+                // last-alternative position. Distinct from
+                // `<sce:arm default="true"/>` (Default-trait marker).
+                if tag_scope == TagScope::Parent {
+                    return Err(located(
+                        &child,
+                        label.diagnostic_label,
+                        ValidationError::CodecVariantParentScopeDefaultArmForbidden {
+                            codec: label.identifier.to_string(),
+                            flag: tag_flag.clone().unwrap_or_default(),
+                            carrier: tag_field.clone(),
+                        },
+                    ));
+                }
                 if default_arm.is_some() {
                     return Err(located(
                         &child,

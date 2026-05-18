@@ -693,6 +693,41 @@ pub enum ValidationError {
         declared_flags: Vec<String>,
     },
 
+    /// RFC §5.B B5-ν default-arm rejection: a codec's
+    /// `<sce:variant tag="parent.<flag>">` (parent-scope dispatch)
+    /// includes a `<sce:default type="..."/>` catch-all child element.
+    /// Parent-scope dispatch reads from a `uint8` flag of width `W`
+    /// (W ≤ 8 by `<sce:requires-parent-flags>` lock), so the tag
+    /// domain is `1 << W` (≤ 256) values — always practically
+    /// enumerable via explicit `<sce:arm>` declarations. The catch-all
+    /// is therefore structurally unreachable in this dispatch form
+    /// (the exhaustiveness check at parser.rs:2120 already requires
+    /// `arms.len() >= 1 << W` when `default_arm` is absent). Admitting
+    /// the catch-all anyway lets readers wrongly infer a meaningful
+    /// fallback that codegen never invokes; the codegen's encode-side
+    /// `_ => default_arm.encode(...)` branch becomes dead emit, and
+    /// the Cpp `std::variant.index()` ternary chain's final
+    /// alternative shadows an enumerated arm at index N. Distinct
+    /// from the `<sce:arm default="true"/>` attribute (Default-trait
+    /// starting-value marker; valid in this form). Author resolves by
+    /// removing the `<sce:default>` element and relying on enumerated
+    /// arms; the `codec/variant-arm-unreachable` diagnostic will
+    /// surface any gap in the enumeration.
+    #[error(
+        "codec '{codec}': <sce:variant tag=\"parent.{flag}\"> uses B5-ν parent-scope \
+         dispatch (carrier '{carrier}' is uint8 with bounded flag width), but the \
+         variant declares a <sce:default> catch-all element — parent-scope dispatch \
+         reads from a fully-enumerable flag domain (1 << width values), so the \
+         catch-all is structurally unreachable. Remove the <sce:default> child and \
+         enumerate all 2^width tag values via <sce:arm value=\"...\"/> entries; \
+         codec/variant-arm-unreachable will surface any gap in the enumeration."
+    )]
+    CodecVariantParentScopeDefaultArmForbidden {
+        codec: String,
+        flag: String,
+        carrier: String,
+    },
+
     /// RFC §5.B B5-ν Q-3: a parent codec has a static
     /// `<sce:flag name="F" ... value="V"/>` constant on its flag
     /// carrier, AND an embedded variant codec uses that same flag

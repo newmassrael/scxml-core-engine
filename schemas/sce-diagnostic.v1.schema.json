@@ -116,6 +116,7 @@
         "codec/variant-default-overlay-arm-not-declared",
         "codec/variant-parent-tag-without-requires-parent-flags",
         "codec/variant-parent-tag-flag-not-declared",
+        "codec/b5-nu-dispatcher-default-arm-forbidden",
         "codec/parent-flag-derivation-conflict",
         "codec/parent-tag-variant-before-carrier",
         "codec/present-if-refs-later-field",

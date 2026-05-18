@@ -10757,3 +10757,98 @@ fn forge_b5_nu_consumer_kind_string_dispatch_python() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// RFC B5-ν default-arm rejection — parent-scope dispatch
+/// (`tag="parent.<flag>"`) reads from a uint8 carrier with bounded
+/// flag width (≤ 8), so the tag domain is `1 << width` ≤ 256 and
+/// always practically enumerable via explicit `<sce:arm>` declarations.
+/// A `<sce:default>` catch-all child is structurally unreachable in
+/// this dispatch form; admitting it would emit dead encode-side
+/// fallback branches and shadow an enumerated arm at the std::variant
+/// last-alternative slot. Distinct from `<sce:arm default="true"/>`
+/// (Default-trait starting-value marker; valid in this form).
+#[test]
+fn forge_b5_nu_dispatcher_default_arm_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let dir = std::env::temp_dir().join(format!("sce_b5nu_default_arm_{pid}_{id}"));
+    std::fs::create_dir_all(&dir).expect("mkdir fixture");
+
+    // Arm bodies are minimal pass-through codecs; the structural
+    // rejection is dispatcher-side so arm contents don't affect the
+    // parser outcome.
+    let arm_a = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="b5nu_dar_arm_a" sce:default-endian="big">
+  <datamodel>
+    <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+  </datamodel>
+</scxml>"#;
+    let arm_b = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="b5nu_dar_arm_b" sce:default-endian="big">
+  <datamodel>
+    <sce:field id="payload" sce:type="uint16" sce:byte="0" sce:bit-size="16"/>
+  </datamodel>
+</scxml>"#;
+    // Dispatcher: tag="parent.M" (parent-scope) + enumerated arms for
+    // both possible bit values + a forbidden <sce:default> catch-all.
+    let dispatcher = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="b5nu_dar_disp" sce:default-endian="big">
+  <sce:import src="b5nu_dar_arm_a.scxml" kind="codec" as="b5nu_dar_arm_a"/>
+  <sce:import src="b5nu_dar_arm_b.scxml" kind="codec" as="b5nu_dar_arm_b"/>
+  <sce:requires-parent-flags carrier="header">
+    <sce:flag name="M" bit="6"/>
+  </sce:requires-parent-flags>
+  <datamodel>
+    <sce:variant tag="parent.M">
+      <sce:arm value="0x00" type="b5nu_dar_arm_a"/>
+      <sce:arm value="0x01" type="b5nu_dar_arm_b"/>
+      <sce:default type="b5nu_dar_arm_a"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#;
+    std::fs::write(dir.join("b5nu_dar_arm_a.scxml"), arm_a).expect("write arm_a");
+    std::fs::write(dir.join("b5nu_dar_arm_b.scxml"), arm_b).expect("write arm_b");
+    std::fs::write(dir.join("b5nu_dar_disp.scxml"), dispatcher).expect("write disp");
+
+    let result = sce_build::compile_forge_with_imports(
+        dispatcher,
+        sce_build::DocumentLabel::symmetric("b5nu_dar_disp"),
+        sce_build::generator::Language::Rust,
+        &dir,
+        &golden_options(sce_build::generator::Language::Rust),
+    );
+    let err = match result {
+        Ok(_) => {
+            let _ = std::fs::remove_dir_all(&dir);
+            panic!(
+                "<sce:default> on B5-ν parent-scope dispatcher must reject with \
+                 codec/b5-nu-dispatcher-default-arm-forbidden"
+            );
+        }
+        Err(e) => e,
+    };
+    let _ = std::fs::remove_dir_all(&dir);
+    let inner = err.error;
+    assert!(
+        matches!(
+            inner,
+            ForgeError::Validation(ValidationError::CodecVariantParentScopeDefaultArmForbidden {
+                ref codec,
+                ref flag,
+                ref carrier,
+            }) if codec == "b5nu_dar_disp" && flag == "M" && carrier == "header"
+        ),
+        "must surface as CodecVariantParentScopeDefaultArmForbidden \
+         with codec=b5nu_dar_disp / flag=M / carrier=header; got: {inner:?}"
+    );
+}
