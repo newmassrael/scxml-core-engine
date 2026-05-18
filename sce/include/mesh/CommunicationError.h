@@ -20,8 +20,9 @@
 // timeout_ms), the §16.7 row-13 `REGION_PARTITIONED` extras
 // (machine / partition, reusing last_seen_ms_ago), the §16.7
 // row-4 `ENVELOPE_CORRUPT` extras (transport / codec / position),
-// the §16.7 row-5 `INVOKE_CHILD_LOST` extras (invoke_id, reusing
-// target), and the §16.7 row-2 `SEND_FAILED` extras
+// the §16.7 row-5 `INVOKE_CHILD_LOST` extras (invoke_id as a wire
+// string covering both §9.5 UUID-form and §9.6 W3C-string-form,
+// reusing target), and the §16.7 row-2 `SEND_FAILED` extras
 // (transport_error, reusing transport / target). Each raise site
 // populates only the extras named in its row of the catalog; the
 // remainder stay empty and are skipped on render.
@@ -73,16 +74,25 @@ struct CommunicationError {
     /// RFC 4122 canonical 36-char string via SCE::uuid::to_string.
     std::optional<std::array<std::uint8_t, 16>> envelope_id;
 
-    /// §16.7 row 5 (INVOKE_CHILD_LOST): wire-level invoke id (UUID v7
-    /// bytes) of the §9.5 `<invoke type="sce:mesh-rpc">` whose
-    /// outstanding correlation entry was cancelled because the
-    /// transport reached its `Shutdown` lifecycle phase per §10.4.1
-    /// row 1704. Rendered as the RFC 4122 canonical 36-char string
-    /// so the JSON shape matches `envelope_id`. Distinct from
-    /// `envelope_id` (which keys the envelope that triggered an
-    /// inbound condition) — `invoke_id` keys the invoke whose
-    /// reply will never arrive.
-    std::optional<std::array<std::uint8_t, 16>> invoke_id;
+    /// §16.7 row 5 (INVOKE_CHILD_LOST): wire-level invoke id of the
+    /// invoke whose reply will never arrive. Two source-equivalent
+    /// shapes share this single wire field:
+    ///   * §9.5 `<invoke type="sce:mesh-rpc">` — caller stringifies
+    ///     the UUID v7 correlation key (`SCE::uuid::to_string`) so
+    ///     the wire shape is the canonical 36-char RFC 4122 form,
+    ///     matching `envelope_id`.
+    ///   * §9.6 `<invoke type="scxml">` — caller stashes the W3C
+    ///     SCXML invokeId string directly (an author-declared
+    ///     `<invoke id="myInvoke">` literal, or the codegen
+    ///     auto-generated `_invoke_0` form). W3C 6.4.1 specifies
+    ///     invokeid as a free-form string with no UUID requirement.
+    ///
+    /// The C++ field is `optional<string>` (not `array<uint8_t,16>`)
+    /// to accommodate the §9.6 path natively without a parallel
+    /// `invoke_string_id` field. Distinct from `envelope_id` (which
+    /// keys the envelope that triggered an inbound condition) —
+    /// `invoke_id` keys the invoke whose reply will never arrive.
+    std::optional<std::string> invoke_id;
 
     /// §16.7 row 8 (PEER_PARTITIONED): deploy.yaml name of the peer
     /// whose liveliness token transitioned to DELETE (e.g. "motor").
@@ -224,7 +234,7 @@ struct CommunicationError {
             j["envelope_id"] = SCE::uuid::to_string(*envelope_id);
         }
         if (invoke_id) {
-            j["invoke_id"] = SCE::uuid::to_string(*invoke_id);
+            j["invoke_id"] = *invoke_id;
         }
         if (target) {
             j["target"] = *target;

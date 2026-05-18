@@ -22,7 +22,8 @@
 //   * TransportUnavailableShape
 //   * SendFailedShape
 //   * SendFailedShapeWithTransportError
-//   * InvokeChildLostShape
+//   * InvokeChildLostShapeMeshRpc
+//   * InvokeChildLostShapeScxmlInvoke
 // since those pin byte-exact output.
 
 #include "mesh/CommunicationError.h"
@@ -217,16 +218,17 @@ TEST(CommunicationErrorTest, EnvelopeCorruptShapeWithPosition) {
               "\"position\":42}");
 }
 
-TEST(CommunicationErrorTest, InvokeChildLostShape) {
-    // §16.7 row 5 — INVOKE_CHILD_LOST carries invoke_id + target.
-    // Raised by TransportRouter::shutdown when iterating
+TEST(CommunicationErrorTest, InvokeChildLostShapeMeshRpc) {
+    // §16.7 row 5 — INVOKE_CHILD_LOST §9.5 mesh-rpc emit. Raised by
+    // TransportRouter::shutdown when iterating
     // `invoke_correlation_`'s outstanding entries via
     // `cancelAllPending` (per §10.4.1 row 1704 "Outstanding RPC
     // entries are cancelled with reason: INVOKE_CHILD_LOST" on
-    // transport Shutdown). `invoke_id` renders as the RFC 4122
-    // canonical UUID string (mirrors `envelope_id`'s shape so
-    // authors using either field key follow the same parsing
-    // discipline). Field order on the wire follows
+    // transport Shutdown). The §9.5 caller stringifies the UUID v7
+    // correlation key via `SCE::uuid::to_string` so the wire
+    // `invoke_id` is the RFC 4122 canonical 36-char form (mirrors
+    // `envelope_id`'s shape so authors using either field key follow
+    // the same parsing discipline). Field order on the wire follows
     // `CommunicationError`'s declaration order: `invoke_id` precedes
     // `target`. Authors guard on `_event.data.reason ==
     // 'INVOKE_CHILD_LOST' && _event.data.target == '<peer>'` to
@@ -240,9 +242,7 @@ TEST(CommunicationErrorTest, InvokeChildLostShape) {
     // outstanding work.
     CommunicationError err;
     err.reason = "INVOKE_CHILD_LOST";
-    err.invoke_id = std::array<std::uint8_t, 16>{
-        0x01, 0x82, 0x0b, 0xc0, 0xde, 0xad, 0x7e, 0x50,
-        0x81, 0xab, 0xca, 0xfe, 0xba, 0xbe, 0xbe, 0xef};
+    err.invoke_id = "01820bc0-dead-7e50-81ab-cafebabebeef";
     err.target = "motor";
 
     const auto out = bytes_to_string(err.toJsonBytes());
@@ -251,6 +251,28 @@ TEST(CommunicationErrorTest, InvokeChildLostShape) {
               "\"reason\":\"INVOKE_CHILD_LOST\","
               "\"invoke_id\":\"01820bc0-dead-7e50-81ab-cafebabebeef\","
               "\"target\":\"motor\"}");
+}
+
+TEST(CommunicationErrorTest, InvokeChildLostShapeScxmlInvoke) {
+    // §16.7 row 5 — INVOKE_CHILD_LOST §9.6 scxml-invoke emit. The
+    // §9.6 path passes the W3C SCXML invokeId string directly (a
+    // free-form identifier per W3C SCXML 6.4.1, NOT a UUID). The
+    // codegen-emitted `<invoke id="myInvoke">` literal lands in
+    // `invoke_id` verbatim. Same wire field name as the §9.5 half,
+    // different value shape — authors who see a non-UUID value
+    // know the failure was on the §9.6 scxml-invoke axis (W3C
+    // `<invoke type="scxml">` over §9.6 worker host).
+    CommunicationError err;
+    err.reason = "INVOKE_CHILD_LOST";
+    err.invoke_id = "myInvoke";
+    err.target = "worker";
+
+    const auto out = bytes_to_string(err.toJsonBytes());
+    EXPECT_EQ(out,
+              "{\"errorName\":\"communication\","
+              "\"reason\":\"INVOKE_CHILD_LOST\","
+              "\"invoke_id\":\"myInvoke\","
+              "\"target\":\"worker\"}");
 }
 
 TEST(CommunicationErrorTest, SendFailedShape) {

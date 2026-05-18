@@ -3423,7 +3423,7 @@ struct TransportRouter {
                    const std::string& target) {
                 SCE::Mesh::CommunicationError err;
                 err.reason = "INVOKE_CHILD_LOST";
-                err.invoke_id = uuid;
+                err.invoke_id = SCE::uuid::to_string(uuid);
                 err.target = target;
                 raiseCommunicationError(std::move(err));
             });
