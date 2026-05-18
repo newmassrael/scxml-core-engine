@@ -9193,3 +9193,159 @@ fn forge_variant_default_overlay_unknown_arm_rejects() {
         err.error
     );
 }
+
+// ── RFC §5.B B5-ν — variant parent-tag dispatch (4 parser/validator tests) ─
+//
+// Phase A covers parser + validators + diagnostics. Codegen (Phase B)
+// is gated behind a typed `GenerateError::UnsupportedFeature` so
+// authors get a clear "infrastructure ready, codegen pending" signal
+// rather than broken output. Tests below exercise the Phase A surface;
+// the codegen guard's positive case is covered by
+// `forge_b5_nu_codegen_phase_b_guard_fires`.
+
+/// B5-ν Q-1 (a): a codec authoring `<sce:variant tag="parent.M">`
+/// without a corresponding `<sce:requires-parent-flags>` block must
+/// surface `codec/variant-parent-tag-without-requires-parent-flags`.
+#[test]
+fn forge_b5_nu_parent_tag_without_rpf_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+    use sce_build::forge::parser::parse_forge_with_imports;
+
+    let content = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big">
+  <datamodel>
+    <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:variant tag="parent.M">
+      <sce:arm value="0x00" type="codec_zenoh_keyexpr_nonlocal" default="true"/>
+      <sce:arm value="0x01" type="codec_zenoh_keyexpr_local"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#;
+
+    let result = parse_forge_with_imports(
+        content,
+        sce_build::DocumentLabel::symmetric("codec_keyexpr_no_rpf"),
+    );
+    let err = result.expect_err("parser must reject parent-tag without rpf");
+    assert!(
+        matches!(
+            err.error,
+            ForgeError::Validation(ValidationError::CodecVariantParentTagWithoutRequiresParentFlags {
+                ref codec,
+                ref tag,
+            }) if codec == "codec_keyexpr_no_rpf" && tag == "parent.M"
+        ),
+        "got: {:?}",
+        err.error
+    );
+}
+
+/// B5-ν Q-1 (b): a codec authoring `<sce:variant tag="parent.X">`
+/// whose `<sce:requires-parent-flags>` doesn't declare `X` must
+/// surface `codec/variant-parent-tag-flag-not-declared` with
+/// declared rpf flag names as the candidate set.
+#[test]
+fn forge_b5_nu_parent_tag_flag_not_in_rpf_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+    use sce_build::forge::parser::parse_forge_with_imports;
+
+    let content = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big">
+  <sce:requires-parent-flags carrier="header">
+    <sce:flag name="M" bit="6"/>
+    <sce:flag name="N" bit="5"/>
+  </sce:requires-parent-flags>
+  <datamodel>
+    <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:variant tag="parent.X">
+      <sce:arm value="0x00" type="codec_zenoh_keyexpr_nonlocal" default="true"/>
+      <sce:arm value="0x01" type="codec_zenoh_keyexpr_local"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#;
+
+    let result = parse_forge_with_imports(
+        content,
+        sce_build::DocumentLabel::symmetric("codec_keyexpr_wrong_flag"),
+    );
+    let err = result.expect_err("parser must reject unknown parent-tag flag");
+    assert!(
+        matches!(
+            err.error,
+            ForgeError::Validation(ValidationError::CodecVariantParentTagFlagNotDeclared {
+                ref codec,
+                ref flag,
+                ref carrier,
+                ref declared_flags,
+            }) if codec == "codec_keyexpr_wrong_flag"
+                && flag == "X"
+                && carrier == "header"
+                && declared_flags == &vec!["M".to_string(), "N".to_string()]
+        ),
+        "got: {:?}",
+        err.error
+    );
+}
+
+/// B5-ν Phase B codegen guard: a parsed parent-tag variant codec
+/// reaches codegen and fails fast with a typed
+/// `GenerateError::UnsupportedFeature` whose message names Phase B.
+/// This proves the infrastructure rejects unimplemented codegen
+/// instead of silently producing broken generated code.
+#[test]
+fn forge_b5_nu_codegen_phase_b_guard_fires() {
+    use sce_build::forge::error::{ForgeError, GenerateError};
+
+    let content = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big">
+  <sce:requires-parent-flags carrier="header">
+    <sce:flag name="M" bit="6"/>
+  </sce:requires-parent-flags>
+  <datamodel>
+    <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:variant tag="parent.M">
+      <sce:arm value="0x00" type="codec_zenoh_keyexpr_nonlocal" default="true"/>
+      <sce:arm value="0x01" type="codec_zenoh_keyexpr_local"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#;
+
+    // compile_forge_with_imports drives the full pipeline; the codegen
+    // guard fires at the variant emit entry. We don't need real arm
+    // body codecs because the guard runs before import resolution
+    // surfaces missing-arm-body errors.
+    let result = sce_build::compile_forge_with_imports(
+        content,
+        sce_build::DocumentLabel::symmetric("codec_b5_nu_codegen_guard"),
+        sce_build::generator::Language::Rust,
+        &std::env::temp_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!("codegen must fail with Phase B guard"),
+        Err(e) => e,
+    };
+    let msg = match err.error {
+        ForgeError::Generate(GenerateError::UnsupportedFeature(feature)) => feature,
+        other => panic!(
+            "expected GenerateError::UnsupportedFeature; got: {:?}",
+            other
+        ),
+    };
+    assert!(
+        msg.contains("B5-ν parent-tag variant codegen is staged for Phase B"),
+        "guard message must name Phase B: {}",
+        msg
+    );
+    assert!(
+        msg.contains("codec_b5_nu_codegen_guard"),
+        "guard message must name the codec: {}",
+        msg
+    );
+}

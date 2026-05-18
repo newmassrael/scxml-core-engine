@@ -1004,7 +1004,17 @@ fn parse_codec(
     // codec's own field list; arm body aliases (resolved against
     // <sce:import> aliases) are validated downstream by the codegen
     // step which has the import set.
-    let variant = parse_codec_variant(&datamodel, &fields, label)?;
+    //
+    // B5-ν: parser also accepts `tag="parent.<flag>"`; threading
+    // requires_parent_flags lets the parser validate the named flag
+    // exists in the codec's declared dependency block and surface
+    // `codec/variant-parent-tag-*` diagnostics without a second pass.
+    let variant = parse_codec_variant(
+        &datamodel,
+        &fields,
+        requires_parent_flags.as_ref(),
+        label,
+    )?;
 
     // RFC §5.B B5-θ inline test vectors. Parsed against the field list
     // so each `<sce:decoded field="..." value|hex|string="..."/>` row
@@ -1609,6 +1619,7 @@ fn parse_peek_byte_from_variant_node(
 fn parse_codec_variant(
     datamodel: &roxmltree::Node,
     fields: &[CodecField],
+    requires_parent_flags: Option<&RequiresParentFlags>,
     label: DocumentLabel<'_>,
 ) -> Result<Option<CodecVariant>, Located<ForgeError>> {
     let variant_node = match datamodel.children().find(|n| {
@@ -1648,6 +1659,13 @@ fn parse_codec_variant(
     // `tag="<field>"` (B1-β whole-field form) keeps the original
     // semantics. Grammar mirrors B1-δ present-if predicate exactly so
     // authors learn one dotted-path convention.
+    //
+    // B5-ν: `tag="parent.<flag>"` dispatches on a flag in the codec's
+    // declared `<sce:requires-parent-flags>` carrier. Resolution sets
+    // `tag_field` to the rpf carrier name + `tag_scope` to `Parent`;
+    // downstream codegen reads from the `parent_flags` parameter
+    // threaded by the parent codec's variant arm dispatcher instead
+    // of from a self-owned field.
     let (tag_field, tag_flag): (String, Option<String>) = match raw_tag.split_once('.') {
         Some((carrier, flag)) => {
             let carrier = carrier.trim();
@@ -1661,9 +1679,11 @@ fn parse_codec_variant(
                         attr: "tag".into(),
                         value: raw_tag.clone(),
                         expected: "either a bare field id (e.g. 'msg_id') for whole-field \
-                                   dispatch, or a '<carrier>.<flag>' dotted path (e.g. \
-                                   'header.mid') for multi-bit-flag dispatch — both halves \
-                                   must be non-empty"
+                                   dispatch, a '<carrier>.<flag>' dotted path (e.g. \
+                                   'header.mid') for multi-bit-flag dispatch, or \
+                                   'parent.<flag>' (B5-ν) for dispatch on a flag in the \
+                                   codec's declared <sce:requires-parent-flags> carrier \
+                                   — both halves must be non-empty"
                             .into(),
                     },
                 ));
@@ -1671,6 +1691,74 @@ fn parse_codec_variant(
             (carrier.to_string(), Some(flag.to_string()))
         }
         None => (raw_tag.clone(), None),
+    };
+
+    // B5-ν: detect parent-scope tag (`tag="parent.<flag>"`). The
+    // literal `parent` token mirrors the B5-γ present-if convention.
+    // When detected we redirect `tag_field` to the codec's declared
+    // `requires_parent_flags.carrier` and validate the named flag
+    // against that block — the codec MUST declare a matching
+    // `<sce:requires-parent-flags>` element, and the named flag MUST
+    // appear in its flag list. Both checks surface dedicated
+    // diagnostics (CodecVariantParentTagWithoutRequiresParentFlags /
+    // CodecVariantParentTagFlagNotDeclared) so author repair is
+    // attribute-text-level.
+    let is_parent_scope = tag_field == "parent" && tag_flag.is_some();
+    let (tag_field, tag_flag, tag_scope): (String, Option<String>, TagScope) = if is_parent_scope {
+        let flag_name = tag_flag
+            .as_ref()
+            .expect("is_parent_scope implies tag_flag is Some")
+            .clone();
+        let rpf = match requires_parent_flags {
+            Some(r) => r,
+            None => {
+                return Err(located(
+                    &variant_node,
+                    label.diagnostic_label,
+                    ValidationError::CodecVariantParentTagWithoutRequiresParentFlags {
+                        codec: label.identifier.to_string(),
+                        tag: raw_tag.clone(),
+                    },
+                ));
+            }
+        };
+        if !rpf.flags.iter().any(|f| f.name == flag_name) {
+            let available: Vec<String> = rpf.flags.iter().map(|f| f.name.clone()).collect();
+            return Err(located(
+                &variant_node,
+                label.diagnostic_label,
+                ValidationError::CodecVariantParentTagFlagNotDeclared {
+                    codec: label.identifier.to_string(),
+                    flag: flag_name.clone(),
+                    carrier: rpf.carrier.clone(),
+                    declared_flags: available,
+                },
+            ));
+        }
+        // B5-ν + peek-byte are mutually exclusive — peek-byte mode
+        // dispatches from the cursor's next byte (a transport-side
+        // mechanism), while parent-tag mode dispatches from the
+        // parent codec's flag carrier (already-decoded state).
+        // Mixing both forms is structurally meaningless.
+        if peek_byte.is_some() {
+            return Err(located(
+                &variant_node,
+                label.diagnostic_label,
+                ValidationError::InvalidAttribute {
+                    element: "<sce:variant>".into(),
+                    attr: "tag".into(),
+                    value: raw_tag.clone(),
+                    expected: "B5-ν `parent.<flag>` form is mutually exclusive with \
+                               <sce:peek-byte> mode — remove the <sce:peek-byte> child \
+                               (parent-tag dispatches from the parent codec's flags \
+                               carrier, no peek needed)"
+                        .into(),
+                },
+            ));
+        }
+        (rpf.carrier.clone(), Some(flag_name), TagScope::Parent)
+    } else {
+        (tag_field, tag_flag, TagScope::Local)
     };
 
     // Y3 atomic 2b-ii peek-byte: peek-byte mode dispatches the tag from
@@ -1685,7 +1773,23 @@ fn parse_codec_variant(
     //   - Own-field mode (B1-β / B5-β): existing logic — resolve
     //     tag_field against codec's own fields, validate unsigned-int,
     //     validate flag against carrier's <sce:flags> children.
-    let (tag_type, tag_flag_width): (SceType, Option<u32>) = if let Some(peek) = &peek_byte {
+    let (tag_type, tag_flag_width): (SceType, Option<u32>) = if tag_scope == TagScope::Parent {
+        // B5-ν: parent-scope tag — carrier is the rpf's named flag
+        // carrier (v1-locked to uint8 by parse_requires_parent_flags),
+        // width comes from the rpf flag declaration. All validations
+        // already ran above when computing `tag_scope`.
+        let rpf = requires_parent_flags
+            .expect("parent scope implies requires_parent_flags is Some");
+        let flag_name = tag_flag
+            .as_ref()
+            .expect("parent scope implies tag_flag is Some");
+        let rpf_flag = rpf
+            .flags
+            .iter()
+            .find(|f| f.name == *flag_name)
+            .expect("parent scope validator confirmed flag exists in rpf");
+        (SceType::Uint8, Some(rpf_flag.width.max(1)))
+    } else if let Some(peek) = &peek_byte {
         if tag_flag.is_none() {
             return Err(located(
                 &variant_node,
@@ -2055,6 +2159,7 @@ fn parse_codec_variant(
     Ok(Some(CodecVariant {
         tag_field,
         tag_flag,
+        tag_scope,
         arms,
         default_arm,
         peek_byte,

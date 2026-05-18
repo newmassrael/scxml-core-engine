@@ -1396,6 +1396,34 @@ pub struct PeekByteSpec {
     pub flags: Vec<FlagDef>,
 }
 
+/// RFC §5.B B5-ν — variant tag scope. Determines whether the tag
+/// field reference is resolved within the codec itself (`Local` —
+/// B1-β / B5-β / peek-byte) or against the codec's
+/// `<sce:requires-parent-flags>` carrier (`Parent` — B5-ν).
+///
+/// `Local` is the back-compat default and skips serialization so
+/// pre-B5-ν goldens stay byte-identical. `Parent` requires the codec
+/// to declare a `<sce:requires-parent-flags carrier="X">` block whose
+/// flag list includes the named tag flag; encode-side derivation
+/// pre-computes the parent flag carrier's bit from the active arm
+/// tag before the parent emits the carrier byte.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum TagScope {
+    Local,
+    Parent,
+}
+
+impl Default for TagScope {
+    fn default() -> Self {
+        TagScope::Local
+    }
+}
+
+fn is_local_tag_scope(scope: &TagScope) -> bool {
+    matches!(scope, TagScope::Local)
+}
+
 /// Discriminated-union suffix on a codec — RFC §5.B Codec DSL.
 ///
 /// Decode reads the named tag field (or named flag bit-range within it,
@@ -1406,17 +1434,18 @@ pub struct PeekByteSpec {
 /// fires `codec/variant-arm-unreachable` at build time (see RFC §5.B).
 #[derive(Debug, Clone, Serialize)]
 pub struct CodecVariant {
-    /// `id` of the field (within this codec's `fields`) whose decoded
-    /// value (or named bit-range, see `tag_flag`) selects an arm. Must
-    /// reference an unsigned-int field (uint8/uint16/uint32/uint64) —
-    /// enforced at parse time.
+    /// `id` of the field whose decoded value (or named bit-range,
+    /// see `tag_flag`) selects an arm. Must reference an unsigned-int
+    /// field — enforced at parse time.
     ///
-    /// RFC §5.B Y3 atomic 2b-ii peek-byte peek-byte mode: when
-    /// `peek_byte` is `Some`, `tag_field` equals `peek_byte.id` (the
-    /// peek slot's name, NOT a real codec field). The carrier value
-    /// is the cursor's next byte (read via `peek_slice(1)`, no
-    /// advance); arm body decoder reads the same byte as its own
-    /// header.
+    /// Resolution scope depends on `tag_scope`:
+    /// - `Local` (default): `tag_field` is a field within this codec's
+    ///   own `fields` (B1-β / B5-β), or equals `peek_byte.id` when
+    ///   peek-byte mode is active.
+    /// - `Parent` (B5-ν): `tag_field` equals the
+    ///   `<sce:requires-parent-flags carrier="X">` carrier name; the
+    ///   dispatch value comes from the `parent_flags` parameter
+    ///   threaded by the parent codec's variant arm dispatcher.
     pub tag_field: String,
     /// RFC §5.B B5-β multi-bit-flag dispatch: when `Some(name)`, the
     /// `tag_field` MUST be a `<sce:flags>`-bearing carrier and `name`
@@ -1426,6 +1455,14 @@ pub struct CodecVariant {
     /// reads the field's whole value (B1-β whole-field form).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tag_flag: Option<String>,
+    /// RFC §5.B B5-ν — variant tag scope (Local vs Parent). When
+    /// `Parent`, the codec MUST declare a matching
+    /// `<sce:requires-parent-flags>` block; encode-side derives the
+    /// parent carrier bit from the active arm. Skipped from
+    /// serialization when Local so back-compat goldens stay
+    /// byte-identical.
+    #[serde(default, skip_serializing_if = "is_local_tag_scope")]
+    pub tag_scope: TagScope,
     /// Enumerated arms in document order.
     pub arms: Vec<VariantArm>,
     /// Catch-all arm for tag values outside the enumerated set.

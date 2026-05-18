@@ -282,6 +282,59 @@ omit a specific codec entry) preserve the SCXML's existing
 `default="true"` markers byte-identically. The 107 existing
 `compile_forge_with_imports` call sites (no deploy) are unaffected.
 
+#### §2.8.2 `<sce:variant tag="parent.<flag>">` (RFC §5.B B5-ν)
+
+B5-ν extends `<sce:variant>` dispatch to read its tag from a flag
+declared in the codec's `<sce:requires-parent-flags>` carrier. The
+variant codec must declare both:
+
+- `<sce:requires-parent-flags carrier="X"><sce:flag name="F" bit="B"/>
+  </sce:requires-parent-flags>` (B5-γ) so the codec's decode/encode
+  signature carries a `parent_flags` parameter.
+- `<sce:variant tag="parent.F">` (B5-ν) — the literal `parent` token
+  in the dotted-tag form, mirroring B5-γ present-if's
+  `parent.<flag>` convention.
+
+Decode reuses the existing B5-γ threading: parent codec passes its
+flag carrier byte into the embedded variant codec; dispatcher reads
+`(parent_flags >> bit) & mask` to select the arm.
+
+Encode adds a new derivation path: when a parent codec emits a flag
+carrier whose flag is named in an embedded variant's parent-tag
+dispatch, the parent's encode pre-computes the carrier's bit value
+from the embedded variant's active arm tag, then ORs it into the
+carrier before writing the carrier bytes. This pre-compute pass
+runs at the top of the parent codec's encode function (Q-2 lock-in)
+so the wire-emit stream stays declaration-ordered.
+
+Constraints (parser-enforced):
+
+- `parent.<flag>` form requires the codec to declare a matching
+  `<sce:requires-parent-flags>` block →
+  `codec/variant-parent-tag-without-requires-parent-flags`.
+- The named flag must appear in the rpf block →
+  `codec/variant-parent-tag-flag-not-declared`
+  (`Fix::ReplaceOneOf` candidates = declared rpf flag names).
+- B5-ν is mutually exclusive with `<sce:peek-byte>` mode (no peek
+  needed when dispatch reads from already-decoded parent state).
+
+Cross-doc constraints (validator at codegen entry):
+
+- A parent codec may not declare a static `<sce:flag value="V"/>`
+  constant on a flag that an embedded variant uses for parent-tag
+  dispatch — derivation and static value are mutually exclusive →
+  `codec/parent-flag-derivation-conflict`.
+- The flag carrier field must precede the embedded variant field
+  in the parent codec's `<datamodel>` declaration order
+  (encode-side derivation is feasible by pre-compute, but the
+  readable order is carrier-first) →
+  `codec/parent-tag-variant-before-carrier`.
+
+Multi-bit dispatch (Q-5): B5-ν inherits B5-β's bit-range width.
+A `parent.<flag>` form on a 3-bit flag dispatches over 8 arm
+values; B5-β's existing `codec/variant-arm-unreachable` covers
+exhaustiveness without special-casing.
+
 ### §2.9 Composition extensions — `<sce:template>`
 
 `<sce:template>` / `<sce:use>` / `<sce:param>` add parameterised XML
@@ -415,7 +468,7 @@ no typed interpretation or are explicitly excluded:
 
 ---
 
-## Appendix — `DiagnosticCode` index (279 codes)
+## Appendix — `DiagnosticCode` index (283 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -496,6 +549,10 @@ Codes that the author can avoid by writing a better SCXML /
 | `codec/variant-arm-inner-mid-undeclared` | Validation |
 | `codec/variant-no-default-arm` | Validation |
 | `codec/variant-default-overlay-arm-not-declared` | Validation |
+| `codec/variant-parent-tag-without-requires-parent-flags` | Validation |
+| `codec/variant-parent-tag-flag-not-declared` | Validation |
+| `codec/parent-flag-derivation-conflict` | Validation |
+| `codec/parent-tag-variant-before-carrier` | Validation |
 | `codec/present-if-refs-later-field` | Validation |
 | `codec/repeat-count-refs-later-field` | Validation |
 | `algorithm/test-vector-unsupported-kind` | Validation |

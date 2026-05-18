@@ -147,6 +147,18 @@ pub struct ImportContext {
     #[serde(skip)]
     pub codec_emits_default_ctor: bool,
 
+    /// RFC §5.B B5-ν: for codec imports whose `<sce:variant>` declares
+    /// `tag="parent.<flag>"` (parent-scope tag), the named flag. The
+    /// parent codec's cross-doc validator uses this to detect Q-3
+    /// derivation conflicts (parent flag has `value=` constant on the
+    /// same flag) and Q-6 declaration-order violations (carrier appears
+    /// after the embedded field). The carrier name lives in
+    /// `codec_requires_parent_flags.carrier`. `None` for non-codec
+    /// imports, codec imports with local-scope variants, codec imports
+    /// with no variant, and codec imports whose model failed to parse.
+    #[serde(skip)]
+    pub codec_b5_nu_parent_tag_flag: Option<String>,
+
     /// For buffer-pool imports: the imported pool's `<sce:slot-size>`
     /// body (bytes), captured at enrichment time from the parsed
     /// [`BufferPoolModel`]. Consumed by the §5.C B6-α' cross-resolver
@@ -307,6 +319,7 @@ fn resolve_single_import(
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
+                codec_b5_nu_parent_tag_flag: None,
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
             }
@@ -340,6 +353,7 @@ fn resolve_single_import(
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
+                codec_b5_nu_parent_tag_flag: None,
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
             }
@@ -375,6 +389,7 @@ fn resolve_single_import(
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
+                codec_b5_nu_parent_tag_flag: None,
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
             }
@@ -436,6 +451,7 @@ fn resolve_single_import(
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
+                codec_b5_nu_parent_tag_flag: None,
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
             }
@@ -471,6 +487,7 @@ fn resolve_single_import(
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
+                codec_b5_nu_parent_tag_flag: None,
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
             }
@@ -507,6 +524,7 @@ fn resolve_single_import(
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
+                codec_b5_nu_parent_tag_flag: None,
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
             }
@@ -1301,6 +1319,18 @@ fn render_codec(
             ));
         }
     }
+
+    // RFC §5.B B5-ν: cross-doc validation of embedded codecs that
+    // declare a parent-tag variant. Walks THIS codec's `Embed` fields;
+    // for each, looks up the imported codec context's
+    // `codec_b5_nu_parent_tag_flag` (populated by
+    // `validate_and_enrich_imports` from the imported codec's
+    // `CodecVariant.tag_scope == Parent` + `tag_flag`). When an
+    // embedded codec is B5-ν, the parent codec must (Q-3) not have a
+    // static `<sce:flag value="...">` constant on the same flag, and
+    // (Q-6) declare the flag carrier earlier than the embedded field
+    // in `<datamodel>` order.
+    validate_cross_codec_variant_parent_tag(m, imports)?;
 
     // RFC §5.B B5-γ closures complete: all six backends (Rust / Cpp /
     // Kotlin / Go / C11 / Python) emit codec parent-flags dependency.
@@ -2407,6 +2437,28 @@ fn render_codec(
     // form (B1-β) `tag_flag` is `None` and the effective tag type is
     // the carrier's full type (whole-field dispatch — back-compat).
     if let Some(v) = &m.variant {
+        // RFC §5.B B5-ν Phase A: parser + validators land in the same
+        // atomic as the model surface; codegen across 6 backends
+        // (Rust/Cpp/Kotlin/Go/Python/C11) is Phase B. Until Phase B
+        // lands, codegen fails fast with a typed `GenerateError` so
+        // authors get a clear "infrastructure ready, codegen pending"
+        // signal instead of broken generated code that would otherwise
+        // result from the existing local-scope codegen path treating
+        // the rpf carrier as a self field (which doesn't exist in
+        // `m.fields`). The fail-fast site is the entry of variant
+        // codegen so no partial codegen artifact is produced.
+        if v.tag_scope == crate::forge::model::TagScope::Parent {
+            return Err(ForgeError::Generate(
+                crate::forge::error::GenerateError::UnsupportedFeature(format!(
+                    "codec '{}': B5-ν parent-tag variant codegen is staged for Phase B \
+                     (parser, validators, and diagnostics land in Phase A; per-backend \
+                     decode/encode emission across the 6-backend matrix is the follow-up \
+                     atomic). Use a local-scope tag (`tag=\"<self_field>.<flag>\"` or \
+                     `tag=\"<self_field>\"`) until Phase B lands.",
+                    m.name
+                )),
+            ));
+        }
         // Y3 atomic 2b-ii peek-byte: peek-byte mode resolves the carrier
         // from `<sce:peek-byte>` instead of a real codec field.
         // `carrier_type` is fixed at uint8 (peek width is single-byte
@@ -3301,6 +3353,114 @@ fn validate_cross_codec_parent_flags(
             // width=1 in parse_requires_parent_flags); the parent
             // can have a wider declaration but the body's bit-test
             // still uses width=1, so width-mismatch is not an error.
+        }
+    }
+    Ok(())
+}
+
+/// RFC §5.B B5-ν — parent-tag variant cross-doc validator.
+///
+/// Walks the parent codec's fields looking for `BitSize::Embed`
+/// fields whose imported codec carries a B5-ν parent-tag variant
+/// (detected via `ImportContext::codec_b5_nu_parent_tag_flag`). For
+/// each such embed:
+///
+/// - **Q-3 conflict**: the parent's flag carrier must NOT declare a
+///   static `<sce:flag value="...">` constant on the same flag. The
+///   embedded variant derives that bit from its arm tag; co-existence
+///   of static + derived value is structurally ambiguous. Fires
+///   `codec/parent-flag-derivation-conflict`.
+///
+/// - **Q-6 declaration order**: the parent's flag carrier field must
+///   appear BEFORE the embedded variant field in `<datamodel>` order.
+///   Encode-side derivation is feasible by pre-compute even when the
+///   order is reversed, but the author-facing reading order is
+///   carrier-first (and matches the wire order). Fires
+///   `codec/parent-tag-variant-before-carrier`.
+///
+/// Layout match between the parent's flag carrier and the embedded
+/// codec's `<sce:requires-parent-flags>` block is already enforced by
+/// `validate_cross_codec_parent_flags` (existing B5-γ check); this
+/// validator only adds the two B5-ν-specific constraints.
+fn validate_cross_codec_variant_parent_tag(
+    parent: &CodecModel,
+    imports: &[ImportContext],
+) -> Result<(), ForgeError> {
+    use crate::forge::error::ValidationError;
+
+    for (embedded_index, field) in parent.fields.iter().enumerate() {
+        if !field.is_embed() {
+            continue;
+        }
+        let embed_alias = match field.embed_body_alias.as_ref() {
+            Some(a) => a,
+            None => continue, // parser invariant violation; surfaced elsewhere
+        };
+        let imp = match imports.iter().find(|i| &i.alias == embed_alias) {
+            Some(i) => i,
+            None => continue, // unresolved import; surfaced by upstream check
+        };
+        let flag_name = match imp.codec_b5_nu_parent_tag_flag.as_ref() {
+            Some(f) => f,
+            None => continue, // not a B5-ν codec — no parent-tag derivation
+        };
+        let rpf = match imp.codec_requires_parent_flags.as_ref() {
+            Some(r) => r,
+            None => {
+                // Parser invariant violation: B5-ν parent-tag without
+                // rpf is rejected at parse time
+                // (CodecVariantParentTagWithoutRequiresParentFlags).
+                // Reaching here means the parser's invariant slipped —
+                // skip silently rather than double-fire.
+                continue;
+            }
+        };
+
+        // Find the parent's flag carrier in declaration order.
+        let carrier_pos = parent
+            .fields
+            .iter()
+            .enumerate()
+            .find(|(_, f)| f.id == rpf.carrier);
+        let (carrier_index, carrier) = match carrier_pos {
+            Some((i, f)) => (i, f),
+            // Missing carrier surfaces from validate_cross_codec_parent_flags
+            // with a CodecParentFlagMismatch — skip here to avoid double
+            // diagnostics on the same root cause.
+            None => continue,
+        };
+
+        // (Q-3) Static value= on the parent flag conflicts with derivation.
+        if let Some(parent_value) = carrier
+            .flags
+            .iter()
+            .find(|f| f.name == *flag_name)
+            .and_then(|f| f.value)
+        {
+            return Err(ForgeError::Validation(
+                ValidationError::CodecParentFlagDerivationConflict {
+                    parent_codec: parent.name.clone(),
+                    embedded_codec: embed_alias.clone(),
+                    embedded_field: field.id.clone(),
+                    carrier: rpf.carrier.clone(),
+                    flag: flag_name.clone(),
+                    parent_value,
+                },
+            ));
+        }
+
+        // (Q-6) Carrier must appear before the embedded variant field.
+        if carrier_index > embedded_index {
+            return Err(ForgeError::Validation(
+                ValidationError::CodecVariantParentTagBeforeCarrier {
+                    parent_codec: parent.name.clone(),
+                    embedded_codec: embed_alias.clone(),
+                    embedded_field: field.id.clone(),
+                    carrier: rpf.carrier.clone(),
+                    carrier_index,
+                    embedded_index,
+                },
+            ));
         }
     }
     Ok(())
@@ -18454,6 +18614,7 @@ mod tests {
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
+                codec_b5_nu_parent_tag_flag: None,
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
             },
@@ -18476,6 +18637,7 @@ mod tests {
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
+                codec_b5_nu_parent_tag_flag: None,
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
             },

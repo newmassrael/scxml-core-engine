@@ -2713,6 +2713,19 @@ fn validate_and_enrich_imports(
                     .map(|v| v.arms.iter().any(|a| a.is_default))
                     .unwrap_or(false);
                 ctx.codec_emits_default_ctor = inner_has_flag_default || inner_has_default_arm;
+                // RFC §5.B B5-ν: capture the imported codec's parent-tag
+                // dispatch flag (when its variant declares
+                // `tag="parent.<flag>"`) so the parent codec's cross-doc
+                // validator can detect (Q-3) derivation conflicts and
+                // (Q-6) declaration-order violations. `None` for
+                // local-scope variants and codecs without a variant.
+                ctx.codec_b5_nu_parent_tag_flag = cm.variant.as_ref().and_then(|v| {
+                    if v.tag_scope == forge::model::TagScope::Parent {
+                        v.tag_flag.clone()
+                    } else {
+                        None
+                    }
+                });
             }
             // RFC §5.C B6-α' cross-resolution: the link kind's
             // `<sce:rx-pool>` / `<sce:tx-pool>` cross-validator

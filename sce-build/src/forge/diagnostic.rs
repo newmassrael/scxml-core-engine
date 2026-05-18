@@ -602,6 +602,41 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/variant-no-default-arm")]
     CodecVariantNoDefaultArm,
 
+    // ── RFC §5.B B5-ν Q-1: a codec's `<sce:variant tag="parent.X">`
+    //    requires the codec to declare a matching
+    //    `<sce:requires-parent-flags>` block. Absence ⇒ the
+    //    `parent_flags` parameter is not threaded into the codec's
+    //    decode/encode signature, so there is no dispatch byte
+    //    source. Stage = Validation. ──
+    #[serde(rename = "codec/variant-parent-tag-without-requires-parent-flags")]
+    CodecVariantParentTagWithoutRequiresParentFlags,
+
+    // ── RFC §5.B B5-ν Q-1: a codec's `<sce:variant tag="parent.X">`
+    //    references a flag name that is not declared in the codec's
+    //    `<sce:requires-parent-flags>` block. Without the rpf flag
+    //    declaration the parser has no bit-position / width info
+    //    for the dispatch extract. Fix carries the declared flag
+    //    names as candidates. Stage = Validation. ──
+    #[serde(rename = "codec/variant-parent-tag-flag-not-declared")]
+    CodecVariantParentTagFlagNotDeclared,
+
+    // ── RFC §5.B B5-ν Q-3: a parent codec has a static
+    //    `<sce:flag value="..."/>` constant on a flag carrier, AND
+    //    an embedded variant codec uses that same flag for B5-ν
+    //    parent-tag dispatch (derives the same bit from its arm).
+    //    Static and derived are mutually exclusive — author must
+    //    pick one. Stage = Validation. ──
+    #[serde(rename = "codec/parent-flag-derivation-conflict")]
+    CodecParentFlagDerivationConflict,
+
+    // ── RFC §5.B B5-ν Q-6: a parent codec declares an embedded
+    //    variant-with-parent-tag field BEFORE the flag carrier that
+    //    supplies the dispatch byte. Encode-side derivation requires
+    //    the carrier to be emitted with derived bits — readable
+    //    declaration order is carrier-first. Stage = Validation. ──
+    #[serde(rename = "codec/parent-tag-variant-before-carrier")]
+    CodecVariantParentTagBeforeCarrier,
+
     // ── §5.B present-if primitive (watching-zenoh RFC §5.B, B1-δ).
     //    Build-time check on `<sce:field sce:present-if="X.Y"/>`: the
     //    referenced field `X` must be declared earlier in the same
@@ -2240,6 +2275,11 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CodecVariantNoDefaultArm,
         // RFC variant-default-overlay Atomic A — deploy.yaml overlay names an undeclared arm
         CodecVariantDefaultOverlayArmNotDeclared,
+        // RFC §5.B B5-ν — variant parent-tag dispatch (4 codes)
+        CodecVariantParentTagWithoutRequiresParentFlags,
+        CodecVariantParentTagFlagNotDeclared,
+        CodecParentFlagDerivationConflict,
+        CodecVariantParentTagBeforeCarrier,
         // Codec §5.B present-if primitive (watching-zenoh RFC §5.B, B1-δ)
         CodecPresentIfRefsLaterField,
         // Codec §5.B repeat primitive (watching-zenoh RFC §5.B, B2)
@@ -2604,6 +2644,10 @@ impl DiagnosticCode {
             | CodecVariantArmInnerMidUndeclared
             | CodecVariantNoDefaultArm
             | CodecVariantDefaultOverlayArmNotDeclared
+            | CodecVariantParentTagWithoutRequiresParentFlags
+            | CodecVariantParentTagFlagNotDeclared
+            | CodecParentFlagDerivationConflict
+            | CodecVariantParentTagBeforeCarrier
             | CodecPresentIfRefsLaterField
             | CodecRepeatCountRefsLaterField
             | AlgorithmTestVectorUnsupportedKind
@@ -3112,6 +3156,16 @@ impl DiagnosticCode {
             CodecVariantNoDefaultArm => "codec/variant-no-default-arm",
             CodecVariantDefaultOverlayArmNotDeclared => {
                 "codec/variant-default-overlay-arm-not-declared"
+            }
+            CodecVariantParentTagWithoutRequiresParentFlags => {
+                "codec/variant-parent-tag-without-requires-parent-flags"
+            }
+            CodecVariantParentTagFlagNotDeclared => {
+                "codec/variant-parent-tag-flag-not-declared"
+            }
+            CodecParentFlagDerivationConflict => "codec/parent-flag-derivation-conflict",
+            CodecVariantParentTagBeforeCarrier => {
+                "codec/parent-tag-variant-before-carrier"
             }
             CodecPresentIfRefsLaterField => "codec/present-if-refs-later-field",
             CodecRepeatCountRefsLaterField => "codec/repeat-count-refs-later-field",
@@ -4338,6 +4392,87 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 })
             },
             key_fragments: vec![codec.clone(), format!("{overlay_arm_value:#x}")],
+        },
+        ValidationError::CodecVariantParentTagWithoutRequiresParentFlags { codec, tag } => {
+            DiagnosticPayload {
+                code: DiagnosticCode::CodecVariantParentTagWithoutRequiresParentFlags,
+                stage: Stage::Validation,
+                expected: Some(vec![
+                    "<sce:requires-parent-flags carrier=\"...\"><sce:flag .../>\
+                     </sce:requires-parent-flags>"
+                        .into(),
+                ]),
+                actual: Some(tag.clone()),
+                fix: None,
+                key_fragments: vec![codec.clone(), tag.clone()],
+            }
+        }
+        ValidationError::CodecVariantParentTagFlagNotDeclared {
+            codec,
+            flag,
+            carrier,
+            declared_flags,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CodecVariantParentTagFlagNotDeclared,
+            stage: Stage::Validation,
+            expected: Some(vec![format!("parent.{flag}")]),
+            actual: Some(codec.clone()),
+            fix: if declared_flags.is_empty() {
+                None
+            } else {
+                Some(Fix::ReplaceOneOf {
+                    candidates: declared_flags
+                        .iter()
+                        .map(|f| format!("parent.{f}"))
+                        .collect(),
+                })
+            },
+            key_fragments: vec![codec.clone(), carrier.clone(), flag.clone()],
+        },
+        ValidationError::CodecParentFlagDerivationConflict {
+            parent_codec,
+            embedded_codec,
+            embedded_field,
+            carrier,
+            flag,
+            parent_value,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CodecParentFlagDerivationConflict,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(format!("{parent_codec}.{carrier}.{flag}={parent_value:#x}")),
+            fix: None,
+            key_fragments: vec![
+                parent_codec.clone(),
+                embedded_codec.clone(),
+                embedded_field.clone(),
+                carrier.clone(),
+                flag.clone(),
+            ],
+        },
+        ValidationError::CodecVariantParentTagBeforeCarrier {
+            parent_codec,
+            embedded_codec,
+            embedded_field,
+            carrier,
+            carrier_index,
+            embedded_index,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CodecVariantParentTagBeforeCarrier,
+            stage: Stage::Validation,
+            expected: Some(vec![format!(
+                "carrier '{carrier}' before field '{embedded_field}'"
+            )]),
+            actual: Some(format!(
+                "carrier at index {carrier_index}, field at index {embedded_index}"
+            )),
+            fix: None,
+            key_fragments: vec![
+                parent_codec.clone(),
+                embedded_codec.clone(),
+                embedded_field.clone(),
+                carrier.clone(),
+            ],
         },
         ValidationError::CodecVariantArmInnerMidUndeclared {
             codec,
@@ -7884,6 +8019,53 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:eeb51f3d4f6560b6","code":"codec/variant-default-overlay-arm-not-declared","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': deploy.yaml variant_defaults names arm value 0xff, but the codec declares no matching <sce:arm value=...> — declared arms: [0x1, 0x2, 0x3]; align the overlay entry with one of the declared values or remove it from variant_defaults","expected":["0xff"],"actual":"session_envelope","fix":{"kind":"replace_one_of","candidates":["0x1","0x2","0x3"]}}"#,
             ),
+            // ── RFC §5.B B5-ν — variant parent-tag dispatch (4 codes) ─
+            (
+                "forge/codec-variant-parent-tag-without-requires-parent-flags",
+                ValidationError::CodecVariantParentTagWithoutRequiresParentFlags {
+                    codec: "codec_zenoh_keyexpr".into(),
+                    tag: "parent.M".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:95d9fc518f3cd6b8","code":"codec/variant-parent-tag-without-requires-parent-flags","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'codec_zenoh_keyexpr': <sce:variant tag=\"parent.M\"> uses B5-ν parent-tag form but the codec declares no <sce:requires-parent-flags> block — parent-tag dispatch reads from a parent codec's flag carrier threaded as `parent_flags`, which is only available when the codec declares its dependency. Add <sce:requires-parent-flags carrier=\"...\"><sce:flag name=\"...\" bit=\"...\"/> </sce:requires-parent-flags> or change the tag to a local form.","expected":["<sce:requires-parent-flags carrier=\"...\"><sce:flag .../></sce:requires-parent-flags>"],"actual":"parent.M"}"#,
+            ),
+            (
+                "forge/codec-variant-parent-tag-flag-not-declared",
+                ValidationError::CodecVariantParentTagFlagNotDeclared {
+                    codec: "codec_zenoh_keyexpr".into(),
+                    flag: "X".into(),
+                    carrier: "header".into(),
+                    declared_flags: vec!["M".into(), "N".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:aee7c96daa3197ae","code":"codec/variant-parent-tag-flag-not-declared","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'codec_zenoh_keyexpr': <sce:variant tag=\"parent.X\"> references a flag that is not declared in <sce:requires-parent-flags carrier=\"header\"> — declared flags on this codec's rpf block: [M, N]. Add <sce:flag name=\"X\" bit=\"...\"/> to the rpf block, or correct the tag attribute.","expected":["parent.X"],"actual":"codec_zenoh_keyexpr","fix":{"kind":"replace_one_of","candidates":["parent.M","parent.N"]}}"#,
+            ),
+            (
+                "forge/codec-parent-flag-derivation-conflict",
+                ValidationError::CodecParentFlagDerivationConflict {
+                    parent_codec: "codec_zenoh_push".into(),
+                    embedded_codec: "codec_zenoh_keyexpr".into(),
+                    embedded_field: "key".into(),
+                    carrier: "header".into(),
+                    flag: "M".into(),
+                    parent_value: 1,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:538432f61e255ff7","code":"codec/parent-flag-derivation-conflict","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"parent codec 'codec_zenoh_push' declares <sce:flag name=\"M\" value=0x1/> on carrier 'header', but embedded codec 'codec_zenoh_keyexpr' (field 'key') uses <sce:variant tag=\"parent.M\"> to derive that same bit from its variant arm — static value and derived value cannot coexist. Remove the value= constant from the parent flag (derivation wins) or change the embedded codec's variant to a local-scope tag.","actual":"codec_zenoh_push.header.M=0x1"}"#,
+            ),
+            (
+                "forge/codec-parent-tag-variant-before-carrier",
+                ValidationError::CodecVariantParentTagBeforeCarrier {
+                    parent_codec: "codec_zenoh_push".into(),
+                    embedded_codec: "codec_zenoh_keyexpr".into(),
+                    embedded_field: "key".into(),
+                    carrier: "header".into(),
+                    carrier_index: 1,
+                    embedded_index: 0,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:db71f4712d752683","code":"codec/parent-tag-variant-before-carrier","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"parent codec 'codec_zenoh_push': field 'key' (codec 'codec_zenoh_keyexpr') uses B5-ν parent-tag dispatch on carrier 'header', but the carrier is declared at field index 1 which is AFTER the variant field at index 0. Encode-side derivation reads the variant's arm tag to compute the carrier's bit — the carrier must appear earlier in the codec's <datamodel> declaration order. Move 'header' to precede 'key'.","expected":["carrier 'header' before field 'key'"],"actual":"carrier at index 1, field at index 0"}"#,
+            ),
             // ── §5.B present-if primitive (watching-zenoh RFC §5.B, B1-δ) ─
             (
                 "forge/codec-present-if-refs-later-field",
@@ -9884,7 +10066,12 @@ mod tests {
             //    variant) drops `fix` to `None` per-instance; the
             //    code-level class stays FixCarriesCandidates since
             //    the dominant case carries the closed set.
-            | CodecVariantDefaultOverlayArmNotDeclared => FixCarriesCandidates,
+            | CodecVariantDefaultOverlayArmNotDeclared
+            // ── RFC §5.B B5-ν — declared rpf flag names form the
+            //    closed-set candidate list for parent-tag flag
+            //    typo correction. Author replaces the bad flag
+            //    name with one of the rpf-declared flags.
+            | CodecVariantParentTagFlagNotDeclared => FixCarriesCandidates,
 
             // ── `expected` carries non-repair metadata ────────
             ExpressionParseMismatch | MeshExternalAmbiguousEventGroup => ExpectedIsMetadata,
@@ -10144,6 +10331,13 @@ mod tests {
             | CodecVariantArmMidMismatch
             | CodecVariantArmInnerMidUndeclared
             | CodecVariantNoDefaultArm
+            // RFC §5.B B5-ν — three of the four codes are
+            // deterministic-fix (add rpf block / remove value= /
+            // reorder fields); CodecVariantParentTagFlagNotDeclared
+            // carries the rpf flag candidates (handled above).
+            | CodecVariantParentTagWithoutRequiresParentFlags
+            | CodecParentFlagDerivationConflict
+            | CodecVariantParentTagBeforeCarrier
             | CodecPresentIfRefsLaterField
             | CodecRepeatCountRefsLaterField
             | AlgorithmTestVectorUnsupportedKind
@@ -10605,6 +10799,10 @@ mod tests {
                 | CodecVariantArmInnerMidUndeclared
                 | CodecVariantNoDefaultArm
                 | CodecVariantDefaultOverlayArmNotDeclared
+                | CodecVariantParentTagWithoutRequiresParentFlags
+                | CodecVariantParentTagFlagNotDeclared
+                | CodecParentFlagDerivationConflict
+                | CodecVariantParentTagBeforeCarrier
                 | CodecPresentIfRefsLaterField
                 | CodecRepeatCountRefsLaterField
                 | AlgorithmTestVectorUnsupportedKind
@@ -10789,7 +10987,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            279,
+            283,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries —\
              expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
