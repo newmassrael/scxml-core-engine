@@ -10,6 +10,7 @@ build_release/
 build_conformance_c/
 build_conformance_cpp/
 build_round_trip_cpp/
+build_round_trip_c/
 /bin/
 lib/
 out/
