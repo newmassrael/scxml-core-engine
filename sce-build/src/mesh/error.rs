@@ -229,6 +229,24 @@ pub enum DeployError {
     )]
     InvalidOutboundBuffer { machine: String, reason: String },
 
+    /// A `retry:` section on a transport binding violates the
+    /// §16.7 row 3 parse-time constraints (see `RetryPolicyConfig`
+    /// validation rules in deploy.rs). Rejected at parse time so a
+    /// degenerate retry policy (zero retries, sub-unit multiplier,
+    /// zero initial backoff, etc.) cannot reach the generated router
+    /// where the `RetryingDispatcher` would behave indistinguishably
+    /// from the opt-out path or compute arithmetically degenerate
+    /// backoff intervals.
+    #[error(
+        "machine '{machine}', binding '{target}': invalid `retry:` section in deploy.yaml — {reason}. \
+             Either fix the value or omit the section entirely to opt out of §16.7 row 3 retry-layer wrapping."
+    )]
+    InvalidRetryPolicy {
+        machine: String,
+        target: String,
+        reason: String,
+    },
+
     /// A `discovery:` top-level block appeared in deploy.yaml. SCE Mesh
     /// §3.3 invariant: transport-native routing is the source of truth
     /// for peer availability, and SCE does not maintain a peer table
@@ -2288,6 +2306,20 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             expected: None,
             fix: None,
             key_fragments: vec![machine.clone(), reason.clone()],
+        },
+        DeployError::InvalidRetryPolicy { machine, target, reason } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployInvalidRetryPolicy,
+            stage: Stage::MeshDeploy,
+            // `actual` surfaces the offending machine so the
+            // diagnostic UI highlights the machine-binding pair the
+            // author authored; `key_fragments` keys the FNV hash on
+            // (machine, target, reason) so two distinct retry
+            // misconfigurations on the same machine surface as
+            // distinct ids in the diagnostic stream.
+            actual: Some(machine.clone()),
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), target.clone(), reason.clone()],
         },
         DeployError::DiscoveryNotSupported { content_kind } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployDiscoveryNotSupported,

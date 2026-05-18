@@ -1289,6 +1289,40 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
 
     add_test(NAME mesh_invoke_correlation_verification COMMAND mesh_invoke_correlation_test)
 
+    # ── RetryingDispatcher unit tests (SCE_MESH.md §16.7 row 3) ──
+    # Pure unit tests on the retry layer wrapping OutboundBuffer's
+    # dispatcher boundary. Verifies the contract pinned in
+    # `sce/include/mesh/RetryingDispatcher.h`: transient retry +
+    # success, exhaustion with attempts==max_retries+1, terminal
+    # fast-fail (retryable=false) with attempts==1, cancel-preempts-
+    # retry, defensive max_retries=0 pass-through, exponential
+    # backoff timing, jitter band bounds. The MeshDeadlineScheduler
+    # is real (the timing-sensitive scheduler-thread path is what
+    # we're verifying); no transport, no OutboundBuffer integration —
+    # the wiring through OutboundBuffer is verified separately in
+    # the codegen E2E flaky-transport ctest.
+    add_executable(mesh_retrying_dispatcher_test
+        mesh/RetryingDispatcherTest.cpp
+    )
+
+    target_include_directories(mesh_retrying_dispatcher_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+    )
+
+    target_link_libraries(mesh_retrying_dispatcher_test
+        PRIVATE
+            sce_mesh_common
+            GTest::gtest_main
+            pthread
+    )
+
+    target_compile_features(mesh_retrying_dispatcher_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_retrying_dispatcher_test)
+
+    add_test(NAME mesh_retrying_dispatcher_verification COMMAND mesh_retrying_dispatcher_test)
+
     # ── DedupRouter unit tests (SCE_MESH.md §10.5) ────────────────
     # Pure unit tests on the per-sender envelope-id dedup filter.
     # Verifies the 256-entry ring (novel/repeat/eviction/wrap) plus

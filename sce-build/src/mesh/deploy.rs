@@ -1583,6 +1583,141 @@ impl OutboundBufferConfig {
     }
 }
 
+/// Minimum `max_retries` accepted in a per-binding `retry:` section.
+///
+/// SCE Mesh §16.7 row 3 retry layer: `max_retries: 0` is semantically
+/// equivalent to omitting the section — the retry wrapper would fast-fail
+/// every dispatcher failure and SEND_FAILED would fire per Stage 1/2
+/// behaviour. Rejecting zero at parse time surfaces the mistake at the
+/// offending deploy.yaml line rather than emitting a no-op retry wrapper
+/// that adds cost without benefit. Values of one or above are accepted
+/// regardless of perceived "too small" judgement: `max_retries: 1`
+/// (single retry) is a legitimate "give it exactly one more chance"
+/// shape that some authors prefer over either extreme.
+pub const MIN_RETRY_MAX_RETRIES: u32 = 1;
+
+/// Per-binding retry policy (SCE Mesh §16.7 row 3 DELIVERY_EXHAUSTED).
+///
+/// Opt-in: absent section ⇒ no retry layer emitted; the OutboundBuffer's
+/// dispatcher closure goes straight to the transport and any
+/// `SendResult::failure()` raises SEND_FAILED per Stage 1/2 (terminal).
+/// Section present ⇒ the generated router wraps the dispatcher in a
+/// `RetryingDispatcher` configured with these values; transient
+/// (`retryable=true`) failures are retried with exponential backoff up
+/// to `max_retries` additional attempts, then DELIVERY_EXHAUSTED fires
+/// with `attempts = max_retries + 1`. Terminal (`retryable=false`)
+/// failures fast-fail with `attempts = 1`.
+///
+/// All timing fields are in milliseconds against
+/// `std::chrono::steady_clock` (monotonic, immune to wall-clock jumps).
+/// The runtime never re-reads the values after init() — they are
+/// codegen-baked into the RetryingDispatcher ctor at deploy.yaml parse
+/// time.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RetryPolicyConfig {
+    /// Maximum number of ADDITIONAL attempts after the first failure.
+    /// Total dispatch attempts before exhaustion = `max_retries + 1`.
+    /// Must be `>= MIN_RETRY_MAX_RETRIES` (zero is rejected — omit the
+    /// section to disable retries instead).
+    pub max_retries: u32,
+
+    /// Initial backoff before the first retry, in milliseconds.
+    /// Subsequent backoffs apply `backoff_multiplier` (capped at
+    /// `max_backoff_ms`). Default: 100ms.
+    #[serde(default = "default_initial_backoff_ms")]
+    pub initial_backoff_ms: u64,
+
+    /// Multiplier applied to the previous backoff to compute the next
+    /// (exponential growth). `1.0` ⇒ fixed-delay retries; `2.0` ⇒
+    /// classic exponential backoff (each retry waits twice as long as
+    /// the previous one). Must be `>= 1.0` — values below 1.0 would
+    /// shrink backoff toward zero, defeating the purpose of retry
+    /// pacing. Default: 2.0.
+    #[serde(default = "default_backoff_multiplier")]
+    pub backoff_multiplier: f64,
+
+    /// Upper bound on a single backoff interval, in milliseconds.
+    /// Caps the exponential growth so a long-running retry train
+    /// doesn't escalate to minute-scale delays. Must be
+    /// `>= initial_backoff_ms`. Default: 5000ms.
+    #[serde(default = "default_max_backoff_ms")]
+    pub max_backoff_ms: u64,
+
+    /// ±N% randomized jitter applied to each computed backoff interval
+    /// (thundering-herd mitigation). `0` ⇒ deterministic backoff;
+    /// `100` ⇒ each interval randomly chosen in `[0, 2*computed]`.
+    /// Must be `<= 100`. Default: 10.
+    #[serde(default = "default_backoff_jitter_pct")]
+    pub backoff_jitter_pct: u32,
+}
+
+fn default_initial_backoff_ms() -> u64 {
+    100
+}
+
+fn default_backoff_multiplier() -> f64 {
+    2.0
+}
+
+fn default_max_backoff_ms() -> u64 {
+    5000
+}
+
+fn default_backoff_jitter_pct() -> u32 {
+    10
+}
+
+impl RetryPolicyConfig {
+    /// Validate the constraints. Returns the rejection reason without
+    /// the machine / target name — the caller wraps this into
+    /// [`DeployError::InvalidRetryPolicy`].
+    fn validation_error(&self) -> Option<String> {
+        if self.max_retries < MIN_RETRY_MAX_RETRIES {
+            return Some(format!(
+                "max_retries ({}) must be >= {} — a zero-retry policy is \
+                 semantically equivalent to omitting the section (the \
+                 dispatcher would fast-fail every failure and SEND_FAILED \
+                 would fire per Stage 1/2 behaviour); omit the section \
+                 entirely to opt out of retries instead",
+                self.max_retries, MIN_RETRY_MAX_RETRIES,
+            ));
+        }
+        if self.initial_backoff_ms == 0 {
+            return Some(
+                "initial_backoff_ms must be > 0 — a zero-delay retry would \
+                 hammer the failing transport at the engine-tick cadence, \
+                 defeating the purpose of pacing"
+                    .to_string(),
+            );
+        }
+        if !(self.backoff_multiplier >= 1.0) {
+            // NaN-safe: `!(x >= 1.0)` catches NaN and values below 1.0.
+            return Some(format!(
+                "backoff_multiplier ({}) must be >= 1.0 — sub-unit \
+                 multipliers shrink backoff toward zero across retries, \
+                 defeating exponential pacing",
+                self.backoff_multiplier,
+            ));
+        }
+        if self.max_backoff_ms < self.initial_backoff_ms {
+            return Some(format!(
+                "max_backoff_ms ({}) must be >= initial_backoff_ms ({}) — \
+                 the cap cannot be smaller than the first interval",
+                self.max_backoff_ms, self.initial_backoff_ms,
+            ));
+        }
+        if self.backoff_jitter_pct > 100 {
+            return Some(format!(
+                "backoff_jitter_pct ({}) must be <= 100 — values above \
+                 100 would invert the jitter range (negative backoffs)",
+                self.backoff_jitter_pct,
+            ));
+        }
+        None
+    }
+}
+
 /// Zenoh session mode.
 ///
 /// Typed at parse time so an invalid value (typo, wrong case) fails the
@@ -2260,6 +2395,16 @@ pub struct BindingConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stage_pool: Option<String>,
 
+    /// SCE Mesh §16.7 row 3 — per-binding retry policy. Opt-in: absent
+    /// ⇒ no retry layer, SEND_FAILED fires per Stage 1/2 on the first
+    /// dispatcher decline. Present ⇒ the generated router wraps the
+    /// OutboundBuffer's dispatcher in a `RetryingDispatcher` configured
+    /// with the parsed values; transient dispatcher failures are
+    /// retried with exponential backoff up to `max_retries`, then
+    /// DELIVERY_EXHAUSTED fires at exhaustion.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry: Option<RetryPolicyConfig>,
+
     /// Per-target transport-native settings passed through to templates
     /// (zenoh `key:`, someip `protocol:`, shm `shm_arena_bytes:`, etc.).
     /// Reserved SOME/IP ID key names are collected here at parse time but
@@ -2332,6 +2477,7 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_pool_capability(&cfg)?;
     validate_stage_pool_transport(&cfg)?;
     validate_outbound_buffer(&cfg)?;
+    validate_retry_policy(&cfg)?;
     validate_discovery_not_supported(&cfg)?;
     validate_synth_invoke_infix(&cfg)?;
     validate_partitions_schema(&cfg)?;
@@ -4578,6 +4724,43 @@ fn validate_stage_pool_references_with(
     Ok(())
 }
 
+/// Walk every binding that declared an explicit `retry:` section and
+/// reject malformed values (SCE Mesh §16.7 row 3). Runs at parse time
+/// so the diagnostic surfaces the offending deploy.yaml line rather
+/// than generating a router whose retry layer behaves identically to
+/// the opt-out path or whose timing values are arithmetically degenerate
+/// (zero backoff, sub-unit multiplier, jitter >100%, etc.).
+///
+/// Mirrors the [`validate_outbound_buffer`] pattern below for symmetry:
+/// determinism over machine name → target id order keeps diagnostics
+/// stable across runs even when the underlying HashMap iteration is not.
+fn validate_retry_policy(cfg: &DeployConfig) -> Result<(), DeployError> {
+    use std::collections::BTreeMap;
+    let mut by_path: BTreeMap<(String, String), &RetryPolicyConfig> = BTreeMap::new();
+    for device in cfg.topology.values() {
+        for (machine_name, machine) in &device.machines {
+            for (target_id, binding) in &machine.bindings {
+                if let Some(r) = &binding.retry {
+                    by_path.insert(
+                        (machine_name.to_string(), target_id.to_string()),
+                        r,
+                    );
+                }
+            }
+        }
+    }
+    for ((machine, target), policy) in by_path {
+        if let Some(reason) = policy.validation_error() {
+            return Err(DeployError::InvalidRetryPolicy {
+                machine,
+                target,
+                reason,
+            });
+        }
+    }
+    Ok(())
+}
+
 /// Walk every machine that declared an explicit `outbound_buffer:`
 /// section and reject capacity-zero values (SCE Mesh §10.10). Runs at
 /// parse time so the diagnostic surfaces the offending deploy.yaml
@@ -6217,6 +6400,195 @@ topology:
             64,
             "explicit section must propagate the max_pending_per_target value"
         );
+    }
+
+    #[test]
+    fn retry_section_absent_is_none() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: zenoh
+"##;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        let machine = &cfg.topology["ecu1"].machines["brake"];
+        let binding = machine.bindings.get(&TargetId::new("#motor").unwrap()).unwrap();
+        assert!(
+            binding.retry.is_none(),
+            "absent retry section must deserialize as None (opt-in gate — §16.7 row 3)"
+        );
+    }
+
+    #[test]
+    fn retry_section_present_parses_with_defaults() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: zenoh
+            retry:
+              max_retries: 3
+"##;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        let machine = &cfg.topology["ecu1"].machines["brake"];
+        let binding = machine.bindings.get(&TargetId::new("#motor").unwrap()).unwrap();
+        let r = binding.retry.expect("retry must be Some");
+        assert_eq!(r.max_retries, 3);
+        // Defaults must populate from the per-field serde defaults.
+        assert_eq!(r.initial_backoff_ms, 100);
+        assert!((r.backoff_multiplier - 2.0).abs() < 1e-9);
+        assert_eq!(r.max_backoff_ms, 5000);
+        assert_eq!(r.backoff_jitter_pct, 10);
+    }
+
+    #[test]
+    fn retry_section_full_override_parses() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: someip
+            retry:
+              max_retries: 5
+              initial_backoff_ms: 50
+              backoff_multiplier: 1.5
+              max_backoff_ms: 2000
+              backoff_jitter_pct: 25
+"##;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        let machine = &cfg.topology["ecu1"].machines["brake"];
+        let binding = machine.bindings.get(&TargetId::new("#motor").unwrap()).unwrap();
+        let r = binding.retry.expect("retry must be Some");
+        assert_eq!(r.max_retries, 5);
+        assert_eq!(r.initial_backoff_ms, 50);
+        assert!((r.backoff_multiplier - 1.5).abs() < 1e-9);
+        assert_eq!(r.max_backoff_ms, 2000);
+        assert_eq!(r.backoff_jitter_pct, 25);
+    }
+
+    #[test]
+    fn retry_zero_max_retries_rejected() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: zenoh
+            retry:
+              max_retries: 0
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::InvalidRetryPolicy { machine, target, reason }) => {
+                assert_eq!(machine, "brake");
+                assert_eq!(target, "#motor");
+                assert!(
+                    reason.contains("max_retries"),
+                    "reason must cite the rejected knob: {reason}",
+                );
+            }
+            other => panic!("expected InvalidRetryPolicy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn retry_sub_unit_multiplier_rejected() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: zenoh
+            retry:
+              max_retries: 2
+              backoff_multiplier: 0.5
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::InvalidRetryPolicy { reason, .. }) => {
+                assert!(
+                    reason.contains("backoff_multiplier"),
+                    "reason must cite the rejected knob: {reason}",
+                );
+            }
+            other => panic!("expected InvalidRetryPolicy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn retry_jitter_over_100_rejected() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: zenoh
+            retry:
+              max_retries: 2
+              backoff_jitter_pct: 150
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::InvalidRetryPolicy { reason, .. }) => {
+                assert!(
+                    reason.contains("backoff_jitter_pct"),
+                    "reason must cite the rejected knob: {reason}",
+                );
+            }
+            other => panic!("expected InvalidRetryPolicy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn retry_max_below_initial_rejected() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: zenoh
+            retry:
+              max_retries: 2
+              initial_backoff_ms: 500
+              max_backoff_ms: 100
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::InvalidRetryPolicy { reason, .. }) => {
+                assert!(
+                    reason.contains("max_backoff_ms"),
+                    "reason must cite the rejected knob: {reason}",
+                );
+            }
+            other => panic!("expected InvalidRetryPolicy, got {other:?}"),
+        }
     }
 
     #[test]

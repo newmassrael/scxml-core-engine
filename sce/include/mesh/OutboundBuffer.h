@@ -111,9 +111,20 @@ namespace SCE::Mesh {
 /// OutboundBuffer relays it untouched into the
 /// `CommunicationError::transport_error` field at the raise site.
 ///
+/// SCE_MESH.md §16.7 row 3 DELIVERY_EXHAUSTED gates the
+/// `RetryingDispatcher` wrapper on `retryable`: dispatchers that
+/// classify their failure as TERMINAL (config error, unrecoverable
+/// codec failure, "closed session" with no auto-reconnect) stamp
+/// `retryable = false` so the retry layer fast-fails without
+/// consuming attempts. Transient failures (default) leave
+/// `retryable = true` and the retry layer honours `max_retries`.
+/// When the retry layer is disabled (`max_retries == 0`), the field
+/// is ignored and SEND_FAILED fires per Stage 1/2 behaviour
+/// regardless of the classification.
+///
 /// On the happy path a dispatcher returns `success()` and the
-/// transport_error stays empty — the field is therefore opt-in:
-/// successful sends never allocate a string.
+/// transport_error / retryable fields stay at their defaults — the
+/// failure metadata is opt-in: successful sends never allocate a string.
 struct SendResult {
     bool ok = false;
     /// Populated only when `!ok`. Absent when the dispatcher cannot
@@ -123,16 +134,32 @@ struct SendResult {
     /// remains optional for future dispatchers that can't).
     std::optional<std::string> transport_error;
 
+    /// SCE_MESH.md §16.7 row 3 retry-layer classification. Only
+    /// meaningful when `!ok` and a `RetryingDispatcher` is installed
+    /// (deploy.yaml `retry: { max_retries > 0 }`). Default `true` on
+    /// failure preserves back-compat with Stage 2's `failure(string)`
+    /// factory: existing dispatchers that don't classify get treated
+    /// as transient (the conservative interpretation). Dispatchers
+    /// that KNOW their failure is terminal stamp `retryable = false`
+    /// via the explicit `failure(string, false)` factory; the retry
+    /// layer then raises DELIVERY_EXHAUSTED with `attempts = 1`
+    /// instead of consuming backoff slots on an unrecoverable error.
+    bool retryable = true;
+
     [[nodiscard]] static SendResult success() {
-        return SendResult{true, std::nullopt};
+        return SendResult{true, std::nullopt, true};
     }
 
     [[nodiscard]] static SendResult failure(std::string err) {
-        return SendResult{false, std::move(err)};
+        return SendResult{false, std::move(err), true};
+    }
+
+    [[nodiscard]] static SendResult failure(std::string err, bool retryable_) {
+        return SendResult{false, std::move(err), retryable_};
     }
 
     [[nodiscard]] static SendResult failure() {
-        return SendResult{false, std::nullopt};
+        return SendResult{false, std::nullopt, true};
     }
 };
 

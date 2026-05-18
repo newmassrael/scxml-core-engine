@@ -498,6 +498,20 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 // buffer code, route_send paths unchanged.
 #include "mesh/OutboundBuffer.h"
 {% endif %}
+{# SCE Mesh §16.7 row 3: per-target retry layer sits above the
+   OutboundBuffer dispatcher boundary when the binding declared a
+   `retry:` block. The wrapper drives DELIVERY_EXHAUSTED at exhaustion
+   and reuses the existing MeshDeadlineScheduler for backoff timing
+   (an already-emitted scheduler instance when has_mesh_rpc.v /
+   has_server_query_timeout is set; otherwise the gate below adds a
+   dedicated one). #}
+{%- set has_any_retry = namespace(v=false) %}
+{%- for target in targets if target.retry %}
+{%-   set has_any_retry.v = true %}
+{%- endfor %}
+{% if has_any_retry.v %}
+#include "mesh/RetryingDispatcher.h"
+{% endif %}
 {% if has_zenoh_mesh_rpc or has_server_query_timeout %}
 // SCE Mesh gap Z3 (`has_zenoh_mesh_rpc`): shared "reply observed" flag
 // coordinates the zenoh `session.get` on_reply and on_drop closures.
@@ -1326,6 +1340,16 @@ struct TransportRouter {
    list below honours member declaration order (-Wreorder safe). #}
 {% if machine_outbound_buffer %}
 {% for target in targets if target.state.kind in ("someip", "zenoh") %}
+{% if target.retry %}
+    // SCE Mesh §16.7 row 3 — per-target retry wrapper. Wraps the
+    // transport-send closure with backoff/exhaustion logic; the
+    // OutboundBuffer's dispatcher routes through this instance's
+    // `send_with_retry` so SEND_FAILED is suppressed when retries
+    // are configured. Declared BEFORE the OutboundBuffer below so
+    // the ctor init-list order matches member declaration
+    // (-Wreorder safe).
+    SCE::Mesh::RetryingDispatcher {{ target.target_snake }}_retry_;
+{% endif %}
     SCE::Mesh::OutboundBuffer {{ target.target_snake }}_outbound_;
 {% if target.state.kind == "zenoh" %}
     std::optional<zenoh::Publisher> {{ target.target_snake }}_publisher_;
@@ -1471,8 +1495,8 @@ struct TransportRouter {
     SCE::Mesh::InvokeCorrelation invoke_correlation_;
 {% endif %}
 
-{% if has_mesh_rpc.v or has_server_query_timeout %}
-    // deadline_scheduler_: callback-based timer shared by two paths:
+{% if has_mesh_rpc.v or has_server_query_timeout or has_any_retry.v %}
+    // deadline_scheduler_: callback-based timer shared by three paths:
     //   - Client-side (`has_mesh_rpc.v`, §9.5): fires
     //     `invoke_correlation_.handleDeadline(uuid)` after
     //     `_mesh_deadline_ms`, delivering `error.invoke.<id>` via the
@@ -1481,14 +1505,18 @@ struct TransportRouter {
     //     `onServerQueryTimedOut(cid)` after the deploy.yaml
     //     `server.query_timeout_ms`, erasing the stranded
     //     `pending_server_queries_` entry.
+    //   - SCE Mesh §16.7 row 3 (`has_any_retry.v`): fires
+    //     `RetryingDispatcher::onRetryFire(envelope_id)` after each
+    //     backoff interval, triggering the next retry attempt or the
+    //     final DELIVERY_EXHAUSTED raise. The envelope id is a
+    //     16-byte UUIDv7 from `MeshEnvelope.id`, which never aliases
+    //     mesh-rpc invoke ids or server correlation ids.
     // Safety: the scheduler's key space is 16-byte UUIDv7, which is
-    // globally unique by construction. Client `invoke_id` and server
-    // `CorrelationKey.id` never alias inside the shared namespace, so
-    // a single scheduler instance covers both roles — the guarantee
-    // holds even on a hypothetical dual-role machine (mesh-rpc client
-    // + zenoh server on the same TransportRouter). Destructor joins
-    // the timer thread; see MeshDeadlineScheduler header for shutdown
-    // semantics.
+    // globally unique by construction. Client `invoke_id`, server
+    // `CorrelationKey.id`, and outbound `MeshEnvelope.id` never alias
+    // inside the shared namespace, so a single scheduler instance
+    // covers all three roles. Destructor joins the timer thread; see
+    // MeshDeadlineScheduler header for shutdown semantics.
     SCE::Mesh::MeshDeadlineScheduler deadline_scheduler_;
 {% endif %}
 
@@ -1683,13 +1711,59 @@ struct TransportRouter {
     check (publisher/app not yet initialized) is also classified as a
     transport-API decline. #}
 {%-     if target.state.kind == "someip" %}
-{%-       set dispatch = "[this](const SCE::Mesh::MeshEnvelope& env) -> SCE::Mesh::SendResult { if (!" ~ target.target_snake ~ "_app_) return SCE::Mesh::SendResult::failure(\"vsomeip app not initialized\"); return send_to_" ~ target.target_snake ~ "(*" ~ target.target_snake ~ "_app_, env) ? SCE::Mesh::SendResult::success() : SCE::Mesh::SendResult::failure(\"vsomeip app.send returned false\"); }" %}
+{#- SCE Mesh §16.7 row 3 retry-layer classification: vsomeip's two
+   failure modes are distinguished by `retryable`.
+   - app_ == nullptr: configuration error (the SOME/IP application
+     was never created or has been torn down). Retrying with the same
+     null pointer cannot succeed; mark TERMINAL.
+   - app.send() returns false: vsomeip declined the message
+     (transient routing-manager state, congestion, missing SD entry
+     that may resolve). Mark RETRYABLE so the retry layer can give
+     the routing manager time to recover. #}
+{%-       set dispatch = "[this](const SCE::Mesh::MeshEnvelope& env) -> SCE::Mesh::SendResult { if (!" ~ target.target_snake ~ "_app_) return SCE::Mesh::SendResult::failure(\"vsomeip app not initialized\", /*retryable=*/false); return send_to_" ~ target.target_snake ~ "(*" ~ target.target_snake ~ "_app_, env) ? SCE::Mesh::SendResult::success() : SCE::Mesh::SendResult::failure(\"vsomeip app.send returned false\", /*retryable=*/true); }" %}
 {%-       set transport_literal = "\"someip\"" %}
 {%-     else %}
-{%-       set dispatch = "[this](const SCE::Mesh::MeshEnvelope& env) -> SCE::Mesh::SendResult { if (!" ~ target.target_snake ~ "_publisher_) return SCE::Mesh::SendResult::failure(\"zenoh publisher not initialized\"); try { " ~ target.target_snake ~ "_publisher_->put(zenoh::Bytes(SCE::Mesh::encodeEnvelope(env))); return SCE::Mesh::SendResult::success(); } catch (const zenoh::ZException& e) { return SCE::Mesh::SendResult::failure(e.what()); } }" %}
+{#- SCE Mesh §16.7 row 3 retry-layer classification for Zenoh.
+   - publisher_ == nullptr: declared publisher was never opened (or
+     teardown ran). Retrying with the same null can't succeed; mark
+     TERMINAL.
+   - ZException from Publisher::put: zenoh exposes no
+     terminal-vs-transient discriminator on the C++ binding; the
+     default classification is RETRYABLE (transient) so a transport
+     hiccup gets the configured backoff. A future atomic can add
+     terminal-pattern matching against ZException::what() once
+     zenoh's error surface stabilises around a documented vocabulary. #}
+{%-       set dispatch = "[this](const SCE::Mesh::MeshEnvelope& env) -> SCE::Mesh::SendResult { if (!" ~ target.target_snake ~ "_publisher_) return SCE::Mesh::SendResult::failure(\"zenoh publisher not initialized\", /*retryable=*/false); try { " ~ target.target_snake ~ "_publisher_->put(zenoh::Bytes(SCE::Mesh::encodeEnvelope(env))); return SCE::Mesh::SendResult::success(); } catch (const zenoh::ZException& e) { return SCE::Mesh::SendResult::failure(e.what(), /*retryable=*/true); } }" %}
 {%-       set transport_literal = "\"zenoh\"" %}
 {%-     endif %}
-{%-     set init = target.target_snake ~ "_outbound_(\"" ~ target.target ~ "\", " ~ machine_outbound_buffer.max_pending_per_target ~ ", " ~ transport_literal ~ ", " ~ dispatch ~ ", [this](SCE::Mesh::CommunicationError err) { raiseCommunicationError(std::move(err)); })" %}
+{%-     if target.retry %}
+{#- SCE Mesh §16.7 row 3 — wrap the transport-send closure in a
+    `RetryingDispatcher`. Policy fields are deploy.yaml-baked at
+    codegen time (validator runs on each before reaching here, so
+    every value is in its accepted range). The OutboundBuffer's
+    dispatcher then routes through the wrapper's `send_with_retry`
+    so SEND_FAILED is suppressed (per Q6=(c) "DELIVERY_EXHAUSTED
+    only when max_retries>0"). #}
+{%-       set retry_policy_init =
+            "{ /*max_retries=*/" ~ target.retry.max_retries ~
+            ", /*initial_backoff=*/std::chrono::milliseconds(" ~ target.retry.initial_backoff_ms ~ ")" ~
+            ", /*backoff_multiplier=*/" ~ target.retry.backoff_multiplier ~
+            ", /*max_backoff=*/std::chrono::milliseconds(" ~ target.retry.max_backoff_ms ~ ")" ~
+            ", /*jitter_pct=*/" ~ target.retry.jitter_pct ~
+            ", /*transport=*/" ~ transport_literal ~
+            ", /*target=*/\"" ~ target.target ~ "\" }" %}
+{%-       set retry_init =
+            target.target_snake ~ "_retry_(deadline_scheduler_, SCE::Mesh::RetryingDispatcher::Policy" ~
+            retry_policy_init ~ ", " ~ dispatch ~
+            ", [this](SCE::Mesh::CommunicationError err) { raiseCommunicationError(std::move(err)); })" %}
+{%-       set ns.parts = ns.parts + [retry_init] %}
+{%-       set wrapped_dispatch =
+            "[this](const SCE::Mesh::MeshEnvelope& env) -> SCE::Mesh::SendResult { return " ~
+            target.target_snake ~ "_retry_.send_with_retry(env); }" %}
+{%-       set init = target.target_snake ~ "_outbound_(\"" ~ target.target ~ "\", " ~ machine_outbound_buffer.max_pending_per_target ~ ", " ~ transport_literal ~ ", " ~ wrapped_dispatch ~ ", [this](SCE::Mesh::CommunicationError err) { raiseCommunicationError(std::move(err)); })" %}
+{%-     else %}
+{%-       set init = target.target_snake ~ "_outbound_(\"" ~ target.target ~ "\", " ~ machine_outbound_buffer.max_pending_per_target ~ ", " ~ transport_literal ~ ", " ~ dispatch ~ ", [this](SCE::Mesh::CommunicationError err) { raiseCommunicationError(std::move(err)); })" %}
+{%-     endif %}
 {%-     set ns.parts = ns.parts + [init] %}
 {%-   endfor %}
 {%- endif %}

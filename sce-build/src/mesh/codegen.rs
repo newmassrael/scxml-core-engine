@@ -326,6 +326,16 @@ struct TargetContext {
     /// Drives both the per-target `seq_counter` emission on the
     /// sender side and the receiver-side `admitOrdered` branch.
     needs_ordering: bool,
+    /// SCE_MESH.md §16.7 row 3 retry policy carried verbatim into the
+    /// template context. `None` ⇒ the OutboundBuffer's dispatcher
+    /// goes straight to the transport-send closure (Stage 1/2
+    /// behaviour). `Some(_)` ⇒ codegen emits a per-target
+    /// `RetryingDispatcher` member declared BEFORE the OutboundBuffer
+    /// in member order so `-Wreorder` stays satisfied; the
+    /// OutboundBuffer's dispatcher closure routes through the
+    /// retrying wrapper.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    retry: Option<RetryPolicyContext>,
     /// Per-event pattern metadata for pattern-aware send logic.
     event_patterns: Vec<EventPatternContext>,
     /// True if any event uses RPC patterns (ServiceRequest/ServiceResponse).
@@ -353,6 +363,34 @@ struct TargetContext {
     /// pool branch is gated on `{% if target.pool_plan %}`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pool_plan: Option<super::topology::PoolPlan>,
+}
+
+/// SCE_MESH.md §16.7 row 3 retry policy as it surfaces to the
+/// template. Mirrors `RetryPolicyConfig` field-for-field, but typed
+/// as plain serializable scalars so the jinja template can emit
+/// numeric initializers directly. `Option`-wrapping a struct that
+/// already has `Option`-wrapped fields would force the template to
+/// reach into nested optionals; the flat record keeps the codegen
+/// site readable.
+#[derive(Debug, Clone, serde::Serialize)]
+struct RetryPolicyContext {
+    max_retries: u32,
+    initial_backoff_ms: u64,
+    backoff_multiplier: f64,
+    max_backoff_ms: u64,
+    jitter_pct: u32,
+}
+
+impl From<super::deploy::RetryPolicyConfig> for RetryPolicyContext {
+    fn from(c: super::deploy::RetryPolicyConfig) -> Self {
+        Self {
+            max_retries: c.max_retries,
+            initial_backoff_ms: c.initial_backoff_ms,
+            backoff_multiplier: c.backoff_multiplier,
+            max_backoff_ms: c.max_backoff_ms,
+            jitter_pct: c.backoff_jitter_pct,
+        }
+    }
 }
 
 /// Per-event pattern context for template rendering.
@@ -1174,6 +1212,7 @@ fn generate_cpp_mesh(
                 has_receive,
                 invoke_sites: t.invoke_sites.clone(),
                 pool_plan: t.pool_plan.clone(),
+                retry: t.retry.map(RetryPolicyContext::from),
             }
         })
         .collect();
@@ -2084,6 +2123,7 @@ mod tests {
             has_receive: false,
             invoke_sites,
             pool_plan: None,
+            retry: None,
         }
     }
 

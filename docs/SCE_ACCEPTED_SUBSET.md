@@ -483,7 +483,7 @@ no typed interpretation or are explicitly excluded:
 
 ---
 
-## Appendix — `DiagnosticCode` index (286 codes)
+## Appendix — `DiagnosticCode` index (287 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -666,6 +666,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/deploy-invalid-liveliness` | Mesh Deploy |
 | `mesh/deploy-invalid-server-query-timeout` | Mesh Deploy |
 | `mesh/deploy-invalid-outbound-buffer` | Mesh Deploy |
+| `mesh/deploy-invalid-retry-policy` | Mesh Deploy |
 | `mesh/deploy-discovery-not-supported` | Mesh Deploy |
 | `mesh/deploy-pool-not-supported-by-transport` | Mesh Deploy |
 | `mesh/deploy-pool-missing-instance-list` | Mesh Deploy |

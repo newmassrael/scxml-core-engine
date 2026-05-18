@@ -358,6 +358,13 @@ pub struct ResolvedTarget {
         skip_serializing_if = "crate::mesh::deploy::OrderingRequirement::is_none"
     )]
     pub ordering: crate::mesh::deploy::OrderingRequirement,
+    /// SCE_MESH.md §16.7 row 3 retry policy. `None` ⇒ no retry layer
+    /// (codegen wires the OutboundBuffer dispatcher directly to the
+    /// transport-send closure, Stage 1/2 behaviour); `Some(_)` ⇒
+    /// codegen emits a per-target `RetryingDispatcher` member +
+    /// wraps the OutboundBuffer dispatcher.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry: Option<crate::mesh::deploy::RetryPolicyConfig>,
     /// SCE_MESH.md §14.4 — runtime pool substitution plan, or `None` if
     /// this target has no placeholder bindings. The typed sum type
     /// (`Zenoh { placeholders }` vs `Someip { instance_from, instances }`)
@@ -1530,6 +1537,12 @@ pub(crate) struct PartialTarget {
     /// per-binding `needs_ordering` decision without revisiting
     /// deploy.yaml.
     pub ordering: crate::mesh::deploy::OrderingRequirement,
+    /// SCE_MESH.md §16.7 row 3 retry policy, copied verbatim from the
+    /// `BindingConfig`. `None` ⇒ no retry layer; OutboundBuffer's
+    /// dispatcher goes straight to the transport. `Some(_)` ⇒ codegen
+    /// emits a `RetryingDispatcher` per opt-in target and wires the
+    /// OutboundBuffer to it.
+    pub retry: Option<crate::mesh::deploy::RetryPolicyConfig>,
     /// SCE_MESH.md §14.4 — raw `BindingConfig.instance_from` copied
     /// for SOME/IP pool resolution in [`finalize_targets`]. `None`
     /// means no SOME/IP pool is requested at this binding; the exact
@@ -1630,6 +1643,7 @@ pub(crate) fn contribute_send_partials(
                     event_patterns: pattern_map.remove(target).unwrap_or_default(),
                     invoke_sites: merged_sites,
                     ordering: binding.ordering,
+                    retry: binding.retry,
                     instance_from: binding.instance_from.clone(),
                     instances: binding.instances.clone(),
                     // Machine-lifetime subscription interest is layered
@@ -1910,6 +1924,7 @@ pub(crate) fn contribute_subscription_partials(
                 event_patterns: Vec::new(),
                 invoke_sites: Vec::new(),
                 ordering: binding.ordering,
+                retry: binding.retry,
                 instance_from: binding.instance_from.clone(),
                 instances: binding.instances.clone(),
                 subscription_events: vec![sub.event.clone()],
@@ -2159,6 +2174,7 @@ pub(crate) fn finalize_targets(
             state,
             invoke_sites: pt.invoke_sites,
             ordering: pt.ordering,
+            retry: pt.retry,
             pool_plan,
         });
     }
@@ -3160,6 +3176,7 @@ mod tests {
             state: TransportState::Local,
             invoke_sites: Vec::new(),
             ordering: crate::mesh::deploy::OrderingRequirement::None,
+            retry: None,
             pool_plan: None,
         }]
     }

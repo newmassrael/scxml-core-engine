@@ -22,10 +22,13 @@
 // row-4 `ENVELOPE_CORRUPT` extras (transport / codec / position),
 // the §16.7 row-5 `INVOKE_CHILD_LOST` extras (invoke_id as a wire
 // string covering both §9.5 UUID-form and §9.6 W3C-string-form,
-// reusing target), and the §16.7 row-2 `SEND_FAILED` extras
-// (transport_error, reusing transport / target). Each raise site
-// populates only the extras named in its row of the catalog; the
-// remainder stay empty and are skipped on render.
+// reusing target), the §16.7 row-2 `SEND_FAILED` extras
+// (transport_error, reusing transport / target), and the §16.7
+// row-3 `DELIVERY_EXHAUSTED` extras (attempts, reusing
+// transport / target / transport_error to carry the last observed
+// API decline). Each raise site populates only the extras named in
+// its row of the catalog; the remainder stay empty and are skipped
+// on render.
 //
 // Design notes:
 //   * Pure header; the canonical JSON render uses
@@ -128,7 +131,22 @@ struct CommunicationError {
     /// the SCXML author may want to log or correlate to transport
     /// telemetry. Pairs with `transport` (which names the binding)
     /// and `target` (which names the peer that declined).
+    ///
+    /// Row 3 DELIVERY_EXHAUSTED reuses this field to carry the LAST
+    /// observed transport_error before the retry layer gave up — so
+    /// the author can correlate the exhaustion event with the
+    /// underlying API decline that drove the final attempt's failure.
     std::optional<std::string> transport_error;
+
+    /// §16.7 row 3 (DELIVERY_EXHAUSTED): total number of dispatch
+    /// attempts the retry layer made before giving up. Equals
+    /// `max_retries + 1` for the common "exhausted after configured
+    /// retries" path (first attempt + N retries); equals `1` when
+    /// the dispatcher classified its first failure as TERMINAL
+    /// (`SendResult.retryable == false`) and the retry layer
+    /// fast-failed without consuming attempts. Absent on every other
+    /// row's raise site — row 3 is the only producer.
+    std::optional<std::int64_t> attempts;
 
     /// §16.7 row 4 (ENVELOPE_CORRUPT): payload codec name of the
     /// inbound envelope whose deserialization failed. Spec restricts
@@ -247,6 +265,9 @@ struct CommunicationError {
         }
         if (transport_error) {
             j["transport_error"] = *transport_error;
+        }
+        if (attempts) {
+            j["attempts"] = *attempts;
         }
         if (codec) {
             j["codec"] = *codec;

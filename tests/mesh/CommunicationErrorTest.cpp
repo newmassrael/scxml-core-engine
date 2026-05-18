@@ -24,6 +24,8 @@
 //   * SendFailedShapeWithTransportError
 //   * InvokeChildLostShapeMeshRpc
 //   * InvokeChildLostShapeScxmlInvoke
+//   * DeliveryExhaustedShapeAfterRetries
+//   * DeliveryExhaustedShapeTerminalFastFail
 // since those pin byte-exact output.
 
 #include "mesh/CommunicationError.h"
@@ -335,6 +337,63 @@ TEST(CommunicationErrorTest, SendFailedShapeWithTransportError) {
               "\"target\":\"motor\","
               "\"transport\":\"zenoh\","
               "\"transport_error\":\"ZException: closed session\"}");
+}
+
+TEST(CommunicationErrorTest, DeliveryExhaustedShapeAfterRetries) {
+    // §16.7 row 3 — DELIVERY_EXHAUSTED carries target + transport +
+    // attempts + (last observed) transport_error. Raised by the
+    // RetryingDispatcher when the configured `max_retries` budget is
+    // consumed without a successful dispatch (attempts == max_retries+1).
+    // JSON insertion order follows CommunicationError's declaration
+    // order: target → transport → transport_error → attempts (the new
+    // field sits adjacent to transport_error to keep the row 2 / row 3
+    // shapes visually congruent for authors comparing them).
+    //
+    // Authors guard on `_event.data.reason == 'DELIVERY_EXHAUSTED' &&
+    //  _event.data.target == 'motor' && _event.data.attempts >= 4` to
+    // route into an out-of-band fallback once SCE has given up.
+    CommunicationError err;
+    err.reason = "DELIVERY_EXHAUSTED";
+    err.target = "motor";
+    err.transport = "zenoh";
+    err.transport_error = "ZException: closed session";
+    err.attempts = 4;  // first attempt + 3 retries
+
+    const auto out = bytes_to_string(err.toJsonBytes());
+    EXPECT_EQ(out,
+              "{\"errorName\":\"communication\","
+              "\"reason\":\"DELIVERY_EXHAUSTED\","
+              "\"target\":\"motor\","
+              "\"transport\":\"zenoh\","
+              "\"transport_error\":\"ZException: closed session\","
+              "\"attempts\":4}");
+}
+
+TEST(CommunicationErrorTest, DeliveryExhaustedShapeTerminalFastFail) {
+    // §16.7 row 3 — when the dispatcher classified its first failure
+    // as TERMINAL (SendResult.retryable == false), the retry layer
+    // fast-fails after a single attempt and DELIVERY_EXHAUSTED reports
+    // `attempts == 1`. The author can branch on `attempts == 1` vs
+    // `attempts > 1` to distinguish "config error" from "tried and
+    // gave up". This pin captures the fast-fail variant; the
+    // `transport_error` carries the same sentinel the SOME/IP / Zenoh
+    // dispatchers stamp on terminal classification (per the codegen
+    // dispatcher closures in mesh_transport.h.jinja2).
+    CommunicationError err;
+    err.reason = "DELIVERY_EXHAUSTED";
+    err.target = "motor";
+    err.transport = "someip";
+    err.transport_error = "vsomeip app not initialized";
+    err.attempts = 1;
+
+    const auto out = bytes_to_string(err.toJsonBytes());
+    EXPECT_EQ(out,
+              "{\"errorName\":\"communication\","
+              "\"reason\":\"DELIVERY_EXHAUSTED\","
+              "\"target\":\"motor\","
+              "\"transport\":\"someip\","
+              "\"transport_error\":\"vsomeip app not initialized\","
+              "\"attempts\":1}");
 }
 
 TEST(CommunicationErrorTest, TransportUnavailableShape) {
