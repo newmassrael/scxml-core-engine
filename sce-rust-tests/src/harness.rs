@@ -127,7 +127,18 @@ pub fn registered_test_count() -> usize {
 ///
 /// The callback sends a real HTTP POST via `reqwest`, parses the JSON response,
 /// and returns `HttpSendResponse` so the engine injects the echoed event.
+///
+/// On first call this also verifies the test server is reachable. A missing
+/// server is an environment problem, not a code defect — without the check
+/// every BasicHTTP-dependent W3C test (test_201, test_207, test_208, test_509,
+/// test_510, test_513, test_518, test_519, test_520, test_522, test_531,
+/// test_532, test_534, test_567, ...) silently routes to its `<transition
+/// event="*"/>` fail branch with a state-mismatch assertion that does not
+/// hint at the real cause. The fast-fail panic below tells the developer
+/// exactly which process to start before re-running the test.
 pub fn setup_http_test<P: StatePolicy>(engine: &mut Engine<P>) {
+    assert_http_test_server_reachable();
+
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(3))
         .build()
@@ -186,6 +197,50 @@ pub fn setup_http_test<P: StatePolicy>(engine: &mut Engine<P>) {
             event_name,
             event_data,
         })
+    });
+}
+
+/// W3C BasicHTTP test server endpoint baked into codegen for
+/// `conf:basicHTTPAccessURITarget=""` (see `tools/codegen/templates/rust/...`
+/// + every `tests/generated/test*/test*_sm.rs` BasicHTTP fixture). Kept here
+/// so the reachability assertion below uses the same string the SM emits.
+const HTTP_TEST_SERVER_URL: &str = "http://localhost:8080/test";
+
+/// Verify the W3C BasicHTTP test server is reachable. Panics with a
+/// developer-actionable message on first call if the socket connect fails.
+///
+/// Process-scoped via `OnceLock` so the check fires at most once per
+/// `cargo test` binary regardless of how many BasicHTTP tests run.
+fn assert_http_test_server_reachable() {
+    use std::sync::OnceLock;
+
+    static CHECKED: OnceLock<()> = OnceLock::new();
+    CHECKED.get_or_init(|| {
+        let probe = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(1))
+            .build()
+            .expect("HTTP probe client build");
+
+        // Any non-network error (e.g. 404/405) still means the socket is
+        // accepting connections, which is all we need to assert here — the
+        // server's handler shape is exercised by the test itself.
+        if probe.get(HTTP_TEST_SERVER_URL).send().is_err() {
+            panic!(
+                "\nW3C BasicHTTP test server is not reachable at {url}.\n\
+                 \n\
+                 Start it before running BasicHTTP-dependent tests:\n\
+                 \n\
+                   node tests/w3c/standalone_http_server.js 8080 /test\n\
+                 \n\
+                 Affected tests include: test_201, test_207, test_208,\n\
+                 test_509, test_510, test_513, test_518, test_519, test_520,\n\
+                 test_522, test_531, test_532, test_534, test_567 (every\n\
+                 fixture whose SM emits `<send type=\"...#BasicHTTPEventProcessor\">`).\n\
+                 Without the server these silently route to their\n\
+                 `<transition event=\"*\"/>` fail branch.\n",
+                url = HTTP_TEST_SERVER_URL,
+            );
+        }
     });
 }
 
