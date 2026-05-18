@@ -87,4 +87,47 @@ fn main() {
         Path::new(&out_dir).join(conformance::harness_filename(Language::Rust));
     std::fs::write(&harness_path, harness)
         .unwrap_or_else(|e| panic!("write {}: {e}", harness_path.display()));
+
+    // Step 4: RFC variant-default-uniformity Atomic β-Rust runtime round-
+    // trip — generate the 3 default-marker fixtures outside the
+    // conformance manifest (they're not part of the numerical-conformance
+    // catalog; they exist solely to prove the Default-emission contract
+    // at runtime, not to assert numerical oracle values). The three
+    // sources are placed under a shared parent module so the outer
+    // codec's `use super::codec_default_marker_arm_*` references resolve.
+    //
+    // The generated sources are post-processed to strip the leading
+    // `#![doc = "SCE-MAP: ..."]` inner attribute so the round-trip
+    // integration test can `include!()` them inside parent `mod {}`
+    // blocks (inner attributes are not permitted at that injection
+    // position). The same trace info is preserved as a regular
+    // `// SCE-MAP:` comment on the following line of the generated
+    // source, so the stripped attribute carries no unique information.
+    for name in &[
+        "codec_default_marker_arm_a",
+        "codec_default_marker_arm_b",
+        "codec_variant_default_marker",
+    ] {
+        let scxml_path = resource_dir.join(format!("{name}.scxml"));
+        let content = std::fs::read_to_string(&scxml_path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", scxml_path.display()));
+        let output = compile_forge_with_imports(
+            &content,
+            DocumentLabel::symmetric(name),
+            Language::Rust,
+            &resource_dir,
+            &options,
+        )
+        .unwrap_or_else(|e| panic!("sce-build codegen failed for {name}: {e}"));
+        for (filename, code) in output.files {
+            let stripped: String = code
+                .lines()
+                .filter(|line| !line.trim_start().starts_with("#![doc"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            let target = Path::new(&out_dir).join(&filename);
+            std::fs::write(&target, &stripped)
+                .unwrap_or_else(|e| panic!("write {}: {e}", target.display()));
+        }
+    }
 }
