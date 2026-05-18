@@ -206,9 +206,17 @@ public:
     /// @return Number of control entries drained
     template <typename Policy, typename Engine>
     std::size_t drain(Engine& engine) {
-        return drainWith([&engine](const MeshEnvelope& env) {
-            dispatchEnvelope<Policy>(env, engine);
-        });
+        // Partition-internal wire-21 paths drive their own §16.7 row 4
+        // emit through codegen `decodeEnvelope` instrumentation, so the
+        // decode-error callback is a no-op here — passing a non-empty
+        // handler at this layer would double-raise. The §9.6
+        // invoke-lifecycle path uses `drainWith` directly with a
+        // non-no-op handler to opt into the catalog row.
+        return drainWith(
+            [&engine](const MeshEnvelope& env) {
+                dispatchEnvelope<Policy>(env, engine);
+            },
+            []() noexcept {});
     }
 
     /// SCE_MESH.md §9.6.2 wire-14/20 variant of `drain`: same CBOR decode
@@ -220,12 +228,23 @@ public:
     /// `void(const MeshEnvelope&)`; it MUST NOT throw (the arena slot is
     /// reclaimed after the call regardless).
     ///
+    /// SCE_MESH.md §16.7 row 4: malformed CBOR slots invoke
+    /// `on_decode_error()` (signature `void()`) instead of `handler` and
+    /// still reclaim the arena slot. The caller wires this to
+    /// `raiseCommunicationError(ENVELOPE_CORRUPT, transport="shm")` so
+    /// the §10.7.1 catalog row fires at this endpoint tier the same way
+    /// codegen `decodeEnvelope` sites already do. Pass a no-op lambda
+    /// if the caller does not need the signal (the convenience
+    /// `drain<Policy, Engine>` overload below does this — partition-
+    /// internal wire-21 paths route decode failures through their own
+    /// codegen `decodeEnvelope` instrumentation).
+    ///
     /// Does NOT call `engine.step()` — macrostep timing is scheduler /
     /// application responsibility (W3C SCXML 3.12).
     ///
     /// @return Number of control entries drained
-    template <typename Handler>
-    std::size_t drainWith(Handler&& handler) {
+    template <typename Handler, typename OnDecodeError>
+    std::size_t drainWith(Handler&& handler, OnDecodeError&& on_decode_error) {
         if (!layout_) return 0;
 
         std::size_t count = 0;
@@ -235,7 +254,13 @@ public:
             if (!decodeEnvelope(
                     reinterpret_cast<const std::uint8_t*>(layout_->arena + slot.offset),
                     slot.length, env)) {
-                // Malformed CBOR — skip but reclaim arena space.
+                // Malformed CBOR — surface via on_decode_error then
+                // skip while reclaiming arena space. §16.7 row 4 raise
+                // happens in the caller-supplied callback so the
+                // transport literal ("shm") is stamped at the right
+                // catalog row without coupling this primitive to
+                // CommunicationError.
+                on_decode_error();
                 layout_->tail_vc.fetch_add(slot.advance, std::memory_order_release);
                 continue;
             }

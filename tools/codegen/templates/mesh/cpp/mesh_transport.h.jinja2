@@ -175,6 +175,16 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 {%- macro raise_envelope_corrupt(transport) -%}
 { ::SCE::Mesh::CommunicationError __sce_decode_err; __sce_decode_err.reason = "ENVELOPE_CORRUPT"; __sce_decode_err.transport = "{{ transport }}"; __sce_decode_err.codec = "cbor"; raiseCommunicationError(std::move(__sce_decode_err)); return; }
 {%- endmacro %}
+{# Lambda-body variant: same emit, no trailing `return;`. Used at
+   hand-written endpoint decode-error callback sites (`ShmChannel::drainWith`,
+   `CustomTcp` read loops, `ZenohScxmlInvokeEndpoint` /
+   `SomeipScxmlInvokeEndpoint` subscribers) where the caller supplies a
+   `void()` lambda whose body emits Row 4 and falls off naturally — the
+   bool-returning early-exit shape of `raise_envelope_corrupt` is wrong
+   for those call sites. #}
+{%- macro raise_envelope_corrupt_lambda(transport) -%}
+{ ::SCE::Mesh::CommunicationError __sce_decode_err; __sce_decode_err.reason = "ENVELOPE_CORRUPT"; __sce_decode_err.transport = "{{ transport }}"; __sce_decode_err.codec = "cbor"; raiseCommunicationError(std::move(__sce_decode_err)); }
+{%- endmacro %}
 {#
   SCE_MESH.md §10.6: per-target admit layering for ordered routes.
 
@@ -314,15 +324,19 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
    via admit overflow), SomeIP region-liveness raises
    (REGION_PARTITIONED via `register_availability_handler`, RFC F.X-3),
    §16.7 row 4 envelope-decode raises (ENVELOPE_CORRUPT at every
-   inbound `decodeEnvelope` failure), and §16.7 row 5 mesh-rpc
-   shutdown raises (INVOKE_CHILD_LOST per outstanding correlation
-   entry, §10.4.1 row 1704) all share this helper, so it and its
-   include live behind a single flag rather than each caller gate.
-   Keeps `raiseCommunicationError` a single definition regardless of
+   inbound `decodeEnvelope` failure), §16.7 row 5 mesh-rpc shutdown
+   raises (INVOKE_CHILD_LOST per outstanding correlation entry,
+   §10.4.1 row 1704), and §16.7 row 4 hand-written shm endpoint
+   raises (`ShmChannel::drainWith` decode-fail callback on §9.6 p2c
+   / c2p channels) all share this helper, so it and its include
+   live behind a single flag rather than each caller gate. Keeps
+   `raiseCommunicationError` a single definition regardless of
    which callers fire. Any router with someip or zenoh transports
    has decode sites and therefore needs the helper; any router with
-   mesh-rpc has the row-5 shutdown emit. #}
-{% set raises_communication_error = has_ordered_binding or has_zenoh_liveliness or machine_outbound_buffer or someip_liveness_service_id_self_hex or someip_machine_liveness_service_id_self_hex or ("someip" in transport_types) or ("zenoh" in transport_types) or has_mesh_rpc.v %}
+   mesh-rpc has the row-5 shutdown emit; any router with §9.6
+   shm scxml-invoke inbound or outbound peers has the shm
+   drainWith decode-fail emit. #}
+{% set raises_communication_error = has_ordered_binding or has_zenoh_liveliness or machine_outbound_buffer or someip_liveness_service_id_self_hex or someip_machine_liveness_service_id_self_hex or ("someip" in transport_types) or ("zenoh" in transport_types) or has_mesh_rpc.v or scxml_remote_inbound_peers or scxml_remote_outbound_peers %}
 
 {# CorrelationKey/Hash are needed by SOME/IP client correlation AND/OR
    server pending-request storage. Emit once if either usage is present. #}
@@ -2150,7 +2164,12 @@ struct TransportRouter {
                     default:
                         break;  // misrouted pattern — drop
                     }
-                });
+                },
+                // SCE_MESH.md §16.7 row 4: malformed CBOR on the
+                // p2c_from_<peer>_ shm channel raises with
+                // `transport="shm"`. Lambda-body variant of
+                // `raise_envelope_corrupt` (no trailing `return;`).
+                [this]() {{ raise_envelope_corrupt_lambda("shm") }});
         }
 {% endfor %}
 {# §9.6 custom_tcp inbound: wire-14/17/19 arrived via the device-shared
@@ -2305,8 +2324,18 @@ struct TransportRouter {
                 SCE::Mesh::ShmChannel<>::Mode::Open);
         }
         if (c2p_from_{{ peer.name }}_.valid()) {
-            total += c2p_from_{{ peer.name }}_
-                .template drain<typename SenderEngine::PolicyType>(*sessions_[0]);
+            // SCE_MESH.md §16.7 row 4: switched from
+            // `.template drain<Policy>(engine)` (no-op decode-error
+            // handler) to explicit `drainWith` so a malformed wire-
+            // 15/16/18/20 CBOR raises with `transport="shm"`. The
+            // success handler reproduces `drain<Policy>`'s
+            // `dispatchEnvelope` dispatch verbatim.
+            total += c2p_from_{{ peer.name }}_.drainWith(
+                [this](const SCE::Mesh::MeshEnvelope& env) {
+                    SCE::Mesh::dispatchEnvelope<typename SenderEngine::PolicyType>(
+                        env, *sessions_[0]);
+                },
+                [this]() {{ raise_envelope_corrupt_lambda("shm") }});
         }
 {% endfor %}
 {# §9.6 custom_tcp outbound peers: pump skips them — wire-15/16/18/20
@@ -3639,7 +3668,7 @@ struct TransportRouter {
     }
 {% endif %}
 
-{% if "someip" in transport_types or "zenoh" in transport_types or "local" in transport_types or "custom_tcp" in transport_types or has_mesh_rpc.v or has_server %}
+{% if "someip" in transport_types or "zenoh" in transport_types or "local" in transport_types or "custom_tcp" in transport_types or has_mesh_rpc.v or has_server or scxml_remote_inbound_peers or scxml_remote_outbound_peers %}
     /// Dispatch an incoming envelope to a specific session via MeshDispatch.
     ///
     /// Called on transport callback threads (vsomeip application threads,
