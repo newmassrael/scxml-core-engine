@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
+#include "SCXMLTypes.h"
+#include "common/EventDataHelper.h"
 #include "scripting/LuaEngine.h"
 #include <algorithm>
 #include <atomic>
@@ -468,5 +470,167 @@ BENCHMARK_DEFINE_F(LuaEngineFixture, ManySessionsStress)(benchmark::State &state
 }
 
 BENCHMARK_REGISTER_F(LuaEngineFixture, ManySessionsStress)->Arg(10)->Arg(50)->Arg(100)->Arg(500);
+
+// ============================================================================
+// mesh_open_issues.md Issue 4 measurement — setCurrentEvent receive-path cost
+//
+// Isolates the per-event cost of the 8-arg `setCurrentEvent` overload's
+// `luaL_dostring("return " + eventData)` compile attempt, and the
+// downstream `EventDataHelper::jsonStringToScriptValue` fallback, against
+// the typedData-overlay path that runs in `EventRaiserImpl` 's
+// pipeline-level pre-parse + the shared_ptr `setCurrentEvent` overlay.
+//
+// Threshold-driven decision (composed-roaming-kernighan.md Phase 1.2):
+//   < 100 ns/event waste → AUTO-CLOSE
+//   100-500 ns/event     → DOCUMENT-ONLY
+//   > 500 ns/event       → AUTO-FIX
+//
+// The delta of interest is:
+//   (8ArgJsonShape - 8ArgEmpty) = compile-attempt + JSON-parse cost per event
+//   (EventOverloadWithTypedData - 8ArgJsonShape) = redundant overlay cost
+// ============================================================================
+
+BENCHMARK_F(LuaEngineFixture, SetCurrentEvent8ArgEmpty)(benchmark::State &state) {
+    std::string sessionId = generateUniqueLuaSessionId();
+    engine_->createSession(sessionId);
+
+    for (auto _ : state) {
+        auto fut = engine_->setCurrentEvent(sessionId, "evt", "", "internal", "", "", "", "");
+        auto result = fut.get();
+        benchmark::DoNotOptimize(result);
+    }
+
+    engine_->destroySession(sessionId);
+    state.SetItemsProcessed(state.iterations());
+    state.SetLabel("Baseline: 8-arg overload, empty data (no parse path)");
+}
+
+BENCHMARK_F(LuaEngineFixture, SetCurrentEvent8ArgJsonShapeShort)(benchmark::State &state) {
+    std::string sessionId = generateUniqueLuaSessionId();
+    engine_->createSession(sessionId);
+
+    // 7 chars — minimal JSON shape (always fails luaL_dostring, succeeds JSON parse)
+    const std::string jsonData = R"({"a":1})";
+
+    for (auto _ : state) {
+        auto fut = engine_->setCurrentEvent(sessionId, "evt", jsonData, "internal", "", "", "", "");
+        auto result = fut.get();
+        benchmark::DoNotOptimize(result);
+    }
+
+    engine_->destroySession(sessionId);
+    state.SetItemsProcessed(state.iterations());
+    state.SetLabel("8-arg overload, JSON {\"a\":1} (compile-fail + JSON-parse)");
+}
+
+BENCHMARK_F(LuaEngineFixture, SetCurrentEvent8ArgJsonShapeRealistic)(benchmark::State &state) {
+    std::string sessionId = generateUniqueLuaSessionId();
+    engine_->createSession(sessionId);
+
+    // Representative event payload — params merged via EventDataHelper::buildJsonFromParams
+    const std::string jsonData = R"({"counter":42,"name":"hello","flag":true})";
+
+    for (auto _ : state) {
+        auto fut = engine_->setCurrentEvent(sessionId, "evt", jsonData, "internal", "", "", "", "");
+        auto result = fut.get();
+        benchmark::DoNotOptimize(result);
+    }
+
+    engine_->destroySession(sessionId);
+    state.SetItemsProcessed(state.iterations());
+    state.SetLabel("8-arg overload, JSON ~40 chars (compile-fail + JSON-parse)");
+}
+
+BENCHMARK_F(LuaEngineFixture, SetCurrentEvent8ArgLuaTable)(benchmark::State &state) {
+    std::string sessionId = generateUniqueLuaSessionId();
+    engine_->createSession(sessionId);
+
+    // Lua table syntax — compile succeeds on L1 path
+    const std::string luaData = "{a=1,b=2}";
+
+    for (auto _ : state) {
+        auto fut = engine_->setCurrentEvent(sessionId, "evt", luaData, "internal", "", "", "", "");
+        auto result = fut.get();
+        benchmark::DoNotOptimize(result);
+    }
+
+    engine_->destroySession(sessionId);
+    state.SetItemsProcessed(state.iterations());
+    state.SetLabel("8-arg overload, Lua {a=1,b=2} (compile-success path)");
+}
+
+BENCHMARK_F(LuaEngineFixture, SetCurrentEvent8ArgPlainText)(benchmark::State &state) {
+    std::string sessionId = generateUniqueLuaSessionId();
+    engine_->createSession(sessionId);
+
+    // Plain text — fails L1 (Lua) and L2 (JSON), falls to L3 (normalize)
+    const std::string plainData = "hello world";
+
+    for (auto _ : state) {
+        auto fut = engine_->setCurrentEvent(sessionId, "evt", plainData, "internal", "", "", "", "");
+        auto result = fut.get();
+        benchmark::DoNotOptimize(result);
+    }
+
+    engine_->destroySession(sessionId);
+    state.SetItemsProcessed(state.iterations());
+    state.SetLabel("8-arg overload, plain text (compile-fail + JSON-fail + normalize)");
+}
+
+BENCHMARK_F(LuaEngineFixture, SetCurrentEventWithTypedData)(benchmark::State &state) {
+    std::string sessionId = generateUniqueLuaSessionId();
+    engine_->createSession(sessionId);
+
+    // Mirrors the production path: EventRaiserImpl pipeline-level pre-parses
+    // JSON into typedData; LuaEngine 8-arg overload still runs full parse on
+    // eventData string, then the shared_ptr overlay overwrites _event.data
+    // with the typedData ScriptValue — the redundant work is what Issue 4
+    // describes.
+    const std::string jsonData = R"({"counter":42,"name":"hello","flag":true})";
+    auto typedData = EventDataHelper::jsonStringToScriptValue(jsonData);
+
+    for (auto _ : state) {
+        auto event = std::make_shared<Event>("evt", "internal");
+        event->setRawJsonData(jsonData);
+        if (typedData.has_value()) {
+            event->setTypedData(typedData.value());
+        }
+        auto fut = engine_->setCurrentEvent(sessionId, event);
+        auto result = fut.get();
+        benchmark::DoNotOptimize(result);
+    }
+
+    engine_->destroySession(sessionId);
+    state.SetItemsProcessed(state.iterations());
+    // After Issue 4 AUTO-FIX this is the fast path: metadata + direct
+    // ScriptValue push, skipping the 8-arg string-parse path entirely.
+    // Pre-fix cost was ~3.1us/event (8-arg parse + overlay overwrite); the
+    // delta against the JsonShapeRealistic 8-arg benchmark is the regression
+    // guard for the typedData bypass.
+    state.SetLabel("Event overload + typedData (fast path: metadata + direct push)");
+}
+
+BENCHMARK_F(LuaEngineFixture, SetCurrentEventWithoutTypedData)(benchmark::State &state) {
+    std::string sessionId = generateUniqueLuaSessionId();
+    engine_->createSession(sessionId);
+
+    // Same flow as above but typedData absent — measures just the
+    // Event-allocation + 8-arg overload (no overlay). Delta against the
+    // typedData variant isolates the overlay cost; delta against the raw
+    // 8-arg JSON benchmark isolates the shared_ptr<Event> allocation cost.
+    const std::string jsonData = R"({"counter":42,"name":"hello","flag":true})";
+
+    for (auto _ : state) {
+        auto event = std::make_shared<Event>("evt", "internal");
+        event->setRawJsonData(jsonData);
+        auto fut = engine_->setCurrentEvent(sessionId, event);
+        auto result = fut.get();
+        benchmark::DoNotOptimize(result);
+    }
+
+    engine_->destroySession(sessionId);
+    state.SetItemsProcessed(state.iterations());
+    state.SetLabel("Event overload, no typedData (8-arg parse only)");
+}
 
 BENCHMARK_MAIN();

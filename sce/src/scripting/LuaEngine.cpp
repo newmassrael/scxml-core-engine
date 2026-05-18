@@ -1077,30 +1077,59 @@ std::future<ScriptResult> LuaEngine::setCurrentEvent(const std::string &sessionI
         return p.get_future();
     }
 
-    // Call string overload first (sets up _event table with all metadata fields)
-    auto future = setCurrentEvent(sessionId, event->getName(), event->getDataAsString(), event->getType(),
-                                  event->getSendId(), event->getOrigin(), event->getOriginType(), event->getInvokeId());
-    // Ensure string overload completes before overlaying typed data
-    future.get();
-
-    // W3C SCXML 5.10: Override _event.data with typed data when available (avoids JSON parsing)
+    // W3C SCXML 5.10: Engine-agnostic ScriptValue pipeline. When typedData is
+    // present, `EventRaiserImpl::raiseEventWithPriority` has already parsed the
+    // JSON eventData at pipeline entry (sce/src/runtime/EventRaiserImpl.cpp:220).
+    // Routing through the 8-arg overload would re-parse eventData via
+    // luaL_dostring + jsonStringToScriptValue (~2.2us/event for realistic JSON,
+    // benchmark_luaengine SetCurrentEvent* — mesh_open_issues.md Issue 4), only
+    // for the post-call overlay to overwrite _event.data. The fast path below
+    // sets the table directly and skips the redundant string parse.
     if (event->hasTypedData()) {
         std::lock_guard<std::mutex> lock(sessionMutex_);
         auto it = sessions_.find(sessionId);
-        if (it != sessions_.end()) {
-            lua_State *L = it->second->L;
-            lua_getglobal(L, "_event");
-            if (lua_istable(L, -1)) {
-                pushScriptValue(L, event->getTypedData().value());
-                lua_setfield(L, -2, "data");
-            }
-            lua_pop(L, 1);
+        if (it == sessions_.end()) {
+            std::promise<ScriptResult> p;
+            p.set_value(ScriptResult::createError("Session not found: " + sessionId));
+            return p.get_future();
         }
+
+        lua_State *L = it->second->L;
+
+        lua_newtable(L);
+
+        lua_pushstring(L, event->getName().c_str());
+        lua_setfield(L, -2, "name");
+
+        lua_pushstring(L, event->getType().c_str());
+        lua_setfield(L, -2, "type");
+
+        lua_pushstring(L, event->getSendId().c_str());
+        lua_setfield(L, -2, "sendid");
+
+        lua_pushstring(L, event->getOrigin().c_str());
+        lua_setfield(L, -2, "origin");
+
+        lua_pushstring(L, event->getOriginType().c_str());
+        lua_setfield(L, -2, "origintype");
+
+        lua_pushstring(L, event->getInvokeId().c_str());
+        lua_setfield(L, -2, "invokeid");
+
+        pushScriptValue(L, event->getTypedData().value());
+        lua_setfield(L, -2, "data");
+
+        lua_setglobal(L, "_event");
+
+        std::promise<ScriptResult> p;
+        p.set_value(ScriptResult::createSuccess(true));
+        return p.get_future();
     }
 
-    std::promise<ScriptResult> p;
-    p.set_value(ScriptResult::createSuccess(true));
-    return p.get_future();
+    // No typedData — delegate to string overload's full data parsing path
+    // (XML DOM / Lua expression / JSON / plain text, W3C SCXML B.2).
+    return setCurrentEvent(sessionId, event->getName(), event->getDataAsString(), event->getType(),
+                           event->getSendId(), event->getOrigin(), event->getOriginType(), event->getInvokeId());
 }
 
 std::future<ScriptResult> LuaEngine::setCurrentEvent(const std::string &sessionId, const std::string &eventName,
