@@ -4092,6 +4092,81 @@ fn forge_codec_variant_default_marker_outer_emits_declared_arm_cpp() {
     );
 }
 
+/// RFC variant-default-uniformity Atomic β (Kotlin): the inner arm
+/// body codec with `<sce:flag value="0x02"/>` on its dispatch flag
+/// must emit a UByte-typed default `header: UByte = 0x02.toUByte()`
+/// on the data class primary constructor so a freshly-constructed
+/// instance carries the wire-MID for its dispatch tag. Kotlin's
+/// `u`/`uL` literal suffixes produce UInt / ULong respectively, so
+/// UByte / UShort carriers narrow from Int via `.toU{Byte,Short}()`
+/// — mirroring the existing `kotlin_default()` zero pattern
+/// (`"0.toUByte()"`).
+#[test]
+fn forge_codec_default_marker_arm_b_emits_baked_default_kotlin() {
+    let scxml_path = resource_dir().join("codec_default_marker_arm_b.scxml");
+    let content = std::fs::read_to_string(&scxml_path)
+        .expect("codec_default_marker_arm_b.scxml must exist");
+    let output = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("codec_default_marker_arm_b"),
+        sce_build::generator::Language::Kotlin,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .expect("forge codegen for arm B fixture must succeed (kotlin)");
+    let (_, generated) = &output.files[0];
+    assert!(
+        generated.contains("header: UByte = 0x02.toUByte()"),
+        "arm B's data class must declare `header: UByte` with a \
+         default value of `0x02.toUByte()` (value=\"0x02\" shifted by \
+         bit=0). Generated source:\n{generated}"
+    );
+}
+
+/// RFC variant-default-uniformity Atomic β (Kotlin): the outer
+/// codec's primary-constructor `body` default must construct the
+/// declared default arm — the one marked `default="true"` — rather
+/// than the first declared alternative. Kotlin has no positional
+/// `std::variant`-style constructor, so the template selects the arm
+/// by sealed-class subtype directly (`Variant.CodecDefaultMarkerArmB(...)`).
+#[test]
+fn forge_codec_variant_default_marker_outer_emits_declared_arm_kotlin() {
+    let scxml_path = resource_dir().join("codec_variant_default_marker.scxml");
+    let content = std::fs::read_to_string(&scxml_path)
+        .expect("codec_variant_default_marker.scxml must exist");
+    let output = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("codec_variant_default_marker"),
+        sce_build::generator::Language::Kotlin,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .expect("forge codegen for outer marker fixture must succeed (kotlin)");
+    let (_, generated) = &output.files[0];
+    // Arm B is marked `default="true"`. The outer body default must
+    // wrap a CodecDefaultMarkerArmB instance, not the first declared
+    // arm (CodecDefaultMarkerArmA). Arm body types are referenced by
+    // FQN in the Kotlin emit to keep imported-codec resolution
+    // unambiguous when two imports share a class name.
+    assert!(
+        generated.contains(
+            "CodecVariantDefaultMarkerVariant.CodecDefaultMarkerArmB(\
+             com.sce.generated.codec_default_marker_arm_b.CodecDefaultMarkerArmB())"
+        ),
+        "outer body default must wrap the arm marked \
+         default=\"true\" (CodecDefaultMarkerArmB). Generated source:\n{generated}"
+    );
+    assert!(
+        !generated.contains(
+            "CodecVariantDefaultMarkerVariant.CodecDefaultMarkerArmA(\
+             com.sce.generated.codec_default_marker_arm_a.CodecDefaultMarkerArmA())"
+        ),
+        "outer body default must NOT wrap the first declared arm \
+         (CodecDefaultMarkerArmA) when another arm is marked \
+         default=\"true\". Generated source:\n{generated}"
+    );
+}
+
 /// RFC variant-default-uniformity Atomic β (Rust): the outer codec's
 /// `*Variant::default()` must pick the arm marked `default="true"`
 /// (not the first declared arm). Combined with the inner manual

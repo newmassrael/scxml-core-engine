@@ -1907,6 +1907,23 @@ fn render_codec(
                     _        => format!("{{0x{:02x}u}}", acc),
                 };
                 obj.insert("cpp_flag_default_init".into(), cpp_literal.into());
+                // Kotlin default-value expression: emitted as the right-
+                // hand side of the data class primary constructor's
+                // `var id: UByte = …` default. UByte / UShort have no
+                // direct hex literal (Kotlin's `u`/`uL` suffixes produce
+                // UInt / ULong respectively), so the carrier-typed
+                // literal narrows from Int via `.toU{Byte,Short}()`.
+                // Pattern mirrors `kotlin_default()` (`0.toUByte()` etc.)
+                // so the emitted RHS reads as a natural extension of the
+                // existing zero default.
+                let kt_literal = match f.sce_type.int_bit_width() {
+                    Some(8)  => format!("0x{:02x}.toUByte()",  acc),
+                    Some(16) => format!("0x{:04x}.toUShort()", acc),
+                    Some(32) => format!("0x{:08x}u",           acc),
+                    Some(64) => format!("0x{:016x}uL",         acc),
+                    _        => format!("0x{:02x}.toUByte()",  acc),
+                };
+                obj.insert("kt_flag_default_literal".into(), kt_literal.into());
             }
 
             // RFC §5.B B1-δ present-if primitive: when the codec has

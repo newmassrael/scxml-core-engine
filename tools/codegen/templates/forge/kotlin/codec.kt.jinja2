@@ -46,10 +46,19 @@ class {{ struct_name }} {
 // mirror the zero-initialized shape that decode() fills in on success.
 data class {{ struct_name }}(
 {% for field in fields %}
-    var {{ field.id }}: {{ field.kt_type }} = {{ field.kt_default }}{{ "," if not loop.last or has_variant else "" }}
+    var {{ field.id }}: {{ field.kt_type }} = {% if field.kt_flag_default_literal is defined %}{{ field.kt_flag_default_literal }}{% else %}{{ field.kt_default }}{% endif %}{{ "," if not loop.last or has_variant else "" }}
 {% endfor %}
 {% if has_variant %}
-{% if variant.arms %}
+{% set ns = namespace(default_arm=none) %}
+{% for arm in variant.arms %}{% if arm.is_default %}{% set ns.default_arm = arm %}{% endif %}{% endfor %}
+{% if ns.default_arm %}
+    // RFC variant-default-uniformity Atomic β-kotlin: pick the declared
+    // default arm (`<sce:arm default="true"/>`) instead of the first
+    // alternative so a freshly-constructed envelope round-trips byte-
+    // exactly through `encode() -> decode()`. Paired with the inner
+    // codec's `<sce:flag value=>`-baked default fields above.
+    var body: {{ struct_name }}Variant = {{ struct_name }}Variant.{{ ns.default_arm.variant_name }}({{ ns.default_arm.body_type }}())
+{% elif variant.arms %}
     var body: {{ struct_name }}Variant = {{ struct_name }}Variant.{{ variant.arms[0].variant_name }}({{ variant.arms[0].body_type }}())
 {% else %}
     var body: {{ struct_name }}Variant = {{ struct_name }}Variant.{{ variant.default_arm.variant_name }}(tag = {{ variant.kt_zero_tag_literal }}, body = {{ variant.default_arm.body_type }}())
