@@ -913,7 +913,10 @@ pub fn generate_cpp_with_imports_and_externs(
     )? {
         files.push(sidecar);
     }
-    Ok(GeneratedOutput { files })
+    Ok(GeneratedOutput {
+        files,
+        ..Default::default()
+    })
 }
 
 // ── Transform rendering (unified) ─────────────────────────────
@@ -9598,7 +9601,10 @@ pub fn generate_kotlin_with_imports(
             files.push(sidecar);
         }
     }
-    Ok(GeneratedOutput { files })
+    Ok(GeneratedOutput {
+        files,
+        ..Default::default()
+    })
 }
 
 /// Default value for Kotlin types.
@@ -9756,7 +9762,10 @@ pub fn generate_rust_with_imports_and_externs(
     )? {
         files.push(sidecar);
     }
-    Ok(GeneratedOutput { files })
+    Ok(GeneratedOutput {
+        files,
+        ..Default::default()
+    })
 }
 
 /// Render a `<sce:kind="link">` document for the Rust backend
@@ -11198,7 +11207,10 @@ pub fn generate_go_with_imports(
             files.push(sidecar);
         }
     }
-    Ok(GeneratedOutput { files })
+    Ok(GeneratedOutput {
+        files,
+        ..Default::default()
+    })
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -11331,7 +11343,10 @@ pub fn generate_python_with_imports(
             files.push(sidecar);
         }
     }
-    Ok(GeneratedOutput { files })
+    Ok(GeneratedOutput {
+        files,
+        ..Default::default()
+    })
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -11497,7 +11512,10 @@ pub fn generate_c11_with_imports_and_externs(
     )? {
         files.push(sidecar);
     }
-    Ok(GeneratedOutput { files })
+    Ok(GeneratedOutput {
+        files,
+        ..Default::default()
+    })
 }
 
 // ── Procedure: C++ ──────────────────────────────────────────

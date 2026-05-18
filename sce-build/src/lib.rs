@@ -94,6 +94,20 @@ impl<'a> DocumentLabel<'a> {
     }
 }
 
+/// Result of the parse-phase: the analyzed SCXML model plus the
+/// canonical paths of every external file the preprocessor consumed.
+///
+/// `preprocessor_deps` is collected by [`parser::SCXMLParser::parse_file`]
+/// from the XInclude + `sce:template` expanders and surfaces here so
+/// every codegen-side entry point can attach the same dep set to its
+/// emitted [`generator::GeneratedOutput`] — single source of truth for
+/// build-system rerun invalidation. Empty after `parse_string` (no fs
+/// access).
+pub(crate) struct ParsedSCXML {
+    pub model: SCXMLModel,
+    pub preprocessor_deps: Vec<std::path::PathBuf>,
+}
+
 /// Parse, analyze, and validate an SCXML file for static code generation.
 /// SCE Forge inline kinds are extracted during parsing (single XML pass).
 ///
@@ -104,7 +118,14 @@ impl<'a> DocumentLabel<'a> {
 /// boundary because WASM/JS callers marshal only strings. See the
 /// `CompileError` alias below — keeping this signature on the typed
 /// side eliminates mid-function stringification.
-fn compile_model(scxml_path: &str) -> Result<SCXMLModel, CompileError> {
+///
+/// The returned [`ParsedSCXML`] carries `preprocessor_deps` so callers
+/// can attach the dep set to their codegen output. Discarding the
+/// deps (e.g. in the `compile_scxml_to_string` shim that does not
+/// have an output struct to populate) is legal but consumers that
+/// drive Cargo / depfile sinks MUST forward them — see
+/// [`generator::GeneratedOutput::deps`] for the canonical surface.
+fn compile_model(scxml_path: &str) -> Result<ParsedSCXML, CompileError> {
     let mut parser = parser::SCXMLParser::new();
     let mut model = parser.parse_file(scxml_path)?;
     analyzer::analyze(&mut model, scxml_path);
@@ -120,7 +141,11 @@ fn compile_model(scxml_path: &str) -> Result<SCXMLModel, CompileError> {
     // `forge::provenance` for the eligibility scope.
     forge::provenance::validate_emission_provenance(&model, scxml_path)?;
     resolve_source_path(&mut model, scxml_path);
-    Ok(model)
+    let preprocessor_deps = parser.preprocessor_deps().to_vec();
+    Ok(ParsedSCXML {
+        model,
+        preprocessor_deps,
+    })
 }
 
 /// Parse SCXML content string, analyze and validate (no filesystem).
@@ -267,14 +292,29 @@ pub fn resolve_driver_refs_with_root(
 
 /// Compile SCXML files to Rust source code in `OUT_DIR`.
 ///
-/// Generates `{name}_sm.rs` for each input SCXML file.
-/// Intended for use in `build.rs`.
+/// Generates `{name}_sm.rs` for each input SCXML file. Intended for
+/// use in `build.rs`.
+///
+/// For every input, emits `cargo::rerun-if-changed=` lines for both
+/// the input itself and every preprocessor dependency the parser
+/// pulled in (`<xi:include>` targets, `<sce:use template>` fragments).
+/// Without the dep lines, Cargo cannot tell that a shared
+/// `*.sce-template.xml` participated in the build, so a template
+/// edit silently keeps the previous generated `*_sm.rs` until either
+/// the host SCXML is touched or `cargo clean` runs — a correctness
+/// hazard, not just an ergonomic gap.
+///
+/// Routes through [`compile_scxml_lang_typed`] (Language::Rust)
+/// rather than [`compile_scxml_to_string`] so the dep set survives
+/// the parse boundary: the typed entry returns
+/// [`generator::GeneratedOutput`] whose `deps` field is the canonical
+/// build-system rerun surface.
 pub fn compile_scxml(scxml_files: &[&str]) {
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set (must be called from build.rs)");
     let template_dir = find_template_dir();
 
     for scxml_path in scxml_files {
-        let code = compile_scxml_to_string(scxml_path, &template_dir)
+        let output = compile_scxml_lang_typed(scxml_path, &template_dir, generator::Language::Rust)
             .unwrap_or_else(|e| panic!("Failed to compile {scxml_path}: {e}"));
 
         let stem = Path::new(scxml_path)
@@ -282,11 +322,30 @@ pub fn compile_scxml(scxml_files: &[&str]) {
             .and_then(|s| s.to_str())
             .expect("Invalid SCXML filename");
 
+        // `compile_scxml_lang_typed` with `Rust` always emits exactly
+        // one file (`{stem}_sm.rs`); destructuring the single entry
+        // makes the contract explicit. Multi-file backends (C++/C11)
+        // route through `compile_scxml_lang_typed_with_section`
+        // directly, not this Rust-only build.rs facade.
+        let (_filename, code) = output
+            .files
+            .into_iter()
+            .next()
+            .expect("compile_scxml_lang_typed(Rust) must emit exactly one file");
+
         let out_path = Path::new(&out_dir).join(format!("{stem}_sm.rs"));
         std::fs::write(&out_path, &code)
             .unwrap_or_else(|e| panic!("Cannot write {}: {e}", out_path.display()));
 
         println!("cargo::rerun-if-changed={scxml_path}");
+        for dep in &output.deps {
+            // `preprocessor_deps` is canonicalised at the parser
+            // boundary, so emitting `display()` preserves the
+            // absolute path Cargo needs to invalidate against. Cargo
+            // de-duplicates rerun-if-changed across invocations
+            // internally, so no extra dedup here.
+            println!("cargo::rerun-if-changed={}", dep.display());
+        }
     }
 }
 
@@ -311,7 +370,12 @@ pub fn compile_scxml_to_string_typed(
     scxml_path: &str,
     template_dir: &Path,
 ) -> Result<String, CompileError> {
-    let model = compile_model(scxml_path)?;
+    // String-only entry: deliberately drops `preprocessor_deps` because
+    // the return type carries no dep channel. Build-system consumers
+    // (`compile_scxml`, `sce-codegen --write-deps`) must route through
+    // an entry that returns [`generator::GeneratedOutput`] so the dep
+    // set survives to the depfile sink.
+    let ParsedSCXML { model, .. } = compile_model(scxml_path)?;
     generator::generate(&model, template_dir, false)
         .map_err(|e| locate_codegen_error(e, scxml_path))
 }
@@ -358,12 +422,21 @@ pub fn compile_from_string_lang_typed(
 ) -> Result<generator::GeneratedOutput, CompileError> {
     let model = compile_model_from_string(scxml_content, scxml_name)?;
 
+    // `from_string` callers have no filesystem-anchored preprocessor
+    // pipeline — `parse_string` leaves `preprocessor_deps` empty by
+    // construction (parser.rs docstring). So every branch returns a
+    // `GeneratedOutput` whose `deps` defaults to the empty vec
+    // populated by `..Default::default()` (or by the C++/C11 helper
+    // returns, which already default `deps` via the derive). This
+    // is intentional, not a leak — there is no dep channel to
+    // forward.
     match language {
         generator::Language::Rust => {
             let code = generator::generate_with_templates(&model, templates, false)
                 .map_err(|e| locate_codegen_error(e, scxml_name))?;
             Ok(generator::GeneratedOutput {
                 files: vec![(format!("{scxml_name}_sm.rs"), code)],
+                ..Default::default()
             })
         }
         generator::Language::Cpp => {
@@ -375,6 +448,7 @@ pub fn compile_from_string_lang_typed(
                 .map_err(|e| locate_codegen_error(e, scxml_name))?;
             Ok(generator::GeneratedOutput {
                 files: vec![(format!("{scxml_name}Sm.kt"), code)],
+                ..Default::default()
             })
         }
         generator::Language::Go => {
@@ -382,6 +456,7 @@ pub fn compile_from_string_lang_typed(
                 .map_err(|e| locate_codegen_error(e, scxml_name))?;
             Ok(generator::GeneratedOutput {
                 files: vec![(format!("{scxml_name}_sm.go"), code)],
+                ..Default::default()
             })
         }
         generator::Language::Python => {
@@ -389,6 +464,7 @@ pub fn compile_from_string_lang_typed(
                 .map_err(|e| locate_codegen_error(e, scxml_name))?;
             Ok(generator::GeneratedOutput {
                 files: vec![(format!("{scxml_name}_sm.py"), code)],
+                ..Default::default()
             })
         }
         generator::Language::C11 => {
@@ -460,7 +536,10 @@ pub fn compile_scxml_lang_typed_with_section(
     driver_root: Option<&Path>,
     section_class: Option<&str>,
 ) -> Result<generator::GeneratedOutput, CompileError> {
-    let mut model = compile_model(scxml_path)?;
+    let ParsedSCXML {
+        mut model,
+        preprocessor_deps,
+    } = compile_model(scxml_path)?;
     if !model.driver_refs.is_empty() {
         match driver_root {
             Some(root) => resolve_driver_refs_with_root(&mut model, scxml_path, root)?,
@@ -476,40 +555,53 @@ pub fn compile_scxml_lang_typed_with_section(
         .and_then(|s| s.to_str())
         .unwrap_or("unknown");
 
-    match language {
+    // Run language-specific codegen first, then attach the parse-phase
+    // deps to the resulting `GeneratedOutput`. Codegen helpers
+    // (`generate*`) do not see the deps — they live one layer above,
+    // bound to the parser exit. Attaching here means every backend
+    // (single-file Rust/Kotlin/Go/Python + multi-file C++/C11) gets
+    // the same dep channel without each `generate_*` learning about
+    // build-system metadata it doesn't otherwise touch.
+    let mut output = match language {
         generator::Language::Rust => {
             let code = generator::generate(&model, template_dir, false)
                 .map_err(|e| locate_codegen_error(e, scxml_path))?;
-            Ok(generator::GeneratedOutput {
+            generator::GeneratedOutput {
                 files: vec![(format!("{input_stem}_sm.rs"), code)],
-            })
+                deps: Vec::new(),
+            }
         }
         generator::Language::Cpp => generator::generate_cpp(&model, template_dir, input_stem)
-            .map_err(|e| locate_codegen_error(e, scxml_path)),
+            .map_err(|e| locate_codegen_error(e, scxml_path))?,
         generator::Language::Kotlin => {
             let code = generator::generate_kotlin(&model, template_dir)
                 .map_err(|e| locate_codegen_error(e, scxml_path))?;
-            Ok(generator::GeneratedOutput {
+            generator::GeneratedOutput {
                 files: vec![(format!("{input_stem}Sm.kt"), code)],
-            })
+                deps: Vec::new(),
+            }
         }
         generator::Language::Go => {
             let code = generator::generate_go(&model, template_dir)
                 .map_err(|e| locate_codegen_error(e, scxml_path))?;
-            Ok(generator::GeneratedOutput {
+            generator::GeneratedOutput {
                 files: vec![(format!("{input_stem}_sm.go"), code)],
-            })
+                deps: Vec::new(),
+            }
         }
         generator::Language::Python => {
             let code = generator::generate_python(&model, template_dir)
                 .map_err(|e| locate_codegen_error(e, scxml_path))?;
-            Ok(generator::GeneratedOutput {
+            generator::GeneratedOutput {
                 files: vec![(format!("{input_stem}_sm.py"), code)],
-            })
+                deps: Vec::new(),
+            }
         }
         generator::Language::C11 => generator::generate_c11(&model, template_dir, input_stem)
-            .map_err(|e| locate_codegen_error(e, scxml_path)),
-    }
+            .map_err(|e| locate_codegen_error(e, scxml_path))?,
+    };
+    output.deps = preprocessor_deps;
+    Ok(output)
 }
 
 /// Compile SCXML file for a specific language (filesystem-based).
@@ -1835,7 +1927,13 @@ pub fn compile_scxml_with_imports(
     let mut scxml_models: Vec<(std::path::PathBuf, SCXMLModel)> = Vec::new();
     for scxml_path in scxml_files {
         let path_str = scxml_path.to_str().unwrap_or("");
-        let model = compile_model(path_str)?;
+        // Pass-2 only consumes the model for cross-doc validators
+        // (`validate_on_sample_link_references`, `resolve_listener_links`,
+        // per-instance event-queue checks). Preprocessor deps are
+        // re-collected in pass-3 by `compile_scxml_lang_typed_with_section`
+        // and attached to each per-doc `GeneratedOutput.deps` — so
+        // dropping them here is intentional, not a leak.
+        let ParsedSCXML { model, .. } = compile_model(path_str)?;
         let basename = scxml_path
             .file_name()
             .and_then(|s| s.to_str())
@@ -2275,7 +2373,17 @@ pub fn compile_scxml_with_imports(
                 )
                 .map_err(|e| Located::new(e, "deploy.yaml", None, None))?;
                 if !files.is_empty() {
-                    outputs.push((machine_name.clone(), generator::GeneratedOutput { files }));
+                    // Per-machine C10-β scheduler artifacts are
+                    // synthesised from `deploy.yaml`, not the SCXML
+                    // preprocessor pipeline — they have no
+                    // filesystem-anchored fragment deps to forward.
+                    outputs.push((
+                        machine_name.clone(),
+                        generator::GeneratedOutput {
+                            files,
+                            ..Default::default()
+                        },
+                    ));
                 }
             }
         }
@@ -4893,7 +5001,7 @@ pub fn compile_mesh_transport(
     {
         let _ = external_resolution; // no bindings → no resolved IDs to consume
         return Ok(MeshResult {
-            output: generator::GeneratedOutput { files: vec![] },
+            output: generator::GeneratedOutput::default(),
             dynamic_target_warnings,
             deadline_override_notices,
             auto_subscriptions,

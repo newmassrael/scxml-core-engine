@@ -72,6 +72,7 @@ impl VerifyFixture {
                 "foo_sm.rs".to_string(),
                 "pub struct Foo;\n\nimpl Foo {\n    pub fn new() -> Self { Foo }\n}\n".to_string(),
             )],
+            ..Default::default()
         };
         sce_build::apply_drift_headers_to_output(&mut output, hashes, generated_at);
         for (filename, content) in output.files {
@@ -196,6 +197,7 @@ fn helper_emits_python_header_with_hash_prefix() {
             ("foo.go".into(), "package main\n\nfunc main() {}\n".into()),
             ("foo.c".into(), "int main() { return 0; }\n".into()),
         ],
+        ..Default::default()
     };
     let hashes = DriftHashes {
         source_hash: [0xaa; 32],
@@ -229,6 +231,7 @@ fn helper_is_idempotent_across_two_invocations() {
     // some build systems impose.
     let mut output = GeneratedOutput {
         files: vec![("foo.rs".into(), "pub fn x() {}\n".into())],
+        ..Default::default()
     };
     let hashes = DriftHashes {
         source_hash: [0x11; 32],
@@ -288,6 +291,7 @@ fn verify_passes_when_input_set_is_empty_scxml_directory() {
     };
     let mut output = GeneratedOutput {
         files: vec![("foo_sm.rs".into(), "pub struct Foo;\n".into())],
+        ..Default::default()
     };
     sce_build::apply_drift_headers_to_output(&mut output, &hashes, 0);
     for (name, content) in output.files {

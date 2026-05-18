@@ -8,7 +8,7 @@ use crate::filters;
 use crate::forge::error::GenerateError;
 use crate::model::SCXMLModel;
 use minijinja::Environment;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Create a minijinja Environment with Python Jinja2 compatibility enabled.
 pub(crate) fn new_env<'a>() -> Environment<'a> {
@@ -58,9 +58,27 @@ impl std::str::FromStr for Language {
     }
 }
 
-/// Generated output — may contain multiple files (e.g., C++ .h + .inl).
+/// Generated output — may contain multiple files (e.g., C++ .h + .inl)
+/// plus the canonical paths of every external file the parse phase
+/// consumed (`<xi:include>` targets, `<sce:use>` template fragments).
+///
+/// `deps` is the single source of truth for build-system rerun
+/// invalidation. Consumers that drive Cargo (`compile_scxml`) or write
+/// Make-style depfiles (`sce-codegen --write-deps`) must emit each
+/// path so a fragment edit re-fires codegen even if the host SCXML
+/// did not change — without this, fragment edits become silent
+/// no-ops and downstream artifacts diverge from author source until
+/// a clean rebuild (tc8-harness hazard class). `from_string` entry
+/// points populate this with `Vec::new()` because they have no
+/// filesystem dependencies.
+#[derive(Default)]
 pub struct GeneratedOutput {
     pub files: Vec<(String, String)>, // (filename, content)
+    /// Canonical paths of preprocessor inputs consumed by the parse
+    /// phase. Populated by typed entry points from
+    /// `Parser::preprocessor_deps()`; empty for `from_string` /
+    /// in-memory routes.
+    pub deps: Vec<PathBuf>,
 }
 
 /// License configuration matching Python license_config.py
@@ -359,6 +377,7 @@ fn render_cpp(
             (format!("{input_stem}_sm.h"), header_code),
             (inl_filename, inl_code),
         ],
+        ..Default::default()
     })
 }
 
@@ -455,6 +474,7 @@ fn render_c11(
             (format!("{input_stem}_sm.h"), header_code),
             (format!("{input_stem}_sm.c"), source_code),
         ],
+        ..Default::default()
     })
 }
 

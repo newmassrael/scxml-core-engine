@@ -851,7 +851,7 @@ pub fn generate_mesh(
         && !has_wire21_routing
         && !has_scxml_remote_wire
     {
-        return Ok(GeneratedOutput { files: vec![] });
+        return Ok(GeneratedOutput::default());
     }
 
     match language {
@@ -1627,6 +1627,7 @@ fn generate_cpp_mesh(
 
     Ok(GeneratedOutput {
         files: vec![(format!("{machine_name}_transport.h"), code)],
+        ..Default::default()
     })
 }
 

@@ -1528,6 +1528,11 @@ fn cmd_generate(
                     .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
                 GeneratedOutput {
                     files: vec![(format!("{input_stem}_sm.rs"), code)],
+                    // CLI threads `Parser::preprocessor_deps()` directly to
+                    // the depfile sink (see `--write-deps` handling below);
+                    // populating `GeneratedOutput.deps` here would
+                    // duplicate the channel without a consumer.
+                    ..Default::default()
                 }
             }
             Language::Cpp => sce_build::generator::generate_cpp(&model, &template_dir, input_stem)
@@ -1551,6 +1556,7 @@ fn cmd_generate(
                 }
                 GeneratedOutput {
                     files: vec![(format!("{input_stem}Sm.kt"), code)],
+                    ..Default::default()
                 }
             }
             Language::Go => {
@@ -1568,6 +1574,7 @@ fn cmd_generate(
                 }
                 GeneratedOutput {
                     files: vec![(format!("{input_stem}_sm.go"), code)],
+                    ..Default::default()
                 }
             }
             Language::Python => {
@@ -1575,6 +1582,7 @@ fn cmd_generate(
                     .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
                 GeneratedOutput {
                     files: vec![(format!("{input_stem}_sm.py"), code)],
+                    ..Default::default()
                 }
             }
             Language::C11 => sce_build::generator::generate_c11(&model, &template_dir, input_stem)
