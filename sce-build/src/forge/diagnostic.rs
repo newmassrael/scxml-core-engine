@@ -1101,7 +1101,6 @@ pub enum DiagnosticCode {
     //    mtu_bytes, change trust_class, raise worker_slot_budget_us)
     //    that are author-domain decisions rather than closed
     //    candidate sets. ──
-
     /// `<sce:rx-pool ref>` bound to a link whose `mtu_bytes` exceeds
     /// the pool's `<sce:slot-size>`. RFC §5.M line 2946 names this
     /// code. The slot cannot hold a single full-MTU datagram; even
@@ -1652,7 +1651,6 @@ pub enum DiagnosticCode {
     //    binding, trust-class-missing-on-fragmenting-link, stage-copy-
     //    wcet-exceeds-slot-budget}`) defer to C13-α-2 follow-up atomic
     //    per scope-split decision. ──
-
     /// Watching-zenoh RFC §5.K line 2421 verbatim
     /// (`deploy/link-driver-unknown`). `machines.<n>.links.<name>.driver`
     /// value is not in the C13-α-known-driver baseline (currently
@@ -1761,7 +1759,6 @@ pub enum DiagnosticCode {
     //    2350-2369 + 2504-2519). Three codes wire the policy enum
     //    plus the per-link `<sce:accept-stage-copy-rate>` opt-out
     //    semantics. ──
-
     /// Watching-zenoh RFC §5.K line 2504-2511 verbatim
     /// (`pool/stage-copy-policy-error`). `pool_defaults.stage_copy_policy:
     /// error` (or `forbid`) AND the §5.M / ARCHITECTURE §9.3
@@ -1810,7 +1807,6 @@ pub enum DiagnosticCode {
     //        (line 2466-2469) — landed at the orchestrator level
     //        where the §5.I baseline + loaded `target_plugin`
     //        symbols converge, mirroring C4 Atomic B precedent.
-
     /// Watching-zenoh RFC §5.K line 2449-2451 verbatim
     /// (`deploy/session-arming-quota-missing`). Link declares
     /// `trust_class: session_arming` but no `session_arming_quota`.
@@ -3118,10 +3114,14 @@ impl DiagnosticCode {
             MemInterPoolPaddingNotEmitted => "mem/inter-pool-padding-not-emitted",
             MemCacheLineAlignment => "mem/cache-line-alignment",
             MemSlotSizeNotCacheLineMultiple => "mem/slot-size-not-cache-line-multiple",
-            MemCachePolicyUnsupportedOnNoDcacheCore => "mem/cache-policy-unsupported-on-no-dcache-core",
+            MemCachePolicyUnsupportedOnNoDcacheCore => {
+                "mem/cache-policy-unsupported-on-no-dcache-core"
+            }
             PoolCacheMaintenanceMisplaced => "pool/cache-maintenance-misplaced",
             PoolSpeculativePrefetchFlagMissing => "pool/speculative-prefetch-flag-missing",
-            PoolCachePreArmInvalidateMissingOnSpeculativeCore => "pool/cache-pre-arm-invalidate-missing-on-speculative-core",
+            PoolCachePreArmInvalidateMissingOnSpeculativeCore => {
+                "pool/cache-pre-arm-invalidate-missing-on-speculative-core"
+            }
             PoolSampleTypestateAttributesDisabled => "pool/sample-typestate-attributes-disabled",
             PoolSampleTakeWithoutStagePool => "pool/sample-take-without-stage-pool",
             PoolSampleCallbackSignatureNonBorrow => "pool/sample-callback-signature-non-borrow",
@@ -3133,22 +3133,44 @@ impl DiagnosticCode {
             WorkerOutboxRefUnknown => "worker/outbox-ref-unknown",
             WorkerOutboxTargetWrongKind => "worker/outbox-target-wrong-kind",
             WorkerOutboxTargetSuffixInvalid => "worker/outbox-target-suffix-invalid",
-            MemReassemblyPoolVariantMissingMaxFragments => "mem/reassembly-pool-variant-missing-max-fragments",
+            MemReassemblyPoolVariantMissingMaxFragments => {
+                "mem/reassembly-pool-variant-missing-max-fragments"
+            }
             MemReassemblyPoolVariantMissingTimeout => "mem/reassembly-pool-variant-missing-timeout",
             MemReassemblySlotSizeBelowDeclaredMtu => "mem/reassembly-slot-size-below-declared-mtu",
-            ReassemblyMaxFragmentsInsufficientForMtu => "reassembly/max-fragments-insufficient-for-mtu",
-            ReassemblyExpectedFragmentationRateHigh => "reassembly/expected-fragmentation-rate-high",
+            ReassemblyMaxFragmentsInsufficientForMtu => {
+                "reassembly/max-fragments-insufficient-for-mtu"
+            }
+            ReassemblyExpectedFragmentationRateHigh => {
+                "reassembly/expected-fragmentation-rate-high"
+            }
             ReassemblyUntrustedLinkBinding => "reassembly/untrusted-link-binding",
-            ReassemblyTrustClassMissingOnFragmentingLink => "reassembly/trust-class-missing-on-fragmenting-link",
-            ReassemblyStageCopyWcetExceedsSlotBudget => "reassembly/stage-copy-wcet-exceeds-slot-budget",
-            ReassemblyPeerIdNotZidOnEstablishedSession => "reassembly/peer-id-not-zid-on-established-session",
-            LinkListenerLinkNotPairedWithEstablishedSibling => "link/listener-link-not-paired-with-established-sibling",
-            MeshDeployReassemblyBindingOnUnpairedListener => "reassembly/binding-on-unpaired-listener",
-            LinkConcurrentCountExceedsSchedulerSlots => "link/concurrent-count-exceeds-scheduler-slots",
+            ReassemblyTrustClassMissingOnFragmentingLink => {
+                "reassembly/trust-class-missing-on-fragmenting-link"
+            }
+            ReassemblyStageCopyWcetExceedsSlotBudget => {
+                "reassembly/stage-copy-wcet-exceeds-slot-budget"
+            }
+            ReassemblyPeerIdNotZidOnEstablishedSession => {
+                "reassembly/peer-id-not-zid-on-established-session"
+            }
+            LinkListenerLinkNotPairedWithEstablishedSibling => {
+                "link/listener-link-not-paired-with-established-sibling"
+            }
+            MeshDeployReassemblyBindingOnUnpairedListener => {
+                "reassembly/binding-on-unpaired-listener"
+            }
+            LinkConcurrentCountExceedsSchedulerSlots => {
+                "link/concurrent-count-exceeds-scheduler-slots"
+            }
             LinkPerLinkBudgetExceedsTickPeriod => "link/per-link-budget-exceeds-tick-period",
             LinkInboundEventQueueUnsized => "link/inbound-event-queue-unsized",
-            CollectionOrderingSortedRequiresIndexBy => "collection/ordering-sorted-requires-index-by",
-            CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion => "collection/overflow-policy-oldest-wins-requires-ordering-insertion",
+            CollectionOrderingSortedRequiresIndexBy => {
+                "collection/ordering-sorted-requires-index-by"
+            }
+            CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion => {
+                "collection/overflow-policy-oldest-wins-requires-ordering-insertion"
+            }
             CollectionElementTypeNotAKind => "collection/element-type-not-a-kind",
             CollectionIndexByFieldMissing => "collection/index-by-field-missing",
             CollectionMultiWriterWithoutAtomics => "collection/multi-writer-without-atomics",
@@ -3200,61 +3222,123 @@ impl DiagnosticCode {
             MeshDeployPartitionNameNotIdentifier => "mesh/deploy-partition-name-not-identifier",
             MeshDeployPartitionSynthInfixCollision => "mesh/deploy-partition-synth-infix-collision",
             MeshDeployPartitionUncoveredUnit => "mesh/deploy-partition-uncovered-unit",
-            MeshDeployPartitionPartialCoverageRequiresDefault => "mesh/deploy-partition-partial-coverage-requires-default",
+            MeshDeployPartitionPartialCoverageRequiresDefault => {
+                "mesh/deploy-partition-partial-coverage-requires-default"
+            }
             MeshDeployPartitionPoolMachine => "mesh/deploy-partition-pool-machine",
-            MeshDeployPartitionTransportBindingUnsupported => "mesh/deploy-partition-transport-binding-unsupported",
-            MeshDeployScxmlInvokeCrossDeviceTransport => "mesh/deploy-scxml-invoke-cross-device-transport",
-            MeshDeploySomeipScxmlInvokeServiceIdOverflow => "mesh/deploy-someip-scxml-invoke-service-id-overflow",
-            MeshDeploySomeipScxmlInvokeServiceIdPinOutOfRange => "mesh/deploy-someip-scxml-invoke-service-id-pin-out-of-range",
-            MeshDeploySomeipScxmlInvokeServiceIdPinCollision => "mesh/deploy-someip-scxml-invoke-service-id-pin-collision",
-            MeshDeploySomeipLivenessServiceIdOverflow => "mesh/deploy-someip-liveness-service-id-overflow",
-            MeshDeploySomeipLivenessServiceIdPinOutOfRange => "mesh/deploy-someip-liveness-service-id-pin-out-of-range",
-            MeshDeploySomeipLivenessServiceIdPinCollision => "mesh/deploy-someip-liveness-service-id-pin-collision",
-            MeshDeploySomeipMachineLivenessServiceIdOverflow => "mesh/deploy-someip-machine-liveness-service-id-overflow",
-            MeshDeploySomeipMachineLivenessServiceIdPinOutOfRange => "mesh/deploy-someip-machine-liveness-service-id-pin-out-of-range",
-            MeshDeploySomeipMachineLivenessServiceIdPinCollision => "mesh/deploy-someip-machine-liveness-service-id-pin-collision",
-            MeshDeployPartitionBarrierTimeoutInvalid => "mesh/deploy-partition-barrier-timeout-invalid",
+            MeshDeployPartitionTransportBindingUnsupported => {
+                "mesh/deploy-partition-transport-binding-unsupported"
+            }
+            MeshDeployScxmlInvokeCrossDeviceTransport => {
+                "mesh/deploy-scxml-invoke-cross-device-transport"
+            }
+            MeshDeploySomeipScxmlInvokeServiceIdOverflow => {
+                "mesh/deploy-someip-scxml-invoke-service-id-overflow"
+            }
+            MeshDeploySomeipScxmlInvokeServiceIdPinOutOfRange => {
+                "mesh/deploy-someip-scxml-invoke-service-id-pin-out-of-range"
+            }
+            MeshDeploySomeipScxmlInvokeServiceIdPinCollision => {
+                "mesh/deploy-someip-scxml-invoke-service-id-pin-collision"
+            }
+            MeshDeploySomeipLivenessServiceIdOverflow => {
+                "mesh/deploy-someip-liveness-service-id-overflow"
+            }
+            MeshDeploySomeipLivenessServiceIdPinOutOfRange => {
+                "mesh/deploy-someip-liveness-service-id-pin-out-of-range"
+            }
+            MeshDeploySomeipLivenessServiceIdPinCollision => {
+                "mesh/deploy-someip-liveness-service-id-pin-collision"
+            }
+            MeshDeploySomeipMachineLivenessServiceIdOverflow => {
+                "mesh/deploy-someip-machine-liveness-service-id-overflow"
+            }
+            MeshDeploySomeipMachineLivenessServiceIdPinOutOfRange => {
+                "mesh/deploy-someip-machine-liveness-service-id-pin-out-of-range"
+            }
+            MeshDeploySomeipMachineLivenessServiceIdPinCollision => {
+                "mesh/deploy-someip-machine-liveness-service-id-pin-collision"
+            }
+            MeshDeployPartitionBarrierTimeoutInvalid => {
+                "mesh/deploy-partition-barrier-timeout-invalid"
+            }
             MeshPartitionParallelRootUndesignated => "mesh/partition-parallel-root-undesignated",
             MeshPartitionParallelRootAmbiguous => "mesh/partition-parallel-root-ambiguous",
-            MeshPartitionParallelRootNotInMachines => "mesh/partition-parallel-root-not-in-machines",
+            MeshPartitionParallelRootNotInMachines => {
+                "mesh/partition-parallel-root-not-in-machines"
+            }
             MeshPartitionParallelRootNonHost => "mesh/partition-parallel-root-non-host",
             MeshPartitionBarrierTimeoutWithoutRoot => "mesh/partition-barrier-timeout-without-root",
-            MeshPartitionWire21CustomTcpUnimplemented => "mesh/partition-wire21-custom-tcp-unimplemented",
+            MeshPartitionWire21CustomTcpUnimplemented => {
+                "mesh/partition-wire21-custom-tcp-unimplemented"
+            }
             MeshDistributabilityR1SharedWrite => "mesh/distributability-r1-shared-write",
-            MeshDistributabilityR2CrossRegionTransition => "mesh/distributability-r2-cross-region-transition",
+            MeshDistributabilityR2CrossRegionTransition => {
+                "mesh/distributability-r2-cross-region-transition"
+            }
             MeshDeployPlatformClassOsMismatch => "mesh/deploy-platform-class-os-mismatch",
-            MeshDeploySchedulerCooperativeMissingStackBudget => "deploy/worker-stack-budget-missing",
+            MeshDeploySchedulerCooperativeMissingStackBudget => {
+                "deploy/worker-stack-budget-missing"
+            }
             MeshDeploySchedulerCooperativeMissingSlotBudget => "deploy/worker-slot-budget-missing",
-            MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget => "deploy/keepalive-jitter-budget-missing",
-            MeshDeploySchedulerIncompatibleWithWorkerCount => "deploy/scheduler-incompatible-with-worker-count",
+            MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget => {
+                "deploy/keepalive-jitter-budget-missing"
+            }
+            MeshDeploySchedulerIncompatibleWithWorkerCount => {
+                "deploy/scheduler-incompatible-with-worker-count"
+            }
             MeshDeployLinkDriverUnknown => "deploy/link-driver-unknown",
-            MeshDeployLinkMtuMissingOnFragmentingLink => "deploy/link-mtu-missing-on-fragmenting-link",
+            MeshDeployLinkMtuMissingOnFragmentingLink => {
+                "deploy/link-mtu-missing-on-fragmenting-link"
+            }
             MeshDeployLinkMtuBelowDriverFloor => "deploy/link-mtu-below-driver-floor",
             MeshDeployLinkDriverClassMismatch => "deploy/link-driver-class-mismatch",
             MeshDeployLinkExpectedP99ExceedsMtu => "deploy/link-expected-p99-exceeds-mtu",
-            MeshDeployLinkBurstPpsMissingOnIsrDispatch => "deploy/link-burst-pps-missing-on-isr-dispatch",
+            MeshDeployLinkBurstPpsMissingOnIsrDispatch => {
+                "deploy/link-burst-pps-missing-on-isr-dispatch"
+            }
             MeshDeployLinkNotDeclaredInDeploy => "deploy/link-not-declared-in-deploy",
             MeshDeployLinkNotDeclaredInForge => "deploy/link-not-declared-in-forge",
-            MeshDeployLinkBurstAbsorptionInsufficient => "deploy/link-burst-absorption-insufficient",
-            MeshDeployLinkRxDispatchWorkerTickOnHighBurst => "deploy/link-rx-dispatch-worker-tick-on-high-burst",
+            MeshDeployLinkBurstAbsorptionInsufficient => {
+                "deploy/link-burst-absorption-insufficient"
+            }
+            MeshDeployLinkRxDispatchWorkerTickOnHighBurst => {
+                "deploy/link-rx-dispatch-worker-tick-on-high-burst"
+            }
             PoolStageCopyPolicyError => "pool/stage-copy-policy-error",
-            PoolStageCopyAcceptRejectedUnderForbid => "pool/stage-copy-accept-rejected-under-forbid",
+            PoolStageCopyAcceptRejectedUnderForbid => {
+                "pool/stage-copy-accept-rejected-under-forbid"
+            }
             MeshDeployStageCopyPolicyUnknown => "deploy/stage-copy-policy-unknown",
             MeshDeploySessionArmingQuotaMissing => "deploy/session-arming-quota-missing",
             MeshDeployAcceptRateConfigMissing => "deploy/accept-rate-config-missing",
-            MeshDeploySessionArmingFieldsOnNonArmingLink => "deploy/session-arming-fields-on-non-arming-link",
-            MeshDeployStatelessAcceptRequiredOnUntrustedSource => "deploy/stateless-accept-required-on-untrusted-source",
-            MeshDeployStatelessAcceptKeyRotationShorterThanLifetime => "deploy/stateless-accept-key-rotation-shorter-than-lifetime",
-            MeshDeploySessionArmingQuotaVsPeerTableInvariantViolated => "deploy/session-arming-quota-vs-peer-table-invariant-violated",
-            MeshDeployStatelessAcceptExternNotWhitelisted => "deploy/stateless-accept-extern-not-whitelisted",
+            MeshDeploySessionArmingFieldsOnNonArmingLink => {
+                "deploy/session-arming-fields-on-non-arming-link"
+            }
+            MeshDeployStatelessAcceptRequiredOnUntrustedSource => {
+                "deploy/stateless-accept-required-on-untrusted-source"
+            }
+            MeshDeployStatelessAcceptKeyRotationShorterThanLifetime => {
+                "deploy/stateless-accept-key-rotation-shorter-than-lifetime"
+            }
+            MeshDeploySessionArmingQuotaVsPeerTableInvariantViolated => {
+                "deploy/session-arming-quota-vs-peer-table-invariant-violated"
+            }
+            MeshDeployStatelessAcceptExternNotWhitelisted => {
+                "deploy/stateless-accept-extern-not-whitelisted"
+            }
             MeshExternalRead => "mesh/external-read",
             MeshExternalParse => "mesh/external-parse",
             MeshExternalUnresolvedNames => "mesh/external-unresolved-names",
             MeshExternalAmbiguousEventGroup => "mesh/external-ambiguous-event-group",
             MeshExternalEmptyEventGroup => "mesh/external-empty-event-group",
-            MeshExternalNamedReferenceWithoutConfig => "mesh/external-named-reference-without-config",
+            MeshExternalNamedReferenceWithoutConfig => {
+                "mesh/external-named-reference-without-config"
+            }
             MeshExternalReservedSomeipIdKeys => "mesh/external-reserved-someip-id-keys",
-            MeshExternalSomeipFieldOnNonSomeipTransport => "mesh/external-someip-field-on-non-someip-transport",
+            MeshExternalSomeipFieldOnNonSomeipTransport => {
+                "mesh/external-someip-field-on-non-someip-transport"
+            }
             MeshExternalConflictingEventSchema => "mesh/external-conflicting-event-schema",
             MeshExternalConflictingEventFieldKinds => "mesh/external-conflicting-event-field-kinds",
             MeshExternalEmptyEventEntry => "mesh/external-empty-event-entry",
@@ -3272,19 +3356,27 @@ impl DiagnosticCode {
             MeshTopologyOrderingCannotBeGuaranteed => "mesh/topology-ordering-cannot-be-guaranteed",
             MeshTopologyPoolParamNameMissing => "mesh/topology-pool-param-name-missing",
             MeshTopologySubscriptionSourceUnbound => "mesh/topology-subscription-source-unbound",
-            MeshTopologyMachineLifetimeSubscriptionUnsupported => "mesh/topology-machine-lifetime-subscription-unsupported",
+            MeshTopologyMachineLifetimeSubscriptionUnsupported => {
+                "mesh/topology-machine-lifetime-subscription-unsupported"
+            }
             MeshCodegenUnsupportedLanguage => "mesh/codegen-unsupported-language",
             MeshCodegenUnsupportedTransport => "mesh/codegen-unsupported-transport",
             MeshCodegenTemplateRead => "mesh/codegen-template-read",
             MeshCodegenTemplateRender => "mesh/codegen-template-render",
             MeshCodegenEventNameCollision => "mesh/codegen-event-name-collision",
-            MeshCodegenPoolWithRpcClientUnsupported => "mesh/codegen-pool-with-rpc-client-unsupported",
+            MeshCodegenPoolWithRpcClientUnsupported => {
+                "mesh/codegen-pool-with-rpc-client-unsupported"
+            }
             MeshIo => "mesh/io",
             ForgeSourceHashMismatch => "forge/source-hash-mismatch",
             TraceabilityScxmlLineRangeMissing => "traceability/scxml-line-range-missing",
             TraceabilityStateIdCollision => "traceability/state-id-collision",
-            TraceabilitySymbolNameExceedsCIdentifierLimit => "traceability/symbol-name-exceeds-c-identifier-limit",
-            TraceabilitySourcemapSourceHashMismatch => "traceability/sourcemap-source-hash-mismatch",
+            TraceabilitySymbolNameExceedsCIdentifierLimit => {
+                "traceability/symbol-name-exceeds-c-identifier-limit"
+            }
+            TraceabilitySourcemapSourceHashMismatch => {
+                "traceability/sourcemap-source-hash-mismatch"
+            }
             TraceabilitySceMapAttributeStripped => "traceability/sce-map-attribute-stripped",
             TraceabilityMetaGeneratedSourceLineMarkerMissing => {
                 "traceability/meta-generated-source-line-marker-missing"
@@ -3342,7 +3434,10 @@ pub enum Fix {
     /// removal. `location` is a dotted path (e.g.
     /// `"machines.x.bindings.y"`) and `fields` are the keys under it
     /// that must be removed.
-    RemoveFields { location: String, fields: Vec<String> },
+    RemoveFields {
+        location: String,
+        fields: Vec<String>,
+    },
 
     /// Replace the offending value — carried in `actual` on the parent
     /// record — with `to`. Emitted only for errors whose repair is
@@ -3575,10 +3670,7 @@ fn xml_fields(e: &XmlError) -> DiagnosticPayload {
         // template path (or parameter name, for the param-shaped
         // variants) so repair bots can act without re-parsing the
         // message; `key_fragments` tie into the `id` hash.
-        XmlError::Template(TemplateError::NotFound {
-            template,
-            searched,
-        }) => DiagnosticPayload {
+        XmlError::Template(TemplateError::NotFound { template, searched }) => DiagnosticPayload {
             code: DiagnosticCode::XmlTemplateNotFound,
             stage: Stage::Xml,
             expected: None,
@@ -3993,25 +4085,24 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
         // ── C7-lowering: algorithm-over-BC dispatch ──────────────────
         // Two codes ride `FixCarriesCandidates` (alias / method
         // enumeration); the other four are `NeutralOrDeterministic`.
-        ValidationError::AlgorithmForeachSourceNotIterable {
-            src,
-            candidates,
-        } => DiagnosticPayload {
-            code: DiagnosticCode::AlgorithmForeachSourceNotIterable,
-            stage: Stage::Validation,
-            // Multi-axis repair (author may add a BC import OR rename
-            // the foreach source to an existing bytes param); no
-            // single canonical `Fix::Replace` value. The visible-name
-            // union rides `key_fragments` for content-hash stability.
-            expected: None,
-            actual: Some(src.clone()),
-            fix: None,
-            key_fragments: {
-                let mut k = vec![src.clone()];
-                k.extend(candidates.iter().cloned());
-                k
-            },
-        },
+        ValidationError::AlgorithmForeachSourceNotIterable { src, candidates } => {
+            DiagnosticPayload {
+                code: DiagnosticCode::AlgorithmForeachSourceNotIterable,
+                stage: Stage::Validation,
+                // Multi-axis repair (author may add a BC import OR rename
+                // the foreach source to an existing bytes param); no
+                // single canonical `Fix::Replace` value. The visible-name
+                // union rides `key_fragments` for content-hash stability.
+                expected: None,
+                actual: Some(src.clone()),
+                fix: None,
+                key_fragments: {
+                    let mut k = vec![src.clone()];
+                    k.extend(candidates.iter().cloned());
+                    k
+                },
+            }
+        }
         ValidationError::AlgorithmCallTargetUnknown {
             target,
             alias,
@@ -4540,11 +4631,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: Some(Fix::ReplaceOneOf {
                 candidates: vec!["none".to_string()],
             }),
-            key_fragments: vec![
-                name.clone(),
-                machine.clone(),
-                declared_policy.clone(),
-            ],
+            key_fragments: vec![name.clone(), machine.clone(), declared_policy.clone()],
         },
         ValidationError::PoolCacheMaintenanceMisplaced { attempted_symbol } => DiagnosticPayload {
             code: DiagnosticCode::PoolCacheMaintenanceMisplaced,
@@ -4769,9 +4856,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             key_fragments: vec![worker_name.clone(), ref_name.clone()],
         },
         // ── §5.I C2-β SPSC inbox ordering ──
-        ValidationError::WorkerInboxOrderingUnspecified {
-            worker_name,
-        } => DiagnosticPayload {
+        ValidationError::WorkerInboxOrderingUnspecified { worker_name } => DiagnosticPayload {
             code: DiagnosticCode::WorkerInboxOrderingUnspecified,
             stage: Stage::Validation,
             // No `actual` value to surface — the violation is the
@@ -4865,11 +4950,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: Some(Fix::ReplaceOneOf {
                 candidates: candidates.clone(),
             }),
-            key_fragments: vec![
-                worker_name.clone(),
-                owner.clone(),
-                actual_kind.clone(),
-            ],
+            key_fragments: vec![worker_name.clone(), owner.clone(), actual_kind.clone()],
         },
         ValidationError::WorkerOutboxTargetSuffixInvalid {
             worker_name,
@@ -4889,26 +4970,22 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: Some(Fix::ReplaceWith {
                 to: format!("{owner}.inbox"),
             }),
-            key_fragments: vec![
-                worker_name.clone(),
-                owner.clone(),
-                suffix.clone(),
-            ],
+            key_fragments: vec![worker_name.clone(), owner.clone(), suffix.clone()],
         },
         // ── §5.L Bounded-collection parse-time structure validators (C6-α) ──
-        ValidationError::CollectionOrderingSortedRequiresIndexBy {
-            collection_name,
-        } => DiagnosticPayload {
-            code: DiagnosticCode::CollectionOrderingSortedRequiresIndexBy,
-            stage: Stage::Validation,
-            // No closed candidate set — the repair requires authoring a
-            // field name from the element-type struct, which is author-
-            // domain knowledge (cf. non_overlap_class entry's reasoning).
-            expected: None,
-            actual: None,
-            fix: None,
-            key_fragments: vec![collection_name.clone()],
-        },
+        ValidationError::CollectionOrderingSortedRequiresIndexBy { collection_name } => {
+            DiagnosticPayload {
+                code: DiagnosticCode::CollectionOrderingSortedRequiresIndexBy,
+                stage: Stage::Validation,
+                // No closed candidate set — the repair requires authoring a
+                // field name from the element-type struct, which is author-
+                // domain knowledge (cf. non_overlap_class entry's reasoning).
+                expected: None,
+                actual: None,
+                fix: None,
+                key_fragments: vec![collection_name.clone()],
+            }
+        }
         ValidationError::CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion {
             collection_name,
         } => DiagnosticPayload {
@@ -5063,11 +5140,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: None,
             expected: None,
             fix: None,
-            key_fragments: vec![
-                pool_name.clone(),
-                machine.clone(),
-                link_name.clone(),
-            ],
+            key_fragments: vec![pool_name.clone(), machine.clone(), link_name.clone()],
         },
         ValidationError::ReassemblyStageCopyWcetExceedsSlotBudget {
             machine,
@@ -5148,11 +5221,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: None,
             expected: None,
             fix: None,
-            key_fragments: vec![
-                pool_name.clone(),
-                machine.clone(),
-                link_name.clone(),
-            ],
+            key_fragments: vec![pool_name.clone(), machine.clone(), link_name.clone()],
         },
         // ── §5.N C10-β link/inbound-event-queue-unsized ──
         ValidationError::LinkInboundEventQueueUnsized {
@@ -5204,21 +5273,20 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 policy.clone(),
             ],
         },
-        ValidationError::PoolStageCopyAcceptRejectedUnderForbid {
-            machine,
-            link_name,
-        } => DiagnosticPayload {
-            code: DiagnosticCode::PoolStageCopyAcceptRejectedUnderForbid,
-            stage: Stage::Validation,
-            // `actual` carries the offending element's name so the
-            // wire payload surfaces what was rejected. Per
-            // non_overlap_class: two valid repair paths (remove
-            // opt-out vs change policy), no closed candidate set.
-            actual: Some("<sce:accept-stage-copy-rate>".to_string()),
-            expected: None,
-            fix: None,
-            key_fragments: vec![machine.clone(), link_name.clone()],
-        },
+        ValidationError::PoolStageCopyAcceptRejectedUnderForbid { machine, link_name } => {
+            DiagnosticPayload {
+                code: DiagnosticCode::PoolStageCopyAcceptRejectedUnderForbid,
+                stage: Stage::Validation,
+                // `actual` carries the offending element's name so the
+                // wire payload surfaces what was rejected. Per
+                // non_overlap_class: two valid repair paths (remove
+                // opt-out vs change policy), no closed candidate set.
+                actual: Some("<sce:accept-stage-copy-rate>".to_string()),
+                expected: None,
+                fix: None,
+                key_fragments: vec![machine.clone(), link_name.clone()],
+            }
+        }
         // ── §5.L Bounded-collection cross-doc resolution (C6-β) ──
         ValidationError::CollectionElementTypeNotAKind {
             collection_name,
@@ -5267,21 +5335,21 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 field.clone(),
             ],
         },
-        ValidationError::CollectionMultiWriterWithoutAtomics {
-            collection_name,
-        } => DiagnosticPayload {
-            code: DiagnosticCode::CollectionMultiWriterWithoutAtomics,
-            stage: Stage::Validation,
-            // No closed candidate set — atomic family is too large
-            // (100+ symbols across load/store/cas/fetch × widths ×
-            // orderings) for `Fix::ReplaceOneOf` to be useful. Author
-            // picks width + ordering + op from the §5.I baseline per
-            // their use case. NeutralOrDeterministic.
-            expected: None,
-            actual: None,
-            fix: None,
-            key_fragments: vec![collection_name.clone()],
-        },
+        ValidationError::CollectionMultiWriterWithoutAtomics { collection_name } => {
+            DiagnosticPayload {
+                code: DiagnosticCode::CollectionMultiWriterWithoutAtomics,
+                stage: Stage::Validation,
+                // No closed candidate set — atomic family is too large
+                // (100+ symbols across load/store/cas/fetch × widths ×
+                // orderings) for `Fix::ReplaceOneOf` to be useful. Author
+                // picks width + ordering + op from the §5.I baseline per
+                // their use case. NeutralOrDeterministic.
+                expected: None,
+                actual: None,
+                fix: None,
+                key_fragments: vec![collection_name.clone()],
+            }
+        }
         // ── §5.L Bounded-collection deploy-time capacity resolution (C6-γ1) ──
         ValidationError::CollectionCapacityUnresolved {
             collection_name,
@@ -5304,11 +5372,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: Some(Fix::ReplaceOneOf {
                 candidates: candidates.clone(),
             }),
-            key_fragments: vec![
-                collection_name.clone(),
-                machine.clone(),
-                limit.clone(),
-            ],
+            key_fragments: vec![collection_name.clone(), machine.clone(), limit.clone()],
         },
         ValidationError::TimerPeriodBelowTickRate {
             timer_name,
@@ -5430,17 +5494,16 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
         //    wire payload is uniquely keyed per offending parser
         //    site without leaking through `expected` / `actual`
         //    (which carry no useful author-facing data here).
-        ValidationError::TraceabilityScxmlLineRangeMissing {
-            node_kind,
-            node_id,
-        } => DiagnosticPayload {
-            code: DiagnosticCode::TraceabilityScxmlLineRangeMissing,
-            stage: Stage::Generate,
-            expected: None,
-            actual: None,
-            fix: None,
-            key_fragments: vec![(*node_kind).into(), node_id.clone()],
-        },
+        ValidationError::TraceabilityScxmlLineRangeMissing { node_kind, node_id } => {
+            DiagnosticPayload {
+                code: DiagnosticCode::TraceabilityScxmlLineRangeMissing,
+                stage: Stage::Generate,
+                expected: None,
+                actual: None,
+                fix: None,
+                key_fragments: vec![(*node_kind).into(), node_id.clone()],
+            }
+        }
         // ── §5.O Atomic 1 — symbol mangling collision detector. The
         //    dual-location payload rides `Fix::ReplaceOneOf` with the
         //    two `<file>:<line>` strings as the closed candidate set:
@@ -5481,11 +5544,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             expected: None,
             actual: Some(mangled.clone()),
             fix: None,
-            key_fragments: vec![
-                mangled.clone(),
-                actual_len.to_string(),
-                over_by.to_string(),
-            ],
+            key_fragments: vec![mangled.clone(), actual_len.to_string(), over_by.to_string()],
         },
         // ── §5.O Atomic 1 — sourcemap source_hash drift against
         //    §6.2.6 header. NeutralOrDeterministic: regenerate via
@@ -5500,11 +5559,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             expected: None,
             actual: Some(sourcemap_hash.clone()),
             fix: None,
-            key_fragments: vec![
-                file.clone(),
-                sourcemap_hash.clone(),
-                header_hash.clone(),
-            ],
+            key_fragments: vec![file.clone(), sourcemap_hash.clone(), header_hash.clone()],
         },
         // ── §5.O Atomic 1 — Rust SCE-MAP `#[doc]` preservation guard
         //    (OQ-W16 b). NeutralOrDeterministic: the dual-emit
@@ -5520,11 +5575,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             expected: None,
             actual: Some(function.clone()),
             fix: None,
-            key_fragments: vec![
-                crate_name.clone(),
-                function.clone(),
-                profile.clone(),
-            ],
+            key_fragments: vec![crate_name.clone(), function.clone(), profile.clone()],
         },
         // ── §5.O Atomic 1 follow-up — codegen-internal traceability
         //    invariant: SCE-emitted file lacks an SCE-MAP marker.
@@ -5599,15 +5650,15 @@ fn worker_shared_state_layer_tag(
 /// pair; layer 2 surfaces the `element.attr="value"` triple. Used by
 /// the payload builder so the wire format carries the most specific
 /// fragment the diagnostic could quote.
-fn worker_shared_state_actual(
-    reason: &crate::forge::error::WorkerSharedStateReason,
-) -> String {
+fn worker_shared_state_actual(reason: &crate::forge::error::WorkerSharedStateReason) -> String {
     use crate::forge::error::WorkerSharedStateReason;
     match reason {
         WorkerSharedStateReason::WorkerImportForbidden {
             imported_alias,
             imported_src,
-        } => format!("<sce:import as=\"{imported_alias}\" src=\"{imported_src}\" kind=\"worker\"/>"),
+        } => {
+            format!("<sce:import as=\"{imported_alias}\" src=\"{imported_src}\" kind=\"worker\"/>")
+        }
         WorkerSharedStateReason::BodyForeignNamespace {
             element,
             attr,
@@ -5651,7 +5702,9 @@ fn expression_fields(e: &ExprError) -> DiagnosticPayload {
             // duplicating it in `expected` would violate non-overlap.
             expected: None,
             actual: Some((*operator).to_string()),
-            fix: Some(Fix::ReplaceWith { to: (*strict).to_string() }),
+            fix: Some(Fix::ReplaceWith {
+                to: (*strict).to_string(),
+            }),
             key_fragments: vec![(*operator).to_string()],
         },
         ExprError::ParseMismatch { expected, got } => DiagnosticPayload {
@@ -5796,22 +5849,26 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![detail.clone()],
         },
-        GenerateError::CodegenMcuClassKindOnNonMcuLanguage { kind, language } => DiagnosticPayload {
-            code: DiagnosticCode::CodegenMcuClassKindOnNonMcuLanguage,
-            stage: Stage::Generate,
-            expected: None,
-            actual: Some(language.clone()),
-            fix: None,
-            key_fragments: vec![kind.clone(), language.clone()],
-        },
-        GenerateError::CodegenGenericKindBackendEmitMissing { kind, language } => DiagnosticPayload {
-            code: DiagnosticCode::CodegenGenericKindBackendEmitMissing,
-            stage: Stage::Generate,
-            expected: None,
-            actual: None,
-            fix: None,
-            key_fragments: vec![kind.clone(), language.clone()],
-        },
+        GenerateError::CodegenMcuClassKindOnNonMcuLanguage { kind, language } => {
+            DiagnosticPayload {
+                code: DiagnosticCode::CodegenMcuClassKindOnNonMcuLanguage,
+                stage: Stage::Generate,
+                expected: None,
+                actual: Some(language.clone()),
+                fix: None,
+                key_fragments: vec![kind.clone(), language.clone()],
+            }
+        }
+        GenerateError::CodegenGenericKindBackendEmitMissing { kind, language } => {
+            DiagnosticPayload {
+                code: DiagnosticCode::CodegenGenericKindBackendEmitMissing,
+                stage: Stage::Generate,
+                expected: None,
+                actual: None,
+                fix: None,
+                key_fragments: vec![kind.clone(), language.clone()],
+            }
+        }
         // ── Round F-α (watching-zenoh RFC §5.2) — non-MCU backend
         //    refuses `platform.c11_section_attribute` (Q-Round-F-D3).
         //    `actual` carries the offending backend name (`cpp` /
@@ -5828,7 +5885,10 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![backend.clone()],
         },
-        GenerateError::CodegenNoStdScriptNotSupported { document, locations } => DiagnosticPayload {
+        GenerateError::CodegenNoStdScriptNotSupported {
+            document,
+            locations,
+        } => DiagnosticPayload {
             code: DiagnosticCode::CodegenNoStdScriptNotSupported,
             stage: Stage::Generate,
             expected: None,
@@ -5836,7 +5896,10 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![document.clone(), locations.clone()],
         },
-        GenerateError::CodegenNoStdHttpNotSupported { document, locations } => DiagnosticPayload {
+        GenerateError::CodegenNoStdHttpNotSupported {
+            document,
+            locations,
+        } => DiagnosticPayload {
             code: DiagnosticCode::CodegenNoStdHttpNotSupported,
             stage: Stage::Generate,
             expected: None,
@@ -5844,7 +5907,10 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![document.clone(), locations.clone()],
         },
-        GenerateError::CodegenNoStdFsLoadNotSupported { document, locations } => DiagnosticPayload {
+        GenerateError::CodegenNoStdFsLoadNotSupported {
+            document,
+            locations,
+        } => DiagnosticPayload {
             code: DiagnosticCode::CodegenNoStdFsLoadNotSupported,
             stage: Stage::Generate,
             expected: None,
@@ -5852,7 +5918,10 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![document.clone(), locations.clone()],
         },
-        GenerateError::CodegenNoStdInvokeNotSupported { document, locations } => DiagnosticPayload {
+        GenerateError::CodegenNoStdInvokeNotSupported {
+            document,
+            locations,
+        } => DiagnosticPayload {
             code: DiagnosticCode::CodegenNoStdInvokeNotSupported,
             stage: Stage::Generate,
             expected: None,
@@ -6212,7 +6281,10 @@ mod tests {
         // Non-overlap rule: the candidate list rides only `fix`.
         // `expected` must stay None so consumers do not see the same
         // data in two different shapes.
-        assert!(d.expected.is_none(), "expected must not duplicate fix.candidates");
+        assert!(
+            d.expected.is_none(),
+            "expected must not duplicate fix.candidates"
+        );
         let candidates = ["u8".to_string(), "u16".to_string(), "u32".to_string()];
         match d.fix {
             Some(Fix::ReplaceOneOf { candidates: got }) => assert_eq!(got, candidates),
@@ -8119,20 +8191,18 @@ mod tests {
     fn xsd_golden_entries() -> Vec<(&'static str, ForgeError, &'static str)> {
         use crate::forge::error::XmlError;
         use crate::forge::xsd_validator::{XsdDiag, XsdErrors};
-        vec![
-            (
-                "forge/xml-schema-validation",
-                ForgeError::Xml(XmlError::SchemaValidation(XsdErrors {
-                    source_label: "chart.scxml".into(),
-                    diagnostics: vec![XsdDiag {
-                        line: Some(7),
-                        col: None,
-                        message: "Element 'sce:field': missing required attribute 'id'.".into(),
-                    }],
-                })),
-                r#"{"v":1,"id":"fnv1a:cd97e1d8cb41cb8c","code":"xml/schema-validation","stage":"xml","spec":"SCE Forge XSD","message":"Element 'sce:field': missing required attribute 'id'.","location":{"file":"chart.scxml","line":7}}"#,
-            ),
-        ]
+        vec![(
+            "forge/xml-schema-validation",
+            ForgeError::Xml(XmlError::SchemaValidation(XsdErrors {
+                source_label: "chart.scxml".into(),
+                diagnostics: vec![XsdDiag {
+                    line: Some(7),
+                    col: None,
+                    message: "Element 'sce:field': missing required attribute 'id'.".into(),
+                }],
+            })),
+            r#"{"v":1,"id":"fnv1a:cd97e1d8cb41cb8c","code":"xml/schema-validation","stage":"xml","spec":"SCE Forge XSD","message":"Element 'sce:field': missing required attribute 'id'.","location":{"file":"chart.scxml","line":7}}"#,
+        )]
     }
 
     /// Shared golden table for first-party `MeshError` cases. See
@@ -9344,7 +9414,9 @@ mod tests {
         vec![
             (
                 "cli/unknown-language",
-                CliError::UnknownLanguage { lang: "ruby".into() },
+                CliError::UnknownLanguage {
+                    lang: "ruby".into(),
+                },
                 r#"{"v":1,"id":"fnv1a:0b7cd966f5ada566","code":"cli/unknown-language","stage":"cli","message":"Unknown language: ruby. Use rust, cpp, kotlin, or go.","actual":"ruby","fix":{"kind":"replace_one_of","candidates":["rust","cpp","kotlin","go"]}}"#,
             ),
             (
@@ -9447,11 +9519,9 @@ mod tests {
                     path: "out/foo_sm.rs".into(),
                     axis: "source",
                     expected_hex:
-                        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-                            .into(),
-                    actual_hex:
-                        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-                            .into(),
+                        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+                    actual_hex: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                        .into(),
                 },
                 r#"{"v":1,"id":"fnv1a:6bbb966dd3008e84","code":"forge/source-hash-mismatch","stage":"cli","spec":"watching-zenoh RFC §6.2.6","message":"out/foo_sm.rs: §6.2.6 source-hash mismatch (embedded=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, recomputed=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) — regenerate via sce-codegen","actual":"source-hash=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}"#,
             ),
@@ -10313,24 +10383,20 @@ mod tests {
     fn expected_is_metadata_emitters_obey_non_overlap() {
         use crate::mesh::error::{ExternalConfigError, MeshError};
 
-        let forge_samples: Vec<ForgeError> = vec![
-            ExprError::ParseMismatch {
-                expected: "identifier".into(),
-                got: ";".into(),
-            }
-            .into(),
-        ];
+        let forge_samples: Vec<ForgeError> = vec![ExprError::ParseMismatch {
+            expected: "identifier".into(),
+            got: ";".into(),
+        }
+        .into()];
 
-        let mesh_samples: Vec<MeshError> = vec![
-            ExternalConfigError::AmbiguousEventGroup {
-                machine: "ecu_a".into(),
-                target: "#motor".into(),
-                event_group: "overspeed".into(),
-                count: 3,
-                config_path: "vsomeip.json".into(),
-            }
-            .into(),
-        ];
+        let mesh_samples: Vec<MeshError> = vec![ExternalConfigError::AmbiguousEventGroup {
+            machine: "ecu_a".into(),
+            target: "#motor".into(),
+            event_group: "overspeed".into(),
+            count: 3,
+            config_path: "vsomeip.json".into(),
+        }
+        .into()];
 
         let all: Vec<Diagnostic> = forge_samples
             .into_iter()
@@ -11371,10 +11437,9 @@ mod tests {
     /// `SCE_ERROR_CONTRACT.md` §8.1 for the transition criterion.
     #[test]
     fn schema_file_declares_status() {
-        let schema_bytes =
-            include_str!("../../../schemas/sce-diagnostic.v1.schema.json");
-        let parsed: serde_json::Value = serde_json::from_str(schema_bytes)
-            .expect("schema file must be valid JSON");
+        let schema_bytes = include_str!("../../../schemas/sce-diagnostic.v1.schema.json");
+        let parsed: serde_json::Value =
+            serde_json::from_str(schema_bytes).expect("schema file must be valid JSON");
         let declared = parsed
             .get("x-sce-schema-status")
             .and_then(|v| v.as_str())
@@ -11475,16 +11540,19 @@ mod tests {
     /// source-of-truth parity, not self-consistency of the schema.
     #[test]
     fn json_schema_enums_match_rust_source_of_truth() {
-        const SCHEMA_BYTES: &str =
-            include_str!("../../../schemas/sce-diagnostic.v1.schema.json");
-        let schema: serde_json::Value = serde_json::from_str(SCHEMA_BYTES)
-            .expect("diagnostic schema is valid JSON");
+        const SCHEMA_BYTES: &str = include_str!("../../../schemas/sce-diagnostic.v1.schema.json");
+        let schema: serde_json::Value =
+            serde_json::from_str(SCHEMA_BYTES).expect("diagnostic schema is valid JSON");
 
         let code_enum: Vec<String> = schema["properties"]["code"]["enum"]
             .as_array()
             .expect("code.enum is an array")
             .iter()
-            .map(|v| v.as_str().expect("code enum member is a string").to_string())
+            .map(|v| {
+                v.as_str()
+                    .expect("code enum member is a string")
+                    .to_string()
+            })
             .collect();
         let rust_codes: Vec<String> = ALL_DIAGNOSTIC_CODES
             .iter()
@@ -11501,7 +11569,11 @@ mod tests {
             .as_array()
             .expect("stage.enum is an array")
             .iter()
-            .map(|v| v.as_str().expect("stage enum member is a string").to_string())
+            .map(|v| {
+                v.as_str()
+                    .expect("stage enum member is a string")
+                    .to_string()
+            })
             .collect();
         let rust_stages: Vec<String> = [
             Stage::Xml,

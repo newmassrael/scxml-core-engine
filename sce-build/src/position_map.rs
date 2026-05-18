@@ -232,7 +232,10 @@ impl PositionMap {
         self.entries.len() == 1
             && matches!(
                 self.entries[0].origin,
-                Origin::File { source_offset: 0, .. }
+                Origin::File {
+                    source_offset: 0,
+                    ..
+                }
             )
     }
 
@@ -244,7 +247,9 @@ impl PositionMap {
     /// the second call (first call's text wins, which is correct
     /// because every file is read exactly once per expansion).
     pub(crate) fn register_file(&mut self, path: PathBuf, text: &str) {
-        self.files.entry(path).or_insert_with(|| FileText::new(text));
+        self.files
+            .entry(path)
+            .or_insert_with(|| FileText::new(text));
     }
 
     /// Append an entry covering `[expanded_start, expanded_end)`.
@@ -306,15 +311,10 @@ impl PositionMap {
         inner_end: usize,
         outer_start: usize,
     ) {
-        debug_assert!(
-            inner_end >= inner_start,
-            "inner range must be non-negative"
-        );
+        debug_assert!(inner_end >= inner_start, "inner range must be non-negative");
         // Copy inner's file texts — idempotent.
         for (path, ft) in &inner.files {
-            self.files
-                .entry(path.clone())
-                .or_insert_with(|| ft.clone());
+            self.files.entry(path.clone()).or_insert_with(|| ft.clone());
         }
         // Walk inner's entries, clip to [inner_start, inner_end),
         // and remap to outer coordinates.
@@ -382,7 +382,10 @@ fn build_line_starts(text: &str) -> Vec<usize> {
 /// multibyte characters and create an invisible skew between
 /// remapped and non-remapped diagnostics.
 fn offset_to_rowcol(text: &str, line_starts: &[usize], byte_offset: usize) -> (u32, u32) {
-    debug_assert!(!line_starts.is_empty(), "line_starts always has at least element 0");
+    debug_assert!(
+        !line_starts.is_empty(),
+        "line_starts always has at least element 0"
+    );
     let clamped = byte_offset.min(text.len());
     // Largest line-start ≤ clamped. partition_point returns the
     // first index where `start > clamped`, so the row index is

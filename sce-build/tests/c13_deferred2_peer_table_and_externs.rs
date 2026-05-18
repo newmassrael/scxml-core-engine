@@ -18,8 +18,8 @@
 //!      `target_plugin` entry. Lives at the orchestrator level
 //!      where target-plugin loading converges with the baseline.
 
-use sce_build::forge::target_plugin::PluginSymbol;
 use sce_build::forge::intrinsic_registry::Abi;
+use sce_build::forge::target_plugin::PluginSymbol;
 use sce_build::mesh::deploy::{parse_deploy_str, validate_stateless_accept_externs};
 use sce_build::mesh::error::DeployError;
 

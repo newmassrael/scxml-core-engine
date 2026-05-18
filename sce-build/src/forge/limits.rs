@@ -54,9 +54,8 @@ mod tests {
     /// without the other) trips this test before any backend can drift.
     #[test]
     fn c_header_matches_rust_constant() {
-        const C_HEADER: &str = include_str!(
-            "../../../sce-forge-runtime/c/include/sce/forge/limits.h"
-        );
+        const C_HEADER: &str =
+            include_str!("../../../sce-forge-runtime/c/include/sce/forge/limits.h");
 
         let line = C_HEADER
             .lines()

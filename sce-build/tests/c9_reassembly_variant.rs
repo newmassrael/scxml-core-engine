@@ -55,10 +55,7 @@ fn label(name: &'static str) -> DocumentLabel<'static> {
 fn parse(content: &str, name: &'static str) -> Result<BufferPoolModel, Located<ForgeError>> {
     match parse_forge(content, label(name))? {
         Some(ForgeDocument::BufferPool(p)) => Ok(p),
-        Some(other) => panic!(
-            "expected ForgeDocument::BufferPool, got {:?}",
-            other.kind()
-        ),
+        Some(other) => panic!("expected ForgeDocument::BufferPool, got {:?}", other.kind()),
         None => panic!("statechart routed through forge entry — fixture mis-tagged?"),
     }
 }
@@ -289,8 +286,7 @@ fn variant_unknown_body_text_rejects() {
   <sce:cache-policy>maintain</sce:cache-policy>
   <sce:variant>tx_only</sce:variant>
 </scxml>"##;
-    let err =
-        parse(xml, "rx_pool_sram1").expect_err("unknown <sce:variant> body text rejects");
+    let err = parse(xml, "rx_pool_sram1").expect_err("unknown <sce:variant> body text rejects");
     let ForgeError::Validation(ValidationError::InvalidAttribute {
         element,
         value,
@@ -331,8 +327,7 @@ fn reassembly_max_fragments_zero_rejects() {
   <sce:reassembly-timeout-ms>500</sce:reassembly-timeout-ms>
   <sce:per-peer-quota>2</sce:per-peer-quota>
 </scxml>"##;
-    let err = parse(xml, "rx_reassembly_pool")
-        .expect_err("zero max-fragments-per-message rejects");
+    let err = parse(xml, "rx_reassembly_pool").expect_err("zero max-fragments-per-message rejects");
     // XSD's xs:positiveInteger refuses `0` before the parser runs. The
     // surface is XmlSchemaValidation rather than ValidationError —
     // matches the existing slot-count/slot-size/alignment zero
@@ -353,14 +348,14 @@ fn reassembly_max_fragments_zero_rejects() {
 /// `c6_bounded_collection.rs::closed_enum_drift_guard` precedent.
 #[test]
 fn c9_alpha_codes_serialize_as_spec_paths() {
-    let rendered = serde_json::to_string(
-        &DiagnosticCode::MemReassemblyPoolVariantMissingMaxFragments,
-    )
-    .expect("serde-serialize");
-    assert_eq!(rendered, "\"mem/reassembly-pool-variant-missing-max-fragments\"");
-    let rendered = serde_json::to_string(
-        &DiagnosticCode::MemReassemblyPoolVariantMissingTimeout,
-    )
-    .expect("serde-serialize");
+    let rendered =
+        serde_json::to_string(&DiagnosticCode::MemReassemblyPoolVariantMissingMaxFragments)
+            .expect("serde-serialize");
+    assert_eq!(
+        rendered,
+        "\"mem/reassembly-pool-variant-missing-max-fragments\""
+    );
+    let rendered = serde_json::to_string(&DiagnosticCode::MemReassemblyPoolVariantMissingTimeout)
+        .expect("serde-serialize");
     assert_eq!(rendered, "\"mem/reassembly-pool-variant-missing-timeout\"");
 }

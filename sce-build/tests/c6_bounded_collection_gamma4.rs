@@ -159,7 +159,8 @@ fn c11_happy_compile_const_no_index_by() {
     // pre-C7-lowering the BC C11 template referenced `<element_pascal>`
     // which has no codec-side typedef, making gcc compilation fail
     // silently under the text-only foundation tests).
-    assert!(code.contains("typedef struct {\n    subscription_entry_t slots[LOCAL_SUB_TABLE_CAPACITY];"));
+    assert!(code
+        .contains("typedef struct {\n    subscription_entry_t slots[LOCAL_SUB_TABLE_CAPACITY];"));
     assert!(code.contains("uint32_t generation[LOCAL_SUB_TABLE_CAPACITY];"));
     assert!(code.contains("uint32_t bitmap[LOCAL_SUB_TABLE_BITMAP_WORDS];"));
     assert!(code.contains("uint32_t count;\n} local_sub_table_t;"));
@@ -263,7 +264,9 @@ fn c11_overflow_oldest_wins_evicts() {
         "oldest-wins must overwrite slot 0"
     );
     assert!(
-        code.contains("self->generation[0] = (self->generation[0] + 1u) & LOCAL_SUB_TABLE_GEN_MASK;"),
+        code.contains(
+            "self->generation[0] = (self->generation[0] + 1u) & LOCAL_SUB_TABLE_GEN_MASK;"
+        ),
         "oldest-wins must increment slot 0's generation counter"
     );
 }
@@ -310,9 +313,7 @@ fn go_happy_compile_const_no_index_by() {
 
     // Package + cross-package element-type import (qualified path).
     assert!(code.contains("package local_sub_table"));
-    assert!(code.contains(&format!(
-        "\"{GO_PREFIX}/subscription_entry\""
-    )));
+    assert!(code.contains(&format!("\"{GO_PREFIX}/subscription_entry\"")));
 
     // Capacity literal.
     assert!(code.contains("const LocalSubTableCapacity = 8"));
@@ -322,7 +323,9 @@ fn go_happy_compile_const_no_index_by() {
     assert!(code.contains("type LocalSubTableHandle uint32"));
     assert!(code.contains("func (h LocalSubTableHandle) Slot() uint32 {"));
     assert!(code.contains("func (h LocalSubTableHandle) Generation() uint32 {"));
-    assert!(code.contains("func NewLocalSubTableHandle(slot, generation uint32) LocalSubTableHandle {"));
+    assert!(
+        code.contains("func NewLocalSubTableHandle(slot, generation uint32) LocalSubTableHandle {")
+    );
     assert!(code.contains("const LocalSubTableSlotBits uint32 = 16"));
     assert!(code.contains("const LocalSubTableGenBits uint32 = 16"));
 
@@ -463,9 +466,7 @@ fn go_use_after_remove_branches_present() {
         occurrences >= 2,
         "expected generation check in both Remove() and Get() (>= 2); found {occurrences}"
     );
-    assert!(code.contains(
-        "t.generation[slot] = (t.generation[slot] + 1) & LocalSubTableGenMask"
-    ));
+    assert!(code.contains("t.generation[slot] = (t.generation[slot] + 1) & LocalSubTableGenMask"));
 }
 
 #[test]
@@ -538,13 +539,12 @@ fn python_happy_compile_const_no_index_by() {
     assert!(code.contains("__slots__ = (\"_slots\", \"_generation\", \"_occupied\", \"_count\")"));
 
     // Q-γ4-Python-overflow-emit (a): Optional[Handle] (None on reject).
-    assert!(code.contains(
-        "def insert(self, elem: SubscriptionEntry) -> Optional[LocalSubTableHandle]:"
-    ));
+    assert!(code
+        .contains("def insert(self, elem: SubscriptionEntry) -> Optional[LocalSubTableHandle]:"));
     assert!(code.contains("def remove(self, handle: LocalSubTableHandle) -> bool:"));
-    assert!(code.contains(
-        "def get(self, handle: LocalSubTableHandle) -> Optional[SubscriptionEntry]:"
-    ));
+    assert!(
+        code.contains("def get(self, handle: LocalSubTableHandle) -> Optional[SubscriptionEntry]:")
+    );
     assert!(code.contains("def __iter__(self) -> Iterator[SubscriptionEntry]:"));
     assert!(code.contains("def for_each(self, fn: Callable[[SubscriptionEntry], None]) -> None:"));
 
@@ -574,9 +574,7 @@ fn python_happy_compile_const_with_index_by() {
 
     // find_by_index with int key (python_type(Uint32) = "int").
     assert!(
-        code.contains(
-            "def find_by_index(self, key: int) -> Optional[LocalSubTableHandle]:"
-        ),
+        code.contains("def find_by_index(self, key: int) -> Optional[LocalSubTableHandle]:"),
         "expected find_by_index(key: int); got:\n{code}"
     );
     // Snake_case field reference (matches Python codec's snake_case emit).
@@ -660,9 +658,7 @@ fn python_use_after_remove_branches_present() {
         occurrences >= 2,
         "expected generation check in both remove() and get() (>= 2); found {occurrences}"
     );
-    assert!(code.contains(
-        "self._gen_set(slot, (self._gen_get(slot) + 1) & _GEN_MASK)"
-    ));
+    assert!(code.contains("self._gen_set(slot, (self._gen_get(slot) + 1) & _GEN_MASK)"));
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -842,9 +838,7 @@ fn procedure_element_type_all_six_backends() {
     let py_body = extract_bc(&py_outputs);
     assert!(py_body.contains("from .frame_record import FrameRecord"));
     assert!(
-        py_body.contains(
-            "def find_by_index(self, key: int) -> Optional[ReassemblyTableHandle]:"
-        )
+        py_body.contains("def find_by_index(self, key: int) -> Optional[ReassemblyTableHandle]:")
     );
 
     // Cpp (γ3 sanity): const uint64_t& key.
@@ -858,9 +852,8 @@ fn procedure_element_type_all_six_backends() {
     )
     .expect("cpp codegen");
     let cpp_body = extract_bc(&cpp_outputs);
-    assert!(cpp_body.contains(
-        "std::optional<ReassemblyTableHandle> find_by_index(const uint64_t& key) const"
-    ));
+    assert!(cpp_body
+        .contains("std::optional<ReassemblyTableHandle> find_by_index(const uint64_t& key) const"));
 
     // Kotlin (γ3 sanity): findByIndex(key: ULong).
     let kt_outputs = compile_scxml_with_imports(

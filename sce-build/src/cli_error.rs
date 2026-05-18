@@ -41,13 +41,22 @@ pub enum CliError {
     UnsupportedLanguage { lang: String },
 
     #[error("Cannot read {path}: {source}")]
-    ReadInput { path: String, source: std::io::Error },
+    ReadInput {
+        path: String,
+        source: std::io::Error,
+    },
 
     #[error("Cannot write {path}: {source}")]
-    WriteOutput { path: String, source: std::io::Error },
+    WriteOutput {
+        path: String,
+        source: std::io::Error,
+    },
 
     #[error("Cannot create output directory {path}: {source}")]
-    CreateOutputDir { path: String, source: std::io::Error },
+    CreateOutputDir {
+        path: String,
+        source: std::io::Error,
+    },
 
     #[error("{stage}: {detail}")]
     ScxmlGenerate { stage: &'static str, detail: String },

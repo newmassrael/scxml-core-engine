@@ -253,7 +253,10 @@ impl TargetStateView {
         use crate::mesh::topology::TransportState;
         match state {
             TransportState::Local => Self::Local,
-            TransportState::Shm { arena_bytes, ring_capacity } => Self::Shm {
+            TransportState::Shm {
+                arena_bytes,
+                ring_capacity,
+            } => Self::Shm {
                 arena_bytes: *arena_bytes,
                 ring_capacity: *ring_capacity,
             },
@@ -457,7 +460,10 @@ fn event_ids_to_template(
             None,
             None,
         ),
-        SomeipEventIds::EventGroup { event_group_id, event_id } => (
+        SomeipEventIds::EventGroup {
+            event_group_id,
+            event_id,
+        } => (
             Some("event_group"),
             None,
             Some(fmt_someip_id(event_group_id)),
@@ -644,9 +650,7 @@ struct ServerEventgroupContext {
 }
 
 /// Build a [`ServerContext`] from a resolved [`super::topology::ServerBinding`].
-fn build_server_context(
-    binding: &super::topology::ServerBinding,
-) -> ServerContext {
+fn build_server_context(binding: &super::topology::ServerBinding) -> ServerContext {
     use crate::mesh::pattern::SomeipFieldKind;
     use crate::mesh::topology::{FieldAccessKind, SomeipEventIds, TransportState};
 
@@ -978,9 +982,9 @@ fn classify_pool_rpc_client_conflict(
     if has_mesh_rpc_client {
         return Some(RpcClientKind::MeshRpc);
     }
-    let has_someip_rpc_request_client = target_contexts.iter().any(|t| {
-        t.has_rpc && matches!(t.state, TargetStateView::Someip { .. })
-    });
+    let has_someip_rpc_request_client = target_contexts
+        .iter()
+        .any(|t| t.has_rpc && matches!(t.state, TargetStateView::Someip { .. }));
     if has_someip_rpc_request_client {
         return Some(RpcClientKind::SomeipRpcRequest);
     }
@@ -1070,8 +1074,7 @@ fn generate_cpp_mesh(
         .iter()
         .map(|t| {
             let stripped = t.target.name();
-            let desc = transport::lookup(t.state.transport_name())
-                .expect("transport validated");
+            let desc = transport::lookup(t.state.transport_name()).expect("transport validated");
 
             // Per-event SOME/IP IDs live inside `TransportState::Someip`.
             // Non-someip variants have no per-event ID map, so the lookup
@@ -1100,8 +1103,9 @@ fn generate_cpp_mesh(
                     // EventUnsubscribe shares the same event_id as its
                     // paired EventSubscribe. A second register_message_handler
                     // on the same triple silently replaces the first in vsomeip.
-                    let skip_receive_handler = CommunicationPattern::from_wire(ep.pattern_kind_value)
-                        == Some(CommunicationPattern::Unsubscribe);
+                    let skip_receive_handler =
+                        CommunicationPattern::from_wire(ep.pattern_kind_value)
+                            == Some(CommunicationPattern::Unsubscribe);
                     EventPatternContext {
                         event: ep.event.clone(),
                         event_const: event_to_const_suffix(&ep.event),
@@ -1337,13 +1341,15 @@ fn generate_cpp_mesh(
     // empty so the template treats "no someip config" and "someip config
     // without application_name" identically — both fall back to the
     // synthetic `<machine>_<target>` name.
-    let someip_transport =
-        someip_config.map(SomeipTransportContext::from_config).filter(|s| !s.is_empty());
+    let someip_transport = someip_config
+        .map(SomeipTransportContext::from_config)
+        .filter(|s| !s.is_empty());
 
     // custom_tcp device-shared listen endpoint. Pure-client devices have
     // no `listen:` key and the template renders only client-side code.
-    let custom_tcp_transport =
-        custom_tcp_config.map(CustomTcpTransportContext::from_config).filter(|s| !s.is_empty());
+    let custom_tcp_transport = custom_tcp_config
+        .map(CustomTcpTransportContext::from_config)
+        .filter(|s| !s.is_empty());
 
     let machine_pascal = filters::to_pascal_case(machine_name.to_string());
 
@@ -1437,8 +1443,7 @@ fn generate_cpp_mesh(
             })
         })
         .collect();
-    let mut wire21_outbound_unique_dests_map: BTreeMap<String, serde_json::Value> =
-        BTreeMap::new();
+    let mut wire21_outbound_unique_dests_map: BTreeMap<String, serde_json::Value> = BTreeMap::new();
     for (_parallel_id, dst_partition) in partition_wire21_outbound {
         wire21_outbound_unique_dests_map
             .entry(dst_partition.clone())
@@ -1489,8 +1494,7 @@ fn generate_cpp_mesh(
     let someip_invoke_service_id_self: Option<u16> =
         someip_invoke_service_ids.get(machine_name).copied();
     let someip_invoke_service_ids_peers: Vec<serde_json::Value> = {
-        let mut peer_names: std::collections::BTreeSet<&str> =
-            std::collections::BTreeSet::new();
+        let mut peer_names: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
         for peer in scxml_remote_outbound_peers
             .iter()
             .chain(scxml_remote_inbound_peers.iter())
@@ -1502,15 +1506,13 @@ fn generate_cpp_mesh(
         peer_names
             .into_iter()
             .filter_map(|name| {
-                someip_invoke_service_ids
-                    .get(name)
-                    .map(|sid| {
-                        serde_json::json!({
-                            "name": name,
-                            "name_upper": name.to_ascii_uppercase(),
-                            "service_id_hex": format!("{sid:#06x}"),
-                        })
+                someip_invoke_service_ids.get(name).map(|sid| {
+                    serde_json::json!({
+                        "name": name,
+                        "name_upper": name.to_ascii_uppercase(),
+                        "service_id_hex": format!("{sid:#06x}"),
                     })
+                })
             })
             .collect()
     };
@@ -1526,13 +1528,12 @@ fn generate_cpp_mesh(
     // per entry (`SCE_LIVENESS_SERVICE_PEER_<sibling_partition_upper>`)
     // and a single `SCE_LIVENESS_SERVICE_SELF`. Disjoint from F.X-1
     // invoke IDs by sub-range partitioning ([0x8180, 0x81FF]).
-    let someip_liveness_service_id_self_hex: Option<String> =
-        partition_self_name.and_then(|p| {
-            let key = format!("{machine_name}__P__{p}");
-            someip_liveness_service_ids
-                .get(&key)
-                .map(|sid| format!("{sid:#06x}"))
-        });
+    let someip_liveness_service_id_self_hex: Option<String> = partition_self_name.and_then(|p| {
+        let key = format!("{machine_name}__P__{p}");
+        someip_liveness_service_ids
+            .get(&key)
+            .map(|sid| format!("{sid:#06x}"))
+    });
     let someip_liveness_service_ids_peers: Vec<serde_json::Value> = {
         let self_key = partition_self_name
             .map(|p| format!("{machine_name}__P__{p}"))
@@ -1761,7 +1762,10 @@ mod tests {
             config: None,
         };
         let j = ZenohSessionJson5::from_config(&cfg);
-        assert_eq!(j.connect.as_deref(), Some(r#""[\"tcp/192.168.1.1:7447\"]""#));
+        assert_eq!(
+            j.connect.as_deref(),
+            Some(r#""[\"tcp/192.168.1.1:7447\"]""#)
+        );
     }
 
     #[test]
@@ -1784,9 +1788,7 @@ mod tests {
         let mut prev_backslash = false;
         for (i, c) in interior.char_indices() {
             if c == '"' && !prev_backslash {
-                panic!(
-                    "unescaped \" at position {i} in literal: {literal:?}"
-                );
+                panic!("unescaped \" at position {i} in literal: {literal:?}");
             }
             prev_backslash = c == '\\' && !prev_backslash;
         }
@@ -1816,7 +1818,10 @@ mod tests {
 
     fn someip_state(extra: HashMap<String, serde_yaml_ng::Value>) -> TransportState {
         TransportState::Someip {
-            service: SomeipServiceIds { service_id: 0x0001, instance_id: 0x0001 },
+            service: SomeipServiceIds {
+                service_id: 0x0001,
+                instance_id: 0x0001,
+            },
             event_bindings: BTreeMap::<String, SomeipEventIds>::new(),
             extra,
         }
@@ -1920,9 +1925,17 @@ mod tests {
             key: "k".into(),
             extra: HashMap::new(),
         };
-        assert!(!compute_needs_ordering(&zenoh, false, OrderingRequirement::None));
+        assert!(!compute_needs_ordering(
+            &zenoh,
+            false,
+            OrderingRequirement::None
+        ));
         let someip = someip_state(HashMap::new());
-        assert!(!compute_needs_ordering(&someip, false, OrderingRequirement::None));
+        assert!(!compute_needs_ordering(
+            &someip,
+            false,
+            OrderingRequirement::None
+        ));
     }
 
     #[test]
@@ -1933,7 +1946,11 @@ mod tests {
             key: "k".into(),
             extra: HashMap::new(),
         };
-        assert!(compute_needs_ordering(&state, false, OrderingRequirement::Required));
+        assert!(compute_needs_ordering(
+            &state,
+            false,
+            OrderingRequirement::Required
+        ));
     }
 
     #[test]
@@ -1941,12 +1958,20 @@ mod tests {
         // Default SOME/IP (no protocol key or explicit udp) → UDP →
         // needs runtime buffer.
         let state = someip_state(HashMap::new());
-        assert!(compute_needs_ordering(&state, false, OrderingRequirement::Required));
+        assert!(compute_needs_ordering(
+            &state,
+            false,
+            OrderingRequirement::Required
+        ));
 
         let mut udp_extra = HashMap::new();
         udp_extra.insert("protocol".to_string(), yaml_str("udp"));
         let state_udp = someip_state(udp_extra);
-        assert!(compute_needs_ordering(&state_udp, false, OrderingRequirement::Required));
+        assert!(compute_needs_ordering(
+            &state_udp,
+            false,
+            OrderingRequirement::Required
+        ));
     }
 
     #[test]
@@ -1956,7 +1981,11 @@ mod tests {
         let mut extra = HashMap::new();
         extra.insert("protocol".to_string(), yaml_str("tcp"));
         let state = someip_state(extra);
-        assert!(!compute_needs_ordering(&state, false, OrderingRequirement::Required));
+        assert!(!compute_needs_ordering(
+            &state,
+            false,
+            OrderingRequirement::Required
+        ));
     }
 
     #[test]
@@ -1967,7 +1996,11 @@ mod tests {
         let mut extra = HashMap::new();
         extra.insert("protocol".to_string(), yaml_str("sctp"));
         let state = someip_state(extra);
-        assert!(compute_needs_ordering(&state, false, OrderingRequirement::Required));
+        assert!(compute_needs_ordering(
+            &state,
+            false,
+            OrderingRequirement::Required
+        ));
     }
 
     #[test]
@@ -1988,7 +2021,11 @@ mod tests {
             connect: "127.0.0.1:9000".into(),
             extra: HashMap::new(),
         };
-        assert!(!compute_needs_ordering(&state, true, OrderingRequirement::Required));
+        assert!(!compute_needs_ordering(
+            &state,
+            true,
+            OrderingRequirement::Required
+        ));
     }
 
     #[test]
@@ -1998,7 +2035,11 @@ mod tests {
             arena_bytes: None,
             ring_capacity: None,
         };
-        assert!(!compute_needs_ordering(&state, true, OrderingRequirement::Required));
+        assert!(!compute_needs_ordering(
+            &state,
+            true,
+            OrderingRequirement::Required
+        ));
     }
 
     // ── classify_pool_rpc_client_conflict (SCE_MESH.md §10.9 invariant 8) ─────

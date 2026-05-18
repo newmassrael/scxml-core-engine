@@ -118,14 +118,20 @@ mod tests {
     #[test]
     fn is_internal_matches_w3c_reserved() {
         for t in ["#_parent", "#_child", "#_internal", "#_scxml_"] {
-            assert!(TargetId::new(t).unwrap().is_internal(), "{t} should be internal");
+            assert!(
+                TargetId::new(t).unwrap().is_internal(),
+                "{t} should be internal"
+            );
         }
     }
 
     #[test]
     fn is_internal_rejects_user_targets() {
         for t in ["#motor", "#display", "#logger", "#_parentX"] {
-            assert!(!TargetId::new(t).unwrap().is_internal(), "{t} should not be internal");
+            assert!(
+                !TargetId::new(t).unwrap().is_internal(),
+                "{t} should not be internal"
+            );
         }
     }
 
@@ -148,7 +154,12 @@ mod tests {
         let mut m: HashMap<TargetId, u32> = HashMap::new();
         m.insert(TargetId::new("#motor").unwrap(), 1);
         let yaml = serde_yaml_ng::to_string(&m).unwrap();
-        assert!(yaml.contains("'#motor': 1") || yaml.contains("\"#motor\": 1") || yaml.contains("#motor: 1"), "yaml was: {yaml}");
+        assert!(
+            yaml.contains("'#motor': 1")
+                || yaml.contains("\"#motor\": 1")
+                || yaml.contains("#motor: 1"),
+            "yaml was: {yaml}"
+        );
     }
 
     #[test]

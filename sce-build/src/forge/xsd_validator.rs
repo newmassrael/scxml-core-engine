@@ -186,27 +186,23 @@ fn cached_schema_path() -> Option<&'static Path> {
 /// natural ordering (top of file to bottom).
 pub fn validate(xml_text: &str, source_label: &str, schema_path: &Path) -> Result<(), XsdErrors> {
     let xml_parser = Parser::default();
-    let doc = xml_parser
-        .parse_string(xml_text)
-        .map_err(|e| XsdErrors {
-            source_label: source_label.to_string(),
-            diagnostics: vec![XsdDiag {
-                line: None,
-                col: None,
-                message: format!("XML parse error: {e}"),
-            }],
-        })?;
+    let doc = xml_parser.parse_string(xml_text).map_err(|e| XsdErrors {
+        source_label: source_label.to_string(),
+        diagnostics: vec![XsdDiag {
+            line: None,
+            col: None,
+            message: format!("XML parse error: {e}"),
+        }],
+    })?;
 
-    let schema_path_str = schema_path
-        .to_str()
-        .ok_or_else(|| XsdErrors {
-            source_label: source_label.to_string(),
-            diagnostics: vec![XsdDiag {
-                line: None,
-                col: None,
-                message: format!("schema path is not valid UTF-8: {schema_path:?}"),
-            }],
-        })?;
+    let schema_path_str = schema_path.to_str().ok_or_else(|| XsdErrors {
+        source_label: source_label.to_string(),
+        diagnostics: vec![XsdDiag {
+            line: None,
+            col: None,
+            message: format!("schema path is not valid UTF-8: {schema_path:?}"),
+        }],
+    })?;
 
     let mut schema_parser = SchemaParserContext::from_file(schema_path_str);
     let mut schema_ctx =
@@ -244,7 +240,9 @@ fn format_error(err: &libxml::error::StructuredError) -> XsdDiag {
         .trim_end_matches('\n')
         .to_string();
     XsdDiag {
-        line: err.line.and_then(|l| if l > 0 { u32::try_from(l).ok() } else { None }),
+        line: err
+            .line
+            .and_then(|l| if l > 0 { u32::try_from(l).ok() } else { None }),
         // libxml2's StructuredError exposes column only on parse
         // errors, not schema violations; fall through as None rather
         // than probe an unreliable field.
@@ -328,7 +326,10 @@ mod tests {
     fn bad_kind_is_rejected_with_enum_error() {
         let err = validate(BAD_KIND, "bad_kind.scxml", &schema()).unwrap_err();
         let combined = err.to_string();
-        assert!(combined.contains("bad_kind.scxml"), "filename in error: {combined}");
+        assert!(
+            combined.contains("bad_kind.scxml"),
+            "filename in error: {combined}"
+        );
         assert!(combined.contains("not_a_kind"), "value cited: {combined}");
         assert!(combined.contains("kind"), "attribute cited: {combined}");
     }
@@ -345,7 +346,10 @@ mod tests {
     fn bad_direction_is_rejected() {
         let err = validate(BAD_DIRECTION, "bad_direction.scxml", &schema()).unwrap_err();
         let combined = err.to_string();
-        assert!(combined.contains("direction"), "attribute cited: {combined}");
+        assert!(
+            combined.contains("direction"),
+            "attribute cited: {combined}"
+        );
         assert!(combined.contains("sideways"), "value cited: {combined}");
     }
 

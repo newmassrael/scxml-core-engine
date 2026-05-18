@@ -144,12 +144,12 @@ fn fixture_b_driver_refs_absent_byte_stable_with_existing_fixtures() {
     // any stray `#include` line that wasn't there before.
     let extraneous = sm_c
         .lines()
-        .filter(|line| {
-            line.trim_start().starts_with("#include")
-                && line.contains("hal.h")
-        })
+        .filter(|line| line.trim_start().starts_with("#include") && line.contains("hal.h"))
         .count();
-    assert_eq!(extraneous, 0, "baseline fixture must not gain driver-side #include lines");
+    assert_eq!(
+        extraneous, 0,
+        "baseline fixture must not gain driver-side #include lines"
+    );
 }
 
 #[test]
@@ -262,9 +262,7 @@ topology:
 
     let sm_c = outputs
         .iter()
-        .find_map(|(_basename, out)| {
-            out.files.iter().find(|(name, _)| name.ends_with("_sm.c"))
-        })
+        .find_map(|(_basename, out)| out.files.iter().find(|(name, _)| name.ends_with("_sm.c")))
         .map(|(_, body)| body.clone())
         .expect("orchestrator emits a *_sm.c for the C11 fixture");
 
@@ -272,10 +270,7 @@ topology:
         sm_c.contains("__attribute__((section(\".app_code\")))"),
         "SCE_SM_FN macro definition must carry the requested section name. \
          Excerpt:\n{}",
-        sm_c.lines()
-            .take(80)
-            .collect::<Vec<_>>()
-            .join("\n"),
+        sm_c.lines().take(80).collect::<Vec<_>>().join("\n"),
     );
     assert!(
         sm_c.contains("SCE_SM_FN"),
@@ -283,10 +278,7 @@ topology:
          least once (the macro itself is referenced inside its own \
          `#define`, so this assertion is byte-weak; the next assertion \
          counts emit sites). Excerpt:\n{}",
-        sm_c.lines()
-            .take(80)
-            .collect::<Vec<_>>()
-            .join("\n"),
+        sm_c.lines().take(80).collect::<Vec<_>>().join("\n"),
     );
     let fn_prefix_count = sm_c.matches("SCE_SM_FN").count();
     assert!(

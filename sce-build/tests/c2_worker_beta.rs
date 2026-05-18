@@ -53,8 +53,7 @@ fn link_fixture() -> &'static str {
 /// refs are parser-validated only (presence + format).
 fn build_workspace() -> tempfile::TempDir {
     let dir = tempdir().expect("tempdir");
-    fs::write(dir.path().join("udp_scout.scxml"), link_fixture())
-        .expect("write link");
+    fs::write(dir.path().join("udp_scout.scxml"), link_fixture()).expect("write link");
     dir
 }
 
@@ -112,31 +111,55 @@ fn happy_worker_rust_emits_inbox_producer_consumer_split() {
     .expect("happy worker Rust compile");
     let (_, code) = out.files.first().expect("at least one file");
     // Surface assertions on the emitted template structure.
-    assert!(code.contains("pub const DEPTH: usize = 16;"),
-        "DEPTH const missing:\n{code}");
-    assert!(code.contains(r#"pub const ORDERING: &'static str = "acq_rel";"#),
-        "ORDERING const missing:\n{code}");
-    assert!(code.contains(r#"pub const LINK_RX: &'static str = "udp_scout";"#),
-        "LINK_RX const missing:\n{code}");
-    assert!(code.contains(r#"pub const OUTBOX: &'static str = "session_fsm.inbox";"#),
-        "OUTBOX const missing:\n{code}");
-    assert!(code.contains("pub struct RxLoopInbox<E>"),
-        "Inbox struct missing:\n{code}");
-    assert!(code.contains("pub struct RxLoopProducer<'a, E>"),
-        "Producer struct missing:\n{code}");
-    assert!(code.contains("pub struct RxLoopConsumer<'a, E>"),
-        "Consumer struct missing:\n{code}");
-    assert!(code.contains("fn try_push(&mut self, event: E) -> Result<(), E>"),
-        "try_push missing:\n{code}");
-    assert!(code.contains("fn try_pop(&mut self) -> Option<E>"),
-        "try_pop missing:\n{code}");
+    assert!(
+        code.contains("pub const DEPTH: usize = 16;"),
+        "DEPTH const missing:\n{code}"
+    );
+    assert!(
+        code.contains(r#"pub const ORDERING: &'static str = "acq_rel";"#),
+        "ORDERING const missing:\n{code}"
+    );
+    assert!(
+        code.contains(r#"pub const LINK_RX: &'static str = "udp_scout";"#),
+        "LINK_RX const missing:\n{code}"
+    );
+    assert!(
+        code.contains(r#"pub const OUTBOX: &'static str = "session_fsm.inbox";"#),
+        "OUTBOX const missing:\n{code}"
+    );
+    assert!(
+        code.contains("pub struct RxLoopInbox<E>"),
+        "Inbox struct missing:\n{code}"
+    );
+    assert!(
+        code.contains("pub struct RxLoopProducer<'a, E>"),
+        "Producer struct missing:\n{code}"
+    );
+    assert!(
+        code.contains("pub struct RxLoopConsumer<'a, E>"),
+        "Consumer struct missing:\n{code}"
+    );
+    assert!(
+        code.contains("fn try_push(&mut self, event: E) -> Result<(), E>"),
+        "try_push missing:\n{code}"
+    );
+    assert!(
+        code.contains("fn try_pop(&mut self) -> Option<E>"),
+        "try_pop missing:\n{code}"
+    );
     // acq_rel ordering selects Acquire/Release atomic ops.
-    assert!(code.contains("const HEAD_LOAD_ORD: Ordering = Ordering::Acquire;"),
-        "Acquire head load missing:\n{code}");
-    assert!(code.contains("const TAIL_STORE_ORD: Ordering = Ordering::Release;"),
-        "Release tail store missing:\n{code}");
-    assert!(!code.contains("Ordering::Relaxed"),
-        "Relaxed ordering must NOT appear in acq_rel template output:\n{code}");
+    assert!(
+        code.contains("const HEAD_LOAD_ORD: Ordering = Ordering::Acquire;"),
+        "Acquire head load missing:\n{code}"
+    );
+    assert!(
+        code.contains("const TAIL_STORE_ORD: Ordering = Ordering::Release;"),
+        "Release tail store missing:\n{code}"
+    );
+    assert!(
+        !code.contains("Ordering::Relaxed"),
+        "Relaxed ordering must NOT appear in acq_rel template output:\n{code}"
+    );
 }
 
 #[test]
@@ -151,17 +174,27 @@ fn happy_worker_rust_relaxed_ordering_emits_relaxed_ops() {
     )
     .expect("happy relaxed worker Rust compile");
     let (_, code) = out.files.first().expect("at least one file");
-    assert!(code.contains(r#"pub const ORDERING: &'static str = "relaxed";"#),
-        "ORDERING relaxed const missing:\n{code}");
-    assert!(code.contains("const HEAD_LOAD_ORD: Ordering = Ordering::Relaxed;"),
-        "Relaxed head load missing:\n{code}");
-    assert!(code.contains("const TAIL_STORE_ORD: Ordering = Ordering::Relaxed;"),
-        "Relaxed tail store missing:\n{code}");
-    assert!(!code.contains("Ordering::Acquire"),
-        "Acquire must NOT appear in relaxed template output:\n{code}");
+    assert!(
+        code.contains(r#"pub const ORDERING: &'static str = "relaxed";"#),
+        "ORDERING relaxed const missing:\n{code}"
+    );
+    assert!(
+        code.contains("const HEAD_LOAD_ORD: Ordering = Ordering::Relaxed;"),
+        "Relaxed head load missing:\n{code}"
+    );
+    assert!(
+        code.contains("const TAIL_STORE_ORD: Ordering = Ordering::Relaxed;"),
+        "Relaxed tail store missing:\n{code}"
+    );
+    assert!(
+        !code.contains("Ordering::Acquire"),
+        "Acquire must NOT appear in relaxed template output:\n{code}"
+    );
     // Outbox absent → no OUTBOX const emitted.
-    assert!(!code.contains("pub const OUTBOX:"),
-        "OUTBOX const must be elided when outbox absent:\n{code}");
+    assert!(
+        !code.contains("pub const OUTBOX:"),
+        "OUTBOX const must be elided when outbox absent:\n{code}"
+    );
 }
 
 // ─── Happy: C11 dual-emit (.h + .c sibling) ──────────────────────────
@@ -189,33 +222,57 @@ fn happy_worker_c11_emits_header_and_impl_sibling() {
     let header = header.expect("rx_loop.h emitted");
     let source = source.expect("rx_loop.c emitted");
     // Header shape:
-    assert!(header.contains("#define RX_LOOP_INBOX_DEPTH ((size_t)32)"),
-        "DEPTH macro missing in .h:\n{header}");
-    assert!(header.contains(r#"#define RX_LOOP_INBOX_ORDERING "acq_rel""#),
-        "ORDERING macro missing:\n{header}");
-    assert!(header.contains(r#"#define RX_LOOP_LINK_RX "udp_scout""#),
-        "LINK_RX macro missing:\n{header}");
-    assert!(header.contains(r#"#define RX_LOOP_OUTBOX "session_fsm.inbox""#),
-        "OUTBOX macro missing:\n{header}");
-    assert!(header.contains("typedef struct rx_loop_inbox_producer_s rx_loop_inbox_producer_t;"),
-        "Producer typedef missing:\n{header}");
-    assert!(header.contains("typedef struct rx_loop_inbox_consumer_s rx_loop_inbox_consumer_t;"),
-        "Consumer typedef missing:\n{header}");
-    assert!(header.contains("bool rx_loop_inbox_try_push("),
-        "try_push prototype missing:\n{header}");
-    assert!(header.contains("bool rx_loop_inbox_try_pop("),
-        "try_pop prototype missing:\n{header}");
+    assert!(
+        header.contains("#define RX_LOOP_INBOX_DEPTH ((size_t)32)"),
+        "DEPTH macro missing in .h:\n{header}"
+    );
+    assert!(
+        header.contains(r#"#define RX_LOOP_INBOX_ORDERING "acq_rel""#),
+        "ORDERING macro missing:\n{header}"
+    );
+    assert!(
+        header.contains(r#"#define RX_LOOP_LINK_RX "udp_scout""#),
+        "LINK_RX macro missing:\n{header}"
+    );
+    assert!(
+        header.contains(r#"#define RX_LOOP_OUTBOX "session_fsm.inbox""#),
+        "OUTBOX macro missing:\n{header}"
+    );
+    assert!(
+        header.contains("typedef struct rx_loop_inbox_producer_s rx_loop_inbox_producer_t;"),
+        "Producer typedef missing:\n{header}"
+    );
+    assert!(
+        header.contains("typedef struct rx_loop_inbox_consumer_s rx_loop_inbox_consumer_t;"),
+        "Consumer typedef missing:\n{header}"
+    );
+    assert!(
+        header.contains("bool rx_loop_inbox_try_push("),
+        "try_push prototype missing:\n{header}"
+    );
+    assert!(
+        header.contains("bool rx_loop_inbox_try_pop("),
+        "try_pop prototype missing:\n{header}"
+    );
     // Source shape — acq_rel selects acquire/release variants of the
     // §5.I baseline atomic family.
-    assert!(source.contains("sce_atomic_load_acquire_u32"),
-        "acquire load missing in .c:\n{source}");
-    assert!(source.contains("sce_atomic_store_release_u32"),
-        "release store missing in .c:\n{source}");
-    assert!(!source.contains("sce_atomic_load_relaxed_u32(&g_head)")
+    assert!(
+        source.contains("sce_atomic_load_acquire_u32"),
+        "acquire load missing in .c:\n{source}"
+    );
+    assert!(
+        source.contains("sce_atomic_store_release_u32"),
+        "release store missing in .c:\n{source}"
+    );
+    assert!(
+        !source.contains("sce_atomic_load_relaxed_u32(&g_head)")
             && !source.contains("sce_atomic_load_relaxed_u32(&g_tail)"),
-        "relaxed atomic ops must NOT appear when ordering=acq_rel:\n{source}");
-    assert!(source.contains("static volatile uint32_t g_storage[RX_LOOP_INBOX_DEPTH]"),
-        "storage array missing in .c:\n{source}");
+        "relaxed atomic ops must NOT appear when ordering=acq_rel:\n{source}"
+    );
+    assert!(
+        source.contains("static volatile uint32_t g_storage[RX_LOOP_INBOX_DEPTH]"),
+        "storage array missing in .c:\n{source}"
+    );
 }
 
 #[test]
@@ -235,13 +292,19 @@ fn happy_worker_c11_relaxed_emits_relaxed_atomic_variants() {
         .find(|(name, _)| name == "rx_loop.c")
         .map(|(_, c)| c)
         .expect("rx_loop.c emitted");
-    assert!(source.contains("sce_atomic_load_relaxed_u32"),
-        "relaxed load missing in .c:\n{source}");
-    assert!(source.contains("sce_atomic_store_relaxed_u32"),
-        "relaxed store missing in .c:\n{source}");
-    assert!(!source.contains("sce_atomic_load_acquire_u32(&g_head)")
+    assert!(
+        source.contains("sce_atomic_load_relaxed_u32"),
+        "relaxed load missing in .c:\n{source}"
+    );
+    assert!(
+        source.contains("sce_atomic_store_relaxed_u32"),
+        "relaxed store missing in .c:\n{source}"
+    );
+    assert!(
+        !source.contains("sce_atomic_load_acquire_u32(&g_head)")
             && !source.contains("sce_atomic_load_acquire_u32(&g_tail)"),
-        "acquire variant must NOT appear in head/tail when ordering=relaxed:\n{source}");
+        "acquire variant must NOT appear in head/tail when ordering=relaxed:\n{source}"
+    );
 }
 
 // ─── Cross-ref negative: link-rx-ref-unknown ─────────────────────────
@@ -251,7 +314,12 @@ fn negative_link_rx_ref_not_imported_fires_diagnostic() {
     let ws = build_workspace();
     // link_rx points at "wrong_link" — no such kind=link import exists.
     let scxml = worker_xml("wrong_link", Some("session_fsm.inbox"), "acq_rel", 16);
-    let err = match compile(&scxml, Language::Rust, ws.path(), &ForgeCompileOptions::default()) {
+    let err = match compile(
+        &scxml,
+        Language::Rust,
+        ws.path(),
+        &ForgeCompileOptions::default(),
+    ) {
         Ok(_) => panic!("link-rx-ref-unknown must reject"),
         Err(e) => e,
     };
@@ -300,9 +368,7 @@ fn negative_inbox_missing_ordering_fires_diagnostic() {
         Err(e) => e,
     };
     match err {
-        ForgeError::Validation(ValidationError::WorkerInboxOrderingUnspecified {
-            worker_name,
-        }) => {
+        ForgeError::Validation(ValidationError::WorkerInboxOrderingUnspecified { worker_name }) => {
             assert_eq!(worker_name, "rx_loop");
         }
         other => panic!("expected WorkerInboxOrderingUnspecified, got {other:?}"),
@@ -358,8 +424,7 @@ fn relaxed_ordering_with_same_core_placement_passes() {
         }]),
         ..Default::default()
     };
-    compile(&scxml, Language::Rust, ws.path(), &options)
-        .expect("same-core relaxed must compile");
+    compile(&scxml, Language::Rust, ws.path(), &options).expect("same-core relaxed must compile");
 }
 
 #[test]
@@ -399,7 +464,12 @@ fn cross_ref_diagnostics_carry_replace_one_of_fix() {
     let ws = build_workspace();
     let scxml = worker_xml("missing_link", Some("ghost.inbox"), "acq_rel", 16);
     // GeneratedOutput lacks Debug; use match-on-Err pattern.
-    let err = match compile(&scxml, Language::Rust, ws.path(), &ForgeCompileOptions::default()) {
+    let err = match compile(
+        &scxml,
+        Language::Rust,
+        ws.path(),
+        &ForgeCompileOptions::default(),
+    ) {
         Ok(_) => panic!("link-rx-ref-unknown must reject (fires before outbox check)"),
         Err(e) => e,
     };
@@ -424,7 +494,12 @@ fn ordering_diagnostics_resolve_to_their_codes() {
   <sce:link-rx ref="udp_scout"/>
   <sce:inbox depth="16"/>
 </scxml>"##;
-    let err = match compile(scxml, Language::Rust, ws.path(), &ForgeCompileOptions::default()) {
+    let err = match compile(
+        scxml,
+        Language::Rust,
+        ws.path(),
+        &ForgeCompileOptions::default(),
+    ) {
         Ok(_) => panic!("inbox-ordering-unspecified must fire"),
         Err(e) => e,
     };

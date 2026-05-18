@@ -127,7 +127,11 @@ fn end_to_end_name_resolution_produces_numeric_constants() {
         .expect("compile_mesh_transport");
 
     // Exactly one generated mesh header for the brake machine.
-    assert_eq!(result.output.files.len(), 1, "one generated file per machine");
+    assert_eq!(
+        result.output.files.len(),
+        1,
+        "one generated file per machine"
+    );
     let (_name, code) = &result.output.files[0];
 
     // Verify the generated template embedded the resolved IDs. Hex
@@ -228,9 +232,7 @@ topology:
     let deploy_path = fx.write("deploy.yaml", deploy);
 
     let mut parser = sce_build::parser::SCXMLParser::new();
-    let mut model = parser
-        .parse_string(brake, "brake")
-        .expect("parse brake");
+    let mut model = parser.parse_string(brake, "brake").expect("parse brake");
     let result = sce_build::compile_mesh_transport(&mut model, &deploy_path, Language::Cpp)
         .expect("compile_mesh_transport");
     let (_name, code) = &result.output.files[0];
@@ -308,10 +310,8 @@ fn unresolved_method_name_fails_build_with_config_path() {
     fx.write("vsomeip.json", VSOMEIP_JSON);
     fx.write("brake.scxml", BRAKE_SCXML);
     fx.write("motor.scxml", MOTOR_SCXML);
-    let bad_deploy = deploy_with_names("vsomeip.json").replace(
-        "method: compute_force",
-        "method: nonexistent_method",
-    );
+    let bad_deploy = deploy_with_names("vsomeip.json")
+        .replace("method: compute_force", "method: nonexistent_method");
     let deploy_path = fx.write("deploy.yaml", &bad_deploy);
 
     let mut model = parse_brake();
@@ -332,7 +332,9 @@ fn unresolved_method_name_fails_build_with_config_path() {
                 "error must reference vsomeip.json path: {config_path}"
             );
             assert!(
-                missing.iter().any(|m| m.kind == "method" && m.name == "nonexistent_method"),
+                missing
+                    .iter()
+                    .any(|m| m.kind == "method" && m.name == "nonexistent_method"),
                 "missing entries should include the bad method: {missing:?}"
             );
         }
@@ -546,7 +548,9 @@ topology:
     };
     match err {
         MeshError::External(ExternalConfigError::ReservedSomeipIdKeys {
-            transport, fields, ..
+            transport,
+            fields,
+            ..
         }) => {
             assert_eq!(transport, "zenoh");
             assert_eq!(fields, vec!["method_id"]);
@@ -588,7 +592,9 @@ topology:
         Err(e) => e,
     };
     match err {
-        MeshError::External(ExternalConfigError::ReservedSomeipIdKeys { fields, target, .. }) => {
+        MeshError::External(ExternalConfigError::ReservedSomeipIdKeys {
+            fields, target, ..
+        }) => {
             assert_eq!(target, "#motor");
             assert!(fields.contains(&"service_id"));
             assert!(fields.contains(&"instance_id"));

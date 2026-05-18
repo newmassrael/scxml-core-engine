@@ -132,7 +132,9 @@ fn rust_get_by_slot_signature_and_boundary_checks() {
     assert!(code.contains("if !self.bit_is_set(slot)"));
     // No generation check — slot-based access bypasses the
     // use-after-remove guard.
-    let body_start = code.find("pub fn get_by_slot").expect("get_by_slot present");
+    let body_start = code
+        .find("pub fn get_by_slot")
+        .expect("get_by_slot present");
     let body_end = code[body_start..]
         .find("\n    }\n")
         .map(|e| body_start + e)
@@ -150,13 +152,13 @@ fn cpp_get_by_slot_signature_and_boundary_checks() {
 
     // Signature: std::optional<SubscriptionEntryType> get_by_slot(std::uint32_t slot) const.
     assert!(
-        code.contains(
-            "std::optional<SubscriptionEntryType> get_by_slot(std::uint32_t slot) const"
-        ),
+        code.contains("std::optional<SubscriptionEntryType> get_by_slot(std::uint32_t slot) const"),
         "Cpp signature missing; got:\n{code}"
     );
     // OOB check + unoccupied check.
-    let body_start = code.find("get_by_slot(std::uint32_t").expect("get_by_slot present");
+    let body_start = code
+        .find("get_by_slot(std::uint32_t")
+        .expect("get_by_slot present");
     let body_end = code[body_start..]
         .find("\n    }\n")
         .map(|e| body_start + e)
@@ -204,7 +206,9 @@ fn go_get_by_slot_signature_and_boundary_checks() {
         ),
         "Go signature missing; got:\n{code}"
     );
-    let body_start = code.find("func (t *LocalSubTable) GetBySlot").expect("GetBySlot present");
+    let body_start = code
+        .find("func (t *LocalSubTable) GetBySlot")
+        .expect("GetBySlot present");
     let body_end = code[body_start..]
         .find("\n}\n")
         .map(|e| body_start + e)
@@ -259,7 +263,9 @@ fn c11_get_by_slot_signature_and_boundary_checks() {
         ),
         "C11 signature missing; got:\n{code}"
     );
-    let body_start = code.find("local_sub_table_get_by_slot(\n").expect("get_by_slot present");
+    let body_start = code
+        .find("local_sub_table_get_by_slot(\n")
+        .expect("get_by_slot present");
     let body_end = code[body_start..]
         .find("\n}\n")
         .map(|e| body_start + e)

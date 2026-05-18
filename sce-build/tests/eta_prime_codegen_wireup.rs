@@ -138,8 +138,7 @@ fn w1_3_emits_active_state_filter_match_arm() {
         code.contains("_ => {}"),
         "missing default match arm:\n{code}"
     );
-    syn::parse_file(&code)
-        .unwrap_or_else(|e| panic!("W1.3 body fails syn parse: {e}\n{code}"));
+    syn::parse_file(&code).unwrap_or_else(|e| panic!("W1.3 body fails syn parse: {e}\n{code}"));
 }
 
 #[test]

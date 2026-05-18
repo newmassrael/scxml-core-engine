@@ -119,8 +119,11 @@ pub fn resolve_external_bindings(
     // here because we batch all unresolved names before erroring.
     for (device_name, device) in deploy_cfg.topology.iter() {
         // Parse vsomeip.json once if referenced.
-        let someip_config_path =
-            device.transports.someip.as_ref().and_then(|s| s.config.clone());
+        let someip_config_path = device
+            .transports
+            .someip
+            .as_ref()
+            .and_then(|s| s.config.clone());
 
         if let Some(rel_path) = someip_config_path.as_ref() {
             let abs_path = resolve_relative(deploy_dir, rel_path);
@@ -144,11 +147,7 @@ pub fn resolve_external_bindings(
                     // other transports have no external config concept. If a
                     // non-someip binding carries SOME/IP-only fields that is
                     // a deploy.yaml bug — catch it here.
-                    reject_someip_fields_on_foreign_transport(
-                        machine_name,
-                        target,
-                        binding,
-                    )?;
+                    reject_someip_fields_on_foreign_transport(machine_name, target, binding)?;
                     continue;
                 }
 
@@ -490,10 +489,18 @@ fn resolve_event_binding_to_tag(
     // per-event entry maps to exactly one SOME/IP resource kind —
     // otherwise `SomeipEventIds` cannot be constructed unambiguously.
     let mut set_fields: Vec<&'static str> = Vec::new();
-    if event_binding.method.is_some()      { set_fields.push("method"); }
-    if event_binding.event_group.is_some() { set_fields.push("event_group"); }
-    if event_binding.getter.is_some()      { set_fields.push("getter"); }
-    if event_binding.setter.is_some()      { set_fields.push("setter"); }
+    if event_binding.method.is_some() {
+        set_fields.push("method");
+    }
+    if event_binding.event_group.is_some() {
+        set_fields.push("event_group");
+    }
+    if event_binding.getter.is_some() {
+        set_fields.push("getter");
+    }
+    if event_binding.setter.is_some() {
+        set_fields.push("setter");
+    }
 
     // Exactly one field family must be set. Both "zero fields" and
     // "multiple fields" are user errors caught here, so the match below
@@ -521,7 +528,13 @@ fn resolve_event_binding_to_tag(
     let kind = set_fields[0];
 
     let defaults = resolve_event_binding_to_default(
-        machine, target, config_path, event_name, event_binding, service_ref, missing,
+        machine,
+        target,
+        config_path,
+        event_name,
+        event_binding,
+        service_ref,
+        missing,
     )?;
 
     // Promote the single populated family into the tagged enum. The kind
@@ -538,11 +551,14 @@ fn resolve_event_binding_to_tag(
     // case is represented here by returning `Ok(None)` for the matched kind,
     // which topology combines with the batched `UnresolvedNames` error.
     let ids = match kind {
-        "method" => defaults.method_id.map(|method_id| SomeipEventIds::Method { method_id }),
+        "method" => defaults
+            .method_id
+            .map(|method_id| SomeipEventIds::Method { method_id }),
         "event_group" => match (defaults.event_group_id, defaults.event_id) {
-            (Some(event_group_id), Some(event_id)) => {
-                Some(SomeipEventIds::EventGroup { event_group_id, event_id })
-            }
+            (Some(event_group_id), Some(event_id)) => Some(SomeipEventIds::EventGroup {
+                event_group_id,
+                event_id,
+            }),
             (None, None) => None,
             // Partial resolution — event_group_id came back but event_id
             // did not, or vice-versa. The only way this could happen is a
@@ -554,11 +570,15 @@ fn resolve_event_binding_to_tag(
                 partial,
             ),
         },
-        "getter" => defaults.getter_id.map(|getter_id| SomeipEventIds::Getter { getter_id }),
-        "setter" => defaults.setter_id.map(|setter_id| SomeipEventIds::Setter { setter_id }),
-        other => unreachable!(
-            "ConflictingEventFieldKinds gate allowed unknown field kind {other:?}"
-        ),
+        "getter" => defaults
+            .getter_id
+            .map(|getter_id| SomeipEventIds::Getter { getter_id }),
+        "setter" => defaults
+            .setter_id
+            .map(|setter_id| SomeipEventIds::Setter { setter_id }),
+        other => {
+            unreachable!("ConflictingEventFieldKinds gate allowed unknown field kind {other:?}")
+        }
     };
     Ok(ids)
 }
@@ -577,9 +597,8 @@ fn resolve_event_binding_to_default(
     missing: &mut Vec<UnresolvedName>,
 ) -> Result<BindingDefaultIds, ExternalConfigError> {
     let mut out = BindingDefaultIds::default();
-    let svc_ctx = || {
-        service_ref.map(|s| format!("in service \"{}\" (event \"{event_name}\")", s.name))
-    };
+    let svc_ctx =
+        || service_ref.map(|s| format!("in service \"{}\" (event \"{event_name}\")", s.name));
 
     if let Some(name) = event_binding.method.as_deref() {
         match service_ref.and_then(|svc| svc.methods.iter().find(|m| m.name == name)) {
@@ -800,12 +819,18 @@ topology:
         let per_binding = res.bindings.get(&key).expect("binding resolution");
         assert_eq!(
             per_binding.service_ids,
-            SomeipServiceIds { service_id: 0x1234, instance_id: 0x0001 },
+            SomeipServiceIds {
+                service_id: 0x1234,
+                instance_id: 0x0001
+            },
         );
 
         // Per-event IDs live on the resolution map's `default` slot
         // (sample_deploy uses flat sugar fields, not an events: block).
-        assert!(per_binding.by_event.is_empty(), "flat sugar → no by_event entries");
+        assert!(
+            per_binding.by_event.is_empty(),
+            "flat sugar → no by_event entries"
+        );
         let d = &per_binding.default;
         assert_eq!(d.method_id, Some(0x0421));
         assert_eq!(d.event_group_id, Some(0x0001));
@@ -1089,11 +1114,16 @@ topology:
 "##;
         let deploy = crate::mesh::deploy::parse_deploy_str(yaml).expect("parse");
         let res = resolve_external_bindings(&deploy, Path::new(".")).expect("resolve");
-        assert!(res.bindings.is_empty(), "zenoh bindings produce no someip resolution entries");
-        let b = &deploy.topology["ecu1"].machines["brake"].bindings
-            ["#motor"];
+        assert!(
+            res.bindings.is_empty(),
+            "zenoh bindings produce no someip resolution entries"
+        );
+        let b = &deploy.topology["ecu1"].machines["brake"].bindings["#motor"];
         // `key:` stays in extra unchanged.
-        assert_eq!(b.extra.get("key").and_then(|v| v.as_str()), Some("brake/cmd"));
+        assert_eq!(
+            b.extra.get("key").and_then(|v| v.as_str()),
+            Some("brake/cmd")
+        );
     }
 
     #[test]
@@ -1114,9 +1144,7 @@ topology:
         let mut deploy = crate::mesh::deploy::parse_deploy_str(yaml).expect("parse");
         match resolve_external_bindings(&mut deploy, Path::new(".")) {
             Err(ExternalConfigError::SomeipFieldOnNonSomeipTransport {
-                transport,
-                fields,
-                ..
+                transport, fields, ..
             }) => {
                 assert_eq!(transport, "zenoh");
                 assert!(fields.contains(&"service"));

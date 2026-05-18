@@ -243,16 +243,12 @@ fn is_pure_in_predicate(expr: &str) -> bool {
             }
             continue;
         }
-        if i + 3 <= length
-            && &b[i..i + 3] == b"and"
-            && (i + 3 >= length || !is_word_char(b[i + 3]))
+        if i + 3 <= length && &b[i..i + 3] == b"and" && (i + 3 >= length || !is_word_char(b[i + 3]))
         {
             i += 3;
             continue;
         }
-        if i + 2 <= length
-            && &b[i..i + 2] == b"or"
-            && (i + 2 >= length || !is_word_char(b[i + 2]))
+        if i + 2 <= length && &b[i..i + 2] == b"or" && (i + 2 >= length || !is_word_char(b[i + 2]))
         {
             i += 2;
             continue;
@@ -672,8 +668,10 @@ fn parenthesize_bitwise_operands(input: &str) -> String {
         return input.to_string();
     }
 
-    let mut has_comparison =
-        input.contains("==") || input.contains("~=") || input.contains("<=") || input.contains(">=");
+    let mut has_comparison = input.contains("==")
+        || input.contains("~=")
+        || input.contains("<=")
+        || input.contains(">=");
 
     if !has_comparison {
         for (i, &c) in b.iter().enumerate() {
@@ -845,8 +843,9 @@ fn transform_array_indexing(input: &str) -> String {
                 let end = find_matching_close(b, i, b'[', b']');
                 let index_expr = trim(&input[i + 1..end]);
 
-                let is_int_literal =
-                    !index_expr.is_empty() && index_expr.len() <= 9 && index_expr.bytes().all(|c| c.is_ascii_digit());
+                let is_int_literal = !index_expr.is_empty()
+                    && index_expr.len() <= 9
+                    && index_expr.bytes().all(|c| c.is_ascii_digit());
 
                 if is_int_literal {
                     let idx: usize = index_expr.parse().unwrap();
@@ -979,10 +978,7 @@ fn transform_function_syntax(input: &str) -> String {
 
     while i < length {
         // Detect function keyword
-        if i + 8 <= length
-            && &b[i..i + 8] == b"function"
-            && (i == 0 || !is_word_char(b[i - 1]))
-        {
+        if i + 8 <= length && &b[i..i + 8] == b"function" && (i == 0 || !is_word_char(b[i - 1])) {
             let func_start = i;
             let mut j = i + 8;
             while j < length && (b[j].is_ascii_whitespace() || is_word_char(b[j])) {
@@ -1153,11 +1149,7 @@ fn transform_ternary_operator(input: &str) -> String {
 
 fn transform_dom_methods(input: &str) -> String {
     let mut result = input.to_string();
-    for method in &[
-        ".getElementsByTagName(",
-        ".getAttribute(",
-        ".getTagName(",
-    ] {
+    for method in &[".getElementsByTagName(", ".getAttribute(", ".getTagName("] {
         let replacement = format!(":{}", &method[1..]);
         result = result.replace(method, &replacement);
     }
@@ -1198,8 +1190,7 @@ fn transform_object_literals(input: &str) -> String {
                 while key_end > 0 && (b[key_end - 1] == b' ' || b[key_end - 1] == b'\t') {
                     key_end -= 1;
                 }
-                if key_end > 0
-                    && (b[key_end - 1].is_ascii_alphanumeric() || b[key_end - 1] == b'_')
+                if key_end > 0 && (b[key_end - 1].is_ascii_alphanumeric() || b[key_end - 1] == b'_')
                 {
                     result.push_str(" =");
                 } else if key_end > 0 && b[key_end - 1] == b'\x01' {
@@ -1595,15 +1586,13 @@ fn transform_conditional_blocks(input: &str) -> String {
                             i = after_else + 2;
                             let ei_cond_start = skip_spaces(b, i);
                             if ei_cond_start < length && b[ei_cond_start] == b'(' {
-                                let cond_end =
-                                    find_matching_close(b, ei_cond_start, b'(', b')');
+                                let cond_end = find_matching_close(b, ei_cond_start, b'(', b')');
                                 let condition = trim(&input[ei_cond_start + 1..cond_end]);
                                 i = cond_end + 1;
 
                                 let body_start = skip_spaces(b, i);
                                 if body_start < length && b[body_start] == b'{' {
-                                    let body_end =
-                                        find_matching_close(b, body_start, b'{', b'}');
+                                    let body_end = find_matching_close(b, body_start, b'{', b'}');
                                     let body = trim(&input[body_start + 1..body_end]);
                                     i = body_end + 1;
                                     result.push_str(&format!(
@@ -1716,11 +1705,7 @@ fn transform_bare_expressions(input: &str) -> String {
 // ── Guard-specific truthiness wrapping ──────────────────────────────
 
 fn needs_truthiness_wrapping(expr: &str) -> bool {
-    if expr.contains("==")
-        || expr.contains("~=")
-        || expr.contains(">=")
-        || expr.contains("<=")
-    {
+    if expr.contains("==") || expr.contains("~=") || expr.contains(">=") || expr.contains("<=") {
         return false;
     }
     if expr.contains("_scxml_truthy") || expr.contains("_isArray") {

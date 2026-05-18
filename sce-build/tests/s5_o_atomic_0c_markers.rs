@@ -152,8 +152,8 @@ fn rand_suffix() -> String {
 /// The count includes both shapes so Atomic 0c's per-function emission
 /// surfaces alongside Atomic 0b's module-level baseline.
 fn count_markers(path: &Path, fixture_name: &str) -> usize {
-    let body = std::fs::read_to_string(path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let body =
+        std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     body.lines()
         .filter(|l| {
             let trimmed = l.trim_start();

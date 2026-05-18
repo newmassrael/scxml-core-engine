@@ -97,9 +97,16 @@ fn json_mode_emits_single_ndjson_record_on_stderr() {
     let (_dir, scxml) = write_missing_datamodel_fixture();
     let out = run_generate(&sce_codegen_bin(), &scxml, "json");
 
-    assert!(!out.status.success(), "process must fail on validation error");
+    assert!(
+        !out.status.success(),
+        "process must fail on validation error"
+    );
     // ValidationError maps to stage=3 per ForgeError::exit_code().
-    assert_eq!(out.status.code(), Some(3), "exit code must equal ForgeError::exit_code()");
+    assert_eq!(
+        out.status.code(),
+        Some(3),
+        "exit code must equal ForgeError::exit_code()"
+    );
 
     let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
     let trimmed = stderr.trim_end();
@@ -116,7 +123,10 @@ fn json_mode_emits_single_ndjson_record_on_stderr() {
         let obj = parsed.as_object().expect("root must be an object");
         // Required fields per the diagnostic contract.
         for key in ["v", "id", "code", "stage", "message"] {
-            assert!(obj.contains_key(key), "missing required field '{key}' in: {line}");
+            assert!(
+                obj.contains_key(key),
+                "missing required field '{key}' in: {line}"
+            );
         }
         assert_eq!(
             obj["v"].as_u64(),
@@ -180,7 +190,10 @@ fn json_mode_covers_cli_boundary_errors() {
     assert!(!out.status.success());
     let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
     let line = stderr.trim_end();
-    assert!(line.starts_with('{') && line.ends_with('}'), "not NDJSON: {line}");
+    assert!(
+        line.starts_with('{') && line.ends_with('}'),
+        "not NDJSON: {line}"
+    );
     let parsed: serde_json::Value =
         serde_json::from_str(line).expect("CLI error line must be JSON");
     assert_eq!(parsed["code"], "cli/unknown-language");
@@ -235,7 +248,11 @@ fn json_mode_undeclared_initial_routes_through_invalid_reference() {
         "validation stage must exit 3 (W5 keeps validation exit code for SCXML semantic), not cli/20",
     );
     let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
-    let line = stderr.trim_end().lines().next().expect("at least one ndjson line");
+    let line = stderr
+        .trim_end()
+        .lines()
+        .next()
+        .expect("at least one ndjson line");
     let parsed: serde_json::Value =
         serde_json::from_str(line).expect("invalid-reference line must be JSON");
     assert_eq!(parsed["code"], "validation/invalid-reference");
@@ -295,7 +312,10 @@ fn json_mode_routes_unknown_sce_kind_through_forge_pipeline() {
     let (_dir, scxml) = write_unknown_kind_fixture();
     let out = run_generate(&sce_codegen_bin(), &scxml, "json");
 
-    assert!(!out.status.success(), "process must fail on unknown sce:kind");
+    assert!(
+        !out.status.success(),
+        "process must fail on unknown sce:kind"
+    );
     // `XmlError::SchemaValidation` → `ForgeError::Xml` → exit code 2.
     // If this becomes 1 (clap / ScxmlParse) again, the routing bug has
     // regressed: the document is re-flowing through the SCXML parser.
@@ -391,10 +411,7 @@ fn json_mode_emits_one_ndjson_record_per_xsd_violation() {
     assert_eq!(out.status.code(), Some(2), "XmlError exit code");
 
     let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
-    let lines: Vec<&str> = stderr
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .collect();
+    let lines: Vec<&str> = stderr.lines().filter(|l| !l.trim().is_empty()).collect();
 
     // Each violation gets its own NDJSON line — merging them would hide
     // the per-line data libxml2 already carries. We expect exactly 3
@@ -413,7 +430,10 @@ fn json_mode_emits_one_ndjson_record_per_xsd_violation() {
         assert_eq!(parsed["code"], "xml/schema-validation");
         assert_eq!(parsed["stage"], "xml");
         let location = &parsed["location"];
-        assert!(location.is_object(), "location object on every record: {line}");
+        assert!(
+            location.is_object(),
+            "location object on every record: {line}"
+        );
         assert_eq!(
             location["file"].as_str(),
             Some("multi_violation.scxml"),
@@ -480,8 +500,7 @@ fn json_mode_condition_missing_expr_reports_leaf_line() {
 
     let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
     let line = stderr.trim_end();
-    let parsed: serde_json::Value =
-        serde_json::from_str(line).expect("stderr must be NDJSON");
+    let parsed: serde_json::Value = serde_json::from_str(line).expect("stderr must be NDJSON");
 
     assert_eq!(parsed["code"], "validation/missing-attribute");
     assert_eq!(parsed["stage"], "validation");
@@ -549,8 +568,7 @@ fn json_mode_transform_no_outputs_reports_datamodel_line() {
 
     let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
     let line = stderr.trim_end();
-    let parsed: serde_json::Value =
-        serde_json::from_str(line).expect("stderr must be NDJSON");
+    let parsed: serde_json::Value = serde_json::from_str(line).expect("stderr must be NDJSON");
 
     assert_eq!(parsed["code"], "validation/empty-collection");
     let location = &parsed["location"];
@@ -992,7 +1010,10 @@ fn write_filter_missing_param_fixture(
 /// drift.
 fn assert_filter_param_anchored_at_output_data(scxml: &PathBuf) {
     let out = run_generate(&sce_codegen_bin(), scxml, "json");
-    assert!(!out.status.success(), "must fail when filter param is missing");
+    assert!(
+        !out.status.success(),
+        "must fail when filter param is missing"
+    );
     assert_eq!(out.status.code(), Some(3));
     let parsed: serde_json::Value =
         serde_json::from_str(String::from_utf8(out.stderr).unwrap().trim_end()).unwrap();
@@ -1264,10 +1285,7 @@ fn stdout_does_not_emit_human_prose() {
 /// files. Returns the directory handle plus the primary file path
 /// (the first entry, by convention the SCXML that sce-codegen
 /// consumes).
-fn write_template_fixture(
-    label: &str,
-    files: &[(&str, &str)],
-) -> (ScratchDir, PathBuf) {
+fn write_template_fixture(label: &str, files: &[(&str, &str)]) -> (ScratchDir, PathBuf) {
     let dir = ScratchDir::new(label);
     let mut main_path: Option<PathBuf> = None;
     for (name, body) in files {
@@ -1277,7 +1295,10 @@ fn write_template_fixture(
             main_path = Some(path);
         }
     }
-    (dir, main_path.expect("fixtures must include at least one file"))
+    (
+        dir,
+        main_path.expect("fixtures must include at least one file"),
+    )
 }
 
 /// Read the single NDJSON diagnostic line from stderr. Panics if
@@ -1340,10 +1361,7 @@ fn template_not_found_emits_xml_template_not_found() {
   </state>
 </scxml>
 "#;
-    let (_dir, scxml) = write_template_fixture(
-        "template-not-found",
-        &[("main.scxml", main_scxml)],
-    );
+    let (_dir, scxml) = write_template_fixture("template-not-found", &[("main.scxml", main_scxml)]);
     let out = run_generate(&sce_codegen_bin(), &scxml, "json");
     assert!(!out.status.success(), "missing template file must fail");
     assert_eq!(out.status.code(), Some(2), "XML stage exit code is 2");
@@ -1368,7 +1386,10 @@ fn template_malformed_root_emits_xml_template_malformed() {
     let bad_tpl = r#"<not-a-template><x/></not-a-template>"#;
     let (_dir, scxml) = write_template_fixture(
         "template-malformed",
-        &[("main.scxml", main_scxml), ("bad.sce-template.xml", bad_tpl)],
+        &[
+            ("main.scxml", main_scxml),
+            ("bad.sce-template.xml", bad_tpl),
+        ],
     );
     let out = run_generate(&sce_codegen_bin(), &scxml, "json");
     assert!(!out.status.success());
@@ -1449,12 +1470,13 @@ fn template_missing_attribute_emits_add_attribute_fix() {
   </state>
 </scxml>
 "#;
-    let (_dir, scxml) = write_template_fixture(
-        "template-missing-attr",
-        &[("main.scxml", main_scxml)],
-    );
+    let (_dir, scxml) =
+        write_template_fixture("template-missing-attr", &[("main.scxml", main_scxml)]);
     let out = run_generate(&sce_codegen_bin(), &scxml, "json");
-    assert!(!out.status.success(), "missing template attribute must fail");
+    assert!(
+        !out.status.success(),
+        "missing template attribute must fail"
+    );
     let diag = single_diagnostic(&String::from_utf8(out.stderr).unwrap());
     // Deterministic fix points at the exact attribute to insert.
     assert_eq!(diag["code"], "xml/template-missing-attribute");

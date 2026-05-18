@@ -38,9 +38,7 @@ const GOLDEN_GO_MODULE_PREFIX: &str = "example.com/sce-forge";
 /// `rust_crate_prefix`), the only edit needed is one line in this
 /// factory — individual test cases do not care about option
 /// construction and never need to be touched.
-fn golden_options(
-    language: sce_build::generator::Language,
-) -> sce_build::ForgeCompileOptions {
+fn golden_options(language: sce_build::generator::Language) -> sce_build::ForgeCompileOptions {
     let mut opts = sce_build::ForgeCompileOptions::default();
     if matches!(language, sce_build::generator::Language::Go) {
         opts.go_module_prefix = Some(GOLDEN_GO_MODULE_PREFIX.to_string());
@@ -210,7 +208,11 @@ fn assert_no_codec_sidecar_until_closure(
         "B5-θ trunk gate: codec '{scxml_name}' on {language:?} must emit exactly one file \
          (primary codec, no sidecar). Got {} files: {:?}",
         output.files.len(),
-        output.files.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>()
+        output
+            .files
+            .iter()
+            .map(|(n, _)| n.as_str())
+            .collect::<Vec<_>>()
     );
 }
 
@@ -276,10 +278,7 @@ fn assert_inline_kinds_cpp(scxml_name: &str) {
 
 /// Render inline kinds directly and compare against fragment goldens,
 /// then verify structural correctness and template integration.
-fn assert_inline_kinds_lang(
-    scxml_name: &str,
-    lang: sce_build::generator::Language,
-) {
+fn assert_inline_kinds_lang(scxml_name: &str, lang: sce_build::generator::Language) {
     use sce_build::forge::generator::{render_inline_kinds, InlineKindCode};
 
     let scxml_path = resource_dir().join(format!("{scxml_name}.scxml"));
@@ -298,9 +297,11 @@ fn assert_inline_kinds_lang(
     );
 
     // ── Layer 1: Fragment golden ───────────────────────────────
-    let InlineKindCode { type_defs, member_fns } =
-        render_inline_kinds(&model.inline_kinds, lang, &machine_name)
-            .unwrap_or_else(|e| panic!("render_inline_kinds({lang:?}) failed: {e}"));
+    let InlineKindCode {
+        type_defs,
+        member_fns,
+    } = render_inline_kinds(&model.inline_kinds, lang, &machine_name)
+        .unwrap_or_else(|e| panic!("render_inline_kinds({lang:?}) failed: {e}"));
 
     let lang_tag = match lang {
         sce_build::generator::Language::Kotlin => "kt",
@@ -311,9 +312,7 @@ fn assert_inline_kinds_lang(
     };
 
     // Member functions golden (always present)
-    let fns_golden_path = expected_dir().join(format!(
-        "{scxml_name}_inline_fns.{lang_tag}.golden"
-    ));
+    let fns_golden_path = expected_dir().join(format!("{scxml_name}_inline_fns.{lang_tag}.golden"));
     if std::env::var("UPDATE_GOLDEN").is_ok() {
         std::fs::write(&fns_golden_path, member_fns.trim().to_string() + "\n")
             .unwrap_or_else(|e| panic!("Cannot write {}: {e}", fns_golden_path.display()));
@@ -334,9 +333,8 @@ fn assert_inline_kinds_lang(
 
     // Type definitions golden (Rust/Go only)
     if !type_defs.is_empty() {
-        let types_golden_path = expected_dir().join(format!(
-            "{scxml_name}_inline_types.{lang_tag}.golden"
-        ));
+        let types_golden_path =
+            expected_dir().join(format!("{scxml_name}_inline_types.{lang_tag}.golden"));
         if std::env::var("UPDATE_GOLDEN").is_ok() {
             std::fs::write(&types_golden_path, type_defs.trim().to_string() + "\n")
                 .unwrap_or_else(|e| panic!("Cannot write {}: {e}", types_golden_path.display()));
@@ -361,12 +359,8 @@ fn assert_inline_kinds_lang(
 
     // ── Layer 3: Template integration + compile gate ───────────
     let tdir = sce_build::find_template_dir_for(lang);
-    let output = sce_build::compile_scxml_lang(
-        scxml_path.to_str().unwrap(),
-        &tdir,
-        lang,
-    )
-    .unwrap_or_else(|e| panic!("Statechart codegen ({lang:?}) failed for {scxml_name}: {e}"));
+    let output = sce_build::compile_scxml_lang(scxml_path.to_str().unwrap(), &tdir, lang)
+        .unwrap_or_else(|e| panic!("Statechart codegen ({lang:?}) failed for {scxml_name}: {e}"));
 
     let full_code = &output.files[0].1;
 
@@ -409,50 +403,80 @@ fn assert_inline_mixed_structural(
     match lang {
         Language::Kotlin => {
             // Nested enum
-            assert!(member_fns.contains("enum class RpmStatus"),
-                "Kotlin: missing nested enum class");
+            assert!(
+                member_fns.contains("enum class RpmStatus"),
+                "Kotlin: missing nested enum class"
+            );
             // when expression
-            assert!(member_fns.contains("= when ("),
-                "Kotlin: missing when expression in lookup");
+            assert!(
+                member_fns.contains("= when ("),
+                "Kotlin: missing when expression in lookup"
+            );
             // Kotlin-idiomatic function signatures
-            assert!(member_fns.contains("fun isReady(): Boolean ="),
-                "Kotlin: missing condition function");
-            assert!(member_fns.contains("fun computeToFahrenheit(): Double ="),
-                "Kotlin: missing transform function");
+            assert!(
+                member_fns.contains("fun isReady(): Boolean ="),
+                "Kotlin: missing condition function"
+            );
+            assert!(
+                member_fns.contains("fun computeToFahrenheit(): Double ="),
+                "Kotlin: missing transform function"
+            );
         }
         Language::Rust => {
             // Module-level enum in type_defs
-            assert!(type_defs.contains("pub enum RpmStatus"),
-                "Rust: missing enum in type_defs");
-            assert!(type_defs.contains("#[derive(Debug, Clone, Copy, PartialEq)]"),
-                "Rust: missing derives on enum");
+            assert!(
+                type_defs.contains("pub enum RpmStatus"),
+                "Rust: missing enum in type_defs"
+            );
+            assert!(
+                type_defs.contains("#[derive(Debug, Clone, Copy, PartialEq)]"),
+                "Rust: missing derives on enum"
+            );
             // self. prefix for member access
-            assert!(member_fns.contains("self."),
-                "Rust: missing self. prefix for member access");
+            assert!(
+                member_fns.contains("self."),
+                "Rust: missing self. prefix for member access"
+            );
             // Idiomatic signatures
-            assert!(member_fns.contains("pub fn is_ready(&self) -> bool"),
-                "Rust: missing condition function signature");
-            assert!(member_fns.contains("pub fn compute_to_fahrenheit(&self) -> f64"),
-                "Rust: missing transform function signature");
+            assert!(
+                member_fns.contains("pub fn is_ready(&self) -> bool"),
+                "Rust: missing condition function signature"
+            );
+            assert!(
+                member_fns.contains("pub fn compute_to_fahrenheit(&self) -> f64"),
+                "Rust: missing transform function signature"
+            );
             // match expression in lookup
-            assert!(member_fns.contains("match raw"),
-                "Rust: missing match in lookup");
+            assert!(
+                member_fns.contains("match raw"),
+                "Rust: missing match in lookup"
+            );
         }
         Language::Go => {
             // Package-level type in type_defs
-            assert!(type_defs.contains("type RpmStatus int"),
-                "Go: missing type in type_defs");
-            assert!(type_defs.contains("RpmStatus = iota"),
-                "Go: missing iota const block");
+            assert!(
+                type_defs.contains("type RpmStatus int"),
+                "Go: missing type in type_defs"
+            );
+            assert!(
+                type_defs.contains("RpmStatus = iota"),
+                "Go: missing iota const block"
+            );
             // p. receiver prefix for member access
-            assert!(member_fns.contains("p."),
-                "Go: missing p. receiver prefix for member access");
+            assert!(
+                member_fns.contains("p."),
+                "Go: missing p. receiver prefix for member access"
+            );
             // Exported method with receiver
-            assert!(member_fns.contains("func (p *"),
-                "Go: missing receiver method");
+            assert!(
+                member_fns.contains("func (p *"),
+                "Go: missing receiver method"
+            );
             // Package-level lookup (no receiver)
-            assert!(member_fns.contains("func LookupRpmStatus("),
-                "Go: missing package-level lookup function");
+            assert!(
+                member_fns.contains("func LookupRpmStatus("),
+                "Go: missing package-level lookup function"
+            );
         }
         Language::C11 => {
             // RFC §5.J.2 Phase F. Verifies idiomatic C11 emit shape that
@@ -461,29 +485,48 @@ fn assert_inline_mixed_structural(
             // golden written from a buggy renderer).
 
             // Top-level enum typedef (no nesting in C)
-            assert!(member_fns.contains("typedef enum"),
-                "C11: missing typedef enum for lookup");
-            assert!(member_fns.contains("} inline_mixed_rpm_status_t;"),
-                "C11: missing snake_case typedef name");
+            assert!(
+                member_fns.contains("typedef enum"),
+                "C11: missing typedef enum for lookup"
+            );
+            assert!(
+                member_fns.contains("} inline_mixed_rpm_status_t;"),
+                "C11: missing snake_case typedef name"
+            );
             // Prefixed enum constants (no namespacing in C)
-            assert!(member_fns.contains("INLINE_MIXED_RPM_STATUS_OFF"),
-                "C11: missing prefixed enum constant");
-            assert!(member_fns.contains("INLINE_MIXED_RPM_STATUS_RUNNING"),
-                "C11: missing prefixed enum constant");
+            assert!(
+                member_fns.contains("INLINE_MIXED_RPM_STATUS_OFF"),
+                "C11: missing prefixed enum constant"
+            );
+            assert!(
+                member_fns.contains("INLINE_MIXED_RPM_STATUS_RUNNING"),
+                "C11: missing prefixed enum constant"
+            );
             // _st-> member access (procedure D14a mirror)
-            assert!(member_fns.contains("_st->"),
-                "C11: missing _st-> prefix for policy member access");
+            assert!(
+                member_fns.contains("_st->"),
+                "C11: missing _st-> prefix for policy member access"
+            );
             // Free-standing static inline functions
-            assert!(member_fns.contains("static inline bool inline_mixed_is_ready("),
-                "C11: missing condition function signature");
-            assert!(member_fns.contains("static inline double inline_mixed_compute_to_fahrenheit("),
-                "C11: missing transform function signature");
-            assert!(member_fns.contains(
-                "static inline inline_mixed_rpm_status_t inline_mixed_lookup_rpm_status("
-            ), "C11: missing lookup function signature");
+            assert!(
+                member_fns.contains("static inline bool inline_mixed_is_ready("),
+                "C11: missing condition function signature"
+            );
+            assert!(
+                member_fns.contains("static inline double inline_mixed_compute_to_fahrenheit("),
+                "C11: missing transform function signature"
+            );
+            assert!(
+                member_fns.contains(
+                    "static inline inline_mixed_rpm_status_t inline_mixed_lookup_rpm_status("
+                ),
+                "C11: missing lookup function signature"
+            );
             // const policy pointer parameter
-            assert!(member_fns.contains("(const inline_mixed_policy_t *_st)"),
-                "C11: missing const policy pointer parameter");
+            assert!(
+                member_fns.contains("(const inline_mixed_policy_t *_st)"),
+                "C11: missing const policy pointer parameter"
+            );
         }
         _ => {}
     }
@@ -502,53 +545,90 @@ fn assert_inline_codec_structural(
     use sce_build::generator::Language;
     match lang {
         Language::Kotlin => {
-            assert!(member_fns.contains("data class Frame("),
-                "Kotlin: missing data class for inline codec");
-            assert!(member_fns.contains("companion object"),
-                "Kotlin: missing companion object hosting decode");
-            assert!(member_fns.contains("fun decode(cursor: com.sce.forge.runtime.SceCursor): Frame?"),
-                "Kotlin: missing cursor-based decode signature");
-            assert!(member_fns.contains("fun encode(): ByteArray = byteArrayOf("),
-                "Kotlin: missing encode signature");
+            assert!(
+                member_fns.contains("data class Frame("),
+                "Kotlin: missing data class for inline codec"
+            );
+            assert!(
+                member_fns.contains("companion object"),
+                "Kotlin: missing companion object hosting decode"
+            );
+            assert!(
+                member_fns.contains("fun decode(cursor: com.sce.forge.runtime.SceCursor): Frame?"),
+                "Kotlin: missing cursor-based decode signature"
+            );
+            assert!(
+                member_fns.contains("fun encode(): ByteArray = byteArrayOf("),
+                "Kotlin: missing encode signature"
+            );
         }
         Language::Rust => {
-            assert!(type_defs.contains("pub struct Frame"),
-                "Rust: missing pub struct in type_defs");
-            assert!(type_defs.contains("#[derive(Debug, Clone)]"),
-                "Rust: missing derives on codec struct");
-            assert!(type_defs.contains(
-                "pub fn decode(cursor: &mut ::sce_forge_runtime::codec::SceCursor<'_>) -> \
+            assert!(
+                type_defs.contains("pub struct Frame"),
+                "Rust: missing pub struct in type_defs"
+            );
+            assert!(
+                type_defs.contains("#[derive(Debug, Clone)]"),
+                "Rust: missing derives on codec struct"
+            );
+            assert!(
+                type_defs.contains(
+                    "pub fn decode(cursor: &mut ::sce_forge_runtime::codec::SceCursor<'_>) -> \
                  Result<Self, ::sce_forge_runtime::codec::CodecError>"
-            ), "Rust: missing cursor-based decode signature");
-            assert!(type_defs.contains("pub fn encode(&self) -> Vec<u8>"),
-                "Rust: missing encode signature");
+                ),
+                "Rust: missing cursor-based decode signature"
+            );
+            assert!(
+                type_defs.contains("pub fn encode(&self) -> Vec<u8>"),
+                "Rust: missing encode signature"
+            );
         }
         Language::Go => {
-            assert!(type_defs.contains("type Frame struct"),
-                "Go: missing struct in type_defs");
-            assert!(type_defs.contains("func DecodeFrame(cursor *codec.SceCursor) (*Frame, error)"),
-                "Go: missing cursor-based exported Decode function");
-            assert!(type_defs.contains("func (s *Frame) Encode() []byte"),
-                "Go: missing receiver Encode method");
+            assert!(
+                type_defs.contains("type Frame struct"),
+                "Go: missing struct in type_defs"
+            );
+            assert!(
+                type_defs.contains("func DecodeFrame(cursor *codec.SceCursor) (*Frame, error)"),
+                "Go: missing cursor-based exported Decode function"
+            );
+            assert!(
+                type_defs.contains("func (s *Frame) Encode() []byte"),
+                "Go: missing receiver Encode method"
+            );
         }
         Language::C11 => {
-            assert!(member_fns.contains("#define INLINE_CODEC_FRAME_MIN_BYTES 4"),
-                "C11: missing min-bytes macro");
-            assert!(member_fns.contains("} inline_codec_frame_t;"),
-                "C11: missing payload typedef");
-            assert!(member_fns.contains("} inline_codec_frame_encoded_t;"),
-                "C11: missing encoded envelope typedef");
-            assert!(member_fns.contains(
-                "static inline sce_forge_codec_status_t inline_codec_frame_decode(\
+            assert!(
+                member_fns.contains("#define INLINE_CODEC_FRAME_MIN_BYTES 4"),
+                "C11: missing min-bytes macro"
+            );
+            assert!(
+                member_fns.contains("} inline_codec_frame_t;"),
+                "C11: missing payload typedef"
+            );
+            assert!(
+                member_fns.contains("} inline_codec_frame_encoded_t;"),
+                "C11: missing encoded envelope typedef"
+            );
+            assert!(
+                member_fns.contains(
+                    "static inline sce_forge_codec_status_t inline_codec_frame_decode(\
                  sce_forge_cursor_t *cursor, inline_codec_frame_t *out)"
-            ), "C11: missing cursor-based decode signature");
-            assert!(member_fns.contains(
-                "static inline inline_codec_frame_encoded_t \
+                ),
+                "C11: missing cursor-based decode signature"
+            );
+            assert!(
+                member_fns.contains(
+                    "static inline inline_codec_frame_encoded_t \
                  inline_codec_frame_encode(const inline_codec_frame_t *self)"
-            ), "C11: missing encode signature");
+                ),
+                "C11: missing encode signature"
+            );
             // self->{snake} member access on encode side
-            assert!(member_fns.contains("self->msg_id"),
-                "C11: missing self-> prefix on encode field access");
+            assert!(
+                member_fns.contains("self->msg_id"),
+                "C11: missing self-> prefix on encode field access"
+            );
         }
         _ => {}
     }
@@ -656,7 +736,10 @@ fn forge_codec_zenoh_close_cpp_no_sidecar_until_closure() {
 
 #[test]
 fn forge_codec_zenoh_close_kotlin_no_sidecar_until_closure() {
-    assert_no_codec_sidecar_until_closure("codec_zenoh_close", sce_build::generator::Language::Kotlin);
+    assert_no_codec_sidecar_until_closure(
+        "codec_zenoh_close",
+        sce_build::generator::Language::Kotlin,
+    );
 }
 
 #[test]
@@ -666,7 +749,10 @@ fn forge_codec_zenoh_close_go_no_sidecar_until_closure() {
 
 #[test]
 fn forge_codec_zenoh_close_python_no_sidecar_until_closure() {
-    assert_no_codec_sidecar_until_closure("codec_zenoh_close", sce_build::generator::Language::Python);
+    assert_no_codec_sidecar_until_closure(
+        "codec_zenoh_close",
+        sce_build::generator::Language::Python,
+    );
 }
 
 #[test]
@@ -676,7 +762,10 @@ fn forge_codec_zenoh_frame_cpp_no_sidecar_until_closure() {
 
 #[test]
 fn forge_codec_zenoh_frame_kotlin_no_sidecar_until_closure() {
-    assert_no_codec_sidecar_until_closure("codec_zenoh_frame", sce_build::generator::Language::Kotlin);
+    assert_no_codec_sidecar_until_closure(
+        "codec_zenoh_frame",
+        sce_build::generator::Language::Kotlin,
+    );
 }
 
 #[test]
@@ -686,27 +775,42 @@ fn forge_codec_zenoh_frame_go_no_sidecar_until_closure() {
 
 #[test]
 fn forge_codec_zenoh_frame_python_no_sidecar_until_closure() {
-    assert_no_codec_sidecar_until_closure("codec_zenoh_frame", sce_build::generator::Language::Python);
+    assert_no_codec_sidecar_until_closure(
+        "codec_zenoh_frame",
+        sce_build::generator::Language::Python,
+    );
 }
 
 #[test]
 fn forge_codec_zenoh_locator_cpp_no_sidecar_until_closure() {
-    assert_no_codec_sidecar_until_closure("codec_zenoh_locator", sce_build::generator::Language::Cpp);
+    assert_no_codec_sidecar_until_closure(
+        "codec_zenoh_locator",
+        sce_build::generator::Language::Cpp,
+    );
 }
 
 #[test]
 fn forge_codec_zenoh_locator_kotlin_no_sidecar_until_closure() {
-    assert_no_codec_sidecar_until_closure("codec_zenoh_locator", sce_build::generator::Language::Kotlin);
+    assert_no_codec_sidecar_until_closure(
+        "codec_zenoh_locator",
+        sce_build::generator::Language::Kotlin,
+    );
 }
 
 #[test]
 fn forge_codec_zenoh_locator_go_no_sidecar_until_closure() {
-    assert_no_codec_sidecar_until_closure("codec_zenoh_locator", sce_build::generator::Language::Go);
+    assert_no_codec_sidecar_until_closure(
+        "codec_zenoh_locator",
+        sce_build::generator::Language::Go,
+    );
 }
 
 #[test]
 fn forge_codec_zenoh_locator_python_no_sidecar_until_closure() {
-    assert_no_codec_sidecar_until_closure("codec_zenoh_locator", sce_build::generator::Language::Python);
+    assert_no_codec_sidecar_until_closure(
+        "codec_zenoh_locator",
+        sce_build::generator::Language::Python,
+    );
 }
 
 // ── B5-ι sidecar emit (Rust + C11) + 4 backend gate ─────────────
@@ -740,22 +844,34 @@ fn forge_c11_codec_zenoh_fragment_test_vector_sidecar() {
 
 #[test]
 fn forge_codec_zenoh_fragment_cpp_no_sidecar_until_closure() {
-    assert_no_codec_sidecar_until_closure("codec_zenoh_fragment", sce_build::generator::Language::Cpp);
+    assert_no_codec_sidecar_until_closure(
+        "codec_zenoh_fragment",
+        sce_build::generator::Language::Cpp,
+    );
 }
 
 #[test]
 fn forge_codec_zenoh_fragment_kotlin_no_sidecar_until_closure() {
-    assert_no_codec_sidecar_until_closure("codec_zenoh_fragment", sce_build::generator::Language::Kotlin);
+    assert_no_codec_sidecar_until_closure(
+        "codec_zenoh_fragment",
+        sce_build::generator::Language::Kotlin,
+    );
 }
 
 #[test]
 fn forge_codec_zenoh_fragment_go_no_sidecar_until_closure() {
-    assert_no_codec_sidecar_until_closure("codec_zenoh_fragment", sce_build::generator::Language::Go);
+    assert_no_codec_sidecar_until_closure(
+        "codec_zenoh_fragment",
+        sce_build::generator::Language::Go,
+    );
 }
 
 #[test]
 fn forge_codec_zenoh_fragment_python_no_sidecar_until_closure() {
-    assert_no_codec_sidecar_until_closure("codec_zenoh_fragment", sce_build::generator::Language::Python);
+    assert_no_codec_sidecar_until_closure(
+        "codec_zenoh_fragment",
+        sce_build::generator::Language::Python,
+    );
 }
 
 // ── RFC §5.B B5-κ Surface L sidecar emit (primitive demo) ──────
@@ -829,18 +945,19 @@ fn forge_codec_length_ref_dotted_basic_python_no_sidecar_until_closure() {
 ///   3. `<sce:yield expr="..."/>` is the fold's terminal child.
 #[test]
 fn forge_algorithm_const_fold_smoke_parses() {
-    use sce_build::forge::model::{
-        AlgorithmConstType, ForgeDocument, SceType,
-    };
+    use sce_build::forge::model::{AlgorithmConstType, ForgeDocument, SceType};
     use sce_build::forge::parser::parse_forge;
     use sce_build::DocumentLabel;
 
     let scxml_path = resource_dir().join("algorithm_const_fold_smoke.scxml");
     let content = std::fs::read_to_string(&scxml_path).expect("read fixture");
 
-    let doc = parse_forge(&content, DocumentLabel::symmetric("algorithm_const_fold_smoke"))
-        .expect("fold-form const must parse cleanly")
-        .expect("fixture is sce:kind=\"algorithm\"");
+    let doc = parse_forge(
+        &content,
+        DocumentLabel::symmetric("algorithm_const_fold_smoke"),
+    )
+    .expect("fold-form const must parse cleanly")
+    .expect("fixture is sce:kind=\"algorithm\"");
     let alg = match doc {
         ForgeDocument::Algorithm(m) => m,
         other => panic!("expected Algorithm doc, got {:?}", other.kind()),
@@ -861,7 +978,11 @@ fn forge_algorithm_const_fold_smoke_parses() {
 
     match &c.sce_type {
         AlgorithmConstType::Array { elem, len } => {
-            assert_eq!(*elem, SceType::Uint16, "Rust-style `u16` alias must map to Uint16");
+            assert_eq!(
+                *elem,
+                SceType::Uint16,
+                "Rust-style `u16` alias must map to Uint16"
+            );
             assert_eq!(*len, 4, "array<u16, 4> declared length");
         }
         other => panic!("fold-form const must carry array shape, got {other:?}"),
@@ -895,10 +1016,7 @@ fn forge_const_fold_smoke_emits_rust() {
 
 #[test]
 fn forge_const_fold_smoke_emits_cpp() {
-    assert_standalone_forge(
-        "algorithm_const_fold_smoke",
-        "algorithm_const_fold_smoke.h",
-    );
+    assert_standalone_forge("algorithm_const_fold_smoke", "algorithm_const_fold_smoke.h");
 }
 
 /// RFC §5.F β acceptance fixture: CRC16-CCITT-FALSE in
@@ -911,18 +1029,12 @@ fn forge_const_fold_smoke_emits_cpp() {
 /// equivalence remains scheduled for A4-A5-A6).
 #[test]
 fn forge_algorithm_crc16_table_rust() {
-    assert_standalone_forge_rust(
-        "algorithm_crc16_table",
-        "algorithm_crc16_table.rs",
-    );
+    assert_standalone_forge_rust("algorithm_crc16_table", "algorithm_crc16_table.rs");
 }
 
 #[test]
 fn forge_algorithm_crc16_table_cpp() {
-    assert_standalone_forge(
-        "algorithm_crc16_table",
-        "algorithm_crc16_table.h",
-    );
+    assert_standalone_forge("algorithm_crc16_table", "algorithm_crc16_table.h");
 }
 
 /// RFC §5.F γ wire codes: each of the three `algorithm/const-*`
@@ -1227,10 +1339,7 @@ fn forge_codec_qos_byte_cpp() {
 
 #[test]
 fn forge_codec_zenoh_keep_alive_cpp() {
-    assert_standalone_forge(
-        "codec_zenoh_keep_alive",
-        "codec_zenoh_keep_alive.h",
-    );
+    assert_standalone_forge("codec_zenoh_keep_alive", "codec_zenoh_keep_alive.h");
 }
 
 // ── RFC §5.B B1-γ flags primitive ────────────────────────────
@@ -1256,10 +1365,7 @@ fn forge_codec_flags_basic() {
 
 #[test]
 fn forge_codec_present_if_basic() {
-    assert_standalone_forge(
-        "codec_present_if_basic",
-        "codec_present_if_basic.h",
-    );
+    assert_standalone_forge("codec_present_if_basic", "codec_present_if_basic.h");
 }
 
 // ── RFC §5.B B5-λ present-if negation primitive (Cpp) ───────
@@ -1276,10 +1382,7 @@ fn forge_codec_present_if_basic() {
 
 #[test]
 fn forge_codec_present_if_negation() {
-    assert_standalone_forge(
-        "codec_present_if_negation",
-        "codec_present_if_negation.h",
-    );
+    assert_standalone_forge("codec_present_if_negation", "codec_present_if_negation.h");
 }
 
 // ── RFC §5.B Y3 atomic 2b-ii present-if disjunction primitive (Cpp) ──
@@ -1328,10 +1431,7 @@ fn forge_codec_peek_arm_b() {
 
 #[test]
 fn forge_codec_variant_peek_basic() {
-    assert_standalone_forge(
-        "codec_variant_peek_basic",
-        "codec_variant_peek_basic.h",
-    );
+    assert_standalone_forge("codec_variant_peek_basic", "codec_variant_peek_basic.h");
 }
 
 // ── RFC §5.B Y3 atomic 2b-ii peek-byte first realistic peek-byte
@@ -1347,10 +1447,7 @@ fn forge_codec_variant_peek_basic() {
 
 #[test]
 fn forge_codec_zenoh_response() {
-    assert_standalone_forge(
-        "codec_zenoh_response",
-        "codec_zenoh_response.h",
-    );
+    assert_standalone_forge("codec_zenoh_response", "codec_zenoh_response.h");
 }
 
 // ── RFC §5.B B2-β present-if + variable-length (Cpp) ─────────
@@ -1501,7 +1598,10 @@ fn forge_codec_zenoh_decl_keyexpr_cpp() {
 
 #[test]
 fn forge_codec_zenoh_decl_subscriber_cpp() {
-    assert_standalone_forge("codec_zenoh_decl_subscriber", "codec_zenoh_decl_subscriber.h");
+    assert_standalone_forge(
+        "codec_zenoh_decl_subscriber",
+        "codec_zenoh_decl_subscriber.h",
+    );
 }
 
 #[test]
@@ -1560,10 +1660,7 @@ fn forge_codec_zenoh_undecl_queryable_cpp() {
 
 #[test]
 fn forge_codec_zenoh_undecl_token_cpp() {
-    assert_standalone_forge(
-        "codec_zenoh_undecl_token",
-        "codec_zenoh_undecl_token.h",
-    );
+    assert_standalone_forge("codec_zenoh_undecl_token", "codec_zenoh_undecl_token.h");
 }
 
 // ── RFC §5.B Wire RFC Phase B Y2 — _encode_ext envelope family ──
@@ -1577,10 +1674,7 @@ fn forge_codec_zenoh_undecl_token_cpp() {
 
 #[test]
 fn forge_codec_zenoh_source_info_cpp() {
-    assert_standalone_forge(
-        "codec_zenoh_source_info",
-        "codec_zenoh_source_info.h",
-    );
+    assert_standalone_forge("codec_zenoh_source_info", "codec_zenoh_source_info.h");
 }
 
 #[test]
@@ -1593,10 +1687,7 @@ fn forge_codec_zenoh_source_info_ext_cpp() {
 
 #[test]
 fn forge_codec_zenoh_timestamp_ext_cpp() {
-    assert_standalone_forge(
-        "codec_zenoh_timestamp_ext",
-        "codec_zenoh_timestamp_ext.h",
-    );
+    assert_standalone_forge("codec_zenoh_timestamp_ext", "codec_zenoh_timestamp_ext.h");
 }
 
 // ── RFC §5.B B3 TLV chain primitive (Cpp/Rust trunk) ────────
@@ -1627,10 +1718,7 @@ fn forge_codec_tlv_entry_rust() {
 
 #[test]
 fn forge_codec_tlv_chain_basic_rust() {
-    assert_standalone_forge_rust(
-        "codec_tlv_chain_basic",
-        "codec_tlv_chain_basic.rs",
-    );
+    assert_standalone_forge_rust("codec_tlv_chain_basic", "codec_tlv_chain_basic.rs");
 }
 
 // ── RFC §5.B B5-ε surface G — TLV chain entry body keyed by carrier bits ─
@@ -1650,42 +1738,27 @@ fn forge_codec_tlv_chain_basic_rust() {
 
 #[test]
 fn forge_codec_zenoh_ext_unit_rust() {
-    assert_standalone_forge_rust(
-        "codec_zenoh_ext_unit",
-        "codec_zenoh_ext_unit.rs",
-    );
+    assert_standalone_forge_rust("codec_zenoh_ext_unit", "codec_zenoh_ext_unit.rs");
 }
 
 #[test]
 fn forge_codec_zenoh_ext_zint_rust() {
-    assert_standalone_forge_rust(
-        "codec_zenoh_ext_zint",
-        "codec_zenoh_ext_zint.rs",
-    );
+    assert_standalone_forge_rust("codec_zenoh_ext_zint", "codec_zenoh_ext_zint.rs");
 }
 
 #[test]
 fn forge_codec_zenoh_ext_zbuf_rust() {
-    assert_standalone_forge_rust(
-        "codec_zenoh_ext_zbuf",
-        "codec_zenoh_ext_zbuf.rs",
-    );
+    assert_standalone_forge_rust("codec_zenoh_ext_zbuf", "codec_zenoh_ext_zbuf.rs");
 }
 
 #[test]
 fn forge_codec_zenoh_ext_entry_rust() {
-    assert_standalone_forge_rust(
-        "codec_zenoh_ext_entry",
-        "codec_zenoh_ext_entry.rs",
-    );
+    assert_standalone_forge_rust("codec_zenoh_ext_entry", "codec_zenoh_ext_entry.rs");
 }
 
 #[test]
 fn forge_codec_zenoh_ext_envelope_rust() {
-    assert_standalone_forge_rust(
-        "codec_zenoh_ext_envelope",
-        "codec_zenoh_ext_envelope.rs",
-    );
+    assert_standalone_forge_rust("codec_zenoh_ext_envelope", "codec_zenoh_ext_envelope.rs");
 }
 
 // RFC §5.B B5-ε closures: cpp/kotlin/go/python now emit TLV chain via
@@ -2177,10 +2250,7 @@ fn forge_codec_zenoh_response_final_cpp() {
 
 #[test]
 fn forge_codec_zenoh_response_final_kotlin() {
-    assert_standalone_forge_kotlin(
-        "codec_zenoh_response_final",
-        "CodecZenohResponseFinal.kt",
-    );
+    assert_standalone_forge_kotlin("codec_zenoh_response_final", "CodecZenohResponseFinal.kt");
 }
 
 #[test]
@@ -2515,7 +2585,6 @@ fn forge_codec_zenoh_ext_envelope_python() {
     assert_standalone_forge_python("codec_zenoh_ext_envelope", "codec_zenoh_ext_envelope.py");
 }
 
-
 // ── RFC §5.B B5-ζ Surface H — string-vs-bytes typing ─────────
 // `codec_zenoh_locator` is the first reachable consumer for
 // `sce:type="string"` codec emit. Wire shape mirrors zenoh-pico
@@ -2542,34 +2611,22 @@ fn forge_codec_zenoh_locator_cpp() {
 
 #[test]
 fn forge_rust_codec_zenoh_locator() {
-    assert_standalone_forge_rust(
-        "codec_zenoh_locator",
-        "codec_zenoh_locator.rs",
-    );
+    assert_standalone_forge_rust("codec_zenoh_locator", "codec_zenoh_locator.rs");
 }
 
 #[test]
 fn forge_kotlin_codec_zenoh_locator() {
-    assert_standalone_forge_kotlin(
-        "codec_zenoh_locator",
-        "CodecZenohLocator.kt",
-    );
+    assert_standalone_forge_kotlin("codec_zenoh_locator", "CodecZenohLocator.kt");
 }
 
 #[test]
 fn forge_go_codec_zenoh_locator() {
-    assert_standalone_forge_go(
-        "codec_zenoh_locator",
-        "codec_zenoh_locator.go",
-    );
+    assert_standalone_forge_go("codec_zenoh_locator", "codec_zenoh_locator.go");
 }
 
 #[test]
 fn forge_python_codec_zenoh_locator() {
-    assert_standalone_forge_python(
-        "codec_zenoh_locator",
-        "codec_zenoh_locator.py",
-    );
+    assert_standalone_forge_python("codec_zenoh_locator", "codec_zenoh_locator.py");
 }
 
 /// RFC §5.B B5-ζ Surface H parser validation: `sce:type="string"`
@@ -2864,10 +2921,7 @@ fn forge_codec_tlv_chain_diagnostic_event_overflow_rejects() {
 
 #[test]
 fn forge_codec_dma_aligned_basic_rust() {
-    assert_standalone_forge_rust(
-        "codec_dma_aligned_basic",
-        "codec_dma_aligned_basic.rs",
-    );
+    assert_standalone_forge_rust("codec_dma_aligned_basic", "codec_dma_aligned_basic.rs");
 }
 
 /// RFC §5.B B3 MCU gate: a codec with `sce:dma-burst-align` on any
@@ -2879,8 +2933,8 @@ fn forge_codec_dma_aligned_rejects_on_cpp() {
     use sce_build::forge::error::{ForgeError, GenerateError};
 
     let scxml_path = resource_dir().join("codec_dma_aligned_basic.scxml");
-    let content = std::fs::read_to_string(&scxml_path)
-        .expect("Cannot read codec_dma_aligned_basic.scxml");
+    let content =
+        std::fs::read_to_string(&scxml_path).expect("Cannot read codec_dma_aligned_basic.scxml");
     let result = sce_build::compile_forge_with_imports(
         &content,
         sce_build::DocumentLabel::symmetric("codec_dma_aligned_basic"),
@@ -3303,9 +3357,7 @@ fn forge_codec_length_field_dotted_non_flags_carrier_rejects() {
         &sce_build::ForgeCompileOptions::default(),
     );
     let err = match result {
-        Ok(_) => panic!(
-            "dotted-path against a non-flags-bearing carrier must reject"
-        ),
+        Ok(_) => panic!("dotted-path against a non-flags-bearing carrier must reject"),
         Err(e) => e,
     };
     assert!(
@@ -3384,7 +3436,11 @@ fn forge_algorithm_test_vector_parses() {
         other => panic!("expected Algorithm doc, got {:?}", other.kind()),
     };
 
-    assert_eq!(alg.test_vectors.len(), 1, "fixture declares one <sce:test-vector>");
+    assert_eq!(
+        alg.test_vectors.len(),
+        1,
+        "fixture declares one <sce:test-vector>"
+    );
     let tv = &alg.test_vectors[0];
     assert_eq!(
         tv.hex,
@@ -3408,9 +3464,7 @@ fn forge_algorithm_test_vector_parses() {
 /// dispatch (uint integer + bytes hex), and the source_line tracking.
 #[test]
 fn forge_codec_test_vector_parses() {
-    use sce_build::forge::model::{
-        DecodedFieldValue, DecodedValue, ForgeDocument,
-    };
+    use sce_build::forge::model::{DecodedFieldValue, DecodedValue, ForgeDocument};
     use sce_build::forge::parser::parse_forge;
     use sce_build::DocumentLabel;
 
@@ -3436,7 +3490,11 @@ fn forge_codec_test_vector_parses() {
         other => panic!("expected Codec doc, got {:?}", other.kind()),
     };
 
-    assert_eq!(codec.test_vectors.len(), 1, "fixture declares one <sce:test-vector>");
+    assert_eq!(
+        codec.test_vectors.len(),
+        1,
+        "fixture declares one <sce:test-vector>"
+    );
     let tv = &codec.test_vectors[0];
     assert_eq!(tv.hex, vec![0x01, 0xCA, 0xFE]);
     let DecodedValue::Plain { fields } = &tv.decoded;
@@ -3475,7 +3533,9 @@ fn forge_codec_test_vector_unknown_field_rejects() {
         &sce_build::ForgeCompileOptions::default(),
     );
     let err = match result {
-        Ok(_) => panic!("<sce:decoded field=\"bogus\"> must reject — bogus is not a declared codec field"),
+        Ok(_) => panic!(
+            "<sce:decoded field=\"bogus\"> must reject — bogus is not a declared codec field"
+        ),
         Err(e) => e,
     };
     assert!(
@@ -3632,10 +3692,7 @@ fn forge_test_vector_invalid_value_rejects() {
 
 #[test]
 fn forge_codec_variant_session_open_cpp() {
-    assert_standalone_forge(
-        "codec_variant_session_open",
-        "codec_variant_session_open.h",
-    );
+    assert_standalone_forge("codec_variant_session_open", "codec_variant_session_open.h");
 }
 
 #[test]
@@ -3648,10 +3705,7 @@ fn forge_codec_variant_session_close_cpp() {
 
 #[test]
 fn forge_codec_variant_dispatch_cpp() {
-    assert_standalone_forge(
-        "codec_variant_dispatch",
-        "codec_variant_dispatch.h",
-    );
+    assert_standalone_forge("codec_variant_dispatch", "codec_variant_dispatch.h");
 }
 
 /// RFC §5.B B5-β multi-bit-flag variant dispatch (Cpp): `<sce:variant
@@ -3662,10 +3716,7 @@ fn forge_codec_variant_dispatch_cpp() {
 /// `_Z_MID_MASK = 0x1f`).
 #[test]
 fn forge_codec_transport_envelope_cpp() {
-    assert_standalone_forge(
-        "codec_transport_envelope",
-        "codec_transport_envelope.h",
-    );
+    assert_standalone_forge("codec_transport_envelope", "codec_transport_envelope.h");
 }
 
 /// RFC §5.B B5-γ trunk (Cpp): body codec with `<sce:requires-parent-flags
@@ -3676,10 +3727,7 @@ fn forge_codec_transport_envelope_cpp() {
 /// zenoh-pico's `_z_init_decode(.., uint8_t header)` upstream pattern.
 #[test]
 fn forge_codec_init_syn_body_cpp() {
-    assert_standalone_forge(
-        "codec_init_syn_body",
-        "codec_init_syn_body.h",
-    );
+    assert_standalone_forge("codec_init_syn_body", "codec_init_syn_body.h");
 }
 
 /// RFC §5.B B5-γ trunk (Cpp): variant parent codec whose arm body
@@ -3691,10 +3739,7 @@ fn forge_codec_init_syn_body_cpp() {
 /// `codec/parent-flag-mismatch`.
 #[test]
 fn forge_codec_init_syn_envelope_cpp() {
-    assert_standalone_forge(
-        "codec_init_syn_envelope",
-        "codec_init_syn_envelope.h",
-    );
+    assert_standalone_forge("codec_init_syn_envelope", "codec_init_syn_envelope.h");
 }
 
 /// RFC §5.B B5-δ Surfaces D + E (Cpp): Init body cookie codec exercising
@@ -3707,10 +3752,7 @@ fn forge_codec_init_syn_envelope_cpp() {
 /// only the payload while always-emitting the length byte.
 #[test]
 fn forge_codec_init_cookie_body_cpp() {
-    assert_standalone_forge(
-        "codec_init_cookie_body",
-        "codec_init_cookie_body.h",
-    );
+    assert_standalone_forge("codec_init_cookie_body", "codec_init_cookie_body.h");
 }
 
 /// RFC §5.B B5-δ Surface F (Cpp): Scout/Hello/Init zid codec exercising
@@ -3720,10 +3762,7 @@ fn forge_codec_init_cookie_body_cpp() {
 /// `zidlen = ((cbyte & 0xF0) >> 4) + (uint8_t)1` (`transport.c:251`).
 #[test]
 fn forge_codec_scout_zid_body_cpp() {
-    assert_standalone_forge(
-        "codec_scout_zid_body",
-        "codec_scout_zid_body.h",
-    );
+    assert_standalone_forge("codec_scout_zid_body", "codec_scout_zid_body.h");
 }
 
 /// RFC §5.B B1-β: `codec/variant-arm-unreachable` build-time check —
@@ -4173,9 +4212,7 @@ fn forge_codec_variant_default_arm_and_catch_all_coexist() {
         &resource_dir(),
         &sce_build::ForgeCompileOptions::default(),
     )
-    .expect(
-        "default=\"true\" on one arm + <sce:default> catch-all must coexist (RFC Q-V3 (a))"
-    );
+    .expect("default=\"true\" on one arm + <sce:default> catch-all must coexist (RFC Q-V3 (a))");
 }
 
 /// RFC variant-default-uniformity Atomic β (Rust): the inner arm body
@@ -4186,8 +4223,8 @@ fn forge_codec_variant_default_arm_and_catch_all_coexist() {
 #[test]
 fn forge_codec_default_marker_arm_b_emits_baked_default_rust() {
     let scxml_path = resource_dir().join("codec_default_marker_arm_b.scxml");
-    let content = std::fs::read_to_string(&scxml_path)
-        .expect("codec_default_marker_arm_b.scxml must exist");
+    let content =
+        std::fs::read_to_string(&scxml_path).expect("codec_default_marker_arm_b.scxml must exist");
     let output = sce_build::compile_forge_with_imports(
         &content,
         sce_build::DocumentLabel::symmetric("codec_default_marker_arm_b"),
@@ -4229,8 +4266,8 @@ fn forge_codec_default_marker_arm_b_emits_baked_default_rust() {
 #[test]
 fn forge_codec_default_marker_arm_b_emits_baked_default_cpp() {
     let scxml_path = resource_dir().join("codec_default_marker_arm_b.scxml");
-    let content = std::fs::read_to_string(&scxml_path)
-        .expect("codec_default_marker_arm_b.scxml must exist");
+    let content =
+        std::fs::read_to_string(&scxml_path).expect("codec_default_marker_arm_b.scxml must exist");
     let output = sce_build::compile_forge_with_imports(
         &content,
         sce_build::DocumentLabel::symmetric("codec_default_marker_arm_b"),
@@ -4293,8 +4330,8 @@ fn forge_codec_variant_default_marker_outer_emits_declared_arm_cpp() {
 #[test]
 fn forge_codec_default_marker_arm_b_emits_baked_default_kotlin() {
     let scxml_path = resource_dir().join("codec_default_marker_arm_b.scxml");
-    let content = std::fs::read_to_string(&scxml_path)
-        .expect("codec_default_marker_arm_b.scxml must exist");
+    let content =
+        std::fs::read_to_string(&scxml_path).expect("codec_default_marker_arm_b.scxml must exist");
     let output = sce_build::compile_forge_with_imports(
         &content,
         sce_build::DocumentLabel::symmetric("codec_default_marker_arm_b"),
@@ -4365,8 +4402,8 @@ fn forge_codec_variant_default_marker_outer_emits_declared_arm_kotlin() {
 #[test]
 fn forge_codec_default_marker_arm_b_emits_baked_default_python() {
     let scxml_path = resource_dir().join("codec_default_marker_arm_b.scxml");
-    let content = std::fs::read_to_string(&scxml_path)
-        .expect("codec_default_marker_arm_b.scxml must exist");
+    let content =
+        std::fs::read_to_string(&scxml_path).expect("codec_default_marker_arm_b.scxml must exist");
     let output = sce_build::compile_forge_with_imports(
         &content,
         sce_build::DocumentLabel::symmetric("codec_default_marker_arm_b"),
@@ -4433,8 +4470,8 @@ fn forge_codec_variant_default_marker_outer_emits_declared_arm_python() {
 #[test]
 fn forge_codec_default_marker_arm_b_emits_baked_default_go() {
     let scxml_path = resource_dir().join("codec_default_marker_arm_b.scxml");
-    let content = std::fs::read_to_string(&scxml_path)
-        .expect("codec_default_marker_arm_b.scxml must exist");
+    let content =
+        std::fs::read_to_string(&scxml_path).expect("codec_default_marker_arm_b.scxml must exist");
     let mut opts = sce_build::ForgeCompileOptions::default();
     opts.go_module_prefix = Some("github.com/test/codec".to_string());
     let output = sce_build::compile_forge_with_imports(
@@ -4510,8 +4547,8 @@ fn forge_codec_variant_default_marker_outer_emits_declared_arm_go() {
 #[test]
 fn forge_codec_default_marker_arm_b_emits_baked_default_c11() {
     let scxml_path = resource_dir().join("codec_default_marker_arm_b.scxml");
-    let content = std::fs::read_to_string(&scxml_path)
-        .expect("codec_default_marker_arm_b.scxml must exist");
+    let content =
+        std::fs::read_to_string(&scxml_path).expect("codec_default_marker_arm_b.scxml must exist");
     let output = sce_build::compile_forge_with_imports(
         &content,
         sce_build::DocumentLabel::symmetric("codec_default_marker_arm_b"),
@@ -4557,9 +4594,8 @@ fn forge_codec_variant_default_marker_outer_emits_declared_arm_c11() {
         "outer must emit the `_DEFAULT_INIT` macro. Generated source:\n{generated}"
     );
     assert!(
-        generated.contains(
-            ".kind = CODEC_VARIANT_DEFAULT_MARKER_BODY_KIND_CODEC_DEFAULT_MARKER_ARM_B,"
-        ),
+        generated
+            .contains(".kind = CODEC_VARIANT_DEFAULT_MARKER_BODY_KIND_CODEC_DEFAULT_MARKER_ARM_B,"),
         "outer `_DEFAULT_INIT` must select the declared default arm's \
          kind enum (CODEC_VARIANT_DEFAULT_MARKER_BODY_KIND_CODEC_DEFAULT_MARKER_ARM_B). \
          Generated source:\n{generated}"
@@ -4573,9 +4609,8 @@ fn forge_codec_variant_default_marker_outer_emits_declared_arm_c11() {
          source:\n{generated}"
     );
     assert!(
-        !generated.contains(
-            ".kind = CODEC_VARIANT_DEFAULT_MARKER_BODY_KIND_CODEC_DEFAULT_MARKER_ARM_A,"
-        ),
+        !generated
+            .contains(".kind = CODEC_VARIANT_DEFAULT_MARKER_BODY_KIND_CODEC_DEFAULT_MARKER_ARM_A,"),
         "outer `_DEFAULT_INIT` must NOT select the first declared arm \
          (CODEC_DEFAULT_MARKER_ARM_A) when another arm is marked \
          default. Generated source:\n{generated}"
@@ -4606,17 +4641,13 @@ fn forge_codec_variant_default_marker_outer_emits_declared_arm_rust() {
     // is marked `default="true"`). The Variant::default() impl must
     // pick it, NOT the first declared arm (CodecDefaultMarkerArmA).
     assert!(
-        generated.contains(
-            "Self::CodecDefaultMarkerArmB(CodecDefaultMarkerArmB::default())"
-        ),
+        generated.contains("Self::CodecDefaultMarkerArmB(CodecDefaultMarkerArmB::default())"),
         "outer Variant::default() must select the arm marked \
          default=\"true\" (CodecDefaultMarkerArmB) — not the first \
          declared arm. Generated source:\n{generated}"
     );
     assert!(
-        !generated.contains(
-            "Self::CodecDefaultMarkerArmA(CodecDefaultMarkerArmA::default())"
-        ),
+        !generated.contains("Self::CodecDefaultMarkerArmA(CodecDefaultMarkerArmA::default())"),
         "outer Variant::default() must NOT select the first declared arm \
          (CodecDefaultMarkerArmA) when another arm is marked \
          default=\"true\". Generated source:\n{generated}"
@@ -4753,9 +4784,7 @@ fn forge_codec_variant_dotted_tag_arm_unreachable_uses_flag_width() {
         &sce_build::ForgeCompileOptions::default(),
     );
     let err = match result {
-        Ok(_) => panic!(
-            "2-arm coverage of width-2 domain (4 values) without default must reject"
-        ),
+        Ok(_) => panic!("2-arm coverage of width-2 domain (4 values) without default must reject"),
         Err(e) => e,
     };
     assert!(
@@ -4944,10 +4973,7 @@ fn forge_kotlin_codec_qos_byte() {
 
 #[test]
 fn forge_kotlin_codec_zenoh_keep_alive() {
-    assert_standalone_forge_kotlin(
-        "codec_zenoh_keep_alive",
-        "CodecZenohKeepAlive.kt",
-    );
+    assert_standalone_forge_kotlin("codec_zenoh_keep_alive", "CodecZenohKeepAlive.kt");
 }
 
 // ── RFC §5.B B1-γ flags primitive (Kotlin) ───────────────────
@@ -4961,54 +4987,36 @@ fn forge_kotlin_codec_flags_basic() {
 
 #[test]
 fn forge_kotlin_codec_variant_session_open() {
-    assert_standalone_forge_kotlin(
-        "codec_variant_session_open",
-        "CodecVariantSessionOpen.kt",
-    );
+    assert_standalone_forge_kotlin("codec_variant_session_open", "CodecVariantSessionOpen.kt");
 }
 
 #[test]
 fn forge_kotlin_codec_variant_session_close() {
-    assert_standalone_forge_kotlin(
-        "codec_variant_session_close",
-        "CodecVariantSessionClose.kt",
-    );
+    assert_standalone_forge_kotlin("codec_variant_session_close", "CodecVariantSessionClose.kt");
 }
 
 #[test]
 fn forge_kotlin_codec_variant_dispatch() {
-    assert_standalone_forge_kotlin(
-        "codec_variant_dispatch",
-        "CodecVariantDispatch.kt",
-    );
+    assert_standalone_forge_kotlin("codec_variant_dispatch", "CodecVariantDispatch.kt");
 }
 
 #[test]
 fn forge_kotlin_codec_transport_envelope() {
-    assert_standalone_forge_kotlin(
-        "codec_transport_envelope",
-        "CodecTransportEnvelope.kt",
-    );
+    assert_standalone_forge_kotlin("codec_transport_envelope", "CodecTransportEnvelope.kt");
 }
 
 // ── RFC §5.B B1-δ present-if primitive (Kotlin) ─────────────
 
 #[test]
 fn forge_kotlin_codec_present_if_basic() {
-    assert_standalone_forge_kotlin(
-        "codec_present_if_basic",
-        "CodecPresentIfBasic.kt",
-    );
+    assert_standalone_forge_kotlin("codec_present_if_basic", "CodecPresentIfBasic.kt");
 }
 
 // ── RFC §5.B B5-λ present-if negation primitive (Kotlin) ────
 
 #[test]
 fn forge_kotlin_codec_present_if_negation() {
-    assert_standalone_forge_kotlin(
-        "codec_present_if_negation",
-        "CodecPresentIfNegation.kt",
-    );
+    assert_standalone_forge_kotlin("codec_present_if_negation", "CodecPresentIfNegation.kt");
 }
 
 // ── RFC §5.B Y3 atomic 2b-ii present-if disjunction primitive (Kotlin) ──
@@ -5035,62 +5043,41 @@ fn forge_kotlin_codec_peek_arm_b() {
 
 #[test]
 fn forge_kotlin_codec_variant_peek_basic() {
-    assert_standalone_forge_kotlin(
-        "codec_variant_peek_basic",
-        "CodecVariantPeekBasic.kt",
-    );
+    assert_standalone_forge_kotlin("codec_variant_peek_basic", "CodecVariantPeekBasic.kt");
 }
 
 #[test]
 fn forge_kotlin_codec_zenoh_response() {
-    assert_standalone_forge_kotlin(
-        "codec_zenoh_response",
-        "CodecZenohResponse.kt",
-    );
+    assert_standalone_forge_kotlin("codec_zenoh_response", "CodecZenohResponse.kt");
 }
 
 // ── RFC §5.B B2-β present-if + variable-length (Kotlin) ─────
 
 #[test]
 fn forge_kotlin_codec_present_if_tail() {
-    assert_standalone_forge_kotlin(
-        "codec_present_if_tail",
-        "CodecPresentIfTail.kt",
-    );
+    assert_standalone_forge_kotlin("codec_present_if_tail", "CodecPresentIfTail.kt");
 }
 
 #[test]
 fn forge_kotlin_codec_present_if_length_ref() {
-    assert_standalone_forge_kotlin(
-        "codec_present_if_length_ref",
-        "CodecPresentIfLengthRef.kt",
-    );
+    assert_standalone_forge_kotlin("codec_present_if_length_ref", "CodecPresentIfLengthRef.kt");
 }
 
 #[test]
 fn forge_kotlin_codec_present_if_vle() {
-    assert_standalone_forge_kotlin(
-        "codec_present_if_vle",
-        "CodecPresentIfVle.kt",
-    );
+    assert_standalone_forge_kotlin("codec_present_if_vle", "CodecPresentIfVle.kt");
 }
 
 // ── RFC §5.B B2 repeat primitive (Kotlin, closure) ──────────
 
 #[test]
 fn forge_kotlin_codec_repeat_elem() {
-    assert_standalone_forge_kotlin(
-        "codec_repeat_elem",
-        "CodecRepeatElem.kt",
-    );
+    assert_standalone_forge_kotlin("codec_repeat_elem", "CodecRepeatElem.kt");
 }
 
 #[test]
 fn forge_kotlin_codec_repeat_basic() {
-    assert_standalone_forge_kotlin(
-        "codec_repeat_basic",
-        "CodecRepeatBasic.kt",
-    );
+    assert_standalone_forge_kotlin("codec_repeat_basic", "CodecRepeatBasic.kt");
 }
 
 #[test]
@@ -5182,68 +5169,44 @@ fn forge_kotlin_codec_zenoh_undecl_queryable() {
 
 #[test]
 fn forge_kotlin_codec_zenoh_undecl_token() {
-    assert_standalone_forge_kotlin(
-        "codec_zenoh_undecl_token",
-        "CodecZenohUndeclToken.kt",
-    );
+    assert_standalone_forge_kotlin("codec_zenoh_undecl_token", "CodecZenohUndeclToken.kt");
 }
 
 #[test]
 fn forge_kotlin_codec_zenoh_source_info() {
-    assert_standalone_forge_kotlin(
-        "codec_zenoh_source_info",
-        "CodecZenohSourceInfo.kt",
-    );
+    assert_standalone_forge_kotlin("codec_zenoh_source_info", "CodecZenohSourceInfo.kt");
 }
 
 #[test]
 fn forge_kotlin_codec_zenoh_source_info_ext() {
-    assert_standalone_forge_kotlin(
-        "codec_zenoh_source_info_ext",
-        "CodecZenohSourceInfoExt.kt",
-    );
+    assert_standalone_forge_kotlin("codec_zenoh_source_info_ext", "CodecZenohSourceInfoExt.kt");
 }
 
 #[test]
 fn forge_kotlin_codec_zenoh_timestamp_ext() {
-    assert_standalone_forge_kotlin(
-        "codec_zenoh_timestamp_ext",
-        "CodecZenohTimestampExt.kt",
-    );
+    assert_standalone_forge_kotlin("codec_zenoh_timestamp_ext", "CodecZenohTimestampExt.kt");
 }
 
 #[test]
 fn forge_kotlin_codec_until_eof_basic() {
-    assert_standalone_forge_kotlin(
-        "codec_until_eof_basic",
-        "CodecUntilEofBasic.kt",
-    );
+    assert_standalone_forge_kotlin("codec_until_eof_basic", "CodecUntilEofBasic.kt");
 }
 
 // ── RFC §5.B B4 applied codec shapes (Kotlin) ───────────────
 
 #[test]
 fn forge_kotlin_codec_ext_timestamp() {
-    assert_standalone_forge_kotlin(
-        "codec_ext_timestamp",
-        "CodecExtTimestamp.kt",
-    );
+    assert_standalone_forge_kotlin("codec_ext_timestamp", "CodecExtTimestamp.kt");
 }
 
 #[test]
 fn forge_kotlin_codec_ext_attachment() {
-    assert_standalone_forge_kotlin(
-        "codec_ext_attachment",
-        "CodecExtAttachment.kt",
-    );
+    assert_standalone_forge_kotlin("codec_ext_attachment", "CodecExtAttachment.kt");
 }
 
 #[test]
 fn forge_kotlin_codec_ext_encoding_info() {
-    assert_standalone_forge_kotlin(
-        "codec_ext_encoding_info",
-        "CodecExtEncodingInfo.kt",
-    );
+    assert_standalone_forge_kotlin("codec_ext_encoding_info", "CodecExtEncodingInfo.kt");
 }
 
 // ── Algorithm (Kotlin, RFC §5.A — post-A6 matrix follow-up) ─
@@ -5524,10 +5487,7 @@ fn forge_rust_codec_qos_byte() {
 
 #[test]
 fn forge_rust_codec_zenoh_keep_alive() {
-    assert_standalone_forge_rust(
-        "codec_zenoh_keep_alive",
-        "codec_zenoh_keep_alive.rs",
-    );
+    assert_standalone_forge_rust("codec_zenoh_keep_alive", "codec_zenoh_keep_alive.rs");
 }
 
 // ── RFC §5.B B1-γ flags primitive (Rust) ─────────────────────
@@ -5541,20 +5501,14 @@ fn forge_rust_codec_flags_basic() {
 
 #[test]
 fn forge_rust_codec_present_if_basic() {
-    assert_standalone_forge_rust(
-        "codec_present_if_basic",
-        "codec_present_if_basic.rs",
-    );
+    assert_standalone_forge_rust("codec_present_if_basic", "codec_present_if_basic.rs");
 }
 
 // ── RFC §5.B B5-λ present-if negation primitive (Rust) ──────
 
 #[test]
 fn forge_rust_codec_present_if_negation() {
-    assert_standalone_forge_rust(
-        "codec_present_if_negation",
-        "codec_present_if_negation.rs",
-    );
+    assert_standalone_forge_rust("codec_present_if_negation", "codec_present_if_negation.rs");
 }
 
 // ── RFC §5.B Y3 atomic 2b-ii present-if disjunction primitive (Rust) ──
@@ -5581,28 +5535,19 @@ fn forge_rust_codec_peek_arm_b() {
 
 #[test]
 fn forge_rust_codec_variant_peek_basic() {
-    assert_standalone_forge_rust(
-        "codec_variant_peek_basic",
-        "codec_variant_peek_basic.rs",
-    );
+    assert_standalone_forge_rust("codec_variant_peek_basic", "codec_variant_peek_basic.rs");
 }
 
 #[test]
 fn forge_rust_codec_zenoh_response() {
-    assert_standalone_forge_rust(
-        "codec_zenoh_response",
-        "codec_zenoh_response.rs",
-    );
+    assert_standalone_forge_rust("codec_zenoh_response", "codec_zenoh_response.rs");
 }
 
 // ── RFC §5.B B2-β present-if + variable-length (Rust) ───────
 
 #[test]
 fn forge_rust_codec_present_if_tail() {
-    assert_standalone_forge_rust(
-        "codec_present_if_tail",
-        "codec_present_if_tail.rs",
-    );
+    assert_standalone_forge_rust("codec_present_if_tail", "codec_present_if_tail.rs");
 }
 
 #[test]
@@ -5615,36 +5560,24 @@ fn forge_rust_codec_present_if_length_ref() {
 
 #[test]
 fn forge_rust_codec_present_if_vle() {
-    assert_standalone_forge_rust(
-        "codec_present_if_vle",
-        "codec_present_if_vle.rs",
-    );
+    assert_standalone_forge_rust("codec_present_if_vle", "codec_present_if_vle.rs");
 }
 
 // ── RFC §5.B B2 repeat primitive (Rust, trunk) ──────────────
 
 #[test]
 fn forge_rust_codec_repeat_elem() {
-    assert_standalone_forge_rust(
-        "codec_repeat_elem",
-        "codec_repeat_elem.rs",
-    );
+    assert_standalone_forge_rust("codec_repeat_elem", "codec_repeat_elem.rs");
 }
 
 #[test]
 fn forge_rust_codec_repeat_basic() {
-    assert_standalone_forge_rust(
-        "codec_repeat_basic",
-        "codec_repeat_basic.rs",
-    );
+    assert_standalone_forge_rust("codec_repeat_basic", "codec_repeat_basic.rs");
 }
 
 #[test]
 fn forge_rust_codec_until_eof_basic() {
-    assert_standalone_forge_rust(
-        "codec_until_eof_basic",
-        "codec_until_eof_basic.rs",
-    );
+    assert_standalone_forge_rust("codec_until_eof_basic", "codec_until_eof_basic.rs");
 }
 
 #[test]
@@ -5683,12 +5616,18 @@ fn forge_rust_codec_zenoh_decl_keyexpr() {
 
 #[test]
 fn forge_rust_codec_zenoh_decl_subscriber() {
-    assert_standalone_forge_rust("codec_zenoh_decl_subscriber", "codec_zenoh_decl_subscriber.rs");
+    assert_standalone_forge_rust(
+        "codec_zenoh_decl_subscriber",
+        "codec_zenoh_decl_subscriber.rs",
+    );
 }
 
 #[test]
 fn forge_rust_codec_zenoh_decl_queryable() {
-    assert_standalone_forge_rust("codec_zenoh_decl_queryable", "codec_zenoh_decl_queryable.rs");
+    assert_standalone_forge_rust(
+        "codec_zenoh_decl_queryable",
+        "codec_zenoh_decl_queryable.rs",
+    );
 }
 
 #[test]
@@ -5698,7 +5637,10 @@ fn forge_rust_codec_zenoh_decl_token() {
 
 #[test]
 fn forge_rust_codec_zenoh_undecl_keyexpr() {
-    assert_standalone_forge_rust("codec_zenoh_undecl_keyexpr", "codec_zenoh_undecl_keyexpr.rs");
+    assert_standalone_forge_rust(
+        "codec_zenoh_undecl_keyexpr",
+        "codec_zenoh_undecl_keyexpr.rs",
+    );
 }
 
 // ── RFC §5.B Wire RFC Phase B Y0b — TLV envelope foundation ────
@@ -5736,18 +5678,12 @@ fn forge_rust_codec_zenoh_undecl_queryable() {
 
 #[test]
 fn forge_rust_codec_zenoh_undecl_token() {
-    assert_standalone_forge_rust(
-        "codec_zenoh_undecl_token",
-        "codec_zenoh_undecl_token.rs",
-    );
+    assert_standalone_forge_rust("codec_zenoh_undecl_token", "codec_zenoh_undecl_token.rs");
 }
 
 #[test]
 fn forge_rust_codec_zenoh_source_info() {
-    assert_standalone_forge_rust(
-        "codec_zenoh_source_info",
-        "codec_zenoh_source_info.rs",
-    );
+    assert_standalone_forge_rust("codec_zenoh_source_info", "codec_zenoh_source_info.rs");
 }
 
 #[test]
@@ -5760,10 +5696,7 @@ fn forge_rust_codec_zenoh_source_info_ext() {
 
 #[test]
 fn forge_rust_codec_zenoh_timestamp_ext() {
-    assert_standalone_forge_rust(
-        "codec_zenoh_timestamp_ext",
-        "codec_zenoh_timestamp_ext.rs",
-    );
+    assert_standalone_forge_rust("codec_zenoh_timestamp_ext", "codec_zenoh_timestamp_ext.rs");
 }
 
 // ── RFC §5.B B4 applied codec shapes (Rust) ─────────────────
@@ -5780,10 +5713,7 @@ fn forge_rust_codec_ext_attachment() {
 
 #[test]
 fn forge_rust_codec_ext_encoding_info() {
-    assert_standalone_forge_rust(
-        "codec_ext_encoding_info",
-        "codec_ext_encoding_info.rs",
-    );
+    assert_standalone_forge_rust("codec_ext_encoding_info", "codec_ext_encoding_info.rs");
 }
 
 // ── RFC §5.B variant primitive (Rust, B1-β trunk) ────────────
@@ -5806,18 +5736,12 @@ fn forge_rust_codec_variant_session_close() {
 
 #[test]
 fn forge_rust_codec_variant_dispatch() {
-    assert_standalone_forge_rust(
-        "codec_variant_dispatch",
-        "codec_variant_dispatch.rs",
-    );
+    assert_standalone_forge_rust("codec_variant_dispatch", "codec_variant_dispatch.rs");
 }
 
 #[test]
 fn forge_rust_codec_transport_envelope() {
-    assert_standalone_forge_rust(
-        "codec_transport_envelope",
-        "codec_transport_envelope.rs",
-    );
+    assert_standalone_forge_rust("codec_transport_envelope", "codec_transport_envelope.rs");
 }
 
 /// RFC §5.B B5-γ trunk (Rust): body codec with parent-flags dependency.
@@ -5827,10 +5751,7 @@ fn forge_rust_codec_transport_envelope() {
 /// `_z_init_decode` upstream signature shape.
 #[test]
 fn forge_rust_codec_init_syn_body() {
-    assert_standalone_forge_rust(
-        "codec_init_syn_body",
-        "codec_init_syn_body.rs",
-    );
+    assert_standalone_forge_rust("codec_init_syn_body", "codec_init_syn_body.rs");
 }
 
 /// RFC §5.B B5-γ trunk (Rust): variant parent threading carrier value.
@@ -5841,10 +5762,7 @@ fn forge_rust_codec_init_syn_body() {
 /// `<sce:flag name="S" bit="6"/>`.
 #[test]
 fn forge_rust_codec_init_syn_envelope() {
-    assert_standalone_forge_rust(
-        "codec_init_syn_envelope",
-        "codec_init_syn_envelope.rs",
-    );
+    assert_standalone_forge_rust("codec_init_syn_envelope", "codec_init_syn_envelope.rs");
 }
 
 /// RFC §5.B B5-δ Surfaces D + E (Rust): Init body cookie codec.
@@ -5853,10 +5771,7 @@ fn forge_rust_codec_init_syn_envelope() {
 /// `cookie_size.unwrap() as usize` inside the predicate's true-branch.
 #[test]
 fn forge_rust_codec_init_cookie_body() {
-    assert_standalone_forge_rust(
-        "codec_init_cookie_body",
-        "codec_init_cookie_body.rs",
-    );
+    assert_standalone_forge_rust("codec_init_cookie_body", "codec_init_cookie_body.rs");
 }
 
 /// RFC §5.B B5-δ Surface F (Rust): Scout/Hello/Init zid codec.
@@ -5866,10 +5781,7 @@ fn forge_rust_codec_init_cookie_body() {
 /// contract: `zid_len_m1 == zid.len() - 1`).
 #[test]
 fn forge_rust_codec_scout_zid_body() {
-    assert_standalone_forge_rust(
-        "codec_scout_zid_body",
-        "codec_scout_zid_body.rs",
-    );
+    assert_standalone_forge_rust("codec_scout_zid_body", "codec_scout_zid_body.rs");
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -6051,10 +5963,7 @@ fn forge_go_codec_qos_byte() {
 
 #[test]
 fn forge_go_codec_zenoh_keep_alive() {
-    assert_standalone_forge_go(
-        "codec_zenoh_keep_alive",
-        "codec_zenoh_keep_alive.go",
-    );
+    assert_standalone_forge_go("codec_zenoh_keep_alive", "codec_zenoh_keep_alive.go");
 }
 
 // ── RFC §5.B B1-γ flags primitive (Go) ───────────────────────
@@ -6084,38 +5993,26 @@ fn forge_go_codec_variant_session_close() {
 
 #[test]
 fn forge_go_codec_variant_dispatch() {
-    assert_standalone_forge_go(
-        "codec_variant_dispatch",
-        "codec_variant_dispatch.go",
-    );
+    assert_standalone_forge_go("codec_variant_dispatch", "codec_variant_dispatch.go");
 }
 
 #[test]
 fn forge_go_codec_transport_envelope() {
-    assert_standalone_forge_go(
-        "codec_transport_envelope",
-        "codec_transport_envelope.go",
-    );
+    assert_standalone_forge_go("codec_transport_envelope", "codec_transport_envelope.go");
 }
 
 // ── RFC §5.B B1-δ present-if primitive (Go) ─────────────────
 
 #[test]
 fn forge_go_codec_present_if_basic() {
-    assert_standalone_forge_go(
-        "codec_present_if_basic",
-        "codec_present_if_basic.go",
-    );
+    assert_standalone_forge_go("codec_present_if_basic", "codec_present_if_basic.go");
 }
 
 // ── RFC §5.B B5-λ present-if negation primitive (Go) ────────
 
 #[test]
 fn forge_go_codec_present_if_negation() {
-    assert_standalone_forge_go(
-        "codec_present_if_negation",
-        "codec_present_if_negation.go",
-    );
+    assert_standalone_forge_go("codec_present_if_negation", "codec_present_if_negation.go");
 }
 
 // ── RFC §5.B Y3 atomic 2b-ii present-if disjunction primitive (Go) ──
@@ -6142,28 +6039,19 @@ fn forge_go_codec_peek_arm_b() {
 
 #[test]
 fn forge_go_codec_variant_peek_basic() {
-    assert_standalone_forge_go(
-        "codec_variant_peek_basic",
-        "codec_variant_peek_basic.go",
-    );
+    assert_standalone_forge_go("codec_variant_peek_basic", "codec_variant_peek_basic.go");
 }
 
 #[test]
 fn forge_go_codec_zenoh_response() {
-    assert_standalone_forge_go(
-        "codec_zenoh_response",
-        "codec_zenoh_response.go",
-    );
+    assert_standalone_forge_go("codec_zenoh_response", "codec_zenoh_response.go");
 }
 
 // ── RFC §5.B B2-β present-if + variable-length (Go) ─────────
 
 #[test]
 fn forge_go_codec_present_if_tail() {
-    assert_standalone_forge_go(
-        "codec_present_if_tail",
-        "codec_present_if_tail.go",
-    );
+    assert_standalone_forge_go("codec_present_if_tail", "codec_present_if_tail.go");
 }
 
 #[test]
@@ -6176,10 +6064,7 @@ fn forge_go_codec_present_if_length_ref() {
 
 #[test]
 fn forge_go_codec_present_if_vle() {
-    assert_standalone_forge_go(
-        "codec_present_if_vle",
-        "codec_present_if_vle.go",
-    );
+    assert_standalone_forge_go("codec_present_if_vle", "codec_present_if_vle.go");
 }
 
 // ── RFC §5.B B2 repeat primitive (Go, closure) ──────────────
@@ -6235,12 +6120,18 @@ fn forge_go_codec_zenoh_decl_keyexpr() {
 
 #[test]
 fn forge_go_codec_zenoh_decl_subscriber() {
-    assert_standalone_forge_go("codec_zenoh_decl_subscriber", "codec_zenoh_decl_subscriber.go");
+    assert_standalone_forge_go(
+        "codec_zenoh_decl_subscriber",
+        "codec_zenoh_decl_subscriber.go",
+    );
 }
 
 #[test]
 fn forge_go_codec_zenoh_decl_queryable() {
-    assert_standalone_forge_go("codec_zenoh_decl_queryable", "codec_zenoh_decl_queryable.go");
+    assert_standalone_forge_go(
+        "codec_zenoh_decl_queryable",
+        "codec_zenoh_decl_queryable.go",
+    );
 }
 
 #[test]
@@ -6250,7 +6141,10 @@ fn forge_go_codec_zenoh_decl_token() {
 
 #[test]
 fn forge_go_codec_zenoh_undecl_keyexpr() {
-    assert_standalone_forge_go("codec_zenoh_undecl_keyexpr", "codec_zenoh_undecl_keyexpr.go");
+    assert_standalone_forge_go(
+        "codec_zenoh_undecl_keyexpr",
+        "codec_zenoh_undecl_keyexpr.go",
+    );
 }
 
 // ── RFC §5.B Wire RFC Phase B Y0b — TLV envelope foundation ────
@@ -6288,18 +6182,12 @@ fn forge_go_codec_zenoh_undecl_queryable() {
 
 #[test]
 fn forge_go_codec_zenoh_undecl_token() {
-    assert_standalone_forge_go(
-        "codec_zenoh_undecl_token",
-        "codec_zenoh_undecl_token.go",
-    );
+    assert_standalone_forge_go("codec_zenoh_undecl_token", "codec_zenoh_undecl_token.go");
 }
 
 #[test]
 fn forge_go_codec_zenoh_source_info() {
-    assert_standalone_forge_go(
-        "codec_zenoh_source_info",
-        "codec_zenoh_source_info.go",
-    );
+    assert_standalone_forge_go("codec_zenoh_source_info", "codec_zenoh_source_info.go");
 }
 
 #[test]
@@ -6312,10 +6200,7 @@ fn forge_go_codec_zenoh_source_info_ext() {
 
 #[test]
 fn forge_go_codec_zenoh_timestamp_ext() {
-    assert_standalone_forge_go(
-        "codec_zenoh_timestamp_ext",
-        "codec_zenoh_timestamp_ext.go",
-    );
+    assert_standalone_forge_go("codec_zenoh_timestamp_ext", "codec_zenoh_timestamp_ext.go");
 }
 
 // ── RFC §5.B B4 applied codec shapes (Go) ───────────────────
@@ -6368,7 +6253,10 @@ fn forge_go_algorithm_crc16_table() {
 
 #[test]
 fn forge_go_algorithm_const_fold_smoke() {
-    assert_standalone_forge_go("algorithm_const_fold_smoke", "algorithm_const_fold_smoke.go");
+    assert_standalone_forge_go(
+        "algorithm_const_fold_smoke",
+        "algorithm_const_fold_smoke.go",
+    );
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -6550,10 +6438,7 @@ fn forge_python_codec_qos_byte() {
 
 #[test]
 fn forge_python_codec_zenoh_keep_alive() {
-    assert_standalone_forge_python(
-        "codec_zenoh_keep_alive",
-        "codec_zenoh_keep_alive.py",
-    );
+    assert_standalone_forge_python("codec_zenoh_keep_alive", "codec_zenoh_keep_alive.py");
 }
 
 // ── RFC §5.B B1-γ flags primitive (Python) ───────────────────
@@ -6583,38 +6468,26 @@ fn forge_python_codec_variant_session_close() {
 
 #[test]
 fn forge_python_codec_variant_dispatch() {
-    assert_standalone_forge_python(
-        "codec_variant_dispatch",
-        "codec_variant_dispatch.py",
-    );
+    assert_standalone_forge_python("codec_variant_dispatch", "codec_variant_dispatch.py");
 }
 
 #[test]
 fn forge_python_codec_transport_envelope() {
-    assert_standalone_forge_python(
-        "codec_transport_envelope",
-        "codec_transport_envelope.py",
-    );
+    assert_standalone_forge_python("codec_transport_envelope", "codec_transport_envelope.py");
 }
 
 // ── RFC §5.B B1-δ present-if primitive (Python) ─────────────
 
 #[test]
 fn forge_python_codec_present_if_basic() {
-    assert_standalone_forge_python(
-        "codec_present_if_basic",
-        "codec_present_if_basic.py",
-    );
+    assert_standalone_forge_python("codec_present_if_basic", "codec_present_if_basic.py");
 }
 
 // ── RFC §5.B B5-λ present-if negation primitive (Python) ────
 
 #[test]
 fn forge_python_codec_present_if_negation() {
-    assert_standalone_forge_python(
-        "codec_present_if_negation",
-        "codec_present_if_negation.py",
-    );
+    assert_standalone_forge_python("codec_present_if_negation", "codec_present_if_negation.py");
 }
 
 // ── RFC §5.B Y3 atomic 2b-ii present-if disjunction primitive (Python) ──
@@ -6641,28 +6514,19 @@ fn forge_python_codec_peek_arm_b() {
 
 #[test]
 fn forge_python_codec_variant_peek_basic() {
-    assert_standalone_forge_python(
-        "codec_variant_peek_basic",
-        "codec_variant_peek_basic.py",
-    );
+    assert_standalone_forge_python("codec_variant_peek_basic", "codec_variant_peek_basic.py");
 }
 
 #[test]
 fn forge_python_codec_zenoh_response() {
-    assert_standalone_forge_python(
-        "codec_zenoh_response",
-        "codec_zenoh_response.py",
-    );
+    assert_standalone_forge_python("codec_zenoh_response", "codec_zenoh_response.py");
 }
 
 // ── RFC §5.B B2-β present-if + variable-length (Python) ─────
 
 #[test]
 fn forge_python_codec_present_if_tail() {
-    assert_standalone_forge_python(
-        "codec_present_if_tail",
-        "codec_present_if_tail.py",
-    );
+    assert_standalone_forge_python("codec_present_if_tail", "codec_present_if_tail.py");
 }
 
 #[test]
@@ -6675,10 +6539,7 @@ fn forge_python_codec_present_if_length_ref() {
 
 #[test]
 fn forge_python_codec_present_if_vle() {
-    assert_standalone_forge_python(
-        "codec_present_if_vle",
-        "codec_present_if_vle.py",
-    );
+    assert_standalone_forge_python("codec_present_if_vle", "codec_present_if_vle.py");
 }
 
 // ── RFC §5.B B2 repeat primitive (Python, final closure) ────
@@ -6734,12 +6595,18 @@ fn forge_python_codec_zenoh_decl_keyexpr() {
 
 #[test]
 fn forge_python_codec_zenoh_decl_subscriber() {
-    assert_standalone_forge_python("codec_zenoh_decl_subscriber", "codec_zenoh_decl_subscriber.py");
+    assert_standalone_forge_python(
+        "codec_zenoh_decl_subscriber",
+        "codec_zenoh_decl_subscriber.py",
+    );
 }
 
 #[test]
 fn forge_python_codec_zenoh_decl_queryable() {
-    assert_standalone_forge_python("codec_zenoh_decl_queryable", "codec_zenoh_decl_queryable.py");
+    assert_standalone_forge_python(
+        "codec_zenoh_decl_queryable",
+        "codec_zenoh_decl_queryable.py",
+    );
 }
 
 #[test]
@@ -6749,7 +6616,10 @@ fn forge_python_codec_zenoh_decl_token() {
 
 #[test]
 fn forge_python_codec_zenoh_undecl_keyexpr() {
-    assert_standalone_forge_python("codec_zenoh_undecl_keyexpr", "codec_zenoh_undecl_keyexpr.py");
+    assert_standalone_forge_python(
+        "codec_zenoh_undecl_keyexpr",
+        "codec_zenoh_undecl_keyexpr.py",
+    );
 }
 
 // ── RFC §5.B Wire RFC Phase B Y0b — TLV envelope foundation ────
@@ -6787,18 +6657,12 @@ fn forge_python_codec_zenoh_undecl_queryable() {
 
 #[test]
 fn forge_python_codec_zenoh_undecl_token() {
-    assert_standalone_forge_python(
-        "codec_zenoh_undecl_token",
-        "codec_zenoh_undecl_token.py",
-    );
+    assert_standalone_forge_python("codec_zenoh_undecl_token", "codec_zenoh_undecl_token.py");
 }
 
 #[test]
 fn forge_python_codec_zenoh_source_info() {
-    assert_standalone_forge_python(
-        "codec_zenoh_source_info",
-        "codec_zenoh_source_info.py",
-    );
+    assert_standalone_forge_python("codec_zenoh_source_info", "codec_zenoh_source_info.py");
 }
 
 #[test]
@@ -6811,10 +6675,7 @@ fn forge_python_codec_zenoh_source_info_ext() {
 
 #[test]
 fn forge_python_codec_zenoh_timestamp_ext() {
-    assert_standalone_forge_python(
-        "codec_zenoh_timestamp_ext",
-        "codec_zenoh_timestamp_ext.py",
-    );
+    assert_standalone_forge_python("codec_zenoh_timestamp_ext", "codec_zenoh_timestamp_ext.py");
 }
 
 // ── RFC §5.B B4 applied codec shapes (Python) ───────────────
@@ -6831,10 +6692,7 @@ fn forge_python_codec_ext_attachment() {
 
 #[test]
 fn forge_python_codec_ext_encoding_info() {
-    assert_standalone_forge_python(
-        "codec_ext_encoding_info",
-        "codec_ext_encoding_info.py",
-    );
+    assert_standalone_forge_python("codec_ext_encoding_info", "codec_ext_encoding_info.py");
 }
 
 // ── Algorithm (Python, RFC §5.A — post-A6 matrix follow-up) ─
@@ -6871,7 +6729,10 @@ fn forge_python_algorithm_crc16_table() {
 
 #[test]
 fn forge_python_algorithm_const_fold_smoke() {
-    assert_standalone_forge_python("algorithm_const_fold_smoke", "algorithm_const_fold_smoke.py");
+    assert_standalone_forge_python(
+        "algorithm_const_fold_smoke",
+        "algorithm_const_fold_smoke.py",
+    );
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -7011,10 +6872,7 @@ fn forge_c11_codec_qos_byte() {
 
 #[test]
 fn forge_c11_codec_zenoh_keep_alive() {
-    assert_standalone_forge_c(
-        "codec_zenoh_keep_alive",
-        "codec_zenoh_keep_alive.c.h",
-    );
+    assert_standalone_forge_c("codec_zenoh_keep_alive", "codec_zenoh_keep_alive.c.h");
 }
 
 // ── RFC §5.B B1-γ flags primitive (C11) ──────────────────────
@@ -7044,38 +6902,26 @@ fn forge_c11_codec_variant_session_close() {
 
 #[test]
 fn forge_c11_codec_variant_dispatch() {
-    assert_standalone_forge_c(
-        "codec_variant_dispatch",
-        "codec_variant_dispatch.c.h",
-    );
+    assert_standalone_forge_c("codec_variant_dispatch", "codec_variant_dispatch.c.h");
 }
 
 #[test]
 fn forge_c11_codec_transport_envelope() {
-    assert_standalone_forge_c(
-        "codec_transport_envelope",
-        "codec_transport_envelope.c.h",
-    );
+    assert_standalone_forge_c("codec_transport_envelope", "codec_transport_envelope.c.h");
 }
 
 // ── RFC §5.B B1-δ present-if primitive (C11) ────────────────
 
 #[test]
 fn forge_c11_codec_present_if_basic() {
-    assert_standalone_forge_c(
-        "codec_present_if_basic",
-        "codec_present_if_basic.c.h",
-    );
+    assert_standalone_forge_c("codec_present_if_basic", "codec_present_if_basic.c.h");
 }
 
 // ── RFC §5.B B5-λ present-if negation primitive (C11) ───────
 
 #[test]
 fn forge_c11_codec_present_if_negation() {
-    assert_standalone_forge_c(
-        "codec_present_if_negation",
-        "codec_present_if_negation.c.h",
-    );
+    assert_standalone_forge_c("codec_present_if_negation", "codec_present_if_negation.c.h");
 }
 
 // ── RFC §5.B Y3 atomic 2b-ii present-if disjunction primitive (C11) ──
@@ -7102,28 +6948,19 @@ fn forge_c11_codec_peek_arm_b() {
 
 #[test]
 fn forge_c11_codec_variant_peek_basic() {
-    assert_standalone_forge_c(
-        "codec_variant_peek_basic",
-        "codec_variant_peek_basic.c.h",
-    );
+    assert_standalone_forge_c("codec_variant_peek_basic", "codec_variant_peek_basic.c.h");
 }
 
 #[test]
 fn forge_c11_codec_zenoh_response() {
-    assert_standalone_forge_c(
-        "codec_zenoh_response",
-        "codec_zenoh_response.c.h",
-    );
+    assert_standalone_forge_c("codec_zenoh_response", "codec_zenoh_response.c.h");
 }
 
 // ── RFC §5.B B2-β present-if + variable-length (C11) ────────
 
 #[test]
 fn forge_c11_codec_present_if_tail() {
-    assert_standalone_forge_c(
-        "codec_present_if_tail",
-        "codec_present_if_tail.c.h",
-    );
+    assert_standalone_forge_c("codec_present_if_tail", "codec_present_if_tail.c.h");
 }
 
 #[test]
@@ -7136,10 +6973,7 @@ fn forge_c11_codec_present_if_length_ref() {
 
 #[test]
 fn forge_c11_codec_present_if_vle() {
-    assert_standalone_forge_c(
-        "codec_present_if_vle",
-        "codec_present_if_vle.c.h",
-    );
+    assert_standalone_forge_c("codec_present_if_vle", "codec_present_if_vle.c.h");
 }
 
 // ── RFC §5.B B2 repeat primitive (C11, closure) ─────────────
@@ -7195,12 +7029,18 @@ fn forge_c11_codec_zenoh_decl_keyexpr() {
 
 #[test]
 fn forge_c11_codec_zenoh_decl_subscriber() {
-    assert_standalone_forge_c("codec_zenoh_decl_subscriber", "codec_zenoh_decl_subscriber.c.h");
+    assert_standalone_forge_c(
+        "codec_zenoh_decl_subscriber",
+        "codec_zenoh_decl_subscriber.c.h",
+    );
 }
 
 #[test]
 fn forge_c11_codec_zenoh_decl_queryable() {
-    assert_standalone_forge_c("codec_zenoh_decl_queryable", "codec_zenoh_decl_queryable.c.h");
+    assert_standalone_forge_c(
+        "codec_zenoh_decl_queryable",
+        "codec_zenoh_decl_queryable.c.h",
+    );
 }
 
 #[test]
@@ -7210,7 +7050,10 @@ fn forge_c11_codec_zenoh_decl_token() {
 
 #[test]
 fn forge_c11_codec_zenoh_undecl_keyexpr() {
-    assert_standalone_forge_c("codec_zenoh_undecl_keyexpr", "codec_zenoh_undecl_keyexpr.c.h");
+    assert_standalone_forge_c(
+        "codec_zenoh_undecl_keyexpr",
+        "codec_zenoh_undecl_keyexpr.c.h",
+    );
 }
 
 // ── RFC §5.B Wire RFC Phase B Y0b — TLV envelope foundation ────
@@ -7248,18 +7091,12 @@ fn forge_c11_codec_zenoh_undecl_queryable() {
 
 #[test]
 fn forge_c11_codec_zenoh_undecl_token() {
-    assert_standalone_forge_c(
-        "codec_zenoh_undecl_token",
-        "codec_zenoh_undecl_token.c.h",
-    );
+    assert_standalone_forge_c("codec_zenoh_undecl_token", "codec_zenoh_undecl_token.c.h");
 }
 
 #[test]
 fn forge_c11_codec_zenoh_source_info() {
-    assert_standalone_forge_c(
-        "codec_zenoh_source_info",
-        "codec_zenoh_source_info.c.h",
-    );
+    assert_standalone_forge_c("codec_zenoh_source_info", "codec_zenoh_source_info.c.h");
 }
 
 #[test]
@@ -7272,10 +7109,7 @@ fn forge_c11_codec_zenoh_source_info_ext() {
 
 #[test]
 fn forge_c11_codec_zenoh_timestamp_ext() {
-    assert_standalone_forge_c(
-        "codec_zenoh_timestamp_ext",
-        "codec_zenoh_timestamp_ext.c.h",
-    );
+    assert_standalone_forge_c("codec_zenoh_timestamp_ext", "codec_zenoh_timestamp_ext.c.h");
 }
 
 // ── RFC §5.B B3 TLV chain primitive (C11, trunk) ────────────
@@ -7295,10 +7129,7 @@ fn forge_c11_codec_tlv_entry() {
 
 #[test]
 fn forge_c11_codec_tlv_chain_basic() {
-    assert_standalone_forge_c(
-        "codec_tlv_chain_basic",
-        "codec_tlv_chain_basic.c.h",
-    );
+    assert_standalone_forge_c("codec_tlv_chain_basic", "codec_tlv_chain_basic.c.h");
 }
 
 // ── RFC §5.B B5-ε surface G — TLV chain entry body keyed by carrier bits ─
@@ -7317,42 +7148,27 @@ fn forge_c11_codec_tlv_chain_basic() {
 
 #[test]
 fn forge_c11_codec_zenoh_ext_unit() {
-    assert_standalone_forge_c(
-        "codec_zenoh_ext_unit",
-        "codec_zenoh_ext_unit.c.h",
-    );
+    assert_standalone_forge_c("codec_zenoh_ext_unit", "codec_zenoh_ext_unit.c.h");
 }
 
 #[test]
 fn forge_c11_codec_zenoh_ext_zint() {
-    assert_standalone_forge_c(
-        "codec_zenoh_ext_zint",
-        "codec_zenoh_ext_zint.c.h",
-    );
+    assert_standalone_forge_c("codec_zenoh_ext_zint", "codec_zenoh_ext_zint.c.h");
 }
 
 #[test]
 fn forge_c11_codec_zenoh_ext_zbuf() {
-    assert_standalone_forge_c(
-        "codec_zenoh_ext_zbuf",
-        "codec_zenoh_ext_zbuf.c.h",
-    );
+    assert_standalone_forge_c("codec_zenoh_ext_zbuf", "codec_zenoh_ext_zbuf.c.h");
 }
 
 #[test]
 fn forge_c11_codec_zenoh_ext_entry() {
-    assert_standalone_forge_c(
-        "codec_zenoh_ext_entry",
-        "codec_zenoh_ext_entry.c.h",
-    );
+    assert_standalone_forge_c("codec_zenoh_ext_entry", "codec_zenoh_ext_entry.c.h");
 }
 
 #[test]
 fn forge_c11_codec_zenoh_ext_envelope() {
-    assert_standalone_forge_c(
-        "codec_zenoh_ext_envelope",
-        "codec_zenoh_ext_envelope.c.h",
-    );
+    assert_standalone_forge_c("codec_zenoh_ext_envelope", "codec_zenoh_ext_envelope.c.h");
 }
 
 // ── RFC §5.B B3 DMA alignment primitive (C11, trunk) ────────
@@ -7366,10 +7182,7 @@ fn forge_c11_codec_zenoh_ext_envelope() {
 
 #[test]
 fn forge_c11_codec_dma_aligned_basic() {
-    assert_standalone_forge_c(
-        "codec_dma_aligned_basic",
-        "codec_dma_aligned_basic.c.h",
-    );
+    assert_standalone_forge_c("codec_dma_aligned_basic", "codec_dma_aligned_basic.c.h");
 }
 
 // ── RFC §5.B B4 applied codec shapes (C11) ──────────────────
@@ -7386,10 +7199,7 @@ fn forge_c11_codec_ext_attachment() {
 
 #[test]
 fn forge_c11_codec_ext_encoding_info() {
-    assert_standalone_forge_c(
-        "codec_ext_encoding_info",
-        "codec_ext_encoding_info.c.h",
-    );
+    assert_standalone_forge_c("codec_ext_encoding_info", "codec_ext_encoding_info.c.h");
 }
 
 // ── Crossfile codec (C11) ───────────────────────────────────
@@ -7401,12 +7211,18 @@ fn forge_c11_crossfile_procedure_codec() {
 
 #[test]
 fn forge_c11_crossfile_procedure_codec_mutate() {
-    assert_standalone_forge_c("crossfile_procedure_codec_mutate", "crossfile_procedure_codec_mutate.c.h");
+    assert_standalone_forge_c(
+        "crossfile_procedure_codec_mutate",
+        "crossfile_procedure_codec_mutate.c.h",
+    );
 }
 
 #[test]
 fn forge_c11_crossfile_procedure_filter() {
-    assert_standalone_forge_c("crossfile_procedure_filter", "crossfile_procedure_filter.c.h");
+    assert_standalone_forge_c(
+        "crossfile_procedure_filter",
+        "crossfile_procedure_filter.c.h",
+    );
 }
 
 #[test]
@@ -7416,27 +7232,42 @@ fn forge_c11_crossfile_validator_codec() {
 
 #[test]
 fn forge_c11_crossfile_validator_filter() {
-    assert_standalone_forge_c("crossfile_validator_filter", "crossfile_validator_filter.c.h");
+    assert_standalone_forge_c(
+        "crossfile_validator_filter",
+        "crossfile_validator_filter.c.h",
+    );
 }
 
 #[test]
 fn forge_c11_crossfile_validator_transform() {
-    assert_standalone_forge_c("crossfile_validator_transform", "crossfile_validator_transform.c.h");
+    assert_standalone_forge_c(
+        "crossfile_validator_transform",
+        "crossfile_validator_transform.c.h",
+    );
 }
 
 #[test]
 fn forge_c11_crossfile_validator_condition() {
-    assert_standalone_forge_c("crossfile_validator_condition", "crossfile_validator_condition.c.h");
+    assert_standalone_forge_c(
+        "crossfile_validator_condition",
+        "crossfile_validator_condition.c.h",
+    );
 }
 
 #[test]
 fn forge_c11_crossfile_validator_lookup() {
-    assert_standalone_forge_c("crossfile_validator_lookup", "crossfile_validator_lookup.c.h");
+    assert_standalone_forge_c(
+        "crossfile_validator_lookup",
+        "crossfile_validator_lookup.c.h",
+    );
 }
 
 #[test]
 fn forge_c11_crossfile_validator_interpolation() {
-    assert_standalone_forge_c("crossfile_validator_interpolation", "crossfile_validator_interpolation.c.h");
+    assert_standalone_forge_c(
+        "crossfile_validator_interpolation",
+        "crossfile_validator_interpolation.c.h",
+    );
 }
 
 // ── Transform (C11) ──────────────────────────────────────────
@@ -7519,7 +7350,10 @@ fn forge_c11_validator_signed_roc() {
 
 #[test]
 fn forge_c11_validator_plausibility_only() {
-    assert_standalone_forge_c("validator_plausibility_only", "validator_plausibility_only.c.h");
+    assert_standalone_forge_c(
+        "validator_plausibility_only",
+        "validator_plausibility_only.c.h",
+    );
 }
 
 // ── Procedure (C11) ──────────────────────────────────────────
@@ -7601,7 +7435,10 @@ fn forge_c11_algorithm_crc16_table() {
 
 #[test]
 fn forge_c11_algorithm_const_fold_smoke() {
-    assert_standalone_forge_c("algorithm_const_fold_smoke", "algorithm_const_fold_smoke.c.h");
+    assert_standalone_forge_c(
+        "algorithm_const_fold_smoke",
+        "algorithm_const_fold_smoke.c.h",
+    );
 }
 
 // ── Validator conformance (C++) ──────────────────────────────
@@ -7623,7 +7460,10 @@ fn forge_validator_signed_roc() {
 
 #[test]
 fn forge_validator_plausibility_only() {
-    assert_standalone_forge("validator_plausibility_only", "validator_plausibility_only.h");
+    assert_standalone_forge(
+        "validator_plausibility_only",
+        "validator_plausibility_only.h",
+    );
 }
 
 // ── Validator conformance (Kotlin) ──────────────────────────
@@ -7645,7 +7485,10 @@ fn forge_kotlin_validator_signed_roc() {
 
 #[test]
 fn forge_kotlin_validator_plausibility_only() {
-    assert_standalone_forge_kotlin("validator_plausibility_only", "ValidatorPlausibilityOnly.kt");
+    assert_standalone_forge_kotlin(
+        "validator_plausibility_only",
+        "ValidatorPlausibilityOnly.kt",
+    );
 }
 
 // ── Validator conformance (Rust) ────────────────────────────
@@ -7667,7 +7510,10 @@ fn forge_rust_validator_signed_roc() {
 
 #[test]
 fn forge_rust_validator_plausibility_only() {
-    assert_standalone_forge_rust("validator_plausibility_only", "validator_plausibility_only.rs");
+    assert_standalone_forge_rust(
+        "validator_plausibility_only",
+        "validator_plausibility_only.rs",
+    );
 }
 
 // ── Validator conformance (Go) ──────────────────────────────
@@ -7689,7 +7535,10 @@ fn forge_go_validator_signed_roc() {
 
 #[test]
 fn forge_go_validator_plausibility_only() {
-    assert_standalone_forge_go("validator_plausibility_only", "validator_plausibility_only.go");
+    assert_standalone_forge_go(
+        "validator_plausibility_only",
+        "validator_plausibility_only.go",
+    );
 }
 
 // ── Validator conformance (Python) ──────────────────────────
@@ -7711,7 +7560,10 @@ fn forge_python_validator_signed_roc() {
 
 #[test]
 fn forge_python_validator_plausibility_only() {
-    assert_standalone_forge_python("validator_plausibility_only", "validator_plausibility_only.py");
+    assert_standalone_forge_python(
+        "validator_plausibility_only",
+        "validator_plausibility_only.py",
+    );
 }
 
 // ── Procedure conformance (C++) ─────────────────────────────
@@ -7863,27 +7715,42 @@ fn forge_crossfile_procedure_codec_python() {
 
 #[test]
 fn forge_crossfile_procedure_codec_mutate_cpp() {
-    assert_standalone_forge("crossfile_procedure_codec_mutate", "crossfile_procedure_codec_mutate.h");
+    assert_standalone_forge(
+        "crossfile_procedure_codec_mutate",
+        "crossfile_procedure_codec_mutate.h",
+    );
 }
 
 #[test]
 fn forge_crossfile_procedure_codec_mutate_kotlin() {
-    assert_standalone_forge_kotlin("crossfile_procedure_codec_mutate", "CrossfileProcedureCodecMutate.kt");
+    assert_standalone_forge_kotlin(
+        "crossfile_procedure_codec_mutate",
+        "CrossfileProcedureCodecMutate.kt",
+    );
 }
 
 #[test]
 fn forge_crossfile_procedure_codec_mutate_rust() {
-    assert_standalone_forge_rust("crossfile_procedure_codec_mutate", "crossfile_procedure_codec_mutate.rs");
+    assert_standalone_forge_rust(
+        "crossfile_procedure_codec_mutate",
+        "crossfile_procedure_codec_mutate.rs",
+    );
 }
 
 #[test]
 fn forge_crossfile_procedure_codec_mutate_go() {
-    assert_standalone_forge_go("crossfile_procedure_codec_mutate", "crossfile_procedure_codec_mutate.go");
+    assert_standalone_forge_go(
+        "crossfile_procedure_codec_mutate",
+        "crossfile_procedure_codec_mutate.go",
+    );
 }
 
 #[test]
 fn forge_crossfile_procedure_codec_mutate_python() {
-    assert_standalone_forge_python("crossfile_procedure_codec_mutate", "crossfile_procedure_codec_mutate.py");
+    assert_standalone_forge_python(
+        "crossfile_procedure_codec_mutate",
+        "crossfile_procedure_codec_mutate.py",
+    );
 }
 
 #[test]
@@ -7898,42 +7765,66 @@ fn forge_crossfile_procedure_filter_kotlin() {
 
 #[test]
 fn forge_crossfile_procedure_filter_rust() {
-    assert_standalone_forge_rust("crossfile_procedure_filter", "crossfile_procedure_filter.rs");
+    assert_standalone_forge_rust(
+        "crossfile_procedure_filter",
+        "crossfile_procedure_filter.rs",
+    );
 }
 
 #[test]
 fn forge_crossfile_procedure_filter_go() {
-    assert_standalone_forge_go("crossfile_procedure_filter", "crossfile_procedure_filter.go");
+    assert_standalone_forge_go(
+        "crossfile_procedure_filter",
+        "crossfile_procedure_filter.go",
+    );
 }
 
 #[test]
 fn forge_crossfile_procedure_filter_python() {
-    assert_standalone_forge_python("crossfile_procedure_filter", "crossfile_procedure_filter.py");
+    assert_standalone_forge_python(
+        "crossfile_procedure_filter",
+        "crossfile_procedure_filter.py",
+    );
 }
 
 #[test]
 fn forge_crossfile_validator_transform_cpp() {
-    assert_standalone_forge("crossfile_validator_transform", "crossfile_validator_transform.h");
+    assert_standalone_forge(
+        "crossfile_validator_transform",
+        "crossfile_validator_transform.h",
+    );
 }
 
 #[test]
 fn forge_crossfile_validator_transform_kotlin() {
-    assert_standalone_forge_kotlin("crossfile_validator_transform", "CrossfileValidatorTransform.kt");
+    assert_standalone_forge_kotlin(
+        "crossfile_validator_transform",
+        "CrossfileValidatorTransform.kt",
+    );
 }
 
 #[test]
 fn forge_crossfile_validator_transform_rust() {
-    assert_standalone_forge_rust("crossfile_validator_transform", "crossfile_validator_transform.rs");
+    assert_standalone_forge_rust(
+        "crossfile_validator_transform",
+        "crossfile_validator_transform.rs",
+    );
 }
 
 #[test]
 fn forge_crossfile_validator_transform_go() {
-    assert_standalone_forge_go("crossfile_validator_transform", "crossfile_validator_transform.go");
+    assert_standalone_forge_go(
+        "crossfile_validator_transform",
+        "crossfile_validator_transform.go",
+    );
 }
 
 #[test]
 fn forge_crossfile_validator_transform_python() {
-    assert_standalone_forge_python("crossfile_validator_transform", "crossfile_validator_transform.py");
+    assert_standalone_forge_python(
+        "crossfile_validator_transform",
+        "crossfile_validator_transform.py",
+    );
 }
 
 #[test]
@@ -7973,42 +7864,66 @@ fn forge_crossfile_validator_filter_kotlin() {
 
 #[test]
 fn forge_crossfile_validator_filter_rust() {
-    assert_standalone_forge_rust("crossfile_validator_filter", "crossfile_validator_filter.rs");
+    assert_standalone_forge_rust(
+        "crossfile_validator_filter",
+        "crossfile_validator_filter.rs",
+    );
 }
 
 #[test]
 fn forge_crossfile_validator_filter_go() {
-    assert_standalone_forge_go("crossfile_validator_filter", "crossfile_validator_filter.go");
+    assert_standalone_forge_go(
+        "crossfile_validator_filter",
+        "crossfile_validator_filter.go",
+    );
 }
 
 #[test]
 fn forge_crossfile_validator_filter_python() {
-    assert_standalone_forge_python("crossfile_validator_filter", "crossfile_validator_filter.py");
+    assert_standalone_forge_python(
+        "crossfile_validator_filter",
+        "crossfile_validator_filter.py",
+    );
 }
 
 #[test]
 fn forge_crossfile_validator_condition_cpp() {
-    assert_standalone_forge("crossfile_validator_condition", "crossfile_validator_condition.h");
+    assert_standalone_forge(
+        "crossfile_validator_condition",
+        "crossfile_validator_condition.h",
+    );
 }
 
 #[test]
 fn forge_crossfile_validator_condition_kotlin() {
-    assert_standalone_forge_kotlin("crossfile_validator_condition", "CrossfileValidatorCondition.kt");
+    assert_standalone_forge_kotlin(
+        "crossfile_validator_condition",
+        "CrossfileValidatorCondition.kt",
+    );
 }
 
 #[test]
 fn forge_crossfile_validator_condition_rust() {
-    assert_standalone_forge_rust("crossfile_validator_condition", "crossfile_validator_condition.rs");
+    assert_standalone_forge_rust(
+        "crossfile_validator_condition",
+        "crossfile_validator_condition.rs",
+    );
 }
 
 #[test]
 fn forge_crossfile_validator_condition_go() {
-    assert_standalone_forge_go("crossfile_validator_condition", "crossfile_validator_condition.go");
+    assert_standalone_forge_go(
+        "crossfile_validator_condition",
+        "crossfile_validator_condition.go",
+    );
 }
 
 #[test]
 fn forge_crossfile_validator_condition_python() {
-    assert_standalone_forge_python("crossfile_validator_condition", "crossfile_validator_condition.py");
+    assert_standalone_forge_python(
+        "crossfile_validator_condition",
+        "crossfile_validator_condition.py",
+    );
 }
 
 #[test]
@@ -8023,42 +7938,66 @@ fn forge_crossfile_validator_lookup_kotlin() {
 
 #[test]
 fn forge_crossfile_validator_lookup_rust() {
-    assert_standalone_forge_rust("crossfile_validator_lookup", "crossfile_validator_lookup.rs");
+    assert_standalone_forge_rust(
+        "crossfile_validator_lookup",
+        "crossfile_validator_lookup.rs",
+    );
 }
 
 #[test]
 fn forge_crossfile_validator_lookup_go() {
-    assert_standalone_forge_go("crossfile_validator_lookup", "crossfile_validator_lookup.go");
+    assert_standalone_forge_go(
+        "crossfile_validator_lookup",
+        "crossfile_validator_lookup.go",
+    );
 }
 
 #[test]
 fn forge_crossfile_validator_lookup_python() {
-    assert_standalone_forge_python("crossfile_validator_lookup", "crossfile_validator_lookup.py");
+    assert_standalone_forge_python(
+        "crossfile_validator_lookup",
+        "crossfile_validator_lookup.py",
+    );
 }
 
 #[test]
 fn forge_crossfile_validator_interpolation_cpp() {
-    assert_standalone_forge("crossfile_validator_interpolation", "crossfile_validator_interpolation.h");
+    assert_standalone_forge(
+        "crossfile_validator_interpolation",
+        "crossfile_validator_interpolation.h",
+    );
 }
 
 #[test]
 fn forge_crossfile_validator_interpolation_kotlin() {
-    assert_standalone_forge_kotlin("crossfile_validator_interpolation", "CrossfileValidatorInterpolation.kt");
+    assert_standalone_forge_kotlin(
+        "crossfile_validator_interpolation",
+        "CrossfileValidatorInterpolation.kt",
+    );
 }
 
 #[test]
 fn forge_crossfile_validator_interpolation_rust() {
-    assert_standalone_forge_rust("crossfile_validator_interpolation", "crossfile_validator_interpolation.rs");
+    assert_standalone_forge_rust(
+        "crossfile_validator_interpolation",
+        "crossfile_validator_interpolation.rs",
+    );
 }
 
 #[test]
 fn forge_crossfile_validator_interpolation_go() {
-    assert_standalone_forge_go("crossfile_validator_interpolation", "crossfile_validator_interpolation.go");
+    assert_standalone_forge_go(
+        "crossfile_validator_interpolation",
+        "crossfile_validator_interpolation.go",
+    );
 }
 
 #[test]
 fn forge_crossfile_validator_interpolation_python() {
-    assert_standalone_forge_python("crossfile_validator_interpolation", "crossfile_validator_interpolation.py");
+    assert_standalone_forge_python(
+        "crossfile_validator_interpolation",
+        "crossfile_validator_interpolation.py",
+    );
 }
 
 // ── Inline kind conformance ──────────────────────────────────
@@ -8643,17 +8582,13 @@ fn assert_crossfile_codegen_languages(
                 if matches!(lang, sce_build::generator::Language::Rust) {
                     for (filename, code) in &output.files {
                         if let Err(e) = syn::parse_file(code) {
-                            panic!(
-                                "{scxml_name} ({lang:?}) {filename}: syn parse error: {e}"
-                            );
+                            panic!("{scxml_name} ({lang:?}) {filename}: syn parse error: {e}");
                         }
                     }
                 }
             }
             Err(e) => {
-                panic!(
-                    "{scxml_name} ({lang:?}): cross-file codegen failed: {e}"
-                );
+                panic!("{scxml_name} ({lang:?}): cross-file codegen failed: {e}");
             }
         }
     }
@@ -8752,10 +8687,7 @@ fn crossfile_matrix_validator_interpolation() {
 /// declaration outlives any predicate consuming it.
 #[test]
 fn forge_kotlin_codec_init_syn_body() {
-    assert_standalone_forge_kotlin(
-        "codec_init_syn_body",
-        "CodecInitSynBody.kt",
-    );
+    assert_standalone_forge_kotlin("codec_init_syn_body", "CodecInitSynBody.kt");
 }
 
 /// RFC §5.B B5-γ Kotlin closure: variant parent threading carrier value.
@@ -8764,10 +8696,7 @@ fn forge_kotlin_codec_init_syn_body() {
 /// passes the just-decoded header local. Mirrors the Rust + Cpp goldens.
 #[test]
 fn forge_kotlin_codec_init_syn_envelope() {
-    assert_standalone_forge_kotlin(
-        "codec_init_syn_envelope",
-        "CodecInitSynEnvelope.kt",
-    );
+    assert_standalone_forge_kotlin("codec_init_syn_envelope", "CodecInitSynEnvelope.kt");
 }
 
 /// RFC §5.B B5-γ Go closure: body codec with parent-flags dependency
@@ -8778,10 +8707,7 @@ fn forge_kotlin_codec_init_syn_envelope() {
 /// but the Go compiler doesn't enforce the use).
 #[test]
 fn forge_go_codec_init_syn_body() {
-    assert_standalone_forge_go(
-        "codec_init_syn_body",
-        "codec_init_syn_body.go",
-    );
+    assert_standalone_forge_go("codec_init_syn_body", "codec_init_syn_body.go");
 }
 
 /// RFC §5.B B5-γ Go closure: variant parent threading carrier value.
@@ -8791,10 +8717,7 @@ fn forge_go_codec_init_syn_body() {
 /// local. Mirrors the Rust + Cpp + Kotlin goldens.
 #[test]
 fn forge_go_codec_init_syn_envelope() {
-    assert_standalone_forge_go(
-        "codec_init_syn_envelope",
-        "codec_init_syn_envelope.go",
-    );
+    assert_standalone_forge_go("codec_init_syn_envelope", "codec_init_syn_envelope.go");
 }
 
 /// RFC §5.B B5-γ C11 closure: body codec with parent-flags dependency
@@ -8807,10 +8730,7 @@ fn forge_go_codec_init_syn_envelope() {
 /// `(void)parent_flags;`).
 #[test]
 fn forge_c11_codec_init_syn_body() {
-    assert_standalone_forge_c(
-        "codec_init_syn_body",
-        "codec_init_syn_body.c.h",
-    );
+    assert_standalone_forge_c("codec_init_syn_body", "codec_init_syn_body.c.h");
 }
 
 /// RFC §5.B B5-γ C11 closure: variant parent threading carrier value.
@@ -8820,10 +8740,7 @@ fn forge_c11_codec_init_syn_body() {
 /// `self->header`. Mirrors the Rust + Cpp + Kotlin + Go goldens.
 #[test]
 fn forge_c11_codec_init_syn_envelope() {
-    assert_standalone_forge_c(
-        "codec_init_syn_envelope",
-        "codec_init_syn_envelope.c.h",
-    );
+    assert_standalone_forge_c("codec_init_syn_envelope", "codec_init_syn_envelope.c.h");
 }
 
 /// RFC §5.B B5-γ Python closure (final): body codec with parent-flags
@@ -8834,10 +8751,7 @@ fn forge_c11_codec_init_syn_envelope() {
 /// `let _ = parent_flags;` and Cpp's `(void)parent_flags;`).
 #[test]
 fn forge_python_codec_init_syn_body() {
-    assert_standalone_forge_python(
-        "codec_init_syn_body",
-        "codec_init_syn_body.py",
-    );
+    assert_standalone_forge_python("codec_init_syn_body", "codec_init_syn_body.py");
 }
 
 /// RFC §5.B B5-γ Python closure (final): variant parent threading
@@ -8849,10 +8763,7 @@ fn forge_python_codec_init_syn_body() {
 /// deleted in the same commit.
 #[test]
 fn forge_python_codec_init_syn_envelope() {
-    assert_standalone_forge_python(
-        "codec_init_syn_envelope",
-        "codec_init_syn_envelope.py",
-    );
+    assert_standalone_forge_python("codec_init_syn_envelope", "codec_init_syn_envelope.py");
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -8872,10 +8783,7 @@ fn forge_python_codec_init_syn_envelope() {
 /// the gated branch.
 #[test]
 fn forge_kotlin_codec_init_cookie_body() {
-    assert_standalone_forge_kotlin(
-        "codec_init_cookie_body",
-        "CodecInitCookieBody.kt",
-    );
+    assert_standalone_forge_kotlin("codec_init_cookie_body", "CodecInitCookieBody.kt");
 }
 
 /// RFC §5.B B5-δ Surface F (Kotlin): Scout/Hello/Init zid codec.
@@ -8883,10 +8791,7 @@ fn forge_kotlin_codec_init_cookie_body() {
 /// count.
 #[test]
 fn forge_kotlin_codec_scout_zid_body() {
-    assert_standalone_forge_kotlin(
-        "codec_scout_zid_body",
-        "CodecScoutZidBody.kt",
-    );
+    assert_standalone_forge_kotlin("codec_scout_zid_body", "CodecScoutZidBody.kt");
 }
 
 /// RFC §5.B B5-δ Surfaces D + E (Go): Init body cookie codec.
@@ -8895,20 +8800,14 @@ fn forge_kotlin_codec_scout_zid_body() {
 /// emits `int(*CookieSize)` inside the gated branch.
 #[test]
 fn forge_go_codec_init_cookie_body() {
-    assert_standalone_forge_go(
-        "codec_init_cookie_body",
-        "codec_init_cookie_body.go",
-    );
+    assert_standalone_forge_go("codec_init_cookie_body", "codec_init_cookie_body.go");
 }
 
 /// RFC §5.B B5-δ Surface F (Go): Scout/Hello/Init zid codec.
 /// `length-arith="+1"` emits `(int(ZidLenM1) + 1)` for the byte count.
 #[test]
 fn forge_go_codec_scout_zid_body() {
-    assert_standalone_forge_go(
-        "codec_scout_zid_body",
-        "codec_scout_zid_body.go",
-    );
+    assert_standalone_forge_go("codec_scout_zid_body", "codec_scout_zid_body.go");
 }
 
 /// RFC §5.B B5-δ Surfaces D + E (C11): Init body cookie codec.
@@ -8918,10 +8817,7 @@ fn forge_go_codec_scout_zid_body() {
 /// presence source.
 #[test]
 fn forge_c11_codec_init_cookie_body() {
-    assert_standalone_forge_c(
-        "codec_init_cookie_body",
-        "codec_init_cookie_body.c.h",
-    );
+    assert_standalone_forge_c("codec_init_cookie_body", "codec_init_cookie_body.c.h");
 }
 
 /// RFC §5.B B5-δ Surface F (C11): Scout/Hello/Init zid codec.
@@ -8931,10 +8827,7 @@ fn forge_c11_codec_init_cookie_body() {
 /// number of bytes is written.
 #[test]
 fn forge_c11_codec_scout_zid_body() {
-    assert_standalone_forge_c(
-        "codec_scout_zid_body",
-        "codec_scout_zid_body.c.h",
-    );
+    assert_standalone_forge_c("codec_scout_zid_body", "codec_scout_zid_body.c.h");
 }
 
 /// RFC §5.B B5-δ Surfaces D + E (Python): Init body cookie codec.
@@ -8943,10 +8836,7 @@ fn forge_c11_codec_scout_zid_body() {
 /// predicate. Helper reads `cookie_size` directly (no unwrap syntax).
 #[test]
 fn forge_python_codec_init_cookie_body() {
-    assert_standalone_forge_python(
-        "codec_init_cookie_body",
-        "codec_init_cookie_body.py",
-    );
+    assert_standalone_forge_python("codec_init_cookie_body", "codec_init_cookie_body.py");
 }
 
 /// RFC §5.B B5-δ Surface F (Python): Scout/Hello/Init zid codec.
@@ -8955,10 +8845,7 @@ fn forge_python_codec_init_cookie_body() {
 /// overflow.
 #[test]
 fn forge_python_codec_scout_zid_body() {
-    assert_standalone_forge_python(
-        "codec_scout_zid_body",
-        "codec_scout_zid_body.py",
-    );
+    assert_standalone_forge_python("codec_scout_zid_body", "codec_scout_zid_body.py");
 }
 
 /// RFC §5.B B5-δ Surface F validation: standalone `sce:length-arith`
@@ -9007,7 +8894,8 @@ fn forge_codec_length_arith_out_of_range_rejects() {
     use sce_build::forge::error::{ForgeError, ValidationError};
 
     for bad in ["0", "+2", "-2", "5", "-3"] {
-        let scxml = format!(r#"<?xml version="1.0" encoding="UTF-8"?>
+        let scxml = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="bad_arith_range">
@@ -9016,7 +8904,8 @@ fn forge_codec_length_arith_out_of_range_rejects() {
     <sce:field id="payload" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref"
                sce:length-field="len" sce:length-arith="{bad}" sce:max-size="16"/>
   </datamodel>
-</scxml>"#);
+</scxml>"#
+        );
         let result = sce_build::compile_forge_with_imports(
             &scxml,
             sce_build::DocumentLabel::symmetric("bad_arith_range"),
@@ -9074,9 +8963,7 @@ fn forge_codec_parent_flag_bit_mismatch_rejects() {
         &sce_build::ForgeCompileOptions::default(),
     );
     let err = match result {
-        Ok(_) => panic!(
-            "parent flag bit-mismatch must reject with codec/parent-flag-mismatch"
-        ),
+        Ok(_) => panic!("parent flag bit-mismatch must reject with codec/parent-flag-mismatch"),
         Err(e) => e,
     };
     assert!(

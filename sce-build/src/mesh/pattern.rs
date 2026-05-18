@@ -103,15 +103,15 @@ impl CommunicationPattern {
     /// `const fn` so the compiler can fold it at call sites.
     pub const fn prefix_str(self) -> &'static str {
         match self {
-            Self::FireForget      => "service.fire_forget",
-            Self::ServiceRequest  => "service.request",
+            Self::FireForget => "service.fire_forget",
+            Self::ServiceRequest => "service.request",
             Self::ServiceResponse => "service.response",
-            Self::Subscribe       => "event.subscribe",
-            Self::Unsubscribe     => "event.unsubscribe",
-            Self::Notification    => "event.notification",
-            Self::FieldGet        => "field.get",
-            Self::FieldSet        => "field.set",
-            Self::FieldNotify     => "field.notify",
+            Self::Subscribe => "event.subscribe",
+            Self::Unsubscribe => "event.unsubscribe",
+            Self::Notification => "event.notification",
+            Self::FieldGet => "field.get",
+            Self::FieldSet => "field.set",
+            Self::FieldNotify => "field.notify",
         }
     }
 
@@ -179,15 +179,15 @@ impl CommunicationPattern {
     /// `ServiceResponse` relationship.
     pub fn wire_value(self) -> u16 {
         match self {
-            Self::FireForget       => 1,
-            Self::ServiceRequest   => 2,
-            Self::ServiceResponse  => 3,
-            Self::Subscribe        => 4,
-            Self::Unsubscribe      => 5,
-            Self::Notification     => 6,
-            Self::FieldGet         => 7,
-            Self::FieldSet         => 8,
-            Self::FieldNotify      => 9,
+            Self::FireForget => 1,
+            Self::ServiceRequest => 2,
+            Self::ServiceResponse => 3,
+            Self::Subscribe => 4,
+            Self::Unsubscribe => 5,
+            Self::Notification => 6,
+            Self::FieldGet => 7,
+            Self::FieldSet => 8,
+            Self::FieldNotify => 9,
         }
     }
 
@@ -249,23 +249,23 @@ pub fn subscribe_to_unsubscribe(event: &str) -> Option<String> {
 // literal magic numbers when comparing against encoded wire values.
 
 /// `PatternKind::FireForget` wire value.
-pub const WIRE_FIRE_FORGET:        u16 = 1;
+pub const WIRE_FIRE_FORGET: u16 = 1;
 /// `PatternKind::RpcRequest` wire value.
-pub const WIRE_RPC_REQUEST:        u16 = 2;
+pub const WIRE_RPC_REQUEST: u16 = 2;
 /// `PatternKind::RpcReply` wire value.
-pub const WIRE_RPC_REPLY:          u16 = 3;
+pub const WIRE_RPC_REPLY: u16 = 3;
 /// `PatternKind::EventSubscribe` wire value.
-pub const WIRE_EVENT_SUBSCRIBE:    u16 = 4;
+pub const WIRE_EVENT_SUBSCRIBE: u16 = 4;
 /// `PatternKind::EventUnsubscribe` wire value.
-pub const WIRE_EVENT_UNSUBSCRIBE:  u16 = 5;
+pub const WIRE_EVENT_UNSUBSCRIBE: u16 = 5;
 /// `PatternKind::EventNotify` wire value.
-pub const WIRE_EVENT_NOTIFY:       u16 = 6;
+pub const WIRE_EVENT_NOTIFY: u16 = 6;
 /// `PatternKind::FieldRead` wire value.
-pub const WIRE_FIELD_READ:         u16 = 7;
+pub const WIRE_FIELD_READ: u16 = 7;
 /// `PatternKind::FieldWrite` wire value.
-pub const WIRE_FIELD_WRITE:        u16 = 8;
+pub const WIRE_FIELD_WRITE: u16 = 8;
 /// `PatternKind::FieldNotify` wire value.
-pub const WIRE_FIELD_NOTIFY:       u16 = 9;
+pub const WIRE_FIELD_NOTIFY: u16 = 9;
 
 impl fmt::Display for CommunicationPattern {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -295,7 +295,6 @@ pub fn detect_pattern(event: &str) -> Option<CommunicationPattern> {
         .copied()
         .find(|p| p.match_suffix(event).is_some())
 }
-
 
 // ── Pattern violation ───────────────────────────────────────
 
@@ -493,8 +492,11 @@ mod tests {
             CommunicationPattern::FieldSet,
             CommunicationPattern::FieldNotify,
         ] {
-            assert_eq!(p.infer_reply_event("service.request.x"), None,
-                       "pattern {p:?} must not produce a reply");
+            assert_eq!(
+                p.infer_reply_event("service.request.x"),
+                None,
+                "pattern {p:?} must not produce a reply"
+            );
         }
     }
 
@@ -572,17 +574,35 @@ mod tests {
     #[test]
     fn someip_field_method_family() {
         use SomeipFieldKind::Method;
-        assert_eq!(CommunicationPattern::FireForget.someip_field(), Some(Method));
-        assert_eq!(CommunicationPattern::ServiceRequest.someip_field(), Some(Method));
-        assert_eq!(CommunicationPattern::ServiceResponse.someip_field(), Some(Method));
+        assert_eq!(
+            CommunicationPattern::FireForget.someip_field(),
+            Some(Method)
+        );
+        assert_eq!(
+            CommunicationPattern::ServiceRequest.someip_field(),
+            Some(Method)
+        );
+        assert_eq!(
+            CommunicationPattern::ServiceResponse.someip_field(),
+            Some(Method)
+        );
     }
 
     #[test]
     fn someip_field_event_group_family() {
         use SomeipFieldKind::EventGroup;
-        assert_eq!(CommunicationPattern::Subscribe.someip_field(), Some(EventGroup));
-        assert_eq!(CommunicationPattern::Unsubscribe.someip_field(), Some(EventGroup));
-        assert_eq!(CommunicationPattern::Notification.someip_field(), Some(EventGroup));
+        assert_eq!(
+            CommunicationPattern::Subscribe.someip_field(),
+            Some(EventGroup)
+        );
+        assert_eq!(
+            CommunicationPattern::Unsubscribe.someip_field(),
+            Some(EventGroup)
+        );
+        assert_eq!(
+            CommunicationPattern::Notification.someip_field(),
+            Some(EventGroup)
+        );
     }
 
     #[test]
@@ -644,8 +664,14 @@ mod tests {
 
     #[test]
     fn pattern_display() {
-        assert_eq!(CommunicationPattern::ServiceRequest.to_string(), "service.request");
-        assert_eq!(CommunicationPattern::Unsubscribe.to_string(), "event.unsubscribe");
+        assert_eq!(
+            CommunicationPattern::ServiceRequest.to_string(),
+            "service.request"
+        );
+        assert_eq!(
+            CommunicationPattern::Unsubscribe.to_string(),
+            "event.unsubscribe"
+        );
         assert_eq!(CommunicationPattern::FieldSet.to_string(), "field.set");
     }
 

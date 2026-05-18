@@ -81,7 +81,11 @@ pub fn collect_leaf_events(tree: &serde_json::Value, prefix: &str) -> Vec<String
         } else {
             format!("{prefix}.{key}")
         };
-        if value.get("_leaf").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if value
+            .get("_leaf")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
             leaves.push(full_name.clone());
         }
         leaves.extend(collect_leaf_events(value, &full_name));
@@ -117,10 +121,7 @@ pub fn collect_branch_events(tree: &serde_json::Value, prefix: &str) -> HashSet<
             .map(|o| o.keys().filter(|k| k.as_str() != "_leaf").collect())
             .unwrap_or_default();
 
-        let is_leaf = node
-            .get("_leaf")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let is_leaf = node.get("_leaf").and_then(|v| v.as_bool()).unwrap_or(false);
 
         if is_leaf && !children.is_empty() {
             branch_events.insert(full_name.clone());
@@ -155,7 +156,13 @@ pub fn render_event_tree(tree: &serde_json::Value, parent_type: &str, indent: &s
         } else {
             RE_KT_DELIMITERS
                 .split(key)
-                .map(|p| if p.is_empty() { String::new() } else { crate::filters::capitalize_first(p) })
+                .map(|p| {
+                    if p.is_empty() {
+                        String::new()
+                    } else {
+                        crate::filters::capitalize_first(p)
+                    }
+                })
                 .collect::<String>()
         };
 
@@ -170,15 +177,10 @@ pub fn render_event_tree(tree: &serde_json::Value, parent_type: &str, indent: &s
             lines.push(format!(
                 "{indent}sealed interface {class_name} : {parent_type} {{"
             ));
-            let is_leaf = node
-                .get("_leaf")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
+            let is_leaf = node.get("_leaf").and_then(|v| v.as_bool()).unwrap_or(false);
             if is_leaf {
                 // Both a concrete event and a parent for prefix matching
-                lines.push(format!(
-                    "{indent}    data object Self : {class_name}"
-                ));
+                lines.push(format!("{indent}    data object Self : {class_name}"));
             }
             // Recurse into children
             let child_indent = format!("{indent}    ");
@@ -189,9 +191,7 @@ pub fn render_event_tree(tree: &serde_json::Value, parent_type: &str, indent: &s
             lines.push(format!("{indent}}}"));
         } else {
             // Leaf node: data object
-            lines.push(format!(
-                "{indent}data object {class_name} : {parent_type}"
-            ));
+            lines.push(format!("{indent}data object {class_name} : {parent_type}"));
         }
     }
 
@@ -236,10 +236,7 @@ pub fn compute_deep_initial_entries(
                     }
                     visited.insert(current.clone());
                     all_path_states.insert(current.clone());
-                    current = model.states[&current]
-                        .parent
-                        .clone()
-                        .unwrap_or_default();
+                    current = model.states[&current].parent.clone().unwrap_or_default();
                 }
             }
 
@@ -290,8 +287,8 @@ pub fn compute_invoke_entries(model: &SCXMLModel) -> BTreeMap<String, Vec<serde_
                         "done.invoke".to_string()
                     };
 
-                let has_done_event = model.events.contains(&done_event)
-                    || model.events.contains("done.invoke");
+                let has_done_event =
+                    model.events.contains(&done_event) || model.events.contains("done.invoke");
 
                 // Serialize params via serde
                 let params_json = serde_json::to_value(&si.params).unwrap_or_default();
@@ -343,8 +340,8 @@ pub fn compute_invoke_entries(model: &SCXMLModel) -> BTreeMap<String, Vec<serde_
                         "done.invoke".to_string()
                     };
 
-                let has_done_event = model.events.contains(&done_event)
-                    || model.events.contains("done.invoke");
+                let has_done_event =
+                    model.events.contains(&done_event) || model.events.contains("done.invoke");
 
                 let params_json = serde_json::to_value(&hi.params).unwrap_or_default();
 
@@ -379,10 +376,7 @@ pub fn compute_invoke_entries(model: &SCXMLModel) -> BTreeMap<String, Vec<serde_
 pub fn compute_ancestors_with_transitions(
     model: &SCXMLModel,
     ancestor_chains: &BTreeMap<String, Vec<String>>,
-) -> (
-    BTreeMap<String, Vec<String>>,
-    BTreeMap<String, Vec<String>>,
-) {
+) -> (BTreeMap<String, Vec<String>>, BTreeMap<String, Vec<String>>) {
     let mut event_map: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut null_map: BTreeMap<String, Vec<String>> = BTreeMap::new();
 
@@ -434,17 +428,13 @@ pub fn compute_effective_transitions(
             for anc_id in chain {
                 if let Some(anc_state) = model.states.get(anc_id) {
                     for t in &anc_state.transitions {
-                        transitions
-                            .push(serde_json::to_value(t).unwrap_or_default());
+                        transitions.push(serde_json::to_value(t).unwrap_or_default());
                     }
                 }
             }
         }
 
-        effective_transitions.insert(
-            state_id.clone(),
-            serde_json::Value::Array(transitions),
-        );
+        effective_transitions.insert(state_id.clone(), serde_json::Value::Array(transitions));
     }
 
     effective_transitions

@@ -100,9 +100,7 @@ fn fsm_with_inline_script_fires_no_std_script_diagnostic() {
                 "locations summary must be non-empty for downstream agent dispatch"
             );
         }
-        other => panic!(
-            "expected CodegenNoStdScriptNotSupported, got: {other:?}"
-        ),
+        other => panic!("expected CodegenNoStdScriptNotSupported, got: {other:?}"),
     }
 }
 
@@ -120,9 +118,7 @@ fn fsm_with_http_send_fires_no_std_http_diagnostic() {
             assert_eq!(document, "http_fsm");
             assert!(locations.contains("BasicHTTPEventProcessor"));
         }
-        other => panic!(
-            "expected CodegenNoStdHttpNotSupported, got: {other:?}"
-        ),
+        other => panic!("expected CodegenNoStdHttpNotSupported, got: {other:?}"),
     }
 }
 
@@ -203,9 +199,7 @@ fn fsm_with_data_src_fires_no_std_fs_load_diagnostic() {
                 "locations summary must name the offending src URL, got {locations:?}"
             );
         }
-        other => panic!(
-            "expected CodegenNoStdFsLoadNotSupported, got: {other:?}"
-        ),
+        other => panic!("expected CodegenNoStdFsLoadNotSupported, got: {other:?}"),
     }
 }
 
@@ -222,8 +216,7 @@ fn fsm_with_multiple_data_src_reports_all_sites() {
         .expect_err("multi-src doc must reject under --no-std");
     let locations = match err {
         ForgeError::Generate(GenerateError::CodegenNoStdFsLoadNotSupported {
-            locations,
-            ..
+            locations, ..
         }) => locations,
         other => panic!("expected CodegenNoStdFsLoadNotSupported, got: {other:?}"),
     };
@@ -267,9 +260,7 @@ fn fsm_with_invoke_fires_no_std_invoke_diagnostic() {
                 "locations summary must mention `<invoke>`, got {locations:?}"
             );
         }
-        other => panic!(
-            "expected CodegenNoStdInvokeNotSupported, got: {other:?}"
-        ),
+        other => panic!("expected CodegenNoStdInvokeNotSupported, got: {other:?}"),
     }
 }
 
@@ -318,14 +309,10 @@ fn document_basename_is_extracted_from_path() {
     // Path basename without extension should populate `document` field
     // so downstream agents dispatching on `key_fragments` can match
     // the SCXML file independent of the calling CWD.
-    let err = validate_no_std_compatibility(
-        &model,
-        Path::new("/abs/some/path/widget_fsm.scxml"),
-    )
-    .expect_err("script-bearing SCXML must reject");
+    let err = validate_no_std_compatibility(&model, Path::new("/abs/some/path/widget_fsm.scxml"))
+        .expect_err("script-bearing SCXML must reject");
     if let ForgeError::Generate(GenerateError::CodegenNoStdScriptNotSupported {
-        document,
-        ..
+        document, ..
     }) = err
     {
         assert_eq!(document, "widget_fsm");

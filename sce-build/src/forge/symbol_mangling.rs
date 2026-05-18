@@ -402,8 +402,16 @@ mod tests {
         // pure encoder by inserting two entries manually under the
         // same key.
         let mut table: BTreeMap<String, SymbolEntry> = BTreeMap::new();
-        let loc1 = SourceLocation { file: "a.scxml".into(), line: Some(10), col: None };
-        let loc2 = SourceLocation { file: "b.scxml".into(), line: Some(20), col: None };
+        let loc1 = SourceLocation {
+            file: "a.scxml".into(),
+            line: Some(10),
+            col: None,
+        };
+        let loc2 = SourceLocation {
+            file: "b.scxml".into(),
+            line: Some(20),
+            col: None,
+        };
         push_entry(&mut table, "m", "dup", "_state_body", &loc1).unwrap();
         let res = push_entry(&mut table, "m", "dup", "_state_body", &loc2);
         let coll = res.expect_err("must report collision on duplicate symbol");

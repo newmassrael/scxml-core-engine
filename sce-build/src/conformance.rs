@@ -372,9 +372,7 @@ pub enum FixtureSpec {
     /// (type + interval_ms) against the oracle. Callback dispatch is
     /// verified by triggering the mock's stored callback and checking that
     /// the recording handler received the expected call.
-    Timer {
-        timers: Vec<TimerFixtureEntry>,
-    },
+    Timer { timers: Vec<TimerFixtureEntry> },
     /// RFC §5.A pure free function with bounded loops. Mirrors `Transform`'s
     /// `(args -> scalar output)` shape but admits `bytes` parameters because
     /// the algorithm body's `<sce:foreach>` over bytes is the canonical
@@ -558,7 +556,13 @@ pub fn c_type_for(ty: &str) -> &'static str {
 /// source itself).
 pub fn c_literal_for(value: &serde_json::Value, ty: &str) -> String {
     match (value, ty) {
-        (serde_json::Value::Bool(b), _) => if *b { "true".into() } else { "false".into() },
+        (serde_json::Value::Bool(b), _) => {
+            if *b {
+                "true".into()
+            } else {
+                "false".into()
+            }
+        }
         (serde_json::Value::Number(n), "f32") => {
             let f = n.as_f64().unwrap_or(0.0);
             // Match Rust's "decimal int → .0_f32" promotion pattern but
@@ -664,9 +668,7 @@ pub fn kt_unmarshal_expr(raw: &str, ty: &str) -> String {
         // unsigned 64-bit range round-trips.
         "u64" => format!("{raw}.jsonPrimitive.content.toULong()"),
         "string" => format!("{raw}.jsonPrimitive.content"),
-        "bytes" => format!(
-            "{raw}.jsonArray.map {{ it.jsonPrimitive.int.toByte() }}.toByteArray()"
-        ),
+        "bytes" => format!("{raw}.jsonArray.map {{ it.jsonPrimitive.int.toByte() }}.toByteArray()"),
         _ => format!("/* unknown canonical type {ty} */"),
     }
 }
@@ -781,7 +783,12 @@ impl Manifest {
                         ));
                     }
                 }
-                FixtureSpec::Lookup { function, output_id, enum_values, .. } => {
+                FixtureSpec::Lookup {
+                    function,
+                    output_id,
+                    enum_values,
+                    ..
+                } => {
                     if function.is_some() {
                         return Err(format!(
                             "fixture {}: lookup `function` is derived from \
@@ -804,7 +811,9 @@ impl Manifest {
                         ));
                     }
                 }
-                FixtureSpec::Validator { output, has_state, .. } => {
+                FixtureSpec::Validator {
+                    output, has_state, ..
+                } => {
                     if output.is_empty() {
                         return Err(format!(
                             "fixture {}: validator requires at least one \
@@ -822,7 +831,10 @@ impl Manifest {
                         ));
                     }
                 }
-                FixtureSpec::Codec { fields: _, has_test_vectors } => {
+                FixtureSpec::Codec {
+                    fields: _,
+                    has_test_vectors,
+                } => {
                     // RFC §5.B B5-α empty-codec lift: zero-field codecs
                     // (Zenoh KeepAlive et al.) are permitted. The
                     // round-trip test body still asserts encode →
@@ -871,7 +883,12 @@ impl Manifest {
                         ));
                     }
                 }
-                FixtureSpec::Algorithm { args, function, has_test_vectors, .. } => {
+                FixtureSpec::Algorithm {
+                    args,
+                    function,
+                    has_test_vectors,
+                    ..
+                } => {
                     if function.is_empty() {
                         return Err(format!(
                             "fixture {}: algorithm `function` must not be \
@@ -1032,9 +1049,7 @@ pub fn lang_supports_fixture(
     if !crate::forge::codegen_matrix::template_ships(kind, language) {
         return Ok(false);
     }
-    if matches!(language, crate::generator::Language::C11)
-        && !c11_supported_kind(&fixture.spec)
-    {
+    if matches!(language, crate::generator::Language::C11) && !c11_supported_kind(&fixture.spec) {
         return Ok(false);
     }
     // Per-fixture MCU-only gate: only the four non-MCU backends need
@@ -1246,15 +1261,24 @@ fn read_lookup_output_id(scxml_path: &Path) -> Result<String, String> {
     let datamodel = doc
         .root_element()
         .children()
-        .find(|n| n.is_element() && n.tag_name().name() == "datamodel" && n.tag_name().namespace() == Some(scxml_ns))
+        .find(|n| {
+            n.is_element()
+                && n.tag_name().name() == "datamodel"
+                && n.tag_name().namespace() == Some(scxml_ns)
+        })
         .ok_or_else(|| format!("{}: missing <datamodel>", scxml_path.display()))?;
-    for data in datamodel.children().filter(|n| n.is_element() && n.tag_name().name() == "data") {
+    for data in datamodel
+        .children()
+        .filter(|n| n.is_element() && n.tag_name().name() == "data")
+    {
         let dir = data.attribute((sce_ns, "direction")).unwrap_or("");
         if dir == "out" {
-            return data
-                .attribute("id")
-                .map(|s| s.to_string())
-                .ok_or_else(|| format!("{}: <data sce:direction=\"out\"> missing id", scxml_path.display()));
+            return data.attribute("id").map(|s| s.to_string()).ok_or_else(|| {
+                format!(
+                    "{}: <data sce:direction=\"out\"> missing id",
+                    scxml_path.display()
+                )
+            });
         }
     }
     Err(format!(
@@ -1277,14 +1301,16 @@ fn read_lookup_enum_values(scxml_path: &Path) -> Result<Vec<String>, String> {
     let datamodel = doc
         .root_element()
         .children()
-        .find(|n| n.is_element() && n.tag_name().name() == "datamodel" && n.tag_name().namespace() == Some(scxml_ns))
+        .find(|n| {
+            n.is_element()
+                && n.tag_name().name() == "datamodel"
+                && n.tag_name().namespace() == Some(scxml_ns)
+        })
         .ok_or_else(|| format!("{}: missing <datamodel>", scxml_path.display()))?;
     let mut values = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for entry in datamodel.descendants().filter(|n| {
-        n.is_element()
-            && n.tag_name().name() == "entry"
-            && n.tag_name().namespace() == Some(sce_ns)
+        n.is_element() && n.tag_name().name() == "entry" && n.tag_name().namespace() == Some(sce_ns)
     }) {
         if let Some(val) = entry.attribute("value") {
             if seen.insert(val.to_string()) {
@@ -1372,9 +1398,10 @@ pub fn codec_has_mcu_only_features(scxml_path: &Path) -> Result<bool, String> {
             if child.is_element() {
                 // Attribute marker: `sce:dma-burst-align` on any
                 // `<sce:field>` (mirrors `has_dma_aligned_fields`).
-                if child.attributes().any(|a| {
-                    a.namespace() == Some(sce_ns) && a.name() == "dma-burst-align"
-                }) {
+                if child
+                    .attributes()
+                    .any(|a| a.namespace() == Some(sce_ns) && a.name() == "dma-burst-align")
+                {
                     return true;
                 }
                 if walk(child, sce_ns) {
@@ -1484,8 +1511,7 @@ pub fn render_harness(
     // place (see `register_conformance_filters`) instead of being duplicated
     // as inline macros inside each harness template.
     register_conformance_filters(&mut env);
-    crate::generator::load_templates(&mut env, &template_dir)
-        .map_err(|e| e.to_string())?;
+    crate::generator::load_templates(&mut env, &template_dir).map_err(|e| e.to_string())?;
 
     let tmpl_name = layout.template_filename;
     let tmpl = env
@@ -1499,7 +1525,13 @@ pub fn render_harness(
     for f in fixtures.iter_mut() {
         let fixture_name = f.name.clone();
         match &mut f.spec {
-            FixtureSpec::Lookup { function, output_id, output, enum_values, .. } => {
+            FixtureSpec::Lookup {
+                function,
+                output_id,
+                output,
+                enum_values,
+                ..
+            } => {
                 let scxml_path = resource_dir.join(format!("{}.scxml", fixture_name));
                 let raw_output_id = read_lookup_output_id(&scxml_path)?;
                 // C11 (RFC §5.J.2 §3 D1) emits fully-qualified `<m.name>_<output_id>`
@@ -1544,7 +1576,11 @@ pub fn render_harness(
                     );
                 }
             }
-            FixtureSpec::Transform { output, compound_outputs, .. } => {
+            FixtureSpec::Transform {
+                output,
+                compound_outputs,
+                ..
+            } => {
                 // RFC §5.J.2 §3 D1: prefix transform function names with the
                 // fixture name in C11 so the harness call sites match what
                 // `render_transform` exports (full-qual flat-scope identifier).
@@ -1570,7 +1606,9 @@ pub fn render_harness(
                     }
                 }
             }
-            FixtureSpec::Codec { has_test_vectors, .. } => {
+            FixtureSpec::Codec {
+                has_test_vectors, ..
+            } => {
                 // RFC §5.B B5-θ: enrich the manifest with the SCXML-derived
                 // `<sce:test-vector>` flag so the per-language harness
                 // fragment can fold the per-fixture sidecar's failure
@@ -1590,7 +1628,11 @@ pub fn render_harness(
                     false
                 };
             }
-            FixtureSpec::Algorithm { function, has_test_vectors, .. } => {
+            FixtureSpec::Algorithm {
+                function,
+                has_test_vectors,
+                ..
+            } => {
                 let scxml_path = resource_dir.join(format!("{}.scxml", fixture_name));
                 *has_test_vectors = has_test_vectors_in_file(&scxml_path)?;
                 // RFC §7 A5/A6: C11 algorithm template emits a free function
@@ -1640,10 +1682,7 @@ pub fn render_harness(
                     .iter()
                     .map(|name| HelperStub {
                         name: name.clone(),
-                        stub: helpers
-                            .get(name)
-                            .cloned()
-                            .expect("cross-checked above"),
+                        stub: helpers.get(name).cloned().expect("cross-checked above"),
                     })
                     .collect();
                 // Populate the derived L2 flag from the SCXML so the
@@ -1724,9 +1763,7 @@ pub fn render_harness(
             let reference: serde_json::Value = serde_json::from_str(&reference_text)
                 .map_err(|e| format!("parse {}: {e}", reference_path.display()))?;
 
-            let tol = reference
-                .get("float_tolerance")
-                .and_then(|v| v.as_f64());
+            let tol = reference.get("float_tolerance").and_then(|v| v.as_f64());
 
             let mut enriched = Vec::with_capacity(fixtures.len());
             for f in &fixtures {
@@ -1806,8 +1843,8 @@ mod tests {
 
     #[test]
     fn loads_real_manifest() {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../tests/forge/conformance/fixtures.json");
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/conformance/fixtures.json");
         let m = Manifest::load(&path).expect("manifest must load and validate");
         assert_eq!(m.version, 1);
         assert!(
@@ -1876,15 +1913,13 @@ mod tests {
     /// the manifest.
     #[test]
     fn render_harness_all_languages() {
-        let manifest_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../tests/forge/conformance/fixtures.json");
-        let manifest = Manifest::load(&manifest_path)
-            .expect("manifest must load and validate");
+        let manifest_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/conformance/fixtures.json");
+        let manifest = Manifest::load(&manifest_path).expect("manifest must load and validate");
 
-        let template_base = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../tools/codegen/templates");
-        let resource_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../tests/forge/resources");
+        let template_base =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tools/codegen/templates");
+        let resource_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
 
         let languages = [
             Language::Cpp,
@@ -1931,17 +1966,16 @@ mod tests {
     /// in sync structurally.
     #[test]
     fn oracle_cross_check() {
-        let manifest_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../tests/forge/conformance/fixtures.json");
-        let manifest = Manifest::load(&manifest_path)
-            .expect("manifest must load and validate");
+        let manifest_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/conformance/fixtures.json");
+        let manifest = Manifest::load(&manifest_path).expect("manifest must load and validate");
 
         let oracle_path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../tests/forge/conformance/numerical_reference.json");
-        let oracle_text = std::fs::read_to_string(&oracle_path)
-            .unwrap_or_else(|e| panic!("read oracle: {e}"));
-        let oracle: serde_json::Value = serde_json::from_str(&oracle_text)
-            .unwrap_or_else(|e| panic!("parse oracle JSON: {e}"));
+        let oracle_text =
+            std::fs::read_to_string(&oracle_path).unwrap_or_else(|e| panic!("read oracle: {e}"));
+        let oracle: serde_json::Value =
+            serde_json::from_str(&oracle_text).unwrap_or_else(|e| panic!("parse oracle JSON: {e}"));
 
         // Structural checks on oracle root
         assert_eq!(
@@ -1950,7 +1984,10 @@ mod tests {
             "oracle must have version: 1"
         );
         assert!(
-            oracle.get("float_tolerance").and_then(|v| v.as_f64()).is_some(),
+            oracle
+                .get("float_tolerance")
+                .and_then(|v| v.as_f64())
+                .is_some(),
             "oracle must have float_tolerance field"
         );
 
@@ -2003,9 +2040,18 @@ mod tests {
 
             // Check that the entry has at least one test case.
             // Most kinds use "cases" or "sequence"; Timer kind uses "timers".
-            let has_cases = entry.get("cases").and_then(|c| c.as_array()).map_or(false, |a| !a.is_empty());
-            let has_sequence = entry.get("sequence").and_then(|s| s.as_array()).map_or(false, |a| !a.is_empty());
-            let has_timers = entry.get("timers").and_then(|t| t.as_array()).map_or(false, |a| !a.is_empty());
+            let has_cases = entry
+                .get("cases")
+                .and_then(|c| c.as_array())
+                .map_or(false, |a| !a.is_empty());
+            let has_sequence = entry
+                .get("sequence")
+                .and_then(|s| s.as_array())
+                .map_or(false, |a| !a.is_empty());
+            let has_timers = entry
+                .get("timers")
+                .and_then(|t| t.as_array())
+                .map_or(false, |a| !a.is_empty());
             if !has_cases && !has_sequence && !has_timers {
                 failures.push(format!(
                     "{fixture_name}: oracle entry has no 'cases', 'sequence', or 'timers' test data"
@@ -2039,15 +2085,13 @@ mod tests {
     /// full toolchain or external build system.
     #[test]
     fn rust_conformance_compile_gate() {
-        let manifest_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../tests/forge/conformance/fixtures.json");
-        let manifest = Manifest::load(&manifest_path)
-            .expect("manifest must load and validate");
+        let manifest_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/conformance/fixtures.json");
+        let manifest = Manifest::load(&manifest_path).expect("manifest must load and validate");
 
-        let template_base = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../tools/codegen/templates");
-        let resource_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../tests/forge/resources");
+        let template_base =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tools/codegen/templates");
+        let resource_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
 
         let options = crate::ForgeCompileOptions::default();
         let mut failures: Vec<String> = Vec::new();
@@ -2079,10 +2123,7 @@ mod tests {
 
             for (filename, code) in &output.files {
                 if let Err(e) = syn::parse_file(code) {
-                    failures.push(format!(
-                        "{}/{filename}: syn parse error: {e}",
-                        fixture.name
-                    ));
+                    failures.push(format!("{}/{filename}: syn parse error: {e}", fixture.name));
                 }
             }
         }

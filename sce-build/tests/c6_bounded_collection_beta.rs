@@ -87,9 +87,7 @@ fn assert_validator_silent_passed(
                 // validator failure would short-circuit before
                 // codegen).
             }
-            other => panic!(
-                "C6-β validator must silent-pass; got an unrelated error: {other:?}"
-            ),
+            other => panic!("C6-β validator must silent-pass; got an unrelated error: {other:?}"),
         },
     }
 }
@@ -202,10 +200,7 @@ fn happy_codec_element_type_no_index_by() {
         ),
     );
 
-    assert_validator_silent_passed(run_orchestrator(
-        &[],
-        &[codec.as_path(), bc.as_path()],
-    ));
+    assert_validator_silent_passed(run_orchestrator(&[], &[codec.as_path(), bc.as_path()]));
 }
 
 // ─── 2. happy_codec_element_type_with_valid_index_by ──────────────────
@@ -233,10 +228,7 @@ fn happy_codec_element_type_with_valid_index_by() {
         ),
     );
 
-    assert_validator_silent_passed(run_orchestrator(
-        &[],
-        &[codec.as_path(), bc.as_path()],
-    ));
+    assert_validator_silent_passed(run_orchestrator(&[], &[codec.as_path(), bc.as_path()]));
 }
 
 // ─── 3. happy_procedure_element_type ─────────────────────────────────
@@ -264,10 +256,7 @@ fn happy_procedure_element_type() {
         ),
     );
 
-    assert_validator_silent_passed(run_orchestrator(
-        &[],
-        &[proc_doc.as_path(), bc.as_path()],
-    ));
+    assert_validator_silent_passed(run_orchestrator(&[], &[proc_doc.as_path(), bc.as_path()]));
 }
 
 // ─── 4. happy_multi_writer_with_atomic_extern ────────────────────────
@@ -307,10 +296,7 @@ fn happy_multi_writer_with_atomic_extern() {
         ),
     );
 
-    assert_validator_silent_passed(run_orchestrator(
-        &[],
-        &[codec.as_path(), bc.as_path()],
-    ));
+    assert_validator_silent_passed(run_orchestrator(&[], &[codec.as_path(), bc.as_path()]));
 }
 
 // ─── 5. element_type_not_a_kind_unknown_fires ────────────────────────
@@ -458,10 +444,7 @@ fn index_by_field_missing_fires() {
             assert_eq!(element_kind, "codec");
             assert_eq!(
                 candidates,
-                &vec![
-                    "callback_id".to_string(),
-                    "key_expr_id".to_string(),
-                ],
+                &vec!["callback_id".to_string(), "key_expr_id".to_string(),],
                 "sorted declared codec fields"
             );
         }

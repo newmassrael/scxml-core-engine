@@ -39,7 +39,9 @@ fn insert_stateless_imports<'a>(ctx: &mut TypeCtx<'a>, imports: &'a [ImportConte
         if imp.is_stateful {
             continue;
         }
-        let Some(ret_ty) = imp.ret_type.as_ref() else { continue };
+        let Some(ret_ty) = imp.ret_type.as_ref() else {
+            continue;
+        };
         let params: Vec<InferredType> = imp
             .param_types
             .iter()
@@ -73,10 +75,7 @@ fn insert_stateless_imports<'a>(ctx: &mut TypeCtx<'a>, imports: &'a [ImportConte
 /// `Member{object: Ident(obj), property: prop}` it forms `"{obj}.{prop}"`
 /// and calls `ctx.lookup_var`, which returns the field's concrete type if
 /// registered here.
-fn insert_stateful_imports<'a>(
-    ctx: &mut TypeCtx<'a>,
-    imports: &'a [ImportContext],
-) {
+fn insert_stateful_imports<'a>(ctx: &mut TypeCtx<'a>, imports: &'a [ImportContext]) {
     for imp in imports {
         if !imp.is_stateful {
             continue;
@@ -89,7 +88,10 @@ fn insert_stateful_imports<'a>(
             let params = param_tys.iter().map(InferredType::from_sce_type).collect();
             ctx.insert_func(
                 qualified_key.as_str(),
-                FuncSig { params, ret: InferredType::from_sce_type(ret_ty) },
+                FuncSig {
+                    params,
+                    ret: InferredType::from_sce_type(ret_ty),
+                },
             );
         }
     }
@@ -136,7 +138,10 @@ pub fn validator<'a>(m: &'a ValidatorModel, imports: &'a [ImportContext]) -> Typ
 /// TypeCtx for a **Lookup** kind: single-input function.
 pub fn lookup<'a>(m: &'a LookupModel, imports: &'a [ImportContext]) -> TypeCtx<'a> {
     let mut ctx = TypeCtx::new();
-    ctx.insert_var(m.input.id.as_str(), InferredType::from_sce_type(&m.input.sce_type));
+    ctx.insert_var(
+        m.input.id.as_str(),
+        InferredType::from_sce_type(&m.input.sce_type),
+    );
     insert_stateless_imports(&mut ctx, imports);
     insert_stateful_imports(&mut ctx, imports);
     ctx
@@ -146,7 +151,10 @@ pub fn lookup<'a>(m: &'a LookupModel, imports: &'a [ImportContext]) -> TypeCtx<'
 /// field. The output is not visible on the right-hand side.
 pub fn filter<'a>(m: &'a FilterModel, imports: &'a [ImportContext]) -> TypeCtx<'a> {
     let mut ctx = TypeCtx::new();
-    ctx.insert_var(m.input.id.as_str(), InferredType::from_sce_type(&m.input.sce_type));
+    ctx.insert_var(
+        m.input.id.as_str(),
+        InferredType::from_sce_type(&m.input.sce_type),
+    );
     insert_stateless_imports(&mut ctx, imports);
     insert_stateful_imports(&mut ctx, imports);
     ctx

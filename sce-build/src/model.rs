@@ -92,47 +92,46 @@ pub struct Transition {
 pub struct Action {
     #[serde(rename = "type")]
     pub action_type: String,
-    
+
     pub event: String,
-    
+
     pub location: String,
-    
+
     pub expr: String,
-    
+
     pub content: String,
-    
+
     pub target: String,
-    
+
     pub targetexpr: String,
-    
+
     pub send_type: String,
-    
+
     pub delay: String,
-    
+
     pub delayexpr: String,
     pub delay_ms: i64,
-    
+
     pub id: String,
-    
+
     pub auto_send_id: String,
-    
+
     pub idlocation: String,
-    
+
     pub namelist: String,
-    
+
     pub contentexpr: String,
-    
+
     pub eventexpr: String,
-    
+
     pub typeexpr: String,
-    
+
     pub label: String,
     // if/elseif/else
-    
     pub cond: String,
-    
+
     pub cond_cpp: String,
-    
+
     pub cond_kt: String,
     #[serde(default)]
     pub is_pure_in_predicate: bool,
@@ -143,11 +142,10 @@ pub struct Action {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub else_actions: Vec<Action>,
     // foreach
-    
     pub array: String,
-    
+
     pub item: String,
-    
+
     pub index: String,
     /// foreach body / transition actions
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -156,9 +154,8 @@ pub struct Action {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub params: Vec<Param>,
     // cancel
-    
     pub sendid: String,
-    
+
     pub sendidexpr: String,
     // send param static optimization
     #[serde(default)]

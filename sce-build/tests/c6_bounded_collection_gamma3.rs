@@ -137,13 +137,11 @@ fn cpp_happy_compile_const_no_index_by() {
     assert!(code.contains("std::array<std::uint32_t, CAPACITY> generation_{};"));
 
     // Operations contract (spec lines 2609-2619).
-    assert!(code.contains(
-        "LocalSubTableInsertResult insert(const SubscriptionEntryType& elem)"
-    ));
+    assert!(code.contains("LocalSubTableInsertResult insert(const SubscriptionEntryType& elem)"));
     assert!(code.contains("bool remove(LocalSubTableHandle handle)"));
-    assert!(code.contains(
-        "std::optional<SubscriptionEntryType> get(LocalSubTableHandle handle) const"
-    ));
+    assert!(
+        code.contains("std::optional<SubscriptionEntryType> get(LocalSubTableHandle handle) const")
+    );
     assert!(code.contains("static constexpr std::size_t capacity() noexcept"));
     assert!(code.contains("std::size_t len() const noexcept"));
 
@@ -512,9 +510,8 @@ fn cpp_kotlin_element_type_procedure_emits() {
         .collect::<Vec<_>>()
         .join("\n\n");
     assert!(cpp_body.contains("#include \"frame_record.h\""));
-    assert!(cpp_body.contains(
-        "std::optional<ReassemblyTableHandle> find_by_index(const uint64_t& key) const"
-    ));
+    assert!(cpp_body
+        .contains("std::optional<ReassemblyTableHandle> find_by_index(const uint64_t& key) const"));
 
     // Kotlin emit: `findByIndex(key: ULong)`.
     let kt_outputs = compile_scxml_with_imports(

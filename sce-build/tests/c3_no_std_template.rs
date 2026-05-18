@@ -393,7 +393,10 @@ fn rust_template_no_std_emission_is_byte_idempotent() {
     let model = parse(PLAIN_FSM, "plain_idempotent");
     let a = generate(&model, &template_dir(), true).expect("first render");
     let b = generate(&model, &template_dir(), true).expect("second render");
-    assert_eq!(a, b, "no_std=true must produce byte-identical output across calls");
+    assert_eq!(
+        a, b,
+        "no_std=true must produce byte-identical output across calls"
+    );
 }
 
 #[test]

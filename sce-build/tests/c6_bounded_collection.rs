@@ -63,7 +63,10 @@ fn bounded_collection_minimal_schema_parses() {
     let c = parse(xml, "local_sub_table").expect("minimal bounded-collection parses");
     assert_eq!(c.name, "local_sub_table");
     assert_eq!(c.element_type, "SubscriptionEntry");
-    assert!(matches!(c.capacity, CapacitySource::CompileConst { value: 8 }));
+    assert!(matches!(
+        c.capacity,
+        CapacitySource::CompileConst { value: 8 }
+    ));
     assert_eq!(c.index_by, None);
     assert!(matches!(c.on_overflow, OverflowPolicy::DiagnosticEvent));
     assert!(matches!(c.ordering, CollectionOrdering::Insertion));
@@ -159,7 +162,10 @@ fn capacity_zero_rejects() {
 </scxml>"##;
     let err = parse(xml, "local_sub_table").expect_err("zero capacity rejects");
     let ForgeError::Validation(ValidationError::InvalidAttribute { .. }) = err.error else {
-        panic!("expected InvalidAttribute for capacity=0, got {:?}", err.error);
+        panic!(
+            "expected InvalidAttribute for capacity=0, got {:?}",
+            err.error
+        );
     };
 }
 
@@ -176,7 +182,10 @@ fn capacity_no_source_rejects() {
 </scxml>"##;
     let err = parse(xml, "local_sub_table").expect_err("empty capacity rejects");
     let ForgeError::Validation(ValidationError::InvalidAttribute { .. }) = err.error else {
-        panic!("expected InvalidAttribute for empty capacity, got {:?}", err.error);
+        panic!(
+            "expected InvalidAttribute for empty capacity, got {:?}",
+            err.error
+        );
     };
 }
 
@@ -193,12 +202,16 @@ fn ordering_sorted_without_index_by_fires_spec_code() {
   <sce:capacity const="8"/>
   <sce:ordering>sorted-by(index-by)</sce:ordering>
 </scxml>"##;
-    let err = parse(xml, "local_sub_table")
-        .expect_err("sorted-by without index-by fires structure code");
-    let ForgeError::Validation(
-        ValidationError::CollectionOrderingSortedRequiresIndexBy { collection_name }
-    ) = &err.error else {
-        panic!("expected CollectionOrderingSortedRequiresIndexBy, got {:?}", err.error);
+    let err =
+        parse(xml, "local_sub_table").expect_err("sorted-by without index-by fires structure code");
+    let ForgeError::Validation(ValidationError::CollectionOrderingSortedRequiresIndexBy {
+        collection_name,
+    }) = &err.error
+    else {
+        panic!(
+            "expected CollectionOrderingSortedRequiresIndexBy, got {:?}",
+            err.error
+        );
     };
     assert_eq!(collection_name, "local_sub_table");
 
@@ -227,13 +240,14 @@ fn oldest_wins_with_sorted_by_fires_spec_code() {
   <sce:on-overflow>oldest-wins</sce:on-overflow>
   <sce:ordering>sorted-by(index-by)</sce:ordering>
 </scxml>"##;
-    let err = parse(xml, "local_sub_table")
-        .expect_err("oldest-wins+sorted-by fires structure code");
+    let err =
+        parse(xml, "local_sub_table").expect_err("oldest-wins+sorted-by fires structure code");
     let ForgeError::Validation(
         ValidationError::CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion {
             collection_name,
-        }
-    ) = &err.error else {
+        },
+    ) = &err.error
+    else {
         panic!(
             "expected CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion, got {:?}",
             err.error
@@ -280,5 +294,8 @@ fn bounded_collection_in_unsupported_kind_candidates() {
     );
     assert!(ForgeKind::BoundedCollection.is_supported());
     // Display surface for diagnostic messages.
-    assert_eq!(ForgeKind::BoundedCollection.to_string(), "bounded-collection");
+    assert_eq!(
+        ForgeKind::BoundedCollection.to_string(),
+        "bounded-collection"
+    );
 }

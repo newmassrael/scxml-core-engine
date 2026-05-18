@@ -180,8 +180,7 @@ fn parse_hex_or_decimal_u16(s: &str) -> Result<u16, String> {
     } else {
         (10u32, trimmed)
     };
-    u16::from_str_radix(digits, radix)
-        .map_err(|e| format!("invalid u16 literal '{s}': {e}"))
+    u16::from_str_radix(digits, radix).map_err(|e| format!("invalid u16 literal '{s}': {e}"))
 }
 
 // ── Tests ────────────────────────────────────────────────────

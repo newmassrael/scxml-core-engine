@@ -404,8 +404,13 @@ fn slot_size_below_declared_mtu_fires() {
     let mut pool_registry: HashMap<String, &BufferPoolModel> = HashMap::new();
     pool_registry.insert("rx_data_pool".to_string(), &pool);
 
-    let err = validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry, &std::collections::BTreeSet::new())
-        .expect_err("slot_size < mtu fires");
+    let err = validate_reassembly_cross_doc(
+        &cfg,
+        &forge_links,
+        &pool_registry,
+        &std::collections::BTreeSet::new(),
+    )
+    .expect_err("slot_size < mtu fires");
     let ValidationError::MemReassemblySlotSizeBelowDeclaredMtu {
         pool_name,
         slot_size,
@@ -446,8 +451,13 @@ fn max_fragments_insufficient_fires_on_reassembly_variant() {
     let mut pool_registry: HashMap<String, &BufferPoolModel> = HashMap::new();
     pool_registry.insert("rx_reassembly_pool".to_string(), &pool);
 
-    let err = validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry, &std::collections::BTreeSet::new())
-        .expect_err("reassembly slot too small");
+    let err = validate_reassembly_cross_doc(
+        &cfg,
+        &forge_links,
+        &pool_registry,
+        &std::collections::BTreeSet::new(),
+    )
+    .expect_err("reassembly slot too small");
     let ValidationError::ReassemblyMaxFragmentsInsufficientForMtu {
         pool_name,
         slot_size,
@@ -487,8 +497,13 @@ fn max_fragments_happy_when_slot_size_sufficient() {
     let mut pool_registry: HashMap<String, &BufferPoolModel> = HashMap::new();
     pool_registry.insert("rx_reassembly_pool".to_string(), &pool);
 
-    validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry, &std::collections::BTreeSet::new())
-        .expect("slot_size suffices → Ok");
+    validate_reassembly_cross_doc(
+        &cfg,
+        &forge_links,
+        &pool_registry,
+        &std::collections::BTreeSet::new(),
+    )
+    .expect("slot_size suffices → Ok");
 }
 
 // ── #3 reassembly/expected-fragmentation-rate-high ─────────────
@@ -532,8 +547,13 @@ fn expected_fragmentation_rate_high_fires_on_default_pool() {
     // Confirm the validator returns SOME error from {#1, #3} for the
     // fixture rather than silent-passing. Per spec deterministic
     // first-failure, #1 fires before #3 in walk order.
-    let err = validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry, &std::collections::BTreeSet::new())
-        .expect_err("slot_size < mtu OR p99 fragmentation rate fires");
+    let err = validate_reassembly_cross_doc(
+        &cfg,
+        &forge_links,
+        &pool_registry,
+        &std::collections::BTreeSet::new(),
+    )
+    .expect_err("slot_size < mtu OR p99 fragmentation rate fires");
     match err {
         ValidationError::MemReassemblySlotSizeBelowDeclaredMtu { .. }
         | ValidationError::ReassemblyExpectedFragmentationRateHigh { .. } => {}
@@ -571,8 +591,13 @@ fn expected_fragmentation_silent_skip_on_reassembly_variant() {
     // #3 must NOT fire on reassembly variant per Q-C13-α2-4 (a).
     // #6 also silent-skips because expected_p99 = 1024, memcpy = 1.0,
     // clock = 400 ⇒ wcet = 1024 × 1.0 / 400 = 3 µs ≪ 200 µs budget.
-    validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry, &std::collections::BTreeSet::new())
-        .expect("reassembly variant silent-skips #3 → Ok");
+    validate_reassembly_cross_doc(
+        &cfg,
+        &forge_links,
+        &pool_registry,
+        &std::collections::BTreeSet::new(),
+    )
+    .expect("reassembly variant silent-skips #3 → Ok");
 }
 
 // ── #4 reassembly/untrusted-link-binding + C10-α reassembly/binding-on-unpaired-listener ──
@@ -736,8 +761,13 @@ fn trust_class_missing_on_fragmenting_link_fires() {
     let mut pool_registry: HashMap<String, &BufferPoolModel> = HashMap::new();
     pool_registry.insert("rx_reassembly_pool".to_string(), &pool);
 
-    let err = validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry, &std::collections::BTreeSet::new())
-        .expect_err("domain_attrs absent on reassembly-bound link");
+    let err = validate_reassembly_cross_doc(
+        &cfg,
+        &forge_links,
+        &pool_registry,
+        &std::collections::BTreeSet::new(),
+    )
+    .expect_err("domain_attrs absent on reassembly-bound link");
     let ValidationError::ReassemblyTrustClassMissingOnFragmentingLink {
         pool_name,
         link_name,
@@ -806,8 +836,13 @@ topology:
     let mut pool_registry: HashMap<String, &BufferPoolModel> = HashMap::new();
     pool_registry.insert("rx_data_pool".to_string(), &pool);
 
-    let err = validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry, &std::collections::BTreeSet::new())
-        .expect_err("stage-copy WCET exceeds slot budget");
+    let err = validate_reassembly_cross_doc(
+        &cfg,
+        &forge_links,
+        &pool_registry,
+        &std::collections::BTreeSet::new(),
+    )
+    .expect_err("stage-copy WCET exceeds slot budget");
     let ValidationError::ReassemblyStageCopyWcetExceedsSlotBudget {
         machine,
         link_name,
@@ -875,8 +910,13 @@ topology:
     let mut pool_registry: HashMap<String, &BufferPoolModel> = HashMap::new();
     pool_registry.insert("rx_data_pool".to_string(), &pool);
 
-    validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry, &std::collections::BTreeSet::new())
-        .expect("missing memcpy_cycles_per_byte → silent-skip Ok");
+    validate_reassembly_cross_doc(
+        &cfg,
+        &forge_links,
+        &pool_registry,
+        &std::collections::BTreeSet::new(),
+    )
+    .expect("missing memcpy_cycles_per_byte → silent-skip Ok");
 }
 
 // ── Happy path with all axes satisfied ─────────────────────────
@@ -904,6 +944,11 @@ fn full_reassembly_pipeline_happy_path() {
     let mut pool_registry: HashMap<String, &BufferPoolModel> = HashMap::new();
     pool_registry.insert("rx_reassembly_pool".to_string(), &pool);
 
-    validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry, &std::collections::BTreeSet::new())
-        .expect("all axes satisfied → Ok");
+    validate_reassembly_cross_doc(
+        &cfg,
+        &forge_links,
+        &pool_registry,
+        &std::collections::BTreeSet::new(),
+    )
+    .expect("all axes satisfied → Ok");
 }

@@ -64,7 +64,11 @@ const BRAKE_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
 "##;
 
 /// Spawn `sce-codegen generate` with `--deploy` and the JSON error format.
-fn run_with_deploy(scxml: &PathBuf, deploy: &PathBuf, out_dir: &std::path::Path) -> std::process::Output {
+fn run_with_deploy(
+    scxml: &PathBuf,
+    deploy: &PathBuf,
+    out_dir: &std::path::Path,
+) -> std::process::Output {
     Command::new(sce_codegen_bin())
         .args([
             "--error-format",
@@ -107,7 +111,11 @@ fn sole_ndjson_record(stderr: &str) -> serde_json::Value {
 /// the per-test code / stage / fix checks. Failure here means a mesh
 /// emission path skipped the serde contract.
 fn assert_core_shape(line: &serde_json::Value) {
-    assert_eq!(line["v"].as_u64(), Some(1), "schema version pinned at 1: {line}");
+    assert_eq!(
+        line["v"].as_u64(),
+        Some(1),
+        "schema version pinned at 1: {line}"
+    );
     assert!(
         line["id"].as_str().unwrap_or("").starts_with("fnv1a:"),
         "id must be content-hashed: {line}"
@@ -139,7 +147,10 @@ topology:
     );
     let out = run_with_deploy(&scxml, &deploy, dir.path());
 
-    assert!(!out.status.success(), "process must fail on unsupported version");
+    assert!(
+        !out.status.success(),
+        "process must fail on unsupported version"
+    );
     assert_eq!(
         out.status.code(),
         Some(10),
@@ -148,13 +159,18 @@ topology:
     let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
     let rec = sole_ndjson_record(&stderr);
     assert_core_shape(&rec);
-    assert_eq!(rec["code"], "mesh/deploy-unsupported-version", "record: {rec}");
+    assert_eq!(
+        rec["code"], "mesh/deploy-unsupported-version",
+        "record: {rec}"
+    );
     assert_eq!(rec["stage"], "mesh-deploy", "record: {rec}");
     // The supported-versions list rides `fix` (repair candidates) —
     // never duplicated on `expected` (SCE_ERROR_CONTRACT.md §3.2).
     assert_eq!(rec["fix"]["kind"], "replace_one_of");
     assert!(
-        rec["fix"]["candidates"].as_array().map_or(false, |a| !a.is_empty()),
+        rec["fix"]["candidates"]
+            .as_array()
+            .map_or(false, |a| !a.is_empty()),
         "fix.candidates must be populated: {rec}"
     );
     assert!(
@@ -180,7 +196,10 @@ fn deploy_parse_error_is_ndjson() {
         "version: [unterminated\n",
     );
     let out = run_with_deploy(&scxml, &deploy, dir.path());
-    assert!(!out.status.success(), "process must fail on YAML parse error");
+    assert!(
+        !out.status.success(),
+        "process must fail on YAML parse error"
+    );
     assert_eq!(out.status.code(), Some(10));
     let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
     let rec = sole_ndjson_record(&stderr);
@@ -227,7 +246,10 @@ topology:
     // are irrelevant because resolution fails before it is parsed.
     dir.write("brake.scxml", BRAKE_SCXML);
     let out = run_with_deploy(&scxml, &deploy, dir.path());
-    assert!(!out.status.success(), "process must fail on unknown machine");
+    assert!(
+        !out.status.success(),
+        "process must fail on unknown machine"
+    );
     assert_eq!(
         out.status.code(),
         Some(11),
@@ -236,7 +258,10 @@ topology:
     let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
     let rec = sole_ndjson_record(&stderr);
     assert_core_shape(&rec);
-    assert_eq!(rec["code"], "mesh/topology-machine-not-found", "record: {rec}");
+    assert_eq!(
+        rec["code"], "mesh/topology-machine-not-found",
+        "record: {rec}"
+    );
     assert_eq!(rec["stage"], "mesh-topology");
     assert_eq!(rec["fix"]["kind"], "replace_one_of");
     let candidates = rec["fix"]["candidates"]

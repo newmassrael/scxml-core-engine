@@ -11,18 +11,18 @@
 //   Topology → stage 2 (SCXML <send> target collection + binding resolution)
 //   Codegen  → stage 3 (transport template selection + rendering)
 
-pub mod error;
+pub mod codegen;
 pub mod deploy;
-pub mod transport;
+pub mod distributability;
+pub mod error;
+pub mod external;
+pub mod partitions;
 pub mod pattern;
+pub mod someip_format;
 pub mod target;
 pub mod topology;
-pub mod codegen;
+pub mod transport;
 pub mod vsomeip_config;
-pub mod external;
-pub mod someip_format;
-pub mod partitions;
-pub mod distributability;
 
 use std::path::Path;
 
@@ -118,5 +118,8 @@ pub fn resolve_deploy_config<'a>(
         error::MeshError::Deploy(errs.into_iter().next().expect("non-empty strict-mode err"))
     })?;
 
-    Ok(ResolvedDeployConfig { original: cfg, plan })
+    Ok(ResolvedDeployConfig {
+        original: cfg,
+        plan,
+    })
 }

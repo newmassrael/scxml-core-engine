@@ -70,12 +70,7 @@ fn link_doc(name: &str) -> String {
 /// Worker doc with explicit outbox. The link-rx alias matches the
 /// imported link's basename minus `.scxml`, so the worker's
 /// `<sce:import>` resolves against the test's temp dir.
-fn worker_with_outbox(
-    name: &str,
-    link_alias: &str,
-    link_src: &str,
-    outbox_ref: &str,
-) -> String {
+fn worker_with_outbox(name: &str, link_alias: &str, link_src: &str, outbox_ref: &str) -> String {
     format!(
         r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
@@ -170,11 +165,8 @@ fn happy_outbox_to_statechart_basic() {
         &statechart_named("session_fsm"),
     );
 
-    let outputs = run_orchestrator(
-        &[statechart.as_path()],
-        &[link.as_path(), worker.as_path()],
-    )
-    .expect("happy outbox→statechart must compile");
+    let outputs = run_orchestrator(&[statechart.as_path()], &[link.as_path(), worker.as_path()])
+        .expect("happy outbox→statechart must compile");
 
     assert_eq!(outputs.len(), 3, "1 statechart + 2 forge → 3 outputs");
 }
@@ -206,11 +198,7 @@ fn happy_outbox_to_statechart_alongside_link() {
     // A second statechart, not referenced from anywhere — its presence
     // just adds another statechart-kind entry to the registry so the
     // candidate-list helper has more than one entry to sort.
-    let observer = write_doc(
-        dir.path(),
-        "observer.scxml",
-        &statechart_named("observer"),
-    );
+    let observer = write_doc(dir.path(), "observer.scxml", &statechart_named("observer"));
 
     let outputs = run_orchestrator(
         &[session.as_path(), observer.as_path()],
@@ -232,12 +220,7 @@ fn happy_outbox_to_worker_basic() {
     let rx = write_doc(
         dir.path(),
         "rx_loop.scxml",
-        &worker_with_outbox(
-            "rx_loop",
-            "scout_link",
-            "scout_link.scxml",
-            "tx_loop.inbox",
-        ),
+        &worker_with_outbox("rx_loop", "scout_link", "scout_link.scxml", "tx_loop.inbox"),
     );
     let tx = write_doc(
         dir.path(),
@@ -247,11 +230,8 @@ fn happy_outbox_to_worker_basic() {
         &worker_without_outbox("tx_loop", "scout_link", "scout_link.scxml"),
     );
 
-    let outputs = run_orchestrator(
-        &[],
-        &[link.as_path(), rx.as_path(), tx.as_path()],
-    )
-    .expect("worker→worker outbox must compile");
+    let outputs = run_orchestrator(&[], &[link.as_path(), rx.as_path(), tx.as_path()])
+        .expect("worker→worker outbox must compile");
 
     assert_eq!(outputs.len(), 3, "3 forge files → 3 outputs");
 }
@@ -269,19 +249,13 @@ fn happy_outbox_to_worker_self_reference() {
     let rx = write_doc(
         dir.path(),
         "rx_loop.scxml",
-        &worker_with_outbox(
-            "rx_loop",
-            "scout_link",
-            "scout_link.scxml",
-            "rx_loop.inbox",
-        ),
+        &worker_with_outbox("rx_loop", "scout_link", "scout_link.scxml", "rx_loop.inbox"),
     );
 
-    let outputs =
-        run_orchestrator(&[], &[link.as_path(), rx.as_path()]).expect(
-            "self-referencing outbox must compile (validator surfaces \
+    let outputs = run_orchestrator(&[], &[link.as_path(), rx.as_path()]).expect(
+        "self-referencing outbox must compile (validator surfaces \
              resolution, not style)",
-        );
+    );
 
     assert_eq!(outputs.len(), 2);
 }
@@ -357,11 +331,7 @@ fn unknown_outbox_owner_with_busy_registry() {
         "session_fsm.scxml",
         &statechart_named("session_fsm"),
     );
-    let observer = write_doc(
-        dir.path(),
-        "observer.scxml",
-        &statechart_named("observer"),
-    );
+    let observer = write_doc(dir.path(), "observer.scxml", &statechart_named("observer"));
 
     let err = match run_orchestrator(
         &[session.as_path(), observer.as_path()],
@@ -460,10 +430,7 @@ fn wrong_kind_outbox_to_link_with_valid_alts() {
         &statechart_named("session_fsm"),
     );
 
-    let err = match run_orchestrator(
-        &[session.as_path()],
-        &[link.as_path(), rx.as_path()],
-    ) {
+    let err = match run_orchestrator(&[session.as_path()], &[link.as_path(), rx.as_path()]) {
         Ok(_) => panic!("outbox→link must fire wrong-kind diagnostic"),
         Err(e) => e,
     };
@@ -477,10 +444,7 @@ fn wrong_kind_outbox_to_link_with_valid_alts() {
             assert_eq!(actual_kind, "link");
             assert_eq!(
                 candidates,
-                vec![
-                    "rx_loop.inbox".to_string(),
-                    "session_fsm.inbox".to_string(),
-                ]
+                vec!["rx_loop.inbox".to_string(), "session_fsm.inbox".to_string(),]
             );
         }
         other => panic!("expected WorkerOutboxTargetWrongKind, got: {other:?}"),
@@ -512,30 +476,23 @@ fn invalid_suffix_typo_inbx_fires() {
         &statechart_named("session_fsm"),
     );
 
-    let err = match run_orchestrator(
-        &[session.as_path()],
-        &[link.as_path(), rx.as_path()],
-    ) {
+    let err = match run_orchestrator(&[session.as_path()], &[link.as_path(), rx.as_path()]) {
         Ok(_) => panic!("suffix typo must fire diagnostic"),
         Err(e) => e,
     };
 
     match err.error {
-        ForgeError::Validation(
-            ValidationError::WorkerOutboxTargetSuffixInvalid {
-                owner,
-                suffix,
-                outbox_value,
-                ..
-            },
-        ) => {
+        ForgeError::Validation(ValidationError::WorkerOutboxTargetSuffixInvalid {
+            owner,
+            suffix,
+            outbox_value,
+            ..
+        }) => {
             assert_eq!(owner, "session_fsm");
             assert_eq!(suffix, "inbx");
             assert_eq!(outbox_value, "session_fsm.inbx");
         }
-        other => panic!(
-            "expected WorkerOutboxTargetSuffixInvalid, got: {other:?}"
-        ),
+        other => panic!("expected WorkerOutboxTargetSuffixInvalid, got: {other:?}"),
     }
 }
 
@@ -551,12 +508,7 @@ fn invalid_suffix_bare_owner_no_dot_fires() {
     let rx = write_doc(
         dir.path(),
         "rx_loop.scxml",
-        &worker_with_outbox(
-            "rx_loop",
-            "scout_link",
-            "scout_link.scxml",
-            "session_fsm",
-        ),
+        &worker_with_outbox("rx_loop", "scout_link", "scout_link.scxml", "session_fsm"),
     );
     let session = write_doc(
         dir.path(),
@@ -564,30 +516,23 @@ fn invalid_suffix_bare_owner_no_dot_fires() {
         &statechart_named("session_fsm"),
     );
 
-    let err = match run_orchestrator(
-        &[session.as_path()],
-        &[link.as_path(), rx.as_path()],
-    ) {
+    let err = match run_orchestrator(&[session.as_path()], &[link.as_path(), rx.as_path()]) {
         Ok(_) => panic!("bare owner (no dot) must fire suffix-invalid"),
         Err(e) => e,
     };
 
     match err.error {
-        ForgeError::Validation(
-            ValidationError::WorkerOutboxTargetSuffixInvalid {
-                owner,
-                suffix,
-                outbox_value,
-                ..
-            },
-        ) => {
+        ForgeError::Validation(ValidationError::WorkerOutboxTargetSuffixInvalid {
+            owner,
+            suffix,
+            outbox_value,
+            ..
+        }) => {
             assert_eq!(owner, "session_fsm");
             assert_eq!(suffix, "", "no-dot case yields empty suffix");
             assert_eq!(outbox_value, "session_fsm");
         }
-        other => panic!(
-            "expected WorkerOutboxTargetSuffixInvalid, got: {other:?}"
-        ),
+        other => panic!("expected WorkerOutboxTargetSuffixInvalid, got: {other:?}"),
     }
 }
 
@@ -615,9 +560,7 @@ fn empty_registry_with_outbox_fires_unknown() {
 
     let err = match run_orchestrator(&[], &[link.as_path(), rx.as_path()]) {
         Ok(_) => {
-            panic!(
-                "minimal build with unknown outbox owner must fire diagnostic"
-            )
+            panic!("minimal build with unknown outbox owner must fire diagnostic")
         }
         Err(e) => e,
     };

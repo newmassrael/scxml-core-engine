@@ -261,9 +261,7 @@ fn validate_options(
 ///
 /// - `all_imports`: every import (for include/import statements in templates)
 /// - `stateful_imports`: only struct-based kinds (for member variable declarations)
-fn build_template_imports(
-    imports: &[ImportContext],
-) -> (bool, minijinja::Value, minijinja::Value) {
+fn build_template_imports(imports: &[ImportContext]) -> (bool, minijinja::Value, minijinja::Value) {
     let has_imports = !imports.is_empty();
     let all = minijinja::Value::from_serialize(imports);
     let stateful: Vec<&ImportContext> = imports.iter().filter(|i| i.is_stateful).collect();
@@ -785,8 +783,16 @@ fn inject_source_location_global(env: &mut minijinja::Environment, doc: &ForgeDo
 // ── Public API ─────────────────────────────────────────────────
 
 /// Generate code from a ForgeDocument for C++ using Jinja2 templates.
-pub fn generate_cpp(doc: &ForgeDocument, template_dir: &Path) -> Result<GeneratedOutput, ForgeError> {
-    generate_cpp_with_imports(doc, template_dir, &[], &crate::ForgeCompileOptions::default())
+pub fn generate_cpp(
+    doc: &ForgeDocument,
+    template_dir: &Path,
+) -> Result<GeneratedOutput, ForgeError> {
+    generate_cpp_with_imports(
+        doc,
+        template_dir,
+        &[],
+        &crate::ForgeCompileOptions::default(),
+    )
 }
 
 /// Generate C++ code with cross-file import support.
@@ -817,34 +823,50 @@ pub fn generate_cpp_with_imports_and_externs(
     inject_source_location_global(&mut env, doc);
 
     let code = match doc {
-        ForgeDocument::Transform(m) => render_transform(&env, m, imports, crate::generator::Language::Cpp)?,
-        ForgeDocument::Lookup(m) => render_lookup(&env, m, imports, crate::generator::Language::Cpp)?,
-        ForgeDocument::Condition(m) => render_condition(&env, m, imports, crate::generator::Language::Cpp)?,
+        ForgeDocument::Transform(m) => {
+            render_transform(&env, m, imports, crate::generator::Language::Cpp)?
+        }
+        ForgeDocument::Lookup(m) => {
+            render_lookup(&env, m, imports, crate::generator::Language::Cpp)?
+        }
+        ForgeDocument::Condition(m) => {
+            render_condition(&env, m, imports, crate::generator::Language::Cpp)?
+        }
         ForgeDocument::Codec(m) => render_codec(&env, m, imports, crate::generator::Language::Cpp)?,
-        ForgeDocument::Validator(m) => render_validator(&env, m, imports, crate::generator::Language::Cpp)?,
+        ForgeDocument::Validator(m) => {
+            render_validator(&env, m, imports, crate::generator::Language::Cpp)?
+        }
         ForgeDocument::Procedure(m) => render_procedure_cpp(&env, m, imports)?,
-        ForgeDocument::Filter(m) => render_filter(&env, m, imports, crate::generator::Language::Cpp)?,
-        ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::Cpp)?,
+        ForgeDocument::Filter(m) => {
+            render_filter(&env, m, imports, crate::generator::Language::Cpp)?
+        }
+        ForgeDocument::Interpolation(m) => {
+            render_interpolation(&env, m, imports, crate::generator::Language::Cpp)?
+        }
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::Cpp)?,
-        ForgeDocument::Observer(m) => render_observer(&env, m, imports, crate::generator::Language::Cpp)?,
-        ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::Cpp, options)?,
+        ForgeDocument::Observer(m) => {
+            render_observer(&env, m, imports, crate::generator::Language::Cpp)?
+        }
+        ForgeDocument::Algorithm(m) => {
+            render_algorithm(&env, m, imports, crate::generator::Language::Cpp, options)?
+        }
         // RFC §5.C / §5.J.4: Link is MCU-class — `codegen_matrix::check`
         // raises `codegen/mcu-class-kind-on-non-mcu-language` before
         // this match runs on cpp. The arm exists only to keep the
         // exhaustive match honest; it must remain unreachable.
-        ForgeDocument::Link(_) => unreachable!(
-            "ForgeDocument::Link rejected by codegen_matrix::check on cpp"
-        ),
+        ForgeDocument::Link(_) => {
+            unreachable!("ForgeDocument::Link rejected by codegen_matrix::check on cpp")
+        }
         // RFC §5.E / §5.J.4: BufferPool is MCU-class — same matrix
         // rejection precedes this match on cpp.
-        ForgeDocument::BufferPool(_) => unreachable!(
-            "ForgeDocument::BufferPool rejected by codegen_matrix::check on cpp"
-        ),
+        ForgeDocument::BufferPool(_) => {
+            unreachable!("ForgeDocument::BufferPool rejected by codegen_matrix::check on cpp")
+        }
         // RFC §5.D / §5.J.4: Worker is MCU-class — same matrix
         // rejection precedes this match on cpp.
-        ForgeDocument::Worker(_) => unreachable!(
-            "ForgeDocument::Worker rejected by codegen_matrix::check on cpp"
-        ),
+        ForgeDocument::Worker(_) => {
+            unreachable!("ForgeDocument::Worker rejected by codegen_matrix::check on cpp")
+        }
         // RFC §5.L C6-γ3: emits the slot-table + Handle + ops
         // contract on the Cpp backend per spec line 2576-2577
         // (`std::array<T, N>` + `std::bitset<N>` + generation
@@ -864,11 +886,9 @@ pub fn generate_cpp_with_imports_and_externs(
     // into its global `g_failures` accumulator (matches the C11
     // harness contract verbatim).
     if let ForgeDocument::Algorithm(m) = doc {
-        if let Some(sidecar) = render_algorithm_test_vector_sidecar(
-            &env,
-            m,
-            crate::generator::Language::Cpp,
-        )? {
+        if let Some(sidecar) =
+            render_algorithm_test_vector_sidecar(&env, m, crate::generator::Language::Cpp)?
+        {
             files.push(sidecar);
         }
     }
@@ -878,11 +898,9 @@ pub fn generate_cpp_with_imports_and_externs(
     // gate error rather than a silent skip when targeting an
     // un-closured backend.
     if let ForgeDocument::Codec(m) = doc {
-        if let Some(sidecar) = render_codec_test_vector_sidecar(
-            &env,
-            m,
-            crate::generator::Language::Cpp,
-        )? {
+        if let Some(sidecar) =
+            render_codec_test_vector_sidecar(&env, m, crate::generator::Language::Cpp)?
+        {
             files.push(sidecar);
         }
     }
@@ -929,10 +947,10 @@ fn render_transform(
             )?;
 
             let fn_name = match lang {
-                Language::Go =>
-                    format!("Compute{}", filters::to_pascal_case(out.id.clone())),
-                Language::Rust | Language::Python =>
-                    format!("compute_{}", filters::to_snake_case(out.id.clone())),
+                Language::Go => format!("Compute{}", filters::to_pascal_case(out.id.clone())),
+                Language::Rust | Language::Python => {
+                    format!("compute_{}", filters::to_snake_case(out.id.clone()))
+                }
                 // RFC §5.J.2 §3 D1 (mirroring Lookup): C11 has a flat scope,
                 // so fully-qualify the exported function with `<m.name>_` to
                 // keep two transforms whose output ids collide (e.g. both
@@ -942,14 +960,12 @@ fn render_transform(
                 // so `crossfile_validator_transform` and any other future
                 // C11 transform import resolves to the same symbol the
                 // generated header declares.
-                Language::C11 =>
-                    format!(
-                        "{}_compute_{}",
-                        filters::to_snake_case(m.name.clone()),
-                        filters::to_snake_case(out.id.clone()),
-                    ),
-                _ =>
-                    format!("compute{}", filters::to_pascal_case(out.id.clone())),
+                Language::C11 => format!(
+                    "{}_compute_{}",
+                    filters::to_snake_case(m.name.clone()),
+                    filters::to_snake_case(out.id.clone()),
+                ),
+                _ => format!("compute{}", filters::to_pascal_case(out.id.clone())),
             };
 
             let mut obj = serde_json::Map::new();
@@ -985,21 +1001,19 @@ fn render_lookup(
 
     let enum_name = filters::to_pascal_case(m.output.id.clone());
     let func_name = match lang {
-        Language::Go =>
-            format!("Lookup{}", filters::to_pascal_case(m.output.id.clone())),
-        Language::Rust | Language::Python =>
-            format!("lookup_{}", filters::to_snake_case(m.output.id.clone())),
+        Language::Go => format!("Lookup{}", filters::to_pascal_case(m.output.id.clone())),
+        Language::Rust | Language::Python => {
+            format!("lookup_{}", filters::to_snake_case(m.output.id.clone()))
+        }
         // RFC §5.J.2 §3 D1: C11 has a flat scope, so fully-qualify with the
         // fixture name to keep two lookups whose output ids collide
         // (e.g. both `status`) from clashing in a single TU.
-        Language::C11 =>
-            format!(
-                "{}_{}",
-                filters::to_snake_case(m.name.clone()),
-                filters::to_snake_case(m.output.id.clone()),
-            ),
-        _ =>
-            format!("lookup{}", filters::to_pascal_case(m.output.id.clone())),
+        Language::C11 => format!(
+            "{}_{}",
+            filters::to_snake_case(m.name.clone()),
+            filters::to_snake_case(m.output.id.clone()),
+        ),
+        _ => format!("lookup{}", filters::to_pascal_case(m.output.id.clone())),
     };
     let input_id = l.local_id(&m.input.id);
 
@@ -1035,7 +1049,11 @@ fn render_lookup(
         };
 
         let uv: Vec<String> = match lang {
-            Language::Rust => m.unique_values().into_iter().map(|v| to_rust_variant(&v)).collect(),
+            Language::Rust => m
+                .unique_values()
+                .into_iter()
+                .map(|v| to_rust_variant(&v))
+                .collect(),
             _ => m.unique_values(),
         };
 
@@ -1053,10 +1071,14 @@ fn render_lookup(
 
     // Numeric strategy: parallel key/value arrays with language-specific literals.
     let (keys_literal, values_literal, default_literal) = if !output_is_string {
-        let kl: Vec<String> = m.entries.iter()
+        let kl: Vec<String> = m
+            .entries
+            .iter()
             .map(|e| l.literal(&e.key, &m.input.sce_type))
             .collect();
-        let vl: Vec<String> = m.entries.iter()
+        let vl: Vec<String> = m
+            .entries
+            .iter()
             .map(|e| l.literal(&e.value, &m.output.sce_type))
             .collect();
         let dl = match &m.miss_policy {
@@ -1075,7 +1097,10 @@ fn render_lookup(
     ctx.insert("value_type".into(), l.param_type(&m.output.sce_type).into());
     ctx.insert("input_id".into(), input_id.into());
     ctx.insert("unique_values".into(), serde_json::json!(unique_values));
-    ctx.insert("entries_by_value".into(), serde_json::json!(entries_by_value));
+    ctx.insert(
+        "entries_by_value".into(),
+        serde_json::json!(entries_by_value),
+    );
     ctx.insert("default_value".into(), default_value.into());
     ctx.insert("default_literal".into(), default_literal.into());
     ctx.insert("output_is_string".into(), output_is_string.into());
@@ -1113,9 +1138,18 @@ fn render_lookup(
             .join("\n");
         ctx.insert("c_typedef_name".into(), format!("{func_name}_t").into());
         ctx.insert("c_variant_prefix".into(), prefix.into());
-        ctx.insert("c_value_name_func".into(), format!("{func_name}_name").into());
-        ctx.insert("c_keys_array_name".into(), format!("{func_name}_keys").into());
-        ctx.insert("c_values_array_name".into(), format!("{func_name}_values").into());
+        ctx.insert(
+            "c_value_name_func".into(),
+            format!("{func_name}_name").into(),
+        );
+        ctx.insert(
+            "c_keys_array_name".into(),
+            format!("{func_name}_keys").into(),
+        );
+        ctx.insert(
+            "c_values_array_name".into(),
+            format!("{func_name}_values").into(),
+        );
         ctx.insert("c_variants_block".into(), variants_block.into());
         ctx.insert("c_value_name_arms".into(), value_name_arms.into());
     }
@@ -1146,10 +1180,8 @@ fn render_condition(
         // condition-specific suffix so namespace-prefixed callsites stay
         // distinct from the bare m.name. Single-output kind, so the
         // suffix is the constant `check` rather than the output id.
-        Language::C11 =>
-            format!("{}_check", filters::to_snake_case(m.name.clone())),
-        Language::Rust | Language::Python =>
-            filters::to_snake_case(m.name.clone()),
+        Language::C11 => format!("{}_check", filters::to_snake_case(m.name.clone())),
+        Language::Rust | Language::Python => filters::to_snake_case(m.name.clone()),
         _ => filters::to_camel_case(m.name.clone()),
     };
 
@@ -2155,7 +2187,10 @@ fn render_codec(
     // native Default analog (Rust impl Default, C++ member-init,
     // Kotlin/Python dataclass defaults) consume this rollup as well
     // when they emit conditional Default-related comment blocks.
-    let has_flag_default = m.fields.iter().any(|f| f.flags.iter().any(|fl| fl.value.is_some()));
+    let has_flag_default = m
+        .fields
+        .iter()
+        .any(|f| f.flags.iter().any(|fl| fl.value.is_some()));
     ctx.insert("has_flag_default".into(), has_flag_default.into());
     // RFC §5.B B5-α: zero-field codecs (Zenoh KeepAlive et al.) skip
     // every cursor / encode-buffer touch; templates branch on
@@ -2269,19 +2304,16 @@ fn render_codec(
     let has_memcpy_fields = m.fields.iter().any(|f| {
         matches!(
             f.bit_size,
-            BitSize::Tail
-                | BitSize::LengthRef
-                | BitSize::Repeat { .. }
-                | BitSize::TlvChain { .. }
+            BitSize::Tail | BitSize::LengthRef | BitSize::Repeat { .. } | BitSize::TlvChain { .. }
         )
     });
     ctx.insert("has_memcpy_fields".into(), has_memcpy_fields.into());
-    ctx.insert(
-        "has_present_if_fields".into(),
-        has_present_if_fields.into(),
-    );
+    ctx.insert("has_present_if_fields".into(), has_present_if_fields.into());
     ctx.insert("has_repeat_fields".into(), has_repeat_fields.into());
-    ctx.insert("has_tlv_chain_fields".into(), m.has_tlv_chain_fields().into());
+    ctx.insert(
+        "has_tlv_chain_fields".into(),
+        m.has_tlv_chain_fields().into(),
+    );
     ctx.insert("has_embed_fields".into(), m.has_embed_fields().into());
     ctx.insert("has_string_fields".into(), m.has_string_fields().into());
     ctx.insert("has_tail_fields".into(), m.has_tail_fields().into());
@@ -2314,9 +2346,7 @@ fn render_codec(
             // identifier already returned by `present_if_test_literal`'s
             // Parent-scope branch, and `UByte` mirrors v1's uint8 lock-in
             // for parent flag carrier type.
-            crate::generator::Language::Kotlin => {
-                (", parentFlags: UByte", "parentFlags: UByte")
-            }
+            crate::generator::Language::Kotlin => (", parentFlags: UByte", "parentFlags: UByte"),
             // Go: idiomatic camelCase function parameter (`parentFlags`)
             // typed as `byte` (Go's alias for `uint8` — mirrors v1's
             // uint8 lock-in for parent flag carrier type). Go function
@@ -2399,8 +2429,8 @@ fn render_codec(
         };
         let (tag_type, tag_flag_def) = match (&v.peek_byte, &v.tag_flag) {
             (Some(_), _) => {
-                let flag_def = peek_flag_def
-                    .expect("peek mode always carries a flag def per parser");
+                let flag_def =
+                    peek_flag_def.expect("peek mode always carries a flag def per parser");
                 let width = flag_def.width.max(1);
                 let result_type = if width <= 8 {
                     SceType::Uint8
@@ -2424,9 +2454,7 @@ fn render_codec(
                     .flags
                     .iter()
                     .find(|f| f.name == *flag_name)
-                    .expect(
-                        "parser validated tag_flag references an existing flag on the carrier",
-                    );
+                    .expect("parser validated tag_flag references an existing flag on the carrier");
                 let width = flag_def.width.max(1);
                 let result_type = if width <= 8 {
                     SceType::Uint8
@@ -2468,14 +2496,9 @@ fn render_codec(
             .arms
             .iter()
             .map(|arm| {
-                let body_type = resolve_variant_arm_body_type(
-                    &m.name,
-                    &arm.body_alias,
-                    imports,
-                    lang,
-                )?;
-                let variant_name =
-                    filters::to_pascal_case(arm.body_alias.clone());
+                let body_type =
+                    resolve_variant_arm_body_type(&m.name, &arm.body_alias, imports, lang)?;
+                let variant_name = filters::to_pascal_case(arm.body_alias.clone());
                 let value_literal = format!("{}{}", arm.value, arm_value_suffix);
                 let body_decoder = resolve_variant_arm_decoder(&arm.body_alias, lang);
                 let body_encoder = resolve_variant_arm_encoder(&arm.body_alias, lang);
@@ -2622,10 +2645,7 @@ fn render_codec(
                     "body_parent_flags_arg_encode".into(),
                     body_parent_flags_arg_encode.into(),
                 );
-                obj.insert(
-                    "body_parent_flags_arg".into(),
-                    body_parent_flags_arg.into(),
-                );
+                obj.insert("body_parent_flags_arg".into(), body_parent_flags_arg.into());
                 obj.insert(
                     "body_parent_flags_arg_first".into(),
                     body_parent_flags_arg_first.into(),
@@ -2665,10 +2685,7 @@ fn render_codec(
                         .find(|i| i.alias == arm.body_alias)
                         .map(|i| i.codec_emits_default_ctor)
                         .unwrap_or(false);
-                    obj.insert(
-                        "go_inner_emits_ctor".into(),
-                        inner_emits_ctor.into(),
-                    );
+                    obj.insert("go_inner_emits_ctor".into(), inner_emits_ctor.into());
                     // Bare element-type reference for the zero-value
                     // fallback (`&snake.Pascal{}`) when the inner has
                     // no NewT(). Pre-computed here so the template
@@ -2699,12 +2716,8 @@ fn render_codec(
             .default_arm
             .as_ref()
             .map(|d| {
-                let body_type = resolve_variant_arm_body_type(
-                    &m.name,
-                    &d.body_alias,
-                    imports,
-                    lang,
-                )?;
+                let body_type =
+                    resolve_variant_arm_body_type(&m.name, &d.body_alias, imports, lang)?;
                 let body_decoder = resolve_variant_arm_decoder(&d.body_alias, lang);
                 let body_encoder = resolve_variant_arm_encoder(&d.body_alias, lang);
                 let c_kind_constant = format!("{c_parent_upper}_BODY_KIND_DEFAULT");
@@ -2768,10 +2781,7 @@ fn render_codec(
                     })
                     .unwrap_or_default();
                 let mut obj = serde_json::Map::new();
-                obj.insert(
-                    "variant_name".into(),
-                    "Default".to_string().into(),
-                );
+                obj.insert("variant_name".into(), "Default".to_string().into());
                 obj.insert("body_type".into(), body_type.into());
                 obj.insert("body_decoder".into(), body_decoder.into());
                 obj.insert("body_encoder".into(), body_encoder.into());
@@ -2780,10 +2790,7 @@ fn render_codec(
                 // enumerated arm whose body alias happens to be `default`.
                 obj.insert("c_union_field".into(), "default_body".to_string().into());
                 obj.insert("c_body_encoded_type".into(), c_body_encoded_type.into());
-                obj.insert(
-                    "body_parent_flags_arg".into(),
-                    body_parent_flags_arg.into(),
-                );
+                obj.insert("body_parent_flags_arg".into(), body_parent_flags_arg.into());
                 obj.insert(
                     "body_parent_flags_arg_first".into(),
                     body_parent_flags_arg_first.into(),
@@ -2823,22 +2830,14 @@ fn render_codec(
         let c11_carrier_qualifier = if peek_mode { "" } else { "out->" };
         let (tag_match_expr, tag_store_expr) = match (&tag_flag_def, lang) {
             // ── Whole-field (B1-β back-compat) ──────────────────────
-            (None, crate::generator::Language::Rust) => {
-                (carrier_id.clone(), carrier_id.clone())
-            }
-            (None, crate::generator::Language::Cpp) => {
-                (carrier_id.clone(), carrier_id.clone())
-            }
-            (None, crate::generator::Language::Go) => {
-                (carrier_id.clone(), carrier_id.clone())
-            }
+            (None, crate::generator::Language::Rust) => (carrier_id.clone(), carrier_id.clone()),
+            (None, crate::generator::Language::Cpp) => (carrier_id.clone(), carrier_id.clone()),
+            (None, crate::generator::Language::Go) => (carrier_id.clone(), carrier_id.clone()),
             (None, crate::generator::Language::C11) => {
                 let qualified = format!("{c11_carrier_qualifier}{carrier_id}");
                 (qualified.clone(), qualified)
             }
-            (None, crate::generator::Language::Python) => {
-                (carrier_id.clone(), carrier_id.clone())
-            }
+            (None, crate::generator::Language::Python) => (carrier_id.clone(), carrier_id.clone()),
             (None, crate::generator::Language::Kotlin) => {
                 // Kotlin needs Int (or Long for u32/u64) for `when` matching;
                 // store expression uses the bare field whose type is already
@@ -2847,10 +2846,7 @@ fn render_codec(
                     SceType::Uint8 | SceType::Uint16 => ".toInt()",
                     _ => ".toLong()",
                 };
-                (
-                    format!("{carrier_id}{cast_op}"),
-                    carrier_id.clone(),
-                )
+                (format!("{carrier_id}{cast_op}"), carrier_id.clone())
             }
             // ── Multi-bit-flag (B5-β) — masked-shifted formula ──────
             (Some(flag), lang_) => {
@@ -2867,8 +2863,7 @@ fn render_codec(
                     64
                 };
                 let value_hex_digits = (result_bits as usize) / 4;
-                let value_mask_lit =
-                    format!("0x{:0width$X}", value_mask, width = value_hex_digits);
+                let value_mask_lit = format!("0x{:0width$X}", value_mask, width = value_hex_digits);
                 match lang_ {
                     crate::generator::Language::Rust => {
                         let result_ty = format!("u{result_bits}");
@@ -2896,9 +2891,8 @@ fn render_codec(
                     }
                     crate::generator::Language::Go => {
                         let result_ty = format!("uint{result_bits}");
-                        let expr = format!(
-                            "{result_ty}(({carrier_id} >> {bit}) & {value_mask_lit})"
-                        );
+                        let expr =
+                            format!("{result_ty}(({carrier_id} >> {bit}) & {value_mask_lit})");
                         (expr.clone(), expr)
                     }
                     crate::generator::Language::C11 => {
@@ -2953,10 +2947,7 @@ fn render_codec(
                 "c_kind_typedef".into(),
                 format!("{snake}_body_kind_t").into(),
             );
-            variant_obj.insert(
-                "c_body_typedef".into(),
-                format!("{snake}_variant_t").into(),
-            );
+            variant_obj.insert("c_body_typedef".into(), format!("{snake}_variant_t").into());
         }
         // Kotlin only: zero-valued tag literal for the default-only
         // variant body initializer (parser allows arms.is_empty() +
@@ -3022,15 +3013,11 @@ fn render_codec(
                      val _peek: UByte = _peekRaw[0].toUByte()"
                         .to_string()
                 }
-                crate::generator::Language::Go => {
-                    "_peekSlice, err := cursor.PeekSlice(1)\n\t\
+                crate::generator::Language::Go => "_peekSlice, err := cursor.PeekSlice(1)\n\t\
                      if err != nil {\n\t\treturn nil, err\n\t}\n\t\
                      _peek := _peekSlice[0]"
-                        .to_string()
-                }
-                crate::generator::Language::Python => {
-                    "_peek = cursor.peek_slice(1)[0]".to_string()
-                }
+                    .to_string(),
+                crate::generator::Language::Python => "_peek = cursor.peek_slice(1)[0]".to_string(),
                 crate::generator::Language::C11 => {
                     "const uint8_t *_peek_raw = sce_forge_cursor_peek(cursor, 1);\n    \
                      if (_peek_raw == NULL) {\n        \
@@ -3044,10 +3031,7 @@ fn render_codec(
             String::new()
         };
         variant_obj.insert("has_peek_byte".into(), peek_mode.into());
-        variant_obj.insert(
-            "peek_byte_decode_stmt".into(),
-            peek_byte_decode_stmt.into(),
-        );
+        variant_obj.insert("peek_byte_decode_stmt".into(), peek_byte_decode_stmt.into());
         // Y3 atomic 2b-iv streaming-prefix variant: own-field variants
         // whose prefix mixes the carrier byte with VLE / length-ref /
         // present-if / tlv-chain / embed / repeat / string fields need
@@ -3085,17 +3069,29 @@ fn render_codec(
         let snake = filters::to_snake_case(m.name.clone());
         let upper = to_upper_snake(&m.name);
         ctx.insert("c_struct_typedef".into(), format!("{snake}_t").into());
-        ctx.insert("c_encoded_typedef".into(), format!("{snake}_encoded_t").into());
+        ctx.insert(
+            "c_encoded_typedef".into(),
+            format!("{snake}_encoded_t").into(),
+        );
         ctx.insert("c_decode_func".into(), format!("{snake}_decode").into());
         ctx.insert("c_encode_func".into(), format!("{snake}_encode").into());
-        ctx.insert("c_max_bytes_macro".into(), format!("{upper}_MAX_BYTES").into());
-        ctx.insert("c_min_bytes_macro".into(), format!("{upper}_MIN_BYTES").into());
+        ctx.insert(
+            "c_max_bytes_macro".into(),
+            format!("{upper}_MAX_BYTES").into(),
+        );
+        ctx.insert(
+            "c_min_bytes_macro".into(),
+            format!("{upper}_MIN_BYTES").into(),
+        );
         // RFC variant-default-uniformity Atomic β-c11: macro name for
         // the codec's `_DEFAULT_INIT` designated-initializer
         // (`<UPPER>_DEFAULT_INIT`). Emission is gated on
         // `has_flag_default` or a declared default arm so codecs that
         // don't opt in stay byte-identical with pre-α goldens.
-        ctx.insert("c_default_init_macro".into(), format!("{upper}_DEFAULT_INIT").into());
+        ctx.insert(
+            "c_default_init_macro".into(),
+            format!("{upper}_DEFAULT_INIT").into(),
+        );
     }
 
     l.insert_imports(&mut ctx, imports);
@@ -3204,11 +3200,7 @@ fn validate_cross_codec_parent_flags(
     use crate::forge::model::SceType;
 
     // Collect each arm's body alias once (arms + default).
-    let mut aliases: Vec<&str> = variant
-        .arms
-        .iter()
-        .map(|a| a.body_alias.as_str())
-        .collect();
+    let mut aliases: Vec<&str> = variant.arms.iter().map(|a| a.body_alias.as_str()).collect();
     if let Some(d) = &variant.default_arm {
         aliases.push(d.body_alias.as_str());
     }
@@ -3342,11 +3334,7 @@ fn validate_cross_codec_peek_byte(
         None => return Ok(()),
     };
 
-    let mut aliases: Vec<&str> = variant
-        .arms
-        .iter()
-        .map(|a| a.body_alias.as_str())
-        .collect();
+    let mut aliases: Vec<&str> = variant.arms.iter().map(|a| a.body_alias.as_str()).collect();
     if let Some(d) = &variant.default_arm {
         aliases.push(d.body_alias.as_str());
     }
@@ -3548,8 +3536,7 @@ fn validate_cross_codec_variant_default_arm(
                 } else {
                     (1u64 << peek_flag.width) - 1
                 };
-                let expected_slice =
-                    (default_arm.value >> peek_flag.bit) & mask;
+                let expected_slice = (default_arm.value >> peek_flag.bit) & mask;
                 if inner_value != expected_slice {
                     return Err(ForgeError::Validation(
                         ValidationError::CodecVariantDefaultArmMidMismatch {
@@ -3567,10 +3554,7 @@ fn validate_cross_codec_variant_default_arm(
     Ok(())
 }
 
-fn resolve_variant_arm_decoder(
-    body_alias: &str,
-    lang: crate::generator::Language,
-) -> String {
+fn resolve_variant_arm_decoder(body_alias: &str, lang: crate::generator::Language) -> String {
     match lang {
         crate::generator::Language::Go => {
             let snake = filters::to_snake_case(body_alias.to_string());
@@ -3599,10 +3583,7 @@ fn resolve_variant_arm_decoder(
 /// `<snake>_encoded_t` that the variant emitter splices into the parent
 /// codec's encoded buffer; method-style backends ignore this field
 /// because they call `.encode()` on the body value directly.
-fn resolve_variant_arm_encoder(
-    body_alias: &str,
-    lang: crate::generator::Language,
-) -> String {
+fn resolve_variant_arm_encoder(body_alias: &str, lang: crate::generator::Language) -> String {
     match lang {
         crate::generator::Language::C11 => {
             let snake = filters::to_snake_case(body_alias.to_string());
@@ -3624,17 +3605,20 @@ fn resolve_repeat_body_type(
     imports: &[ImportContext],
     lang: crate::generator::Language,
 ) -> Result<String, ForgeError> {
-    let imp = imports.iter().find(|i| i.alias == body_alias).ok_or_else(|| {
-        let available: Vec<&str> = imports.iter().map(|i| i.alias.as_str()).collect();
-        ForgeError::Generate(crate::forge::error::GenerateError::UnsupportedFeature(
-            format!(
-                "codec '{codec_name}': <sce:repeat> body references unknown import alias \
+    let imp = imports
+        .iter()
+        .find(|i| i.alias == body_alias)
+        .ok_or_else(|| {
+            let available: Vec<&str> = imports.iter().map(|i| i.alias.as_str()).collect();
+            ForgeError::Generate(crate::forge::error::GenerateError::UnsupportedFeature(
+                format!(
+                    "codec '{codec_name}': <sce:repeat> body references unknown import alias \
                  '{body_alias}' (available aliases: [{}]) — add `<sce:import \
                  src=\"{body_alias}.scxml\" kind=\"codec\" as=\"{body_alias}\"/>`",
-                available.join(", ")
-            ),
-        ))
-    })?;
+                    available.join(", ")
+                ),
+            ))
+        })?;
     if imp.kind != "codec" {
         return Err(ForgeError::Generate(
             crate::forge::error::GenerateError::UnsupportedFeature(format!(
@@ -3712,7 +3696,15 @@ fn repeat_streaming_decode_stmt(
     // the True arm is sound.
     if let Some(pred) = &field.present_if {
         return repeat_streaming_decode_stmt_gated(
-            field, fields, parent_flags, pred, count_ref, body_type, body_decoder, max_count, lang,
+            field,
+            fields,
+            parent_flags,
+            pred,
+            count_ref,
+            body_type,
+            body_decoder,
+            max_count,
+            lang,
         );
     }
 
@@ -3923,7 +3915,12 @@ fn repeat_streaming_encode_block(
     // / MutableList? / Optional[List] / Go nilness / C11 carrier-bit).
     if let Some(pred) = &field.present_if {
         return repeat_streaming_encode_block_gated(
-            field, fields, parent_flags, pred, body_encoder, lang,
+            field,
+            fields,
+            parent_flags,
+            pred,
+            body_encoder,
+            lang,
         );
     }
     match lang {
@@ -4382,49 +4379,49 @@ fn embed_streaming_encode_block(
     let has_present_if = field.present_if.is_some();
     let thread_arg_norm = thread_arg.trim_start_matches(", ");
     match lang {
-        Language::Rust => if !has_present_if {
-            format!(
-                "        r.extend(self.{id}.encode({thread_arg_norm}));"
-            )
-        } else {
-            format!(
-                "        if let Some(_v) = &self.{id} {{\n            \
+        Language::Rust => {
+            if !has_present_if {
+                format!("        r.extend(self.{id}.encode({thread_arg_norm}));")
+            } else {
+                format!(
+                    "        if let Some(_v) = &self.{id} {{\n            \
                      r.extend(_v.encode({thread_arg_norm}));\n        \
                  }}"
-            )
-        },
-        Language::Cpp => if !has_present_if {
-            format!(
-                "        {{\n            \
+                )
+            }
+        }
+        Language::Cpp => {
+            if !has_present_if {
+                format!(
+                    "        {{\n            \
                      auto _sub = {id}.encode({thread_arg_norm});\n            \
                      r.insert(r.end(), _sub.begin(), _sub.end());\n        \
                  }}"
-            )
-        } else {
-            format!(
-                "        if (this->{id}.has_value()) {{\n            \
+                )
+            } else {
+                format!(
+                    "        if (this->{id}.has_value()) {{\n            \
                      auto _sub = this->{id}->encode({thread_arg_norm});\n            \
                      r.insert(r.end(), _sub.begin(), _sub.end());\n        \
                  }}"
-            )
-        },
-        Language::Kotlin => if !has_present_if {
-            format!(
-                "        r.addAll(this.{id}.encode({thread_arg_norm}).toList())"
-            )
-        } else {
-            format!(
-                "        this.{id}?.let {{ _v ->\n            \
+                )
+            }
+        }
+        Language::Kotlin => {
+            if !has_present_if {
+                format!("        r.addAll(this.{id}.encode({thread_arg_norm}).toList())")
+            } else {
+                format!(
+                    "        this.{id}?.let {{ _v ->\n            \
                      r.addAll(_v.encode({thread_arg_norm}).toList())\n        \
                  }}"
-            )
-        },
+                )
+            }
+        }
         Language::Go => {
             let go_id = filters::to_pascal_case(id.to_string());
             if !has_present_if {
-                format!(
-                    "\tr = append(r, s.{go_id}.Encode({thread_arg_norm})...)"
-                )
+                format!("\tr = append(r, s.{go_id}.Encode({thread_arg_norm})...)")
             } else {
                 format!(
                     "\tif s.{go_id} != nil {{\n\t\t\
@@ -4477,9 +4474,7 @@ fn embed_streaming_encode_block(
         Language::Python => {
             let py_id = filters::to_snake_case(id.to_string());
             if !has_present_if {
-                format!(
-                    "        r.extend(self.{py_id}.encode({thread_arg_norm}))"
-                )
+                format!("        r.extend(self.{py_id}.encode({thread_arg_norm}))")
             } else {
                 format!(
                     "        if self.{py_id} is not None:\n            \
@@ -4559,7 +4554,10 @@ fn embed_parent_flags_thread_args(
             Language::C11 => format!(", self->{}", filters::to_snake_case(carrier.clone())),
             Language::Python => format!(", self.{}", filters::to_snake_case(carrier.clone())),
         };
-        return EmbedThreadArgs { decode_arg: decode, encode_arg: encode };
+        return EmbedThreadArgs {
+            decode_arg: decode,
+            encode_arg: encode,
+        };
     }
 
     // Case B: parent codec declares its own
@@ -4573,9 +4571,7 @@ fn embed_parent_flags_thread_args(
         .unwrap_or(false)
     {
         let arg = match lang {
-            Language::Rust | Language::Cpp | Language::C11 | Language::Python => {
-                ", parent_flags"
-            }
+            Language::Rust | Language::Cpp | Language::C11 | Language::Python => ", parent_flags",
             Language::Kotlin | Language::Go => ", parentFlags",
         };
         return EmbedThreadArgs {
@@ -4885,8 +4881,7 @@ fn repeat_streaming_encode_block_gated(
         // length-ref equivalent). Reads `self->carrier` for Local
         // scope, bare `parent_flags` for Parent scope.
         Language::C11 => {
-            let (mask, hex_digits, carrier) =
-                present_if_carrier_info(fields, parent_flags, pred);
+            let (mask, hex_digits, carrier) = present_if_carrier_info(fields, parent_flags, pred);
             let op = if pred.negate { "==" } else { "!=" };
             let id_snake = filters::to_snake_case(id.to_string());
             let test_id = match &carrier {
@@ -5050,9 +5045,7 @@ fn tlv_chain_streaming_decode_stmt(
             // `_decode` suffix to recover the entry's struct snake
             // name (used as the accessor's free-function prefix per
             // c/codec.h.jinja2 line 444 / 455).
-            let entry_struct_snake = body_decoder
-                .strip_suffix("_decode")
-                .unwrap_or(body_decoder);
+            let entry_struct_snake = body_decoder.strip_suffix("_decode").unwrap_or(body_decoder);
             let body = match &entry_flag_acc {
                 None => format!(
                     "            if (sce_forge_cursor_remaining(cursor) == 0) break;\n            \
@@ -5088,9 +5081,9 @@ fn tlv_chain_streaming_decode_stmt(
         Language::Cpp => {
             // Y3 atomic 2b: exhaust-or-depth-only overflow check.
             let overflow_check = match (on_overflow, &entry_flag_acc) {
-                (TlvOverflowPolicy::Reject, None) => format!(
-                    "\n        if (cursor.remaining() > 0) return std::nullopt;"
-                ),
+                (TlvOverflowPolicy::Reject, None) => {
+                    format!("\n        if (cursor.remaining() > 0) return std::nullopt;")
+                }
                 _ => String::new(),
             };
             let body = match &entry_flag_acc {
@@ -5128,9 +5121,9 @@ fn tlv_chain_streaming_decode_stmt(
         Language::Kotlin => {
             // Y3 atomic 2b: exhaust-or-depth-only overflow check.
             let overflow_check = match (on_overflow, &entry_flag_acc) {
-                (TlvOverflowPolicy::Reject, None) => format!(
-                    "\n            if (cursor.remaining() > 0) return null"
-                ),
+                (TlvOverflowPolicy::Reject, None) => {
+                    format!("\n            if (cursor.remaining() > 0) return null")
+                }
                 _ => String::new(),
             };
             let body = match &entry_flag_acc {
@@ -5412,9 +5405,9 @@ fn tlv_chain_streaming_decode_stmt_gated(
         Language::Cpp => {
             // Y3 atomic 2b: exhaust-or-depth-only overflow check.
             let overflow_check = match (on_overflow, &entry_flag_acc) {
-                (TlvOverflowPolicy::Reject, None) => format!(
-                    "\n            if (cursor.remaining() > 0) return std::nullopt;"
-                ),
+                (TlvOverflowPolicy::Reject, None) => {
+                    format!("\n            if (cursor.remaining() > 0) return std::nullopt;")
+                }
                 _ => String::new(),
             };
             let body = match &entry_flag_acc {
@@ -5447,9 +5440,9 @@ fn tlv_chain_streaming_decode_stmt_gated(
         Language::Kotlin => {
             // Y3 atomic 2b: exhaust-or-depth-only overflow check.
             let overflow_check = match (on_overflow, &entry_flag_acc) {
-                (TlvOverflowPolicy::Reject, None) => format!(
-                    "\n                if (cursor.remaining() > 0) return null"
-                ),
+                (TlvOverflowPolicy::Reject, None) => {
+                    format!("\n                if (cursor.remaining() > 0) return null")
+                }
                 _ => String::new(),
             };
             let body = match &entry_flag_acc {
@@ -5531,9 +5524,7 @@ fn tlv_chain_streaming_decode_stmt_gated(
                 ),
                 _ => String::new(),
             };
-            let entry_struct_snake = body_decoder
-                .strip_suffix("_decode")
-                .unwrap_or(body_decoder);
+            let entry_struct_snake = body_decoder.strip_suffix("_decode").unwrap_or(body_decoder);
             let body = match &entry_flag_acc {
                 None => format!(
                     "                if (sce_forge_cursor_remaining(cursor) == 0) break;\n                \
@@ -5730,8 +5721,7 @@ fn build_flag_ctx(
             // Shifted mask in carrier width (full bit-range claimed
             // by this flag, used by setter clear path and bool getter).
             let shifted_mask: u64 = ((1u64 << width) - 1) << f.bit;
-            let mask_literal =
-                format!("0x{:0width$X}", shifted_mask, width = carrier_hex_digits);
+            let mask_literal = format!("0x{:0width$X}", shifted_mask, width = carrier_hex_digits);
             // Result-type natural width: the smallest unsigned int
             // type that holds `width` bits.
             let result_bits: u32 = if width <= 8 {
@@ -5813,10 +5803,7 @@ fn build_flag_ctx(
             obj.insert("width".into(), width.into());
             obj.insert("multi_bit".into(), multi_bit.into());
             obj.insert("mask_literal".into(), mask_literal.into());
-            obj.insert(
-                "value_mask_literal".into(),
-                value_mask_literal.into(),
-            );
+            obj.insert("value_mask_literal".into(), value_mask_literal.into());
             obj.insert("result_type".into(), result_type.into());
             obj.insert("name_acc".into(), name_acc.into());
             obj.insert("name_set".into(), name_set.into());
@@ -5835,13 +5822,13 @@ fn build_flag_ctx(
 /// the CARRIER's byte offset — the codec emit at `generate_decode_expr`
 /// then composes the bit-extract (`(raw[off] >> shift) & mask`) on top
 /// of that offset using the per-language flag resolver.
-fn resolve_length_field_byte_off(
-    fields: &[CodecField],
-    field: &CodecField,
-) -> Option<u32> {
+fn resolve_length_field_byte_off(fields: &[CodecField], field: &CodecField) -> Option<u32> {
     field.length_field.as_ref().and_then(|name| {
         if let Some((carrier_id, _)) = dotted_length_field(name) {
-            fields.iter().find(|x| x.id == carrier_id).map(|x| x.byte_offset)
+            fields
+                .iter()
+                .find(|x| x.id == carrier_id)
+                .map(|x| x.byte_offset)
         } else {
             fields.iter().find(|x| x.id == *name).map(|x| x.byte_offset)
         }
@@ -6901,12 +6888,7 @@ fn apply_arith_signed(base: &str, arith: i32) -> String {
     }
 }
 
-fn compute_n_go(
-    len_field: &str,
-    fields: &[CodecField],
-    sibling_gated: bool,
-    arith: i32,
-) -> String {
+fn compute_n_go(len_field: &str, fields: &[CodecField], sibling_gated: bool, arith: i32) -> String {
     let base = if let Some((c, f)) = dotted_length_field(len_field) {
         let (shift, mask) = dotted_length_resolve(c, f, fields);
         let go_c = filters::to_pascal_case(c.to_string());
@@ -6957,11 +6939,7 @@ fn compute_n_c11(
 /// emitted a bare `self->{len_snake}` (no `(size_t)` cast) for the
 /// plain bare-id no-arith case, so to keep no-arith goldens byte-stable
 /// we strip the cast when `arith == 0` AND len_field is plain.
-fn compute_n_c11_encode(
-    len_field: &str,
-    fields: &[CodecField],
-    arith: i32,
-) -> String {
+fn compute_n_c11_encode(len_field: &str, fields: &[CodecField], arith: i32) -> String {
     if arith == 0 && dotted_length_field(len_field).is_none() {
         let len_snake = filters::to_snake_case(len_field.to_string());
         format!("self->{len_snake}")
@@ -7017,11 +6995,7 @@ fn dotted_length_field(len_field: &str) -> Option<(&str, &str)> {
 /// (`validate_codec_length_field_refs`) guarantees the carrier exists,
 /// is flags-bearing, contains the named flag, and the flag has
 /// `width > 1` — so the lookups `.expect` cleanly.
-fn dotted_length_resolve(
-    carrier_id: &str,
-    flag_name: &str,
-    fields: &[CodecField],
-) -> (u32, u64) {
+fn dotted_length_resolve(carrier_id: &str, flag_name: &str, fields: &[CodecField]) -> (u32, u64) {
     let carrier = fields
         .iter()
         .find(|x| x.id == carrier_id)
@@ -7286,7 +7260,10 @@ fn present_if_encode_fixed(
             // `or_with` tail and joins clauses with `||` (each clause
             // reads through `self->` for Local scope, `parent_flags`
             // for Parent scope — uniform with other 4 C11 encode arms).
-            let p = field.present_if.as_ref().expect("gated arm requires predicate");
+            let p = field
+                .present_if
+                .as_ref()
+                .expect("gated arm requires predicate");
             let test = present_if_test_literal_encode(fields, parent_flags, p, Language::C11);
             let inner = streaming_fixed_field_encode_c11_inner(field, default_endian, n);
             format!(
@@ -7324,17 +7301,13 @@ fn present_if_encode_tail(
     use crate::generator::Language;
     let id = field.id.as_str();
     match (lang, field.present_if.is_some()) {
-        (Language::Rust, false) => format!(
-            "        r.extend_from_slice(&self.{id});"
-        ),
+        (Language::Rust, false) => format!("        r.extend_from_slice(&self.{id});"),
         (Language::Rust, true) => format!(
             "        if let Some(_v) = &self.{id} {{\n            \
                  r.extend_from_slice(_v);\n        \
              }}"
         ),
-        (Language::Cpp, false) => format!(
-            "        r.insert(r.end(), {id}.begin(), {id}.end());"
-        ),
+        (Language::Cpp, false) => format!("        r.insert(r.end(), {id}.begin(), {id}.end());"),
         (Language::Cpp, true) => format!(
             "        if ({id}.has_value()) {{\n            \
                  r.insert(r.end(), {id}->begin(), {id}->end());\n        \
@@ -7342,9 +7315,7 @@ fn present_if_encode_tail(
         ),
         // Kotlin: ByteArray's `.toList()` boxes each Byte so addAll
         // accepts it (mirrors the pattern from `has_variable_fields`).
-        (Language::Kotlin, false) => format!(
-            "        r.addAll(this.{id}.toList())"
-        ),
+        (Language::Kotlin, false) => format!("        r.addAll(this.{id}.toList())"),
         (Language::Kotlin, true) => format!(
             "        this.{id}?.let {{ _v ->\n            \
                  r.addAll(_v.toList())\n        \
@@ -7423,9 +7394,7 @@ fn present_if_encode_string_length_ref(
     use crate::generator::Language;
     let id = field.id.as_str();
     match (lang, &field.present_if) {
-        (Language::Rust, None) => format!(
-            "        r.extend_from_slice(self.{id}.as_bytes());"
-        ),
+        (Language::Rust, None) => format!("        r.extend_from_slice(self.{id}.as_bytes());"),
         // Wire RFC Phase B Y0a — gated String encode on Rust:
         // `Option<String>::as_ref()` borrows the inner String so
         // `.as_bytes()` resolves; `if let Some(_v) = ...` mirrors the
@@ -7461,9 +7430,9 @@ fn present_if_encode_string_length_ref(
         // call for charset-encoded byte serialization; UTF-8 is total
         // on String (Kotlin's String is UTF-16 internally but
         // toByteArray reencodes losslessly to UTF-8).
-        (Language::Kotlin, None) => format!(
-            "        r.addAll(this.{id}.toByteArray(Charsets.UTF_8).toList())"
-        ),
+        (Language::Kotlin, None) => {
+            format!("        r.addAll(this.{id}.toByteArray(Charsets.UTF_8).toList())")
+        }
         // Wire RFC Phase B Y0a — gated String encode on Kotlin:
         // `String?` + safe-call `?.let { _v -> ... }` mirrors the
         // bytes encode arm.
@@ -7578,25 +7547,19 @@ fn present_if_encode_length_ref(
         return present_if_encode_string_length_ref(field, fields, parent_flags, lang);
     }
     match (lang, field.present_if.is_some()) {
-        (Language::Rust, false) => format!(
-            "        r.extend_from_slice(&self.{id});"
-        ),
+        (Language::Rust, false) => format!("        r.extend_from_slice(&self.{id});"),
         (Language::Rust, true) => format!(
             "        if let Some(_v) = &self.{id} {{\n            \
                  r.extend_from_slice(_v);\n        \
              }}"
         ),
-        (Language::Cpp, false) => format!(
-            "        r.insert(r.end(), {id}.begin(), {id}.end());"
-        ),
+        (Language::Cpp, false) => format!("        r.insert(r.end(), {id}.begin(), {id}.end());"),
         (Language::Cpp, true) => format!(
             "        if ({id}.has_value()) {{\n            \
                  r.insert(r.end(), {id}->begin(), {id}->end());\n        \
              }}"
         ),
-        (Language::Kotlin, false) => format!(
-            "        r.addAll(this.{id}.toList())"
-        ),
+        (Language::Kotlin, false) => format!("        r.addAll(this.{id}.toList())"),
         (Language::Kotlin, true) => format!(
             "        this.{id}?.let {{ _v ->\n            \
                  r.addAll(_v.toList())\n        \
@@ -7753,11 +7716,7 @@ fn present_if_encode_vle(
             // `present_if_test_literal_encode`.
             let id_snake = filters::to_snake_case(id.to_string());
             let test = present_if_test_literal_encode(fields, parent_flags, p, Language::C11);
-            let inner = vle_encode_block(
-                &format!("self->{id_snake}"),
-                width_bits,
-                lang,
-            );
+            let inner = vle_encode_block(&format!("self->{id_snake}"), width_bits, lang);
             format!(
                 "    if ({test}) {{\n\
                  {inner}\n    \
@@ -7982,11 +7941,7 @@ fn streaming_fixed_field_body(
 
 /// Encode block for a non-gated fixed field — Rust. Reads `self.<id>`
 /// and pushes `n` bytes in the field's effective endianness.
-fn streaming_fixed_field_encode_rust(
-    field: &CodecField,
-    default_endian: Endian,
-    n: u32,
-) -> String {
+fn streaming_fixed_field_encode_rust(field: &CodecField, default_endian: Endian, n: u32) -> String {
     let id = field.id.as_str();
     let endian = field.effective_endian(default_endian);
     let mut lines = String::new();
@@ -8000,9 +7955,7 @@ fn streaming_fixed_field_encode_rust(
         } else if shift == 0 {
             lines.push_str(&format!("        r.push(self.{id} as u8);\n"));
         } else {
-            lines.push_str(&format!(
-                "        r.push((self.{id} >> {shift}) as u8);\n"
-            ));
+            lines.push_str(&format!("        r.push((self.{id} >> {shift}) as u8);\n"));
         }
     }
     lines.trim_end().to_string()
@@ -8035,11 +7988,7 @@ fn streaming_fixed_field_encode_rust_from_local(
 }
 
 /// Cpp encode counterpart — non-gated.
-fn streaming_fixed_field_encode_cpp(
-    field: &CodecField,
-    default_endian: Endian,
-    n: u32,
-) -> String {
+fn streaming_fixed_field_encode_cpp(field: &CodecField, default_endian: Endian, n: u32) -> String {
     let id = field.id.as_str();
     let endian = field.effective_endian(default_endian);
     let mut lines = String::new();
@@ -8079,9 +8028,7 @@ fn streaming_fixed_field_encode_cpp_from_local(
         if n == 1 {
             lines.push_str("            r.push_back(_v);\n");
         } else if shift == 0 {
-            lines.push_str(
-                "            r.push_back(static_cast<std::uint8_t>(_v));\n",
-            );
+            lines.push_str("            r.push_back(static_cast<std::uint8_t>(_v));\n");
         } else {
             lines.push_str(&format!(
                 "            r.push_back(static_cast<std::uint8_t>(_v >> {shift}));\n"
@@ -8137,11 +8084,7 @@ fn streaming_fixed_field_encode_kotlin(
 /// for Go: byte fields cast directly, multi-byte fields pull bytes via
 /// `byte(s.<Id> >> shift)` in the field's effective endianness. Tab
 /// indentation matches the surrounding `Encode()` method body.
-fn streaming_fixed_field_encode_go(
-    field: &CodecField,
-    default_endian: Endian,
-    n: u32,
-) -> String {
+fn streaming_fixed_field_encode_go(field: &CodecField, default_endian: Endian, n: u32) -> String {
     let id = field.id.as_str();
     let go_id = filters::to_pascal_case(id.to_string());
     let endian = field.effective_endian(default_endian);
@@ -8157,9 +8100,7 @@ fn streaming_fixed_field_encode_go(
             if shift == 0 {
                 lines.push_str(&format!("\tr = append(r, byte(s.{go_id}))\n"));
             } else {
-                lines.push_str(&format!(
-                    "\tr = append(r, byte(s.{go_id}>>{shift}))\n"
-                ));
+                lines.push_str(&format!("\tr = append(r, byte(s.{go_id}>>{shift}))\n"));
             }
         }
     }
@@ -8171,18 +8112,12 @@ fn streaming_fixed_field_encode_go(
 /// drop through `(uint8_t)((self-><id> >> shift) & 0xFF)`. The C11 encode
 /// signature uses an `encoded_t r` with `r.bytes[r.len++]` so each byte
 /// append both writes the slot and bumps the length.
-fn streaming_fixed_field_encode_c11(
-    field: &CodecField,
-    default_endian: Endian,
-    n: u32,
-) -> String {
+fn streaming_fixed_field_encode_c11(field: &CodecField, default_endian: Endian, n: u32) -> String {
     let id_snake = filters::to_snake_case(field.id.clone());
     let endian = field.effective_endian(default_endian);
     let mut lines = String::new();
     if n == 1 {
-        lines.push_str(&format!(
-            "    r.bytes[r.len++] = self->{id_snake};\n"
-        ));
+        lines.push_str(&format!("    r.bytes[r.len++] = self->{id_snake};\n"));
     } else {
         for i in 0..n {
             let shift = match endian {
@@ -8216,9 +8151,7 @@ fn streaming_fixed_field_encode_c11_inner(
     let endian = field.effective_endian(default_endian);
     let mut lines = String::new();
     if n == 1 {
-        lines.push_str(&format!(
-            "        r.bytes[r.len++] = self->{id_snake};\n"
-        ));
+        lines.push_str(&format!("        r.bytes[r.len++] = self->{id_snake};\n"));
     } else {
         for i in 0..n {
             let shift = match endian {
@@ -8253,9 +8186,7 @@ fn streaming_fixed_field_encode_python(
     let endian = field.effective_endian(default_endian);
     let mut lines = String::new();
     if n == 1 {
-        lines.push_str(&format!(
-            "        r.append(self.{py_id} & 0xFF)\n"
-        ));
+        lines.push_str(&format!("        r.append(self.{py_id} & 0xFF)\n"));
     } else {
         for i in 0..n {
             let shift = match endian {
@@ -8263,9 +8194,7 @@ fn streaming_fixed_field_encode_python(
                 Endian::Big | Endian::Native => (n - 1 - i) * 8,
             };
             if shift == 0 {
-                lines.push_str(&format!(
-                    "        r.append(self.{py_id} & 0xFF)\n"
-                ));
+                lines.push_str(&format!("        r.append(self.{py_id} & 0xFF)\n"));
             } else {
                 lines.push_str(&format!(
                     "        r.append((self.{py_id} >> {shift}) & 0xFF)\n"
@@ -8290,9 +8219,7 @@ fn streaming_fixed_field_encode_python_inner(
     let endian = field.effective_endian(default_endian);
     let mut lines = String::new();
     if n == 1 {
-        lines.push_str(&format!(
-            "            r.append(self.{py_id} & 0xFF)\n"
-        ));
+        lines.push_str(&format!("            r.append(self.{py_id} & 0xFF)\n"));
     } else {
         for i in 0..n {
             let shift = match endian {
@@ -8300,9 +8227,7 @@ fn streaming_fixed_field_encode_python_inner(
                 Endian::Big | Endian::Native => (n - 1 - i) * 8,
             };
             if shift == 0 {
-                lines.push_str(&format!(
-                    "            r.append(self.{py_id} & 0xFF)\n"
-                ));
+                lines.push_str(&format!("            r.append(self.{py_id} & 0xFF)\n"));
             } else {
                 lines.push_str(&format!(
                     "            r.append((self.{py_id} >> {shift}) & 0xFF)\n"
@@ -8429,8 +8354,8 @@ fn present_if_carrier_info<'a>(
             (mask, hex_digits, PresentIfCarrier::Local(carrier))
         }
         PresentIfScope::Parent => {
-            let block = parent_flags
-                .expect("validator ensured codec declares requires-parent-flags");
+            let block =
+                parent_flags.expect("validator ensured codec declares requires-parent-flags");
             let flag = block
                 .flags
                 .iter()
@@ -8515,7 +8440,10 @@ fn present_if_test_literal_clause(
                 SceType::Uint64 => "u64",
                 _ => "",
             };
-            format!("({id} & 0x{mask:0width$X}{suffix}) {op} 0", width = hex_digits)
+            format!(
+                "({id} & 0x{mask:0width$X}{suffix}) {op} 0",
+                width = hex_digits
+            )
         }
         Language::Cpp => format!("({id} & 0x{mask:0width$X}) {op} 0", width = hex_digits),
         // Go: bitwise `&` accepts the carrier type directly (no widening
@@ -8545,10 +8473,9 @@ fn present_if_test_literal_clause(
         Language::C11 => {
             let c_id = filters::to_snake_case(id.to_string());
             match carrier {
-                PresentIfCarrier::Parent => format!(
-                    "({c_id} & 0x{mask:0width$X}) {op} 0",
-                    width = hex_digits
-                ),
+                PresentIfCarrier::Parent => {
+                    format!("({c_id} & 0x{mask:0width$X}) {op} 0", width = hex_digits)
+                }
                 PresentIfCarrier::Local(_) => format!(
                     "(out->{c_id} & 0x{mask:0width$X}) {op} 0",
                     width = hex_digits
@@ -8563,10 +8490,7 @@ fn present_if_test_literal_clause(
         // than `!=` so disambiguation isn't necessary either.
         Language::Python => {
             let py_id = filters::to_snake_case(id.to_string());
-            format!(
-                "({py_id} & 0x{mask:0width$X}) {op} 0",
-                width = hex_digits
-            )
+            format!("({py_id} & 0x{mask:0width$X}) {op} 0", width = hex_digits)
         }
         Language::Kotlin => {
             // Kotlin's UByte/UShort/UInt/ULong don't expose direct
@@ -8780,14 +8704,16 @@ fn generate_decode_expr(
             if bit_off > 0 || *bits < 8 {
                 let mask = (1u64 << bits) - 1;
                 match lang {
-                    Language::Cpp =>
-                        format!("static_cast<uint8_t>((raw[{byte_off}] >> {bit_off}) & 0x{mask:02X})"),
-                    Language::Kotlin =>
-                        format!("((raw[{byte_off}].toInt() ushr {bit_off}) and 0x{mask:02X}).toUByte()"),
-                    Language::C11 =>
-                        format!("(uint8_t)((raw[{byte_off}] >> {bit_off}) & 0x{mask:02X})"),
-                    _ =>
-                        format!("(raw[{byte_off}] >> {bit_off}) & 0x{mask:02X}"),
+                    Language::Cpp => format!(
+                        "static_cast<uint8_t>((raw[{byte_off}] >> {bit_off}) & 0x{mask:02X})"
+                    ),
+                    Language::Kotlin => format!(
+                        "((raw[{byte_off}].toInt() ushr {bit_off}) and 0x{mask:02X}).toUByte()"
+                    ),
+                    Language::C11 => {
+                        format!("(uint8_t)((raw[{byte_off}] >> {bit_off}) & 0x{mask:02X})")
+                    }
+                    _ => format!("(raw[{byte_off}] >> {bit_off}) & 0x{mask:02X}"),
                 }
             } else {
                 match bits {
@@ -8806,14 +8732,10 @@ fn generate_decode_expr(
             }
         }
         BitSize::Tail => match lang {
-            Language::Cpp =>
-                format!("std::vector<uint8_t>(raw + {byte_off}, raw + len)"),
-            Language::Kotlin =>
-                format!("raw.copyOfRange({byte_off}, raw.size)"),
-            Language::Rust =>
-                format!("raw[{byte_off}..].to_vec()"),
-            Language::Go | Language::Python =>
-                format!("raw[{byte_off}:]"),
+            Language::Cpp => format!("std::vector<uint8_t>(raw + {byte_off}, raw + len)"),
+            Language::Kotlin => format!("raw.copyOfRange({byte_off}, raw.size)"),
+            Language::Rust => format!("raw[{byte_off}..].to_vec()"),
+            Language::Go | Language::Python => format!("raw[{byte_off}:]"),
             // C11 V1β/V2b: variable-length decode is multi-statement
             // (bounds check + memcpy + len assignment), so the template
             // branches on `field.is_variable` and emits a block instead
@@ -8865,15 +8787,21 @@ fn generate_decode_expr(
                 _ => format!("raw[{len_off}]"),
             };
             let len_value_kotlin = match (shift_opt, mask_opt) {
-                (Some(shift), Some(mask)) => format!("((raw[{len_off}].toInt() ushr {shift}) and 0x{mask:X})"),
+                (Some(shift), Some(mask)) => {
+                    format!("((raw[{len_off}].toInt() ushr {shift}) and 0x{mask:X})")
+                }
                 _ => format!("raw[{len_off}].toInt()"),
             };
             let len_value_rust = match (shift_opt, mask_opt) {
-                (Some(shift), Some(mask)) => format!("(((raw[{len_off}] >> {shift}) & 0x{mask:X}) as usize)"),
+                (Some(shift), Some(mask)) => {
+                    format!("(((raw[{len_off}] >> {shift}) & 0x{mask:X}) as usize)")
+                }
                 _ => format!("raw[{len_off}] as usize"),
             };
             let len_value_go = match (shift_opt, mask_opt) {
-                (Some(shift), Some(mask)) => format!("int((raw[{len_off}] >> {shift}) & 0x{mask:X})"),
+                (Some(shift), Some(mask)) => {
+                    format!("int((raw[{len_off}] >> {shift}) & 0x{mask:X})")
+                }
                 _ => format!("int(raw[{len_off}])"),
             };
             let len_value_python = match (shift_opt, mask_opt) {
@@ -8933,32 +8861,66 @@ fn decode_multibyte_unified(
                 let off = byte_off + i;
                 match lang {
                     Language::Cpp => {
-                        let target = match byte_count { 2 => "uint16_t", 3 | 4 => "uint32_t", _ => "uint64_t" };
-                        if shift == 0 { format!("raw[{off}]") }
-                        else { format!("(static_cast<{target}>(raw[{off}]) << {shift})") }
+                        let target = match byte_count {
+                            2 => "uint16_t",
+                            3 | 4 => "uint32_t",
+                            _ => "uint64_t",
+                        };
+                        if shift == 0 {
+                            format!("raw[{off}]")
+                        } else {
+                            format!("(static_cast<{target}>(raw[{off}]) << {shift})")
+                        }
                     }
                     Language::Kotlin => {
-                        if shift == 0 { format!("(raw[{off}].toInt() and 0xFF)") }
-                        else { format!("((raw[{off}].toInt() and 0xFF) shl {shift})") }
+                        if shift == 0 {
+                            format!("(raw[{off}].toInt() and 0xFF)")
+                        } else {
+                            format!("((raw[{off}].toInt() and 0xFF) shl {shift})")
+                        }
                     }
                     Language::Rust => {
-                        let target = match byte_count { 2 => "u16", 3 | 4 => "u32", _ => "u64" };
-                        if shift == 0 { format!("raw[{off}] as {target}") }
-                        else { format!("((raw[{off}] as {target}) << {shift})") }
+                        let target = match byte_count {
+                            2 => "u16",
+                            3 | 4 => "u32",
+                            _ => "u64",
+                        };
+                        if shift == 0 {
+                            format!("raw[{off}] as {target}")
+                        } else {
+                            format!("((raw[{off}] as {target}) << {shift})")
+                        }
                     }
                     Language::Go => {
-                        let target = match byte_count { 2 => "uint16", 3 | 4 => "uint32", _ => "uint64" };
-                        if shift == 0 { format!("{target}(raw[{off}])") }
-                        else { format!("{target}(raw[{off}])<<{shift}") }
+                        let target = match byte_count {
+                            2 => "uint16",
+                            3 | 4 => "uint32",
+                            _ => "uint64",
+                        };
+                        if shift == 0 {
+                            format!("{target}(raw[{off}])")
+                        } else {
+                            format!("{target}(raw[{off}])<<{shift}")
+                        }
                     }
                     Language::Python => {
-                        if shift == 0 { format!("raw[{off}]") }
-                        else { format!("(raw[{off}] << {shift})") }
+                        if shift == 0 {
+                            format!("raw[{off}]")
+                        } else {
+                            format!("(raw[{off}] << {shift})")
+                        }
                     }
                     Language::C11 => {
-                        let target = match byte_count { 2 => "uint16_t", 3 | 4 => "uint32_t", _ => "uint64_t" };
-                        if shift == 0 { format!("raw[{off}]") }
-                        else { format!("(({target})raw[{off}] << {shift})") }
+                        let target = match byte_count {
+                            2 => "uint16_t",
+                            3 | 4 => "uint32_t",
+                            _ => "uint64_t",
+                        };
+                        if shift == 0 {
+                            format!("raw[{off}]")
+                        } else {
+                            format!("(({target})raw[{off}] << {shift})")
+                        }
                     }
                 }
             })
@@ -9027,7 +8989,10 @@ fn generate_encode_exprs(
         // template appends them after the fixed `encode_exprs` byte
         // literals. They never enter `byte_groups`.
         if !field.is_variable_length() {
-            byte_groups.entry(field.byte_offset).or_default().push(field);
+            byte_groups
+                .entry(field.byte_offset)
+                .or_default()
+                .push(field);
         }
     }
 
@@ -9042,17 +9007,21 @@ fn generate_encode_exprs(
                 let mask = (1u64 << bits) - 1;
                 let field_ref = l.codec_field_ref(&l.codec_field_id(&field.id));
                 match lang {
-                    crate::generator::Language::Kotlin =>
-                        parts.push(format!("({field_ref}.toInt() and 0x{mask:02X} shl {bit_off})")),
+                    crate::generator::Language::Kotlin => parts.push(format!(
+                        "({field_ref}.toInt() and 0x{mask:02X} shl {bit_off})"
+                    )),
                     crate::generator::Language::Cpp
                     | crate::generator::Language::Rust
-                    | crate::generator::Language::C11 =>
-                        parts.push(format!("(({field_ref} & 0x{mask:02X}) << {bit_off})")),
-                    _ =>
-                        parts.push(format!("({field_ref} & 0x{mask:02X}) << {bit_off}")),
+                    | crate::generator::Language::C11 => {
+                        parts.push(format!("(({field_ref} & 0x{mask:02X}) << {bit_off})"))
+                    }
+                    _ => parts.push(format!("({field_ref} & 0x{mask:02X}) << {bit_off}")),
                 }
             }
-            let sep = match lang { crate::generator::Language::Kotlin => " or ", _ => " | " };
+            let sep = match lang {
+                crate::generator::Language::Kotlin => " or ",
+                _ => " | ",
+            };
             let merged = parts.join(sep);
             exprs.push(l.codec_to_byte(&merged));
         }
@@ -9091,10 +9060,8 @@ fn encode_single_field_unified(
         Some(bits) if bits < 8 || bit_off > 0 => {
             let mask = (1u64 << bits) - 1;
             let inner = match lang {
-                Language::Kotlin =>
-                    format!("{field_ref}.toInt() and 0x{mask:02X} shl {bit_off}"),
-                _ =>
-                    format!("({field_ref} & 0x{mask:02X}) << {bit_off}"),
+                Language::Kotlin => format!("{field_ref}.toInt() and 0x{mask:02X} shl {bit_off}"),
+                _ => format!("({field_ref} & 0x{mask:02X}) << {bit_off}"),
             };
             exprs.push(l.codec_to_byte(&inner));
         }
@@ -9265,7 +9232,9 @@ fn render_validator(
     let params = l.param_str(&rv.inputs);
 
     // prev_vars: superset of all per-language fields.
-    let prev_vars: Vec<serde_json::Value> = rv.rocs.iter()
+    let prev_vars: Vec<serde_json::Value> = rv
+        .rocs
+        .iter()
         .map(|roc| {
             let local = l.local_id(&roc.id);
             let ty_str = l.type_name(&roc.sce_type);
@@ -9282,7 +9251,9 @@ fn render_validator(
         .collect();
 
     // range_rules: `reason_id` from single source of truth (ResolvedRange).
-    let range_rules: Vec<serde_json::Value> = rv.ranges.iter()
+    let range_rules: Vec<serde_json::Value> = rv
+        .ranges
+        .iter()
         .map(|r| {
             let mut obj = serde_json::Map::new();
             obj.insert("id".into(), l.local_id(&r.id).into());
@@ -9322,7 +9293,9 @@ fn render_validator(
         .collect();
 
     // roc_rules: superset of per-language fields; Kotlin conv folded in.
-    let roc_rules: Vec<serde_json::Value> = rv.rocs.iter()
+    let roc_rules: Vec<serde_json::Value> = rv
+        .rocs
+        .iter()
         .map(|roc| {
             let local = l.local_id(&roc.id);
             let mut obj = serde_json::Map::new();
@@ -9386,9 +9359,7 @@ fn render_validator(
         }
         let alias_expansion: Option<String> = match lang {
             Language::Cpp => Some(imp.member_name.clone()),
-            Language::Rust | Language::Python => {
-                Some(format!("self.{}", imp.member_name))
-            }
+            Language::Rust | Language::Python => Some(format!("self.{}", imp.member_name)),
             Language::Go => Some(format!("p.{}", imp.member_name)),
             Language::Kotlin | Language::C11 => None,
         };
@@ -9396,13 +9367,11 @@ fn render_validator(
             owned_renames.insert(imp.alias.as_str(), exp);
         }
     }
-    let validator_method_renames =
-        stateful_import_method_renames(imports, &lang);
+    let validator_method_renames = stateful_import_method_renames(imports, &lang);
     for (k, v) in &validator_method_renames {
         owned_renames.insert(k.as_str(), v.clone());
     }
-    let validator_field_renames =
-        stateful_import_field_renames(imports, &lang);
+    let validator_field_renames = stateful_import_field_renames(imports, &lang);
     for (k, v) in &validator_field_renames {
         owned_renames.insert(k.as_str(), v.clone());
     }
@@ -9430,10 +9399,7 @@ fn render_validator(
         .filter(|imp| imp.is_stateful)
         .map(|imp| {
             let methods: Vec<(String, String)> = match imp.kind.as_str() {
-                "filter" => vec![(
-                    "update".to_string(),
-                    format!("{}_update", imp.namespace),
-                )],
+                "filter" => vec![("update".to_string(), format!("{}_update", imp.namespace))],
                 // Codec: validator currently only reads codec fields in
                 // plausibility (no `frame.encode()` call site exists in
                 // any validator fixture). Empty methods list keeps the
@@ -9486,7 +9452,10 @@ fn render_validator(
     ctx.insert("prev_vars".into(), serde_json::json!(prev_vars));
     ctx.insert("range_rules".into(), serde_json::json!(range_rules));
     ctx.insert("roc_rules".into(), serde_json::json!(roc_rules));
-    ctx.insert("plausibility_expr".into(), serde_json::json!(plausibility_expr));
+    ctx.insert(
+        "plausibility_expr".into(),
+        serde_json::json!(plausibility_expr),
+    );
 
     // C11 (RFC §5.J.2 §3 Phase C V1b): per-fixture flat-scope typedef + V2c
     // mixed calling convention. Stateless validators (no rocs and no
@@ -9504,7 +9473,10 @@ fn render_validator(
     //     C11 ImportLowering can prepend `&_st->{member}` for method calls.
     if matches!(lang, Language::C11) {
         let snake = filters::to_snake_case(m.name.clone());
-        ctx.insert("c_result_typedef".into(), format!("{snake}_result_t").into());
+        ctx.insert(
+            "c_result_typedef".into(),
+            format!("{snake}_result_t").into(),
+        );
         ctx.insert("c_state_typedef".into(), format!("{snake}_t").into());
         ctx.insert("c_validate_func".into(), format!("{snake}_validate").into());
         let c_has_state = !prev_vars.is_empty() || has_stateful_imports;
@@ -9521,8 +9493,16 @@ fn render_validator(
 // ══════════════════════════════════════════════════════════════
 
 /// Generate code from a ForgeDocument for Kotlin using Jinja2 templates.
-pub fn generate_kotlin(doc: &ForgeDocument, template_dir: &Path) -> Result<GeneratedOutput, ForgeError> {
-    generate_kotlin_with_imports(doc, template_dir, &[], &crate::ForgeCompileOptions::default())
+pub fn generate_kotlin(
+    doc: &ForgeDocument,
+    template_dir: &Path,
+) -> Result<GeneratedOutput, ForgeError> {
+    generate_kotlin_with_imports(
+        doc,
+        template_dir,
+        &[],
+        &crate::ForgeCompileOptions::default(),
+    )
 }
 
 /// Generate Kotlin code with cross-file import support.
@@ -9540,28 +9520,52 @@ pub fn generate_kotlin_with_imports(
     inject_source_location_global(&mut env, doc);
 
     let code = match doc {
-        ForgeDocument::Transform(m) => render_transform(&env, m, imports, crate::generator::Language::Kotlin)?,
-        ForgeDocument::Lookup(m) => render_lookup(&env, m, imports, crate::generator::Language::Kotlin)?,
-        ForgeDocument::Condition(m) => render_condition(&env, m, imports, crate::generator::Language::Kotlin)?,
-        ForgeDocument::Codec(m) => render_codec(&env, m, imports, crate::generator::Language::Kotlin)?,
-        ForgeDocument::Validator(m) => render_validator(&env, m, imports, crate::generator::Language::Kotlin)?,
+        ForgeDocument::Transform(m) => {
+            render_transform(&env, m, imports, crate::generator::Language::Kotlin)?
+        }
+        ForgeDocument::Lookup(m) => {
+            render_lookup(&env, m, imports, crate::generator::Language::Kotlin)?
+        }
+        ForgeDocument::Condition(m) => {
+            render_condition(&env, m, imports, crate::generator::Language::Kotlin)?
+        }
+        ForgeDocument::Codec(m) => {
+            render_codec(&env, m, imports, crate::generator::Language::Kotlin)?
+        }
+        ForgeDocument::Validator(m) => {
+            render_validator(&env, m, imports, crate::generator::Language::Kotlin)?
+        }
         ForgeDocument::Procedure(m) => render_procedure_kotlin(&env, m, imports)?,
-        ForgeDocument::Filter(m) => render_filter(&env, m, imports, crate::generator::Language::Kotlin)?,
-        ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::Kotlin)?,
-        ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::Kotlin)?,
-        ForgeDocument::Observer(m) => render_observer(&env, m, imports, crate::generator::Language::Kotlin)?,
-        ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::Kotlin, options)?,
+        ForgeDocument::Filter(m) => {
+            render_filter(&env, m, imports, crate::generator::Language::Kotlin)?
+        }
+        ForgeDocument::Interpolation(m) => {
+            render_interpolation(&env, m, imports, crate::generator::Language::Kotlin)?
+        }
+        ForgeDocument::Timer(m) => {
+            render_timer(&env, m, imports, crate::generator::Language::Kotlin)?
+        }
+        ForgeDocument::Observer(m) => {
+            render_observer(&env, m, imports, crate::generator::Language::Kotlin)?
+        }
+        ForgeDocument::Algorithm(m) => render_algorithm(
+            &env,
+            m,
+            imports,
+            crate::generator::Language::Kotlin,
+            options,
+        )?,
         // RFC §5.C / §5.J.4: rejected upstream by codegen_matrix::check.
-        ForgeDocument::Link(_) => unreachable!(
-            "ForgeDocument::Link rejected by codegen_matrix::check on kotlin"
-        ),
-        ForgeDocument::BufferPool(_) => unreachable!(
-            "ForgeDocument::BufferPool rejected by codegen_matrix::check on kotlin"
-        ),
+        ForgeDocument::Link(_) => {
+            unreachable!("ForgeDocument::Link rejected by codegen_matrix::check on kotlin")
+        }
+        ForgeDocument::BufferPool(_) => {
+            unreachable!("ForgeDocument::BufferPool rejected by codegen_matrix::check on kotlin")
+        }
         // RFC §5.D / §5.J.4: rejected upstream by codegen_matrix::check.
-        ForgeDocument::Worker(_) => unreachable!(
-            "ForgeDocument::Worker rejected by codegen_matrix::check on kotlin"
-        ),
+        ForgeDocument::Worker(_) => {
+            unreachable!("ForgeDocument::Worker rejected by codegen_matrix::check on kotlin")
+        }
         // RFC §5.L C6-γ3: emits the slot-table + Handle + ops
         // contract on the Kotlin backend per spec line 2578
         // (`Array<T?>(N)` + `BooleanArray(N)` + generation +
@@ -9581,20 +9585,16 @@ pub fn generate_kotlin_with_imports(
     // `jvmTest` source set wired in
     // `sce-forge-runtime/kotlin/build.gradle.kts`.
     if let ForgeDocument::Algorithm(m) = doc {
-        if let Some(sidecar) = render_algorithm_test_vector_sidecar(
-            &env,
-            m,
-            crate::generator::Language::Kotlin,
-        )? {
+        if let Some(sidecar) =
+            render_algorithm_test_vector_sidecar(&env, m, crate::generator::Language::Kotlin)?
+        {
             files.push(sidecar);
         }
     }
     if let ForgeDocument::Codec(m) = doc {
-        if let Some(sidecar) = render_codec_test_vector_sidecar(
-            &env,
-            m,
-            crate::generator::Language::Kotlin,
-        )? {
+        if let Some(sidecar) =
+            render_codec_test_vector_sidecar(&env, m, crate::generator::Language::Kotlin)?
+        {
             files.push(sidecar);
         }
     }
@@ -9624,8 +9624,16 @@ fn kotlin_default_value(kt_type: &str) -> &'static str {
 // ══════════════════════════════════════════════════════════════
 
 /// Generate code from a ForgeDocument for Rust using Jinja2 templates.
-pub fn generate_rust(doc: &ForgeDocument, template_dir: &Path) -> Result<GeneratedOutput, ForgeError> {
-    generate_rust_with_imports(doc, template_dir, &[], &crate::ForgeCompileOptions::default())
+pub fn generate_rust(
+    doc: &ForgeDocument,
+    template_dir: &Path,
+) -> Result<GeneratedOutput, ForgeError> {
+    generate_rust_with_imports(
+        doc,
+        template_dir,
+        &[],
+        &crate::ForgeCompileOptions::default(),
+    )
 }
 
 /// Generate Rust code with cross-file import support.
@@ -9659,17 +9667,37 @@ pub fn generate_rust_with_imports_and_externs(
     inject_source_location_global(&mut env, doc);
 
     let code = match doc {
-        ForgeDocument::Transform(m) => render_transform(&env, m, imports, crate::generator::Language::Rust)?,
-        ForgeDocument::Lookup(m) => render_lookup(&env, m, imports, crate::generator::Language::Rust)?,
-        ForgeDocument::Condition(m) => render_condition(&env, m, imports, crate::generator::Language::Rust)?,
-        ForgeDocument::Codec(m) => render_codec(&env, m, imports, crate::generator::Language::Rust)?,
-        ForgeDocument::Validator(m) => render_validator(&env, m, imports, crate::generator::Language::Rust)?,
+        ForgeDocument::Transform(m) => {
+            render_transform(&env, m, imports, crate::generator::Language::Rust)?
+        }
+        ForgeDocument::Lookup(m) => {
+            render_lookup(&env, m, imports, crate::generator::Language::Rust)?
+        }
+        ForgeDocument::Condition(m) => {
+            render_condition(&env, m, imports, crate::generator::Language::Rust)?
+        }
+        ForgeDocument::Codec(m) => {
+            render_codec(&env, m, imports, crate::generator::Language::Rust)?
+        }
+        ForgeDocument::Validator(m) => {
+            render_validator(&env, m, imports, crate::generator::Language::Rust)?
+        }
         ForgeDocument::Procedure(m) => render_procedure_rust(&env, m, imports)?,
-        ForgeDocument::Filter(m) => render_filter(&env, m, imports, crate::generator::Language::Rust)?,
-        ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::Rust)?,
-        ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::Rust)?,
-        ForgeDocument::Observer(m) => render_observer(&env, m, imports, crate::generator::Language::Rust)?,
-        ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::Rust, options)?,
+        ForgeDocument::Filter(m) => {
+            render_filter(&env, m, imports, crate::generator::Language::Rust)?
+        }
+        ForgeDocument::Interpolation(m) => {
+            render_interpolation(&env, m, imports, crate::generator::Language::Rust)?
+        }
+        ForgeDocument::Timer(m) => {
+            render_timer(&env, m, imports, crate::generator::Language::Rust)?
+        }
+        ForgeDocument::Observer(m) => {
+            render_observer(&env, m, imports, crate::generator::Language::Rust)?
+        }
+        ForgeDocument::Algorithm(m) => {
+            render_algorithm(&env, m, imports, crate::generator::Language::Rust, options)?
+        }
         // RFC §5.C: byte-stream link emit. The template wires the
         // §5.B framer into RX/TX paths and routes the result through
         // the `Link` trait owned by `sce-link-runtime`. C10-α threads
@@ -9706,20 +9734,16 @@ pub fn generate_rust_with_imports_and_externs(
     // `pub mod` scope so cargo test discovers each row as a
     // distinct `#[test]`.
     if let ForgeDocument::Algorithm(m) = doc {
-        if let Some(sidecar) = render_algorithm_test_vector_sidecar(
-            &env,
-            m,
-            crate::generator::Language::Rust,
-        )? {
+        if let Some(sidecar) =
+            render_algorithm_test_vector_sidecar(&env, m, crate::generator::Language::Rust)?
+        {
             files.push(sidecar);
         }
     }
     if let ForgeDocument::Codec(m) = doc {
-        if let Some(sidecar) = render_codec_test_vector_sidecar(
-            &env,
-            m,
-            crate::generator::Language::Rust,
-        )? {
+        if let Some(sidecar) =
+            render_codec_test_vector_sidecar(&env, m, crate::generator::Language::Rust)?
+        {
             files.push(sidecar);
         }
     }
@@ -9748,11 +9772,11 @@ fn render_link_rust(
     _imports: &[ImportContext],
     options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
-    let tmpl = env
-        .get_template("link.rs.jinja2")
-        .map_err(|e| ForgeError::Generate(GenerateError::TemplateLoad(format!(
+    let tmpl = env.get_template("link.rs.jinja2").map_err(|e| {
+        ForgeError::Generate(GenerateError::TemplateLoad(format!(
             "link.rs.jinja2 (rust): {e}"
-        ))))?;
+        )))
+    })?;
     // C10-α: orchestrator-resolved listener-pair flag. `None` (deploy-
     // unaware paths) collapses to `false` — silent-skip per Q-η5 (a):
     // no deploy ⇒ no listener-pair synthesis. The set-membership lookup
@@ -9808,10 +9832,7 @@ fn render_link_rust(
 ///
 /// Mirrors [`check_reassembly_peer_id_zid_invariant_rust`] (C9-γ
 /// precedent at generator.rs:9455-9472).
-fn check_listener_sibling_emitted_rust(
-    link_name: &str,
-    rendered: &str,
-) -> Result<(), ForgeError> {
+fn check_listener_sibling_emitted_rust(link_name: &str, rendered: &str) -> Result<(), ForgeError> {
     let pascal_name = filters::to_pascal_case(link_name.to_string());
     let needle = format!("pub struct {}EstablishedSession", pascal_name);
     if rendered.contains(&needle) {
@@ -9841,17 +9862,19 @@ pub fn render_machine_link_bus_rust(
     machine_name: &str,
     link_names: &[String],
 ) -> Result<String, ForgeError> {
-    let tmpl = env
-        .get_template("link_bus.rs.jinja2")
-        .map_err(|e| ForgeError::Generate(GenerateError::TemplateLoad(format!(
+    let tmpl = env.get_template("link_bus.rs.jinja2").map_err(|e| {
+        ForgeError::Generate(GenerateError::TemplateLoad(format!(
             "link_bus.rs.jinja2 (rust): {e}"
-        ))))?;
+        )))
+    })?;
     let links: Vec<_> = link_names
         .iter()
-        .map(|n| minijinja::context! {
-            name => n,
-            pascal_name => filters::to_pascal_case(n.clone()),
-            snake_name => filters::to_snake_case(n.clone()),
+        .map(|n| {
+            minijinja::context! {
+                name => n,
+                pascal_name => filters::to_pascal_case(n.clone()),
+                snake_name => filters::to_snake_case(n.clone()),
+            }
         })
         .collect();
     let ctx = minijinja::context! {
@@ -9879,17 +9902,19 @@ pub fn render_machine_scheduler_rust(
     tick_period_us: u32,
     per_link_budget_us: u32,
 ) -> Result<String, ForgeError> {
-    let tmpl = env
-        .get_template("scheduler.rs.jinja2")
-        .map_err(|e| ForgeError::Generate(GenerateError::TemplateLoad(format!(
+    let tmpl = env.get_template("scheduler.rs.jinja2").map_err(|e| {
+        ForgeError::Generate(GenerateError::TemplateLoad(format!(
             "scheduler.rs.jinja2 (rust): {e}"
-        ))))?;
+        )))
+    })?;
     let links: Vec<_> = link_names
         .iter()
-        .map(|n| minijinja::context! {
-            name => n,
-            pascal_name => filters::to_pascal_case(n.clone()),
-            snake_name => filters::to_snake_case(n.clone()),
+        .map(|n| {
+            minijinja::context! {
+                name => n,
+                pascal_name => filters::to_pascal_case(n.clone()),
+                snake_name => filters::to_snake_case(n.clone()),
+            }
         })
         .collect();
     let ctx = minijinja::context! {
@@ -9945,13 +9970,8 @@ pub fn render_machine_concurrency_artifacts(
             // Single-doc compile paths + AP-only machines silent-skip
             // per Q-C10-β-9 (a).
             if let (Some(tick), Some(budget)) = (tick_period_us, per_link_budget_us) {
-                let sched = render_machine_scheduler_rust(
-                    &env,
-                    machine_name,
-                    link_names,
-                    tick,
-                    budget,
-                )?;
+                let sched =
+                    render_machine_scheduler_rust(&env, machine_name, link_names, tick, budget)?;
                 files.push((format!("{}_scheduler.rs", snake), sched));
             }
         }
@@ -9962,13 +9982,8 @@ pub fn render_machine_concurrency_artifacts(
                 let forge_dir = template_dir.join("forge/c");
                 let mut env = generator::new_env();
                 generator::load_templates(&mut env, &forge_dir)?;
-                let sched = render_machine_scheduler_c(
-                    &env,
-                    machine_name,
-                    link_names,
-                    tick,
-                    budget,
-                )?;
+                let sched =
+                    render_machine_scheduler_c(&env, machine_name, link_names, tick, budget)?;
                 files.push((format!("{}_scheduler.h", snake), sched));
             }
         }
@@ -9992,19 +10007,21 @@ pub fn render_machine_scheduler_c(
     tick_period_us: u32,
     per_link_budget_us: u32,
 ) -> Result<String, ForgeError> {
-    let tmpl = env
-        .get_template("scheduler.h.jinja2")
-        .map_err(|e| ForgeError::Generate(GenerateError::TemplateLoad(format!(
+    let tmpl = env.get_template("scheduler.h.jinja2").map_err(|e| {
+        ForgeError::Generate(GenerateError::TemplateLoad(format!(
             "scheduler.h.jinja2 (c11): {e}"
-        ))))?;
+        )))
+    })?;
     let snake_name = filters::to_snake_case(machine_name.to_string());
     let upper_name = to_upper_snake(machine_name);
     let guard = format!("SCE_FORGE_{}_SCHEDULER_H", &upper_name);
     let links: Vec<_> = link_names
         .iter()
-        .map(|n| minijinja::context! {
-            name => n,
-            snake_name => filters::to_snake_case(n.clone()),
+        .map(|n| {
+            minijinja::context! {
+                name => n,
+                snake_name => filters::to_snake_case(n.clone()),
+            }
         })
         .collect();
     let ctx = minijinja::context! {
@@ -10038,11 +10055,11 @@ fn render_buffer_pool_rust(
     _imports: &[ImportContext],
     options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
-    let tmpl = env
-        .get_template("buffer_pool.rs.jinja2")
-        .map_err(|e| ForgeError::Generate(GenerateError::TemplateLoad(format!(
+    let tmpl = env.get_template("buffer_pool.rs.jinja2").map_err(|e| {
+        ForgeError::Generate(GenerateError::TemplateLoad(format!(
             "buffer_pool.rs.jinja2 (rust): {e}"
-        ))))?;
+        )))
+    })?;
     // C5: deploy-aware cache-maintenance gating. `None` (deploy-
     // unaware path) → conservative `false` default; the only effect
     // is to skip the pre-arm RX invalidate edge, which is correct
@@ -10151,11 +10168,11 @@ fn render_worker_rust(
     m: &WorkerModel,
     _imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
-    let tmpl = env
-        .get_template("worker.rs.jinja2")
-        .map_err(|e| ForgeError::Generate(GenerateError::TemplateLoad(format!(
+    let tmpl = env.get_template("worker.rs.jinja2").map_err(|e| {
+        ForgeError::Generate(GenerateError::TemplateLoad(format!(
             "worker.rs.jinja2 (rust): {e}"
-        ))))?;
+        )))
+    })?;
     let ordering_is_acq_rel = m.inbox.ordering == InboxOrdering::AcqRel;
     let ctx = minijinja::context! {
         name => &m.name,
@@ -10215,18 +10232,16 @@ fn resolve_bounded_collection_inputs(
         (CapacitySource::CompileConst { value }, _) => *value,
         (CapacitySource::DeployKey { .. }, Some(r)) => r.capacity,
         (CapacitySource::DeployKey { key }, None) => {
-            return Err(ForgeError::Generate(GenerateError::InvalidConfig(
-                format!(
-                    "bounded-collection '{name}': <sce:capacity source=\"deploy\" \
+            return Err(ForgeError::Generate(GenerateError::InvalidConfig(format!(
+                "bounded-collection '{name}': <sce:capacity source=\"deploy\" \
                      key=\"{key}\"/> resolution missing — single-file \
                      compile_forge_with_imports has no deploy.yaml context. \
                      Route through compile_forge_with_deploy (or supply \
                      ForgeCompileOptions::bounded_collection_resolutions \
                      manually in tests) to pin the capacity.",
-                    name = m.name,
-                    key = key,
-                ),
-            )));
+                name = m.name,
+                key = key,
+            ))));
         }
     };
 
@@ -10237,28 +10252,25 @@ fn resolve_bounded_collection_inputs(
     // we surface a clear `InvalidConfig` instead of a silently-
     // broken hook. Each backend's render fn converts the abstract
     // type to its language string at the call site.
-    let index_by_sce_type: Option<crate::forge::model::SceType> =
-        match (&m.index_by, resolution) {
-            (None, _) => None,
-            (Some(_), Some(r)) if r.index_by_field_sce_type.is_some() => {
-                r.index_by_field_sce_type.clone()
-            }
-            (Some(field), _) => {
-                return Err(ForgeError::Generate(GenerateError::InvalidConfig(
-                    format!(
-                        "bounded-collection '{name}': <sce:index-by \
+    let index_by_sce_type: Option<crate::forge::model::SceType> = match (&m.index_by, resolution) {
+        (None, _) => None,
+        (Some(_), Some(r)) if r.index_by_field_sce_type.is_some() => {
+            r.index_by_field_sce_type.clone()
+        }
+        (Some(field), _) => {
+            return Err(ForgeError::Generate(GenerateError::InvalidConfig(format!(
+                "bounded-collection '{name}': <sce:index-by \
                          field=\"{field}\"/> resolution missing — find_by_index \
                          emit requires the orchestrator (compile_scxml_with_imports) \
                          to thread the element-type document so the field's type \
                          can be inferred. Route this build through the orchestrator \
                          (or supply ForgeCompileOptions::bounded_collection_resolutions \
                          manually in tests).",
-                        name = m.name,
-                        field = field,
-                    ),
-                )));
-            }
-        };
+                name = m.name,
+                field = field,
+            ))));
+        }
+    };
 
     let on_overflow_str = match m.on_overflow {
         crate::forge::model::OverflowPolicy::DiagnosticEvent => "diagnostic-event",
@@ -10682,8 +10694,7 @@ fn render_bounded_collection_python(
     // <Pascal>`) — the existing codec / procedure import resolver
     // emits this exact shape (resolve_single_import Python arm).
     // Mirror it for the BC's implicit element-type reference.
-    let element_import_stmt =
-        format!("from .{element_snake} import {element_pascal}");
+    let element_import_stmt = format!("from .{element_snake} import {element_pascal}");
 
     // Python codec emits struct fields in snake_case (`codec_field_id`
     // Python arm). Mirror that here so `_slots[slot].<field>` matches
@@ -10737,11 +10748,11 @@ fn render_link_c(
     _imports: &[ImportContext],
     options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
-    let tmpl = env
-        .get_template("link.h.jinja2")
-        .map_err(|e| ForgeError::Generate(GenerateError::TemplateLoad(format!(
+    let tmpl = env.get_template("link.h.jinja2").map_err(|e| {
+        ForgeError::Generate(GenerateError::TemplateLoad(format!(
             "link.h.jinja2 (c11): {e}"
-        ))))?;
+        )))
+    })?;
     let snake_name = filters::to_snake_case(m.name.clone());
     let upper_name = to_upper_snake(&m.name);
     let guard = format!("SCE_FORGE_{}_H", &upper_name);
@@ -10823,11 +10834,11 @@ fn render_worker_c_header(
     m: &WorkerModel,
     _imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
-    let tmpl = env
-        .get_template("worker.h.jinja2")
-        .map_err(|e| ForgeError::Generate(GenerateError::TemplateLoad(format!(
+    let tmpl = env.get_template("worker.h.jinja2").map_err(|e| {
+        ForgeError::Generate(GenerateError::TemplateLoad(format!(
             "worker.h.jinja2 (c11): {e}"
-        ))))?;
+        )))
+    })?;
     let snake_name = filters::to_snake_case(m.name.clone());
     let upper_name = to_upper_snake(&m.name);
     let guard = format!("SCE_FORGE_{}_H", &upper_name);
@@ -10862,11 +10873,11 @@ fn render_worker_c_impl(
     m: &WorkerModel,
     _imports: &[ImportContext],
 ) -> Result<(String, String), ForgeError> {
-    let tmpl = env
-        .get_template("worker.c.jinja2")
-        .map_err(|e| ForgeError::Generate(GenerateError::TemplateLoad(format!(
+    let tmpl = env.get_template("worker.c.jinja2").map_err(|e| {
+        ForgeError::Generate(GenerateError::TemplateLoad(format!(
             "worker.c.jinja2 (c11): {e}"
-        ))))?;
+        )))
+    })?;
     let snake_name = filters::to_snake_case(m.name.clone());
     let upper_name = to_upper_snake(&m.name);
     let ordering_is_acq_rel = m.inbox.ordering == InboxOrdering::AcqRel;
@@ -10903,11 +10914,11 @@ fn render_buffer_pool_c(
     _imports: &[ImportContext],
     options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
-    let tmpl = env
-        .get_template("buffer_pool.h.jinja2")
-        .map_err(|e| ForgeError::Generate(GenerateError::TemplateLoad(format!(
+    let tmpl = env.get_template("buffer_pool.h.jinja2").map_err(|e| {
+        ForgeError::Generate(GenerateError::TemplateLoad(format!(
             "buffer_pool.h.jinja2 (c11): {e}"
-        ))))?;
+        )))
+    })?;
     let snake_name = filters::to_snake_case(m.name.clone());
     let upper_name = to_upper_snake(&m.name);
     let guard = format!("SCE_FORGE_{}_H", &upper_name);
@@ -11004,11 +11015,11 @@ fn render_buffer_pool_linker_fragment(
     env: &minijinja::Environment<'_>,
     m: &BufferPoolModel,
 ) -> Result<(String, String), ForgeError> {
-    let tmpl = env
-        .get_template("buffer_pool.ld.jinja2")
-        .map_err(|e| ForgeError::Generate(GenerateError::TemplateLoad(format!(
+    let tmpl = env.get_template("buffer_pool.ld.jinja2").map_err(|e| {
+        ForgeError::Generate(GenerateError::TemplateLoad(format!(
             "buffer_pool.ld.jinja2 (c11): {e}"
-        ))))?;
+        )))
+    })?;
     let snake_name = filters::to_snake_case(m.name.clone());
     let ctx = minijinja::context! {
         name => &m.name,
@@ -11043,9 +11054,11 @@ fn check_inter_pool_padding_invariant(
     if rendered_ld.contains(". = ALIGN(") {
         Ok(())
     } else {
-        Err(ForgeError::Validation(crate::forge::error::ValidationError::BufferPoolInterPoolPaddingNotEmitted {
-            name: pool_name.to_string(),
-        }))
+        Err(ForgeError::Validation(
+            crate::forge::error::ValidationError::BufferPoolInterPoolPaddingNotEmitted {
+                name: pool_name.to_string(),
+            },
+        ))
     }
 }
 
@@ -11082,20 +11095,26 @@ pub(crate) fn go_type(ty: &SceType) -> &'static str {
 /// Builtins (byte, string, int, etc.) compile but shadow the built-in type.
 fn go_escape_builtin(name: &str) -> String {
     match name {
-        "byte" | "rune" | "error" | "string" | "bool" | "int" | "uint"
-        | "int8" | "int16" | "int32" | "int64"
-        | "uint8" | "uint16" | "uint32" | "uint64"
-        | "float32" | "float64" | "complex64" | "complex128"
-        | "uintptr" | "len" | "cap" | "make" | "new" | "append" | "copy"
-        | "close" | "delete" | "panic" | "recover" | "print" | "println"
-        | "true" | "false" | "nil" | "iota" => format!("{name}_"),
+        "byte" | "rune" | "error" | "string" | "bool" | "int" | "uint" | "int8" | "int16"
+        | "int32" | "int64" | "uint8" | "uint16" | "uint32" | "uint64" | "float32" | "float64"
+        | "complex64" | "complex128" | "uintptr" | "len" | "cap" | "make" | "new" | "append"
+        | "copy" | "close" | "delete" | "panic" | "recover" | "print" | "println" | "true"
+        | "false" | "nil" | "iota" => format!("{name}_"),
         _ => name.to_string(),
     }
 }
 
 /// Generate code from a ForgeDocument for Go using Jinja2 templates.
-pub fn generate_go(doc: &ForgeDocument, template_dir: &Path) -> Result<GeneratedOutput, ForgeError> {
-    generate_go_with_imports(doc, template_dir, &[], &crate::ForgeCompileOptions::default())
+pub fn generate_go(
+    doc: &ForgeDocument,
+    template_dir: &Path,
+) -> Result<GeneratedOutput, ForgeError> {
+    generate_go_with_imports(
+        doc,
+        template_dir,
+        &[],
+        &crate::ForgeCompileOptions::default(),
+    )
 }
 
 /// Generate Go code with cross-file import support.
@@ -11113,28 +11132,44 @@ pub fn generate_go_with_imports(
     inject_source_location_global(&mut env, doc);
 
     let code = match doc {
-        ForgeDocument::Transform(m) => render_transform(&env, m, imports, crate::generator::Language::Go)?,
-        ForgeDocument::Lookup(m) => render_lookup(&env, m, imports, crate::generator::Language::Go)?,
-        ForgeDocument::Condition(m) => render_condition(&env, m, imports, crate::generator::Language::Go)?,
+        ForgeDocument::Transform(m) => {
+            render_transform(&env, m, imports, crate::generator::Language::Go)?
+        }
+        ForgeDocument::Lookup(m) => {
+            render_lookup(&env, m, imports, crate::generator::Language::Go)?
+        }
+        ForgeDocument::Condition(m) => {
+            render_condition(&env, m, imports, crate::generator::Language::Go)?
+        }
         ForgeDocument::Codec(m) => render_codec(&env, m, imports, crate::generator::Language::Go)?,
-        ForgeDocument::Validator(m) => render_validator(&env, m, imports, crate::generator::Language::Go)?,
+        ForgeDocument::Validator(m) => {
+            render_validator(&env, m, imports, crate::generator::Language::Go)?
+        }
         ForgeDocument::Procedure(m) => render_procedure_go(&env, m, imports)?,
-        ForgeDocument::Filter(m) => render_filter(&env, m, imports, crate::generator::Language::Go)?,
-        ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::Go)?,
+        ForgeDocument::Filter(m) => {
+            render_filter(&env, m, imports, crate::generator::Language::Go)?
+        }
+        ForgeDocument::Interpolation(m) => {
+            render_interpolation(&env, m, imports, crate::generator::Language::Go)?
+        }
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::Go)?,
-        ForgeDocument::Observer(m) => render_observer(&env, m, imports, crate::generator::Language::Go)?,
-        ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::Go, options)?,
+        ForgeDocument::Observer(m) => {
+            render_observer(&env, m, imports, crate::generator::Language::Go)?
+        }
+        ForgeDocument::Algorithm(m) => {
+            render_algorithm(&env, m, imports, crate::generator::Language::Go, options)?
+        }
         // RFC §5.C / §5.J.4: rejected upstream by codegen_matrix::check.
-        ForgeDocument::Link(_) => unreachable!(
-            "ForgeDocument::Link rejected by codegen_matrix::check on go"
-        ),
-        ForgeDocument::BufferPool(_) => unreachable!(
-            "ForgeDocument::BufferPool rejected by codegen_matrix::check on go"
-        ),
+        ForgeDocument::Link(_) => {
+            unreachable!("ForgeDocument::Link rejected by codegen_matrix::check on go")
+        }
+        ForgeDocument::BufferPool(_) => {
+            unreachable!("ForgeDocument::BufferPool rejected by codegen_matrix::check on go")
+        }
         // RFC §5.D / §5.J.4: rejected upstream by codegen_matrix::check.
-        ForgeDocument::Worker(_) => unreachable!(
-            "ForgeDocument::Worker rejected by codegen_matrix::check on go"
-        ),
+        ForgeDocument::Worker(_) => {
+            unreachable!("ForgeDocument::Worker rejected by codegen_matrix::check on go")
+        }
         ForgeDocument::BoundedCollection(m) => {
             render_bounded_collection_go(&env, m, imports, options)?
         }
@@ -11150,20 +11185,16 @@ pub fn generate_go_with_imports(
     // `go test ./conformance/...` pattern runs the per-fixture
     // package tests without any harness scaffolding edits.
     if let ForgeDocument::Algorithm(m) = doc {
-        if let Some(sidecar) = render_algorithm_test_vector_sidecar(
-            &env,
-            m,
-            crate::generator::Language::Go,
-        )? {
+        if let Some(sidecar) =
+            render_algorithm_test_vector_sidecar(&env, m, crate::generator::Language::Go)?
+        {
             files.push(sidecar);
         }
     }
     if let ForgeDocument::Codec(m) = doc {
-        if let Some(sidecar) = render_codec_test_vector_sidecar(
-            &env,
-            m,
-            crate::generator::Language::Go,
-        )? {
+        if let Some(sidecar) =
+            render_codec_test_vector_sidecar(&env, m, crate::generator::Language::Go)?
+        {
             files.push(sidecar);
         }
     }
@@ -11199,8 +11230,16 @@ pub(crate) fn python_type(ty: &SceType) -> &'static str {
 }
 
 /// Generate code from a ForgeDocument for Python using Jinja2 templates.
-pub fn generate_python(doc: &ForgeDocument, template_dir: &Path) -> Result<GeneratedOutput, ForgeError> {
-    generate_python_with_imports(doc, template_dir, &[], &crate::ForgeCompileOptions::default())
+pub fn generate_python(
+    doc: &ForgeDocument,
+    template_dir: &Path,
+) -> Result<GeneratedOutput, ForgeError> {
+    generate_python_with_imports(
+        doc,
+        template_dir,
+        &[],
+        &crate::ForgeCompileOptions::default(),
+    )
 }
 
 /// Generate Python code with cross-file import support.
@@ -11218,28 +11257,52 @@ pub fn generate_python_with_imports(
     inject_source_location_global(&mut env, doc);
 
     let code = match doc {
-        ForgeDocument::Transform(m) => render_transform(&env, m, imports, crate::generator::Language::Python)?,
-        ForgeDocument::Lookup(m) => render_lookup(&env, m, imports, crate::generator::Language::Python)?,
-        ForgeDocument::Condition(m) => render_condition(&env, m, imports, crate::generator::Language::Python)?,
-        ForgeDocument::Codec(m) => render_codec(&env, m, imports, crate::generator::Language::Python)?,
-        ForgeDocument::Validator(m) => render_validator(&env, m, imports, crate::generator::Language::Python)?,
+        ForgeDocument::Transform(m) => {
+            render_transform(&env, m, imports, crate::generator::Language::Python)?
+        }
+        ForgeDocument::Lookup(m) => {
+            render_lookup(&env, m, imports, crate::generator::Language::Python)?
+        }
+        ForgeDocument::Condition(m) => {
+            render_condition(&env, m, imports, crate::generator::Language::Python)?
+        }
+        ForgeDocument::Codec(m) => {
+            render_codec(&env, m, imports, crate::generator::Language::Python)?
+        }
+        ForgeDocument::Validator(m) => {
+            render_validator(&env, m, imports, crate::generator::Language::Python)?
+        }
         ForgeDocument::Procedure(m) => render_procedure_python(&env, m, imports)?,
-        ForgeDocument::Filter(m) => render_filter(&env, m, imports, crate::generator::Language::Python)?,
-        ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::Python)?,
-        ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::Python)?,
-        ForgeDocument::Observer(m) => render_observer(&env, m, imports, crate::generator::Language::Python)?,
-        ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::Python, options)?,
+        ForgeDocument::Filter(m) => {
+            render_filter(&env, m, imports, crate::generator::Language::Python)?
+        }
+        ForgeDocument::Interpolation(m) => {
+            render_interpolation(&env, m, imports, crate::generator::Language::Python)?
+        }
+        ForgeDocument::Timer(m) => {
+            render_timer(&env, m, imports, crate::generator::Language::Python)?
+        }
+        ForgeDocument::Observer(m) => {
+            render_observer(&env, m, imports, crate::generator::Language::Python)?
+        }
+        ForgeDocument::Algorithm(m) => render_algorithm(
+            &env,
+            m,
+            imports,
+            crate::generator::Language::Python,
+            options,
+        )?,
         // RFC §5.C / §5.J.4: rejected upstream by codegen_matrix::check.
-        ForgeDocument::Link(_) => unreachable!(
-            "ForgeDocument::Link rejected by codegen_matrix::check on python"
-        ),
-        ForgeDocument::BufferPool(_) => unreachable!(
-            "ForgeDocument::BufferPool rejected by codegen_matrix::check on python"
-        ),
+        ForgeDocument::Link(_) => {
+            unreachable!("ForgeDocument::Link rejected by codegen_matrix::check on python")
+        }
+        ForgeDocument::BufferPool(_) => {
+            unreachable!("ForgeDocument::BufferPool rejected by codegen_matrix::check on python")
+        }
         // RFC §5.D / §5.J.4: rejected upstream by codegen_matrix::check.
-        ForgeDocument::Worker(_) => unreachable!(
-            "ForgeDocument::Worker rejected by codegen_matrix::check on python"
-        ),
+        ForgeDocument::Worker(_) => {
+            unreachable!("ForgeDocument::Worker rejected by codegen_matrix::check on python")
+        }
         ForgeDocument::BoundedCollection(m) => {
             render_bounded_collection_python(&env, m, imports, options)?
         }
@@ -11255,20 +11318,16 @@ pub fn generate_python_with_imports(
     // in `tests/test_numerical_conformance.py` picks it up
     // alongside `TestNumericalConformance`.
     if let ForgeDocument::Algorithm(m) = doc {
-        if let Some(sidecar) = render_algorithm_test_vector_sidecar(
-            &env,
-            m,
-            crate::generator::Language::Python,
-        )? {
+        if let Some(sidecar) =
+            render_algorithm_test_vector_sidecar(&env, m, crate::generator::Language::Python)?
+        {
             files.push(sidecar);
         }
     }
     if let ForgeDocument::Codec(m) = doc {
-        if let Some(sidecar) = render_codec_test_vector_sidecar(
-            &env,
-            m,
-            crate::generator::Language::Python,
-        )? {
+        if let Some(sidecar) =
+            render_codec_test_vector_sidecar(&env, m, crate::generator::Language::Python)?
+        {
             files.push(sidecar);
         }
     }
@@ -11285,8 +11344,16 @@ pub fn generate_python_with_imports(
 // loud at codegen time, not at compile time of stale generated code).
 
 /// Generate code from a ForgeDocument for C11 using Jinja2 templates.
-pub fn generate_c11(doc: &ForgeDocument, template_dir: &Path) -> Result<GeneratedOutput, ForgeError> {
-    generate_c11_with_imports(doc, template_dir, &[], &crate::ForgeCompileOptions::default())
+pub fn generate_c11(
+    doc: &ForgeDocument,
+    template_dir: &Path,
+) -> Result<GeneratedOutput, ForgeError> {
+    generate_c11_with_imports(
+        doc,
+        template_dir,
+        &[],
+        &crate::ForgeCompileOptions::default(),
+    )
 }
 
 /// Generate C11 code with cross-file import support.
@@ -11324,11 +11391,19 @@ pub fn generate_c11_with_imports_and_externs(
     inject_source_location_global(&mut env, doc);
 
     let code = match doc {
-        ForgeDocument::Transform(m) => render_transform(&env, m, imports, crate::generator::Language::C11)?,
-        ForgeDocument::Condition(m) => render_condition(&env, m, imports, crate::generator::Language::C11)?,
-        ForgeDocument::Lookup(m) => render_lookup(&env, m, imports, crate::generator::Language::C11)?,
+        ForgeDocument::Transform(m) => {
+            render_transform(&env, m, imports, crate::generator::Language::C11)?
+        }
+        ForgeDocument::Condition(m) => {
+            render_condition(&env, m, imports, crate::generator::Language::C11)?
+        }
+        ForgeDocument::Lookup(m) => {
+            render_lookup(&env, m, imports, crate::generator::Language::C11)?
+        }
         ForgeDocument::Codec(m) => render_codec(&env, m, imports, crate::generator::Language::C11)?,
-        ForgeDocument::Validator(m) => render_validator(&env, m, imports, crate::generator::Language::C11)?,
+        ForgeDocument::Validator(m) => {
+            render_validator(&env, m, imports, crate::generator::Language::C11)?
+        }
         ForgeDocument::Procedure(m) => {
             if m.is_l2() {
                 render_procedure_c_l2(&env, m, imports)?
@@ -11336,11 +11411,19 @@ pub fn generate_c11_with_imports_and_externs(
                 render_procedure_c(&env, m, imports)?
             }
         }
-        ForgeDocument::Filter(m) => render_filter(&env, m, imports, crate::generator::Language::C11)?,
-        ForgeDocument::Observer(m) => render_observer(&env, m, imports, crate::generator::Language::C11)?,
-        ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::C11)?,
+        ForgeDocument::Filter(m) => {
+            render_filter(&env, m, imports, crate::generator::Language::C11)?
+        }
+        ForgeDocument::Observer(m) => {
+            render_observer(&env, m, imports, crate::generator::Language::C11)?
+        }
+        ForgeDocument::Interpolation(m) => {
+            render_interpolation(&env, m, imports, crate::generator::Language::C11)?
+        }
         ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::C11)?,
-        ForgeDocument::Algorithm(m) => render_algorithm(&env, m, imports, crate::generator::Language::C11, options)?,
+        ForgeDocument::Algorithm(m) => {
+            render_algorithm(&env, m, imports, crate::generator::Language::C11, options)?
+        }
         // RFC §5.C: byte-stream link emit. The template wires the
         // §5.B framer into RX/TX paths through the canonical Linux-
         // kernel separate-vtable shape declared in
@@ -11374,20 +11457,16 @@ pub fn generate_c11_with_imports_and_externs(
     // into its global `g_failures` accumulator (matches the existing
     // `test_<fixture>` accounting in the kind-fragment templates).
     if let ForgeDocument::Algorithm(m) = doc {
-        if let Some(sidecar) = render_algorithm_test_vector_sidecar(
-            &env,
-            m,
-            crate::generator::Language::C11,
-        )? {
+        if let Some(sidecar) =
+            render_algorithm_test_vector_sidecar(&env, m, crate::generator::Language::C11)?
+        {
             files.push(sidecar);
         }
     }
     if let ForgeDocument::Codec(m) = doc {
-        if let Some(sidecar) = render_codec_test_vector_sidecar(
-            &env,
-            m,
-            crate::generator::Language::C11,
-        )? {
+        if let Some(sidecar) =
+            render_codec_test_vector_sidecar(&env, m, crate::generator::Language::C11)?
+        {
             files.push(sidecar);
         }
     }
@@ -11455,7 +11534,8 @@ fn render_procedure_cpp(
     // current fixture has no explicit `<transition event="error.execution">`
     // (in which case processTransition simply returns nullopt and the
     // procedure terminates uncompleted — W3C-correct).
-    let mut event_raw_to_pascal: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    let mut event_raw_to_pascal: std::collections::BTreeMap<String, String> =
+        std::collections::BTreeMap::new();
     event_raw_to_pascal.insert("error.execution".to_string(), "ErrorExecution".to_string());
     event_raw_to_pascal.insert("ok".to_string(), "Ok".to_string());
     event_raw_to_pascal.insert("fail".to_string(), "Fail".to_string());
@@ -11605,13 +11685,11 @@ fn render_procedure_cpp(
     // `frame_.encode` (C++). Site-owned Vec keeps the qualified keys alive so
     // the `HashMap<&str, String>` can borrow them. See
     // `stateful_import_method_renames` for the rationale.
-    let cpp_method_renames =
-        stateful_import_method_renames(imports, &generator::Language::Cpp);
+    let cpp_method_renames = stateful_import_method_renames(imports, &generator::Language::Cpp);
     for (k, v) in &cpp_method_renames {
         owned_rename_map.insert(k.as_str(), v.clone());
     }
-    let cpp_field_renames =
-        stateful_import_field_renames(imports, &generator::Language::Cpp);
+    let cpp_field_renames = stateful_import_field_renames(imports, &generator::Language::Cpp);
     for (k, v) in &cpp_field_renames {
         owned_rename_map.insert(k.as_str(), v.clone());
     }
@@ -11895,10 +11973,8 @@ fn render_procedure_c(
     for (raw, snk) in var_name_strings.iter().zip(snake_owned.iter()) {
         owned_rename.insert(raw.as_str(), snk.clone());
     }
-    let rename_map: std::collections::HashMap<&str, &str> = owned_rename
-        .iter()
-        .map(|(k, v)| (*k, v.as_str()))
-        .collect();
+    let rename_map: std::collections::HashMap<&str, &str> =
+        owned_rename.iter().map(|(k, v)| (*k, v.as_str())).collect();
 
     let procedure_type_ctx = crate::forge::type_ctx::procedure(m, imports);
 
@@ -11924,11 +12000,7 @@ fn render_procedure_c(
                             crate::forge::types::InferredType::Bool,
                         )
                     });
-                    let target_enum = format!(
-                        "{}_STATE_{}",
-                        upper,
-                        to_upper_snake(&tr.target),
-                    );
+                    let target_enum = format!("{}_STATE_{}", upper, to_upper_snake(&tr.target),);
                     serde_json::json!({
                         "has_cond": tr.cond.is_some(),
                         "cond": cond_transpiled.unwrap_or_default(),
@@ -11955,11 +12027,7 @@ fn render_procedure_c(
         })
         .collect();
 
-    let initial_state_enum = format!(
-        "{}_STATE_{}",
-        upper,
-        to_upper_snake(&m.initial),
-    );
+    let initial_state_enum = format!("{}_STATE_{}", upper, to_upper_snake(&m.initial),);
     let result_typedef = format!("{}_result_t", &snake);
     let state_typedef = format!("{}_state_t", &snake);
     let execute_func = format!("{}_execute", &snake);
@@ -12115,8 +12183,7 @@ fn render_procedure_c_l2(
         .iter()
         .map(|h| {
             let ret = c_l2_type(&h.returns);
-            let params: Vec<String> =
-                h.args.iter().map(|t| c_l2_type(t)).collect();
+            let params: Vec<String> = h.args.iter().map(|t| c_l2_type(t)).collect();
             serde_json::json!({
                 "id": filters::to_snake_case(h.name.clone()),
                 "return_type": ret,
@@ -12163,15 +12230,12 @@ fn render_procedure_c_l2(
     // `frame.encode()` → `codec_simple_frame_encode(&_st->frame_)`) flows
     // through the C11 AST pre-pass, not this rename map — see
     // `stateful_import_method_renames` for the rationale.
-    let import_field_renames =
-        stateful_import_field_renames(imports, &generator::Language::C11);
+    let import_field_renames = stateful_import_field_renames(imports, &generator::Language::C11);
     for (k, v) in &import_field_renames {
         owned_rename.insert(k.as_str(), v.clone());
     }
-    let rename_map: std::collections::HashMap<&str, &str> = owned_rename
-        .iter()
-        .map(|(k, v)| (*k, v.as_str()))
-        .collect();
+    let rename_map: std::collections::HashMap<&str, &str> =
+        owned_rename.iter().map(|(k, v)| (*k, v.as_str())).collect();
     let mut owned_assign_rename = owned_rename.clone();
     owned_assign_rename.insert("_event.data", "_st->pending_event_data".to_string());
     let assign_rename_map: std::collections::HashMap<&str, &str> = owned_assign_rename
@@ -12224,10 +12288,7 @@ fn render_procedure_c_l2(
                     "encode".to_string(),
                     format!("{}__{}_encode", &snake, imp.alias),
                 )],
-                "filter" => vec![(
-                    "update".to_string(),
-                    format!("{}_update", imp.namespace),
-                )],
+                "filter" => vec![("update".to_string(), format!("{}_update", imp.namespace))],
                 // Future stateful kinds (validator/procedure/observer/timer)
                 // register their methods here when the first conformance
                 // fixture imports them. Empty Vec leaves member-call sites
@@ -12428,17 +12489,12 @@ fn render_procedure_c_l2(
         if let Some(obj) = entry.as_object_mut() {
             obj.insert(
                 "enum_name".to_string(),
-                serde_json::Value::String(format!(
-                    "{}_STATE_{}",
-                    upper,
-                    to_upper_snake(raw_id)
-                )),
+                serde_json::Value::String(format!("{}_STATE_{}", upper, to_upper_snake(raw_id))),
             );
         }
     }
 
-    let initial_state_enum =
-        format!("{}_STATE_{}", upper, to_upper_snake(&m.initial));
+    let initial_state_enum = format!("{}_STATE_{}", upper, to_upper_snake(&m.initial));
     let state_typedef = format!("{}_state_t", &snake);
     let state_struct = format!("{}_t", &snake);
     let result_typedef = format!("{}_result_t", &snake);
@@ -12708,17 +12764,9 @@ fn transpile_procedure_expr_c11(
     lowerings: &[expr::ImportLowering],
 ) -> String {
     if lowerings.is_empty() {
-        return transpile_procedure_expr(
-            raw,
-            ExprTarget::C,
-            type_ctx,
-            renames,
-            expected,
-        );
+        return transpile_procedure_expr(raw, ExprTarget::C, type_ctx, renames, expected);
     }
-    match expr::transpile_typed_with_import_lowering(
-        raw, type_ctx, renames, expected, lowerings,
-    ) {
+    match expr::transpile_typed_with_import_lowering(raw, type_ctx, renames, expected, lowerings) {
         Ok(result) => result,
         Err(e) => format!("/* SCE_TRANSPILE_ERROR: {} */ {}", e, raw),
     }
@@ -13062,13 +13110,14 @@ fn build_procedure_states_with_assigns(
                                     lhs_ty,
                                 )
                             };
-                            let wrapped = if matches!(lhs_ty, crate::forge::types::InferredType::Bytes)
-                                && a.expr.trim() == "_event.data"
-                            {
-                                bytes_wrap_for(target, &transpiled)
-                            } else {
-                                transpiled
-                            };
+                            let wrapped =
+                                if matches!(lhs_ty, crate::forge::types::InferredType::Bytes)
+                                    && a.expr.trim() == "_event.data"
+                                {
+                                    bytes_wrap_for(target, &transpiled)
+                                } else {
+                                    transpiled
+                                };
                             // Cap-check fires when (a) the destination
                             // slot is bytes-typed with a known cap and
                             // (b) the current target language has its
@@ -13078,10 +13127,7 @@ fn build_procedure_states_with_assigns(
                             let slot_cap = bytes_slot_caps.get(a.location.as_str()).copied();
                             let is_bytes_with_cap = cap_check_target
                                 && slot_cap.is_some()
-                                && matches!(
-                                    lhs_ty,
-                                    crate::forge::types::InferredType::Bytes
-                                );
+                                && matches!(lhs_ty, crate::forge::types::InferredType::Bytes);
                             serde_json::json!({
                                 "location": location_emitted,
                                 "expr": wrapped,
@@ -13130,7 +13176,9 @@ fn bytes_wrap_for(target: ExprTarget, transpiled: &str) -> String {
 }
 
 /// Build the type map (variable name → SceType) for assign type checking.
-fn build_procedure_type_map<'a>(m: &'a ProcedureModel) -> std::collections::HashMap<&'a str, &'a SceType> {
+fn build_procedure_type_map<'a>(
+    m: &'a ProcedureModel,
+) -> std::collections::HashMap<&'a str, &'a SceType> {
     m.inputs
         .iter()
         .chain(m.internals.iter())
@@ -13258,13 +13306,16 @@ fn render_procedure_kotlin(
             let default_val = f
                 .expr
                 .as_ref()
-                .map(|e| expr::transpile_typed(
-                    e,
-                    ExprTarget::Kotlin,
-                    &procedure_type_ctx,
-                    &empty_procedure_renames,
-                    expected,
-                ).unwrap_or_else(|_| e.clone()))
+                .map(|e| {
+                    expr::transpile_typed(
+                        e,
+                        ExprTarget::Kotlin,
+                        &procedure_type_ctx,
+                        &empty_procedure_renames,
+                        expected,
+                    )
+                    .unwrap_or_else(|_| e.clone())
+                })
                 .unwrap_or_else(|| kotlin_default(&f.sce_type).to_string());
             serde_json::json!({
                 "id": f.id,
@@ -13294,22 +13345,28 @@ fn render_procedure_kotlin(
     for (k, v) in &kotlin_method_renames {
         owned_rename.insert(k.as_str(), v.clone());
     }
-    let kotlin_field_renames =
-        stateful_import_field_renames(imports, &generator::Language::Kotlin);
+    let kotlin_field_renames = stateful_import_field_renames(imports, &generator::Language::Kotlin);
     for (k, v) in &kotlin_field_renames {
         owned_rename.insert(k.as_str(), v.clone());
     }
-    let rename_map: std::collections::HashMap<&str, &str> = owned_rename
-        .iter()
-        .map(|(k, v)| (*k, v.as_str()))
-        .collect();
+    let rename_map: std::collections::HashMap<&str, &str> =
+        owned_rename.iter().map(|(k, v)| (*k, v.as_str())).collect();
 
     let assign_rename_map = rename_map.clone();
 
-    let states_with_entry =
-        build_procedure_states_with_entry(m, ExprTarget::Kotlin, &procedure_type_ctx, &rename_map, None);
-    let final_states_with_donedata =
-        build_procedure_final_states_with_donedata(m, ExprTarget::Kotlin, &procedure_type_ctx, &rename_map);
+    let states_with_entry = build_procedure_states_with_entry(
+        m,
+        ExprTarget::Kotlin,
+        &procedure_type_ctx,
+        &rename_map,
+        None,
+    );
+    let final_states_with_donedata = build_procedure_final_states_with_donedata(
+        m,
+        ExprTarget::Kotlin,
+        &procedure_type_ctx,
+        &rename_map,
+    );
 
     let non_final_states = build_procedure_non_final_states(
         m,
@@ -13394,20 +13451,17 @@ fn render_procedure_rust(
     let mut owned_rename_with_event = owned_rename;
     for imp in imports {
         if imp.is_stateful {
-            owned_rename_with_event
-                .insert(&imp.alias, format!("self.{}", imp.member_name));
+            owned_rename_with_event.insert(&imp.alias, format!("self.{}", imp.member_name));
         }
     }
     owned_rename_with_event.insert("_event.data", "self.pending_event_data".to_string());
     // Method-level rename entries for stateful imports (Rust expansion:
     // `self.{member}.{method}`). Site-owned Vec keeps qualified keys alive.
-    let rust_method_renames =
-        stateful_import_method_renames(imports, &generator::Language::Rust);
+    let rust_method_renames = stateful_import_method_renames(imports, &generator::Language::Rust);
     for (k, v) in &rust_method_renames {
         owned_rename_with_event.insert(k.as_str(), v.clone());
     }
-    let rust_field_renames =
-        stateful_import_field_renames(imports, &generator::Language::Rust);
+    let rust_field_renames = stateful_import_field_renames(imports, &generator::Language::Rust);
     for (k, v) in &rust_field_renames {
         owned_rename_with_event.insert(k.as_str(), v.clone());
     }
@@ -13518,13 +13572,16 @@ fn render_procedure_rust(
             let default_val = f
                 .expr
                 .as_ref()
-                .map(|e| expr::transpile_typed(
-                    e,
-                    ExprTarget::Rust,
-                    &procedure_type_ctx,
-                    &empty_procedure_renames,
-                    expected,
-                ).unwrap_or_else(|_| e.clone()))
+                .map(|e| {
+                    expr::transpile_typed(
+                        e,
+                        ExprTarget::Rust,
+                        &procedure_type_ctx,
+                        &empty_procedure_renames,
+                        expected,
+                    )
+                    .unwrap_or_else(|_| e.clone())
+                })
                 .unwrap_or_else(|| rust_default(&f.sce_type).to_string());
             serde_json::json!({
                 "id": snake_id,
@@ -13549,13 +13606,15 @@ fn render_procedure_rust(
             };
             (name.as_str(), value)
         })
-        .chain(std::iter::once(("_event.data", "self.pending_event_data".to_string())))
+        .chain(std::iter::once((
+            "_event.data",
+            "self.pending_event_data".to_string(),
+        )))
         .collect();
     // Add import alias renames to payload map
     for imp in imports {
         if imp.is_stateful {
-            owned_payload_rename
-                .insert(&imp.alias, format!("self.{}", imp.member_name));
+            owned_payload_rename.insert(&imp.alias, format!("self.{}", imp.member_name));
         }
     }
     // Method-level rename entries for stateful imports (same Rust expansion
@@ -13582,8 +13641,12 @@ fn render_procedure_rust(
         &rename_map,
         Some(&payload_rename_map),
     );
-    let final_states_with_donedata =
-        build_procedure_final_states_with_donedata(m, ExprTarget::Rust, &procedure_type_ctx, &rename_map);
+    let final_states_with_donedata = build_procedure_final_states_with_donedata(
+        m,
+        ExprTarget::Rust,
+        &procedure_type_ctx,
+        &rename_map,
+    );
     let non_final_states = build_procedure_non_final_states(
         m,
         ExprTarget::Rust,
@@ -13654,19 +13717,13 @@ fn render_procedure_go(
         .collect();
     let owned_rename: std::collections::HashMap<&str, String> = var_name_strings
         .iter()
-        .map(|name| {
-            (
-                name.as_str(),
-                format!("p.{}", go_escape_builtin(name)),
-            )
-        })
+        .map(|name| (name.as_str(), format!("p.{}", go_escape_builtin(name))))
         .collect();
     // Add import alias renames: `frame` → `p.Frame` for Go struct field access
     let mut owned_rename_with_event = owned_rename;
     for imp in imports {
         if imp.is_stateful {
-            owned_rename_with_event
-                .insert(&imp.alias, format!("p.{}", imp.member_name));
+            owned_rename_with_event.insert(&imp.alias, format!("p.{}", imp.member_name));
         }
     }
     owned_rename_with_event.insert("_event.data", "p.pendingEventData".to_string());
@@ -13675,13 +13732,11 @@ fn render_procedure_go(
     // `Decode`), so this is the load-bearing consumer for the helper: the
     // existing byte golden `p.Frame.encode()` fails to compile and must
     // become `p.Frame.Encode()`.
-    let go_method_renames =
-        stateful_import_method_renames(imports, &generator::Language::Go);
+    let go_method_renames = stateful_import_method_renames(imports, &generator::Language::Go);
     for (k, v) in &go_method_renames {
         owned_rename_with_event.insert(k.as_str(), v.clone());
     }
-    let go_field_renames =
-        stateful_import_field_renames(imports, &generator::Language::Go);
+    let go_field_renames = stateful_import_field_renames(imports, &generator::Language::Go);
     for (k, v) in &go_field_renames {
         owned_rename_with_event.insert(k.as_str(), v.clone());
     }
@@ -13691,12 +13746,7 @@ fn render_procedure_go(
     let go_helper_rename_pairs: Vec<(String, String)> = m
         .helpers
         .iter()
-        .map(|h| {
-            (
-                h.name.clone(),
-                format!("p.{}", go_escape_builtin(&h.name)),
-            )
-        })
+        .map(|h| (h.name.clone(), format!("p.{}", go_escape_builtin(&h.name))))
         .collect();
     for (k, v) in &go_helper_rename_pairs {
         owned_rename_with_event.insert(k.as_str(), v.clone());
@@ -13802,10 +13852,19 @@ fn render_procedure_go(
         })
         .collect();
 
-    let states_with_entry =
-        build_procedure_states_with_entry(m, ExprTarget::Go, &procedure_type_ctx, &rename_map, None);
-    let final_states_with_donedata =
-        build_procedure_final_states_with_donedata(m, ExprTarget::Go, &procedure_type_ctx, &rename_map);
+    let states_with_entry = build_procedure_states_with_entry(
+        m,
+        ExprTarget::Go,
+        &procedure_type_ctx,
+        &rename_map,
+        None,
+    );
+    let final_states_with_donedata = build_procedure_final_states_with_donedata(
+        m,
+        ExprTarget::Go,
+        &procedure_type_ctx,
+        &rename_map,
+    );
     let non_final_states = build_procedure_non_final_states(
         m,
         ExprTarget::Go,
@@ -13889,8 +13948,7 @@ fn render_procedure_python(
     let mut owned_rename_with_event = owned_rename;
     for imp in imports {
         if imp.is_stateful {
-            owned_rename_with_event
-                .insert(&imp.alias, format!("self.{}", imp.member_name));
+            owned_rename_with_event.insert(&imp.alias, format!("self.{}", imp.member_name));
         }
     }
     owned_rename_with_event.insert("_event.data", "self._pending_event_data".to_string());
@@ -13901,8 +13959,7 @@ fn render_procedure_python(
     for (k, v) in &python_method_renames {
         owned_rename_with_event.insert(k.as_str(), v.clone());
     }
-    let python_field_renames =
-        stateful_import_field_renames(imports, &generator::Language::Python);
+    let python_field_renames = stateful_import_field_renames(imports, &generator::Language::Python);
     for (k, v) in &python_field_renames {
         owned_rename_with_event.insert(k.as_str(), v.clone());
     }
@@ -13955,21 +14012,11 @@ fn render_procedure_python(
         .map(|h| {
             let snake = filters::to_snake_case(h.name.clone());
             let setter_name = format!("set_{}", snake);
-            let params_ty: Vec<String> = h
-                .args
-                .iter()
-                .map(|a| python_type(a).to_string())
-                .collect();
+            let params_ty: Vec<String> =
+                h.args.iter().map(|a| python_type(a).to_string()).collect();
             let ret_ty = python_type(&h.returns);
-            let callable_type = format!(
-                "Callable[[{}], {}]",
-                params_ty.join(", "),
-                ret_ty,
-            );
-            let default_impl = format!(
-                "_unset_helper_raiser({:?}, {:?})",
-                h.name, setter_name,
-            );
+            let callable_type = format!("Callable[[{}], {}]", params_ty.join(", "), ret_ty,);
+            let default_impl = format!("_unset_helper_raiser({:?}, {:?})", h.name, setter_name,);
             serde_json::json!({
                 "snake_id": snake,
                 "setter_name": setter_name,
@@ -13992,13 +14039,16 @@ fn render_procedure_python(
             let default_val = f
                 .expr
                 .as_ref()
-                .map(|e| expr::transpile_typed(
-                    e,
-                    ExprTarget::Python,
-                    &procedure_type_ctx,
-                    &empty_procedure_renames,
-                    expected,
-                ).unwrap_or_else(|_| e.clone()))
+                .map(|e| {
+                    expr::transpile_typed(
+                        e,
+                        ExprTarget::Python,
+                        &procedure_type_ctx,
+                        &empty_procedure_renames,
+                        expected,
+                    )
+                    .unwrap_or_else(|_| e.clone())
+                })
                 .unwrap_or_else(|| python_default(&f.sce_type).to_string());
             serde_json::json!({
                 "snake_id": snake_id,
@@ -14008,10 +14058,19 @@ fn render_procedure_python(
         })
         .collect();
 
-    let states_with_entry =
-        build_procedure_states_with_entry(m, ExprTarget::Python, &procedure_type_ctx, &rename_map, None);
-    let final_states_with_donedata =
-        build_procedure_final_states_with_donedata(m, ExprTarget::Python, &procedure_type_ctx, &rename_map);
+    let states_with_entry = build_procedure_states_with_entry(
+        m,
+        ExprTarget::Python,
+        &procedure_type_ctx,
+        &rename_map,
+        None,
+    );
+    let final_states_with_donedata = build_procedure_final_states_with_donedata(
+        m,
+        ExprTarget::Python,
+        &procedure_type_ctx,
+        &rename_map,
+    );
     let non_final_states = build_procedure_non_final_states(
         m,
         ExprTarget::Python,
@@ -14108,28 +14167,32 @@ fn render_single_inline_kind(
     machine_name: &str,
 ) -> Result<(String, String), ForgeError> {
     match &kind.data {
-        InlineKindData::Transform { inputs: _, expr, output_type } => {
-            render_inline_transform_member(&kind.id, expr, output_type, l, machine_name)
-        }
-        InlineKindData::Lookup { input_id, entries, default_value } => {
+        InlineKindData::Transform {
+            inputs: _,
+            expr,
+            output_type,
+        } => render_inline_transform_member(&kind.id, expr, output_type, l, machine_name),
+        InlineKindData::Lookup {
+            input_id,
+            entries,
+            default_value,
+        } => {
             render_inline_lookup_member(&kind.id, input_id, entries, default_value, l, machine_name)
         }
         InlineKindData::Condition { expr } => {
             render_inline_condition_member(&kind.id, expr, l, machine_name)
         }
-        InlineKindData::Codec { fields, default_endian } => {
-            render_inline_codec_member(&kind.id, fields, *default_endian, l, machine_name)
-        }
+        InlineKindData::Codec {
+            fields,
+            default_endian,
+        } => render_inline_codec_member(&kind.id, fields, *default_endian, l, machine_name),
     }
 }
 
 /// Build identifier→member-access renames for languages that require explicit
 /// `self.` (Rust) or `p.` (Go) prefixes when accessing policy struct fields.
 /// C++ and Kotlin use implicit member access, so no renames are needed.
-fn build_member_renames(
-    raw_expr: &str,
-    l: &LangCtx,
-) -> Result<Vec<(String, String)>, ForgeError> {
+fn build_member_renames(raw_expr: &str, l: &LangCtx) -> Result<Vec<(String, String)>, ForgeError> {
     use crate::generator::Language;
     match l.lang {
         Language::Cpp | Language::Kotlin | Language::Python => Ok(Vec::new()),
@@ -14148,8 +14211,10 @@ fn build_member_renames(
             Ok(idents
                 .into_iter()
                 .map(|id| {
-                    let target =
-                        format!("p.{}", go_escape_builtin(&filters::to_camel_case(id.clone())));
+                    let target = format!(
+                        "p.{}",
+                        go_escape_builtin(&filters::to_camel_case(id.clone()))
+                    );
                     (id, target)
                 })
                 .collect())
@@ -14193,13 +14258,8 @@ fn render_inline_transform_member(
     let member_renames = build_member_renames(raw_expr, l)?;
     let renames = rename_map(&member_renames);
 
-    let transpiled = expr::transpile_typed(
-        raw_expr,
-        l.expr_target(),
-        &empty_ctx,
-        &renames,
-        expected,
-    )?;
+    let transpiled =
+        expr::transpile_typed(raw_expr, l.expr_target(), &empty_ctx, &renames, expected)?;
 
     let ret_type = l.type_name(output_type);
 
@@ -14338,9 +14398,7 @@ fn render_inline_lookup_member(
             ));
             for (value, keys) in &map {
                 let keys_str = keys.join(", ");
-                code.push_str(&format!(
-                    "        {keys_str} -> {enum_name}.{value}\n"
-                ));
+                code.push_str(&format!("        {keys_str} -> {enum_name}.{value}\n"));
             }
             code.push_str(&format!(
                 "        else -> {enum_name}.{default_value}\n\
@@ -14412,13 +14470,9 @@ fn render_inline_lookup_member(
             ));
             for (i, v) in unique_values.iter().enumerate() {
                 if i == 0 {
-                    type_def.push_str(&format!(
-                        "\t{enum_name}{v} {enum_name} = iota\n"
-                    ));
+                    type_def.push_str(&format!("\t{enum_name}{v} {enum_name} = iota\n"));
                 } else {
-                    type_def.push_str(&format!(
-                        "\t{enum_name}{v}\n"
-                    ));
+                    type_def.push_str(&format!("\t{enum_name}{v}\n"));
                 }
             }
             type_def.push(')');
@@ -14488,9 +14542,8 @@ fn render_inline_lookup_member(
             let typedef = format!("{sm_snake}_{id_snake}_t");
             let func_name = format!("{sm_snake}_lookup_{id_snake}");
             let input_snake = filters::to_snake_case(input_id.to_string());
-            let const_name = |v: &str| -> String {
-                format!("{sm_upper}_{id_upper}_{}", v.to_uppercase())
-            };
+            let const_name =
+                |v: &str| -> String { format!("{sm_upper}_{id_upper}_{}", v.to_uppercase()) };
 
             let mut code = String::new();
             code.push_str(&format!(
@@ -14635,11 +14688,7 @@ fn render_inline_codec_member(
             code.push_str(&format!("    // SCE Forge: Inline codec '{id}'\n"));
             code.push_str(&format!("    struct {struct_name} {{\n"));
             for f in codec_fields {
-                code.push_str(&format!(
-                    "        {} {};\n",
-                    cpp_type(&f.sce_type),
-                    f.id
-                ));
+                code.push_str(&format!("        {} {};\n", cpp_type(&f.sce_type), f.id));
             }
             code.push_str(&format!(
                 "\n        static std::optional<{struct_name}> decode(::SCE::Forge::SceCursor& cursor) {{\n\
@@ -14648,7 +14697,13 @@ fn render_inline_codec_member(
                  \x20           {struct_name} value{{\n"
             ));
             for f in codec_fields {
-                let decode = generate_decode_expr(f, default_endian, Language::Cpp, resolve_length_field_byte_off(codec_fields, f), codec_fields);
+                let decode = generate_decode_expr(
+                    f,
+                    default_endian,
+                    Language::Cpp,
+                    resolve_length_field_byte_off(codec_fields, f),
+                    codec_fields,
+                );
                 code.push_str(&format!("                .{} = {},\n", f.id, decode));
             }
             code.push_str("            };\n");
@@ -14656,8 +14711,7 @@ fn render_inline_codec_member(
                 "            if (!cursor.advance({min_bytes})) return std::nullopt;\n\
                  \x20           return value;\n        }}\n"
             ));
-            let encode_exprs =
-                generate_encode_exprs(codec_fields, default_endian, Language::Cpp);
+            let encode_exprs = generate_encode_exprs(codec_fields, default_endian, Language::Cpp);
             code.push_str(
                 "\n        std::vector<uint8_t> encode() const {\n            return {\n",
             );
@@ -14689,7 +14743,13 @@ fn render_inline_codec_member(
                  \x20               val value = {struct_name}(\n"
             ));
             for f in codec_fields {
-                let decode = generate_decode_expr(f, default_endian, Language::Kotlin, resolve_length_field_byte_off(codec_fields, f), codec_fields);
+                let decode = generate_decode_expr(
+                    f,
+                    default_endian,
+                    Language::Kotlin,
+                    resolve_length_field_byte_off(codec_fields, f),
+                    codec_fields,
+                );
                 code.push_str(&format!("                    {},\n", decode));
             }
             code.push_str("                )\n");
@@ -14699,9 +14759,7 @@ fn render_inline_codec_member(
             ));
             let encode_exprs =
                 generate_encode_exprs(codec_fields, default_endian, Language::Kotlin);
-            code.push_str(
-                "        fun encode(): ByteArray = byteArrayOf(\n",
-            );
+            code.push_str("        fun encode(): ByteArray = byteArrayOf(\n");
             for (i, expr_str) in encode_exprs.iter().enumerate() {
                 let comma = if i < encode_exprs.len() - 1 { "," } else { "" };
                 code.push_str(&format!("            {expr_str}{comma}\n"));
@@ -14713,7 +14771,9 @@ fn render_inline_codec_member(
         Language::Rust => {
             let mut type_def = String::new();
             type_def.push_str(&format!("// SCE Forge: Inline codec '{id}'\n"));
-            type_def.push_str(&format!("#[derive(Debug, Clone)]\npub struct {struct_name} {{\n"));
+            type_def.push_str(&format!(
+                "#[derive(Debug, Clone)]\npub struct {struct_name} {{\n"
+            ));
             for f in codec_fields {
                 let field_id = filters::to_snake_case(f.id.clone());
                 type_def.push_str(&format!(
@@ -14730,7 +14790,13 @@ fn render_inline_codec_member(
                  \x20       let value = Self {{\n"
             ));
             for f in codec_fields {
-                let decode = generate_decode_expr(f, default_endian, Language::Rust, resolve_length_field_byte_off(codec_fields, f), codec_fields);
+                let decode = generate_decode_expr(
+                    f,
+                    default_endian,
+                    Language::Rust,
+                    resolve_length_field_byte_off(codec_fields, f),
+                    codec_fields,
+                );
                 let field_id = filters::to_snake_case(f.id.clone());
                 type_def.push_str(&format!("            {field_id}: {decode},\n"));
             }
@@ -14738,8 +14804,7 @@ fn render_inline_codec_member(
             type_def.push_str(&format!(
                 "        cursor.advance({min_bytes})?;\n        Ok(value)\n    }}\n\n"
             ));
-            let encode_exprs =
-                generate_encode_exprs(codec_fields, default_endian, Language::Rust);
+            let encode_exprs = generate_encode_exprs(codec_fields, default_endian, Language::Rust);
             type_def.push_str("    pub fn encode(&self) -> Vec<u8> {\n        vec![\n");
             for (i, expr_str) in encode_exprs.iter().enumerate() {
                 let comma = if i < encode_exprs.len() - 1 { "," } else { "" };
@@ -14755,11 +14820,7 @@ fn render_inline_codec_member(
             type_def.push_str(&format!("type {struct_name} struct {{\n"));
             for f in codec_fields {
                 let field_id = filters::to_pascal_case(f.id.clone());
-                type_def.push_str(&format!(
-                    "\t{} {}\n",
-                    field_id,
-                    go_type(&f.sce_type)
-                ));
+                type_def.push_str(&format!("\t{} {}\n", field_id, go_type(&f.sce_type)));
             }
             type_def.push_str("}\n\n");
             // Inline-codec import path: emitted by state_machine.go
@@ -14767,7 +14828,8 @@ fn render_inline_codec_member(
             // import block. Hard-code the codec runtime package import
             // here so the inline emit compiles without a separate go.mod
             // dependency surface from the host statechart file.
-            type_def.push_str("// codec runtime import for cursor-based decode (RFC §5.B L494-519)\n");
+            type_def
+                .push_str("// codec runtime import for cursor-based decode (RFC §5.B L494-519)\n");
             type_def.push_str("// import \"github.com/newmassrael/sce-forge-runtime/codec\"\n");
             type_def.push_str(&format!(
                 "func Decode{struct_name}(cursor *codec.SceCursor) (*{struct_name}, error) {{\n\
@@ -14778,7 +14840,13 @@ fn render_inline_codec_member(
                  \tvalue := &{struct_name}{{\n"
             ));
             for f in codec_fields {
-                let decode = generate_decode_expr(f, default_endian, Language::Go, resolve_length_field_byte_off(codec_fields, f), codec_fields);
+                let decode = generate_decode_expr(
+                    f,
+                    default_endian,
+                    Language::Go,
+                    resolve_length_field_byte_off(codec_fields, f),
+                    codec_fields,
+                );
                 let field_id = filters::to_pascal_case(f.id.clone());
                 type_def.push_str(&format!("\t\t{field_id}: {decode},\n"));
             }
@@ -14786,8 +14854,7 @@ fn render_inline_codec_member(
                 "\t}}\n\tif err := cursor.Advance({min_bytes}); err != nil {{\n\
                  \t\treturn nil, err\n\t}}\n\treturn value, nil\n}}\n\n"
             ));
-            let encode_exprs =
-                generate_encode_exprs(codec_fields, default_endian, Language::Go);
+            let encode_exprs = generate_encode_exprs(codec_fields, default_endian, Language::Go);
             type_def.push_str(&format!(
                 "func (s *{struct_name}) Encode() []byte {{\n\treturn []byte{{\n"
             ));
@@ -14824,7 +14891,13 @@ fn render_inline_codec_member(
                  \x20           value = {struct_name}(\n"
             ));
             for f in codec_fields {
-                let decode = generate_decode_expr(f, default_endian, Language::Python, resolve_length_field_byte_off(codec_fields, f), codec_fields);
+                let decode = generate_decode_expr(
+                    f,
+                    default_endian,
+                    Language::Python,
+                    resolve_length_field_byte_off(codec_fields, f),
+                    codec_fields,
+                );
                 code.push_str(&format!("                {decode},\n"));
             }
             code.push_str("            )\n");
@@ -14885,7 +14958,13 @@ fn render_inline_codec_member(
             ));
             for f in codec_fields {
                 let field_id = filters::to_snake_case(f.id.clone());
-                let decode = generate_decode_expr(f, default_endian, Language::C11, resolve_length_field_byte_off(codec_fields, f), codec_fields);
+                let decode = generate_decode_expr(
+                    f,
+                    default_endian,
+                    Language::C11,
+                    resolve_length_field_byte_off(codec_fields, f),
+                    codec_fields,
+                );
                 code.push_str(&format!("    out->{field_id} = {decode};\n"));
             }
             code.push_str(&format!(
@@ -14893,8 +14972,7 @@ fn render_inline_codec_member(
                  \x20   return SCE_FORGE_CODEC_OK;\n}}\n\n"
             ));
 
-            let encode_exprs =
-                generate_encode_exprs(codec_fields, default_endian, Language::C11);
+            let encode_exprs = generate_encode_exprs(codec_fields, default_endian, Language::C11);
             code.push_str(&format!(
                 "static inline {encoded_typedef} {encode_func}(const {struct_typedef} *self) {{\n\
                  \x20   {encoded_typedef} r;\n\
@@ -14952,7 +15030,8 @@ impl LangCtx {
 
     /// Format a full parameter list string from fields.
     fn param_str(&self, fields: &[ForgeField]) -> String {
-        fields.iter()
+        fields
+            .iter()
             .map(|f| self.format_param(&f.id, &f.sce_type))
             .collect::<Vec<_>>()
             .join(", ")
@@ -14962,18 +15041,24 @@ impl LangCtx {
     /// placement order, and reference/borrow semantics.
     fn format_param(&self, id: &str, ty: &SceType) -> String {
         match self.lang {
-            crate::generator::Language::Cpp =>
-                format!("{} {}", cpp_param_type(ty), id),
-            crate::generator::Language::Kotlin =>
-                format!("{}: {}", id, kotlin_type(ty)),
-            crate::generator::Language::Rust =>
-                format!("{}: {}", filters::to_snake_case(id.to_string()), rust_param_type(ty)),
-            crate::generator::Language::Go =>
-                format!("{} {}", go_escape_builtin(id), go_type(ty)),
-            crate::generator::Language::Python =>
-                format!("{}: {}", filters::to_snake_case(id.to_string()), python_type(ty)),
-            crate::generator::Language::C11 =>
-                format!("{} {}", c_param_type(ty), filters::to_snake_case(id.to_string())),
+            crate::generator::Language::Cpp => format!("{} {}", cpp_param_type(ty), id),
+            crate::generator::Language::Kotlin => format!("{}: {}", id, kotlin_type(ty)),
+            crate::generator::Language::Rust => format!(
+                "{}: {}",
+                filters::to_snake_case(id.to_string()),
+                rust_param_type(ty)
+            ),
+            crate::generator::Language::Go => format!("{} {}", go_escape_builtin(id), go_type(ty)),
+            crate::generator::Language::Python => format!(
+                "{}: {}",
+                filters::to_snake_case(id.to_string()),
+                python_type(ty)
+            ),
+            crate::generator::Language::C11 => format!(
+                "{} {}",
+                c_param_type(ty),
+                filters::to_snake_case(id.to_string())
+            ),
         }
     }
 
@@ -14982,10 +15067,8 @@ impl LangCtx {
         match self.lang {
             crate::generator::Language::Rust
             | crate::generator::Language::Python
-            | crate::generator::Language::C11 =>
-                filters::to_snake_case(id.to_string()),
-            crate::generator::Language::Go =>
-                go_escape_builtin(id),
+            | crate::generator::Language::C11 => filters::to_snake_case(id.to_string()),
+            crate::generator::Language::Go => go_escape_builtin(id),
             _ => id.to_string(),
         }
     }
@@ -15025,19 +15108,31 @@ impl LangCtx {
         m.insert("struct_name".into(), struct_name.clone().into());
         match self.lang {
             crate::generator::Language::Cpp => {
-                m.insert("guard".into(), format!("SCE_FORGE_{}_H", to_upper_snake(name)).into());
+                m.insert(
+                    "guard".into(),
+                    format!("SCE_FORGE_{}_H", to_upper_snake(name)).into(),
+                );
                 m.insert("namespace".into(), struct_name.into());
             }
             crate::generator::Language::Go => {
-                m.insert("package".into(), filters::to_snake_case(name.to_string()).into());
+                m.insert(
+                    "package".into(),
+                    filters::to_snake_case(name.to_string()).into(),
+                );
             }
             crate::generator::Language::Kotlin => {
-                m.insert("package".into(), filters::to_snake_case(name.to_string()).into());
+                m.insert(
+                    "package".into(),
+                    filters::to_snake_case(name.to_string()).into(),
+                );
             }
             crate::generator::Language::C11 => {
                 // C has no namespace concept — only the include guard differs
                 // from Cpp, dropping the C++ name-mangling-sensitive tail.
-                m.insert("guard".into(), format!("SCE_FORGE_{}_H", to_upper_snake(name)).into());
+                m.insert(
+                    "guard".into(),
+                    format!("SCE_FORGE_{}_H", to_upper_snake(name)).into(),
+                );
             }
             _ => {}
         }
@@ -15063,7 +15158,6 @@ impl LangCtx {
             .collect()
     }
 
-
     /// Language-specific literal formatting for typed constant arrays.
     fn literal(&self, val: &str, ty: &SceType) -> String {
         match self.lang {
@@ -15083,7 +15177,8 @@ impl LangCtx {
         kind: &str,
     ) -> Result<minijinja::Template<'a, 'a>, ForgeError> {
         let name = format!("{}.{}.jinja2", kind, self.template_ext());
-        env.get_template(&name).map_err(|e| GenerateError::TemplateLoad(e.to_string()).into())
+        env.get_template(&name)
+            .map_err(|e| GenerateError::TemplateLoad(e.to_string()).into())
     }
 
     /// Render a template from a serde_json::Map context.
@@ -15106,8 +15201,14 @@ impl LangCtx {
     ) {
         let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
         ctx.insert("has_imports".into(), has_imports.into());
-        ctx.insert("imports".into(), serde_json::to_value(&stateful_imports).unwrap_or_default());
-        ctx.insert("all_imports".into(), serde_json::to_value(&all_imports).unwrap_or_default());
+        ctx.insert(
+            "imports".into(),
+            serde_json::to_value(&stateful_imports).unwrap_or_default(),
+        );
+        ctx.insert(
+            "all_imports".into(),
+            serde_json::to_value(&all_imports).unwrap_or_default(),
+        );
     }
 
     // ── Codec-specific helpers ──────────────────────────────────
@@ -15130,8 +15231,7 @@ impl LangCtx {
             crate::generator::Language::Go => filters::to_pascal_case(id.to_string()),
             crate::generator::Language::Rust
             | crate::generator::Language::Python
-            | crate::generator::Language::C11 =>
-                filters::to_snake_case(id.to_string()),
+            | crate::generator::Language::C11 => filters::to_snake_case(id.to_string()),
             _ => id.to_string(),
         }
     }
@@ -15139,14 +15239,13 @@ impl LangCtx {
     /// Self/receiver prefix for codec encode field references.
     fn codec_field_ref(&self, name: &str) -> String {
         match self.lang {
-            crate::generator::Language::Rust | crate::generator::Language::Python =>
-                format!("self.{name}"),
-            crate::generator::Language::Go =>
-                format!("s.{name}"),
+            crate::generator::Language::Rust | crate::generator::Language::Python => {
+                format!("self.{name}")
+            }
+            crate::generator::Language::Go => format!("s.{name}"),
             // C11's encode is a free function `encode(const struct_t *self)`
             // so member access goes through the pointer with `->`.
-            crate::generator::Language::C11 =>
-                format!("self->{name}"),
+            crate::generator::Language::C11 => format!("self->{name}"),
             _ => name.to_string(),
         }
     }
@@ -15154,18 +15253,12 @@ impl LangCtx {
     /// Cast expression to byte (uint8) for encode.
     fn codec_to_byte(&self, expr: &str) -> String {
         match self.lang {
-            crate::generator::Language::Cpp =>
-                format!("static_cast<uint8_t>({expr})"),
-            crate::generator::Language::Kotlin =>
-                format!("({expr}).toByte()"),
-            crate::generator::Language::Rust =>
-                format!("({expr}) as u8"),
-            crate::generator::Language::Go =>
-                format!("byte({expr})"),
-            crate::generator::Language::Python =>
-                format!("({expr}) & 0xFF"),
-            crate::generator::Language::C11 =>
-                format!("(uint8_t)({expr})"),
+            crate::generator::Language::Cpp => format!("static_cast<uint8_t>({expr})"),
+            crate::generator::Language::Kotlin => format!("({expr}).toByte()"),
+            crate::generator::Language::Rust => format!("({expr}) as u8"),
+            crate::generator::Language::Go => format!("byte({expr})"),
+            crate::generator::Language::Python => format!("({expr}) & 0xFF"),
+            crate::generator::Language::C11 => format!("(uint8_t)({expr})"),
         }
     }
 
@@ -15182,17 +15275,20 @@ impl LangCtx {
         match self.lang {
             crate::generator::Language::Rust
             | crate::generator::Language::Python
-            | crate::generator::Language::C11 =>
-                format!("prev_{}", filters::to_snake_case(id.to_string())),
-            _ =>
-                format!("prev{}", filters::to_pascal_case(self.local_id(id))),
+            | crate::generator::Language::C11 => {
+                format!("prev_{}", filters::to_snake_case(id.to_string()))
+            }
+            _ => format!("prev{}", filters::to_pascal_case(self.local_id(id))),
         }
     }
 }
 
 /// Build a rename HashMap from pre-computed (original, escaped) pairs.
 fn rename_map(pairs: &[(String, String)]) -> std::collections::HashMap<&str, &str> {
-    pairs.iter().map(|(f, t)| (f.as_str(), t.as_str())).collect()
+    pairs
+        .iter()
+        .map(|(f, t)| (f.as_str(), t.as_str()))
+        .collect()
 }
 
 fn render_phase3(
@@ -15233,8 +15329,14 @@ fn render_filter(
     ctx.insert("window".into(), serde_json::json!(m.window));
     ctx.insert("alpha".into(), serde_json::json!(m.alpha));
     ctx.insert("has_imports".into(), has_imports.into());
-    ctx.insert("imports".into(), serde_json::to_value(&stateful_imports).unwrap_or_default());
-    ctx.insert("all_imports".into(), serde_json::to_value(&all_imports).unwrap_or_default());
+    ctx.insert(
+        "imports".into(),
+        serde_json::to_value(&stateful_imports).unwrap_or_default(),
+    );
+    ctx.insert(
+        "all_imports".into(),
+        serde_json::to_value(&all_imports).unwrap_or_default(),
+    );
 
     // RFC §5.J.2 Phase E-1: C11 emits per-fixture state struct + free
     // functions (`<snake>_t`, `<snake>_update`, `<snake>_reset`) instead
@@ -15267,29 +15369,38 @@ fn render_interpolation(
     let mut ctx = l.base_context(&m.name);
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
-    let axes: Vec<serde_json::Value> = m.axes.iter().map(|a| {
-        let var_name = match lang {
-            crate::generator::Language::Go =>
-                format!("axis{}", filters::to_pascal_case(a.input_id.clone())),
-            _ => format!("AXIS_{}", a.input_id.to_uppercase()),
-        };
-        serde_json::json!({
-            "input_id": a.input_id,
-            // RFC §5.J.2 Phase E-3: C11 uses snake_case parameter names
-            // (matches `param_str` C11 arm at line 5113); cpp/Kotlin keep
-            // camelCase, Rust/Python/Go use their own conventions emitted
-            // through `param_str`. The template references this only when
-            // lang=C11 — other backends ignore the field.
-            "input_id_snake": filters::to_snake_case(a.input_id.clone()),
-            "var_name": var_name,
-            "breakpoints": a.breakpoints,
-            "size": a.breakpoints.len(),
+    let axes: Vec<serde_json::Value> = m
+        .axes
+        .iter()
+        .map(|a| {
+            let var_name = match lang {
+                crate::generator::Language::Go => {
+                    format!("axis{}", filters::to_pascal_case(a.input_id.clone()))
+                }
+                _ => format!("AXIS_{}", a.input_id.to_uppercase()),
+            };
+            serde_json::json!({
+                "input_id": a.input_id,
+                // RFC §5.J.2 Phase E-3: C11 uses snake_case parameter names
+                // (matches `param_str` C11 arm at line 5113); cpp/Kotlin keep
+                // camelCase, Rust/Python/Go use their own conventions emitted
+                // through `param_str`. The template references this only when
+                // lang=C11 — other backends ignore the field.
+                "input_id_snake": filters::to_snake_case(a.input_id.clone()),
+                "var_name": var_name,
+                "breakpoints": a.breakpoints,
+                "size": a.breakpoints.len(),
+            })
         })
-    }).collect();
+        .collect();
 
     let is_bilinear = m.method == InterpolationMethod::Bilinear;
     let rows = m.axes[0].breakpoints.len();
-    let cols = if is_bilinear { m.axes[1].breakpoints.len() } else { 0 };
+    let cols = if is_bilinear {
+        m.axes[1].breakpoints.len()
+    } else {
+        0
+    };
 
     ctx.insert("is_bilinear".into(), is_bilinear.into());
     ctx.insert("axes".into(), serde_json::json!(axes));
@@ -15300,8 +15411,14 @@ fn render_interpolation(
     ctx.insert("params".into(), l.param_str(&m.inputs).into());
     ctx.insert("out_of_bounds".into(), m.out_of_bounds.as_str().into());
     ctx.insert("has_imports".into(), has_imports.into());
-    ctx.insert("imports".into(), serde_json::to_value(&stateful_imports).unwrap_or_default());
-    ctx.insert("all_imports".into(), serde_json::to_value(&all_imports).unwrap_or_default());
+    ctx.insert(
+        "imports".into(),
+        serde_json::to_value(&stateful_imports).unwrap_or_default(),
+    );
+    ctx.insert(
+        "all_imports".into(),
+        serde_json::to_value(&all_imports).unwrap_or_default(),
+    );
 
     // RFC §5.J.2 Phase E-3: C11 bakes the linear/bilinear algorithm
     // inline per fixture (no runtime header surface). Adds `<snake>` so
@@ -15314,7 +15431,11 @@ fn render_interpolation(
         );
     }
 
-    render_phase3(env, &format!("interpolation.{}.jinja2", l.template_ext()), ctx)
+    render_phase3(
+        env,
+        &format!("interpolation.{}.jinja2", l.template_ext()),
+        ctx,
+    )
 }
 
 // ── Timer (unified) ───────────────────────────────────────────
@@ -15381,8 +15502,14 @@ fn render_timer(
         );
     }
     ctx.insert("has_imports".into(), has_imports.into());
-    ctx.insert("imports".into(), serde_json::to_value(&stateful_imports).unwrap_or_default());
-    ctx.insert("all_imports".into(), serde_json::to_value(&all_imports).unwrap_or_default());
+    ctx.insert(
+        "imports".into(),
+        serde_json::to_value(&stateful_imports).unwrap_or_default(),
+    );
+    ctx.insert(
+        "all_imports".into(),
+        serde_json::to_value(&all_imports).unwrap_or_default(),
+    );
 
     if matches!(lang, crate::generator::Language::C11) {
         ctx.insert(
@@ -15409,53 +15536,58 @@ fn render_observer(
     let obs_type_ctx = crate::forge::type_ctx::observer(m, imports);
     let obs_empty_renames = std::collections::HashMap::new();
 
-    let monitors: Vec<serde_json::Value> = m.monitors.iter().map(|mon| {
-        let enter_expr = expr::transpile_typed(
-            &mon.enter_expr,
-            l.expr_target(),
-            &obs_type_ctx,
-            &obs_empty_renames,
-            crate::forge::types::InferredType::Bool,
-        )
-        .unwrap_or_default();
-        let leave_expr = mon.leave_expr.as_ref().map(|e| {
-            expr::transpile_typed(
-                e,
+    let monitors: Vec<serde_json::Value> = m
+        .monitors
+        .iter()
+        .map(|mon| {
+            let enter_expr = expr::transpile_typed(
+                &mon.enter_expr,
                 l.expr_target(),
                 &obs_type_ctx,
                 &obs_empty_renames,
                 crate::forge::types::InferredType::Bool,
             )
-            .unwrap_or_default()
-        });
+            .unwrap_or_default();
+            let leave_expr = mon.leave_expr.as_ref().map(|e| {
+                expr::transpile_typed(
+                    e,
+                    l.expr_target(),
+                    &obs_type_ctx,
+                    &obs_empty_renames,
+                    crate::forge::types::InferredType::Bool,
+                )
+                .unwrap_or_default()
+            });
 
-        let active_var = match lang {
-            crate::generator::Language::Cpp => format!("{}Active_", mon.id),
-            crate::generator::Language::Kotlin => format!("{}Active", mon.id),
-            crate::generator::Language::Go => format!("{}Active", mon.id),
-            // C11 follows Rust/Python's snake_case "<id>_active" convention.
-            // The bake-at-codegen observer template (RFC §5.J.2 Phase E-2)
-            // emits these as bool fields on the `<snake>_t` state struct,
-            // mirroring the cpp ThresholdState::active_ flag bit-for-bit.
-            crate::generator::Language::Rust
-            | crate::generator::Language::Python
-            | crate::generator::Language::C11 =>
-                format!("{}_active", filters::to_snake_case(mon.id.clone())),
-        };
+            let active_var = match lang {
+                crate::generator::Language::Cpp => format!("{}Active_", mon.id),
+                crate::generator::Language::Kotlin => format!("{}Active", mon.id),
+                crate::generator::Language::Go => format!("{}Active", mon.id),
+                // C11 follows Rust/Python's snake_case "<id>_active" convention.
+                // The bake-at-codegen observer template (RFC §5.J.2 Phase E-2)
+                // emits these as bool fields on the `<snake>_t` state struct,
+                // mirroring the cpp ThresholdState::active_ flag bit-for-bit.
+                crate::generator::Language::Rust
+                | crate::generator::Language::Python
+                | crate::generator::Language::C11 => {
+                    format!("{}_active", filters::to_snake_case(mon.id.clone()))
+                }
+            };
 
-        serde_json::json!({
-            "id": mon.id,
-            "active_var": active_var,
-            "enter_expr": enter_expr,
-            "leave_expr": leave_expr,
-            "has_leave": mon.leave_expr.is_some(),
-            "on_enter": mon.on_enter,
-            "on_leave": mon.on_leave,
-            "has_on_leave": mon.on_leave.is_some(),
-            "event_enter": l.event_name(&mon.on_enter),
-            "event_leave": mon.on_leave.as_ref().map(|s| l.event_name(s)),
+            serde_json::json!({
+                "id": mon.id,
+                "active_var": active_var,
+                "enter_expr": enter_expr,
+                "leave_expr": leave_expr,
+                "has_leave": mon.leave_expr.is_some(),
+                "on_enter": mon.on_enter,
+                "on_leave": mon.on_leave,
+                "has_on_leave": mon.on_leave.is_some(),
+                "event_enter": l.event_name(&mon.on_enter),
+                "event_leave": mon.on_leave.as_ref().map(|s| l.event_name(s)),
+            })
         })
-    }).collect();
+        .collect();
 
     let mut events = Vec::new();
     for mon in &m.monitors {
@@ -15471,8 +15603,14 @@ fn render_observer(
     ctx.insert("has_event_domain".into(), m.event_domain.is_some().into());
     ctx.insert("event_domain".into(), serde_json::json!(m.event_domain));
     ctx.insert("has_imports".into(), has_imports.into());
-    ctx.insert("imports".into(), serde_json::to_value(&stateful_imports).unwrap_or_default());
-    ctx.insert("all_imports".into(), serde_json::to_value(&all_imports).unwrap_or_default());
+    ctx.insert(
+        "imports".into(),
+        serde_json::to_value(&stateful_imports).unwrap_or_default(),
+    );
+    ctx.insert(
+        "all_imports".into(),
+        serde_json::to_value(&all_imports).unwrap_or_default(),
+    );
 
     // RFC §5.J.2 Phase E-2: C11 emits per-fixture state struct + tag enum
     // + fixed-cap event queue inline (no runtime header surface). Adds
@@ -15594,21 +15732,25 @@ fn collect_algorithm_local_types(
         match s {
             AlgorithmStmt::Var { name, sce_type, .. } => {
                 if !seen.insert(name.clone()) {
-                    return Err(crate::forge::error::ValidationError::AlgorithmLocalShadowsParam {
-                        name: name.clone(),
-                        what: "another binding (param or earlier local)".into(),
-                    }
-                    .into());
+                    return Err(
+                        crate::forge::error::ValidationError::AlgorithmLocalShadowsParam {
+                            name: name.clone(),
+                            what: "another binding (param or earlier local)".into(),
+                        }
+                        .into(),
+                    );
                 }
                 out.push((name.clone(), sce_type.clone()));
             }
             AlgorithmStmt::Foreach { item, body, .. } => {
                 if !seen.insert(item.clone()) {
-                    return Err(crate::forge::error::ValidationError::AlgorithmLocalShadowsParam {
-                        name: item.clone(),
-                        what: "another binding (param or earlier local)".into(),
-                    }
-                    .into());
+                    return Err(
+                        crate::forge::error::ValidationError::AlgorithmLocalShadowsParam {
+                            name: item.clone(),
+                            what: "another binding (param or earlier local)".into(),
+                        }
+                        .into(),
+                    );
                 }
                 // Foreach over `bytes` exposes the item as Uint8.
                 out.push((item.clone(), SceType::Uint8));
@@ -15659,11 +15801,12 @@ fn lower_algorithm_body(
     // unconditionally (mutability discipline is the consumer's concern),
     // Go uses `var name T = expr` (mutability not statement-level), and
     // Python is dynamic.
-    let mut assigned: std::collections::HashSet<String> =
-        std::collections::HashSet::new();
+    let mut assigned: std::collections::HashSet<String> = std::collections::HashSet::new();
     collect_algorithm_assigned_roots(stmts, &mut assigned);
     for s in stmts {
-        lower_algorithm_stmt(s, lang, type_ctx, &l, renames, &pad, indent, &assigned, return_ty, imports, &mut out)?;
+        lower_algorithm_stmt(
+            s, lang, type_ctx, &l, renames, &pad, indent, &assigned, return_ty, imports, &mut out,
+        )?;
     }
     Ok(out.trim_end().to_string())
 }
@@ -15689,7 +15832,11 @@ fn collect_algorithm_assigned_roots(
                     out.insert(root);
                 }
             }
-            AlgorithmStmt::If { then_body, else_body, .. } => {
+            AlgorithmStmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
                 collect_algorithm_assigned_roots(then_body, out);
                 if let Some(eb) = else_body {
                     collect_algorithm_assigned_roots(eb, out);
@@ -15769,20 +15916,22 @@ fn lower_algorithm_stmt(
                     "{pad}var {local} {ty} = {init_lowered}\n",
                     ty = l.type_name(sce_type)
                 ),
-                Language::Python => format!("{pad}{local}: {ty} = {init_lowered}\n", ty = l.type_name(sce_type)),
+                Language::Python => format!(
+                    "{pad}{local}: {ty} = {init_lowered}\n",
+                    ty = l.type_name(sce_type)
+                ),
             };
             out.push_str(&line);
         }
         AlgorithmStmt::Assign { target, expr: rhs } => {
             let (lhs, lhs_ty) = expr::transpile_lvalue(target, l.expr_target(), type_ctx, renames)?;
-            let rhs_lowered = expr::transpile_typed(
-                rhs,
-                l.expr_target(),
-                type_ctx,
-                renames,
-                lhs_ty,
-            )?;
-            let semi = if matches!(lang, Language::Kotlin | Language::Python) { "" } else { ";" };
+            let rhs_lowered =
+                expr::transpile_typed(rhs, l.expr_target(), type_ctx, renames, lhs_ty)?;
+            let semi = if matches!(lang, Language::Kotlin | Language::Python) {
+                ""
+            } else {
+                ";"
+            };
             out.push_str(&format!("{pad}{lhs} = {rhs_lowered}{semi}\n"));
         }
         AlgorithmStmt::If {
@@ -15808,12 +15957,36 @@ fn lower_algorithm_stmt(
                     out.push_str(&format!("{pad}if {cond_lowered}:\n"));
                     let inner_pad = "    ".repeat(indent + 1);
                     for st in then_body {
-                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, return_ty, imports, out)?;
+                        lower_algorithm_stmt(
+                            st,
+                            lang,
+                            type_ctx,
+                            l,
+                            renames,
+                            &inner_pad,
+                            indent + 1,
+                            assigned,
+                            return_ty,
+                            imports,
+                            out,
+                        )?;
                     }
                     if let Some(eb) = else_body {
                         out.push_str(&format!("{pad}else:\n"));
                         for st in eb {
-                            lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, return_ty, imports, out)?;
+                            lower_algorithm_stmt(
+                                st,
+                                lang,
+                                type_ctx,
+                                l,
+                                renames,
+                                &inner_pad,
+                                indent + 1,
+                                assigned,
+                                return_ty,
+                                imports,
+                                out,
+                            )?;
                         }
                     }
                 }
@@ -15825,19 +15998,47 @@ fn lower_algorithm_stmt(
                     out.push_str(&header_open);
                     let inner_pad = "    ".repeat(indent + 1);
                     for st in then_body {
-                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, return_ty, imports, out)?;
+                        lower_algorithm_stmt(
+                            st,
+                            lang,
+                            type_ctx,
+                            l,
+                            renames,
+                            &inner_pad,
+                            indent + 1,
+                            assigned,
+                            return_ty,
+                            imports,
+                            out,
+                        )?;
                     }
                     if let Some(eb) = else_body {
                         out.push_str(&format!("{pad}}} else {{\n"));
                         for st in eb {
-                            lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, return_ty, imports, out)?;
+                            lower_algorithm_stmt(
+                                st,
+                                lang,
+                                type_ctx,
+                                l,
+                                renames,
+                                &inner_pad,
+                                indent + 1,
+                                assigned,
+                                return_ty,
+                                imports,
+                                out,
+                            )?;
                         }
                     }
                     out.push_str(&format!("{pad}}}\n"));
                 }
             }
         }
-        AlgorithmStmt::While { cond, body, max_iter } => {
+        AlgorithmStmt::While {
+            cond,
+            body,
+            max_iter,
+        } => {
             let cond_lowered = expr::transpile_typed(
                 cond,
                 l.expr_target(),
@@ -15846,14 +16047,26 @@ fn lower_algorithm_stmt(
                 InferredType::Bool,
             )?;
             let _ = max_iter; // RFC §5.A runtime-counter guard lands in A4 (build-time fold).
-            // Same paren policy as `if` above — Rust loop conditions
-            // refuse the C-flavoured paren wrap under unused_parens.
+                              // Same paren policy as `if` above — Rust loop conditions
+                              // refuse the C-flavoured paren wrap under unused_parens.
             match lang {
                 Language::Python => {
                     out.push_str(&format!("{pad}while {cond_lowered}:\n"));
                     let inner_pad = "    ".repeat(indent + 1);
                     for st in body {
-                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, return_ty, imports, out)?;
+                        lower_algorithm_stmt(
+                            st,
+                            lang,
+                            type_ctx,
+                            l,
+                            renames,
+                            &inner_pad,
+                            indent + 1,
+                            assigned,
+                            return_ty,
+                            imports,
+                            out,
+                        )?;
                     }
                 }
                 _ => {
@@ -15869,7 +16082,19 @@ fn lower_algorithm_stmt(
                     out.push_str(&header_open);
                     let inner_pad = "    ".repeat(indent + 1);
                     for st in body {
-                        lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, indent + 1, assigned, return_ty, imports, out)?;
+                        lower_algorithm_stmt(
+                            st,
+                            lang,
+                            type_ctx,
+                            l,
+                            renames,
+                            &inner_pad,
+                            indent + 1,
+                            assigned,
+                            return_ty,
+                            imports,
+                            out,
+                        )?;
                     }
                     out.push_str(&format!("{pad}}}\n"));
                 }
@@ -15887,10 +16112,9 @@ fn lower_algorithm_stmt(
             // `algorithm/foreach-source-not-iterable` rejects sources
             // that resolve to neither, so by the time codegen runs we
             // trust source matches one branch.
-            let bc_import = imports
-                .iter()
-                .find(|imp| imp.alias.as_str() == source.as_str()
-                    && imp.kind == "bounded-collection");
+            let bc_import = imports.iter().find(|imp| {
+                imp.alias.as_str() == source.as_str() && imp.kind == "bounded-collection"
+            });
             if let Some(imp) = bc_import {
                 // RFC §5.A v1 + §5.L line 2642-2647 (Q-C7-10 (a)
                 // diagnostic surface, C7-lowering 2026-05-13): the BC
@@ -15905,7 +16129,12 @@ fn lower_algorithm_stmt(
                 // field access (e.g. `entry.callback_id` instead of a
                 // separate `<sce:var name="b" type="uint8"/>`).
                 for st in body {
-                    if let AlgorithmStmt::Var { name: var_name, sce_type, .. } = st {
+                    if let AlgorithmStmt::Var {
+                        name: var_name,
+                        sce_type,
+                        ..
+                    } = st
+                    {
                         if matches!(sce_type, SceType::Uint8) {
                             return Err(crate::forge::error::ValidationError::AlgorithmForeachSourceBcWithBytesItemType {
                                 src: source.clone(),
@@ -15959,9 +16188,7 @@ fn lower_algorithm_stmt(
                         out.push_str(&format!(
                             "{pad}    auto {it}_opt = {alias}.get_by_slot(slot_idx);\n"
                         ));
-                        out.push_str(&format!(
-                            "{pad}    if ({it}_opt.has_value()) {{\n"
-                        ));
+                        out.push_str(&format!("{pad}    if ({it}_opt.has_value()) {{\n"));
                         out.push_str(&format!(
                             "{pad}        const auto& {it} = {it}_opt.value();\n"
                         ));
@@ -15999,9 +16226,7 @@ fn lower_algorithm_stmt(
                             "{pad}    const {element_snake}_t *{it}_ptr = {snake}_get_by_slot({alias}, slot_idx);\n"
                         ));
                         out.push_str(&format!("{pad}    if ({it}_ptr == NULL) continue;\n"));
-                        out.push_str(&format!(
-                            "{pad}    {element_snake}_t {it} = *{it}_ptr;\n"
-                        ));
+                        out.push_str(&format!("{pad}    {element_snake}_t {it} = *{it}_ptr;\n"));
                         out.push_str(&format!("{pad}    {{\n"));
                     }
                     Language::Kotlin => {
@@ -16042,17 +16267,24 @@ fn lower_algorithm_stmt(
                         out.push_str(&format!(
                             "{pad}for slot_idx in range({type_name}.capacity()):\n"
                         ));
-                        out.push_str(&format!(
-                            "{pad}    {it} = {alias}.get_by_slot(slot_idx)\n"
-                        ));
+                        out.push_str(&format!("{pad}    {it} = {alias}.get_by_slot(slot_idx)\n"));
                         out.push_str(&format!("{pad}    if {it} is None:\n"));
                         out.push_str(&format!("{pad}        continue\n"));
                     }
                 }
                 for st in body {
                     lower_algorithm_stmt(
-                        st, lang, type_ctx, l, renames, &inner_pad,
-                        body_inner_indent, assigned, return_ty, imports, out,
+                        st,
+                        lang,
+                        type_ctx,
+                        l,
+                        renames,
+                        &inner_pad,
+                        body_inner_indent,
+                        assigned,
+                        return_ty,
+                        imports,
+                        out,
                     )?;
                 }
                 // Per-backend close braces. Rust/Cpp/C11 close two
@@ -16092,11 +16324,13 @@ fn lower_algorithm_stmt(
                             .map(|imp| imp.alias.clone()),
                     );
                     candidates.sort();
-                    return Err(crate::forge::error::ValidationError::AlgorithmForeachSourceNotIterable {
-                        src: source.clone(),
-                        candidates,
-                    }
-                    .into());
+                    return Err(
+                        crate::forge::error::ValidationError::AlgorithmForeachSourceNotIterable {
+                            src: source.clone(),
+                            candidates,
+                        }
+                        .into(),
+                    );
                 }
                 let src_lowered = expr::transpile_typed(
                     source,
@@ -16125,10 +16359,26 @@ fn lower_algorithm_stmt(
                     Language::Python => format!("{pad}for {it} in {src_lowered}:\n"),
                 };
                 out.push_str(&header);
-                let inner_indent = if matches!(lang, Language::Python) { indent + 1 } else { indent + 1 };
+                let inner_indent = if matches!(lang, Language::Python) {
+                    indent + 1
+                } else {
+                    indent + 1
+                };
                 let inner_pad = "    ".repeat(inner_indent);
                 for st in body {
-                    lower_algorithm_stmt(st, lang, type_ctx, l, renames, &inner_pad, inner_indent, assigned, return_ty, imports, out)?;
+                    lower_algorithm_stmt(
+                        st,
+                        lang,
+                        type_ctx,
+                        l,
+                        renames,
+                        &inner_pad,
+                        inner_indent,
+                        assigned,
+                        return_ty,
+                        imports,
+                        out,
+                    )?;
                 }
                 if !matches!(lang, Language::Python) {
                     out.push_str(&format!("{pad}}}\n"));
@@ -16145,13 +16395,8 @@ fn lower_algorithm_stmt(
                     // C/Cpp rely on implicit narrowing; Go on
                     // assignability — passing the explicit type lets
                     // every emitter route through its own coerce path.
-                    let lowered = expr::transpile_typed(
-                        rhs,
-                        l.expr_target(),
-                        type_ctx,
-                        renames,
-                        return_ty,
-                    )?;
+                    let lowered =
+                        expr::transpile_typed(rhs, l.expr_target(), type_ctx, renames, return_ty)?;
                     match lang {
                         Language::Python => format!("{pad}return {lowered}\n"),
                         Language::Kotlin => format!("{pad}return {lowered}\n"),
@@ -16178,7 +16423,11 @@ fn lower_algorithm_stmt(
                     )
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            let semi = if matches!(lang, Language::Kotlin | Language::Python) { "" } else { ";" };
+            let semi = if matches!(lang, Language::Kotlin | Language::Python) {
+                ""
+            } else {
+                ";"
+            };
 
             // RFC §5.A line 311 + §5.L line 2642-2647 (C7-lowering
             // 2026-05-13): dotted target `<sce:call
@@ -16187,9 +16436,8 @@ fn lower_algorithm_stmt(
             // emitting a sibling free-function call verbatim.
             if let Some((alias, method)) = target.split_once('.') {
                 // BC public read-only method roster (Q-C7-5 (a) lock).
-                const BC_READONLY_METHODS: &[&str] = &[
-                    "capacity", "find_by_index", "get", "get_by_slot", "len",
-                ];
+                const BC_READONLY_METHODS: &[&str] =
+                    &["capacity", "find_by_index", "get", "get_by_slot", "len"];
                 // BC mutating methods rejected by `algorithm/
                 // bc-mutation-forbidden` (Q-C7-5 (a) lock — algorithms
                 // are pure per RFC §5.A line 333).
@@ -16202,12 +16450,14 @@ fn lower_algorithm_stmt(
                         let mut candidates: Vec<String> =
                             imports.iter().map(|i| i.alias.clone()).collect();
                         candidates.sort();
-                        return Err(crate::forge::error::ValidationError::AlgorithmCallTargetUnknown {
-                            target: target.clone(),
-                            alias: alias.to_string(),
-                            candidates,
-                        }
-                        .into());
+                        return Err(
+                            crate::forge::error::ValidationError::AlgorithmCallTargetUnknown {
+                                target: target.clone(),
+                                alias: alias.to_string(),
+                                candidates,
+                            }
+                            .into(),
+                        );
                     }
                 };
 
@@ -16280,15 +16530,19 @@ fn lower_algorithm_stmt(
                 if imp.kind == "bounded-collection" {
                     // Method roster validation.
                     if BC_MUTATING_METHODS.contains(&method) {
-                        return Err(crate::forge::error::ValidationError::AlgorithmBcMutationForbidden {
-                            target: target.clone(),
-                            method: method.to_string(),
-                        }
-                        .into());
+                        return Err(
+                            crate::forge::error::ValidationError::AlgorithmBcMutationForbidden {
+                                target: target.clone(),
+                                method: method.to_string(),
+                            }
+                            .into(),
+                        );
                     }
                     if !BC_READONLY_METHODS.contains(&method) {
-                        let candidates: Vec<String> =
-                            BC_READONLY_METHODS.iter().map(|s| (*s).to_string()).collect();
+                        let candidates: Vec<String> = BC_READONLY_METHODS
+                            .iter()
+                            .map(|s| (*s).to_string())
+                            .collect();
                         return Err(crate::forge::error::ValidationError::AlgorithmCallTargetMethodUnknown {
                             target: target.clone(),
                             alias: alias.to_string(),
@@ -16306,12 +16560,14 @@ fn lower_algorithm_stmt(
                         _ => unreachable!("BC_READONLY_METHODS roster guard"),
                     };
                     if args.len() != expected_arity {
-                        return Err(crate::forge::error::ValidationError::AlgorithmCallArgCountMismatch {
-                            target: target.clone(),
-                            actual: args.len(),
-                            expected: expected_arity,
-                        }
-                        .into());
+                        return Err(
+                            crate::forge::error::ValidationError::AlgorithmCallArgCountMismatch {
+                                target: target.clone(),
+                                actual: args.len(),
+                                expected: expected_arity,
+                            }
+                            .into(),
+                        );
                     }
                     // Emit per-backend method call. C11 needs `&self`
                     // as the first arg (snake-prefix dispatch).
@@ -16336,12 +16592,14 @@ fn lower_algorithm_stmt(
                     // `validate_and_enrich_imports::discover_stateless_signature`).
                     let expected_arity = imp.param_types.len();
                     if args.len() != expected_arity {
-                        return Err(crate::forge::error::ValidationError::AlgorithmCallArgCountMismatch {
-                            target: target.clone(),
-                            actual: args.len(),
-                            expected: expected_arity,
-                        }
-                        .into());
+                        return Err(
+                            crate::forge::error::ValidationError::AlgorithmCallArgCountMismatch {
+                                target: target.clone(),
+                                actual: args.len(),
+                                expected: expected_arity,
+                            }
+                            .into(),
+                        );
                     }
                     let qualified = emit_qualified_call(lang, alias, method);
                     out.push_str(&format!(
@@ -16352,14 +16610,16 @@ fn lower_algorithm_stmt(
                     // Other kinds (codec/procedure/etc.) — out of scope
                     // per Q-C7-5 (a) lock. No closed candidate set —
                     // future RFC extensions may add cross-kind dispatch.
-                    return Err(crate::forge::error::ValidationError::AlgorithmCallTargetMethodUnknown {
-                        target: target.clone(),
-                        alias: alias.to_string(),
-                        method: method.to_string(),
-                        kind: imp.kind.clone(),
-                        candidates: Vec::new(),
-                    }
-                    .into());
+                    return Err(
+                        crate::forge::error::ValidationError::AlgorithmCallTargetMethodUnknown {
+                            target: target.clone(),
+                            alias: alias.to_string(),
+                            method: method.to_string(),
+                            kind: imp.kind.clone(),
+                            candidates: Vec::new(),
+                        }
+                        .into(),
+                    );
                 }
             } else {
                 // Bare target — sibling free-function call within the
@@ -16409,7 +16669,10 @@ fn render_algorithm(
     // `<array>`; gate the include so algorithms without array
     // consts keep their previous header surface byte-equivalent.
     let needs_std_array = m.consts.iter().any(|c| {
-        matches!(c.sce_type, crate::forge::model::AlgorithmConstType::Array { .. })
+        matches!(
+            c.sce_type,
+            crate::forge::model::AlgorithmConstType::Array { .. }
+        )
     });
     // Kotlin: `UByteArray` / `UShortArray` / `UIntArray` / `ULongArray`
     // are stable since Kotlin 1.9 but still tagged
@@ -16459,10 +16722,7 @@ fn render_algorithm(
     // resolve the access at compile time.
     for c in &m.consts {
         if let crate::forge::model::AlgorithmConstType::Array { elem, .. } = &c.sce_type {
-            type_ctx.insert_array_elem(
-                c.name.as_str(),
-                InferredType::from_sce_type(elem),
-            );
+            type_ctx.insert_array_elem(c.name.as_str(), InferredType::from_sce_type(elem));
         }
     }
 
@@ -16530,8 +16790,7 @@ fn render_algorithm(
         .collect();
     for imp in imports {
         if imp.kind == "algorithm" && !imp.qualified_call.is_empty() {
-            const_renames_owned
-                .push((imp.alias.clone(), imp.qualified_call.clone()));
+            const_renames_owned.push((imp.alias.clone(), imp.qualified_call.clone()));
         }
     }
     let const_renames: std::collections::HashMap<&str, &str> = const_renames_owned
@@ -16544,7 +16803,15 @@ fn render_algorithm(
         .as_ref()
         .map(InferredType::from_sce_type)
         .unwrap_or(InferredType::Unknown);
-    let body = lower_algorithm_body(&m.body, lang, &type_ctx, &const_renames, 1, return_ty_inferred, imports)?;
+    let body = lower_algorithm_body(
+        &m.body,
+        lang,
+        &type_ctx,
+        &const_renames,
+        1,
+        return_ty_inferred,
+        imports,
+    )?;
 
     let needs_span = m
         .signature
@@ -16554,8 +16821,14 @@ fn render_algorithm(
 
     let snake = filters::to_snake_case(m.name.clone());
     ctx.insert("name".into(), snake.clone().into());
-    ctx.insert("name_pascal".into(), filters::to_pascal_case(m.name.clone()).into());
-    ctx.insert("name_camel".into(), filters::to_camel_case(m.name.clone()).into());
+    ctx.insert(
+        "name_pascal".into(),
+        filters::to_pascal_case(m.name.clone()).into(),
+    );
+    ctx.insert(
+        "name_camel".into(),
+        filters::to_camel_case(m.name.clone()).into(),
+    );
     ctx.insert("params_str".into(), params_str.into());
     ctx.insert("return_type".into(), return_type.into());
     // RFC §5.A line 311 + Q-C7-6 (b) lock (C7-lowering 2026-05-13):
@@ -16569,8 +16842,7 @@ fn render_algorithm(
     // function emit doesn't store BC instances as members (they ride
     // through positional ref params), so the template consumes
     // `all_imports` for the include block and ignores `imports`.
-    let (has_imports, all_imports_val, stateful_imports_val) =
-        build_template_imports(imports);
+    let (has_imports, all_imports_val, stateful_imports_val) = build_template_imports(imports);
     ctx.insert("has_imports".into(), has_imports.into());
     ctx.insert(
         "imports".into(),
@@ -16657,9 +16929,8 @@ fn render_externs_sidecar(
         return Ok(None);
     }
 
-    let emits = build_extern_emit_list(extern_decls).map_err(|e| {
-        ForgeError::Generate(GenerateError::UnsupportedFeature(e.to_string()))
-    })?;
+    let emits = build_extern_emit_list(extern_decls)
+        .map_err(|e| ForgeError::Generate(GenerateError::UnsupportedFeature(e.to_string())))?;
 
     let parent_snake = filters::to_snake_case(parent_module.to_string());
     let (template_name, filename, guard) = match lang {
@@ -16716,9 +16987,7 @@ fn render_algorithm_test_vector_sidecar(
     // (else it rejects with InvalidAttribute) and that the value
     // matches a bool/integer scalar. The signature shape is enforced
     // here so the emitter can lower the hex bytes unambiguously.
-    if m.signature.params.len() != 1
-        || !matches!(m.signature.params[0].sce_type, SceType::Bytes)
-    {
+    if m.signature.params.len() != 1 || !matches!(m.signature.params[0].sce_type, SceType::Bytes) {
         return Err(ForgeError::Generate(
             crate::forge::error::GenerateError::UnsupportedFeature(format!(
                 "algorithm '{name}': <sce:test-vector> v1 only supports algorithms with a single \
@@ -16730,10 +16999,12 @@ fn render_algorithm_test_vector_sidecar(
     }
 
     let return_type = m.signature.return_type.as_ref().ok_or_else(|| {
-        ForgeError::Generate(crate::forge::error::GenerateError::UnsupportedFeature(format!(
-            "algorithm '{name}': <sce:test-vector> requires a non-void return type",
-            name = m.name,
-        )))
+        ForgeError::Generate(crate::forge::error::GenerateError::UnsupportedFeature(
+            format!(
+                "algorithm '{name}': <sce:test-vector> requires a non-void return type",
+                name = m.name,
+            ),
+        ))
     })?;
     let l = LangCtx::new(lang);
     let return_type_native = l.type_name(return_type).to_string();
@@ -16750,11 +17021,7 @@ fn render_algorithm_test_vector_sidecar(
             // algorithm's init-value branch (e.g. CRC16 returns 0xFFFF).
             "&[]".to_string()
         } else {
-            let parts: Vec<String> = tv
-                .hex
-                .iter()
-                .map(|b| format!("0x{b:02x}u8"))
-                .collect();
+            let parts: Vec<String> = tv.hex.iter().map(|b| format!("0x{b:02x}u8")).collect();
             format!("&[{}]", parts.join(", "))
         };
         let hex_bytes_literal_c = if tv.hex.is_empty() {
@@ -16790,11 +17057,7 @@ fn render_algorithm_test_vector_sidecar(
         let bytes_literal_go = if tv.hex.is_empty() {
             "[]byte{}".to_string()
         } else {
-            let parts: Vec<String> = tv
-                .hex
-                .iter()
-                .map(|b| format!("0x{b:02x}"))
-                .collect();
+            let parts: Vec<String> = tv.hex.iter().map(|b| format!("0x{b:02x}")).collect();
             format!("[]byte{{{}}}", parts.join(", "))
         };
         // Python `bytes([...])` accepts integer literals 0..255 from
@@ -16804,18 +17067,10 @@ fn render_algorithm_test_vector_sidecar(
         let bytes_literal_py = if tv.hex.is_empty() {
             "bytes()".to_string()
         } else {
-            let parts: Vec<String> = tv
-                .hex
-                .iter()
-                .map(|b| format!("0x{b:02x}"))
-                .collect();
+            let parts: Vec<String> = tv.hex.iter().map(|b| format!("0x{b:02x}")).collect();
             format!("bytes([{}])", parts.join(", "))
         };
-        let hex_str: String = tv
-            .hex
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect();
+        let hex_str: String = tv.hex.iter().map(|b| format!("{b:02x}")).collect();
 
         let (
             value_literal_rust,
@@ -17062,10 +17317,7 @@ fn render_algorithm_test_vector_sidecar(
         Language::C11 | Language::Cpp => format!("{snake}_test.h"),
         Language::Go => format!("{snake}_test.go"),
         Language::Python => format!("{snake}_test.py"),
-        Language::Kotlin => format!(
-            "{}TestVectors.kt",
-            filters::to_pascal_case(m.name.clone())
-        ),
+        Language::Kotlin => format!("{}TestVectors.kt", filters::to_pascal_case(m.name.clone())),
     };
     Ok(Some((filename, code)))
 }
@@ -17115,44 +17367,54 @@ fn render_codec_test_vector_sidecar(
     // parent-flags closures land alongside their first sidecar
     // consumer following the trunk-then-closures cadence.
     if m.variant.is_some() {
-        return Err(ForgeError::Generate(GenerateError::UnsupportedFeature(format!(
-            "codec '{name}': <sce:test-vector> on variant codec deferred to B5-θ-variant \
+        return Err(ForgeError::Generate(GenerateError::UnsupportedFeature(
+            format!(
+                "codec '{name}': <sce:test-vector> on variant codec deferred to B5-θ-variant \
              closure (decoded shape requires <sce:decoded-variant kind tag><body/></...> \
              grammar; default-arm tag preservation contract pinned at that closure)",
-            name = m.name,
-        ))));
+                name = m.name,
+            ),
+        )));
     }
     if m.has_tlv_chain_fields() {
-        return Err(ForgeError::Generate(GenerateError::UnsupportedFeature(format!(
-            "codec '{name}': <sce:test-vector> on TLV-chain codec deferred to B5-θ-tlv \
+        return Err(ForgeError::Generate(GenerateError::UnsupportedFeature(
+            format!(
+                "codec '{name}': <sce:test-vector> on TLV-chain codec deferred to B5-θ-tlv \
              closure (decoded shape requires <sce:decoded-chain field><sce:decoded-entry/></...> \
              grammar)",
-            name = m.name,
-        ))));
+                name = m.name,
+            ),
+        )));
     }
     if m.has_parent_flags() {
-        return Err(ForgeError::Generate(GenerateError::UnsupportedFeature(format!(
-            "codec '{name}': <sce:test-vector> on parent-flags-bearing codec deferred to \
+        return Err(ForgeError::Generate(GenerateError::UnsupportedFeature(
+            format!(
+                "codec '{name}': <sce:test-vector> on parent-flags-bearing codec deferred to \
              B5-θ-parent closure (round-trip oracle requires the codec be invoked as a \
              variant-arm body; standalone test invocation has no parent_flags source)",
-            name = m.name,
-        ))));
+                name = m.name,
+            ),
+        )));
     }
     if m.has_repeat_fields() {
-        return Err(ForgeError::Generate(GenerateError::UnsupportedFeature(format!(
+        return Err(ForgeError::Generate(GenerateError::UnsupportedFeature(
+            format!(
             "codec '{name}': <sce:test-vector> on repeat-bearing codec deferred to B5-θ-repeat \
              closure (decoded shape requires nested <sce:decoded-repeat field><sce:decoded-entry/> \
              grammar)",
             name = m.name,
-        ))));
+        ),
+        )));
     }
     if m.has_present_if_fields() {
-        return Err(ForgeError::Generate(GenerateError::UnsupportedFeature(format!(
-            "codec '{name}': <sce:test-vector> on present-if codec deferred to B5-θ-optional \
+        return Err(ForgeError::Generate(GenerateError::UnsupportedFeature(
+            format!(
+                "codec '{name}': <sce:test-vector> on present-if codec deferred to B5-θ-optional \
              closure (decoded shape needs absent-vs-present marker; trunk only lands on \
              always-present field codecs)",
-            name = m.name,
-        ))));
+                name = m.name,
+            ),
+        )));
     }
 
     let snake = filters::to_snake_case(m.name.clone());
@@ -17162,7 +17424,9 @@ fn render_codec_test_vector_sidecar(
     // arithmetic / wrap / cast lives next to its sibling helpers.
     let mut rows: Vec<serde_json::Value> = Vec::with_capacity(m.test_vectors.len());
     for tv in &m.test_vectors {
-        let DecodedValue::Plain { fields: decoded_fields } = &tv.decoded;
+        let DecodedValue::Plain {
+            fields: decoded_fields,
+        } = &tv.decoded;
 
         // Hex byte literals — same per-language shape as the
         // algorithm sidecar's `bytes_literal_*` rows.
@@ -17198,7 +17462,8 @@ fn render_codec_test_vector_sidecar(
                 )))
             })?;
 
-            let (rust_lit, c_lit) = lower_decoded_field_value(&df.value, &codec_field.sce_type, &m.name)?;
+            let (rust_lit, c_lit) =
+                lower_decoded_field_value(&df.value, &codec_field.sce_type, &m.name)?;
 
             field_rows.push(serde_json::json!({
                 "name_snake": filters::to_snake_case(df.name.clone()),
@@ -17242,7 +17507,9 @@ fn render_codec_test_vector_sidecar(
     })?;
     let value = minijinja::Value::from_serialize(&ctx);
     let code = template.render(value).map_err(|e| {
-        ForgeError::Generate(GenerateError::TemplateRender(format!("{template_name}: {e}")))
+        ForgeError::Generate(GenerateError::TemplateRender(format!(
+            "{template_name}: {e}"
+        )))
     })?;
     let filename = match lang {
         Language::Rust => format!("{snake}_test.rs"),
@@ -17311,10 +17578,7 @@ fn lower_decoded_field_value(
                 SceType::Int64 => "int64_t",
                 _ => unreachable!("is_signed guard"),
             };
-            Ok((
-                format!("{i}{suffix_rust}"),
-                format!("({c_cast})({i})"),
-            ))
+            Ok((format!("{i}{suffix_rust}"), format!("({c_cast})({i})")))
         }
         (DecodedFieldValue::Bytes(bs), SceType::Bytes) => {
             // Rust: `vec![0xCA, 0xFE]` — owned because the codec
@@ -17366,10 +17630,12 @@ fn lower_decoded_field_value(
                 format!("\"{escaped}\""),
             ))
         }
-        (val, ty) => Err(ForgeError::Generate(GenerateError::UnsupportedFeature(format!(
-            "codec '{codec_name}': <sce:test-vector> field value {val:?} does not match codec \
+        (val, ty) => Err(ForgeError::Generate(GenerateError::UnsupportedFeature(
+            format!(
+                "codec '{codec_name}': <sce:test-vector> field value {val:?} does not match codec \
              field SceType {ty:?} — parser invariant violated"
-        )))),
+            ),
+        ))),
     }
 }
 
@@ -17425,10 +17691,8 @@ fn lower_algorithm_consts(
             }
             (AlgorithmConstType::Scalar(ty), None, Some(init_expr)) => {
                 let value = const_fold::evaluate_scalar_init(init_expr, ty, site)?;
-                let lit = const_fold::serialize_array_literal_body(
-                    std::slice::from_ref(&value),
-                    lang,
-                );
+                let lit =
+                    const_fold::serialize_array_literal_body(std::slice::from_ref(&value), lang);
                 out.push_str(&emit_scalar_const(lang, &l, &upper, ty, &lit));
             }
             // Parser invariants: scalar consts are paired with `init`
@@ -17461,26 +17725,18 @@ fn emit_array_const(
     use crate::generator::Language;
     let elem_name = l.type_name(elem);
     match lang {
-        Language::Rust => format!(
-            "pub static {name}: [{elem_name}; {len}] = [{body}];\n\n"
-        ),
-        Language::Cpp => format!(
-            "inline constexpr std::array<{elem_name}, {len}> {name} = {{ {body} }};\n\n"
-        ),
-        Language::C11 => format!(
-            "static const {elem_name} {name}[{len}] = {{ {body} }};\n\n"
-        ),
+        Language::Rust => format!("pub static {name}: [{elem_name}; {len}] = [{body}];\n\n"),
+        Language::Cpp => {
+            format!("inline constexpr std::array<{elem_name}, {len}> {name} = {{ {body} }};\n\n")
+        }
+        Language::C11 => format!("static const {elem_name} {name}[{len}] = {{ {body} }};\n\n"),
         Language::Kotlin => format!(
             "val {name}: {arr} = {factory}({body})\n\n",
             arr = kotlin_array_type(elem),
             factory = kotlin_array_factory(elem),
         ),
-        Language::Go => format!(
-            "var {name} = [{len}]{elem_name}{{ {body} }}\n\n"
-        ),
-        Language::Python => format!(
-            "{name}: tuple = ({body},)\n\n"
-        ),
+        Language::Go => format!("var {name} = [{len}]{elem_name}{{ {body} }}\n\n"),
+        Language::Python => format!("{name}: tuple = ({body},)\n\n"),
     }
 }
 
@@ -17559,7 +17815,6 @@ fn to_upper_snake(s: &str) -> String {
     filters::to_snake_case(s.to_string()).to_uppercase()
 }
 
-
 /// Forge-local thin wrapper around `filters::to_rust_variant` for the
 /// `&str` call sites scattered in this module. Centralized definition
 /// lives in `filters.rs` so the same SCREAMING_SNAKE → PascalCase rule
@@ -17599,7 +17854,10 @@ mod tests {
     #[test]
     fn cpp_param_type_references_large_types() {
         assert_eq!(cpp_param_type(&SceType::String), "const std::string&");
-        assert_eq!(cpp_param_type(&SceType::Bytes), "const std::vector<uint8_t>&");
+        assert_eq!(
+            cpp_param_type(&SceType::Bytes),
+            "const std::vector<uint8_t>&"
+        );
     }
 
     #[test]
@@ -17919,7 +18177,10 @@ mod tests {
             alias: "t".to_string(),
             line: None,
         }];
-        let opts = crate::ForgeCompileOptions { go_module_prefix: None, ..Default::default() };
+        let opts = crate::ForgeCompileOptions {
+            go_module_prefix: None,
+            ..Default::default()
+        };
         let result = validate_options(&imports, &crate::generator::Language::Go, &opts);
         assert!(result.is_err());
     }
@@ -17974,7 +18235,10 @@ mod tests {
 
     #[test]
     fn validate_go_no_imports_no_prefix_ok() {
-        let opts = crate::ForgeCompileOptions { go_module_prefix: None, ..Default::default() };
+        let opts = crate::ForgeCompileOptions {
+            go_module_prefix: None,
+            ..Default::default()
+        };
         let result = validate_options(&[], &crate::generator::Language::Go, &opts);
         assert!(result.is_ok());
     }
@@ -17987,7 +18251,10 @@ mod tests {
             alias: "t".to_string(),
             line: None,
         }];
-        let opts = crate::ForgeCompileOptions { go_module_prefix: None, ..Default::default() };
+        let opts = crate::ForgeCompileOptions {
+            go_module_prefix: None,
+            ..Default::default()
+        };
         let result = validate_options(&imports, &crate::generator::Language::Cpp, &opts);
         assert!(result.is_ok());
     }
@@ -18030,7 +18297,10 @@ mod tests {
         let ctx = resolve_single_import(&imp, &crate::generator::Language::Cpp, &opts);
         assert!(ctx.is_stateful);
         assert_eq!(ctx.member_name, "frame_");
-        assert_eq!(ctx.member_type, "::SCE::Generated::SimpleCodec::SimpleCodec");
+        assert_eq!(
+            ctx.member_type,
+            "::SCE::Generated::SimpleCodec::SimpleCodec"
+        );
     }
 
     #[test]
@@ -18038,7 +18308,10 @@ mod tests {
         let imp = test_import();
         let opts = crate::ForgeCompileOptions::default();
         let ctx = resolve_single_import(&imp, &crate::generator::Language::Kotlin, &opts);
-        assert_eq!(ctx.include_stmt, "import com.sce.generated.temperature_transform.*");
+        assert_eq!(
+            ctx.include_stmt,
+            "import com.sce.generated.temperature_transform.*"
+        );
         assert_eq!(ctx.type_name, "TemperatureTransform");
     }
 
@@ -18194,4 +18467,3 @@ mod tests {
         assert!(has);
     }
 }
-

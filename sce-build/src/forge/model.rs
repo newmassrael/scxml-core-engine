@@ -247,8 +247,7 @@ impl ForgeKind {
     /// a precise answer after parsing.
     pub fn max_runtime_dep(&self) -> RuntimeDep {
         match self {
-            Self::Transform | Self::Condition | Self::Codec
-            | Self::Validator => RuntimeDep::None,
+            Self::Transform | Self::Condition | Self::Codec | Self::Validator => RuntimeDep::None,
             // Lookup: string output = None (enum dispatch), numeric = ForgeRuntime.
             // Procedure: L1 = None, L2 = ForgeRuntime.
             // Upper bound for both is ForgeRuntime.
@@ -381,7 +380,10 @@ impl SceType {
 
     /// Unsigned integer types (uint8..uint64).
     pub fn is_unsigned(&self) -> bool {
-        matches!(self, Self::Uint8 | Self::Uint16 | Self::Uint32 | Self::Uint64)
+        matches!(
+            self,
+            Self::Uint8 | Self::Uint16 | Self::Uint32 | Self::Uint64
+        )
     }
 
     /// Stringified maximum value for unsigned integer types — used by the
@@ -804,9 +806,10 @@ impl ProcedureModel {
     pub fn is_l2(&self) -> bool {
         !self.internals.is_empty()
             || !self.helpers.is_empty()
-            || self.states.iter().any(|s| {
-                !s.on_entry_sends.is_empty() || !s.done_params.is_empty()
-            })
+            || self
+                .states
+                .iter()
+                .any(|s| !s.on_entry_sends.is_empty() || !s.done_params.is_empty())
     }
 }
 
@@ -2008,9 +2011,7 @@ pub enum InlineKindData {
         default_value: String,
     },
     #[serde(rename = "condition")]
-    Condition {
-        expr: String,
-    },
+    Condition { expr: String },
     #[serde(rename = "codec")]
     Codec {
         fields: Vec<CodecField>,
@@ -2068,10 +2069,7 @@ pub enum AlgorithmConstType {
     /// Array form `array<T, N>` — emitted as a language-native static
     /// array literal once §5.F const-fold lands. Length is the fixed
     /// element count; element type is one of the scalar `SceType`s.
-    Array {
-        elem: SceType,
-        len: u32,
-    },
+    Array { elem: SceType, len: u32 },
 }
 
 impl AlgorithmConstType {
@@ -2332,13 +2330,8 @@ pub enum LinkClass {
 
 impl LinkClass {
     /// Every legal `<sce:link-class>` value, in declaration order.
-    pub const ALL_NAMES: &'static [&'static str] = &[
-        "udp",
-        "tcp",
-        "serial",
-        "websocket",
-        "raw_eth",
-    ];
+    pub const ALL_NAMES: &'static [&'static str] =
+        &["udp", "tcp", "serial", "websocket", "raw_eth"];
 
     /// Parse from `<sce:link-class>` body text. Returns `None` for
     /// unknown classes — the parser raises `link/link-class-unknown`.
@@ -3155,16 +3148,26 @@ impl ForgeDocument {
     ///   - Lookup: string output (enum dispatch) = None, numeric = ForgeRuntime.
     pub fn runtime_dep(&self) -> RuntimeDep {
         match self {
-            Self::Transform(_) | Self::Condition(_) | Self::Codec(_)
-            | Self::Validator(_) => RuntimeDep::None,
-            Self::Lookup(m) => {
-                if m.output_is_string() { RuntimeDep::None } else { RuntimeDep::ForgeRuntime }
+            Self::Transform(_) | Self::Condition(_) | Self::Codec(_) | Self::Validator(_) => {
+                RuntimeDep::None
             }
-            Self::Filter(_) | Self::Interpolation(_)
-            | Self::Observer(_) => RuntimeDep::ForgeRuntime,
+            Self::Lookup(m) => {
+                if m.output_is_string() {
+                    RuntimeDep::None
+                } else {
+                    RuntimeDep::ForgeRuntime
+                }
+            }
+            Self::Filter(_) | Self::Interpolation(_) | Self::Observer(_) => {
+                RuntimeDep::ForgeRuntime
+            }
             Self::Timer(_) => RuntimeDep::ForgeRuntimeHal,
             Self::Procedure(m) => {
-                if m.is_l2() { RuntimeDep::ForgeRuntime } else { RuntimeDep::None }
+                if m.is_l2() {
+                    RuntimeDep::ForgeRuntime
+                } else {
+                    RuntimeDep::None
+                }
             }
             // RFC §5.A: free function over language-native loops/locals.
             Self::Algorithm(_) => RuntimeDep::None,

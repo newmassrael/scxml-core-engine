@@ -948,7 +948,6 @@ pub struct LinkConfig {
     //    fields fires `deploy/session-arming-fields-on-non-arming-link`
     //    — Accepting.* is never instantiated on those classes so the
     //    fields would be dead config. ──
-
     /// Spec line 2279-2289 — max concurrent half-open `Accepting.*`
     /// slots per link. MCU default 8, AP default 32 (not auto-applied
     /// — validator fires `session-arming-quota-missing` on absence
@@ -1702,7 +1701,10 @@ pub struct MachineConfig {
     ///
     /// **YAML grammar**: same as `someip_service_id` — integer literal or
     /// quoted hex string (preferred). Per RFC F.X-4 D3.
-    #[serde(default, deserialize_with = "deserialize_someip_machine_liveness_service_id")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_someip_machine_liveness_service_id"
+    )]
     pub someip_machine_liveness_service_id: Option<u16>,
 
     /// Per-machine platform descriptor (SCE Mesh §14, watching-zenoh RFC
@@ -2331,8 +2333,7 @@ fn validate_pool_defaults(cfg: &DeployConfig) -> Result<(), DeployError> {
             let Some(pool_defaults) = machine.pool_defaults.as_ref() else {
                 continue;
             };
-            if StageCopyPolicy::from_str(&pool_defaults.stage_copy_policy).is_none()
-            {
+            if StageCopyPolicy::from_str(&pool_defaults.stage_copy_policy).is_none() {
                 let candidates: Vec<String> = StageCopyPolicy::ALL
                     .iter()
                     .map(|s| (*s).to_string())
@@ -2548,8 +2549,7 @@ fn validate_links(cfg: &DeployConfig) -> Result<(), DeployError> {
                 // session_arming, OR when domain_attrs is absent
                 // entirely (no Accepting.* can ever instantiate
                 // without a trust class declaration).
-                let is_session_arming =
-                    matches!(trust_class, Some(TrustClass::SessionArming));
+                let is_session_arming = matches!(trust_class, Some(TrustClass::SessionArming));
                 if !is_session_arming {
                     let mut offending: Vec<&str> = Vec::new();
                     if link.session_arming_quota.is_some() {
@@ -2579,14 +2579,12 @@ fn validate_links(cfg: &DeployConfig) -> Result<(), DeployError> {
                         let trust_class_str = trust_class
                             .map(|tc| tc.as_str().to_string())
                             .unwrap_or_else(|| "<absent>".to_string());
-                        return Err(
-                            DeployError::SessionArmingFieldsOnNonArmingLink {
-                                machine: machine_name.clone(),
-                                link_name: link_name.clone(),
-                                trust_class: trust_class_str,
-                                offending_fields,
-                            },
-                        );
+                        return Err(DeployError::SessionArmingFieldsOnNonArmingLink {
+                            machine: machine_name.clone(),
+                            link_name: link_name.clone(),
+                            trust_class: trust_class_str,
+                            offending_fields,
+                        });
                     }
                 }
 
@@ -2622,12 +2620,10 @@ fn validate_links(cfg: &DeployConfig) -> Result<(), DeployError> {
 
                 // 9. stateless-accept-required-on-untrusted-source.
                 if untrusted_source && link.stateless_accept.is_none() {
-                    return Err(
-                        DeployError::StatelessAcceptRequiredOnUntrustedSource {
-                            machine: machine_name.clone(),
-                            link_name: link_name.clone(),
-                        },
-                    );
+                    return Err(DeployError::StatelessAcceptRequiredOnUntrustedSource {
+                        machine: machine_name.clone(),
+                        link_name: link_name.clone(),
+                    });
                 }
 
                 // 10. stateless-accept-key-rotation-shorter-than-lifetime.
@@ -2637,16 +2633,14 @@ fn validate_links(cfg: &DeployConfig) -> Result<(), DeployError> {
                     let rotation_ms = sa.key_rotation_s as u64 * 1000;
                     let lifetime_doubled = sa.cookie_lifetime_ms as u64 * 2;
                     if rotation_ms <= lifetime_doubled {
-                        return Err(
-                            DeployError::StatelessAcceptKeyRotationShorterThanLifetime {
-                                machine: machine_name.clone(),
-                                link_name: link_name.clone(),
-                                key_rotation_s: sa.key_rotation_s,
-                                cookie_lifetime_ms: sa.cookie_lifetime_ms,
-                                rotation_ms,
-                                lifetime_doubled,
-                            },
-                        );
+                        return Err(DeployError::StatelessAcceptKeyRotationShorterThanLifetime {
+                            machine: machine_name.clone(),
+                            link_name: link_name.clone(),
+                            key_rotation_s: sa.key_rotation_s,
+                            cookie_lifetime_ms: sa.cookie_lifetime_ms,
+                            rotation_ms,
+                            lifetime_doubled,
+                        });
                     }
                 }
 
@@ -2667,13 +2661,16 @@ fn validate_links(cfg: &DeployConfig) -> Result<(), DeployError> {
                 // check #7 above, so the silent-skip here doesn't mask
                 // that case.
                 if let Some(sa) = link.stateless_accept.as_ref() {
-                    if let (Some(peer_table), Some(max_handshake_time_s), Some(session_arming_quota)) = (
+                    if let (
+                        Some(peer_table),
+                        Some(max_handshake_time_s),
+                        Some(session_arming_quota),
+                    ) = (
                         sa.peer_table.as_ref(),
                         sa.max_handshake_time_s,
                         link.session_arming_quota,
                     ) {
-                        let product =
-                            session_arming_quota as u64 * max_handshake_time_s as u64;
+                        let product = session_arming_quota as u64 * max_handshake_time_s as u64;
                         if product > peer_table.capacity as u64 {
                             return Err(
                                 DeployError::SessionArmingQuotaVsPeerTableInvariantViolated {
@@ -2733,8 +2730,7 @@ pub fn validate_links_cross_doc(
     // one deploy entry across the build.
     for forge_name in &forge_set {
         if !deploy_link_names.contains(forge_name) {
-            let candidates: Vec<String> =
-                deploy_link_names.iter().map(|s| s.to_string()).collect();
+            let candidates: Vec<String> = deploy_link_names.iter().map(|s| s.to_string()).collect();
             let candidates_list = candidates.join(", ");
             return Err(DeployError::LinkNotDeclaredInDeploy {
                 link_name: (*forge_name).to_string(),
@@ -2751,8 +2747,7 @@ pub fn validate_links_cross_doc(
         for (machine_name, machine) in device.machines.iter() {
             for link_name in machine.links.keys() {
                 if !forge_set.contains(link_name.as_str()) {
-                    let candidates: Vec<String> =
-                        forge_set.iter().map(|s| s.to_string()).collect();
+                    let candidates: Vec<String> = forge_set.iter().map(|s| s.to_string()).collect();
                     let candidates_list = candidates.join(", ");
                     return Err(DeployError::LinkNotDeclaredInForge {
                         machine: machine_name.clone(),
@@ -2849,7 +2844,10 @@ pub fn validate_link_driver_class_consistency(
 pub fn resolve_link_rx_pool_slot_count<'a>(
     link_name: &str,
     forge_link_models: &'a std::collections::HashMap<String, &'a crate::forge::model::LinkModel>,
-    pool_registry_full: &'a std::collections::HashMap<String, &'a crate::forge::model::BufferPoolModel>,
+    pool_registry_full: &'a std::collections::HashMap<
+        String,
+        &'a crate::forge::model::BufferPoolModel,
+    >,
 ) -> Option<(&'a str, u32, &'a crate::forge::model::BufferPoolVariant)> {
     let forge_link = forge_link_models.get(link_name)?;
     let rx_pool_ref = forge_link.rx_pool.as_deref()?;
@@ -2883,10 +2881,7 @@ pub fn validate_links_burst_invariants(
 ) -> Result<(), DeployError> {
     for device in cfg.topology.values() {
         for (machine_name, machine) in device.machines.iter() {
-            let Some(tick_period_us) = machine
-                .scheduler
-                .as_ref()
-                .and_then(|s| s.tick_period_us)
+            let Some(tick_period_us) = machine.scheduler.as_ref().and_then(|s| s.tick_period_us)
             else {
                 continue;
             };
@@ -2894,13 +2889,11 @@ pub fn validate_links_burst_invariants(
                 let Some(burst_pps) = link.burst_pps else {
                     continue;
                 };
-                let Some((pool_name, slot_count, _variant)) =
-                    resolve_link_rx_pool_slot_count(
-                        link_name,
-                        forge_link_models,
-                        pool_registry_full,
-                    )
-                else {
+                let Some((pool_name, slot_count, _variant)) = resolve_link_rx_pool_slot_count(
+                    link_name,
+                    forge_link_models,
+                    pool_registry_full,
+                ) else {
                     continue;
                 };
 
@@ -2914,11 +2907,8 @@ pub fn validate_links_burst_invariants(
                 // The safety factor lives on the RHS to keep both
                 // operands as u64; overflow-safe because all four inputs
                 // are u32.
-                let drain_capacity_u64 =
-                    slot_count as u64 * 1_000_000;
-                let burst_load_u64 = burst_pps as u64
-                    * tick_period_us as u64
-                    * 2;
+                let drain_capacity_u64 = slot_count as u64 * 1_000_000;
+                let burst_load_u64 = burst_pps as u64 * tick_period_us as u64 * 2;
                 if drain_capacity_u64 < burst_load_u64 {
                     // drain_per_second = slot_count × ticks_per_second
                     //                  = slot_count × 1_000_000 /
@@ -2928,10 +2918,8 @@ pub fn validate_links_burst_invariants(
                     // numbers reflect raw pool capacity; the burst
                     // comparison itself uses the safety factor per
                     // spec.
-                    let drain_per_second = (slot_count as u64 * 1_000_000
-                        / tick_period_us as u64)
-                        .min(u32::MAX as u64)
-                        as u32;
+                    let drain_per_second = (slot_count as u64 * 1_000_000 / tick_period_us as u64)
+                        .min(u32::MAX as u64) as u32;
                     return Err(DeployError::LinkBurstAbsorptionInsufficient {
                         machine: machine_name.clone(),
                         link_name: link_name.clone(),
@@ -2952,28 +2940,20 @@ pub fn validate_links_burst_invariants(
                 // microseconds; one tick = tick_period_us / 1_000_000
                 // seconds, so arrivals per tick = burst_pps ×
                 // tick_period_us / 1_000_000.
-                if matches!(
-                    link.resolved_rx_dispatch(),
-                    RxDispatch::WorkerTick
-                ) {
-                    let arrivals_per_tick_u64 = (burst_pps as u64
-                        * tick_period_us as u64)
-                        / 1_000_000;
+                if matches!(link.resolved_rx_dispatch(), RxDispatch::WorkerTick) {
+                    let arrivals_per_tick_u64 =
+                        (burst_pps as u64 * tick_period_us as u64) / 1_000_000;
                     if arrivals_per_tick_u64 > slot_count as u64 {
-                        let arrivals_per_tick = arrivals_per_tick_u64
-                            .min(u32::MAX as u64)
-                            as u32;
-                        return Err(
-                            DeployError::LinkRxDispatchWorkerTickOnHighBurst {
-                                machine: machine_name.clone(),
-                                link_name: link_name.clone(),
-                                pool_name: pool_name.to_string(),
-                                slot_count,
-                                burst_pps,
-                                tick_period_us,
-                                arrivals_per_tick,
-                            },
-                        );
+                        let arrivals_per_tick = arrivals_per_tick_u64.min(u32::MAX as u64) as u32;
+                        return Err(DeployError::LinkRxDispatchWorkerTickOnHighBurst {
+                            machine: machine_name.clone(),
+                            link_name: link_name.clone(),
+                            pool_name: pool_name.to_string(),
+                            slot_count,
+                            burst_pps,
+                            tick_period_us,
+                            arrivals_per_tick,
+                        });
                     }
                 }
             }
@@ -3053,13 +3033,11 @@ pub fn validate_reassembly_cross_doc(
                 .unwrap_or((None, None));
 
             for (link_name, link) in machine.links.iter() {
-                let Some((pool_name, _slot_count, variant)) =
-                    resolve_link_rx_pool_slot_count(
-                        link_name,
-                        forge_link_models,
-                        pool_registry_full,
-                    )
-                else {
+                let Some((pool_name, _slot_count, variant)) = resolve_link_rx_pool_slot_count(
+                    link_name,
+                    forge_link_models,
+                    pool_registry_full,
+                ) else {
                     continue;
                 };
                 // C13-γ accept_stage_copy_rate lookup — same join the
@@ -3089,15 +3067,13 @@ pub fn validate_reassembly_cross_doc(
                 // parse time.
                 if let Some(mtu_bytes) = link.mtu_bytes {
                     if slot_size < mtu_bytes {
-                        return Err(
-                            ValidationError::MemReassemblySlotSizeBelowDeclaredMtu {
-                                pool_name: pool_name.to_string(),
-                                slot_size,
-                                mtu_bytes,
-                                machine: machine_name.clone(),
-                                link_name: link_name.clone(),
-                            },
-                        );
+                        return Err(ValidationError::MemReassemblySlotSizeBelowDeclaredMtu {
+                            pool_name: pool_name.to_string(),
+                            slot_size,
+                            mtu_bytes,
+                            machine: machine_name.clone(),
+                            link_name: link_name.clone(),
+                        });
                     }
                 }
 
@@ -3117,8 +3093,7 @@ pub fn validate_reassembly_cross_doc(
                     if let Some(mtu_bytes) = link.mtu_bytes {
                         let required = (reassembly_cfg.max_fragments_per_message as u64
                             * mtu_bytes as u64)
-                            .min(u32::MAX as u64)
-                            as u32;
+                            .min(u32::MAX as u64) as u32;
                         if slot_size < required {
                             return Err(
                                 ValidationError::ReassemblyMaxFragmentsInsufficientForMtu {
@@ -3191,17 +3166,12 @@ pub fn validate_reassembly_cross_doc(
                                 // same field set.
                             }
                             TrustClass::Untrusted => {
-                                return Err(
-                                    ValidationError::ReassemblyUntrustedLinkBinding {
-                                        pool_name: pool_name.to_string(),
-                                        trust_class: domain
-                                            .trust_class
-                                            .as_str()
-                                            .to_string(),
-                                        machine: machine_name.clone(),
-                                        link_name: link_name.clone(),
-                                    },
-                                );
+                                return Err(ValidationError::ReassemblyUntrustedLinkBinding {
+                                    pool_name: pool_name.to_string(),
+                                    trust_class: domain.trust_class.as_str().to_string(),
+                                    machine: machine_name.clone(),
+                                    link_name: link_name.clone(),
+                                });
                             }
                         }
                     } else {
@@ -3238,12 +3208,10 @@ pub fn validate_reassembly_cross_doc(
                         .map(|l| l.accept_stage_copy_rate)
                         .unwrap_or(false)
                 {
-                    return Err(
-                        ValidationError::PoolStageCopyAcceptRejectedUnderForbid {
-                            machine: machine_name.clone(),
-                            link_name: link_name.clone(),
-                        },
-                    );
+                    return Err(ValidationError::PoolStageCopyAcceptRejectedUnderForbid {
+                        machine: machine_name.clone(),
+                        link_name: link_name.clone(),
+                    });
                 }
 
                 // ── #3 reassembly/expected-fragmentation-rate-high ──
@@ -3274,9 +3242,8 @@ pub fn validate_reassembly_cross_doc(
                             // rate_percent = (p99 - slot_size) / p99 × 100
                             // Integer math: (p99 - slot_size) × 100 / p99
                             let excess = expected_p99_bytes - slot_size;
-                            let rate_percent = (excess as u64 * 100
-                                / expected_p99_bytes as u64)
-                                as u32;
+                            let rate_percent =
+                                (excess as u64 * 100 / expected_p99_bytes as u64) as u32;
                             if rate_percent > 25 {
                                 let opt_out = forge_link
                                     .map(|l| l.accept_stage_copy_rate)
@@ -3344,20 +3311,17 @@ pub fn validate_reassembly_cross_doc(
                         * memcpy_cycles_per_byte as f64)
                         / clock_freq_mhz as f64)
                         .ceil()
-                        .min(u32::MAX as f64)
-                        as u32;
+                        .min(u32::MAX as f64) as u32;
                     if stage_copy_wcet_us > worker_slot_budget_us {
-                        return Err(
-                            ValidationError::ReassemblyStageCopyWcetExceedsSlotBudget {
-                                machine: machine_name.clone(),
-                                link_name: link_name.clone(),
-                                expected_p99_bytes,
-                                memcpy_cycles_per_byte,
-                                clock_freq_mhz,
-                                worker_slot_budget_us,
-                                stage_copy_wcet_us,
-                            },
-                        );
+                        return Err(ValidationError::ReassemblyStageCopyWcetExceedsSlotBudget {
+                            machine: machine_name.clone(),
+                            link_name: link_name.clone(),
+                            expected_p99_bytes,
+                            memcpy_cycles_per_byte,
+                            clock_freq_mhz,
+                            worker_slot_budget_us,
+                            stage_copy_wcet_us,
+                        });
                     }
                 }
             }
@@ -3396,7 +3360,10 @@ pub fn validate_stateless_accept_externs(
     // `Fix::ReplaceOneOf` ride determinism matters for byte-stable
     // golden tests (FixCarriesCandidates non_overlap_class).
     let build_candidates = || -> Vec<String> {
-        let mut out: Vec<String> = BASELINE_SYMBOLS.iter().map(|s| s.name.to_string()).collect();
+        let mut out: Vec<String> = BASELINE_SYMBOLS
+            .iter()
+            .map(|s| s.name.to_string())
+            .collect();
         for ps in plugin_symbols {
             out.push(ps.name.clone());
         }
@@ -3411,10 +3378,7 @@ pub fn validate_stateless_accept_externs(
                 let Some(sa) = link.stateless_accept.as_ref() else {
                     continue;
                 };
-                for (role, extern_name) in [
-                    ("hmac", &sa.hmac_extern),
-                    ("rng", &sa.rng_extern),
-                ] {
+                for (role, extern_name) in [("hmac", &sa.hmac_extern), ("rng", &sa.rng_extern)] {
                     if !resolved(extern_name) {
                         return Err(DeployError::StatelessAcceptExternNotWhitelisted {
                             machine: machine_name.clone(),
@@ -3532,9 +3496,11 @@ fn validate_keepalive_jitter_required_when_cooperative(
             if matches!(sched.kind, SchedulerKind::Cooperative)
                 && sched.keepalive_jitter_budget_us.is_none()
             {
-                return Err(DeployError::SchedulerCooperativeMissingKeepaliveJitterBudget {
-                    machine: machine_name.clone(),
-                });
+                return Err(
+                    DeployError::SchedulerCooperativeMissingKeepaliveJitterBudget {
+                        machine: machine_name.clone(),
+                    },
+                );
             }
         }
     }
@@ -3588,9 +3554,7 @@ fn validate_keepalive_jitter_required_when_cooperative(
 ///
 /// Returns the first failure (deterministic order: devices →
 /// machines → per-link budget check first → slot count second).
-fn validate_machine_scheduler_link_concurrency(
-    cfg: &DeployConfig,
-) -> Result<(), DeployError> {
+fn validate_machine_scheduler_link_concurrency(cfg: &DeployConfig) -> Result<(), DeployError> {
     for device in cfg.topology.values() {
         for (machine_name, machine) in device.machines.iter() {
             let Some(sched) = machine.scheduler.as_ref() else {
@@ -3742,7 +3706,7 @@ fn validate_synth_invoke_infix(cfg: &DeployConfig) -> Result<(), DeployError> {
     for device in cfg.topology.values() {
         for name in device.machines.keys() {
             let Some((parent, _)) = name.split_once(SYNTH_INVOKE_INFIX) else {
-                continue;  // no infix, no collision concern
+                continue; // no infix, no collision concern
             };
             if !parent.is_empty() && all_machines.contains(parent) {
                 // Explicit override surface — author declares synth
@@ -4212,10 +4176,7 @@ pub(crate) fn extract_placeholders(s: &str) -> Result<Vec<String>, String> {
                      ASCII letter or underscore"
                 ));
             }
-            if !name
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '_')
-            {
+            if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
                 return Err(format!(
                     "placeholder '{{{name}}}' at byte {i} — name may only contain ASCII \
                      letters, digits, and underscores"
@@ -4239,9 +4200,7 @@ pub(crate) fn extract_placeholders(s: &str) -> Result<Vec<String>, String> {
 /// signalled here — the caller surfaces them through the dedicated
 /// diagnostic so an invalid placeholder never silently degrades to "no
 /// pool behaviour".
-fn binding_placeholder_names(
-    binding: &BindingConfig,
-) -> Result<Vec<String>, String> {
+fn binding_placeholder_names(binding: &BindingConfig) -> Result<Vec<String>, String> {
     let mut names = Vec::new();
     for value in binding.extra.values() {
         if let serde_yaml_ng::Value::String(s) = value {
@@ -4334,8 +4293,7 @@ fn validate_pool_capability(cfg: &DeployConfig) -> Result<(), DeployError> {
     // collapsed count would be strictly less than the raw declaration
     // count and every downstream diagnostic in this function would
     // read from the last-seen copy instead of the real duplicate.
-    let total_declarations: usize =
-        cfg.topology.values().map(|d| d.machines.len()).sum();
+    let total_declarations: usize = cfg.topology.values().map(|d| d.machines.len()).sum();
     debug_assert_eq!(
         by_machine.len(),
         total_declarations,
@@ -4384,11 +4342,10 @@ fn validate_pool_capability(cfg: &DeployConfig) -> Result<(), DeployError> {
                 return Err(DeployError::PoolInvalidPlaceholder {
                     machine: machine_name.to_string(),
                     binding: binding_key.as_str().to_string(),
-                    reason:
-                        "SOME/IP bindings express runtime instance selection via \
+                    reason: "SOME/IP bindings express runtime instance selection via \
                          `instance_from: <param-name>`, not `{name}` placeholders \
                          — the instance_id is a typed uint16_t, not a string carrier"
-                            .to_string(),
+                        .to_string(),
                 });
             }
 
@@ -4713,8 +4670,7 @@ pub(crate) fn assign_someip_invoke_service_ids(
         .flat_map(|d| d.machines.keys().map(|k| k.as_str()))
         .collect();
 
-    let mut participants: std::collections::BTreeSet<String> =
-        std::collections::BTreeSet::new();
+    let mut participants: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for device in cfg.topology.values() {
         for (machine_name, machine_cfg) in &device.machines {
             for (target_id, binding) in &machine_cfg.bindings {
@@ -4819,7 +4775,9 @@ fn validate_someip_scxml_invoke_service_ids(cfg: &DeployConfig) -> Result<(), De
 pub(crate) fn assign_someip_liveness_service_ids(
     cfg: &DeployConfig,
 ) -> Result<std::collections::BTreeMap<String, u16>, DeployError> {
-    use crate::mesh::transport::someip::{assign_liveness_service_ids, AssignLivenessServiceIdError};
+    use crate::mesh::transport::someip::{
+        assign_liveness_service_ids, AssignLivenessServiceIdError,
+    };
 
     // 1. Identify SomeIP-transport machines that opt into `liveliness:`
     //    AND appear across ≥2 sibling partitions. Region-liveness (row 13)
@@ -5046,7 +5004,8 @@ impl DeployConfig {
         let source_suffix = format!("{file_stem}.scxml");
         for device in self.topology.values() {
             for (name, cfg) in &device.machines {
-                if cfg.source == source_suffix || cfg.source.ends_with(&format!("/{source_suffix}")) {
+                if cfg.source == source_suffix || cfg.source.ends_with(&format!("/{source_suffix}"))
+                {
                     return Some(name.clone());
                 }
             }
@@ -5143,8 +5102,14 @@ topology:
             .as_ref()
             .expect("zenoh block");
         assert_eq!(zenoh.mode, Some(ZenohMode::Peer));
-        assert_eq!(zenoh.connect.as_deref(), Some(&["tcp/192.168.1.1:7447".to_string()][..]));
-        assert_eq!(zenoh.listen.as_deref(), Some(&["tcp/0.0.0.0:7447".to_string()][..]));
+        assert_eq!(
+            zenoh.connect.as_deref(),
+            Some(&["tcp/192.168.1.1:7447".to_string()][..])
+        );
+        assert_eq!(
+            zenoh.listen.as_deref(),
+            Some(&["tcp/0.0.0.0:7447".to_string()][..])
+        );
     }
 
     #[test]
@@ -5405,9 +5370,15 @@ topology:
         let cfg = parse_deploy_str(yaml).expect("parse");
         let brake = &cfg.topology["ecu1"].machines["brake"];
         assert_eq!(brake.subscriptions.len(), 2);
-        assert_eq!(brake.subscriptions[0].event, "event.notification.vehicle_speed");
+        assert_eq!(
+            brake.subscriptions[0].event,
+            "event.notification.vehicle_speed"
+        );
         assert_eq!(brake.subscriptions[0].source, "#chassis");
-        assert_eq!(brake.subscriptions[1].event, "event.notification.brake_pressure");
+        assert_eq!(
+            brake.subscriptions[1].event,
+            "event.notification.brake_pressure"
+        );
         assert_eq!(brake.subscriptions[1].source, "#sensor");
     }
 
@@ -5820,7 +5791,8 @@ topology:
         liveliness:
           lease_ms: 200
 "##;
-        let cfg = parse_deploy_str(yaml).expect("zenoh server must satisfy liveliness transport-compat");
+        let cfg =
+            parse_deploy_str(yaml).expect("zenoh server must satisfy liveliness transport-compat");
         let machine = &cfg.topology["ecu1"].machines["brake"];
         assert!(
             machine.liveliness.is_some(),
@@ -5873,7 +5845,10 @@ topology:
             Err(DeployError::InvalidLiveliness { machine, reason }) => {
                 assert_eq!(machine, "brake");
                 assert!(reason.contains("lease_ms"), "reason: {reason}");
-                assert!(reason.contains("100"), "reason must cite the floor: {reason}");
+                assert!(
+                    reason.contains("100"),
+                    "reason must cite the floor: {reason}"
+                );
             }
             other => panic!("expected InvalidLiveliness, got {other:?}"),
         }
@@ -5965,8 +5940,7 @@ partitions:
         // Region-liveness allocator filters by partition count under
         // F.X-3's existing semantics: with only 1 partition, there is
         // no row-13 participant.
-        let region_ids =
-            assign_someip_liveness_service_ids(&cfg).expect("assigner must succeed");
+        let region_ids = assign_someip_liveness_service_ids(&cfg).expect("assigner must succeed");
         assert!(
             region_ids.is_empty(),
             "single-partition machine must not generate row-13 region-liveness participants: {region_ids:?}"
@@ -6512,7 +6486,11 @@ topology:
             shm_channel: "ch-{id}"
 "##;
         match parse_deploy_str(yaml) {
-            Err(DeployError::PoolNotSupportedByTransport { machine, binding, transport }) => {
+            Err(DeployError::PoolNotSupportedByTransport {
+                machine,
+                binding,
+                transport,
+            }) => {
                 assert_eq!(machine, "brake");
                 assert_eq!(binding, "#logger");
                 assert_eq!(transport, "shm");
@@ -6595,7 +6573,11 @@ topology:
             key: "unused-{id}"
 "##;
         match parse_deploy_str(yaml) {
-            Err(DeployError::PoolInvalidPlaceholder { machine, binding, reason }) => {
+            Err(DeployError::PoolInvalidPlaceholder {
+                machine,
+                binding,
+                reason,
+            }) => {
                 assert_eq!(machine, "brake");
                 assert_eq!(binding, "#player");
                 assert!(
@@ -6627,7 +6609,11 @@ topology:
             instance_from: id
 "##;
         match parse_deploy_str(yaml) {
-            Err(DeployError::PoolNotSupportedByTransport { machine, binding, transport }) => {
+            Err(DeployError::PoolNotSupportedByTransport {
+                machine,
+                binding,
+                transport,
+            }) => {
                 assert_eq!(machine, "brake");
                 assert_eq!(binding, "#player");
                 assert_eq!(transport, "zenoh");
@@ -6962,10 +6948,7 @@ partitions:
         - { machine: motor, region: drive }
 "##;
         match parse_deploy_str(yaml) {
-            Err(DeployError::PartitionMachineNotListed {
-                partition,
-                machine,
-            }) => {
+            Err(DeployError::PartitionMachineNotListed { partition, machine }) => {
                 assert_eq!(partition, "brake_only");
                 assert_eq!(machine, "motor");
             }
@@ -7080,7 +7063,11 @@ partitions:
         assert!(cfg.partitions.is_some());
         let motor = &cfg.topology["ecu1"].machines["motor"];
         assert!(
-            motor.server.as_ref().and_then(|s| s.instances.as_ref()).is_some(),
+            motor
+                .server
+                .as_ref()
+                .and_then(|s| s.instances.as_ref())
+                .is_some(),
             "motor must retain its pool declaration",
         );
     }
@@ -7137,10 +7124,7 @@ partitions:
         let cfg = parse_deploy_str(yaml).expect("parse");
         let part = cfg.partitions.expect("partitions present");
         assert_eq!(
-            part.get("brake_main")
-                .unwrap()
-                .transport_binding
-                .as_deref(),
+            part.get("brake_main").unwrap().transport_binding.as_deref(),
             Some("shm")
         );
     }
@@ -7170,10 +7154,7 @@ partitions:
         let cfg = parse_deploy_str(yaml).expect("parse");
         let part = cfg.partitions.expect("partitions present");
         assert_eq!(
-            part.get("brake_main")
-                .unwrap()
-                .transport_binding
-                .as_deref(),
+            part.get("brake_main").unwrap().transport_binding.as_deref(),
             Some("custom_tcp")
         );
     }
@@ -7878,11 +7859,7 @@ topology:
           os: linux
 "##;
         match parse_deploy_str(yaml) {
-            Err(DeployError::PlatformClassOsMismatch {
-                machine,
-                class,
-                os,
-            }) => {
+            Err(DeployError::PlatformClassOsMismatch { machine, class, os }) => {
                 assert_eq!(machine, "bad");
                 assert_eq!(class, "mcu");
                 assert_eq!(os, "linux");

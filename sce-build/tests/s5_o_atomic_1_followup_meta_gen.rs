@@ -97,7 +97,10 @@ fn walker_fires_when_marker_stripped_from_emitted_file() {
     fs::create_dir_all(&out_dir).unwrap();
 
     let (code, stderr) = run_generate(&out_dir, &scxml);
-    assert_eq!(code, 0, "fixture setup: clean generate must pass. stderr: {stderr}");
+    assert_eq!(
+        code, 0,
+        "fixture setup: clean generate must pass. stderr: {stderr}"
+    );
 
     // Now simulate a template regression that dropped the marker
     // macro call: strip every `SCE-MAP:` line from the emitted file
@@ -159,11 +162,7 @@ fn walker_silently_skips_files_without_drift_header() {
     .unwrap();
 
     // 3. Hand-written file with neither — trivially out of scope.
-    fs::write(
-        out_dir.join("regular.rs"),
-        "pub fn y() -> u32 { 0 }\n",
-    )
-    .unwrap();
+    fs::write(out_dir.join("regular.rs"), "pub fn y() -> u32 { 0 }\n").unwrap();
 
     let result = sce_build::forge::sourcemap::validate_emitted_files_have_markers(&out_dir);
     assert!(
@@ -206,7 +205,10 @@ fn walker_diagnostic_code_is_meta_generated_source_line_marker_missing() {
         Some("out/test144/test144_sm.rs"),
         "wire `actual` must carry the offending file path",
     );
-    assert!(d.fix.is_none(), "no author repair — codegen-internal invariant");
+    assert!(
+        d.fix.is_none(),
+        "no author repair — codegen-internal invariant"
+    );
 }
 
 #[test]

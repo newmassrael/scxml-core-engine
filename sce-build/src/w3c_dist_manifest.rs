@@ -116,8 +116,8 @@ impl ManifestFile {
     }
 
     pub fn parse_str(text: &str) -> Result<Self, String> {
-        let parsed: Self = serde_yaml_ng::from_str(text)
-            .map_err(|e| format!("manifest parse error: {}", e))?;
+        let parsed: Self =
+            serde_yaml_ng::from_str(text).map_err(|e| format!("manifest parse error: {}", e))?;
         parsed.validate()?;
         Ok(parsed)
     }
@@ -307,10 +307,7 @@ tests:
             Distributable::MergedSinglePartition
         );
         assert_eq!(manifest.tests["c"].distributable, Distributable::No);
-        assert_eq!(
-            manifest.tests["d"].distributable,
-            Distributable::Forbidden
-        );
+        assert_eq!(manifest.tests["d"].distributable, Distributable::Forbidden);
     }
 
     #[test]

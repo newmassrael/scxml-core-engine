@@ -479,7 +479,11 @@ fn eval_stmt(
     budget: &mut Budget,
 ) -> Result<(), ConstFoldKind> {
     match s {
-        AlgorithmStmt::Var { name, sce_type, init } => {
+        AlgorithmStmt::Var {
+            name,
+            sce_type,
+            init,
+        } => {
             let value = eval_expr_typed(init, scope, sce_type)?;
             scope.declare(name, value);
             Ok(())
@@ -497,15 +501,17 @@ fn eval_stmt(
                 )));
             }
             let prev = scope.lookup(target).ok_or_else(|| {
-                ConstFoldKind::NotFoldable(format!(
-                    "assign target '{target}' is not in scope"
-                ))
+                ConstFoldKind::NotFoldable(format!("assign target '{target}' is not in scope"))
             })?;
             let new = eval_expr_typed(expr, scope, &prev.declared_type())?;
             scope.assign(target, new)?;
             Ok(())
         }
-        AlgorithmStmt::If { cond, then_body, else_body } => {
+        AlgorithmStmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => {
             let c = eval_expr(cond, scope)?.to_bool()?;
             if c {
                 eval_stmts(then_body, scope, budget)?;
@@ -514,7 +520,11 @@ fn eval_stmt(
             }
             Ok(())
         }
-        AlgorithmStmt::While { cond, body, max_iter } => {
+        AlgorithmStmt::While {
+            cond,
+            body,
+            max_iter,
+        } => {
             let cap = max_iter.unwrap_or(u32::MAX);
             let mut ticks = 0u32;
             while eval_expr(cond, scope)?.to_bool()? {
@@ -625,7 +635,11 @@ fn eval_node(node: &TypedExpr, scope: &Scope) -> Result<EvalValue, ConstFoldKind
             let v = eval_node(operand, scope)?;
             eval_unop(*op, v)
         }
-        ExprKind::Conditional { condition, consequent, alternate } => {
+        ExprKind::Conditional {
+            condition,
+            consequent,
+            alternate,
+        } => {
             let c = eval_node(condition, scope)?.to_bool()?;
             if c {
                 eval_node(consequent, scope)
@@ -654,17 +668,15 @@ fn eval_node(node: &TypedExpr, scope: &Scope) -> Result<EvalValue, ConstFoldKind
 fn eval_binop(op: BinOp, l: EvalValue, r: EvalValue) -> Result<EvalValue, ConstFoldKind> {
     use EvalValue as V;
     match op {
-        BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod => {
-            match (l, r) {
-                (V::Int(a), V::Int(b)) => Ok(V::Int(arith_int(op, a, b)?)),
-                (V::Float(a), V::Float(b)) => Ok(V::Float(arith_float(op, a, b)?)),
-                (V::Int(a), V::Float(b)) => Ok(V::Float(arith_float(op, a as f64, b)?)),
-                (V::Float(a), V::Int(b)) => Ok(V::Float(arith_float(op, a, b as f64)?)),
-                _ => Err(ConstFoldKind::NotFoldable(
-                    "arithmetic on non-numeric operand".to_string(),
-                )),
-            }
-        }
+        BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod => match (l, r) {
+            (V::Int(a), V::Int(b)) => Ok(V::Int(arith_int(op, a, b)?)),
+            (V::Float(a), V::Float(b)) => Ok(V::Float(arith_float(op, a, b)?)),
+            (V::Int(a), V::Float(b)) => Ok(V::Float(arith_float(op, a as f64, b)?)),
+            (V::Float(a), V::Int(b)) => Ok(V::Float(arith_float(op, a, b as f64)?)),
+            _ => Err(ConstFoldKind::NotFoldable(
+                "arithmetic on non-numeric operand".to_string(),
+            )),
+        },
         BinOp::StrictEq => Ok(V::Bool(eq(l, r))),
         BinOp::StrictNeq => Ok(V::Bool(!eq(l, r))),
         BinOp::Lt | BinOp::Gt | BinOp::LtEq | BinOp::GtEq => match (l, r) {
@@ -822,27 +834,23 @@ fn eval_unop(op: UnaryOp, v: EvalValue) -> Result<EvalValue, ConstFoldKind> {
 fn parse_number_lit(s: &str) -> Result<EvalValue, ConstFoldKind> {
     let s = s.trim();
     let is_float = s.contains('.')
-        || s.chars().any(|c| c == 'e' || c == 'E')
-            && !s.starts_with("0x")
-            && !s.starts_with("0X");
+        || s.chars().any(|c| c == 'e' || c == 'E') && !s.starts_with("0x") && !s.starts_with("0X");
     if is_float {
-        s.parse::<f64>().map(EvalValue::Float).map_err(|e| {
-            ConstFoldKind::NotFoldable(format!("malformed float literal '{s}': {e}"))
-        })
+        s.parse::<f64>()
+            .map(EvalValue::Float)
+            .map_err(|e| ConstFoldKind::NotFoldable(format!("malformed float literal '{s}': {e}")))
     } else if let Some(rest) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
         i128::from_str_radix(rest, 16)
             .map(EvalValue::Int)
-            .map_err(|e| {
-                ConstFoldKind::NotFoldable(format!("malformed hex literal '{s}': {e}"))
-            })
+            .map_err(|e| ConstFoldKind::NotFoldable(format!("malformed hex literal '{s}': {e}")))
     } else if let Some(rest) = s.strip_prefix("0b").or_else(|| s.strip_prefix("0B")) {
-        i128::from_str_radix(rest, 2).map(EvalValue::Int).map_err(|e| {
-            ConstFoldKind::NotFoldable(format!("malformed binary literal '{s}': {e}"))
-        })
+        i128::from_str_radix(rest, 2)
+            .map(EvalValue::Int)
+            .map_err(|e| ConstFoldKind::NotFoldable(format!("malformed binary literal '{s}': {e}")))
     } else if let Some(rest) = s.strip_prefix("0o").or_else(|| s.strip_prefix("0O")) {
-        i128::from_str_radix(rest, 8).map(EvalValue::Int).map_err(|e| {
-            ConstFoldKind::NotFoldable(format!("malformed octal literal '{s}': {e}"))
-        })
+        i128::from_str_radix(rest, 8)
+            .map(EvalValue::Int)
+            .map_err(|e| ConstFoldKind::NotFoldable(format!("malformed octal literal '{s}': {e}")))
     } else {
         s.parse::<i128>().map(EvalValue::Int).map_err(|e| {
             ConstFoldKind::NotFoldable(format!("malformed integer literal '{s}': {e}"))
@@ -872,12 +880,10 @@ fn coerce_to_const(value: EvalValue, ty: &SceType) -> Result<ConstValue, ConstFo
 
         (EvalValue::Int(i), Uint8) => Ok(ConstValue::U8((i as u128 & 0xFF) as u8)),
         (EvalValue::Int(i), Uint16) => Ok(ConstValue::U16((i as u128 & 0xFFFF) as u16)),
-        (EvalValue::Int(i), Uint32) => {
-            Ok(ConstValue::U32((i as u128 & 0xFFFF_FFFF) as u32))
+        (EvalValue::Int(i), Uint32) => Ok(ConstValue::U32((i as u128 & 0xFFFF_FFFF) as u32)),
+        (EvalValue::Int(i), Uint64) => {
+            Ok(ConstValue::U64((i as u128 & 0xFFFF_FFFF_FFFF_FFFF) as u64))
         }
-        (EvalValue::Int(i), Uint64) => Ok(ConstValue::U64(
-            (i as u128 & 0xFFFF_FFFF_FFFF_FFFF) as u64,
-        )),
         (EvalValue::Int(i), Int8) => Ok(ConstValue::I8(i as i8)),
         (EvalValue::Int(i), Int16) => Ok(ConstValue::I16(i as i16)),
         (EvalValue::Int(i), Int32) => Ok(ConstValue::I32(i as i32)),
@@ -1023,7 +1029,10 @@ mod tests {
         let mut budget = Budget::new(3);
         let err = evaluate_fold(&fold, &mut budget, TEST_SITE).unwrap_err();
         assert!(
-            matches!(err, GenerateError::ConstFoldBudgetExceeded { budget: 3, .. }),
+            matches!(
+                err,
+                GenerateError::ConstFoldBudgetExceeded { budget: 3, .. }
+            ),
             "budget-exceeded error must surface; got {err:?}"
         );
     }
@@ -1042,7 +1051,9 @@ mod tests {
 
         let mut budget = Budget::default();
         let ret_err = evaluate_fold(
-            &make_fold(AlgorithmStmt::Return { expr: Some("0".into()) }),
+            &make_fold(AlgorithmStmt::Return {
+                expr: Some("0".into()),
+            }),
             &mut budget,
             TEST_SITE,
         )
@@ -1113,14 +1124,15 @@ mod tests {
     fn serialize_decimal_integers() {
         use crate::generator::Language;
         let body = serialize_array_literal_body(
-            &[ConstValue::U16(0), ConstValue::U16(2), ConstValue::U16(0x1021)],
+            &[
+                ConstValue::U16(0),
+                ConstValue::U16(2),
+                ConstValue::U16(0x1021),
+            ],
             Language::Rust,
         );
         assert_eq!(body, "0, 2, 4129");
-        let cpp_body = serialize_array_literal_body(
-            &[ConstValue::U16(0xFFFF)],
-            Language::Cpp,
-        );
+        let cpp_body = serialize_array_literal_body(&[ConstValue::U16(0xFFFF)], Language::Cpp);
         assert_eq!(cpp_body, "65535");
     }
 }

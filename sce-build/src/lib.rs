@@ -16,6 +16,17 @@
 //   // main.rs
 //   include!(concat!(env!("OUT_DIR"), "/traffic_light_sm.rs"));
 
+pub mod analyzer;
+pub mod cli_error;
+pub mod conformance;
+pub mod filters;
+pub mod forge;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod formatter;
+pub mod generator;
+pub mod kotlin;
+pub mod lua_transformer;
+pub mod mesh;
 pub mod model;
 pub mod parser;
 /// Byte-level mapping from an expanded SCXML document back to its
@@ -24,6 +35,17 @@ pub mod parser;
 /// roxmltree row/col, semantic validation) to author file/row/col.
 /// See [`position_map`] for the shape and lookup semantics.
 pub mod position_map;
+pub mod script_engine_analyzer;
+pub mod scxml_semantic;
+/// `sce:template` / `sce:use` / `sce:param` preprocessing —
+/// parameterised composition adjacent to XInclude. AOT-only per
+/// RFC §6.5 Phase A; runs immediately after XInclude expansion
+/// so templates see a post-XInclude document. See [`template`]
+/// for the expansion semantics and error model.
+pub mod template;
+pub mod w3c_dist_manifest;
+#[cfg(feature = "wasm")]
+mod wasm;
 /// W3C XInclude preprocessing. Runs between XSD validation and
 /// roxmltree's document parse so the AOT code generator consumes
 /// the same post-expansion document as the C++ runtime. See
@@ -31,28 +53,6 @@ pub mod position_map;
 /// divergence in error handling (runtime warns-and-continues,
 /// AOT hard-errors).
 pub mod xinclude;
-/// `sce:template` / `sce:use` / `sce:param` preprocessing —
-/// parameterised composition adjacent to XInclude. AOT-only per
-/// RFC §6.5 Phase A; runs immediately after XInclude expansion
-/// so templates see a post-XInclude document. See [`template`]
-/// for the expansion semantics and error model.
-pub mod template;
-pub mod analyzer;
-pub mod scxml_semantic;
-pub mod script_engine_analyzer;
-pub mod filters;
-pub mod generator;
-pub mod kotlin;
-pub mod lua_transformer;
-pub mod conformance;
-pub mod forge;
-pub mod mesh;
-pub mod cli_error;
-pub mod w3c_dist_manifest;
-#[cfg(not(target_arch = "wasm32"))]
-pub mod formatter;
-#[cfg(feature = "wasm")]
-mod wasm;
 
 use model::SCXMLModel;
 use std::collections::HashSet;
@@ -87,7 +87,10 @@ impl<'a> DocumentLabel<'a> {
     /// with no filesystem path — there is nothing extension-worthy to
     /// distinguish, so identifier and diagnostic label coincide.
     pub fn symmetric(label: &'a str) -> Self {
-        Self { identifier: label, diagnostic_label: label }
+        Self {
+            identifier: label,
+            diagnostic_label: label,
+        }
     }
 }
 
@@ -149,8 +152,7 @@ pub type CompileError = forge::error::Located<forge::error::ForgeError>;
 /// violations); this helper just stamps the source location.
 fn guard_static_generatable(model: &SCXMLModel, source_name: &str) -> Result<(), CompileError> {
     use forge::error::Located;
-    analyzer::can_generate_static(model)
-        .map_err(|err| Located::new(err, source_name, None, None))
+    analyzer::can_generate_static(model).map_err(|err| Located::new(err, source_name, None, None))
 }
 
 /// Prepend the spec §6.2.6 `// SCE-GENERATED` header to every file in
@@ -524,7 +526,7 @@ pub fn compile_scxml_lang(
 pub fn find_template_dir_for(language: generator::Language) -> std::path::PathBuf {
     let subdir = match language {
         generator::Language::Rust => "rust",
-        generator::Language::Cpp => "",       // C++ templates at root
+        generator::Language::Cpp => "", // C++ templates at root
         generator::Language::Kotlin => "kotlin",
         generator::Language::Go => "go",
         generator::Language::Python => "python",
@@ -559,8 +561,8 @@ pub fn compile_forge_from_string(
 ) -> Result<generator::GeneratedOutput, forge::error::Located<forge::error::ForgeError>> {
     use forge::error::{Located, ValidationError};
 
-    let doc = forge::parser::parse_forge(content, label)?
-        .ok_or_else(|| Located::new(
+    let doc = forge::parser::parse_forge(content, label)?.ok_or_else(|| {
+        Located::new(
             ValidationError::WrongPipeline {
                 kind: forge::model::ForgeKind::Statechart,
             }
@@ -568,7 +570,8 @@ pub fn compile_forge_from_string(
             label.diagnostic_label,
             None,
             None,
-        ))?;
+        )
+    })?;
 
     // Watching-zenoh RFC §5.O Atomic 0c — forge IR provenance pre-emit
     // guard. Mirrors the SCXML-side `validate_emission_provenance`
@@ -653,16 +656,19 @@ pub fn compile_forge_with_deploy(
         })?;
     }
 
-    let parsed = forge::parser::parse_forge_with_imports_and_plugin(content, label, &plugin_symbols)?
-        .ok_or_else(|| Located::new(
-            ValidationError::WrongPipeline {
-                kind: forge::model::ForgeKind::Statechart,
-            }
-            .into(),
-            label.diagnostic_label,
-            None,
-            None,
-        ))?;
+    let parsed =
+        forge::parser::parse_forge_with_imports_and_plugin(content, label, &plugin_symbols)?
+            .ok_or_else(|| {
+                Located::new(
+                    ValidationError::WrongPipeline {
+                        kind: forge::model::ForgeKind::Statechart,
+                    }
+                    .into(),
+                    label.diagnostic_label,
+                    None,
+                    None,
+                )
+            })?;
     let extern_decls = parsed.extern_declarations.clone();
     let doc = parsed.document;
 
@@ -825,8 +831,7 @@ pub fn compile_forge_with_deploy(
                             }
                             let remainder = pool.slot_size % line_size;
                             if remainder != 0 {
-                                let next_multiple =
-                                    pool.slot_size + (line_size - remainder);
+                                let next_multiple = pool.slot_size + (line_size - remainder);
                                 return Err(Located::new(
                                     ValidationError::BufferPoolSlotSizeNotCacheLineMultiple {
                                         name: pool.name.clone(),
@@ -920,10 +925,7 @@ pub fn compile_forge_with_deploy(
                 .and_then(|d| d.machines.get(machine_name))
             {
                 if let Some(sched) = machine.scheduler.as_ref() {
-                    if matches!(
-                        sched.kind,
-                        mesh::deploy::SchedulerKind::Cooperative
-                    ) {
+                    if matches!(sched.kind, mesh::deploy::SchedulerKind::Cooperative) {
                         if let Some(tick_period_us) = sched.tick_period_us {
                             if timer.period_us < tick_period_us as u64 {
                                 return Err(Located::new(
@@ -1016,9 +1018,7 @@ pub fn compile_forge_with_deploy(
         let machine = device.machines.get(machine_name)?;
         let platform = machine.platform.as_ref()?;
         Some(CachePlatformInfo {
-            has_speculative_prefetch: platform
-                .has_speculative_prefetch
-                .unwrap_or(false),
+            has_speculative_prefetch: platform.has_speculative_prefetch.unwrap_or(false),
         })
     })();
 
@@ -1078,8 +1078,7 @@ pub fn compile_forge_with_deploy(
             forge::model::CapacitySource::DeployKey { key } => {
                 let cfg = deploy?;
                 let machine_name = target_machine?;
-                let (machine_segment, limit_name) =
-                    parse_bounded_collection_deploy_key(key)?;
+                let (machine_segment, limit_name) = parse_bounded_collection_deploy_key(key)?;
                 if machine_segment != machine_name {
                     return None;
                 }
@@ -1125,11 +1124,7 @@ pub fn compile_forge_with_deploy(
     // ref must resolve to a declared kind=link import; under
     // `compile_forge_with_deploy` the validator was previously
     // missing — re-wiring closes the gap.
-    validate_worker_cross_refs(
-        &doc,
-        &parsed.imports,
-        label.diagnostic_label,
-    )?;
+    validate_worker_cross_refs(&doc, &parsed.imports, label.diagnostic_label)?;
 
     let template_base = find_template_base();
 
@@ -1145,9 +1140,7 @@ pub fn compile_forge_with_deploy(
     if !extern_decls.is_empty()
         && matches!(
             language,
-            generator::Language::Kotlin
-                | generator::Language::Go
-                | generator::Language::Python
+            generator::Language::Kotlin | generator::Language::Go | generator::Language::Python
         )
     {
         return Err(Located::new(
@@ -1214,7 +1207,11 @@ pub fn compile_forge_with_deploy(
                             generator::Language::C11 => "c11",
                             _ => unreachable!(),
                         };
-                        let primary = output.files.first().map(|(_, src)| src.as_str()).unwrap_or("");
+                        let primary = output
+                            .files
+                            .first()
+                            .map(|(_, src)| src.as_str())
+                            .unwrap_or("");
                         if !primary.contains("sce_dcache_invalidate_by_addr") {
                             return Err(Located::new(
                                 ValidationError::PoolCachePreArmInvalidateMissingOnSpeculativeCore {
@@ -1499,8 +1496,8 @@ pub fn compile_forge_with_imports(
 ) -> Result<generator::GeneratedOutput, forge::error::Located<forge::error::ForgeError>> {
     use forge::error::{Located, ValidationError};
 
-    let parsed = forge::parser::parse_forge_with_imports(content, label)?
-        .ok_or_else(|| Located::new(
+    let parsed = forge::parser::parse_forge_with_imports(content, label)?.ok_or_else(|| {
+        Located::new(
             ValidationError::WrongPipeline {
                 kind: forge::model::ForgeKind::Statechart,
             }
@@ -1508,7 +1505,8 @@ pub fn compile_forge_with_imports(
             label.diagnostic_label,
             None,
             None,
-        ))?;
+        )
+    })?;
 
     // Watching-zenoh RFC §5.O Atomic 0c — forge IR provenance pre-emit
     // guard. Runs before import resolution + cross-doc validators so a
@@ -1540,11 +1538,7 @@ pub fn compile_forge_with_imports(
     // codegen so a slot-size mismatch surfaces as `link/pool-slot-
     // smaller-than-framer-max` rather than as a silently-truncated
     // emit (or a silently-stage-copying TX path).
-    validate_link_pool_framer_resolution(
-        &parsed.document,
-        &import_ctx,
-        label.diagnostic_label,
-    )?;
+    validate_link_pool_framer_resolution(&parsed.document, &import_ctx, label.diagnostic_label)?;
 
     // RFC §5.D C2-β worker cross-resolution. Per-doc resolution of
     // `<sce:link-rx ref>` against kind=link imports and `<sce:outbox
@@ -1553,11 +1547,7 @@ pub fn compile_forge_with_imports(
     // 2026-05-11 after Gate B preflight surfaced built-but-unconsumed
     // risk — direct parsed.imports check is the η-precedent textbook
     // path.
-    validate_worker_cross_refs(
-        &parsed.document,
-        &parsed.imports,
-        label.diagnostic_label,
-    )?;
+    validate_worker_cross_refs(&parsed.document, &parsed.imports, label.diagnostic_label)?;
 
     // RFC §5.I C2-β codegen-invariant for cross-core SPSC ordering.
     // Silent-skip when `options.worker_placement` is `None` (deploy-
@@ -1583,9 +1573,7 @@ pub fn compile_forge_with_imports(
     if !parsed.extern_declarations.is_empty()
         && matches!(
             language,
-            generator::Language::Kotlin
-                | generator::Language::Go
-                | generator::Language::Python
+            generator::Language::Kotlin | generator::Language::Go | generator::Language::Python
         )
     {
         return Err(Located::new(
@@ -1601,42 +1589,45 @@ pub fn compile_forge_with_imports(
     }
 
     let output = match language {
-        generator::Language::Cpp => {
-            forge::generator::generate_cpp_with_imports_and_externs(
-                &parsed.document,
-                &template_base,
-                &import_ctx,
-                &parsed.extern_declarations,
-                options,
-            )
-        }
-        generator::Language::Kotlin => {
-            forge::generator::generate_kotlin_with_imports(&parsed.document, &template_base, &import_ctx, options)
-        }
-        generator::Language::Rust => {
-            forge::generator::generate_rust_with_imports_and_externs(
-                &parsed.document,
-                &template_base,
-                &import_ctx,
-                &parsed.extern_declarations,
-                options,
-            )
-        }
-        generator::Language::Go => {
-            forge::generator::generate_go_with_imports(&parsed.document, &template_base, &import_ctx, options)
-        }
-        generator::Language::Python => {
-            forge::generator::generate_python_with_imports(&parsed.document, &template_base, &import_ctx, options)
-        }
-        generator::Language::C11 => {
-            forge::generator::generate_c11_with_imports_and_externs(
-                &parsed.document,
-                &template_base,
-                &import_ctx,
-                &parsed.extern_declarations,
-                options,
-            )
-        }
+        generator::Language::Cpp => forge::generator::generate_cpp_with_imports_and_externs(
+            &parsed.document,
+            &template_base,
+            &import_ctx,
+            &parsed.extern_declarations,
+            options,
+        ),
+        generator::Language::Kotlin => forge::generator::generate_kotlin_with_imports(
+            &parsed.document,
+            &template_base,
+            &import_ctx,
+            options,
+        ),
+        generator::Language::Rust => forge::generator::generate_rust_with_imports_and_externs(
+            &parsed.document,
+            &template_base,
+            &import_ctx,
+            &parsed.extern_declarations,
+            options,
+        ),
+        generator::Language::Go => forge::generator::generate_go_with_imports(
+            &parsed.document,
+            &template_base,
+            &import_ctx,
+            options,
+        ),
+        generator::Language::Python => forge::generator::generate_python_with_imports(
+            &parsed.document,
+            &template_base,
+            &import_ctx,
+            options,
+        ),
+        generator::Language::C11 => forge::generator::generate_c11_with_imports_and_externs(
+            &parsed.document,
+            &template_base,
+            &import_ctx,
+            &parsed.extern_declarations,
+            options,
+        ),
     }
     .map_err(|e| Located::new(e, label.diagnostic_label, None, None))?;
     Ok(output)
@@ -1702,12 +1693,9 @@ pub fn compile_scxml_with_imports(
     // user direction 2026-05-13.
     let mut cross_doc = SceCrossDocRegistry::new();
     let mut pool_reg = ForgePoolRegistry::new();
-    let mut workers_for_outbox: Vec<(String, forge::model::WorkerModel)> =
+    let mut workers_for_outbox: Vec<(String, forge::model::WorkerModel)> = Vec::new();
+    let mut bounded_collections_for_xref: Vec<(String, forge::model::BoundedCollectionModel)> =
         Vec::new();
-    let mut bounded_collections_for_xref: Vec<(
-        String,
-        forge::model::BoundedCollectionModel,
-    )> = Vec::new();
     let mut element_type_candidates: std::collections::HashMap<
         String,
         forge::model::ForgeDocument,
@@ -1722,10 +1710,8 @@ pub fn compile_scxml_with_imports(
     // pattern; consumed by `validate_*_cross_doc` only when `deploy` is
     // `Some` — `None` (deploy-unaware path) silent-skips per Q-η5 (a)
     // precedent (no deploy ⇒ no cross-doc deploy-vs-forge to check).
-    let mut link_models_for_xref: Vec<(String, forge::model::LinkModel)> =
-        Vec::new();
-    let mut pool_models_for_xref: Vec<(String, forge::model::BufferPoolModel)> =
-        Vec::new();
+    let mut link_models_for_xref: Vec<(String, forge::model::LinkModel)> = Vec::new();
+    let mut pool_models_for_xref: Vec<(String, forge::model::BufferPoolModel)> = Vec::new();
 
     for forge_path in forge_files {
         let path_str = forge_path.to_str().unwrap_or("");
@@ -1752,8 +1738,8 @@ pub fn compile_scxml_with_imports(
             identifier: stem,
             diagnostic_label: basename,
         };
-        let parsed = forge::parser::parse_forge_with_imports(&content, label)?
-            .ok_or_else(|| {
+        let parsed =
+            forge::parser::parse_forge_with_imports(&content, label)?.ok_or_else(|| {
                 Located::new(
                     ValidationError::WrongPipeline {
                         kind: forge::model::ForgeKind::Statechart,
@@ -1879,10 +1865,7 @@ pub fn compile_scxml_with_imports(
         scxml_models.push(((*scxml_path).to_path_buf(), model));
     }
     for (path, model) in &scxml_models {
-        let basename = path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("");
+        let basename = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
         parser::validate_on_sample_link_references(model, &cross_doc, &pool_reg, basename)?;
     }
 
@@ -1990,12 +1973,9 @@ pub fn compile_scxml_with_imports(
         .map_err(mesh::error::MeshError::Deploy)
         .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
 
-        mesh::deploy::validate_link_driver_class_consistency(
-            deploy_cfg,
-            &forge_link_models_view,
-        )
-        .map_err(mesh::error::MeshError::Deploy)
-        .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
+        mesh::deploy::validate_link_driver_class_consistency(deploy_cfg, &forge_link_models_view)
+            .map_err(mesh::error::MeshError::Deploy)
+            .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
 
         mesh::deploy::validate_reassembly_cross_doc(
             deploy_cfg,
@@ -2017,12 +1997,9 @@ pub fn compile_scxml_with_imports(
         // bubble through with ?. Any plugin-load failure surfaces at
         // the deploy.yaml label set above.
         let orchestrator_plugin_symbols = load_target_plugin_for_compile(deploy_cfg, DEPLOY_LABEL)?;
-        mesh::deploy::validate_stateless_accept_externs(
-            deploy_cfg,
-            &orchestrator_plugin_symbols,
-        )
-        .map_err(mesh::error::MeshError::Deploy)
-        .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
+        mesh::deploy::validate_stateless_accept_externs(deploy_cfg, &orchestrator_plugin_symbols)
+            .map_err(mesh::error::MeshError::Deploy)
+            .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
 
         // ── C10-β link/inbound-event-queue-unsized ──
         //
@@ -2071,10 +2048,13 @@ pub fn compile_scxml_with_imports(
                             .map(|n| n == machine_source)
                             .unwrap_or(false)
                             || path.to_str().map(|p| p == machine_source).unwrap_or(false);
-                        if matches { Some(model) } else { None }
+                        if matches {
+                            Some(model)
+                        } else {
+                            None
+                        }
                     });
-                    let has_per_instance =
-                        model.and_then(|m| m.event_queue_capacity).is_some();
+                    let has_per_instance = model.and_then(|m| m.event_queue_capacity).is_some();
                     // Per-machine fallback source.
                     let has_per_machine = machine
                         .scheduler
@@ -2122,11 +2102,10 @@ pub fn compile_scxml_with_imports(
                     // precedent ("populator skips when source is missing").
                     forge::model::CapacitySource::DeployKey { .. } => return None,
                 };
-                let index_by_field_sce_type =
-                    bc.index_by.as_ref().and_then(|field| {
-                        let element_doc = element_type_candidates.get(&bc.element_type)?;
-                        extract_bounded_collection_index_field_sce_type(element_doc, field)
-                    });
+                let index_by_field_sce_type = bc.index_by.as_ref().and_then(|field| {
+                    let element_doc = element_type_candidates.get(&bc.element_type)?;
+                    extract_bounded_collection_index_field_sce_type(element_doc, field)
+                });
                 Some((
                     bc.name.clone(),
                     BoundedCollectionResolution {
@@ -2146,8 +2125,7 @@ pub fn compile_scxml_with_imports(
     // per Q-η5 (a)).
     let listener_links_override: Option<std::collections::BTreeSet<String>> =
         deploy.map(|_| listener_links.clone());
-    let needs_override =
-        !bc_resolutions.is_empty() || listener_links_override.is_some();
+    let needs_override = !bc_resolutions.is_empty() || listener_links_override.is_some();
     let bc_options_override = if !needs_override {
         None
     } else {
@@ -2196,13 +2174,8 @@ pub fn compile_scxml_with_imports(
         };
         let base_dir = forge_path.parent().unwrap_or_else(|| Path::new("."));
         let effective_options = bc_options_override.as_ref().unwrap_or(options);
-        let out = compile_forge_with_imports(
-            &content,
-            label,
-            language,
-            base_dir,
-            effective_options,
-        )?;
+        let out =
+            compile_forge_with_imports(&content, label, language, base_dir, effective_options)?;
         outputs.push((basename.to_string(), out));
     }
 
@@ -2287,10 +2260,7 @@ pub fn compile_scxml_with_imports(
                     .collect::<std::collections::BTreeSet<String>>()
                     .into_iter()
                     .collect();
-                let tick_period_us = machine
-                    .scheduler
-                    .as_ref()
-                    .and_then(|s| s.tick_period_us);
+                let tick_period_us = machine.scheduler.as_ref().and_then(|s| s.tick_period_us);
                 let per_link_budget_us = machine
                     .scheduler
                     .as_ref()
@@ -2305,10 +2275,7 @@ pub fn compile_scxml_with_imports(
                 )
                 .map_err(|e| Located::new(e, "deploy.yaml", None, None))?;
                 if !files.is_empty() {
-                    outputs.push((
-                        machine_name.clone(),
-                        generator::GeneratedOutput { files },
-                    ));
+                    outputs.push((machine_name.clone(), generator::GeneratedOutput { files }));
                 }
             }
         }
@@ -2393,8 +2360,7 @@ fn compute_codec_recursive_max_bytes(
                 identifier: stem,
                 diagnostic_label: basename,
             };
-            let parsed =
-                forge::parser::parse_forge_with_imports(&content, label).ok()??;
+            let parsed = forge::parser::parse_forge_with_imports(&content, label).ok()??;
             let inner_cm = match parsed.document {
                 forge::model::ForgeDocument::Codec(c) => c,
                 _ => return None,
@@ -2424,9 +2390,7 @@ fn compute_codec_recursive_max_bytes(
             .arms
             .iter()
             .chain(v.default_arm.iter())
-            .filter_map(|arm| {
-                resolve_import_max(&arm.body_alias, imports, base_dir, visited)
-            })
+            .filter_map(|arm| resolve_import_max(&arm.body_alias, imports, base_dir, visited))
             .max()
             .unwrap_or(0);
         cm.max_frame_bytes() + arm_body_max
@@ -2437,8 +2401,7 @@ fn compute_codec_recursive_max_bytes(
             .filter(|f| f.is_repeat())
             .filter_map(|f| {
                 let alias = f.repeat_body_alias.as_deref()?;
-                let body_max =
-                    resolve_import_max(alias, imports, base_dir, visited)?;
+                let body_max = resolve_import_max(alias, imports, base_dir, visited)?;
                 let count = forge::limits::resolve_max_count(f.max_count);
                 Some(body_max.saturating_mul(count))
             })
@@ -2449,8 +2412,7 @@ fn compute_codec_recursive_max_bytes(
             .filter(|f| f.is_tlv_chain())
             .filter_map(|f| {
                 let alias = f.tlv_chain_body_alias.as_deref()?;
-                let body_max =
-                    resolve_import_max(alias, imports, base_dir, visited)?;
+                let body_max = resolve_import_max(alias, imports, base_dir, visited)?;
                 let max_depth = match &f.bit_size {
                     BitSize::TlvChain { max_depth, .. } => *max_depth,
                     _ => return None,
@@ -2624,8 +2586,7 @@ fn validate_and_enrich_imports(
                     .as_ref()
                     .map(|v| v.arms.iter().any(|a| a.is_default))
                     .unwrap_or(false);
-                ctx.codec_emits_default_ctor =
-                    inner_has_flag_default || inner_has_default_arm;
+                ctx.codec_emits_default_ctor = inner_has_flag_default || inner_has_default_arm;
             }
             // RFC §5.C B6-α' cross-resolution: the link kind's
             // `<sce:rx-pool>` / `<sce:tx-pool>` cross-validator
@@ -2647,9 +2608,7 @@ fn validate_and_enrich_imports(
             // `ImportContext::bc_element_snake` for the cross-backend
             // contract).
             if let forge::model::ForgeDocument::BoundedCollection(bcm) = &doc {
-                ctx.bc_element_snake = Some(filters::to_snake_case(
-                    bcm.element_type.clone(),
-                ));
+                ctx.bc_element_snake = Some(filters::to_snake_case(bcm.element_type.clone()));
             }
             if !ctx.is_stateful {
                 if let Some(name) = discover_primary_function(&doc, language) {
@@ -3024,9 +2983,10 @@ fn parse_bounded_collection_deploy_key(key: &str) -> Option<(&str, &str)> {
 /// dot guard rejects unrelated state IDs that share the `Accepting`
 /// stem (e.g. `AcceptingPayment`).
 pub fn accepting_substate_present(model: &SCXMLModel) -> bool {
-    model.states.keys().any(|id| {
-        id == "Accepting" || id.starts_with("Accepting.")
-    })
+    model
+        .states
+        .keys()
+        .any(|id| id == "Accepting" || id.starts_with("Accepting."))
 }
 
 /// watching-zenoh RFC §5.C lines 802-833 + §5.M lines 2771-2828
@@ -3059,8 +3019,7 @@ pub fn resolve_listener_links(
     scxml_models: &[(std::path::PathBuf, SCXMLModel)],
 ) -> std::collections::BTreeSet<String> {
     use mesh::deploy::TrustClass;
-    let mut listener_links: std::collections::BTreeSet<String> =
-        std::collections::BTreeSet::new();
+    let mut listener_links: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for device in deploy_cfg.topology.values() {
         for (_machine_name, machine) in device.machines.iter() {
             // Resolve `machine.source` against the parsed scxml_models
@@ -3193,10 +3152,7 @@ fn validate_bounded_collection_cross_refs(
     // unspecified, so we sort on every call — the cost is bounded by
     // the number of codec + procedure docs in the build (typically
     // <50) and keeps the wire payload deterministic.
-    let mut element_type_names: Vec<String> = element_type_candidates
-        .keys()
-        .cloned()
-        .collect();
+    let mut element_type_names: Vec<String> = element_type_candidates.keys().cloned().collect();
     element_type_names.sort();
 
     // Pre-compute the build-wide atomic-import surface answer once —
@@ -3282,9 +3238,7 @@ fn validate_bounded_collection_cross_refs(
         }
 
         // ── Multi-writer atomic-import surface axis ──
-        if matches!(bc.concurrency, ConcurrencyMode::MultiWriter)
-            && !build_has_atomic_import
-        {
+        if matches!(bc.concurrency, ConcurrencyMode::MultiWriter) && !build_has_atomic_import {
             return Err(Located::new(
                 ValidationError::CollectionMultiWriterWithoutAtomics {
                     collection_name: bc.name.clone(),
@@ -3383,9 +3337,10 @@ fn discover_stateless_signature(
             let params: Vec<SceType> = m.inputs.iter().map(|f| f.sce_type.clone()).collect();
             (params, Some(SceType::Bool))
         }
-        ForgeDocument::Lookup(m) => {
-            (vec![m.input.sce_type.clone()], Some(m.output.sce_type.clone()))
-        }
+        ForgeDocument::Lookup(m) => (
+            vec![m.input.sce_type.clone()],
+            Some(m.output.sce_type.clone()),
+        ),
         ForgeDocument::Interpolation(_) => {
             // Interpolation takes a typed input (x, or x+y for 2D) and returns
             // float64. Without opening up the Interpolation model further, we
@@ -3918,13 +3873,20 @@ pub fn inject_partition_context_for(
             let claimed_roots: std::collections::BTreeSet<&String> = decl
                 .hosts_parallel_roots
                 .as_ref()
-                .map(|v| v.iter().filter(|e| e.machine == resolved_name).map(|e| &e.parallel).collect())
+                .map(|v| {
+                    v.iter()
+                        .filter(|e| e.machine == resolved_name)
+                        .map(|e| &e.parallel)
+                        .collect()
+                })
                 .unwrap_or_default();
 
             // Regions of `resolved_name` hosted by ANY partition —
             // used to detect whether a `<parallel>` is distributed.
-            let mut parallel_partitions: std::collections::BTreeMap<&String, std::collections::BTreeSet<&String>> =
-                std::collections::BTreeMap::new();
+            let mut parallel_partitions: std::collections::BTreeMap<
+                &String,
+                std::collections::BTreeSet<&String>,
+            > = std::collections::BTreeMap::new();
             for (part_name, part_decl) in partitions.iter() {
                 for r in &part_decl.contains.parallel_regions {
                     if r.machine != resolved_name {
@@ -3997,10 +3959,9 @@ pub fn inject_partition_context_for(
                 match role {
                     model::PartitionRole::NonRoot => {
                         if let Some(root_part) = parallel_root_partition.get(parallel_id) {
-                            model.partition_wire21_outbound_routes.insert(
-                                parallel_id.clone(),
-                                (*root_part).clone(),
-                            );
+                            model
+                                .partition_wire21_outbound_routes
+                                .insert(parallel_id.clone(), (*root_part).clone());
                         }
                     }
                     model::PartitionRole::Root => {
@@ -4105,11 +4066,11 @@ fn validate_scxml_invoke_transport(
         let failure: Option<mesh::error::ScxmlInvokeCrossDeviceFailure> =
             match &peer_binding.transport {
                 None => Some(mesh::error::ScxmlInvokeCrossDeviceFailure::MissingBinding),
-                Some(t) if t == "shm" || t == "local" => {
-                    Some(mesh::error::ScxmlInvokeCrossDeviceFailure::TransportIncapable {
+                Some(t) if t == "shm" || t == "local" => Some(
+                    mesh::error::ScxmlInvokeCrossDeviceFailure::TransportIncapable {
                         transport: t.clone(),
-                    })
-                }
+                    },
+                ),
                 Some(t) if t == "custom_tcp" => {
                     // SCE_MESH.md §9.6 L1393 Session 2: custom_tcp
                     // scxml-remote is wired. Reject only when the
@@ -4119,17 +4080,15 @@ fn validate_scxml_invoke_transport(
                     // scxml-remote invoke is bidirectional — parent
                     // receives wire-15/16/18/20 replies, peer
                     // receives wire-14/17/19 requests.
-                    let missing_device = [&parent_device, &peer_device]
-                        .iter()
-                        .find_map(|dev| {
-                            let has_listen = deploy_cfg
-                                .topology
-                                .get(*dev)
-                                .and_then(|d| d.transports.custom_tcp.as_ref())
-                                .and_then(|c| c.listen.as_ref())
-                                .is_some();
-                            (!has_listen).then(|| (*dev).clone())
-                        });
+                    let missing_device = [&parent_device, &peer_device].iter().find_map(|dev| {
+                        let has_listen = deploy_cfg
+                            .topology
+                            .get(*dev)
+                            .and_then(|d| d.transports.custom_tcp.as_ref())
+                            .and_then(|c| c.listen.as_ref())
+                            .is_some();
+                        (!has_listen).then(|| (*dev).clone())
+                    });
                     missing_device.map(|device| {
                         mesh::error::ScxmlInvokeCrossDeviceFailure::TransportListenMissing {
                             transport: t.clone(),
@@ -4174,9 +4133,11 @@ fn validate_scxml_invoke_transport(
                     // Mirrors `partition-wire21-custom-tcp-
                     // unimplemented`: build-time rejection beats
                     // runtime silent fallback.
-                    Some(mesh::error::ScxmlInvokeCrossDeviceFailure::TransportUnwired {
-                        transport: t.clone(),
-                    })
+                    Some(
+                        mesh::error::ScxmlInvokeCrossDeviceFailure::TransportUnwired {
+                            transport: t.clone(),
+                        },
+                    )
                 }
             };
 
@@ -4408,9 +4369,10 @@ fn collect_scxml_remote_peers(
     // attribute: absent, empty, "scxml", or the W3C default URI all pass;
     // anything else (sce:mesh-rpc, custom URIs) is excluded. One regex
     // traversal per file; no full XML parse.
-    let _ = self_marker;  // reserved for future diagnostics; fast-scan below handles the inclusion check
+    let _ = self_marker; // reserved for future diagnostics; fast-scan below handles the inclusion check
     let invoke_tag_re = regex::Regex::new(r##"<invoke\b[^>]*>"##).expect("valid regex");
-    let src_attr_re = regex::Regex::new(r##"\bsrc="#([A-Za-z_][A-Za-z0-9_]*)""##).expect("valid regex");
+    let src_attr_re =
+        regex::Regex::new(r##"\bsrc="#([A-Za-z_][A-Za-z0-9_]*)""##).expect("valid regex");
     let type_attr_re = regex::Regex::new(r##"\btype="([^"]*)""##).expect("valid regex");
 
     let self_binding_key = format!("#{resolved_name}");
@@ -4418,12 +4380,12 @@ fn collect_scxml_remote_peers(
     for device in deploy_cfg.topology.values() {
         for (peer_name, peer_cfg) in &device.machines {
             if peer_name.as_str() == resolved_name {
-                continue;  // skip self — outbound list already covers it
+                continue; // skip self — outbound list already covers it
             }
             let peer_scxml_path = deploy_dir.join(&peer_cfg.source);
             let content = match std::fs::read_to_string(&peer_scxml_path) {
                 Ok(c) => c,
-                Err(_) => continue,  // unreadable — fail-silent (see header)
+                Err(_) => continue, // unreadable — fail-silent (see header)
             };
             for tag in invoke_tag_re.find_iter(&content) {
                 let tag_text = tag.as_str();
@@ -4432,7 +4394,7 @@ fn collect_scxml_remote_peers(
                         let t = &c[1];
                         t.is_empty() || t == "scxml" || t == "http://www.w3.org/TR/scxml/"
                     }
-                    None => true,  // no type attr — W3C default "scxml"
+                    None => true, // no type attr — W3C default "scxml"
                 };
                 if !type_ok {
                     continue;
@@ -4468,11 +4430,9 @@ fn collect_scxml_remote_peers(
     if let Some((parent_candidate, _)) =
         resolved_name.rsplit_once(crate::mesh::deploy::SYNTH_INVOKE_INFIX)
     {
-        if !parent_candidate.is_empty()
-            && deploy_cfg.device_for_machine(parent_candidate).is_some()
+        if !parent_candidate.is_empty() && deploy_cfg.device_for_machine(parent_candidate).is_some()
         {
-            let self_partition =
-                mesh::partitions::partition_for_machine(deploy_cfg, resolved_name);
+            let self_partition = mesh::partitions::partition_for_machine(deploy_cfg, resolved_name);
             let parent_partition =
                 mesh::partitions::partition_for_machine(deploy_cfg, parent_candidate);
             if self_partition != parent_partition {
@@ -4524,8 +4484,7 @@ fn collect_scxml_remote_peers(
     // (deploy.yaml was not yet consulted); this override is the
     // authoritative value for deploy-aware builds. Kept in sync with the
     // formula in `analyzer::analyze`.
-    model.needs_parent_template =
-        model.has_parent_communication && !model.is_remote_invoke_target;
+    model.needs_parent_template = model.has_parent_communication && !model.is_remote_invoke_target;
 }
 
 /// SCE_MESH.md §9.6 — mark each `Invoke::Scxml` whose `src` is `#<name>`
@@ -4585,8 +4544,7 @@ fn classify_remote_scxml_invokes(
                 // §9.6.6 rule 3 — same-partition invokes run in one OS
                 // process and therefore take the local child-session
                 // path; only cross-partition invokes cross a mesh wire.
-                let target_partition =
-                    mesh::partitions::partition_for_machine(deploy_cfg, target);
+                let target_partition = mesh::partitions::partition_for_machine(deploy_cfg, target);
                 if target_partition != parent_partition {
                     info.remote_mesh_target = Some(target.to_string());
                     // SCE_MESH.md §9.6 L1393 — record the declared transport
@@ -4657,10 +4615,7 @@ pub fn inject_server_model_mutations(
     let eventgroup_events = server_config
         .map(mesh::topology::detect_server_eventgroup_events)
         .unwrap_or_default();
-    if server_pairs.is_empty()
-        && field_access_pairs.is_empty()
-        && eventgroup_events.is_empty()
-    {
+    if server_pairs.is_empty() && field_access_pairs.is_empty() && eventgroup_events.is_empty() {
         return Ok(vec![]);
     }
 
@@ -4670,7 +4625,10 @@ pub fn inject_server_model_mutations(
         .chain(field_access_pairs.iter().map(|p| p.response_event.clone()))
         .chain(eventgroup_events.iter().map(|eg| eg.event.clone()))
         .collect();
-    Ok(mesh::topology::inject_server_response_sends(model, &response_events))
+    Ok(mesh::topology::inject_server_response_sends(
+        model,
+        &response_events,
+    ))
 }
 
 /// Watching-zenoh RFC §5.J.2 + §5.L (Q-RustNoStd-7 (a), C3 Atomic
@@ -4752,8 +4710,7 @@ pub fn compile_mesh_transport(
     let distributability_snapshot_notices = resolved_deploy.plan.snapshot_notices.clone();
     drop(resolved_deploy);
 
-    let external_resolution =
-        mesh::external::resolve_external_bindings(&deploy_cfg, deploy_dir)?;
+    let external_resolution = mesh::external::resolve_external_bindings(&deploy_cfg, deploy_dir)?;
 
     // Stage 1c: auto-symmetry injection (SCE_MESH.md §13). Must run
     // BEFORE collect_send_summary so synthesized unsubscribe sends are
@@ -4789,10 +4746,8 @@ pub fn compile_mesh_transport(
         .and_then(|m| m.server.as_ref());
 
     let server_pairs = mesh::topology::detect_server_pairs(model);
-    let server_fire_forget_events =
-        mesh::topology::detect_server_fire_forget_events(model);
-    let server_field_access_pairs =
-        mesh::topology::detect_server_field_access_pairs(model);
+    let server_fire_forget_events = mesh::topology::detect_server_fire_forget_events(model);
+    let server_field_access_pairs = mesh::topology::detect_server_field_access_pairs(model);
     // Eventgroup events are deploy.yaml-driven (server.events with
     // event_group: binding). Detection requires the server config.
     let server_eventgroup_events = server_config
@@ -4810,11 +4765,7 @@ pub fn compile_mesh_transport(
                 .iter()
                 .map(|p| p.response_event.clone()),
         )
-        .chain(
-            server_eventgroup_events
-                .iter()
-                .map(|eg| eg.event.clone()),
-        )
+        .chain(server_eventgroup_events.iter().map(|eg| eg.event.clone()))
         .collect();
 
     let server_binding = if let Some(srv_cfg) = server_config {
@@ -4867,12 +4818,12 @@ pub fn compile_mesh_transport(
         let self_target_str = format!("#{scxml_name}");
         if let Some(self_tid) = mesh::target::TargetId::new(&self_target_str) {
             summary.targets.remove(&self_tid);
-            summary.target_events.retain(|(t, e)| {
-                !(t == &self_tid && server_response_events.contains(e))
-            });
-            summary.actions.retain(|a| {
-                !(a.target == self_tid && server_response_events.contains(&a.event))
-            });
+            summary
+                .target_events
+                .retain(|(t, e)| !(t == &self_tid && server_response_events.contains(e)));
+            summary
+                .actions
+                .retain(|a| !(a.target == self_tid && server_response_events.contains(&a.event)));
         }
     }
 
@@ -4934,7 +4885,12 @@ pub fn compile_mesh_transport(
     let has_scxml_remote_wire = !model.scxml_remote_outbound_peers.is_empty()
         || !model.scxml_remote_inbound_peers.is_empty();
 
-    if resolved.is_empty() && server_binding.is_none() && !has_custom_tcp_listen && !has_wire21_routing && !has_scxml_remote_wire {
+    if resolved.is_empty()
+        && server_binding.is_none()
+        && !has_custom_tcp_listen
+        && !has_wire21_routing
+        && !has_scxml_remote_wire
+    {
         let _ = external_resolution; // no bindings → no resolved IDs to consume
         return Ok(MeshResult {
             output: generator::GeneratedOutput { files: vec![] },
@@ -4963,8 +4919,12 @@ pub fn compile_mesh_transport(
         // Stage 2d: event coverage — implementation check.
         let receiver_models =
             mesh::topology::load_receiver_models(&resolved, &deploy_cfg, deploy_dir, &model.name)?;
-        let uncovered =
-            mesh::topology::check_sender_event_coverage(&model.name, &summary, &receiver_models, &deploy_cfg);
+        let uncovered = mesh::topology::check_sender_event_coverage(
+            &model.name,
+            &summary,
+            &receiver_models,
+            &deploy_cfg,
+        );
         if !uncovered.is_empty() {
             return Err(mesh::error::TopologyError::UncoveredEvents {
                 sender: model.name.clone(),
@@ -5029,8 +4989,7 @@ pub fn compile_mesh_transport(
     // assignable and the function returns Ok. Codegen reads self's ID and
     // each peer's ID from this map to emit per-target constants instead of
     // `serviceIdForMachine(...)` constexpr calls.
-    let someip_invoke_service_ids =
-        mesh::deploy::assign_someip_invoke_service_ids(&deploy_cfg)?;
+    let someip_invoke_service_ids = mesh::deploy::assign_someip_invoke_service_ids(&deploy_cfg)?;
     // RFC F.X-3: §16.4 region-liveness service IDs live in the disjoint
     // [0x8180, 0x81FF] sub-range of the SCE-reserved space. The deploy
     // validator already ran inside `parse_deploy_str` above, so any
@@ -5282,9 +5241,8 @@ pub fn validate_no_std_compatibility(
     if model.needs_http_send {
         return Err(GenerateError::CodegenNoStdHttpNotSupported {
             document,
-            locations:
-                "BasicHTTPEventProcessor <send> target/targetexpr (analyzer-detected)"
-                    .to_string(),
+            locations: "BasicHTTPEventProcessor <send> target/targetexpr (analyzer-detected)"
+                .to_string(),
         }
         .into());
     }
@@ -5313,8 +5271,7 @@ pub fn find_template_base() -> std::path::PathBuf {
     if let Ok(dir) = std::env::var("SCE_TEMPLATE_DIR") {
         // If pointing to a language subdir, go up one level
         let p = Path::new(&dir);
-        if p.join("state_machine.rs.jinja2").exists()
-            || p.join("state_machine.kt.jinja2").exists()
+        if p.join("state_machine.rs.jinja2").exists() || p.join("state_machine.kt.jinja2").exists()
         {
             return p.parent().unwrap_or(p).to_path_buf();
         }
@@ -5690,7 +5647,10 @@ mod tests {
             .err()
             .expect("link with unknown <sce:link-class> body must reject");
         let diags = err.to_diagnostics();
-        assert!(!diags.is_empty(), "at least one diagnostic for unknown class");
+        assert!(
+            !diags.is_empty(),
+            "at least one diagnostic for unknown class"
+        );
         let d = &diags[0];
         assert!(
             matches!(d.code, DiagnosticCode::XmlSchemaValidation),
@@ -5732,11 +5692,7 @@ mod tests {
             .err()
             .expect("link without <sce:backpressure> must reject");
         let diags = err.to_diagnostics();
-        assert_eq!(
-            diags.len(),
-            1,
-            "single diagnostic for missing backpressure"
-        );
+        assert_eq!(diags.len(), 1, "single diagnostic for missing backpressure");
         let d = &diags[0];
         assert!(
             matches!(d.code, DiagnosticCode::LinkBackpressureUndeclared),
@@ -5782,8 +5738,7 @@ topology:
           class: ap
           os: linux
 "#;
-        let deploy = mesh::deploy::parse_deploy_str(deploy_yaml)
-            .expect("deploy.yaml parses");
+        let deploy = mesh::deploy::parse_deploy_str(deploy_yaml).expect("deploy.yaml parses");
         let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -5838,13 +5793,8 @@ topology:
         // later at codegen-on-non-MCU which is a different diagnostic).
         // Verifying the η check is layered on top of the existing
         // pipeline rather than added to it.
-        let no_deploy_err = compile_forge_with_deploy(
-            scxml,
-            label,
-            generator::Language::Rust,
-            None,
-            None,
-        );
+        let no_deploy_err =
+            compile_forge_with_deploy(scxml, label, generator::Language::Rust, None, None);
         // Either succeeds (rust accepts MCU-class kinds on AP code path
         // via the codegen-matrix) or fails for codegen reasons unrelated
         // to η — what matters is η does NOT fire.
@@ -5892,7 +5842,10 @@ topology:
             let diags = err.to_diagnostics();
             assert_eq!(diags.len(), 1);
             assert!(
-                matches!(diags[0].code, DiagnosticCode::CodegenMcuClassKindOnNonMcuLanguage),
+                matches!(
+                    diags[0].code,
+                    DiagnosticCode::CodegenMcuClassKindOnNonMcuLanguage
+                ),
                 "{lang:?} link emit must raise mcu-class-kind-on-non-mcu-language; got {:?}",
                 diags[0].code,
             );
@@ -6037,7 +5990,9 @@ topology:
             "Event.ErrorExecution must be emitted in Kotlin enum; full source:\n{body}",
         );
         assert!(
-            body.contains("override fun executeTransitionActions(source: State, trIndex: Int): Event?"),
+            body.contains(
+                "override fun executeTransitionActions(source: State, trIndex: Int): Event?"
+            ),
             "executeTransitionActions must return Event?; full source:\n{body}",
         );
         assert!(
@@ -6233,8 +6188,7 @@ topology:
         // Resolve the template root the same way `find_template_dir_for(C11)`
         // does so this test runs from any cargo invocation directory.
         let template_dir = find_template_dir_for(generator::Language::C11);
-        let templates: Vec<(String, String)> =
-            collect_templates_for_test(&template_dir);
+        let templates: Vec<(String, String)> = collect_templates_for_test(&template_dir);
         let template_refs: Vec<(&str, &str)> = templates
             .iter()
             .map(|(n, c)| (n.as_str(), c.as_str()))
@@ -6268,22 +6222,16 @@ topology:
     /// without spawning a separate test for the filesystem path.
     fn collect_templates_for_test(base: &std::path::Path) -> Vec<(String, String)> {
         let mut out = Vec::new();
-        fn walk(
-            base: &std::path::Path,
-            cur: &std::path::Path,
-            out: &mut Vec<(String, String)>,
-        ) {
+        fn walk(base: &std::path::Path, cur: &std::path::Path, out: &mut Vec<(String, String)>) {
             for entry in std::fs::read_dir(cur).expect("read template dir") {
                 let entry = entry.expect("dir entry");
                 let path = entry.path();
                 if path.is_dir() {
                     walk(base, &path, out);
-                } else if path.extension().and_then(|e| e.to_str()) == Some("jinja2")
-                {
+                } else if path.extension().and_then(|e| e.to_str()) == Some("jinja2") {
                     let rel = path.strip_prefix(base).expect("strip prefix");
                     let name = rel.to_string_lossy().replace('\\', "/");
-                    let content =
-                        std::fs::read_to_string(&path).expect("read template");
+                    let content = std::fs::read_to_string(&path).expect("read template");
                     out.push((name, content));
                 }
             }
@@ -6411,8 +6359,8 @@ topology:
             .parse_file(tmp.join("motor.scxml").to_str().unwrap())
             .expect("parse motor");
 
-        let injected = inject_server_model_mutations(&mut model, &tmp.join("deploy.yaml"))
-            .expect("inject");
+        let injected =
+            inject_server_model_mutations(&mut model, &tmp.join("deploy.yaml")).expect("inject");
 
         assert!(
             !injected.is_empty(),
@@ -6696,12 +6644,14 @@ topology:
         let err = inject_partition_context_for(&mut model, &tmp.join("deploy.yaml"), None)
             .expect_err("must reject when worker is both mesh peer and local invoke target");
         match err {
-            mesh::error::MeshError::Deploy(mesh::error::DeployError::ScxmlInvokeTargetConflict {
-                machine,
-                inbound_peers,
-                local_invoker,
-                local_src,
-            }) => {
+            mesh::error::MeshError::Deploy(
+                mesh::error::DeployError::ScxmlInvokeTargetConflict {
+                    machine,
+                    inbound_peers,
+                    local_invoker,
+                    local_src,
+                },
+            ) => {
                 assert_eq!(machine, "worker");
                 assert_eq!(inbound_peers, vec!["parent_mesh".to_string()]);
                 assert_eq!(local_invoker, "parent_local");
@@ -7044,16 +6994,15 @@ partitions:
         // `src=` attribute), so the §9.6.6 rule-3 infix inversion is
         // what produces the correct inbound peer set.
         let synth_src = tmp.join("parent__sce_synth_invoke__inv0.scxml");
-        assert!(synth_src.exists(), "parser must have written the synth sibling");
+        assert!(
+            synth_src.exists(),
+            "parser must have written the synth sibling"
+        );
         let mut synth_model = parser::SCXMLParser::new()
             .parse_file(synth_src.to_str().unwrap())
             .expect("parse synth");
 
-        classify_remote_scxml_invokes(
-            &mut synth_model,
-            &cfg,
-            "parent__sce_synth_invoke__inv0",
-        );
+        classify_remote_scxml_invokes(&mut synth_model, &cfg, "parent__sce_synth_invoke__inv0");
         collect_scxml_remote_peers(
             &mut synth_model,
             &cfg,
@@ -7142,11 +7091,7 @@ partitions:
 
         let cfg = mesh::deploy::parse_deploy_str(deploy).expect("deploy must parse");
 
-        classify_remote_scxml_invokes(
-            &mut synth_model,
-            &cfg,
-            "parent__sce_synth_invoke__inv0",
-        );
+        classify_remote_scxml_invokes(&mut synth_model, &cfg, "parent__sce_synth_invoke__inv0");
         collect_scxml_remote_peers(
             &mut synth_model,
             &cfg,
@@ -7249,7 +7194,9 @@ topology:
                 assert_eq!(parent_device, "ecu_a");
                 assert_eq!(peer_device, "ecu_b");
             }
-            other => panic!("expected ScxmlInvokeCrossDeviceTransport/MissingBinding, got {other:?}"),
+            other => {
+                panic!("expected ScxmlInvokeCrossDeviceTransport/MissingBinding, got {other:?}")
+            }
         }
         let _ = fs::remove_dir_all(&tmp);
     }
@@ -7271,14 +7218,17 @@ topology:
             mesh::error::MeshError::Deploy(
                 mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport {
                     peer,
-                    failure: mesh::error::ScxmlInvokeCrossDeviceFailure::TransportIncapable { transport },
+                    failure:
+                        mesh::error::ScxmlInvokeCrossDeviceFailure::TransportIncapable { transport },
                     ..
                 },
             ) => {
                 assert_eq!(peer, "worker");
                 assert_eq!(transport, "shm");
             }
-            other => panic!("expected ScxmlInvokeCrossDeviceTransport/TransportIncapable, got {other:?}"),
+            other => {
+                panic!("expected ScxmlInvokeCrossDeviceTransport/TransportIncapable, got {other:?}")
+            }
         }
         let _ = fs::remove_dir_all(&tmp);
     }
@@ -7309,14 +7259,17 @@ topology:
             mesh::error::MeshError::Deploy(
                 mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport {
                     peer,
-                    failure: mesh::error::ScxmlInvokeCrossDeviceFailure::TransportUnwired { transport },
+                    failure:
+                        mesh::error::ScxmlInvokeCrossDeviceFailure::TransportUnwired { transport },
                     ..
                 },
             ) => {
                 assert_eq!(peer, "worker");
                 assert_eq!(transport, "dds");
             }
-            other => panic!("expected ScxmlInvokeCrossDeviceTransport/TransportUnwired, got {other:?}"),
+            other => {
+                panic!("expected ScxmlInvokeCrossDeviceTransport/TransportUnwired, got {other:?}")
+            }
         }
         let _ = fs::remove_dir_all(&tmp);
     }
@@ -7347,9 +7300,9 @@ topology:
 
         let render_transports = |listen: Option<&str>| -> String {
             match listen {
-                Some(ep) => format!(
-                    "    transports:\n      custom_tcp:\n        listen: \"{ep}\"\n"
-                ),
+                Some(ep) => {
+                    format!("    transports:\n      custom_tcp:\n        listen: \"{ep}\"\n")
+                }
                 None => String::new(),
             }
         };
@@ -7433,7 +7386,8 @@ topology:
     #[test]
     fn cross_device_custom_tcp_accepted() {
         use std::fs;
-        let bindings = "        bindings:\n          \"#worker\":\n            transport: custom_tcp\n";
+        let bindings =
+            "        bindings:\n          \"#worker\":\n            transport: custom_tcp\n";
         let (tmp, deploy_path) = setup_custom_tcp_deployment(
             "accepted",
             bindings,
@@ -7455,13 +7409,10 @@ topology:
     #[test]
     fn cross_device_custom_tcp_peer_listen_missing_rejected() {
         use std::fs;
-        let bindings = "        bindings:\n          \"#worker\":\n            transport: custom_tcp\n";
-        let (tmp, deploy_path) = setup_custom_tcp_deployment(
-            "peer_missing",
-            bindings,
-            Some("127.0.0.1:19202"),
-            None,
-        );
+        let bindings =
+            "        bindings:\n          \"#worker\":\n            transport: custom_tcp\n";
+        let (tmp, deploy_path) =
+            setup_custom_tcp_deployment("peer_missing", bindings, Some("127.0.0.1:19202"), None);
         let mut model = parser::SCXMLParser::new()
             .parse_file(tmp.join("parent.scxml").to_str().unwrap())
             .expect("parse parent");
@@ -7496,13 +7447,10 @@ topology:
     #[test]
     fn cross_device_custom_tcp_parent_listen_missing_rejected() {
         use std::fs;
-        let bindings = "        bindings:\n          \"#worker\":\n            transport: custom_tcp\n";
-        let (tmp, deploy_path) = setup_custom_tcp_deployment(
-            "parent_missing",
-            bindings,
-            None,
-            Some("127.0.0.1:19203"),
-        );
+        let bindings =
+            "        bindings:\n          \"#worker\":\n            transport: custom_tcp\n";
+        let (tmp, deploy_path) =
+            setup_custom_tcp_deployment("parent_missing", bindings, None, Some("127.0.0.1:19203"));
         let mut model = parser::SCXMLParser::new()
             .parse_file(tmp.join("parent.scxml").to_str().unwrap())
             .expect("parse parent");
@@ -7685,7 +7633,8 @@ topology:
             .arg("-o")
             .arg(tmp.join("rx_pool_sram1.rmeta"))
             .arg(&src)
-            .arg("--cap-lints").arg("allow")
+            .arg("--cap-lints")
+            .arg("allow")
             .output()
             .expect("rustc must be on PATH for the build environment");
 
@@ -7855,14 +7804,9 @@ topology:
         // the slot table without section validation). Verifying η is
         // layered on top of the existing pipeline rather than added
         // to it.
-        let no_deploy_out = compile_forge_with_deploy(
-            scxml,
-            label,
-            generator::Language::Rust,
-            None,
-            None,
-        )
-        .expect("no-deploy path must skip section validation per Q-η5 (a)");
+        let no_deploy_out =
+            compile_forge_with_deploy(scxml, label, generator::Language::Rust, None, None)
+                .expect("no-deploy path must skip section validation per Q-η5 (a)");
         assert_eq!(no_deploy_out.files.len(), 1);
     }
 
@@ -7890,8 +7834,7 @@ topology:
               base: 0x08000000
               size: 524288
 "#;
-        let deploy = mesh::deploy::parse_deploy_str(deploy_yaml)
-            .expect("deploy.yaml parses");
+        let deploy = mesh::deploy::parse_deploy_str(deploy_yaml).expect("deploy.yaml parses");
         let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -8046,10 +7989,16 @@ topology:
             "buffer-pool c11 emits a (.h, .ld) pair; full file list:\n{:?}",
             out.files.iter().map(|(n, _)| n).collect::<Vec<_>>(),
         );
-        let header = out.files.iter().find(|(n, _)| n == "rx_pool_sram1.h")
+        let header = out
+            .files
+            .iter()
+            .find(|(n, _)| n == "rx_pool_sram1.h")
             .map(|(_, body)| body.as_str())
             .expect("header file must be `rx_pool_sram1.h`");
-        let ld = out.files.iter().find(|(n, _)| n == "rx_pool_sram1_pool.ld")
+        let ld = out
+            .files
+            .iter()
+            .find(|(n, _)| n == "rx_pool_sram1_pool.ld")
             .map(|(_, body)| body.as_str())
             .expect("linker fragment must be `rx_pool_sram1_pool.ld`");
 
@@ -8079,9 +8028,7 @@ topology:
             "CACHE_POLICY macro must round-trip the policy enum; full header:\n{header}",
         );
         assert!(
-            header.contains(
-                "__attribute__((section(\".sram1_rx_pool_sram1\"), aligned(32)))"
-            ),
+            header.contains("__attribute__((section(\".sram1_rx_pool_sram1\"), aligned(32)))"),
             "storage variable must carry section+aligned attribute; full header:\n{header}",
         );
         assert!(
@@ -8128,11 +8075,15 @@ topology:
             "must emit link_arm_rx tag-checked surface (spec §5.E line 1236); full header:\n{header}",
         );
         assert!(
-            header.contains("static inline bool rx_pool_sram1_link_arm_tx(sce_slot_handle_t *handle)"),
+            header.contains(
+                "static inline bool rx_pool_sram1_link_arm_tx(sce_slot_handle_t *handle)"
+            ),
             "must emit tag-checked link_arm_tx (spec §5.E line 1235); full header:\n{header}",
         );
         assert!(
-            header.contains("static inline bool rx_pool_sram1_pool_return(sce_slot_handle_t *handle)"),
+            header.contains(
+                "static inline bool rx_pool_sram1_pool_return(sce_slot_handle_t *handle)"
+            ),
             "must emit tag-checked pool_return (spec §5.E line 1234); full header:\n{header}",
         );
 
@@ -8189,7 +8140,10 @@ topology:
         };
         let out = compile_forge_from_string(scxml, label, generator::Language::C11)
             .expect("forge c11 codegen must succeed for a well-formed buffer-pool");
-        let header = out.files.iter().find(|(n, _)| n == "rx_pool_sram1.h")
+        let header = out
+            .files
+            .iter()
+            .find(|(n, _)| n == "rx_pool_sram1.h")
             .map(|(_, body)| body.as_str())
             .expect("header file must be `rx_pool_sram1.h`");
 
@@ -8269,10 +8223,13 @@ int main(void) {
             // `<sce/sample.h>` — the typestate family is silently-
             // inert on host gcc per §5.E lines 1444-1453.
             .arg("-D__attribute__(x)=")
-            .arg("-I").arg(&tmp)
-            .arg("-I").arg(&runtime_include)
+            .arg("-I")
+            .arg(&tmp)
+            .arg("-I")
+            .arg(&runtime_include)
             .arg(&driver_path)
-            .arg("-o").arg(&exec_path)
+            .arg("-o")
+            .arg(&exec_path)
             .output()
             .expect("gcc must be on PATH for the build environment");
 
@@ -8398,8 +8355,7 @@ topology:
               base: 0x08000000
               size: 65536
 "#;
-        let deploy = mesh::deploy::parse_deploy_str(deploy_yaml)
-            .expect("deploy.yaml parses");
+        let deploy = mesh::deploy::parse_deploy_str(deploy_yaml).expect("deploy.yaml parses");
         let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -8451,8 +8407,7 @@ topology:
             name: "rx_pool_sram1".into(),
         }
         .into();
-        let located: Located<ForgeError> =
-            Located::new(err, "rx_pool_sram1.scxml", None, None);
+        let located: Located<ForgeError> = Located::new(err, "rx_pool_sram1.scxml", None, None);
         let diags = located.to_diagnostics();
         assert_eq!(diags.len(), 1);
         let d = &diags[0];
@@ -8502,13 +8457,15 @@ topology:
             name: "rx_pool_sram1".into(),
         }
         .into();
-        let located: Located<ForgeError> =
-            Located::new(err, "rx_pool_sram1.scxml", None, None);
+        let located: Located<ForgeError> = Located::new(err, "rx_pool_sram1.scxml", None, None);
         let diags = located.to_diagnostics();
         assert_eq!(diags.len(), 1);
         let d = &diags[0];
         assert!(
-            matches!(d.code, DiagnosticCode::PoolSampleTypestateAttributesDisabled),
+            matches!(
+                d.code,
+                DiagnosticCode::PoolSampleTypestateAttributesDisabled
+            ),
             "must be DiagnosticCode::PoolSampleTypestateAttributesDisabled; got {:?}",
             d.code,
         );
@@ -8546,10 +8503,8 @@ topology:
         // the warn_unused_result combination + thread-safety analysis
         // we depend on per Q-ε1).
         let candidates: &[&str] = &[
-            "clang",
-            "clang-19", "clang-18", "clang-17", "clang-16",
-            "clang-15", "clang-14", "clang-13", "clang-12",
-            "clang-11", "clang-10", "clang-9",
+            "clang", "clang-19", "clang-18", "clang-17", "clang-16", "clang-15", "clang-14",
+            "clang-13", "clang-12", "clang-11", "clang-10", "clang-9",
         ];
         for name in candidates {
             if std::process::Command::new(name)
@@ -8671,8 +8626,7 @@ int main(void) {
             let _ = std::fs::remove_dir_all(&tmp);
             std::fs::create_dir_all(&tmp).expect("create tmp dir");
             let driver = tmp.join("driver.c");
-            std::fs::write(&driver, format!("{}{}", prologue, body))
-                .expect("write driver.c");
+            std::fs::write(&driver, format!("{}{}", prologue, body)).expect("write driver.c");
 
             let out = std::process::Command::new(&clang)
                 .arg("-std=c11")
@@ -8683,9 +8637,11 @@ int main(void) {
                 .arg("-Werror=consumed")
                 .arg("-Werror=unused-result")
                 .arg("-c")
-                .arg("-I").arg(&runtime_include)
+                .arg("-I")
+                .arg(&runtime_include)
                 .arg(&driver)
-                .arg("-o").arg(tmp.join("driver.o"))
+                .arg("-o")
+                .arg(tmp.join("driver.o"))
                 .output()
                 .expect("clang must execute");
 
@@ -8736,18 +8692,18 @@ int main(void) {
         };
         let out = compile_forge_from_string(scxml, label, generator::Language::C11)
             .expect("forge c11 codegen must succeed for a well-formed buffer-pool");
-        let header = out.files.iter().find(|(n, _)| n == "rx_pool_sram1.h")
+        let header = out
+            .files
+            .iter()
+            .find(|(n, _)| n == "rx_pool_sram1.h")
             .map(|(_, body)| body.as_str())
             .expect("header file must be `rx_pool_sram1.h`");
 
-        let tmp = std::env::temp_dir().join(format!(
-            "sce-build-eps-gcc-silent-{}",
-            std::process::id()
-        ));
+        let tmp =
+            std::env::temp_dir().join(format!("sce-build-eps-gcc-silent-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).expect("create tmp dir");
-        std::fs::write(tmp.join("rx_pool_sram1.h"), header)
-            .expect("write generated header");
+        std::fs::write(tmp.join("rx_pool_sram1.h"), header).expect("write generated header");
         // Minimal driver — just `#include "<pool>.h"` to drive the
         // include chain through `<sce/sample.h>`. The `(void)0`
         // statement keeps `main` well-formed; we are not exercising
@@ -8776,11 +8732,14 @@ int main(void) { (void)0; return 0; }
             // chain — Layer 1 attributes are already empty under gcc
             // per the silently-inert path.
             .arg("-D__attribute__(x)=")
-            .arg("-I").arg(&tmp)
-            .arg("-I").arg(&runtime_include)
+            .arg("-I")
+            .arg(&tmp)
+            .arg("-I")
+            .arg(&runtime_include)
             .arg("-c")
             .arg(tmp.join("driver.c"))
-            .arg("-o").arg(tmp.join("driver.o"))
+            .arg("-o")
+            .arg(tmp.join("driver.o"))
             .output()
             .expect("gcc must be on PATH");
         let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
@@ -8810,8 +8769,8 @@ int main(void) { (void)0; return 0; }
     #[test]
     fn buffer_pool_template_pulls_in_sce_sample_h() {
         let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let template_path = crate_dir
-            .join("../tools/codegen/templates/forge/c/buffer_pool.h.jinja2");
+        let template_path =
+            crate_dir.join("../tools/codegen/templates/forge/c/buffer_pool.h.jinja2");
         let body = std::fs::read_to_string(&template_path).unwrap_or_else(|e| {
             panic!(
                 "template {} must exist for B7-ε integration: {e}",
@@ -8952,9 +8911,8 @@ int main(void) { (void)0; return 0; }
             !body_none.contains("STAGE_POOL"),
             "STAGE_POOL must NOT emit when no <sce:stage-pool>; full source:\n{body_none}",
         );
-        let out_c_none =
-            compile_forge_from_string(no_stage, label, generator::Language::C11)
-                .expect("c11 backend without stage-pool must still emit");
+        let out_c_none = compile_forge_from_string(no_stage, label, generator::Language::C11)
+            .expect("c11 backend without stage-pool must still emit");
         let (_, body_c_none) = &out_c_none.files[0];
         assert!(
             !body_c_none.contains("LINK_STAGE_POOL"),
@@ -9048,8 +9006,7 @@ int main(void) { (void)0; return 0; }
         // tx slot = 64 bytes (sufficient). The cross-resolver must
         // surface the rx-axis violation first per the iteration order
         // (rx, tx).
-        let (link_path, link_label) =
-            write_link_pool_fixture_files(tmp.path(), 32, 16, 64);
+        let (link_path, link_label) = write_link_pool_fixture_files(tmp.path(), 32, 16, 64);
         let content = std::fs::read_to_string(&link_path).unwrap();
         let label = DocumentLabel {
             identifier: "udp_scout",
@@ -9095,8 +9052,7 @@ int main(void) { (void)0; return 0; }
         // framer worst-case = 32 bytes, rx slot = 64 bytes (sufficient),
         // tx slot = 8 bytes (undersized). Cross-resolver must reach the
         // tx axis after rx passes.
-        let (link_path, link_label) =
-            write_link_pool_fixture_files(tmp.path(), 32, 64, 8);
+        let (link_path, link_label) = write_link_pool_fixture_files(tmp.path(), 32, 64, 8);
         let content = std::fs::read_to_string(&link_path).unwrap();
         let label = DocumentLabel {
             identifier: "udp_scout",
@@ -9154,10 +9110,8 @@ int main(void) { (void)0; return 0; }
             include_dir.display(),
         );
 
-        let tmp = std::env::temp_dir().join(format!(
-            "sce-build-sample-h-smoke-{}",
-            std::process::id()
-        ));
+        let tmp =
+            std::env::temp_dir().join(format!("sce-build-sample-h-smoke-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).expect("create tmp dir");
 
@@ -9243,8 +9197,7 @@ int main(void) {
         let tmp = TempDir::new().expect("tempdir");
         // framer worst-case = 32 bytes, both pools >= 32 bytes — the
         // boundary case (slot_size == framer_max_bytes) must pass.
-        let (link_path, link_label) =
-            write_link_pool_fixture_files(tmp.path(), 32, 32, 64);
+        let (link_path, link_label) = write_link_pool_fixture_files(tmp.path(), 32, 32, 64);
         let content = std::fs::read_to_string(&link_path).unwrap();
         let label = DocumentLabel {
             identifier: "udp_scout",

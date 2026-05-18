@@ -133,7 +133,12 @@ mod tests {
 
     fn single_code(err: &ForgeError) -> &'static str {
         let diags = err.to_diagnostics();
-        assert_eq!(diags.len(), 1, "expected single diagnostic, got {}", diags.len());
+        assert_eq!(
+            diags.len(),
+            1,
+            "expected single diagnostic, got {}",
+            diags.len()
+        );
         diags[0].code.as_str()
     }
 
@@ -325,7 +330,10 @@ mod tests {
 
         // RFC §W5 D2 inventory: 1 NEW + 3 REUSED = 4 leaves total.
         let rust_to_cpp: &[(&str, &str)] = &[
-            ("validation/invalid-reference", "SemanticInitialStateUnknown"),
+            (
+                "validation/invalid-reference",
+                "SemanticInitialStateUnknown",
+            ),
             (
                 "validation/invalid-reference",
                 "SemanticTransitionTargetUnknown",
@@ -342,8 +350,7 @@ mod tests {
             "Expected 4 W5 leaves (RFC §W5 D2 inventory: 1 NEW + 3 REUSED)"
         );
 
-        let expected_cpp: BTreeSet<&str> =
-            rust_to_cpp.iter().map(|(_, cpp)| *cpp).collect();
+        let expected_cpp: BTreeSet<&str> = rust_to_cpp.iter().map(|(_, cpp)| *cpp).collect();
         assert_eq!(
             expected_cpp.len(),
             4,
@@ -351,10 +358,8 @@ mod tests {
         );
 
         let hdr = include_str!("../../sce/include/parsing/SemanticError.h");
-        let re = regex::Regex::new(
-            r"class\s+(Semantic\w+)\s*:\s*public\s+SemanticError\b",
-        )
-        .unwrap();
+        let re =
+            regex::Regex::new(r"class\s+(Semantic\w+)\s*:\s*public\s+SemanticError\b").unwrap();
         let mut found: BTreeSet<String> = BTreeSet::new();
         for captures in re.captures_iter(hdr) {
             found.insert(captures[1].to_string());
@@ -368,8 +373,7 @@ mod tests {
              the same commit"
         );
 
-        let found_refs: BTreeSet<&str> =
-            found.iter().map(|s| s.as_str()).collect();
+        let found_refs: BTreeSet<&str> = found.iter().map(|s| s.as_str()).collect();
         assert_eq!(
             found_refs, expected_cpp,
             "SemanticError subtype drift: C++ header = {:?}, expected \
@@ -424,8 +428,7 @@ mod tests {
         let hdr = include_str!("../../sce/include/parsing/SemanticError.h");
 
         for (cpp_class, expected_code) in class_to_code {
-            let class_marker =
-                format!("class {} : public SemanticError", cpp_class);
+            let class_marker = format!("class {} : public SemanticError", cpp_class);
             let class_start = hdr.find(&class_marker).unwrap_or_else(|| {
                 panic!(
                     "class `{}` not found in \
@@ -441,8 +444,7 @@ mod tests {
             // (`enum class Scope`) whose `};` would confuse a naive
             // find-next-`};` scanner; bounding by sibling-class
             // boundary skips the nesting issue.
-            let body_start =
-                hdr[class_start..].find('{').unwrap() + class_start + 1;
+            let body_start = hdr[class_start..].find('{').unwrap() + class_start + 1;
             // Bound by next `class Semantic` declaration (or EOF). The
             // `\nclass Semantic` prefix avoids matching nested `enum
             // class` keywords inside this leaf's body.

@@ -137,19 +137,14 @@ impl CppFormatter {
     /// Format a list of `(filename, code)` pairs in-place, returning the
     /// formatted pairs. Files that fail to format are returned unchanged
     /// with a warning printed to stderr.
-    pub fn format_output(
-        &self,
-        files: Vec<(String, String)>,
-    ) -> Vec<(String, String)> {
+    pub fn format_output(&self, files: Vec<(String, String)>) -> Vec<(String, String)> {
         files
             .into_iter()
-            .map(|(name, code)| {
-                match self.format(&code, &name) {
-                    Ok(formatted) => (name, formatted),
-                    Err(e) => {
-                        eprintln!("  Warning: format failed for {name}: {e}");
-                        (name, code)
-                    }
+            .map(|(name, code)| match self.format(&code, &name) {
+                Ok(formatted) => (name, formatted),
+                Err(e) => {
+                    eprintln!("  Warning: format failed for {name}: {e}");
+                    (name, code)
                 }
             })
             .collect()

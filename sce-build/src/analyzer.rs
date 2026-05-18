@@ -26,8 +26,7 @@ pub fn analyze(model: &mut SCXMLModel, scxml_path: &str) {
     // "emit ParentStateMachine template" condition consumed by
     // state_machine.jinja2 / process_transition.jinja2 /
     // entry_exit_actions.jinja2 / actions/send.jinja2.
-    model.needs_parent_template =
-        model.has_parent_communication && !model.is_remote_invoke_target;
+    model.needs_parent_template = model.has_parent_communication && !model.is_remote_invoke_target;
 
     // Named Context: set needs_nonstatic_method
     model.needs_nonstatic_method = model.needs_script_engine
@@ -133,7 +132,11 @@ fn analyze_model_features(model: &mut SCXMLModel) {
                 analyze_action(action, model);
             }
         }
-        for block in state.on_entry_blocks.iter().chain(state.on_exit_blocks.iter()) {
+        for block in state
+            .on_entry_blocks
+            .iter()
+            .chain(state.on_exit_blocks.iter())
+        {
             for action in block {
                 analyze_action(action, model);
             }
@@ -208,10 +211,14 @@ fn analyze_model_features(model: &mut SCXMLModel) {
     // check fires there); this analyzer pass only handles inline
     // content because every src=XML fixture in the current corpus
     // (test557) also carries an inline `<` sibling that triggers here.
-    let needs_dom_from_inline = model.variables.iter()
+    let needs_dom_from_inline = model
+        .variables
+        .iter()
         .any(|v| first_non_ws(&v.content) == Some('<'))
         || model.states.values().any(|state| {
-            state.datamodel.iter()
+            state
+                .datamodel
+                .iter()
                 .any(|v| first_non_ws(&v.content) == Some('<'))
         });
     if needs_dom_from_inline {
@@ -250,9 +257,15 @@ fn apply_script_engine_implications(model: &mut SCXMLModel) {
 /// (e.g., `_event.origin` matching inside `_event.origintype`).
 fn check_action_event_fields(action: &Action, model: &mut SCXMLModel) {
     let fields_to_check = [
-        &action.expr, &action.target, &action.targetexpr,
-        &action.cond, &action.content, &action.contentexpr,
-        &action.eventexpr, &action.namelist, &action.typeexpr,
+        &action.expr,
+        &action.target,
+        &action.targetexpr,
+        &action.cond,
+        &action.content,
+        &action.contentexpr,
+        &action.eventexpr,
+        &action.namelist,
+        &action.typeexpr,
         &action.idlocation,
     ];
     for field in &fields_to_check {
@@ -268,8 +281,12 @@ fn check_event_field(field: &str, model: &mut SCXMLModel) {
     if !field.contains("_event.") {
         return;
     }
-    if field.contains("_event.sendid") { model.needs_event_sendid = true; }
-    if field.contains("_event.origintype") { model.needs_event_origintype = true; }
+    if field.contains("_event.sendid") {
+        model.needs_event_sendid = true;
+    }
+    if field.contains("_event.origintype") {
+        model.needs_event_origintype = true;
+    }
     // Check _event.origin independently: exclude substring matches inside _event.origintype
     if field.contains("_event.origin") {
         // Set origin if field has _event.origin not followed by "type"
@@ -283,10 +300,18 @@ fn check_event_field(field: &str, model: &mut SCXMLModel) {
             pos = abs_idx;
         }
     }
-    if field.contains("_event.invokeid") { model.needs_event_invokeid = true; }
-    if field.contains("_event.data") { model.needs_event_data = true; }
-    if field.contains("_event.name") { model.needs_event_name = true; }
-    if field.contains("_event.type") { model.needs_event_type = true; }
+    if field.contains("_event.invokeid") {
+        model.needs_event_invokeid = true;
+    }
+    if field.contains("_event.data") {
+        model.needs_event_data = true;
+    }
+    if field.contains("_event.name") {
+        model.needs_event_name = true;
+    }
+    if field.contains("_event.type") {
+        model.needs_event_type = true;
+    }
 }
 
 fn analyze_action(action: &Action, model: &mut SCXMLModel) {
@@ -416,9 +441,8 @@ fn build_prefix_matching(model: &mut SCXMLModel) {
     let state_ids: Vec<String> = model.states.keys().cloned().collect();
     for state_id in &state_ids {
         // Take transitions out of the state to avoid cloning the entire state
-        let mut updated_transitions = std::mem::take(
-            &mut model.states.get_mut(state_id).unwrap().transitions,
-        );
+        let mut updated_transitions =
+            std::mem::take(&mut model.states.get_mut(state_id).unwrap().transitions);
 
         for trans in &mut updated_transitions {
             if trans.event.is_empty() {
@@ -535,9 +559,7 @@ pub(crate) fn resolve_internal_transitions(model: &mut SCXMLModel) {
 }
 
 fn compute_scxml_base_path(scxml_path: &str) -> String {
-    let parent = Path::new(scxml_path)
-        .parent()
-        .unwrap_or(Path::new("."));
+    let parent = Path::new(scxml_path).parent().unwrap_or(Path::new("."));
     if let Ok(cwd) = std::env::current_dir() {
         if let Ok(rel) = parent.strip_prefix(&cwd) {
             return rel.to_string_lossy().to_string();
@@ -607,9 +629,7 @@ pub fn can_generate_static(model: &SCXMLModel) -> Result<(), crate::forge::error
     }
     let initial_states: Vec<&str> = model.initial.split_whitespace().collect();
     let all_known = if initial_states.len() > 1 {
-        initial_states
-            .iter()
-            .all(|s| model.states.contains_key(*s))
+        initial_states.iter().all(|s| model.states.contains_key(*s))
     } else {
         model.states.contains_key(&model.initial)
     };
@@ -618,13 +638,11 @@ pub fn can_generate_static(model: &SCXMLModel) -> Result<(), crate::forge::error
         // because §3.3 cannot resolve a non-existent state id. The
         // available list feeds the structured `ReplaceOneOf` fix.
         let available: Vec<String> = model.states.keys().cloned().collect();
-        return Err(ForgeError::Scxml(
-            ScxmlSemanticError::InitialStateUnknown {
-                state_id: model.initial.clone(),
-                scope: InitialStateScope::DocumentRoot,
-                available,
-            },
-        ));
+        return Err(ForgeError::Scxml(ScxmlSemanticError::InitialStateUnknown {
+            state_id: model.initial.clone(),
+            scope: InitialStateScope::DocumentRoot,
+            available,
+        }));
     }
     Ok(())
 }
@@ -780,16 +798,17 @@ mod tests {
         let mut model = empty_model();
         model.initial = String::new();
         // states map non-empty so we don't hit document_rejected first
-        model
-            .states
-            .insert("s1".into(), Default::default());
+        model.states.insert("s1".into(), Default::default());
 
         let err = can_generate_static(&model)
             .expect_err("no initial attribute must surface a precondition failure");
         match err {
             ForgeError::Validation(ValidationError::DynamicFeatures { name, reason }) => {
                 assert_eq!(name, "probe");
-                assert_eq!(reason, "no initial state (runtime default resolution required)");
+                assert_eq!(
+                    reason,
+                    "no initial state (runtime default resolution required)"
+                );
             }
             other => panic!(
                 "expected ValidationError::DynamicFeatures for no-initial path, got: {other:?}"
@@ -806,12 +825,9 @@ mod tests {
     fn undeclared_initial_routes_to_scxml_semantic() {
         let mut model = empty_model();
         model.initial = "nope".into();
-        model
-            .states
-            .insert("s1".into(), Default::default());
+        model.states.insert("s1".into(), Default::default());
 
-        let err = can_generate_static(&model)
-            .expect_err("undeclared initial must reject");
+        let err = can_generate_static(&model).expect_err("undeclared initial must reject");
         match err {
             ForgeError::Scxml(ScxmlSemanticError::InitialStateUnknown {
                 state_id,
@@ -822,9 +838,7 @@ mod tests {
                 assert!(matches!(scope, InitialStateScope::DocumentRoot));
                 assert_eq!(available, vec!["s1".to_string()]);
             }
-            other => panic!(
-                "expected ScxmlSemanticError::InitialStateUnknown, got: {other:?}"
-            ),
+            other => panic!("expected ScxmlSemanticError::InitialStateUnknown, got: {other:?}"),
         }
     }
 
@@ -838,8 +852,8 @@ mod tests {
         let mut model = empty_model();
         model.document_rejected = true;
 
-        let err = can_generate_static(&model)
-            .expect_err("document_rejected must surface a typed error");
+        let err =
+            can_generate_static(&model).expect_err("document_rejected must surface a typed error");
         match err {
             ForgeError::Scxml(ScxmlSemanticError::TopLevelScriptUnloaded { index, src }) => {
                 // Analyzer path doesn't have the failing script's
@@ -848,9 +862,7 @@ mod tests {
                 assert!(index.is_none());
                 assert!(src.is_none());
             }
-            other => panic!(
-                "expected ScxmlSemanticError::TopLevelScriptUnloaded, got: {other:?}"
-            ),
+            other => panic!("expected ScxmlSemanticError::TopLevelScriptUnloaded, got: {other:?}"),
         }
     }
 
@@ -867,9 +879,7 @@ mod tests {
 
         let mut model = empty_model();
         model.initial = "nope".into();
-        model
-            .states
-            .insert("s1".into(), Default::default());
+        model.states.insert("s1".into(), Default::default());
         let scxml_err = can_generate_static(&model).expect_err("undeclared");
         let scxml_diags = scxml_err.to_diagnostics();
         assert_eq!(scxml_diags.len(), 1);

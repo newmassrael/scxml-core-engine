@@ -63,8 +63,7 @@ fn worker_fixture(name: &str) -> String {
 
 fn build_workspace() -> tempfile::TempDir {
     let dir = tempdir().expect("tempdir");
-    fs::write(dir.path().join("udp_scout.scxml"), link_fixture())
-        .expect("write link");
+    fs::write(dir.path().join("udp_scout.scxml"), link_fixture()).expect("write link");
     dir
 }
 
@@ -77,15 +76,9 @@ fn compile_worker(
     let scxml = worker_fixture(worker_name);
     let label = DocumentLabel::symmetric(worker_name);
     let _ = base_dir;
-    compile_forge_with_deploy(
-        &scxml,
-        label,
-        Language::Rust,
-        deploy,
-        target_machine,
-    )
-    .map(|_| ())
-    .map_err(|e| e.error)
+    compile_forge_with_deploy(&scxml, label, Language::Rust, deploy, target_machine)
+        .map(|_| ())
+        .map_err(|e| e.error)
 }
 
 // ─── Happy: full cooperative scheduler + workers block parses ─────────
@@ -152,9 +145,7 @@ topology:
         Err(DeployError::SchedulerCooperativeMissingSlotBudget { machine }) => {
             assert_eq!(machine, "mcu_node");
         }
-        other => panic!(
-            "expected SchedulerCooperativeMissingSlotBudget, got {other:?}"
-        ),
+        other => panic!("expected SchedulerCooperativeMissingSlotBudget, got {other:?}"),
     }
 }
 
@@ -178,9 +169,7 @@ topology:
         Err(DeployError::SchedulerCooperativeMissingKeepaliveJitterBudget { machine }) => {
             assert_eq!(machine, "mcu_node");
         }
-        other => panic!(
-            "expected SchedulerCooperativeMissingKeepaliveJitterBudget, got {other:?}"
-        ),
+        other => panic!("expected SchedulerCooperativeMissingKeepaliveJitterBudget, got {other:?}"),
     }
 }
 
@@ -224,9 +213,7 @@ topology:
             assert_eq!(tick_period_us, 1000);
             assert_eq!(worker_slot_budget_us, 300);
         }
-        other => panic!(
-            "expected SchedulerIncompatibleWithWorkerCount, got {other:?}"
-        ),
+        other => panic!("expected SchedulerIncompatibleWithWorkerCount, got {other:?}"),
     }
 }
 
@@ -277,9 +264,7 @@ topology:
             // Wire-name rename verified by golden test; this fixture
             // only asserts the variant still fires.
         }
-        other => panic!(
-            "expected SchedulerCooperativeMissingStackBudget, got {other:?}"
-        ),
+        other => panic!("expected SchedulerCooperativeMissingStackBudget, got {other:?}"),
     }
 }
 
@@ -305,12 +290,7 @@ topology:
           some_other_worker:
 "##;
     let deploy = parse_deploy_str(yaml).expect("deploy parses");
-    let err = match compile_worker(
-        ws.path(),
-        Some(&deploy),
-        Some("mcu_node"),
-        "rx_loop",
-    ) {
+    let err = match compile_worker(ws.path(), Some(&deploy), Some("mcu_node"), "rx_loop") {
         Ok(()) => panic!("worker/scheduler-unsupported must reject"),
         Err(e) => e,
     };
@@ -348,13 +328,8 @@ topology:
           rx_loop:
 "##;
     let deploy = parse_deploy_str(yaml).expect("deploy parses");
-    compile_worker(
-        ws.path(),
-        Some(&deploy),
-        Some("mcu_node"),
-        "rx_loop",
-    )
-    .expect("declared worker must compile under deploy");
+    compile_worker(ws.path(), Some(&deploy), Some("mcu_node"), "rx_loop")
+        .expect("declared worker must compile under deploy");
 }
 
 // ─── Silent-skip: deploy-unaware path ─────────────────────────────────
@@ -365,8 +340,7 @@ fn deploy_unaware_path_silent_skips_worker_scheduler_check() {
     // (Q-η5 (a) precedent). Worker compiles even though there's no
     // deploy declaration.
     let ws = build_workspace();
-    compile_worker(ws.path(), None, None, "rx_loop")
-        .expect("deploy-unaware path must silent-skip");
+    compile_worker(ws.path(), None, None, "rx_loop").expect("deploy-unaware path must silent-skip");
 }
 
 // ─── Tokio / Rt: required-when-cooperative scopes correctly ───────────

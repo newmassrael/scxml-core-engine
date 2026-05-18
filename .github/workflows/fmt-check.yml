@@ -1,0 +1,61 @@
+name: Rust fmt check
+
+# CI gate enforcing `cargo fmt --all -- --check` on every push and PR.
+# Mirrors the drift-verify.yml pattern: a fast pre-merge guard so the
+# tree stays canonically formatted, preventing the cosmetic-vs-intent
+# scope-creep that motivated installing the gate in the first place
+# (Sce mesh_open_issues.md Issue 2 commit, 2026-05-18).
+#
+# Workflow is intentionally minimal — fmt has no test fixtures, no
+# native build dependencies, no expensive caches. A single rustfmt
+# invocation on the whole workspace finishes in seconds. Failure mode
+# is exactly one diagnostic: `cargo fmt --all` prints a per-file diff
+# of what needs to change; developers run `cargo fmt --all` locally
+# to fix.
+#
+# The corresponding pre-commit hook (scripts/install-hooks.sh) gives
+# developers a local fast-fail, but the CI gate is the authoritative
+# enforcement point — hooks are opt-in install per developer, the
+# workflow is mandatory per merge.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '**/*.rs'
+      - '**/Cargo.toml'
+      - 'Cargo.lock'
+      - 'rustfmt.toml'
+      - '.rustfmt.toml'
+      - '.github/workflows/fmt-check.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '**/*.rs'
+      - '**/Cargo.toml'
+      - 'Cargo.lock'
+      - 'rustfmt.toml'
+      - '.rustfmt.toml'
+      - '.github/workflows/fmt-check.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fmt-check:
+    name: cargo fmt --all -- --check
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust Toolchain (with rustfmt)
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt
+
+    - name: cargo fmt --all -- --check
+      run: cargo fmt --all -- --check

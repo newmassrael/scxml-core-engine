@@ -48,7 +48,11 @@ impl VerifyFixture {
         fs::create_dir_all(&template_root).unwrap();
         fs::write(&cargo_lock, b"# synthetic lock file\n").unwrap();
         fs::write(input_root.join("foo.scxml"), b"<scxml/>").unwrap();
-        fs::write(template_root.join("state_machine.jinja2"), b"sample template").unwrap();
+        fs::write(
+            template_root.join("state_machine.jinja2"),
+            b"sample template",
+        )
+        .unwrap();
         VerifyFixture {
             _root: root,
             input_root,
@@ -143,7 +147,10 @@ fn verify_fails_when_source_drifts() {
     fs::write(fix.input_root.join("foo.scxml"), b"<scxml version='1.0'/>").unwrap();
 
     let (code, _stdout, stderr) = fix.run_verify();
-    assert_ne!(code, 0, "verify must fail when source drifted. stderr: {stderr}");
+    assert_ne!(
+        code, 0,
+        "verify must fail when source drifted. stderr: {stderr}"
+    );
     assert!(
         stderr.contains("source-hash") || stderr.contains("forge/source-hash-mismatch"),
         "diagnostic must name the drift axis. stderr: {stderr}"
@@ -164,7 +171,10 @@ fn verify_fails_when_template_drifts() {
     .unwrap();
 
     let (code, _stdout, stderr) = fix.run_verify();
-    assert_ne!(code, 0, "verify must fail when template drifted. stderr: {stderr}");
+    assert_ne!(
+        code, 0,
+        "verify must fail when template drifted. stderr: {stderr}"
+    );
     assert!(
         stderr.contains("template-hash") || stderr.contains("forge/source-hash-mismatch"),
         "diagnostic must name the drift axis. stderr: {stderr}"
@@ -194,7 +204,11 @@ fn helper_emits_python_header_with_hash_prefix() {
     sce_build::apply_drift_headers_to_output(&mut output, &hashes, 0);
 
     for (filename, content) in &output.files {
-        let prefix_expected = if filename.ends_with(".py") { "# " } else { "// " };
+        let prefix_expected = if filename.ends_with(".py") {
+            "# "
+        } else {
+            "// "
+        };
         let first_line = content.lines().next().unwrap();
         assert!(
             first_line.starts_with(prefix_expected),
@@ -224,7 +238,10 @@ fn helper_is_idempotent_across_two_invocations() {
     let once = output.files[0].1.clone();
     sce_build::apply_drift_headers_to_output(&mut output, &hashes, 100);
     let twice = output.files[0].1.clone();
-    assert_eq!(once, twice, "helper must be idempotent under repeat application");
+    assert_eq!(
+        once, twice,
+        "helper must be idempotent under repeat application"
+    );
 }
 
 #[test]
@@ -242,7 +259,10 @@ fn verify_passes_when_run_from_different_working_directory() {
     let alt_cwd = fix._root.path().join("alt-cwd");
     fs::create_dir_all(&alt_cwd).unwrap();
     let (code, _stdout, stderr) = fix.run_verify_from(Some(&alt_cwd));
-    assert_eq!(code, 0, "verify with absolute paths must be cwd-independent. stderr: {stderr}");
+    assert_eq!(
+        code, 0,
+        "verify with absolute paths must be cwd-independent. stderr: {stderr}"
+    );
 }
 
 #[test]
@@ -365,7 +385,11 @@ fn input_root_override_pins_hash_to_canonical_location() {
     );
 
     let foo_sm = out_dir.join("foo_sm.rs");
-    assert!(foo_sm.exists(), "generate must emit foo_sm.rs at {}", foo_sm.display());
+    assert!(
+        foo_sm.exists(),
+        "generate must emit foo_sm.rs at {}",
+        foo_sm.display()
+    );
     let content = fs::read_to_string(&foo_sm).unwrap();
     let expected_line = format!("source-hash: {}", canonical_hashes.source_hex());
     assert!(

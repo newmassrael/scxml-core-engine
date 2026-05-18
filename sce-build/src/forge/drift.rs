@@ -384,7 +384,10 @@ mod tests {
         write_file(root, "noise.txt", b"ignore me");
         write_file(root, "deploy.yaml", b"untouched");
         let h_post = compute_source_hash(root, None).unwrap();
-        assert_eq!(h_pre, h_post, "non-.scxml files must not contribute to source-hash");
+        assert_eq!(
+            h_pre, h_post,
+            "non-.scxml files must not contribute to source-hash"
+        );
     }
 
     #[test]
@@ -407,7 +410,10 @@ mod tests {
         let deploy = write_file(root, "deploy.yaml", b"machines: {}");
         let h_with = compute_source_hash(root, Some(&deploy)).unwrap();
         let h_without = compute_source_hash(root, None).unwrap();
-        assert_ne!(h_with, h_without, "deploy.yaml inclusion must affect source-hash");
+        assert_ne!(
+            h_with, h_without,
+            "deploy.yaml inclusion must affect source-hash"
+        );
     }
 
     #[test]
@@ -513,7 +519,9 @@ mod tests {
         let prev = std::env::var("SOURCE_DATE_EPOCH").ok();
         // SAFETY: env var manipulation in tests; isolated per-process by
         // cargo test default thread model.
-        unsafe { std::env::set_var("SOURCE_DATE_EPOCH", "42"); }
+        unsafe {
+            std::env::set_var("SOURCE_DATE_EPOCH", "42");
+        }
         assert_eq!(now_utc_seconds(), 42);
         match prev {
             Some(v) => unsafe { std::env::set_var("SOURCE_DATE_EPOCH", v) },

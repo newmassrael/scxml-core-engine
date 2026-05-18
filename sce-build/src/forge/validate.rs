@@ -32,13 +32,10 @@ use crate::forge::model::{ProcedureModel, ProcedureState, SceType};
 /// validation error at a time. Multi-violation aggregation is
 /// out-of-scope for this pass (consistent with how `parse_procedure`
 /// itself short-circuits on the first failure).
-pub fn validate_bytes_max_size_consistency(
-    model: &ProcedureModel,
-) -> Result<(), ValidationError> {
+pub fn validate_bytes_max_size_consistency(model: &ProcedureModel) -> Result<(), ValidationError> {
     // Build a map: slot id -> resolved cap. Only bytes-typed slots
     // participate; everything else is irrelevant to this contract.
-    let mut slot_caps: std::collections::HashMap<&str, u32> =
-        std::collections::HashMap::new();
+    let mut slot_caps: std::collections::HashMap<&str, u32> = std::collections::HashMap::new();
     for f in model.inputs.iter().chain(model.internals.iter()) {
         if matches!(f.sce_type, SceType::Bytes) {
             slot_caps.insert(f.id.as_str(), resolve_bytes_max(f.max_size));

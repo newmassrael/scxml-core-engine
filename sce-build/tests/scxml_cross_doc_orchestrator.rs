@@ -230,8 +230,7 @@ fn on_sample_sample_take_without_stage_pool_fires() {
 
     match err.error {
         ForgeError::Validation(ValidationError::PoolSampleTakeWithoutStagePool {
-            link,
-            ..
+            link, ..
         }) => {
             assert_eq!(link, "scout_link");
         }
@@ -574,10 +573,7 @@ fn c13_link_not_declared_in_deploy_fires_through_orchestrator() {
     match err.error {
         ForgeError::Mesh(ref mesh_err) => match mesh_err {
             sce_build::mesh::error::MeshError::Deploy(
-                sce_build::mesh::error::DeployError::LinkNotDeclaredInDeploy {
-                    link_name,
-                    ..
-                },
+                sce_build::mesh::error::DeployError::LinkNotDeclaredInDeploy { link_name, .. },
             ) => {
                 assert_eq!(link_name, "udp_data");
             }

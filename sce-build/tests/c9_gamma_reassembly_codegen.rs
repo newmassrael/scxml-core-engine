@@ -372,8 +372,7 @@ fn reassembly_peer_id_zid_self_check_force_fixture_rust() {
         language: "rust".into(),
     }
     .into();
-    let located: Located<ForgeError> =
-        Located::new(err, "rx_reassembly_pool.scxml", None, None);
+    let located: Located<ForgeError> = Located::new(err, "rx_reassembly_pool.scxml", None, None);
     let diags = located.to_diagnostics();
     assert_eq!(diags.len(), 1);
     let d = &diags[0];
@@ -414,8 +413,7 @@ fn reassembly_peer_id_zid_self_check_force_fixture_c11() {
         language: "c11".into(),
     }
     .into();
-    let located: Located<ForgeError> =
-        Located::new(err, "rx_reassembly_pool.scxml", None, None);
+    let located: Located<ForgeError> = Located::new(err, "rx_reassembly_pool.scxml", None, None);
     let diags = located.to_diagnostics();
     assert_eq!(diags.len(), 1);
     let d = &diags[0];

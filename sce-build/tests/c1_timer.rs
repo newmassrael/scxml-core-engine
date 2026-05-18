@@ -59,32 +59,28 @@ fn compile_via_imports(scxml: &str, lang: Language, base_dir: &Path) -> Result<(
 fn duration_seconds_unit_parses() {
     let dir = tempdir().expect("tempdir");
     let scxml = timer_xml("5s", "tick");
-    compile_via_imports(&scxml, Language::Rust, dir.path())
-        .expect("5s must parse");
+    compile_via_imports(&scxml, Language::Rust, dir.path()).expect("5s must parse");
 }
 
 #[test]
 fn duration_milliseconds_unit_parses() {
     let dir = tempdir().expect("tempdir");
     let scxml = timer_xml("250ms", "tick");
-    compile_via_imports(&scxml, Language::Rust, dir.path())
-        .expect("250ms must parse");
+    compile_via_imports(&scxml, Language::Rust, dir.path()).expect("250ms must parse");
 }
 
 #[test]
 fn duration_microseconds_unit_parses() {
     let dir = tempdir().expect("tempdir");
     let scxml = timer_xml("500us", "tick");
-    compile_via_imports(&scxml, Language::Rust, dir.path())
-        .expect("500us must parse");
+    compile_via_imports(&scxml, Language::Rust, dir.path()).expect("500us must parse");
 }
 
 #[test]
 fn duration_minutes_unit_parses() {
     let dir = tempdir().expect("tempdir");
     let scxml = timer_xml("2m", "tick");
-    compile_via_imports(&scxml, Language::Rust, dir.path())
-        .expect("2m must parse");
+    compile_via_imports(&scxml, Language::Rust, dir.path()).expect("2m must parse");
 }
 
 #[test]
@@ -95,8 +91,10 @@ fn duration_unknown_unit_rejected() {
         .expect_err("unknown unit must reject");
     match err {
         ForgeError::Validation(ValidationError::NumericParse { detail, .. }) => {
-            assert!(detail.contains("unsupported duration unit"),
-                "expected unit-error detail, got: {detail}");
+            assert!(
+                detail.contains("unsupported duration unit"),
+                "expected unit-error detail, got: {detail}"
+            );
         }
         other => panic!("expected NumericParse, got {other:?}"),
     }
@@ -110,8 +108,10 @@ fn duration_missing_unit_rejected() {
         .expect_err("missing unit must reject");
     match err {
         ForgeError::Validation(ValidationError::NumericParse { detail, .. }) => {
-            assert!(detail.contains("missing unit suffix"),
-                "expected missing-unit detail, got: {detail}");
+            assert!(
+                detail.contains("missing unit suffix"),
+                "expected missing-unit detail, got: {detail}"
+            );
         }
         other => panic!("expected NumericParse, got {other:?}"),
     }
@@ -140,18 +140,30 @@ fn full_lifecycle_emits_rust_struct_with_reset_and_cancel() {
     )
     .expect("full lifecycle must compile");
     let (_, code) = out.files.first().expect("at least one file");
-    assert!(code.contains("pub const PERIOD_US: u64 = 5000000;"),
-        "PERIOD_US constant missing:\n{code}");
-    assert!(code.contains(r#"pub const RESET_ON_EVENT: &'static str = "session.msg.received";"#),
-        "RESET_ON_EVENT constant missing:\n{code}");
-    assert!(code.contains(r#"pub const CANCEL_ON_STATE_EXIT: &'static str = "established";"#),
-        "CANCEL_ON_STATE_EXIT constant missing:\n{code}");
-    assert!(code.contains("fn on_reset_session_msg_received"),
-        "reset hook method missing:\n{code}");
-    assert!(code.contains("fn on_cancel_established_exit"),
-        "cancel hook method missing:\n{code}");
-    assert!(code.contains("fn fire_keepalive_tick"),
-        "fire callback missing:\n{code}");
+    assert!(
+        code.contains("pub const PERIOD_US: u64 = 5000000;"),
+        "PERIOD_US constant missing:\n{code}"
+    );
+    assert!(
+        code.contains(r#"pub const RESET_ON_EVENT: &'static str = "session.msg.received";"#),
+        "RESET_ON_EVENT constant missing:\n{code}"
+    );
+    assert!(
+        code.contains(r#"pub const CANCEL_ON_STATE_EXIT: &'static str = "established";"#),
+        "CANCEL_ON_STATE_EXIT constant missing:\n{code}"
+    );
+    assert!(
+        code.contains("fn on_reset_session_msg_received"),
+        "reset hook method missing:\n{code}"
+    );
+    assert!(
+        code.contains("fn on_cancel_established_exit"),
+        "cancel hook method missing:\n{code}"
+    );
+    assert!(
+        code.contains("fn fire_keepalive_tick"),
+        "fire callback missing:\n{code}"
+    );
 }
 
 #[test]
@@ -167,12 +179,18 @@ fn minimal_shape_emits_rust_struct_without_optional_hooks() {
     )
     .expect("minimal shape must compile");
     let (_, code) = out.files.first().expect("at least one file");
-    assert!(code.contains("pub const PERIOD_US: u64 = 100000;"),
-        "PERIOD_US constant missing:\n{code}");
-    assert!(!code.contains("RESET_ON_EVENT"),
-        "RESET_ON_EVENT must elide when reset-on absent:\n{code}");
-    assert!(!code.contains("CANCEL_ON_STATE_EXIT"),
-        "CANCEL_ON_STATE_EXIT must elide when cancel-on absent:\n{code}");
+    assert!(
+        code.contains("pub const PERIOD_US: u64 = 100000;"),
+        "PERIOD_US constant missing:\n{code}"
+    );
+    assert!(
+        !code.contains("RESET_ON_EVENT"),
+        "RESET_ON_EVENT must elide when reset-on absent:\n{code}"
+    );
+    assert!(
+        !code.contains("CANCEL_ON_STATE_EXIT"),
+        "CANCEL_ON_STATE_EXIT must elide when cancel-on absent:\n{code}"
+    );
 }
 
 #[test]
@@ -196,12 +214,18 @@ fn full_lifecycle_emits_c11_header_with_reset_and_cancel() {
     )
     .expect("C11 full lifecycle must compile");
     let (_, code) = out.files.first().expect("at least one file");
-    assert!(code.contains("KEEPALIVE_PERIOD_US"),
-        "PERIOD_US macro missing:\n{code}");
-    assert!(code.contains("keepalive_on_reset_heartbeat"),
-        "reset hook missing:\n{code}");
-    assert!(code.contains("keepalive_on_cancel_idle_exit"),
-        "cancel hook missing:\n{code}");
+    assert!(
+        code.contains("KEEPALIVE_PERIOD_US"),
+        "PERIOD_US macro missing:\n{code}"
+    );
+    assert!(
+        code.contains("keepalive_on_reset_heartbeat"),
+        "reset hook missing:\n{code}"
+    );
+    assert!(
+        code.contains("keepalive_on_cancel_idle_exit"),
+        "cancel hook missing:\n{code}"
+    );
 }
 
 // ─── Negative: missing required elements ──────────────────────────────

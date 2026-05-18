@@ -298,7 +298,10 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
     use TransportCapability::*;
 
     static LOCAL: TransportDescriptor = TransportDescriptor {
-        shape: TransportShape { has_per_target_field: true, has_shared_session: false },
+        shape: TransportShape {
+            has_per_target_field: true,
+            has_shared_session: false,
+        },
         capabilities: &[RequestReply, FireForget, PubSub, FieldAccess],
         implemented: true,
         required_binding_fields: &[],
@@ -320,7 +323,10 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         supports_inter_partition_ipc: false,
     };
     static SHM: TransportDescriptor = TransportDescriptor {
-        shape: TransportShape { has_per_target_field: true, has_shared_session: false },
+        shape: TransportShape {
+            has_per_target_field: true,
+            has_shared_session: false,
+        },
         capabilities: &[FireForget, FieldAccess],
         implemented: true,
         required_binding_fields: &[],
@@ -343,7 +349,10 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         supports_inter_partition_ipc: true,
     };
     static SOMEIP: TransportDescriptor = TransportDescriptor {
-        shape: TransportShape { has_per_target_field: true, has_shared_session: false },
+        shape: TransportShape {
+            has_per_target_field: true,
+            has_shared_session: false,
+        },
         capabilities: &[RequestReply, FireForget, PubSub, FieldAccess],
         implemented: true,
         // SOME/IP identity (`service_id` + `instance_id`) and per-event IDs
@@ -401,7 +410,10 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         supports_inter_partition_ipc: false,
     };
     static ZENOH: TransportDescriptor = TransportDescriptor {
-        shape: TransportShape { has_per_target_field: false, has_shared_session: true },
+        shape: TransportShape {
+            has_per_target_field: false,
+            has_shared_session: true,
+        },
         // Zenoh supports RPC via queryable/query primitives — `session.get()`
         // against a `declare_queryable()` endpoint. Correlation is handled
         // natively by the Zenoh runtime (reply callbacks), so no per-router
@@ -446,7 +458,10 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
     // server. FireForget only in this session — RPC/PubSub/FieldAccess
     // arrive with the dedup layer + duplex correlation in the next session.
     static CUSTOM_TCP: TransportDescriptor = TransportDescriptor {
-        shape: TransportShape { has_per_target_field: true, has_shared_session: true },
+        shape: TransportShape {
+            has_per_target_field: true,
+            has_shared_session: true,
+        },
         capabilities: &[FireForget],
         implemented: true,
         required_binding_fields: &["connect"],
@@ -473,7 +488,10 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         supports_inter_partition_ipc: true,
     };
     static DDS: TransportDescriptor = TransportDescriptor {
-        shape: TransportShape { has_per_target_field: true, has_shared_session: false },
+        shape: TransportShape {
+            has_per_target_field: true,
+            has_shared_session: false,
+        },
         capabilities: &[FireForget, PubSub, FieldAccess],
         implemented: false,
         required_binding_fields: &[],
@@ -505,7 +523,10 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         supports_inter_partition_ipc: false,
     };
     static CAN: TransportDescriptor = TransportDescriptor {
-        shape: TransportShape { has_per_target_field: true, has_shared_session: false },
+        shape: TransportShape {
+            has_per_target_field: true,
+            has_shared_session: false,
+        },
         capabilities: &[FireForget, FieldAccess],
         implemented: false,
         required_binding_fields: &[],
@@ -659,7 +680,10 @@ mod tests {
         for name in &["dds", "can"] {
             let d = lookup(name).unwrap();
             assert!(!d.implemented, "transport '{name}' has no template yet");
-            assert!(!d.capabilities.is_empty(), "transport '{name}' should still have capabilities for pattern validation");
+            assert!(
+                !d.capabilities.is_empty(),
+                "transport '{name}' should still have capabilities for pattern validation"
+            );
         }
     }
 
@@ -800,11 +824,19 @@ mod tests {
         // semantics make sender-stamped sequence meaningless at the
         // receiver. Adding another such transport would force this test
         // to update alongside the topology reject path.
-        let nonrepresentable: Vec<&str> = ["local", "shm", "someip", "zenoh", "custom_tcp", "dds", "can"]
-            .iter()
-            .copied()
-            .filter(|n| !lookup(n).unwrap().ordering_representable)
-            .collect();
+        let nonrepresentable: Vec<&str> = [
+            "local",
+            "shm",
+            "someip",
+            "zenoh",
+            "custom_tcp",
+            "dds",
+            "can",
+        ]
+        .iter()
+        .copied()
+        .filter(|n| !lookup(n).unwrap().ordering_representable)
+        .collect();
         assert_eq!(nonrepresentable, vec!["can"]);
     }
 
@@ -823,11 +855,19 @@ mod tests {
         // (e.g. iceoryx2, a local unix socket) must flip this flag in
         // the same commit that adds the registry entry — this guard
         // fails loudly instead of the addition landing silently.
-        let ipc_true: Vec<&str> = ["local", "shm", "someip", "zenoh", "custom_tcp", "dds", "can"]
-            .iter()
-            .copied()
-            .filter(|n| lookup(n).unwrap().supports_inter_partition_ipc)
-            .collect();
+        let ipc_true: Vec<&str> = [
+            "local",
+            "shm",
+            "someip",
+            "zenoh",
+            "custom_tcp",
+            "dds",
+            "can",
+        ]
+        .iter()
+        .copied()
+        .filter(|n| lookup(n).unwrap().supports_inter_partition_ipc)
+        .collect();
         assert_eq!(ipc_true, vec!["shm", "custom_tcp"]);
     }
 
@@ -841,11 +881,19 @@ mod tests {
         // A future addition must update this regression guard in the
         // same commit that flips the flag, so the transport registry
         // and the parse-time reject stay synchronised.
-        let multi_instance_true: Vec<&str> = ["local", "shm", "someip", "zenoh", "custom_tcp", "dds", "can"]
-            .iter()
-            .copied()
-            .filter(|n| lookup(n).unwrap().supports_multi_instance_server)
-            .collect();
+        let multi_instance_true: Vec<&str> = [
+            "local",
+            "shm",
+            "someip",
+            "zenoh",
+            "custom_tcp",
+            "dds",
+            "can",
+        ]
+        .iter()
+        .copied()
+        .filter(|n| lookup(n).unwrap().supports_multi_instance_server)
+        .collect();
         assert_eq!(multi_instance_true, vec!["someip"]);
     }
 

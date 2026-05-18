@@ -27,11 +27,7 @@ use crate::DocumentLabel;
 /// through here so location data on diagnostics is uniform: an agent
 /// reading `xml/schema-validation` and `validation/missing-attribute`
 /// records gets the same shape of location hint for both.
-fn located<E: Into<ForgeError>>(
-    node: &roxmltree::Node,
-    name: &str,
-    err: E,
-) -> Located<ForgeError> {
+fn located<E: Into<ForgeError>>(node: &roxmltree::Node, name: &str, err: E) -> Located<ForgeError> {
     let pos = node.document().text_pos_at(node.range().start);
     Located::new(err.into(), name, Some(pos.row), Some(pos.col))
 }
@@ -64,10 +60,7 @@ fn located_at_line<E: Into<ForgeError>>(
 /// across diagnostics and SCE-MAP markers means an author-side tool
 /// opens the same file for both.
 #[inline]
-fn forge_source_location_of(
-    node: &roxmltree::Node,
-    source_name: &str,
-) -> Option<SourceLocation> {
+fn forge_source_location_of(node: &roxmltree::Node, source_name: &str) -> Option<SourceLocation> {
     let pos = node.document().text_pos_at(node.range().start);
     Some(SourceLocation {
         file: source_name.to_string(),
@@ -85,8 +78,7 @@ fn forge_source_location_of(
 /// the higher-level `parse_forge_with_imports` entry point; this
 /// lower-level helper reports the file-less version.
 pub fn detect_kind(content: &str) -> Result<Option<ForgeKind>, ForgeError> {
-    let doc = roxmltree::Document::parse(content)
-        .map_err(|e| XmlError::Parse(e.to_string()))?;
+    let doc = roxmltree::Document::parse(content).map_err(|e| XmlError::Parse(e.to_string()))?;
     let root = doc.root_element();
     Ok(detect_kind_from_node(&root)?)
 }
@@ -147,9 +139,8 @@ pub fn parse_forge_with_imports_and_plugin(
     crate::forge::xsd_validator::validate_or_skip(content, diag)
         .map_err(|e| Located::new(XmlError::SchemaValidation(e).into(), diag, None, None))?;
 
-    let doc = roxmltree::Document::parse(content).map_err(|e| {
-        Located::new(XmlError::Parse(e.to_string()).into(), diag, None, None)
-    })?;
+    let doc = roxmltree::Document::parse(content)
+        .map_err(|e| Located::new(XmlError::Parse(e.to_string()).into(), diag, None, None))?;
     let root = doc.root_element();
 
     let kind = match detect_kind_from_node(&root) {
@@ -471,15 +462,18 @@ fn parse_forge_from_node(
         ForgeKind::Validator => parse_validator(root, label).map(ForgeDocument::Validator),
         ForgeKind::Procedure => parse_procedure(root, label).map(ForgeDocument::Procedure),
         ForgeKind::Filter => parse_filter(root, label).map(ForgeDocument::Filter),
-        ForgeKind::Interpolation => parse_interpolation(root, label).map(ForgeDocument::Interpolation),
+        ForgeKind::Interpolation => {
+            parse_interpolation(root, label).map(ForgeDocument::Interpolation)
+        }
         ForgeKind::Timer => parse_timer(root, label).map(ForgeDocument::Timer),
         ForgeKind::Observer => parse_observer(root, label).map(ForgeDocument::Observer),
         ForgeKind::Algorithm => parse_algorithm(root, label).map(ForgeDocument::Algorithm),
         ForgeKind::Link => parse_link(root, label).map(ForgeDocument::Link),
         ForgeKind::BufferPool => parse_buffer_pool(root, label).map(ForgeDocument::BufferPool),
         ForgeKind::Worker => parse_worker(root, label).map(ForgeDocument::Worker),
-        ForgeKind::BoundedCollection => parse_bounded_collection(root, label)
-            .map(ForgeDocument::BoundedCollection),
+        ForgeKind::BoundedCollection => {
+            parse_bounded_collection(root, label).map(ForgeDocument::BoundedCollection)
+        }
         ForgeKind::Statechart => Err(located(
             root,
             label.diagnostic_label,
@@ -518,20 +512,22 @@ fn parse_forge_from_node(
 // `label.diagnostic_label` into model `name` — would fold `.scxml`
 // into generated Go/C++/Kotlin symbols.
 
-
-
-
 // ── Transform parsing ──────────────────────────────────────────
 
 fn parse_transform(
     root: &roxmltree::Node,
     label: DocumentLabel<'_>,
 ) -> Result<TransformModel, Located<ForgeError>> {
-    let datamodel = find_child(root, "datamodel")
-        .ok_or_else(|| located(root, label.diagnostic_label, ValidationError::MissingElement {
-            kind: ForgeKind::Transform,
-            element: "datamodel".into(),
-        }))?;
+    let datamodel = find_child(root, "datamodel").ok_or_else(|| {
+        located(
+            root,
+            label.diagnostic_label,
+            ValidationError::MissingElement {
+                kind: ForgeKind::Transform,
+                element: "datamodel".into(),
+            },
+        )
+    })?;
 
     let mut inputs = Vec::new();
     let mut outputs = Vec::new();
@@ -542,34 +538,50 @@ fn parse_transform(
             Direction::In => inputs.push(field),
             Direction::Out => outputs.push(field),
             Direction::Internal => {
-                return Err(located(&data, label.diagnostic_label, ValidationError::InvalidDirection {
-                    kind: ForgeKind::Transform,
-                    direction: "internal".into(),
-                    field: field.id,
-                }));
+                return Err(located(
+                    &data,
+                    label.diagnostic_label,
+                    ValidationError::InvalidDirection {
+                        kind: ForgeKind::Transform,
+                        direction: "internal".into(),
+                        field: field.id,
+                    },
+                ));
             }
         }
     }
 
     if inputs.is_empty() {
-        return Err(located(&datamodel, label.diagnostic_label, ValidationError::EmptyCollection {
-            kind: ForgeKind::Transform,
-            what: "input field".into(),
-        }));
+        return Err(located(
+            &datamodel,
+            label.diagnostic_label,
+            ValidationError::EmptyCollection {
+                kind: ForgeKind::Transform,
+                what: "input field".into(),
+            },
+        ));
     }
     if outputs.is_empty() {
-        return Err(located(&datamodel, label.diagnostic_label, ValidationError::EmptyCollection {
-            kind: ForgeKind::Transform,
-            what: "output field".into(),
-        }));
+        return Err(located(
+            &datamodel,
+            label.diagnostic_label,
+            ValidationError::EmptyCollection {
+                kind: ForgeKind::Transform,
+                what: "output field".into(),
+            },
+        ));
     }
 
     for out in &outputs {
         if out.expr.is_none() {
-            return Err(located(&datamodel, label.diagnostic_label, ValidationError::MissingAttribute {
-                element: format!("Transform output field '{}'", out.id),
-                attr: "expr".into(),
-            }));
+            return Err(located(
+                &datamodel,
+                label.diagnostic_label,
+                ValidationError::MissingAttribute {
+                    element: format!("Transform output field '{}'", out.id),
+                    attr: "expr".into(),
+                },
+            ));
         }
     }
 
@@ -623,10 +635,16 @@ fn parse_lookup(
             output = Some(parse_forge_field(&data, label.diagnostic_label)?);
         } else {
             if let Some(def) = sce_attr(&data, "default") {
-                explicit_default = Some(DataAttr { value: def, node: data });
+                explicit_default = Some(DataAttr {
+                    value: def,
+                    node: data,
+                });
             }
             if let Some(oms) = sce_attr(&data, "on-miss") {
-                on_miss_attr = Some(DataAttr { value: oms, node: data });
+                on_miss_attr = Some(DataAttr {
+                    value: oms,
+                    node: data,
+                });
             }
             entries.extend(parse_sce_entries(&data, label.diagnostic_label)?);
         }
@@ -880,7 +898,10 @@ fn parse_codec(
                 fields.push(parse_codec_flags_from_node(&child, label.diagnostic_label)?);
             }
             "repeat" => {
-                fields.push(parse_codec_repeat_from_node(&child, label.diagnostic_label)?);
+                fields.push(parse_codec_repeat_from_node(
+                    &child,
+                    label.diagnostic_label,
+                )?);
             }
             "tlv-chain" => {
                 fields.push(parse_codec_tlv_chain_from_node(&child, label)?);
@@ -1217,18 +1238,16 @@ fn validate_codec_present_if_predicates(
                                 ),
                                 attr: "sce:present-if".into(),
                                 value: format!("parent.{}", predicate.flag_name),
-                                expected:
-                                    "codec must declare \
+                                expected: "codec must declare \
                                      <sce:requires-parent-flags carrier=\"...\"> \
                                      before using a 'parent.<flag>' predicate"
-                                        .into(),
+                                    .into(),
                             },
                         ));
                     }
                 };
                 if !parent.flags.iter().any(|f| f.name == predicate.flag_name) {
-                    let known: Vec<&str> =
-                        parent.flags.iter().map(|f| f.name.as_str()).collect();
+                    let known: Vec<&str> = parent.flags.iter().map(|f| f.name.as_str()).collect();
                     return Err(located(
                         datamodel,
                         label.diagnostic_label,
@@ -1291,11 +1310,7 @@ fn validate_codec_present_if_predicates(
                                 },
                             ));
                         }
-                        if !carrier
-                            .flags
-                            .iter()
-                            .any(|f| f.name == predicate.flag_name)
-                        {
+                        if !carrier.flags.iter().any(|f| f.name == predicate.flag_name) {
                             let known: Vec<&str> =
                                 carrier.flags.iter().map(|f| f.name.as_str()).collect();
                             return Err(located(
@@ -1404,18 +1419,16 @@ fn parse_peek_byte_from_variant_node(
     // `<sce:flags sce:type="...">` (both carry width semantics on a
     // flags-bearing carrier), but its enumeration is currently
     // restricted to `uint8`.
-    let ty = node
-        .attribute((SCE_NAMESPACE, "type"))
-        .ok_or_else(|| {
-            located(
-                &node,
-                label.diagnostic_label,
-                ValidationError::MissingAttribute {
-                    element: format!("<sce:peek-byte id='{id}'>"),
-                    attr: "sce:type".into(),
-                },
-            )
-        })?;
+    let ty = node.attribute((SCE_NAMESPACE, "type")).ok_or_else(|| {
+        located(
+            &node,
+            label.diagnostic_label,
+            ValidationError::MissingAttribute {
+                element: format!("<sce:peek-byte id='{id}'>"),
+                attr: "sce:type".into(),
+            },
+        )
+    })?;
     if ty != "uint8" {
         return Err(located(
             &node,
@@ -1439,8 +1452,7 @@ fn parse_peek_byte_from_variant_node(
     let mut occupied: u64 = 0;
     let mut flag_defs: Vec<FlagDef> = Vec::new();
     for child in node.children().filter(|n| n.is_element()) {
-        if child.tag_name().namespace() != Some(SCE_NAMESPACE)
-            || child.tag_name().name() != "flag"
+        if child.tag_name().namespace() != Some(SCE_NAMESPACE) || child.tag_name().name() != "flag"
         {
             return Err(located(
                 &child,
@@ -1560,8 +1572,7 @@ fn parse_peek_byte_from_variant_node(
                     element: format!("<sce:flag name='{name}'>"),
                     attr: "bit".into(),
                     value: format!("{bit}..{}", bit + width),
-                    expected: "bit-range disjoint from siblings in same <sce:peek-byte>"
-                        .into(),
+                    expected: "bit-range disjoint from siblings in same <sce:peek-byte>".into(),
                 },
             ));
         }
@@ -1570,7 +1581,12 @@ fn parse_peek_byte_from_variant_node(
         // value comes from the inner codec's MID flag, so peek-byte
         // flags never carry the `value=` wire-constant (RFC
         // variant-default-uniformity Atomic α).
-        flag_defs.push(FlagDef { name, bit, width, value: None });
+        flag_defs.push(FlagDef {
+            name,
+            bit,
+            width,
+            value: None,
+        });
     }
 
     if flag_defs.is_empty() {
@@ -1584,7 +1600,10 @@ fn parse_peek_byte_from_variant_node(
         ));
     }
 
-    Ok(Some(PeekByteSpec { id, flags: flag_defs }))
+    Ok(Some(PeekByteSpec {
+        id,
+        flags: flag_defs,
+    }))
 }
 
 fn parse_codec_variant(
@@ -1705,8 +1724,7 @@ fn parse_codec_variant(
         match peek.flags.iter().find(|f| f.name == *flag_name) {
             Some(flag_def) => (SceType::Uint8, Some(flag_def.width.max(1))),
             None => {
-                let available: Vec<String> =
-                    peek.flags.iter().map(|f| f.name.clone()).collect();
+                let available: Vec<String> = peek.flags.iter().map(|f| f.name.clone()).collect();
                 return Err(located(
                     &variant_node,
                     label.diagnostic_label,
@@ -1906,13 +1924,16 @@ fn parse_codec_variant(
                                 element: format!("<sce:arm value=\"{value_str}\">"),
                                 attr: "default".into(),
                                 value: other.to_string(),
-                                expected: "\"true\" or \"false\" (or omit the attribute)"
-                                    .into(),
+                                expected: "\"true\" or \"false\" (or omit the attribute)".into(),
                             },
                         ));
                     }
                 };
-                arms.push(VariantArm { value, body_alias, is_default });
+                arms.push(VariantArm {
+                    value,
+                    body_alias,
+                    is_default,
+                });
             }
             "default" => {
                 if default_arm.is_some() {
@@ -1946,7 +1967,11 @@ fn parse_codec_variant(
                 // The catch-all is never the Default-trait starting
                 // arm (RFC variant-default-uniformity §3 Q-V3 (a) —
                 // catch-all and default arm are distinct concepts).
-                default_arm = Some(VariantArm { value: 0, body_alias, is_default: false });
+                default_arm = Some(VariantArm {
+                    value: 0,
+                    body_alias,
+                    is_default: false,
+                });
             }
             // Y3 atomic 2b-ii peek-byte: peek-byte was already parsed
             // pre-pass — skip it here so the unknown-child fallback
@@ -2518,8 +2543,7 @@ fn parse_codec_flags_from_node(
     let mut occupied: u64 = 0;
     let mut flag_defs: Vec<FlagDef> = Vec::new();
     for child in node.children().filter(|n| n.is_element()) {
-        if child.tag_name().namespace() != Some(SCE_NAMESPACE)
-            || child.tag_name().name() != "flag"
+        if child.tag_name().namespace() != Some(SCE_NAMESPACE) || child.tag_name().name() != "flag"
         {
             return Err(located(
                 &child,
@@ -2647,8 +2671,7 @@ fn parse_codec_flags_from_node(
                     element: format!("<sce:flag name='{name}'>"),
                     attr: "bit".into(),
                     value: format!("{bit}..{}", bit + width),
-                    expected: "bit-range disjoint from siblings in same <sce:flags>"
-                        .into(),
+                    expected: "bit-range disjoint from siblings in same <sce:flags>".into(),
                 },
             ));
         }
@@ -2703,7 +2726,12 @@ fn parse_codec_flags_from_node(
                 Some(v)
             }
         };
-        flag_defs.push(FlagDef { name, bit, width, value });
+        flag_defs.push(FlagDef {
+            name,
+            bit,
+            width,
+            value,
+        });
     }
 
     if flag_defs.is_empty() {
@@ -3041,17 +3069,19 @@ fn parse_codec_tlv_chain_from_node(
     let terminate_on = match node.attribute("terminate-on") {
         None | Some("exhaust-or-depth") => TlvTerminateStrategy::ExhaustOrDepth,
         Some("entry-flag") => {
-            let flag_name = node.attribute("entry-flag-name").ok_or_else(|| {
-                located(
-                    node,
-                    doc_name,
-                    ValidationError::MissingAttribute {
-                        element: format!("<sce:tlv-chain id='{id}'>"),
-                        attr: "entry-flag-name".into(),
-                    },
-                )
-            })?
-            .to_string();
+            let flag_name = node
+                .attribute("entry-flag-name")
+                .ok_or_else(|| {
+                    located(
+                        node,
+                        doc_name,
+                        ValidationError::MissingAttribute {
+                            element: format!("<sce:tlv-chain id='{id}'>"),
+                            attr: "entry-flag-name".into(),
+                        },
+                    )
+                })?
+                .to_string();
             TlvTerminateStrategy::EntryFlag { flag_name }
         }
         Some(other) => {
@@ -3300,14 +3330,19 @@ fn validate_codec_length_field_refs(
                          (declared via <sce:flags>); '{carrier_id}' is a plain field"
                     )));
                 }
-                let flag = carrier.flags.iter().find(|f| f.name == flag_name).ok_or_else(|| {
-                    let known: Vec<&str> = carrier.flags.iter().map(|f| f.name.as_str()).collect();
-                    invalid(format!(
-                        "flag name must be declared on carrier '{carrier_id}': \
+                let flag = carrier
+                    .flags
+                    .iter()
+                    .find(|f| f.name == flag_name)
+                    .ok_or_else(|| {
+                        let known: Vec<&str> =
+                            carrier.flags.iter().map(|f| f.name.as_str()).collect();
+                        invalid(format!(
+                            "flag name must be declared on carrier '{carrier_id}': \
                          known flags = [{}]",
-                        known.join(", ")
-                    ))
-                })?;
+                            known.join(", ")
+                        ))
+                    })?;
                 if flag.width <= 1 {
                     return Err(invalid(format!(
                         "flag '{carrier_id}.{flag_name}' has width={} but \
@@ -3398,7 +3433,10 @@ fn validate_codec_repeat_count_refs(
     use std::collections::BTreeMap;
     let mut by_id_so_far: BTreeMap<&str, &CodecField> = BTreeMap::new();
     for field in fields {
-        if let BitSize::Repeat { count_ref: CountRef::LengthField(target) } = &field.bit_size {
+        if let BitSize::Repeat {
+            count_ref: CountRef::LengthField(target),
+        } = &field.bit_size
+        {
             match by_id_so_far.get(target.as_str()) {
                 None => {
                     return Err(located(
@@ -3412,8 +3450,7 @@ fn validate_codec_repeat_count_refs(
                     ));
                 }
                 Some(carrier) => {
-                    let is_int = carrier.sce_type.is_unsigned()
-                        || carrier.sce_type.is_signed();
+                    let is_int = carrier.sce_type.is_unsigned() || carrier.sce_type.is_signed();
                     if !is_int {
                         return Err(located(
                             datamodel,
@@ -3464,7 +3501,10 @@ fn validate_codec_repeat_present_if_co_gating(
         let Some(repeat_pred) = &field.present_if else {
             continue;
         };
-        let BitSize::Repeat { count_ref: CountRef::LengthField(target) } = &field.bit_size else {
+        let BitSize::Repeat {
+            count_ref: CountRef::LengthField(target),
+        } = &field.bit_size
+        else {
             continue;
         };
         let count_field = fields
@@ -3714,7 +3754,9 @@ fn parse_one_codec_test_vector(
 
     Ok(CodecTestVector {
         hex,
-        decoded: DecodedValue::Plain { fields: decoded_fields },
+        decoded: DecodedValue::Plain {
+            fields: decoded_fields,
+        },
         source_line: node.document().text_pos_at(node.range().start).row as usize,
     })
 }
@@ -3758,8 +3800,9 @@ fn parse_one_decoded_field(
     let value_attr = node.attribute("value");
     let hex_attr = node.attribute("hex");
     let string_attr = node.attribute("string");
-    let n_set =
-        usize::from(value_attr.is_some()) + usize::from(hex_attr.is_some()) + usize::from(string_attr.is_some());
+    let n_set = usize::from(value_attr.is_some())
+        + usize::from(hex_attr.is_some())
+        + usize::from(string_attr.is_some());
     if n_set != 1 {
         return Err(located(
             node,
@@ -3768,27 +3811,30 @@ fn parse_one_decoded_field(
                 element: "sce:decoded".into(),
                 attr: "value|hex|string".into(),
                 value: format!("{n_set} of value/hex/string attributes set"),
-                expected: "exactly one of value=, hex=, or string= must be set per <sce:decoded> row"
-                    .into(),
+                expected:
+                    "exactly one of value=, hex=, or string= must be set per <sce:decoded> row"
+                        .into(),
             },
         ));
     }
 
     let typed = match &codec_field.sce_type {
         SceType::Bytes => {
-            let raw = hex_attr.ok_or_else(|| located(
-                node,
-                label.diagnostic_label,
-                ValidationError::InvalidAttribute {
-                    element: "sce:decoded".into(),
-                    attr: "value-form".into(),
-                    value: "value= or string=".into(),
-                    expected: format!(
-                        "field '{}' has SceType::Bytes — must use hex=\"...\" form",
-                        codec_field.id
-                    ),
-                },
-            ))?;
+            let raw = hex_attr.ok_or_else(|| {
+                located(
+                    node,
+                    label.diagnostic_label,
+                    ValidationError::InvalidAttribute {
+                        element: "sce:decoded".into(),
+                        attr: "value-form".into(),
+                        value: "value= or string=".into(),
+                        expected: format!(
+                            "field '{}' has SceType::Bytes — must use hex=\"...\" form",
+                            codec_field.id
+                        ),
+                    },
+                )
+            })?;
             let bytes = decode_hex(&strip_hex_whitespace(raw)).map_err(|reason| {
                 located(
                     node,
@@ -3804,35 +3850,39 @@ fn parse_one_decoded_field(
             DecodedFieldValue::Bytes(bytes)
         }
         SceType::String => {
-            let s = string_attr.ok_or_else(|| located(
-                node,
-                label.diagnostic_label,
-                ValidationError::InvalidAttribute {
-                    element: "sce:decoded".into(),
-                    attr: "value-form".into(),
-                    value: "value= or hex=".into(),
-                    expected: format!(
-                        "field '{}' has SceType::String — must use string=\"...\" form",
-                        codec_field.id
-                    ),
-                },
-            ))?;
+            let s = string_attr.ok_or_else(|| {
+                located(
+                    node,
+                    label.diagnostic_label,
+                    ValidationError::InvalidAttribute {
+                        element: "sce:decoded".into(),
+                        attr: "value-form".into(),
+                        value: "value= or hex=".into(),
+                        expected: format!(
+                            "field '{}' has SceType::String — must use string=\"...\" form",
+                            codec_field.id
+                        ),
+                    },
+                )
+            })?;
             DecodedFieldValue::String(s.to_string())
         }
         SceType::Bool => {
-            let v = value_attr.ok_or_else(|| located(
-                node,
-                label.diagnostic_label,
-                ValidationError::InvalidAttribute {
-                    element: "sce:decoded".into(),
-                    attr: "value-form".into(),
-                    value: "hex= or string=".into(),
-                    expected: format!(
-                        "field '{}' has SceType::Bool — must use value=\"true|false\"",
-                        codec_field.id
-                    ),
-                },
-            ))?;
+            let v = value_attr.ok_or_else(|| {
+                located(
+                    node,
+                    label.diagnostic_label,
+                    ValidationError::InvalidAttribute {
+                        element: "sce:decoded".into(),
+                        attr: "value-form".into(),
+                        value: "hex= or string=".into(),
+                        expected: format!(
+                            "field '{}' has SceType::Bool — must use value=\"true|false\"",
+                            codec_field.id
+                        ),
+                    },
+                )
+            })?;
             match v.trim() {
                 "true" => DecodedFieldValue::Bool(true),
                 "false" => DecodedFieldValue::Bool(false),
@@ -3851,19 +3901,21 @@ fn parse_one_decoded_field(
             }
         }
         ty if ty.is_unsigned() || ty.is_signed() => {
-            let v = value_attr.ok_or_else(|| located(
-                node,
-                label.diagnostic_label,
-                ValidationError::InvalidAttribute {
-                    element: "sce:decoded".into(),
-                    attr: "value-form".into(),
-                    value: "hex= or string=".into(),
-                    expected: format!(
-                        "field '{}' has integer SceType — must use value=\"...\" form",
-                        codec_field.id
-                    ),
-                },
-            ))?;
+            let v = value_attr.ok_or_else(|| {
+                located(
+                    node,
+                    label.diagnostic_label,
+                    ValidationError::InvalidAttribute {
+                        element: "sce:decoded".into(),
+                        attr: "value-form".into(),
+                        value: "hex= or string=".into(),
+                        expected: format!(
+                            "field '{}' has integer SceType — must use value=\"...\" form",
+                            codec_field.id
+                        ),
+                    },
+                )
+            })?;
             parse_decoded_int_literal(v, ty).map_err(|reason| {
                 located(
                     node,
@@ -3918,10 +3970,17 @@ fn parse_decoded_int_literal(s: &str, return_type: &SceType) -> Result<DecodedFi
     } else {
         (false, trimmed)
     };
-    let magnitude = if let Some(rest) = digits.strip_prefix("0x").or_else(|| digits.strip_prefix("0X")) {
+    let magnitude = if let Some(rest) = digits
+        .strip_prefix("0x")
+        .or_else(|| digits.strip_prefix("0X"))
+    {
         u64::from_str_radix(rest, 16).map_err(|e| format!("invalid hex literal after '0x': {e}"))?
-    } else if let Some(rest) = digits.strip_prefix("0b").or_else(|| digits.strip_prefix("0B")) {
-        u64::from_str_radix(rest, 2).map_err(|e| format!("invalid binary literal after '0b': {e}"))?
+    } else if let Some(rest) = digits
+        .strip_prefix("0b")
+        .or_else(|| digits.strip_prefix("0B"))
+    {
+        u64::from_str_radix(rest, 2)
+            .map_err(|e| format!("invalid binary literal after '0b': {e}"))?
     } else {
         digits
             .parse::<u64>()
@@ -3938,8 +3997,8 @@ fn parse_decoded_int_literal(s: &str, return_type: &SceType) -> Result<DecodedFi
             .map_err(|_| format!("value '-{magnitude}' overflows i64"))?;
         Ok(DecodedFieldValue::Int(signed))
     } else if return_type.is_signed() {
-        let signed = i64::try_from(magnitude)
-            .map_err(|_| format!("value '{magnitude}' overflows i64"))?;
+        let signed =
+            i64::try_from(magnitude).map_err(|_| format!("value '{magnitude}' overflows i64"))?;
         Ok(DecodedFieldValue::Int(signed))
     } else {
         Ok(DecodedFieldValue::Uint(magnitude))
@@ -3984,8 +4043,8 @@ fn parse_validator(
                 }
 
                 if let Some(max_delta) = sce_attr(&data, "max-delta") {
-                    let sample_interval_str = sce_attr(&data, "sample-interval")
-                        .unwrap_or_else(|| "100ms".to_string());
+                    let sample_interval_str =
+                        sce_attr(&data, "sample-interval").unwrap_or_else(|| "100ms".to_string());
                     let sample_interval_ms = parse_time_interval(&sample_interval_str)
                         .map_err(|e| located(&data, label.diagnostic_label, e))?;
                     rate_of_changes.push(RateOfChangeRule {
@@ -4108,7 +4167,10 @@ fn parse_procedure(
                 && n.tag_name().name() == "helper"
         }) {
             let helper = parse_procedure_helper(&child, label.diagnostic_label)?;
-            if helpers.iter().any(|h: &ProcedureHelper| h.name == helper.name) {
+            if helpers
+                .iter()
+                .any(|h: &ProcedureHelper| h.name == helper.name)
+            {
                 return Err(located(
                     &child,
                     label.diagnostic_label,
@@ -4297,7 +4359,9 @@ fn parse_procedure(
 /// etc.) would break the generator and has no legitimate use case.
 fn is_ident(name: &str) -> bool {
     let mut chars = name.chars();
-    let Some(first) = chars.next() else { return false };
+    let Some(first) = chars.next() else {
+        return false;
+    };
     if !(first.is_ascii_alphabetic() || first == '_') {
         return false;
     }
@@ -4342,13 +4406,19 @@ fn parse_procedure_helper(
                 element: "<sce:helper>".into(),
                 attr: "name".into(),
                 value: helper_name,
-                expected: "[A-Za-z_][A-Za-z0-9_]* (valid identifier for 5-language generated source)".into(),
+                expected:
+                    "[A-Za-z_][A-Za-z0-9_]* (valid identifier for 5-language generated source)"
+                        .into(),
             },
         ));
     }
     let args_raw = node.attribute("args").unwrap_or("");
     let mut args = Vec::new();
-    for part in args_raw.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
+    for part in args_raw
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+    {
         let sce_ty = SceType::from_attr(part).ok_or_else(|| {
             located(
                 node,
@@ -4498,7 +4568,10 @@ fn parse_procedure_onentry(
     doc_name: &str,
 ) -> Result<Vec<ProcedureSendAction>, Located<ForgeError>> {
     let mut sends = Vec::new();
-    for onentry in state.children().filter(|n| n.is_element() && n.tag_name().name() == "onentry") {
+    for onentry in state
+        .children()
+        .filter(|n| n.is_element() && n.tag_name().name() == "onentry")
+    {
         for child in onentry.children().filter(|n| n.is_element()) {
             if child.tag_name().name() != "send" {
                 continue;
@@ -4518,8 +4591,8 @@ fn parse_procedure_onentry(
             let payload = sce_attr(&child, "payload");
             // RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B1: cap on
             // the bytes the service handler may return as `_event.data`.
-            let response_max_size = sce_attr(&child, "response-max-size")
-                .and_then(|s| parse_int(&s));
+            let response_max_size =
+                sce_attr(&child, "response-max-size").and_then(|s| parse_int(&s));
             sends.push(ProcedureSendAction {
                 service,
                 subfunc,
@@ -5050,14 +5123,13 @@ fn parse_duration_to_us(s: &str) -> Result<u64, String> {
         .char_indices()
         .find_map(|(i, c)| c.is_ascii_alphabetic().then_some(i))
         .ok_or_else(|| {
-            format!(
-                "missing unit suffix on '{trimmed}': expected one of us / ms / s / m"
-            )
+            format!("missing unit suffix on '{trimmed}': expected one of us / ms / s / m")
         })?;
     let (number, unit) = trimmed.split_at(unit_start);
-    let n: u64 = number.trim().parse().map_err(|_| {
-        format!("non-integer duration value '{number}'")
-    })?;
+    let n: u64 = number
+        .trim()
+        .parse()
+        .map_err(|_| format!("non-integer duration value '{number}'"))?;
     let multiplier_us: u64 = match unit {
         "us" => 1,
         "ms" => 1_000,
@@ -5293,8 +5365,7 @@ fn parse_algorithm(
 
     let mut consts = Vec::new();
     for child in root.children().filter(|n| n.is_element()) {
-        if child.tag_name().namespace() == Some(SCE_NAMESPACE)
-            && child.tag_name().name() == "const"
+        if child.tag_name().namespace() == Some(SCE_NAMESPACE) && child.tag_name().name() == "const"
         {
             consts.push(parse_algorithm_const(&child, label.diagnostic_label)?);
         }
@@ -5331,8 +5402,7 @@ fn parse_algorithm(
     // a non-void return type, the body's terminal statement must be
     // `<sce:return>`. v1 only checks the trivial last-statement form;
     // flow-sensitive path coverage lands with §5.F (Phase A4).
-    if signature.return_type.is_some()
-        && !matches!(body.last(), Some(AlgorithmStmt::Return { .. }))
+    if signature.return_type.is_some() && !matches!(body.last(), Some(AlgorithmStmt::Return { .. }))
     {
         return Err(located(
             &body_node,
@@ -5530,18 +5600,21 @@ fn parse_test_vector_value(s: &str, return_type: &SceType) -> Result<TestVectorV
         (false, trimmed)
     };
 
-    let magnitude = if let Some(rest) = digits.strip_prefix("0x").or_else(|| digits.strip_prefix("0X")) {
-        u64::from_str_radix(rest, 16).map_err(|e| format!(
-            "invalid hex literal after '0x': {e}"
-        ))?
-    } else if let Some(rest) = digits.strip_prefix("0b").or_else(|| digits.strip_prefix("0B")) {
-        u64::from_str_radix(rest, 2).map_err(|e| format!(
-            "invalid binary literal after '0b': {e}"
-        ))?
+    let magnitude = if let Some(rest) = digits
+        .strip_prefix("0x")
+        .or_else(|| digits.strip_prefix("0X"))
+    {
+        u64::from_str_radix(rest, 16).map_err(|e| format!("invalid hex literal after '0x': {e}"))?
+    } else if let Some(rest) = digits
+        .strip_prefix("0b")
+        .or_else(|| digits.strip_prefix("0B"))
+    {
+        u64::from_str_radix(rest, 2)
+            .map_err(|e| format!("invalid binary literal after '0b': {e}"))?
     } else {
-        digits.parse::<u64>().map_err(|e| format!(
-            "invalid decimal integer literal: {e}"
-        ))?
+        digits
+            .parse::<u64>()
+            .map_err(|e| format!("invalid decimal integer literal: {e}"))?
     };
 
     if negative {
@@ -5555,8 +5628,8 @@ fn parse_test_vector_value(s: &str, return_type: &SceType) -> Result<TestVectorV
             .map_err(|_| format!("value '-{magnitude}' overflows i64"))?;
         Ok(TestVectorValue::Int(signed))
     } else if return_type.is_signed() {
-        let signed = i64::try_from(magnitude)
-            .map_err(|_| format!("value '{magnitude}' overflows i64"))?;
+        let signed =
+            i64::try_from(magnitude).map_err(|_| format!("value '{magnitude}' overflows i64"))?;
         Ok(TestVectorValue::Int(signed))
     } else {
         Ok(TestVectorValue::Uint(magnitude))
@@ -6044,7 +6117,9 @@ fn parse_algorithm_stmt(
                         element: format!("<sce:var name=\"{name}\">"),
                         attr: "type".into(),
                         value: type_str.clone(),
-                        expected: "uint8..uint64, int8..int64, float32, float64, bool, string, bytes".into(),
+                        expected:
+                            "uint8..uint64, int8..int64, float32, float64, bool, string, bytes"
+                                .into(),
                     },
                 )
             })?;
@@ -6434,7 +6509,11 @@ fn parse_buffer_pool(
     // `<sce:dma-channel>` is optional — pure CPU-managed pools omit it.
     let dma_channel = find_sce_child(root, "dma-channel").and_then(|node| {
         let text = node.text().unwrap_or("").trim().to_string();
-        if text.is_empty() { None } else { Some(text) }
+        if text.is_empty() {
+            None
+        } else {
+            Some(text)
+        }
     });
 
     let cache_node = find_sce_child(root, "cache-policy").ok_or_else(|| {
@@ -6573,7 +6652,9 @@ fn parse_buffer_pool_variant(
                         element: format!("<sce:{name}>"),
                         attr: "context".into(),
                         value: "buffer-pool without <sce:variant>reassembly</sce:variant>".into(),
-                        expected: "only allowed when <sce:variant>reassembly</sce:variant> is declared".into(),
+                        expected:
+                            "only allowed when <sce:variant>reassembly</sce:variant> is declared"
+                                .into(),
                     },
                 ));
             }
@@ -6789,12 +6870,7 @@ fn parse_worker(
             },
         )
     })?;
-    let depth_str = require_attr(
-        &inbox_node,
-        "depth",
-        "<sce:inbox>",
-        label.diagnostic_label,
-    )?;
+    let depth_str = require_attr(&inbox_node, "depth", "<sce:inbox>", label.diagnostic_label)?;
     let depth: u32 = depth_str.parse().map_err(|_| {
         located(
             &inbox_node,
@@ -6990,8 +7066,7 @@ fn parse_bounded_collection(
     label: DocumentLabel<'_>,
 ) -> Result<BoundedCollectionModel, Located<ForgeError>> {
     use crate::forge::model::{
-        BoundedCollectionModel, CapacitySource, CollectionOrdering, ConcurrencyMode,
-        OverflowPolicy,
+        BoundedCollectionModel, CapacitySource, CollectionOrdering, ConcurrencyMode, OverflowPolicy,
     };
 
     let doc_name = label.identifier;
@@ -7106,24 +7181,23 @@ fn parse_bounded_collection(
     // ── Optional: <sce:index-by field="..."/> ──
     let index_by = find_sce_child(root, "index-by")
         .map(|n| {
-            require_attr(&n, "field", "<sce:index-by>", label.diagnostic_label)
-                .and_then(|v| {
-                    let v = v.trim().to_string();
-                    if v.is_empty() {
-                        Err(located(
-                            &n,
-                            label.diagnostic_label,
-                            ValidationError::InvalidAttribute {
-                                element: "<sce:index-by>".into(),
-                                attr: "field".into(),
-                                value: String::new(),
-                                expected: "non-empty field name from element-type struct".into(),
-                            },
-                        ))
-                    } else {
-                        Ok(v)
-                    }
-                })
+            require_attr(&n, "field", "<sce:index-by>", label.diagnostic_label).and_then(|v| {
+                let v = v.trim().to_string();
+                if v.is_empty() {
+                    Err(located(
+                        &n,
+                        label.diagnostic_label,
+                        ValidationError::InvalidAttribute {
+                            element: "<sce:index-by>".into(),
+                            attr: "field".into(),
+                            value: String::new(),
+                            expected: "non-empty field name from element-type struct".into(),
+                        },
+                    ))
+                } else {
+                    Ok(v)
+                }
+            })
         })
         .transpose()?;
 
@@ -7242,24 +7316,19 @@ fn require_attr(
     element: &str,
     doc_name: &str,
 ) -> Result<String, Located<ForgeError>> {
-    node.attribute(attr)
-        .map(|s| s.to_string())
-        .ok_or_else(|| {
-            located(
-                node,
-                doc_name,
-                ValidationError::MissingAttribute {
-                    element: element.into(),
-                    attr: attr.into(),
-                },
-            )
-        })
+    node.attribute(attr).map(|s| s.to_string()).ok_or_else(|| {
+        located(
+            node,
+            doc_name,
+            ValidationError::MissingAttribute {
+                element: element.into(),
+                attr: attr.into(),
+            },
+        )
+    })
 }
 
-fn find_sce_child<'a>(
-    node: &'a roxmltree::Node,
-    local: &str,
-) -> Option<roxmltree::Node<'a, 'a>> {
+fn find_sce_child<'a>(node: &'a roxmltree::Node, local: &str) -> Option<roxmltree::Node<'a, 'a>> {
     node.children().find(|n| {
         n.is_element()
             && n.tag_name().namespace() == Some(SCE_NAMESPACE)
@@ -7388,14 +7457,8 @@ pub fn parse_imports_only(
     content: &str,
     doc_name: &str,
 ) -> Result<Vec<ForgeImport>, Located<ForgeError>> {
-    let doc = roxmltree::Document::parse(content).map_err(|e| {
-        Located::new(
-            XmlError::Parse(e.to_string()).into(),
-            doc_name,
-            None,
-            None,
-        )
-    })?;
+    let doc = roxmltree::Document::parse(content)
+        .map_err(|e| Located::new(XmlError::Parse(e.to_string()).into(), doc_name, None, None))?;
     let root = doc.root_element();
     parse_imports(&root, doc_name)
 }
@@ -7427,7 +7490,8 @@ fn parse_sce_entries(
     let mut entries = Vec::new();
     let mut seen_keys = std::collections::BTreeSet::new();
     for child in node.children().filter(|n| n.is_element()) {
-        if child.tag_name().name() == "entry" && child.tag_name().namespace() == Some(SCE_NAMESPACE) {
+        if child.tag_name().name() == "entry" && child.tag_name().namespace() == Some(SCE_NAMESPACE)
+        {
             let key = child
                 .attribute("key")
                 .ok_or_else(|| {

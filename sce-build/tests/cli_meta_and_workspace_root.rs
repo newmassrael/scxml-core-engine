@@ -197,8 +197,8 @@ fn run_generate(
     );
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
     // The Rust template emits `<basename>_sm.rs`.
-    let body = std::fs::read_to_string(scratch.path().join("m_sm.rs"))
-        .expect("read generated m_sm.rs");
+    let body =
+        std::fs::read_to_string(scratch.path().join("m_sm.rs")).expect("read generated m_sm.rs");
     (stderr, body)
 }
 
@@ -247,12 +247,7 @@ fn workspace_root_env_var_yields_real_template_hash() {
 
     let (stderr, body) = run_generate(
         &unrelated_cwd,
-        &[
-            "generate",
-            scxml_path.to_str().unwrap(),
-            "-l",
-            "rust",
-        ],
+        &["generate", scxml_path.to_str().unwrap(), "-l", "rust"],
         &[("SCE_WORKSPACE_ROOT", Some(ws.to_str().unwrap()))],
     );
     assert!(
@@ -331,12 +326,7 @@ fn workspace_root_compile_time_fallback_resolves_for_vendored_layout() {
 
     let (stderr, body) = run_generate(
         &unrelated_cwd,
-        &[
-            "generate",
-            scxml_path.to_str().unwrap(),
-            "-l",
-            "rust",
-        ],
+        &["generate", scxml_path.to_str().unwrap(), "-l", "rust"],
         &[("SCE_WORKSPACE_ROOT", None)],
     );
     assert!(

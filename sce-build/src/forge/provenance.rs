@@ -101,7 +101,11 @@ pub fn validate_emission_provenance(
         //    Nested if/foreach bodies hold their own per-action
         //    records; the walker recurses through them too so the
         //    populate gap is caught wherever it occurs.
-        for block in state.on_entry_blocks.iter().chain(state.on_exit_blocks.iter()) {
+        for block in state
+            .on_entry_blocks
+            .iter()
+            .chain(state.on_exit_blocks.iter())
+        {
             check_action_block(block, state_id, scxml_path)?;
         }
         check_action_block(&state.initial_transition_actions, state_id, scxml_path)?;
@@ -264,21 +268,55 @@ pub fn forge_doc_source_location(doc: &ForgeDocument) -> Option<&SourceLocation>
 /// preserved.
 fn forge_doc_provenance(doc: &ForgeDocument) -> (&'static str, &str, &Option<SourceLocation>) {
     match doc {
-        ForgeDocument::Transform(m) => ("<scxml sce:kind=\"transform\">", &m.name, &m.source_location),
+        ForgeDocument::Transform(m) => (
+            "<scxml sce:kind=\"transform\">",
+            &m.name,
+            &m.source_location,
+        ),
         ForgeDocument::Lookup(m) => ("<scxml sce:kind=\"lookup\">", &m.name, &m.source_location),
-        ForgeDocument::Condition(m) => ("<scxml sce:kind=\"condition\">", &m.name, &m.source_location),
+        ForgeDocument::Condition(m) => (
+            "<scxml sce:kind=\"condition\">",
+            &m.name,
+            &m.source_location,
+        ),
         ForgeDocument::Codec(m) => ("<scxml sce:kind=\"codec\">", &m.name, &m.source_location),
-        ForgeDocument::Validator(m) => ("<scxml sce:kind=\"validator\">", &m.name, &m.source_location),
-        ForgeDocument::Procedure(m) => ("<scxml sce:kind=\"procedure\">", &m.name, &m.source_location),
+        ForgeDocument::Validator(m) => (
+            "<scxml sce:kind=\"validator\">",
+            &m.name,
+            &m.source_location,
+        ),
+        ForgeDocument::Procedure(m) => (
+            "<scxml sce:kind=\"procedure\">",
+            &m.name,
+            &m.source_location,
+        ),
         ForgeDocument::Filter(m) => ("<scxml sce:kind=\"filter\">", &m.name, &m.source_location),
-        ForgeDocument::Interpolation(m) => ("<scxml sce:kind=\"interpolation\">", &m.name, &m.source_location),
+        ForgeDocument::Interpolation(m) => (
+            "<scxml sce:kind=\"interpolation\">",
+            &m.name,
+            &m.source_location,
+        ),
         ForgeDocument::Timer(m) => ("<scxml sce:kind=\"timer\">", &m.name, &m.source_location),
-        ForgeDocument::Observer(m) => ("<scxml sce:kind=\"observer\">", &m.name, &m.source_location),
-        ForgeDocument::Algorithm(m) => ("<scxml sce:kind=\"algorithm\">", &m.name, &m.source_location),
+        ForgeDocument::Observer(m) => {
+            ("<scxml sce:kind=\"observer\">", &m.name, &m.source_location)
+        }
+        ForgeDocument::Algorithm(m) => (
+            "<scxml sce:kind=\"algorithm\">",
+            &m.name,
+            &m.source_location,
+        ),
         ForgeDocument::Link(m) => ("<scxml sce:kind=\"link\">", &m.name, &m.source_location),
-        ForgeDocument::BufferPool(m) => ("<scxml sce:kind=\"buffer-pool\">", &m.name, &m.source_location),
+        ForgeDocument::BufferPool(m) => (
+            "<scxml sce:kind=\"buffer-pool\">",
+            &m.name,
+            &m.source_location,
+        ),
         ForgeDocument::Worker(m) => ("<scxml sce:kind=\"worker\">", &m.name, &m.source_location),
-        ForgeDocument::BoundedCollection(m) => ("<scxml sce:kind=\"bounded-collection\">", &m.name, &m.source_location),
+        ForgeDocument::BoundedCollection(m) => (
+            "<scxml sce:kind=\"bounded-collection\">",
+            &m.name,
+            &m.source_location,
+        ),
     }
 }
 
@@ -403,11 +441,10 @@ mod tests {
             AlgorithmModel, AlgorithmSignature, BackpressurePolicy, BoundedCollectionModel,
             BufferPoolModel, BufferPoolVariant, CachePolicy, CapacitySource, CodecModel,
             CollectionOrdering, ConcurrencyMode, ConditionModel, Direction, Endian, FilterModel,
-            FilterType, ForgeDocument, ForgeField, InboxConfig, InboxOrdering,
-            InterpolationAxis, InterpolationMethod, InterpolationModel, LinkClass, LinkModel,
-            LookupModel, MissPolicy, ObserverModel, OutOfBounds, OverflowPolicy, ProcedureModel,
-            SceType, ThresholdMonitor, TimerModel, TransformModel, ValidatorModel, ValidatorRules,
-            WorkerModel,
+            FilterType, ForgeDocument, ForgeField, InboxConfig, InboxOrdering, InterpolationAxis,
+            InterpolationMethod, InterpolationModel, LinkClass, LinkModel, LookupModel, MissPolicy,
+            ObserverModel, OutOfBounds, OverflowPolicy, ProcedureModel, SceType, ThresholdMonitor,
+            TimerModel, TransformModel, ValidatorModel, ValidatorRules, WorkerModel,
         };
         let scalar = ForgeField {
             id: "x".into(),
@@ -482,7 +519,10 @@ mod tests {
                 output: scalar.clone(),
                 method: InterpolationMethod::Linear,
                 out_of_bounds: OutOfBounds::Clamp,
-                axes: vec![InterpolationAxis { input_id: "x".into(), breakpoints: vec![0.0, 1.0] }],
+                axes: vec![InterpolationAxis {
+                    input_id: "x".into(),
+                    breakpoints: vec![0.0, 1.0],
+                }],
                 values: vec![0.0, 1.0],
                 source_location: None,
             }),
@@ -545,7 +585,10 @@ mod tests {
             ForgeDocument::Worker(WorkerModel {
                 name: "w".into(),
                 link_rx: "ln".into(),
-                inbox: InboxConfig { depth: 4, ordering: InboxOrdering::AcqRel },
+                inbox: InboxConfig {
+                    depth: 4,
+                    ordering: InboxOrdering::AcqRel,
+                },
                 outbox: None,
                 source_location: None,
             }),
@@ -561,9 +604,8 @@ mod tests {
             }),
         ];
         for doc in &cases {
-            let err = validate_forge_emission_provenance(doc, "x.scxml").expect_err(
-                "every variant with source_location: None must fire the walker",
-            );
+            let err = validate_forge_emission_provenance(doc, "x.scxml")
+                .expect_err("every variant with source_location: None must fire the walker");
             match &err.error {
                 ForgeError::Validation(ValidationError::TraceabilityScxmlLineRangeMissing {
                     node_kind,

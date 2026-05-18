@@ -516,13 +516,13 @@ mod tests {
         // wire-14 and `method=0x0020` for wire-20 with no decimal-to-hex
         // translation in the reader's head. Anyone changing values trips
         // this test before the C++ side rebuilds against a wrong constant.
-        assert_eq!(SCXML_INVOKE_METHOD_WIRE14_INVOKE_START,   0x0014);
+        assert_eq!(SCXML_INVOKE_METHOD_WIRE14_INVOKE_START, 0x0014);
         assert_eq!(SCXML_INVOKE_METHOD_WIRE15_INVOKE_STARTED, 0x0015);
-        assert_eq!(SCXML_INVOKE_METHOD_WIRE16_CHILD_EVENT,    0x0016);
-        assert_eq!(SCXML_INVOKE_METHOD_WIRE17_PARENT_EVENT,   0x0017);
-        assert_eq!(SCXML_INVOKE_METHOD_WIRE18_INVOKE_DONE,    0x0018);
-        assert_eq!(SCXML_INVOKE_METHOD_WIRE19_INVOKE_CANCEL,  0x0019);
-        assert_eq!(SCXML_INVOKE_METHOD_WIRE20_INVOKE_ERROR,   0x0020);
+        assert_eq!(SCXML_INVOKE_METHOD_WIRE16_CHILD_EVENT, 0x0016);
+        assert_eq!(SCXML_INVOKE_METHOD_WIRE17_PARENT_EVENT, 0x0017);
+        assert_eq!(SCXML_INVOKE_METHOD_WIRE18_INVOKE_DONE, 0x0018);
+        assert_eq!(SCXML_INVOKE_METHOD_WIRE19_INVOKE_CANCEL, 0x0019);
+        assert_eq!(SCXML_INVOKE_METHOD_WIRE20_INVOKE_ERROR, 0x0020);
 
         // All seven values must be distinct so dispatch by method ID is
         // unambiguous. Sorting + dedup catches any accidental
@@ -559,12 +559,9 @@ mod tests {
     #[test]
     fn assigner_all_unpinned_walks_counter_from_base() {
         // Lex order: alpha, bravo, charlie. IDs 0x8100, 0x8101, 0x8102.
-        let out = assign_invoke_service_ids(&p(&[
-            ("bravo", None),
-            ("alpha", None),
-            ("charlie", None),
-        ]))
-        .expect("unpinned-only must succeed");
+        let out =
+            assign_invoke_service_ids(&p(&[("bravo", None), ("alpha", None), ("charlie", None)]))
+                .expect("unpinned-only must succeed");
         assert_eq!(out.get("alpha").copied(), Some(0x8100));
         assert_eq!(out.get("bravo").copied(), Some(0x8101));
         assert_eq!(out.get("charlie").copied(), Some(0x8102));
@@ -572,11 +569,9 @@ mod tests {
 
     #[test]
     fn assigner_all_pinned_uses_pins_verbatim() {
-        let out = assign_invoke_service_ids(&p(&[
-            ("alpha", Some(0x8123)),
-            ("bravo", Some(0x817F)),
-        ]))
-        .expect("all-pinned must succeed");
+        let out =
+            assign_invoke_service_ids(&p(&[("alpha", Some(0x8123)), ("bravo", Some(0x817F))]))
+                .expect("all-pinned must succeed");
         assert_eq!(out.get("alpha").copied(), Some(0x8123));
         assert_eq!(out.get("bravo").copied(), Some(0x817F));
     }
@@ -689,10 +684,8 @@ mod tests {
     #[test]
     fn assigner_pin_collision_rejected() {
         // Two machines pin the same ID — operator error.
-        let out = assign_invoke_service_ids(&p(&[
-            ("alpha", Some(0x8105)),
-            ("bravo", Some(0x8105)),
-        ]));
+        let out =
+            assign_invoke_service_ids(&p(&[("alpha", Some(0x8105)), ("bravo", Some(0x8105))]));
         match out {
             Err(AssignInvokeServiceIdError::PinCollision {
                 machines,
@@ -739,17 +732,17 @@ mod tests {
     // ── §16.4 region-liveness assigner (RFC F.X-3) ──────────────────────
 
     fn lp(entries: &[(&str, Option<u16>)]) -> BTreeMap<String, Option<u16>> {
-        entries
-            .iter()
-            .map(|(k, v)| (k.to_string(), *v))
-            .collect()
+        entries.iter().map(|(k, v)| (k.to_string(), *v)).collect()
     }
 
     #[test]
     fn liveness_constants_partition_invoke_subrange() {
         // RFC F.X-3 D1: invoke and liveness sub-ranges are disjoint
         // halves of the SCE-reserved 256-slot space.
-        assert_eq!(SCXML_INVOKE_SERVICE_CEILING + 1, SCXML_LIVENESS_SERVICE_BASE);
+        assert_eq!(
+            SCXML_INVOKE_SERVICE_CEILING + 1,
+            SCXML_LIVENESS_SERVICE_BASE
+        );
         assert_eq!(
             SCXML_LIVENESS_SERVICE_RANGE_SIZE, 128,
             "F.X-3 reserves a 128-slot sub-range mirroring F.X-1"
@@ -917,10 +910,8 @@ mod tests {
             assert!(lid >= SCXML_LIVENESS_SERVICE_BASE);
         }
         // Empty intersection is the load-bearing assertion.
-        let invoke_set: std::collections::HashSet<u16> =
-            invoke_out.values().copied().collect();
-        let liveness_set: std::collections::HashSet<u16> =
-            liveness_out.values().copied().collect();
+        let invoke_set: std::collections::HashSet<u16> = invoke_out.values().copied().collect();
+        let liveness_set: std::collections::HashSet<u16> = liveness_out.values().copied().collect();
         assert!(invoke_set.is_disjoint(&liveness_set));
     }
 
@@ -991,7 +982,10 @@ mod tests {
                 participant_count,
                 ceiling,
             }) => {
-                assert_eq!(participant_count, SCXML_MACHINE_LIVENESS_SERVICE_RANGE_SIZE + 1);
+                assert_eq!(
+                    participant_count,
+                    SCXML_MACHINE_LIVENESS_SERVICE_RANGE_SIZE + 1
+                );
                 assert_eq!(ceiling, SCXML_MACHINE_LIVENESS_SERVICE_RANGE_SIZE);
             }
             other => panic!("expected Overflow, got {other:?}"),
@@ -1082,8 +1076,13 @@ mod tests {
         let region_id = region["alpha__P__l"];
         let machine_id = machine["alpha"];
         assert!(invoke_id <= SCXML_INVOKE_SERVICE_CEILING);
-        assert!((SCXML_LIVENESS_SERVICE_BASE..=SCXML_LIVENESS_SERVICE_CEILING).contains(&region_id));
-        assert!((SCXML_MACHINE_LIVENESS_SERVICE_BASE..=SCXML_MACHINE_LIVENESS_SERVICE_CEILING).contains(&machine_id));
+        assert!(
+            (SCXML_LIVENESS_SERVICE_BASE..=SCXML_LIVENESS_SERVICE_CEILING).contains(&region_id)
+        );
+        assert!(
+            (SCXML_MACHINE_LIVENESS_SERVICE_BASE..=SCXML_MACHINE_LIVENESS_SERVICE_CEILING)
+                .contains(&machine_id)
+        );
         // Pairwise distinct.
         assert_ne!(invoke_id, region_id);
         assert_ne!(invoke_id, machine_id);

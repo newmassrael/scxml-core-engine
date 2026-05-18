@@ -148,12 +148,10 @@ mod tests {
     fn register_and_lookup_buffer_pool() {
         let mut reg = ForgePoolRegistry::new();
         assert!(reg.is_empty());
-        reg.record("rx_pool_sram1", ForgePoolKind::BufferPool).unwrap();
+        reg.record("rx_pool_sram1", ForgePoolKind::BufferPool)
+            .unwrap();
         assert_eq!(reg.len(), 1);
-        assert_eq!(
-            reg.lookup("rx_pool_sram1"),
-            Some(ForgePoolKind::BufferPool)
-        );
+        assert_eq!(reg.lookup("rx_pool_sram1"), Some(ForgePoolKind::BufferPool));
         assert_eq!(reg.lookup("missing"), None);
     }
 
@@ -172,7 +170,8 @@ mod tests {
         let mut reg = ForgePoolRegistry::new();
         reg.record("zeta_pool", ForgePoolKind::BufferPool).unwrap();
         reg.record("alpha_pool", ForgePoolKind::BufferPool).unwrap();
-        reg.record("middle_pool", ForgePoolKind::BufferPool).unwrap();
+        reg.record("middle_pool", ForgePoolKind::BufferPool)
+            .unwrap();
         assert_eq!(
             reg.names_of_kind(ForgePoolKind::BufferPool),
             vec![
@@ -208,9 +207,6 @@ mod tests {
         let doc = ForgeDocument::BufferPool(pool);
         let mut reg = ForgePoolRegistry::new();
         reg.record_document(&doc).expect("buffer-pool registers");
-        assert_eq!(
-            reg.lookup("rx_pool_sram1"),
-            Some(ForgePoolKind::BufferPool)
-        );
+        assert_eq!(reg.lookup("rx_pool_sram1"), Some(ForgePoolKind::BufferPool));
     }
 }

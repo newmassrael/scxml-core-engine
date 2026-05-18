@@ -34,14 +34,12 @@ pub fn capitalize_first(s: &str) -> String {
 
 /// Rust 2021 edition reserved keywords — must be escaped with `r#` prefix
 const RUST_KEYWORDS: &[&str] = &[
-    "as", "break", "const", "continue", "crate", "else", "enum", "extern",
-    "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod",
-    "move", "mut", "pub", "ref", "return", "self", "Self", "static", "struct",
-    "super", "trait", "true", "type", "unsafe", "use", "where", "while",
-    "async", "await", "dyn",
-    // Reserved for future use
-    "abstract", "become", "box", "do", "final", "macro", "override", "priv",
-    "typeof", "unsized", "virtual", "yield", "try", "union",
+    "as", "break", "const", "continue", "crate", "else", "enum", "extern", "false", "fn", "for",
+    "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref", "return",
+    "self", "Self", "static", "struct", "super", "trait", "true", "type", "unsafe", "use", "where",
+    "while", "async", "await", "dyn", // Reserved for future use
+    "abstract", "become", "box", "do", "final", "macro", "override", "priv", "typeof", "unsized",
+    "virtual", "yield", "try", "union",
 ];
 
 /// Register all Rust-specific filters on the minijinja environment.
@@ -99,7 +97,13 @@ pub fn to_pascal_case(name: String) -> String {
     }
     RE_DELIMITERS
         .split(&name)
-        .map(|p| if p.is_empty() { String::new() } else { capitalize_first(p) })
+        .map(|p| {
+            if p.is_empty() {
+                String::new()
+            } else {
+                capitalize_first(p)
+            }
+        })
         .collect()
 }
 
@@ -107,7 +111,10 @@ pub fn to_pascal_case(name: String) -> String {
 /// "STOP" -> "Stop", "RUNNING" -> "Running", "ENGINE_START" -> "EngineStart".
 /// Mixed-case input is delegated to to_pascal_case.
 pub fn to_rust_variant(name: String) -> String {
-    if name.chars().all(|c| c.is_ascii_uppercase() || c == '_' || c.is_ascii_digit()) {
+    if name
+        .chars()
+        .all(|c| c.is_ascii_uppercase() || c == '_' || c.is_ascii_digit())
+    {
         name.split('_')
             .filter(|p| !p.is_empty())
             .map(|word| {
@@ -175,7 +182,13 @@ pub fn to_state_variant(name: String) -> String {
     }
     RE_WORD_DELIMITERS
         .split(&name)
-        .map(|p| if p.is_empty() { String::new() } else { capitalize_first(p) })
+        .map(|p| {
+            if p.is_empty() {
+                String::new()
+            } else {
+                capitalize_first(p)
+            }
+        })
         .collect()
 }
 
@@ -344,7 +357,9 @@ fn invoke_is_remote_mesh(item: &Value) -> bool {
 fn filter_scxml(value: Value) -> Result<Value, minijinja::Error> {
     let mut out: Vec<Value> = Vec::new();
     for item in value.try_iter()? {
-        let Ok(kind_val) = item.get_attr("kind") else { continue };
+        let Ok(kind_val) = item.get_attr("kind") else {
+            continue;
+        };
         let Some(k) = kind_val.as_str() else { continue };
         if k != "Scxml" {
             continue;
@@ -365,7 +380,9 @@ fn filter_scxml(value: Value) -> Result<Value, minijinja::Error> {
 fn filter_scxml_remote(value: Value) -> Result<Value, minijinja::Error> {
     let mut out: Vec<Value> = Vec::new();
     for item in value.try_iter()? {
-        let Ok(kind_val) = item.get_attr("kind") else { continue };
+        let Ok(kind_val) = item.get_attr("kind") else {
+            continue;
+        };
         let Some(k) = kind_val.as_str() else { continue };
         if k != "Scxml" {
             continue;
@@ -466,9 +483,30 @@ fn filter_to_field_suffix(s: String) -> String {
 
 /// Go reserved keywords — must be escaped with `_` suffix
 const GO_KEYWORDS: &[&str] = &[
-    "break", "case", "chan", "const", "continue", "default", "defer", "else",
-    "fallthrough", "for", "func", "go", "goto", "if", "import", "interface",
-    "map", "package", "range", "return", "select", "struct", "switch", "type",
+    "break",
+    "case",
+    "chan",
+    "const",
+    "continue",
+    "default",
+    "defer",
+    "else",
+    "fallthrough",
+    "for",
+    "func",
+    "go",
+    "goto",
+    "if",
+    "import",
+    "interface",
+    "map",
+    "package",
+    "range",
+    "return",
+    "select",
+    "struct",
+    "switch",
+    "type",
     "var",
 ];
 
@@ -763,7 +801,10 @@ fn to_kotlin_string_expr(expr: String) -> String {
     let stripped = expr.trim();
     if stripped.len() >= 2 && stripped.starts_with('\'') && stripped.ends_with('\'') {
         let inner = &stripped[1..stripped.len() - 1];
-        let inner = inner.replace('\\', "\\\\").replace('"', "\\\"").replace('$', "\\$");
+        let inner = inner
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('$', "\\$");
         format!("\"{inner}\"")
     } else {
         expr
@@ -779,7 +820,13 @@ pub fn to_event_class_name(name: String) -> String {
         .map(|dot_part| {
             RE_WORD_DELIMITERS
                 .split(dot_part)
-                .map(|p| if p.is_empty() { String::new() } else { capitalize_first(p) })
+                .map(|p| {
+                    if p.is_empty() {
+                        String::new()
+                    } else {
+                        capitalize_first(p)
+                    }
+                })
                 .collect::<String>()
         })
         .collect::<Vec<_>>()
@@ -896,4 +943,3 @@ pub fn py_string_literal(text: String) -> String {
     out.push('"');
     out
 }
-

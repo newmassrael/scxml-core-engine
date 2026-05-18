@@ -245,8 +245,7 @@ fn analyze_parallel(
             .map(|rd| &rd.region_id)
             .collect();
         if writers.len() >= 2 {
-            let mut regions_sorted: Vec<String> =
-                writers.iter().map(|s| s.to_string()).collect();
+            let mut regions_sorted: Vec<String> = writers.iter().map(|s| s.to_string()).collect();
             regions_sorted.sort();
             regions_sorted.dedup();
             constraints.push(Constraint {
@@ -598,10 +597,7 @@ fn location_root(loc: &str) -> Option<&str> {
 /// Split a W3C SCXML transition `target` attribute on whitespace
 /// per §3.13.
 fn split_targets(target: &str) -> Vec<String> {
-    target
-        .split_whitespace()
-        .map(str::to_string)
-        .collect()
+    target.split_whitespace().map(str::to_string).collect()
 }
 
 /// Ancestor-scope data locations for a `<parallel>`: the union of
@@ -618,10 +614,7 @@ fn ancestor_scope_data(model: &SCXMLModel, parallel_id: &str) -> BTreeSet<String
     }
     // Walk parent chain starting from parallel's parent. Stop at
     // root (no parent).
-    let mut cursor = model
-        .states
-        .get(parallel_id)
-        .and_then(|s| s.parent.clone());
+    let mut cursor = model.states.get(parallel_id).and_then(|s| s.parent.clone());
     while let Some(pid) = cursor {
         if let Some(parent_state) = model.states.get(&pid) {
             for var in &parent_state.datamodel {
@@ -674,11 +667,13 @@ fn constraint_to_error(c: Constraint) -> DeployError {
             location: c.location,
             regions: c.regions,
         },
-        MergeRule::R2CrossRegionTransition => DeployError::DistributabilityR2CrossRegionTransition {
-            machine: c.machine,
-            parallel: c.parallel_id,
-            regions: c.regions,
-        },
+        MergeRule::R2CrossRegionTransition => {
+            DeployError::DistributabilityR2CrossRegionTransition {
+                machine: c.machine,
+                parallel: c.parallel_id,
+                regions: c.regions,
+            }
+        }
     }
 }
 
@@ -793,8 +788,7 @@ fn merge_into(dest: &mut PartitionDecl, src: PartitionDecl) {
         std::mem::take(&mut dest.contains.parallel_regions),
         parallel_regions,
     );
-    dest.contains.invokes =
-        merge_invoke_refs(std::mem::take(&mut dest.contains.invokes), invokes);
+    dest.contains.invokes = merge_invoke_refs(std::mem::take(&mut dest.contains.invokes), invokes);
 
     if dest.transport_binding.is_none() {
         dest.transport_binding = src.transport_binding;
@@ -1052,10 +1046,7 @@ partitions:
         assert_eq!(notice.absorbed, vec!["motor_right".to_string()]);
         // After merge the resolved plan has a single partition.
         assert_eq!(plan.resolved.len(), 1);
-        let merged = plan
-            .resolved
-            .get("motor_left")
-            .expect("canonical survives");
+        let merged = plan.resolved.get("motor_left").expect("canonical survives");
         assert_eq!(merged.contains.parallel_regions.len(), 2);
     }
 
@@ -1086,7 +1077,10 @@ partitions:
         let ms = models(&[("motor", MOTOR_R2_VIOLATION)]);
         let plan = analyze_distributability(&cfg, &ms).expect("permissive Ok");
         assert_eq!(plan.merge_notices.len(), 1);
-        assert_eq!(plan.merge_notices[0].rule, MergeRule::R2CrossRegionTransition);
+        assert_eq!(
+            plan.merge_notices[0].rule,
+            MergeRule::R2CrossRegionTransition
+        );
         assert_eq!(plan.resolved.len(), 1);
     }
 
@@ -1095,10 +1089,7 @@ partitions:
         let cfg = parse_deploy_str(deploy_split_regions()).expect("deploy parse");
         let ms = models(&[("motor", MOTOR_R3_NOTICE)]);
         let plan = analyze_distributability(&cfg, &ms).expect("R3 is informational");
-        assert!(
-            plan.merge_notices.is_empty(),
-            "R3 must not trigger a merge"
-        );
+        assert!(plan.merge_notices.is_empty(), "R3 must not trigger a merge");
         assert_eq!(plan.snapshot_notices.len(), 1);
         let notice = &plan.snapshot_notices[0];
         assert_eq!(notice.reader_region, "right");

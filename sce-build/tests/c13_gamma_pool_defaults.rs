@@ -21,9 +21,7 @@ use sce_build::forge::error::ValidationError;
 use sce_build::forge::model::{
     BackpressurePolicy, BufferPoolModel, BufferPoolVariant, CachePolicy, LinkClass, LinkModel,
 };
-use sce_build::mesh::deploy::{
-    parse_deploy_str, validate_reassembly_cross_doc, StageCopyPolicy,
-};
+use sce_build::mesh::deploy::{parse_deploy_str, validate_reassembly_cross_doc, StageCopyPolicy};
 use sce_build::mesh::error::DeployError;
 
 fn link_model(name: &str, rx_pool: Option<&str>, accept_opt_out: bool) -> LinkModel {
@@ -186,7 +184,11 @@ fn unknown_policy_value_fires_at_parse_time() {
     assert_eq!(value, "errr");
     assert_eq!(
         candidates,
-        vec!["warn".to_string(), "error".to_string(), "forbid".to_string()],
+        vec![
+            "warn".to_string(),
+            "error".to_string(),
+            "forbid".to_string()
+        ],
     );
 }
 
@@ -226,8 +228,13 @@ fn warn_policy_fires_expected_fragmentation_rate_high() {
     let cfg = parse_deploy_str(&yaml).expect("warn parses");
     let (links, pools) = fixture_link_and_pool();
     let (link_view, pool_view) = views(&links, &pools);
-    let err = validate_reassembly_cross_doc(&cfg, &link_view, &pool_view, &std::collections::BTreeSet::new())
-        .expect_err("rate > 25 fires");
+    let err = validate_reassembly_cross_doc(
+        &cfg,
+        &link_view,
+        &pool_view,
+        &std::collections::BTreeSet::new(),
+    )
+    .expect_err("rate > 25 fires");
     match err {
         ValidationError::ReassemblyExpectedFragmentationRateHigh { rate_percent, .. } => {
             assert_eq!(rate_percent, 31);
@@ -251,8 +258,13 @@ fn warn_policy_opt_out_suppresses_warning() {
         default_pool("rx_data_pool", 16, 700),
     );
     let (link_view, pool_view) = views(&links, &pools);
-    validate_reassembly_cross_doc(&cfg, &link_view, &pool_view, &std::collections::BTreeSet::new())
-        .expect("opt-out under warn ⇒ silent-skip");
+    validate_reassembly_cross_doc(
+        &cfg,
+        &link_view,
+        &pool_view,
+        &std::collections::BTreeSet::new(),
+    )
+    .expect("opt-out under warn ⇒ silent-skip");
 }
 
 // ── Error policy: promotion ─────────────────────────────────────
@@ -263,11 +275,18 @@ fn error_policy_promotes_to_pool_stage_copy_policy_error() {
     let cfg = parse_deploy_str(&yaml).expect("error parses");
     let (links, pools) = fixture_link_and_pool();
     let (link_view, pool_view) = views(&links, &pools);
-    let err = validate_reassembly_cross_doc(&cfg, &link_view, &pool_view, &std::collections::BTreeSet::new())
-        .expect_err("rate > 25 + error policy fires");
+    let err = validate_reassembly_cross_doc(
+        &cfg,
+        &link_view,
+        &pool_view,
+        &std::collections::BTreeSet::new(),
+    )
+    .expect_err("rate > 25 + error policy fires");
     match err {
         ValidationError::PoolStageCopyPolicyError {
-            rate_percent, policy, ..
+            rate_percent,
+            policy,
+            ..
         } => {
             assert_eq!(rate_percent, 31);
             assert_eq!(policy, "error");
@@ -291,8 +310,13 @@ fn error_policy_opt_out_suppresses_promotion() {
         default_pool("rx_data_pool", 16, 700),
     );
     let (link_view, pool_view) = views(&links, &pools);
-    validate_reassembly_cross_doc(&cfg, &link_view, &pool_view, &std::collections::BTreeSet::new())
-        .expect("opt-out under error ⇒ silent-skip per spec line 2358-2361");
+    validate_reassembly_cross_doc(
+        &cfg,
+        &link_view,
+        &pool_view,
+        &std::collections::BTreeSet::new(),
+    )
+    .expect("opt-out under error ⇒ silent-skip per spec line 2358-2361");
 }
 
 // ── Forbid policy: opt-out rejection + promotion ────────────────
@@ -303,8 +327,13 @@ fn forbid_policy_promotes_to_pool_stage_copy_policy_error_without_opt_out() {
     let cfg = parse_deploy_str(&yaml).expect("forbid parses");
     let (links, pools) = fixture_link_and_pool();
     let (link_view, pool_view) = views(&links, &pools);
-    let err = validate_reassembly_cross_doc(&cfg, &link_view, &pool_view, &std::collections::BTreeSet::new())
-        .expect_err("rate > 25 + forbid policy + no opt-out fires");
+    let err = validate_reassembly_cross_doc(
+        &cfg,
+        &link_view,
+        &pool_view,
+        &std::collections::BTreeSet::new(),
+    )
+    .expect_err("rate > 25 + forbid policy + no opt-out fires");
     match err {
         ValidationError::PoolStageCopyPolicyError { policy, .. } => {
             assert_eq!(policy, "forbid");
@@ -328,8 +357,13 @@ fn forbid_policy_with_opt_out_rejects_outright() {
         default_pool("rx_data_pool", 16, 700),
     );
     let (link_view, pool_view) = views(&links, &pools);
-    let err = validate_reassembly_cross_doc(&cfg, &link_view, &pool_view, &std::collections::BTreeSet::new())
-        .expect_err("forbid rejects opt-out outright");
+    let err = validate_reassembly_cross_doc(
+        &cfg,
+        &link_view,
+        &pool_view,
+        &std::collections::BTreeSet::new(),
+    )
+    .expect_err("forbid rejects opt-out outright");
     match err {
         ValidationError::PoolStageCopyAcceptRejectedUnderForbid { machine, link_name } => {
             assert_eq!(machine, "mcu_node");
@@ -356,8 +390,13 @@ fn warn_policy_with_opt_out_does_not_reject() {
         default_pool("rx_data_pool", 16, 700),
     );
     let (link_view, pool_view) = views(&links, &pools);
-    validate_reassembly_cross_doc(&cfg, &link_view, &pool_view, &std::collections::BTreeSet::new())
-        .expect("warn + opt-out ⇒ silent-skip (no rejection)");
+    validate_reassembly_cross_doc(
+        &cfg,
+        &link_view,
+        &pool_view,
+        &std::collections::BTreeSet::new(),
+    )
+    .expect("warn + opt-out ⇒ silent-skip (no rejection)");
 }
 
 #[test]
@@ -377,8 +416,13 @@ fn error_policy_with_opt_out_does_not_reject() {
         default_pool("rx_data_pool", 16, 700),
     );
     let (link_view, pool_view) = views(&links, &pools);
-    validate_reassembly_cross_doc(&cfg, &link_view, &pool_view, &std::collections::BTreeSet::new())
-        .expect("error + opt-out ⇒ silent-skip (no rejection)");
+    validate_reassembly_cross_doc(
+        &cfg,
+        &link_view,
+        &pool_view,
+        &std::collections::BTreeSet::new(),
+    )
+    .expect("error + opt-out ⇒ silent-skip (no rejection)");
 }
 
 // ── Closed-enum drift guard for StageCopyPolicy::ALL ────────────
@@ -388,8 +432,7 @@ fn stage_copy_policy_all_matches_enum_variants() {
     // If anyone adds a new variant to StageCopyPolicy without
     // extending ALL or from_str, this test trips at compile time
     // (exhaustive match) and at runtime (count mismatch).
-    let expected: Vec<&str> =
-        StageCopyPolicy::ALL.iter().map(|s| *s).collect();
+    let expected: Vec<&str> = StageCopyPolicy::ALL.iter().map(|s| *s).collect();
     assert_eq!(expected, vec!["warn", "error", "forbid"]);
     assert!(StageCopyPolicy::from_str("warn").is_some());
     assert!(StageCopyPolicy::from_str("error").is_some());

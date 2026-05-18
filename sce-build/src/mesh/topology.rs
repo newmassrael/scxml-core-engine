@@ -139,22 +139,32 @@ impl BindingDefaultIds {
     /// family the pattern needs. Returns `None` if the pattern's required
     /// family is not populated on this default — caller treats that as
     /// "no defaults to attach for this event".
-    pub fn project_to(&self, pattern: super::pattern::CommunicationPattern) -> Option<SomeipEventIds> {
+    pub fn project_to(
+        &self,
+        pattern: super::pattern::CommunicationPattern,
+    ) -> Option<SomeipEventIds> {
         use super::pattern::SomeipFieldKind;
         // A pattern with no dedicated SOME/IP slot (currently only
         // FieldNotify, which piggybacks on the getter/setter reply path)
         // never consumes a per-binding default. Binding-level flat sugar
         // is only meaningful for request/subscribe/field-access patterns.
         match pattern.someip_field()? {
-            SomeipFieldKind::Method => self.method_id.map(|id| SomeipEventIds::Method { method_id: id }),
+            SomeipFieldKind::Method => self
+                .method_id
+                .map(|id| SomeipEventIds::Method { method_id: id }),
             SomeipFieldKind::EventGroup => match (self.event_group_id, self.event_id) {
-                (Some(group), Some(event)) => {
-                    Some(SomeipEventIds::EventGroup { event_group_id: group, event_id: event })
-                }
+                (Some(group), Some(event)) => Some(SomeipEventIds::EventGroup {
+                    event_group_id: group,
+                    event_id: event,
+                }),
                 _ => None,
             },
-            SomeipFieldKind::Getter => self.getter_id.map(|id| SomeipEventIds::Getter { getter_id: id }),
-            SomeipFieldKind::Setter => self.setter_id.map(|id| SomeipEventIds::Setter { setter_id: id }),
+            SomeipFieldKind::Getter => self
+                .getter_id
+                .map(|id| SomeipEventIds::Getter { getter_id: id }),
+            SomeipFieldKind::Setter => self
+                .setter_id
+                .map(|id| SomeipEventIds::Setter { setter_id: id }),
         }
     }
 }
@@ -343,7 +353,10 @@ pub struct ResolvedTarget {
     /// the registry-level `supplies_ordering` to decide whether the
     /// generated mesh-send-callback must stamp `env.sequence_no` and
     /// whether the receiver path must route through `admitOrdered`.
-    #[serde(default, skip_serializing_if = "crate::mesh::deploy::OrderingRequirement::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "crate::mesh::deploy::OrderingRequirement::is_none"
+    )]
     pub ordering: crate::mesh::deploy::OrderingRequirement,
     /// SCE_MESH.md §14.4 — runtime pool substitution plan, or `None` if
     /// this target has no placeholder bindings. The typed sum type
@@ -401,9 +414,7 @@ impl PoolPlan {
     /// [`validate_pool_param_names`]; a missing name is a build error.
     pub fn required_param_names(&self) -> Vec<&str> {
         match self {
-            Self::Zenoh { placeholders } => {
-                placeholders.iter().map(String::as_str).collect()
-            }
+            Self::Zenoh { placeholders } => placeholders.iter().map(String::as_str).collect(),
             Self::Someip { instance_from, .. } => vec![instance_from.as_str()],
         }
     }
@@ -697,7 +708,9 @@ pub fn detect_server_pairs(model: &SCXMLModel) -> Vec<ServerRpcPair> {
     let mut request_suffixes: Vec<(String, String)> = Vec::new(); // (suffix, full_event)
     for state in model.states.values() {
         for transition in &state.transitions {
-            if let Some(suffix) = CommunicationPattern::ServiceRequest.match_suffix(&transition.event) {
+            if let Some(suffix) =
+                CommunicationPattern::ServiceRequest.match_suffix(&transition.event)
+            {
                 if !suffix.is_empty() {
                     request_suffixes.push((suffix.to_string(), transition.event.clone()));
                 }
@@ -709,8 +722,7 @@ pub fn detect_server_pairs(model: &SCXMLModel) -> Vec<ServerRpcPair> {
     }
 
     // Step 2: collect all service.response.* events from sends and raises
-    let response_suffixes =
-        collect_response_suffixes(model, CommunicationPattern::ServiceResponse);
+    let response_suffixes = collect_response_suffixes(model, CommunicationPattern::ServiceResponse);
 
     // Step 3: pair request suffixes with confirmed response suffixes
     let mut pairs = Vec::new();
@@ -749,9 +761,7 @@ pub fn detect_server_fire_forget_events(model: &SCXMLModel) -> Vec<String> {
     let mut events = std::collections::BTreeSet::new();
     for state in model.states.values() {
         for transition in &state.transitions {
-            if let Some(suffix) =
-                CommunicationPattern::FireForget.match_suffix(&transition.event)
-            {
+            if let Some(suffix) = CommunicationPattern::FireForget.match_suffix(&transition.event) {
                 if !suffix.is_empty() {
                     events.insert(transition.event.clone());
                 }
@@ -780,9 +790,7 @@ pub fn detect_server_fire_forget_events(model: &SCXMLModel) -> Vec<String> {
 /// `SOMEIP_SERVER_SETTER_*` method constants. A suffix that happens to
 /// appear in both FieldGet and FieldSet transitions yields two distinct
 /// pairs (one Getter, one Setter) — that is the authored contract.
-pub fn detect_server_field_access_pairs(
-    model: &SCXMLModel,
-) -> Vec<ServerFieldAccessPair> {
+pub fn detect_server_field_access_pairs(model: &SCXMLModel) -> Vec<ServerFieldAccessPair> {
     use super::pattern::CommunicationPattern;
 
     // Step 1: collect (kind, suffix, full_event) for every field.get/field.set
@@ -817,8 +825,7 @@ pub fn detect_server_field_access_pairs(
 
     // Step 2: collect all field.notify.* suffixes emitted as send or raise
     // action events anywhere in the model.
-    let response_suffixes =
-        collect_response_suffixes(model, CommunicationPattern::FieldNotify);
+    let response_suffixes = collect_response_suffixes(model, CommunicationPattern::FieldNotify);
 
     // Step 3: pair each (kind, suffix) with a confirmed field.notify suffix.
     // The dedup key is (kind, suffix) so a suffix that appears as both a
@@ -953,27 +960,33 @@ pub fn inject_server_response_sends(
         event: String,
     }
     #[derive(Clone, Copy)]
-    enum BlockKind { OnEntry, OnExit, Transition(usize) }
+    enum BlockKind {
+        OnEntry,
+        OnExit,
+        Transition(usize),
+    }
 
     // Idempotency guard: a raise is only a candidate if no synthetic
     // send with the same event and self-target already follows it. This
     // allows the function to be called multiple times (pre-SM and inside
     // compile_mesh_transport) without inserting duplicate sends.
-    let already_followed_by_send = |actions: &[crate::model::Action], ai: usize, event: &str| -> bool {
-        if ai + 1 < actions.len() {
-            let next = &actions[ai + 1];
-            next.action_type == "send" && next.event == event && next.target == self_target
-        } else {
-            false
-        }
-    };
+    let already_followed_by_send =
+        |actions: &[crate::model::Action], ai: usize, event: &str| -> bool {
+            if ai + 1 < actions.len() {
+                let next = &actions[ai + 1];
+                next.action_type == "send" && next.event == event && next.target == self_target
+            } else {
+                false
+            }
+        };
 
     let mut candidates: Vec<Candidate> = Vec::new();
 
     for (state_id, state) in &model.states {
         for (bi, block) in state.on_entry_blocks.iter().enumerate() {
             for (ai, action) in block.iter().enumerate() {
-                if action.action_type == "raise" && response_events.contains(action.event.as_str())
+                if action.action_type == "raise"
+                    && response_events.contains(action.event.as_str())
                     && !already_followed_by_send(block, ai, &action.event)
                 {
                     candidates.push(Candidate {
@@ -988,7 +1001,8 @@ pub fn inject_server_response_sends(
         }
         for (bi, block) in state.on_exit_blocks.iter().enumerate() {
             for (ai, action) in block.iter().enumerate() {
-                if action.action_type == "raise" && response_events.contains(action.event.as_str())
+                if action.action_type == "raise"
+                    && response_events.contains(action.event.as_str())
                     && !already_followed_by_send(block, ai, &action.event)
                 {
                     candidates.push(Candidate {
@@ -1003,7 +1017,8 @@ pub fn inject_server_response_sends(
         }
         for (ti, transition) in state.transitions.iter().enumerate() {
             for (ai, action) in transition.actions.iter().enumerate() {
-                if action.action_type == "raise" && response_events.contains(action.event.as_str())
+                if action.action_type == "raise"
+                    && response_events.contains(action.event.as_str())
                     && !already_followed_by_send(&transition.actions, ai, &action.event)
                 {
                     candidates.push(Candidate {
@@ -1022,14 +1037,16 @@ pub fn inject_server_response_sends(
     // Process in reverse order so insertion indices remain valid.
     let mut injected = Vec::new();
     candidates.sort_by(|a, b| {
-        a.state_id.cmp(&b.state_id)
+        a.state_id
+            .cmp(&b.state_id)
             .then(b.action_idx.cmp(&a.action_idx)) // reverse action index
     });
 
     for c in &candidates {
-        let state = model.states.get_mut(&c.state_id).expect(
-            "state must exist — collected from the same model",
-        );
+        let state = model
+            .states
+            .get_mut(&c.state_id)
+            .expect("state must exist — collected from the same model");
 
         let mut send_action = crate::model::Action::default();
         send_action.action_type = "send".to_string();
@@ -1045,7 +1062,9 @@ pub fn inject_server_response_sends(
                 state.on_exit_blocks[c.block_idx].insert(insert_pos, send_action);
             }
             BlockKind::Transition(ti) => {
-                state.transitions[ti].actions.insert(insert_pos, send_action);
+                state.transitions[ti]
+                    .actions
+                    .insert(insert_pos, send_action);
             }
         }
         injected.push(c.event.clone());
@@ -1120,8 +1139,7 @@ pub fn resolve_server_binding(
                 _ => false,
             };
             if !has_method_binding {
-                let server_target =
-                    TargetId::new("#_server").expect("static target ID");
+                let server_target = TargetId::new("#_server").expect("static target ID");
                 return Err(TopologyError::MissingBindingField {
                     machine: machine_name.to_string(),
                     target: server_target,
@@ -1138,18 +1156,17 @@ pub fn resolve_server_binding(
                 FieldAccessKind::Setter => ("setter", "setter"),
             };
             let has_binding = match &state {
-                TransportState::Someip { event_bindings, .. } => match event_bindings
-                    .get(&pair.request_event)
-                {
-                    Some(SomeipEventIds::Getter { .. }) if expected == "getter" => true,
-                    Some(SomeipEventIds::Setter { .. }) if expected == "setter" => true,
-                    _ => false,
-                },
+                TransportState::Someip { event_bindings, .. } => {
+                    match event_bindings.get(&pair.request_event) {
+                        Some(SomeipEventIds::Getter { .. }) if expected == "getter" => true,
+                        Some(SomeipEventIds::Setter { .. }) if expected == "setter" => true,
+                        _ => false,
+                    }
+                }
                 _ => false,
             };
             if !has_binding {
-                let server_target =
-                    TargetId::new("#_server").expect("static target ID");
+                let server_target = TargetId::new("#_server").expect("static target ID");
                 return Err(TopologyError::MissingBindingField {
                     machine: machine_name.to_string(),
                     target: server_target,
@@ -1172,8 +1189,7 @@ pub fn resolve_server_binding(
                 _ => false,
             };
             if !has_eventgroup_binding {
-                let server_target =
-                    TargetId::new("#_server").expect("static target ID");
+                let server_target = TargetId::new("#_server").expect("static target ID");
                 return Err(TopologyError::MissingBindingField {
                     machine: machine_name.to_string(),
                     target: server_target,
@@ -1231,14 +1247,15 @@ fn build_server_transport_state(
             })
         }
         "zenoh" => {
-            let key = server_cfg.key.clone().ok_or_else(|| {
-                TopologyError::MissingBindingField {
+            let key = server_cfg
+                .key
+                .clone()
+                .ok_or_else(|| TopologyError::MissingBindingField {
                     machine: machine_name.to_string(),
                     target: server_target,
                     transport: "zenoh".to_string(),
                     field: "key (required for server-side Zenoh queryable)".to_string(),
-                }
-            })?;
+                })?;
             Ok(TransportState::Zenoh {
                 key,
                 extra: server_cfg.extra.clone(),
@@ -1742,11 +1759,8 @@ pub fn build_resolved_targets(
         contribute_send_partials(contributions.send_summary, bindings, machine_name)?;
 
     if !contributions.subscriptions.is_empty() {
-        let subscription_partials = contribute_subscription_partials(
-            contributions.subscriptions,
-            bindings,
-            machine_name,
-        )?;
+        let subscription_partials =
+            contribute_subscription_partials(contributions.subscriptions, bindings, machine_name)?;
         for p in subscription_partials {
             merge_partial_into(&mut partials, p);
         }
@@ -1943,11 +1957,8 @@ fn validate_pool_param_names(
         };
         let required: Vec<&str> = plan.required_param_names();
         for site in &rt.invoke_sites {
-            let supplied: std::collections::BTreeSet<&str> = site
-                .params
-                .iter()
-                .map(|p| p.name.as_str())
-                .collect();
+            let supplied: std::collections::BTreeSet<&str> =
+                site.params.iter().map(|p| p.name.as_str()).collect();
             let missing: Vec<String> = required
                 .iter()
                 .filter(|name| !supplied.contains(*name))
@@ -2012,7 +2023,10 @@ fn validate_shm_extras_partial(
             )
         })?;
         if n == 0 {
-            return Err(invalid("shm_arena_bytes", "must be greater than zero".into()));
+            return Err(invalid(
+                "shm_arena_bytes",
+                "must be greater than zero".into(),
+            ));
         }
         if n > u32::MAX as u64 {
             return Err(invalid(
@@ -2079,7 +2093,11 @@ fn validate_someip_pattern_fields(
                 machine: machine_name.to_string(),
                 target: rt.target.clone(),
                 transport: rt.state.transport_name().to_string(),
-                field: format!("{} (event \"{}\")", field_kind_yaml_name(expected), ep.event),
+                field: format!(
+                    "{} (event \"{}\")",
+                    field_kind_yaml_name(expected),
+                    ep.event
+                ),
             });
         }
     }
@@ -2162,13 +2180,10 @@ fn derive_pool_plan(pt: &PartialTarget) -> Option<PoolPlan> {
             // (today: `key:`). Collect every `{name}` in insertion
             // order, de-duplicate, sort — the template's
             // substitution plan is position-independent.
-            let mut names: std::collections::BTreeSet<String> =
-                std::collections::BTreeSet::new();
+            let mut names: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
             for value in pt.extra.values() {
                 if let Some(s) = value.as_str() {
-                    if let Ok(ids) =
-                        crate::mesh::deploy::extract_placeholders(s)
-                    {
+                    if let Ok(ids) = crate::mesh::deploy::extract_placeholders(s) {
                         names.extend(ids);
                     }
                 }
@@ -2186,12 +2201,10 @@ fn derive_pool_plan(pt: &PartialTarget) -> Option<PoolPlan> {
             // pair gated by `validate_pool_capability`. Either both
             // present or both absent by that point.
             match (pt.instance_from.as_ref(), pt.instances.as_ref()) {
-                (Some(instance_from), Some(list)) if !list.is_empty() => {
-                    Some(PoolPlan::Someip {
-                        instance_from: instance_from.clone(),
-                        instances: list.clone(),
-                    })
-                }
+                (Some(instance_from), Some(list)) if !list.is_empty() => Some(PoolPlan::Someip {
+                    instance_from: instance_from.clone(),
+                    instances: list.clone(),
+                }),
                 _ => None,
             }
         }
@@ -2217,17 +2230,24 @@ fn build_transport_state(
     match pt.transport.as_str() {
         "local" => TransportState::Local,
         "shm" => TransportState::Shm {
-            arena_bytes: pt.extra.get("shm_arena_bytes").and_then(|v| v.as_u64()).map(|n| n as u32),
-            ring_capacity: pt.extra.get("shm_ring_capacity").and_then(|v| v.as_u64()).map(|n| n as u32),
+            arena_bytes: pt
+                .extra
+                .get("shm_arena_bytes")
+                .and_then(|v| v.as_u64())
+                .map(|n| n as u32),
+            ring_capacity: pt
+                .extra
+                .get("shm_ring_capacity")
+                .and_then(|v| v.as_u64())
+                .map(|n| n as u32),
         },
         "someip" => {
             // `someip_resolved` is `Some` for every someip target after
             // `resolve_someip_ids` runs (typed `PerBindingResolution`
             // invariant). The `expect` pins that contract; reaching
             // `None` here would be an upstream bug.
-            let (service, event_bindings) = someip_resolved.expect(
-                "build_transport_state: someip target must have resolved service identity",
-            );
+            let (service, event_bindings) = someip_resolved
+                .expect("build_transport_state: someip target must have resolved service identity");
             TransportState::Someip {
                 service,
                 event_bindings,
@@ -2367,8 +2387,11 @@ fn resolve_someip_ids(
     }
 
     // Detect unused per-event entries (likely typos).
-    let actual_events: BTreeSet<&str> =
-        pt.event_patterns.iter().map(|ep| ep.event.as_str()).collect();
+    let actual_events: BTreeSet<&str> = pt
+        .event_patterns
+        .iter()
+        .map(|ep| ep.event.as_str())
+        .collect();
     for declared in per_binding.by_event.keys() {
         if !actual_events.contains(declared.as_str()) {
             return Err(TopologyError::EventBindingUnused {
@@ -2568,7 +2591,6 @@ pub fn validate_event_coverage(
 // SCE_MESH.md §13 path B: QoS is a transport binding concern (declared in
 // deploy.yaml or external config such as vsomeip.json), not a per-<send>
 // SCXML annotation — so there is no `sce:qos` consistency validator here.
-
 
 // ── Pattern capability validation ────────────────────────────
 
@@ -2841,12 +2863,15 @@ pub enum SubscriptionLintReason {
 impl std::fmt::Display for SubscriptionLintNotice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let reason = match &self.reason {
-            SubscriptionLintReason::NestedInConditional =>
-                "subscribe is nested inside <if>/<foreach> (not a direct child of <onentry>)",
-            SubscriptionLintReason::ManualUnsubscribePresent =>
-                "state already has a manual <onexit> unsubscribe for the same event",
-            SubscriptionLintReason::DuplicateSubscribe =>
-                "duplicate subscribe for the same event in the same <onentry> block",
+            SubscriptionLintReason::NestedInConditional => {
+                "subscribe is nested inside <if>/<foreach> (not a direct child of <onentry>)"
+            }
+            SubscriptionLintReason::ManualUnsubscribePresent => {
+                "state already has a manual <onexit> unsubscribe for the same event"
+            }
+            SubscriptionLintReason::DuplicateSubscribe => {
+                "duplicate subscribe for the same event in the same <onentry> block"
+            }
         };
         write!(
             f,
@@ -2915,11 +2940,7 @@ pub fn inject_auto_subscriptions(
             // Scan nested actions for non-qualifying subscribe sends.
             for action in block {
                 if action.action_type == "if" || action.action_type == "foreach" {
-                    collect_nested_subscribe_notices(
-                        state_id,
-                        action,
-                        &mut notices,
-                    );
+                    collect_nested_subscribe_notices(state_id, action, &mut notices);
                 }
             }
 
@@ -2934,8 +2955,7 @@ pub fn inject_auto_subscriptions(
                     continue;
                 }
 
-                let Some(unsub_event) =
-                    super::pattern::subscribe_to_unsubscribe(&action.event)
+                let Some(unsub_event) = super::pattern::subscribe_to_unsubscribe(&action.event)
                 else {
                     continue;
                 };
@@ -2976,9 +2996,10 @@ pub fn inject_auto_subscriptions(
 
     // Inject synthetic unsubscribe sends into the model.
     for c in &candidates {
-        let state = model.states.get_mut(&c.state_id).expect(
-            "state must exist — collected from the same model",
-        );
+        let state = model
+            .states
+            .get_mut(&c.state_id)
+            .expect("state must exist — collected from the same model");
 
         // Build synthetic send action.
         let mut unsub_action = crate::model::Action::default();
@@ -3185,7 +3206,11 @@ topology:
         let resolved = resolved_motor_target();
         let err = load_receiver_models(&resolved, &deploy, &dir, "brake").unwrap_err();
         match err {
-            TopologyError::ReceiverNotDeclared { sender, target, receiver } => {
+            TopologyError::ReceiverNotDeclared {
+                sender,
+                target,
+                receiver,
+            } => {
                 assert_eq!(sender, "brake");
                 assert_eq!(target, "#motor");
                 assert_eq!(receiver, "motor");
@@ -3296,7 +3321,10 @@ topology:
 
         let summary = summary_for(&brake);
         let findings = check_sender_event_coverage("brake", &summary, &receivers, &deploy);
-        assert!(findings.is_empty(), "expected no findings, got {findings:?}");
+        assert!(
+            findings.is_empty(),
+            "expected no findings, got {findings:?}"
+        );
     }
 
     #[test]
@@ -3434,7 +3462,10 @@ topology:
         let model = parse_model(PATTERN_SCXML, "tester");
 
         let violations = validate_pattern_capability(&summary_for(&model), &deploy, "tester");
-        assert!(violations.is_empty(), "expected no violations, got {violations:?}");
+        assert!(
+            violations.is_empty(),
+            "expected no violations, got {violations:?}"
+        );
     }
 
     #[test]
@@ -3760,7 +3791,10 @@ topology:
         match err {
             TopologyError::InvalidBindingField { field, reason, .. } => {
                 assert_eq!(field, "shm_arena_bytes");
-                assert!(reason.contains("-1"), "reason should include value: {reason}");
+                assert!(
+                    reason.contains("-1"),
+                    "reason should include value: {reason}"
+                );
             }
             other => panic!("expected InvalidBindingField, got {other:?}"),
         }
@@ -3804,10 +3838,7 @@ topology:
         )
     }
 
-    fn resolve_for_mesh_rpc(
-        per_invoke: Option<u64>,
-        binding_yaml: &str,
-    ) -> TargetResolution {
+    fn resolve_for_mesh_rpc(per_invoke: Option<u64>, binding_yaml: &str) -> TargetResolution {
         let model = parse_model(&mesh_rpc_sender_scxml(per_invoke), "brake");
         let deploy = parse_deploy_str(&deploy_with_motor_binding(binding_yaml)).unwrap();
         let external = super::super::external::ExternalResolution::default();
@@ -3826,7 +3857,10 @@ topology:
     #[test]
     fn deadline_per_invoke_only_no_notice_no_inheritance() {
         let res = resolve_for_mesh_rpc(Some(50), "");
-        assert!(res.deadline_overrides.is_empty(), "no binding-level deadline → no notice");
+        assert!(
+            res.deadline_overrides.is_empty(),
+            "no binding-level deadline → no notice"
+        );
         let site = &res.targets[0].invoke_sites[0];
         assert_eq!(site.deadline_ms, Some(50));
     }
@@ -3834,9 +3868,16 @@ topology:
     #[test]
     fn deadline_binding_only_inherits_to_site() {
         let res = resolve_for_mesh_rpc(None, "\n            deadline_ms: 75");
-        assert!(res.deadline_overrides.is_empty(), "per-invoke absent → no notice");
+        assert!(
+            res.deadline_overrides.is_empty(),
+            "per-invoke absent → no notice"
+        );
         let site = &res.targets[0].invoke_sites[0];
-        assert_eq!(site.deadline_ms, Some(75), "binding fallback should populate site");
+        assert_eq!(
+            site.deadline_ms,
+            Some(75),
+            "binding fallback should populate site"
+        );
     }
 
     #[test]
@@ -3849,7 +3890,11 @@ topology:
     #[test]
     fn deadline_both_set_diverge_emits_notice_and_per_invoke_wins() {
         let res = resolve_for_mesh_rpc(Some(50), "\n            deadline_ms: 200");
-        assert_eq!(res.deadline_overrides.len(), 1, "diverging values → exactly one notice");
+        assert_eq!(
+            res.deadline_overrides.len(),
+            1,
+            "diverging values → exactly one notice"
+        );
         let n = &res.deadline_overrides[0];
         assert_eq!(n.param_value, 50);
         assert_eq!(n.binding_value, 200);
@@ -3860,8 +3905,14 @@ topology:
         // Display message must name both values so a deploy author can
         // diff intent vs effect without re-running with --verbose.
         let msg = format!("{n}");
-        assert!(msg.contains("50ms"), "notice should name per-invoke value: {msg}");
-        assert!(msg.contains("200ms"), "notice should name binding value: {msg}");
+        assert!(
+            msg.contains("50ms"),
+            "notice should name per-invoke value: {msg}"
+        );
+        assert!(
+            msg.contains("200ms"),
+            "notice should name binding value: {msg}"
+        );
     }
 
     #[test]
@@ -3925,9 +3976,9 @@ topology:
         let state = model.states.get("monitoring").expect("state exists");
         assert!(!state.on_exit_blocks.is_empty(), "onexit block created");
         let exit_block = &state.on_exit_blocks[0];
-        let unsub = exit_block.iter().find(|a| {
-            a.action_type == "send" && a.event == "event.unsubscribe.brake_status"
-        });
+        let unsub = exit_block
+            .iter()
+            .find(|a| a.action_type == "send" && a.event == "event.unsubscribe.brake_status");
         assert!(unsub.is_some(), "synthetic unsubscribe send injected");
         let unsub = unsub.unwrap();
         assert_eq!(unsub.target, "#bus");
@@ -3938,7 +3989,10 @@ topology:
         let mut model = parse_model(NESTED_SUB_SCXML, "nested_test");
         let (sites, notices) = inject_auto_subscriptions(&mut model);
 
-        assert!(sites.is_empty(), "nested subscribe should not auto-generate");
+        assert!(
+            sites.is_empty(),
+            "nested subscribe should not auto-generate"
+        );
         assert_eq!(notices.len(), 1, "one lint notice");
         assert_eq!(notices[0].event, "event.subscribe.speed");
         assert!(matches!(
@@ -3952,7 +4006,10 @@ topology:
         let mut model = parse_model(MANUAL_UNSUB_SCXML, "manual_test");
         let (sites, notices) = inject_auto_subscriptions(&mut model);
 
-        assert!(sites.is_empty(), "manual unsubscribe suppresses auto-generation");
+        assert!(
+            sites.is_empty(),
+            "manual unsubscribe suppresses auto-generation"
+        );
         assert_eq!(notices.len(), 1, "one lint notice for manual suppression");
         assert!(matches!(
             notices[0].reason,
@@ -3968,8 +4025,14 @@ topology:
         // After injection, collect_send_summary should see both subscribe and unsubscribe.
         let summary = collect_send_summary(&model);
         let events: Vec<&str> = summary.actions.iter().map(|a| a.event.as_str()).collect();
-        assert!(events.contains(&"event.subscribe.brake_status"), "subscribe detected");
-        assert!(events.contains(&"event.unsubscribe.brake_status"), "unsubscribe detected");
+        assert!(
+            events.contains(&"event.subscribe.brake_status"),
+            "subscribe detected"
+        );
+        assert!(
+            events.contains(&"event.unsubscribe.brake_status"),
+            "unsubscribe detected"
+        );
     }
 
     #[test]
@@ -4112,7 +4175,11 @@ topology:
         )
         .expect_err("CAN + ordering:required must be rejected");
         match err {
-            TopologyError::OrderingCannotBeGuaranteed { machine, target, transport } => {
+            TopologyError::OrderingCannotBeGuaranteed {
+                machine,
+                target,
+                transport,
+            } => {
                 assert_eq!(machine, "sender");
                 assert_eq!(target.as_str(), "#receiver");
                 assert_eq!(transport, "can");
@@ -4200,7 +4267,9 @@ topology:
         let deploy = parse_deploy_str(yaml).unwrap();
         let model = parse_model(SUBSCRIPTION_ONLY_SCXML, "brake");
         let external = super::super::external::ExternalResolution::default();
-        let subs = deploy.topology["ecu1"].machines["brake"].subscriptions.clone();
+        let subs = deploy.topology["ecu1"].machines["brake"]
+            .subscriptions
+            .clone();
         let resolution = build_resolved_targets(
             &TargetContributions {
                 send_summary: &summary_for(&model),
@@ -4261,7 +4330,9 @@ topology:
         let deploy = parse_deploy_str(yaml).unwrap();
         let model = parse_model(SUBSCRIPTION_ONLY_SCXML, "brake");
         let external = super::super::external::ExternalResolution::default();
-        let subs = deploy.topology["ecu1"].machines["brake"].subscriptions.clone();
+        let subs = deploy.topology["ecu1"].machines["brake"]
+            .subscriptions
+            .clone();
         let err = build_resolved_targets(
             &TargetContributions {
                 send_summary: &summary_for(&model),
@@ -4273,12 +4344,18 @@ topology:
         )
         .expect_err("unbound subscription source must reject");
         match err {
-            TopologyError::SubscriptionSourceUnbound { machine, source_target, available } => {
+            TopologyError::SubscriptionSourceUnbound {
+                machine,
+                source_target,
+                available,
+            } => {
                 assert_eq!(machine, "brake");
                 assert_eq!(source_target, "#ghost");
                 let names: Vec<&str> = available.iter().map(|t| t.as_str()).collect();
-                assert!(names.contains(&"#motor") && names.contains(&"#chassis"),
-                        "available must enumerate all existing bindings, got {names:?}");
+                assert!(
+                    names.contains(&"#motor") && names.contains(&"#chassis"),
+                    "available must enumerate all existing bindings, got {names:?}"
+                );
             }
             other => panic!("expected SubscriptionSourceUnbound, got {other:?}"),
         }
@@ -4320,7 +4397,9 @@ topology:
         let deploy = parse_deploy_str(yaml).unwrap();
         let model = parse_model(scxml, "brake");
         let external = super::super::external::ExternalResolution::default();
-        let subs = deploy.topology["ecu1"].machines["brake"].subscriptions.clone();
+        let subs = deploy.topology["ecu1"].machines["brake"]
+            .subscriptions
+            .clone();
         let resolution = build_resolved_targets(
             &TargetContributions {
                 send_summary: &summary_for(&model),
@@ -4398,7 +4477,9 @@ topology:
         let deploy = parse_deploy_str(yaml).unwrap();
         let model = parse_model(scxml, "brake");
         let external = super::super::external::ExternalResolution::default();
-        let subs = deploy.topology["ecu1"].machines["brake"].subscriptions.clone();
+        let subs = deploy.topology["ecu1"].machines["brake"]
+            .subscriptions
+            .clone();
         let err = build_resolved_targets(
             &TargetContributions {
                 send_summary: &summary_for(&model),
@@ -4411,7 +4492,10 @@ topology:
         .expect_err("SOME/IP machine-lifetime subscribe must reject at topology");
         match err {
             TopologyError::MachineLifetimeSubscriptionUnsupported {
-                machine, source_target, event, transport,
+                machine,
+                source_target,
+                event,
+                transport,
             } => {
                 assert_eq!(machine, "brake");
                 assert_eq!(source_target.as_str(), "#motor");

@@ -54,7 +54,10 @@ pub enum NeedsScriptEngineCause {
     SendNamelist { state_id: String },
     /// W3C SCXML 6.2.4 — `<send><param expr="..."/>` whose expression is
     /// not a static string literal. Static literals are folded at build time.
-    SendParamExpr { state_id: String, param_name: String },
+    SendParamExpr {
+        state_id: String,
+        param_name: String,
+    },
     /// W3C SCXML 6.2 — `<send>` with `eventexpr` / `targetexpr` /
     /// `delayexpr` / `typeexpr` / `contentexpr` / `idlocation` attributes:
     /// any of which forces runtime expression evaluation. `contentexpr`
@@ -160,7 +163,11 @@ fn collect_state_causes(state_id: &str, state: &State, out: &mut Vec<NeedsScript
             collect_action_causes(state_id, action, out);
         }
     }
-    for block in state.on_entry_blocks.iter().chain(state.on_exit_blocks.iter()) {
+    for block in state
+        .on_entry_blocks
+        .iter()
+        .chain(state.on_exit_blocks.iter())
+    {
         for action in block {
             collect_action_causes(state_id, action, out);
         }
@@ -189,11 +196,7 @@ fn transition_guard_needs_engine(trans: &crate::model::Transition) -> bool {
     needs_se
 }
 
-fn collect_action_causes(
-    state_id: &str,
-    action: &Action,
-    out: &mut Vec<NeedsScriptEngineCause>,
-) {
+fn collect_action_causes(state_id: &str, action: &Action, out: &mut Vec<NeedsScriptEngineCause>) {
     match action.action_type.as_str() {
         "send" => {
             if !action.namelist.is_empty() {
@@ -333,11 +336,7 @@ fn push_child_invoke_cause(common: &InvokeSessionCommon, out: &mut Vec<NeedsScri
     }
 }
 
-fn collect_donedata_causes(
-    state_id: &str,
-    dd: &DoneData,
-    out: &mut Vec<NeedsScriptEngineCause>,
-) {
+fn collect_donedata_causes(state_id: &str, dd: &DoneData, out: &mut Vec<NeedsScriptEngineCause>) {
     if !dd.params.is_empty() {
         out.push(NeedsScriptEngineCause::DonedataParam {
             state_id: state_id.to_string(),
@@ -455,9 +454,10 @@ mod tests {
         let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
             <state id="s"><onentry><send event="e" namelist="a b"/></onentry></state>
         </scxml>"#;
-        contains_cause(scxml, |c| {
-            matches!(c, NeedsScriptEngineCause::SendNamelist { state_id } if state_id == "s")
-        });
+        contains_cause(
+            scxml,
+            |c| matches!(c, NeedsScriptEngineCause::SendNamelist { state_id } if state_id == "s"),
+        );
     }
 
     #[test]
@@ -467,10 +467,12 @@ mod tests {
                 <send event="e"><param name="p" expr="1 + 2"/></send>
             </onentry></state>
         </scxml>"#;
-        contains_cause(scxml, |c| matches!(
-            c,
-            NeedsScriptEngineCause::SendParamExpr { param_name, .. } if param_name == "p"
-        ));
+        contains_cause(scxml, |c| {
+            matches!(
+                c,
+                NeedsScriptEngineCause::SendParamExpr { param_name, .. } if param_name == "p"
+            )
+        });
     }
 
     #[test]
@@ -478,9 +480,10 @@ mod tests {
         let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
             <state id="s"><onentry><send eventexpr="'e'"/></onentry></state>
         </scxml>"#;
-        contains_cause(scxml, |c| {
-            matches!(c, NeedsScriptEngineCause::SendDynamicAttr { state_id } if state_id == "s")
-        });
+        contains_cause(
+            scxml,
+            |c| matches!(c, NeedsScriptEngineCause::SendDynamicAttr { state_id } if state_id == "s"),
+        );
     }
 
     #[test]
@@ -488,9 +491,10 @@ mod tests {
         let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
             <state id="s"><onentry><if cond="1 == 1"/></onentry></state>
         </scxml>"#;
-        contains_cause(scxml, |c| {
-            matches!(c, NeedsScriptEngineCause::IfCondition { state_id } if state_id == "s")
-        });
+        contains_cause(
+            scxml,
+            |c| matches!(c, NeedsScriptEngineCause::IfCondition { state_id } if state_id == "s"),
+        );
     }
 
     #[test]
@@ -500,9 +504,10 @@ mod tests {
                 <if cond="In('s')"><elseif cond="1 == 1"/></if>
             </onentry></state>
         </scxml>"#;
-        contains_cause(scxml, |c| {
-            matches!(c, NeedsScriptEngineCause::ElseIfCondition { state_id } if state_id == "s")
-        });
+        contains_cause(
+            scxml,
+            |c| matches!(c, NeedsScriptEngineCause::ElseIfCondition { state_id } if state_id == "s"),
+        );
     }
 
     #[test]
@@ -510,9 +515,10 @@ mod tests {
         let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
             <state id="s"><onentry><assign location="x" expr="1"/></onentry></state>
         </scxml>"#;
-        contains_cause(scxml, |c| {
-            matches!(c, NeedsScriptEngineCause::AssignAction { state_id } if state_id == "s")
-        });
+        contains_cause(
+            scxml,
+            |c| matches!(c, NeedsScriptEngineCause::AssignAction { state_id } if state_id == "s"),
+        );
     }
 
     #[test]
@@ -520,9 +526,10 @@ mod tests {
         let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
             <state id="s"><onentry><log expr="1"/></onentry></state>
         </scxml>"#;
-        contains_cause(scxml, |c| {
-            matches!(c, NeedsScriptEngineCause::LogExpr { state_id } if state_id == "s")
-        });
+        contains_cause(
+            scxml,
+            |c| matches!(c, NeedsScriptEngineCause::LogExpr { state_id } if state_id == "s"),
+        );
     }
 
     #[test]
@@ -530,9 +537,10 @@ mod tests {
         let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
             <state id="s"><onentry><script>var y = 2;</script></onentry></state>
         </scxml>"#;
-        contains_cause(scxml, |c| {
-            matches!(c, NeedsScriptEngineCause::InlineScriptAction { state_id } if state_id == "s")
-        });
+        contains_cause(
+            scxml,
+            |c| matches!(c, NeedsScriptEngineCause::InlineScriptAction { state_id } if state_id == "s"),
+        );
     }
 
     #[test]
@@ -540,9 +548,10 @@ mod tests {
         let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
             <state id="s"><onentry><cancel sendidexpr="'id'"/></onentry></state>
         </scxml>"#;
-        contains_cause(scxml, |c| {
-            matches!(c, NeedsScriptEngineCause::CancelExpr { state_id } if state_id == "s")
-        });
+        contains_cause(
+            scxml,
+            |c| matches!(c, NeedsScriptEngineCause::CancelExpr { state_id } if state_id == "s"),
+        );
     }
 
     #[test]
@@ -550,9 +559,10 @@ mod tests {
         let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
             <state id="s"><onentry><foreach array="xs" item="x"/></onentry></state>
         </scxml>"#;
-        contains_cause(scxml, |c| {
-            matches!(c, NeedsScriptEngineCause::ForeachAction { state_id } if state_id == "s")
-        });
+        contains_cause(
+            scxml,
+            |c| matches!(c, NeedsScriptEngineCause::ForeachAction { state_id } if state_id == "s"),
+        );
     }
 
     #[test]
@@ -562,9 +572,10 @@ mod tests {
                 <invoke id="h1" srcexpr="'child.scxml'"/>
             </state>
         </scxml>"##;
-        contains_cause(scxml, |c| {
-            matches!(c, NeedsScriptEngineCause::HybridInvoke { invoke_id } if invoke_id == "h1")
-        });
+        contains_cause(
+            scxml,
+            |c| matches!(c, NeedsScriptEngineCause::HybridInvoke { invoke_id } if invoke_id == "h1"),
+        );
     }
 
     #[test]
@@ -579,10 +590,12 @@ mod tests {
                 </invoke>
             </state>
         </scxml>"##;
-        contains_cause(scxml, |c| matches!(
-            c,
-            NeedsScriptEngineCause::StaticInvokeNamelist { invoke_id } if invoke_id == "i1"
-        ));
+        contains_cause(scxml, |c| {
+            matches!(
+                c,
+                NeedsScriptEngineCause::StaticInvokeNamelist { invoke_id } if invoke_id == "i1"
+            )
+        });
     }
 
     #[test]
@@ -594,10 +607,12 @@ mod tests {
                 </invoke>
             </state>
         </scxml>"##;
-        contains_cause(scxml, |c| matches!(
-            c,
-            NeedsScriptEngineCause::MeshRpcSrcExpr { invoke_id } if invoke_id == "m1"
-        ));
+        contains_cause(scxml, |c| {
+            matches!(
+                c,
+                NeedsScriptEngineCause::MeshRpcSrcExpr { invoke_id } if invoke_id == "m1"
+            )
+        });
     }
 
     #[test]
@@ -605,9 +620,10 @@ mod tests {
         let scxml = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
             <state id="s" initial="f"><final id="f"><donedata><param name="x" expr="1"/></donedata></final></state>
         </scxml>"##;
-        contains_cause(scxml, |c| {
-            matches!(c, NeedsScriptEngineCause::DonedataParam { state_id } if state_id == "f")
-        });
+        contains_cause(
+            scxml,
+            |c| matches!(c, NeedsScriptEngineCause::DonedataParam { state_id } if state_id == "f"),
+        );
     }
 
     #[test]
@@ -617,9 +633,10 @@ mod tests {
         let scxml = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
             <state id="s" initial="f"><final id="f"><donedata><content expr="1"/></donedata></final></state>
         </scxml>"##;
-        contains_cause(scxml, |c| {
-            matches!(c, NeedsScriptEngineCause::DonedataContent { state_id } if state_id == "f")
-        });
+        contains_cause(
+            scxml,
+            |c| matches!(c, NeedsScriptEngineCause::DonedataContent { state_id } if state_id == "f"),
+        );
     }
 
     #[test]
@@ -656,9 +673,10 @@ mod tests {
                 <final id="f"><donedata><content>21</content></donedata></final>
             </state>
         </scxml>"##;
-        contains_cause(scxml, |c| {
-            matches!(c, NeedsScriptEngineCause::DonedataContent { state_id } if state_id == "f")
-        });
+        contains_cause(
+            scxml,
+            |c| matches!(c, NeedsScriptEngineCause::DonedataContent { state_id } if state_id == "f"),
+        );
     }
 
     #[test]
@@ -684,7 +702,11 @@ mod tests {
                 !analyze(&model).is_empty(),
                 "requires_script_engine diverged from analyze for {scxml}",
             );
-            assert_eq!(requires_script_engine(&model), *expected, "unexpected flag for {scxml}");
+            assert_eq!(
+                requires_script_engine(&model),
+                *expected,
+                "unexpected flag for {scxml}"
+            );
         }
     }
 }

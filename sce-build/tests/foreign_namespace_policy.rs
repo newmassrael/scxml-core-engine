@@ -58,8 +58,9 @@ fn foreign_ns_attribute_and_unique_local_name_child_pass_xsd_and_drop_from_ir() 
     let path = write_doc(dir.path(), "foreign_ns_unique.scxml", scxml);
     let tdir = template_dir();
 
-    let out = compile_scxml_lang(path.to_str().unwrap(), &tdir, Language::Rust)
-        .expect("foreign-NS attribute + unique-local-name child must pass XSD (preserve) and parser");
+    let out = compile_scxml_lang(path.to_str().unwrap(), &tdir, Language::Rust).expect(
+        "foreign-NS attribute + unique-local-name child must pass XSD (preserve) and parser",
+    );
 
     let code = out
         .files
@@ -115,11 +116,14 @@ fn scxml_without_xmlns_declaration_is_rejected_by_xsd() {
     // hand-roll the Ok-rejection so the error string is still in scope.
     let result = compile_scxml_lang(path.to_str().unwrap(), &tdir, Language::Rust);
     let err = match result {
-        Ok(_) => panic!("SCXML without xmlns must be rejected by XSD validation, but compile succeeded"),
+        Ok(_) => {
+            panic!("SCXML without xmlns must be rejected by XSD validation, but compile succeeded")
+        }
         Err(e) => e,
     };
     assert!(
-        err.contains("No matching global declaration") || err.to_lowercase().contains("xmlns")
+        err.contains("No matching global declaration")
+            || err.to_lowercase().contains("xmlns")
             || err.to_lowercase().contains("validation"),
         "expected schema-validation error citing xmlns / global declaration, got: {err}"
     );

@@ -80,8 +80,14 @@ fn happy_path_multiple_externs_preserve_order() {
     );
     let parsed = parse_fixture(&scxml).expect("3 registry-clean declarations");
     assert_eq!(parsed.extern_declarations.len(), 3);
-    assert_eq!(parsed.extern_declarations[0].name, "sce_atomic_load_acquire_u32");
-    assert_eq!(parsed.extern_declarations[1].name, "sce_atomic_fence_seq_cst");
+    assert_eq!(
+        parsed.extern_declarations[0].name,
+        "sce_atomic_load_acquire_u32"
+    );
+    assert_eq!(
+        parsed.extern_declarations[1].name,
+        "sce_atomic_fence_seq_cst"
+    );
     assert_eq!(parsed.extern_declarations[2].name, "sce_irq_save");
     // Explicit `crate` attribute overrides the registry's canonical
     // crate (atomic-A storage of plugin-extension future axis).
@@ -95,9 +101,7 @@ fn reject_symbol_not_in_whitelist() {
     );
     let err = parse_fixture(&scxml).expect_err("must reject unknown symbol");
     match err {
-        ForgeError::Validation(ValidationError::ExternSymbolNotInWhitelist {
-            name, ..
-        }) => {
+        ForgeError::Validation(ValidationError::ExternSymbolNotInWhitelist { name, .. }) => {
             assert_eq!(name, "sce_does_not_exist_in_registry");
         }
         other => panic!("expected ExternSymbolNotInWhitelist, got {other:?}"),

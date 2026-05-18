@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Git pre-commit hook — fast-fail on Rust files that are not canonically
+# fmt'd. Mirrors the CI gate `.github/workflows/fmt-check.yml` so a local
+# commit surfaces the same failure shape before push.
+#
+# Install via `scripts/install-hooks.sh` (symlinks this file into
+# .git/hooks/pre-commit). Hooks are intentionally tracked in
+# scripts/hooks/ rather than .git/hooks/ so updates stay versioned.
+#
+# Bypass: `git commit --no-verify` — reserve for true emergencies; the
+# CI gate will still catch the drift before merge.
+
+set -euo pipefail
+
+# Only run if there are staged Rust files. A no-op for doc-only / non-Rust
+# commits keeps the hook fast and avoids spurious failures when rustfmt
+# isn't installed (e.g. a contributor on a fresh checkout fixing a typo
+# in README).
+staged_rs=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.rs$' || true)
+if [ -z "${staged_rs}" ]; then
+    exit 0
+fi
+
+if ! command -v cargo >/dev/null 2>&1; then
+    echo "pre-commit: cargo not on PATH; skipping fmt check." >&2
+    echo "pre-commit:   install Rust toolchain or use --no-verify to bypass." >&2
+    exit 0
+fi
+
+# Workspace-wide check matches CI exactly. The check covers only staged
+# files' workspace because cargo fmt operates on the discovered package
+# tree, not on a per-file filter — staged_rs above just gated whether
+# to run the check at all.
+if ! cargo fmt --all -- --check; then
+    echo "" >&2
+    echo "pre-commit: cargo fmt --check failed." >&2
+    echo "pre-commit:   run 'cargo fmt --all' to apply, then re-stage." >&2
+    echo "pre-commit:   bypass with 'git commit --no-verify' (CI gate still runs)." >&2
+    exit 1
+fi

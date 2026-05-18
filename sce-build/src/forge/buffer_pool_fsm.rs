@@ -174,7 +174,9 @@ pub const TRANSITIONS: [Transition; 11] = [
         from: SlotState::Free,
         to: SlotState::DmaArmedRx,
         trigger: "link_arm_rx(slot)",
-        cache_op: CacheOp::InvalidateIfMaintain { gated_speculative: true },
+        cache_op: CacheOp::InvalidateIfMaintain {
+            gated_speculative: true,
+        },
         author_callable: true,
     },
     Transition {
@@ -188,7 +190,9 @@ pub const TRANSITIONS: [Transition; 11] = [
         from: SlotState::DmaBusyRx,
         to: SlotState::CpuRef,
         trigger: "RX-complete IRQ",
-        cache_op: CacheOp::InvalidateIfMaintain { gated_speculative: false },
+        cache_op: CacheOp::InvalidateIfMaintain {
+            gated_speculative: false,
+        },
         author_callable: false,
     },
     Transition {
@@ -258,7 +262,10 @@ mod tests {
 
     #[test]
     fn states_count_matches_spec() {
-        assert_eq!(STATE_COUNT, 7, "spec §5.E lines 1129-1135 declare seven states");
+        assert_eq!(
+            STATE_COUNT, 7,
+            "spec §5.E lines 1129-1135 declare seven states"
+        );
     }
 
     #[test]
@@ -273,11 +280,7 @@ mod tests {
     fn each_state_has_a_distinct_discriminant() {
         let mut seen = std::collections::HashSet::new();
         for s in STATES.iter() {
-            assert!(
-                seen.insert(*s as u8),
-                "discriminant collision for {:?}",
-                s
-            );
+            assert!(seen.insert(*s as u8), "discriminant collision for {:?}", s);
         }
         assert_eq!(seen.len(), STATE_COUNT);
     }
@@ -304,9 +307,21 @@ mod tests {
             assert!(seen.insert(name), "duplicate pascal_name for {:?}", s);
             // First char uppercase, no hyphen / underscore.
             let first = name.chars().next().expect("pascal_name non-empty");
-            assert!(first.is_ascii_uppercase(), "pascal_name {:?} must start uppercase", name);
-            assert!(!name.contains('-'), "pascal_name {:?} must not contain '-'", name);
-            assert!(!name.contains('_'), "pascal_name {:?} must not contain '_'", name);
+            assert!(
+                first.is_ascii_uppercase(),
+                "pascal_name {:?} must start uppercase",
+                name
+            );
+            assert!(
+                !name.contains('-'),
+                "pascal_name {:?} must not contain '-'",
+                name
+            );
+            assert!(
+                !name.contains('_'),
+                "pascal_name {:?} must not contain '_'",
+                name
+            );
         }
     }
 
@@ -398,7 +413,11 @@ mod tests {
     #[test]
     fn transitions_from_free_yields_two_edges() {
         let edges: Vec<_> = transitions_from(SlotState::Free).collect();
-        assert_eq!(edges.len(), 2, "free has two outgoing edges (cpu-mut, dma-armed-rx)");
+        assert_eq!(
+            edges.len(),
+            2,
+            "free has two outgoing edges (cpu-mut, dma-armed-rx)"
+        );
         let targets: Vec<_> = edges.iter().map(|t| t.to).collect();
         assert!(targets.contains(&SlotState::CpuMut));
         assert!(targets.contains(&SlotState::DmaArmedRx));
@@ -407,7 +426,11 @@ mod tests {
     #[test]
     fn transitions_from_cpu_mut_yields_two_edges() {
         let edges: Vec<_> = transitions_from(SlotState::CpuMut).collect();
-        assert_eq!(edges.len(), 2, "cpu-mut has two outgoing edges (dma-armed-tx, free)");
+        assert_eq!(
+            edges.len(),
+            2,
+            "cpu-mut has two outgoing edges (dma-armed-tx, free)"
+        );
         let targets: Vec<_> = edges.iter().map(|t| t.to).collect();
         assert!(targets.contains(&SlotState::DmaArmedTx));
         assert!(targets.contains(&SlotState::Free));
@@ -416,7 +439,11 @@ mod tests {
     #[test]
     fn transitions_from_cpu_ref_yields_two_edges() {
         let edges: Vec<_> = transitions_from(SlotState::CpuRef).collect();
-        assert_eq!(edges.len(), 2, "cpu-ref has two outgoing edges (free, cpu-mut)");
+        assert_eq!(
+            edges.len(),
+            2,
+            "cpu-ref has two outgoing edges (free, cpu-mut)"
+        );
     }
 
     #[test]
@@ -435,7 +462,9 @@ mod tests {
             .expect("rx-arm edge present");
         assert!(matches!(
             rx_arm.cache_op,
-            CacheOp::InvalidateIfMaintain { gated_speculative: true }
+            CacheOp::InvalidateIfMaintain {
+                gated_speculative: true
+            }
         ));
 
         // dma-busy-rx → cpu-ref: invalidate if maintain (spec line 1195-1197, unconditional)
@@ -445,7 +474,9 @@ mod tests {
             .expect("rx-complete edge present");
         assert!(matches!(
             rx_complete.cache_op,
-            CacheOp::InvalidateIfMaintain { gated_speculative: false }
+            CacheOp::InvalidateIfMaintain {
+                gated_speculative: false
+            }
         ));
 
         // cpu-ref → cpu-mut: clean on next hand-off (spec line 1154)
@@ -465,7 +496,10 @@ mod tests {
         //   link_arm_rx              (free → dma-armed-rx)
         // → five author-callable edges total.
         let count = author_callable_transitions().count();
-        assert_eq!(count, 5, "five author-visible edges per spec lines 1232-1237");
+        assert_eq!(
+            count, 5,
+            "five author-visible edges per spec lines 1232-1237"
+        );
 
         let pairs: Vec<(SlotState, SlotState)> = author_callable_transitions()
             .map(|t| (t.from, t.to))
@@ -492,8 +526,7 @@ mod tests {
                 assert!(
                     !t.author_callable,
                     "edge {:?} -> {:?} is IRQ/peripheral-driven and must not be author-callable",
-                    t.from,
-                    t.to,
+                    t.from, t.to,
                 );
             }
         }

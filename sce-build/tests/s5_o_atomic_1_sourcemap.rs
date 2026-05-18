@@ -48,10 +48,7 @@ fn rand_suffix() -> u64 {
 /// Stage the fixture into a unique temp dir and run `sce-codegen
 /// generate -l <lang>`. Returns (tmp_dir, sourcemap_text).
 fn generate(lang: &str) -> (PathBuf, String) {
-    let tmp = std::env::temp_dir().join(format!(
-        "sce_atomic1_{lang}_{:x}",
-        rand_suffix(),
-    ));
+    let tmp = std::env::temp_dir().join(format!("sce_atomic1_{lang}_{:x}", rand_suffix(),));
     std::fs::create_dir_all(&tmp).expect("tmp dir");
     let scxml = tmp.join("atomic1.scxml");
     std::fs::write(&scxml, FIXTURE).expect("write fixture");
@@ -134,7 +131,10 @@ fn normalise_scxml_file_paths(mut val: serde_json::Value) -> serde_json::Value {
         .and_then(|s| s.as_object_mut())
     {
         for (_k, v) in symbols {
-            if let Some(file) = v.get_mut("scxml_file").and_then(|f| f.as_str()).map(String::from)
+            if let Some(file) = v
+                .get_mut("scxml_file")
+                .and_then(|f| f.as_str())
+                .map(String::from)
             {
                 let token = match file.rsplit('/').next() {
                     Some(name) => format!("<tmp>/{name}"),
@@ -177,12 +177,18 @@ fn symbol_mangling_round_trip() {
     // Plain triple round-trips.
     let m = mangle("motor", "running", "_state_body");
     let (a, b, c) = demangle(&m).unwrap();
-    assert_eq!((a.as_str(), b.as_str(), c.as_str()), ("motor", "running", "_state_body"));
+    assert_eq!(
+        (a.as_str(), b.as_str(), c.as_str()),
+        ("motor", "running", "_state_body")
+    );
 
     // Machine name with literal `__` escapes to `_u_` and round-trips.
     let m2 = mangle("ma__ch", "s1", "_state_body");
     let (a2, b2, c2) = demangle(&m2).unwrap();
-    assert_eq!((a2.as_str(), b2.as_str(), c2.as_str()), ("ma__ch", "s1", "_state_body"));
+    assert_eq!(
+        (a2.as_str(), b2.as_str(), c2.as_str()),
+        ("ma__ch", "s1", "_state_body")
+    );
 
     // State path with hierarchy separator flattens to `_`.
     let m3 = mangle("m", "s1/s1p1", "_state_body");
@@ -199,15 +205,14 @@ fn symbol_mangling_round_trip() {
 fn state_id_collision_diagnostic_payload_shape() {
     use sce_build::forge::diagnostic::ToDiagnostics;
     use sce_build::forge::error::ValidationError;
-    let err = sce_build::forge::error::ForgeError::from(
-        ValidationError::TraceabilityStateIdCollision {
+    let err =
+        sce_build::forge::error::ForgeError::from(ValidationError::TraceabilityStateIdCollision {
             mangled: "m__dup___state_body".into(),
             first_file: "a.scxml".into(),
             first_line: 7,
             second_file: "b.scxml".into(),
             second_line: 11,
-        },
-    );
+        });
     let d = err.to_diagnostics().pop().expect("one diagnostic");
     let code_str = serde_json::to_string(&d.code).unwrap();
     assert_eq!(code_str, "\"traceability/state-id-collision\"");
@@ -248,10 +253,7 @@ fn sourcemap_drift_diagnostic_payload_shape() {
     );
     let d = err.to_diagnostics().pop().expect("one diagnostic");
     let code_str = serde_json::to_string(&d.code).unwrap();
-    assert_eq!(
-        code_str,
-        "\"traceability/sourcemap-source-hash-mismatch\""
-    );
+    assert_eq!(code_str, "\"traceability/sourcemap-source-hash-mismatch\"");
 }
 
 /// D18(v.d) — `traceability/sce-map-attribute-stripped`.
@@ -316,7 +318,10 @@ fn addr2sce_rejects_unknown_symbol() {
         .arg("definitely__not_a_real___state_body")
         .output()
         .expect("invoke addr2sce");
-    assert!(!out.status.success(), "addr2sce should reject missing symbol");
+    assert!(
+        !out.status.success(),
+        "addr2sce should reject missing symbol"
+    );
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("not found"), "stderr: {stderr}");
     let _ = std::fs::remove_dir_all(&tmp);

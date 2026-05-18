@@ -41,9 +41,15 @@ fn sce_codegen_bin() -> PathBuf {
 /// Stage the fixture into a unique temp dir and run sce-codegen on it
 /// for the given backend. Returns the generated file paths.
 fn generate(lang: &str) -> Vec<PathBuf> {
-    let tmp =
-        std::env::temp_dir().join(format!("sce_marker_test_{}_{}_pid{}", lang, std::process::id(),
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    let tmp = std::env::temp_dir().join(format!(
+        "sce_marker_test_{}_{}_pid{}",
+        lang,
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
     std::fs::create_dir_all(&tmp).expect("create temp dir");
     let scxml = tmp.join("marker_probe.scxml");
     std::fs::write(&scxml, FIXTURE).expect("write fixture");
@@ -87,8 +93,8 @@ fn generate(lang: &str) -> Vec<PathBuf> {
 /// the per-backend test can additionally assert backend-specific
 /// syntax (`#![doc]` for Rust, `//line` deferred to 0c, etc.).
 fn assert_marker_present(path: &Path) -> String {
-    let body = std::fs::read_to_string(path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let body =
+        std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     let line = body
         .lines()
         .find(|l| l.contains("SCE-MAP") && l.contains("marker_probe.scxml"))

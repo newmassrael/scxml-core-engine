@@ -24,9 +24,7 @@
 //! C13-α-1; §5.B aggregate WCET + C9-β stage-copy-wcet consumers fire
 //! when the corresponding consumer-side atomic lands.
 
-use sce_build::mesh::deploy::{
-    parse_deploy_str, validate_links_cross_doc, RxDispatch, TrustClass,
-};
+use sce_build::mesh::deploy::{parse_deploy_str, validate_links_cross_doc, RxDispatch, TrustClass};
 use sce_build::mesh::error::DeployError;
 
 /// Standard MCU deploy.yaml prelude used across most tests below.
@@ -111,11 +109,7 @@ fn rx_dispatch_default_isr_when_burst_pps_declared() {
 "#,
     );
     let cfg = parse_deploy_str(&yaml).expect("burst_pps + no rx_dispatch parses");
-    let link = cfg
-        .topology["mcu_device"]
-        .machines["mcu_node"]
-        .links["udp_data"]
-        .clone();
+    let link = cfg.topology["mcu_device"].machines["mcu_node"].links["udp_data"].clone();
     assert_eq!(link.resolved_rx_dispatch(), RxDispatch::IsrToPool);
 }
 

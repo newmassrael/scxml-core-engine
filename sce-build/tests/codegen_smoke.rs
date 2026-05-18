@@ -142,7 +142,15 @@ fn run_generate(lang: &str, out_dir: &Path, fixture: &str) {
             continue;
         }
         let child_out = Command::new(sce_codegen_bin())
-            .args(["generate", "--as-child", "--parent-stem", fixture, "-l", lang, "-o"])
+            .args([
+                "generate",
+                "--as-child",
+                "--parent-stem",
+                fixture,
+                "-l",
+                lang,
+                "-o",
+            ])
             .arg(out_dir)
             .arg(&child_scxml)
             .output()

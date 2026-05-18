@@ -326,11 +326,7 @@ pub fn validate_emitted_files_have_markers(
 /// metadata. Convenience for tests and ad-hoc callers; production
 /// `build` walks the symbol table directly.
 #[cfg(test)]
-pub(crate) fn synth_symbol(
-    loc: &SourceLocation,
-    state_path: &str,
-    kind: &str,
-) -> SourceSymbol {
+pub(crate) fn synth_symbol(loc: &SourceLocation, state_path: &str, kind: &str) -> SourceSymbol {
     SourceSymbol {
         scxml_file: loc.file.clone(),
         scxml_state_path: state_path.to_string(),
@@ -433,7 +429,11 @@ mod tests {
 
     #[test]
     fn synth_symbol_helper_smoke() {
-        let loc = SourceLocation { file: "f.scxml".into(), line: Some(7), col: None };
+        let loc = SourceLocation {
+            file: "f.scxml".into(),
+            line: Some(7),
+            col: None,
+        };
         let s = synth_symbol(&loc, "s1", "state");
         assert_eq!(s.scxml_file, "f.scxml");
         assert_eq!(s.line_range, [7, 7]);

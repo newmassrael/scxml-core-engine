@@ -75,12 +75,7 @@ fn bc_doc(name: &str, element_type: &str, capacity: u32, extras: &str) -> String
 /// Compile a codec + BC pair through `compile_scxml_with_imports`
 /// and return the generated Rust source for the BC. Panics on any
 /// validator or codegen failure.
-fn compile_pair(
-    bc_xml: &str,
-    codec_xml: &str,
-    codec_basename: &str,
-    bc_basename: &str,
-) -> String {
+fn compile_pair(bc_xml: &str, codec_xml: &str, codec_basename: &str, bc_basename: &str) -> String {
     let dir = tempdir().expect("tempdir");
     let codec = write_doc(dir.path(), codec_basename, codec_xml);
     let bc = write_doc(dir.path(), bc_basename, bc_xml);
@@ -164,9 +159,8 @@ fn happy_compile_const_no_index_by() {
          Result<LocalSubTableHandle, LocalSubTableOverflowError>"
     ));
     assert!(code.contains("pub fn remove(&mut self, handle: LocalSubTableHandle) -> bool"));
-    assert!(code.contains(
-        "pub fn get(&self, handle: LocalSubTableHandle) -> Option<&SubscriptionEntry>"
-    ));
+    assert!(code
+        .contains("pub fn get(&self, handle: LocalSubTableHandle) -> Option<&SubscriptionEntry>"));
     assert!(code.contains("pub fn iter(&self) -> impl Iterator<Item = &SubscriptionEntry>"));
     assert!(code.contains("pub fn len(&self) -> usize"));
     assert!(code.contains("pub const fn capacity() -> usize"));
@@ -218,9 +212,7 @@ fn happy_compile_const_with_index_by() {
     // find_by_index emits with `&u32` (spec line 2615 + codec field
     // type resolved by orchestrator).
     assert!(
-        code.contains(
-            "pub fn find_by_index(&self, key: &u32) -> Option<LocalSubTableHandle>"
-        ),
+        code.contains("pub fn find_by_index(&self, key: &u32) -> Option<LocalSubTableHandle>"),
         "expected typed find_by_index over &u32; got:\n{code}"
     );
 
@@ -388,7 +380,9 @@ fn use_after_remove_branches_present() {
          found {occurrences}\n--- code ---\n{code}"
     );
     // remove increments the slot's generation counter on free.
-    assert!(code.contains("self.generation[slot] = self.generation[slot].wrapping_add(1) & GEN_MASK;"));
+    assert!(
+        code.contains("self.generation[slot] = self.generation[slot].wrapping_add(1) & GEN_MASK;")
+    );
 }
 
 // ─── 8. deploy_key_resolves_into_emit ───────────────────────────────────
@@ -426,10 +420,7 @@ topology:
     );
     let output = match out {
         Ok(o) => o,
-        Err(e) => panic!(
-            "deploy-key BC must emit cleanly; got: {:?}",
-            e.error
-        ),
+        Err(e) => panic!("deploy-key BC must emit cleanly; got: {:?}", e.error),
     };
     let body = output
         .files

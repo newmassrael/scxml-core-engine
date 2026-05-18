@@ -31,9 +31,7 @@ use sce_build::forge::model::{
     BackpressurePolicy, BufferPoolModel, BufferPoolVariant, CachePolicy, LinkClass,
     LinkInstanceRole, LinkModel, ReassemblyConfig, ResolvedLinkInstance,
 };
-use sce_build::mesh::deploy::{
-    parse_deploy_str, validate_reassembly_cross_doc,
-};
+use sce_build::mesh::deploy::{parse_deploy_str, validate_reassembly_cross_doc};
 use sce_build::model::{SCXMLModel, State};
 use sce_build::{accepting_substate_present, resolve_listener_links};
 
@@ -42,7 +40,9 @@ use sce_build::{accepting_substate_present, resolve_listener_links};
 #[test]
 fn accepting_substate_present_matches_exact_id() {
     let mut model = SCXMLModel::default();
-    model.states.insert("Accepting".to_string(), State::default());
+    model
+        .states
+        .insert("Accepting".to_string(), State::default());
     assert!(
         accepting_substate_present(&model),
         "exact id 'Accepting' must match the dot-glob"
@@ -124,10 +124,7 @@ fn session_arming_link_yaml() -> String {
 
 #[test]
 fn resolve_listener_links_pairs_session_arming_with_accepting_substate() {
-    let yaml = deploy_with_listener_source(
-        "session_fsm.scxml",
-        &session_arming_link_yaml(),
-    );
+    let yaml = deploy_with_listener_source("session_fsm.scxml", &session_arming_link_yaml());
     let cfg = parse_deploy_str(&yaml).expect("deploy parses");
 
     let mut session_fsm = SCXMLModel::default();
@@ -146,19 +143,14 @@ fn resolve_listener_links_pairs_session_arming_with_accepting_substate() {
 
 #[test]
 fn resolve_listener_links_silent_skips_non_listener_session_arming() {
-    let yaml = deploy_with_listener_source(
-        "data_fsm.scxml",
-        &session_arming_link_yaml(),
-    );
+    let yaml = deploy_with_listener_source("data_fsm.scxml", &session_arming_link_yaml());
     let cfg = parse_deploy_str(&yaml).expect("deploy parses");
 
     // No `Accepting.*` substate ⇒ no listener pairing despite
     // session_arming trust class.
     let mut data_fsm = SCXMLModel::default();
     data_fsm.name = "data_fsm".into();
-    data_fsm
-        .states
-        .insert("Idle".to_string(), State::default());
+    data_fsm.states.insert("Idle".to_string(), State::default());
     let scxml_models = vec![(PathBuf::from("data_fsm.scxml"), data_fsm)];
 
     let listener_links = resolve_listener_links(&cfg, &scxml_models);
@@ -249,10 +241,7 @@ fn resolved_link_instance_sibling_inherits_six_fields_via_role() {
 #[test]
 fn link_instance_role_wire_form_distinguishes_listener_and_sibling() {
     assert_eq!(LinkInstanceRole::Listener.as_str(), "listener");
-    assert_eq!(
-        LinkInstanceRole::Sibling.as_str(),
-        "established-session"
-    );
+    assert_eq!(LinkInstanceRole::Sibling.as_str(), "established-session");
 }
 
 // ── Codegen post-render self-check force-fixture ───────────────
@@ -332,13 +321,8 @@ fn validate_reassembly_with_empty_listener_links_still_rejects_untrusted() {
     let mut pool_registry: HashMap<String, &BufferPoolModel> = HashMap::new();
     pool_registry.insert("rx_reassembly_pool".to_string(), &pool);
 
-    let err = validate_reassembly_cross_doc(
-        &cfg,
-        &forge_links,
-        &pool_registry,
-        &BTreeSet::new(),
-    )
-    .expect_err("Untrusted binding still rejected post-C10-α");
+    let err = validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry, &BTreeSet::new())
+        .expect_err("Untrusted binding still rejected post-C10-α");
     assert!(
         matches!(err, ValidationError::ReassemblyUntrustedLinkBinding { .. }),
         "C10-α retains `reassembly/untrusted-link-binding` for Untrusted: {err:?}"

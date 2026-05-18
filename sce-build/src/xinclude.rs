@@ -127,10 +127,7 @@ pub enum XIncludeError {
     /// time would produce state machines that differ from
     /// runtime parse — we reject them at the earliest stage.
     #[error("<xi:include href=\"{href}\">: unsupported feature: {feature}")]
-    Unsupported {
-        href: String,
-        feature: &'static str,
-    },
+    Unsupported { href: String, feature: &'static str },
 }
 
 /// Location of an `<xi:include>` inside the source string —
@@ -320,24 +317,29 @@ fn expand_impl(
 
         stack.push(canon);
         let nested_base = resolved.parent().map(|p| p.to_path_buf());
-        let (expanded, nested_map) =
-            expand_impl(&raw, &resolved, nested_base.as_deref(), depth + 1, stack, deps).map_err(
-                |(err, nested_loc)| {
-                    // The nested error's row/col references the
-                    // included file, not the outer one. For the AOT
-                    // diagnostic we keep the outer-file location
-                    // (the `<xi:include>` node) because that is
-                    // where the operator will apply the fix — the
-                    // inner location is still available via the
-                    // nested error's own rendering inside `detail`.
-                    let _ = nested_loc;
-                    (remap_nested(err, href), loc)
-                },
-            )?;
+        let (expanded, nested_map) = expand_impl(
+            &raw,
+            &resolved,
+            nested_base.as_deref(),
+            depth + 1,
+            stack,
+            deps,
+        )
+        .map_err(|(err, nested_loc)| {
+            // The nested error's row/col references the
+            // included file, not the outer one. For the AOT
+            // diagnostic we keep the outer-file location
+            // (the `<xi:include>` node) because that is
+            // where the operator will apply the fix — the
+            // inner location is still available via the
+            // nested error's own rendering inside `detail`.
+            let _ = nested_loc;
+            (remap_nested(err, href), loc)
+        })?;
         stack.pop();
 
-        let (rendered, rendered_range) = render_root_children(&expanded, href)
-            .map_err(|e| (e, loc))?;
+        let (rendered, rendered_range) =
+            render_root_children(&expanded, href).map_err(|e| (e, loc))?;
         let splice_start = out.len();
         out.push_str(&rendered);
         // Compose the nested map for exactly the bytes we just
@@ -798,7 +800,8 @@ mod tests {
         // Whitespace before `<xi:include>` places it on row 2 — the
         // reported location must name that row, not row 1.
         let tmp = TempDir::new().unwrap();
-        let main_src = "<root>\n    <xi:include xmlns:xi=\"http://www.w3.org/2001/XInclude\"/>\n</root>";
+        let main_src =
+            "<root>\n    <xi:include xmlns:xi=\"http://www.w3.org/2001/XInclude\"/>\n</root>";
         let main_path = write(tmp.path(), "main.xml", main_src);
         let err = expand(main_src, main_path.to_str().unwrap(), Some(tmp.path())).unwrap_err();
         assert_eq!(err.1.row, 2);
@@ -839,10 +842,9 @@ mod tests {
         let hdr = include_str!("../../sce/include/parsing/XIncludeExpander.h");
 
         // ── Constant agreement: MAX_XINCLUDE_DEPTH ──────────────
-        let depth_re = regex::Regex::new(
-            r"constexpr\s+unsigned\s+MAX_XINCLUDE_DEPTH\s*=\s*(\d+)\s*;",
-        )
-        .expect("MAX_XINCLUDE_DEPTH regex must compile");
+        let depth_re =
+            regex::Regex::new(r"constexpr\s+unsigned\s+MAX_XINCLUDE_DEPTH\s*=\s*(\d+)\s*;")
+                .expect("MAX_XINCLUDE_DEPTH regex must compile");
         let cap = depth_re.captures(hdr).expect(
             "sce/include/parsing/XIncludeExpander.h must declare \
              `constexpr unsigned MAX_XINCLUDE_DEPTH = N;`",
@@ -937,14 +939,12 @@ mod tests {
             "Expected 7-way mapping; update rust_to_cpp if the \
              DiagnosticCode set grew or shrank"
         );
-        let expected_cpp: BTreeSet<&str> =
-            rust_to_cpp.iter().map(|(_, cpp)| *cpp).collect();
+        let expected_cpp: BTreeSet<&str> = rust_to_cpp.iter().map(|(_, cpp)| *cpp).collect();
 
         let hdr = include_str!("../../sce/include/parsing/XIncludeError.h");
-        let re = regex::Regex::new(
-            r"class\s+(XInclude\w+)\s*:\s*public\s+XIncludeExpansionError\b",
-        )
-        .unwrap();
+        let re =
+            regex::Regex::new(r"class\s+(XInclude\w+)\s*:\s*public\s+XIncludeExpansionError\b")
+                .unwrap();
         let mut found: BTreeSet<String> = BTreeSet::new();
         for captures in re.captures_iter(hdr) {
             found.insert(captures[1].to_string());
@@ -958,8 +958,7 @@ mod tests {
              changed, update this drift test in the same commit"
         );
 
-        let found_refs: BTreeSet<&str> =
-            found.iter().map(|s| s.as_str()).collect();
+        let found_refs: BTreeSet<&str> = found.iter().map(|s| s.as_str()).collect();
         assert_eq!(
             found_refs, expected_cpp,
             "XIncludeError subtype drift: C++ header = {:?}, \
@@ -985,7 +984,8 @@ mod tests {
                  sce-build/src/forge/diagnostic.rs. Keep the wire \
                  name, the Rust variant, and the C++ subtype in \
                  sync — see RFC §W3.",
-                rust_code, cpp_name
+                rust_code,
+                cpp_name
             );
         }
     }
@@ -1023,8 +1023,7 @@ mod tests {
             // `find("};")` accurate enough for a drift guard; if a
             // future rewrite nests braces inside a subtype we update
             // this scanner in the same commit.
-            let class_marker =
-                format!("class {} : public XIncludeExpansionError", cpp_class);
+            let class_marker = format!("class {} : public XIncludeExpansionError", cpp_class);
             let class_start = hdr.find(&class_marker).unwrap_or_else(|| {
                 panic!(
                     "class `{}` not found in sce/include/parsing/\
@@ -1033,8 +1032,7 @@ mod tests {
                     cpp_class
                 )
             });
-            let body_start =
-                hdr[class_start..].find('{').unwrap() + class_start + 1;
+            let body_start = hdr[class_start..].find('{').unwrap() + class_start + 1;
             let body_end_rel = hdr[body_start..].find("};").unwrap();
             let body = &hdr[body_start..body_start + body_end_rel];
 
@@ -1046,7 +1044,8 @@ mod tests {
                  DiagnosticCode wire literal exactly so the JSON \
                  wire emitted by `to_json()` agrees with \
                  `--error-format=json`. RFC §W3 / SCE_ERROR_CONTRACT.md §3.",
-                cpp_class, needle
+                cpp_class,
+                needle
             );
         }
 

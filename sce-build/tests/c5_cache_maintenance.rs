@@ -169,7 +169,10 @@ fn cache_maintain_with_speculative_prefetch_emits_both_edges_c11() {
     )
     .expect("speculative core + maintain pool compiles");
     let body = &out.files.first().expect("primary c11 header emitted").1;
-    assert!(body.contains("sce_dcache_clean_by_addr("), "C11 TX cache-clean missing:\n{body}");
+    assert!(
+        body.contains("sce_dcache_clean_by_addr("),
+        "C11 TX cache-clean missing:\n{body}"
+    );
     assert!(
         body.contains("sce_dcache_invalidate_by_addr("),
         "C11 RX pre-arm invalidate missing:\n{body}"
@@ -309,7 +312,10 @@ fn mem_cache_line_alignment_fires_when_alignment_smaller_than_dcache_line_size()
     );
     let diags = err.to_diagnostics();
     assert_eq!(diags.len(), 1);
-    assert!(matches!(diags[0].code, DiagnosticCode::MemCacheLineAlignment));
+    assert!(matches!(
+        diags[0].code,
+        DiagnosticCode::MemCacheLineAlignment
+    ));
     assert!(diags[0].message.contains("16"));
     assert!(diags[0].message.contains("32"));
 }
@@ -422,14 +428,7 @@ topology:
               size: 65536
 "#;
     let err = expect_compile_err(
-        compile_pool_with_deploy(
-            "maintain",
-            32,
-            64,
-            deploy_yaml,
-            "mcu_node",
-            Language::Rust,
-        ),
+        compile_pool_with_deploy("maintain", 32, 64, deploy_yaml, "mcu_node", Language::Rust),
         "missing has_speculative_prefetch must reject",
     );
     let diags = err.to_diagnostics();
@@ -463,15 +462,11 @@ topology:
               base: 0x08000000
               size: 65536
 "#;
-    let out = compile_pool_with_deploy(
-        "none",
-        32,
-        64,
-        deploy_yaml,
-        "mcu_node",
-        Language::Rust,
+    let out = compile_pool_with_deploy("none", 32, 64, deploy_yaml, "mcu_node", Language::Rust);
+    assert!(
+        out.is_ok(),
+        "cache-policy=none must skip speculative-prefetch requirement"
     );
-    assert!(out.is_ok(), "cache-policy=none must skip speculative-prefetch requirement");
 }
 
 #[test]

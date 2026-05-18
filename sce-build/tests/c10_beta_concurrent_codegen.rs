@@ -26,8 +26,7 @@ fn template_root() -> std::path::PathBuf {
     // climbing parents from the crate manifest until the directory
     // appears. Keeps the test resilient to in-tree vs out-of-tree
     // build layouts.
-    let mut cursor: std::path::PathBuf =
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let mut cursor: std::path::PathBuf = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     loop {
         let candidate = cursor.join("tools/codegen/templates");
         if candidate.is_dir() {
@@ -297,7 +296,10 @@ fn render_rust_emits_link_bus_and_scheduler_when_budgets_set() {
     let names: Vec<&str> = files.iter().map(|(n, _)| n.as_str()).collect();
     assert!(names.contains(&"mcu_node_link_bus.rs"));
     assert!(names.contains(&"mcu_node_scheduler.rs"));
-    let (_, bus) = files.iter().find(|(n, _)| n == "mcu_node_link_bus.rs").unwrap();
+    let (_, bus) = files
+        .iter()
+        .find(|(n, _)| n == "mcu_node_link_bus.rs")
+        .unwrap();
     assert!(
         bus.contains("McuNodeLinkBus"),
         "LinkBus struct uses pascal-case machine name"
@@ -306,7 +308,10 @@ fn render_rust_emits_link_bus_and_scheduler_when_budgets_set() {
         bus.contains("UdpScout(Vec<u8>)") && bus.contains("UdpData(Vec<u8>)"),
         "LinkBusEvent variants emit per link in pascal-case"
     );
-    let (_, sched) = files.iter().find(|(n, _)| n == "mcu_node_scheduler.rs").unwrap();
+    let (_, sched) = files
+        .iter()
+        .find(|(n, _)| n == "mcu_node_scheduler.rs")
+        .unwrap();
     assert!(sched.contains("TICK_PERIOD_US: u32 = 1000"));
     assert!(sched.contains("PER_LINK_BUDGET_US: u32 = 500"));
     assert!(sched.contains(r#""udp_scout","#));
@@ -394,7 +399,12 @@ fn render_c11_silent_skips_without_budgets() {
 
 #[test]
 fn render_other_backends_silent_skip_per_q_c10_beta_7() {
-    for lang in [Language::Cpp, Language::Kotlin, Language::Go, Language::Python] {
+    for lang in [
+        Language::Cpp,
+        Language::Kotlin,
+        Language::Go,
+        Language::Python,
+    ] {
         let files = render_machine_concurrency_artifacts(
             &template_root(),
             lang,

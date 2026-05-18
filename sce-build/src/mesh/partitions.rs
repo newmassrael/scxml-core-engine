@@ -277,14 +277,13 @@ pub fn validate_parallel_root_designation(
                 .get(&root.machine)
                 .and_then(|m| m.parallel_regions.get(&root.parallel));
 
-            let co_hosts = match parallel_regions {
-                None => false,
-                Some(regions_of_parallel) => decl
-                    .contains
-                    .parallel_regions
-                    .iter()
-                    .any(|r| r.machine == root.machine && regions_of_parallel.contains(&r.region)),
-            };
+            let co_hosts =
+                match parallel_regions {
+                    None => false,
+                    Some(regions_of_parallel) => decl.contains.parallel_regions.iter().any(|r| {
+                        r.machine == root.machine && regions_of_parallel.contains(&r.region)
+                    }),
+                };
 
             if !co_hosts {
                 return Err(DeployError::PartitionParallelRootNonHost {
@@ -332,9 +331,10 @@ pub fn validate_parallel_root_designation(
             let hosting: BTreeSet<String> = partitions
                 .iter()
                 .filter(|(_, decl)| {
-                    decl.contains.parallel_regions.iter().any(|r| {
-                        r.machine == *machine && regions_of_parallel.contains(&r.region)
-                    })
+                    decl.contains
+                        .parallel_regions
+                        .iter()
+                        .any(|r| r.machine == *machine && regions_of_parallel.contains(&r.region))
                 })
                 .map(|(name, _)| name.clone())
                 .collect();
@@ -345,8 +345,7 @@ pub fn validate_parallel_root_designation(
                 continue;
             }
 
-            let claimed =
-                claims_by_parallel.contains_key(&(machine.clone(), parallel_id.clone()));
+            let claimed = claims_by_parallel.contains_key(&(machine.clone(), parallel_id.clone()));
             if !claimed {
                 return Err(DeployError::PartitionParallelRootUndesignated {
                     machine: machine.clone(),
@@ -425,10 +424,7 @@ pub fn validate_partitions_against_models(
         };
 
         let units = enumerate_units(machine, model);
-        let uncovered: Vec<String> = units
-            .into_iter()
-            .filter(|u| !covered.contains(u))
-            .collect();
+        let uncovered: Vec<String> = units.into_iter().filter(|u| !covered.contains(u)).collect();
         if uncovered.is_empty() {
             continue;
         }
@@ -521,18 +517,15 @@ pub fn load_partition_machine_models(
     for (machine, source) in &machine_to_source {
         let path = deploy_dir.join(source);
         let mut parser = SCXMLParser::new();
-        let model = parser.parse_file(&path.display().to_string()).map_err(|e| {
-            MeshError::Io {
+        let model = parser
+            .parse_file(&path.display().to_string())
+            .map_err(|e| MeshError::Io {
                 path: path.clone(),
                 source: std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    format!(
-                        "failed to parse SCXML for machine '{machine}': {}",
-                        e.error
-                    ),
+                    format!("failed to parse SCXML for machine '{machine}': {}", e.error),
                 ),
-            }
-        })?;
+            })?;
         models.insert(machine.clone(), model);
     }
 
@@ -617,7 +610,10 @@ partitions:
 "#;
         let cfg = parse_deploy_str(deploy).expect("deploy must parse");
         let mut models = BTreeMap::new();
-        models.insert("brake".to_string(), parse_scxml("brake", TWO_REGION_PARALLEL));
+        models.insert(
+            "brake".to_string(),
+            parse_scxml("brake", TWO_REGION_PARALLEL),
+        );
         validate_partitions_against_models(&cfg, &models).expect("full coverage must pass");
     }
 
@@ -648,7 +644,10 @@ partitions:
 </scxml>
 "#;
         let mut models = BTreeMap::new();
-        models.insert("brake".to_string(), parse_scxml("brake", TWO_REGION_PARALLEL));
+        models.insert(
+            "brake".to_string(),
+            parse_scxml("brake", TWO_REGION_PARALLEL),
+        );
         models.insert("motor".to_string(), parse_scxml("motor", motor_scxml));
         validate_partitions_against_models(&cfg, &models)
             .expect("unmentioned machine must run monolithic without error");
@@ -672,7 +671,10 @@ partitions:
 "#;
         let cfg = parse_deploy_str(deploy).expect("deploy must parse");
         let mut models = BTreeMap::new();
-        models.insert("brake".to_string(), parse_scxml("brake", TWO_REGION_PARALLEL));
+        models.insert(
+            "brake".to_string(),
+            parse_scxml("brake", TWO_REGION_PARALLEL),
+        );
         let err = validate_partitions_against_models(&cfg, &models)
             .expect_err("partial coverage must fail");
         match err {
@@ -708,7 +710,10 @@ partitions:
 "#;
         let cfg = parse_deploy_str(deploy).expect("deploy must parse");
         let mut models = BTreeMap::new();
-        models.insert("brake".to_string(), parse_scxml("brake", TWO_REGION_PARALLEL));
+        models.insert(
+            "brake".to_string(),
+            parse_scxml("brake", TWO_REGION_PARALLEL),
+        );
         let err = validate_partitions_against_models(&cfg, &models)
             .expect_err("incomplete default partition must fail");
         match err {
@@ -774,7 +779,10 @@ partitions:
 "#;
         let cfg = parse_deploy_str(deploy).expect("deploy must parse");
         let mut models = BTreeMap::new();
-        models.insert("brake".to_string(), parse_scxml("brake", REGION_WITH_INVOKE));
+        models.insert(
+            "brake".to_string(),
+            parse_scxml("brake", REGION_WITH_INVOKE),
+        );
         let err = validate_partitions_against_models(&cfg, &models)
             .expect_err("uncovered invoke must fail");
         match err {
@@ -796,7 +804,10 @@ topology:
 "#;
         let cfg = parse_deploy_str(deploy).expect("deploy must parse");
         let mut models = BTreeMap::new();
-        models.insert("brake".to_string(), parse_scxml("brake", TWO_REGION_PARALLEL));
+        models.insert(
+            "brake".to_string(),
+            parse_scxml("brake", TWO_REGION_PARALLEL),
+        );
         validate_partitions_against_models(&cfg, &models)
             .expect("absent partitions block must short-circuit to Ok");
     }
@@ -826,7 +837,10 @@ partitions:
 "#;
         let cfg = parse_deploy_str(deploy).expect("deploy must parse");
         let mut models = BTreeMap::new();
-        models.insert("brake".to_string(), parse_scxml("brake", TWO_REGION_PARALLEL));
+        models.insert(
+            "brake".to_string(),
+            parse_scxml("brake", TWO_REGION_PARALLEL),
+        );
         let err = validate_partitions_against_models(&cfg, &models)
             .expect_err("distributed parallel with no claimant must fail");
         match err {
@@ -861,7 +875,10 @@ partitions:
 "#;
         let cfg = parse_deploy_str(deploy).expect("deploy must parse");
         let mut models = BTreeMap::new();
-        models.insert("brake".to_string(), parse_scxml("brake", TWO_REGION_PARALLEL));
+        models.insert(
+            "brake".to_string(),
+            parse_scxml("brake", TWO_REGION_PARALLEL),
+        );
         validate_partitions_against_models(&cfg, &models)
             .expect("single-partition parallel has implicit root — no error");
     }
@@ -891,7 +908,10 @@ partitions:
 "#;
         let cfg = parse_deploy_str(deploy).expect("deploy must parse");
         let mut models = BTreeMap::new();
-        models.insert("brake".to_string(), parse_scxml("brake", TWO_REGION_PARALLEL));
+        models.insert(
+            "brake".to_string(),
+            parse_scxml("brake", TWO_REGION_PARALLEL),
+        );
         validate_partitions_against_models(&cfg, &models)
             .expect("well-formed distributed parallel with one root must pass");
     }
@@ -921,9 +941,12 @@ partitions:
 "#;
         let cfg = parse_deploy_str(deploy).expect("deploy must parse");
         let mut models = BTreeMap::new();
-        models.insert("brake".to_string(), parse_scxml("brake", TWO_REGION_PARALLEL));
-        let err = validate_partitions_against_models(&cfg, &models)
-            .expect_err("two claimants must fail");
+        models.insert(
+            "brake".to_string(),
+            parse_scxml("brake", TWO_REGION_PARALLEL),
+        );
+        let err =
+            validate_partitions_against_models(&cfg, &models).expect_err("two claimants must fail");
         match err {
             DeployError::PartitionParallelRootAmbiguous {
                 machine,
@@ -964,7 +987,10 @@ partitions:
 "#;
         let cfg = parse_deploy_str(deploy).expect("deploy must parse");
         let mut models = BTreeMap::new();
-        models.insert("brake".to_string(), parse_scxml("brake", TWO_REGION_PARALLEL));
+        models.insert(
+            "brake".to_string(),
+            parse_scxml("brake", TWO_REGION_PARALLEL),
+        );
         // motor is untouched so the claim cannot resolve against any model.
         models.insert(
             "motor".to_string(),
@@ -1020,7 +1046,10 @@ partitions:
 "#;
         let cfg = parse_deploy_str(deploy).expect("deploy must parse");
         let mut models = BTreeMap::new();
-        models.insert("brake".to_string(), parse_scxml("brake", REGION_WITH_INVOKE));
+        models.insert(
+            "brake".to_string(),
+            parse_scxml("brake", REGION_WITH_INVOKE),
+        );
         let err = validate_partitions_against_models(&cfg, &models)
             .expect_err("non-host claimant must fail");
         match err {
@@ -1062,7 +1091,10 @@ partitions:
 "#;
         let cfg = parse_deploy_str(deploy).expect("deploy must parse");
         let mut models = BTreeMap::new();
-        models.insert("brake".to_string(), parse_scxml("brake", TWO_REGION_PARALLEL));
+        models.insert(
+            "brake".to_string(),
+            parse_scxml("brake", TWO_REGION_PARALLEL),
+        );
         let err = validate_partitions_against_models(&cfg, &models)
             .expect_err("barrier_timeout without hosts_parallel_roots must fail");
         match err {
@@ -1104,7 +1136,10 @@ partitions:
 "#;
         let cfg = parse_deploy_str(deploy).expect("deploy must parse");
         let mut models = BTreeMap::new();
-        models.insert("brake".to_string(), parse_scxml("brake", TWO_REGION_PARALLEL));
+        models.insert(
+            "brake".to_string(),
+            parse_scxml("brake", TWO_REGION_PARALLEL),
+        );
         let err = validate_partitions_against_models(&cfg, &models)
             .expect_err("custom_tcp on a wire-21 route must fail");
         match err {
@@ -1149,7 +1184,10 @@ partitions:
 "#;
         let cfg = parse_deploy_str(deploy).expect("deploy must parse");
         let mut models = BTreeMap::new();
-        models.insert("brake".to_string(), parse_scxml("brake", TWO_REGION_PARALLEL));
+        models.insert(
+            "brake".to_string(),
+            parse_scxml("brake", TWO_REGION_PARALLEL),
+        );
         let err = validate_partitions_against_models(&cfg, &models)
             .expect_err("custom_tcp on a NonRoot wire-21 route must fail");
         match err {
@@ -1188,7 +1226,10 @@ partitions:
 "#;
         let cfg = parse_deploy_str(deploy).expect("deploy must parse");
         let mut models = BTreeMap::new();
-        models.insert("brake".to_string(), parse_scxml("brake", TWO_REGION_PARALLEL));
+        models.insert(
+            "brake".to_string(),
+            parse_scxml("brake", TWO_REGION_PARALLEL),
+        );
         validate_partitions_against_models(&cfg, &models)
             .expect("single-partition parallel with custom_tcp must pass — no wire-21 traffic");
     }
@@ -1211,7 +1252,10 @@ topology:
         let cfg = parse_deploy_str(deploy).expect("deploy must parse");
         let brake = partition_for_machine(&cfg, "brake");
         let motor = partition_for_machine(&cfg, "motor");
-        assert_ne!(brake, motor, "distinct machines must occupy distinct locations");
+        assert_ne!(
+            brake, motor,
+            "distinct machines must occupy distinct locations"
+        );
         assert!(brake.starts_with("__monolithic__"));
         assert!(motor.starts_with("__monolithic__"));
     }

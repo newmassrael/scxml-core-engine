@@ -153,9 +153,7 @@ impl SceCrossDocRegistry {
                 }
                 Ok(())
             }
-            ForgeDocument::Worker(worker) => {
-                self.record(worker.name.clone(), ScxmlDocKind::Worker)
-            }
+            ForgeDocument::Worker(worker) => self.record(worker.name.clone(), ScxmlDocKind::Worker),
             _ => Ok(()),
         }
     }
@@ -166,10 +164,7 @@ impl SceCrossDocRegistry {
     /// this dedicated entry point. Returns `Err` with the existing
     /// kind if the name collides with a previously-registered doc
     /// (link / worker / another statechart).
-    pub fn record_statechart(
-        &mut self,
-        name: impl Into<String>,
-    ) -> Result<(), ScxmlDocKind> {
+    pub fn record_statechart(&mut self, name: impl Into<String>) -> Result<(), ScxmlDocKind> {
         self.record(name, ScxmlDocKind::Statechart)
     }
 
@@ -265,7 +260,8 @@ mod tests {
         // Same name, different kind → rejection with the existing
         // kind label so the caller can surface a meaningful conflict
         // diagnostic.
-        let err = reg.record("name_x", ScxmlDocKind::Statechart)
+        let err = reg
+            .record("name_x", ScxmlDocKind::Statechart)
             .expect_err("kind collision must reject");
         assert_eq!(err, ScxmlDocKind::Link);
     }
@@ -304,10 +300,7 @@ mod tests {
         reg.record("tx_loop", ScxmlDocKind::Worker).unwrap();
         reg.record("rx_loop", ScxmlDocKind::Worker).unwrap();
         reg.record("link_a", ScxmlDocKind::Link).unwrap();
-        let candidates = reg.names_of_any_kind(&[
-            ScxmlDocKind::Statechart,
-            ScxmlDocKind::Worker,
-        ]);
+        let candidates = reg.names_of_any_kind(&[ScxmlDocKind::Statechart, ScxmlDocKind::Worker]);
         assert_eq!(
             candidates,
             vec![
@@ -330,9 +323,7 @@ mod tests {
 
     #[test]
     fn record_document_captures_stage_pool() {
-        use super::super::model::{
-            BackpressurePolicy, ForgeDocument, LinkClass, LinkModel,
-        };
+        use super::super::model::{BackpressurePolicy, ForgeDocument, LinkClass, LinkModel};
         let mut reg = SceCrossDocRegistry::new();
         let doc = ForgeDocument::Link(LinkModel {
             name: "scout_link".to_string(),
@@ -349,7 +340,10 @@ mod tests {
         });
         reg.record_document(&doc).unwrap();
         assert_eq!(reg.lookup("scout_link"), Some(ScxmlDocKind::Link));
-        assert_eq!(reg.lookup_stage_pool("scout_link"), Some("scout_stage_pool"));
+        assert_eq!(
+            reg.lookup_stage_pool("scout_link"),
+            Some("scout_stage_pool")
+        );
     }
 
     #[test]
@@ -357,9 +351,7 @@ mod tests {
         // A link kind without `<sce:stage-pool>` registers normally,
         // but `lookup_stage_pool` returns None — that's the trigger
         // for the η' `pool/sample-take-without-stage-pool` diagnostic.
-        use super::super::model::{
-            BackpressurePolicy, ForgeDocument, LinkClass, LinkModel,
-        };
+        use super::super::model::{BackpressurePolicy, ForgeDocument, LinkClass, LinkModel};
         let mut reg = SceCrossDocRegistry::new();
         let doc = ForgeDocument::Link(LinkModel {
             name: "borrow_only_link".to_string(),
@@ -389,7 +381,10 @@ mod tests {
         let doc = ForgeDocument::Worker(WorkerModel {
             name: "rx_loop".to_string(),
             link_rx: "udp_scout".to_string(),
-            inbox: InboxConfig { depth: 16, ordering: InboxOrdering::AcqRel },
+            inbox: InboxConfig {
+                depth: 16,
+                ordering: InboxOrdering::AcqRel,
+            },
             outbox: None,
             source_location: None,
         });

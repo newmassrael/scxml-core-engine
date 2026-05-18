@@ -110,14 +110,38 @@ impl InferredType {
     /// produced by generator code flow through this converter.
     pub fn from_sce_type(ty: &SceType) -> Self {
         match ty {
-            SceType::Uint8 => Self::Int { signed: false, bits: 8 },
-            SceType::Uint16 => Self::Int { signed: false, bits: 16 },
-            SceType::Uint32 => Self::Int { signed: false, bits: 32 },
-            SceType::Uint64 => Self::Int { signed: false, bits: 64 },
-            SceType::Int8 => Self::Int { signed: true, bits: 8 },
-            SceType::Int16 => Self::Int { signed: true, bits: 16 },
-            SceType::Int32 => Self::Int { signed: true, bits: 32 },
-            SceType::Int64 => Self::Int { signed: true, bits: 64 },
+            SceType::Uint8 => Self::Int {
+                signed: false,
+                bits: 8,
+            },
+            SceType::Uint16 => Self::Int {
+                signed: false,
+                bits: 16,
+            },
+            SceType::Uint32 => Self::Int {
+                signed: false,
+                bits: 32,
+            },
+            SceType::Uint64 => Self::Int {
+                signed: false,
+                bits: 64,
+            },
+            SceType::Int8 => Self::Int {
+                signed: true,
+                bits: 8,
+            },
+            SceType::Int16 => Self::Int {
+                signed: true,
+                bits: 16,
+            },
+            SceType::Int32 => Self::Int {
+                signed: true,
+                bits: 32,
+            },
+            SceType::Int64 => Self::Int {
+                signed: true,
+                bits: 64,
+            },
             SceType::Float32 => Self::Float { bits: 32 },
             SceType::Float64 => Self::Float { bits: 64 },
             SceType::Bool => Self::Bool,
@@ -167,11 +191,20 @@ pub fn join_arith(left: InferredType, right: InferredType) -> InferredType {
         }
         (UntypedFloat, Float { bits }) | (Float { bits }, UntypedFloat) => Float { bits },
 
-        (Int { signed: s1, bits: b1 }, Int { signed: s2, bits: b2 }) => {
-            Int { signed: s1 || s2, bits: b1.max(b2) }
-        }
-        (Int { bits: bi, .. }, Float { bits: bf })
-        | (Float { bits: bf }, Int { bits: bi, .. }) => {
+        (
+            Int {
+                signed: s1,
+                bits: b1,
+            },
+            Int {
+                signed: s2,
+                bits: b2,
+            },
+        ) => Int {
+            signed: s1 || s2,
+            bits: b1.max(b2),
+        },
+        (Int { bits: bi, .. }, Float { bits: bf }) | (Float { bits: bf }, Int { bits: bi, .. }) => {
             let _ = bi; // integer width ignored when unified with float
             Float { bits: bf.max(32) }
         }
@@ -196,9 +229,19 @@ pub fn join_int(left: InferredType, right: InferredType) -> InferredType {
             Int { signed, bits }
         }
 
-        (Int { signed: s1, bits: b1 }, Int { signed: s2, bits: b2 }) => {
-            Int { signed: s1 || s2, bits: b1.max(b2) }
-        }
+        (
+            Int {
+                signed: s1,
+                bits: b1,
+            },
+            Int {
+                signed: s2,
+                bits: b2,
+            },
+        ) => Int {
+            signed: s1 || s2,
+            bits: b1.max(b2),
+        },
 
         _ => Unknown,
     }
@@ -257,7 +300,10 @@ impl<'a> TypeCtx<'a> {
     /// inference can still proceed on expressions mixing known and unknown
     /// identifiers.
     pub fn lookup_var(&self, name: &str) -> InferredType {
-        self.vars.get(name).copied().unwrap_or(InferredType::Unknown)
+        self.vars
+            .get(name)
+            .copied()
+            .unwrap_or(InferredType::Unknown)
     }
 
     /// Look up a function signature. Returns `None` if absent.
@@ -313,9 +359,18 @@ mod tests {
         assert_eq!(InferredType::from_sce_type(&SceType::Int64), int(true, 64));
         assert_eq!(InferredType::from_sce_type(&SceType::Float32), float(32));
         assert_eq!(InferredType::from_sce_type(&SceType::Float64), float(64));
-        assert_eq!(InferredType::from_sce_type(&SceType::Bool), InferredType::Bool);
-        assert_eq!(InferredType::from_sce_type(&SceType::String), InferredType::Str);
-        assert_eq!(InferredType::from_sce_type(&SceType::Bytes), InferredType::Bytes);
+        assert_eq!(
+            InferredType::from_sce_type(&SceType::Bool),
+            InferredType::Bool
+        );
+        assert_eq!(
+            InferredType::from_sce_type(&SceType::String),
+            InferredType::Str
+        );
+        assert_eq!(
+            InferredType::from_sce_type(&SceType::Bytes),
+            InferredType::Bytes
+        );
     }
 
     // ── join_arith ──────────────────────────────────────────────
@@ -328,8 +383,14 @@ mod tests {
 
     #[test]
     fn arith_untyped_int_and_concrete_int_adopts_concrete() {
-        assert_eq!(join_arith(InferredType::UntypedInt, int(true, 32)), int(true, 32));
-        assert_eq!(join_arith(int(false, 16), InferredType::UntypedInt), int(false, 16));
+        assert_eq!(
+            join_arith(InferredType::UntypedInt, int(true, 32)),
+            int(true, 32)
+        );
+        assert_eq!(
+            join_arith(int(false, 16), InferredType::UntypedInt),
+            int(false, 16)
+        );
     }
 
     #[test]
@@ -348,7 +409,10 @@ mod tests {
             float(32)
         );
         // UntypedFloat ⊔ Int{i, 64} → Float{bits: max(32, 64)} = Float{64}
-        assert_eq!(join_arith(int(true, 64), InferredType::UntypedFloat), float(64));
+        assert_eq!(
+            join_arith(int(true, 64), InferredType::UntypedFloat),
+            float(64)
+        );
     }
 
     #[test]
@@ -360,15 +424,9 @@ mod tests {
     #[test]
     fn arith_int_widening_prefers_signed() {
         // u16 ⊔ i32 → i32 (widen to 32, prefer signed)
-        assert_eq!(
-            join_arith(int(false, 16), int(true, 32)),
-            int(true, 32)
-        );
+        assert_eq!(join_arith(int(false, 16), int(true, 32)), int(true, 32));
         // u32 ⊔ u64 → u64
-        assert_eq!(
-            join_arith(int(false, 32), int(false, 64)),
-            int(false, 64)
-        );
+        assert_eq!(join_arith(int(false, 32), int(false, 64)), int(false, 64));
     }
 
     #[test]
@@ -422,15 +480,15 @@ mod tests {
     #[test]
     fn int_bitwise_with_float_is_unknown() {
         assert_eq!(join_int(int(true, 32), float(64)), InferredType::Unknown);
-        assert_eq!(join_int(InferredType::UntypedFloat, int(false, 8)), InferredType::Unknown);
+        assert_eq!(
+            join_int(InferredType::UntypedFloat, int(false, 8)),
+            InferredType::Unknown
+        );
     }
 
     #[test]
     fn int_widening_prefers_signed() {
-        assert_eq!(
-            join_int(int(false, 16), int(true, 8)),
-            int(true, 16)
-        );
+        assert_eq!(join_int(int(false, 16), int(true, 8)), int(true, 16));
     }
 
     // ── TypeCtx ─────────────────────────────────────────────────
@@ -453,7 +511,10 @@ mod tests {
         let mut ctx = TypeCtx::new();
         ctx.insert_func(
             "temp_xform",
-            FuncSig { params: vec![int(false, 16)], ret: float(64) },
+            FuncSig {
+                params: vec![int(false, 16)],
+                ret: float(64),
+            },
         );
         assert!(ctx.lookup_func("temp_xform").is_some());
         assert_eq!(ctx.lookup_func("missing").is_none(), true);

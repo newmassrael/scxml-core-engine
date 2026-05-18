@@ -236,10 +236,7 @@ pub(crate) fn transpile_typed_with_import_lowering(
 /// which the rename pass handles after this rewrite returns. Splitting the
 /// two cases at AST shape — Call vs. bare Member — keeps each pass's
 /// responsibility one-thing-only.
-fn lower_stateful_import_calls(
-    ast: &mut TypedExpr,
-    lowerings: &[ImportLowering],
-) {
+fn lower_stateful_import_calls(ast: &mut TypedExpr, lowerings: &[ImportLowering]) {
     match &mut ast.kind {
         ExprKind::Call { callee, args } => {
             // Try the lowering match first so a successful rewrite does not
@@ -247,13 +244,9 @@ fn lower_stateful_import_calls(
             // arms below.
             if let ExprKind::Member { object, property } = &callee.kind {
                 if let ExprKind::Ident(alias) = &object.kind {
-                    if let Some(lowering) =
-                        lowerings.iter().find(|l| l.alias == *alias)
-                    {
-                        if let Some((_, free_fn)) = lowering
-                            .methods
-                            .iter()
-                            .find(|(name, _)| name == property)
+                    if let Some(lowering) = lowerings.iter().find(|l| l.alias == *alias) {
+                        if let Some((_, free_fn)) =
+                            lowering.methods.iter().find(|(name, _)| name == property)
                         {
                             let prepended = TypedExpr {
                                 kind: ExprKind::Raw(lowering.prepended_arg.clone()),
@@ -295,7 +288,11 @@ fn lower_stateful_import_calls(
         ExprKind::Unary { operand, .. } => {
             lower_stateful_import_calls(operand, lowerings);
         }
-        ExprKind::Conditional { condition, consequent, alternate } => {
+        ExprKind::Conditional {
+            condition,
+            consequent,
+            alternate,
+        } => {
             lower_stateful_import_calls(condition, lowerings);
             lower_stateful_import_calls(consequent, lowerings);
             lower_stateful_import_calls(alternate, lowerings);
@@ -351,7 +348,9 @@ pub fn transpile_lvalue(
 ) -> Result<(String, InferredType), ExprError> {
     let trimmed = location.trim();
     if trimmed.is_empty() {
-        return Err(ExprError::Empty { what: "assign location" });
+        return Err(ExprError::Empty {
+            what: "assign location",
+        });
     }
 
     let tokens = tokenize(trimmed)?;
@@ -456,7 +455,10 @@ pub(crate) struct TypedExpr {
 
 impl TypedExpr {
     fn new(kind: ExprKind) -> Self {
-        Self { kind, ty: InferredType::Unknown }
+        Self {
+            kind,
+            ty: InferredType::Unknown,
+        }
     }
 }
 
@@ -465,7 +467,10 @@ impl TypedExpr {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ExprKind {
     NumberLit(String),
-    StringLit { value: String, quote: char },
+    StringLit {
+        value: String,
+        quote: char,
+    },
     BoolLit(bool),
     NullLit,
     /// A lexer-produced bare identifier. Represents a name the user wrote in
@@ -484,30 +489,63 @@ pub(crate) enum ExprKind {
     /// string-content heuristics, which broke as soon as the rename format
     /// diverged from the lexer's grammar for bare identifiers.
     Raw(String),
-    Binary { op: BinOp, left: Box<TypedExpr>, right: Box<TypedExpr> },
-    Unary { op: UnaryOp, operand: Box<TypedExpr> },
+    Binary {
+        op: BinOp,
+        left: Box<TypedExpr>,
+        right: Box<TypedExpr>,
+    },
+    Unary {
+        op: UnaryOp,
+        operand: Box<TypedExpr>,
+    },
     Conditional {
         condition: Box<TypedExpr>,
         consequent: Box<TypedExpr>,
         alternate: Box<TypedExpr>,
     },
-    Member { object: Box<TypedExpr>, property: String },
-    Index { object: Box<TypedExpr>, index: Box<TypedExpr> },
-    Call { callee: Box<TypedExpr>, args: Vec<TypedExpr> },
+    Member {
+        object: Box<TypedExpr>,
+        property: String,
+    },
+    Index {
+        object: Box<TypedExpr>,
+        index: Box<TypedExpr>,
+    },
+    Call {
+        callee: Box<TypedExpr>,
+        args: Vec<TypedExpr>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum BinOp {
-    Add, Sub, Mul, Div, Mod,
-    StrictEq, StrictNeq, Lt, Gt, LtEq, GtEq,
-    And, Or,
-    BitAnd, BitOr, BitXor,
-    Shl, Shr, UShr,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    StrictEq,
+    StrictNeq,
+    Lt,
+    Gt,
+    LtEq,
+    GtEq,
+    And,
+    Or,
+    BitAnd,
+    BitOr,
+    BitXor,
+    Shl,
+    Shr,
+    UShr,
 }
 
 impl BinOp {
     fn is_arith(self) -> bool {
-        matches!(self, Self::Add | Self::Sub | Self::Mul | Self::Div | Self::Mod)
+        matches!(
+            self,
+            Self::Add | Self::Sub | Self::Mul | Self::Div | Self::Mod
+        )
     }
     fn is_comparison(self) -> bool {
         matches!(
@@ -528,7 +566,10 @@ impl BinOp {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum UnaryOp {
-    Neg, Pos, Not, BitNot,
+    Neg,
+    Pos,
+    Not,
+    BitNot,
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -558,9 +599,8 @@ pub fn extract_free_idents(raw_expr: &str) -> Result<Vec<String>, ExprError> {
 }
 
 pub fn strip_string_literals(expr: &str) -> String {
-    static RE_STR: LazyLock<regex::Regex> = LazyLock::new(|| {
-        regex::Regex::new(r#"'[^']*'|"[^"]*""#).unwrap()
-    });
+    static RE_STR: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r#"'[^']*'|"[^"]*""#).unwrap());
     RE_STR
         .replace_all(expr, |caps: &regex::Captures| " ".repeat(caps[0].len()))
         .to_string()
@@ -575,14 +615,35 @@ enum Token {
     Number(String),
     String { value: String, quote: char },
     Ident(String),
-    Plus, Minus, Star, Slash, Percent,
-    StrictEq, StrictNeq,
-    Lt, Gt, LtEq, GtEq,
-    AmpAmp, PipePipe,
-    Amp, Pipe, Caret, Tilde, Bang,
-    Shl, Shr, UShr,
-    Question, Colon, Dot, Comma,
-    LParen, RParen, LBracket, RBracket,
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    Percent,
+    StrictEq,
+    StrictNeq,
+    Lt,
+    Gt,
+    LtEq,
+    GtEq,
+    AmpAmp,
+    PipePipe,
+    Amp,
+    Pipe,
+    Caret,
+    Tilde,
+    Bang,
+    Shl,
+    Shr,
+    UShr,
+    Question,
+    Colon,
+    Dot,
+    Comma,
+    LParen,
+    RParen,
+    LBracket,
+    RBracket,
     Eof,
 }
 
@@ -592,22 +653,35 @@ impl fmt::Display for Token {
             Token::Number(n) => write!(f, "{n}"),
             Token::String { value, .. } => write!(f, "'{value}'"),
             Token::Ident(s) => write!(f, "{s}"),
-            Token::Plus => write!(f, "+"), Token::Minus => write!(f, "-"),
-            Token::Star => write!(f, "*"), Token::Slash => write!(f, "/"),
+            Token::Plus => write!(f, "+"),
+            Token::Minus => write!(f, "-"),
+            Token::Star => write!(f, "*"),
+            Token::Slash => write!(f, "/"),
             Token::Percent => write!(f, "%"),
-            Token::StrictEq => write!(f, "==="), Token::StrictNeq => write!(f, "!=="),
-            Token::Lt => write!(f, "<"), Token::Gt => write!(f, ">"),
-            Token::LtEq => write!(f, "<="), Token::GtEq => write!(f, ">="),
-            Token::AmpAmp => write!(f, "&&"), Token::PipePipe => write!(f, "||"),
-            Token::Amp => write!(f, "&"), Token::Pipe => write!(f, "|"),
-            Token::Caret => write!(f, "^"), Token::Tilde => write!(f, "~"),
+            Token::StrictEq => write!(f, "==="),
+            Token::StrictNeq => write!(f, "!=="),
+            Token::Lt => write!(f, "<"),
+            Token::Gt => write!(f, ">"),
+            Token::LtEq => write!(f, "<="),
+            Token::GtEq => write!(f, ">="),
+            Token::AmpAmp => write!(f, "&&"),
+            Token::PipePipe => write!(f, "||"),
+            Token::Amp => write!(f, "&"),
+            Token::Pipe => write!(f, "|"),
+            Token::Caret => write!(f, "^"),
+            Token::Tilde => write!(f, "~"),
             Token::Bang => write!(f, "!"),
-            Token::Shl => write!(f, "<<"), Token::Shr => write!(f, ">>"),
+            Token::Shl => write!(f, "<<"),
+            Token::Shr => write!(f, ">>"),
             Token::UShr => write!(f, ">>>"),
-            Token::Question => write!(f, "?"), Token::Colon => write!(f, ":"),
-            Token::Dot => write!(f, "."), Token::Comma => write!(f, ","),
-            Token::LParen => write!(f, "("), Token::RParen => write!(f, ")"),
-            Token::LBracket => write!(f, "["), Token::RBracket => write!(f, "]"),
+            Token::Question => write!(f, "?"),
+            Token::Colon => write!(f, ":"),
+            Token::Dot => write!(f, "."),
+            Token::Comma => write!(f, ","),
+            Token::LParen => write!(f, "("),
+            Token::RParen => write!(f, ")"),
+            Token::LBracket => write!(f, "["),
+            Token::RBracket => write!(f, "]"),
             Token::Eof => write!(f, "EOF"),
         }
     }
@@ -641,7 +715,10 @@ fn tokenize(input: &str) -> Result<Vec<Token>, ExprError> {
                 i += 1;
             }
             if i >= len {
-                return Err(ExprError::Lex { position: start, detail: "unterminated string literal".to_string() });
+                return Err(ExprError::Lex {
+                    position: start,
+                    detail: "unterminated string literal".to_string(),
+                });
             }
             let value = input[start..i].to_string();
             i += 1;
@@ -659,19 +736,25 @@ fn tokenize(input: &str) -> Result<Vec<Token>, ExprError> {
                 match bytes[i + 1] {
                     b'x' | b'X' => {
                         i += 2;
-                        while i < len && bytes[i].is_ascii_hexdigit() { i += 1; }
+                        while i < len && bytes[i].is_ascii_hexdigit() {
+                            i += 1;
+                        }
                         tokens.push(Token::Number(input[start..i].to_string()));
                         continue;
                     }
                     b'b' | b'B' => {
                         i += 2;
-                        while i < len && (bytes[i] == b'0' || bytes[i] == b'1') { i += 1; }
+                        while i < len && (bytes[i] == b'0' || bytes[i] == b'1') {
+                            i += 1;
+                        }
                         tokens.push(Token::Number(input[start..i].to_string()));
                         continue;
                     }
                     b'o' | b'O' => {
                         i += 2;
-                        while i < len && bytes[i] >= b'0' && bytes[i] <= b'7' { i += 1; }
+                        while i < len && bytes[i] >= b'0' && bytes[i] <= b'7' {
+                            i += 1;
+                        }
                         tokens.push(Token::Number(input[start..i].to_string()));
                         continue;
                     }
@@ -683,8 +766,12 @@ fn tokenize(input: &str) -> Result<Vec<Token>, ExprError> {
             }
             if i < len && (bytes[i] == b'e' || bytes[i] == b'E') {
                 i += 1;
-                if i < len && (bytes[i] == b'+' || bytes[i] == b'-') { i += 1; }
-                while i < len && bytes[i].is_ascii_digit() { i += 1; }
+                if i < len && (bytes[i] == b'+' || bytes[i] == b'-') {
+                    i += 1;
+                }
+                while i < len && bytes[i].is_ascii_digit() {
+                    i += 1;
+                }
             }
             let mut num = input[start..i].to_string();
             // Normalize `.5` -> `0.5` (not valid in Rust/Kotlin)
@@ -698,7 +785,9 @@ fn tokenize(input: &str) -> Result<Vec<Token>, ExprError> {
         // Identifiers and keywords
         if bytes[i].is_ascii_alphabetic() || bytes[i] == b'_' || bytes[i] == b'$' {
             let start = i;
-            while i < len && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_' || bytes[i] == b'$') {
+            while i < len
+                && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_' || bytes[i] == b'$')
+            {
                 i += 1;
             }
             let word = &input[start..i];
@@ -709,30 +798,46 @@ fn tokenize(input: &str) -> Result<Vec<Token>, ExprError> {
 
         // Reject unsupported multi-char constructs with clear diagnostics.
         if i + 1 < len && &input[i..i + 2] == "=>" {
-            return Err(ExprError::UnsupportedConstruct { construct: "arrow function (=>)".to_string() });
+            return Err(ExprError::UnsupportedConstruct {
+                construct: "arrow function (=>)".to_string(),
+            });
         }
         if i + 1 < len && &input[i..i + 2] == "??" {
-            return Err(ExprError::UnsupportedConstruct { construct: "nullish coalescing (??)".to_string() });
+            return Err(ExprError::UnsupportedConstruct {
+                construct: "nullish coalescing (??)".to_string(),
+            });
         }
         if i + 1 < len && &input[i..i + 2] == "?." {
-            return Err(ExprError::UnsupportedConstruct { construct: "optional chaining (?.)".to_string() });
+            return Err(ExprError::UnsupportedConstruct {
+                construct: "optional chaining (?.)".to_string(),
+            });
         }
         if i + 2 < len && &input[i..i + 3] == "..." {
-            return Err(ExprError::UnsupportedConstruct { construct: "spread/rest (...)".to_string() });
+            return Err(ExprError::UnsupportedConstruct {
+                construct: "spread/rest (...)".to_string(),
+            });
         }
         if bytes[i] == b'`' {
-            return Err(ExprError::UnsupportedConstruct { construct: "template literal (`)".to_string() });
+            return Err(ExprError::UnsupportedConstruct {
+                construct: "template literal (`)".to_string(),
+            });
         }
 
         // Multi-char operators (longest match first)
         if i + 2 < len && &input[i..i + 3] == ">>>" {
-            tokens.push(Token::UShr); i += 3; continue;
+            tokens.push(Token::UShr);
+            i += 3;
+            continue;
         }
         if i + 2 < len && &input[i..i + 3] == "===" {
-            tokens.push(Token::StrictEq); i += 3; continue;
+            tokens.push(Token::StrictEq);
+            i += 3;
+            continue;
         }
         if i + 2 < len && &input[i..i + 3] == "!==" {
-            tokens.push(Token::StrictNeq); i += 3; continue;
+            tokens.push(Token::StrictNeq);
+            i += 3;
+            continue;
         }
         if i + 1 < len {
             let two = &input[i..i + 2];
@@ -758,22 +863,40 @@ fn tokenize(input: &str) -> Result<Vec<Token>, ExprError> {
                 _ => None,
             };
             if let Some(t) = tok {
-                tokens.push(t); i += 2; continue;
+                tokens.push(t);
+                i += 2;
+                continue;
             }
         }
 
         // Single-char operators
         let tok = match bytes[i] {
-            b'+' => Token::Plus, b'-' => Token::Minus,
-            b'*' => Token::Star, b'/' => Token::Slash, b'%' => Token::Percent,
-            b'<' => Token::Lt, b'>' => Token::Gt,
-            b'&' => Token::Amp, b'|' => Token::Pipe,
-            b'^' => Token::Caret, b'~' => Token::Tilde, b'!' => Token::Bang,
-            b'?' => Token::Question, b':' => Token::Colon,
-            b'.' => Token::Dot, b',' => Token::Comma,
-            b'(' => Token::LParen, b')' => Token::RParen,
-            b'[' => Token::LBracket, b']' => Token::RBracket,
-            ch => return Err(ExprError::Lex { position: i, detail: format!("unexpected character: '{}'", ch as char) }),
+            b'+' => Token::Plus,
+            b'-' => Token::Minus,
+            b'*' => Token::Star,
+            b'/' => Token::Slash,
+            b'%' => Token::Percent,
+            b'<' => Token::Lt,
+            b'>' => Token::Gt,
+            b'&' => Token::Amp,
+            b'|' => Token::Pipe,
+            b'^' => Token::Caret,
+            b'~' => Token::Tilde,
+            b'!' => Token::Bang,
+            b'?' => Token::Question,
+            b':' => Token::Colon,
+            b'.' => Token::Dot,
+            b',' => Token::Comma,
+            b'(' => Token::LParen,
+            b')' => Token::RParen,
+            b'[' => Token::LBracket,
+            b']' => Token::RBracket,
+            ch => {
+                return Err(ExprError::Lex {
+                    position: i,
+                    detail: format!("unexpected character: '{}'", ch as char),
+                })
+            }
         };
         tokens.push(tok);
         i += 1;
@@ -785,16 +908,26 @@ fn tokenize(input: &str) -> Result<Vec<Token>, ExprError> {
 
 fn validate_keyword(word: &str) -> Result<(), ExprError> {
     const REJECTED: &[(&str, &str)] = &[
-        ("new", "new"), ("delete", "delete"), ("typeof", "typeof"),
-        ("instanceof", "instanceof"), ("this", "this"), ("eval", "eval()"),
-        ("async", "async"), ("await", "await"), ("yield", "yield"),
-        ("function", "function declaration"), ("class", "class declaration"),
-        ("var", "var declaration"), ("let", "let declaration"),
+        ("new", "new"),
+        ("delete", "delete"),
+        ("typeof", "typeof"),
+        ("instanceof", "instanceof"),
+        ("this", "this"),
+        ("eval", "eval()"),
+        ("async", "async"),
+        ("await", "await"),
+        ("yield", "yield"),
+        ("function", "function declaration"),
+        ("class", "class declaration"),
+        ("var", "var declaration"),
+        ("let", "let declaration"),
         ("const", "const declaration"),
     ];
     for &(kw, desc) in REJECTED {
         if word == kw {
-            return Err(ExprError::UnsupportedConstruct { construct: desc.to_string() });
+            return Err(ExprError::UnsupportedConstruct {
+                construct: desc.to_string(),
+            });
         }
     }
     Ok(())
@@ -827,9 +960,13 @@ struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    fn new(tokens: &'a [Token]) -> Self { Self { tokens, pos: 0 } }
+    fn new(tokens: &'a [Token]) -> Self {
+        Self { tokens, pos: 0 }
+    }
 
-    fn peek(&self) -> &Token { self.tokens.get(self.pos).unwrap_or(&Token::Eof) }
+    fn peek(&self) -> &Token {
+        self.tokens.get(self.pos).unwrap_or(&Token::Eof)
+    }
 
     fn advance(&mut self) -> &Token {
         let tok = self.tokens.get(self.pos).unwrap_or(&Token::Eof);
@@ -839,14 +976,22 @@ impl<'a> Parser<'a> {
 
     fn expect(&mut self, expected: &Token) -> Result<(), ExprError> {
         let tok = self.advance().clone();
-        if &tok == expected { Ok(()) }
-        else { Err(ExprError::ParseMismatch { expected: format!("'{expected}'"), got: tok.to_string() }) }
+        if &tok == expected {
+            Ok(())
+        } else {
+            Err(ExprError::ParseMismatch {
+                expected: format!("'{expected}'"),
+                got: tok.to_string(),
+            })
+        }
     }
 
     fn parse_expression(&mut self) -> Result<TypedExpr, ExprError> {
         let expr = self.parse_conditional()?;
         if *self.peek() != Token::Eof {
-            return Err(ExprError::UnexpectedToken { token: self.peek().to_string() });
+            return Err(ExprError::UnexpectedToken {
+                token: self.peek().to_string(),
+            });
         }
         Ok(expr)
     }
@@ -873,7 +1018,9 @@ impl<'a> Parser<'a> {
             self.advance();
             let right = self.parse_logical_and()?;
             left = TypedExpr::new(ExprKind::Binary {
-                op: BinOp::Or, left: Box::new(left), right: Box::new(right),
+                op: BinOp::Or,
+                left: Box::new(left),
+                right: Box::new(right),
             });
         }
         Ok(left)
@@ -885,7 +1032,9 @@ impl<'a> Parser<'a> {
             self.advance();
             let right = self.parse_bitwise_or()?;
             left = TypedExpr::new(ExprKind::Binary {
-                op: BinOp::And, left: Box::new(left), right: Box::new(right),
+                op: BinOp::And,
+                left: Box::new(left),
+                right: Box::new(right),
             });
         }
         Ok(left)
@@ -897,7 +1046,9 @@ impl<'a> Parser<'a> {
             self.advance();
             let right = self.parse_bitwise_xor()?;
             left = TypedExpr::new(ExprKind::Binary {
-                op: BinOp::BitOr, left: Box::new(left), right: Box::new(right),
+                op: BinOp::BitOr,
+                left: Box::new(left),
+                right: Box::new(right),
             });
         }
         Ok(left)
@@ -909,7 +1060,9 @@ impl<'a> Parser<'a> {
             self.advance();
             let right = self.parse_bitwise_and()?;
             left = TypedExpr::new(ExprKind::Binary {
-                op: BinOp::BitXor, left: Box::new(left), right: Box::new(right),
+                op: BinOp::BitXor,
+                left: Box::new(left),
+                right: Box::new(right),
             });
         }
         Ok(left)
@@ -921,7 +1074,9 @@ impl<'a> Parser<'a> {
             self.advance();
             let right = self.parse_equality()?;
             left = TypedExpr::new(ExprKind::Binary {
-                op: BinOp::BitAnd, left: Box::new(left), right: Box::new(right),
+                op: BinOp::BitAnd,
+                left: Box::new(left),
+                right: Box::new(right),
             });
         }
         Ok(left)
@@ -938,7 +1093,9 @@ impl<'a> Parser<'a> {
             self.advance();
             let right = self.parse_relational()?;
             left = TypedExpr::new(ExprKind::Binary {
-                op, left: Box::new(left), right: Box::new(right),
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
             });
         }
         Ok(left)
@@ -948,14 +1105,18 @@ impl<'a> Parser<'a> {
         let mut left = self.parse_shift()?;
         loop {
             let op = match self.peek() {
-                Token::Lt => BinOp::Lt, Token::Gt => BinOp::Gt,
-                Token::LtEq => BinOp::LtEq, Token::GtEq => BinOp::GtEq,
+                Token::Lt => BinOp::Lt,
+                Token::Gt => BinOp::Gt,
+                Token::LtEq => BinOp::LtEq,
+                Token::GtEq => BinOp::GtEq,
                 _ => break,
             };
             self.advance();
             let right = self.parse_shift()?;
             left = TypedExpr::new(ExprKind::Binary {
-                op, left: Box::new(left), right: Box::new(right),
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
             });
         }
         Ok(left)
@@ -965,13 +1126,17 @@ impl<'a> Parser<'a> {
         let mut left = self.parse_additive()?;
         loop {
             let op = match self.peek() {
-                Token::Shl => BinOp::Shl, Token::Shr => BinOp::Shr, Token::UShr => BinOp::UShr,
+                Token::Shl => BinOp::Shl,
+                Token::Shr => BinOp::Shr,
+                Token::UShr => BinOp::UShr,
                 _ => break,
             };
             self.advance();
             let right = self.parse_additive()?;
             left = TypedExpr::new(ExprKind::Binary {
-                op, left: Box::new(left), right: Box::new(right),
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
             });
         }
         Ok(left)
@@ -981,13 +1146,16 @@ impl<'a> Parser<'a> {
         let mut left = self.parse_multiplicative()?;
         loop {
             let op = match self.peek() {
-                Token::Plus => BinOp::Add, Token::Minus => BinOp::Sub,
+                Token::Plus => BinOp::Add,
+                Token::Minus => BinOp::Sub,
                 _ => break,
             };
             self.advance();
             let right = self.parse_multiplicative()?;
             left = TypedExpr::new(ExprKind::Binary {
-                op, left: Box::new(left), right: Box::new(right),
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
             });
         }
         Ok(left)
@@ -997,13 +1165,17 @@ impl<'a> Parser<'a> {
         let mut left = self.parse_unary()?;
         loop {
             let op = match self.peek() {
-                Token::Star => BinOp::Mul, Token::Slash => BinOp::Div, Token::Percent => BinOp::Mod,
+                Token::Star => BinOp::Mul,
+                Token::Slash => BinOp::Div,
+                Token::Percent => BinOp::Mod,
                 _ => break,
             };
             self.advance();
             let right = self.parse_unary()?;
             left = TypedExpr::new(ExprKind::Binary {
-                op, left: Box::new(left), right: Box::new(right),
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
             });
         }
         Ok(left)
@@ -1011,15 +1183,18 @@ impl<'a> Parser<'a> {
 
     fn parse_unary(&mut self) -> Result<TypedExpr, ExprError> {
         let op = match self.peek() {
-            Token::Minus => Some(UnaryOp::Neg), Token::Plus => Some(UnaryOp::Pos),
-            Token::Bang => Some(UnaryOp::Not), Token::Tilde => Some(UnaryOp::BitNot),
+            Token::Minus => Some(UnaryOp::Neg),
+            Token::Plus => Some(UnaryOp::Pos),
+            Token::Bang => Some(UnaryOp::Not),
+            Token::Tilde => Some(UnaryOp::BitNot),
             _ => None,
         };
         if let Some(op) = op {
             self.advance();
             let operand = self.parse_unary()?;
             return Ok(TypedExpr::new(ExprKind::Unary {
-                op, operand: Box::new(operand),
+                op,
+                operand: Box::new(operand),
             }));
         }
         self.parse_postfix()
@@ -1033,10 +1208,16 @@ impl<'a> Parser<'a> {
                     self.advance();
                     let prop = match self.advance().clone() {
                         Token::Ident(s) => s,
-                        other => return Err(ExprError::ParseMismatch { expected: "property name after '.'".into(), got: other.to_string() }),
+                        other => {
+                            return Err(ExprError::ParseMismatch {
+                                expected: "property name after '.'".into(),
+                                got: other.to_string(),
+                            })
+                        }
                     };
                     expr = TypedExpr::new(ExprKind::Member {
-                        object: Box::new(expr), property: prop,
+                        object: Box::new(expr),
+                        property: prop,
                     });
                 }
                 Token::LBracket => {
@@ -1044,7 +1225,8 @@ impl<'a> Parser<'a> {
                     let index = self.parse_conditional()?;
                     self.expect(&Token::RBracket)?;
                     expr = TypedExpr::new(ExprKind::Index {
-                        object: Box::new(expr), index: Box::new(index),
+                        object: Box::new(expr),
+                        index: Box::new(index),
                     });
                 }
                 Token::LParen => {
@@ -1059,7 +1241,8 @@ impl<'a> Parser<'a> {
                     }
                     self.expect(&Token::RParen)?;
                     expr = TypedExpr::new(ExprKind::Call {
-                        callee: Box::new(expr), args,
+                        callee: Box::new(expr),
+                        args,
                     });
                 }
                 _ => break,
@@ -1083,7 +1266,9 @@ impl<'a> Parser<'a> {
                 self.expect(&Token::RParen)?;
                 Ok(inner)
             }
-            other => Err(ExprError::UnexpectedToken { token: other.to_string() }),
+            other => Err(ExprError::UnexpectedToken {
+                token: other.to_string(),
+            }),
         }
     }
 }
@@ -1122,7 +1307,11 @@ fn rename_identifiers(ast: &mut TypedExpr, renames: &HashMap<&str, &str>) {
         ExprKind::Unary { operand, .. } => {
             rename_identifiers(operand, renames);
         }
-        ExprKind::Conditional { condition, consequent, alternate } => {
+        ExprKind::Conditional {
+            condition,
+            consequent,
+            alternate,
+        } => {
             rename_identifiers(condition, renames);
             rename_identifiers(consequent, renames);
             rename_identifiers(alternate, renames);
@@ -1149,8 +1338,10 @@ fn rename_identifiers(ast: &mut TypedExpr, renames: &HashMap<&str, &str>) {
             }
         }
         ExprKind::Raw(_)
-        | ExprKind::NumberLit(_) | ExprKind::StringLit { .. }
-        | ExprKind::BoolLit(_) | ExprKind::NullLit => {}
+        | ExprKind::NumberLit(_)
+        | ExprKind::StringLit { .. }
+        | ExprKind::BoolLit(_)
+        | ExprKind::NullLit => {}
     }
 }
 
@@ -1213,7 +1404,11 @@ fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
                 UnaryOp::BitNot => operand.ty,
             }
         }
-        ExprKind::Conditional { condition, consequent, alternate } => {
+        ExprKind::Conditional {
+            condition,
+            consequent,
+            alternate,
+        } => {
             infer_types(condition, ctx);
             infer_types(consequent, ctx);
             infer_types(alternate, ctx);
@@ -1244,7 +1439,10 @@ fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
             infer_types(object, ctx);
             infer_types(index, ctx);
             match object.ty {
-                InferredType::Bytes => InferredType::Int { signed: false, bits: 8 },
+                InferredType::Bytes => InferredType::Int {
+                    signed: false,
+                    bits: 8,
+                },
                 _ => {
                     // RFC §5.A: `<sce:const name="X" type="array<elem, N>">`
                     // registers `X` in `ctx.array_elems`. Recover the
@@ -1309,9 +1507,12 @@ fn is_float_literal_text(n: &str) -> bool {
 fn is_decimal_integer_literal(n: &str) -> bool {
     !n.is_empty()
         && !is_float_literal_text(n)
-        && !n.starts_with("0x") && !n.starts_with("0X")
-        && !n.starts_with("0b") && !n.starts_with("0B")
-        && !n.starts_with("0o") && !n.starts_with("0O")
+        && !n.starts_with("0x")
+        && !n.starts_with("0X")
+        && !n.starts_with("0b")
+        && !n.starts_with("0B")
+        && !n.starts_with("0o")
+        && !n.starts_with("0O")
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1339,8 +1540,7 @@ fn kotlin_precedence(op: BinOp) -> u8 {
         BinOp::And => 2,
         BinOp::StrictEq | BinOp::StrictNeq => 3,
         BinOp::Lt | BinOp::Gt | BinOp::LtEq | BinOp::GtEq => 4,
-        BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor
-        | BinOp::Shl | BinOp::Shr | BinOp::UShr => 7,
+        BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor | BinOp::Shl | BinOp::Shr | BinOp::UShr => 7,
         BinOp::Add | BinOp::Sub => 9,
         BinOp::Mul | BinOp::Div | BinOp::Mod => 10,
     }
@@ -1350,11 +1550,15 @@ fn go_precedence(op: BinOp) -> u8 {
     match op {
         BinOp::Or => 1,
         BinOp::And => 2,
-        BinOp::StrictEq | BinOp::StrictNeq
-        | BinOp::Lt | BinOp::Gt | BinOp::LtEq | BinOp::GtEq => 3,
+        BinOp::StrictEq | BinOp::StrictNeq | BinOp::Lt | BinOp::Gt | BinOp::LtEq | BinOp::GtEq => 3,
         BinOp::Add | BinOp::Sub | BinOp::BitOr | BinOp::BitXor => 4,
-        BinOp::Mul | BinOp::Div | BinOp::Mod
-        | BinOp::Shl | BinOp::Shr | BinOp::UShr | BinOp::BitAnd => 5,
+        BinOp::Mul
+        | BinOp::Div
+        | BinOp::Mod
+        | BinOp::Shl
+        | BinOp::Shr
+        | BinOp::UShr
+        | BinOp::BitAnd => 5,
     }
 }
 
@@ -1362,8 +1566,7 @@ fn rust_precedence(op: BinOp) -> u8 {
     match op {
         BinOp::Or => 1,
         BinOp::And => 2,
-        BinOp::StrictEq | BinOp::StrictNeq
-        | BinOp::Lt | BinOp::Gt | BinOp::LtEq | BinOp::GtEq => 4,
+        BinOp::StrictEq | BinOp::StrictNeq | BinOp::Lt | BinOp::Gt | BinOp::LtEq | BinOp::GtEq => 4,
         BinOp::BitOr => 5,
         BinOp::BitXor => 6,
         BinOp::BitAnd => 7,
@@ -1377,8 +1580,7 @@ fn python_precedence(op: BinOp) -> u8 {
     match op {
         BinOp::Or => 1,
         BinOp::And => 2,
-        BinOp::StrictEq | BinOp::StrictNeq
-        | BinOp::Lt | BinOp::Gt | BinOp::LtEq | BinOp::GtEq => 4,
+        BinOp::StrictEq | BinOp::StrictNeq | BinOp::Lt | BinOp::Gt | BinOp::LtEq | BinOp::GtEq => 4,
         BinOp::BitOr => 5,
         BinOp::BitXor => 6,
         BinOp::BitAnd => 7,
@@ -1388,12 +1590,21 @@ fn python_precedence(op: BinOp) -> u8 {
     }
 }
 
-fn child_needs_parens(child: &TypedExpr, parent_op: BinOp, is_left: bool, prec: fn(BinOp) -> u8) -> bool {
+fn child_needs_parens(
+    child: &TypedExpr,
+    parent_op: BinOp,
+    is_left: bool,
+    prec: fn(BinOp) -> u8,
+) -> bool {
     match &child.kind {
         ExprKind::Binary { op: child_op, .. } => {
             let cp = prec(*child_op);
             let pp = prec(parent_op);
-            if is_left { cp < pp } else { cp <= pp }
+            if is_left {
+                cp < pp
+            } else {
+                cp <= pp
+            }
         }
         ExprKind::Conditional { .. } => true,
         _ => false,
@@ -1463,10 +1674,14 @@ fn emit_cpp(expr: &TypedExpr, expected: InferredType) -> String {
             let r_raw = emit_cpp(right, expected);
             let l = if child_needs_parens(left, *op, true, ecma_precedence) {
                 format!("({l_raw})")
-            } else { l_raw };
+            } else {
+                l_raw
+            };
             let r = if child_needs_parens(right, *op, false, ecma_precedence) {
                 format!("({r_raw})")
-            } else { r_raw };
+            } else {
+                r_raw
+            };
             return format!("{l} {} {r}", cpp_binop(*op));
         }
     }
@@ -1476,7 +1691,11 @@ fn emit_cpp(expr: &TypedExpr, expected: InferredType) -> String {
     // float `expected`, so the inner literal stays `40` and the result is
     // `-40` instead of the symmetric `-40.0`. Mirrors the Binary push-down
     // above.
-    if let ExprKind::Unary { op: op @ (UnaryOp::Neg | UnaryOp::Pos), operand } = &expr.kind {
+    if let ExprKind::Unary {
+        op: op @ (UnaryOp::Neg | UnaryOp::Pos),
+        operand,
+    } = &expr.kind
+    {
         if matches!(expected, InferredType::Float { .. }) {
             let inner = emit_cpp(operand, expected);
             let wrap = matches!(
@@ -1508,10 +1727,14 @@ fn cpp_emit_node(expr: &TypedExpr) -> String {
             let r_raw = emit_cpp(right, operand_ty);
             let l = if child_needs_parens(left, *op, true, ecma_precedence) {
                 format!("({l_raw})")
-            } else { l_raw };
+            } else {
+                l_raw
+            };
             let r = if child_needs_parens(right, *op, false, ecma_precedence) {
                 format!("({r_raw})")
-            } else { r_raw };
+            } else {
+                r_raw
+            };
             format!("{l} {} {r}", cpp_binop(*op))
         }
         ExprKind::Unary { op, operand } => {
@@ -1526,7 +1749,11 @@ fn cpp_emit_node(expr: &TypedExpr) -> String {
                 format!("{}{inner}", cpp_unary(*op))
             }
         }
-        ExprKind::Conditional { condition, consequent, alternate } => {
+        ExprKind::Conditional {
+            condition,
+            consequent,
+            alternate,
+        } => {
             format!(
                 "{} ? {} : {}",
                 emit_cpp(condition, InferredType::Bool),
@@ -1535,7 +1762,10 @@ fn cpp_emit_node(expr: &TypedExpr) -> String {
             )
         }
         ExprKind::Member { object, property } => {
-            format!("{}.{property}", wrap_postfix(object, emit_cpp(object, InferredType::Unknown)))
+            format!(
+                "{}.{property}",
+                wrap_postfix(object, emit_cpp(object, InferredType::Unknown))
+            )
         }
         ExprKind::Index { object, index } => {
             format!(
@@ -1545,7 +1775,10 @@ fn cpp_emit_node(expr: &TypedExpr) -> String {
             )
         }
         ExprKind::Call { callee, args } => {
-            let a: Vec<_> = args.iter().map(|a| emit_cpp(a, InferredType::Unknown)).collect();
+            let a: Vec<_> = args
+                .iter()
+                .map(|a| emit_cpp(a, InferredType::Unknown))
+                .collect();
             format!(
                 "{}({})",
                 wrap_postfix(callee, emit_cpp(callee, InferredType::Unknown)),
@@ -1574,18 +1807,35 @@ fn cpp_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExp
 
 fn cpp_binop(op: BinOp) -> &'static str {
     match op {
-        BinOp::Add => "+", BinOp::Sub => "-", BinOp::Mul => "*", BinOp::Div => "/", BinOp::Mod => "%",
-        BinOp::StrictEq => "==", BinOp::StrictNeq => "!=",
-        BinOp::Lt => "<", BinOp::Gt => ">", BinOp::LtEq => "<=", BinOp::GtEq => ">=",
-        BinOp::And => "&&", BinOp::Or => "||",
-        BinOp::BitAnd => "&", BinOp::BitOr => "|", BinOp::BitXor => "^",
-        BinOp::Shl => "<<", BinOp::Shr => ">>",
+        BinOp::Add => "+",
+        BinOp::Sub => "-",
+        BinOp::Mul => "*",
+        BinOp::Div => "/",
+        BinOp::Mod => "%",
+        BinOp::StrictEq => "==",
+        BinOp::StrictNeq => "!=",
+        BinOp::Lt => "<",
+        BinOp::Gt => ">",
+        BinOp::LtEq => "<=",
+        BinOp::GtEq => ">=",
+        BinOp::And => "&&",
+        BinOp::Or => "||",
+        BinOp::BitAnd => "&",
+        BinOp::BitOr => "|",
+        BinOp::BitXor => "^",
+        BinOp::Shl => "<<",
+        BinOp::Shr => ">>",
         BinOp::UShr => ">>",
     }
 }
 
 fn cpp_unary(op: UnaryOp) -> &'static str {
-    match op { UnaryOp::Neg => "-", UnaryOp::Pos => "+", UnaryOp::Not => "!", UnaryOp::BitNot => "~" }
+    match op {
+        UnaryOp::Neg => "-",
+        UnaryOp::Pos => "+",
+        UnaryOp::Not => "!",
+        UnaryOp::BitNot => "~",
+    }
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1613,10 +1863,14 @@ fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> String {
             let r_raw = emit_kotlin(right, expected);
             let l = if child_needs_parens(left, *op, true, kotlin_precedence) {
                 format!("({l_raw})")
-            } else { l_raw };
+            } else {
+                l_raw
+            };
             let r = if child_needs_parens(right, *op, false, kotlin_precedence) {
                 format!("({r_raw})")
-            } else { r_raw };
+            } else {
+                r_raw
+            };
             return format!("{l} {} {r}", kotlin_binop(*op));
         }
         // Kotlin's narrow unsigned types (UByte/UShort) do not support
@@ -1626,15 +1880,22 @@ fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> String {
         // caller-requested type. The outer kotlin_coerce handles the
         // Int32 → UByte/UShort reverse conversion via `.toUByte()`.
         if op.is_bitwise() && (is_narrow_unsigned(left.ty) || is_narrow_unsigned(right.ty)) {
-            let widened = InferredType::Int { signed: true, bits: 32 };
+            let widened = InferredType::Int {
+                signed: true,
+                bits: 32,
+            };
             let l_raw = emit_kotlin(left, widened);
             let r_raw = emit_kotlin(right, widened);
             let l = if child_needs_parens(left, *op, true, kotlin_precedence) {
                 format!("({l_raw})")
-            } else { l_raw };
+            } else {
+                l_raw
+            };
             let r = if child_needs_parens(right, *op, false, kotlin_precedence) {
                 format!("({r_raw})")
-            } else { r_raw };
+            } else {
+                r_raw
+            };
             let inner = format!("{l} {} {r}", kotlin_binop(*op));
             return kotlin_coerce(inner, widened, expected, expr);
         }
@@ -1646,15 +1907,22 @@ fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> String {
         // the caller-requested narrow unsigned via the outer
         // `kotlin_coerce`'s `.toUByte()` / `.toUShort()` arm.
         if op.is_arith() && (is_narrow_unsigned(left.ty) || is_narrow_unsigned(right.ty)) {
-            let widened = InferredType::Int { signed: false, bits: 32 };
+            let widened = InferredType::Int {
+                signed: false,
+                bits: 32,
+            };
             let l_raw = emit_kotlin(left, widened);
             let r_raw = emit_kotlin(right, widened);
             let l = if child_needs_parens(left, *op, true, kotlin_precedence) {
                 format!("({l_raw})")
-            } else { l_raw };
+            } else {
+                l_raw
+            };
             let r = if child_needs_parens(right, *op, false, kotlin_precedence) {
                 format!("({r_raw})")
-            } else { r_raw };
+            } else {
+                r_raw
+            };
             let inner = format!("{l} {} {r}", kotlin_binop(*op));
             return kotlin_coerce(inner, widened, expected, expr);
         }
@@ -1663,18 +1931,27 @@ fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> String {
     // literal stays UntypedInt and the outer `kotlin_coerce` falls back to
     // `(-40).toDouble()`. Pushing the Float expectation into the operand
     // lets it pick up the `.0` literal-rewrite path and emit `-40.0`.
-    if let ExprKind::Unary { op: op @ (UnaryOp::Neg | UnaryOp::Pos), operand } = &expr.kind {
+    if let ExprKind::Unary {
+        op: op @ (UnaryOp::Neg | UnaryOp::Pos),
+        operand,
+    } = &expr.kind
+    {
         if matches!(expected, InferredType::Float { .. }) {
             let inner = emit_kotlin(operand, expected);
             let prefix = match op {
-                UnaryOp::Neg => "-", UnaryOp::Pos => "+",
+                UnaryOp::Neg => "-",
+                UnaryOp::Pos => "+",
                 _ => unreachable!("guarded by outer match"),
             };
             let wrap = matches!(
                 &operand.kind,
                 ExprKind::Binary { .. } | ExprKind::Conditional { .. }
             );
-            return if wrap { format!("{prefix}({inner})") } else { format!("{prefix}{inner}") };
+            return if wrap {
+                format!("{prefix}({inner})")
+            } else {
+                format!("{prefix}{inner}")
+            };
         }
     }
     let raw = kotlin_emit_node(expr);
@@ -1684,7 +1961,13 @@ fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> String {
 /// A narrow unsigned integer — UByte (8) or UShort (16). Kotlin stdlib does
 /// not define bitwise/shift ops on these; widen to signed Int32 for ops.
 fn is_narrow_unsigned(ty: InferredType) -> bool {
-    matches!(ty, InferredType::Int { signed: false, bits: 8 | 16 })
+    matches!(
+        ty,
+        InferredType::Int {
+            signed: false,
+            bits: 8 | 16
+        }
+    )
 }
 
 fn kotlin_emit_node(expr: &TypedExpr) -> String {
@@ -1701,13 +1984,20 @@ fn kotlin_emit_node(expr: &TypedExpr) -> String {
             let r_raw = emit_kotlin(right, operand_ty);
             let l = if child_needs_parens(left, *op, true, kotlin_precedence) {
                 format!("({l_raw})")
-            } else { l_raw };
+            } else {
+                l_raw
+            };
             let r = if child_needs_parens(right, *op, false, kotlin_precedence) {
                 format!("({r_raw})")
-            } else { r_raw };
+            } else {
+                r_raw
+            };
             format!("{l} {} {r}", kotlin_binop(*op))
         }
-        ExprKind::Unary { op: UnaryOp::BitNot, operand } => {
+        ExprKind::Unary {
+            op: UnaryOp::BitNot,
+            operand,
+        } => {
             format!(
                 "{}.inv()",
                 wrap_postfix(operand, emit_kotlin(operand, expr.ty))
@@ -1716,16 +2006,26 @@ fn kotlin_emit_node(expr: &TypedExpr) -> String {
         ExprKind::Unary { op, operand } => {
             let inner = emit_kotlin(operand, expr.ty);
             let prefix = match op {
-                UnaryOp::Neg => "-", UnaryOp::Pos => "+", UnaryOp::Not => "!",
+                UnaryOp::Neg => "-",
+                UnaryOp::Pos => "+",
+                UnaryOp::Not => "!",
                 UnaryOp::BitNot => unreachable!(),
             };
             let wrap = matches!(
                 &operand.kind,
                 ExprKind::Binary { .. } | ExprKind::Conditional { .. }
             );
-            if wrap { format!("{prefix}({inner})") } else { format!("{prefix}{inner}") }
+            if wrap {
+                format!("{prefix}({inner})")
+            } else {
+                format!("{prefix}{inner}")
+            }
         }
-        ExprKind::Conditional { condition, consequent, alternate } => {
+        ExprKind::Conditional {
+            condition,
+            consequent,
+            alternate,
+        } => {
             format!(
                 "if ({}) {} else {}",
                 emit_kotlin(condition, InferredType::Bool),
@@ -1734,7 +2034,10 @@ fn kotlin_emit_node(expr: &TypedExpr) -> String {
             )
         }
         ExprKind::Member { object, property } => {
-            format!("{}.{property}", wrap_postfix(object, emit_kotlin(object, InferredType::Unknown)))
+            format!(
+                "{}.{property}",
+                wrap_postfix(object, emit_kotlin(object, InferredType::Unknown))
+            )
         }
         ExprKind::Index { object, index } => {
             // Kotlin's `Array.get(index: Int)` and the unboxed
@@ -1745,7 +2048,10 @@ fn kotlin_emit_node(expr: &TypedExpr) -> String {
             // `as usize` insertion for non-`UntypedInt` indices.
             let idx_raw = emit_kotlin(index, InferredType::Unknown);
             let idx_emit = match index.ty {
-                InferredType::Int { signed: true, bits: 32 } => idx_raw,
+                InferredType::Int {
+                    signed: true,
+                    bits: 32,
+                } => idx_raw,
                 InferredType::Int { .. } => format!("{idx_raw}.toInt()"),
                 _ => idx_raw,
             };
@@ -1755,7 +2061,10 @@ fn kotlin_emit_node(expr: &TypedExpr) -> String {
             )
         }
         ExprKind::Call { callee, args } => {
-            let a: Vec<_> = args.iter().map(|a| emit_kotlin(a, InferredType::Unknown)).collect();
+            let a: Vec<_> = args
+                .iter()
+                .map(|a| emit_kotlin(a, InferredType::Unknown))
+                .collect();
             format!(
                 "{}({})",
                 wrap_postfix(callee, emit_kotlin(callee, InferredType::Unknown)),
@@ -1767,23 +2076,31 @@ fn kotlin_emit_node(expr: &TypedExpr) -> String {
 
 fn kotlin_binop(op: BinOp) -> &'static str {
     match op {
-        BinOp::Add => "+", BinOp::Sub => "-", BinOp::Mul => "*", BinOp::Div => "/", BinOp::Mod => "%",
-        BinOp::StrictEq => "==", BinOp::StrictNeq => "!=",
-        BinOp::Lt => "<", BinOp::Gt => ">", BinOp::LtEq => "<=", BinOp::GtEq => ">=",
-        BinOp::And => "&&", BinOp::Or => "||",
-        BinOp::BitAnd => "and", BinOp::BitOr => "or", BinOp::BitXor => "xor",
-        BinOp::Shl => "shl", BinOp::Shr => "shr", BinOp::UShr => "ushr",
+        BinOp::Add => "+",
+        BinOp::Sub => "-",
+        BinOp::Mul => "*",
+        BinOp::Div => "/",
+        BinOp::Mod => "%",
+        BinOp::StrictEq => "==",
+        BinOp::StrictNeq => "!=",
+        BinOp::Lt => "<",
+        BinOp::Gt => ">",
+        BinOp::LtEq => "<=",
+        BinOp::GtEq => ">=",
+        BinOp::And => "&&",
+        BinOp::Or => "||",
+        BinOp::BitAnd => "and",
+        BinOp::BitOr => "or",
+        BinOp::BitXor => "xor",
+        BinOp::Shl => "shl",
+        BinOp::Shr => "shr",
+        BinOp::UShr => "ushr",
     }
 }
 
 /// Apply language-specific coercion from a child's natural type to the
 /// expected parent type.
-fn kotlin_coerce(
-    raw: String,
-    from: InferredType,
-    to: InferredType,
-    node: &TypedExpr,
-) -> String {
+fn kotlin_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr) -> String {
     use InferredType::*;
     if from == to || matches!(to, Unknown) {
         return raw;
@@ -1802,25 +2119,59 @@ fn kotlin_coerce(
         // Concrete int → float: explicit `.toDouble()` / `.toFloat()`.
         (Int { .. }, Float { bits: 64 }) => wrap_dotcall(raw, node, "toDouble"),
         (Int { .. }, Float { bits: 32 }) => wrap_dotcall(raw, node, "toFloat"),
-        (UntypedInt, Int { signed: false, bits }) => {
+        (
+            UntypedInt,
+            Int {
+                signed: false,
+                bits,
+            },
+        ) => {
             // Literal adopting unsigned concrete type.
             let suffix = kotlin_unsigned_ctor(bits);
             format!("{raw}.{suffix}()")
         }
         (UntypedInt, Int { signed: true, .. }) => raw,
         // Unsigned → signed: required for mixed-sign arithmetic in Kotlin.
-        (Int { signed: false, bits: bfrom }, Int { signed: true, bits: bto }) => {
+        (
+            Int {
+                signed: false,
+                bits: bfrom,
+            },
+            Int {
+                signed: true,
+                bits: bto,
+            },
+        ) => {
             let ctor = kotlin_signed_ctor(bfrom.max(bto));
             wrap_dotcall(raw, node, ctor)
         }
         // Signed → unsigned: result suffix for unsigned outputs.
-        (Int { signed: true, .. }, Int { signed: false, bits: bto }) => {
+        (
+            Int { signed: true, .. },
+            Int {
+                signed: false,
+                bits: bto,
+            },
+        ) => {
             let ctor = kotlin_unsigned_ctor(bto);
             wrap_dotcall(raw, node, ctor)
         }
         // Int widening among same signedness.
-        (Int { signed: s1, bits: b1 }, Int { signed: s2, bits: b2 }) if s1 == s2 && b1 != b2 => {
-            let ctor = if s1 { kotlin_signed_ctor(b2) } else { kotlin_unsigned_ctor(b2) };
+        (
+            Int {
+                signed: s1,
+                bits: b1,
+            },
+            Int {
+                signed: s2,
+                bits: b2,
+            },
+        ) if s1 == s2 && b1 != b2 => {
+            let ctor = if s1 {
+                kotlin_signed_ctor(b2)
+            } else {
+                kotlin_unsigned_ctor(b2)
+            };
             wrap_dotcall(raw, node, ctor)
         }
         // Float widening.
@@ -1839,14 +2190,20 @@ fn kotlin_coerce(
 
 fn kotlin_signed_ctor(bits: u8) -> &'static str {
     match bits {
-        8 => "toByte", 16 => "toShort", 32 => "toInt", 64 => "toLong",
+        8 => "toByte",
+        16 => "toShort",
+        32 => "toInt",
+        64 => "toLong",
         _ => "toInt",
     }
 }
 
 fn kotlin_unsigned_ctor(bits: u8) -> &'static str {
     match bits {
-        8 => "toUByte", 16 => "toUShort", 32 => "toUInt", 64 => "toULong",
+        8 => "toUByte",
+        16 => "toUShort",
+        32 => "toUInt",
+        64 => "toULong",
         _ => "toUInt",
     }
 }
@@ -1893,10 +2250,14 @@ fn emit_rust(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprErr
             let r_raw = emit_rust(right, expected)?;
             let l = if child_needs_parens(left, *op, true, rust_precedence) {
                 format!("({l_raw})")
-            } else { l_raw };
+            } else {
+                l_raw
+            };
             let r = if child_needs_parens(right, *op, false, rust_precedence) {
                 format!("({r_raw})")
-            } else { r_raw };
+            } else {
+                r_raw
+            };
             return Ok(format!("{l} {} {r}", rust_binop(*op)));
         }
     }
@@ -1907,11 +2268,16 @@ fn emit_rust(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprErr
     // `rust_coerce` then takes the "Computed subtree" branch on the outer
     // Unary, emitting the ugly `-40 as f64` instead of the symmetric
     // `-40.0`. Mirrors the Binary push-down above.
-    if let ExprKind::Unary { op: op @ (UnaryOp::Neg | UnaryOp::Pos), operand } = &expr.kind {
+    if let ExprKind::Unary {
+        op: op @ (UnaryOp::Neg | UnaryOp::Pos),
+        operand,
+    } = &expr.kind
+    {
         if matches!(expected, InferredType::Float { .. }) {
             let inner = emit_rust(operand, expected)?;
             let prefix = match op {
-                UnaryOp::Neg => "-", UnaryOp::Pos => "",
+                UnaryOp::Neg => "-",
+                UnaryOp::Pos => "",
                 _ => unreachable!("guarded by outer match"),
             };
             let wrap = matches!(
@@ -1943,10 +2309,14 @@ fn rust_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             let r_raw = emit_rust(right, operand_ty)?;
             let l = if child_needs_parens(left, *op, true, rust_precedence) {
                 format!("({l_raw})")
-            } else { l_raw };
+            } else {
+                l_raw
+            };
             let r = if child_needs_parens(right, *op, false, rust_precedence) {
                 format!("({r_raw})")
-            } else { r_raw };
+            } else {
+                r_raw
+            };
             format!("{l} {} {r}", rust_binop(*op))
         }
         ExprKind::Unary { op, operand } => {
@@ -1956,12 +2326,21 @@ fn rust_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 ExprKind::Binary { .. } | ExprKind::Conditional { .. }
             );
             let prefix = match op {
-                UnaryOp::Neg => "-", UnaryOp::Pos => "",
+                UnaryOp::Neg => "-",
+                UnaryOp::Pos => "",
                 UnaryOp::Not | UnaryOp::BitNot => "!",
             };
-            if wrap { format!("{prefix}({inner})") } else { format!("{prefix}{inner}") }
+            if wrap {
+                format!("{prefix}({inner})")
+            } else {
+                format!("{prefix}{inner}")
+            }
         }
-        ExprKind::Conditional { condition, consequent, alternate } => {
+        ExprKind::Conditional {
+            condition,
+            consequent,
+            alternate,
+        } => {
             format!(
                 "if {} {{ {} }} else {{ {} }}",
                 emit_rust(condition, InferredType::Bool)?,
@@ -2009,12 +2388,24 @@ fn rust_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
 
 fn rust_binop(op: BinOp) -> &'static str {
     match op {
-        BinOp::Add => "+", BinOp::Sub => "-", BinOp::Mul => "*", BinOp::Div => "/", BinOp::Mod => "%",
-        BinOp::StrictEq => "==", BinOp::StrictNeq => "!=",
-        BinOp::Lt => "<", BinOp::Gt => ">", BinOp::LtEq => "<=", BinOp::GtEq => ">=",
-        BinOp::And => "&&", BinOp::Or => "||",
-        BinOp::BitAnd => "&", BinOp::BitOr => "|", BinOp::BitXor => "^",
-        BinOp::Shl => "<<", BinOp::Shr => ">>",
+        BinOp::Add => "+",
+        BinOp::Sub => "-",
+        BinOp::Mul => "*",
+        BinOp::Div => "/",
+        BinOp::Mod => "%",
+        BinOp::StrictEq => "==",
+        BinOp::StrictNeq => "!=",
+        BinOp::Lt => "<",
+        BinOp::Gt => ">",
+        BinOp::LtEq => "<=",
+        BinOp::GtEq => ">=",
+        BinOp::And => "&&",
+        BinOp::Or => "||",
+        BinOp::BitAnd => "&",
+        BinOp::BitOr => "|",
+        BinOp::BitXor => "^",
+        BinOp::Shl => "<<",
+        BinOp::Shr => ">>",
         BinOp::UShr => ">>",
     }
 }
@@ -2061,7 +2452,16 @@ fn rust_coerce(
         // Untyped float → concrete float: emit as-is; Rust infers.
         (UntypedFloat, Float { .. }) => Ok(raw),
         // Concrete int widening.
-        (Int { signed: s1, bits: b1 }, Int { signed: s2, bits: b2 }) if (s1, b1) != (s2, b2) => {
+        (
+            Int {
+                signed: s1,
+                bits: b1,
+            },
+            Int {
+                signed: s2,
+                bits: b2,
+            },
+        ) if (s1, b1) != (s2, b2) => {
             let target = rust_int_type(s2, b2);
             Ok(rust_cast(raw, node, target))
         }
@@ -2087,8 +2487,14 @@ fn rust_cast(raw: String, node: &TypedExpr, target: &str) -> String {
 
 fn rust_int_type(signed: bool, bits: u8) -> &'static str {
     match (signed, bits) {
-        (true, 8) => "i8", (true, 16) => "i16", (true, 32) => "i32", (true, 64) => "i64",
-        (false, 8) => "u8", (false, 16) => "u16", (false, 32) => "u32", (false, 64) => "u64",
+        (true, 8) => "i8",
+        (true, 16) => "i16",
+        (true, 32) => "i32",
+        (true, 64) => "i64",
+        (false, 8) => "u8",
+        (false, 16) => "u16",
+        (false, 32) => "u32",
+        (false, 64) => "u64",
         _ => "i64",
     }
 }
@@ -2116,20 +2522,29 @@ fn emit_go(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
             let r_raw = emit_go(right, expected)?;
             let l = if child_needs_parens(left, *op, true, go_precedence) {
                 format!("({l_raw})")
-            } else { l_raw };
+            } else {
+                l_raw
+            };
             let r = if child_needs_parens(right, *op, false, go_precedence) {
                 format!("({r_raw})")
-            } else { r_raw };
+            } else {
+                r_raw
+            };
             return Ok(format!("{l} {} {r}", go_binop(*op)));
         }
     }
     // Push-down: Unary{Neg|Pos} in float context — propagate Float so
     // go_coerce appends `.0` to the inner literal (e.g. `-40` → `-40.0`).
-    if let ExprKind::Unary { op: op @ (UnaryOp::Neg | UnaryOp::Pos), operand } = &expr.kind {
+    if let ExprKind::Unary {
+        op: op @ (UnaryOp::Neg | UnaryOp::Pos),
+        operand,
+    } = &expr.kind
+    {
         if matches!(expected, InferredType::Float { .. }) {
             let inner = emit_go(operand, expected)?;
             let prefix = match op {
-                UnaryOp::Neg => "-", UnaryOp::Pos => "+",
+                UnaryOp::Neg => "-",
+                UnaryOp::Pos => "+",
                 _ => unreachable!("guarded by outer match"),
             };
             let wrap = matches!(
@@ -2161,10 +2576,14 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             let r_raw = emit_go(right, operand_ty)?;
             let l = if child_needs_parens(left, *op, true, go_precedence) {
                 format!("({l_raw})")
-            } else { l_raw };
+            } else {
+                l_raw
+            };
             let r = if child_needs_parens(right, *op, false, go_precedence) {
                 format!("({r_raw})")
-            } else { r_raw };
+            } else {
+                r_raw
+            };
             format!("{l} {} {r}", go_binop(*op))
         }
         ExprKind::Unary { op, operand } => {
@@ -2174,14 +2593,23 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 ExprKind::Binary { .. } | ExprKind::Conditional { .. }
             );
             let prefix = match op {
-                UnaryOp::Neg => "-", UnaryOp::Pos => "+",
-                UnaryOp::Not => "!", UnaryOp::BitNot => "^",
+                UnaryOp::Neg => "-",
+                UnaryOp::Pos => "+",
+                UnaryOp::Not => "!",
+                UnaryOp::BitNot => "^",
             };
-            if wrap { format!("{prefix}({inner})") } else { format!("{prefix}{inner}") }
+            if wrap {
+                format!("{prefix}({inner})")
+            } else {
+                format!("{prefix}{inner}")
+            }
         }
         ExprKind::Conditional { .. } => unreachable!("has_ternary guard"),
         ExprKind::Member { object, property } => {
-            format!("{}.{property}", wrap_postfix(object, emit_go(object, InferredType::Unknown)?))
+            format!(
+                "{}.{property}",
+                wrap_postfix(object, emit_go(object, InferredType::Unknown)?)
+            )
         }
         ExprKind::Index { object, index } => {
             format!(
@@ -2206,12 +2634,24 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
 
 fn go_binop(op: BinOp) -> &'static str {
     match op {
-        BinOp::Add => "+", BinOp::Sub => "-", BinOp::Mul => "*", BinOp::Div => "/", BinOp::Mod => "%",
-        BinOp::StrictEq => "==", BinOp::StrictNeq => "!=",
-        BinOp::Lt => "<", BinOp::Gt => ">", BinOp::LtEq => "<=", BinOp::GtEq => ">=",
-        BinOp::And => "&&", BinOp::Or => "||",
-        BinOp::BitAnd => "&", BinOp::BitOr => "|", BinOp::BitXor => "^",
-        BinOp::Shl => "<<", BinOp::Shr => ">>",
+        BinOp::Add => "+",
+        BinOp::Sub => "-",
+        BinOp::Mul => "*",
+        BinOp::Div => "/",
+        BinOp::Mod => "%",
+        BinOp::StrictEq => "==",
+        BinOp::StrictNeq => "!=",
+        BinOp::Lt => "<",
+        BinOp::Gt => ">",
+        BinOp::LtEq => "<=",
+        BinOp::GtEq => ">=",
+        BinOp::And => "&&",
+        BinOp::Or => "||",
+        BinOp::BitAnd => "&",
+        BinOp::BitOr => "|",
+        BinOp::BitXor => "^",
+        BinOp::Shl => "<<",
+        BinOp::Shr => ">>",
         BinOp::UShr => ">>",
     }
 }
@@ -2241,7 +2681,16 @@ fn go_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr
         (Float { bits: 32 }, Float { bits: 64 }) => format!("float64({raw})"),
         (Float { bits: 64 }, Float { bits: 32 }) => format!("float32({raw})"),
         // Integer conversions.
-        (Int { signed: s1, bits: b1 }, Int { signed: s2, bits: b2 }) if (s1, b1) != (s2, b2) => {
+        (
+            Int {
+                signed: s1,
+                bits: b1,
+            },
+            Int {
+                signed: s2,
+                bits: b2,
+            },
+        ) if (s1, b1) != (s2, b2) => {
             let target = go_int_type(s2, b2);
             format!("{target}({raw})")
         }
@@ -2251,8 +2700,14 @@ fn go_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr
 
 fn go_int_type(signed: bool, bits: u8) -> &'static str {
     match (signed, bits) {
-        (true, 8) => "int8", (true, 16) => "int16", (true, 32) => "int32", (true, 64) => "int64",
-        (false, 8) => "uint8", (false, 16) => "uint16", (false, 32) => "uint32", (false, 64) => "uint64",
+        (true, 8) => "int8",
+        (true, 16) => "int16",
+        (true, 32) => "int32",
+        (true, 64) => "int64",
+        (false, 8) => "uint8",
+        (false, 16) => "uint16",
+        (false, 32) => "uint32",
+        (false, 64) => "uint64",
         _ => "int64",
     }
 }
@@ -2264,9 +2719,7 @@ fn has_ternary(expr: &TypedExpr) -> bool {
         ExprKind::Unary { operand, .. } => has_ternary(operand),
         ExprKind::Member { object, .. } => has_ternary(object),
         ExprKind::Index { object, index } => has_ternary(object) || has_ternary(index),
-        ExprKind::Call { callee, args } => {
-            has_ternary(callee) || args.iter().any(has_ternary)
-        }
+        ExprKind::Call { callee, args } => has_ternary(callee) || args.iter().any(has_ternary),
         _ => false,
     }
 }
@@ -2297,10 +2750,14 @@ fn emit_python(expr: &TypedExpr, expected: InferredType) -> String {
             let r_raw = emit_python(right, expected);
             let l = if child_needs_parens(left, *op, true, python_precedence) {
                 format!("({l_raw})")
-            } else { l_raw };
+            } else {
+                l_raw
+            };
             let r = if child_needs_parens(right, *op, false, python_precedence) {
                 format!("({r_raw})")
-            } else { r_raw };
+            } else {
+                r_raw
+            };
             return format!("{l} {} {r}", python_binop(*op));
         }
     }
@@ -2308,18 +2765,27 @@ fn emit_python(expr: &TypedExpr, expected: InferredType) -> String {
     // with the other four emitters.  python_coerce is a no-op for
     // UntypedInt→Float, so `-40` stays as `-40` (Python's dynamic typing
     // and true division make explicit promotion unnecessary).
-    if let ExprKind::Unary { op: op @ (UnaryOp::Neg | UnaryOp::Pos), operand } = &expr.kind {
+    if let ExprKind::Unary {
+        op: op @ (UnaryOp::Neg | UnaryOp::Pos),
+        operand,
+    } = &expr.kind
+    {
         if matches!(expected, InferredType::Float { .. }) {
             let inner = emit_python(operand, expected);
             let prefix = match op {
-                UnaryOp::Neg => "-", UnaryOp::Pos => "+",
+                UnaryOp::Neg => "-",
+                UnaryOp::Pos => "+",
                 _ => unreachable!("guarded by outer match"),
             };
             let wrap = matches!(
                 &operand.kind,
                 ExprKind::Binary { .. } | ExprKind::Conditional { .. }
             );
-            return if wrap { format!("{prefix}({inner})") } else { format!("{prefix}{inner}") };
+            return if wrap {
+                format!("{prefix}({inner})")
+            } else {
+                format!("{prefix}{inner}")
+            };
         }
     }
     let raw = python_emit_node(expr);
@@ -2340,10 +2806,14 @@ fn python_emit_node(expr: &TypedExpr) -> String {
             let r_raw = emit_python(right, operand_ty);
             let l = if child_needs_parens(left, *op, true, python_precedence) {
                 format!("({l_raw})")
-            } else { l_raw };
+            } else {
+                l_raw
+            };
             let r = if child_needs_parens(right, *op, false, python_precedence) {
                 format!("({r_raw})")
-            } else { r_raw };
+            } else {
+                r_raw
+            };
             let raw = format!("{l} {} {r}", python_binop(*op));
             // RFC §5.A: Python's `int` is arbitrary-precision, so an
             // operation that would truncate on a fixed-width unsigned
@@ -2365,7 +2835,11 @@ fn python_emit_node(expr: &TypedExpr) -> String {
                 _ => false,
             };
             if needs_mask {
-                if let InferredType::Int { signed: false, bits } = expr.ty {
+                if let InferredType::Int {
+                    signed: false,
+                    bits,
+                } = expr.ty
+                {
                     if bits <= 32 {
                         let mask: u64 = (1u64 << bits) - 1;
                         return format!("({raw}) & 0x{mask:X}");
@@ -2381,16 +2855,28 @@ fn python_emit_node(expr: &TypedExpr) -> String {
                 ExprKind::Binary { .. } | ExprKind::Conditional { .. }
             );
             let prefix = match op {
-                UnaryOp::Neg => "-", UnaryOp::Pos => "+",
-                UnaryOp::Not => "not ", UnaryOp::BitNot => "~",
+                UnaryOp::Neg => "-",
+                UnaryOp::Pos => "+",
+                UnaryOp::Not => "not ",
+                UnaryOp::BitNot => "~",
             };
-            if wrap { format!("{prefix}({inner})") } else { format!("{prefix}{inner}") }
+            if wrap {
+                format!("{prefix}({inner})")
+            } else {
+                format!("{prefix}{inner}")
+            }
         }
-        ExprKind::Conditional { condition, consequent, alternate } => {
+        ExprKind::Conditional {
+            condition,
+            consequent,
+            alternate,
+        } => {
             let cons = emit_python(consequent, expr.ty);
             let cons = if matches!(&consequent.kind, ExprKind::Conditional { .. }) {
                 format!("({cons})")
-            } else { cons };
+            } else {
+                cons
+            };
             format!(
                 "{cons} if {} else {}",
                 emit_python(condition, InferredType::Bool),
@@ -2398,7 +2884,10 @@ fn python_emit_node(expr: &TypedExpr) -> String {
             )
         }
         ExprKind::Member { object, property } => {
-            format!("{}.{property}", wrap_postfix(object, emit_python(object, InferredType::Unknown)))
+            format!(
+                "{}.{property}",
+                wrap_postfix(object, emit_python(object, InferredType::Unknown))
+            )
         }
         ExprKind::Index { object, index } => {
             format!(
@@ -2408,7 +2897,10 @@ fn python_emit_node(expr: &TypedExpr) -> String {
             )
         }
         ExprKind::Call { callee, args } => {
-            let a: Vec<_> = args.iter().map(|a| emit_python(a, InferredType::Unknown)).collect();
+            let a: Vec<_> = args
+                .iter()
+                .map(|a| emit_python(a, InferredType::Unknown))
+                .collect();
             format!(
                 "{}({})",
                 wrap_postfix(callee, emit_python(callee, InferredType::Unknown)),
@@ -2431,12 +2923,25 @@ fn python_coerce(raw: String, from: InferredType, to: InferredType) -> String {
 
 fn python_binop(op: BinOp) -> &'static str {
     match op {
-        BinOp::Add => "+", BinOp::Sub => "-", BinOp::Mul => "*", BinOp::Div => "/", BinOp::Mod => "%",
-        BinOp::StrictEq => "==", BinOp::StrictNeq => "!=",
-        BinOp::Lt => "<", BinOp::Gt => ">", BinOp::LtEq => "<=", BinOp::GtEq => ">=",
-        BinOp::And => "and", BinOp::Or => "or",
-        BinOp::BitAnd => "&", BinOp::BitOr => "|", BinOp::BitXor => "^",
-        BinOp::Shl => "<<", BinOp::Shr => ">>", BinOp::UShr => ">>",
+        BinOp::Add => "+",
+        BinOp::Sub => "-",
+        BinOp::Mul => "*",
+        BinOp::Div => "/",
+        BinOp::Mod => "%",
+        BinOp::StrictEq => "==",
+        BinOp::StrictNeq => "!=",
+        BinOp::Lt => "<",
+        BinOp::Gt => ">",
+        BinOp::LtEq => "<=",
+        BinOp::GtEq => ">=",
+        BinOp::And => "and",
+        BinOp::Or => "or",
+        BinOp::BitAnd => "&",
+        BinOp::BitOr => "|",
+        BinOp::BitXor => "^",
+        BinOp::Shl => "<<",
+        BinOp::Shr => ">>",
+        BinOp::UShr => ">>",
     }
 }
 
@@ -2465,15 +2970,23 @@ fn emit_c(expr: &TypedExpr, expected: InferredType) -> String {
             let r_raw = emit_c(right, expected);
             let l = if child_needs_parens(left, *op, true, ecma_precedence) {
                 format!("({l_raw})")
-            } else { l_raw };
+            } else {
+                l_raw
+            };
             let r = if child_needs_parens(right, *op, false, ecma_precedence) {
                 format!("({r_raw})")
-            } else { r_raw };
+            } else {
+                r_raw
+            };
             return format!("{l} {} {r}", cpp_binop(*op));
         }
     }
     // Push-down: Unary{Neg|Pos} in float context — same rationale as emit_cpp.
-    if let ExprKind::Unary { op: op @ (UnaryOp::Neg | UnaryOp::Pos), operand } = &expr.kind {
+    if let ExprKind::Unary {
+        op: op @ (UnaryOp::Neg | UnaryOp::Pos),
+        operand,
+    } = &expr.kind
+    {
         if matches!(expected, InferredType::Float { .. }) {
             let inner = emit_c(operand, expected);
             let wrap = matches!(
@@ -2523,10 +3036,14 @@ fn c_emit_node(expr: &TypedExpr) -> String {
             let r_raw = emit_c(right, operand_ty);
             let l = if child_needs_parens(left, *op, true, ecma_precedence) {
                 format!("({l_raw})")
-            } else { l_raw };
+            } else {
+                l_raw
+            };
             let r = if child_needs_parens(right, *op, false, ecma_precedence) {
                 format!("({r_raw})")
-            } else { r_raw };
+            } else {
+                r_raw
+            };
             format!("{l} {} {r}", cpp_binop(*op))
         }
         ExprKind::Unary { op, operand } => {
@@ -2541,7 +3058,11 @@ fn c_emit_node(expr: &TypedExpr) -> String {
                 format!("{}{inner}", cpp_unary(*op))
             }
         }
-        ExprKind::Conditional { condition, consequent, alternate } => {
+        ExprKind::Conditional {
+            condition,
+            consequent,
+            alternate,
+        } => {
             format!(
                 "{} ? {} : {}",
                 emit_c(condition, InferredType::Bool),
@@ -2550,7 +3071,10 @@ fn c_emit_node(expr: &TypedExpr) -> String {
             )
         }
         ExprKind::Member { object, property } => {
-            format!("{}.{property}", wrap_postfix(object, emit_c(object, InferredType::Unknown)))
+            format!(
+                "{}.{property}",
+                wrap_postfix(object, emit_c(object, InferredType::Unknown))
+            )
         }
         ExprKind::Index { object, index } => {
             format!(
@@ -2560,7 +3084,10 @@ fn c_emit_node(expr: &TypedExpr) -> String {
             )
         }
         ExprKind::Call { callee, args } => {
-            let a: Vec<_> = args.iter().map(|a| emit_c(a, InferredType::Unknown)).collect();
+            let a: Vec<_> = args
+                .iter()
+                .map(|a| emit_c(a, InferredType::Unknown))
+                .collect();
             format!(
                 "{}({})",
                 wrap_postfix(callee, emit_c(callee, InferredType::Unknown)),
@@ -2596,19 +3123,42 @@ mod tests {
 
     // ── Helpers ─────────────────────────────────────────────────
 
-    fn empty_ctx() -> TypeCtx<'static> { TypeCtx::new() }
-    fn empty_renames() -> HashMap<&'static str, &'static str> { HashMap::new() }
+    fn empty_ctx() -> TypeCtx<'static> {
+        TypeCtx::new()
+    }
+    fn empty_renames() -> HashMap<&'static str, &'static str> {
+        HashMap::new()
+    }
 
     fn tp(expr: &str, target: ExprTarget) -> String {
-        transpile_typed(expr, target, &empty_ctx(), &empty_renames(), InferredType::Unknown).unwrap()
+        transpile_typed(
+            expr,
+            target,
+            &empty_ctx(),
+            &empty_renames(),
+            InferredType::Unknown,
+        )
+        .unwrap()
     }
 
     fn tp_err(expr: &str, target: ExprTarget) -> String {
-        transpile_typed(expr, target, &empty_ctx(), &empty_renames(), InferredType::Unknown).unwrap_err().to_string()
+        transpile_typed(
+            expr,
+            target,
+            &empty_ctx(),
+            &empty_renames(),
+            InferredType::Unknown,
+        )
+        .unwrap_err()
+        .to_string()
     }
 
-    fn float(bits: u8) -> InferredType { InferredType::Float { bits } }
-    fn int(signed: bool, bits: u8) -> InferredType { InferredType::Int { signed, bits } }
+    fn float(bits: u8) -> InferredType {
+        InferredType::Float { bits }
+    }
+    fn int(signed: bool, bits: u8) -> InferredType {
+        InferredType::Int { signed, bits }
+    }
 
     fn tp_with(expr: &str, target: ExprTarget, ctx: &TypeCtx<'_>) -> String {
         transpile_typed(expr, target, ctx, &empty_renames(), InferredType::Unknown).unwrap()
@@ -2628,7 +3178,10 @@ mod tests {
 
     #[test]
     fn cpp_logical_verbatim() {
-        assert_eq!(tp("engineStop && ignOn", ExprTarget::Cpp), "engineStop && ignOn");
+        assert_eq!(
+            tp("engineStop && ignOn", ExprTarget::Cpp),
+            "engineStop && ignOn"
+        );
     }
 
     #[test]
@@ -2656,7 +3209,10 @@ mod tests {
     #[test]
     fn python_booleans_with_snake_case() {
         assert_eq!(
-            tp("ignition === true && engineStop === false", ExprTarget::Python),
+            tp(
+                "ignition === true && engineStop === false",
+                ExprTarget::Python
+            ),
             "ignition == True and engine_stop == False"
         );
     }
@@ -2665,7 +3221,14 @@ mod tests {
 
     #[test]
     fn reject_arrow_function() {
-        assert!(transpile_typed("() => x + 1", ExprTarget::Cpp, &empty_ctx(), &empty_renames(), InferredType::Unknown).is_err());
+        assert!(transpile_typed(
+            "() => x + 1",
+            ExprTarget::Cpp,
+            &empty_ctx(),
+            &empty_renames(),
+            InferredType::Unknown
+        )
+        .is_err());
     }
 
     #[test]
@@ -2681,7 +3244,10 @@ mod tests {
 
     #[test]
     fn cpp_shift_and_mask() {
-        assert_eq!(tp("(raw[1] >> 4) & 0x0F", ExprTarget::Cpp), "raw[1] >> 4 & 0x0F");
+        assert_eq!(
+            tp("(raw[1] >> 4) & 0x0F", ExprTarget::Cpp),
+            "raw[1] >> 4 & 0x0F"
+        );
     }
 
     #[test]
@@ -2731,7 +3297,13 @@ mod tests {
     fn c_numeric_compare_unchanged() {
         // Sanity: numeric comparison is NOT routed through strcmp.
         let mut ctx = TypeCtx::new();
-        ctx.insert_var("rpm", InferredType::Int { signed: false, bits: 16 });
+        ctx.insert_var(
+            "rpm",
+            InferredType::Int {
+                signed: false,
+                bits: 16,
+            },
+        );
         assert_eq!(tp_with("rpm > 8000", ExprTarget::C, &ctx), "rpm > 8000");
     }
 
@@ -2739,14 +3311,16 @@ mod tests {
     fn c_string_compare_within_logical_combo() {
         // rpm_validator real expression: numeric == on rpm, string !== on engineState.
         let mut ctx = TypeCtx::new();
-        ctx.insert_var("rpm", InferredType::Int { signed: false, bits: 16 });
+        ctx.insert_var(
+            "rpm",
+            InferredType::Int {
+                signed: false,
+                bits: 16,
+            },
+        );
         ctx.insert_var("engineState", InferredType::Str);
         assert_eq!(
-            tp_with(
-                "rpm === 0 || engineState !== 'STOP'",
-                ExprTarget::C,
-                &ctx
-            ),
+            tp_with("rpm === 0 || engineState !== 'STOP'", ExprTarget::C, &ctx),
             "rpm == 0 || strcmp(engine_state, \"STOP\") != 0"
         );
     }
@@ -2759,7 +3333,10 @@ mod tests {
 
     #[test]
     fn kotlin_bitwise_shift_infix() {
-        assert_eq!(tp("(byte >> 4) & 0x0F", ExprTarget::Kotlin), "byte shr 4 and 0x0F");
+        assert_eq!(
+            tp("(byte >> 4) & 0x0F", ExprTarget::Kotlin),
+            "byte shr 4 and 0x0F"
+        );
     }
 
     #[test]
@@ -2805,17 +3382,26 @@ mod tests {
 
     #[test]
     fn kotlin_nested_bitwise_not() {
-        assert_eq!(tp("~(a & (b | c))", ExprTarget::Kotlin), "(a and (b or c)).inv()");
+        assert_eq!(
+            tp("~(a & (b | c))", ExprTarget::Kotlin),
+            "(a and (b or c)).inv()"
+        );
     }
 
     #[test]
     fn cpp_chained_member_access() {
-        assert_eq!(tp("_event.data.payload", ExprTarget::Cpp), "_event.data.payload");
+        assert_eq!(
+            tp("_event.data.payload", ExprTarget::Cpp),
+            "_event.data.payload"
+        );
     }
 
     #[test]
     fn cpp_function_call_multi_args() {
-        assert_eq!(tp("computeKey(seed, 0x01)", ExprTarget::Cpp), "computeKey(seed, 0x01)");
+        assert_eq!(
+            tp("computeKey(seed, 0x01)", ExprTarget::Cpp),
+            "computeKey(seed, 0x01)"
+        );
     }
 
     #[test]
@@ -2837,7 +3423,10 @@ mod tests {
     #[test]
     fn kotlin_complex_codec_expression() {
         assert_eq!(
-            tp("(raw[2] << 16) | (raw[3] << 8) | raw[4]", ExprTarget::Kotlin),
+            tp(
+                "(raw[2] << 16) | (raw[3] << 8) | raw[4]",
+                ExprTarget::Kotlin
+            ),
             "raw[2] shl 16 or (raw[3] shl 8) or raw[4]"
         );
     }
@@ -2947,7 +3536,8 @@ mod tests {
             &ctx,
             &empty_renames(),
             float(64),
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(out, "celsius * 9.0 / 5.0 + 32.0");
     }
 
@@ -2960,7 +3550,8 @@ mod tests {
             &ctx,
             &empty_renames(),
             float(64),
-        ).unwrap();
+        )
+        .unwrap();
         // Concrete int `raw` coerced to f64, float literals untouched.
         assert_eq!(out, "raw as f64 * 0.1 - 40.0");
     }
@@ -2974,7 +3565,9 @@ mod tests {
             &ctx,
             &empty_renames(),
             float(64),
-        ).unwrap_err().to_string();
+        )
+        .unwrap_err()
+        .to_string();
         assert!(err.contains("hex/binary/octal"), "error: {err}");
     }
 
@@ -2987,7 +3580,8 @@ mod tests {
             &ctx,
             &empty_renames(),
             InferredType::Bool,
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(out, "temperature > 100.0 && temperature < 200.0");
     }
 
@@ -3001,14 +3595,16 @@ mod tests {
             &ctx,
             &empty_renames(),
             int(true, 32),
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(out, "counter + 1");
     }
 
     #[test]
     fn rust_top_level_bare_integer_literal_promotes() {
         let ctx = empty_ctx();
-        let out = transpile_typed("42", ExprTarget::Rust, &ctx, &empty_renames(), float(64)).unwrap();
+        let out =
+            transpile_typed("42", ExprTarget::Rust, &ctx, &empty_renames(), float(64)).unwrap();
         assert_eq!(out, "42.0");
     }
 
@@ -3023,7 +3619,8 @@ mod tests {
             &ctx,
             &empty_renames(),
             float(64),
-        ).unwrap();
+        )
+        .unwrap();
         // Go untyped literal auto-converts, concrete ident needs wrap.
         assert_eq!(out, "float64(raw) * 0.1");
     }
@@ -3044,7 +3641,8 @@ mod tests {
             &ctx,
             &empty_renames(),
             float(64),
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(out, "celsius * 9.0 / 5.0 + 32.0");
     }
 
@@ -3058,7 +3656,8 @@ mod tests {
             &ctx,
             &empty_renames(),
             float(64),
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(out, "9.0 / 5.0 + celsius");
     }
 
@@ -3073,7 +3672,8 @@ mod tests {
             &ctx,
             &empty_renames(),
             float(64),
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(out, "celsius * 9.0 / 5.0 + 32.0");
     }
 
@@ -3086,7 +3686,8 @@ mod tests {
             &ctx,
             &empty_renames(),
             float(64),
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(out, "raw.toDouble() * 0.1");
     }
 
@@ -3101,7 +3702,8 @@ mod tests {
             &ctx,
             &empty_renames(),
             float(64),
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(out, "celsius * 9.0 / 5.0 + 32.0");
     }
 
@@ -3114,7 +3716,8 @@ mod tests {
             &ctx,
             &empty_renames(),
             float(64),
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(out, "9.0 / 5.0 + celsius");
     }
 
@@ -3128,7 +3731,8 @@ mod tests {
             &ctx,
             &empty_renames(),
             float(64),
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(out, "celsius * 9 / 5 + 32");
     }
 
@@ -3142,7 +3746,8 @@ mod tests {
             &ctx,
             &empty_renames(),
             float(64),
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(out, "9 / 5 + celsius");
     }
 
@@ -3154,7 +3759,10 @@ mod tests {
         ctx.insert_var("raw", int(false, 16));
         ctx.insert_func(
             "temp_xform",
-            FuncSig { params: vec![int(false, 16)], ret: float(64) },
+            FuncSig {
+                params: vec![int(false, 16)],
+                ret: float(64),
+            },
         );
         let out = transpile_typed(
             "temp_xform(raw) * 2 + 1",
@@ -3162,7 +3770,8 @@ mod tests {
             &ctx,
             &empty_renames(),
             float(64),
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(out, "temp_xform(raw) * 2.0 + 1.0");
     }
 
@@ -3172,7 +3781,10 @@ mod tests {
         ctx.insert_var("frame", InferredType::Unknown);
         ctx.insert_func(
             "frame.encode",
-            FuncSig { params: vec![], ret: InferredType::Bytes },
+            FuncSig {
+                params: vec![],
+                ret: InferredType::Bytes,
+            },
         );
         // frame.encode()[0] should infer Index on Bytes → u8
         let tokens = tokenize("frame.encode()[0]").unwrap();
@@ -3202,7 +3814,8 @@ mod tests {
             &empty_ctx(),
             &renames,
             InferredType::Unknown,
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(out, "pendingEventData_ + 1");
     }
 
@@ -3216,7 +3829,8 @@ mod tests {
             &empty_ctx(),
             &renames,
             InferredType::Unknown,
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(out, "retryCount_ + 1");
     }
 
@@ -3228,7 +3842,8 @@ mod tests {
         renames.insert("retryCount", "retryCount_");
         let mut ctx = TypeCtx::new();
         ctx.insert_var("retryCount", int(true, 32));
-        let (emitted, ty) = transpile_lvalue("retryCount", ExprTarget::Cpp, &ctx, &renames).unwrap();
+        let (emitted, ty) =
+            transpile_lvalue("retryCount", ExprTarget::Cpp, &ctx, &renames).unwrap();
         assert_eq!(emitted, "retryCount_");
         assert_eq!(ty, int(true, 32));
     }
@@ -3251,7 +3866,8 @@ mod tests {
         let mut ctx = TypeCtx::new();
         ctx.insert_var("frame", InferredType::Unknown);
         ctx.insert_var("frame.msgId", int(false, 32));
-        let (emitted, ty) = transpile_lvalue("frame.msgId", ExprTarget::Rust, &ctx, &renames).unwrap();
+        let (emitted, ty) =
+            transpile_lvalue("frame.msgId", ExprTarget::Rust, &ctx, &renames).unwrap();
         assert_eq!(emitted, "self.frame.msg_id");
         assert_eq!(ty, int(false, 32));
     }
@@ -3287,7 +3903,8 @@ mod tests {
     fn lvalue_field_rename_cpp() {
         // C++: member_name = "frame_", field verbatim
         let (ctx, renames) = codec_field_ctx_and_renames("frame_", "frame_.msgId");
-        let (emitted, ty) = transpile_lvalue("frame.msgId", ExprTarget::Cpp, &ctx, &renames).unwrap();
+        let (emitted, ty) =
+            transpile_lvalue("frame.msgId", ExprTarget::Cpp, &ctx, &renames).unwrap();
         assert_eq!(emitted, "frame_.msgId");
         assert_eq!(ty, int(false, 32));
     }
@@ -3296,7 +3913,8 @@ mod tests {
     fn lvalue_field_rename_kotlin() {
         // Kotlin: member_name = "frame", field verbatim
         let (ctx, renames) = codec_field_ctx_and_renames("frame", "frame.msgId");
-        let (emitted, ty) = transpile_lvalue("frame.msgId", ExprTarget::Kotlin, &ctx, &renames).unwrap();
+        let (emitted, ty) =
+            transpile_lvalue("frame.msgId", ExprTarget::Kotlin, &ctx, &renames).unwrap();
         assert_eq!(emitted, "frame.msgId");
         assert_eq!(ty, int(false, 32));
     }
@@ -3305,7 +3923,8 @@ mod tests {
     fn lvalue_field_rename_rust() {
         // Rust: "self." + member_name + snake_case field
         let (ctx, renames) = codec_field_ctx_and_renames("self.frame", "self.frame.msg_id");
-        let (emitted, ty) = transpile_lvalue("frame.msgId", ExprTarget::Rust, &ctx, &renames).unwrap();
+        let (emitted, ty) =
+            transpile_lvalue("frame.msgId", ExprTarget::Rust, &ctx, &renames).unwrap();
         assert_eq!(emitted, "self.frame.msg_id");
         assert_eq!(ty, int(false, 32));
     }
@@ -3314,7 +3933,8 @@ mod tests {
     fn lvalue_field_rename_go() {
         // Go: "p." + PascalCase member + PascalCase field
         let (ctx, renames) = codec_field_ctx_and_renames("p.Frame", "p.Frame.MsgId");
-        let (emitted, ty) = transpile_lvalue("frame.msgId", ExprTarget::Go, &ctx, &renames).unwrap();
+        let (emitted, ty) =
+            transpile_lvalue("frame.msgId", ExprTarget::Go, &ctx, &renames).unwrap();
         assert_eq!(emitted, "p.Frame.MsgId");
         assert_eq!(ty, int(false, 32));
     }
@@ -3323,7 +3943,8 @@ mod tests {
     fn lvalue_field_rename_python() {
         // Python: "self." + member_name + snake_case field
         let (ctx, renames) = codec_field_ctx_and_renames("self.frame", "self.frame.msg_id");
-        let (emitted, ty) = transpile_lvalue("frame.msgId", ExprTarget::Python, &ctx, &renames).unwrap();
+        let (emitted, ty) =
+            transpile_lvalue("frame.msgId", ExprTarget::Python, &ctx, &renames).unwrap();
         assert_eq!(emitted, "self.frame.msg_id");
         assert_eq!(ty, int(false, 32));
     }
@@ -3353,7 +3974,10 @@ mod tests {
     fn lvalue_rejects_nested_member() {
         let err = transpile_lvalue("a.b.c", ExprTarget::Cpp, &empty_ctx(), &empty_renames());
         assert!(err.is_err());
-        assert!(err.unwrap_err().to_string().contains("must be a bare identifier"));
+        assert!(err
+            .unwrap_err()
+            .to_string()
+            .contains("must be a bare identifier"));
     }
 
     #[test]

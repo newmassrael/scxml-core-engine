@@ -62,12 +62,7 @@ impl<E> Located<E> {
     /// `line` and `col` are optional so XSD-level errors (line only),
     /// file-scoped errors (neither), and node-precise errors (both)
     /// share a single constructor.
-    pub fn new(
-        error: E,
-        file: impl Into<String>,
-        line: Option<u32>,
-        col: Option<u32>,
-    ) -> Self {
+    pub fn new(error: E, file: impl Into<String>, line: Option<u32>, col: Option<u32>) -> Self {
         Self {
             error,
             location: SourceLocation {
@@ -77,7 +72,6 @@ impl<E> Located<E> {
             },
         }
     }
-
 }
 
 impl<E: std::fmt::Display> std::fmt::Display for Located<E> {
@@ -410,10 +404,7 @@ pub enum ValidationError {
     /// each other before any runtime data flows. See
     /// `claudedocs/rfc-forge-bytes-bounded.md` §3 B1+B4.
     #[error("{procedure}: {detail}")]
-    BytesMaxSizeViolation {
-        procedure: String,
-        detail: String,
-    },
+    BytesMaxSizeViolation { procedure: String, detail: String },
 
     /// RFC §5.A: a local `<sce:var>` or `<sce:foreach item>` reuses
     /// the name of a parameter (or another local) inside the same
@@ -428,17 +419,16 @@ pub enum ValidationError {
     /// variable. `target` is the offending l-value text;
     /// `restriction` names which rule was hit.
     #[error("<sce:assign target=\"{target}\">: {restriction}")]
-    AlgorithmLvalueUnsupported {
-        target: String,
-        restriction: String,
-    },
+    AlgorithmLvalueUnsupported { target: String, restriction: String },
 
     /// RFC §5.A: an algorithm declares a non-void `<sce:return type>`
     /// in the signature but the body contains no terminal
     /// `<sce:return expr>` along every code path. v1 detects only the
     /// trivial case (last statement is not a return); flow-sensitive
     /// path tracking lands with §5.F (A4).
-    #[error("algorithm: signature declares return type but body's last statement is not <sce:return>")]
+    #[error(
+        "algorithm: signature declares return type but body's last statement is not <sce:return>"
+    )]
     AlgorithmReturnMissing,
 
     /// RFC §5.A + §5.L line 2642-2647 (C7-lowering): `<sce:foreach
@@ -488,10 +478,7 @@ pub enum ValidationError {
     /// alias is read-only; `<sce:call target="bc_alias.insert">` or
     /// `bc_alias.remove` violates the purity contract.
     #[error("algorithm: <sce:call target=\"{target}\">: mutating bounded-collection method '{method}' is forbidden from algorithm body (algorithms are pure per RFC §5.A)")]
-    AlgorithmBcMutationForbidden {
-        target: String,
-        method: String,
-    },
+    AlgorithmBcMutationForbidden { target: String, method: String },
 
     /// RFC §5.A v1 + §5.L line 2642-2647 (C7-lowering): `<sce:foreach
     /// in="<bc-alias>">` body declares a `<sce:var name="..."
@@ -499,10 +486,7 @@ pub enum ValidationError {
     /// loop item is a `u8`. BC iteration carries the element-type, not
     /// `uint8`; the body cannot rely on `u8` semantics.
     #[error("algorithm: <sce:foreach in=\"{src}\"> over bounded-collection: body's <sce:var name=\"{var_name}\" type=\"uint8\"> uses the bytes-iteration pattern but '{src}' is a bounded-collection (item carries element-type)")]
-    AlgorithmForeachSourceBcWithBytesItemType {
-        src: String,
-        var_name: String,
-    },
+    AlgorithmForeachSourceBcWithBytesItemType { src: String, var_name: String },
 
     /// RFC §5.A line 311 (C7-lowering): dotted `<sce:call
     /// target="alias.method">` argument count does not match the
@@ -625,9 +609,7 @@ pub enum ValidationError {
          default=\"true\" to the intended arm. (The catch-all <sce:default> \
          element is a separate concept and does not satisfy this requirement.)"
     )]
-    CodecVariantNoDefaultArm {
-        codec: String,
-    },
+    CodecVariantNoDefaultArm { codec: String },
 
     /// RFC §5.B present-if primitive (B1-δ): the predicate on a
     /// `sce:present-if` attribute references a field that is **not**
@@ -691,10 +673,7 @@ pub enum ValidationError {
     #[error(
         "codec '{codec}': tlv-chain field '{field}' is missing the required `max-depth` attribute — TLV chain decoders need a build-time bound to size their working set and enforce iterative-only parse (RFC §5.B line 488); add `max-depth=\"N\"` for some N > 0"
     )]
-    CodecTlvChainDepthUnspecified {
-        codec: String,
-        field: String,
-    },
+    CodecTlvChainDepthUnspecified { codec: String, field: String },
 
     /// RFC §5.B B3 DMA alignment primitive: a field with
     /// `sce:dma-burst-align="N"` cannot be honored at build time —
@@ -1908,10 +1887,7 @@ pub enum ValidationError {
          watching-zenoh RFC §5.M line 2976-2981 — codegen invariant violation: per-peer quota check must use the handshake-derived ZID as the peer key, not the wire source address (defends against UDP source-IP spoofing on `established_session` links). \
          In well-formed templates the reassembly variant always emits the 16-byte ZID typedef (the cross-doc validator `reassembly/untrusted-link-binding` gates non-`established_session` bindings upstream), so this diagnostic fires only on template regression; report at https://github.com/newmassrael/scxml-core-engine/issues"
     )]
-    ReassemblyPeerIdNotZidOnEstablishedSession {
-        pool_name: String,
-        language: String,
-    },
+    ReassemblyPeerIdNotZidOnEstablishedSession { pool_name: String, language: String },
 
     /// watching-zenoh RFC §5.C lines 849-856 verbatim
     /// (`link/listener-link-not-paired-with-established-sibling`) —
@@ -1942,10 +1918,7 @@ pub enum ValidationError {
          watching-zenoh RFC §5.C lines 849-856 — codegen invariant violation: every `session_arming` listener must emit its paired `established_session` sibling so per-peer dispatch retains a stable codegen-time identity (re-introduces OQ-W22 if dropped). \
          In well-formed templates the diagnostic never fires (the per-language link template emits both halves unconditionally when `listener_links` contains this name); report at https://github.com/newmassrael/scxml-core-engine/issues"
     )]
-    LinkListenerLinkNotPairedWithEstablishedSibling {
-        link_name: String,
-        language: String,
-    },
+    LinkListenerLinkNotPairedWithEstablishedSibling { link_name: String, language: String },
 
     /// watching-zenoh RFC §5.M lines 2982-2994 verbatim
     /// (`reassembly/binding-on-unpaired-listener`) — a reassembly-
@@ -2046,10 +2019,7 @@ pub enum ValidationError {
          watching-zenoh RFC §5.K line 2512-2516 — only structural fixes (raise `<sce:slot-size>` or lower `expected_p99_bytes`) are accepted under `forbid`. \
          Repair: remove `<sce:accept-stage-copy-rate>` from link '{link_name}', or change `pool_defaults.stage_copy_policy` to `error` (which permits the opt-out)."
     )]
-    PoolStageCopyAcceptRejectedUnderForbid {
-        machine: String,
-        link_name: String,
-    },
+    PoolStageCopyAcceptRejectedUnderForbid { machine: String, link_name: String },
 
     /// watching-zenoh RFC §5.L lines 2566-2567 +  2650
     /// (`collection/element-type-not-a-kind`) — `<sce:element-type>NAME`
@@ -2383,7 +2353,6 @@ pub enum ValidationError {
         /// file's parent).
         resolved_dir: String,
     },
-
 }
 
 /// watching-zenoh RFC §5.E B7-η' Atomic A2 callback-path failure
@@ -2538,7 +2507,9 @@ pub enum ImportError {
     FileNotFound { src: String, searched: String },
 
     /// The declared kind on `<sce:import>` doesn't match the file's actual kind.
-    #[error("<sce:import src=\"{src}\" kind=\"{declared}\">: actual kind is '{actual}' (mismatch)")]
+    #[error(
+        "<sce:import src=\"{src}\" kind=\"{declared}\">: actual kind is '{actual}' (mismatch)"
+    )]
     KindMismatch {
         src: String,
         declared: String,
@@ -2551,10 +2522,7 @@ pub enum ImportError {
 
     /// Cannot read the imported file.
     #[error("<sce:import src=\"{src}\">: cannot read: {source}")]
-    ReadError {
-        src: String,
-        source: std::io::Error,
-    },
+    ReadError { src: String, source: std::io::Error },
 }
 
 // ── Stage 6: Dependency manifest ───────────────────────────────

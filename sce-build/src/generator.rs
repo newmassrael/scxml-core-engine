@@ -137,20 +137,14 @@ fn reject_mesh_rpc_in_unsupported_lang(
 // distributed `<parallel>` whose Root lives in a different machine
 // has `partition_barrier_timeouts` empty here (only Root-owning
 // machines carry an entry); NonRoot machines never reach this gate.
-fn reject_barrier_timeout_without_handler(
-    model: &SCXMLModel,
-) -> Result<(), GenerateError> {
+fn reject_barrier_timeout_without_handler(model: &SCXMLModel) -> Result<(), GenerateError> {
     if model.partition_barrier_timeouts.is_empty() {
         return Ok(());
     }
     if model.events.contains("error.communication") {
         return Ok(());
     }
-    let parallels: Vec<String> = model
-        .partition_barrier_timeouts
-        .keys()
-        .cloned()
-        .collect();
+    let parallels: Vec<String> = model.partition_barrier_timeouts.keys().cloned().collect();
     Err(GenerateError::UnsupportedFeature(format!(
         "machine '{}' declares `barrier_timeout_ms:` on a Root partition \
          for <parallel id=\"{}\"> but the SCXML has no transition for \
@@ -185,9 +179,7 @@ fn reject_barrier_timeout_without_handler(
 // covers both rows because the model flag is set whenever the
 // machine declares `liveliness:` — there is no `liveliness:` shape
 // that produces row 13 without also authorizing row 8.
-fn reject_liveliness_without_handler(
-    model: &SCXMLModel,
-) -> Result<(), GenerateError> {
+fn reject_liveliness_without_handler(model: &SCXMLModel) -> Result<(), GenerateError> {
     if !model.machine_liveliness_opt_in {
         return Ok(());
     }
@@ -219,7 +211,11 @@ fn reject_liveliness_without_handler(
 /// Default `false` keeps std-coupled output for the existing 200+ AOT
 /// W3C fixtures byte-identical. The B-β (`818de8eb`) CLI flag
 /// `--no-std` threads through `cmd_generate` to this parameter.
-pub fn generate(model: &SCXMLModel, template_dir: &Path, no_std: bool) -> Result<String, GenerateError> {
+pub fn generate(
+    model: &SCXMLModel,
+    template_dir: &Path,
+    no_std: bool,
+) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Rust")?;
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
@@ -242,7 +238,11 @@ pub fn generate_with_templates(
     render_rust(&env, model, no_std)
 }
 
-fn render_rust(env: &Environment, model: &SCXMLModel, no_std: bool) -> Result<String, GenerateError> {
+fn render_rust(
+    env: &Environment,
+    model: &SCXMLModel,
+    no_std: bool,
+) -> Result<String, GenerateError> {
     let machine_name = filters::to_pascal_case(model.name.clone());
 
     // SCE Forge: render inline kind declarations as Rust code fragments.
@@ -497,10 +497,9 @@ fn register_kotlin_dynamic_filters(env: &mut Environment, model: &SCXMLModel) {
     let branch_events = kotlin::collect_branch_events(&event_tree, "");
 
     let branch_events_clone = branch_events.clone();
-    env.add_filter(
-        "to_event_ref",
-        move |name: String| -> String { kotlin::to_event_ref(&name, &branch_events_clone) },
-    );
+    env.add_filter("to_event_ref", move |name: String| -> String {
+        kotlin::to_event_ref(&name, &branch_events_clone)
+    });
 
     let parallel_regions = model.parallel_regions.clone();
     let states_for_check = model.states.clone();
@@ -608,12 +607,24 @@ impl minijinja::value::Object for KotlinDefaultFn {
             let var_type = var
                 .get_attr("type")
                 .ok()
-                .and_then(|v| if v.is_undefined() { None } else { Some(v.to_string()) })
+                .and_then(|v| {
+                    if v.is_undefined() {
+                        None
+                    } else {
+                        Some(v.to_string())
+                    }
+                })
                 .unwrap_or_default();
             let expr = var
                 .get_attr("expr")
                 .ok()
-                .and_then(|v| if v.is_undefined() { None } else { Some(v.to_string()) })
+                .and_then(|v| {
+                    if v.is_undefined() {
+                        None
+                    } else {
+                        Some(v.to_string())
+                    }
+                })
                 .unwrap_or_default();
 
             let default = if expr.is_empty() {
@@ -693,10 +704,7 @@ pub fn generate_go_with_templates(
 // separate (interpreter-mode) integration and is not used here.
 
 /// Generate Python code from an analyzed SCXMLModel (filesystem-based).
-pub fn generate_python(
-    model: &SCXMLModel,
-    template_dir: &Path,
-) -> Result<String, GenerateError> {
+pub fn generate_python(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Python")?;
     reject_python_unsupported_features(model)?;
     let mut env = new_env();
@@ -740,7 +748,8 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
             crate::model::Invoke::MeshRpc(_) => {
                 return Err(GenerateError::InvalidConfig(
                     "Python codegen rejects <invoke type=\"sce:mesh-rpc\">: \
-                     mesh runtime is C++ alone (mesh_cpp_first_policy)".into(),
+                     mesh runtime is C++ alone (mesh_cpp_first_policy)"
+                        .into(),
                 ));
             }
         }
@@ -769,10 +778,7 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
     // `targetexpr` / non-default `send_type` remain reject-walled —
     // those routes need the cross-session router or HTTP transport
     // (BasicHTTPEventProcessor) that γ-4a/γ-4b lift.
-    fn check_actions(
-        actions: &[crate::model::Action],
-        context: &str,
-    ) -> Result<(), GenerateError> {
+    fn check_actions(actions: &[crate::model::Action], context: &str) -> Result<(), GenerateError> {
         const SUPPORTED_ACTIONS: &[&str] = &[
             "script", "assign", "raise", "log", "if", "foreach", "send", "cancel",
         ];
@@ -829,12 +835,8 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
                 // static or computed event identifier.
                 let is_http_send = action.target.starts_with("http://")
                     || action.target.starts_with("https://")
-                    || action.send_type
-                        == "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor";
-                if action.event.is_empty()
-                    && action.eventexpr.is_empty()
-                    && !is_http_send
-                {
+                    || action.send_type == "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor";
+                if action.event.is_empty() && action.eventexpr.is_empty() && !is_http_send {
                     return Err(GenerateError::InvalidConfig(format!(
                         "Python codegen `<send>` in {} requires `event` or `eventexpr`",
                         context
@@ -927,7 +929,9 @@ fn load_template_strings(
 ) -> Result<(), GenerateError> {
     for (name, content) in templates {
         env.add_template_owned(name.to_string(), content.to_string())
-            .map_err(|e| GenerateError::TemplateLoad(format!("Template parse error in {name}: {e}")))?;
+            .map_err(|e| {
+                GenerateError::TemplateLoad(format!("Template parse error in {name}: {e}"))
+            })?;
     }
     Ok(())
 }
@@ -979,11 +983,13 @@ fn load_templates_recursive(
     base_dir: &Path,
     current_dir: &Path,
 ) -> Result<(), GenerateError> {
-    let entries = std::fs::read_dir(current_dir)
-        .map_err(|e| GenerateError::TemplateLoad(format!("Cannot read {}: {e}", current_dir.display())))?;
+    let entries = std::fs::read_dir(current_dir).map_err(|e| {
+        GenerateError::TemplateLoad(format!("Cannot read {}: {e}", current_dir.display()))
+    })?;
 
     for entry in entries {
-        let entry = entry.map_err(|e| GenerateError::TemplateLoad(format!("Dir entry error: {e}")))?;
+        let entry =
+            entry.map_err(|e| GenerateError::TemplateLoad(format!("Dir entry error: {e}")))?;
         let path = entry.path();
         if path.is_dir() {
             load_templates_recursive(env, base_dir, &path)?;
@@ -992,10 +998,16 @@ fn load_templates_recursive(
                 .strip_prefix(base_dir)
                 .map_err(|e| GenerateError::TemplateLoad(format!("Path error: {e}")))?;
             let template_name = rel.to_string_lossy().replace('\\', "/");
-            let content = std::fs::read_to_string(&path)
-                .map_err(|e| GenerateError::TemplateLoad(format!("Cannot read template {}: {e}", path.display())))?;
+            let content = std::fs::read_to_string(&path).map_err(|e| {
+                GenerateError::TemplateLoad(format!("Cannot read template {}: {e}", path.display()))
+            })?;
             env.add_template_owned(template_name, content)
-                .map_err(|e| GenerateError::TemplateLoad(format!("Template parse error in {}: {e}", path.display())))?;
+                .map_err(|e| {
+                    GenerateError::TemplateLoad(format!(
+                        "Template parse error in {}: {e}",
+                        path.display()
+                    ))
+                })?;
         }
     }
     Ok(())
@@ -1108,15 +1120,14 @@ fn postprocess_cpp_inl(code: &str) -> String {
         }
 
         // Strip the base indent (4 spaces) from lines that have it.
-        let line = if raw_line.len() >= BASE_INDENT
-            && raw_line[..BASE_INDENT].chars().all(|c| c == ' ')
-        {
-            raw_line[BASE_INDENT..].to_string()
-        } else {
-            // Line has less than BASE_INDENT leading spaces (e.g., orphaned action code at col 0).
-            // Will be re-indented below based on brace depth.
-            raw_line.to_string()
-        };
+        let line =
+            if raw_line.len() >= BASE_INDENT && raw_line[..BASE_INDENT].chars().all(|c| c == ' ') {
+                raw_line[BASE_INDENT..].to_string()
+            } else {
+                // Line has less than BASE_INDENT leading spaces (e.g., orphaned action code at col 0).
+                // Will be re-indented below based on brace depth.
+                raw_line.to_string()
+            };
 
         let trimmed = line.trim().to_string();
         if trimmed.is_empty() {
@@ -1142,8 +1153,9 @@ fn postprocess_cpp_inl(code: &str) -> String {
         // If this line is at 0 indent but should be deeper (orphaned action code),
         // re-indent it to match the current brace depth.
         let output_line = if line_indent == 0 && effective_depth > 0 {
-            let indent_str: String =
-                std::iter::repeat(' ').take(effective_depth as usize * 4).collect();
+            let indent_str: String = std::iter::repeat(' ')
+                .take(effective_depth as usize * 4)
+                .collect();
             format!("{indent_str}{trimmed}")
         } else {
             line
@@ -1646,13 +1658,25 @@ mod tests {
         };
         match err {
             GenerateError::UnsupportedFeature(msg) => {
-                assert!(msg.contains("barrier_timeout_ms"), "msg cites the knob: {msg}");
-                assert!(msg.contains("error.communication"), "msg names the missing handler: {msg}");
-                assert!(msg.contains("PARALLEL_BARRIER_TIMEOUT"), "msg names §16.7 row 6 reason: {msg}");
+                assert!(
+                    msg.contains("barrier_timeout_ms"),
+                    "msg cites the knob: {msg}"
+                );
+                assert!(
+                    msg.contains("error.communication"),
+                    "msg names the missing handler: {msg}"
+                );
+                assert!(
+                    msg.contains("PARALLEL_BARRIER_TIMEOUT"),
+                    "msg names §16.7 row 6 reason: {msg}"
+                );
                 // Machine name is whatever the test parser assigned via
                 // `parse_string(..., "brake")`; the assertion only cares
                 // that SOME machine identifier is surfaced.
-                assert!(msg.contains("machine"), "msg names the compiled machine: {msg}");
+                assert!(
+                    msg.contains("machine"),
+                    "msg names the compiled machine: {msg}"
+                );
                 assert!(msg.contains("root"), "msg names the parallel id: {msg}");
             }
             other => panic!("expected UnsupportedFeature, got {other:?}"),
@@ -1670,9 +1694,7 @@ mod tests {
         // surface through `error.communication` and share the same
         // silent-broken failure mode. Partitioned and non-partitioned
         // fixtures both probed so the gate is never dead for either axis.
-        for &(context_present, label) in
-            &[(true, "partitioned"), (false, "non-partitioned")]
-        {
+        for &(context_present, label) in &[(true, "partitioned"), (false, "non-partitioned")] {
             let mut model = parse(PARALLEL_FINAL_SCXML);
             crate::analyzer::analyze(&mut model, "pf_fixture.scxml");
             model.partition_context_present = context_present;
@@ -1698,7 +1720,10 @@ mod tests {
             };
             match err {
                 GenerateError::UnsupportedFeature(msg) => {
-                    assert!(msg.contains("liveliness"), "{label}: msg cites the knob: {msg}");
+                    assert!(
+                        msg.contains("liveliness"),
+                        "{label}: msg cites the knob: {msg}"
+                    );
                     assert!(
                         msg.contains("error.communication"),
                         "{label}: msg names the missing handler: {msg}"

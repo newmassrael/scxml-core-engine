@@ -122,8 +122,8 @@ fn generate_rust_with_fixture(fixture_name: &str, fixture: &str, extra_args: &[&
 /// `// SCE-MAP: ...` forms. Counts each so a template edit that drops
 /// one form (regressing the dual-emit contract) is observable.
 fn assert_dual_emit(body: &str, label: &str) {
-    let doc_count = body.matches("#[doc = \"SCE-MAP:").count()
-        + body.matches("#![doc = \"SCE-MAP:").count();
+    let doc_count =
+        body.matches("#[doc = \"SCE-MAP:").count() + body.matches("#![doc = \"SCE-MAP:").count();
     let comment_count = body.matches("// SCE-MAP:").count();
     assert!(
         doc_count >= 1,
@@ -151,8 +151,7 @@ fn assert_dual_emit(body: &str, label: &str) {
 
 #[test]
 fn rust_default_profile_emits_both_marker_forms() {
-    let body =
-        generate_rust_with_fixture("default_path", STATECHART_FIXTURE_WITH_LOG, &[]);
+    let body = generate_rust_with_fixture("default_path", STATECHART_FIXTURE_WITH_LOG, &[]);
     assert_dual_emit(&body, "rust default (std)");
 }
 
@@ -178,8 +177,7 @@ fn marker_dual_emit_is_strict_pairing() {
     let lines: Vec<&str> = body.lines().collect();
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim_start();
-        if !trimmed.starts_with("#[doc = \"SCE-MAP:")
-            && !trimmed.starts_with("#![doc = \"SCE-MAP:")
+        if !trimmed.starts_with("#[doc = \"SCE-MAP:") && !trimmed.starts_with("#![doc = \"SCE-MAP:")
         {
             continue;
         }

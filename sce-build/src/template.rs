@@ -121,9 +121,7 @@ pub enum TemplateError {
     /// a deterministic `add_attribute` fix so repair agents can
     /// insert the missing attribute without re-parsing the
     /// template file.
-    #[error(
-        "<sce:use template=\"{template}\">: missing required parameter '{param}'"
-    )]
+    #[error("<sce:use template=\"{template}\">: missing required parameter '{param}'")]
     MissingParam { template: String, param: String },
 
     /// `<sce:use>` attribute does not match any `<sce:param name>`
@@ -228,7 +226,9 @@ pub fn expand(
     // the SCE jinja2 templates and the host SCXML, leaving fragment
     // edits as silent no-ops — see tc8-harness feedback report.
     let mut deps: Vec<PathBuf> = Vec::new();
-    let (out, map) = expand_impl(content, &self_file, base_dir, 0, &mut stack, input_map, &mut deps)?;
+    let (out, map) = expand_impl(
+        content, &self_file, base_dir, 0, &mut stack, input_map, &mut deps,
+    )?;
     Ok((out, map, deps))
 }
 
@@ -303,8 +303,7 @@ fn expand_impl(
             .filter(|v| !v.is_empty())
             .ok_or((TemplateError::MissingTemplateAttribute, loc))?;
 
-        let resolved =
-            resolve_template_path(template_attr, base_dir).map_err(|e| (e, loc))?;
+        let resolved = resolve_template_path(template_attr, base_dir).map_err(|e| (e, loc))?;
 
         // Cycle detection via canonicalised path. Also deduplicates
         // aliased forms (`./foo.xml`, `foo.xml`, `../dir/foo.xml`).
@@ -383,9 +382,8 @@ fn expand_impl(
         // node. Ranges are byte-range pairs into `expanded_template`;
         // each segment composes the matching slice of
         // `expanded_map` into the outer map.
-        let body_ranges =
-            extract_template_body_ranges(&expanded_template, template_attr)
-                .map_err(|e| (e, loc))?;
+        let body_ranges = extract_template_body_ranges(&expanded_template, template_attr)
+            .map_err(|e| (e, loc))?;
         for range in &body_ranges {
             let seg_splice_start = out.len();
             out.push_str(&expanded_template[range.start..range.end]);
@@ -501,11 +499,9 @@ fn substitute_into_template_with_map(
     caller_row: u32,
     caller_col: u32,
 ) -> Result<(String, PositionMap), TemplateError> {
-    let doc = roxmltree::Document::parse(template_raw).map_err(|e| {
-        TemplateError::Malformed {
-            template: template_href.to_string(),
-            detail: e.to_string(),
-        }
+    let doc = roxmltree::Document::parse(template_raw).map_err(|e| TemplateError::Malformed {
+        template: template_href.to_string(),
+        detail: e.to_string(),
     })?;
     let root = doc.root_element();
 
@@ -676,12 +672,11 @@ fn extract_template_body_ranges(
     expanded_template: &str,
     template_href: &str,
 ) -> Result<Vec<std::ops::Range<usize>>, TemplateError> {
-    let doc = roxmltree::Document::parse(expanded_template).map_err(|e| {
-        TemplateError::Malformed {
+    let doc =
+        roxmltree::Document::parse(expanded_template).map_err(|e| TemplateError::Malformed {
             template: template_href.to_string(),
             detail: format!("expanded template is malformed: {}", e),
-        }
-    })?;
+        })?;
     let root = doc.root_element();
     if !is_sce(&root, "template") {
         return Err(TemplateError::Malformed {
@@ -989,8 +984,8 @@ mod tests {
         // element exists — must parse to tell, and pass unchanged.
         let src = "<root description=\"how to sce:use this\"/>";
         let input_map = PositionMap::identity("inline", src);
-        let (out, map, _deps) = expand(src, "inline", None, &input_map)
-            .expect("no sce:use elements");
+        let (out, map, _deps) =
+            expand(src, "inline", None, &input_map).expect("no sce:use elements");
         assert_eq!(out, src);
         assert!(map.is_identity());
     }
@@ -1175,7 +1170,9 @@ mod tests {
         )
         .unwrap_err();
         match err.0 {
-            TemplateError::UnknownParam { param, declared, .. } => {
+            TemplateError::UnknownParam {
+                param, declared, ..
+            } => {
                 assert_eq!(param, "typo");
                 assert_eq!(declared, "port");
             }
@@ -1207,7 +1204,8 @@ mod tests {
             "bad.xml",
             r#"<not-a-template><x/></not-a-template>"#,
         );
-        let main_src = r#"<root xmlns:sce="http://sce.dev/ext"><sce:use template="bad.xml"/></root>"#;
+        let main_src =
+            r#"<root xmlns:sce="http://sce.dev/ext"><sce:use template="bad.xml"/></root>"#;
         let main_path = write(tmp.path(), "main.xml", main_src);
         let input_map = PositionMap::identity(main_path.to_str().unwrap(), main_src);
         let err = expand(
@@ -1532,8 +1530,10 @@ mod tests {
         // accept trailing garbage the XSD rejects.
         let anchored = format!("^(?:{})$", xsd_pattern);
         let xsd_re = regex::Regex::new(&anchored).unwrap_or_else(|e| {
-            panic!("XSD paramNameType pattern is not a valid Rust regex: {e} — \
-                    pattern text: {xsd_pattern:?}")
+            panic!(
+                "XSD paramNameType pattern is not a valid Rust regex: {e} — \
+                    pattern text: {xsd_pattern:?}"
+            )
         });
 
         // Extract the C++ raw-string pattern (same raw-string-delimiter
@@ -1542,8 +1542,7 @@ mod tests {
         // XSD regex <-> Rust validator <-> C++ regex all verdict the
         // same cases. Option 2 from the Phase B M2 task spec (pure
         // Rust, no cross-build dependency).
-        let cpp_hdr =
-            include_str!("../../sce/include/parsing/TemplateConstants.h");
+        let cpp_hdr = include_str!("../../sce/include/parsing/TemplateConstants.h");
         let cpp_begin_anchor = r#"R"pat("#;
         let cpp_end_anchor = r#")pat""#;
         let cpp_begin = cpp_hdr.find(cpp_begin_anchor).unwrap_or_else(|| {
@@ -1562,8 +1561,7 @@ mod tests {
                      TemplateConstants.h — closing `)pat\"` not found"
                 )
             });
-        let cpp_pattern =
-            &cpp_hdr[cpp_content_start..cpp_content_start + cpp_content_end_rel];
+        let cpp_pattern = &cpp_hdr[cpp_content_start..cpp_content_start + cpp_content_end_rel];
         let cpp_anchored = format!("^(?:{})$", cpp_pattern);
         let cpp_re = regex::Regex::new(&cpp_anchored).unwrap_or_else(|e| {
             panic!(
@@ -1637,10 +1635,9 @@ mod tests {
     #[test]
     fn cpp_template_depth_matches_rust() {
         let hdr = include_str!("../../sce/include/parsing/TemplateConstants.h");
-        let re = regex::Regex::new(
-            r"inline\s+constexpr\s+int\s+MAX_TEMPLATE_DEPTH\s*=\s*(\d+)\s*;",
-        )
-        .unwrap();
+        let re =
+            regex::Regex::new(r"inline\s+constexpr\s+int\s+MAX_TEMPLATE_DEPTH\s*=\s*(\d+)\s*;")
+                .unwrap();
         let captures = re.captures(hdr).unwrap_or_else(|| {
             panic!(
                 "sce/include/parsing/TemplateConstants.h must declare \
@@ -1708,9 +1705,9 @@ mod tests {
         // xsd_param_name_pattern_agrees_with_rust_impl).
         let xsd = include_str!("../../schemas/sce-forge-ext.xsd");
         let anchor = r#"<xs:simpleType name="paramNameType">"#;
-        let start = xsd.find(anchor).expect(
-            "XSD must declare <xs:simpleType name=\"paramNameType\">",
-        );
+        let start = xsd
+            .find(anchor)
+            .expect("XSD must declare <xs:simpleType name=\"paramNameType\">");
         let after = &xsd[start..];
         let pat_start = after
             .find(r#"<xs:pattern value=""#)
@@ -1771,8 +1768,7 @@ mod tests {
             "Expected 8-way mapping; update rust_to_cpp if the \
              DiagnosticCode set grew or shrank"
         );
-        let expected_cpp: BTreeSet<&str> =
-            rust_to_cpp.iter().map(|(_, cpp)| *cpp).collect();
+        let expected_cpp: BTreeSet<&str> = rust_to_cpp.iter().map(|(_, cpp)| *cpp).collect();
 
         // Scan the C++ header for every `class TemplateXxx : public
         // TemplateError` declaration. Matches the precedent in
@@ -1781,10 +1777,8 @@ mod tests {
         // `struct` or inserts attributes surfaces as a clear
         // no-match rather than a false pass.
         let hdr = include_str!("../../sce/include/parsing/TemplateError.h");
-        let re = regex::Regex::new(
-            r"class\s+(Template\w+)\s*:\s*public\s+TemplateError\b",
-        )
-        .unwrap();
+        let re =
+            regex::Regex::new(r"class\s+(Template\w+)\s*:\s*public\s+TemplateError\b").unwrap();
         let mut found: BTreeSet<String> = BTreeSet::new();
         for captures in re.captures_iter(hdr) {
             found.insert(captures[1].to_string());
@@ -1802,8 +1796,7 @@ mod tests {
              update this drift test in the same commit"
         );
 
-        let found_refs: BTreeSet<&str> =
-            found.iter().map(|s| s.as_str()).collect();
+        let found_refs: BTreeSet<&str> = found.iter().map(|s| s.as_str()).collect();
         assert_eq!(
             found_refs, expected_cpp,
             "TemplateError subtype drift: C++ header = {:?}, \
@@ -1831,7 +1824,8 @@ mod tests {
                  sce-build/src/forge/diagnostic.rs. Keep the wire \
                  name, the Rust variant, and the C++ subtype in \
                  sync — see RFC §1 Q4.",
-                rust_code, cpp_name
+                rust_code,
+                cpp_name
             );
         }
     }
@@ -1871,8 +1865,7 @@ mod tests {
             // `find("};")` accurate enough for a drift guard; if a
             // future rewrite nests braces inside a subtype we update
             // this scanner in the same commit.
-            let class_marker =
-                format!("class {} : public TemplateError", cpp_class);
+            let class_marker = format!("class {} : public TemplateError", cpp_class);
             let class_start = hdr.find(&class_marker).unwrap_or_else(|| {
                 panic!(
                     "class `{}` not found in sce/include/parsing/\
@@ -1881,8 +1874,7 @@ mod tests {
                     cpp_class
                 )
             });
-            let body_start =
-                hdr[class_start..].find('{').unwrap() + class_start + 1;
+            let body_start = hdr[class_start..].find('{').unwrap() + class_start + 1;
             let body_end_rel = hdr[body_start..].find("};").unwrap();
             let body = &hdr[body_start..body_start + body_end_rel];
 
@@ -1894,7 +1886,8 @@ mod tests {
                  DiagnosticCode wire literal exactly so the JSON wire \
                  emitted by `to_json()` agrees with `--error-format=\
                  json`. RFC §W1 / SCE_ERROR_CONTRACT.md §3.",
-                cpp_class, needle
+                cpp_class,
+                needle
             );
         }
 

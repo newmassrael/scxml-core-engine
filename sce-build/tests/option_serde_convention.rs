@@ -22,8 +22,7 @@ use std::path::{Path, PathBuf};
 
 /// Recursively collects paths matching `ext` under `dir`.
 fn collect_with_ext(dir: &Path, ext: &str, out: &mut Vec<PathBuf>) {
-    let entries = fs::read_dir(dir)
-        .unwrap_or_else(|e| panic!("read_dir {}: {}", dir.display(), e));
+    let entries = fs::read_dir(dir).unwrap_or_else(|e| panic!("read_dir {}: {}", dir.display(), e));
     for entry in entries {
         let entry = entry.expect("dir entry");
         let path = entry.path();
@@ -92,8 +91,7 @@ fn option_is_none_fields_must_not_skip_serializing() {
     );
 
     let none_probe =
-        Regex::new(r"\.([A-Za-z_][A-Za-z0-9_]*)\s+is\s+(?:not\s+)?none")
-            .expect("regex compiles");
+        Regex::new(r"\.([A-Za-z_][A-Za-z0-9_]*)\s+is\s+(?:not\s+)?none").expect("regex compiles");
     let mut probed: BTreeSet<String> = BTreeSet::new();
     for file in &jinja_files {
         let content = fs::read_to_string(file).expect("read template");
@@ -118,11 +116,7 @@ fn option_is_none_fields_must_not_skip_serializing() {
     // field declaration, or any non-`#[...]` line terminates the block.
     let skip_attr_literal = r#"skip_serializing_if = "Option::is_none""#;
 
-    fn attribute_block_contains(
-        lines: &[&str],
-        field_line: usize,
-        needle: &str,
-    ) -> bool {
+    fn attribute_block_contains(lines: &[&str], field_line: usize, needle: &str) -> bool {
         let mut j = field_line;
         while j > 0 {
             j -= 1;

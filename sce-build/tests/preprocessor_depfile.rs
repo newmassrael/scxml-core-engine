@@ -179,7 +179,10 @@ fn preprocessor_deps_records_transitive_sce_use_chain() {
     // depfile-consumer side (build systems are insensitive but the
     // reproducibility contract is cleaner with a fixed shape).
     assert_eq!(deps[0], mid, "DFS order: directly-used fragment first");
-    assert_eq!(deps[1], leaf, "DFS order: transitively-used fragment second");
+    assert_eq!(
+        deps[1], leaf,
+        "DFS order: transitively-used fragment second"
+    );
 }
 
 #[test]

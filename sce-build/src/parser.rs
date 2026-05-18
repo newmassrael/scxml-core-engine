@@ -58,8 +58,7 @@ use std::sync::LazyLock;
 /// is bounded by the template size (static), so the leak does not
 /// grow at runtime.
 pub static RESERVED_CONTEXT_IDS: LazyLock<&'static [&'static str]> = LazyLock::new(|| {
-    const TEMPLATE_SRC: &str =
-        include_str!("../../tools/codegen/templates/state_machine.jinja2");
+    const TEMPLATE_SRC: &str = include_str!("../../tools/codegen/templates/state_machine.jinja2");
     let re = regex::Regex::new(r"using\s+([A-Z][A-Za-z0-9_]*)Type\s*=")
         .expect("RESERVED_CONTEXT_IDS regex must compile");
     let mut ids: Vec<String> = re
@@ -179,9 +178,7 @@ pub fn expand_preprocessors(
                 // post-XInclude coordinates. Phase X RFC §1 Q2; mirrors
                 // the C++ side's `inputMap.lookup` at the useLocation
                 // stamp.
-                let byte = crate::position_map::rowcol_to_offset(
-                    &included, loc.row, loc.col,
-                );
+                let byte = crate::position_map::rowcol_to_offset(&included, loc.row, loc.col);
                 let origin = xinclude_map.lookup(byte);
                 let origin_path = origin.file.to_string_lossy().into_owned();
                 Located::new(
@@ -367,7 +364,10 @@ impl SCXMLParser {
         base_dir: Option<&Path>,
     ) -> Result<SCXMLModel, crate::forge::error::Located<crate::forge::error::ForgeError>> {
         use crate::forge::error::{ForgeError, Located, XmlError};
-        let DocumentLabel { identifier: name, diagnostic_label: diag_label } = label;
+        let DocumentLabel {
+            identifier: name,
+            diagnostic_label: diag_label,
+        } = label;
 
         // W3C SCXML + sce: namespace schema validation. Runs before any
         // structural parsing so malformed documents fail fast at the
@@ -495,7 +495,10 @@ impl SCXMLParser {
             scxml_name: root.attribute("name").unwrap_or("").to_string(),
             initial,
             binding: root.attribute("binding").unwrap_or("early").to_string(),
-            datamodel_type: root.attribute("datamodel").unwrap_or("ecmascript").to_string(),
+            datamodel_type: root
+                .attribute("datamodel")
+                .unwrap_or("ecmascript")
+                .to_string(),
             event_queue_capacity,
             source_location: root_source_location,
             ..Default::default()
@@ -596,8 +599,7 @@ impl SCXMLParser {
         // elements the analyzer walks (variables, states, invokes,
         // donedata). Parser sub-routines no longer set this flag; each
         // former write site is now a [`NeedsScriptEngineCause`] variant.
-        model.needs_script_engine =
-            crate::script_engine_analyzer::requires_script_engine(&model);
+        model.needs_script_engine = crate::script_engine_analyzer::requires_script_engine(&model);
 
         // Compute needs_nonstatic_method
         model.needs_nonstatic_method = model.needs_script_engine
@@ -730,13 +732,12 @@ impl SCXMLParser {
         // roxmltree document owns — the same mechanism the forge
         // codec-field parser uses, so inline-kind diagnostics reach
         // NDJSON with matching precision.
-        let locate_at =
-            |node: &roxmltree::Node,
-             err: ValidationError|
-             -> Located<crate::forge::error::ForgeError> {
-                let pos = node.document().text_pos_at(node.range().start);
-                Located::new(err.into(), source_name, Some(pos.row), Some(pos.col))
-            };
+        let locate_at = |node: &roxmltree::Node,
+                         err: ValidationError|
+         -> Located<crate::forge::error::ForgeError> {
+            let pos = node.document().text_pos_at(node.range().start);
+            Located::new(err.into(), source_name, Some(pos.row), Some(pos.col))
+        };
         let locate = |err: ValidationError| locate_at(data, err);
 
         let kind = match ForgeKind::from_attr(kind_attr) {
@@ -758,7 +759,8 @@ impl SCXMLParser {
             .to_string();
 
         let sce_attr = |local: &str| -> Option<String> {
-            data.attribute((SCE_NAMESPACE, local)).map(|s| s.to_string())
+            data.attribute((SCE_NAMESPACE, local))
+                .map(|s| s.to_string())
         };
 
         let inline_data = match kind {
@@ -774,19 +776,25 @@ impl SCXMLParser {
                         let key = child
                             .attribute("key")
                             .ok_or_else(|| {
-                                locate_at(&child, ValidationError::MissingAttribute {
-                                    element: format!("<sce:entry> in inline lookup '{id}'"),
-                                    attr: "key".to_string(),
-                                })
+                                locate_at(
+                                    &child,
+                                    ValidationError::MissingAttribute {
+                                        element: format!("<sce:entry> in inline lookup '{id}'"),
+                                        attr: "key".to_string(),
+                                    },
+                                )
                             })?
                             .to_string();
                         let value = child
                             .attribute("value")
                             .ok_or_else(|| {
-                                locate_at(&child, ValidationError::MissingAttribute {
-                                    element: format!("<sce:entry> in inline lookup '{id}'"),
-                                    attr: "value".to_string(),
-                                })
+                                locate_at(
+                                    &child,
+                                    ValidationError::MissingAttribute {
+                                        element: format!("<sce:entry> in inline lookup '{id}'"),
+                                        attr: "value".to_string(),
+                                    },
+                                )
                             })?
                             .to_string();
                         entries.push(LookupEntry { key, value });
@@ -1189,7 +1197,8 @@ impl SCXMLParser {
             for trans_elem in scxml_children(&child, "transition") {
                 if let Some(target) = trans_elem.attribute("target") {
                     default_target = target.to_string();
-                    default_actions = self.parse_executable_content(&trans_elem, model, source_name)?;
+                    default_actions =
+                        self.parse_executable_content(&trans_elem, model, source_name)?;
                     break;
                 }
             }
@@ -1219,8 +1228,7 @@ impl SCXMLParser {
         elem: &roxmltree::Node,
         model: &mut SCXMLModel,
         source_name: &str,
-    ) -> Result<Transition, crate::forge::error::Located<crate::forge::error::ForgeError>>
-    {
+    ) -> Result<Transition, crate::forge::error::Located<crate::forge::error::ForgeError>> {
         let cond = elem
             .attribute("cond")
             .or_else(|| elem.attribute("expr"))
@@ -1245,7 +1253,10 @@ impl SCXMLParser {
         } else if let Some(stripped) = cond.strip_prefix("kt:") {
             is_kt_condition = true;
             cond_kt = if !model.context_object_ids.is_empty() {
-                transform_kt_code_with_named_contexts(&stripped.to_string(), &model.context_object_ids)
+                transform_kt_code_with_named_contexts(
+                    &stripped.to_string(),
+                    &model.context_object_ids,
+                )
             } else {
                 stripped.to_string()
             };
@@ -1276,7 +1287,10 @@ impl SCXMLParser {
         // script-engine side of this check is re-evaluated post-parse by
         // [`crate::script_engine_analyzer`] —
         // [`NeedsScriptEngineCause::TransitionGuard`].
-        if !transition.cond.is_empty() && !transition.is_cpp_condition && !transition.is_kt_condition {
+        if !transition.cond.is_empty()
+            && !transition.is_cpp_condition
+            && !transition.is_kt_condition
+        {
             let (_needs_se, has_in) = check_expression_needs(&transition.cond);
             if has_in {
                 model.uses_in_predicate = true;
@@ -1291,11 +1305,12 @@ impl SCXMLParser {
         parent: &roxmltree::Node,
         model: &mut SCXMLModel,
         source_name: &str,
-    ) -> Result<Vec<Action>, crate::forge::error::Located<crate::forge::error::ForgeError>>
-    {
+    ) -> Result<Vec<Action>, crate::forge::error::Located<crate::forge::error::ForgeError>> {
         let mut actions = Vec::new();
         for child in parent.children() {
-            if let Some(action) = self.parse_executable_content_single(&child, model, source_name)? {
+            if let Some(action) =
+                self.parse_executable_content_single(&child, model, source_name)?
+            {
                 actions.push(action);
             }
         }
@@ -1484,11 +1499,21 @@ impl SCXMLParser {
                         // is still surfaced here for
                         // `uses_in_predicate` gating.
                         let (_needs_se, has_in) = check_expression_needs(&ei_cond);
-                        if has_in { model.uses_in_predicate = true; }
+                        if has_in {
+                            model.uses_in_predicate = true;
+                        }
                     }
                     let ei_pure_in = !ei_cond.is_empty() && is_pure_in_predicate(&ei_cond);
-                    let ei_cpp = if ei_pure_in { convert_in_to_cpp(&ei_cond) } else { String::new() };
-                    let ei_kt = if ei_pure_in { convert_in_to_kotlin(&ei_cond) } else { String::new() };
+                    let ei_cpp = if ei_pure_in {
+                        convert_in_to_cpp(&ei_cond)
+                    } else {
+                        String::new()
+                    };
+                    let ei_kt = if ei_pure_in {
+                        convert_in_to_kotlin(&ei_cond)
+                    } else {
+                        String::new()
+                    };
                     action.elseif_branches.push(ElseIfBranch {
                         cond: ei_cond,
                         cond_cpp: ei_cpp,
@@ -1503,7 +1528,8 @@ impl SCXMLParser {
                 }
                 _ => {
                     // Parse the nested action
-                    let nested_actions = self.parse_executable_content_single(&child, model, source_name)?;
+                    let nested_actions =
+                        self.parse_executable_content_single(&child, model, source_name)?;
                     if let Some(nested) = nested_actions {
                         match current_branch {
                             0 => action.then_actions.push(nested),
@@ -1526,10 +1552,7 @@ impl SCXMLParser {
         child: &roxmltree::Node,
         model: &mut SCXMLModel,
         source_name: &str,
-    ) -> Result<
-        Option<Action>,
-        crate::forge::error::Located<crate::forge::error::ForgeError>,
-    > {
+    ) -> Result<Option<Action>, crate::forge::error::Located<crate::forge::error::ForgeError>> {
         if !child.is_element() {
             return Ok(None);
         }
@@ -1579,18 +1602,25 @@ impl SCXMLParser {
                         action.is_cpp_function = true;
                         action.content = cpp_code.clone();
                         action.content_transformed = if !model.context_object_ids.is_empty() {
-                            transform_cpp_code_with_named_contexts(&cpp_code, &model.context_object_ids)
+                            transform_cpp_code_with_named_contexts(
+                                &cpp_code,
+                                &model.context_object_ids,
+                            )
                         } else {
                             cpp_code
                         };
                         found_native = true;
                         break;
-                    } else if sc_name == "kt" || sc.tag_name().namespace() == Some("urn:sce:kotlin") {
+                    } else if sc_name == "kt" || sc.tag_name().namespace() == Some("urn:sce:kotlin")
+                    {
                         let kt_code = sc.text().unwrap_or("").to_string();
                         action.is_kt_function = true;
                         action.content = kt_code.clone();
                         action.content_kt = if !model.context_object_ids.is_empty() {
-                            transform_kt_code_with_named_contexts(&kt_code, &model.context_object_ids)
+                            transform_kt_code_with_named_contexts(
+                                &kt_code,
+                                &model.context_object_ids,
+                            )
                         } else {
                             kt_code
                         };
@@ -1668,10 +1698,7 @@ impl SCXMLParser {
         state_id: &str,
         base_dir: Option<&Path>,
         source_name: &str,
-    ) -> Result<
-        Option<Invoke>,
-        crate::forge::error::Located<crate::forge::error::ForgeError>,
-    > {
+    ) -> Result<Option<Invoke>, crate::forge::error::Located<crate::forge::error::ForgeError>> {
         // W3C SCXML 6.4.1: Generate invoke ID if not provided. Auto-ids carry
         // a leading underscore by spec convention; templates building
         // identifiers (`child_<suffix>`) consume `field_suffix` instead so the
@@ -1790,7 +1817,8 @@ impl SCXMLParser {
         // Parse <finalize>
         let mut finalize_content = String::new();
         if let Some(finalize_elem) = scxml_child(elem, "finalize") {
-            let finalize_actions = self.parse_executable_content(&finalize_elem, model, source_name)?;
+            let finalize_actions =
+                self.parse_executable_content(&finalize_elem, model, source_name)?;
             finalize_content = actions_to_javascript(&finalize_actions);
         }
 
@@ -1860,8 +1888,7 @@ impl SCXMLParser {
                             crate::mesh::deploy::SYNTH_INVOKE_INFIX,
                             &field_suffix,
                         );
-                        let child_scxml_path =
-                            scxml_dir.join(format!("{synth_name}.scxml"));
+                        let child_scxml_path = scxml_dir.join(format!("{synth_name}.scxml"));
                         let inline_with_ns = if !inline_scxml_text.contains("xmlns=") {
                             inline_scxml_text.replacen(
                                 "<scxml",
@@ -1871,8 +1898,7 @@ impl SCXMLParser {
                         } else {
                             inline_scxml_text.clone()
                         };
-                        let xml_content =
-                            format!("<?xml version=\"1.0\"?>\n\n{inline_with_ns}");
+                        let xml_content = format!("<?xml version=\"1.0\"?>\n\n{inline_with_ns}");
                         if let Err(e) = std::fs::write(&child_scxml_path, &xml_content) {
                             eprintln!(
                                 "Warning: Cannot write inline SCXML {}: {e}",
@@ -1927,8 +1953,8 @@ impl SCXMLParser {
             // variable list) when the resolved child SCXML file exists.
             if let Some(scxml_dir) = base_dir {
                 if !scxml_info.common.child_name.is_empty() {
-                    let child_scxml_path = scxml_dir
-                        .join(format!("{}.scxml", scxml_info.common.child_name));
+                    let child_scxml_path =
+                        scxml_dir.join(format!("{}.scxml", scxml_info.common.child_name));
                     parse_child_metadata(&child_scxml_path, &mut scxml_info.common);
                 }
             }
@@ -1963,10 +1989,8 @@ impl SCXMLParser {
         src: String,
         srcexpr: String,
         idlocation: String,
-    ) -> Result<
-        MeshRpcInvokeInfo,
-        crate::forge::error::Located<crate::forge::error::ForgeError>,
-    > {
+    ) -> Result<MeshRpcInvokeInfo, crate::forge::error::Located<crate::forge::error::ForgeError>>
+    {
         use crate::forge::error::{Located, ValidationError};
 
         let locate = |err: ValidationError| -> Located<crate::forge::error::ForgeError> {
@@ -2024,8 +2048,7 @@ impl SCXMLParser {
                 if mesh_event_count > 1 {
                     return Err(locate(ValidationError::MeshRpcReservedParam {
                         param: "_mesh_event".into(),
-                        detail: "<param name=\"_mesh_event\"> must appear exactly once"
-                            .into(),
+                        detail: "<param name=\"_mesh_event\"> must appear exactly once".into(),
                     }));
                 }
                 mesh_event = Some(extract_static_string_literal(&expr));
@@ -2034,9 +2057,7 @@ impl SCXMLParser {
                 if deadline_count > 1 {
                     return Err(locate(ValidationError::MeshRpcReservedParam {
                         param: "_mesh_deadline_ms".into(),
-                        detail:
-                            "<param name=\"_mesh_deadline_ms\"> may appear at most once"
-                                .into(),
+                        detail: "<param name=\"_mesh_deadline_ms\"> may appear at most once".into(),
                     }));
                 }
                 // §9.5: `_mesh_deadline_ms` is an integer in
@@ -2063,9 +2084,7 @@ impl SCXMLParser {
             } else if name.starts_with("_mesh_") {
                 return Err(locate(ValidationError::MeshRpcReservedParam {
                     param: name.clone(),
-                    detail:
-                        "unknown _mesh_* name is reserved for future envelope metadata"
-                            .into(),
+                    detail: "unknown _mesh_* name is reserved for future envelope metadata".into(),
                 }));
             } else {
                 let is_sl = is_static_string_literal(&expr);
@@ -2173,7 +2192,11 @@ impl SCXMLParser {
                     model.has_event_metadata = true;
                 }
             }
-            for block in state.on_entry_blocks.iter().chain(state.on_exit_blocks.iter()) {
+            for block in state
+                .on_entry_blocks
+                .iter()
+                .chain(state.on_exit_blocks.iter())
+            {
                 if actions_contain_event_metadata(block) {
                     model.has_event_metadata = true;
                 }
@@ -2228,30 +2251,33 @@ impl SCXMLParser {
         //     `initial` overrides so the existing chain walk-up reaches
         //     every leaf without a multi-target dispatch helper.
         let mut overrides: Vec<(String, String)> = Vec::new();
-        let collect = |targets: &[String], stop_at: Option<&str>, out: &mut Vec<(String, String)>| {
-            for state_id in targets {
-                if !model.states.contains_key(state_id) {
-                    continue;
-                }
-                let mut current = state_id.clone();
-                loop {
-                    let parent_id =
-                        match model.states.get(&current).and_then(|s| s.parent.clone()) {
-                            Some(p) if model.states.contains_key(&p) => p,
-                            _ => break,
-                        };
-                    if Some(parent_id.as_str()) == stop_at {
-                        break;
+        let collect =
+            |targets: &[String], stop_at: Option<&str>, out: &mut Vec<(String, String)>| {
+                for state_id in targets {
+                    if !model.states.contains_key(state_id) {
+                        continue;
                     }
-                    let is_parallel =
-                        model.states.get(&parent_id).map_or(false, |s| s.is_parallel);
-                    if !is_parallel {
-                        out.push((parent_id.clone(), current.clone()));
+                    let mut current = state_id.clone();
+                    loop {
+                        let parent_id =
+                            match model.states.get(&current).and_then(|s| s.parent.clone()) {
+                                Some(p) if model.states.contains_key(&p) => p,
+                                _ => break,
+                            };
+                        if Some(parent_id.as_str()) == stop_at {
+                            break;
+                        }
+                        let is_parallel = model
+                            .states
+                            .get(&parent_id)
+                            .map_or(false, |s| s.is_parallel);
+                        if !is_parallel {
+                            out.push((parent_id.clone(), current.clone()));
+                        }
+                        current = parent_id;
                     }
-                    current = parent_id;
                 }
-            }
-        };
+            };
 
         // Root-scope multi-target.
         let root_targets: Vec<String> = if model.initial.is_empty() {
@@ -2275,8 +2301,7 @@ impl SCXMLParser {
             .states
             .iter()
             .filter_map(|(id, s)| {
-                let parts: Vec<String> =
-                    s.initial.split_whitespace().map(String::from).collect();
+                let parts: Vec<String> = s.initial.split_whitespace().map(String::from).collect();
                 if parts.len() > 1 && parts.iter().all(|t| model.states.contains_key(t)) {
                     Some((id.clone(), parts))
                 } else {
@@ -2293,8 +2318,7 @@ impl SCXMLParser {
         // afterwards), preserving the path determined by the outer
         // multi-target. Conflicts inside one scope can't arise because
         // each path through a parallel ancestor enters its own region.
-        let mut applied: std::collections::BTreeSet<String> =
-            std::collections::BTreeSet::new();
+        let mut applied: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
         for (parent_id, child_id) in overrides {
             if applied.contains(&parent_id) {
                 continue;
@@ -2343,9 +2367,8 @@ impl SCXMLParser {
                     if let Some(default_target) = history_defaults.get(&trans.target) {
                         trans.history_target = Some(trans.target.clone());
                         // W3C SCXML 3.11: Resolved leaf target for Kotlin Phase 1
-                        trans.history_leaf_target = history_leaf_targets
-                            .get(&trans.target)
-                            .cloned();
+                        trans.history_leaf_target =
+                            history_leaf_targets.get(&trans.target).cloned();
                         trans.target = default_target.clone();
                     }
                 }
@@ -2475,11 +2498,7 @@ impl SCXMLParser {
     /// Also stamps `InvokeSessionCommon::child_has_send_to_parent` per invoke so
     /// codegen can gate the parent_sm / parent_dispatch wiring at child spawn time
     /// (W3C SCXML 6.4 — required for test226/240/241/243/244/245/276).
-    fn collect_child_to_parent_events(
-        &self,
-        model: &mut SCXMLModel,
-        base_dir: Option<&Path>,
-    ) {
+    fn collect_child_to_parent_events(&self, model: &mut SCXMLModel, base_dir: Option<&Path>) {
         if !model.has_scxml_invoke() {
             return;
         }
@@ -2487,7 +2506,8 @@ impl SCXMLParser {
             Some(dir) => dir.to_path_buf(),
             None => return, // No filesystem access (WASM)
         };
-        let mut parsed_children: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut parsed_children: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
         let mut child_send_to_parent: std::collections::HashMap<String, bool> =
             std::collections::HashMap::new();
 
@@ -2507,16 +2527,21 @@ impl SCXMLParser {
                 continue;
             }
 
-            let child_model = match SCXMLParser::new().parse_file(&child_scxml_path.to_string_lossy()) {
-                Ok(m) => m,
-                Err(_) => continue,
-            };
+            let child_model =
+                match SCXMLParser::new().parse_file(&child_scxml_path.to_string_lossy()) {
+                    Ok(m) => m,
+                    Err(_) => continue,
+                };
 
             // Scan child for <send target="#_parent" event="xxx"> actions
             let mut child_parent_events = std::collections::BTreeSet::new();
             for child_state in child_model.states.values() {
                 // Check entry/exit actions
-                for block in child_state.on_entry_blocks.iter().chain(child_state.on_exit_blocks.iter()) {
+                for block in child_state
+                    .on_entry_blocks
+                    .iter()
+                    .chain(child_state.on_exit_blocks.iter())
+                {
                     collect_parent_send_events(block, &mut child_parent_events);
                 }
                 // Check transition actions
@@ -2524,11 +2549,13 @@ impl SCXMLParser {
                     collect_parent_send_events(&trans.actions, &mut child_parent_events);
                 }
                 // Check initial transition actions
-                collect_parent_send_events(&child_state.initial_transition_actions, &mut child_parent_events);
+                collect_parent_send_events(
+                    &child_state.initial_transition_actions,
+                    &mut child_parent_events,
+                );
             }
 
-            child_send_to_parent
-                .insert(si.child_name.clone(), !child_parent_events.is_empty());
+            child_send_to_parent.insert(si.child_name.clone(), !child_parent_events.is_empty());
 
             // Add collected events to parent's event set
             for event in child_parent_events {
@@ -2576,9 +2603,8 @@ impl SCXMLParser {
         use crate::forge::error::{Located, ValidationError};
         use crate::forge::model::SCE_NAMESPACE;
         for child in root.children().filter(|n| n.is_element()) {
-            let is_sce_context =
-                child.tag_name().namespace() == Some(SCE_NAMESPACE)
-                    && child.tag_name().name() == "context";
+            let is_sce_context = child.tag_name().namespace() == Some(SCE_NAMESPACE)
+                && child.tag_name().name() == "context";
             if !is_sce_context {
                 continue;
             }
@@ -2606,10 +2632,7 @@ impl SCXMLParser {
                 ));
             }
             let ctx_id_lower = ctx_id.to_ascii_lowercase();
-            if RESERVED_CONTEXT_IDS
-                .iter()
-                .any(|&r| r == ctx_id_lower)
-            {
+            if RESERVED_CONTEXT_IDS.iter().any(|&r| r == ctx_id_lower) {
                 return Err(Located::new(
                     ValidationError::ReservedContextId {
                         id: ctx_id,
@@ -2727,9 +2750,8 @@ impl SCXMLParser {
         if !model.context_object_ids.is_empty() {
             return Ok(());
         }
-        static RE_OBJ: LazyLock<regex::Regex> = LazyLock::new(|| {
-            regex::Regex::new(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\.").unwrap()
-        });
+        static RE_OBJ: LazyLock<regex::Regex> =
+            LazyLock::new(|| regex::Regex::new(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\.").unwrap());
         let re_obj = &*RE_OBJ;
         for state in model.states.values() {
             for trans in &state.transitions {
@@ -2753,7 +2775,9 @@ impl SCXMLParser {
                 }
             }
             // Check entry/exit blocks AND transition actions for native code references
-            let all_actions = state.on_entry_blocks.iter()
+            let all_actions = state
+                .on_entry_blocks
+                .iter()
                 .chain(state.on_exit_blocks.iter())
                 .flat_map(|block| block.iter())
                 .chain(state.transitions.iter().flat_map(|t| t.actions.iter()));
@@ -2824,9 +2848,11 @@ fn transform_cpp_code_with_named_contexts(
     let alternatives: Vec<String> = declared_ids.iter().map(|id| regex::escape(id)).collect();
     if !alternatives.is_empty() {
         let pattern = regex::Regex::new(&format!(r"\b({})\s*\.", alternatives.join("|"))).unwrap();
-        result = pattern.replace_all(&result, |caps: &regex::Captures| {
-            format!("this->{}_->", &caps[1])
-        }).to_string();
+        result = pattern
+            .replace_all(&result, |caps: &regex::Captures| {
+                format!("this->{}_->", &caps[1])
+            })
+            .to_string();
     }
     restore_context_strings(&result, &literals)
 }
@@ -2848,13 +2874,16 @@ fn transform_kt_code_with_named_contexts(
     if !renames.is_empty() {
         let alternatives: Vec<String> = renames.iter().map(|(id, _)| regex::escape(id)).collect();
         let pattern = regex::Regex::new(&format!(r"\b({})\b", alternatives.join("|"))).unwrap();
-        result = pattern.replace_all(&result, |caps: &regex::Captures| {
-            let matched = &caps[1];
-            renames.iter()
-                .find(|(id, _)| id == matched)
-                .map(|(_, camel)| camel.clone())
-                .unwrap_or_else(|| matched.to_string())
-        }).to_string();
+        result = pattern
+            .replace_all(&result, |caps: &regex::Captures| {
+                let matched = &caps[1];
+                renames
+                    .iter()
+                    .find(|(id, _)| id == matched)
+                    .map(|(_, camel)| camel.clone())
+                    .unwrap_or_else(|| matched.to_string())
+            })
+            .to_string();
     }
     restore_context_strings(&result, &literals)
 }
@@ -2868,9 +2897,8 @@ fn id_to_camel_case(name: &str) -> String {
 /// Distinct from lua_transformer::protect_string_literals which handles JS comments
 /// and uses \x01-delimited placeholders for ECMAScript-to-Lua conversion.
 fn protect_context_strings(code: &str) -> (String, Vec<String>) {
-    static RE_STRING: LazyLock<regex::Regex> = LazyLock::new(|| {
-        regex::Regex::new(r#""(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'"#).unwrap()
-    });
+    static RE_STRING: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r#""(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'"#).unwrap());
     let mut literals = Vec::new();
     let result = RE_STRING.replace_all(code, |caps: &regex::Captures| {
         let idx = literals.len();
@@ -2996,7 +3024,10 @@ fn scxml_children<'a>(
 
 /// Find first SCXML-namespaced child with a given local name. See
 /// [`scxml_children`] for the namespace-filter contract.
-fn scxml_child<'a>(parent: &'a roxmltree::Node<'a, 'a>, tag: &str) -> Option<roxmltree::Node<'a, 'a>> {
+fn scxml_child<'a>(
+    parent: &'a roxmltree::Node<'a, 'a>,
+    tag: &str,
+) -> Option<roxmltree::Node<'a, 'a>> {
     parent
         .children()
         .find(|c| c.is_element() && c.tag_name().name() == tag && is_scxml_ns(c))
@@ -3015,10 +3046,7 @@ fn scxml_child<'a>(parent: &'a roxmltree::Node<'a, 'a>, tag: &str) -> Option<rox
 /// [`crate::scxml_semantic`]). Document order is the per-state index
 /// inside `on_sample_blocks`, used as a stable diagnostic key when
 /// source line numbers aren't available.
-fn collect_on_sample_blocks(
-    parent: &roxmltree::Node,
-    out: &mut Vec<crate::model::OnSampleNode>,
-) {
+fn collect_on_sample_blocks(parent: &roxmltree::Node, out: &mut Vec<crate::model::OnSampleNode>) {
     use crate::forge::model::SCE_NAMESPACE;
     for child in parent.children() {
         if !child.is_element() {
@@ -3266,9 +3294,7 @@ fn validate_on_sample_callback_paths(
 /// 4. Path body has a leading `::`, trailing `::`, or empty segment
 ///    → `MalformedPath`.
 /// 5. Any segment fails `is_rust_path_segment` → `MalformedSegment`.
-fn classify_on_sample_callback_path(
-    raw: &str,
-) -> Option<crate::forge::error::CallbackPathReason> {
+fn classify_on_sample_callback_path(raw: &str) -> Option<crate::forge::error::CallbackPathReason> {
     use crate::forge::error::CallbackPathReason;
     if raw.is_empty() {
         return Some(CallbackPathReason::EmptyPath);
@@ -3364,8 +3390,8 @@ pub fn validate_on_sample_link_references(
     pool_registry: &crate::forge::pool_registry::ForgePoolRegistry,
     diag_label: &str,
 ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
-    use crate::forge::error::{Located, ValidationError};
     use crate::forge::cross_doc_registry::ScxmlDocKind;
+    use crate::forge::error::{Located, ValidationError};
     use crate::forge::pool_registry::ForgePoolKind;
     let mut state_ids: Vec<&String> = model.states.keys().collect();
     state_ids.sort();
@@ -3382,8 +3408,7 @@ pub fn validate_on_sample_link_references(
                     // The original on-sample diagnostic was wired
                     // forward-compat for exactly this growth point —
                     // see error.rs `OnSampleLinkWrongKind` doc-comment.
-                    let candidates =
-                        link_registry.names_of_kind(ScxmlDocKind::Link);
+                    let candidates = link_registry.names_of_kind(ScxmlDocKind::Link);
                     return Err(Located::new(
                         ValidationError::OnSampleLinkWrongKind {
                             state_id: state_id.clone(),
@@ -3479,9 +3504,9 @@ fn serialize_node_inner(node: &roxmltree::Node, parent_ns: Option<&str>, c14n: b
     }
 
     // Check if element has any meaningful children (elements or non-empty text)
-    let has_children = node.children().any(|c| {
-        c.is_element() || (c.is_text() && !c.text().unwrap_or("").trim().is_empty())
-    });
+    let has_children = node
+        .children()
+        .any(|c| c.is_element() || (c.is_text() && !c.text().unwrap_or("").trim().is_empty()));
 
     if !has_children && !c14n {
         // Self-closing tag for empty elements (matches lxml method='xml')
@@ -3502,9 +3527,8 @@ fn serialize_node_inner(node: &roxmltree::Node, parent_ns: Option<&str>, c14n: b
 
 /// W3C SCXML 5.9.2: Check if expression is pure In() predicate
 fn is_pure_in_predicate(cond: &str) -> bool {
-    static RE_IN_CALL: LazyLock<regex::Regex> = LazyLock::new(|| {
-        regex::Regex::new(r#"In\(['"][^'"]+['"]\)"#).unwrap()
-    });
+    static RE_IN_CALL: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r#"In\(['"][^'"]+['"]\)"#).unwrap());
 
     let trimmed = cond.trim();
     if trimmed.is_empty() {
@@ -3525,9 +3549,8 @@ fn is_pure_in_predicate(cond: &str) -> bool {
 }
 
 /// Shared regex for In() predicate with capture group
-static RE_IN_PREDICATE: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r#"In\(['"]([^'"]+)['"]\)"#).unwrap()
-});
+static RE_IN_PREDICATE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r#"In\(['"]([^'"]+)['"]\)"#).unwrap());
 
 /// Convert In() predicate to C++ isStateActive calls
 fn convert_in_to_cpp(cond: &str) -> String {
@@ -3573,9 +3596,8 @@ pub(crate) fn check_expression_needs(cond: &str) -> (bool, bool) {
         }
     }
     // W3C SCXML 5.9: System-reserved identifiers starting with underscore
-    static RE_UNDERSCORE: LazyLock<regex::Regex> = LazyLock::new(|| {
-        regex::Regex::new(r"\b_[a-zA-Z]\w*\b").unwrap()
-    });
+    static RE_UNDERSCORE: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r"\b_[a-zA-Z]\w*\b").unwrap());
     if RE_UNDERSCORE.is_match(cond) {
         return (true, false);
     }
@@ -3592,11 +3614,41 @@ pub(crate) fn check_expression_needs(cond: &str) -> (bool, bool) {
     }
     // Note: _event.* fields are already caught by "_event." in js_features above.
     // C++/Rust reserved keywords that would be invalid as conditions
-    let reserved = ["return", "break", "continue", "goto", "switch", "case", "default",
-                    "if", "else", "while", "do", "for", "class", "struct", "typedef",
-                    "using", "namespace", "template", "typename", "static", "extern",
-                    "inline", "virtual", "operator", "new", "delete", "this", "throw",
-                    "try", "catch", "public", "private", "protected"];
+    let reserved = [
+        "return",
+        "break",
+        "continue",
+        "goto",
+        "switch",
+        "case",
+        "default",
+        "if",
+        "else",
+        "while",
+        "do",
+        "for",
+        "class",
+        "struct",
+        "typedef",
+        "using",
+        "namespace",
+        "template",
+        "typename",
+        "static",
+        "extern",
+        "inline",
+        "virtual",
+        "operator",
+        "new",
+        "delete",
+        "this",
+        "throw",
+        "try",
+        "catch",
+        "public",
+        "private",
+        "protected",
+    ];
     let stripped = cond.trim();
     for kw in &reserved {
         if stripped == *kw
@@ -3619,10 +3671,16 @@ fn parse_delay_to_ms(delay: &str) -> i64 {
     if let Some(s) = trimmed.strip_suffix("ms") {
         s.trim().parse().unwrap_or(0)
     } else if let Some(s) = trimmed.strip_suffix('s') {
-        s.trim().parse::<f64>().map(|v| (v * 1000.0) as i64).unwrap_or(0)
+        s.trim()
+            .parse::<f64>()
+            .map(|v| (v * 1000.0) as i64)
+            .unwrap_or(0)
     } else {
         // Bare number: default to seconds (common in W3C test suite)
-        trimmed.parse::<f64>().map(|v| (v * 1000.0) as i64).unwrap_or(0)
+        trimmed
+            .parse::<f64>()
+            .map(|v| (v * 1000.0) as i64)
+            .unwrap_or(0)
     }
 }
 
@@ -3682,7 +3740,11 @@ fn child_has_delayed_send(child_model: &SCXMLModel) -> bool {
         false
     }
     for state in child_model.states.values() {
-        for block in state.on_entry_blocks.iter().chain(state.on_exit_blocks.iter()) {
+        for block in state
+            .on_entry_blocks
+            .iter()
+            .chain(state.on_exit_blocks.iter())
+        {
             if walk(block) {
                 return true;
             }
@@ -3713,9 +3775,8 @@ fn parse_child_metadata(child_path: &Path, common: &mut InvokeSessionCommon) {
     match SCXMLParser::new().parse_file(&child_path.to_string_lossy()) {
         Ok(child_model) => {
             common.child_needs_script_engine = child_model.needs_script_engine;
-            common.child_datamodel_vars = Some(
-                child_model.variables.iter().map(|v| v.id.clone()).collect(),
-            );
+            common.child_datamodel_vars =
+                Some(child_model.variables.iter().map(|v| v.id.clone()).collect());
             // W3C SCXML 6.2 (test187/207): mirror the child's own scheduler
             // requirement. The child's codegen emits `_tick` only when
             // its scheduler queue is non-empty; the parent's invoke driver
@@ -4150,10 +4211,7 @@ mod tests {
         let mut ids = BTreeSet::new();
         ids.insert("hw".to_string());
         ids.insert("sensor".to_string());
-        let result = transform_cpp_code_with_named_contexts(
-            "hw.reset() && sensor.read()",
-            &ids,
-        );
+        let result = transform_cpp_code_with_named_contexts("hw.reset() && sensor.read()", &ids);
         assert_eq!(result, "this->hw_->reset() && this->sensor_->read()");
     }
 
@@ -4161,10 +4219,7 @@ mod tests {
     fn cpp_transform_preserves_string_literals() {
         let mut ids = BTreeSet::new();
         ids.insert("hw".to_string());
-        let result = transform_cpp_code_with_named_contexts(
-            r#"hw.log("hw.error")"#,
-            &ids,
-        );
+        let result = transform_cpp_code_with_named_contexts(r#"hw.log("hw.error")"#, &ids);
         // "hw.error" inside quotes must NOT be transformed
         assert_eq!(result, r#"this->hw_->log("hw.error")"#);
     }
@@ -4199,10 +4254,7 @@ mod tests {
     fn kt_transform_preserves_string_literals() {
         let mut ids = BTreeSet::new();
         ids.insert("my_obj".to_string());
-        let result = transform_kt_code_with_named_contexts(
-            r#"my_obj.call("my_obj")"#,
-            &ids,
-        );
+        let result = transform_kt_code_with_named_contexts(r#"my_obj.call("my_obj")"#, &ids);
         // Inside quotes should not be transformed
         assert_eq!(result, r#"myObj.call("my_obj")"#);
     }
@@ -4806,9 +4858,9 @@ mod tests {
                     vec!["sendid".to_string(), "sendidexpr".to_string()]
                 );
             }
-            other => panic!(
-                "expected ValidationError::RequireEither for <cancel/>, got: {other:?}"
-            ),
+            other => {
+                panic!("expected ValidationError::RequireEither for <cancel/>, got: {other:?}")
+            }
         }
     }
 
@@ -4974,7 +5026,10 @@ mod tests {
             "expected ValidationError::MissingAttribute(attr=\"id\"), got: {:?}",
             err.error,
         );
-        assert_eq!(err.location.file, "test", "located error must carry source name");
+        assert_eq!(
+            err.location.file, "test",
+            "located error must carry source name"
+        );
         assert!(
             err.location.line.is_some() && err.location.col.is_some(),
             "inline-kind leaf errors must carry roxmltree row/col, got: {:?}",
@@ -4997,9 +5052,9 @@ mod tests {
             <state id="s2"/>
         </scxml>"#;
         let mut parser = SCXMLParser::new();
-        let err = parser.parse_string(scxml, "test").expect_err(
-            "cpp: condition without <sce:context> must fail validation",
-        );
+        let err = parser
+            .parse_string(scxml, "test")
+            .expect_err("cpp: condition without <sce:context> must fail validation");
         assert!(
             matches!(
                 err.error,
@@ -5196,10 +5251,9 @@ mod tests {
         let mut parser = SCXMLParser::new();
         let err = parser.parse_string(scxml, "test").unwrap_err();
         match err.error {
-            ForgeError::Validation(ValidationError::MeshRpcReservedParam {
-                param,
-                detail,
-            }) => (param, detail),
+            ForgeError::Validation(ValidationError::MeshRpcReservedParam { param, detail }) => {
+                (param, detail)
+            }
             other => panic!("expected MeshRpcReservedParam, got {other:?}"),
         }
     }
@@ -5372,8 +5426,10 @@ mod tests {
             </state>
         </scxml>"##;
         let info = first_mesh_rpc_invoke(scxml);
-        assert!(info.target.src_literal().is_none(),
-            "SrcExpr variant has no build-time literal");
+        assert!(
+            info.target.src_literal().is_none(),
+            "SrcExpr variant has no build-time literal"
+        );
         match &info.target {
             MeshRpcTarget::SrcExpr { srcexpr } => {
                 assert_eq!(srcexpr, "'#motor_' + id");
@@ -5435,10 +5491,9 @@ mod tests {
             Err(e) => e,
         };
         match err.error {
-            ForgeError::Validation(ValidationError::RemovedAttribute {
-                attribute,
-                event,
-            }) => (attribute, event),
+            ForgeError::Validation(ValidationError::RemovedAttribute { attribute, event }) => {
+                (attribute, event)
+            }
             other => panic!("expected RemovedAttribute, got: {other:?}"),
         }
     }
@@ -5789,8 +5844,7 @@ mod tests {
         let t_path = tmp.path().join("t.xml");
         let main_path = tmp.path().join("main.scxml");
 
-        let template_raw =
-            r#"<sce:template xmlns:sce="http://sce.dev/ext" name="t">
+        let template_raw = r#"<sce:template xmlns:sce="http://sce.dev/ext" name="t">
   <sce:param name="id" required="true"/>
   <marker value="{$id}"/>
 </sce:template>"#;
@@ -5828,7 +5882,9 @@ mod tests {
              splice path produced no output",
         );
         assert!(
-            expanded[marker_offset + MARKER.len()..].find(MARKER).is_none(),
+            expanded[marker_offset + MARKER.len()..]
+                .find(MARKER)
+                .is_none(),
             "marker must be unique in expanded output",
         );
 
@@ -5981,8 +6037,7 @@ mod tests {
         // The 3 reused-code leaves (no Rust XmlError variant by α-strict
         // design — see ParseError.h per-leaf comments). They still must
         // exist as ParseError subclasses to compile.
-        let reused_code_cpp: &[&str] =
-            &["ParseXmlFailed", "ParseException", "ParseNoRootElement"];
+        let reused_code_cpp: &[&str] = &["ParseXmlFailed", "ParseException", "ParseNoRootElement"];
 
         let expected_cpp: BTreeSet<&str> = rust_to_cpp_new
             .iter()
@@ -5996,10 +6051,7 @@ mod tests {
         );
 
         let hdr = include_str!("../../sce/include/parsing/ParseError.h");
-        let re = regex::Regex::new(
-            r"class\s+(Parse\w+)\s*:\s*public\s+ParseError\b",
-        )
-        .unwrap();
+        let re = regex::Regex::new(r"class\s+(Parse\w+)\s*:\s*public\s+ParseError\b").unwrap();
         let mut found: BTreeSet<String> = BTreeSet::new();
         for captures in re.captures_iter(hdr) {
             found.insert(captures[1].to_string());
@@ -6013,8 +6065,7 @@ mod tests {
              same commit"
         );
 
-        let found_refs: BTreeSet<&str> =
-            found.iter().map(|s| s.as_str()).collect();
+        let found_refs: BTreeSet<&str> = found.iter().map(|s| s.as_str()).collect();
         assert_eq!(
             found_refs, expected_cpp,
             "ParseError subtype drift: C++ header = {:?}, expected \
@@ -6039,7 +6090,8 @@ mod tests {
                  sce-build/src/forge/diagnostic.rs. Keep the wire \
                  name, the Rust variant, and the C++ subtype in \
                  sync — see RFC §W4.",
-                rust_code, cpp_name
+                rust_code,
+                cpp_name
             );
         }
     }
@@ -6076,8 +6128,7 @@ mod tests {
             // `find(\"};\")` accurate enough for a drift guard; if a
             // future rewrite nests braces inside a subtype we update
             // this scanner in the same commit.
-            let class_marker =
-                format!("class {} : public ParseError", cpp_class);
+            let class_marker = format!("class {} : public ParseError", cpp_class);
             let class_start = hdr.find(&class_marker).unwrap_or_else(|| {
                 panic!(
                     "class `{}` not found in sce/include/parsing/\
@@ -6086,8 +6137,7 @@ mod tests {
                     cpp_class
                 )
             });
-            let body_start =
-                hdr[class_start..].find('{').unwrap() + class_start + 1;
+            let body_start = hdr[class_start..].find('{').unwrap() + class_start + 1;
             let body_end_rel = hdr[body_start..].find("};").unwrap();
             let body = &hdr[body_start..body_start + body_end_rel];
 
@@ -6099,7 +6149,8 @@ mod tests {
                  wire literal exactly so the JSON wire emitted by \
                  `to_json()` agrees with `--error-format=json`. RFC \
                  §W4 / SCE_ERROR_CONTRACT.md §3.",
-                cpp_class, needle
+                cpp_class,
+                needle
             );
         }
 
@@ -6339,13 +6390,8 @@ mod tests {
     /// stage-pool reference passed via `stage_pool` lands on the
     /// `LinkModel.stage_pool` field, which `record_document` then
     /// captures into the registry's sparse `stage_pools` map.
-    fn make_link_doc(
-        name: &str,
-        stage_pool: Option<&str>,
-    ) -> crate::forge::model::ForgeDocument {
-        use crate::forge::model::{
-            BackpressurePolicy, ForgeDocument, LinkClass, LinkModel,
-        };
+    fn make_link_doc(name: &str, stage_pool: Option<&str>) -> crate::forge::model::ForgeDocument {
+        use crate::forge::model::{BackpressurePolicy, ForgeDocument, LinkClass, LinkModel};
         ForgeDocument::Link(LinkModel {
             name: name.to_string(),
             class: LinkClass::Udp,
@@ -6378,13 +6424,8 @@ mod tests {
             .record_document(&make_link_doc("scout_link", Some("scout_stage_pool")))
             .unwrap();
         let pool_registry = ForgePoolRegistry::new();
-        validate_on_sample_link_references(
-            &model,
-            &registry,
-            &pool_registry,
-            "cross_ref_test",
-        )
-        .expect("registered link with stage_pool resolves cleanly");
+        validate_on_sample_link_references(&model, &registry, &pool_registry, "cross_ref_test")
+            .expect("registered link with stage_pool resolves cleanly");
     }
 
     #[test]
@@ -6393,21 +6434,15 @@ mod tests {
         // unresolved reference surfaces as
         // `OnSampleLinkNotDeclared` with the registry's actual
         // link names (sorted) as `Fix::ReplaceOneOf` candidates.
-        use crate::forge::cross_doc_registry::{ScxmlDocKind, SceCrossDocRegistry};
+        use crate::forge::cross_doc_registry::{SceCrossDocRegistry, ScxmlDocKind};
         use crate::forge::pool_registry::ForgePoolRegistry;
         let model = parse_running_with_link("scout_link");
         let mut registry = SceCrossDocRegistry::new();
-        registry
-            .record("status_link", ScxmlDocKind::Link)
-            .unwrap();
+        registry.record("status_link", ScxmlDocKind::Link).unwrap();
         let pool_registry = ForgePoolRegistry::new();
-        let err = validate_on_sample_link_references(
-            &model,
-            &registry,
-            &pool_registry,
-            "cross_ref_test",
-        )
-        .expect_err("unregistered link must be rejected");
+        let err =
+            validate_on_sample_link_references(&model, &registry, &pool_registry, "cross_ref_test")
+                .expect_err("unregistered link must be rejected");
         let err_str = format!("{:?}", err);
         assert!(
             err_str.contains("OnSampleLinkNotDeclared"),
@@ -6434,13 +6469,9 @@ mod tests {
         let model = parse_running_with_link("scout_link");
         let registry = SceCrossDocRegistry::new();
         let pool_registry = ForgePoolRegistry::new();
-        let err = validate_on_sample_link_references(
-            &model,
-            &registry,
-            &pool_registry,
-            "cross_ref_test",
-        )
-        .expect_err("empty registry → reference must be rejected");
+        let err =
+            validate_on_sample_link_references(&model, &registry, &pool_registry, "cross_ref_test")
+                .expect_err("empty registry → reference must be rejected");
         let err_str = format!("{:?}", err);
         assert!(
             err_str.contains("OnSampleLinkNotDeclared"),
@@ -6469,13 +6500,8 @@ mod tests {
             .expect("parse");
         let registry = SceCrossDocRegistry::new();
         let pool_registry = ForgePoolRegistry::new();
-        validate_on_sample_link_references(
-            &model,
-            &registry,
-            &pool_registry,
-            "cross_ref_noop",
-        )
-        .expect("states without on-sample blocks need no registry entries");
+        validate_on_sample_link_references(&model, &registry, &pool_registry, "cross_ref_noop")
+            .expect("states without on-sample blocks need no registry entries");
     }
 
     // ── watching-zenoh RFC §5.E B7-η' Atomic A1 — stage-pool gate ──
@@ -6504,13 +6530,9 @@ mod tests {
         pool_registry
             .record("alt_stage_pool", ForgePoolKind::BufferPool)
             .unwrap();
-        let err = validate_on_sample_link_references(
-            &model,
-            &registry,
-            &pool_registry,
-            "cross_ref_test",
-        )
-        .expect_err("on-sample on link without stage_pool must be rejected");
+        let err =
+            validate_on_sample_link_references(&model, &registry, &pool_registry, "cross_ref_test")
+                .expect_err("on-sample on link without stage_pool must be rejected");
         let err_str = format!("{:?}", err);
         assert!(
             err_str.contains("PoolSampleTakeWithoutStagePool"),
@@ -6549,13 +6571,8 @@ mod tests {
             .record_document(&make_link_doc("scout_link", Some("scout_stage_pool")))
             .unwrap();
         let pool_registry = ForgePoolRegistry::new();
-        validate_on_sample_link_references(
-            &model,
-            &registry,
-            &pool_registry,
-            "cross_ref_test",
-        )
-        .expect("link with stage_pool resolves regardless of pool registry contents");
+        validate_on_sample_link_references(&model, &registry, &pool_registry, "cross_ref_test")
+            .expect("link with stage_pool resolves regardless of pool registry contents");
     }
 
     // ── watching-zenoh RFC §5.E B7-η' Atomic A2 — `callback="rust:..."` ──
@@ -6631,8 +6648,7 @@ mod tests {
             "expected PoolSampleCallbackSignatureNonBorrow, got: {err_str}",
         );
         assert!(
-            err_str.contains("UnknownLanguagePrefix")
-                && err_str.contains("\"cpp\""),
+            err_str.contains("UnknownLanguagePrefix") && err_str.contains("\"cpp\""),
             "diagnostic should carry the unknown-prefix reason: {err_str}",
         );
     }

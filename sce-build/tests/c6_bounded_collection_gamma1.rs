@@ -84,11 +84,7 @@ topology:
 /// (machine mismatch, single-file path) so the deploy resolution
 /// never made it into options — that is itself proof that the
 /// validator passed.
-fn assert_validator_passed(
-    scxml: &str,
-    deploy_yaml: &str,
-    target_machine: Option<&str>,
-) {
+fn assert_validator_passed(scxml: &str, deploy_yaml: &str, target_machine: Option<&str>) {
     let deploy = parse_deploy_str(deploy_yaml).expect("deploy parses");
     let result = compile_forge_with_deploy(
         scxml,
@@ -109,10 +105,8 @@ fn assert_validator_passed(
                 // Pre-γ2 deferred-template fallback — kept for other
                 // backends still on the matrix's `false` arm.
             }
-            ForgeError::Generate(
-                sce_build::forge::error::GenerateError::InvalidConfig(msg),
-            ) if msg.contains("bounded-collection")
-                && msg.contains("resolution missing") =>
+            ForgeError::Generate(sce_build::forge::error::GenerateError::InvalidConfig(msg))
+                if msg.contains("bounded-collection") && msg.contains("resolution missing") =>
             {
                 // γ2 render-time gate: γ1 validator passed (silent-
                 // skipped per Q-η5 (a)) but the codegen layer has no
@@ -124,9 +118,7 @@ fn assert_validator_passed(
                 // expected downstream consequence, not a validator
                 // failure.
             }
-            other => panic!(
-                "C6-γ1 validator must silent-pass; got unrelated error: {other:?}"
-            ),
+            other => panic!("C6-γ1 validator must silent-pass; got unrelated error: {other:?}"),
         },
     }
 }
@@ -276,10 +268,8 @@ fn compile_const_silent_skips_without_deploy() {
                 // Pre-γ2 deferred-template fallback — kept for other
                 // backends still on the matrix's `false` arm.
             }
-            ForgeError::Generate(
-                sce_build::forge::error::GenerateError::InvalidConfig(msg),
-            ) if msg.contains("bounded-collection")
-                && msg.contains("resolution missing") =>
+            ForgeError::Generate(sce_build::forge::error::GenerateError::InvalidConfig(msg))
+                if msg.contains("bounded-collection") && msg.contains("resolution missing") =>
             {
                 // γ2 render-time gate: single-file deploy-aware path
                 // has no deploy.yaml, so the deploy-key cannot

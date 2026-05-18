@@ -145,7 +145,9 @@ fn run_orchestrate(
     error_format: &str,
 ) -> std::process::Output {
     let mut cmd = Command::new(bin);
-    cmd.arg("--error-format").arg(error_format).arg("orchestrate");
+    cmd.arg("--error-format")
+        .arg(error_format)
+        .arg("orchestrate");
     cmd.arg("--scxml").arg(scxml);
     for f in forges {
         cmd.arg("--forge").arg(f);
@@ -259,19 +261,13 @@ fn orchestrate_with_deploy_fires_link_not_declared_in_deploy() {
             line.starts_with('{') && line.ends_with('}'),
             "NDJSON wire shape required: {line}",
         );
-        let parsed: serde_json::Value = serde_json::from_str(line)
-            .unwrap_or_else(|e| panic!("not JSON ({e}): {line}"));
-        let code = parsed
-            .get("code")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let parsed: serde_json::Value =
+            serde_json::from_str(line).unwrap_or_else(|e| panic!("not JSON ({e}): {line}"));
+        let code = parsed.get("code").and_then(|v| v.as_str()).unwrap_or("");
         if code == "deploy/link-not-declared-in-deploy" {
             found_target_code = true;
             assert_eq!(
-                parsed
-                    .get("stage")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or(""),
+                parsed.get("stage").and_then(|v| v.as_str()).unwrap_or(""),
                 "mesh-deploy",
                 "deploy-side diagnostic must carry stage=mesh-deploy",
             );
@@ -320,17 +316,14 @@ fn orchestrate_with_malformed_deploy_yaml_fails_cleanly() {
 
     let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
     let trimmed = stderr.trim_end();
-    assert!(
-        !trimmed.is_empty(),
-        "malformed deploy must emit diagnostic",
-    );
+    assert!(!trimmed.is_empty(), "malformed deploy must emit diagnostic",);
     // The deploy parser produces `mesh/deploy-yaml-parse` (or similar
     // stable code). Pin the stage so a regression to "io" or generic
     // failure surfaces.
     let mut saw_mesh_deploy_stage = false;
     for line in trimmed.lines() {
-        let parsed: serde_json::Value = serde_json::from_str(line)
-            .unwrap_or_else(|e| panic!("not JSON ({e}): {line}"));
+        let parsed: serde_json::Value =
+            serde_json::from_str(line).unwrap_or_else(|e| panic!("not JSON ({e}): {line}"));
         if parsed.get("stage").and_then(|v| v.as_str()) == Some("mesh-deploy") {
             saw_mesh_deploy_stage = true;
         }

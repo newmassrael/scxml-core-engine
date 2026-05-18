@@ -31,10 +31,7 @@ fn label(name: &'static str) -> DocumentLabel<'static> {
 fn parse(content: &str, name: &'static str) -> Result<WorkerModel, Located<ForgeError>> {
     match parse_forge(content, label(name))? {
         Some(ForgeDocument::Worker(w)) => Ok(w),
-        Some(other) => panic!(
-            "expected ForgeDocument::Worker, got {:?}",
-            other.kind()
-        ),
+        Some(other) => panic!("expected ForgeDocument::Worker, got {:?}", other.kind()),
         None => panic!("statechart routed through forge entry — fixture mis-tagged?"),
     }
 }
@@ -136,9 +133,7 @@ fn worker_inbox_depth_zero_rejected() {
         // Layer 1 (XSD): xs:positiveInteger restriction rejects "0".
         ForgeError::Xml(_) => {}
         // Layer 2 (parser): the `depth == 0` guard inside `parse_worker`.
-        ForgeError::Validation(ValidationError::InvalidAttribute {
-            element, attr, ..
-        }) => {
+        ForgeError::Validation(ValidationError::InvalidAttribute { element, attr, .. }) => {
             assert_eq!(element, "<sce:inbox>");
             assert_eq!(attr, "depth");
         }
@@ -215,10 +210,11 @@ fn worker_import_kind_worker_minimal_attrs_fires_layer1() {
         // Parser-layer rejection (Rust guard runs ahead of import-spec
         // parser, surfaces WorkerSharedMutableState with empty attrs).
         ForgeError::Validation(ValidationError::WorkerSharedMutableState {
-            reason: WorkerSharedStateReason::WorkerImportForbidden {
-                imported_alias,
-                imported_src,
-            },
+            reason:
+                WorkerSharedStateReason::WorkerImportForbidden {
+                    imported_alias,
+                    imported_src,
+                },
             ..
         }) => {
             assert_eq!(imported_alias, "");
@@ -267,12 +263,13 @@ fn worker_body_assign_to_foreign_namespace_fires_layer2() {
     let err = parse(xml, "rx_loop").expect_err("foreign-namespace assign must reject");
     match err.error {
         ForgeError::Validation(ValidationError::WorkerSharedMutableState {
-            reason: WorkerSharedStateReason::BodyForeignNamespace {
-                element,
-                attr,
-                value,
-                foreign_prefix,
-            },
+            reason:
+                WorkerSharedStateReason::BodyForeignNamespace {
+                    element,
+                    attr,
+                    value,
+                    foreign_prefix,
+                },
             ..
         }) => {
             assert_eq!(element, "assign");

@@ -133,8 +133,12 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         // post-A6 follow-up trio adds Go + Kotlin + Python in three
         // independent commits.
         ForgeKind::Algorithm => match lang {
-            Language::Rust | Language::Cpp | Language::C11
-            | Language::Go | Language::Kotlin | Language::Python => true,
+            Language::Rust
+            | Language::Cpp
+            | Language::C11
+            | Language::Go
+            | Language::Kotlin
+            | Language::Python => true,
         },
         // RFC §5.C Link: B6-α shipped rust; B6-β closes c11 parity.
         // cpp/kotlin/go/python are MCU-class-rejected by `kind_class`
@@ -223,12 +227,10 @@ pub const fn lookup(kind: ForgeKind, lang: Language) -> EmitOutcome {
 pub fn check(kind: ForgeKind, lang: Language) -> Result<(), GenerateError> {
     match lookup(kind, lang) {
         EmitOutcome::Emit => Ok(()),
-        EmitOutcome::TemplateMissing => {
-            Err(GenerateError::CodegenGenericKindBackendEmitMissing {
-                kind: kind.to_string(),
-                language: language_wire_name(lang).to_string(),
-            })
-        }
+        EmitOutcome::TemplateMissing => Err(GenerateError::CodegenGenericKindBackendEmitMissing {
+            kind: kind.to_string(),
+            language: language_wire_name(lang).to_string(),
+        }),
         EmitOutcome::McuClassOnNonMcuLanguage => {
             Err(GenerateError::CodegenMcuClassKindOnNonMcuLanguage {
                 kind: kind.to_string(),

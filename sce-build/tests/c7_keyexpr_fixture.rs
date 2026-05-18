@@ -123,7 +123,9 @@ fn rust_keyexpr_match_first_emits_foreach_bc_and_cross_algo_dispatch() {
     // alias-rename emits the imported algorithm's qualified call
     // (`<namespace>::<func>` for Rust).
     assert!(
-        code.contains("algorithm_keyexpr_intersect_exact::keyexpr_intersect(entry.callback_id, target)"),
+        code.contains(
+            "algorithm_keyexpr_intersect_exact::keyexpr_intersect(entry.callback_id, target)"
+        ),
         "Rust cross-algo dispatch missing qualified call; got:\n{code}"
     );
     // Both BC and algorithm imports surface as `use super::*` lines.
@@ -150,7 +152,9 @@ fn cpp_keyexpr_match_first_emits_foreach_bc_and_cross_algo_dispatch() {
     );
     // Cross-algorithm dispatch — Cpp qualified call form.
     assert!(
-        code.contains("AlgorithmKeyexprIntersectExact::keyexpr_intersect(entry.callback_id, target)"),
+        code.contains(
+            "AlgorithmKeyexprIntersectExact::keyexpr_intersect(entry.callback_id, target)"
+        ),
         "Cpp cross-algo dispatch missing qualified call; got:\n{code}"
     );
     assert!(
@@ -204,7 +208,9 @@ fn go_keyexpr_match_first_emits_foreach_bc_and_cross_algo_dispatch() {
     );
     // Cross-algorithm dispatch — Go package-qualified form.
     assert!(
-        code.contains("algorithm_keyexpr_intersect_exact.KeyexprIntersect(entry.callback_id, target)"),
+        code.contains(
+            "algorithm_keyexpr_intersect_exact.KeyexprIntersect(entry.callback_id, target)"
+        ),
         "Go cross-algo dispatch missing qualified call; got:\n{code}"
     );
 }
@@ -223,7 +229,9 @@ fn python_keyexpr_match_first_emits_foreach_bc_and_cross_algo_dispatch() {
     // Cross-algorithm dispatch — Python module-qualified form
     // (`from . import <snake>` + `<snake>.<func>(...)`).
     assert!(
-        code.contains("algorithm_keyexpr_intersect_exact.keyexpr_intersect(entry.callback_id, target)"),
+        code.contains(
+            "algorithm_keyexpr_intersect_exact.keyexpr_intersect(entry.callback_id, target)"
+        ),
         "Python cross-algo dispatch missing qualified call; got:\n{code}"
     );
     assert!(
@@ -240,17 +248,23 @@ fn python_keyexpr_match_first_emits_foreach_bc_and_cross_algo_dispatch() {
 fn c11_keyexpr_match_first_emits_foreach_bc_and_cross_algo_dispatch() {
     let code = compile_match_first_for(Language::C11);
     assert!(
-        code.contains("for (uint32_t slot_idx = 0u; slot_idx < LOCAL_SUB_TABLE_CAPACITY; ++slot_idx) {"),
+        code.contains(
+            "for (uint32_t slot_idx = 0u; slot_idx < LOCAL_SUB_TABLE_CAPACITY; ++slot_idx) {"
+        ),
         "C11 foreach-BC missing index loop; got:\n{code}"
     );
     assert!(
-        code.contains("const subscription_entry_t *entry_ptr = local_sub_table_get_by_slot(subs, slot_idx);"),
+        code.contains(
+            "const subscription_entry_t *entry_ptr = local_sub_table_get_by_slot(subs, slot_idx);"
+        ),
         "C11 foreach-BC missing get_by_slot dispatch; got:\n{code}"
     );
     // Cross-algorithm dispatch — C11 prefix-style form
     // (`<namespace>_<func>` per RFC §5.J.1).
     assert!(
-        code.contains("algorithm_keyexpr_intersect_exact_keyexpr_intersect(entry.callback_id, target)"),
+        code.contains(
+            "algorithm_keyexpr_intersect_exact_keyexpr_intersect(entry.callback_id, target)"
+        ),
         "C11 cross-algo dispatch missing prefix call; got:\n{code}"
     );
     assert!(
@@ -312,9 +326,7 @@ fn keyexpr_match_first_emits_on_all_six_backends() {
             Language::Go => "algorithm_keyexpr_intersect_exact.KeyexprIntersect(",
             Language::C11 => "algorithm_keyexpr_intersect_exact_keyexpr_intersect(",
             Language::Cpp => "AlgorithmKeyexprIntersectExact::keyexpr_intersect(",
-            Language::Python => {
-                "algorithm_keyexpr_intersect_exact.keyexpr_intersect("
-            }
+            Language::Python => "algorithm_keyexpr_intersect_exact.keyexpr_intersect(",
             Language::Rust => "algorithm_keyexpr_intersect_exact::keyexpr_intersect(",
         };
         assert!(

@@ -236,11 +236,15 @@ fn python_foreach_bc_emits_index_loop_with_get_by_slot() {
 fn c11_foreach_bc_emits_index_loop_with_get_by_slot() {
     let code = compile_algo_for(Language::C11);
     assert!(
-        code.contains("for (uint32_t slot_idx = 0u; slot_idx < LOCAL_SUB_TABLE_CAPACITY; ++slot_idx) {"),
+        code.contains(
+            "for (uint32_t slot_idx = 0u; slot_idx < LOCAL_SUB_TABLE_CAPACITY; ++slot_idx) {"
+        ),
         "C11 foreach-BC missing index loop; got:\n{code}"
     );
     assert!(
-        code.contains("const subscription_entry_t *entry_ptr = local_sub_table_get_by_slot(subs, slot_idx);"),
+        code.contains(
+            "const subscription_entry_t *entry_ptr = local_sub_table_get_by_slot(subs, slot_idx);"
+        ),
         "C11 foreach-BC missing get_by_slot dispatch; got:\n{code}"
     );
     assert!(
@@ -294,10 +298,7 @@ fn match_validation_error<F: FnOnce(&ValidationError) -> bool>(
     }
 }
 
-fn expect_compile_err(
-    lang: Language,
-    extra: &[(String, String)],
-) -> Located<ForgeError> {
+fn expect_compile_err(lang: Language, extra: &[(String, String)]) -> Located<ForgeError> {
     match compile_inline(lang, extra) {
         Ok(_) => panic!("expected compile error but compilation succeeded"),
         Err(e) => e,
@@ -311,10 +312,7 @@ fn negative_foreach_source_not_iterable_fires() {
     </sce:foreach>
     <sce:return expr="0xFFFF"/>"##;
     let doc = negative_algo_doc(body, "");
-    let err = expect_compile_err(
-        Language::Rust,
-        &[("algo.scxml".into(), doc)],
-    );
+    let err = expect_compile_err(Language::Rust, &[("algo.scxml".into(), doc)]);
     assert!(
         match_validation_error(&err, |v| matches!(
             v,
@@ -329,10 +327,7 @@ fn negative_call_target_unknown_fires() {
     let body = r##"    <sce:call target="missing_alias.find_by_index" args="target"/>
     <sce:return expr="0xFFFF"/>"##;
     let doc = negative_algo_doc(body, "");
-    let err = expect_compile_err(
-        Language::Rust,
-        &[("algo.scxml".into(), doc)],
-    );
+    let err = expect_compile_err(Language::Rust, &[("algo.scxml".into(), doc)]);
     assert!(
         match_validation_error(&err, |v| matches!(
             v,
@@ -347,10 +342,7 @@ fn negative_call_target_method_unknown_fires() {
     let body = r##"    <sce:call target="subs.unknown_method" args="target"/>
     <sce:return expr="0xFFFF"/>"##;
     let doc = negative_algo_doc(body, "");
-    let err = expect_compile_err(
-        Language::Rust,
-        &[("algo.scxml".into(), doc)],
-    );
+    let err = expect_compile_err(Language::Rust, &[("algo.scxml".into(), doc)]);
     assert!(
         match_validation_error(&err, |v| matches!(
             v,
@@ -365,10 +357,7 @@ fn negative_bc_mutation_forbidden_fires() {
     let body = r##"    <sce:call target="subs.insert" args="target"/>
     <sce:return expr="0xFFFF"/>"##;
     let doc = negative_algo_doc(body, "");
-    let err = expect_compile_err(
-        Language::Rust,
-        &[("algo.scxml".into(), doc)],
-    );
+    let err = expect_compile_err(Language::Rust, &[("algo.scxml".into(), doc)]);
     assert!(
         match_validation_error(&err, |v| matches!(
             v,
@@ -384,14 +373,15 @@ fn negative_call_arg_count_mismatch_fires() {
     let body = r##"    <sce:call target="subs.find_by_index" args="target, target"/>
     <sce:return expr="0xFFFF"/>"##;
     let doc = negative_algo_doc(body, "");
-    let err = expect_compile_err(
-        Language::Rust,
-        &[("algo.scxml".into(), doc)],
-    );
+    let err = expect_compile_err(Language::Rust, &[("algo.scxml".into(), doc)]);
     assert!(
         match_validation_error(&err, |v| matches!(
             v,
-            ValidationError::AlgorithmCallArgCountMismatch { actual: 2, expected: 1, .. }
+            ValidationError::AlgorithmCallArgCountMismatch {
+                actual: 2,
+                expected: 1,
+                ..
+            }
         )),
         "expected AlgorithmCallArgCountMismatch (2 vs 1); got: {err:?}"
     );
@@ -407,10 +397,7 @@ fn negative_foreach_source_bc_with_bytes_item_type_fires() {
     </sce:foreach>
     <sce:return expr="0xFFFF"/>"##;
     let doc = negative_algo_doc(body, "");
-    let err = expect_compile_err(
-        Language::Rust,
-        &[("algo.scxml".into(), doc)],
-    );
+    let err = expect_compile_err(Language::Rust, &[("algo.scxml".into(), doc)]);
     assert!(
         match_validation_error(&err, |v| matches!(
             v,

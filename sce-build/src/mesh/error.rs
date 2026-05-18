@@ -190,34 +190,31 @@ pub enum DeployError {
     /// `tick_period_ms` must be strictly less than `gap_timeout_ms`
     /// (Nyquist). Rejected at parse time so a bad value cannot reach
     /// the generated router.
-    #[error("machine '{machine}': invalid `ordering:` section in deploy.yaml — {reason}. \
-             Either fix the values or omit the section entirely to accept the defaults.")]
-    InvalidOrderingTimings {
-        machine: String,
-        reason: String,
-    },
+    #[error(
+        "machine '{machine}': invalid `ordering:` section in deploy.yaml — {reason}. \
+             Either fix the values or omit the section entirely to accept the defaults."
+    )]
+    InvalidOrderingTimings { machine: String, reason: String },
 
     /// A machine declared a `liveliness:` section whose `lease_ms`
     /// violates the minimum-floor constraint (SCE Mesh §16.7 row 8;
     /// see `MIN_LIVELINESS_LEASE_MS` in deploy.rs). Rejected at parse
     /// time so a bad value cannot reach the generated router.
-    #[error("machine '{machine}': invalid `liveliness:` section in deploy.yaml — {reason}. \
-             Either fix the value or omit the section entirely to disable liveliness.")]
-    InvalidLiveliness {
-        machine: String,
-        reason: String,
-    },
+    #[error(
+        "machine '{machine}': invalid `liveliness:` section in deploy.yaml — {reason}. \
+             Either fix the value or omit the section entirely to disable liveliness."
+    )]
+    InvalidLiveliness { machine: String, reason: String },
 
     /// A machine declared a `server.query_timeout_ms` whose value
     /// violates the minimum-floor constraint (SCE Mesh §9.5 gap Z2;
     /// see `MIN_SERVER_QUERY_TIMEOUT_MS` in deploy.rs). Rejected at
     /// parse time so a bad value cannot reach the generated router.
-    #[error("machine '{machine}': invalid `server.query_timeout_ms` in deploy.yaml — {reason}. \
-             Either fix the value or omit the knob entirely to disable the server deadline.")]
-    InvalidServerQueryTimeout {
-        machine: String,
-        reason: String,
-    },
+    #[error(
+        "machine '{machine}': invalid `server.query_timeout_ms` in deploy.yaml — {reason}. \
+             Either fix the value or omit the knob entirely to disable the server deadline."
+    )]
+    InvalidServerQueryTimeout { machine: String, reason: String },
 
     /// A machine declared an `outbound_buffer:` section whose
     /// `max_pending_per_target` violates the minimum constraint
@@ -226,12 +223,11 @@ pub enum DeployError {
     /// semantically equivalent to no buffer — cannot reach the
     /// generated router under the guise of opting into §10.10
     /// readiness gating.
-    #[error("machine '{machine}': invalid `outbound_buffer:` section in deploy.yaml — {reason}. \
-             Either fix the value or omit the section entirely to opt out of §10.10 buffering.")]
-    InvalidOutboundBuffer {
-        machine: String,
-        reason: String,
-    },
+    #[error(
+        "machine '{machine}': invalid `outbound_buffer:` section in deploy.yaml — {reason}. \
+             Either fix the value or omit the section entirely to opt out of §10.10 buffering."
+    )]
+    InvalidOutboundBuffer { machine: String, reason: String },
 
     /// A `discovery:` top-level block appeared in deploy.yaml. SCE Mesh
     /// §3.3 invariant: transport-native routing is the source of truth
@@ -243,13 +239,15 @@ pub enum DeployError {
     /// (zenoh.json5 scouting, vsomeip.json service-discovery). Rejected
     /// at parse time so an authored block cannot silently round-trip
     /// through codegen producing no runtime behaviour.
-    #[error("deploy.yaml 'discovery:' top-level block is not supported ({content_kind}). \
+    #[error(
+        "deploy.yaml 'discovery:' top-level block is not supported ({content_kind}). \
              SCE Mesh §3.3 invariant: transport-native routing is the source of truth for \
              peer availability; SCE does not maintain a peer table (§2572 rejected list, \
              §2574 rejection of `discovery.mode: static | dynamic`). For per-binding runtime \
              target selection use value-field placeholders (§14.4). For transport-level peer \
              discovery configure the external OEM config (zenoh.json5 scouting, \
-             vsomeip.json service-discovery).")]
+             vsomeip.json service-discovery)."
+    )]
     DiscoveryNotSupported { content_kind: String },
 
     /// A binding carries a `{name}` placeholder value but the binding's
@@ -258,10 +256,12 @@ pub enum DeployError {
     /// (local, shm, custom_tcp, can) cannot substitute runtime values
     /// without SCE reimplementing transport discovery, which the §3.3
     /// design invariant explicitly rejects.
-    #[error("machine '{machine}': binding '{binding}' on transport '{transport}' carries a \
+    #[error(
+        "machine '{machine}': binding '{binding}' on transport '{transport}' carries a \
              '{{name}}' placeholder, but this transport does not support pool bindings \
              (supports_pool = false). Use a routing-capable transport (zenoh, someip) or \
-             drop the placeholder.")]
+             drop the placeholder."
+    )]
     PoolNotSupportedByTransport {
         machine: String,
         binding: String,
@@ -273,31 +273,31 @@ pub enum DeployError {
     /// `request_service(SERVICE, ANY_INSTANCE)` is interpreted as
     /// specific-instance-0xFFFF, not a wildcard, so codegen must know
     /// the finite set of instance IDs to pre-request at init().
-    #[error("machine '{machine}': SOME/IP binding '{binding}' uses a '{{name}}' placeholder \
+    #[error(
+        "machine '{machine}': SOME/IP binding '{binding}' uses a '{{name}}' placeholder \
              but is missing the required `instances:` list. vsomeip does not support \
-             open-ended instance subscription; declare the expected instance IDs explicitly.")]
-    PoolMissingInstanceList {
-        machine: String,
-        binding: String,
-    },
+             open-ended instance subscription; declare the expected instance IDs explicitly."
+    )]
+    PoolMissingInstanceList { machine: String, binding: String },
 
     /// A binding declared an empty `instances: []` list (SCE Mesh §14.4).
     /// An empty pool would generate zero `request_service` calls and the
     /// runtime would refuse every placeholder value, so the
     /// configuration is silently broken.
-    #[error("machine '{machine}': binding '{binding}' has an empty `instances: []` list. \
-             Declare at least one instance ID or remove the list entirely.")]
-    PoolEmptyInstanceList {
-        machine: String,
-        binding: String,
-    },
+    #[error(
+        "machine '{machine}': binding '{binding}' has an empty `instances: []` list. \
+             Declare at least one instance ID or remove the list entirely."
+    )]
+    PoolEmptyInstanceList { machine: String, binding: String },
 
     /// A binding value field contains a malformed placeholder (unbalanced
     /// braces, empty name, invalid characters). Rejected at parse time
     /// so a malformed placeholder cannot be confused with a literal
     /// brace in the value string.
-    #[error("machine '{machine}': binding '{binding}' has an invalid placeholder — {reason}. \
-             Fix the placeholder syntax or escape intended literal braces.")]
+    #[error(
+        "machine '{machine}': binding '{binding}' has an invalid placeholder — {reason}. \
+             Fix the placeholder syntax or escape intended literal braces."
+    )]
     PoolInvalidPlaceholder {
         machine: String,
         binding: String,
@@ -314,15 +314,14 @@ pub enum DeployError {
     /// the author see which transport the deploy.yaml declared so the
     /// diagnostic distinguishes the per-transport policy from the
     /// machine-level one. See SCE_MESH.md §14.4.
-    #[error("machine '{machine}': `server.instances:` is not supported on transport '{transport}' \
+    #[error(
+        "machine '{machine}': `server.instances:` is not supported on transport '{transport}' \
              — only transports with a peer-identifying inbound distinguisher (SOME/IP today) can \
              host a multi-instance server pool. Drop `instances:` from the server section, switch \
              the server transport to one that supports pools, or run N processes each hosting a \
-             single-instance server. See SCE_MESH.md §14.4.")]
-    ServerPoolNotSupported {
-        machine: String,
-        transport: String,
-    },
+             single-instance server. See SCE_MESH.md §14.4."
+    )]
+    ServerPoolNotSupported { machine: String, transport: String },
 
     /// A `binding.stage_pool: <name>` reference points at a forge pool
     /// that no `.forge` file in the build declares (watching-zenoh RFC
@@ -333,10 +332,12 @@ pub enum DeployError {
     /// `candidates` list means no buffer-pool kind is declared anywhere
     /// in the build — likely a missing `.forge` file rather than a
     /// typo.
-    #[error("machine '{machine}': binding '{binding}' references stage_pool '{stage_pool}' but \
+    #[error(
+        "machine '{machine}': binding '{binding}' references stage_pool '{stage_pool}' but \
              no `.forge` file in the build declares a pool by that name. Add a forge \
              `<scxml sce:kind=\"buffer-pool\" name=\"{stage_pool}\">` document or fix the \
-             reference. See watching-zenoh RFC §5.E.")]
+             reference. See watching-zenoh RFC §5.E."
+    )]
     StagePoolNotDeclared {
         machine: String,
         binding: String,
@@ -351,10 +352,12 @@ pub enum DeployError {
     /// codec / link kinds cannot back a stage copy because they have
     /// no slot table. The repair is to point the reference at one of
     /// the build's actual buffer-pool kind names.
-    #[error("machine '{machine}': binding '{binding}' references stage_pool '{stage_pool}' which \
+    #[error(
+        "machine '{machine}': binding '{binding}' references stage_pool '{stage_pool}' which \
              resolves to a forge '{actual_kind}' kind, not 'buffer-pool'. Only buffer-pool kind \
              documents back the `Sample::take()` slot contract. Repoint the reference at one of \
-             the build's buffer-pool kind names. See watching-zenoh RFC §5.E.")]
+             the build's buffer-pool kind names. See watching-zenoh RFC §5.E."
+    )]
     StagePoolWrongKind {
         machine: String,
         binding: String,
@@ -373,11 +376,13 @@ pub enum DeployError {
     /// drop the `stage_pool` field on the binding (its presence is
     /// otherwise inert and would silently mislead a future reader
     /// into thinking RX staging applied here).
-    #[error("machine '{machine}': binding '{binding}' declares stage_pool '{stage_pool}' on \
+    #[error(
+        "machine '{machine}': binding '{binding}' declares stage_pool '{stage_pool}' on \
              transport '{transport}', which has no buffer-pool RX staging surface. The \
              `stage_pool` field is meaningful only for transports that bind a forge buffer-pool \
              kind on their RX path. Drop the field or change the transport. See watching-zenoh \
-             RFC §5.E.")]
+             RFC §5.E."
+    )]
     StagePoolTransportMismatch {
         machine: String,
         binding: String,
@@ -423,9 +428,11 @@ pub enum DeployError {
     /// semantics, so the parser detects the collision via a custom
     /// [`crate::mesh::deploy::PartitionMap`] deserializer and surfaces
     /// it here before the downstream validators run on a truncated map.
-    #[error("partition name '{name}' is declared more than once under `partitions:`. \
+    #[error(
+        "partition name '{name}' is declared more than once under `partitions:`. \
              Partition names are globally unique process identities (SCE_MESH.md §14 rule 6). \
-             Rename one of the entries or delete the duplicate.")]
+             Rename one of the entries or delete the duplicate."
+    )]
     PartitionDuplicateName { name: String },
 
     /// A partition's `contains:` references machines hosted on more
@@ -462,22 +469,23 @@ pub enum DeployError {
     /// (SCE_MESH.md §14 rule 9). A partition cannot reach into
     /// another partition's address space; the membership declaration
     /// and the `contains:` entries must agree.
-    #[error("partition '{partition}': `contains:` entry references machine '{machine}', \
+    #[error(
+        "partition '{partition}': `contains:` entry references machine '{machine}', \
              but '{machine}' is not listed under the partition's `machines:` field. \
-             Add '{machine}' to `machines:` or remove the stray entry (SCE_MESH.md §14 rule 9).")]
-    PartitionMachineNotListed {
-        partition: String,
-        machine: String,
-    },
+             Add '{machine}' to `machines:` or remove the stray entry (SCE_MESH.md §14 rule 9)."
+    )]
+    PartitionMachineNotListed { partition: String, machine: String },
 
     /// A partition has no `contains:` entries at all — no parallel
     /// regions and no invokes (SCE_MESH.md §14 rule 10). An empty
     /// partition has no runtime purpose and usually indicates a
     /// copy-paste error. Authors who want a reserved entry must
     /// declare the units they plan to host.
-    #[error("partition '{partition}' is empty (no `contains.parallel_regions:` and no \
+    #[error(
+        "partition '{partition}' is empty (no `contains.parallel_regions:` and no \
              `contains.invokes:`). Empty partitions have no runtime purpose (SCE_MESH.md \
-             §14 rule 10); either add the units this partition hosts or delete the entry.")]
+             §14 rule 10); either add the units this partition hosts or delete the entry."
+    )]
     PartitionEmpty { partition: String },
 
     /// A partition name contains characters that are not legal in a
@@ -488,11 +496,13 @@ pub enum DeployError {
     /// non-compiling C++. Detected at deploy parse so the failure
     /// surfaces before codegen rather than at the downstream C++
     /// compiler.
-    #[error("partition '{partition}' is not a valid C++ identifier: must start with a \
+    #[error(
+        "partition '{partition}' is not a valid C++ identifier: must start with a \
              letter or underscore and contain only letters, digits, and underscores. \
              Codegen bakes this name into `SCE::Generated::<machine>::P_{partition}` \
              (SCE_MESH.md §14 arch-debt #4 closure) — non-identifier characters would \
-             emit non-compiling C++. Rename the partition in deploy.yaml.")]
+             emit non-compiling C++. Rename the partition in deploy.yaml."
+    )]
     PartitionNameNotIdentifier { partition: String },
 
     /// An author-declared machine id contains the reserved
@@ -505,11 +515,13 @@ pub enum DeployError {
     /// reservation stands even when `partitions:` is absent, so that
     /// opting into partitions later never turns previously-valid ids
     /// into silent collisions.
-    #[error("machine '{machine}' uses the reserved `__sce_synth_invoke__` infix in its \
+    #[error(
+        "machine '{machine}' uses the reserved `__sce_synth_invoke__` infix in its \
              name. SCE Mesh §14 rule 5 reserves this substring for machines synthesised \
              from `<invoke type=\"scxml\">` inline `<content>` (§9.6.6); an author id \
              collision would silently shadow the synthesised peer at runtime. Rename the \
-             machine to drop the substring.")]
+             machine to drop the substring."
+    )]
     PartitionSynthInfixCollision { machine: String },
 
     /// A machine listed under some partition's `machines:` leaves one or
@@ -526,10 +538,7 @@ pub enum DeployError {
              '{machine}_default' partition exists, so the direct repair is to extend its \
              `contains:` with the missing entries (SCE_MESH.md §14 rule 1).",
              .units.iter().map(|u| format!("\n  - {u}")).collect::<String>())]
-    PartitionUncoveredUnit {
-        machine: String,
-        units: Vec<String>,
-    },
+    PartitionUncoveredUnit { machine: String, units: Vec<String> },
 
     /// A machine is mentioned in some partition's `machines:` list but
     /// one or more of its orthogonal units is not covered by any
@@ -560,18 +569,17 @@ pub enum DeployError {
     /// the combination is rejected at parse time instead of silently
     /// accepted. Authors drop the pool to partition the machine, or
     /// drop the partition listing to keep the pool.
-    #[error("machine '{machine}' declares `server.instances:` (SCE Mesh §14.4 SOME/IP \
+    #[error(
+        "machine '{machine}' declares `server.instances:` (SCE Mesh §14.4 SOME/IP \
              server pool) but partition '{partition}' lists it under `machines:`. A pool \
              is one router hosting N SOME/IP sessions on a single process; a partition \
              splits a machine across M OS processes (SCE_MESH.md §14). deploy.yaml does \
              not define the combined meaning — either remove '{machine}' from \
              partition '{partition}' `machines:` (keep the pool as one monolithic \
              process), or drop `server.instances:` from the machine and run N processes \
-             each hosting a single-instance server.")]
-    PartitionPoolMachine {
-        machine: String,
-        partition: String,
-    },
+             each hosting a single-instance server."
+    )]
+    PartitionPoolMachine { machine: String, partition: String },
 
     /// A partition declared `transport_binding:` naming a transport
     /// that does not carry inter-partition IPC within a single
@@ -586,11 +594,13 @@ pub enum DeployError {
     /// cannot cross process boundaries; carrying it over `someip` /
     /// `zenoh` / `dds` / `can` routes through a middleware daemon or
     /// broadcast fabric instead of the direct channel §14 intends.
-    #[error("partition '{partition}': `transport_binding: {transport}` is not a valid \
+    #[error(
+        "partition '{partition}': `transport_binding: {transport}` is not a valid \
              inter-partition IPC transport — {failure}. SCE Mesh §14 requires a transport \
              whose primary purpose is same-machine IPC (today: shm, custom_tcp). Switch to \
              one of those or omit `transport_binding:` to accept the default (§14 L2730 \
-             \"kind tcp/shm\").")]
+             \"kind tcp/shm\")."
+    )]
     PartitionTransportBindingUnsupported {
         partition: String,
         transport: String,
@@ -609,12 +619,14 @@ pub enum DeployError {
     /// Same-device cross-partition invokes are accepted without any
     /// `bindings` declaration — they take the implicit shm channel
     /// which is today's only wired path (§9.6.2 wire-14/20 over shm).
-    #[error("machine '{parent}' (device '{parent_device}') → \
+    #[error(
+        "machine '{parent}' (device '{parent_device}') → \
              `<invoke type=\"scxml\" src=\"#{peer}\">` on device '{peer_device}': {failure}. \
              SCE Mesh §9.6 L1393 requires each cross-device scxml-remote peer to declare \
              its transport on `machines.{parent}.bindings[\"#{peer}\"].transport`, and that \
              transport must be both capable of crossing devices AND wired by the Session F \
-             C++ dispatch.")]
+             C++ dispatch."
+    )]
     ScxmlInvokeCrossDeviceTransport {
         parent: String,
         peer: String,
@@ -632,13 +644,15 @@ pub enum DeployError {
     /// either reduce the participant count or wait on the multi-domain
     /// landing (today's single-domain assumption is the conservative
     /// trade).
-    #[error("§9.6 SOME/IP scxml-invoke service-ID overflow: \
+    #[error(
+        "§9.6 SOME/IP scxml-invoke service-ID overflow: \
              {participant_count} participants exceed the {ceiling}-slot \
              sub-range ceiling [0x8100, 0x817F] (RFC F.X-1 subsystem range \
              partitioning reserves [0x8180, 0x81FF] for §16.4 region-liveness). \
              Reduce the §9.6 SOMEIP participant count or split deploy.yaml \
              across multi-OEM domains (multi-domain support is a separate \
-             landing).")]
+             landing)."
+    )]
     SomeipScxmlInvokeServiceIdOverflow {
         participant_count: usize,
         ceiling: usize,
@@ -651,13 +665,15 @@ pub enum DeployError {
     /// (`[0x0000, 0x80FF]` / `[0x8200, 0xFFFF]` are OEM-owned). Operator
     /// fix: choose a pin inside the sub-range, or remove the pin to let
     /// the counter auto-assign.
-    #[error("machine '{machine}': pinned `someip_service_id: {pinned_id:#06x}` \
+    #[error(
+        "machine '{machine}': pinned `someip_service_id: {pinned_id:#06x}` \
              is outside the §9.6 SOMEIP scxml-invoke sub-range \
              [{range_lo:#06x}, {range_hi:#06x}] (RFC F.X-1). The upper half of \
              the SCE-reserved range is reserved for §16.4 region-liveness; pins \
              outside the SCE-reserved range collide with OEM-owned service \
              space. Pick a value inside [{range_lo:#06x}, {range_hi:#06x}] \
-             or drop the pin to use the auto-assigner.")]
+             or drop the pin to use the auto-assigner."
+    )]
     SomeipScxmlInvokeServiceIdPinOutOfRange {
         machine: String,
         pinned_id: u16,
@@ -686,13 +702,15 @@ pub enum DeployError {
     /// 128-slot ceiling of the liveness sub-range `[0x8180, 0x81FF]`
     /// (RFC F.X-3). Operator fix: reduce the partition count, or split
     /// the deploy across multi-OEM domains (separate landing).
-    #[error("§16.4 SOME/IP region-liveness service-ID overflow: \
+    #[error(
+        "§16.4 SOME/IP region-liveness service-ID overflow: \
              {participant_count} partitions exceed the {ceiling}-slot \
              sub-range ceiling [0x8180, 0x81FF] (RFC F.X-3 subsystem range \
              partitioning reserves the upper half of the SCE-reserved \
              space for region-liveness, disjoint from §9.6 invoke's \
              [0x8100, 0x817F]). Reduce the §16.4 SOMEIP partition count \
-             or split deploy.yaml across multi-OEM domains.")]
+             or split deploy.yaml across multi-OEM domains."
+    )]
     SomeipLivenessServiceIdOverflow {
         participant_count: usize,
         ceiling: usize,
@@ -703,7 +721,8 @@ pub enum DeployError {
     /// collide with the F.X-1 invoke reservation; pins above escape the
     /// SCE-reserved range entirely. Operator fix: choose a pin inside
     /// the sub-range, or remove the pin to let the counter auto-assign.
-    #[error("partition '{partition_key}': pinned \
+    #[error(
+        "partition '{partition_key}': pinned \
              `someip_liveness_service_id: {pinned_id:#06x}` is outside \
              the §16.4 SOMEIP region-liveness sub-range \
              [{range_lo:#06x}, {range_hi:#06x}] (RFC F.X-3). The lower \
@@ -711,7 +730,8 @@ pub enum DeployError {
              scxml-invoke; pins outside the SCE-reserved range collide \
              with OEM-owned service space. Pick a value inside \
              [{range_lo:#06x}, {range_hi:#06x}] or drop the pin to use \
-             the auto-assigner.")]
+             the auto-assigner."
+    )]
     SomeipLivenessServiceIdPinOutOfRange {
         partition_key: String,
         pinned_id: u16,
@@ -742,7 +762,8 @@ pub enum DeployError {
     /// from a SOME/IP-only machine, switch some machines to Zenoh
     /// transport (which carries row 8 + row 13 unconditionally), or
     /// split the deploy across multi-OEM domains.
-    #[error("§16.7 row 8 SOME/IP machine-liveness service-ID overflow: \
+    #[error(
+        "§16.7 row 8 SOME/IP machine-liveness service-ID overflow: \
              {participant_count} machines exceed the {ceiling}-slot \
              sub-range ceiling [0x8280, 0x82FF] (RFC F.X-4 subsystem range \
              partitioning reserves a third disjoint 128-slot sub-range \
@@ -750,7 +771,8 @@ pub enum DeployError {
              [0x8100, 0x817F] and §16.4 region-liveness's [0x8180, 0x81FF]). \
              Drop `liveliness:` from some SOME/IP machines, switch them \
              to Zenoh transport, or split deploy.yaml across multi-OEM \
-             domains.")]
+             domains."
+    )]
     SomeipMachineLivenessServiceIdOverflow {
         participant_count: usize,
         ceiling: usize,
@@ -762,7 +784,8 @@ pub enum DeployError {
     /// liveness or F.X-1 invoke; pins above escape the SCE-reserved
     /// namespace into OEM-owned space. Operator fix: choose a pin inside
     /// the sub-range, or remove the pin to let the counter auto-assign.
-    #[error("machine '{machine}': pinned \
+    #[error(
+        "machine '{machine}': pinned \
              `someip_machine_liveness_service_id: {pinned_id:#06x}` is \
              outside the §16.7 row 8 SOME/IP machine-liveness sub-range \
              [{range_lo:#06x}, {range_hi:#06x}] (RFC F.X-4). The lower \
@@ -770,7 +793,8 @@ pub enum DeployError {
              and §16.4 region-liveness; pins outside the SCE-reserved \
              namespace collide with OEM-owned service space. Pick a value \
              inside [{range_lo:#06x}, {range_hi:#06x}] or drop the pin to \
-             use the auto-assigner.")]
+             use the auto-assigner."
+    )]
     SomeipMachineLivenessServiceIdPinOutOfRange {
         machine: String,
         pinned_id: u16,
@@ -812,10 +836,12 @@ pub enum DeployError {
     /// applies only on partitions hosting a `<parallel>` root is a
     /// SCXML cross-reference rule (SCE_MESH.md §16.5) — its runtime
     /// consumer is the §16.5 scope, not this validator.
-    #[error("partition '{partition}': `barrier_timeout_ms: {value}` is invalid — {reason}. \
+    #[error(
+        "partition '{partition}': `barrier_timeout_ms: {value}` is invalid — {reason}. \
              SCE Mesh §14 L2731-2732 pins the W3C normative default as infinity (null / \
              field omitted); finite values must be >= 1 ms. Either fix the value or drop \
-             the key to accept the default.")]
+             the key to accept the default."
+    )]
     PartitionBarrierTimeoutInvalid {
         partition: String,
         value: u32,
@@ -884,13 +910,15 @@ pub enum DeployError {
     /// would force every region update to cross process boundaries as
     /// inter-partition traffic — the spec rejects the shape to keep the
     /// §16.5 tracker's aggregation path coherent.
-    #[error("partition '{partition}': claims root for machine '{machine}' \
+    #[error(
+        "partition '{partition}': claims root for machine '{machine}' \
              `<parallel id=\"{parallel}\">` but hosts no region of that parallel in \
              `contains.parallel_regions:`. SCE Mesh §14 rule 12 requires a root claimant \
              to co-host at least one region — otherwise every region update crosses \
              partitions as inter-partition traffic. Either add a region of the parallel \
              to this partition's `contains:`, or move the `hosts_parallel_roots:` entry \
-             to a partition that already hosts one.")]
+             to a partition that already hosts one."
+    )]
     PartitionParallelRootNonHost {
         partition: String,
         machine: String,
@@ -904,16 +932,15 @@ pub enum DeployError {
     /// [`Self::PartitionBarrierTimeoutInvalid`] which is a value-range
     /// check; this diagnostic catches the orthogonal configuration
     /// error of setting a timeout on a partition that is not a root.
-    #[error("partition '{partition}': `barrier_timeout_ms: {value}` is set but the \
+    #[error(
+        "partition '{partition}': `barrier_timeout_ms: {value}` is set but the \
              partition has no `hosts_parallel_roots:` entries. SCE Mesh §14 rule 12 \
              (L2842) requires the timeout to gate a §16.5 `ParallelCompletionTracker`, \
              and trackers only exist on root-hosting partitions. Either add a \
              `hosts_parallel_roots:` entry (making this partition a root) or drop \
-             `barrier_timeout_ms:` (which has no consumer here).")]
-    PartitionBarrierTimeoutWithoutRoot {
-        partition: String,
-        value: u32,
-    },
+             `barrier_timeout_ms:` (which has no consumer here)."
+    )]
+    PartitionBarrierTimeoutWithoutRoot { partition: String, value: u32 },
 
     /// A partition declared `transport_binding: custom_tcp` and
     /// participates in a distributed `<parallel>` (§16.5) wire-21
@@ -926,14 +953,16 @@ pub enum DeployError {
     /// surfaces here instead of as a delayed runtime fault. Spec §14
     /// rule 4 accepts custom_tcp; the gap is in the codegen surface
     /// (SCE_MESH.md §16.5 banner + matrix carve-out).
-    #[error("partition '{partition}': `transport_binding: custom_tcp` is set, but the \
+    #[error(
+        "partition '{partition}': `transport_binding: custom_tcp` is set, but the \
              partition participates in distributed `<parallel id=\"{parallel}\">` \
              (machine '{machine}') wire-21 routing. The §16.5 wire-21 channel emitter \
              currently supports `transport_binding: shm` only — a `custom_tcp` channel \
              is not yet generated for ParallelRegionDone forwarding. Either change this \
              partition's `transport_binding:` to `shm` (same-device deployments), or \
              remove the partition from any distributed `<parallel>` route until the \
-             custom_tcp wire-21 emitter lands.")]
+             custom_tcp wire-21 emitter lands."
+    )]
     PartitionWire21CustomTcpUnimplemented {
         partition: String,
         machine: String,
@@ -991,12 +1020,14 @@ pub enum DeployError {
     /// `bare_metal` / `rtos`; `class: ap` admits only the general-purpose
     /// OS values. Rejected at parse time so a contradictory pairing
     /// cannot reach the codegen-matrix walker (RFC §5.J.4 / §5.J.5).
-    #[error("machine '{machine}': platform.class '{class}' is not compatible with \
+    #[error(
+        "machine '{machine}': platform.class '{class}' is not compatible with \
              platform.os '{os}'. SCE Mesh §14 (RFC §5.K) admits 'mcu' with \
              os ∈ {{bare_metal, rtos}} and 'ap' with os ∈ {{linux, qnx, macos, \
              freebsd, windows}}. Repair: change either field so the pair becomes \
              admissible, or drop the platform: section to leave the machine \
-             unclassified.")]
+             unclassified."
+    )]
     PlatformClassOsMismatch {
         machine: String,
         class: &'static str,
@@ -1009,17 +1040,17 @@ pub enum DeployError {
     /// worker drives `<send>` queue draining inside a fixed stack
     /// frame; without an authored bound, codegen has no static budget
     /// to gate TLV-decode recursion against. Rejected at parse time.
-    #[error("machine '{machine}': scheduler.kind 'cooperative' requires \
+    #[error(
+        "machine '{machine}': scheduler.kind 'cooperative' requires \
              scheduler.worker_stack_budget (bytes). watching-zenoh RFC §5.K \
              line 2426 (`deploy/worker-stack-budget-missing`) — cooperative \
              drives the `<send>` queue inside a fixed stack frame; a missing \
              budget would let TLV-decode recursion silently overflow. \
              Repair: add `worker_stack_budget: <bytes>` under `scheduler:` (e.g. \
              4096), or change `kind:` to `tokio` / `rt` to inherit the host \
-             runtime's stack defaults.")]
-    SchedulerCooperativeMissingStackBudget {
-        machine: String,
-    },
+             runtime's stack defaults."
+    )]
+    SchedulerCooperativeMissingStackBudget { machine: String },
 
     /// A machine declared `scheduler.kind: cooperative` without
     /// `scheduler.worker_slot_budget_us` (watching-zenoh RFC §5.K line
@@ -1029,16 +1060,16 @@ pub enum DeployError {
     /// WCET check has no budget to compare against and the slot-count
     /// derivation (per [`super::deploy::validate_machine_scheduler_worker_capacity`])
     /// cannot run. Rejected at parse time.
-    #[error("machine '{machine}': scheduler.kind 'cooperative' requires \
+    #[error(
+        "machine '{machine}': scheduler.kind 'cooperative' requires \
              scheduler.worker_slot_budget_us (microseconds). watching-zenoh \
              RFC §5.K line 2428-2429 (`deploy/worker-slot-budget-missing`) — \
              per-slot WCET ceiling drives the §5.B aggregate WCET check and \
              the cooperative slot-count derivation. Repair: add \
              `worker_slot_budget_us: <us>` under `scheduler:` (e.g. 200), or \
-             change `kind:` to `tokio` / `rt` to skip the WCET check.")]
-    SchedulerCooperativeMissingSlotBudget {
-        machine: String,
-    },
+             change `kind:` to `tokio` / `rt` to skip the WCET check."
+    )]
+    SchedulerCooperativeMissingSlotBudget { machine: String },
 
     /// A machine declared `scheduler.kind: cooperative` without
     /// `scheduler.keepalive_jitter_budget_us` (watching-zenoh RFC §5.K
@@ -1047,16 +1078,16 @@ pub enum DeployError {
     /// this bound, so the consumer check (§5.B aggregate WCET) needs
     /// the ceiling to enforce keepalive emission jitter limits.
     /// Rejected at parse time.
-    #[error("machine '{machine}': scheduler.kind 'cooperative' requires \
+    #[error(
+        "machine '{machine}': scheduler.kind 'cooperative' requires \
              scheduler.keepalive_jitter_budget_us (microseconds). watching-zenoh \
              RFC §5.K line 2430-2431 (`deploy/keepalive-jitter-budget-missing`) \
              — sum of worst-case slot budgets in one tick window must fit \
              inside this bound. Repair: add `keepalive_jitter_budget_us: <us>` \
              under `scheduler:` (recommended default: 0.5 × min lease), or \
-             change `kind:` to `tokio` / `rt` to inherit host runtime jitter.")]
-    SchedulerCooperativeMissingKeepaliveJitterBudget {
-        machine: String,
-    },
+             change `kind:` to `tokio` / `rt` to inherit host runtime jitter."
+    )]
+    SchedulerCooperativeMissingKeepaliveJitterBudget { machine: String },
 
     /// A machine declared more workers (entries under `machines.<m>.workers`)
     /// than the cooperative scheduler can host in one tick window
@@ -1067,7 +1098,8 @@ pub enum DeployError {
     /// failure mode is `worker/scheduler-unsupported` (spec §5.D line
     /// 912), raised during [`crate::compile_forge_with_deploy`] for
     /// the specific Worker doc that overflowed the budget.
-    #[error("machine '{machine}': declared {worker_count} workers under \
+    #[error(
+        "machine '{machine}': declared {worker_count} workers under \
              machines.{machine}.workers, but cooperative scheduler can host \
              only {slot_count} per tick window (derived from tick_period_us \
              {tick_period_us} / worker_slot_budget_us {worker_slot_budget_us}). \
@@ -1075,7 +1107,8 @@ pub enum DeployError {
              (`deploy/scheduler-incompatible-with-worker-count`). Repair: \
              raise `tick_period_us`, lower `worker_slot_budget_us`, remove \
              excess workers, or switch `scheduler.kind:` to a preemptive \
-             host (`tokio` / `rt`).")]
+             host (`tokio` / `rt`)."
+    )]
     SchedulerIncompatibleWithWorkerCount {
         machine: String,
         worker_count: u32,
@@ -1089,14 +1122,16 @@ pub enum DeployError {
     /// (watching-zenoh RFC §5.D line 910 `timer/slot-overflow`).
     /// The MCU static timer wheel is sized at compile time; each
     /// timer slot is one wheel cell.
-    #[error("machine '{machine}': declared {timer_count} timers under \
+    #[error(
+        "machine '{machine}': declared {timer_count} timers under \
              machines.{machine}.timers, but scheduler.timer_wheel_depth = \
              {wheel_depth} slots cannot accommodate them. watching-zenoh \
              RFC §5.D line 910 (`timer/slot-overflow`) — the static \
              timer wheel is sized at compile time. Repair: raise \
              `scheduler.timer_wheel_depth`, remove excess timers, or \
              switch to `scheduler.kind: tokio` / `rt` to inherit \
-             host runtime timer scheduling.")]
+             host runtime timer scheduling."
+    )]
     TimerSlotOverflow {
         machine: String,
         timer_count: u32,
@@ -1108,7 +1143,6 @@ pub enum DeployError {
     //    spec-named (lines 2421, 2440-2503) + 2 cross-doc (Q-C13-5 a
     //    lock). C13-β anti-flood family + C9-β reassembly cross-doc
     //    codes defer to follow-up atomics per scope-split decision. ──
-
     /// Watching-zenoh RFC §5.K line 2421
     /// (`deploy/link-driver-unknown`). `machines.<n>.links.<name>.driver`
     /// names a driver that is not in the C13-α-1 known-driver baseline
@@ -1120,12 +1154,14 @@ pub enum DeployError {
     /// link-doc names) per Q-C13-8 (a) lock; the registry-driven
     /// expansion lets new forge link-kind docs extend the validator
     /// without freezing the Rust enum surface.
-    #[error("machine '{machine}': link '{link_name}' declares driver \
+    #[error(
+        "machine '{machine}': link '{link_name}' declares driver \
              '{driver}' which is unknown. watching-zenoh RFC §5.K \
              line 2421 (`deploy/link-driver-unknown`) — the build's \
              closed-allowlist + forge `<sce:link>` cross-doc registry \
              union does not contain this driver. Repair: pick one of \
-             [{candidates_list}].")]
+             [{candidates_list}]."
+    )]
     LinkDriverUnknown {
         machine: String,
         link_name: String,
@@ -1154,7 +1190,8 @@ pub enum DeployError {
     /// doc step. Authors who declare an `established_session` link
     /// without `mtu_bytes` see this earlier than the C9-β reassembly
     /// consumer.
-    #[error("machine '{machine}': link '{link_name}' declares \
+    #[error(
+        "machine '{machine}': link '{link_name}' declares \
              `domain_attrs.trust_class: established_session` but \
              `mtu_bytes:` is absent. watching-zenoh RFC §5.K line \
              2440-2442 (`deploy/link-mtu-missing-on-fragmenting-link`) \
@@ -1162,11 +1199,9 @@ pub enum DeployError {
              traffic (RFC §5.M line 2731) and the build cannot size \
              reassembly pool slots without the link-layer MTU. Repair: \
              add `mtu_bytes: <bytes>` under this link entry (e.g. \
-             1472 for UDP/IPv4 over Ethernet).")]
-    LinkMtuMissingOnFragmentingLink {
-        machine: String,
-        link_name: String,
-    },
+             1472 for UDP/IPv4 over Ethernet)."
+    )]
+    LinkMtuMissingOnFragmentingLink { machine: String, link_name: String },
 
     /// Watching-zenoh RFC §5.K line 2443-2445
     /// (`deploy/link-mtu-below-driver-floor`). `mtu_bytes` declared
@@ -1175,14 +1210,16 @@ pub enum DeployError {
     /// `lwip_udp` = 28 (IPv4 minimum header), `lwip_tcp` = 40
     /// (IPv4+TCP minimum). Unknown drivers silent-skip this check
     /// until their floor is registered.
-    #[error("machine '{machine}': link '{link_name}' declares `mtu_bytes: \
+    #[error(
+        "machine '{machine}': link '{link_name}' declares `mtu_bytes: \
              {declared_mtu}` which is below driver '{driver}'s minimum \
              payload floor ({driver_floor}). watching-zenoh RFC §5.K \
              line 2443-2445 (`deploy/link-mtu-below-driver-floor`) — \
              the driver's default minimum would override the declared \
              value silently. Repair: raise `mtu_bytes` to >= \
              {driver_floor}, or change the driver to one with a smaller \
-             header floor.")]
+             header floor."
+    )]
     LinkMtuBelowDriverFloor {
         machine: String,
         link_name: String,
@@ -1203,7 +1240,8 @@ pub enum DeployError {
     /// parent C11 RFC §5.2 named this hook for closure once the
     /// driver matrix reached 4×4; `60fba30c` (C11-WebSocket
     /// landing) satisfied the trigger.
-    #[error("machine '{machine}': link '{link_name}' declares forge \
+    #[error(
+        "machine '{machine}': link '{link_name}' declares forge \
              `<sce:link-class>{declared_class}</sce:link-class>` but \
              deploy.yaml binds `driver: {driver}` which implements \
              class '{expected_class}'. watching-zenoh RFC §5.C lines \
@@ -1212,7 +1250,8 @@ pub enum DeployError {
              driver implements exactly one protocol class. Repair: \
              change `driver:` to the entry matching the declared \
              class, or change `<sce:link-class>` to match the bound \
-             driver.")]
+             driver."
+    )]
     LinkDriverClassMismatch {
         machine: String,
         link_name: String,
@@ -1240,14 +1279,16 @@ pub enum DeployError {
     /// (`reassembly/expected-fragmentation-rate-high`) refines this
     /// when the reassembly-pool-bound-to-link cross-doc step lands in
     /// C13-α-2.
-    #[error("machine '{machine}': link '{link_name}' declares \
+    #[error(
+        "machine '{machine}': link '{link_name}' declares \
              `expected_p99_bytes: {expected_p99_bytes}` which exceeds \
              `mtu_bytes: {mtu_bytes}`. watching-zenoh RFC §5.K line \
              2446-2448 (`deploy/link-expected-p99-exceeds-mtu`) — the \
              p99 message would always fragment. Repair: lower \
              `expected_p99_bytes` to <= `mtu_bytes`, or raise \
              `mtu_bytes` (driver permitting), or bind a reassembly \
-             pool to this link via a forge `<sce:link>` declaration.")]
+             pool to this link via a forge `<sce:link>` declaration."
+    )]
     LinkExpectedP99ExceedsMtu {
         machine: String,
         link_name: String,
@@ -1265,7 +1306,8 @@ pub enum DeployError {
     /// / tick_period_us < burst_pps × 2` (safety factor 2.0 per spec
     /// line 2492). Silent-skips on any join failure or missing
     /// `scheduler.tick_period_us` / `burst_pps`.
-    #[error("machine '{machine}': link '{link_name}' declares \
+    #[error(
+        "machine '{machine}': link '{link_name}' declares \
              `burst_pps: {burst_pps}` against RX pool '{pool_name}' \
              with `<sce:slot-count>{slot_count}</sce:slot-count>` \
              and scheduler `tick_period_us: {tick_period_us}`. \
@@ -1275,7 +1317,8 @@ pub enum DeployError {
              burst. Repair: raise `<sce:slot-count>` on pool \
              '{pool_name}', lower `scheduler.tick_period_us`, or \
              switch `rx_dispatch: isr_to_pool` when currently \
-             `worker_tick`.")]
+             `worker_tick`."
+    )]
     LinkBurstAbsorptionInsufficient {
         machine: String,
         link_name: String,
@@ -1293,7 +1336,8 @@ pub enum DeployError {
     /// 1_000_000 > slot_count`. C13-α-2 cross-doc consumer of
     /// `resolve_link_rx_pool_slot_count`. Silent-skips on any join
     /// failure or missing `scheduler.tick_period_us` / `burst_pps`.
-    #[error("machine '{machine}': link '{link_name}' resolves to \
+    #[error(
+        "machine '{machine}': link '{link_name}' resolves to \
              `rx_dispatch: worker_tick` but one tick window of \
              arrivals overruns RX pool '{pool_name}'. \
              `burst_pps × tick_period_us / 1_000_000 = {arrivals_per_tick}` \
@@ -1304,7 +1348,8 @@ pub enum DeployError {
              re-arm absorbs the burst), raise `<sce:slot-count>` on \
              pool '{pool_name}' to admit the per-tick arrivals, or \
              lower `scheduler.tick_period_us` so each window admits \
-             fewer arrivals.")]
+             fewer arrivals."
+    )]
     LinkRxDispatchWorkerTickOnHighBurst {
         machine: String,
         link_name: String,
@@ -1321,7 +1366,8 @@ pub enum DeployError {
     /// ISR fast-path requires the rate to size descriptor ring +
     /// validate stack budget. C13-α-1 fires at parse-time since the
     /// resolution is purely intra-link-config (per Q-C13-3 a default).
-    #[error("machine '{machine}': link '{link_name}' resolves to \
+    #[error(
+        "machine '{machine}': link '{link_name}' resolves to \
              `rx_dispatch: isr_to_pool` but `burst_pps` is not declared. \
              watching-zenoh RFC §5.K line 2501-2503 \
              (`deploy/link-burst-pps-missing-on-isr-dispatch`) — ISR \
@@ -1329,11 +1375,9 @@ pub enum DeployError {
              ring and validate the stack budget. Repair: declare \
              `burst_pps: <pps>`, or explicitly set `rx_dispatch: \
              worker_tick` to opt into the slower cooperative-tick \
-             path.")]
-    LinkBurstPpsMissingOnIsrDispatch {
-        machine: String,
-        link_name: String,
-    },
+             path."
+    )]
+    LinkBurstPpsMissingOnIsrDispatch { machine: String, link_name: String },
 
     /// C13-α-1 cross-doc validator pair (Q-C13-5 a). A forge
     /// `<scxml sce:kind="link" name="X">` document was declared in the
@@ -1347,13 +1391,15 @@ pub enum DeployError {
     /// across the build (union across all machines) — primary repair
     /// is adding the missing entry, but knowing what names ARE
     /// declared helps the author spot typos.
-    #[error("forge `<sce:link name=\"{link_name}\">` declared but no \
+    #[error(
+        "forge `<sce:link name=\"{link_name}\">` declared but no \
              `deploy.yaml::machines.<n>.links.{link_name}` entry \
              exists. C13-α-1 cross-doc validator \
              (`deploy/link-not-declared-in-deploy`) per Q-C13-5 (a) \
              lock. Repair: add the deploy entry under one of [\
              {candidates_list}] or another machine, or remove the \
-             forge link doc.")]
+             forge link doc."
+    )]
     LinkNotDeclaredInDeploy {
         link_name: String,
         candidates: Vec<String>,
@@ -1366,7 +1412,8 @@ pub enum DeployError {
     /// build. The deploy entry has no wire framer / codec pairing —
     /// dead config. Author repair: add the forge `<sce:link>` doc, or
     /// remove the orphan deploy entry.
-    #[error("machine '{machine}': link '{link_name}' declared in \
+    #[error(
+        "machine '{machine}': link '{link_name}' declared in \
              deploy.yaml but no forge `<scxml sce:kind=\"link\" \
              name=\"{link_name}\">` document was declared/imported. \
              C13-α-1 cross-doc validator \
@@ -1374,7 +1421,8 @@ pub enum DeployError {
              lock. Repair: declare the forge link doc and import it \
              from a statechart/worker on this machine, or pick one \
              of [{candidates_list}] (forge link doc names known to \
-             this build), or remove the orphan deploy entry.")]
+             this build), or remove the orphan deploy entry."
+    )]
     LinkNotDeclaredInForge {
         machine: String,
         link_name: String,
@@ -1387,11 +1435,13 @@ pub enum DeployError {
     /// `pool_defaults.stage_copy_policy` declared with a value other
     /// than `warn` / `error` / `forbid`. Parse-time typo guard;
     /// FixCarriesCandidates over the closed set.
-    #[error("machine '{machine}': `pool_defaults.stage_copy_policy: \
+    #[error(
+        "machine '{machine}': `pool_defaults.stage_copy_policy: \
              {value}` is not a known policy. watching-zenoh RFC §5.K \
              line 2517-2519 (`deploy/stage-copy-policy-unknown`) — \
              closed-set typo guard. Repair: pick one of \
-             [{candidates_list}].")]
+             [{candidates_list}]."
+    )]
     StageCopyPolicyUnknown {
         machine: String,
         value: String,
@@ -1403,23 +1453,23 @@ pub enum DeployError {
     /// (`deploy/session-arming-quota-missing`). Link declares
     /// `trust_class: session_arming` but no `session_arming_quota`.
     /// Hard error.
-    #[error("machine '{machine}': link '{link_name}' declares \
+    #[error(
+        "machine '{machine}': link '{link_name}' declares \
              `trust_class: session_arming` but no \
              `session_arming_quota`. watching-zenoh RFC §5.K line \
              2449-2451 — without a cap an attacker can fill every \
              `Accepting.*` slot. Repair: declare \
              `session_arming_quota: <count>` (MCU recommended 8, AP \
-             recommended 32 per spec line 2282).")]
-    SessionArmingQuotaMissing {
-        machine: String,
-        link_name: String,
-    },
+             recommended 32 per spec line 2282)."
+    )]
+    SessionArmingQuotaMissing { machine: String, link_name: String },
 
     /// Watching-zenoh RFC §5.K line 2452-2453 verbatim
     /// (`deploy/accept-rate-config-missing`). `trust_class:
     /// session_arming` link missing `accept_rate_per_sec` or
     /// `accept_rate_burst`.
-    #[error("machine '{machine}': link '{link_name}' declares \
+    #[error(
+        "machine '{machine}': link '{link_name}' declares \
              `trust_class: session_arming` but missing \
              accept-rate config: {missing_fields}. watching-zenoh \
              RFC §5.K line 2452-2453 — token-bucket rate-limit is \
@@ -1427,7 +1477,8 @@ pub enum DeployError {
              declare both `accept_rate_per_sec` and \
              `accept_rate_burst` (spec line 2290-2302 recommends \
              defaults `accept_rate_per_sec: 4` MCU / `16` AP and \
-             `accept_rate_burst: 2 × accept_rate_per_sec`).")]
+             `accept_rate_burst: 2 × accept_rate_per_sec`)."
+    )]
     AcceptRateConfigMissing {
         machine: String,
         link_name: String,
@@ -1439,7 +1490,8 @@ pub enum DeployError {
     /// flood / stateless_accept fields declared on a `trust_class:
     /// untrusted` or `established_session` link where `Accepting.*`
     /// is never instantiated.
-    #[error("machine '{machine}': link '{link_name}' declares \
+    #[error(
+        "machine '{machine}': link '{link_name}' declares \
              `trust_class: {trust_class}` but anti-flood / \
              stateless_accept fields are present ({offending_fields}). \
              watching-zenoh RFC §5.K line 2454-2459 — `Accepting.*` is \
@@ -1447,7 +1499,8 @@ pub enum DeployError {
              dead config (suggests author confusion about which link \
              is the listener). Repair: change `trust_class` to \
              `session_arming` on link '{link_name}' if it is in fact \
-             the listener, or remove the dead fields.")]
+             the listener, or remove the dead fields."
+    )]
     SessionArmingFieldsOnNonArmingLink {
         machine: String,
         link_name: String,
@@ -1459,7 +1512,8 @@ pub enum DeployError {
     /// (`deploy/stateless-accept-required-on-untrusted-source`).
     /// Link with `domain_attrs.untrusted_source: true` but no
     /// `stateless_accept` block.
-    #[error("machine '{machine}': link '{link_name}' declares \
+    #[error(
+        "machine '{machine}': link '{link_name}' declares \
              `domain_attrs.untrusted_source: true` but no \
              `stateless_accept` block. watching-zenoh RFC §5.K line \
              2463-2465 — links exposed to networks the deployment \
@@ -1468,16 +1522,15 @@ pub enum DeployError {
              block with `mode`, `cookie_lifetime_ms`, \
              `key_rotation_s`, `hmac_extern`, `rng_extern` per spec \
              line 2320-2349, or set `untrusted_source: false` if the \
-             link is on a controlled network.")]
-    StatelessAcceptRequiredOnUntrustedSource {
-        machine: String,
-        link_name: String,
-    },
+             link is on a controlled network."
+    )]
+    StatelessAcceptRequiredOnUntrustedSource { machine: String, link_name: String },
 
     /// Watching-zenoh RFC §5.K line 2470-2473 verbatim
     /// (`deploy/stateless-accept-key-rotation-shorter-than-lifetime`).
     /// `key_rotation_s × 1000 ≤ 2 × cookie_lifetime_ms`.
-    #[error("machine '{machine}': link '{link_name}' \
+    #[error(
+        "machine '{machine}': link '{link_name}' \
              `stateless_accept.key_rotation_s: {key_rotation_s}` × 1000 \
              ≤ 2 × `cookie_lifetime_ms: {cookie_lifetime_ms}` \
              ({rotation_ms} ≤ {lifetime_doubled}). watching-zenoh RFC §5.K \
@@ -1485,7 +1538,8 @@ pub enum DeployError {
              bridge a rotation, so handshakes near rotation boundaries \
              get spurious cookie rejection. Repair: raise \
              `key_rotation_s` to > `2 × cookie_lifetime_ms / 1000`, or \
-             lower `cookie_lifetime_ms` to < `key_rotation_s × 500`.")]
+             lower `cookie_lifetime_ms` to < `key_rotation_s × 500`."
+    )]
     StatelessAcceptKeyRotationShorterThanLifetime {
         machine: String,
         link_name: String,
@@ -1499,7 +1553,8 @@ pub enum DeployError {
     /// (`deploy/session-arming-quota-vs-peer-table-invariant-violated`).
     /// `session_arming_quota × max_handshake_time_s > peer_table.capacity`.
     /// A slow legitimate handshake can be evicted under attack.
-    #[error("machine '{machine}': link '{link_name}' \
+    #[error(
+        "machine '{machine}': link '{link_name}' \
              `session_arming_quota: {session_arming_quota}` × \
              `stateless_accept.max_handshake_time_s: {max_handshake_time_s}` \
              > `stateless_accept.peer_table.capacity: {peer_table_capacity}` \
@@ -1509,7 +1564,8 @@ pub enum DeployError {
              faster than the per-peer table can absorb. Repair: raise \
              `peer_table.capacity` to ≥ {product}, or lower \
              `session_arming_quota` or `max_handshake_time_s` so the \
-             product fits the table.")]
+             product fits the table."
+    )]
     SessionArmingQuotaVsPeerTableInvariantViolated {
         machine: String,
         link_name: String,
@@ -1526,7 +1582,8 @@ pub enum DeployError {
     /// The wire payload's `candidates` field rides the closed sorted
     /// union of baseline + plugin symbols so authors get a `Fix::
     /// ReplaceOneOf` shape (FixCarriesCandidates non_overlap_class).
-    #[error("machine '{machine}': link '{link_name}' \
+    #[error(
+        "machine '{machine}': link '{link_name}' \
              `stateless_accept.{role}_extern: {extern_name}` not present \
              in the §5.I baseline intrinsics whitelist AND not declared \
              in any loaded `target_plugin`. watching-zenoh RFC §5.K \
@@ -1534,7 +1591,8 @@ pub enum DeployError {
              must come from the baseline registry or a target-plugin \
              entry. Repair: spell the symbol exactly as it appears in \
              the baseline registry or add the symbol to a loaded \
-             target-plugin file.")]
+             target-plugin file."
+    )]
     StatelessAcceptExternNotWhitelisted {
         machine: String,
         link_name: String,
@@ -1625,10 +1683,12 @@ pub enum ExternalConfigError {
     /// in vsomeip.json contains more than one event. The current template
     /// models one event per binding; resolving a multi-event group would
     /// silently pick a single id. Rejected at the Rust level.
-    #[error("machine '{machine}': binding '{target}' references event_group '{event_group}' \
+    #[error(
+        "machine '{machine}': binding '{target}' references event_group '{event_group}' \
              in '{config_path}', which contains {count} events. \
              Per-event fanout is not yet supported; declare a single-event group \
-             or add a per-event binding.")]
+             or add a per-event binding."
+    )]
     AmbiguousEventGroup {
         machine: String,
         target: String,
@@ -1640,8 +1700,10 @@ pub enum ExternalConfigError {
     /// A binding uses the `event_group:` sugar but the referenced event group
     /// in vsomeip.json contains no events. Building on that would emit an
     /// event_id of 0 and route nothing.
-    #[error("machine '{machine}': binding '{target}' references event_group '{event_group}' \
-             in '{config_path}', which has no events declared. Add the event id in vsomeip.json.")]
+    #[error(
+        "machine '{machine}': binding '{target}' references event_group '{event_group}' \
+             in '{config_path}', which has no events declared. Add the event id in vsomeip.json."
+    )]
     EmptyEventGroup {
         machine: String,
         target: String,
@@ -1652,9 +1714,11 @@ pub enum ExternalConfigError {
     /// A SOME/IP binding declared a name-based reference (e.g. `service: motor`)
     /// but the owning device did not declare `transports.someip.config:`.
     /// Without the config file path there is no way to resolve the name.
-    #[error("machine '{machine}': binding '{target}' uses name-based SOME/IP references \
+    #[error(
+        "machine '{machine}': binding '{target}' uses name-based SOME/IP references \
              but device '{device}' does not declare 'transports.someip.config:'. \
-             Add the vsomeip.json path to the device's transports block.")]
+             Add the vsomeip.json path to the device's transports block."
+    )]
     NamedReferenceWithoutConfig {
         machine: String,
         device: String,
@@ -1669,10 +1733,12 @@ pub enum ExternalConfigError {
     /// non-SOME/IP transports, and on SOME/IP they are replaced by
     /// name-based references (`service:`, `events.*.method:`, …) that
     /// resolve against `transports.someip.config:`. See SCE_MESH.md §14.
-    #[error("machine '{machine}': binding '{target}' (transport: {transport}) uses \
+    #[error(
+        "machine '{machine}': binding '{target}' (transport: {transport}) uses \
              reserved SOME/IP numeric-ID key(s) {fields:?}. deploy.yaml does not declare \
              numeric IDs directly — for SOME/IP bindings reference names against \
-             `transports.someip.config:` (vsomeip.json); on other transports remove these keys.")]
+             `transports.someip.config:` (vsomeip.json); on other transports remove these keys."
+    )]
     ReservedSomeipIdKeys {
         machine: String,
         target: String,
@@ -1684,9 +1750,11 @@ pub enum ExternalConfigError {
     /// name-based fields (`service`, `method`, `event_group`, `getter`,
     /// `setter`). Catches misconfigured deploy.yaml at build time instead
     /// of silently ignoring the fields.
-    #[error("machine '{machine}': binding '{target}' uses transport '{transport}' but \
+    #[error(
+        "machine '{machine}': binding '{target}' uses transport '{transport}' but \
              declares SOME/IP-only fields {fields:?}. Either change the transport to 'someip' \
-             or remove the SOME/IP-specific fields.")]
+             or remove the SOME/IP-specific fields."
+    )]
     SomeipFieldOnNonSomeipTransport {
         machine: String,
         target: String,
@@ -1711,9 +1779,11 @@ pub enum ExternalConfigError {
     /// `method:` and `event_group:`). Each SCXML event addresses exactly
     /// one SOME/IP resource kind — mixing families within one entry would
     /// silently pick a variant at codegen time. Rejected at resolution.
-    #[error("machine '{machine}': binding '{target}' event '{event}' sets multiple \
+    #[error(
+        "machine '{machine}': binding '{target}' event '{event}' sets multiple \
              field kinds ({fields:?}). Each per-event entry must declare exactly one \
-             of method / event_group / getter / setter.")]
+             of method / event_group / getter / setter."
+    )]
     ConflictingEventFieldKinds {
         machine: String,
         target: String,
@@ -1726,14 +1796,15 @@ pub enum ExternalConfigError {
     /// `getter`/`setter` — an empty entry contributes no mapping and
     /// would silently drop the event at codegen time. Rejected at
     /// resolution so the diagnostic points at the SCXML event.
-    #[error("machine '{machine}': binding '{target}' event '{event}' declares no field. \
-             Each per-event entry must set exactly one of method / event_group / getter / setter.")]
+    #[error(
+        "machine '{machine}': binding '{target}' event '{event}' declares no field. \
+             Each per-event entry must set exactly one of method / event_group / getter / setter."
+    )]
     EmptyEventEntry {
         machine: String,
         target: String,
         event: String,
     },
-
     // EventBindingUnused lives on TopologyError because detection requires
     // the SCXML send summary (an SCXML-stage input).
 }
@@ -1796,9 +1867,11 @@ pub enum TopologyError {
     /// A <send target="#X"/> references a receiver machine not declared in
     /// deploy.yaml. Required so the event coverage analyzer can locate the
     /// receiver's SCXML source and read its <transition event="..."> set.
-    #[error("machine '{sender}' sends to '{target}' but no machine '{receiver}' \
+    #[error(
+        "machine '{sender}' sends to '{target}' but no machine '{receiver}' \
              is declared in deploy.yaml. Add the receiver under topology.*.machines \
-             with its `source:` path.")]
+             with its `source:` path."
+    )]
     ReceiverNotDeclared {
         sender: String,
         target: super::target::TargetId,
@@ -1807,16 +1880,17 @@ pub enum TopologyError {
 
     /// The `source:` field uses an absolute path. Deploy descriptors must be
     /// portable across checkouts and build roots — absolute paths defeat that.
-    #[error("machine '{machine}' has absolute source path '{path}'. Use a path \
-             relative to the deploy.yaml file instead.")]
-    AbsoluteSourcePath {
-        machine: String,
-        path: String,
-    },
+    #[error(
+        "machine '{machine}' has absolute source path '{path}'. Use a path \
+             relative to the deploy.yaml file instead."
+    )]
+    AbsoluteSourcePath { machine: String, path: String },
 
     /// Cannot read a receiver's SCXML source file during event coverage validation.
-    #[error("cannot read receiver SCXML '{path}' (for machine '{machine}'): {source}. \
-             Check the `source:` field in deploy.yaml for this machine.")]
+    #[error(
+        "cannot read receiver SCXML '{path}' (for machine '{machine}'): {source}. \
+             Check the `source:` field in deploy.yaml for this machine."
+    )]
     ReceiverSourceRead {
         machine: String,
         path: String,
@@ -1859,9 +1933,11 @@ pub enum TopologyError {
     /// A deploy.yaml binding is missing a field required by its transport.
     /// Detected at the Rust level (topology stage) so users get a clear
     /// deploy.yaml diagnostic instead of a deferred C++ `#error`.
-    #[error("machine '{machine}': binding for '{target}' (transport: {transport}) \
+    #[error(
+        "machine '{machine}': binding for '{target}' (transport: {transport}) \
              is missing required field '{field}'. \
-             Add '{field}:' to the binding in deploy.yaml.")]
+             Add '{field}:' to the binding in deploy.yaml."
+    )]
     MissingBindingField {
         machine: String,
         target: super::target::TargetId,
@@ -1873,8 +1949,10 @@ pub enum TopologyError {
     /// violates a constraint like power-of-two). Reported from the Rust
     /// validation stage so the diagnostic points at deploy.yaml, not at
     /// a deferred C++ static_assert.
-    #[error("machine '{machine}': binding '{target}' (transport: {transport}) \
-             has invalid '{field}': {reason}")]
+    #[error(
+        "machine '{machine}': binding '{target}' (transport: {transport}) \
+             has invalid '{field}': {reason}"
+    )]
     InvalidBindingField {
         machine: String,
         target: super::target::TargetId,
@@ -1887,9 +1965,11 @@ pub enum TopologyError {
     /// that the sender never `<send>`s to this target. Detecting this
     /// here (instead of at runtime where the event would silently route
     /// to no method_id) catches deploy.yaml typos at build time.
-    #[error("machine '{machine}': binding '{target}' declares events.{event} in deploy.yaml, \
+    #[error(
+        "machine '{machine}': binding '{target}' declares events.{event} in deploy.yaml, \
              but the SCXML model never sends '{event}' to this target. Remove the unused \
-             entry, or correct the event name.")]
+             entry, or correct the event name."
+    )]
     EventBindingUnused {
         machine: String,
         target: super::target::TargetId,
@@ -1902,11 +1982,13 @@ pub enum TopologyError {
     /// sender-stamped `sequence_no` is indistinguishable at each
     /// receiver on the bus (SCE_MESH.md §10.6.2). CAN is the only
     /// in-tree transport in this category today.
-    #[error("machine '{machine}': binding for '{target}' (transport: {transport}) declares \
+    #[error(
+        "machine '{machine}': binding for '{target}' (transport: {transport}) declares \
              `ordering: required`, but '{transport}' is a broadcast bus whose semantics do not \
              support per-(sender, receiver) sequence reconstruction (SCE Mesh §10.6.2). \
              Either change the transport to a point-to-point one (e.g. local, shm, custom_tcp, \
-             someip, zenoh) or remove the `ordering: required` declaration from this binding.")]
+             someip, zenoh) or remove the `ordering: required` declaration from this binding."
+    )]
     OrderingCannotBeGuaranteed {
         machine: String,
         target: super::target::TargetId,
@@ -1923,10 +2005,12 @@ pub enum TopologyError {
     /// deployment. Detecting at build time pinpoints the offending
     /// invoke site (state + invoke id) in a single diagnostic instead
     /// of dozens of runtime misfires.
-    #[error("machine '{machine}': binding '{target}' declares a runtime pool that needs \
+    #[error(
+        "machine '{machine}': binding '{target}' declares a runtime pool that needs \
              <param> values {missing:?} at every using <invoke>, but invoke '{invoke_id}' \
              in state '{state}' does not supply {missing:?}. Add the missing <param>(s) \
-             to that invoke, or drop the placeholder / `instance_from:` from the binding.")]
+             to that invoke, or drop the placeholder / `instance_from:` from the binding."
+    )]
     PoolParamNameMissing {
         machine: String,
         target: super::target::TargetId,
@@ -1975,11 +2059,13 @@ pub enum TopologyError {
     /// supports_machine_lifetime_subscribe`. Currently `true` only
     /// for `zenoh`; SOME/IP support is tracked under
     /// `mesh_someip_sd_gaps_roadmap.md`.
-    #[error("machine '{machine}': subscription on source '{source_target}' for event \
+    #[error(
+        "machine '{machine}': subscription on source '{source_target}' for event \
              '{event}' uses transport '{transport}', which does not support the \
              machine-lifetime subscription path in this build. Move the binding to a \
              transport that supports it (e.g. 'zenoh') or drop the subscription from \
-             machines.{machine}.subscriptions:.")]
+             machines.{machine}.subscriptions:."
+    )]
     MachineLifetimeSubscriptionUnsupported {
         machine: String,
         source_target: super::target::TargetId,
@@ -2020,9 +2106,11 @@ pub enum CodegenError {
     /// `service-request-x` both collapse to `SERVICE_REQUEST_X`). Without
     /// this check the collision would only surface as a C++ redefinition
     /// error on the downstream compiler — an unhelpful diagnostic location.
-    #[error("target '{target}': SCXML events {events:?} both map to the same \
+    #[error(
+        "target '{target}': SCXML events {events:?} both map to the same \
              C++ constant suffix '{suffix}'. Rename one of the events (or use \
-             a per-event explicit mapping) so generated constants are unique.")]
+             a per-event explicit mapping) so generated constants are unique."
+    )]
     EventNameCollision {
         target: super::target::TargetId,
         suffix: String,
@@ -2052,12 +2140,14 @@ pub enum CodegenError {
     /// diagnostic keeps both arms so the author picks. Split
     /// across deployments is fine: the rejection is per-router,
     /// not per-deployment.
-    #[error("machine '{machine}': SOME/IP server pool (`server.instances: [...]` with more than \
+    #[error(
+        "machine '{machine}': SOME/IP server pool (`server.instances: [...]` with more than \
              one entry) cannot be combined with {kind} in the same router. Router-scoped \
              correlation tables (`invoke_correlation_` / `active_invokes_` / `pending_rpcs_`) \
              cannot safely alias across hosted sessions. Either remove the RPC client site(s) \
              from this machine or reduce `server.instances:` to a single instance. See \
-             SCE_MESH.md §14.4.")]
+             SCE_MESH.md §14.4."
+    )]
     PoolWithRpcClientUnsupported {
         machine: String,
         kind: RpcClientKind,
@@ -2741,16 +2831,14 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![partition.clone(), machine.clone(), parallel.clone()],
         },
-        DeployError::PartitionBarrierTimeoutWithoutRoot { partition, value } => {
-            DiagnosticPayload {
-                code: DiagnosticCode::MeshPartitionBarrierTimeoutWithoutRoot,
-                stage: Stage::MeshDeploy,
-                actual: Some(partition.clone()),
-                expected: None,
-                fix: None,
-                key_fragments: vec![partition.clone(), value.to_string()],
-            }
-        }
+        DeployError::PartitionBarrierTimeoutWithoutRoot { partition, value } => DiagnosticPayload {
+            code: DiagnosticCode::MeshPartitionBarrierTimeoutWithoutRoot,
+            stage: Stage::MeshDeploy,
+            actual: Some(partition.clone()),
+            expected: None,
+            fix: None,
+            key_fragments: vec![partition.clone(), value.to_string()],
+        },
         DeployError::PartitionWire21CustomTcpUnimplemented {
             partition,
             machine,
@@ -2799,21 +2887,13 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 k
             },
         },
-        DeployError::PlatformClassOsMismatch {
-            machine,
-            class,
-            os,
-        } => DiagnosticPayload {
+        DeployError::PlatformClassOsMismatch { machine, class, os } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployPlatformClassOsMismatch,
             stage: Stage::MeshDeploy,
             actual: Some((*os).to_string()),
             expected: None,
             fix: None,
-            key_fragments: vec![
-                machine.clone(),
-                (*class).to_string(),
-                (*os).to_string(),
-            ],
+            key_fragments: vec![machine.clone(), (*class).to_string(), (*os).to_string()],
         },
         DeployError::SchedulerCooperativeMissingStackBudget { machine } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeploySchedulerCooperativeMissingStackBudget,
@@ -2895,10 +2975,7 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             }),
             key_fragments: vec![machine.clone(), link_name.clone(), driver.clone()],
         },
-        DeployError::LinkMtuMissingOnFragmentingLink {
-            machine,
-            link_name,
-        } => DiagnosticPayload {
+        DeployError::LinkMtuMissingOnFragmentingLink { machine, link_name } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployLinkMtuMissingOnFragmentingLink,
             stage: Stage::MeshDeploy,
             actual: None,
@@ -2966,10 +3043,7 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 mtu_bytes.to_string(),
             ],
         },
-        DeployError::LinkBurstPpsMissingOnIsrDispatch {
-            machine,
-            link_name,
-        } => DiagnosticPayload {
+        DeployError::LinkBurstPpsMissingOnIsrDispatch { machine, link_name } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployLinkBurstPpsMissingOnIsrDispatch,
             stage: Stage::MeshDeploy,
             actual: None,
@@ -3100,11 +3174,7 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             actual: Some(missing_fields.clone()),
             expected: None,
             fix: None,
-            key_fragments: vec![
-                machine.clone(),
-                link_name.clone(),
-                missing_fields.clone(),
-            ],
+            key_fragments: vec![machine.clone(), link_name.clone(), missing_fields.clone()],
         },
         DeployError::SessionArmingFieldsOnNonArmingLink {
             machine,
@@ -3124,17 +3194,16 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 offending_fields.clone(),
             ],
         },
-        DeployError::StatelessAcceptRequiredOnUntrustedSource {
-            machine,
-            link_name,
-        } => DiagnosticPayload {
-            code: DiagnosticCode::MeshDeployStatelessAcceptRequiredOnUntrustedSource,
-            stage: Stage::MeshDeploy,
-            actual: None,
-            expected: None,
-            fix: None,
-            key_fragments: vec![machine.clone(), link_name.clone()],
-        },
+        DeployError::StatelessAcceptRequiredOnUntrustedSource { machine, link_name } => {
+            DiagnosticPayload {
+                code: DiagnosticCode::MeshDeployStatelessAcceptRequiredOnUntrustedSource,
+                stage: Stage::MeshDeploy,
+                actual: None,
+                expected: None,
+                fix: None,
+                key_fragments: vec![machine.clone(), link_name.clone()],
+            }
+        }
         DeployError::StatelessAcceptKeyRotationShorterThanLifetime {
             machine,
             link_name,
@@ -3273,7 +3342,11 @@ fn external_fields(e: &ExternalConfigError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![path.clone(), reason.clone()],
         },
-        ExternalConfigError::UnresolvedNames { machine, config_path, missing } => DiagnosticPayload {
+        ExternalConfigError::UnresolvedNames {
+            machine,
+            config_path,
+            missing,
+        } => DiagnosticPayload {
             code: DiagnosticCode::MeshExternalUnresolvedNames,
             stage: Stage::MeshExternal,
             actual: None,
@@ -3285,7 +3358,13 @@ fn external_fields(e: &ExternalConfigError) -> DiagnosticPayload {
                 k
             },
         },
-        ExternalConfigError::AmbiguousEventGroup { machine, target, event_group, count, .. } => DiagnosticPayload {
+        ExternalConfigError::AmbiguousEventGroup {
+            machine,
+            target,
+            event_group,
+            count,
+            ..
+        } => DiagnosticPayload {
             code: DiagnosticCode::MeshExternalAmbiguousEventGroup,
             stage: Stage::MeshExternal,
             actual: Some(count.to_string()),
@@ -3299,7 +3378,12 @@ fn external_fields(e: &ExternalConfigError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![machine.clone(), target.clone(), event_group.clone()],
         },
-        ExternalConfigError::EmptyEventGroup { machine, target, event_group, .. } => DiagnosticPayload {
+        ExternalConfigError::EmptyEventGroup {
+            machine,
+            target,
+            event_group,
+            ..
+        } => DiagnosticPayload {
             code: DiagnosticCode::MeshExternalEmptyEventGroup,
             stage: Stage::MeshExternal,
             actual: None,
@@ -3307,7 +3391,11 @@ fn external_fields(e: &ExternalConfigError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![machine.clone(), target.clone(), event_group.clone()],
         },
-        ExternalConfigError::NamedReferenceWithoutConfig { machine, device, target } => DiagnosticPayload {
+        ExternalConfigError::NamedReferenceWithoutConfig {
+            machine,
+            device,
+            target,
+        } => DiagnosticPayload {
             code: DiagnosticCode::MeshExternalNamedReferenceWithoutConfig,
             stage: Stage::MeshExternal,
             actual: None,
@@ -3315,7 +3403,12 @@ fn external_fields(e: &ExternalConfigError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![machine.clone(), device.clone(), target.clone()],
         },
-        ExternalConfigError::ReservedSomeipIdKeys { machine, target, transport, fields } => DiagnosticPayload {
+        ExternalConfigError::ReservedSomeipIdKeys {
+            machine,
+            target,
+            transport,
+            fields,
+        } => DiagnosticPayload {
             code: DiagnosticCode::MeshExternalReservedSomeipIdKeys,
             stage: Stage::MeshExternal,
             actual: None,
@@ -3335,7 +3428,12 @@ fn external_fields(e: &ExternalConfigError) -> DiagnosticPayload {
                 k
             },
         },
-        ExternalConfigError::SomeipFieldOnNonSomeipTransport { machine, target, transport, fields } => DiagnosticPayload {
+        ExternalConfigError::SomeipFieldOnNonSomeipTransport {
+            machine,
+            target,
+            transport,
+            fields,
+        } => DiagnosticPayload {
             code: DiagnosticCode::MeshExternalSomeipFieldOnNonSomeipTransport,
             stage: Stage::MeshExternal,
             actual: Some(transport.clone()),
@@ -3343,14 +3441,20 @@ fn external_fields(e: &ExternalConfigError) -> DiagnosticPayload {
             // SOME/IP-specific, so the only repair that preserves them
             // is to switch the binding's transport to `someip`.
             expected: None,
-            fix: Some(Fix::ReplaceWith { to: "someip".to_string() }),
+            fix: Some(Fix::ReplaceWith {
+                to: "someip".to_string(),
+            }),
             key_fragments: {
                 let mut k = vec![machine.clone(), target.clone(), transport.clone()];
                 k.extend(fields.iter().map(|f| (*f).to_string()));
                 k
             },
         },
-        ExternalConfigError::ConflictingEventSchema { machine, target, flat_fields } => DiagnosticPayload {
+        ExternalConfigError::ConflictingEventSchema {
+            machine,
+            target,
+            flat_fields,
+        } => DiagnosticPayload {
             code: DiagnosticCode::MeshExternalConflictingEventSchema,
             stage: Stage::MeshExternal,
             actual: None,
@@ -3362,7 +3466,12 @@ fn external_fields(e: &ExternalConfigError) -> DiagnosticPayload {
                 k
             },
         },
-        ExternalConfigError::ConflictingEventFieldKinds { machine, target, event, fields } => DiagnosticPayload {
+        ExternalConfigError::ConflictingEventFieldKinds {
+            machine,
+            target,
+            event,
+            fields,
+        } => DiagnosticPayload {
             code: DiagnosticCode::MeshExternalConflictingEventFieldKinds,
             stage: Stage::MeshExternal,
             actual: None,
@@ -3374,7 +3483,11 @@ fn external_fields(e: &ExternalConfigError) -> DiagnosticPayload {
                 k
             },
         },
-        ExternalConfigError::EmptyEventEntry { machine, target, event } => DiagnosticPayload {
+        ExternalConfigError::EmptyEventEntry {
+            machine,
+            target,
+            event,
+        } => DiagnosticPayload {
             code: DiagnosticCode::MeshExternalEmptyEventEntry,
             stage: Stage::MeshExternal,
             actual: None,
@@ -3409,13 +3522,21 @@ fn topology_fields(e: &TopologyError) -> DiagnosticPayload {
             }),
             key_fragments: vec![machine.clone()],
         },
-        TopologyError::ReceiverNotDeclared { sender, target, receiver } => DiagnosticPayload {
+        TopologyError::ReceiverNotDeclared {
+            sender,
+            target,
+            receiver,
+        } => DiagnosticPayload {
             code: DiagnosticCode::MeshTopologyReceiverNotDeclared,
             stage: Stage::MeshTopology,
             actual: Some(receiver.clone()),
             expected: None,
             fix: None,
-            key_fragments: vec![sender.clone(), target.as_str().to_string(), receiver.clone()],
+            key_fragments: vec![
+                sender.clone(),
+                target.as_str().to_string(),
+                receiver.clone(),
+            ],
         },
         TopologyError::AbsoluteSourcePath { machine, path } => DiagnosticPayload {
             code: DiagnosticCode::MeshTopologyAbsoluteSourcePath,
@@ -3433,7 +3554,11 @@ fn topology_fields(e: &TopologyError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![machine.clone(), path.clone()],
         },
-        TopologyError::ReceiverSourceParse { machine, path, reason } => DiagnosticPayload {
+        TopologyError::ReceiverSourceParse {
+            machine,
+            path,
+            reason,
+        } => DiagnosticPayload {
             code: DiagnosticCode::MeshTopologyReceiverSourceParse,
             stage: Stage::MeshTopology,
             actual: None,
@@ -3467,7 +3592,12 @@ fn topology_fields(e: &TopologyError) -> DiagnosticPayload {
                 k
             },
         },
-        TopologyError::MissingBindingField { machine, target, transport, field } => DiagnosticPayload {
+        TopologyError::MissingBindingField {
+            machine,
+            target,
+            transport,
+            field,
+        } => DiagnosticPayload {
             code: DiagnosticCode::MeshTopologyMissingBindingField,
             stage: Stage::MeshTopology,
             actual: None,
@@ -3487,7 +3617,13 @@ fn topology_fields(e: &TopologyError) -> DiagnosticPayload {
                 field.clone(),
             ],
         },
-        TopologyError::InvalidBindingField { machine, target, transport, field, reason } => DiagnosticPayload {
+        TopologyError::InvalidBindingField {
+            machine,
+            target,
+            transport,
+            field,
+            reason,
+        } => DiagnosticPayload {
             code: DiagnosticCode::MeshTopologyInvalidBindingField,
             stage: Stage::MeshTopology,
             actual: None,
@@ -3501,7 +3637,11 @@ fn topology_fields(e: &TopologyError) -> DiagnosticPayload {
                 reason.clone(),
             ],
         },
-        TopologyError::EventBindingUnused { machine, target, event } => DiagnosticPayload {
+        TopologyError::EventBindingUnused {
+            machine,
+            target,
+            event,
+        } => DiagnosticPayload {
             code: DiagnosticCode::MeshTopologyEventBindingUnused,
             stage: Stage::MeshTopology,
             actual: Some(event.clone()),
@@ -3512,15 +3652,16 @@ fn topology_fields(e: &TopologyError) -> DiagnosticPayload {
             // sender's <send event=...>" — lives elsewhere and is
             // not local to this binding.)
             fix: Some(Fix::RemoveFields {
-                location: format!(
-                    "machines.{machine}.bindings.{}.events",
-                    target.as_str()
-                ),
+                location: format!("machines.{machine}.bindings.{}.events", target.as_str()),
                 fields: vec![event.clone()],
             }),
             key_fragments: vec![machine.clone(), target.as_str().to_string(), event.clone()],
         },
-        TopologyError::OrderingCannotBeGuaranteed { machine, target, transport } => DiagnosticPayload {
+        TopologyError::OrderingCannotBeGuaranteed {
+            machine,
+            target,
+            transport,
+        } => DiagnosticPayload {
             code: DiagnosticCode::MeshTopologyOrderingCannotBeGuaranteed,
             stage: Stage::MeshTopology,
             actual: Some(transport.clone()),
@@ -3538,7 +3679,13 @@ fn topology_fields(e: &TopologyError) -> DiagnosticPayload {
                 transport.clone(),
             ],
         },
-        TopologyError::PoolParamNameMissing { machine, target, state, invoke_id, missing } => DiagnosticPayload {
+        TopologyError::PoolParamNameMissing {
+            machine,
+            target,
+            state,
+            invoke_id,
+            missing,
+        } => DiagnosticPayload {
             code: DiagnosticCode::MeshTopologyPoolParamNameMissing,
             stage: Stage::MeshTopology,
             actual: Some(invoke_id.clone()),
@@ -3559,7 +3706,11 @@ fn topology_fields(e: &TopologyError) -> DiagnosticPayload {
                 k
             },
         },
-        TopologyError::SubscriptionSourceUnbound { machine, source_target, available } => DiagnosticPayload {
+        TopologyError::SubscriptionSourceUnbound {
+            machine,
+            source_target,
+            available,
+        } => DiagnosticPayload {
             code: DiagnosticCode::MeshTopologySubscriptionSourceUnbound,
             stage: Stage::MeshTopology,
             actual: Some(source_target.clone()),
@@ -3572,7 +3723,10 @@ fn topology_fields(e: &TopologyError) -> DiagnosticPayload {
             key_fragments: vec![machine.clone(), source_target.clone()],
         },
         TopologyError::MachineLifetimeSubscriptionUnsupported {
-            machine, source_target, event, transport,
+            machine,
+            source_target,
+            event,
+            transport,
         } => DiagnosticPayload {
             code: DiagnosticCode::MeshTopologyMachineLifetimeSubscriptionUnsupported,
             stage: Stage::MeshTopology,
@@ -3640,7 +3794,11 @@ fn codegen_fields(e: &CodegenError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![detail.clone()],
         },
-        CodegenError::EventNameCollision { target, suffix, events } => DiagnosticPayload {
+        CodegenError::EventNameCollision {
+            target,
+            suffix,
+            events,
+        } => DiagnosticPayload {
             code: DiagnosticCode::MeshCodegenEventNameCollision,
             stage: Stage::MeshCodegen,
             actual: Some(suffix.clone()),
