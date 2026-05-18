@@ -20,6 +20,7 @@
 //   * EnvelopeCorruptShape
 //   * DedupWindowOverflowShape
 //   * TransportUnavailableShape
+//   * SendFailedShape
 // since those pin byte-exact output.
 
 #include "mesh/CommunicationError.h"
@@ -212,6 +213,42 @@ TEST(CommunicationErrorTest, EnvelopeCorruptShapeWithPosition) {
               "\"transport\":\"zenoh\","
               "\"codec\":\"cbor\","
               "\"position\":42}");
+}
+
+TEST(CommunicationErrorTest, SendFailedShape) {
+    // §16.7 row 2 — SEND_FAILED. Raised by OutboundBuffer at the
+    // dispatcher-fail observation points: admit fast path (when the
+    // transport API declines a direct send) and markReady drain (per
+    // declined envelope in the buffered batch). The §10.4.1 row 1702
+    // "Enqueued-but-unsent envelopes are failed individually" clause
+    // is satisfied vacuously in OutboundBuffer because `ready_=true`
+    // implies `queue.empty()` by construction (admit fast-paths under
+    // ready+empty, markReady drains under `mu_`) — there is never a
+    // non-empty queue at the moment of an Active→Disconnected edge.
+    //
+    // Only `target` and `transport` are populated today. A future
+    // Stage 2 atomic enriches the dispatcher signature so the
+    // underlying API error string (errno, vsomeip return code,
+    // zenoh exception message) flows through as `transport_error`
+    // and lands as a struct field at the same commit as its
+    // consumer; that atomic also handles Zenoh's `publisher.put`
+    // exception capture (today the Zenoh dispatcher always returns
+    // true so its api-fail path is silent under Stage 1).
+    //
+    // Authors guard on `_event.data.reason == 'SEND_FAILED' &&
+    //  _event.data.target == '<peer>'` to react to dropped outbound
+    // work for a specific peer.
+    CommunicationError err;
+    err.reason = "SEND_FAILED";
+    err.target = "motor";
+    err.transport = "someip";
+
+    const auto out = bytes_to_string(err.toJsonBytes());
+    EXPECT_EQ(out,
+              "{\"errorName\":\"communication\","
+              "\"reason\":\"SEND_FAILED\","
+              "\"target\":\"motor\","
+              "\"transport\":\"someip\"}");
 }
 
 TEST(CommunicationErrorTest, TransportUnavailableShape) {

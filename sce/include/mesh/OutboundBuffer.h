@@ -23,6 +23,22 @@
 // state is `ready_=false`, the first transition fires `markReady`) does
 // not emit because no Active lifecycle phase preceded it.
 //
+// Row 2 `SEND_FAILED` is emitted at every dispatcher-fail observation
+// point: the `admit` fast path (dispatcher under `ready=true ∧ queue
+// empty`) and the `markReady` drain loop (each queued envelope's
+// dispatch attempt). The §10.4.1 "Enqueued-but-unsent envelopes are
+// failed individually on Active→Disconnected" clause is satisfied by
+// construction in OutboundBuffer's design: `ready_=true` implies
+// `queue.empty()` (the fast path dispatches; the drain holds `mu_`
+// for its entire scope so admits cannot enqueue mid-drain). There is
+// therefore no non-empty queue at the moment of `markNotReady`;
+// `markNotReady` emits Row 1 only. The per-send api-fail half today
+// captures SOME/IP `app.send()` boolean returns; Zenoh `publisher.put`
+// has no boolean return (the dispatcher always reports success today)
+// and its api-fail observation lands with the Stage 2 atomic that
+// also adds the `transport_error` field for the underlying API
+// error string.
+//
 // OutboundBuffer is the third generic SCE mesh primitive, a sibling of
 // §10.5 `DedupRouter` (inbound duplicate suppression) and §10.6
 // `OrderingBuffer` (inbound reorder). All three share the same shape:
@@ -32,10 +48,13 @@
 //     by transport-specific callbacks.
 //
 // Scope (what this class is NOT):
-//   * No retry policy. Transport-level send failure after readiness is
-//     surfaced by the dispatch callback returning false; the buffer
-//     does not re-enqueue or retry (SCE_MESH.md §16.7 row 2
-//     `SEND_FAILED` and row 3 `DELIVERY_EXHAUSTED` are orthogonal).
+//   * No retry policy. Transport-level send failure observed at the
+//     dispatcher boundary (returning false from admit fast path or
+//     markReady drain) is surfaced as `error.communication` with
+//     `reason = "SEND_FAILED"` (§16.7 row 2) and the envelope is
+//     considered consumed — the buffer does not re-enqueue or retry.
+//     SCE_MESH.md §16.7 row 3 `DELIVERY_EXHAUSTED` (retry-exhausted)
+//     is orthogonal and lives in a future retry-layer atomic.
 //   * No age-based drop. Overflow policy is fixed at
 //     `BACKPRESSURE_DROP` (§16.7 row 9) + drop-newest. Grammar
 //     additions (`max_age_ms`, `overflow: drop_oldest`) are deferred
@@ -127,11 +146,19 @@ public:
     ///   * ready + non-empty queue (transient mid-drain) ⇒ enqueue to
     ///     preserve FIFO; the in-progress drain will release it.
     ///
-    /// Returns `true` if the envelope was dispatched or buffered;
-    /// `false` if it was dropped on overflow.
+    /// SCE_MESH.md §16.7 row 2: when the fast path's dispatcher
+    /// returns `false`, `error.communication` with
+    /// `reason = "SEND_FAILED"` is raised — the transport API said
+    /// no, the envelope is gone, and the SCXML author must observe
+    /// the loss. Raised OUTSIDE the buffer mutex.
+    ///
+    /// Returns `true` if the envelope was dispatched-or-buffered
+    /// successfully; `false` if it was dropped on overflow OR if
+    /// the fast-path dispatch was declined by the transport API.
     [[nodiscard]] bool admit(const MeshEnvelope& env) {
         bool overflow = false;
         std::size_t depth_at_overflow = 0;
+        bool send_failed = false;
         bool accepted = false;
         {
             std::lock_guard<std::mutex> lock(mu_);
@@ -140,6 +167,9 @@ public:
                 // markReady cannot slip buffered envelopes past this
                 // direct send out of FIFO.
                 accepted = dispatch_(env);
+                if (!accepted) {
+                    send_failed = true;
+                }
             } else if (queue_.size() >= max_pending_) {
                 overflow = true;
                 depth_at_overflow = queue_.size();
@@ -157,6 +187,13 @@ public:
             raise_error_(std::move(err));
             return false;
         }
+        if (send_failed) {
+            CommunicationError err;
+            err.reason = "SEND_FAILED";
+            err.target = target_;
+            err.transport = transport_name_;
+            raise_error_(std::move(err));
+        }
         return accepted;
     }
 
@@ -164,40 +201,63 @@ public:
     /// order through the dispatcher. Idempotent: calling markReady on an
     /// already-ready buffer is a no-op (queue is empty by invariant).
     ///
+    /// SCE_MESH.md §16.7 row 2: each drained envelope whose dispatcher
+    /// returns `false` raises `error.communication` with
+    /// `reason = "SEND_FAILED"`. The raises run OUTSIDE the buffer
+    /// mutex (after the drain releases `mu_`), preserving §10.10
+    /// lock-discipline; the per-failure count is captured under the
+    /// mutex during the drain and the raises are emitted in a single
+    /// post-drain loop.
+    ///
     /// The dispatcher runs under the mutex so a concurrent `admit` whose
     /// fast path would otherwise race ahead cannot interleave with the
     /// drain. See class-level thread-safety note for the rationale that
     /// this does not become a throughput bottleneck in practice.
     void markReady() {
-        std::lock_guard<std::mutex> lock(mu_);
-        ready_ = true;
-        while (!queue_.empty()) {
-            MeshEnvelope env = std::move(queue_.front());
-            queue_.pop_front();
-            (void)dispatch_(env);
+        std::size_t failed_count = 0;
+        {
+            std::lock_guard<std::mutex> lock(mu_);
+            ready_ = true;
+            while (!queue_.empty()) {
+                MeshEnvelope env = std::move(queue_.front());
+                queue_.pop_front();
+                if (!dispatch_(env)) {
+                    ++failed_count;
+                }
+            }
+        }
+        for (std::size_t i = 0; i < failed_count; ++i) {
+            CommunicationError err;
+            err.reason = "SEND_FAILED";
+            err.target = target_;
+            err.transport = transport_name_;
+            raise_error_(std::move(err));
         }
     }
 
     /// Transport readiness became false. Subsequent admits enqueue
-    /// until the next `markReady`. Does not clear the queue — envelopes
-    /// buffered while temporarily ready remain, so a readiness flicker
-    /// does not lose in-flight work.
+    /// until the next `markReady`.
     ///
     /// SCE_MESH.md §10.4.1 + §16.7 row 1: a `true → false` transition
     /// is the "Active → Disconnected" lifecycle edge and raises
     /// `error.communication` with `reason = "TRANSPORT_UNAVAILABLE"`.
     /// Repeated `markNotReady` calls while already not-ready are
-    /// idempotent and DO NOT re-emit — Row 1 fires per-transition,
-    /// not per-callback (a transport callback that re-asserts the
-    /// same state is not a new transport fault). The initial seed
-    /// state `ready_=false` therefore does NOT emit on the first
-    /// `markNotReady`: no Active phase preceded the call, so there
-    /// is no transition.
+    /// idempotent and DO NOT re-emit. The initial seed state
+    /// `ready_=false` therefore does NOT emit on the first call: no
+    /// Active phase preceded it, so there is no transition.
     ///
-    /// The raise closure is invoked OUTSIDE the buffer mutex to
-    /// preserve the §10.10 lock-discipline contract (raise paths
-    /// must never run under `mu_`, mirroring `admit`'s overflow
-    /// raise).
+    /// The §10.4.1 disconnect-drain "Enqueued-but-unsent envelopes
+    /// are failed individually" clause is satisfied vacuously:
+    /// `ready_=true` implies `queue.empty()` in OutboundBuffer's
+    /// design (admit fast-paths under ready+empty; markReady's drain
+    /// holds `mu_` so concurrent admits cannot land in the
+    /// "ready + non-empty queue" branch during drain). The queue
+    /// at the disconnect moment is therefore empty by construction.
+    /// Row 2 emit lives at the dispatcher-fail observation points
+    /// (`admit` fast path, `markReady` drain).
+    ///
+    /// The raise closure runs OUTSIDE the buffer mutex to preserve
+    /// §10.10 lock-discipline.
     void markNotReady() {
         bool was_ready = false;
         {

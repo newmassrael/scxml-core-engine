@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// OutboundBuffer unit tests — SCE_MESH.md §10.10 + §16.7 rows 1 + 9.
+// OutboundBuffer unit tests — SCE_MESH.md §10.10 + §16.7 rows 1, 2, 9.
 //
 // Sibling of DedupRouter / OrderingBuffer unit tests in Bucket 1
 // (Core primitives). Existing E2E coverage exercises the DRAIN path
 // (`mesh_someip_late_boot` and `mesh_zenoh_publisher_first` verify
 // that envelopes buffered while the transport is not ready survive
 // and reach the peer after `markReady()` fires). This file covers
-// the two raise paths the buffer owns:
+// the three raise paths the buffer owns:
 //
 //   * §16.7 row 9 BACKPRESSURE_DROP: `OutboundBuffer::admit` raises
 //     `error.communication` with `reason="BACKPRESSURE_DROP"` and
@@ -20,14 +20,27 @@
 //     Zenoh matching=false, etc.). The initial `ready_=false` seed
 //     state does NOT emit on the first `markNotReady`: no Active phase
 //     preceded it, so no transition fires.
+//   * §16.7 row 2 SEND_FAILED (per-send api-fail half):
+//     The dispatcher returns `false` either at `admit`'s fast path
+//     (direct send under ready_=true + empty queue) or per envelope
+//     in `markReady`'s drain loop. Each false return raises one
+//     `error.communication` with `reason="SEND_FAILED"`. The
+//     §10.4.1 disconnect-drain clause is satisfied vacuously by
+//     OutboundBuffer's "ready_=true ⟹ queue empty" invariant — the
+//     queue at the Active→Disconnected edge is empty by construction
+//     so `markNotReady` emits Row 1 only. A future Stage 2 atomic
+//     enriches the dispatcher signature so the transport's API
+//     error string flows through as a `transport_error` field; that
+//     atomic also adds Zenoh-side capture (today's Zenoh dispatcher
+//     always returns true because `publisher.put` has no boolean
+//     return surface).
 //
 // The byte-shape unit pins for the raised errors live in
-// `CommunicationErrorTest::BackpressureDropShape` and
-// `CommunicationErrorTest::TransportUnavailableShape`; this file
-// proves each raise FIRES under the right precondition and that the
-// captured fields match the catalog. The four tests together close
-// the row 1 + row 9 entries of §16.7 at the same E2E + byte-shape
-// ratification level rows 6 / 8 / 11 / 12 / 13 already enjoy.
+// `CommunicationErrorTest::BackpressureDropShape`,
+// `CommunicationErrorTest::TransportUnavailableShape`, and
+// `CommunicationErrorTest::SendFailedShape`; this file proves each
+// raise FIRES under the right precondition and that the captured
+// fields match the catalog.
 
 #include "mesh/CommunicationError.h"
 #include "mesh/MeshEnvelope.h"
@@ -174,6 +187,115 @@ TEST(OutboundBufferTest, MarkNotReadyAfterReadyRaisesRow1) {
         << "row 1 reports the disconnection itself, not queue state";
     EXPECT_FALSE(sink.last->source.has_value())
         << "row 1 is observed at transport layer, not bound to an inbound envelope";
+}
+
+TEST(OutboundBufferTest, AdmitFastPathDispatchFailRaisesRow2) {
+    // §16.7 row 2: when admit's fast path runs the dispatcher and the
+    // transport API declines the envelope (return false), the buffer
+    // raises `error.communication` with `reason="SEND_FAILED"` so the
+    // SCXML author observes the dropped outbound work. The envelope
+    // is considered consumed — the buffer does not re-enqueue or
+    // retry (§10.10 contract; row 3 DELIVERY_EXHAUSTED is orthogonal).
+    ErrorSink sink;
+    OutboundBuffer buf(
+        /* target          */ "motor",
+        /* max_pending     */ 4,
+        /* transport_name  */ "someip",
+        /* dispatch        */ [](const MeshEnvelope&) { return false; },
+        /* raise_error     */ std::ref(sink));
+
+    buf.markReady();  // Ready→Active so admit takes fast path
+
+    MeshEnvelope env{};
+    EXPECT_FALSE(buf.admit(env))
+        << "dispatcher declined: admit returns false to caller";
+
+    ASSERT_EQ(sink.call_count, 1);
+    EXPECT_EQ(sink.last->reason, "SEND_FAILED");
+    ASSERT_TRUE(sink.last->target.has_value());
+    EXPECT_EQ(*sink.last->target, "motor");
+    ASSERT_TRUE(sink.last->transport.has_value());
+    EXPECT_EQ(*sink.last->transport, "someip");
+}
+
+TEST(OutboundBufferTest, AdmitFastPathDispatchSuccessDoesNotRaise) {
+    // Symmetry pin: a successful fast-path dispatch (dispatcher
+    // returns true) is the no-op happy path — no error event.
+    // Guards against regression where an unconditional Row 2 emit
+    // would spam SCXML authors on every successful send.
+    ErrorSink sink;
+    OutboundBuffer buf(
+        "motor", /*max_pending*/ 4, "someip",
+        [](const MeshEnvelope&) { return true; },
+        std::ref(sink));
+
+    buf.markReady();
+    MeshEnvelope env{};
+    EXPECT_TRUE(buf.admit(env));
+    EXPECT_EQ(sink.call_count, 0) << "no error events on successful dispatch";
+}
+
+TEST(OutboundBufferTest, MarkReadyDrainDispatchFailRaisesRow2PerEnvelope) {
+    // §16.7 row 2 emitted during drain: when markReady drains queued
+    // envelopes after the transport reaches Active, each envelope
+    // whose dispatcher returns false raises its own SEND_FAILED
+    // event. The raises are deferred to AFTER the drain releases
+    // `mu_` (§10.10 lock-discipline) but counted under the mutex
+    // during the drain itself.
+    ErrorSink sink;
+    OutboundBuffer buf(
+        "motor", /*max_pending*/ 8, "someip",
+        [](const MeshEnvelope&) { return false; },  // always declines
+        std::ref(sink));
+
+    // Seed three envelopes under ready_=false. They wait for the
+    // reconnect (markReady) and only then exercise the dispatcher.
+    MeshEnvelope env{};
+    EXPECT_TRUE(buf.admit(env));
+    EXPECT_TRUE(buf.admit(env));
+    EXPECT_TRUE(buf.admit(env));
+    EXPECT_EQ(buf.queue_depth(), 3u);
+    EXPECT_EQ(sink.call_count, 0) << "admits under ready_=false enqueue silently";
+
+    buf.markReady();
+
+    EXPECT_EQ(buf.queue_depth(), 0u) << "drain consumes the queue even on failure";
+    ASSERT_EQ(sink.call_count, 3) << "one SEND_FAILED per failed drain dispatch";
+    EXPECT_EQ(sink.last->reason, "SEND_FAILED");
+    ASSERT_TRUE(sink.last->target.has_value());
+    EXPECT_EQ(*sink.last->target, "motor");
+    ASSERT_TRUE(sink.last->transport.has_value());
+    EXPECT_EQ(*sink.last->transport, "someip");
+}
+
+TEST(OutboundBufferTest, MarkReadyDrainMixedSuccessAndFailureRaisesPerFailure) {
+    // Drain through a dispatcher whose result depends on envelope
+    // sequence (alternating succeed/fail). Pins that the failure-
+    // count is exactly the number of declined envelopes, not the
+    // total drain depth — successful dispatches must not spuriously
+    // raise Row 2.
+    int call_index = 0;
+    ErrorSink sink;
+    OutboundBuffer buf(
+        "motor", /*max_pending*/ 8, "someip",
+        [&](const MeshEnvelope&) {
+            // Indices: 0=ok, 1=fail, 2=ok, 3=fail
+            return (call_index++ % 2) == 0;
+        },
+        std::ref(sink));
+
+    MeshEnvelope env{};
+    EXPECT_TRUE(buf.admit(env));
+    EXPECT_TRUE(buf.admit(env));
+    EXPECT_TRUE(buf.admit(env));
+    EXPECT_TRUE(buf.admit(env));
+    EXPECT_EQ(buf.queue_depth(), 4u);
+
+    buf.markReady();
+
+    EXPECT_EQ(call_index, 4) << "drain visits every queued envelope";
+    EXPECT_EQ(sink.call_count, 2) << "exactly the two declined envelopes raise";
+    EXPECT_EQ(sink.last->reason, "SEND_FAILED");
 }
 
 TEST(OutboundBufferTest, RepeatedMarkNotReadyRaisesPerTransitionOnly) {
