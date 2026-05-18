@@ -175,6 +175,22 @@ if(SCE_ENABLE_MESH)
             benchmark::benchmark_main
             Threads::Threads
     )
+
+    # mesh_open_issues.md Issue 1 measurement half — drain hot-path alloc
+    # cost. The (BM_DecodeLongName - BM_DecodeShortName) delta isolates the
+    # per-event `MeshEnvelope.type` heap-alloc cost that an inline_string<N>
+    # migration would avoid; threshold-driven fix decision is recorded in
+    # the closing entry of mesh_open_issues.md (Issue 1).
+    add_executable(benchmark_mesh_envelope_codec
+        MeshEnvelopeCodecBenchmark.cpp
+    )
+    target_link_libraries(benchmark_mesh_envelope_codec
+        PRIVATE
+            sce_mesh_common
+            benchmark::benchmark
+            benchmark::benchmark_main
+            Threads::Threads
+    )
 endif()
 
 # ============================================================================

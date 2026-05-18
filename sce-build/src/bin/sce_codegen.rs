@@ -37,7 +37,10 @@ fn write_or_exit<P: AsRef<std::path::Path>, C: AsRef<[u8]>>(
     let path = path.as_ref();
     if let Err(e) = fs::write(path, contents) {
         fmt.emit_and_exit(
-            &CliError::WriteOutput { path: path.display().to_string(), source: e },
+            &CliError::WriteOutput {
+                path: path.display().to_string(),
+                source: e,
+            },
             "",
         );
     }
@@ -122,14 +125,13 @@ impl DriftContext {
     /// still satisfies that, and `sce-codegen verify` reports the
     /// mismatch when invoked against the real workspace.
     fn compute(input_root: &Path, deploy: Option<&Path>) -> Self {
-        let source_hash = drift::compute_source_hash(input_root, deploy)
-            .unwrap_or_else(|e| {
-                eprintln!(
-                    "sce-codegen: source-hash compute failed for {} ({e}); embedding zero hash",
-                    input_root.display(),
-                );
-                [0u8; 32]
-            });
+        let source_hash = drift::compute_source_hash(input_root, deploy).unwrap_or_else(|e| {
+            eprintln!(
+                "sce-codegen: source-hash compute failed for {} ({e}); embedding zero hash",
+                input_root.display(),
+            );
+            [0u8; 32]
+        });
         let explicit = current_workspace_root_override();
         let template_hash = match locate_workspace_root(explicit.as_deref()) {
             Some(ws) => {
@@ -192,12 +194,7 @@ fn apply_drift_header(content: &str, path: &Path, ctx: &DriftContext) -> String 
 /// `sce-codegen verify` recomputes both hashes and rejects on
 /// mismatch, fulfilling the spec invariant that every emitted file
 /// carries a drift-detectable header.
-fn write_drift_aware<P: AsRef<Path>>(
-    fmt: ErrorFormat,
-    path: P,
-    content: &str,
-    ctx: &DriftContext,
-) {
+fn write_drift_aware<P: AsRef<Path>>(fmt: ErrorFormat, path: P, content: &str, ctx: &DriftContext) {
     let path_ref = path.as_ref();
     let final_content = apply_drift_header(content, path_ref, ctx);
     if let Err(e) = fs::write(path_ref, &final_content) {
@@ -234,11 +231,7 @@ fn write_if_changed_drift_aware(path: &Path, content: &str, ctx: &DriftContext) 
 /// file's `source_hash` field IS the drift-detectable provenance.
 /// `sce-codegen verify` skips JSON in `is_drift_eligible_path`, so
 /// the file stays a plain JSON document.
-fn emit_sourcemap_for_machine(
-    model: &SCXMLModel,
-    target_dir: &Path,
-    drift_ctx: &DriftContext,
-) {
+fn emit_sourcemap_for_machine(model: &SCXMLModel, target_dir: &Path, drift_ctx: &DriftContext) {
     use sce_build::forge::sourcemap;
     use sce_build::forge::symbol_mangling;
 
@@ -548,6 +541,19 @@ enum Commands {
         /// the state machine code. SM output remains identical.
         #[arg(long)]
         deploy: Option<String>,
+        /// Emit only the mesh transport header — skip the state-machine
+        /// backend code generation entirely. Requires `--deploy`. Used
+        /// by CMake fixtures that want transport regeneration without
+        /// the rebuild churn from re-emitting `<name>_sm.{h,rs,kt,go,py}`
+        /// on every transport-touching change. The state-machine output
+        /// must be produced by a separate `generate` invocation without
+        /// `--transport-only` (typically a sibling `add_custom_command`).
+        ///
+        /// Closes mesh_open_issues.md Issue 2 — Pattern Realization
+        /// completed 2026-04-16 (Session C), making the deferred
+        /// rationale moot.
+        #[arg(long, requires = "deploy")]
+        transport_only: bool,
         /// Partition identity for `<parallel>` rule-12 role assignment
         /// (SCE_MESH.md §14 rule 12, §16.5). When supplied together
         /// with `--deploy`, the generated SM code branches per
@@ -856,6 +862,7 @@ fn main() {
             format_style,
             no_format,
             deploy,
+            transport_only,
             partition,
             const_fold_budget,
             no_std,
@@ -871,6 +878,7 @@ fn main() {
             format_style.as_deref(),
             no_format,
             deploy.as_deref(),
+            transport_only,
             partition.as_deref(),
             const_fold_budget,
             no_std,
@@ -982,8 +990,12 @@ fn cmd_orchestrate(
     error_format: ErrorFormat,
 ) {
     let lang: Language = language.parse().unwrap_or_else(|_| {
-        error_format
-            .emit_and_exit(&CliError::UnknownLanguage { lang: language.to_string() }, "")
+        error_format.emit_and_exit(
+            &CliError::UnknownLanguage {
+                lang: language.to_string(),
+            },
+            "",
+        )
     });
 
     let scxml_path_bufs: Vec<std::path::PathBuf> =
@@ -1010,30 +1022,28 @@ fn cmd_orchestrate(
     // other deploy-side diagnostic. The diagnostic label points at the
     // user-supplied deploy.yaml path so CLI consumers see the file
     // they passed.
-    let deploy_cfg: Option<sce_build::mesh::deploy::DeployConfig> =
-        match deploy_path {
-            Some(p) => {
-                let content = fs::read_to_string(p).unwrap_or_else(|e| {
-                    error_format.emit_and_exit(
-                        &CliError::ReadInput {
-                            path: p.to_string(),
-                            source: e,
-                        },
-                        "",
-                    )
-                });
-                match sce_build::mesh::deploy::parse_deploy_str(&content) {
-                    Ok(cfg) => Some(cfg),
-                    Err(e) => {
-                        let forge_err: ForgeError =
-                            sce_build::mesh::error::MeshError::Deploy(e).into();
-                        let located = Located::new(forge_err, p, None, None);
-                        error_format.emit_forge_and_exit(&located);
-                    }
+    let deploy_cfg: Option<sce_build::mesh::deploy::DeployConfig> = match deploy_path {
+        Some(p) => {
+            let content = fs::read_to_string(p).unwrap_or_else(|e| {
+                error_format.emit_and_exit(
+                    &CliError::ReadInput {
+                        path: p.to_string(),
+                        source: e,
+                    },
+                    "",
+                )
+            });
+            match sce_build::mesh::deploy::parse_deploy_str(&content) {
+                Ok(cfg) => Some(cfg),
+                Err(e) => {
+                    let forge_err: ForgeError = sce_build::mesh::error::MeshError::Deploy(e).into();
+                    let located = Located::new(forge_err, p, None, None);
+                    error_format.emit_forge_and_exit(&located);
                 }
             }
-            None => None,
-        };
+        }
+        None => None,
+    };
 
     let outputs = match sce_build::compile_scxml_with_imports(
         &scxml_refs,
@@ -1051,7 +1061,10 @@ fn cmd_orchestrate(
     if !out_root.exists() {
         if let Err(e) = fs::create_dir_all(out_root) {
             error_format.emit_and_exit(
-                &CliError::WriteOutput { path: output_dir.to_string(), source: e },
+                &CliError::WriteOutput {
+                    path: output_dir.to_string(),
+                    source: e,
+                },
                 "",
             );
         }
@@ -1092,6 +1105,7 @@ fn cmd_generate(
     format_style: Option<&str>,
     no_format: bool,
     deploy_path: Option<&str>,
+    transport_only: bool,
     for_partition: Option<&str>,
     const_fold_budget: Option<u64>,
     no_std: bool,
@@ -1099,7 +1113,12 @@ fn cmd_generate(
     error_format: ErrorFormat,
 ) {
     let lang: Language = language.parse().unwrap_or_else(|_| {
-        error_format.emit_and_exit(&CliError::UnknownLanguage { lang: language.to_string() }, "")
+        error_format.emit_and_exit(
+            &CliError::UnknownLanguage {
+                lang: language.to_string(),
+            },
+            "",
+        )
     });
 
     // Every stdout artifact, the `needs_script_engine` verdict, and
@@ -1114,7 +1133,10 @@ fn cmd_generate(
     // Read the file once; the same content is reused for both detection and compilation.
     let scxml_content = fs::read_to_string(scxml_path).unwrap_or_else(|e| {
         error_format.emit_and_exit(
-            &CliError::ReadInput { path: scxml_path.to_string(), source: e },
+            &CliError::ReadInput {
+                path: scxml_path.to_string(),
+                source: e,
+            },
             "",
         )
     });
@@ -1260,11 +1282,22 @@ fn cmd_generate(
                      struct {pascal} {{\n\
                      }};\n\
                      }}  // namespace SCE::Generated::{name}\n",
-                    name = input_stem, pascal = pascal
+                    name = input_stem,
+                    pascal = pascal
                 );
                 let inl = "// W3C SCXML 5.8: Document rejected\n";
-                write_drift_aware(error_format, out.join(format!("{input_stem}_sm.h")), &header, &drift_ctx);
-                write_drift_aware(error_format, out.join(format!("{input_stem}_sm.inl")), inl, &drift_ctx);
+                write_drift_aware(
+                    error_format,
+                    out.join(format!("{input_stem}_sm.h")),
+                    &header,
+                    &drift_ctx,
+                );
+                write_drift_aware(
+                    error_format,
+                    out.join(format!("{input_stem}_sm.inl")),
+                    inl,
+                    &drift_ctx,
+                );
             }
             Language::Rust => {
                 let stub = format!(
@@ -1272,7 +1305,12 @@ fn cmd_generate(
                      // SCE-MAP: {scxml_basename}:1\n\
                      // This state machine was rejected at parse time.\n"
                 );
-                write_drift_aware(error_format, out.join(format!("{input_stem}_sm.rs")), &stub, &drift_ctx);
+                write_drift_aware(
+                    error_format,
+                    out.join(format!("{input_stem}_sm.rs")),
+                    &stub,
+                    &drift_ctx,
+                );
             }
             Language::Kotlin => {
                 let stub = format!(
@@ -1281,7 +1319,12 @@ fn cmd_generate(
                      package com.sce.generated.{name}\n",
                     name = input_stem
                 );
-                write_drift_aware(error_format, out.join(format!("{input_stem}Sm.kt")), &stub, &drift_ctx);
+                write_drift_aware(
+                    error_format,
+                    out.join(format!("{input_stem}Sm.kt")),
+                    &stub,
+                    &drift_ctx,
+                );
             }
             Language::Go => {
                 let stub = format!(
@@ -1290,14 +1333,24 @@ fn cmd_generate(
                      package {name}\n",
                     name = input_stem
                 );
-                write_drift_aware(error_format, out.join(format!("{input_stem}_sm.go")), &stub, &drift_ctx);
+                write_drift_aware(
+                    error_format,
+                    out.join(format!("{input_stem}_sm.go")),
+                    &stub,
+                    &drift_ctx,
+                );
             }
             Language::Python => {
                 let stub = format!(
                     "# W3C SCXML 5.8: Document rejected\n\
                      # SCE-MAP: {scxml_basename}:1\n"
                 );
-                write_drift_aware(error_format, out.join(format!("{input_stem}_sm.py")), &stub, &drift_ctx);
+                write_drift_aware(
+                    error_format,
+                    out.join(format!("{input_stem}_sm.py")),
+                    &stub,
+                    &drift_ctx,
+                );
             }
             Language::C11 => {
                 // RFC §5.J.1: C11 statechart stub. M1 emits a header-only
@@ -1330,8 +1383,18 @@ fn cmd_generate(
                     input_stem = input_stem,
                     stem = input_stem
                 );
-                write_drift_aware(error_format, out.join(format!("{input_stem}_sm.h")), &header, &drift_ctx);
-                write_drift_aware(error_format, out.join(format!("{input_stem}_sm.c")), &body, &drift_ctx);
+                write_drift_aware(
+                    error_format,
+                    out.join(format!("{input_stem}_sm.h")),
+                    &header,
+                    &drift_ctx,
+                );
+                write_drift_aware(
+                    error_format,
+                    out.join(format!("{input_stem}_sm.c")),
+                    &body,
+                    &drift_ctx,
+                );
             }
         }
         report.rejected = Some(RejectedDocument {
@@ -1349,8 +1412,7 @@ fn cmd_generate(
         // for hard semantic violations (top-level script rejected,
         // initial-state names undeclared) and `ValidationDynamicFeatures`
         // for genuine codegen limitations (no initial attribute).
-        let located =
-            sce_build::forge::error::Located::new(err, scxml_path, None, None);
+        let located = sce_build::forge::error::Located::new(err, scxml_path, None, None);
         error_format.emit_and_exit(&located, "");
     }
 
@@ -1364,11 +1426,8 @@ fn cmd_generate(
     // `has_unresolved_external_script` / `needs_http_send` flags from
     // the parser + analyzer passes; B-β just reads them.
     if no_std && lang == Language::Rust {
-        if let Err(err) =
-            sce_build::validate_no_std_compatibility(&model, Path::new(scxml_path))
-        {
-            let located =
-                sce_build::forge::error::Located::new(err, scxml_path, None, None);
+        if let Err(err) = sce_build::validate_no_std_compatibility(&model, Path::new(scxml_path)) {
+            let located = sce_build::forge::error::Located::new(err, scxml_path, None, None);
             error_format.emit_and_exit(&located, "");
         }
     }
@@ -1394,7 +1453,8 @@ fn cmd_generate(
     // for handleServerResponse routing. Idempotent — safe even if
     // compile_mesh_transport re-runs the injection later.
     if let Some(deploy_file) = deploy_path {
-        if let Err(e) = sce_build::inject_server_model_mutations(&mut model, Path::new(deploy_file)) {
+        if let Err(e) = sce_build::inject_server_model_mutations(&mut model, Path::new(deploy_file))
+        {
             error_format.emit_and_exit(&e, "Server model injection error: ");
         }
         // SCE_MESH.md §14 rule 12: surface partition context. The
@@ -1417,10 +1477,9 @@ fn cmd_generate(
         // capacity or when the deploy lacks the field — matching the
         // cache_platform / worker_placement precedent of silent-skip
         // on partial deploy data.
-        if let Err(e) = sce_build::populate_event_queue_capacity_from_deploy(
-            &mut model,
-            Path::new(deploy_file),
-        ) {
+        if let Err(e) =
+            sce_build::populate_event_queue_capacity_from_deploy(&mut model, Path::new(deploy_file))
+        {
             error_format.emit_and_exit(&e, "Event-queue capacity injection error: ");
         }
     }
@@ -1428,144 +1487,152 @@ fn cmd_generate(
     let locate_codegen = |e: sce_build::forge::error::GenerateError| -> Located<ForgeError> {
         Located::new(ForgeError::from(e), scxml_path, None, None)
     };
-    let output = match lang {
-        Language::Rust => {
-            // C3 Atomic B-γ1 lands `<sce:capacity>` parsing +
-            // deploy.yaml `default_event_queue_capacity` populator +
-            // `pub const EVENT_QUEUE_CAPACITY` template emission. The
-            // `--no-std` CLI flag stays a B-β-level validation gate
-            // (script/HTTP rejection — consumed earlier in
-            // `validate_no_std_compatibility`); the template-level
-            // `#![no_std]` + `use core::time::Duration` switch lands in
-            // B-γ2 alongside the runtime port + sub-template `std::*`
-            // → `core::*` swaps (send.rs.jinja2 / process_transition
-            // .rs.jinja2 / invoke_methods.rs.jinja2). Wiring those in
-            // B-γ1 would emit code that compiles cleanly under std but
-            // fails on the first sub-template `std::time::Duration` /
-            // `std::collections::HashSet` / `std::sync::atomic` site
-            // under `--features=no_std` — `feedback_silently_broken_
-            // hooks.md` anti-pattern unless co-landed with B-γ2.
-            let code = sce_build::generator::generate(&model, &template_dir, no_std)
-                .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
-            GeneratedOutput {
-                files: vec![(format!("{input_stem}_sm.rs"), code)],
-            }
-        }
-        Language::Cpp => sce_build::generator::generate_cpp(&model, &template_dir, input_stem)
-            .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e))),
-        Language::Kotlin => {
-            let mut code = sce_build::generator::generate_kotlin(&model, &template_dir)
-                .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
-            // Mirror `generate-w3c`'s KotlinBackend::process_child: the
-            // child's self-derived package (`com.sce.generated.{child}`)
-            // is rewritten to the parent's package so the parent's
-            // unqualified reference to the child `StateMachine` class
-            // resolves within one compilation unit.
-            if as_child {
-                if let Some(parent) = parent_stem {
-                    let child_pkg = sce_build::filters::to_snake_case(input_stem.to_string());
-                    code = code.replace(
-                        &format!("package com.sce.generated.{child_pkg}"),
-                        &format!("package com.sce.generated.{parent}"),
-                    );
-                }
-            }
-            GeneratedOutput {
-                files: vec![(format!("{input_stem}Sm.kt"), code)],
-            }
-        }
-        Language::Go => {
-            let mut code = sce_build::generator::generate_go(&model, &template_dir)
-                .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
-            // Same rewrite as Kotlin, for the Go `package <child>` header.
-            if as_child {
-                if let Some(parent) = parent_stem {
-                    let child_pkg = sce_build::filters::to_snake_case(input_stem.to_string());
-                    code = code.replace(
-                        &format!("package {child_pkg}"),
-                        &format!("package {parent}"),
-                    );
-                }
-            }
-            GeneratedOutput {
-                files: vec![(format!("{input_stem}_sm.go"), code)],
-            }
-        }
-        Language::Python => {
-            let code = sce_build::generator::generate_python(&model, &template_dir)
-                .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
-            GeneratedOutput {
-                files: vec![(format!("{input_stem}_sm.py"), code)],
-            }
-        }
-        Language::C11 => sce_build::generator::generate_c11(&model, &template_dir, input_stem)
-            .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e))),
-    };
 
+    // mesh_open_issues.md Issue 2: when --transport-only is set, skip
+    // the state-machine backend emit + its side-product files
+    // (sourcemap, children manifest, static-invoke copy, hybrid stubs).
+    // The transport-only branch still threads `out_path` and the report
+    // through to the mesh emit block below so depfile + sourcemap-marker
+    // validation operate on the transport header alone.
     let out_path = Path::new(output_dir);
     fs::create_dir_all(out_path).unwrap_or_else(|e| {
         error_format.emit_and_exit(
-            &CliError::CreateOutputDir { path: out_path.display().to_string(), source: e },
+            &CliError::CreateOutputDir {
+                path: out_path.display().to_string(),
+                source: e,
+            },
             "",
         )
     });
+    let mut output_paths: Vec<PathBuf> = Vec::new();
 
-    let files = maybe_format_files(output.files, &cpp_formatter);
-    let mut output_paths = Vec::new();
-    for (filename, code) in &files {
-        let file_path = out_path.join(filename);
-        write_drift_aware(error_format, &file_path, code, &drift_ctx);
-        report.artifacts.push(file_path.clone());
-        output_paths.push(file_path);
-    }
+    if !transport_only {
+        let output = match lang {
+            Language::Rust => {
+                // C3 Atomic B-γ1 lands `<sce:capacity>` parsing +
+                // deploy.yaml `default_event_queue_capacity` populator +
+                // `pub const EVENT_QUEUE_CAPACITY` template emission. The
+                // `--no-std` CLI flag stays a B-β-level validation gate
+                // (script/HTTP rejection — consumed earlier in
+                // `validate_no_std_compatibility`); the template-level
+                // `#![no_std]` + `use core::time::Duration` switch lands in
+                // B-γ2 alongside the runtime port + sub-template `std::*`
+                // → `core::*` swaps (send.rs.jinja2 / process_transition
+                // .rs.jinja2 / invoke_methods.rs.jinja2). Wiring those in
+                // B-γ1 would emit code that compiles cleanly under std but
+                // fails on the first sub-template `std::time::Duration` /
+                // `std::collections::HashSet` / `std::sync::atomic` site
+                // under `--features=no_std` — `feedback_silently_broken_
+                // hooks.md` anti-pattern unless co-landed with B-γ2.
+                let code = sce_build::generator::generate(&model, &template_dir, no_std)
+                    .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
+                GeneratedOutput {
+                    files: vec![(format!("{input_stem}_sm.rs"), code)],
+                }
+            }
+            Language::Cpp => sce_build::generator::generate_cpp(&model, &template_dir, input_stem)
+                .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e))),
+            Language::Kotlin => {
+                let mut code = sce_build::generator::generate_kotlin(&model, &template_dir)
+                    .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
+                // Mirror `generate-w3c`'s KotlinBackend::process_child: the
+                // child's self-derived package (`com.sce.generated.{child}`)
+                // is rewritten to the parent's package so the parent's
+                // unqualified reference to the child `StateMachine` class
+                // resolves within one compilation unit.
+                if as_child {
+                    if let Some(parent) = parent_stem {
+                        let child_pkg = sce_build::filters::to_snake_case(input_stem.to_string());
+                        code = code.replace(
+                            &format!("package com.sce.generated.{child_pkg}"),
+                            &format!("package com.sce.generated.{parent}"),
+                        );
+                    }
+                }
+                GeneratedOutput {
+                    files: vec![(format!("{input_stem}Sm.kt"), code)],
+                }
+            }
+            Language::Go => {
+                let mut code = sce_build::generator::generate_go(&model, &template_dir)
+                    .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
+                // Same rewrite as Kotlin, for the Go `package <child>` header.
+                if as_child {
+                    if let Some(parent) = parent_stem {
+                        let child_pkg = sce_build::filters::to_snake_case(input_stem.to_string());
+                        code = code.replace(
+                            &format!("package {child_pkg}"),
+                            &format!("package {parent}"),
+                        );
+                    }
+                }
+                GeneratedOutput {
+                    files: vec![(format!("{input_stem}_sm.go"), code)],
+                }
+            }
+            Language::Python => {
+                let code = sce_build::generator::generate_python(&model, &template_dir)
+                    .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
+                GeneratedOutput {
+                    files: vec![(format!("{input_stem}_sm.py"), code)],
+                }
+            }
+            Language::C11 => sce_build::generator::generate_c11(&model, &template_dir, input_stem)
+                .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e))),
+        };
 
-    // Watching-zenoh RFC §5.O Atomic 1 — sourcemap JSON sidecar
-    // alongside the per-language SM output. The single-SCXML codegen
-    // path writes one sourcemap per emit; cross-backend byte-identity
-    // is preserved because the symbol table + hashes are language-
-    // agnostic (Q-§5.O-8).
-    emit_sourcemap_for_machine(&model, out_path, &drift_ctx);
+        let files = maybe_format_files(output.files, &cpp_formatter);
+        for (filename, code) in &files {
+            let file_path = out_path.join(filename);
+            write_drift_aware(error_format, &file_path, code, &drift_ctx);
+            report.artifacts.push(file_path.clone());
+            output_paths.push(file_path);
+        }
 
-    report.needs_script_engine = Some(model.needs_script_engine);
+        // Watching-zenoh RFC §5.O Atomic 1 — sourcemap JSON sidecar
+        // alongside the per-language SM output. The single-SCXML codegen
+        // path writes one sourcemap per emit; cross-backend byte-identity
+        // is preserved because the symbol table + hashes are language-
+        // agnostic (Q-§5.O-8).
+        emit_sourcemap_for_machine(&model, out_path, &drift_ctx);
 
-    // W3C SCXML 6.4: Generate children metadata + hybrid SCXML stubs for all languages.
-    // C++ uses _children.txt for CMake post-processing; all languages need hybrid stubs.
-    let children = collect_invoke_child_names(&model);
-    if lang == Language::Cpp && !children.is_empty() {
-        let children_file = out_path.join(format!("{input_stem}_children.txt"));
-        write_or_exit(error_format, &children_file, children.join("\n") + "\n");
-    }
-    // W3C SCXML 6.4: Copy static invoke child SCXML files to the output
-    // directory so CMake's post-processing script can find them next to the
-    // parent. `process_static_invokes` extracts inline <scxml> content to
-    // the *source* directory; the build system expects them in OUTPUT_DIR.
-    copy_static_invoke_children(&model, Path::new(scxml_path), out_path);
-    // W3C SCXML 6.4 (test216/530): hybrid stub destination is backend-aware.
-    // cpp's CMake harness drives child codegen from OUTPUT_DIR (its
-    // `process_children_<N>.cmake` reads `<OUTPUT_DIR>/<child>.scxml`), so
-    // hybrid stubs land alongside the parent's generated files. c11 discovers
-    // children via RESOURCE_DIR GLOBs at CMake configure time — a stub
-    // emitted only into OUTPUT_DIR is invisible to that GLOB on the first
-    // build. Mirroring `process_static_invokes` for inline `<content>`,
-    // the c11 stub is written to the SCXML source directory so the same
-    // configure-time discovery flow picks it up.
-    let hybrid_dest = if lang == Language::C11 {
-        Path::new(scxml_path).parent().unwrap_or(Path::new("."))
-    } else {
-        out_path
-    };
-    generate_hybrid_child_scxmls(&model, hybrid_dest);
+        report.needs_script_engine = Some(model.needs_script_engine);
+
+        // W3C SCXML 6.4: Generate children metadata + hybrid SCXML stubs for all languages.
+        // C++ uses _children.txt for CMake post-processing; all languages need hybrid stubs.
+        let children = collect_invoke_child_names(&model);
+        if lang == Language::Cpp && !children.is_empty() {
+            let children_file = out_path.join(format!("{input_stem}_children.txt"));
+            write_or_exit(error_format, &children_file, children.join("\n") + "\n");
+        }
+        // W3C SCXML 6.4: Copy static invoke child SCXML files to the output
+        // directory so CMake's post-processing script can find them next to the
+        // parent. `process_static_invokes` extracts inline <scxml> content to
+        // the *source* directory; the build system expects them in OUTPUT_DIR.
+        copy_static_invoke_children(&model, Path::new(scxml_path), out_path);
+        // W3C SCXML 6.4 (test216/530): hybrid stub destination is backend-aware.
+        // cpp's CMake harness drives child codegen from OUTPUT_DIR (its
+        // `process_children_<N>.cmake` reads `<OUTPUT_DIR>/<child>.scxml`), so
+        // hybrid stubs land alongside the parent's generated files. c11 discovers
+        // children via RESOURCE_DIR GLOBs at CMake configure time — a stub
+        // emitted only into OUTPUT_DIR is invisible to that GLOB on the first
+        // build. Mirroring `process_static_invokes` for inline `<content>`,
+        // the c11 stub is written to the SCXML source directory so the same
+        // configure-time discovery flow picks it up.
+        let hybrid_dest = if lang == Language::C11 {
+            Path::new(scxml_path).parent().unwrap_or(Path::new("."))
+        } else {
+            out_path
+        };
+        generate_hybrid_child_scxmls(&model, hybrid_dest);
+    } // end of `if !transport_only` — mesh transport emit follows.
 
     // SCE Mesh: generate transport routing code when --deploy is provided.
     // Uses the public API (compile_mesh_transport) so CLI, tests, and build.rs
     // share the same entry point. Server-response injection ran above (pre-SM)
     // and is idempotent, so the re-run inside compile_mesh_transport is a no-op.
     if let Some(deploy_file) = deploy_path {
-        match sce_build::compile_mesh_transport(
-            &mut model,
-            Path::new(deploy_file),
-            lang,
-        ) {
+        match sce_build::compile_mesh_transport(&mut model, Path::new(deploy_file), lang) {
             Ok(result) => {
                 for w in &result.dynamic_target_warnings {
                     eprintln!("Warning: {w}");
@@ -1597,11 +1664,7 @@ fn cmd_generate(
                         "Notice: machine '{}' <parallel id=\"{}\"> region '{}' reads \
                          ancestor data '{}' that sibling region '{}' writes — \
                          snapshot captured at parallel entry (SCE_MESH.md §16.3 R3).",
-                        n.machine,
-                        n.parallel_id,
-                        n.reader_region,
-                        n.location,
-                        n.writer_region,
+                        n.machine, n.parallel_id, n.reader_region, n.location, n.writer_region,
                     );
                 }
                 let mesh_files = maybe_format_files(result.output.files, &cpp_formatter);
@@ -1642,9 +1705,9 @@ fn cmd_generate(
     // `traceability/meta-generated-source-line-marker-missing` on
     // codegen-internal regression — surfaces immediately rather than
     // letting a broken template ship.
-    if let Err(err) = sce_build::forge::sourcemap::validate_emitted_files_have_markers(
-        Path::new(output_dir),
-    ) {
+    if let Err(err) =
+        sce_build::forge::sourcemap::validate_emitted_files_have_markers(Path::new(output_dir))
+    {
         error_format.emit_and_exit(&err, "");
     }
 
@@ -1807,7 +1870,10 @@ fn write_depfile(
         }
         content.push('\n');
         fs::write(depfile_path, content).unwrap_or_else(|e| {
-            cli_exit(CliError::WriteOutput { path: depfile_path.to_string(), source: e })
+            cli_exit(CliError::WriteOutput {
+                path: depfile_path.to_string(),
+                source: e,
+            })
         });
     }
 }
@@ -1852,9 +1918,11 @@ fn cmd_generate_w3c(
     format_style: Option<&str>,
     no_format: bool,
 ) {
-    let lang: Language = language
-        .parse()
-        .unwrap_or_else(|_| cli_exit(CliError::UnknownLanguage { lang: language.to_string() }));
+    let lang: Language = language.parse().unwrap_or_else(|_| {
+        cli_exit(CliError::UnknownLanguage {
+            lang: language.to_string(),
+        })
+    });
 
     // Resolve project root
     let project_root = find_project_root();
@@ -1879,7 +1947,15 @@ fn cmd_generate_w3c(
     // C++ formatter: created once and reused for all generated tests.
     let cpp_formatter = create_cpp_formatter(lang, format_style, no_format);
 
-    generate_w3c_unified(backend.as_ref(), &resources_dir, &cmake_file, single_test, clean, list, &cpp_formatter);
+    generate_w3c_unified(
+        backend.as_ref(),
+        &resources_dir,
+        &cmake_file,
+        single_test,
+        clean,
+        list,
+        &cpp_formatter,
+    );
 }
 
 fn find_project_root() -> PathBuf {
@@ -1899,7 +1975,10 @@ fn find_project_root() -> PathBuf {
 /// Parse test registrations from CMakeLists.txt.
 fn parse_cmake_tests(cmake_file: &Path) -> BTreeMap<String, TestInfo> {
     let content = fs::read_to_string(cmake_file).unwrap_or_else(|e| {
-        cli_exit(CliError::ReadInput { path: cmake_file.display().to_string(), source: e })
+        cli_exit(CliError::ReadInput {
+            path: cmake_file.display().to_string(),
+            source: e,
+        })
     });
 
     let re = regex::Regex::new(
@@ -1910,7 +1989,11 @@ fn parse_cmake_tests(cmake_file: &Path) -> BTreeMap<String, TestInfo> {
     for line in content.lines() {
         if let Some(caps) = re.captures(line) {
             let test_id = caps[1].to_string();
-            let test_type = caps.get(2).map(|m| m.as_str()).unwrap_or("SIMPLE").to_string();
+            let test_type = caps
+                .get(2)
+                .map(|m| m.as_str())
+                .unwrap_or("SIMPLE")
+                .to_string();
             let comment = caps[3].trim().to_string();
             tests.insert(test_id, TestInfo { test_type, comment });
         }
@@ -1944,8 +2027,14 @@ fn read_metadata(resources_dir: &Path, test_id: &str) -> TestMetadata {
 /// Find the SCXML file for a test ID.
 fn find_scxml(resources_dir: &Path, test_id: &str) -> Option<PathBuf> {
     let num_prefix = extract_num_prefix(test_id);
-    let scxml = resources_dir.join(&num_prefix).join(format!("test{test_id}.scxml"));
-    if scxml.exists() { Some(scxml) } else { None }
+    let scxml = resources_dir
+        .join(&num_prefix)
+        .join(format!("test{test_id}.scxml"));
+    if scxml.exists() {
+        Some(scxml)
+    } else {
+        None
+    }
 }
 
 /// Extract numeric prefix from test ID (e.g., "144" -> "144", "553b" -> "553")
@@ -1996,7 +2085,11 @@ fn model_uses_http_send(model: &SCXMLModel) -> bool {
                 return true;
             }
         }
-        for block in state.on_entry_blocks.iter().chain(state.on_exit_blocks.iter()) {
+        for block in state
+            .on_entry_blocks
+            .iter()
+            .chain(state.on_exit_blocks.iter())
+        {
             if action_uses_http_send(block) {
                 return true;
             }
@@ -2007,9 +2100,7 @@ fn model_uses_http_send(model: &SCXMLModel) -> bool {
 
 fn action_uses_http_send(actions: &[sce_build::model::Action]) -> bool {
     for action in actions {
-        if action.action_type == "send"
-            && action.send_type.contains("BasicHTTPEventProcessor")
-        {
+        if action.action_type == "send" && action.send_type.contains("BasicHTTPEventProcessor") {
             return true;
         }
         if action_uses_http_send(&action.then_actions)
@@ -2050,7 +2141,11 @@ trait W3cBackend {
     /// structured `code` / `stage` / `fix` / `location` signal all the
     /// way to NDJSON output. Stringifying here would collapse every
     /// failure into `cli/scxml-generate` and lose the repair routing.
-    fn generate_sm(&self, model: &SCXMLModel, input_stem: &str) -> Result<Vec<(String, String)>, ForgeError>;
+    fn generate_sm(
+        &self,
+        model: &SCXMLModel,
+        input_stem: &str,
+    ) -> Result<Vec<(String, String)>, ForgeError>;
 
     /// Hook after writing parent SM (e.g. Rust writes mod.rs).
     fn post_write_parent(
@@ -2059,7 +2154,8 @@ trait W3cBackend {
         _test_mod_dir: &Path,
         _input_stem: &str,
         _drift_ctx: &DriftContext,
-    ) {}
+    ) {
+    }
 
     /// Process a successfully generated child SM: fix package, register module, etc.
     fn process_child(
@@ -2078,7 +2174,8 @@ trait W3cBackend {
         _child_name: &str,
         _test_mod_dir: &Path,
         _drift_ctx: &DriftContext,
-    ) {}
+    ) {
+    }
 
     /// Generate test file content. Default returns empty (C++ uses CMake-managed test headers).
     fn generate_test_file(
@@ -2091,18 +2188,26 @@ trait W3cBackend {
         _uses_http: bool,
         _test_type: &str,
         _metadata: &TestMetadata,
-    ) -> String { String::new() }
+    ) -> String {
+        String::new()
+    }
 
     /// Test filename (relative to test_output_dir or test_mod_dir).
     /// Default returns empty (backends that generate test files must override).
-    fn test_filename(&self, _test_id: &str, _input_stem: &str) -> String { String::new() }
+    fn test_filename(&self, _test_id: &str, _input_stem: &str) -> String {
+        String::new()
+    }
 
     /// Test file lives in test_mod_dir (Go) vs test_output_dir (Rust, Kotlin).
-    fn test_in_sm_dir(&self) -> bool { false }
+    fn test_in_sm_dir(&self) -> bool {
+        false
+    }
 
     /// Whether this backend writes SM files into per-test subdirectories (testNNN/).
     /// C++ writes to a flat output directory; others use subdirectories.
-    fn uses_per_test_subdirs(&self) -> bool { true }
+    fn uses_per_test_subdirs(&self) -> bool {
+        true
+    }
 
     /// W3C SCXML 6.4: Whether this backend's parent template constructs a
     /// generated child class for hybrid (`srcexpr` / `contentexpr`)
@@ -2114,11 +2219,15 @@ trait W3cBackend {
     /// Static `src=` / inline `<content>` invokes always get a stub
     /// because every backend's template references the child class
     /// by name and there is no runtime fallback.
-    fn emits_hybrid_child_stub(&self) -> bool { true }
+    fn emits_hybrid_child_stub(&self) -> bool {
+        true
+    }
 
     /// Whether this backend generates test files alongside SM code.
     /// C++ test headers are managed by CMake, not by sce-codegen.
-    fn generates_test_files(&self) -> bool { true }
+    fn generates_test_files(&self) -> bool {
+        true
+    }
 
     /// Called after main loop to write module indices (Rust writes root mod.rs).
     fn finalize(&self, _generated_ids: &[String], _drift_ctx: &DriftContext) {}
@@ -2128,8 +2237,9 @@ trait W3cBackend {
 
     /// Clean stale generated files for tests no longer in registry.
     /// Returns number of stale entries removed. Default is no-op.
-    fn clean_stale(&self, _valid_ids: &BTreeSet<String>) -> usize { 0 }
-
+    fn clean_stale(&self, _valid_ids: &BTreeSet<String>) -> usize {
+        0
+    }
 }
 
 // ── Shared Utilities for W3C Generation ────────────────────────
@@ -2208,7 +2318,13 @@ fn generate_child_sms(
                 match backend.generate_sm(&child_model, child_name) {
                     Ok(files) => {
                         if let Some((_, code)) = files.into_iter().next() {
-                            backend.process_child(test_id, child_name, code, test_mod_dir, drift_ctx);
+                            backend.process_child(
+                                test_id,
+                                child_name,
+                                code,
+                                test_mod_dir,
+                                drift_ctx,
+                            );
                         }
                     }
                     Err(_) => {
@@ -2251,7 +2367,10 @@ fn generate_w3c_unified(
             let scxml = find_scxml(resources_dir, tid);
             let status = if scxml.is_some() { "OK" } else { "MISSING" };
             let comment_trunc: String = info.comment.chars().take(70).collect();
-            println!("  {tid:6} [{:9}] {status} -- {comment_trunc}", info.type_str());
+            println!(
+                "  {tid:6} [{:9}] {status} -- {comment_trunc}",
+                info.type_str()
+            );
         }
         return;
     }
@@ -2294,7 +2413,10 @@ fn generate_w3c_unified(
 
                 resolve_source_path(&mut model, &scxml_path);
 
-                let input_stem = scxml_path.file_stem().and_then(|s| s.to_str()).unwrap_or("unknown");
+                let input_stem = scxml_path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("unknown");
 
                 match backend.generate_sm(&model, input_stem) {
                     Ok(files) => {
@@ -2332,7 +2454,14 @@ fn generate_w3c_unified(
                         // (only for backends that use per-test subdirs; C++ handles children via CMake)
                         if backend.uses_per_test_subdirs() {
                             generate_hybrid_child_scxmls(&model, &test_mod_dir);
-                            generate_child_sms(backend, test_id, &model, &scxml_path, &test_mod_dir, &drift_ctx);
+                            generate_child_sms(
+                                backend,
+                                test_id,
+                                &model,
+                                &scxml_path,
+                                &test_mod_dir,
+                                &drift_ctx,
+                            );
                         }
 
                         // Detect pass state and generate test file (if backend supports it)
@@ -2341,12 +2470,22 @@ fn generate_w3c_unified(
                             if let Some(ref pass) = pass_state {
                                 let machine = to_pascal_case(input_stem);
                                 let metadata = read_metadata(resources_dir, test_id);
-                                let test_type = cmake_tests.get(test_id.as_str()).map(|i| i.test_type.as_str()).unwrap_or("SIMPLE");
+                                let test_type = cmake_tests
+                                    .get(test_id.as_str())
+                                    .map(|i| i.test_type.as_str())
+                                    .unwrap_or("SIMPLE");
                                 let uses_http = model_uses_http_send(&model);
                                 let needs_script = model.needs_script_engine;
 
                                 let test_code = backend.generate_test_file(
-                                    test_id, input_stem, &machine, pass, needs_script, uses_http, test_type, &metadata,
+                                    test_id,
+                                    input_stem,
+                                    &machine,
+                                    pass,
+                                    needs_script,
+                                    uses_http,
+                                    test_type,
+                                    &metadata,
                                 );
                                 let test_filename = backend.test_filename(test_id, input_stem);
                                 let test_file_dir = if backend.test_in_sm_dir() {
@@ -2423,7 +2562,11 @@ fn generate_w3c_unified(
     // Clean stale files (backends that override clean_stale, e.g. Kotlin)
     let mut stale_removed = 0;
     if single_test.is_none() {
-        let valid_ids: BTreeSet<String> = generated_static.iter().chain(generated_script.iter()).cloned().collect();
+        let valid_ids: BTreeSet<String> = generated_static
+            .iter()
+            .chain(generated_script.iter())
+            .cloned()
+            .collect();
         if !valid_ids.is_empty() {
             stale_removed = backend.clean_stale(&valid_ids);
         }
@@ -2431,7 +2574,11 @@ fn generate_w3c_unified(
 
     // Finalize (Rust writes root mod.rs)
     if single_test.is_none() {
-        let mut all_ids: Vec<String> = generated_static.iter().chain(generated_script.iter()).cloned().collect();
+        let mut all_ids: Vec<String> = generated_static
+            .iter()
+            .chain(generated_script.iter())
+            .cloned()
+            .collect();
         all_ids.sort_by(|a, b| a.len().cmp(&b.len()).then_with(|| a.cmp(b)));
         backend.finalize(&all_ids, &drift_ctx);
     }
@@ -2466,13 +2613,25 @@ fn generate_w3c_unified(
     }
 
     if total_generated > 0 {
-        println!("\nGenerated SM classes: {}", backend.sm_output_base().display());
+        println!(
+            "\nGenerated SM classes: {}",
+            backend.sm_output_base().display()
+        );
         if !backend.test_in_sm_dir() {
-            println!("Generated test classes: {}", backend.test_output_dir().display());
+            println!(
+                "Generated test classes: {}",
+                backend.test_output_dir().display()
+            );
         }
-        println!("\nGenerated test IDs (static): {}", generated_static.join(" "));
+        println!(
+            "\nGenerated test IDs (static): {}",
+            generated_static.join(" ")
+        );
         if !generated_script.is_empty() {
-            println!("Generated test IDs (script): {}", generated_script.join(" "));
+            println!(
+                "Generated test IDs (script): {}",
+                generated_script.join(" ")
+            );
         }
     }
 
@@ -2529,11 +2688,21 @@ impl RustBackend {
 }
 
 impl W3cBackend for RustBackend {
-    fn language_name(&self) -> &str { "Rust" }
-    fn sm_output_base(&self) -> &Path { &self.sm_base }
-    fn test_output_dir(&self) -> &Path { &self.test_dir }
+    fn language_name(&self) -> &str {
+        "Rust"
+    }
+    fn sm_output_base(&self) -> &Path {
+        &self.sm_base
+    }
+    fn test_output_dir(&self) -> &Path {
+        &self.test_dir
+    }
 
-    fn generate_sm(&self, model: &SCXMLModel, input_stem: &str) -> Result<Vec<(String, String)>, ForgeError> {
+    fn generate_sm(
+        &self,
+        model: &SCXMLModel,
+        input_stem: &str,
+    ) -> Result<Vec<(String, String)>, ForgeError> {
         // W3C SCXML W3C-test runner always emits std-coupled code:
         // the 202-fixture AOT suite exercises std-backed engine paths
         // (HTTP, script engines, multi-thread Arc<Mutex> external
@@ -2593,7 +2762,11 @@ impl W3cBackend for RustBackend {
                     "mod {child_name}_sm;\n\
                      pub use {child_name}_sm::*;\n"
                 );
-                write_if_changed_drift_aware(&mod_file, &format!("{existing}{addition}"), drift_ctx);
+                write_if_changed_drift_aware(
+                    &mod_file,
+                    &format!("{existing}{addition}"),
+                    drift_ctx,
+                );
             }
         }
     }
@@ -2609,7 +2782,11 @@ impl W3cBackend for RustBackend {
         test_type: &str,
         _metadata: &TestMetadata,
     ) -> String {
-        let timeout_secs = if test_type == "SCHEDULED" || test_type == "HTTP" { 5 } else { 3 };
+        let timeout_secs = if test_type == "SCHEDULED" || test_type == "HTTP" {
+            5
+        } else {
+            3
+        };
         // Engine DI Parity RFC (Path B+): instantiate LuaEngine per-test and pass it
         // to `Policy::new(engine)` instead of registering a process-global singleton.
         let policy_ctor = if needs_script {
@@ -2619,7 +2796,11 @@ impl W3cBackend for RustBackend {
         } else {
             "    let policy = sce_rust_tests::generated::test"
         };
-        let policy_args = if needs_script { "(script_engine)" } else { "()" };
+        let policy_args = if needs_script {
+            "(script_engine)"
+        } else {
+            "()"
+        };
         let is_http = test_type == "HTTP" && uses_http;
         let http_setup = if is_http {
             "    sce_rust_tests::harness::setup_http_test(&mut engine);\n"
@@ -2677,20 +2858,32 @@ impl W3cBackend for RustBackend {
         let mut mod_lines = vec![
             "// GENERATED -- DO NOT EDIT (sce-codegen)".to_string(),
             format!("// SCE-MAP: test{first_id}.scxml:1"),
-            format!("//! Generated W3C SCXML conformance test state machines ({} tests).\n", generated_ids.len()),
+            format!(
+                "//! Generated W3C SCXML conformance test state machines ({} tests).\n",
+                generated_ids.len()
+            ),
         ];
         for id in generated_ids {
             mod_lines.push(format!("pub mod test{id};"));
         }
         mod_lines.push(String::new());
-        write_if_changed_drift_aware(&self.sm_base.join("mod.rs"), &mod_lines.join("\n"), drift_ctx);
+        write_if_changed_drift_aware(
+            &self.sm_base.join("mod.rs"),
+            &mod_lines.join("\n"),
+            drift_ctx,
+        );
     }
 
     fn clean(&self) {
         // Remove generated dirs but not handcrafted files
         for entry in fs::read_dir(&self.sm_base).into_iter().flatten().flatten() {
             let path = entry.path();
-            if path.is_dir() && path.file_name().and_then(|n| n.to_str()).map_or(false, |n| n.starts_with("test")) {
+            if path.is_dir()
+                && path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .map_or(false, |n| n.starts_with("test"))
+            {
                 fs::remove_dir_all(&path).ok();
             }
         }
@@ -2724,11 +2917,21 @@ impl GoBackend {
 }
 
 impl W3cBackend for GoBackend {
-    fn language_name(&self) -> &str { "Go" }
-    fn sm_output_base(&self) -> &Path { &self.sm_base }
-    fn test_output_dir(&self) -> &Path { &self.sm_base } // Go tests live in sm dir
+    fn language_name(&self) -> &str {
+        "Go"
+    }
+    fn sm_output_base(&self) -> &Path {
+        &self.sm_base
+    }
+    fn test_output_dir(&self) -> &Path {
+        &self.sm_base
+    } // Go tests live in sm dir
 
-    fn generate_sm(&self, model: &SCXMLModel, input_stem: &str) -> Result<Vec<(String, String)>, ForgeError> {
+    fn generate_sm(
+        &self,
+        model: &SCXMLModel,
+        input_stem: &str,
+    ) -> Result<Vec<(String, String)>, ForgeError> {
         let code = sce_build::generator::generate_go(model, &self.tmpl_dir)?;
         Ok(vec![(format!("{input_stem}_sm.go"), code)])
     }
@@ -2763,7 +2966,11 @@ impl W3cBackend for GoBackend {
         metadata: &TestMetadata,
     ) -> String {
         let is_http = test_type == "HTTP" && uses_http;
-        let timeout = if test_type == "SCHEDULED" { "5 * time.Second" } else { "3 * time.Second" };
+        let timeout = if test_type == "SCHEDULED" {
+            "5 * time.Second"
+        } else {
+            "3 * time.Second"
+        };
 
         let engine_setup = if needs_script {
             // Engine DI Parity RFC (Path B+): each test owns its LuaEngine; the
@@ -2820,7 +3027,9 @@ impl W3cBackend for GoBackend {
         format!("{input_stem}_test.go")
     }
 
-    fn test_in_sm_dir(&self) -> bool { true }
+    fn test_in_sm_dir(&self) -> bool {
+        true
+    }
 
     fn clean(&self) {
         if self.sm_base.exists() {
@@ -2850,11 +3059,21 @@ impl KotlinBackend {
 }
 
 impl W3cBackend for KotlinBackend {
-    fn language_name(&self) -> &str { "Kotlin" }
-    fn sm_output_base(&self) -> &Path { &self.sm_base }
-    fn test_output_dir(&self) -> &Path { &self.test_dir }
+    fn language_name(&self) -> &str {
+        "Kotlin"
+    }
+    fn sm_output_base(&self) -> &Path {
+        &self.sm_base
+    }
+    fn test_output_dir(&self) -> &Path {
+        &self.test_dir
+    }
 
-    fn generate_sm(&self, model: &SCXMLModel, input_stem: &str) -> Result<Vec<(String, String)>, ForgeError> {
+    fn generate_sm(
+        &self,
+        model: &SCXMLModel,
+        input_stem: &str,
+    ) -> Result<Vec<(String, String)>, ForgeError> {
         let code = sce_build::generator::generate_kotlin(model, &self.tmpl_dir)?;
         Ok(vec![(format!("{input_stem}Sm.kt"), code)])
     }
@@ -2884,7 +3103,9 @@ impl W3cBackend for KotlinBackend {
     /// emitting that stub would be dead code. Static `src=` / inline
     /// `<content>` invokes still get a stub via the trait default
     /// because the parent template instantiates them by name.
-    fn emits_hybrid_child_stub(&self) -> bool { false }
+    fn emits_hybrid_child_stub(&self) -> bool {
+        false
+    }
 
     fn process_child_failure(
         &self,
@@ -2934,7 +3155,11 @@ impl W3cBackend for KotlinBackend {
 
         // W3C SCXML C.2: HTTP tests use W3CHttpTestBase only when SM actually uses performHttpSend()
         let is_http = test_type == "HTTP" && uses_http;
-        let base_class = if is_http { "W3CHttpTestBase" } else { "W3CTestBase" };
+        let base_class = if is_http {
+            "W3CHttpTestBase"
+        } else {
+            "W3CTestBase"
+        };
 
         // W3C SCXML 6.2: SCHEDULED tests need longer timeout
         let timeout_override = if test_type == "SCHEDULED" {
@@ -2944,7 +3169,9 @@ impl W3cBackend for KotlinBackend {
         };
 
         let create_sm = if needs_script {
-            format!("    override fun createStateMachine() = {sm_class}StateMachine(createEngine())\n")
+            format!(
+                "    override fun createStateMachine() = {sm_class}StateMachine(createEngine())\n"
+            )
         } else {
             format!("    override fun createStateMachine() = {sm_class}StateMachine()\n")
         };
@@ -2997,9 +3224,13 @@ impl W3cBackend for KotlinBackend {
         // Clean stale SM directories
         if self.sm_base.exists() {
             for entry in fs::read_dir(&self.sm_base).into_iter().flatten().flatten() {
-                if !entry.path().is_dir() { continue; }
+                if !entry.path().is_dir() {
+                    continue;
+                }
                 let name = entry.file_name().to_string_lossy().to_string();
-                if !name.starts_with("test") { continue; }
+                if !name.starts_with("test") {
+                    continue;
+                }
                 let dir_test_id = &name[4..];
                 if !valid_ids.contains(dir_test_id) {
                     fs::remove_dir_all(entry.path()).ok();
@@ -3011,14 +3242,21 @@ impl W3cBackend for KotlinBackend {
 
         // Clean stale test classes
         if self.test_dir.exists() {
-            let valid_lower: BTreeSet<String> = valid_ids.iter().map(|s| s.to_lowercase()).collect();
+            let valid_lower: BTreeSet<String> =
+                valid_ids.iter().map(|s| s.to_lowercase()).collect();
             for entry in fs::read_dir(&self.test_dir).into_iter().flatten().flatten() {
                 let name = entry.file_name().to_string_lossy().to_string();
-                if !name.starts_with("Test") || !name.ends_with(".kt") { continue; }
-                if name == "W3CTestBase.kt" || name == "W3CHttpTestBase.kt" { continue; }
+                if !name.starts_with("Test") || !name.ends_with(".kt") {
+                    continue;
+                }
+                if name == "W3CTestBase.kt" || name == "W3CHttpTestBase.kt" {
+                    continue;
+                }
                 let stem = &name[..name.len() - 3];
                 let file_test_id = &stem[4..];
-                if !valid_ids.contains(file_test_id) && !valid_lower.contains(&file_test_id.to_lowercase()) {
+                if !valid_ids.contains(file_test_id)
+                    && !valid_lower.contains(&file_test_id.to_lowercase())
+                {
                     fs::remove_file(entry.path()).ok();
                     println!("  Removed stale test: {name}");
                     removed += 1;
@@ -3047,17 +3285,31 @@ impl CppBackend {
 }
 
 impl W3cBackend for CppBackend {
-    fn language_name(&self) -> &str { "C++" }
-    fn sm_output_base(&self) -> &Path { &self.output_dir }
-    fn test_output_dir(&self) -> &Path { &self.output_dir }
+    fn language_name(&self) -> &str {
+        "C++"
+    }
+    fn sm_output_base(&self) -> &Path {
+        &self.output_dir
+    }
+    fn test_output_dir(&self) -> &Path {
+        &self.output_dir
+    }
 
-    fn generate_sm(&self, model: &SCXMLModel, input_stem: &str) -> Result<Vec<(String, String)>, ForgeError> {
+    fn generate_sm(
+        &self,
+        model: &SCXMLModel,
+        input_stem: &str,
+    ) -> Result<Vec<(String, String)>, ForgeError> {
         let output = sce_build::generator::generate_cpp(model, &self.tmpl_dir, input_stem)?;
         Ok(output.files)
     }
 
-    fn uses_per_test_subdirs(&self) -> bool { false }
-    fn generates_test_files(&self) -> bool { false }
+    fn uses_per_test_subdirs(&self) -> bool {
+        false
+    }
+    fn generates_test_files(&self) -> bool {
+        false
+    }
 
     fn process_child(
         &self,
@@ -3105,11 +3357,21 @@ impl PythonBackend {
 }
 
 impl W3cBackend for PythonBackend {
-    fn language_name(&self) -> &str { "Python" }
-    fn sm_output_base(&self) -> &Path { &self.sm_base }
-    fn test_output_dir(&self) -> &Path { &self.sm_base }
+    fn language_name(&self) -> &str {
+        "Python"
+    }
+    fn sm_output_base(&self) -> &Path {
+        &self.sm_base
+    }
+    fn test_output_dir(&self) -> &Path {
+        &self.sm_base
+    }
 
-    fn generate_sm(&self, model: &SCXMLModel, input_stem: &str) -> Result<Vec<(String, String)>, ForgeError> {
+    fn generate_sm(
+        &self,
+        model: &SCXMLModel,
+        input_stem: &str,
+    ) -> Result<Vec<(String, String)>, ForgeError> {
         let code = sce_build::generator::generate_python(model, &self.tmpl_dir)
             .map_err(ForgeError::from)?;
         Ok(vec![(format!("{input_stem}_sm.py"), code)])
@@ -3138,9 +3400,13 @@ impl W3cBackend for PythonBackend {
     // to 6 s in 50 ms ticks so 5 s `<send delay>` fixtures resolve;
     // SIMPLE tests reach final on the macrostep right after
     // initialize, so the time-advance loop completes in zero ticks.
-    fn generates_test_files(&self) -> bool { true }
+    fn generates_test_files(&self) -> bool {
+        true
+    }
 
-    fn test_in_sm_dir(&self) -> bool { true }
+    fn test_in_sm_dir(&self) -> bool {
+        true
+    }
 
     fn generate_test_file(
         &self,
@@ -3250,7 +3516,10 @@ impl W3cBackend for PythonBackend {
 
 fn cmd_fix_scxml_name(scxml_path: &str, name: &str) {
     let content = fs::read_to_string(scxml_path).unwrap_or_else(|e| {
-        cli_exit(CliError::ReadInput { path: scxml_path.to_string(), source: e })
+        cli_exit(CliError::ReadInput {
+            path: scxml_path.to_string(),
+            source: e,
+        })
     });
 
     // Find first <scxml...> tag
@@ -3263,13 +3532,23 @@ fn cmd_fix_scxml_name(scxml_path: &str, name: &str) {
             let cleaned = re_name.replace(first_scxml, "").to_string();
             // Add new name attribute
             let with_name = cleaned.replacen("<scxml", &format!("<scxml name=\"{name}\""), 1);
-            format!("{}{}{}", &content[..m.start()], with_name, &content[m.end()..])
+            format!(
+                "{}{}{}",
+                &content[..m.start()],
+                with_name,
+                &content[m.end()..]
+            )
         }
-        None => cli_exit(CliError::NoScxmlTag { path: scxml_path.to_string() }),
+        None => cli_exit(CliError::NoScxmlTag {
+            path: scxml_path.to_string(),
+        }),
     };
 
     fs::write(scxml_path, fixed).unwrap_or_else(|e| {
-        cli_exit(CliError::WriteOutput { path: scxml_path.to_string(), source: e })
+        cli_exit(CliError::WriteOutput {
+            path: scxml_path.to_string(),
+            source: e,
+        })
     });
 }
 
@@ -3277,7 +3556,10 @@ fn cmd_fix_scxml_name(scxml_path: &str, name: &str) {
 
 fn cmd_read_metadata(metadata_file: &str) {
     let content = fs::read_to_string(metadata_file).unwrap_or_else(|e| {
-        cli_exit(CliError::ReadInput { path: metadata_file.to_string(), source: e })
+        cli_exit(CliError::ReadInput {
+            path: metadata_file.to_string(),
+            source: e,
+        })
     });
 
     for line in content.lines() {
@@ -3289,7 +3571,9 @@ fn cmd_read_metadata(metadata_file: &str) {
         }
     }
 
-    cli_exit(CliError::MissingMetadataField { path: metadata_file.to_string() });
+    cli_exit(CliError::MissingMetadataField {
+        path: metadata_file.to_string(),
+    });
 }
 
 // ── Subcommand: manifest ───────────────────────────────────────
@@ -3297,14 +3581,18 @@ fn cmd_read_metadata(metadata_file: &str) {
 fn cmd_manifest(dir: &str) {
     let dir_path = Path::new(dir);
     if !dir_path.is_dir() {
-        cli_exit(CliError::NotADirectory { path: dir.to_string() });
+        cli_exit(CliError::NotADirectory {
+            path: dir.to_string(),
+        });
     }
 
     let manifest = sce_build::build_forge_manifest(dir_path)
         .unwrap_or_else(|e| current_error_format().emit_and_exit(&e, "Forge codegen error: "));
 
     let json = serde_json::to_string_pretty(&manifest).unwrap_or_else(|e| {
-        cli_exit(CliError::JsonSerialization { detail: e.to_string() })
+        cli_exit(CliError::JsonSerialization {
+            detail: e.to_string(),
+        })
     });
 
     println!("{json}");
@@ -3313,12 +3601,14 @@ fn cmd_manifest(dir: &str) {
 // ── Subcommand: generate-conformance ───────────────────────────
 
 fn cmd_generate_conformance(language: &str, manifest_path: &str, output_dir: &str) {
-    let lang: Language = language
-        .parse()
-        .unwrap_or_else(|_| cli_exit(CliError::UnknownLanguage { lang: language.to_string() }));
+    let lang: Language = language.parse().unwrap_or_else(|_| {
+        cli_exit(CliError::UnknownLanguage {
+            lang: language.to_string(),
+        })
+    });
 
-    let manifest = sce_build::conformance::Manifest::load(Path::new(manifest_path))
-        .unwrap_or_else(|e| {
+    let manifest =
+        sce_build::conformance::Manifest::load(Path::new(manifest_path)).unwrap_or_else(|e| {
             cli_exit(CliError::ReadInput {
                 path: manifest_path.to_string(),
                 source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
@@ -3350,7 +3640,10 @@ fn cmd_generate_conformance(language: &str, manifest_path: &str, output_dir: &st
 
     let out_dir = Path::new(output_dir);
     fs::create_dir_all(out_dir).unwrap_or_else(|e| {
-        cli_exit(CliError::CreateOutputDir { path: out_dir.display().to_string(), source: e })
+        cli_exit(CliError::CreateOutputDir {
+            path: out_dir.display().to_string(),
+            source: e,
+        })
     });
     let out_path = out_dir.join(sce_build::conformance::harness_filename(lang));
 
@@ -3378,10 +3671,10 @@ fn cmd_expand(scxml_path: &str) {
         })
     });
     let base_dir = Path::new(scxml_path).parent();
-    let (expanded, _map, _deps) =
-        sce_build::parser::expand_preprocessors(&content, scxml_path, base_dir).unwrap_or_else(
-            |err| current_error_format().emit_and_exit(&err, "Preprocessor error: "),
-        );
+    let (expanded, _map, _deps) = sce_build::parser::expand_preprocessors(
+        &content, scxml_path, base_dir,
+    )
+    .unwrap_or_else(|err| current_error_format().emit_and_exit(&err, "Preprocessor error: "));
     // Write raw bytes to stdout without trailing newline so the
     // Phase B parity harness can byte-compare against the C++
     // pugixml canonicalisation without newline handling quirks.
@@ -3428,9 +3721,13 @@ fn cmd_verify(
     // emit. Falls back to cwd only if every layer fails, mirroring
     // the pre-2026-05 forgiving behaviour for ad-hoc invocations.
     let explicit_root = current_workspace_root_override();
-    let workspace_root = locate_workspace_root(explicit_root.as_deref())
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")));
-    let tpl_root_default = workspace_root.join("tools").join("codegen").join("templates");
+    let workspace_root = locate_workspace_root(explicit_root.as_deref()).unwrap_or_else(|| {
+        std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
+    });
+    let tpl_root_default = workspace_root
+        .join("tools")
+        .join("codegen")
+        .join("templates");
     let lock_default = workspace_root.join("Cargo.lock");
     let tpl_root = template_root
         .map(std::path::PathBuf::from)
@@ -3662,9 +3959,7 @@ fn cmd_list_fixtures(
         let resource_root: std::path::PathBuf = match resource_dir {
             Some(rd) => std::path::PathBuf::from(rd),
             None => {
-                let manifest_dir = Path::new(manifest_path)
-                    .parent()
-                    .unwrap_or(Path::new("."));
+                let manifest_dir = Path::new(manifest_path).parent().unwrap_or(Path::new("."));
                 manifest_dir
                     .parent()
                     .map(|p| p.join("resources"))
@@ -3678,8 +3973,8 @@ fn cmd_list_fixtures(
         // (matches the manifest-as-source-of-truth contract; the
         // listing is then a superset that downstream cmake configs
         // narrow with their own --language filter).
-        let lang_for_enrich: Option<sce_build::generator::Language> = language
-            .and_then(|s| s.parse::<sce_build::generator::Language>().ok());
+        let lang_for_enrich: Option<sce_build::generator::Language> =
+            language.and_then(|s| s.parse::<sce_build::generator::Language>().ok());
         for f in manifest.fixtures.iter_mut() {
             let (has_tv_slot, kind_supports_sidecar) = match &mut f.spec {
                 sce_build::conformance::FixtureSpec::Algorithm {
@@ -3727,7 +4022,9 @@ fn cmd_list_fixtures(
     // (filterless) contract every other backend already relies on.
     let lang_filter = match language {
         Some(s) => Some(s.parse::<Language>().unwrap_or_else(|_| {
-            cli_exit(CliError::UnknownLanguage { lang: s.to_string() })
+            cli_exit(CliError::UnknownLanguage {
+                lang: s.to_string(),
+            })
         })),
         None => None,
     };
@@ -3746,9 +4043,7 @@ fn cmd_list_fixtures(
     let resource_root_for_filter: std::path::PathBuf = match resource_dir {
         Some(rd) => std::path::PathBuf::from(rd),
         None => {
-            let manifest_dir = Path::new(manifest_path)
-                .parent()
-                .unwrap_or(Path::new("."));
+            let manifest_dir = Path::new(manifest_path).parent().unwrap_or(Path::new("."));
             manifest_dir
                 .parent()
                 .map(|p| p.join("resources"))
@@ -3768,12 +4063,10 @@ fn cmd_list_fixtures(
             // see identical fixture sets — drift here would silently
             // schedule a per-fixture `add_custom_command` for a
             // generation that fails with `MCU-class kind`.
-            Some(lang) => sce_build::conformance::lang_supports_fixture(
-                f,
-                lang,
-                &resource_root_for_filter,
-            )
-            .unwrap_or(false),
+            Some(lang) => {
+                sce_build::conformance::lang_supports_fixture(f, lang, &resource_root_for_filter)
+                    .unwrap_or(false)
+            }
             None => true,
         })
         .filter(|f| {
@@ -3867,7 +4160,10 @@ fn write_if_changed(path: &Path, content: &str) -> bool {
         fs::create_dir_all(parent).ok();
     }
     fs::write(path, content).unwrap_or_else(|e| {
-        cli_exit(CliError::WriteOutput { path: path.display().to_string(), source: e })
+        cli_exit(CliError::WriteOutput {
+            path: path.display().to_string(),
+            source: e,
+        })
     });
     true
 }
