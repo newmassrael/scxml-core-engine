@@ -57,6 +57,34 @@ type {{ struct_name }} struct {
 {% endif %}
 }
 
+{% if has_variant %}
+{% set ns = namespace(default_arm=none) %}
+{% for arm in variant.arms %}{% if arm.is_default %}{% set ns.default_arm = arm %}{% endif %}{% endfor %}
+{% endif %}
+{% if has_flag_default or (has_variant and ns.default_arm) %}
+// New{{ struct_name }} returns a {{ struct_name }} initialized with the
+// declared wire-MID defaults. Go has no Default trait — round-trip
+// safety (`New{{ struct_name }}().Encode()` decodes back to the same
+// arm) requires using this constructor rather than the bare struct
+// literal `{{ struct_name }}{}`, which would zero-init every field
+// (and leave every Variant arm pointer nil for variant codecs).
+// RFC variant-default-uniformity Atomic β-go.
+func New{{ struct_name }}() *{{ struct_name }} {
+	return &{{ struct_name }}{
+{% for field in fields %}
+{% if field.go_flag_default_literal is defined %}
+		{{ field.id }}: {{ field.go_flag_default_literal }},
+{% endif %}
+{% endfor %}
+{% if has_variant and ns.default_arm %}
+		Body: {{ struct_name }}Variant{
+			{{ ns.default_arm.variant_name }}: {{ ns.default_arm.go_body_constructor }}(),
+		},
+{% endif %}
+	}
+}
+
+{% endif %}
 // Decode{{ struct_name }} decodes the next frame from cursor.
 // On success the cursor advances past the consumed bytes; returns
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail

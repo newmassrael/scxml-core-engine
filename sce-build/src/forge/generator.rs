@@ -1936,6 +1936,20 @@ fn render_codec(
                     _        => format!("0x{:02x}",  acc),
                 };
                 obj.insert("py_flag_default_literal".into(), py_literal.into());
+                // Go literal: Go has no Default trait — the equivalent
+                // is a package-level `NewT()` constructor that returns
+                // a struct literal with the wire-MID baked field
+                // values. Typed-conversion form `uint8(0x02)` keeps
+                // the literal unambiguous when the field type is an
+                // unsigned-integer alias.
+                let go_literal = match f.sce_type.int_bit_width() {
+                    Some(8)  => format!("uint8(0x{:02x})",   acc),
+                    Some(16) => format!("uint16(0x{:04x})",  acc),
+                    Some(32) => format!("uint32(0x{:08x})",  acc),
+                    Some(64) => format!("uint64(0x{:016x})", acc),
+                    _        => format!("uint8(0x{:02x})",   acc),
+                };
+                obj.insert("go_flag_default_literal".into(), go_literal.into());
             }
 
             // RFC §5.B B1-δ present-if primitive: when the codec has
@@ -2082,6 +2096,15 @@ fn render_codec(
     // (`<snake>_<flag_name>` / `<snake>_set_<flag_name>`).
     let has_flags = m.fields.iter().any(|f| !f.flags.is_empty());
     ctx.insert("has_flags".into(), has_flags.into());
+    // RFC variant-default-uniformity Atomic β: codec-level rollup
+    // that fires when at least one field declares `<sce:flag value=>`,
+    // i.e. when this codec needs a manual wire-MID-baked default. Go
+    // template gates `NewT()` ctor emission on this; languages with a
+    // native Default analog (Rust impl Default, C++ member-init,
+    // Kotlin/Python dataclass defaults) consume this rollup as well
+    // when they emit conditional Default-related comment blocks.
+    let has_flag_default = m.fields.iter().any(|f| f.flags.iter().any(|fl| fl.value.is_some()));
+    ctx.insert("has_flag_default".into(), has_flag_default.into());
     // RFC §5.B B5-α: zero-field codecs (Zenoh KeepAlive et al.) skip
     // every cursor / encode-buffer touch; templates branch on
     // `has_no_fields` to emit a trivial encode/decode that round-trips
@@ -2561,6 +2584,23 @@ fn render_codec(
                 // one arm per variant carries this (parse-time guard
                 // `codec/variant-duplicate-default-arm`).
                 obj.insert("is_default".into(), arm.is_default.into());
+                // RFC variant-default-uniformity Atomic β-go: the Go
+                // template emits a `NewT()` constructor on the outer
+                // codec that calls into the declared default arm's own
+                // `New<Pascal>()` to populate the Variant body
+                // pointer. Constructor name follows the Go decoder
+                // pattern (`<snake>.Decode<Pascal>` → `<snake>.New<Pascal>`).
+                // Empty for non-Go languages so the field stays absent
+                // from their template context (`is defined` checks
+                // gate consumption).
+                if matches!(lang, crate::generator::Language::Go) {
+                    let snake = filters::to_snake_case(arm.body_alias.clone());
+                    let pascal = filters::to_pascal_case(arm.body_alias.clone());
+                    obj.insert(
+                        "go_body_constructor".into(),
+                        format!("{snake}.New{pascal}").into(),
+                    );
+                }
                 Ok::<_, ForgeError>(serde_json::Value::Object(obj))
             })
             .collect::<Result<Vec<_>, _>>()?;

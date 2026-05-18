@@ -4236,6 +4236,81 @@ fn forge_codec_variant_default_marker_outer_emits_declared_arm_python() {
     );
 }
 
+/// RFC variant-default-uniformity Atomic β (Go): the inner arm body
+/// codec with `<sce:flag value="0x02"/>` must emit a `NewT()`
+/// constructor returning a struct literal with `Header: uint8(0x02)`
+/// baked in. Go has no Default trait, so round-trip safety requires
+/// callers use `NewT()` instead of `T{}` (the zero-value).
+#[test]
+fn forge_codec_default_marker_arm_b_emits_baked_default_go() {
+    let scxml_path = resource_dir().join("codec_default_marker_arm_b.scxml");
+    let content = std::fs::read_to_string(&scxml_path)
+        .expect("codec_default_marker_arm_b.scxml must exist");
+    let mut opts = sce_build::ForgeCompileOptions::default();
+    opts.go_module_prefix = Some("github.com/test/codec".to_string());
+    let output = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("codec_default_marker_arm_b"),
+        sce_build::generator::Language::Go,
+        &resource_dir(),
+        &opts,
+    )
+    .expect("forge codegen for arm B fixture must succeed (go)");
+    let (_, generated) = &output.files[0];
+    assert!(
+        generated.contains("func NewCodecDefaultMarkerArmB() *CodecDefaultMarkerArmB"),
+        "arm B must emit a `NewCodecDefaultMarkerArmB()` constructor. \
+         Generated source:\n{generated}"
+    );
+    assert!(
+        generated.contains("Header: uint8(0x02),"),
+        "NewCodecDefaultMarkerArmB must bake `Header: uint8(0x02)` \
+         (value=\"0x02\" shifted by bit=0). Generated source:\n{generated}"
+    );
+}
+
+/// RFC variant-default-uniformity Atomic β (Go): the outer codec
+/// must emit a `NewT()` constructor whose returned struct's `Body`
+/// is a Variant with the declared default arm's pointer populated
+/// via the inner codec's `New<Arm>()`. The bare `T{}` zero-value
+/// would leave every Variant pointer nil and break round-trip.
+#[test]
+fn forge_codec_variant_default_marker_outer_emits_declared_arm_go() {
+    let scxml_path = resource_dir().join("codec_variant_default_marker.scxml");
+    let content = std::fs::read_to_string(&scxml_path)
+        .expect("codec_variant_default_marker.scxml must exist");
+    let mut opts = sce_build::ForgeCompileOptions::default();
+    opts.go_module_prefix = Some("github.com/test/codec".to_string());
+    let output = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("codec_variant_default_marker"),
+        sce_build::generator::Language::Go,
+        &resource_dir(),
+        &opts,
+    )
+    .expect("forge codegen for outer marker fixture must succeed (go)");
+    let (_, generated) = &output.files[0];
+    assert!(
+        generated.contains("func NewCodecVariantDefaultMarker() *CodecVariantDefaultMarker"),
+        "outer must emit a `NewCodecVariantDefaultMarker()` constructor. \
+         Generated source:\n{generated}"
+    );
+    assert!(
+        generated.contains(
+            "CodecDefaultMarkerArmB: codec_default_marker_arm_b.NewCodecDefaultMarkerArmB(),"
+        ),
+        "outer ctor must populate the declared default arm \
+         (CodecDefaultMarkerArmB) via its own NewT() call. Generated \
+         source:\n{generated}"
+    );
+    assert!(
+        !generated.contains("CodecDefaultMarkerArmA: codec_default_marker_arm_a"),
+        "outer ctor must NOT populate the first declared arm \
+         (CodecDefaultMarkerArmA) when another arm is marked default. \
+         Generated source:\n{generated}"
+    );
+}
+
 /// RFC variant-default-uniformity Atomic β (Rust): the outer codec's
 /// `*Variant::default()` must pick the arm marked `default="true"`
 /// (not the first declared arm). Combined with the inner manual
