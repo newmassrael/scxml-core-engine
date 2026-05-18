@@ -19,6 +19,7 @@
 //   * BackpressureDropShape
 //   * EnvelopeCorruptShape
 //   * DedupWindowOverflowShape
+//   * TransportUnavailableShape
 // since those pin byte-exact output.
 
 #include "mesh/CommunicationError.h"
@@ -211,6 +212,35 @@ TEST(CommunicationErrorTest, EnvelopeCorruptShapeWithPosition) {
               "\"transport\":\"zenoh\","
               "\"codec\":\"cbor\","
               "\"position\":42}");
+}
+
+TEST(CommunicationErrorTest, TransportUnavailableShape) {
+    // §16.7 row 1 — TRANSPORT_UNAVAILABLE carries target + transport.
+    // Raised by `OutboundBuffer::markNotReady` on the `true → false`
+    // transition (the §10.4.1 "Active → Disconnected" lifecycle edge:
+    // SOME/IP availability=false, Zenoh matching=false, TCP RST). No
+    // `source` / `envelope_id` because the raise is observed at the
+    // transport layer, not triggered by a specific inbound envelope;
+    // no `queue_depth` either — row 1 reports the disconnection itself,
+    // whereas row 9 BACKPRESSURE_DROP reports queue overflow that may
+    // be a downstream consequence. Field order on the wire follows
+    // CommunicationError's declaration order: target precedes
+    // transport, matching the row-9 BackpressureDropShape pin so the
+    // two transport-keyed rows render under the same discipline.
+    // Authors guard on `_event.data.reason == 'TRANSPORT_UNAVAILABLE' &&
+    //  _event.data.target == '<peer>'` to switch to a fallback path for
+    // a specific peer's transport drop.
+    CommunicationError err;
+    err.reason = "TRANSPORT_UNAVAILABLE";
+    err.target = "motor";
+    err.transport = "someip";
+
+    const auto out = bytes_to_string(err.toJsonBytes());
+    EXPECT_EQ(out,
+              "{\"errorName\":\"communication\","
+              "\"reason\":\"TRANSPORT_UNAVAILABLE\","
+              "\"target\":\"motor\","
+              "\"transport\":\"someip\"}");
 }
 
 TEST(CommunicationErrorTest, DedupWindowOverflowShape) {

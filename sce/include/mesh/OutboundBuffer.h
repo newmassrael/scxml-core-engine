@@ -13,6 +13,16 @@
 // Zenoh `Publisher::declare_matching_listener`), the buffer drains in
 // FIFO order.
 //
+// SCE_MESH.md §10.4.1 transport-lifecycle "Active → Disconnected"
+// observer: the same readiness primitive that drives drain also
+// witnesses transport loss. When `markNotReady()` observes a true→false
+// transition (transport was Active and is now Disconnected — TCP RST,
+// SOME/IP availability=false, Zenoh peer-drop), the buffer raises
+// `error.communication` with `reason = "TRANSPORT_UNAVAILABLE"`
+// (§16.7 row 1). The initial Ready→Active anchor (the buffer's seed
+// state is `ready_=false`, the first transition fires `markReady`) does
+// not emit because no Active lifecycle phase preceded it.
+//
 // OutboundBuffer is the third generic SCE mesh primitive, a sibling of
 // §10.5 `DedupRouter` (inbound duplicate suppression) and §10.6
 // `OrderingBuffer` (inbound reorder). All three share the same shape:
@@ -172,9 +182,36 @@ public:
     /// until the next `markReady`. Does not clear the queue — envelopes
     /// buffered while temporarily ready remain, so a readiness flicker
     /// does not lose in-flight work.
+    ///
+    /// SCE_MESH.md §10.4.1 + §16.7 row 1: a `true → false` transition
+    /// is the "Active → Disconnected" lifecycle edge and raises
+    /// `error.communication` with `reason = "TRANSPORT_UNAVAILABLE"`.
+    /// Repeated `markNotReady` calls while already not-ready are
+    /// idempotent and DO NOT re-emit — Row 1 fires per-transition,
+    /// not per-callback (a transport callback that re-asserts the
+    /// same state is not a new transport fault). The initial seed
+    /// state `ready_=false` therefore does NOT emit on the first
+    /// `markNotReady`: no Active phase preceded the call, so there
+    /// is no transition.
+    ///
+    /// The raise closure is invoked OUTSIDE the buffer mutex to
+    /// preserve the §10.10 lock-discipline contract (raise paths
+    /// must never run under `mu_`, mirroring `admit`'s overflow
+    /// raise).
     void markNotReady() {
-        std::lock_guard<std::mutex> lock(mu_);
-        ready_ = false;
+        bool was_ready = false;
+        {
+            std::lock_guard<std::mutex> lock(mu_);
+            was_ready = ready_;
+            ready_ = false;
+        }
+        if (was_ready) {
+            CommunicationError err;
+            err.reason = "TRANSPORT_UNAVAILABLE";
+            err.target = target_;
+            err.transport = transport_name_;
+            raise_error_(std::move(err));
+        }
     }
 
     /// Current queue depth. Test-only accessor — production code reads
