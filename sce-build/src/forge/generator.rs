@@ -1950,6 +1950,21 @@ fn render_codec(
                     _        => format!("uint8(0x{:02x})",   acc),
                 };
                 obj.insert("go_flag_default_literal".into(), go_literal.into());
+                // C11 designated-initializer value for the carrier
+                // field. C has no Default trait — the equivalent is a
+                // `<UPPER>_DEFAULT_INIT` macro that expands to a
+                // designated-initializer literal (`{ .header = 0x02u }`)
+                // and is callable from the outer codec's own
+                // `_DEFAULT_INIT` macro for composition. Each carrier
+                // width uses the stdint-typedef-friendly suffix.
+                let c_literal = match f.sce_type.int_bit_width() {
+                    Some(8)  => format!("0x{:02x}u",    acc),
+                    Some(16) => format!("0x{:04x}u",    acc),
+                    Some(32) => format!("0x{:08x}uL",   acc),
+                    Some(64) => format!("0x{:016x}uLL", acc),
+                    _        => format!("0x{:02x}u",    acc),
+                };
+                obj.insert("c_flag_default_literal".into(), c_literal.into());
             }
 
             // RFC §5.B B1-δ present-if primitive: when the codec has
@@ -2601,6 +2616,19 @@ fn render_codec(
                         format!("{snake}.New{pascal}").into(),
                     );
                 }
+                // RFC variant-default-uniformity Atomic β-c11: macro
+                // name for the inner arm body codec's
+                // `<UPPER>_DEFAULT_INIT` designated initializer. The
+                // outer codec's own `_DEFAULT_INIT` composes this
+                // macro for the declared default arm's body slot so a
+                // single brace-init literal at the call site builds
+                // an outer instance whose wire bytes round-trip.
+                if matches!(lang, crate::generator::Language::C11) {
+                    obj.insert(
+                        "c_inner_default_init_macro".into(),
+                        format!("{arm_upper}_DEFAULT_INIT").into(),
+                    );
+                }
                 Ok::<_, ForgeError>(serde_json::Value::Object(obj))
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -2999,6 +3027,12 @@ fn render_codec(
         ctx.insert("c_encode_func".into(), format!("{snake}_encode").into());
         ctx.insert("c_max_bytes_macro".into(), format!("{upper}_MAX_BYTES").into());
         ctx.insert("c_min_bytes_macro".into(), format!("{upper}_MIN_BYTES").into());
+        // RFC variant-default-uniformity Atomic β-c11: macro name for
+        // the codec's `_DEFAULT_INIT` designated-initializer
+        // (`<UPPER>_DEFAULT_INIT`). Emission is gated on
+        // `has_flag_default` or a declared default arm so codecs that
+        // don't opt in stay byte-identical with pre-α goldens.
+        ctx.insert("c_default_init_macro".into(), format!("{upper}_DEFAULT_INIT").into());
     }
 
     l.insert_imports(&mut ctx, imports);

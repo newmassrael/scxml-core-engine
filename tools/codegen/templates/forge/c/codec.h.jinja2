@@ -117,6 +117,35 @@ typedef struct {
 {% endif %}
 } {{ c_struct_typedef }};
 
+{% if has_variant %}
+{% set ns = namespace(default_arm=none) %}
+{% for arm in variant.arms %}{% if arm.is_default %}{% set ns.default_arm = arm %}{% endif %}{% endfor %}
+{% endif %}
+{% if has_flag_default or (has_variant and ns.default_arm) %}
+/* RFC variant-default-uniformity Atomic β-c11: designated-initializer
+ * macro carrying the codec's wire-MID-baked defaults. C has no Default
+ * trait — round-trip safety (`{{ c_struct_typedef }} x = {{ c_default_init_macro }};
+ * {{ c_struct_typedef }}_encode(&x)` decodes back to the same arm)
+ * requires using this macro rather than the zero-initializer `{0}`,
+ * which would leave the dispatch tag at zero and (for variant codecs)
+ * land in the catch-all arm or a mismatched union slot. Unspecified
+ * fields zero-initialize per C11 §6.7.9 ¶21, so the macro names only
+ * the wire-MID-bearing members. */
+#define {{ c_default_init_macro }} { \
+{% for field in fields %}
+{% if field.c_flag_default_literal is defined %}
+    .{{ field.id }} = {{ field.c_flag_default_literal }}, \
+{% endif %}
+{% endfor %}
+{% if has_variant and ns.default_arm %}
+    .body = { \
+        .kind = {{ ns.default_arm.c_kind_constant }}, \
+        .arm = { .{{ ns.default_arm.c_union_field }} = {{ ns.default_arm.c_inner_default_init_macro }} } \
+    }, \
+{% endif %}
+}
+
+{% endif %}
 typedef struct {
 {% if has_no_fields %}
     /* RFC §5.B B5-α empty body — C11 forbids zero-length arrays so the

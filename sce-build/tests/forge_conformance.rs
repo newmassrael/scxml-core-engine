@@ -4311,6 +4311,88 @@ fn forge_codec_variant_default_marker_outer_emits_declared_arm_go() {
     );
 }
 
+/// RFC variant-default-uniformity Atomic β (C11): the inner arm body
+/// codec with `<sce:flag value="0x02"/>` must emit a designated-
+/// initializer macro `<UPPER>_DEFAULT_INIT { .header = 0x02u, }` so
+/// `codec_t x = <UPPER>_DEFAULT_INIT;` constructs an instance whose
+/// wire byte is the arm's MID. C has no Default trait; the macro is
+/// the textbook header-only equivalent (no linkage / no function-
+/// call overhead, composable from outer codec's own macro).
+#[test]
+fn forge_codec_default_marker_arm_b_emits_baked_default_c11() {
+    let scxml_path = resource_dir().join("codec_default_marker_arm_b.scxml");
+    let content = std::fs::read_to_string(&scxml_path)
+        .expect("codec_default_marker_arm_b.scxml must exist");
+    let output = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("codec_default_marker_arm_b"),
+        sce_build::generator::Language::C11,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .expect("forge codegen for arm B fixture must succeed (c11)");
+    let (_, generated) = &output.files[0];
+    assert!(
+        generated.contains("#define CODEC_DEFAULT_MARKER_ARM_B_DEFAULT_INIT"),
+        "arm B must emit the `_DEFAULT_INIT` macro. Generated source:\n{generated}"
+    );
+    assert!(
+        generated.contains(".header = 0x02u,"),
+        "arm B's `_DEFAULT_INIT` macro must bake `.header = 0x02u` \
+         (value=\"0x02\" shifted by bit=0). Generated source:\n{generated}"
+    );
+}
+
+/// RFC variant-default-uniformity Atomic β (C11): the outer codec
+/// must emit a `_DEFAULT_INIT` macro whose body initializes the
+/// Variant `.kind` to the declared default arm's enum constant and
+/// composes the inner arm's own `_DEFAULT_INIT` into the matching
+/// union slot. Macro composition keeps wire-MID propagation
+/// compile-time-constant without a runtime constructor call.
+#[test]
+fn forge_codec_variant_default_marker_outer_emits_declared_arm_c11() {
+    let scxml_path = resource_dir().join("codec_variant_default_marker.scxml");
+    let content = std::fs::read_to_string(&scxml_path)
+        .expect("codec_variant_default_marker.scxml must exist");
+    let output = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("codec_variant_default_marker"),
+        sce_build::generator::Language::C11,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .expect("forge codegen for outer marker fixture must succeed (c11)");
+    let (_, generated) = &output.files[0];
+    assert!(
+        generated.contains("#define CODEC_VARIANT_DEFAULT_MARKER_DEFAULT_INIT"),
+        "outer must emit the `_DEFAULT_INIT` macro. Generated source:\n{generated}"
+    );
+    assert!(
+        generated.contains(
+            ".kind = CODEC_VARIANT_DEFAULT_MARKER_BODY_KIND_CODEC_DEFAULT_MARKER_ARM_B,"
+        ),
+        "outer `_DEFAULT_INIT` must select the declared default arm's \
+         kind enum (CODEC_VARIANT_DEFAULT_MARKER_BODY_KIND_CODEC_DEFAULT_MARKER_ARM_B). \
+         Generated source:\n{generated}"
+    );
+    assert!(
+        generated.contains(
+            ".arm = { .codec_default_marker_arm_b = CODEC_DEFAULT_MARKER_ARM_B_DEFAULT_INIT }"
+        ),
+        "outer `_DEFAULT_INIT` must compose the inner arm's own \
+         `_DEFAULT_INIT` macro into the union slot. Generated \
+         source:\n{generated}"
+    );
+    assert!(
+        !generated.contains(
+            ".kind = CODEC_VARIANT_DEFAULT_MARKER_BODY_KIND_CODEC_DEFAULT_MARKER_ARM_A,"
+        ),
+        "outer `_DEFAULT_INIT` must NOT select the first declared arm \
+         (CODEC_DEFAULT_MARKER_ARM_A) when another arm is marked \
+         default. Generated source:\n{generated}"
+    );
+}
+
 /// RFC variant-default-uniformity Atomic β (Rust): the outer codec's
 /// `*Variant::default()` must pick the arm marked `default="true"`
 /// (not the first declared arm). Combined with the inner manual
