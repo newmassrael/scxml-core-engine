@@ -17,12 +17,13 @@
 // (target / last_seen_ms_ago), the §16.7 row-12 `ORDERING_GAP`
 // extras (lost_seq_lo / lost_seq_hi), the §16.7 row-6
 // `PARALLEL_BARRIER_TIMEOUT` extras (parallel_id / missing_regions /
-// timeout_ms), and the §16.7 row-13 `REGION_PARTITIONED` extras
-// (machine / partition, reusing last_seen_ms_ago). Other §16.7 rows
-// add their own extras (transport, invoke_id, etc.) — those grow here
-// when a raise site needs them. Each raise site populates only the
-// extras named in its row of the catalog; the remainder stay empty
-// and are skipped on render.
+// timeout_ms), the §16.7 row-13 `REGION_PARTITIONED` extras
+// (machine / partition, reusing last_seen_ms_ago), and the §16.7
+// row-4 `ENVELOPE_CORRUPT` extras (transport / codec / position).
+// Other §16.7 rows add their own extras (invoke_id, etc.) — those
+// grow here when a raise site needs them. Each raise site populates
+// only the extras named in its row of the catalog; the remainder
+// stay empty and are skipped on render.
 //
 // Design notes:
 //   * Pure header; the canonical JSON render uses
@@ -93,6 +94,25 @@ struct CommunicationError {
     /// etc.) whose plumbing observed the condition. The target-keyed
     /// extra reuses the `target` member above.
     std::optional<std::string> transport;
+
+    /// §16.7 row 4 (ENVELOPE_CORRUPT): payload codec name of the
+    /// inbound envelope whose deserialization failed. Spec restricts
+    /// the value to `"cbor" | "json" | "typed" | "raw"`. SCE's
+    /// MeshEnvelope wire is canonical CBOR (§7.5) so every current
+    /// raise site stamps `"cbor"`; the field exists in string form
+    /// so future per-binding-codec transports can mark their slot
+    /// without an enum-coupling refactor through the raise sites.
+    std::optional<std::string> codec;
+
+    /// §16.7 row 4 (ENVELOPE_CORRUPT): byte offset within the
+    /// envelope at which deserialization failed, when the codec
+    /// reports one. CBOR/tinycbor's parser does not expose a
+    /// post-failure cursor through `decodeEnvelope`'s bool return,
+    /// so current raise sites leave this absent — preserving the
+    /// optional contract documented in §16.7. A future codec
+    /// upgrade that surfaces fault position populates this without
+    /// touching the catalog row.
+    std::optional<std::int64_t> position;
 
     /// §16.7 row 9 (BACKPRESSURE_DROP): outbound buffer depth at the
     /// moment the overflow was observed. Signed for symmetry with
@@ -176,6 +196,12 @@ struct CommunicationError {
         }
         if (transport) {
             j["transport"] = *transport;
+        }
+        if (codec) {
+            j["codec"] = *codec;
+        }
+        if (position) {
+            j["position"] = *position;
         }
         if (queue_depth) {
             j["queue_depth"] = *queue_depth;

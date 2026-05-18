@@ -91,7 +91,7 @@
                 auto pl = msg->get_payload();
                 if (!pl) return;
                 SCE::Mesh::MeshEnvelope env;
-                if (!SCE::Mesh::decodeEnvelope(pl->get_data(), pl->get_length(), env)) return;
+                if (!SCE::Mesh::decodeEnvelope(pl->get_data(), pl->get_length(), env)) {{ raise_envelope_corrupt("someip") }}
 {% if kind == "rpc" %}
                 // Correlation: look up reply-event name for this correlation_id
                 if (env.correlation_id) {
@@ -159,6 +159,21 @@ admitInbound({{ env_name }}, {{ session_idx_expr }})
 {%- else -%}
 dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 {%- endif -%}
+{%- endmacro %}
+
+{# SCE_MESH.md §16.7 row 4 — ENVELOPE_CORRUPT raise block. Used at
+   every codegen call site of `decodeEnvelope` so a CBOR
+   deserialization failure surfaces as `error.communication` with the
+   row-4 catalog shape instead of a silent return. One-line expansion
+   so the macro can replace the existing `return;` token without
+   disturbing the caller's indentation. `transport` is the literal
+   string the catalog row carries ("someip" / "zenoh" — extend when a
+   new transport that decodes envelopes lands). `codec` is always
+   "cbor" today (MeshEnvelope wire is canonical CBOR per §7.5);
+   `position` stays absent because tinycbor's bool return does not
+   expose a post-failure cursor. #}
+{%- macro raise_envelope_corrupt(transport) -%}
+{ ::SCE::Mesh::CommunicationError __sce_decode_err; __sce_decode_err.reason = "ENVELOPE_CORRUPT"; __sce_decode_err.transport = "{{ transport }}"; __sce_decode_err.codec = "cbor"; raiseCommunicationError(std::move(__sce_decode_err)); return; }
 {%- endmacro %}
 {#
   SCE_MESH.md §10.6: per-target admit layering for ordered routes.
@@ -296,12 +311,15 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
    ORDERING_GAP via the ordering tick), Zenoh liveliness-path raises
    (PEER_PARTITIONED / REGION_PARTITIONED via the liveliness
    subscriber), §10.10 OutboundBuffer-path raises (BACKPRESSURE_DROP
-   via admit overflow), and SomeIP region-liveness raises
-   (REGION_PARTITIONED via `register_availability_handler`, RFC F.X-3)
-   all share this helper, so it and its include live behind a single
-   flag rather than each caller gate. Keeps `raiseCommunicationError`
-   a single definition regardless of which callers fire. #}
-{% set raises_communication_error = has_ordered_binding or has_zenoh_liveliness or machine_outbound_buffer or someip_liveness_service_id_self_hex or someip_machine_liveness_service_id_self_hex %}
+   via admit overflow), SomeIP region-liveness raises
+   (REGION_PARTITIONED via `register_availability_handler`, RFC F.X-3),
+   and §16.7 row 4 envelope-decode raises (ENVELOPE_CORRUPT at every
+   inbound `decodeEnvelope` failure) all share this helper, so it
+   and its include live behind a single flag rather than each caller
+   gate. Keeps `raiseCommunicationError` a single definition
+   regardless of which callers fire. Any router with someip or zenoh
+   transports has decode sites and therefore needs the helper. #}
+{% set raises_communication_error = has_ordered_binding or has_zenoh_liveliness or machine_outbound_buffer or someip_liveness_service_id_self_hex or someip_machine_liveness_service_id_self_hex or ("someip" in transport_types) or ("zenoh" in transport_types) %}
 
 {# CorrelationKey/Hash are needed by SOME/IP client correlation AND/OR
    server pending-request storage. Emit once if either usage is present. #}
@@ -3026,7 +3044,7 @@ struct TransportRouter {
                     auto pl = msg->get_payload();
                     if (!pl) return;
                     SCE::Mesh::MeshEnvelope env;
-                    if (!SCE::Mesh::decodeEnvelope(pl->get_data(), pl->get_length(), env)) return;
+                    if (!SCE::Mesh::decodeEnvelope(pl->get_data(), pl->get_length(), env)) {{ raise_envelope_corrupt("someip") }}
                     // Stash original request for create_response() when the
                     // engine sends service.response.X. Key by invoke_id when
                     // available (mesh-rpc path) for correlation bridge symmetry
@@ -3074,7 +3092,7 @@ struct TransportRouter {
                     auto pl = msg->get_payload();
                     if (!pl) return;
                     SCE::Mesh::MeshEnvelope env;
-                    if (!SCE::Mesh::decodeEnvelope(pl->get_data(), pl->get_length(), env)) return;
+                    if (!SCE::Mesh::decodeEnvelope(pl->get_data(), pl->get_length(), env)) {{ raise_envelope_corrupt("someip") }}
                     // SCE_MESH.md §10.5: same server-side dedup gate as the
                     // RPC handler above.
                     (void)this->{{ dedup_or_dispatch(server_needs_dedup, "env", "session_idx") }};
@@ -3104,7 +3122,7 @@ struct TransportRouter {
                     auto pl = msg->get_payload();
                     if (!pl) return;
                     SCE::Mesh::MeshEnvelope env;
-                    if (!SCE::Mesh::decodeEnvelope(pl->get_data(), pl->get_length(), env)) return;
+                    if (!SCE::Mesh::decodeEnvelope(pl->get_data(), pl->get_length(), env)) {{ raise_envelope_corrupt("someip") }}
                     // Stash original request (key symmetry with the RPC
                     // handler: invoke_id first, correlation_id fallback,
                     // fresh UUID last). handleServerResponse looks the
@@ -3145,7 +3163,7 @@ struct TransportRouter {
                 if (!payload_opt.has_value()) return;
                 auto bytes = payload_opt->get().as_vector();
                 SCE::Mesh::MeshEnvelope env;
-                if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), env)) return;
+                if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), env)) {{ raise_envelope_corrupt("zenoh") }}
                 // Key by invoke_id when available (mesh-rpc invoke path) so the
                 // outbound response can be correlated through the engine's
                 // currentEventInvokeId without an extra mapping table. Falls
@@ -3210,7 +3228,7 @@ struct TransportRouter {
             [this](const zenoh::Sample& sample) {
                 auto bytes = sample.get_payload().as_vector();
                 SCE::Mesh::MeshEnvelope env;
-                if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), env)) return;
+                if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), env)) {{ raise_envelope_corrupt("zenoh") }}
                 // Skip self-published eventgroup notifications. When the
                 // server publishes via session.put on ZENOH_SERVER_KEY, this
                 // subscriber also receives the event. Filtering by source
@@ -4282,7 +4300,7 @@ struct TransportRouter {
                         const auto& sample = reply_msg.get_ok();
                         auto bytes = sample.get_payload().as_vector();
                         SCE::Mesh::MeshEnvelope resp;
-                        if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), resp)) return;
+                        if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), resp)) {{ raise_envelope_corrupt("zenoh") }}
                         if (!reply_event.empty()) resp.type = reply_event;
                         resp.pattern = SCE::Mesh::PatternKind::RpcReply;
                         (void)this->admitZenohInbound(target_owned, resp);
@@ -4578,7 +4596,7 @@ struct TransportRouter {
                     const auto& sample = reply_msg.get_ok();
                     auto bytes = sample.get_payload().as_vector();
                     SCE::Mesh::MeshEnvelope resp;
-                    if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), resp)) return;
+                    if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), resp)) {{ raise_envelope_corrupt("zenoh") }}
                     if (!reply_event.empty()) resp.type = reply_event;
                     resp.pattern = reply_pattern;
                     // SCE_MESH.md §10.5/§10.6 SSoT dispatch: the per-
@@ -4625,7 +4643,7 @@ struct TransportRouter {
                  target_owned = std::string(target_name)](const zenoh::Sample& sample) {
                     auto bytes = sample.get_payload().as_vector();
                     SCE::Mesh::MeshEnvelope notify;
-                    if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), notify)) return;
+                    if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), notify)) {{ raise_envelope_corrupt("zenoh") }}
                     notify.pattern = SCE::Mesh::PatternKind::EventNotify;
                     // SCE_MESH.md §10.5/§10.6: per-target admit chain
                     // via the same SSoT helper the reply closure uses.

@@ -17,6 +17,7 @@
 //   * BarrierTimeoutShape
 //   * RegionPartitionedShape
 //   * BackpressureDropShape
+//   * EnvelopeCorruptShape
 // since those pin byte-exact output.
 
 #include "mesh/CommunicationError.h"
@@ -165,6 +166,50 @@ TEST(CommunicationErrorTest, BackpressureDropShape) {
               "\"target\":\"motor\","
               "\"transport\":\"someip\","
               "\"queue_depth\":1024}");
+}
+
+TEST(CommunicationErrorTest, EnvelopeCorruptShape) {
+    // §16.7 row 4 — ENVELOPE_CORRUPT carries transport + codec +
+    // optional position. Runtime raise sites live at every
+    // `decodeEnvelope` call within the codegen TransportRouter
+    // (`mesh_transport.h.jinja2`). All SCE transports today wire
+    // canonical CBOR so `codec="cbor"` is the only value stamped
+    // by current emitters; the field stays string-typed so a
+    // future per-binding-codec transport can mark its slot without
+    // an enum refactor. `position` stays absent on tinycbor-failed
+    // decodes because the parser does not expose a post-failure
+    // cursor through decodeEnvelope's bool return.
+    CommunicationError err;
+    err.reason = "ENVELOPE_CORRUPT";
+    err.transport = "someip";
+    err.codec = "cbor";
+
+    const auto out = bytes_to_string(err.toJsonBytes());
+    EXPECT_EQ(out,
+              "{\"errorName\":\"communication\","
+              "\"reason\":\"ENVELOPE_CORRUPT\","
+              "\"transport\":\"someip\","
+              "\"codec\":\"cbor\"}");
+}
+
+TEST(CommunicationErrorTest, EnvelopeCorruptShapeWithPosition) {
+    // Same row 4 contract with a populated `position` — proves the
+    // optional field renders in declaration order between `codec`
+    // and `queue_depth` so future codec backends that report fault
+    // offsets stay wire-shape compatible.
+    CommunicationError err;
+    err.reason = "ENVELOPE_CORRUPT";
+    err.transport = "zenoh";
+    err.codec = "cbor";
+    err.position = 42;
+
+    const auto out = bytes_to_string(err.toJsonBytes());
+    EXPECT_EQ(out,
+              "{\"errorName\":\"communication\","
+              "\"reason\":\"ENVELOPE_CORRUPT\","
+              "\"transport\":\"zenoh\","
+              "\"codec\":\"cbor\","
+              "\"position\":42}");
 }
 
 TEST(CommunicationErrorTest, OptionalFieldsAbsentAreSkipped) {
