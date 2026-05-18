@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: RFC variant-default-uniformity arm body B.
+     Declared-default arm of `codec_variant_default_marker` — selected
+     by the outer codec's `Default::default()` via the new
+     `<sce:arm default="true"/>` marker (Atomic α schema). Inner codec
+     declares its wire dispatch tag (`kind=0x02`) so its Default is
+     wire-valid for the dispatch.
+
+     Wire shape:
+       byte 0 : header (kind:2 bits + reserved:6 bits)
+                — `value="0x02"` ⇒ Default-emitted carrier = 0x02.
+       byte 1 : payload uint16 (big-endian).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_default_marker_arm_b">
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="kind" bit="0" width="2" value="0x02"/>
+    </sce:flags>
+    <sce:field id="payload" sce:type="uint16" sce:byte="1" sce:bit-size="16"/>
+  </datamodel>
+</scxml>

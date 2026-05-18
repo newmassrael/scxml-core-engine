@@ -3991,6 +3991,91 @@ fn forge_codec_variant_default_arm_and_catch_all_coexist() {
     );
 }
 
+/// RFC variant-default-uniformity Atomic β (Rust): the inner arm body
+/// codec with `<sce:flag value="0x02"/>` on its dispatch flag must
+/// emit a manual `impl Default` that bakes the wire-MID into the
+/// carrier byte. Without this, `CodecDefaultMarkerArmB::default()`
+/// would zero-fill the header and break the round-trip invariant.
+#[test]
+fn forge_codec_default_marker_arm_b_emits_baked_default_rust() {
+    let scxml_path = resource_dir().join("codec_default_marker_arm_b.scxml");
+    let content = std::fs::read_to_string(&scxml_path)
+        .expect("codec_default_marker_arm_b.scxml must exist");
+    let output = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("codec_default_marker_arm_b"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .expect("forge codegen for arm B fixture must succeed");
+    let (_, generated) = &output.files[0];
+    assert!(
+        !generated.contains("#[derive(Default)]"),
+        "arm B has <sce:flag value=>; the codec struct must use a manual \
+         impl Default rather than #[derive(Default)] so the wire-MID \
+         constant is baked in. Generated source:\n{generated}"
+    );
+    assert!(
+        generated.contains("impl Default for CodecDefaultMarkerArmB"),
+        "arm B's generated source must contain a manual `impl Default for \
+         CodecDefaultMarkerArmB`. Generated source:\n{generated}"
+    );
+    assert!(
+        generated.contains("header: 0x02u8"),
+        "arm B's Default impl must initialize `header` to the wire-MID \
+         literal `0x02u8` (value=\"0x02\" shifted by bit=0). Generated \
+         source:\n{generated}"
+    );
+    // Syntactic validation — caught early if any template branch
+    // produces invalid Rust.
+    syn::parse_file(generated)
+        .unwrap_or_else(|e| panic!("generated arm B source must parse as valid Rust: {e}"));
+}
+
+/// RFC variant-default-uniformity Atomic β (Rust): the outer codec's
+/// `*Variant::default()` must pick the arm marked `default="true"`
+/// (not the first declared arm). Combined with the inner manual
+/// Default (previous test), this closes the round-trip dispatch
+/// loop — `Outer::default().encode()` produces a byte stream that
+/// `Outer::decode()` resolves back to the same arm variant.
+#[test]
+fn forge_codec_variant_default_marker_outer_emits_declared_arm_rust() {
+    let scxml_path = resource_dir().join("codec_variant_default_marker.scxml");
+    let content = std::fs::read_to_string(&scxml_path)
+        .expect("codec_variant_default_marker.scxml must exist");
+    let output = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("codec_variant_default_marker"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .expect("forge codegen for outer marker fixture must succeed");
+    let (_, generated) = &output.files[0];
+    // The declared-default arm is `CodecDefaultMarkerArmB` (value=0x02
+    // is marked `default="true"`). The Variant::default() impl must
+    // pick it, NOT the first declared arm (CodecDefaultMarkerArmA).
+    assert!(
+        generated.contains(
+            "Self::CodecDefaultMarkerArmB(CodecDefaultMarkerArmB::default())"
+        ),
+        "outer Variant::default() must select the arm marked \
+         default=\"true\" (CodecDefaultMarkerArmB) — not the first \
+         declared arm. Generated source:\n{generated}"
+    );
+    assert!(
+        !generated.contains(
+            "Self::CodecDefaultMarkerArmA(CodecDefaultMarkerArmA::default())"
+        ),
+        "outer Variant::default() must NOT select the first declared arm \
+         (CodecDefaultMarkerArmA) when another arm is marked \
+         default=\"true\". Generated source:\n{generated}"
+    );
+    syn::parse_file(generated)
+        .unwrap_or_else(|e| panic!("generated outer source must parse as valid Rust: {e}"));
+}
+
 /// RFC §5.B B5-β multi-bit-flag dispatch: `<sce:variant
 /// tag="<carrier>.<flag>"/>` requires the carrier to be a
 /// `<sce:flags>`-bearing field. Pointing at a plain field rejects

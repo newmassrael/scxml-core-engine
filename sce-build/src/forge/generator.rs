@@ -1854,6 +1854,46 @@ fn render_codec(
                 "flags".into(),
                 serde_json::json!(build_flag_ctx(&f.flags, &f.sce_type, lang)),
             );
+            // RFC variant-default-uniformity Atomic β: precompute the
+            // carrier's Default-time initializer from any `<sce:flag
+            // value="N"/>` declarations. Each declared value contributes
+            // `(N & ((1 << width) - 1)) << bit` ORed into the carrier;
+            // undeclared flags contribute 0 (preserving derive(Default)
+            // semantics for codecs that don't opt in). `None` ⇒ no
+            // declared values on this field; emitter falls back to
+            // `Default::default()` for back-compat with pre-Atomic-α
+            // goldens. Carrier-typed literal includes the language-
+            // specific suffix (`0x01u8`, `0x05u16`, etc.) so the Rust
+            // template can drop it verbatim into the manual impl.
+            let any_declared_value = f.flags.iter().any(|fl| fl.value.is_some());
+            if any_declared_value {
+                let acc: u64 = f.flags.iter().fold(0u64, |a, fl| {
+                    match fl.value {
+                        Some(v) => {
+                            let mask: u64 = if fl.width >= 64 {
+                                u64::MAX
+                            } else {
+                                (1u64 << fl.width) - 1
+                            };
+                            a | ((v & mask) << fl.bit)
+                        }
+                        None => a,
+                    }
+                });
+                let (suffix_rust, hex_digits) = match f.sce_type.int_bit_width() {
+                    Some(8)  => ("u8",  2usize),
+                    Some(16) => ("u16", 4),
+                    Some(32) => ("u32", 8),
+                    Some(64) => ("u64", 16),
+                    // Non-unsigned carriers are rejected at parse time
+                    // (`<sce:flags>` requires uint8/16/32/64). Defensive
+                    // fallback keeps the literal type-checkable rather
+                    // than panicking inside a template render.
+                    _ => ("u8", 2),
+                };
+                let rs_literal = format!("0x{:0w$x}{}", acc, suffix_rust, w = hex_digits);
+                obj.insert("rs_flag_default_literal".into(), rs_literal.into());
+            }
 
             // RFC §5.B B1-δ present-if primitive: when the codec has
             // any gated field every field renders via the streaming
@@ -2472,6 +2512,12 @@ fn render_codec(
                     "body_parent_flags_arg_first".into(),
                     body_parent_flags_arg_first.into(),
                 );
+                // RFC variant-default-uniformity Atomic β: surface the
+                // `default="true"` marker so the Rust template can pick
+                // this arm as the Default-trait starting value. At most
+                // one arm per variant carries this (parse-time guard
+                // `codec/variant-duplicate-default-arm`).
+                obj.insert("is_default".into(), arm.is_default.into());
                 Ok::<_, ForgeError>(serde_json::Value::Object(obj))
             })
             .collect::<Result<Vec<_>, _>>()?;

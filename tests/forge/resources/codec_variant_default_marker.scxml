@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: RFC variant-default-uniformity Atomic β.
+     Outer codec demonstrating the textbook round-trip invariant for
+     a `<sce:variant>` with peek-byte dispatch:
+
+         T::default().encode().decode() == T::default()
+
+     Two complementary RFC-α schema declarations make this hold:
+
+     1. `<sce:arm value="0x02" ... default="true"/>` — picks arm B as
+        the Default-trait starting value (instead of the legacy
+        "first declared arm" convention). Without this, `Variant::
+        default()` would pick arm A (value=0x01) and a freshly-
+        constructed envelope would decode as arm A.
+
+     2. Each inner codec's `<sce:flag value="..."/>` on its dispatch
+        flag — arm A declares `kind=0x01`, arm B declares `kind=0x02`.
+        This guarantees the inner codec's Default carrier already
+        carries the wire-MID, so the peeked byte after `encode()`
+        matches the dispatch table.
+
+     Wire shape (with `Default::default()` chosen — arm B):
+       byte 0 (peeked) : header (kind:2 = 0x02 + reserved:6 = 0)
+                         — arm B's inner header byte == the peeked
+                         dispatch byte (Zenoh peek-byte convention).
+       bytes 1-2       : payload uint16 = 0 (BE).
+
+     Exhaustiveness: 2-bit dispatch domain has 4 values {0..3}; arms
+     enumerate 0x01 and 0x02; `<sce:default>` catches 0x00 and 0x03. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_variant_default_marker">
+  <sce:import src="codec_default_marker_arm_a.scxml" kind="codec" as="codec_default_marker_arm_a"/>
+  <sce:import src="codec_default_marker_arm_b.scxml" kind="codec" as="codec_default_marker_arm_b"/>
+  <datamodel>
+    <sce:variant tag="peek.kind">
+      <sce:peek-byte id="peek" sce:type="uint8">
+        <sce:flag name="kind" bit="0" width="2"/>
+      </sce:peek-byte>
+      <sce:arm value="0x01" type="codec_default_marker_arm_a"/>
+      <sce:arm value="0x02" type="codec_default_marker_arm_b" default="true"/>
+      <sce:default type="codec_default_marker_arm_b"/>
+    </sce:variant>
+  </datamodel>
+</scxml>
