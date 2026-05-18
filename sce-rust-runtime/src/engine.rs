@@ -41,10 +41,15 @@
 #[cfg(not(feature = "no_std"))]
 use std::sync::{Arc, Mutex};
 // `Duration` is re-exported by `std::time` from `core::time` and is therefore
-// available under both build profiles. `Instant`, however, is host-clock-coupled
-// and lives only in `std`; the no_std variant routes its monotonic-time reads
-// through the `Hal::now_ticks_ms` returning a u64 millisecond tick (see the
-// `SchedTimePoint` alias below).
+// available under both build profiles. The scheduler does not read `Instant`
+// directly under either profile: monotonic-time reads route through
+// `<P::Hal>::now_ticks_ms()` so the [`Hal`] trait is the single host-clock
+// surface (see the `SchedTimePoint` alias below and `sched_now` /
+// `sched_now_plus` helpers).
+//
+// `Instant` is still used by `run_until_completion` for its outer wall-clock
+// timeout budget — that is a CI-level deadline, not scheduler time, and must
+// stay on the real host clock so a Hal-mock cannot suppress test timeouts.
 use core::time::Duration;
 #[cfg(not(feature = "no_std"))]
 use std::time::Instant;
@@ -70,23 +75,27 @@ use crate::MAX_SCHEDULED_EVENTS;
 // Scheduler time point alias (Watching-zenoh RFC §5.J.2 line 1984 HAL)
 // ─────────────────────────────────────────────────────────────────────
 // `SchedTimePoint` decouples the scheduler's comparable-timestamp type from
-// the host clock. std builds use `Instant` (preserves existing behaviour);
-// no_std builds use `u64` milliseconds — the `<P::Hal>::now_ticks_ms()`
-// reading. The `PullScheduler` itself holds no clock source: all
-// time-comparing methods take `now: SchedTimePoint` as a parameter (DI
-// pattern), and `Engine<P>` resolves the per-build `now` via the
-// `sched_now`/`sched_now_plus` helpers below.
+// the host clock. Both build profiles use `u64` millisecond ticks read from
+// `<P::Hal as Hal>::now_ticks_ms()` — the [`Hal`] trait is the single host-
+// clock surface, so a custom `H: Hal` impl (e.g. an advance-able TestHal for
+// deterministic timer-firing tests) takes effect identically under std and
+// no_std. The `PullScheduler` itself holds no clock source: all time-comparing
+// methods take `now: SchedTimePoint` as a parameter (DI pattern), and
+// `Engine<P>` resolves `now` via the `sched_now` / `sched_now_plus` helpers
+// below.
 
-/// Comparable timestamp used by the scheduler under each build profile.
+/// Comparable timestamp used by the scheduler: `u64` millisecond ticks read
+/// from `<P::Hal as Hal>::now_ticks_ms()` under both std and no_std.
 ///
-/// - std: `std::time::Instant` — host monotonic clock, ABI-preserving.
-/// - no_std: `u64` — millisecond ticks from `<P::Hal as Hal>::now_ticks_ms()`.
-#[cfg(not(feature = "no_std"))]
-pub type SchedTimePoint = Instant;
-/// no_std variant of [`SchedTimePoint`]: `u64` millisecond ticks read from
-/// `<P::Hal as Hal>::now_ticks_ms()`. See the std-variant doc-comment above
-/// for the full contract.
-#[cfg(feature = "no_std")]
+/// Under std the default `StdHal::now_ticks_ms()` implementation still reads
+/// `std::time::Instant`, so the production clock source is unchanged from
+/// pre-HAL-routing behaviour. The difference is that the scheduler now routes
+/// through the trait, which means a consumer-provided `H: Hal` impl (assigned
+/// via `StatePolicy::Hal = H`) is consulted on every scheduler read — making
+/// synthetic-clock tests viable on host as well as embedded.
+///
+/// Resolution is milliseconds because the W3C SCXML `<send delay>` grammar
+/// (§6.2.4) is integer ms/s/min/h; sub-ms scheduling is out of contract.
 pub type SchedTimePoint = u64;
 
 /// Minimal scheduler stub for Phase 1.
@@ -200,7 +209,7 @@ impl<E: Clone> PullScheduler<E> {
     /// Whether any scheduled events are ready to fire (ready_at <= now).
     ///
     /// Caller supplies the current time — see `Engine<P>::has_ready_events` for
-    /// the host-build wrapper that reads `<P::Hal>::now_ticks_ms()` / `Instant::now()`.
+    /// the wrapper that reads `<P::Hal>::now_ticks_ms()`.
     pub fn has_ready_events_at(&self, now: SchedTimePoint) -> bool {
         self.entries.iter().any(|e| e.ready_at <= now)
     }
@@ -343,39 +352,30 @@ impl<P: StatePolicy> Engine<P> {
 
     /// Resolve the current scheduler time point for "now".
     ///
-    /// Routes through `<P::Hal>::now_ticks_ms()` under no_std (returning a u64
-    /// millisecond tick) and through `Instant::now()` under std. The textbook
-    /// DI split keeps [`PullScheduler`] clock-source-agnostic and unit-testable.
+    /// Routes through `<P::Hal as Hal>::now_ticks_ms()` on both build profiles
+    /// so the [`Hal`] trait is the single host-clock surface. The textbook DI
+    /// split keeps [`PullScheduler`] clock-source-agnostic and unit-testable
+    /// with a synthetic-clock `Hal` impl on host as well as embedded.
     #[inline]
     fn sched_now(&self) -> SchedTimePoint {
-        #[cfg(not(feature = "no_std"))]
-        {
-            Instant::now()
-        }
-        #[cfg(feature = "no_std")]
-        {
-            <P::Hal as Hal>::now_ticks_ms()
-        }
+        <P::Hal as Hal>::now_ticks_ms()
     }
 
     /// Resolve `now + delay` for scheduling.
     ///
-    /// Under std this is `Instant::now() + delay`. Under no_std this is
-    /// `<P::Hal>::now_ticks_ms().saturating_add(delay.as_millis() as u64)` —
-    /// `saturating_add` clamps a pathologically large delay to `u64::MAX`
-    /// rather than wrapping (`u64::MAX` ms ≈ 585 million years, so the clamp
-    /// is operationally indistinguishable from "infinity").
+    /// Reads `<P::Hal>::now_ticks_ms()` and adds `delay.as_millis() as u64`
+    /// via `saturating_add`, clamping a pathologically large delay to
+    /// `u64::MAX` rather than wrapping (`u64::MAX` ms ≈ 584 million years, so
+    /// the clamp is operationally indistinguishable from "infinity").
+    ///
+    /// Resolution is milliseconds on both profiles — the W3C SCXML `<send
+    /// delay>` grammar is integer ms/s/min/h, so sub-ms truncation does not
+    /// affect spec-conformant state machines. Internal call sites that need
+    /// finer resolution should not route through the scheduler at all.
     #[inline]
     fn sched_now_plus(&self, delay: Duration) -> SchedTimePoint {
-        #[cfg(not(feature = "no_std"))]
-        {
-            Instant::now() + delay
-        }
-        #[cfg(feature = "no_std")]
-        {
-            let delay_ms = delay.as_millis() as u64;
-            <P::Hal as Hal>::now_ticks_ms().saturating_add(delay_ms)
-        }
+        let delay_ms = delay.as_millis() as u64;
+        <P::Hal as Hal>::now_ticks_ms().saturating_add(delay_ms)
     }
 
     // ════════════════════════════════════════
@@ -836,8 +836,8 @@ impl<P: StatePolicy> Engine<P> {
     /// Schedule an event for delayed delivery. Returns the send ID.
     ///
     /// Resolves the current clock via [`sched_now_plus`](Self::sched_now_plus)
-    /// (`Instant::now() + delay` under std, `<P::Hal>::now_ticks_ms() + delay_ms`
-    /// under no_std) and forwards to the clock-source-agnostic
+    /// — `<P::Hal>::now_ticks_ms() + delay_ms` under both profiles — and
+    /// forwards to the clock-source-agnostic
     /// [`PullScheduler::schedule_event_at`].
     pub fn schedule_event(
         &mut self,
