@@ -6,6 +6,12 @@
 # ordered cheapest-first; the first failure short-circuits the rest.
 #
 # Gates:
+#   0. cargo fmt --all --check               — mirrors CI rustfmt gate
+#                                              (reproduces the 2026-05-20
+#                                              fmt-drift CI fail where 488
+#                                              files survived past the hook
+#                                              because no later stage
+#                                              exercised rustfmt)
 #   1. cargo build sce-codegen               — every downstream gate uses it
 #   1b. Rust mod.rs ↔ subdir drift check     — fail fast on orphaned modules
 #                                              before Stage 2 spends ~30s
@@ -47,7 +53,7 @@ fail_step() { printf '\nERROR pre-push: %s FAILED — push aborted.\n  Fix the i
 # Single composed cleanup so each resource added by a later stage
 # (HTTP server PID, scratch dirs) is reliably reclaimed even when
 # `set -e` aborts mid-stage. The two earlier inline `trap '...rm...' EXIT`
-# overwrites at Stage 4/5 leaked the HTTP server process when Stage 2
+# overwrites at Stage 4/6 leaked the HTTP server process when Stage 2
 # raced through them.
 HTTP_SERVER_PID=""
 HTTP_SERVER_LOG=""
@@ -61,8 +67,20 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# ── Stage 0: cargo fmt --all --check ──────────────────────────────
+# Mirror CI's `.github/workflows/rust-ci.yml` cargo fmt gate. Runs
+# first because rustfmt is a sub-second tool — a fmt drift discovered
+# at Stage 1+ has already paid the build cost it would have avoided
+# here. Reproduces the 2026-05-20 CI fail-mode where 488 files of
+# accumulated rustfmt drift survived past the hook because no
+# previous stage exercised rustfmt; fmt-check stays cheapest so it
+# stays first.
+log_step "Stage 0/6 — cargo fmt --all -- --check (mirrors CI fmt gate)"
+cargo fmt --all -- --check \
+    || fail_step "Stage 0 (cargo fmt --all --check) — run \`cargo fmt --all\` locally to fix"
+
 # ── Stage 1: sce-codegen build (baseline) ─────────────────────────
-log_step "Stage 1/5 — cargo build sce-codegen --release"
+log_step "Stage 1/6 — cargo build sce-codegen --release"
 cargo build --bin sce-codegen --features cli --release -p sce-build \
     || fail_step "Stage 1 (sce-codegen build)"
 
@@ -75,7 +93,7 @@ cargo build --bin sce-codegen --features cli --release -p sce-build \
 # `cargo test --workspace` catches it eventually — but only after
 # ~30 s of compilation; this fast structural check fails in under a
 # second with a precise diff that points at the offending file.
-log_step "Stage 1b/5 — Rust mod.rs ↔ subdir drift check"
+log_step "Stage 1b/6 — Rust mod.rs ↔ subdir drift check"
 check_mod_tree() {
     local mod_file="$1"
     local parent_dir
@@ -140,7 +158,7 @@ done
 # present + no manifest written. Runs in ~1s, no toolchain beyond
 # clang-19 already required by Stage 4. Catches the silent-degrade
 # pattern's reintroduction before any developer pays the CI round-trip.
-log_step "Stage 1c/5 — emit_embed_manifest.sh fail-fast regression TC"
+log_step "Stage 1c/6 — emit_embed_manifest.sh fail-fast regression TC"
 bash scripts/test_emit_manifest_fail_fast.sh \
     || fail_step "Stage 1c (emit_embed_manifest fail-fast TC)"
 
@@ -167,7 +185,7 @@ if ! kill -0 "${HTTP_SERVER_PID}" 2>/dev/null; then
 fi
 
 # ── Stage 2: Rust workspace tests ─────────────────────────────────
-log_step "Stage 2/5 — cargo test --workspace --release"
+log_step "Stage 2/6 — cargo test --workspace --release"
 cargo test --workspace --release \
     || fail_step "Stage 2 (cargo test --workspace)"
 
@@ -180,7 +198,7 @@ HTTP_SERVER_PID=""
 # generate.sh already runs `go build ./conformance/...` as a smoke check,
 # so a codegen drift that produces uncompilable Go (the package-alias bug
 # this hook was born to catch) surfaces right here.
-log_step "Stage 3/5 — Go forge conformance regenerate + go build"
+log_step "Stage 3/6 — Go forge conformance regenerate + go build"
 ( cd sce-forge-runtime/go/conformance && bash generate.sh ) \
     || fail_step "Stage 3 (Go forge conformance)"
 
@@ -188,7 +206,7 @@ log_step "Stage 3/5 — Go forge conformance regenerate + go build"
 # Uses a dedicated scratch build dir so it does not clobber a developer's
 # main build tree. The codegen dependency is passed explicitly via
 # -DSCE_CODEGEN so CMake cannot quietly pick up a stale binary.
-log_step "Stage 4/5 — C++ forge conformance build"
+log_step "Stage 4/6 — C++ forge conformance build"
 BUILD_DIR="$(mktemp -d)"
 cmake -S sce-forge-runtime/cpp/tests/conformance \
       -B "$BUILD_DIR" \
@@ -204,7 +222,7 @@ cmake --build "$BUILD_DIR" --parallel "$(nproc)" \
 # `urn:sce:extensions` → `http://sce.dev/ext` namespace migration) surface
 # well before link time. Run sce-codegen over each example SCXML in a
 # scratch output dir and abort push if any fail to produce artifacts.
-log_step "Stage 5/5 — Example SCXML codegen smoke"
+log_step "Stage 5/6 — Example SCXML codegen smoke"
 GEN_OUT="$(mktemp -d)"
 example_failures=0
 for scxml in examples/doom_wasm/scxml/*.scxml examples/smart_light/smart_light.scxml; do
@@ -218,4 +236,4 @@ for scxml in examples/doom_wasm/scxml/*.scxml examples/smart_light/smart_light.s
 done
 (( example_failures == 0 )) || fail_step "Stage 5 ($example_failures example(s) failed codegen)"
 
-printf '\npre-push: all 5 gates passed — push allowed.\n' >&2
+printf '\npre-push: all 6 gates passed — push allowed.\n' >&2
