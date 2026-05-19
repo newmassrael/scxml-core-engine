@@ -2713,73 +2713,54 @@ fn validate_and_enrich_imports(
                     .map(|v| v.arms.iter().any(|a| a.is_default))
                     .unwrap_or(false);
                 ctx.codec_emits_default_ctor = inner_has_flag_default || inner_has_default_arm;
-                // RFC §5.B B5-ν: capture the imported codec's parent-tag
-                // dispatch flag (when its variant declares
-                // `tag="parent.<flag>"`) so the parent codec's cross-doc
-                // validator can detect (Q-3) derivation conflicts and
-                // (Q-6) declaration-order violations. `None` for
-                // local-scope variants and codecs without a variant.
-                ctx.codec_b5_nu_parent_tag_flag = cm.variant.as_ref().and_then(|v| {
-                    if v.tag_scope == forge::model::TagScope::Parent {
-                        v.tag_flag.clone()
-                    } else {
-                        None
-                    }
-                });
-                // RFC §5.B B5-ν Phase B: surface the bit/width of the
-                // parent-tag flag plus the variant arms (alias + arm
-                // value + is_default) so the parent codec's encode-side
-                // derivation pass can emit a per-language match over
-                // `self.<embed_field>.body` that ORs the active arm's
-                // tag bits into the parent carrier byte before the
-                // carrier emits. The rpf lookup uses the codec's own
-                // `requires_parent_flags` (parser-validated to declare
-                // the named flag) — `expect` is safe because the
-                // matched flag name is the same one Phase A's parser
-                // resolved against this list.
+                // RFC B5-ν inversion enrichment: for ANY variant
+                // codec import (regardless of legacy tag_scope), surface
+                // the arm count and default-arm presence so the new
+                // parent-local validator can enforce Q-D-3a (no
+                // dispatch + no default arm = decode ambiguity) and
+                // Q-D-5a (flag width fits arm count).
                 if let Some(v) = cm.variant.as_ref() {
-                    if v.tag_scope == forge::model::TagScope::Parent {
-                        if let (Some(flag_name), Some(rpf)) =
-                            (v.tag_flag.as_ref(), cm.requires_parent_flags.as_ref())
-                        {
-                            if let Some(fd) =
-                                rpf.flags.iter().find(|f| f.name == *flag_name)
-                            {
-                                ctx.codec_b5_nu_parent_tag_bit_width =
-                                    Some((fd.bit, fd.width.max(1)));
-                            }
-                        }
-                        ctx.codec_b5_nu_variant_arms = v
-                            .arms
+                    ctx.codec_variant_arms_for_inversion = Some(
+                        v.arms
                             .iter()
-                            .map(|arm| {
-                                (arm.body_alias.clone(), arm.value, arm.is_default)
-                            })
-                            .collect();
-                        // RFC B5-ν dispatcher-self-gen Gap 6 — Rust
-                        // requires explicit `use` for each item from a
-                        // module; the dispatcher emits both the
-                        // `<Stem>` struct AND the `<Stem>Variant` enum
-                        // and consumers reference both (the struct as
-                        // the embed field type, the enum at the
-                        // `b5_nu_derivation_block` match site). Collapse
-                        // to brace-list `use super::{snake}::{Stem, StemVariant};`
-                        // when the imported codec is B5-ν. Other 5
-                        // backends already pull the variant enum via
-                        // header inclusion / wildcard import / package
-                        // qualifier — no augmentation needed.
-                        if matches!(*language, generator::Language::Rust) {
-                            let snake = std::path::Path::new(&imp.src)
-                                .file_stem()
-                                .and_then(|s| s.to_str())
-                                .map(|s| filters::to_snake_case(s.to_string()))
-                                .unwrap_or_else(|| ctx.alias.clone());
-                            ctx.include_stmt = format!(
-                                "use super::{snake}::{{{pascal}, {pascal}Variant}};",
-                                snake = snake,
-                                pascal = ctx.type_name,
-                            );
-                        }
+                            .map(|arm| (arm.body_alias.clone(), arm.value, arm.is_default))
+                            .collect(),
+                    );
+                    ctx.codec_variant_has_default_arm =
+                        Some(v.arms.iter().any(|a| a.is_default));
+                    // RFC B5-ν inversion β shape: tag-less `<sce:variant>`
+                    // signals the imported codec uses caller-tag dispatch.
+                    // Parents importing this codec MUST supply a `tag: u8`
+                    // arg at the leaf's decode call site.
+                    ctx.codec_variant_is_caller_tag = v.tag_field.is_none();
+                    // RFC B5-ν dispatcher-self-gen Gap 6 (extended to β):
+                    // Rust requires explicit `use` for each item from a
+                    // module; the dispatcher emits both the `<Stem>` struct
+                    // AND the `<Stem>Variant` enum, and the parent's
+                    // `b5_nu_derivation_block` match references the Variant
+                    // enum. Brace-list emit fires when this parent declares
+                    // OR-inversion dispatch on the import — either via the
+                    // new `<sce:variant-dispatch>` (`embed_dispatch.is_some()`)
+                    // or the legacy `tag="parent.X"` form (carried through
+                    // `codec_b5_nu_parent_tag_flag`). Other variant imports
+                    // (own-field Local dispatch) do not need the Variant
+                    // enum at the parent — keep the bare-struct import to
+                    // preserve byte-stable goldens for non-B5-ν consumers.
+                    let _ = v; // variant existence already gated this branch
+                    let needs_variant_import = imp.embed_dispatch.is_some();
+                    if matches!(*language, generator::Language::Rust)
+                        && needs_variant_import
+                    {
+                        let snake = std::path::Path::new(&imp.src)
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .map(|s| filters::to_snake_case(s.to_string()))
+                            .unwrap_or_else(|| ctx.alias.clone());
+                        ctx.include_stmt = format!(
+                            "use super::{snake}::{{{pascal}, {pascal}Variant}};",
+                            snake = snake,
+                            pascal = ctx.type_name,
+                        );
                     }
                 }
             }

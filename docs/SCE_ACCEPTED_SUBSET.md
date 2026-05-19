@@ -282,73 +282,78 @@ omit a specific codec entry) preserve the SCXML's existing
 `default="true"` markers byte-identically. The 107 existing
 `compile_forge_with_imports` call sites (no deploy) are unaffected.
 
-#### §2.8.2 `<sce:variant tag="parent.<flag>">` (RFC §5.B B5-ν)
+#### §2.8.2 `<sce:variant-dispatch>` import-site dispatch (RFC §5.B B5-ν inversion)
 
-B5-ν extends `<sce:variant>` dispatch to read its tag from a flag
-declared in the codec's `<sce:requires-parent-flags>` carrier. The
-variant codec must declare both:
+B5-ν inversion places dispatch ownership at the composition root:
+the parent codec declares — at its `<sce:import>` site — which of
+its own flags drives an imported variant codec's arm selection.
+The leaf codec describes only its body (variant arms + their wire
+shapes); it carries no `tag=` attribute and no
+`<sce:requires-parent-flags>` block for B5-ν purposes.
 
-- `<sce:requires-parent-flags carrier="X"><sce:flag name="F" bit="B"/>
-  </sce:requires-parent-flags>` (B5-γ) so the codec's decode/encode
-  signature carries a `parent_flags` parameter.
-- `<sce:variant tag="parent.F">` (B5-ν) — the literal `parent` token
-  in the dotted-tag form, mirroring B5-γ present-if's
-  `parent.<flag>` convention.
+```xml
+<!-- Leaf: pure body, no parent reference -->
+<scxml sce:kind="codec" sce:codec-id="codec_zenoh_keyexpr">
+  <datamodel>
+    <sce:variant>
+      <sce:arm value="0x00" type="codec_keyexpr_nonlocal" default="true"/>
+      <sce:arm value="0x01" type="codec_keyexpr_local"/>
+    </sce:variant>
+  </datamodel>
+</scxml>
 
-Decode reuses the existing B5-γ threading: parent codec passes its
-flag carrier byte into the embedded variant codec; dispatcher reads
-`(parent_flags >> bit) & mask` to select the arm.
+<!-- Parent declares dispatch at the import site -->
+<scxml sce:kind="codec" sce:codec-id="codec_zenoh_push">
+  <sce:import src="codec_zenoh_keyexpr.scxml" kind="codec" as="key">
+    <sce:variant-dispatch flag="header.M"/>
+  </sce:import>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8">
+      <sce:flag name="mid" bit="0" width="5" value="0x1d"/>
+      <sce:flag name="M" bit="6"/>
+    </sce:flags>
+    <sce:embed id="key" type="key" sce:byte="1"/>
+  </datamodel>
+</scxml>
+```
 
-Encode adds a new derivation path: when a parent codec emits a flag
-carrier whose flag is named in an embedded variant's parent-tag
-dispatch, the parent's encode pre-computes the carrier's bit value
-from the embedded variant's active arm tag, then ORs it into the
-carrier before writing the carrier bytes. This pre-compute pass
-runs at the top of the parent codec's encode function (Q-2 lock-in)
-so the wire-emit stream stays declaration-ordered.
+The leaf's decode signature gains a `tag: u8` parameter; the leaf
+matches `tag` directly to pick the arm. Encode is unchanged — the
+active arm is the language-level enum discriminant. The parent's
+decode extracts the dispatch tag from its own flag carrier
+(`(carrier >> bit) & mask`) and passes it to the leaf. The parent's
+encode pre-computes the carrier's bit value from the embedded
+variant's active arm and ORs it into the carrier before emitting
+the carrier bytes.
 
-Constraints (parser-enforced):
+Parents importing a variant codec **without** `<sce:variant-dispatch>`
+fall back to the leaf's `<sce:arm default="true"/>` arm as the
+construction-time tag input (Q-D-3 (a)). This is the case when arm
+bodies happen to be wire-distinguishable by other means, or when the
+author selects the arm at construction.
 
-- `parent.<flag>` form requires the codec to declare a matching
-  `<sce:requires-parent-flags>` block →
-  `codec/variant-parent-tag-without-requires-parent-flags`.
-- The named flag must appear in the rpf block →
-  `codec/variant-parent-tag-flag-not-declared`
-  (`Fix::ReplaceOneOf` candidates = declared rpf flag names).
-- B5-ν is mutually exclusive with `<sce:peek-byte>` mode (no peek
-  needed when dispatch reads from already-decoded parent state).
+Cross-doc constraints (parent-local validator):
 
-Cross-doc constraints (validator at codegen entry):
+- `<sce:variant-dispatch flag="X.Y"/>` must resolve against the
+  parent's own fields — both the carrier `X` and the flag `Y` must
+  exist on the parent →
+  `codec/variant-dispatch-flag-not-resolved`
+  (`Fix::ReplaceOneOf` candidates = available carriers / flags).
+- The named flag's `width` must fit the imported variant's arm count →
+  `codec/variant-dispatch-bit-width-mismatch`.
+- A parent without `<sce:variant-dispatch>` importing a variant codec
+  without a `default="true"` arm cannot resolve the dispatch tag →
+  `codec/variant-dispatch-arms-not-distinguishable-without-default`.
+- The named flag must not carry a static `<sce:flag value="V"/>`
+  constant (the bit is derived, not constant) →
+  `codec/variant-dispatch-flag-has-static-value`.
+- The flag carrier field must precede the embed field in the parent's
+  `<datamodel>` declaration order →
+  `codec/variant-dispatch-carrier-after-embed`.
 
-- A parent codec may not declare a static `<sce:flag value="V"/>`
-  constant on a flag that an embedded variant uses for parent-tag
-  dispatch — derivation and static value are mutually exclusive →
-  `codec/parent-flag-derivation-conflict`.
-- The flag carrier field must precede the embedded variant field
-  in the parent codec's `<datamodel>` declaration order
-  (encode-side derivation is feasible by pre-compute, but the
-  readable order is carrier-first) →
-  `codec/parent-tag-variant-before-carrier`.
-
-Multi-bit dispatch (Q-5): B5-ν inherits B5-β's bit-range width.
-A `parent.<flag>` form on a 3-bit flag dispatches over 8 arm
-values; B5-β's existing `codec/variant-arm-unreachable` covers
-exhaustiveness without special-casing.
-
-Default-arm rule: `<sce:variant tag="parent.<flag>">` reads from
-a uint8 carrier with bounded flag width (≤ 8 per
-`<sce:requires-parent-flags>` lock), so the tag domain is
-`1 << width` ≤ 256 and always practically enumerable via explicit
-`<sce:arm>` declarations. A `<sce:default>` catch-all child is
-therefore structurally unreachable in this dispatch form;
-admitting it would let codegen emit dead encode-side fallback
-branches and shadow an enumerated arm at the std::variant
-last-alternative slot. Parser rejects with
-`codec/b5-nu-dispatcher-default-arm-forbidden`. Distinct from
-the `<sce:arm default="true"/>` attribute (Default-trait
-starting-value marker) which remains valid in this form. Any
-gap in the enumeration surfaces via the existing
-`codec/variant-arm-unreachable`.
+Multi-bit dispatch: B5-ν inversion preserves B5-β's bit-range width
+semantics. A `flag="X.Y"` form on a 3-bit flag dispatches over 8
+arm values.
 
 ### §2.9 Composition extensions — `<sce:template>`
 
@@ -483,7 +488,7 @@ no typed interpretation or are explicitly excluded:
 
 ---
 
-## Appendix — `DiagnosticCode` index (287 codes)
+## Appendix — `DiagnosticCode` index (282 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -564,11 +569,11 @@ Codes that the author can avoid by writing a better SCXML /
 | `codec/variant-arm-inner-mid-undeclared` | Validation |
 | `codec/variant-no-default-arm` | Validation |
 | `codec/variant-default-overlay-arm-not-declared` | Validation |
-| `codec/variant-parent-tag-without-requires-parent-flags` | Validation |
-| `codec/variant-parent-tag-flag-not-declared` | Validation |
-| `codec/b5-nu-dispatcher-default-arm-forbidden` | Validation |
-| `codec/parent-flag-derivation-conflict` | Validation |
-| `codec/parent-tag-variant-before-carrier` | Validation |
+| `codec/variant-dispatch-flag-not-resolved` | Validation |
+| `codec/variant-dispatch-bit-width-mismatch` | Validation |
+| `codec/variant-dispatch-arms-not-distinguishable-without-default` | Validation |
+| `codec/variant-dispatch-flag-has-static-value` | Validation |
+| `codec/variant-dispatch-carrier-after-embed` | Validation |
 | `codec/present-if-refs-later-field` | Validation |
 | `codec/repeat-count-refs-later-field` | Validation |
 | `algorithm/test-vector-unsupported-kind` | Validation |

@@ -152,34 +152,6 @@ pub struct ImportContext {
     /// parent codec's cross-doc validator uses this to detect Q-3
     /// derivation conflicts (parent flag has `value=` constant on the
     /// same flag) and Q-6 declaration-order violations (carrier appears
-    /// after the embedded field). The carrier name lives in
-    /// `codec_requires_parent_flags.carrier`. `None` for non-codec
-    /// imports, codec imports with local-scope variants, codec imports
-    /// with no variant, and codec imports whose model failed to parse.
-    #[serde(skip)]
-    pub codec_b5_nu_parent_tag_flag: Option<String>,
-
-    /// RFC §5.B B5-ν Phase B: for codec imports with parent-tag-
-    /// dispatched variants, the parent flag's bit position and width
-    /// within the parent carrier. Populated alongside
-    /// `codec_b5_nu_parent_tag_flag` so the parent codec's encode-side
-    /// derivation pass can shift the active arm's tag value into the
-    /// correct bit range before ORing it into the carrier byte. `None`
-    /// for non-B5-ν imports. Stored as `(bit, width)`; both match
-    /// `FlagDef`'s u32 representation.
-    #[serde(skip)]
-    pub codec_b5_nu_parent_tag_bit_width: Option<(u32, u32)>,
-
-    /// RFC §5.B B5-ν Phase B: for codec imports with parent-tag-
-    /// dispatched variants, the variant arm metadata needed for the
-    /// parent's encode-side derivation match expression. Each tuple is
-    /// `(body_alias_snake, arm_value, is_default)`. Empty for non-B5-ν
-    /// imports. Order matches the embedded codec's `<sce:arm>`
-    /// declaration order so the emitted match preserves authoring
-    /// intent.
-    #[serde(skip)]
-    pub codec_b5_nu_variant_arms: Vec<(String, u64, bool)>,
-
     /// For buffer-pool imports: the imported pool's `<sce:slot-size>`
     /// body (bytes), captured at enrichment time from the parsed
     /// [`BufferPoolModel`]. Consumed by the §5.C B6-α' cross-resolver
@@ -211,6 +183,48 @@ pub struct ImportContext {
     /// [`BoundedCollectionModel`]: crate::forge::model::BoundedCollectionModel
     #[serde(skip)]
     pub bc_element_snake: Option<String>,
+
+    /// RFC §5.B variant-dispatch (B5-ν inversion) — mirrors the
+    /// parent codec's `<sce:variant-dispatch>` declaration on this
+    /// import. Codegen reads `embed_dispatch.flag_source` to derive
+    /// the parent flag carrier's bit value from the imported variant
+    /// codec's active arm at encode time. `None` when the
+    /// `<sce:import>` had no `<sce:variant-dispatch>` child — either
+    /// the import is non-codec, the imported codec carries no
+    /// variant, or the parent author chose the arm explicitly
+    /// without wire-level dispatch.
+    #[serde(skip)]
+    pub embed_dispatch: Option<crate::forge::model::EmbedDispatch>,
+
+    /// RFC B5-ν inversion: for codec imports whose model declares a
+    /// `<sce:variant>`, the variant arm metadata needed for the
+    /// parent's encode-side derivation. Each tuple is
+    /// `(body_alias_snake, arm_value, is_default)` in `<sce:arm>`
+    /// declaration order. `None` for non-codec imports and for codec
+    /// imports with no variant.
+    #[serde(skip)]
+    pub codec_variant_arms_for_inversion: Option<Vec<(String, u64, bool)>>,
+
+    /// RFC B5-ν inversion: for codec imports whose model declares a
+    /// `<sce:variant>`, whether any arm carries `default="true"`.
+    /// Used by the cross-doc validator (Q-D-3a) to require either a
+    /// `<sce:variant-dispatch>` or a default arm on every variant
+    /// import. `None` for non-codec imports and for codec imports
+    /// with no variant; `Some(false)` for variant codecs without a
+    /// default arm; `Some(true)` for variant codecs with a default arm.
+    #[serde(skip)]
+    pub codec_variant_has_default_arm: Option<bool>,
+
+    /// RFC B5-ν inversion β shape: `true` when the imported codec's
+    /// `<sce:variant>` has no `tag=` attribute (caller-tag form).
+    /// Parents importing such a leaf MUST supply a `tag: u8` value to
+    /// the leaf's decode call — either extracted from the parent's own
+    /// flag carrier (when `embed_dispatch` is set) or taken from the
+    /// leaf's `default="true"` arm value (Q-D-3 (a) no-dispatch case).
+    /// `false` for non-codec imports, codec imports without variant,
+    /// and codecs with the legacy own-field / parent-scope dispatch.
+    #[serde(skip)]
+    pub codec_variant_is_caller_tag: bool,
 }
 
 /// Resolve a list of `ForgeImport` into template-ready `ImportContext`.
@@ -340,11 +354,12 @@ fn resolve_single_import(
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
-                codec_b5_nu_parent_tag_flag: None,
-                codec_b5_nu_parent_tag_bit_width: None,
-                codec_b5_nu_variant_arms: Vec::new(),
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
+                embed_dispatch: imp.embed_dispatch.clone(),
+                codec_variant_arms_for_inversion: None,
+                codec_variant_has_default_arm: None,
+                codec_variant_is_caller_tag: false,
             }
         }
         crate::generator::Language::Kotlin => {
@@ -376,11 +391,12 @@ fn resolve_single_import(
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
-                codec_b5_nu_parent_tag_flag: None,
-                codec_b5_nu_parent_tag_bit_width: None,
-                codec_b5_nu_variant_arms: Vec::new(),
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
+                embed_dispatch: imp.embed_dispatch.clone(),
+                codec_variant_arms_for_inversion: None,
+                codec_variant_has_default_arm: None,
+                codec_variant_is_caller_tag: false,
             }
         }
         crate::generator::Language::Rust => {
@@ -414,11 +430,12 @@ fn resolve_single_import(
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
-                codec_b5_nu_parent_tag_flag: None,
-                codec_b5_nu_parent_tag_bit_width: None,
-                codec_b5_nu_variant_arms: Vec::new(),
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
+                embed_dispatch: imp.embed_dispatch.clone(),
+                codec_variant_arms_for_inversion: None,
+                codec_variant_has_default_arm: None,
+                codec_variant_is_caller_tag: false,
             }
         }
         crate::generator::Language::Go => {
@@ -478,11 +495,12 @@ fn resolve_single_import(
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
-                codec_b5_nu_parent_tag_flag: None,
-                codec_b5_nu_parent_tag_bit_width: None,
-                codec_b5_nu_variant_arms: Vec::new(),
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
+                embed_dispatch: imp.embed_dispatch.clone(),
+                codec_variant_arms_for_inversion: None,
+                codec_variant_has_default_arm: None,
+                codec_variant_is_caller_tag: false,
             }
         }
         crate::generator::Language::Python => {
@@ -516,11 +534,12 @@ fn resolve_single_import(
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
-                codec_b5_nu_parent_tag_flag: None,
-                codec_b5_nu_parent_tag_bit_width: None,
-                codec_b5_nu_variant_arms: Vec::new(),
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
+                embed_dispatch: imp.embed_dispatch.clone(),
+                codec_variant_arms_for_inversion: None,
+                codec_variant_has_default_arm: None,
+                codec_variant_is_caller_tag: false,
             }
         }
         crate::generator::Language::C11 => {
@@ -555,11 +574,12 @@ fn resolve_single_import(
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
-                codec_b5_nu_parent_tag_flag: None,
-                codec_b5_nu_parent_tag_bit_width: None,
-                codec_b5_nu_variant_arms: Vec::new(),
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
+                embed_dispatch: imp.embed_dispatch.clone(),
+                codec_variant_arms_for_inversion: None,
+                codec_variant_has_default_arm: None,
+                codec_variant_is_caller_tag: false,
             }
         }
     }
@@ -1353,17 +1373,12 @@ fn render_codec(
         }
     }
 
-    // RFC §5.B B5-ν: cross-doc validation of embedded codecs that
-    // declare a parent-tag variant. Walks THIS codec's `Embed` fields;
-    // for each, looks up the imported codec context's
-    // `codec_b5_nu_parent_tag_flag` (populated by
-    // `validate_and_enrich_imports` from the imported codec's
-    // `CodecVariant.tag_scope == Parent` + `tag_flag`). When an
-    // embedded codec is B5-ν, the parent codec must (Q-3) not have a
-    // static `<sce:flag value="...">` constant on the same flag, and
-    // (Q-6) declare the flag carrier earlier than the embedded field
-    // in `<datamodel>` order.
-    validate_cross_codec_variant_parent_tag(m, imports)?;
+    // RFC B5-ν inversion: parent-local cross-doc validator for the
+    // `<sce:variant-dispatch>` import-site declaration. Walks parent's
+    // embed fields and resolves each import's EmbedDispatch (if any)
+    // against parent's own fields/flags — see function doc-comment for
+    // the 5 checks plus the Q-D-3a no-dispatch + no-default-arm gate.
+    validate_cross_codec_variant_dispatch(m, imports)?;
 
     // RFC §5.B B5-γ closures complete: all six backends (Rust / Cpp /
     // Kotlin / Go / C11 / Python) emit codec parent-flags dependency.
@@ -2496,6 +2511,45 @@ fn render_codec(
         "parent_flags_param_first".into(),
         parent_flags_param_first.into(),
     );
+    // RFC B5-ν inversion β shape: when this codec's `<sce:variant>` is
+    // tag-less (caller-tag form), the leaf decode signature gains a
+    // `tag: u8` parameter alongside any existing `parent_flags`
+    // parameter (B5-γ orthogonal). Encode signature unchanged — the
+    // active arm is the enum discriminant. Per-language fragments
+    // factor the syntax out of the templates; templates inject
+    // `{{ dispatch_tag_param_decl }}` into decode signatures.
+    let has_caller_tag = m
+        .variant
+        .as_ref()
+        .map(|v| v.tag_field.is_none())
+        .unwrap_or(false);
+    let (dispatch_tag_param_decl, dispatch_tag_param_first) = if has_caller_tag {
+        match lang {
+            crate::generator::Language::Rust => (", tag: u8", "tag: u8"),
+            crate::generator::Language::Cpp => (", std::uint8_t tag", "std::uint8_t tag"),
+            crate::generator::Language::Kotlin => (", tag: UByte", "tag: UByte"),
+            crate::generator::Language::Go => (", tag byte", "tag byte"),
+            // C11 always has a preceding `*cursor`/`*self` arg on both
+            // decode and encode, so `_first` is unreachable. Templates
+            // use `_decl` (leading-comma) at both sites.
+            crate::generator::Language::C11 => (", uint8_t tag", ""),
+            // Python: classmethod `decode(cls, cursor, …)` always has
+            // a preceding `cls, cursor` so `_decl` (leading-comma) form
+            // is what the template consumes; `_first` stays empty.
+            crate::generator::Language::Python => (", tag: int", ""),
+        }
+    } else {
+        ("", "")
+    };
+    ctx.insert(
+        "dispatch_tag_param_decl".into(),
+        dispatch_tag_param_decl.into(),
+    );
+    ctx.insert(
+        "dispatch_tag_param_first".into(),
+        dispatch_tag_param_first.into(),
+    );
+    ctx.insert("has_caller_tag".into(), has_caller_tag.into());
     ctx.insert("encode_exprs".into(), serde_json::json!(encode_exprs));
     // RFC §5.B B5-ν Phase B — per-codec derivation locals block.
     // Templates render `{{ parent_tag_derivation_block }}` immediately
@@ -2538,8 +2592,17 @@ fn render_codec(
         // through `<sce:requires-parent-flags>` instead of `m.fields`;
         // `carrier_type` is uint8 (rpf carrier v1 lock-in), the flag
         // def comes from `rpf.flags`.
-        let parent_scope = v.tag_scope == crate::forge::model::TagScope::Parent;
-        let (carrier_type, peek_flag_def, rpf_flag_def) = if let Some(peek) = &v.peek_byte {
+        // RFC B5-ν inversion β shape: tag-less variant. The leaf has no
+        // own carrier (no field, no peek, no RPF); the dispatch value is
+        // supplied by the caller as the `tag: u8` decode parameter. β
+        // v1 fixes tag_type at Uint8 (matches the parent's `<sce:flag>`
+        // width upper bound under the RPF v1 lock-in).
+        let caller_tag = v.tag_field.is_none();
+        let (carrier_type, peek_flag_def) = if caller_tag {
+            // β shape carries no carrier_field / flag_def; downstream
+            // tag_match_expr / tag_store_expr take the caller-tag branch.
+            (SceType::Uint8, None)
+        } else if let Some(peek) = &v.peek_byte {
             let flag_name = v
                 .tag_flag
                 .as_ref()
@@ -2549,32 +2612,26 @@ fn render_codec(
                 .iter()
                 .find(|f| f.name == *flag_name)
                 .expect("parser validated tag_flag references a peek-byte flag");
-            (SceType::Uint8, Some(flag_def), None)
-        } else if parent_scope {
-            let rpf = m
-                .requires_parent_flags
-                .as_ref()
-                .expect("parser enforces requires-parent-flags for parent-scope variants");
-            let flag_name = v
-                .tag_flag
-                .as_ref()
-                .expect("parser enforces dotted tag in parent scope");
-            let flag_def = rpf
-                .flags
-                .iter()
-                .find(|f| f.name == *flag_name)
-                .expect("parser validated parent.tag_flag references an rpf flag");
-            (SceType::Uint8, None, Some(flag_def))
+            (SceType::Uint8, Some(flag_def))
         } else {
+            let tag_field_name = v
+                .tag_field
+                .as_ref()
+                .expect("non-β variant has Some(tag_field) by construction");
             let carrier_field = m
                 .fields
                 .iter()
-                .find(|f| f.id == v.tag_field)
+                .find(|f| f.id == *tag_field_name)
                 .expect("parser validated tag_field references an existing field");
-            (carrier_field.sce_type.clone(), None, None)
+            (carrier_field.sce_type.clone(), None)
         };
-        let (tag_type, tag_flag_def) = match (&v.peek_byte, parent_scope, &v.tag_flag) {
-            (Some(_), _, _) => {
+        let (tag_type, tag_flag_def) = if caller_tag {
+            // β shape: caller passes the dispatch value as `tag: u8`
+            // directly — no shift/mask, no carrier. tag_type fixed at
+            // Uint8 (β v1 lock).
+            (SceType::Uint8, None)
+        } else { match (&v.peek_byte, &v.tag_flag) {
+            (Some(_), _) => {
                 let flag_def =
                     peek_flag_def.expect("peek mode always carries a flag def per parser");
                 let width = flag_def.width.max(1);
@@ -2589,27 +2646,16 @@ fn render_codec(
                 };
                 (result_type, Some(flag_def))
             }
-            (None, true, _) => {
-                let flag_def =
-                    rpf_flag_def.expect("parent scope always carries an rpf flag def per parser");
-                let width = flag_def.width.max(1);
-                let result_type = if width <= 8 {
-                    SceType::Uint8
-                } else if width <= 16 {
-                    SceType::Uint16
-                } else if width <= 32 {
-                    SceType::Uint32
-                } else {
-                    SceType::Uint64
-                };
-                (result_type, Some(flag_def))
-            }
-            (None, false, None) => (carrier_type.clone(), None),
-            (None, false, Some(flag_name)) => {
+            (None, None) => (carrier_type.clone(), None),
+            (None, Some(flag_name)) => {
+                let tag_field_name = v
+                    .tag_field
+                    .as_ref()
+                    .expect("Local own-field implies tag_field is Some");
                 let carrier_field = m
                     .fields
                     .iter()
-                    .find(|f| f.id == v.tag_field)
+                    .find(|f| f.id == *tag_field_name)
                     .expect("parser validated tag_field references an existing field");
                 let flag_def = carrier_field
                     .flags
@@ -2628,7 +2674,7 @@ fn render_codec(
                 };
                 (result_type, Some(flag_def))
             }
-        };
+        } };
         let tag_native = l.type_name(&tag_type).to_string();
         let arm_value_suffix = match (lang, &tag_type) {
             (crate::generator::Language::Rust, SceType::Uint8) => "u8",
@@ -2941,8 +2987,20 @@ fn render_codec(
             .transpose()?;
 
         let mut variant_obj = serde_json::Map::new();
-        variant_obj.insert("tag_field".into(), l.codec_field_id(&v.tag_field).into());
+        // β shape: no own carrier — `tag_field` ctx key carries an empty
+        // string sentinel (templates that read it gate via the
+        // `caller_tag` flag below). Non-β paths emit the field id.
+        let tag_field_ctx = match v.tag_field.as_ref() {
+            Some(id) => l.codec_field_id(id),
+            None => String::new(),
+        };
+        variant_obj.insert("tag_field".into(), tag_field_ctx.into());
         variant_obj.insert("tag_native_type".into(), tag_native.into());
+        // RFC B5-ν inversion β shape signal: when true, leaf decode
+        // signature gains `tag: u8` parameter (via
+        // `dispatch_tag_param_decl` ctx) and the dispatch reads the
+        // parameter directly without shift/mask.
+        variant_obj.insert("caller_tag".into(), caller_tag.into());
         // RFC §5.B B5-β: `tag_match_expr` / `tag_store_expr` factor the
         // dispatch and default-arm-tag-storage expressions out of the
         // 6 templates so the same template body emits both whole-field
@@ -2965,20 +3023,22 @@ fn render_codec(
         // at `parent_flags_param_decl`).
         let carrier_id = if peek_mode {
             "_peek".to_string()
-        } else if parent_scope {
-            match lang {
-                crate::generator::Language::Kotlin | crate::generator::Language::Go => {
-                    "parentFlags".to_string()
-                }
-                _ => "parent_flags".to_string(),
-            }
+        } else if caller_tag {
+            // β shape: dispatch reads the caller-provided `tag`
+            // parameter. Bare identifier matches the per-language
+            // fragment name in `dispatch_tag_param_decl`.
+            "tag".to_string()
         } else {
-            l.codec_field_id(&v.tag_field)
+            let tag_field_name = v
+                .tag_field
+                .as_ref()
+                .expect("non-β + non-peek implies tag_field is Some");
+            l.codec_field_id(tag_field_name)
         };
         // C11 own-field mode reads from `out->{field}` (the codec's
-        // output struct member); peek mode and parent-scope mode read
+        // output struct member); peek mode and β caller-tag mode read
         // from bare locals/parameters.
-        let c11_carrier_qualifier = if peek_mode || parent_scope {
+        let c11_carrier_qualifier = if peek_mode || caller_tag {
             ""
         } else {
             "out->"
@@ -3608,31 +3668,28 @@ fn validate_cross_codec_parent_flags(
     Ok(())
 }
 
-/// RFC §5.B B5-ν — parent-tag variant cross-doc validator.
+/// RFC B5-ν inversion — parent-local cross-doc validator for the
+/// `<sce:variant-dispatch>` import-site declaration.
 ///
-/// Walks the parent codec's fields looking for `BitSize::Embed`
-/// fields whose imported codec carries a B5-ν parent-tag variant
-/// (detected via `ImportContext::codec_b5_nu_parent_tag_flag`). For
-/// each such embed:
+/// Walks the parent codec's `Embed` fields; for each field whose import
+/// carries an `EmbedDispatch` (parsed from `<sce:variant-dispatch
+/// flag="X.Y"/>` child of `<sce:import>`), resolves the dotted reference
+/// against the parent's own fields and enforces five constraints:
 ///
-/// - **Q-3 conflict**: the parent's flag carrier must NOT declare a
-///   static `<sce:flag value="...">` constant on the same flag. The
-///   embedded variant derives that bit from its arm tag; co-existence
-///   of static + derived value is structurally ambiguous. Fires
-///   `codec/parent-flag-derivation-conflict`.
+/// 1. (Q-D-5a) Carrier field `X` declared on the parent
+/// 2. (Q-D-5a) Flag `Y` declared on that carrier's `<sce:flags>` list
+/// 3. (Q-D-4a) Flag has no static `value=` constant (would conflict
+///    with the derived bit value from the variant's arm choice)
+/// 4. (Q-D-5a) Flag width can encode the imported variant's arm count
+///    (1 << width ≥ arms.len())
+/// 5. (Q-D-5a) Carrier field is declared BEFORE the embed field
+///    (declaration order matches wire order; carrier-first convention)
 ///
-/// - **Q-6 declaration order**: the parent's flag carrier field must
-///   appear BEFORE the embedded variant field in `<datamodel>` order.
-///   Encode-side derivation is feasible by pre-compute even when the
-///   order is reversed, but the author-facing reading order is
-///   carrier-first (and matches the wire order). Fires
-///   `codec/parent-tag-variant-before-carrier`.
-///
-/// Layout match between the parent's flag carrier and the embedded
-/// codec's `<sce:requires-parent-flags>` block is already enforced by
-/// `validate_cross_codec_parent_flags` (existing B5-γ check); this
-/// validator only adds the two B5-ν-specific constraints.
-fn validate_cross_codec_variant_parent_tag(
+/// Additionally (Q-D-3a): if an import targets a variant codec and the
+/// import carries NO `<sce:variant-dispatch>`, the imported codec MUST
+/// have a `default="true"` arm — otherwise the parent's decode cannot
+/// deterministically select an arm.
+fn validate_cross_codec_variant_dispatch(
     parent: &CodecModel,
     imports: &[ImportContext],
 ) -> Result<(), ForgeError> {
@@ -3644,73 +3701,145 @@ fn validate_cross_codec_variant_parent_tag(
         }
         let embed_alias = match field.embed_body_alias.as_ref() {
             Some(a) => a,
-            None => continue, // parser invariant violation; surfaced elsewhere
+            None => continue,
         };
         let imp = match imports.iter().find(|i| &i.alias == embed_alias) {
             Some(i) => i,
-            None => continue, // unresolved import; surfaced by upstream check
-        };
-        let flag_name = match imp.codec_b5_nu_parent_tag_flag.as_ref() {
-            Some(f) => f,
-            None => continue, // not a B5-ν codec — no parent-tag derivation
-        };
-        let rpf = match imp.codec_requires_parent_flags.as_ref() {
-            Some(r) => r,
-            None => {
-                // Parser invariant violation: B5-ν parent-tag without
-                // rpf is rejected at parse time
-                // (CodecVariantParentTagWithoutRequiresParentFlags).
-                // Reaching here means the parser's invariant slipped —
-                // skip silently rather than double-fire.
-                continue;
-            }
-        };
-
-        // Find the parent's flag carrier in declaration order.
-        let carrier_pos = parent
-            .fields
-            .iter()
-            .enumerate()
-            .find(|(_, f)| f.id == rpf.carrier);
-        let (carrier_index, carrier) = match carrier_pos {
-            Some((i, f)) => (i, f),
-            // Missing carrier surfaces from validate_cross_codec_parent_flags
-            // with a CodecParentFlagMismatch — skip here to avoid double
-            // diagnostics on the same root cause.
             None => continue,
         };
+        let imported_variant_arm_count: Option<usize> =
+            imp.codec_variant_arms_for_inversion.as_ref().map(|v| v.len());
+        let imported_has_default_arm: bool = imp.codec_variant_has_default_arm.unwrap_or(false);
 
-        // (Q-3) Static value= on the parent flag conflicts with derivation.
-        if let Some(parent_value) = carrier
-            .flags
-            .iter()
-            .find(|f| f.name == *flag_name)
-            .and_then(|f| f.value)
-        {
-            return Err(ForgeError::Validation(
-                ValidationError::CodecParentFlagDerivationConflict {
-                    parent_codec: parent.name.clone(),
-                    embedded_codec: embed_alias.clone(),
-                    embedded_field: field.id.clone(),
-                    carrier: rpf.carrier.clone(),
-                    flag: flag_name.clone(),
-                    parent_value,
-                },
-            ));
-        }
+        match imp.embed_dispatch.as_ref() {
+            None => {
+                // Q-D-3(a): no dispatch + imported codec is a variant
+                // without a default arm ⇒ decode cannot pick an arm.
+                if let Some(arm_count) = imported_variant_arm_count {
+                    if arm_count > 0 && !imported_has_default_arm {
+                        return Err(ForgeError::Validation(
+                            ValidationError::CodecVariantDispatchArmsNotDistinguishableWithoutDefault {
+                                parent_codec: parent.name.clone(),
+                                embedded_alias: embed_alias.clone(),
+                                embedded_codec: embed_alias.clone(),
+                            },
+                        ));
+                    }
+                }
+            }
+            Some(dispatch) => {
+                let (carrier_name, flag_name) = match dispatch.flag_source.split_once('.') {
+                    Some((c, f)) => (c.trim().to_string(), f.trim().to_string()),
+                    // Parser shape-validated dotted form; reaching here
+                    // means parser invariant slipped — skip silently
+                    // rather than double-fire.
+                    None => continue,
+                };
 
-        // (Q-6) Carrier must appear before the embedded variant field.
-        if carrier_index > embedded_index {
-            return Err(ForgeError::Validation(
-                ValidationError::CodecVariantParentTagBeforeCarrier {
-                    parent_codec: parent.name.clone(),
-                    embedded_codec: embed_alias.clone(),
-                    embedded_field: field.id.clone(),
-                    carrier: rpf.carrier.clone(),
-                    carrier_index,
-                    embedded_index,
-                },
-            ));
+                // (1) Carrier field exists on the parent.
+                let carrier_lookup = parent
+                    .fields
+                    .iter()
+                    .enumerate()
+                    .find(|(_, f)| f.id == carrier_name);
+                let (carrier_index, carrier_field) = match carrier_lookup {
+                    Some((i, f)) => (i, f),
+                    None => {
+                        let available: Vec<String> = parent
+                            .fields
+                            .iter()
+                            .filter(|f| !f.flags.is_empty())
+                            .map(|f| f.id.clone())
+                            .collect();
+                        return Err(ForgeError::Validation(
+                            ValidationError::CodecVariantDispatchFlagNotResolved {
+                                parent_codec: parent.name.clone(),
+                                embedded_alias: embed_alias.clone(),
+                                flag_source: dispatch.flag_source.clone(),
+                                detail: format!(
+                                    "carrier '{carrier_name}' is not declared on this codec"
+                                ),
+                                candidates: available,
+                            },
+                        ));
+                    }
+                };
+
+                // (2) Flag exists on that carrier.
+                let flag_def = match carrier_field.flags.iter().find(|f| f.name == flag_name) {
+                    Some(f) => f,
+                    None => {
+                        let available: Vec<String> = carrier_field
+                            .flags
+                            .iter()
+                            .map(|f| format!("{}.{}", carrier_name, f.name))
+                            .collect();
+                        return Err(ForgeError::Validation(
+                            ValidationError::CodecVariantDispatchFlagNotResolved {
+                                parent_codec: parent.name.clone(),
+                                embedded_alias: embed_alias.clone(),
+                                flag_source: dispatch.flag_source.clone(),
+                                detail: format!(
+                                    "flag '{flag_name}' is not declared on carrier '{carrier_name}'"
+                                ),
+                                candidates: available,
+                            },
+                        ));
+                    }
+                };
+
+                // (3) Q-D-4a: flag must not carry a static value=.
+                if let Some(static_value) = flag_def.value {
+                    return Err(ForgeError::Validation(
+                        ValidationError::CodecVariantDispatchFlagHasStaticValue {
+                            parent_codec: parent.name.clone(),
+                            embedded_alias: embed_alias.clone(),
+                            carrier: carrier_name.clone(),
+                            flag: flag_name.clone(),
+                            static_value,
+                        },
+                    ));
+                }
+
+                // (4) Q-D-5a: flag width must encode the arm count.
+                if let Some(arm_count) = imported_variant_arm_count {
+                    let flag_width = flag_def.width.max(1);
+                    let max_values: u64 = if flag_width >= 64 {
+                        u64::MAX
+                    } else {
+                        1u64 << flag_width
+                    };
+                    if (arm_count as u64) > max_values {
+                        return Err(ForgeError::Validation(
+                            ValidationError::CodecVariantDispatchBitWidthMismatch {
+                                parent_codec: parent.name.clone(),
+                                embedded_alias: embed_alias.clone(),
+                                embedded_codec: embed_alias.clone(),
+                                carrier: carrier_name.clone(),
+                                flag: flag_name.clone(),
+                                flag_width,
+                                max_values,
+                                arm_count,
+                            },
+                        ));
+                    }
+                }
+
+                // (5) Q-D-5a: carrier declared before embed.
+                if carrier_index > embedded_index {
+                    return Err(ForgeError::Validation(
+                        ValidationError::CodecVariantDispatchCarrierAfterEmbed {
+                            parent_codec: parent.name.clone(),
+                            embedded_alias: embed_alias.clone(),
+                            embedded_field: field.id.clone(),
+                            carrier: carrier_name.clone(),
+                            flag: flag_name.clone(),
+                            carrier_index,
+                            embedded_index,
+                        },
+                    ));
+                }
+            }
         }
     }
     Ok(())
@@ -4918,87 +5047,171 @@ struct EmbedThreadArgs {
 }
 
 fn embed_parent_flags_thread_args(
-    _field: &CodecField,
+    field: &CodecField,
     embed_alias: &str,
     imports: &[ImportContext],
     parent: &CodecModel,
     lang: crate::generator::Language,
 ) -> EmbedThreadArgs {
     use crate::generator::Language;
+    let imp = imports.iter().find(|i| i.alias == embed_alias);
+    // RFC B5-ν inversion β shape: when the imported codec is
+    // caller-tag, the parent MUST supply `tag: u8` to the leaf's
+    // decode call (encode unchanged — leaf reads the active arm from
+    // its enum discriminant). Computed first so it composes with any
+    // parent_flags arg produced below.
+    let caller_tag_decode_arg: String = match imp {
+        Some(i) if i.codec_variant_is_caller_tag => caller_tag_arg_decode(field, i, parent, lang),
+        _ => String::new(),
+    };
+
     // What carrier does the embedded codec require?
-    let embedded_carrier = imports
-        .iter()
-        .find(|i| i.alias == embed_alias)
+    let embedded_carrier = imp
         .and_then(|i| i.codec_requires_parent_flags.as_ref())
         .map(|r| r.carrier.clone());
 
-    let Some(carrier) = embedded_carrier else {
-        // Embedded codec has no parent-flag dependency.
-        return EmbedThreadArgs {
+    let parent_flags_args: EmbedThreadArgs = match embedded_carrier {
+        None => EmbedThreadArgs {
             decode_arg: String::new(),
             encode_arg: String::new(),
-        };
+        },
+        Some(carrier) => {
+            // Case A: parent codec has a local `<sce:flags id="carrier">`.
+            let local_carrier = parent
+                .fields
+                .iter()
+                .find(|fld| fld.is_flags_carrier() && fld.id == carrier);
+            if local_carrier.is_some() {
+                let decode = match lang {
+                    Language::Rust | Language::Cpp | Language::Kotlin => {
+                        format!(", {}", carrier)
+                    }
+                    Language::Go => format!(", {}", filters::to_pascal_case(carrier.clone())),
+                    Language::C11 => format!(", out->{}", filters::to_snake_case(carrier.clone())),
+                    Language::Python => format!(", {}", filters::to_snake_case(carrier.clone())),
+                };
+                let encode = match lang {
+                    Language::Rust => format!(", self.{}", carrier),
+                    Language::Cpp => format!(", {}", carrier),
+                    Language::Kotlin => format!(", this.{}", carrier),
+                    Language::Go => format!(", s.{}", filters::to_pascal_case(carrier.clone())),
+                    Language::C11 => format!(", self->{}", filters::to_snake_case(carrier.clone())),
+                    Language::Python => format!(", self.{}", filters::to_snake_case(carrier.clone())),
+                };
+                EmbedThreadArgs {
+                    decode_arg: decode,
+                    encode_arg: encode,
+                }
+            } else if parent
+                .requires_parent_flags
+                .as_ref()
+                .map(|r| r.carrier == carrier)
+                .unwrap_or(false)
+            {
+                // Case B: parent codec declares its own
+                // `<sce:requires-parent-flags carrier="K">`.
+                let arg = match lang {
+                    Language::Rust | Language::Cpp | Language::C11 | Language::Python => {
+                        ", parent_flags"
+                    }
+                    Language::Kotlin | Language::Go => ", parentFlags",
+                };
+                EmbedThreadArgs {
+                    decode_arg: arg.to_string(),
+                    encode_arg: arg.to_string(),
+                }
+            } else {
+                // Validator should have rejected this codec.
+                EmbedThreadArgs {
+                    decode_arg: String::new(),
+                    encode_arg: String::new(),
+                }
+            }
+        }
     };
 
-    // Case A: parent codec has a local `<sce:flags id="carrier">`.
-    let local_carrier = parent
-        .fields
-        .iter()
-        .find(|fld| fld.is_flags_carrier() && fld.id == carrier);
-
-    if local_carrier.is_some() {
-        // Read the just-decoded local (decode side) / self field
-        // (encode side). Per-language naming mirrors variant arm
-        // threading at lines ~2007-2080.
-        let decode = match lang {
-            Language::Rust | Language::Cpp | Language::Kotlin => {
-                format!(", {}", carrier)
-            }
-            Language::Go => format!(", {}", filters::to_pascal_case(carrier.clone())),
-            Language::C11 => format!(", out->{}", filters::to_snake_case(carrier.clone())),
-            Language::Python => format!(", {}", filters::to_snake_case(carrier.clone())),
-        };
-        let encode = match lang {
-            Language::Rust => format!(", self.{}", carrier),
-            Language::Cpp => format!(", {}", carrier),
-            Language::Kotlin => format!(", this.{}", carrier),
-            Language::Go => format!(", s.{}", filters::to_pascal_case(carrier.clone())),
-            Language::C11 => format!(", self->{}", filters::to_snake_case(carrier.clone())),
-            Language::Python => format!(", self.{}", filters::to_snake_case(carrier.clone())),
-        };
-        return EmbedThreadArgs {
-            decode_arg: decode,
-            encode_arg: encode,
-        };
-    }
-
-    // Case B: parent codec declares its own
-    // `<sce:requires-parent-flags carrier="K">`. Pass the codec's
-    // `parent_flags` parameter through verbatim. Validator guarantees
-    // carrier names match.
-    if parent
-        .requires_parent_flags
-        .as_ref()
-        .map(|r| r.carrier == carrier)
-        .unwrap_or(false)
-    {
-        let arg = match lang {
-            Language::Rust | Language::Cpp | Language::C11 | Language::Python => ", parent_flags",
-            Language::Kotlin | Language::Go => ", parentFlags",
-        };
-        return EmbedThreadArgs {
-            decode_arg: arg.to_string(),
-            encode_arg: arg.to_string(),
-        };
-    }
-
-    // Validator should have rejected this codec. Returning empty
-    // produces invalid code that fails compilation — surfaces the
-    // bug visibly rather than silently emitting the wrong thread arg.
     EmbedThreadArgs {
-        decode_arg: String::new(),
-        encode_arg: String::new(),
+        decode_arg: format!("{}{}", parent_flags_args.decode_arg, caller_tag_decode_arg),
+        encode_arg: parent_flags_args.encode_arg,
     }
+}
+
+/// RFC B5-ν inversion β shape (caller-tag): compose the leading-comma
+/// `tag: u8` argument the parent codec must pass to a β-leaf's decode
+/// call. Two source paths:
+///
+///   - `<sce:variant-dispatch flag="X.Y"/>` declared on the parent's
+///     `<sce:import>`: extract `(carrier_value >> bit) & mask` from
+///     the parent's `X` field and pass the masked u8 value.
+///   - No `<sce:variant-dispatch>` declared (Q-D-3 (a) case): the leaf
+///     MUST carry a `<sce:arm default="true"/>` — emit the marked
+///     arm's `value=` literal as a constant u8.
+///
+/// Returns empty when neither dispatch source resolves; parent-local
+/// validator should have already raised. The compile failure that
+/// follows surfaces the missing arg visibly rather than emitting a
+/// silently-wrong default.
+fn caller_tag_arg_decode(
+    _field: &CodecField,
+    imp: &ImportContext,
+    parent: &CodecModel,
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    if let Some(dispatch) = imp.embed_dispatch.as_ref() {
+        if let Some((carrier_name, flag_name)) = dispatch.flag_source.split_once('.') {
+            let carrier_name = carrier_name.trim();
+            let flag_name = flag_name.trim();
+            if let Some(carrier_field) = parent.fields.iter().find(|f| f.id == carrier_name) {
+                if let Some(flag_def) = carrier_field.flags.iter().find(|f| f.name == flag_name) {
+                    let bit = flag_def.bit;
+                    let width = flag_def.width.max(1);
+                    let mask: u64 = (1u64 << width) - 1;
+                    return match lang {
+                        Language::Rust => {
+                            format!(", (({carrier_name} >> {bit}) & 0x{mask:X}) as u8")
+                        }
+                        Language::Cpp => format!(
+                            ", static_cast<std::uint8_t>(({carrier_name} >> {bit}) & 0x{mask:X})"
+                        ),
+                        Language::Kotlin => format!(
+                            ", ((({carrier_name}.toInt() shr {bit}) and 0x{mask:X}).toUByte())"
+                        ),
+                        Language::Go => {
+                            // Decode-site carrier is the just-bound local
+                            // (pascal-case for Go — mirrors variant arm
+                            // threading at parent_flags Case A).
+                            let pascal = filters::to_pascal_case(carrier_name.to_string());
+                            format!(", byte(({pascal} >> {bit}) & 0x{mask:X})")
+                        }
+                        Language::C11 => format!(
+                            ", (uint8_t)((out->{snake} >> {bit}) & 0x{mask:X})",
+                            snake = filters::to_snake_case(carrier_name.to_string())
+                        ),
+                        Language::Python => {
+                            let snake = filters::to_snake_case(carrier_name.to_string());
+                            format!(", (({snake} >> {bit}) & 0x{mask:X})")
+                        }
+                    };
+                }
+            }
+        }
+        return String::new();
+    }
+
+    if let Some(arms) = imp.codec_variant_arms_for_inversion.as_ref() {
+        if let Some((_, default_value, _)) = arms.iter().find(|(_, _, is_default)| *is_default) {
+            return match lang {
+                Language::Rust => format!(", 0x{default_value:X}u8"),
+                Language::Cpp => format!(", static_cast<std::uint8_t>(0x{default_value:X})"),
+                Language::Kotlin => format!(", 0x{default_value:X}.toUByte()"),
+                Language::Go => format!(", byte(0x{default_value:X})"),
+                Language::C11 => format!(", (uint8_t)0x{default_value:X}"),
+                Language::Python => format!(", 0x{default_value:X}"),
+            };
+        }
+    }
+    String::new()
 }
 
 /// RFC §5.B B5-μ — gated repeat decode (Wire RFC Phase B X1). Wraps
@@ -9387,9 +9600,9 @@ fn decode_multibyte_unified(
 /// discover which (carrier, flag) pairs need encode-time derivation
 /// from an embedded B5-ν variant arm.
 ///
-/// Walks `m.fields` for `BitSize::Embed` entries, joins to
-/// `ImportContext::codec_b5_nu_parent_tag_flag` to detect the parent-
-/// tag dispatch, and records one [`B5NuDerivation`] per derivation.
+/// Walks `m.fields` for `BitSize::Embed` entries; for each whose
+/// import declares `<sce:variant-dispatch>`, resolves the bit/width
+/// from the parent's own flag layout and records one [`B5NuDerivation`].
 /// Multiple embeds OR-ing onto the same parent carrier are grouped
 /// downstream by `b5_nu_derivation_block` and `b5_nu_carrier_or_suffix`
 /// so each carrier emits exactly one local + one OR injection site.
@@ -9410,36 +9623,45 @@ fn collect_b5_nu_derivations(
             Some(i) => i,
             None => continue,
         };
-        // Three populated metadata fields together signal B5-ν.
-        // Phase A's cross-doc validator (`validate_cross_codec_variant_parent_tag`)
-        // has already enforced Q-3 (no `value=` on the derived flag)
-        // and Q-6 (carrier declared before the embedded field), so
-        // this collector trusts the parent's flags-carrier exists and
-        // the order is sound.
-        let (bit, width) = match (
-            imp.codec_b5_nu_parent_tag_flag.as_ref(),
-            imp.codec_b5_nu_parent_tag_bit_width,
-        ) {
-            (Some(_), Some(bw)) => bw,
-            _ => continue,
-        };
-        if imp.codec_b5_nu_variant_arms.is_empty() {
-            continue;
+
+        // RFC B5-ν inversion: prefer the new parent-side dispatch
+        // declaration (`<sce:variant-dispatch>` on the parent's import).
+        // The new path resolves bit/width/arms entirely from the
+        // parent's own model + the imported codec's variant arms — no
+        // dependency on the leaf's deprecated `tag="parent.X"` form.
+        // `validate_cross_codec_variant_dispatch` has already
+        // enforced carrier existence, flag existence, bit-width fit,
+        // no-static-value conflict, and declaration order.
+        if let Some(dispatch) = imp.embed_dispatch.as_ref() {
+            let (carrier_name, flag_name) = match dispatch.flag_source.split_once('.') {
+                Some((c, fl)) => (c.trim().to_string(), fl.trim().to_string()),
+                None => continue,
+            };
+            let carrier_field = match m.fields.iter().find(|cf| cf.id == carrier_name) {
+                Some(cf) => cf,
+                None => continue,
+            };
+            let flag_def = match carrier_field.flags.iter().find(|fd| fd.name == flag_name) {
+                Some(fd) => fd,
+                None => continue,
+            };
+            let arms = match imp.codec_variant_arms_for_inversion.as_ref() {
+                Some(a) if !a.is_empty() => a.clone(),
+                _ => continue,
+            };
+            out.push(B5NuDerivation {
+                embed_field_id: f.id.clone(),
+                embed_alias: alias.clone(),
+                carrier_field_id: carrier_name,
+                bit: flag_def.bit,
+                width: flag_def.width.max(1),
+                present_if: f.present_if.clone(),
+                arms,
+            });
         }
-        // Carrier name lives in the embedded codec's rpf declaration.
-        let carrier = match imp.codec_requires_parent_flags.as_ref() {
-            Some(rpf) => rpf.carrier.clone(),
-            None => continue,
-        };
-        out.push(B5NuDerivation {
-            embed_field_id: f.id.clone(),
-            embed_alias: alias.clone(),
-            carrier_field_id: carrier,
-            bit,
-            width,
-            present_if: f.present_if.clone(),
-            arms: imp.codec_b5_nu_variant_arms.clone(),
-        });
+        // No `embed_dispatch` → this embed isn't B5-ν dispatched at
+        // the parent; either non-variant import or β-shape leaf with
+        // no parent dispatch (Q-D-3 (a) — caller picks the arm).
     }
     out
 }
@@ -9595,7 +9817,7 @@ fn b5_nu_derivation_local_for_carrier(
 
 /// Look up the dispatcher codec's emitted type name (the PascalCase
 /// stem) for a B5-ν embed alias. Panics on miss because the cross-doc
-/// validator (`validate_cross_codec_variant_parent_tag`) and the
+/// validator (`validate_cross_codec_variant_dispatch`) and the
 /// `collect_b5_nu_derivations` precondition together guarantee every
 /// derivation's alias resolves in `imports`.
 fn b5_nu_embed_pascal<'a>(d: &B5NuDerivation, imports: &'a [ImportContext]) -> &'a str {
@@ -19173,6 +19395,7 @@ mod tests {
             kind: ForgeKind::Transform,
             alias: "t".to_string(),
             line: None,
+            embed_dispatch: None,
         }];
         let opts = crate::ForgeCompileOptions {
             go_module_prefix: None,
@@ -19189,6 +19412,7 @@ mod tests {
             kind: ForgeKind::Transform,
             alias: "t".to_string(),
             line: None,
+            embed_dispatch: None,
         }];
         let opts = crate::ForgeCompileOptions {
             go_module_prefix: Some("".to_string()),
@@ -19205,6 +19429,7 @@ mod tests {
             kind: ForgeKind::Transform,
             alias: "t".to_string(),
             line: None,
+            embed_dispatch: None,
         }];
         let opts = crate::ForgeCompileOptions {
             go_module_prefix: Some("github.com/acme /gen".to_string()),
@@ -19221,6 +19446,7 @@ mod tests {
             kind: ForgeKind::Transform,
             alias: "t".to_string(),
             line: None,
+            embed_dispatch: None,
         }];
         let opts = crate::ForgeCompileOptions {
             go_module_prefix: Some("github.com/acme/gen".to_string()),
@@ -19247,6 +19473,7 @@ mod tests {
             kind: ForgeKind::Transform,
             alias: "t".to_string(),
             line: None,
+            embed_dispatch: None,
         }];
         let opts = crate::ForgeCompileOptions {
             go_module_prefix: None,
@@ -19264,6 +19491,7 @@ mod tests {
             kind: ForgeKind::Transform,
             alias: "temp".to_string(),
             line: None,
+            embed_dispatch: None,
         }
     }
 
@@ -19273,6 +19501,7 @@ mod tests {
             kind: ForgeKind::Codec,
             alias: "frame".to_string(),
             line: None,
+            embed_dispatch: None,
         }
     }
 
@@ -19434,11 +19663,12 @@ mod tests {
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
-                codec_b5_nu_parent_tag_flag: None,
-                codec_b5_nu_parent_tag_bit_width: None,
-                codec_b5_nu_variant_arms: Vec::new(),
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
+                embed_dispatch: None,
+                codec_variant_arms_for_inversion: None,
+                codec_variant_has_default_arm: None,
+                codec_variant_is_caller_tag: false,
             },
             ImportContext {
                 alias: "c".to_string(),
@@ -19459,11 +19689,12 @@ mod tests {
                 codec_requires_parent_flags: None,
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
-                codec_b5_nu_parent_tag_flag: None,
-                codec_b5_nu_parent_tag_bit_width: None,
-                codec_b5_nu_variant_arms: Vec::new(),
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
+                embed_dispatch: None,
+                codec_variant_arms_for_inversion: None,
+                codec_variant_has_default_arm: None,
+                codec_variant_is_caller_tag: false,
             },
         ];
         let (has, _all, _stateful) = build_template_imports(&imports);

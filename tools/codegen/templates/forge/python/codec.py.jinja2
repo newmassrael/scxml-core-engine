@@ -85,7 +85,7 @@ class {{ struct_name }}:
 {% endif %}
 
     @classmethod
-    def decode(cls, cursor: SceCursor{{ parent_flags_param_decl }}) -> Optional[{{ struct_name }}]:
+    def decode(cls, cursor: SceCursor{{ parent_flags_param_decl }}{{ dispatch_tag_param_decl }}) -> Optional[{{ struct_name }}]:
         """Decode the next frame from ``cursor``. Returns ``None`` when
         the cursor's tail is shorter than the declared minimum frame
         (RFC §5.B L494-519); on success the cursor advances past the

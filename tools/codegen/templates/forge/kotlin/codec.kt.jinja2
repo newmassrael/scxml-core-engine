@@ -239,10 +239,10 @@ data class {{ struct_name }}(
         /// advances past the consumed bytes; returns `null` when the
         /// cursor's tail is shorter than the declared minimum frame
         /// (RFC §5.B L494-519).
-{% if has_parent_flags %}
+{% if has_parent_flags or has_caller_tag %}
         @Suppress("UNUSED_PARAMETER")
 {% endif %}
-        fun decode(cursor: SceCursor{{ parent_flags_param_decl }}): {{ struct_name }}? {
+        fun decode(cursor: SceCursor{{ parent_flags_param_decl }}{{ dispatch_tag_param_decl }}): {{ struct_name }}? {
 {% if has_no_fields %}
             // RFC §5.B B5-α empty body — zero-byte payload, no cursor work.
             return {{ struct_name }}()

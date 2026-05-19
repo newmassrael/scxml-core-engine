@@ -81,7 +81,7 @@ struct {{ struct_name }} {
     /// bytes (RFC §5.B L494-519). Returns `std::nullopt` on the
     /// `NeedMoreBytes` boundary; later phases attach a typed error via
     /// `cursor.last_error()`.
-    static std::optional<{{ struct_name }}> decode(::SCE::Forge::SceCursor& cursor{{ parent_flags_param_decl }}) {
+    static std::optional<{{ struct_name }}> decode(::SCE::Forge::SceCursor& cursor{{ parent_flags_param_decl }}{{ dispatch_tag_param_decl }}) {
 {% if has_parent_flags %}
         // RFC §5.B B5-γ: `parent_flags` is the parent codec's flags
         // carrier value, threaded by the variant arm dispatcher.
@@ -90,6 +90,10 @@ struct {{ struct_name }} {
         // gated field — keeps the param accessible to per-field
         // gates without UB on unused-parameter warnings.
         (void)parent_flags;
+{% endif %}
+{% if has_caller_tag %}
+        // RFC B5-ν inversion β shape: `tag` is the dispatch value
+        // extracted by the parent codec from its flag carrier.
 {% endif %}
 {% if has_no_fields %}
         // RFC §5.B B5-α empty body — zero-byte payload, no cursor work.

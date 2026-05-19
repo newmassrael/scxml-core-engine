@@ -303,12 +303,34 @@
        Element Declarations
        ═══════════════════════════════════════════════════════════════ -->
 
-  <!-- Section 5: Cross-file kind import -->
+  <!-- Section 5: Cross-file kind import. The optional
+       <sce:variant-dispatch> child carries the RFC B5-ν inversion
+       declaration: when the imported codec is a `<sce:variant>` codec,
+       the parent uses this child to designate which of its own flags
+       drives the variant's arm dispatch (dotted `<carrier>.<flag>`).
+       Parent-local cross-doc validator confirms the named carrier and
+       flag exist in the parent's own model. -->
   <xs:element name="import">
     <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="sce:variant-dispatch" minOccurs="0" maxOccurs="1"/>
+      </xs:sequence>
       <xs:attribute name="src" type="xs:string" use="required"/>
       <xs:attribute name="kind" type="sce:kindType" use="required"/>
       <xs:attribute name="as" type="xs:NCName" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- RFC B5-ν inversion: parent-side variant-dispatch declaration.
+       Dotted `flag="<carrier>.<flag>"` references one of the parent
+       codec's own carriers and one of its declared flags. Cross-doc
+       validator (`validate_cross_codec_variant_dispatch`) enforces
+       carrier/flag existence, flag-width fit against the imported
+       variant's arm count, no value= conflict on the dispatched flag,
+       and carrier-before-embed declaration order. -->
+  <xs:element name="variant-dispatch">
+    <xs:complexType>
+      <xs:attribute name="flag" type="xs:string" use="required"/>
     </xs:complexType>
   </xs:element>
 

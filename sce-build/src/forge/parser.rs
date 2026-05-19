@@ -1640,19 +1640,18 @@ fn parse_codec_variant(
     // convention for SCE-element-internal attributes; SCE-namespaced
     // attributes are reserved for attributes declared on non-SCE host
     // elements like <data sce:byte=...>).
-    let raw_tag = variant_node
-        .attribute("tag")
-        .ok_or_else(|| {
-            located(
-                &variant_node,
-                label.diagnostic_label,
-                ValidationError::MissingAttribute {
-                    element: "<sce:variant>".into(),
-                    attr: "tag".into(),
-                },
-            )
-        })?
-        .to_string();
+    // RFC B5-ν inversion β shape (Q-D-8): `<sce:variant>` without a
+    // `tag=` attribute is the caller-tag form — the leaf has no own
+    // carrier field; the dispatch value is supplied by the caller via
+    // the `tag: u8` decode parameter. Codegen emits leaf decode as
+    // `decode(cursor, tag: u8)` and the parent's encode/decode paths
+    // own the carrier byte directly.
+    //
+    // Legacy form: `tag` attribute is required and carries either a
+    // bare field id (B1-β whole-field), a `<carrier>.<flag>` dotted
+    // path (B5-β multi-bit-flag), or `parent.<flag>` (B5-ν leaf-side,
+    // deprecated by inversion — kept alive through #12, removed in #4).
+    let raw_tag: Option<String> = variant_node.attribute("tag").map(|s| s.to_string());
 
     // RFC §5.B B5-β multi-bit-flag dispatch: `tag="<carrier>.<flag>"`
     // names a bit-range within a flags-bearing carrier; bare
@@ -1666,31 +1665,39 @@ fn parse_codec_variant(
     // downstream codegen reads from the `parent_flags` parameter
     // threaded by the parent codec's variant arm dispatcher instead
     // of from a self-owned field.
-    let (tag_field, tag_flag): (String, Option<String>) = match raw_tag.split_once('.') {
-        Some((carrier, flag)) => {
-            let carrier = carrier.trim();
-            let flag = flag.trim();
-            if carrier.is_empty() || flag.is_empty() {
-                return Err(located(
-                    &variant_node,
-                    label.diagnostic_label,
-                    ValidationError::InvalidAttribute {
-                        element: "<sce:variant>".into(),
-                        attr: "tag".into(),
-                        value: raw_tag.clone(),
-                        expected: "either a bare field id (e.g. 'msg_id') for whole-field \
-                                   dispatch, a '<carrier>.<flag>' dotted path (e.g. \
-                                   'header.mid') for multi-bit-flag dispatch, or \
-                                   'parent.<flag>' (B5-ν) for dispatch on a flag in the \
-                                   codec's declared <sce:requires-parent-flags> carrier \
-                                   — both halves must be non-empty"
-                            .into(),
-                    },
-                ));
+    //
+    // β shape (`raw_tag.is_none()`): tag_field stays `None` all the
+    // way through. Both `tag_flag` and `tag_scope` default to their
+    // None/Local sentinels so downstream codegen takes the caller-tag
+    // path purely off `tag_field.is_none()`.
+    let (tag_field, tag_flag): (Option<String>, Option<String>) = match raw_tag.as_deref() {
+        None => (None, None),
+        Some(raw) => match raw.split_once('.') {
+            Some((carrier, flag)) => {
+                let carrier = carrier.trim();
+                let flag = flag.trim();
+                if carrier.is_empty() || flag.is_empty() {
+                    return Err(located(
+                        &variant_node,
+                        label.diagnostic_label,
+                        ValidationError::InvalidAttribute {
+                            element: "<sce:variant>".into(),
+                            attr: "tag".into(),
+                            value: raw.to_string(),
+                            expected: "either a bare field id (e.g. 'msg_id') for whole-field \
+                                       dispatch, a '<carrier>.<flag>' dotted path (e.g. \
+                                       'header.mid') for multi-bit-flag dispatch, or \
+                                       'parent.<flag>' (B5-ν) for dispatch on a flag in the \
+                                       codec's declared <sce:requires-parent-flags> carrier \
+                                       — both halves must be non-empty"
+                                .into(),
+                        },
+                    ));
+                }
+                (Some(carrier.to_string()), Some(flag.to_string()))
             }
-            (carrier.to_string(), Some(flag.to_string()))
-        }
-        None => (raw_tag.clone(), None),
+            None => (Some(raw.to_string()), None),
+        },
     };
 
     // B5-ν: detect parent-scope tag (`tag="parent.<flag>"`). The
@@ -1703,63 +1710,11 @@ fn parse_codec_variant(
     // diagnostics (CodecVariantParentTagWithoutRequiresParentFlags /
     // CodecVariantParentTagFlagNotDeclared) so author repair is
     // attribute-text-level.
-    let is_parent_scope = tag_field == "parent" && tag_flag.is_some();
-    let (tag_field, tag_flag, tag_scope): (String, Option<String>, TagScope) = if is_parent_scope {
-        let flag_name = tag_flag
-            .as_ref()
-            .expect("is_parent_scope implies tag_flag is Some")
-            .clone();
-        let rpf = match requires_parent_flags {
-            Some(r) => r,
-            None => {
-                return Err(located(
-                    &variant_node,
-                    label.diagnostic_label,
-                    ValidationError::CodecVariantParentTagWithoutRequiresParentFlags {
-                        codec: label.identifier.to_string(),
-                        tag: raw_tag.clone(),
-                    },
-                ));
-            }
-        };
-        if !rpf.flags.iter().any(|f| f.name == flag_name) {
-            let available: Vec<String> = rpf.flags.iter().map(|f| f.name.clone()).collect();
-            return Err(located(
-                &variant_node,
-                label.diagnostic_label,
-                ValidationError::CodecVariantParentTagFlagNotDeclared {
-                    codec: label.identifier.to_string(),
-                    flag: flag_name.clone(),
-                    carrier: rpf.carrier.clone(),
-                    declared_flags: available,
-                },
-            ));
-        }
-        // B5-ν + peek-byte are mutually exclusive — peek-byte mode
-        // dispatches from the cursor's next byte (a transport-side
-        // mechanism), while parent-tag mode dispatches from the
-        // parent codec's flag carrier (already-decoded state).
-        // Mixing both forms is structurally meaningless.
-        if peek_byte.is_some() {
-            return Err(located(
-                &variant_node,
-                label.diagnostic_label,
-                ValidationError::InvalidAttribute {
-                    element: "<sce:variant>".into(),
-                    attr: "tag".into(),
-                    value: raw_tag.clone(),
-                    expected: "B5-ν `parent.<flag>` form is mutually exclusive with \
-                               <sce:peek-byte> mode — remove the <sce:peek-byte> child \
-                               (parent-tag dispatches from the parent codec's flags \
-                               carrier, no peek needed)"
-                        .into(),
-                },
-            ));
-        }
-        (rpf.carrier.clone(), Some(flag_name), TagScope::Parent)
-    } else {
-        (tag_field, tag_flag, TagScope::Local)
-    };
+    // RFC B5-ν inversion β shape: legacy `tag="parent.<flag>"` form
+    // removed. Dispatch on a parent flag is now declared at the
+    // parent's `<sce:import>` via `<sce:variant-dispatch>`; the leaf
+    // omits `tag=` entirely.
+    let _ = requires_parent_flags; // RPF stays alive for B5-γ — not consumed here.
 
     // Y3 atomic 2b-ii peek-byte: peek-byte mode dispatches the tag from
     // the cursor's NEXT byte (peek-without-advance) rather than from
@@ -1773,23 +1728,40 @@ fn parse_codec_variant(
     //   - Own-field mode (B1-β / B5-β): existing logic — resolve
     //     tag_field against codec's own fields, validate unsigned-int,
     //     validate flag against carrier's <sce:flags> children.
-    let (tag_type, tag_flag_width): (SceType, Option<u32>) = if tag_scope == TagScope::Parent {
-        // B5-ν: parent-scope tag — carrier is the rpf's named flag
-        // carrier (v1-locked to uint8 by parse_requires_parent_flags),
-        // width comes from the rpf flag declaration. All validations
-        // already ran above when computing `tag_scope`.
-        let rpf = requires_parent_flags
-            .expect("parent scope implies requires_parent_flags is Some");
-        let flag_name = tag_flag
-            .as_ref()
-            .expect("parent scope implies tag_flag is Some");
-        let rpf_flag = rpf
-            .flags
-            .iter()
-            .find(|f| f.name == *flag_name)
-            .expect("parent scope validator confirmed flag exists in rpf");
-        (SceType::Uint8, Some(rpf_flag.width.max(1)))
+    // RFC B5-ν inversion β shape: caller-tag — no own field, no peek,
+    // no parent-flag declaration. Dispatch width is unknown at the
+    // leaf (the parent's import-site `<sce:variant-dispatch>` will
+    // pin it). Tag type fixes to Uint8 by β v1 lock-in (parent flag
+    // carrier is already uint8 per `<sce:requires-parent-flags>` v1
+    // lock); arm-domain exhaustiveness shifts to the parent-local
+    // validator (`validate_cross_codec_variant_dispatch`) which sees
+    // both the leaf arms and the parent's flag width.
+    if tag_field.is_none() {
+        if peek_byte.is_some() {
+            return Err(located(
+                &variant_node,
+                label.diagnostic_label,
+                ValidationError::InvalidAttribute {
+                    element: "<sce:variant>".into(),
+                    attr: "tag".into(),
+                    value: "<absent>".into(),
+                    expected: "β caller-tag form (no `tag=` attribute) is mutually \
+                               exclusive with <sce:peek-byte> mode — either drop the \
+                               peek-byte child or add a `tag=\"<peek_id>.<flag>\"` \
+                               attribute"
+                        .into(),
+                },
+            ));
+        }
+        // Continue past tag_type/tag_flag_width — values are unused
+        // for β shape (variant_obj's β branch reads neither).
+    }
+    let (tag_type, tag_flag_width): (SceType, Option<u32>) = if tag_field.is_none() {
+        (SceType::Uint8, None)
     } else if let Some(peek) = &peek_byte {
+        let tag_field_name = tag_field
+            .as_ref()
+            .expect("peek branch reachable only via tag attribute present");
         if tag_flag.is_none() {
             return Err(located(
                 &variant_node,
@@ -1797,7 +1769,7 @@ fn parse_codec_variant(
                 ValidationError::InvalidAttribute {
                     element: "<sce:variant>".into(),
                     attr: "tag".into(),
-                    value: raw_tag.clone(),
+                    value: raw_tag.clone().unwrap_or_default(),
                     expected: format!(
                         "peek-byte mode requires a dotted-path tag '<peek_id>.<flag>' — \
                          the carrier half names the <sce:peek-byte id='...'> slot, the \
@@ -1808,18 +1780,18 @@ fn parse_codec_variant(
                 },
             ));
         }
-        if tag_field != peek.id {
+        if tag_field_name != &peek.id {
             return Err(located(
                 &variant_node,
                 label.diagnostic_label,
                 ValidationError::InvalidAttribute {
                     element: "<sce:variant>".into(),
                     attr: "tag".into(),
-                    value: raw_tag.clone(),
+                    value: raw_tag.clone().unwrap_or_default(),
                     expected: format!(
                         "peek-byte mode tag carrier must equal the <sce:peek-byte id='{}'> \
                          slot's id; got '{}'",
-                        peek.id, tag_field
+                        peek.id, tag_field_name
                     ),
                 },
             ));
@@ -1835,7 +1807,7 @@ fn parse_codec_variant(
                     ValidationError::InvalidAttribute {
                         element: "<sce:variant>".into(),
                         attr: "tag".into(),
-                        value: raw_tag.clone(),
+                        value: raw_tag.clone().unwrap_or_default(),
                         expected: format!(
                             "flag '{flag_name}' is not declared on <sce:peek-byte id='{}'> — \
                              available flags: {}",
@@ -1857,7 +1829,10 @@ fn parse_codec_variant(
         // MUST be a `<sce:flags>`-bearing field (parser invariant: flags
         // carriers are always unsigned-int, so the unsigned check still
         // holds), and `flag` MUST name one of its `<sce:flag>` children.
-        let tag_field_ref = match fields.iter().find(|f| f.id == tag_field) {
+        let tag_field_name = tag_field
+            .as_ref()
+            .expect("Local own-field branch implies tag_field is Some");
+        let tag_field_ref = match fields.iter().find(|f| f.id == *tag_field_name) {
             Some(f) if f.sce_type.is_unsigned() => f,
             Some(f) => {
                 return Err(located(
@@ -1866,9 +1841,9 @@ fn parse_codec_variant(
                     ValidationError::InvalidAttribute {
                         element: "<sce:variant>".into(),
                         attr: "sce:tag".into(),
-                        value: tag_field.clone(),
+                        value: tag_field_name.clone(),
                         expected: format!(
-                            "tag field must be unsigned-int (uint8/uint16/uint32/uint64); '{tag_field}' is {:?}",
+                            "tag field must be unsigned-int (uint8/uint16/uint32/uint64); '{tag_field_name}' is {:?}",
                             f.sce_type
                         ),
                     },
@@ -1881,7 +1856,7 @@ fn parse_codec_variant(
                     label.diagnostic_label,
                     ValidationError::InvalidReference {
                         kind: ForgeKind::Codec,
-                        name: tag_field.clone(),
+                        name: tag_field_name.clone(),
                         what: "field".into(),
                         available: available.join(", "),
                     },
@@ -1905,12 +1880,12 @@ fn parse_codec_variant(
                         ValidationError::InvalidAttribute {
                             element: "<sce:variant>".into(),
                             attr: "tag".into(),
-                            value: format!("{tag_field}.{flag_name}"),
+                            value: format!("{tag_field_name}.{flag_name}"),
                             expected: format!(
-                                "carrier '{tag_field}' must be authored as <sce:flags> with \
-                                 <sce:flag> children for the dotted-path form; '{tag_field}' \
+                                "carrier '{tag_field_name}' must be authored as <sce:flags> with \
+                                 <sce:flag> children for the dotted-path form; '{tag_field_name}' \
                                  is a plain field — either author it as <sce:flags> or use \
-                                 bare tag=\"{tag_field}\" for whole-field dispatch"
+                                 bare tag=\"{tag_field_name}\" for whole-field dispatch"
                             ),
                         },
                     ));
@@ -1926,10 +1901,10 @@ fn parse_codec_variant(
                             ValidationError::InvalidAttribute {
                                 element: "<sce:variant>".into(),
                                 attr: "tag".into(),
-                                value: format!("{tag_field}.{flag_name}"),
+                                value: format!("{tag_field_name}.{flag_name}"),
                                 expected: format!(
                                     "flag '{flag_name}' is not declared on carrier \
-                                     '{tag_field}' — available flags: {}",
+                                     '{tag_field_name}' — available flags: {}",
                                     available.join(", ")
                                 ),
                             },
@@ -2040,28 +2015,12 @@ fn parse_codec_variant(
                 });
             }
             "default" => {
-                // RFC §5.B B5-ν default-arm rejection: parent-scope
-                // dispatch (`tag="parent.<flag>"`) reads from a
-                // uint8 carrier with bounded flag width (≤ 8 per
-                // `<sce:requires-parent-flags>` lock), so the tag
-                // domain is `1 << width` (≤ 256) and always
-                // practically enumerable. The catch-all is
-                // structurally unreachable; admitting it would let
-                // codegen emit dead encode-side fallback branches
-                // and shadow an enumerated arm at the std::variant
-                // last-alternative position. Distinct from
-                // `<sce:arm default="true"/>` (Default-trait marker).
-                if tag_scope == TagScope::Parent {
-                    return Err(located(
-                        &child,
-                        label.diagnostic_label,
-                        ValidationError::CodecVariantParentScopeDefaultArmForbidden {
-                            codec: label.identifier.to_string(),
-                            flag: tag_flag.clone().unwrap_or_default(),
-                            carrier: tag_field.clone(),
-                        },
-                    ));
-                }
+                // RFC B5-ν inversion: `<sce:default>` catch-all on the
+                // leaf's variant is now allowed unconditionally — under
+                // β shape, parents without `<sce:variant-dispatch>` use
+                // the default arm at construction time (Q-D-3 (a)).
+                // Legacy parent-scope rejection removed with the rest
+                // of the `tag="parent.X"` path.
                 if default_arm.is_some() {
                     return Err(located(
                         &child,
@@ -2139,7 +2098,14 @@ fn parse_codec_variant(
     // bit-range (e.g. width=5 ⇒ 32 values), which is always
     // practically enumerable since `<sce:flag>` width itself is bounded
     // by carrier_int_bit_width ≤ 64.
-    if default_arm.is_none() {
+    //
+    // RFC B5-ν inversion β shape: the leaf doesn't know the parent's
+    // flag width — domain is unknown at parse time. Exhaustiveness
+    // check moves to the parent-local validator
+    // (`validate_cross_codec_variant_dispatch`) which sees both arm
+    // count and the parent's `<sce:variant-dispatch>` flag width.
+    // Skip the local check for β.
+    if default_arm.is_none() && tag_field.is_some() {
         let domain_size: Option<u64> = match tag_flag_width {
             Some(width) => Some(1u64 << width),
             None => match tag_type {
@@ -2160,9 +2126,12 @@ fn parse_codec_variant(
             // exhaustiveness expectation when the actual domain is
             // 1<<width). The diagnostic's `tag_type` field stays the
             // carrier type for back-compat with the unreachable test.
+            let tag_field_name = tag_field
+                .as_ref()
+                .expect("tag_field.is_some() gates this branch");
             let display_tag = match &tag_flag {
-                Some(flag_name) => format!("{tag_field}.{flag_name}"),
-                None => tag_field.clone(),
+                Some(flag_name) => format!("{tag_field_name}.{flag_name}"),
+                None => tag_field_name.clone(),
             };
             return Err(located(
                 &variant_node,
@@ -2181,7 +2150,6 @@ fn parse_codec_variant(
     Ok(Some(CodecVariant {
         tag_field,
         tag_flag,
-        tag_scope,
         arms,
         default_arm,
         peek_byte,
@@ -7563,11 +7531,84 @@ fn parse_imports(
         }
 
         let line = Some(child.document().text_pos_at(child.range().start).row);
+
+        // RFC §5.B variant-dispatch (B5-ν inversion) — parse the
+        // optional `<sce:variant-dispatch flag="X.Y"/>` child element.
+        // Cross-doc validator (`validate_cross_codec_variant_dispatch`)
+        // resolves the dotted reference against the importing codec's
+        // own field+flag space. Parse-time only checks shape: the
+        // attribute is present, non-empty, and contains exactly one
+        // dot separating carrier and flag identifiers.
+        let mut embed_dispatch: Option<crate::forge::model::EmbedDispatch> = None;
+        for grandchild in child.children().filter(|n| n.is_element()) {
+            if grandchild.tag_name().name() != "variant-dispatch"
+                || grandchild.tag_name().namespace() != Some(SCE_NAMESPACE)
+            {
+                continue;
+            }
+            if embed_dispatch.is_some() {
+                return Err(located(
+                    &grandchild,
+                    doc_name,
+                    ValidationError::InvalidAttribute {
+                        element: "<sce:variant-dispatch>".into(),
+                        attr: "(element)".into(),
+                        value: String::new(),
+                        expected:
+                            "at most one <sce:variant-dispatch> per <sce:import> — multiple \
+                             dispatch sources for a single imported variant codec are \
+                             structurally meaningless"
+                                .into(),
+                    },
+                ));
+            }
+            let flag_source = grandchild
+                .attribute("flag")
+                .ok_or_else(|| {
+                    located(
+                        &grandchild,
+                        doc_name,
+                        ValidationError::MissingAttribute {
+                            element: "<sce:variant-dispatch>".into(),
+                            attr: "flag".into(),
+                        },
+                    )
+                })?
+                .to_string();
+            // Shape validation: dotted `<carrier>.<flag>` form. Both
+            // halves must be non-empty identifiers. Cross-doc validator
+            // resolves the actual existence of carrier/flag against the
+            // parent's `fields` list.
+            let parts: Vec<&str> = flag_source.splitn(2, '.').collect();
+            if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
+                return Err(located(
+                    &grandchild,
+                    doc_name,
+                    ValidationError::InvalidAttribute {
+                        element: "<sce:variant-dispatch>".into(),
+                        attr: "flag".into(),
+                        value: flag_source.clone(),
+                        expected:
+                            "dotted `<carrier>.<flag>` form (e.g. \"header.M\") naming a \
+                             carrier field and one of its declared flags in this codec"
+                                .into(),
+                    },
+                ));
+            }
+            let dispatch_line =
+                Some(grandchild.document().text_pos_at(grandchild.range().start).row);
+            embed_dispatch = Some(crate::forge::model::EmbedDispatch {
+                flag_source,
+                line: dispatch_line,
+            });
+        }
+
         imports.push(ForgeImport {
             src,
             kind,
             alias,
             line,
+            embed_dispatch,
         });
     }
 

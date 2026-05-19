@@ -1402,28 +1402,6 @@ pub struct PeekByteSpec {
 /// `<sce:requires-parent-flags>` carrier (`Parent` — B5-ν).
 ///
 /// `Local` is the back-compat default and skips serialization so
-/// pre-B5-ν goldens stay byte-identical. `Parent` requires the codec
-/// to declare a `<sce:requires-parent-flags carrier="X">` block whose
-/// flag list includes the named tag flag; encode-side derivation
-/// pre-computes the parent flag carrier's bit from the active arm
-/// tag before the parent emits the carrier byte.
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum TagScope {
-    Local,
-    Parent,
-}
-
-impl Default for TagScope {
-    fn default() -> Self {
-        TagScope::Local
-    }
-}
-
-fn is_local_tag_scope(scope: &TagScope) -> bool {
-    matches!(scope, TagScope::Local)
-}
-
 /// Discriminated-union suffix on a codec — RFC §5.B Codec DSL.
 ///
 /// Decode reads the named tag field (or named flag bit-range within it,
@@ -1436,17 +1414,18 @@ fn is_local_tag_scope(scope: &TagScope) -> bool {
 pub struct CodecVariant {
     /// `id` of the field whose decoded value (or named bit-range,
     /// see `tag_flag`) selects an arm. Must reference an unsigned-int
-    /// field — enforced at parse time.
+    /// field — enforced at parse time. `tag_field` resolves to a
+    /// field in the codec's own `fields` (B1-β / B5-β whole-field
+    /// or multi-bit-flag dispatch), or equals `peek_byte.id` when
+    /// peek-byte mode is active.
     ///
-    /// Resolution scope depends on `tag_scope`:
-    /// - `Local` (default): `tag_field` is a field within this codec's
-    ///   own `fields` (B1-β / B5-β), or equals `peek_byte.id` when
-    ///   peek-byte mode is active.
-    /// - `Parent` (B5-ν): `tag_field` equals the
-    ///   `<sce:requires-parent-flags carrier="X">` carrier name; the
-    ///   dispatch value comes from the `parent_flags` parameter
-    ///   threaded by the parent codec's variant arm dispatcher.
-    pub tag_field: String,
+    /// `None` ⇒ RFC B5-ν inversion β shape (caller-tag): `<sce:variant>`
+    /// element with no `tag=` attribute. The leaf has no own carrier
+    /// field; the dispatch value is supplied by the caller as the
+    /// `tag: u8` decode parameter. Encode signature unchanged
+    /// (active arm comes from the language-level enum discriminant).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tag_field: Option<String>,
     /// RFC §5.B B5-β multi-bit-flag dispatch: when `Some(name)`, the
     /// `tag_field` MUST be a `<sce:flags>`-bearing carrier and `name`
     /// names one of its `<sce:flag>` bit-ranges. The dispatch value is
@@ -1455,14 +1434,6 @@ pub struct CodecVariant {
     /// reads the field's whole value (B1-β whole-field form).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tag_flag: Option<String>,
-    /// RFC §5.B B5-ν — variant tag scope (Local vs Parent). When
-    /// `Parent`, the codec MUST declare a matching
-    /// `<sce:requires-parent-flags>` block; encode-side derives the
-    /// parent carrier bit from the active arm. Skipped from
-    /// serialization when Local so back-compat goldens stay
-    /// byte-identical.
-    #[serde(default, skip_serializing_if = "is_local_tag_scope")]
-    pub tag_scope: TagScope,
     /// Enumerated arms in document order.
     pub arms: Vec<VariantArm>,
     /// Catch-all arm for tag values outside the enumerated set.
@@ -2007,6 +1978,41 @@ pub struct ForgeImport {
     /// diagnostics at the exact element rather than at the document
     /// root. Skipped from serialization so existing manifest JSON
     /// output stays byte-stable.
+    #[serde(skip)]
+    pub line: Option<u32>,
+    /// RFC §5.B variant-dispatch (B5-ν inversion) — when the importing
+    /// parent codec declares `<sce:variant-dispatch flag="X.Y"/>` as a
+    /// child of this `<sce:import>`, the imported variant codec's arm
+    /// choice drives a bit value into the parent's named flag carrier
+    /// at encode time. `None` for imports with no dispatch declaration
+    /// (either the imported codec has no variant, or the parent author
+    /// selects the arm explicitly without wire-level dispatch — see
+    /// Q-D-3 in the inversion RFC). Cross-doc validator confirms the
+    /// named carrier + flag exist in the parent's own model.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub embed_dispatch: Option<EmbedDispatch>,
+}
+
+/// RFC §5.B variant-dispatch (B5-ν inversion) — parent-side declaration
+/// of which of its own flags drives an imported variant codec's arm
+/// dispatch. Attached to a `ForgeImport` via the `<sce:variant-dispatch>`
+/// child of `<sce:import>`.
+///
+/// The dotted `flag_source` value names the parent's own carrier and
+/// flag (e.g. `"header.M"` means "the M flag bit of the `header` field
+/// in this codec"). Cross-doc validator confirms the named carrier
+/// field exists, the named flag exists on it, the flag has no
+/// conflicting `value=` constant, the flag's width fits the imported
+/// codec's arm count, and the carrier appears before the embed field
+/// in declaration order.
+#[derive(Debug, Clone, Serialize)]
+pub struct EmbedDispatch {
+    /// Dotted `<carrier>.<flag>` reference into the parent codec's
+    /// own flag space. Parser splits on the dot; cross-doc validator
+    /// resolves both halves against the parent's `fields` list.
+    pub flag_source: String,
+    /// 1-based source line of the `<sce:variant-dispatch>` element
+    /// for diagnostic anchoring.
     #[serde(skip)]
     pub line: Option<u32>,
 }
@@ -3289,6 +3295,7 @@ mod tests {
             kind: ForgeKind::Codec,
             alias: "a".into(),
             line: Some(42),
+            embed_dispatch: None,
         };
         let json = serde_json::to_value(&imp).expect("serialize ForgeImport");
         assert!(

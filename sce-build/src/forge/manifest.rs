@@ -241,6 +241,7 @@ mod tests {
                     kind: ForgeKind::Codec,
                     alias: "frame".to_string(),
                     line: None,
+                    embed_dispatch: None,
                 }],
             },
         ];
@@ -261,6 +262,7 @@ mod tests {
                     kind: ForgeKind::Transform,
                     alias: "b".to_string(),
                     line: None,
+                    embed_dispatch: None,
                 }],
             },
             ManifestEntry {
@@ -273,6 +275,7 @@ mod tests {
                     kind: ForgeKind::Codec,
                     alias: "a".to_string(),
                     line: None,
+                    embed_dispatch: None,
                 }],
             },
         ];

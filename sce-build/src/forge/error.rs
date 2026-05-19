@@ -652,134 +652,119 @@ pub enum ValidationError {
         declared_arms: Vec<u64>,
     },
 
-    /// RFC §5.B B5-ν: a codec's `<sce:variant tag="parent.<flag>">`
-    /// dispatches on a flag declared by its `<sce:requires-parent-flags>`
-    /// block, but the codec carries no such block. Without the rpf
-    /// declaration there is no parent flag carrier to thread the
-    /// dispatch byte through. Author resolves by adding the missing
-    /// `<sce:requires-parent-flags carrier="X"><sce:flag name="<flag>"
-    /// bit="B"/></sce:requires-parent-flags>` element, or by switching
-    /// the variant tag to a local form (bare field id or
-    /// `<carrier>.<flag>` against a self-owned flags carrier).
+    /// RFC B5-ν inversion Q-D-5(a): a parent codec's
+    /// `<sce:variant-dispatch flag="X.Y">` at an import-site names a
+    /// dotted `<carrier>.<flag>` that does not resolve against the
+    /// parent's own fields — either the carrier field `X` is not
+    /// declared, or the flag `Y` is not declared on that carrier.
+    /// Author repairs the dotted reference; the candidates list
+    /// surfaces the available carriers (or flags on the resolved
+    /// carrier) to disambiguate typos.
     #[error(
-        "codec '{codec}': <sce:variant tag=\"{tag}\"> uses B5-ν parent-tag form but the \
-         codec declares no <sce:requires-parent-flags> block — parent-tag dispatch reads \
-         from a parent codec's flag carrier threaded as `parent_flags`, which is only \
-         available when the codec declares its dependency. Add \
-         <sce:requires-parent-flags carrier=\"...\"><sce:flag name=\"...\" bit=\"...\"/> \
-         </sce:requires-parent-flags> or change the tag to a local form."
+        "parent codec '{parent_codec}': <sce:variant-dispatch flag=\"{flag_source}\"/> on \
+         import '{embedded_alias}' does not resolve — {detail}. Correct the dotted reference \
+         to one of: [{candidates_summary}].",
+        candidates_summary = candidates.join(", ")
     )]
-    CodecVariantParentTagWithoutRequiresParentFlags { codec: String, tag: String },
-
-    /// RFC §5.B B5-ν: a codec's `<sce:variant tag="parent.<flag>">`
-    /// names a flag that is not declared in the codec's
-    /// `<sce:requires-parent-flags>` block. The flag must appear in
-    /// the rpf flag list so the parser knows the bit position and
-    /// width to use for dispatch; without that declaration the
-    /// codegen has no way to extract the dispatch value from the
-    /// threaded `parent_flags` byte. Author resolves by adding the
-    /// flag to the rpf block (or correcting a typo).
-    #[error(
-        "codec '{codec}': <sce:variant tag=\"parent.{flag}\"> references a flag that is \
-         not declared in <sce:requires-parent-flags carrier=\"{carrier}\"> — declared \
-         flags on this codec's rpf block: [{declared_summary}]. Add <sce:flag name=\"{flag}\" \
-         bit=\"...\"/> to the rpf block, or correct the tag attribute.",
-        declared_summary = declared_flags.join(", ")
-    )]
-    CodecVariantParentTagFlagNotDeclared {
-        codec: String,
-        flag: String,
-        carrier: String,
-        declared_flags: Vec<String>,
-    },
-
-    /// RFC §5.B B5-ν default-arm rejection: a codec's
-    /// `<sce:variant tag="parent.<flag>">` (parent-scope dispatch)
-    /// includes a `<sce:default type="..."/>` catch-all child element.
-    /// Parent-scope dispatch reads from a `uint8` flag of width `W`
-    /// (W ≤ 8 by `<sce:requires-parent-flags>` lock), so the tag
-    /// domain is `1 << W` (≤ 256) values — always practically
-    /// enumerable via explicit `<sce:arm>` declarations. The catch-all
-    /// is therefore structurally unreachable in this dispatch form
-    /// (the exhaustiveness check at parser.rs:2120 already requires
-    /// `arms.len() >= 1 << W` when `default_arm` is absent). Admitting
-    /// the catch-all anyway lets readers wrongly infer a meaningful
-    /// fallback that codegen never invokes; the codegen's encode-side
-    /// `_ => default_arm.encode(...)` branch becomes dead emit, and
-    /// the Cpp `std::variant.index()` ternary chain's final
-    /// alternative shadows an enumerated arm at index N. Distinct
-    /// from the `<sce:arm default="true"/>` attribute (Default-trait
-    /// starting-value marker; valid in this form). Author resolves by
-    /// removing the `<sce:default>` element and relying on enumerated
-    /// arms; the `codec/variant-arm-unreachable` diagnostic will
-    /// surface any gap in the enumeration.
-    #[error(
-        "codec '{codec}': <sce:variant tag=\"parent.{flag}\"> uses B5-ν parent-scope \
-         dispatch (carrier '{carrier}' is uint8 with bounded flag width), but the \
-         variant declares a <sce:default> catch-all element — parent-scope dispatch \
-         reads from a fully-enumerable flag domain (1 << width values), so the \
-         catch-all is structurally unreachable. Remove the <sce:default> child and \
-         enumerate all 2^width tag values via <sce:arm value=\"...\"/> entries; \
-         codec/variant-arm-unreachable will surface any gap in the enumeration."
-    )]
-    CodecVariantParentScopeDefaultArmForbidden {
-        codec: String,
-        flag: String,
-        carrier: String,
-    },
-
-    /// RFC §5.B B5-ν Q-3: a parent codec has a static
-    /// `<sce:flag name="F" ... value="V"/>` constant on its flag
-    /// carrier, AND an embedded variant codec uses that same flag
-    /// for B5-ν parent-tag dispatch. Static value and derived value
-    /// are mutually exclusive — the parent would have to ship both
-    /// the static bit and the bit derived from the embedded variant's
-    /// arm choice, which is structurally ambiguous when the two
-    /// disagree. Author resolves by removing the `value=` constant
-    /// from the parent flag (derivation supersedes), or by switching
-    /// the embedded variant off parent-tag dispatch (static value
-    /// supersedes).
-    #[error(
-        "parent codec '{parent_codec}' declares <sce:flag name=\"{flag}\" \
-         value={parent_value:#x}/> on carrier '{carrier}', but embedded codec \
-         '{embedded_codec}' (field '{embedded_field}') uses <sce:variant \
-         tag=\"parent.{flag}\"> to derive that same bit from its variant arm — static \
-         value and derived value cannot coexist. Remove the value= constant from the \
-         parent flag (derivation wins) or change the embedded codec's variant to a \
-         local-scope tag."
-    )]
-    CodecParentFlagDerivationConflict {
+    CodecVariantDispatchFlagNotResolved {
         parent_codec: String,
+        embedded_alias: String,
+        flag_source: String,
+        detail: String,
+        candidates: Vec<String>,
+    },
+
+    /// RFC B5-ν inversion Q-D-5(a): a parent codec's
+    /// `<sce:variant-dispatch flag="X.Y">` names a flag whose `width`
+    /// cannot represent the imported codec's full arm enumeration.
+    /// The dispatch value is `(carrier >> bit) & ((1<<width)-1)` —
+    /// `1 << width` distinct values; the imported variant has more
+    /// arms than that. Author resolves by widening the flag (more bits)
+    /// or shrinking the variant (fewer arms).
+    #[error(
+        "parent codec '{parent_codec}': <sce:variant-dispatch flag=\"{carrier}.{flag}\"/> on \
+         import '{embedded_alias}' (codec '{embedded_codec}') — flag width {flag_width} can \
+         encode at most {max_values} dispatch values, but the imported codec declares \
+         {arm_count} arms. Widen the flag or reduce the arm count."
+    )]
+    CodecVariantDispatchBitWidthMismatch {
+        parent_codec: String,
+        embedded_alias: String,
         embedded_codec: String,
+        carrier: String,
+        flag: String,
+        flag_width: u32,
+        max_values: u64,
+        arm_count: usize,
+    },
+
+    /// RFC B5-ν inversion Q-D-3(a): a parent codec imports a variant
+    /// codec WITHOUT declaring `<sce:variant-dispatch>`, AND the
+    /// imported codec has no `<sce:arm default="true"/>` marker. With
+    /// no wire-level dispatch and no default arm, the parent's decode
+    /// cannot deterministically pick which arm to instantiate from
+    /// the wire bytes — the leaf's arms would all be equally
+    /// plausible. Author resolves by either (a) adding
+    /// `<sce:variant-dispatch flag="X.Y"/>` on the import to provide a
+    /// dispatch source, or (b) marking one arm in the imported codec
+    /// as `default="true"` so the parent's decode falls back to it
+    /// when no dispatch is wired.
+    #[error(
+        "parent codec '{parent_codec}': import '{embedded_alias}' (codec '{embedded_codec}') \
+         is a variant codec but the import declares no <sce:variant-dispatch> and the \
+         imported codec has no <sce:arm default=\"true\"/> marker. Add \
+         <sce:variant-dispatch flag=\"...\"/> to the import, or mark one arm in '{embedded_codec}' \
+         as default=\"true\"."
+    )]
+    CodecVariantDispatchArmsNotDistinguishableWithoutDefault {
+        parent_codec: String,
+        embedded_alias: String,
+        embedded_codec: String,
+    },
+
+    /// RFC B5-ν inversion Q-D-4(a): a parent codec's
+    /// `<sce:variant-dispatch flag="X.Y">` targets a flag that ALSO
+    /// carries a static `value=` constant on the same parent codec.
+    /// Derived (from arm choice) and static cannot coexist on the
+    /// same bit — they would have to agree, which is structurally
+    /// ambiguous when the author later changes the arm. Author
+    /// resolves by either removing the `value=` constant (derivation
+    /// wins) or moving the dispatch to a different flag.
+    #[error(
+        "parent codec '{parent_codec}': flag '{carrier}.{flag}' has static <sce:flag \
+         value={static_value:#x}/>, but <sce:variant-dispatch flag=\"{carrier}.{flag}\"/> on \
+         import '{embedded_alias}' would derive the same bit from the variant's arm choice — \
+         static and derived cannot coexist. Remove the value= constant or move the dispatch \
+         to a different flag."
+    )]
+    CodecVariantDispatchFlagHasStaticValue {
+        parent_codec: String,
+        embedded_alias: String,
+        carrier: String,
+        flag: String,
+        static_value: u64,
+    },
+
+    /// RFC B5-ν inversion Q-D-5(a): a parent codec declares a field
+    /// with `<sce:variant-dispatch>` BEFORE the carrier field that
+    /// the dispatch flag belongs to. Encode-side derivation needs the
+    /// carrier byte to be emitted AFTER (or with) the derived bit set;
+    /// having the embed declared before the carrier breaks readable
+    /// declaration order (the carrier-first convention also matches
+    /// wire order). Author resolves by reordering fields so the
+    /// carrier appears before the embed field.
+    #[error(
+        "parent codec '{parent_codec}': field '{embedded_field}' (import '{embedded_alias}') \
+         has <sce:variant-dispatch flag=\"{carrier}.{flag}\"/>, but carrier '{carrier}' is \
+         declared at field index {carrier_index} which is AFTER the embed field at index \
+         {embedded_index}. Reorder fields so '{carrier}' precedes '{embedded_field}'."
+    )]
+    CodecVariantDispatchCarrierAfterEmbed {
+        parent_codec: String,
+        embedded_alias: String,
         embedded_field: String,
         carrier: String,
         flag: String,
-        parent_value: u64,
-    },
-
-    /// RFC §5.B B5-ν Q-6: a parent codec declares an embedded variant
-    /// codec (with `tag_scope = Parent`) as a field BEFORE the flag
-    /// carrier that supplies the dispatch byte. Encode-side derivation
-    /// requires the carrier to be emitted with bits derived from the
-    /// later variant — feasible via a pre-compute pass, but the
-    /// author-facing reading order is carrier-first (the wire order
-    /// is also carrier-first). The parser enforces declaration order
-    /// to keep SCXML readable. Author resolves by reordering fields
-    /// so the carrier appears before the variant-bearing field.
-    #[error(
-        "parent codec '{parent_codec}': field '{embedded_field}' (codec \
-         '{embedded_codec}') uses B5-ν parent-tag dispatch on carrier '{carrier}', but \
-         the carrier is declared at field index {carrier_index} which is AFTER the \
-         variant field at index {embedded_index}. Encode-side derivation reads the \
-         variant's arm tag to compute the carrier's bit — the carrier must appear \
-         earlier in the codec's <datamodel> declaration order. Move '{carrier}' to \
-         precede '{embedded_field}'."
-    )]
-    CodecVariantParentTagBeforeCarrier {
-        parent_codec: String,
-        embedded_codec: String,
-        embedded_field: String,
-        carrier: String,
         carrier_index: usize,
         embedded_index: usize,
     },

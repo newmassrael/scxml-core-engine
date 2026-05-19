@@ -94,7 +94,7 @@ func New{{ struct_name }}() *{{ struct_name }} {
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail
 // is shorter than the declared minimum frame (RFC §5.B L494-519).
 // VLE codecs may also return `codec.ErrVLEWidthOverflow`.
-func Decode{{ struct_name }}(cursor *codec.SceCursor{{ parent_flags_param_decl }}) (*{{ struct_name }}, error) {
+func Decode{{ struct_name }}(cursor *codec.SceCursor{{ parent_flags_param_decl }}{{ dispatch_tag_param_decl }}) (*{{ struct_name }}, error) {
 {% if has_no_fields %}
 	// RFC §5.B B5-α empty body — zero-byte payload, no cursor work.
 	_ = cursor
