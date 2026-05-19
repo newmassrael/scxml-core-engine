@@ -3,7 +3,6 @@
 // template-hash: 73644a8c52ee83b6af224889edefc07c66120d6db7d21a41c918be4815ed8509
 // generated-at: 1779022531
 
-
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
 //
@@ -71,7 +70,6 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-
 #![doc = "SCE-MAP: test504.scxml:5"]
 // SCE-MAP: test504.scxml:5
 
@@ -215,18 +213,19 @@ impl Test504Policy {
         }
     }
 
-
-
     // W3C SCXML 5.9.2: Check if state is active (for In() predicate)
     fn is_state_active(&self, state_id: &str) -> bool {
-        self.active_states.iter().any(|&s| Self::get_state_name(s) == state_id)
+        self.active_states
+            .iter()
+            .any(|&s| Self::get_state_name(s) == state_id)
     }
 
     // W3C SCXML 5.10: Ensure session ID is initialized
     // Uses atomic counter (1:1 with C++ UniqueIdGenerator::generateSessionId)
     fn ensure_session_id(&mut self) {
         if self.session_id.is_none() {
-            static SESSION_COUNTER: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+            static SESSION_COUNTER: core::sync::atomic::AtomicU64 =
+                core::sync::atomic::AtomicU64::new(0);
             let id = SESSION_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             self.session_id = Some(format!("session_{}", id));
         }
@@ -252,36 +251,38 @@ impl Test504Policy {
         // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
         // W3C SCXML 5.2/5.3: Initialize 'Var1' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "Var1", "0") {
+            se, &sid, "Var1", "0",
+        ) {
             log::error!("global: {}", e);
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'Var2' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "Var2", "0") {
+            se, &sid, "Var2", "0",
+        ) {
             log::error!("global: {}", e);
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'Var3' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "Var3", "0") {
+            se, &sid, "Var3", "0",
+        ) {
             log::error!("global: {}", e);
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'Var4' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "Var4", "0") {
+            se, &sid, "Var4", "0",
+        ) {
             log::error!("global: {}", e);
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'Var5' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "Var5", "0") {
+            se, &sid, "Var5", "0",
+        ) {
             log::error!("global: {}", e);
         }
-
-
-
 
         // W3C SCXML 5.9.2: Register In() state query callback
         {
@@ -323,41 +324,53 @@ impl Test504Policy {
         // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
         // W3C SCXML 5.2/5.3: Initialize 'Var1' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "Var1", "0") {
+            se, &sid, "Var1", "0",
+        ) {
             log::error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(Test504Event::ErrorExecution));
+            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                Test504Event::ErrorExecution,
+            ));
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'Var2' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "Var2", "0") {
+            se, &sid, "Var2", "0",
+        ) {
             log::error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(Test504Event::ErrorExecution));
+            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                Test504Event::ErrorExecution,
+            ));
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'Var3' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "Var3", "0") {
+            se, &sid, "Var3", "0",
+        ) {
             log::error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(Test504Event::ErrorExecution));
+            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                Test504Event::ErrorExecution,
+            ));
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'Var4' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "Var4", "0") {
+            se, &sid, "Var4", "0",
+        ) {
             log::error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(Test504Event::ErrorExecution));
+            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                Test504Event::ErrorExecution,
+            ));
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'Var5' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "Var5", "0") {
+            se, &sid, "Var5", "0",
+        ) {
             log::error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(Test504Event::ErrorExecution));
+            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                Test504Event::ErrorExecution,
+            ));
         }
-
-
-
 
         // W3C SCXML 5.9.2: Register In() state query callback
         {
@@ -388,20 +401,38 @@ impl Test504Policy {
             Ok(val) => val.to_bool(),
             Err(e) => {
                 log::error!("Guard evaluation failed for '{}': {}", cond, e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(Test504Event::ErrorExecution));
+                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                    Test504Event::ErrorExecution,
+                ));
                 false
             }
         }
     }
 
     // W3C SCXML 5.10: Set _event system variable for current event
-    fn set_current_event_in_script_engine(&self, event_name: &str, event_data: &str,
-            event_type: &str, send_id: &str, origin: &str, origin_type: &str, invoke_id: &str) {
+    fn set_current_event_in_script_engine(
+        &self,
+        event_name: &str,
+        event_data: &str,
+        event_type: &str,
+        send_id: &str,
+        origin: &str,
+        origin_type: &str,
+        invoke_id: &str,
+    ) {
         if let Some(ref sid) = self.session_id {
             let se = self.script_engine.clone();
             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-            let _ = se.set_current_event(sid, event_name, event_data, event_type,
-                send_id, origin, origin_type, invoke_id);
+            let _ = se.set_current_event(
+                sid,
+                event_name,
+                event_data,
+                event_type,
+                send_id,
+                origin,
+                origin_type,
+                invoke_id,
+            );
         }
     }
 
@@ -418,17 +449,20 @@ impl Test504Policy {
         let se = self.script_engine.clone();
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         match se.evaluate_expression(&sid, expr) {
-            Ok(val) => { let _ = se.set_variable(&sid, name, val); }
+            Ok(val) => {
+                let _ = se.set_variable(&sid, name, val);
+            }
             Err(_) => {
                 // Fallback: set as string literal
-                let _ = se.set_variable(&sid, name,
-                    sce_rust_runtime::ScriptValue::String(expr.to_string()));
+                let _ = se.set_variable(
+                    &sid,
+                    name,
+                    sce_rust_runtime::ScriptValue::String(expr.to_string()),
+                );
             }
         }
     }
-
 }
-
 
 // ======================================================================
 // StatePolicy trait implementation
@@ -487,10 +521,7 @@ impl StatePolicy for Test504Policy {
 
     fn get_parallel_regions(state: Self::State) -> &'static [Self::State] {
         match state {
-            Test504State::P => &[
-                Test504State::Ps1,
-                Test504State::Ps2,
-            ],
+            Test504State::P => &[Test504State::Ps1, Test504State::Ps2],
             _ => &[],
         }
     }
@@ -570,11 +601,13 @@ impl StatePolicy for Test504Policy {
     // [`StateChain`] alias and the body uses `state_chain_from_slice` instead of
     // `vec![...]` so the emitted code compiles under `--no-std` (`vec!` is a
     // std-only macro; heapless has no equivalent).
-    fn get_initial_children(state: Self::State) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
+    fn get_initial_children(
+        state: Self::State,
+    ) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
         match state {
-            Test504State::S2 => ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([
-                Test504State::P,
-            ]),
+            Test504State::S2 => {
+                ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([Test504State::P])
+            }
             _ => ::sce_rust_runtime::helpers::hierarchy::new_chain(),
         }
     }
@@ -582,9 +615,7 @@ impl StatePolicy for Test504Policy {
     // W3C SCXML 3.11: Get initial or history-restored child
     fn get_initial_or_history_child(&self, state: Self::State) -> Self::State {
         match state {
-            Test504State::S2 => {
-                Test504State::P
-            }
+            Test504State::S2 => Test504State::P,
             _ => state,
         }
     }
@@ -656,12 +687,14 @@ impl StatePolicy for Test504Policy {
     // Instance methods - generated executable content
     // ======================================================================
 
-
-
     // W3C SCXML 3.7: Execute <onentry> actions for a state
     #[doc = "SCE-MAP: test504.scxml:5"]
-// SCE-MAP: test504.scxml:5
-    fn execute_entry_actions(&mut self, state: Self::State, engine: &mut sce_rust_runtime::Engine<Self>) {
+    // SCE-MAP: test504.scxml:5
+    fn execute_entry_actions(
+        &mut self,
+        state: Self::State,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
         // W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
         //
         // Watching-zenoh RFC §5.J.2: `push_chain` is the runtime crate's
@@ -671,19 +704,18 @@ impl StatePolicy for Test504Policy {
         if !self.active_states.contains(&state) {
             ::sce_rust_runtime::helpers::hierarchy::push_chain(&mut self.active_states, state);
         } else {
-            return;  // W3C SCXML 3.8: Skip onentry actions for duplicate state entry
+            return; // W3C SCXML 3.8: Skip onentry actions for duplicate state entry
         }
         match state {
             Test504State::S1 => {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
+                    // W3C SCXML 3.8.1: <raise event="foo">
+                    engine.raise(sce_rust_runtime::EventWithMetadata::new(Test504Event::Foo));
 
-// W3C SCXML 3.8.1: <raise event="foo">
-engine.raise(sce_rust_runtime::EventWithMetadata::new(Test504Event::Foo));
-
-// W3C SCXML 3.8.1: <raise event="bar">
-engine.raise(sce_rust_runtime::EventWithMetadata::new(Test504Event::Bar));
+                    // W3C SCXML 3.8.1: <raise event="bar">
+                    engine.raise(sce_rust_runtime::EventWithMetadata::new(Test504Event::Bar));
                 }
             }
             _ => {}
@@ -739,7 +771,7 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test504Event::Bar));
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
     #[doc = "SCE-MAP: test504.scxml:5"]
-// SCE-MAP: test504.scxml:5
+    // SCE-MAP: test504.scxml:5
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -749,13 +781,16 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test504Event::Bar));
         // W3C SCXML 3.4 + 3.13: Parallel state exit order
         if Self::is_parallel_state(state) {
             // W3C SCXML 3.4: Collect all active descendants of this parallel state
-            let mut descendants_to_exit: Vec<Self::State> = self.active_states.iter()
+            let mut descendants_to_exit: Vec<Self::State> = self
+                .active_states
+                .iter()
                 .filter(|&&s| s != state && Self::is_descendant_of(s, state))
                 .copied()
                 .collect();
 
             // W3C SCXML 3.13: Sort descendants by reverse document order (deepest first)
-            descendants_to_exit.sort_by(|a, b| Self::get_document_order(*b).cmp(&Self::get_document_order(*a)));
+            descendants_to_exit
+                .sort_by(|a, b| Self::get_document_order(*b).cmp(&Self::get_document_order(*a)));
 
             // Exit each active descendant (deepest first)
             for descendant in descendants_to_exit {
@@ -769,119 +804,117 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test504Event::Bar));
                 // W3C SCXML 3.9: onexit block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.9: error stops block)
                 'action_block: {
-
-{
-    // W3C SCXML 5.3: <assign location="Var1">
-    self.ensure_script_engine();
-    let sid = self.session_id.as_ref().unwrap().clone();
-    let se = self.script_engine.clone();
-    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-    let expr = "Var1 + 1";
-    // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-    // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-    // through evaluate_expression + set_variable would round-trip through ScriptValue
-    // and create a fresh table, breaking reference equality.
-    let assign_script = format!("{} = {}", "Var1", expr);
-    if let Err(e) = se.execute_script(&sid, &assign_script) {
-        log::error!("Assign failed for 'Var1': {}", e);
-        engine.raise(sce_rust_runtime::EventWithMetadata::new(Test504Event::ErrorExecution));
-        // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
-        break 'action_block;
-    }
-}
-
+                    {
+                        // W3C SCXML 5.3: <assign location="Var1">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "Var1 + 1";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "Var1", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            log::error!("Assign failed for 'Var1': {}", e);
+                            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                Test504Event::ErrorExecution,
+                            ));
+                            // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
+                            break 'action_block;
+                        }
+                    }
                 }
             }
             Test504State::Ps1 => {
                 // W3C SCXML 3.9: onexit block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.9: error stops block)
                 'action_block: {
-
-{
-    // W3C SCXML 5.3: <assign location="Var2">
-    self.ensure_script_engine();
-    let sid = self.session_id.as_ref().unwrap().clone();
-    let se = self.script_engine.clone();
-    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-    let expr = "Var2 + 1";
-    // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-    // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-    // through evaluate_expression + set_variable would round-trip through ScriptValue
-    // and create a fresh table, breaking reference equality.
-    let assign_script = format!("{} = {}", "Var2", expr);
-    if let Err(e) = se.execute_script(&sid, &assign_script) {
-        log::error!("Assign failed for 'Var2': {}", e);
-        engine.raise(sce_rust_runtime::EventWithMetadata::new(Test504Event::ErrorExecution));
-        // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
-        break 'action_block;
-    }
-}
-
+                    {
+                        // W3C SCXML 5.3: <assign location="Var2">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "Var2 + 1";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "Var2", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            log::error!("Assign failed for 'Var2': {}", e);
+                            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                Test504Event::ErrorExecution,
+                            ));
+                            // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
+                            break 'action_block;
+                        }
+                    }
                 }
             }
             Test504State::Ps2 => {
                 // W3C SCXML 3.9: onexit block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.9: error stops block)
                 'action_block: {
-
-{
-    // W3C SCXML 5.3: <assign location="Var3">
-    self.ensure_script_engine();
-    let sid = self.session_id.as_ref().unwrap().clone();
-    let se = self.script_engine.clone();
-    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-    let expr = "Var3 + 1";
-    // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-    // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-    // through evaluate_expression + set_variable would round-trip through ScriptValue
-    // and create a fresh table, breaking reference equality.
-    let assign_script = format!("{} = {}", "Var3", expr);
-    if let Err(e) = se.execute_script(&sid, &assign_script) {
-        log::error!("Assign failed for 'Var3': {}", e);
-        engine.raise(sce_rust_runtime::EventWithMetadata::new(Test504Event::ErrorExecution));
-        // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
-        break 'action_block;
-    }
-}
-
+                    {
+                        // W3C SCXML 5.3: <assign location="Var3">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "Var3 + 1";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "Var3", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            log::error!("Assign failed for 'Var3': {}", e);
+                            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                Test504Event::ErrorExecution,
+                            ));
+                            // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
+                            break 'action_block;
+                        }
+                    }
                 }
             }
             Test504State::S2 => {
                 // W3C SCXML 3.9: onexit block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.9: error stops block)
                 'action_block: {
-
-{
-    // W3C SCXML 5.3: <assign location="Var5">
-    self.ensure_script_engine();
-    let sid = self.session_id.as_ref().unwrap().clone();
-    let se = self.script_engine.clone();
-    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-    let expr = "Var5 + 1";
-    // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-    // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-    // through evaluate_expression + set_variable would round-trip through ScriptValue
-    // and create a fresh table, breaking reference equality.
-    let assign_script = format!("{} = {}", "Var5", expr);
-    if let Err(e) = se.execute_script(&sid, &assign_script) {
-        log::error!("Assign failed for 'Var5': {}", e);
-        engine.raise(sce_rust_runtime::EventWithMetadata::new(Test504Event::ErrorExecution));
-        // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
-        break 'action_block;
-    }
-}
-
+                    {
+                        // W3C SCXML 5.3: <assign location="Var5">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        let expr = "Var5 + 1";
+                        // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                        // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                        // through evaluate_expression + set_variable would round-trip through ScriptValue
+                        // and create a fresh table, breaking reference equality.
+                        let assign_script = format!("{} = {}", "Var5", expr);
+                        if let Err(e) = se.execute_script(&sid, &assign_script) {
+                            log::error!("Assign failed for 'Var5': {}", e);
+                            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                Test504Event::ErrorExecution,
+                            ));
+                            // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
+                            break 'action_block;
+                        }
+                    }
                 }
             }
             _ => {}
         }
     }
 
-
-
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
     #[doc = "SCE-MAP: test504.scxml:5"]
-// SCE-MAP: test504.scxml:5
+    // SCE-MAP: test504.scxml:5
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -896,7 +929,8 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test504Event::Bar));
             let event_name = Self::get_event_name(event);
             self.pending_event_name = event_name.to_string();
             // W3C SCXML 5.10.1: Classify event type (ports C++ EventTypeHelper::classifyEventType)
-            let event_type = if event_name.starts_with("error.") || event_name.starts_with("done.") {
+            let event_type = if event_name.starts_with("error.") || event_name.starts_with("done.")
+            {
                 "platform"
             } else if self.next_event_is_external {
                 self.next_event_is_external = false;
@@ -912,14 +946,24 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test504Event::Bar));
             let ev_origintype: &str = &self.pending_event_origintype;
             let ev_invokeid: &str = &self.pending_event_invokeid;
             self.set_current_event_in_script_engine(
-                event_name, ev_data, event_type, ev_sendid, ev_origin, ev_origintype, ev_invokeid,
+                event_name,
+                ev_data,
+                event_type,
+                ev_sendid,
+                ev_origin,
+                ev_origintype,
+                ev_invokeid,
             );
         }
         // W3C SCXML 5.9.2: Update shared In() active state snapshot
         if let Some(ref shared) = self.in_predicate_states {
             let mut states = shared.lock().unwrap();
             states.clear();
-            states.extend(self.active_states.iter().map(|&s| Self::get_state_name(s).to_string()));
+            states.extend(
+                self.active_states
+                    .iter()
+                    .map(|&s| Self::get_state_name(s).to_string()),
+            );
         }
 
         // W3C SCXML 3.4 + 3.12 + Appendix D: Parallel state transition handling
@@ -933,7 +977,14 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test504Event::Bar));
 
             for active_state in &states_to_check {
                 // W3C SCXML 3.13: Eventless transitions do NOT bubble to parent states
-                self.try_transition_in_state(*active_state, event, current_state, &mut transition_taken, engine, Some(&mut enabled_transitions));
+                self.try_transition_in_state(
+                    *active_state,
+                    event,
+                    current_state,
+                    &mut transition_taken,
+                    engine,
+                    Some(&mut enabled_transitions),
+                );
             }
 
             // W3C SCXML Appendix D.2: Remove conflicting transitions
@@ -943,18 +994,25 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test504Event::Bar));
 
             // W3C SCXML Appendix D Steps 2-5: Execute as atomic microstep
             if !enabled_transitions.is_empty() {
-                self.execute_microstep(&enabled_transitions, current_state, &mut transition_taken, engine);
+                self.execute_microstep(
+                    &enabled_transitions,
+                    current_state,
+                    &mut transition_taken,
+                    engine,
+                );
             }
         } else {
             // W3C SCXML Appendix D: External events - collect then execute
             let mut enabled_transitions: Vec<TransitionInfo> = Vec::new();
 
             for &active_state in &self.active_states.clone() {
-                let is_non_atomic = Self::is_compound_state(active_state) || Self::is_parallel_state(active_state);
+                let is_non_atomic =
+                    Self::is_compound_state(active_state) || Self::is_parallel_state(active_state);
 
                 // W3C SCXML 3.13: Check if this is a done.state event
                 let event_name = Self::get_event_name(event);
-                let is_done_state_event = event != Self::null_event() && event_name.starts_with("done.state.");
+                let is_done_state_event =
+                    event != Self::null_event() && event_name.starts_with("done.state.");
 
                 // Skip non-atomic states UNLESS processing done.state event
                 if is_non_atomic && !is_done_state_event {
@@ -964,7 +1022,14 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test504Event::Bar));
                 // W3C SCXML 3.12: Hierarchical event bubbling
                 let mut check_state = active_state;
                 loop {
-                    let found = self.try_transition_in_state(check_state, event, current_state, &mut transition_taken, engine, Some(&mut enabled_transitions));
+                    let found = self.try_transition_in_state(
+                        check_state,
+                        event,
+                        current_state,
+                        &mut transition_taken,
+                        engine,
+                        Some(&mut enabled_transitions),
+                    );
                     if found {
                         break;
                     }
@@ -979,9 +1044,7 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test504Event::Bar));
             // of the same ancestor (e.g., both parallel regions bubble up to the same parent
             // transition; test 504). Preserves first-match document order.
             let mut seen = std::collections::HashSet::new();
-            enabled_transitions.retain(|t| {
-                seen.insert((t.source, t.transition_index))
-            });
+            enabled_transitions.retain(|t| seen.insert((t.source, t.transition_index)));
 
             // W3C SCXML Appendix D.2: Remove conflicting transitions
             if !enabled_transitions.is_empty() {
@@ -990,7 +1053,12 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test504Event::Bar));
 
             // W3C SCXML Appendix D Steps 2-5: Execute as atomic microstep
             if !enabled_transitions.is_empty() {
-                self.execute_microstep(&enabled_transitions, current_state, &mut transition_taken, engine);
+                self.execute_microstep(
+                    &enabled_transitions,
+                    current_state,
+                    &mut transition_taken,
+                    engine,
+                );
             }
         }
 
@@ -999,7 +1067,7 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test504Event::Bar));
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
     #[doc = "SCE-MAP: test504.scxml:5"]
-// SCE-MAP: test504.scxml:5
+    // SCE-MAP: test504.scxml:5
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         if !self.has_transition_actions {
             return;
@@ -1012,24 +1080,25 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test504Event::Bar));
                     0 => {
                         // W3C SCXML 3.13: Transition 0 actions
 
-{
-    // W3C SCXML 5.3: <assign location="Var4">
-    self.ensure_script_engine();
-    let sid = self.session_id.as_ref().unwrap().clone();
-    let se = self.script_engine.clone();
-    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-    let expr = "Var4 + 1";
-    // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-    // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-    // through evaluate_expression + set_variable would round-trip through ScriptValue
-    // and create a fresh table, breaking reference equality.
-    let assign_script = format!("{} = {}", "Var4", expr);
-    if let Err(e) = se.execute_script(&sid, &assign_script) {
-        log::error!("Assign failed for 'Var4': {}", e);
-        engine.raise(sce_rust_runtime::EventWithMetadata::new(Test504Event::ErrorExecution));
-    }
-}
-
+                        {
+                            // W3C SCXML 5.3: <assign location="Var4">
+                            self.ensure_script_engine();
+                            let sid = self.session_id.as_ref().unwrap().clone();
+                            let se = self.script_engine.clone();
+                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                            let expr = "Var4 + 1";
+                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                            // through evaluate_expression + set_variable would round-trip through ScriptValue
+                            // and create a fresh table, breaking reference equality.
+                            let assign_script = format!("{} = {}", "Var4", expr);
+                            if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                log::error!("Assign failed for 'Var4': {}", e);
+                                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                    Test504Event::ErrorExecution,
+                                ));
+                            }
+                        }
                     }
                     _ => {}
                 }
@@ -1045,7 +1114,6 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test504Event::Bar));
     fn initialize_data_model(&mut self, engine: &mut Engine<Self>) {
         self.do_initialize_data_model(engine);
     }
-
 }
 
 // ======================================================================
@@ -1069,26 +1137,27 @@ impl Test504Policy {
                 // W3C SCXML 3.12: Event-triggered transitions (document order)
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == Test504Event::Foo {
-                        // W3C SCXML 3.4: Track transition metadata
-                        self.last_transition_source_state = check_state;
-                        self.last_transition_index = 0;
-                        self.has_transition_actions = true;
-                        self.last_transition_is_internal = false;
-                        self.last_transition_is_targetless = false;
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_index = 0;
+                    self.has_transition_actions = true;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
 
-                        if let Some(ref mut collect) = collect_mode {
-                            collect.push(TransitionInfo {
-                                source: check_state, target: Test504State::Ps1,
-                                transition_index: 0,
-                                has_actions: true,
-                                is_internal: false,
-                                is_targetless: false,
-                            });
-                        } else {
-                            *current_state = Test504State::Ps1;
-                            *transition_taken = true;
-                        }
-                        return true;
+                    if let Some(ref mut collect) = collect_mode {
+                        collect.push(TransitionInfo {
+                            source: check_state,
+                            target: Test504State::Ps1,
+                            transition_index: 0,
+                            has_actions: true,
+                            is_internal: false,
+                            is_targetless: false,
+                        });
+                    } else {
+                        *current_state = Test504State::Ps1;
+                        *transition_taken = true;
+                    }
+                    return true;
                 }
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == Test504Event::Bar {
@@ -1103,7 +1172,8 @@ impl Test504Policy {
 
                         if let Some(ref mut collect) = collect_mode {
                             collect.push(TransitionInfo {
-                                source: check_state, target: Test504State::S3,
+                                source: check_state,
+                                target: Test504State::S3,
                                 transition_index: 1,
                                 has_actions: false,
                                 is_internal: false,
@@ -1118,26 +1188,27 @@ impl Test504Policy {
                 }
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == Test504Event::Bar {
-                        // W3C SCXML 3.4: Track transition metadata
-                        self.last_transition_source_state = check_state;
-                        self.last_transition_index = 2;
-                        self.has_transition_actions = false;
-                        self.last_transition_is_internal = false;
-                        self.last_transition_is_targetless = false;
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_index = 2;
+                    self.has_transition_actions = false;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
 
-                        if let Some(ref mut collect) = collect_mode {
-                            collect.push(TransitionInfo {
-                                source: check_state, target: Test504State::Fail,
-                                transition_index: 2,
-                                has_actions: false,
-                                is_internal: false,
-                                is_targetless: false,
-                            });
-                        } else {
-                            *current_state = Test504State::Fail;
-                            *transition_taken = true;
-                        }
-                        return true;
+                    if let Some(ref mut collect) = collect_mode {
+                        collect.push(TransitionInfo {
+                            source: check_state,
+                            target: Test504State::Fail,
+                            transition_index: 2,
+                            has_actions: false,
+                            is_internal: false,
+                            is_targetless: false,
+                        });
+                    } else {
+                        *current_state = Test504State::Fail;
+                        *transition_taken = true;
+                    }
+                    return true;
                 }
                 false
             }
@@ -1155,7 +1226,8 @@ impl Test504Policy {
                     self.last_transition_is_targetless = false;
                     if let Some(ref mut collect) = collect_mode {
                         collect.push(TransitionInfo {
-                            source: check_state, target: Test504State::P,
+                            source: check_state,
+                            target: Test504State::P,
                             transition_index: 0,
                             has_actions: false,
                             is_internal: false,
@@ -1173,7 +1245,7 @@ impl Test504Policy {
             Test504State::S3 => {
                 // W3C SCXML 3.13: Eventless transitions
                 if event == Test504Event::Null {
-if self.safe_evaluate_guard("Var1 == 2", engine) {
+                    if self.safe_evaluate_guard("Var1 == 2", engine) {
                         // W3C SCXML 3.4: Track transition metadata
                         self.last_transition_source_state = check_state;
                         self.last_transition_index = 0;
@@ -1182,7 +1254,8 @@ if self.safe_evaluate_guard("Var1 == 2", engine) {
                         self.last_transition_is_targetless = false;
                         if let Some(ref mut collect) = collect_mode {
                             collect.push(TransitionInfo {
-                                source: check_state, target: Test504State::S4,
+                                source: check_state,
+                                target: Test504State::S4,
                                 transition_index: 0,
                                 has_actions: false,
                                 is_internal: false,
@@ -1202,7 +1275,8 @@ if self.safe_evaluate_guard("Var1 == 2", engine) {
                         self.last_transition_is_targetless = false;
                         if let Some(ref mut collect) = collect_mode {
                             collect.push(TransitionInfo {
-                                source: check_state, target: Test504State::Fail,
+                                source: check_state,
+                                target: Test504State::Fail,
                                 transition_index: 1,
                                 has_actions: false,
                                 is_internal: false,
@@ -1220,7 +1294,7 @@ if self.safe_evaluate_guard("Var1 == 2", engine) {
             Test504State::S4 => {
                 // W3C SCXML 3.13: Eventless transitions
                 if event == Test504Event::Null {
-if self.safe_evaluate_guard("Var2 == 2", engine) {
+                    if self.safe_evaluate_guard("Var2 == 2", engine) {
                         // W3C SCXML 3.4: Track transition metadata
                         self.last_transition_source_state = check_state;
                         self.last_transition_index = 0;
@@ -1229,7 +1303,8 @@ if self.safe_evaluate_guard("Var2 == 2", engine) {
                         self.last_transition_is_targetless = false;
                         if let Some(ref mut collect) = collect_mode {
                             collect.push(TransitionInfo {
-                                source: check_state, target: Test504State::S5,
+                                source: check_state,
+                                target: Test504State::S5,
                                 transition_index: 0,
                                 has_actions: false,
                                 is_internal: false,
@@ -1249,7 +1324,8 @@ if self.safe_evaluate_guard("Var2 == 2", engine) {
                         self.last_transition_is_targetless = false;
                         if let Some(ref mut collect) = collect_mode {
                             collect.push(TransitionInfo {
-                                source: check_state, target: Test504State::Fail,
+                                source: check_state,
+                                target: Test504State::Fail,
                                 transition_index: 1,
                                 has_actions: false,
                                 is_internal: false,
@@ -1267,7 +1343,7 @@ if self.safe_evaluate_guard("Var2 == 2", engine) {
             Test504State::S5 => {
                 // W3C SCXML 3.13: Eventless transitions
                 if event == Test504Event::Null {
-if self.safe_evaluate_guard("Var3 == 2", engine) {
+                    if self.safe_evaluate_guard("Var3 == 2", engine) {
                         // W3C SCXML 3.4: Track transition metadata
                         self.last_transition_source_state = check_state;
                         self.last_transition_index = 0;
@@ -1276,7 +1352,8 @@ if self.safe_evaluate_guard("Var3 == 2", engine) {
                         self.last_transition_is_targetless = false;
                         if let Some(ref mut collect) = collect_mode {
                             collect.push(TransitionInfo {
-                                source: check_state, target: Test504State::S6,
+                                source: check_state,
+                                target: Test504State::S6,
                                 transition_index: 0,
                                 has_actions: false,
                                 is_internal: false,
@@ -1296,7 +1373,8 @@ if self.safe_evaluate_guard("Var3 == 2", engine) {
                         self.last_transition_is_targetless = false;
                         if let Some(ref mut collect) = collect_mode {
                             collect.push(TransitionInfo {
-                                source: check_state, target: Test504State::Fail,
+                                source: check_state,
+                                target: Test504State::Fail,
                                 transition_index: 1,
                                 has_actions: false,
                                 is_internal: false,
@@ -1314,7 +1392,7 @@ if self.safe_evaluate_guard("Var3 == 2", engine) {
             Test504State::S6 => {
                 // W3C SCXML 3.13: Eventless transitions
                 if event == Test504Event::Null {
-if self.safe_evaluate_guard("Var5 == 1", engine) {
+                    if self.safe_evaluate_guard("Var5 == 1", engine) {
                         // W3C SCXML 3.4: Track transition metadata
                         self.last_transition_source_state = check_state;
                         self.last_transition_index = 0;
@@ -1323,7 +1401,8 @@ if self.safe_evaluate_guard("Var5 == 1", engine) {
                         self.last_transition_is_targetless = false;
                         if let Some(ref mut collect) = collect_mode {
                             collect.push(TransitionInfo {
-                                source: check_state, target: Test504State::Pass,
+                                source: check_state,
+                                target: Test504State::Pass,
                                 transition_index: 0,
                                 has_actions: false,
                                 is_internal: false,
@@ -1343,7 +1422,8 @@ if self.safe_evaluate_guard("Var5 == 1", engine) {
                         self.last_transition_is_targetless = false;
                         if let Some(ref mut collect) = collect_mode {
                             collect.push(TransitionInfo {
-                                source: check_state, target: Test504State::Fail,
+                                source: check_state,
+                                target: Test504State::Fail,
                                 transition_index: 1,
                                 has_actions: false,
                                 is_internal: false,
@@ -1362,9 +1442,6 @@ if self.safe_evaluate_guard("Var5 == 1", engine) {
         }
     }
 
-
-
-
     // W3C SCXML Appendix D.2: Remove conflicting transitions
     fn remove_conflicting_transitions(enabled: &[TransitionInfo]) -> Vec<TransitionInfo> {
         let mut filtered: Vec<TransitionInfo> = Vec::new();
@@ -1375,8 +1452,10 @@ if self.safe_evaluate_guard("Var5 == 1", engine) {
 
             for (idx, t2) in filtered.iter().enumerate() {
                 // W3C SCXML Appendix D.2: Check if exit sets intersect
-                let t1_exits = Self::compute_exit_set(t1.source, t1.target, t1.is_internal, t1.is_targetless);
-                let t2_exits = Self::compute_exit_set(t2.source, t2.target, t2.is_internal, t2.is_targetless);
+                let t1_exits =
+                    Self::compute_exit_set(t1.source, t1.target, t1.is_internal, t1.is_targetless);
+                let t2_exits =
+                    Self::compute_exit_set(t2.source, t2.target, t2.is_internal, t2.is_targetless);
 
                 let mut has_conflict = t1_exits.iter().any(|s1| t2_exits.contains(s1));
 
@@ -1440,7 +1519,12 @@ if self.safe_evaluate_guard("Var5 == 1", engine) {
     // Matches C++ `ParallelTransitionHelper::computeExitSet` — returns all states
     // from `source` up to (but not including) LCA(source, target). For internal
     // transitions where the target is a descendant of the source, returns empty.
-    fn compute_exit_set(source: Test504State, target: Test504State, is_internal: bool, is_targetless: bool) -> Vec<Test504State> {
+    fn compute_exit_set(
+        source: Test504State,
+        target: Test504State,
+        is_internal: bool,
+        is_targetless: bool,
+    ) -> Vec<Test504State> {
         // W3C SCXML 5.9.2: Targetless transitions execute actions only — no exit/entry
         if is_targetless {
             return Vec::new();
@@ -1451,8 +1535,10 @@ if self.safe_evaluate_guard("Var5 == 1", engine) {
         // target must be a proper descendant. If source is atomic or parallel, the internal
         // transition behaves as external (W3C SCXML 3.13).
         if is_internal
-            && Self::is_compound_state(source) && !Self::is_parallel_state(source)
-            && Self::is_descendant_of(target, source) && target != source
+            && Self::is_compound_state(source)
+            && !Self::is_parallel_state(source)
+            && Self::is_descendant_of(target, source)
+            && target != source
         {
             return Vec::new();
         }
@@ -1523,8 +1609,10 @@ if self.safe_evaluate_guard("Var5 == 1", engine) {
             // Matches C++ `computeEffectiveLCA` — internal transition with compound
             // (non-parallel) source and proper descendant target uses source as domain.
             let is_internal_to_descendant = trans.is_internal
-                && Self::is_compound_state(trans.source) && !Self::is_parallel_state(trans.source)
-                && Self::is_descendant_of(trans.target, trans.source) && trans.target != trans.source;
+                && Self::is_compound_state(trans.source)
+                && !Self::is_parallel_state(trans.source)
+                && Self::is_descendant_of(trans.target, trans.source)
+                && trans.target != trans.source;
             let domain: Option<Test504State> = if is_internal_to_descendant {
                 Some(trans.source)
             } else {
@@ -1566,7 +1654,8 @@ if self.safe_evaluate_guard("Var5 == 1", engine) {
         }
 
         // Sort by reverse document order (deepest first)
-        states_to_exit.sort_by(|a, b| Self::get_document_order(*b).cmp(&Self::get_document_order(*a)));
+        states_to_exit
+            .sort_by(|a, b| Self::get_document_order(*b).cmp(&Self::get_document_order(*a)));
 
         // Snapshot active states for history recording
         let active_snapshot = self.active_states.clone();
@@ -1601,7 +1690,8 @@ if self.safe_evaluate_guard("Var5 == 1", engine) {
             let target = trans.target;
 
             // W3C SCXML 3.13: Build hierarchical entry chain from root to target
-            let entry_chain = sce_rust_runtime::helpers::hierarchy::build_entry_chain::<Self>(target);
+            let entry_chain =
+                sce_rust_runtime::helpers::hierarchy::build_entry_chain::<Self>(target);
 
             for state in &entry_chain {
                 if self.active_states.contains(state) {

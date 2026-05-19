@@ -53,8 +53,8 @@ fn main() {
 
     // Step 1: fixture catalog — single source of truth for which SCXML files
     // participate in the conformance harness across all 5 languages.
-    let manifest = Manifest::load(&manifest_path)
-        .unwrap_or_else(|e| panic!("load conformance manifest: {e}"));
+    let manifest =
+        Manifest::load(&manifest_path).unwrap_or_else(|e| panic!("load conformance manifest: {e}"));
 
     // Step 2: generate each fixture's Rust code into OUT_DIR.
     let options = ForgeCompileOptions::default();
@@ -83,8 +83,7 @@ fn main() {
     let harness =
         conformance::render_harness(&manifest, Language::Rust, &template_base, &resource_dir)
             .unwrap_or_else(|e| panic!("render conformance harness: {e}"));
-    let harness_path =
-        Path::new(&out_dir).join(conformance::harness_filename(Language::Rust));
+    let harness_path = Path::new(&out_dir).join(conformance::harness_filename(Language::Rust));
     std::fs::write(&harness_path, harness)
         .unwrap_or_else(|e| panic!("write {}: {e}", harness_path.display()));
 

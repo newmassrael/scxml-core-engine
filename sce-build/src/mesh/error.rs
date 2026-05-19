@@ -2324,7 +2324,11 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![machine.clone(), reason.clone()],
         },
-        DeployError::InvalidRetryPolicy { machine, target, reason } => DiagnosticPayload {
+        DeployError::InvalidRetryPolicy {
+            machine,
+            target,
+            reason,
+        } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployInvalidRetryPolicy,
             stage: Stage::MeshDeploy,
             // `actual` surfaces the offending machine so the
@@ -2338,7 +2342,11 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![machine.clone(), target.clone(), reason.clone()],
         },
-        DeployError::InvalidAuthPolicy { machine, target, reason } => DiagnosticPayload {
+        DeployError::InvalidAuthPolicy {
+            machine,
+            target,
+            reason,
+        } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployInvalidAuthPolicy,
             stage: Stage::MeshDeploy,
             // Mirror InvalidRetryPolicy's actual / key_fragments shape:

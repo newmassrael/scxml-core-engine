@@ -112,8 +112,7 @@ fn default_marker_round_trips_via_declared_default_arm() {
     // Re-encode must produce byte-equal output to the first encode.
     let re_encoded = decoded.encode();
     assert_eq!(
-        bytes,
-        re_encoded,
+        bytes, re_encoded,
         "decode → encode produced different bytes; round-trip is not \
          byte-stable"
     );

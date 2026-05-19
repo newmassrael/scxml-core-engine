@@ -5637,10 +5637,7 @@ fn forge_rust_codec_zenoh_decl_token() {
 
 #[test]
 fn forge_rust_codec_zenoh_undecl_kexpr() {
-    assert_standalone_forge_rust(
-        "codec_zenoh_undecl_kexpr",
-        "codec_zenoh_undecl_kexpr.rs",
-    );
+    assert_standalone_forge_rust("codec_zenoh_undecl_kexpr", "codec_zenoh_undecl_kexpr.rs");
 }
 
 // ── RFC §5.B Wire RFC Phase B Y0b — TLV envelope foundation ────
@@ -6141,10 +6138,7 @@ fn forge_go_codec_zenoh_decl_token() {
 
 #[test]
 fn forge_go_codec_zenoh_undecl_kexpr() {
-    assert_standalone_forge_go(
-        "codec_zenoh_undecl_kexpr",
-        "codec_zenoh_undecl_kexpr.go",
-    );
+    assert_standalone_forge_go("codec_zenoh_undecl_kexpr", "codec_zenoh_undecl_kexpr.go");
 }
 
 // ── RFC §5.B Wire RFC Phase B Y0b — TLV envelope foundation ────
@@ -6616,10 +6610,7 @@ fn forge_python_codec_zenoh_decl_token() {
 
 #[test]
 fn forge_python_codec_zenoh_undecl_kexpr() {
-    assert_standalone_forge_python(
-        "codec_zenoh_undecl_kexpr",
-        "codec_zenoh_undecl_kexpr.py",
-    );
+    assert_standalone_forge_python("codec_zenoh_undecl_kexpr", "codec_zenoh_undecl_kexpr.py");
 }
 
 // ── RFC §5.B Wire RFC Phase B Y0b — TLV envelope foundation ────
@@ -7050,10 +7041,7 @@ fn forge_c11_codec_zenoh_decl_token() {
 
 #[test]
 fn forge_c11_codec_zenoh_undecl_kexpr() {
-    assert_standalone_forge_c(
-        "codec_zenoh_undecl_kexpr",
-        "codec_zenoh_undecl_kexpr.c.h",
-    );
+    assert_standalone_forge_c("codec_zenoh_undecl_kexpr", "codec_zenoh_undecl_kexpr.c.h");
 }
 
 // ── RFC §5.B Wire RFC Phase B Y0b — TLV envelope foundation ────
@@ -8963,9 +8951,9 @@ fn forge_codec_parent_flag_bit_mismatch_rejects() {
         &sce_build::ForgeCompileOptions::default(),
     );
     let err = match result {
-        Ok(_) => panic!(
-            "parent flag bit-mismatch must reject with codec/parent-flag-chain-bit-drift"
-        ),
+        Ok(_) => {
+            panic!("parent flag bit-mismatch must reject with codec/parent-flag-chain-bit-drift")
+        }
         Err(e) => e,
     };
     // RFC B5-ν consumer-parity (claudedocs/rfc-b5-nu-consumer-parity.md)
@@ -9601,9 +9589,7 @@ fn forge_b5_nu_inversion_flag_not_resolved_rejects() {
             assert_eq!(embedded_alias, "codec_b5nu_keyexpr");
             assert_eq!(flag_source, "header.X");
         }
-        other => panic!(
-            "expected CodecVariantDispatchFlagNotResolved, got: {other:?}"
-        ),
+        other => panic!("expected CodecVariantDispatchFlagNotResolved, got: {other:?}"),
     }
 
     let _ = std::fs::remove_dir_all(&dir);
@@ -9798,7 +9784,7 @@ fn forge_b5_nu_inversion_dispatch_flag_static_value_rejects() {
     use sce_build::forge::error::{ForgeError, ValidationError};
 
     let (dir, parent_path) = b5_nu_write_round_trip_fixture(
-        "", // no extra middle field
+        "",                 // no extra middle field
         r#" value="0x01""#, // STATIC value= on M flag conflicts with dispatch
     );
 
@@ -10063,7 +10049,9 @@ fn forge_b5_nu_consumer_parity_alias_neq_stem_rust() {
     // resolves at rustc-time. Phase B / atomic 11287248 emitted only
     // the struct import.
     assert!(
-        parent_rust.contains("use super::b5nu_consumer_disp::{B5nuConsumerDisp, B5nuConsumerDispVariant};"),
+        parent_rust.contains(
+            "use super::b5nu_consumer_disp::{B5nuConsumerDisp, B5nuConsumerDispVariant};"
+        ),
         "use statement must brace-list both the struct and Variant enum; \
          got:\n{parent_rust}"
     );
@@ -10157,7 +10145,8 @@ fn forge_b5_nu_consumer_parity_present_if_gated_rust() {
     std::fs::write(dir.join("b5nu_consumer_gated_parent.scxml"), parent).expect("write parent");
     std::fs::write(dir.join("b5nu_consumer_gated_disp.scxml"), disp).expect("write disp");
     std::fs::write(dir.join("b5nu_consumer_gated_local.scxml"), local).expect("write local");
-    std::fs::write(dir.join("b5nu_consumer_gated_nonlocal.scxml"), nonlocal).expect("write nonlocal");
+    std::fs::write(dir.join("b5nu_consumer_gated_nonlocal.scxml"), nonlocal)
+        .expect("write nonlocal");
 
     let output = sce_build::compile_forge_with_imports(
         parent,
@@ -10526,9 +10515,7 @@ fn forge_b5_nu_consumer_parity_chain_bit_drift_rejects() {
 /// dispatcher with own RPF carrier="header" + flag M (variant tag)
 /// + flag N (forwarded to arm_a's body which gates a payload byte
 /// on `parent.N`), plus arm_a (with RPF on N) and arm_b (plain).
-fn b5_nu_dsg_write_fixture(
-    namespace: &str,
-) -> (std::path::PathBuf, String, String, String) {
+fn b5_nu_dsg_write_fixture(namespace: &str) -> (std::path::PathBuf, String, String, String) {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -10681,11 +10668,8 @@ fn rustc_compile_codec_set(
     // root so its target dir / resolver / member set is isolated.
     let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id();
-    let proj_dir = std::env::temp_dir().join(format!(
-        "sce_rustc_check_{test_id}_{pid}_{counter}"
-    ));
-    std::fs::create_dir_all(proj_dir.join("src"))
-        .map_err(|e| format!("mkdir src: {e}"))?;
+    let proj_dir = std::env::temp_dir().join(format!("sce_rustc_check_{test_id}_{pid}_{counter}"));
+    std::fs::create_dir_all(proj_dir.join("src")).map_err(|e| format!("mkdir src: {e}"))?;
 
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let forge_runtime = std::path::Path::new(manifest_dir)
@@ -11219,16 +11203,11 @@ fn compile_codec_set_cpp(
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id();
-    let proj_dir = std::env::temp_dir().join(format!(
-        "sce_cpp_check_{test_id}_{pid}_{counter}"
-    ));
+    let proj_dir = std::env::temp_dir().join(format!("sce_cpp_check_{test_id}_{pid}_{counter}"));
     std::fs::create_dir_all(&proj_dir).map_err(|e| format!("mkdir: {e}"))?;
 
-    let all_files = generate_files_for_codec_set(
-        dir,
-        scxml_filenames,
-        sce_build::generator::Language::Cpp,
-    )?;
+    let all_files =
+        generate_files_for_codec_set(dir, scxml_filenames, sce_build::generator::Language::Cpp)?;
 
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let runtime_include = std::path::Path::new(manifest_dir)
@@ -11322,16 +11301,11 @@ fn compile_codec_set_c11(
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id();
-    let proj_dir = std::env::temp_dir().join(format!(
-        "sce_c11_check_{test_id}_{pid}_{counter}"
-    ));
+    let proj_dir = std::env::temp_dir().join(format!("sce_c11_check_{test_id}_{pid}_{counter}"));
     std::fs::create_dir_all(&proj_dir).map_err(|e| format!("mkdir: {e}"))?;
 
-    let all_files = generate_files_for_codec_set(
-        dir,
-        scxml_filenames,
-        sce_build::generator::Language::C11,
-    )?;
+    let all_files =
+        generate_files_for_codec_set(dir, scxml_filenames, sce_build::generator::Language::C11)?;
 
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let runtime_include = std::path::Path::new(manifest_dir)
@@ -11423,16 +11397,11 @@ fn compile_codec_set_go(
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id();
-    let proj_dir = std::env::temp_dir().join(format!(
-        "sce_go_check_{test_id}_{pid}_{counter}"
-    ));
+    let proj_dir = std::env::temp_dir().join(format!("sce_go_check_{test_id}_{pid}_{counter}"));
     std::fs::create_dir_all(&proj_dir).map_err(|e| format!("mkdir: {e}"))?;
 
-    let all_files = generate_files_for_codec_set(
-        dir,
-        scxml_filenames,
-        sce_build::generator::Language::Go,
-    )?;
+    let all_files =
+        generate_files_for_codec_set(dir, scxml_filenames, sce_build::generator::Language::Go)?;
 
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let runtime_path = std::path::Path::new(manifest_dir)
@@ -11488,8 +11457,7 @@ fn compile_codec_set_go(
          replace github.com/newmassrael/sce-forge-runtime => {}\n",
         runtime_path.display(),
     );
-    std::fs::write(proj_dir.join("go.mod"), go_mod)
-        .map_err(|e| format!("write go.mod: {e}"))?;
+    std::fs::write(proj_dir.join("go.mod"), go_mod).map_err(|e| format!("write go.mod: {e}"))?;
 
     let build_out = std::process::Command::new("go")
         .arg("build")
@@ -11549,16 +11517,11 @@ fn compile_codec_set_python(
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id();
-    let proj_dir = std::env::temp_dir().join(format!(
-        "sce_py_check_{test_id}_{pid}_{counter}"
-    ));
+    let proj_dir = std::env::temp_dir().join(format!("sce_py_check_{test_id}_{pid}_{counter}"));
     std::fs::create_dir_all(&proj_dir).map_err(|e| format!("mkdir: {e}"))?;
 
-    let all_files = generate_files_for_codec_set(
-        dir,
-        scxml_filenames,
-        sce_build::generator::Language::Python,
-    )?;
+    let all_files =
+        generate_files_for_codec_set(dir, scxml_filenames, sce_build::generator::Language::Python)?;
 
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let runtime_path = std::path::Path::new(manifest_dir)
@@ -11640,16 +11603,11 @@ fn compile_codec_set_kotlin(
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id();
-    let proj_dir = std::env::temp_dir().join(format!(
-        "sce_kt_check_{test_id}_{pid}_{counter}"
-    ));
+    let proj_dir = std::env::temp_dir().join(format!("sce_kt_check_{test_id}_{pid}_{counter}"));
     std::fs::create_dir_all(&proj_dir).map_err(|e| format!("mkdir: {e}"))?;
 
-    let all_files = generate_files_for_codec_set(
-        dir,
-        scxml_filenames,
-        sce_build::generator::Language::Kotlin,
-    )?;
+    let all_files =
+        generate_files_for_codec_set(dir, scxml_filenames, sce_build::generator::Language::Kotlin)?;
 
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let runtime_jar_dir = std::path::Path::new(manifest_dir)
@@ -11661,15 +11619,12 @@ fn compile_codec_set_kotlin(
     let runtime_jar = std::fs::read_dir(&runtime_jar_dir)
         .ok()
         .and_then(|entries| {
-            entries
-                .filter_map(|e| e.ok())
-                .map(|e| e.path())
-                .find(|p| {
-                    p.file_name()
-                        .and_then(|n| n.to_str())
-                        .map(|n| n.starts_with("sce-forge-runtime-kotlin-jvm") && n.ends_with(".jar"))
-                        .unwrap_or(false)
-                })
+            entries.filter_map(|e| e.ok()).map(|e| e.path()).find(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|n| n.starts_with("sce-forge-runtime-kotlin-jvm") && n.ends_with(".jar"))
+                    .unwrap_or(false)
+            })
         });
     let Some(jar_path) = runtime_jar else {
         let _ = std::fs::remove_dir_all(&proj_dir);

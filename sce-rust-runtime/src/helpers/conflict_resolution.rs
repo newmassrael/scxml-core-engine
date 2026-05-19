@@ -119,8 +119,7 @@ pub fn compute_exit_set<P: StatePolicy>(
 
     // W3C SCXML 3.13: Internal transition to compound descendant -- source stays active
     if is_internal {
-        let source_is_compound =
-            P::is_compound_state(source) && !P::is_parallel_state(source);
+        let source_is_compound = P::is_compound_state(source) && !P::is_parallel_state(source);
         if source_is_compound && P::is_descendant_of(target, source) && target != source {
             return Vec::new();
         }

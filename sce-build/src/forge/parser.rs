@@ -1009,12 +1009,7 @@ fn parse_codec(
     // requires_parent_flags lets the parser validate the named flag
     // exists in the codec's declared dependency block and surface
     // `codec/variant-parent-tag-*` diagnostics without a second pass.
-    let variant = parse_codec_variant(
-        &datamodel,
-        &fields,
-        requires_parent_flags.as_ref(),
-        label,
-    )?;
+    let variant = parse_codec_variant(&datamodel, &fields, requires_parent_flags.as_ref(), label)?;
 
     // RFC §5.B B5-θ inline test vectors. Parsed against the field list
     // so each `<sce:decoded field="..." value|hex|string="..."/>` row
@@ -7554,11 +7549,10 @@ fn parse_imports(
                         element: "<sce:variant-dispatch>".into(),
                         attr: "(element)".into(),
                         value: String::new(),
-                        expected:
-                            "at most one <sce:variant-dispatch> per <sce:import> — multiple \
+                        expected: "at most one <sce:variant-dispatch> per <sce:import> — multiple \
                              dispatch sources for a single imported variant codec are \
                              structurally meaningless"
-                                .into(),
+                            .into(),
                     },
                 ));
             }
@@ -7588,15 +7582,18 @@ fn parse_imports(
                         element: "<sce:variant-dispatch>".into(),
                         attr: "flag".into(),
                         value: flag_source.clone(),
-                        expected:
-                            "dotted `<carrier>.<flag>` form (e.g. \"header.M\") naming a \
+                        expected: "dotted `<carrier>.<flag>` form (e.g. \"header.M\") naming a \
                              carrier field and one of its declared flags in this codec"
-                                .into(),
+                            .into(),
                     },
                 ));
             }
-            let dispatch_line =
-                Some(grandchild.document().text_pos_at(grandchild.range().start).row);
+            let dispatch_line = Some(
+                grandchild
+                    .document()
+                    .text_pos_at(grandchild.range().start)
+                    .row,
+            );
             embed_dispatch = Some(crate::forge::model::EmbedDispatch {
                 flag_source,
                 line: dispatch_line,

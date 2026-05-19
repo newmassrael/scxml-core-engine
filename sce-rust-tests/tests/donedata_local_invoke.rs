@@ -44,8 +44,7 @@ fn parent_observes_donedata_on_done_invoke() {
     // reaches `pass`/`fail` within a few microsteps. A brief poll loop
     // mirrors the Kotlin harness and guards against any future async
     // microstep scheduling.
-    let completed =
-        engine.run_until_completion(Duration::from_secs(2), Duration::from_millis(10));
+    let completed = engine.run_until_completion(Duration::from_secs(2), Duration::from_millis(10));
     assert!(
         completed,
         "donedata_local_invoke timed out before reaching a final state"

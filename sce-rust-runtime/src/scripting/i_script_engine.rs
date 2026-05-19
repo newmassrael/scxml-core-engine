@@ -97,9 +97,7 @@ impl ScriptValue {
                 format!("{{{}}}", items.join(", "))
             }
             ScriptValue::Dom(s) => {
-                let escaped = s
-                    .replace('\\', "\\\\")
-                    .replace('"', "\\\"");
+                let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
                 format!("\"{}\"", escaped)
             }
         }
@@ -187,12 +185,7 @@ pub trait IScriptEngine: Send + Sync {
     // ════════════════════════════════════════
 
     /// Set a variable in the specified session (W3C SCXML 5.3).
-    fn set_variable(
-        &self,
-        session_id: &str,
-        name: &str,
-        value: ScriptValue,
-    ) -> ScriptResult<()>;
+    fn set_variable(&self, session_id: &str, name: &str, value: ScriptValue) -> ScriptResult<()>;
 
     /// Get a variable from the specified session (W3C SCXML 5.3).
     fn get_variable(&self, session_id: &str, name: &str) -> ScriptResult<ScriptValue>;
@@ -262,11 +255,7 @@ pub trait IScriptEngine: Send + Sync {
     /// Matches C++ `registerGlobalFunction`. Returns `true` on success. Used by
     /// runtime integrations (e.g., logging, state query callbacks) to expose Rust
     /// code to generated Lua/JS expressions.
-    fn register_global_function(
-        &self,
-        function_name: &str,
-        callback: NativeMethod,
-    ) -> bool;
+    fn register_global_function(&self, function_name: &str, callback: NativeMethod) -> bool;
 
     // ════════════════════════════════════════
     // Native Object Binding
@@ -308,11 +297,7 @@ pub trait IScriptEngine: Send + Sync {
     /// Matches C++ `setStateQueryCallback`. The callback takes a state ID string
     /// and returns `true` if the state is in the current active configuration.
     /// Passing `None` unregisters the callback.
-    fn set_state_query_callback(
-        &self,
-        session_id: &str,
-        callback: Option<StateQueryCallback>,
-    );
+    fn set_state_query_callback(&self, session_id: &str, callback: Option<StateQueryCallback>);
 
     // ════════════════════════════════════════
     // Engine Lifecycle

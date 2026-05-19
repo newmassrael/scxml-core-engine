@@ -3,7 +3,6 @@
 // template-hash: 73644a8c52ee83b6af224889edefc07c66120d6db7d21a41c918be4815ed8509
 // generated-at: 1779022531
 
-
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
 //
@@ -71,13 +70,11 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-
 #![doc = "SCE-MAP: test242.scxml:6"]
 // SCE-MAP: test242.scxml:6
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
-
 
 // ======================================================================
 // State enum (W3C SCXML 3.3)
@@ -128,10 +125,22 @@ pub struct Test242Policy {
     child_invoke_0: Option<Box<sce_rust_runtime::Engine<super::test242sub1_sm::Test242sub1Policy>>>,
     pending_done_invoke_invoke_0: bool,
     // W3C SCXML 6.4: Static invoke child '_invoke_1' (test242__sce_synth_invoke__invoke_1)
-    child_invoke_1: Option<Box<sce_rust_runtime::Engine<super::test242__sce_synth_invoke__invoke_1_sm::Test242SceSynthInvokeInvoke1Policy>>>,
+    child_invoke_1: Option<
+        Box<
+            sce_rust_runtime::Engine<
+                super::test242__sce_synth_invoke__invoke_1_sm::Test242SceSynthInvokeInvoke1Policy,
+            >,
+        >,
+    >,
     pending_done_invoke_invoke_1: bool,
     // W3C SCXML 6.4: Static invoke child '_invoke_2' (test242__sce_synth_invoke__invoke_2)
-    child_invoke_2: Option<Box<sce_rust_runtime::Engine<super::test242__sce_synth_invoke__invoke_2_sm::Test242SceSynthInvokeInvoke2Policy>>>,
+    child_invoke_2: Option<
+        Box<
+            sce_rust_runtime::Engine<
+                super::test242__sce_synth_invoke__invoke_2_sm::Test242SceSynthInvokeInvoke2Policy,
+            >,
+        >,
+    >,
     pending_done_invoke_invoke_2: bool,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated under std — any SM can be invoked as a child. Under
@@ -166,9 +175,6 @@ impl Test242Policy {
         }
     }
 
-
-
-
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
     // 1:1 port of C++ executePendingInvokes() in entry_exit_actions.jinja2
     fn do_execute_pending_invokes(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
@@ -181,11 +187,12 @@ impl Test242Policy {
 
         for pending in &invokes_to_execute {
             if pending.invoke_id.contains("._invoke_0") {
-
                 // W3C SCXML 6.5: Generate child session ID for finalize origin matching
-                let child_session_id = format!("{}.{}",
+                let child_session_id = format!(
+                    "{}.{}",
                     self.session_id.as_deref().unwrap_or(""),
-                    &pending.invoke_id);
+                    &pending.invoke_id
+                );
 
                 // W3C SCXML 6.4: Create child state machine
                 // Engine DI Parity RFC: forward parent's script engine to child when the
@@ -198,15 +205,16 @@ impl Test242Policy {
 
                 // W3C SCXML 6.4: Ensure child session ID for invoke tracking
                 if child_policy.session_id.is_none() {
-                    static CHILD_SESSION_COUNTER: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
-                    let cid = CHILD_SESSION_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    static CHILD_SESSION_COUNTER: core::sync::atomic::AtomicU64 =
+                        core::sync::atomic::AtomicU64::new(0);
+                    let cid =
+                        CHILD_SESSION_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     child_policy.session_id = Some(format!("child_session_{}", cid));
                 }
 
-
-
                 // W3C SCXML 6.4.6: Track active invoke session BEFORE initialize
-                self.active_invokes.insert("_invoke_0".to_string(),
+                self.active_invokes.insert(
+                    "_invoke_0".to_string(),
                     sce_rust_runtime::invoke::ChildSession {
                         session_id: child_session_id,
                         // W3C SCXML 6.4: Element invoke_id for _event.invokeid (test 228)
@@ -227,20 +235,30 @@ impl Test242Policy {
 
                 // W3C SCXML 6.4: Drain child-to-parent events raised during initialize
                 sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &self.child_invoke_0.as_ref().unwrap().policy().parent_external_queue,
+                    &self
+                        .child_invoke_0
+                        .as_ref()
+                        .unwrap()
+                        .policy()
+                        .parent_external_queue,
                     &self.active_invokes,
                     "_invoke_0",
                     engine,
                 );
 
                 // W3C SCXML 6.4: Check if child completed during initialize (test 236)
-                if self.child_invoke_0.as_ref().map_or(false, |c| c.is_in_final_state()) {
+                if self
+                    .child_invoke_0
+                    .as_ref()
+                    .map_or(false, |c| c.is_in_final_state())
+                {
                     self.pending_done_invoke_invoke_0 = true;
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
                     // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
                     // + EventMetadataHelper::createDoneInvokeEvent).
-                    let donedata = self.child_invoke_0
+                    let donedata = self
+                        .child_invoke_0
                         .as_ref()
                         .map(|c| c.donedata_at_final().to_string())
                         .unwrap_or_default();
@@ -253,11 +271,12 @@ impl Test242Policy {
                 continue;
             }
             if pending.invoke_id.contains("._invoke_1") {
-
                 // W3C SCXML 6.5: Generate child session ID for finalize origin matching
-                let child_session_id = format!("{}.{}",
+                let child_session_id = format!(
+                    "{}.{}",
                     self.session_id.as_deref().unwrap_or(""),
-                    &pending.invoke_id);
+                    &pending.invoke_id
+                );
 
                 // W3C SCXML 6.4: Create child state machine
                 // Engine DI Parity RFC: forward parent's script engine to child when the
@@ -270,15 +289,16 @@ impl Test242Policy {
 
                 // W3C SCXML 6.4: Ensure child session ID for invoke tracking
                 if child_policy.session_id.is_none() {
-                    static CHILD_SESSION_COUNTER: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
-                    let cid = CHILD_SESSION_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    static CHILD_SESSION_COUNTER: core::sync::atomic::AtomicU64 =
+                        core::sync::atomic::AtomicU64::new(0);
+                    let cid =
+                        CHILD_SESSION_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     child_policy.session_id = Some(format!("child_session_{}", cid));
                 }
 
-
-
                 // W3C SCXML 6.4.6: Track active invoke session BEFORE initialize
-                self.active_invokes.insert("_invoke_1".to_string(),
+                self.active_invokes.insert(
+                    "_invoke_1".to_string(),
                     sce_rust_runtime::invoke::ChildSession {
                         session_id: child_session_id,
                         // W3C SCXML 6.4: Element invoke_id for _event.invokeid (test 228)
@@ -299,20 +319,30 @@ impl Test242Policy {
 
                 // W3C SCXML 6.4: Drain child-to-parent events raised during initialize
                 sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &self.child_invoke_1.as_ref().unwrap().policy().parent_external_queue,
+                    &self
+                        .child_invoke_1
+                        .as_ref()
+                        .unwrap()
+                        .policy()
+                        .parent_external_queue,
                     &self.active_invokes,
                     "_invoke_1",
                     engine,
                 );
 
                 // W3C SCXML 6.4: Check if child completed during initialize (test 236)
-                if self.child_invoke_1.as_ref().map_or(false, |c| c.is_in_final_state()) {
+                if self
+                    .child_invoke_1
+                    .as_ref()
+                    .map_or(false, |c| c.is_in_final_state())
+                {
                     self.pending_done_invoke_invoke_1 = true;
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
                     // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
                     // + EventMetadataHelper::createDoneInvokeEvent).
-                    let donedata = self.child_invoke_1
+                    let donedata = self
+                        .child_invoke_1
                         .as_ref()
                         .map(|c| c.donedata_at_final().to_string())
                         .unwrap_or_default();
@@ -325,11 +355,12 @@ impl Test242Policy {
                 continue;
             }
             if pending.invoke_id.contains("._invoke_2") {
-
                 // W3C SCXML 6.5: Generate child session ID for finalize origin matching
-                let child_session_id = format!("{}.{}",
+                let child_session_id = format!(
+                    "{}.{}",
                     self.session_id.as_deref().unwrap_or(""),
-                    &pending.invoke_id);
+                    &pending.invoke_id
+                );
 
                 // W3C SCXML 6.4: Create child state machine
                 // Engine DI Parity RFC: forward parent's script engine to child when the
@@ -342,15 +373,16 @@ impl Test242Policy {
 
                 // W3C SCXML 6.4: Ensure child session ID for invoke tracking
                 if child_policy.session_id.is_none() {
-                    static CHILD_SESSION_COUNTER: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
-                    let cid = CHILD_SESSION_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    static CHILD_SESSION_COUNTER: core::sync::atomic::AtomicU64 =
+                        core::sync::atomic::AtomicU64::new(0);
+                    let cid =
+                        CHILD_SESSION_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     child_policy.session_id = Some(format!("child_session_{}", cid));
                 }
 
-
-
                 // W3C SCXML 6.4.6: Track active invoke session BEFORE initialize
-                self.active_invokes.insert("_invoke_2".to_string(),
+                self.active_invokes.insert(
+                    "_invoke_2".to_string(),
                     sce_rust_runtime::invoke::ChildSession {
                         session_id: child_session_id,
                         // W3C SCXML 6.4: Element invoke_id for _event.invokeid (test 228)
@@ -371,20 +403,30 @@ impl Test242Policy {
 
                 // W3C SCXML 6.4: Drain child-to-parent events raised during initialize
                 sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &self.child_invoke_2.as_ref().unwrap().policy().parent_external_queue,
+                    &self
+                        .child_invoke_2
+                        .as_ref()
+                        .unwrap()
+                        .policy()
+                        .parent_external_queue,
                     &self.active_invokes,
                     "_invoke_2",
                     engine,
                 );
 
                 // W3C SCXML 6.4: Check if child completed during initialize (test 236)
-                if self.child_invoke_2.as_ref().map_or(false, |c| c.is_in_final_state()) {
+                if self
+                    .child_invoke_2
+                    .as_ref()
+                    .map_or(false, |c| c.is_in_final_state())
+                {
                     self.pending_done_invoke_invoke_2 = true;
                     // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
                     // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
                     // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
                     // + EventMetadataHelper::createDoneInvokeEvent).
-                    let donedata = self.child_invoke_2
+                    let donedata = self
+                        .child_invoke_2
                         .as_ref()
                         .map(|c| c.donedata_at_final().to_string())
                         .unwrap_or_default();
@@ -516,9 +558,6 @@ impl Test242Policy {
             }
         }
     }
-
-
-
 }
 
 impl Default for Test242Policy {
@@ -570,7 +609,6 @@ impl StatePolicy for Test242Policy {
             _ => false,
         }
     }
-
 
     fn is_descendant_of(desc: Self::State, anc: Self::State) -> bool {
         let mut current = desc;
@@ -643,7 +681,9 @@ impl StatePolicy for Test242Policy {
     // [`StateChain`] alias and the body uses `state_chain_from_slice` instead of
     // `vec![...]` so the emitted code compiles under `--no-std` (`vec!` is a
     // std-only macro; heapless has no equivalent).
-    fn get_initial_children(state: Self::State) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
+    fn get_initial_children(
+        state: Self::State,
+    ) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
         match state {
             _ => ::sce_rust_runtime::helpers::hierarchy::new_chain(),
         }
@@ -684,51 +724,44 @@ impl StatePolicy for Test242Policy {
         self.last_transition_source_state = state;
     }
 
-
-
-
     // ======================================================================
     // Instance methods - generated executable content
     // ======================================================================
 
-
-
     // W3C SCXML 3.7: Execute <onentry> actions for a state
     #[doc = "SCE-MAP: test242.scxml:6"]
-// SCE-MAP: test242.scxml:6
-    fn execute_entry_actions(&mut self, state: Self::State, engine: &mut sce_rust_runtime::Engine<Self>) {
+    // SCE-MAP: test242.scxml:6
+    fn execute_entry_actions(
+        &mut self,
+        state: Self::State,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
         match state {
             Test242State::S0 => {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
+                    {
+                        let send_id = "__send_0".to_string();
 
+                        let event_data: &str = "";
 
-{
-    let send_id = "__send_0".to_string();
+                        // W3C SCXML 6.2: Delayed send (1000ms)
+                        engine.schedule_event(
+                            Test242Event::Timeout1,
+                            core::time::Duration::from_millis(1000),
+                            &send_id,
+                            event_data,
+                        );
 
-
-    let event_data: &str = "";
-
-
-
-    // W3C SCXML 6.2: Delayed send (1000ms)
-    engine.schedule_event(
-        Test242Event::Timeout1,
-        core::time::Duration::from_millis(1000),
-        &send_id,
-        event_data,
-    );
-
-
-    let _ = send_id;  // suppress unused warning when no send operation
-    let _ = event_data;  // suppress unused warning in branches that skip dispatch
-}
+                        let _ = send_id; // suppress unused warning when no send operation
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                    }
                 }
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
-                    let generated_invoke_id = format!("{}.{}._invoke_0",
-                        "s0", self as *const _ as usize);
+                    let generated_invoke_id =
+                        format!("{}.{}._invoke_0", "s0", self as *const _ as usize);
                     sce_rust_runtime::invoke::defer_invoke(
                         &mut self.pending_invokes,
                         sce_rust_runtime::invoke::PendingInvoke {
@@ -742,33 +775,27 @@ impl StatePolicy for Test242Policy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
+                    {
+                        let send_id = "__send_1".to_string();
 
+                        let event_data: &str = "";
 
-{
-    let send_id = "__send_1".to_string();
+                        // W3C SCXML 6.2: Delayed send (1000ms)
+                        engine.schedule_event(
+                            Test242Event::Timeout2,
+                            core::time::Duration::from_millis(1000),
+                            &send_id,
+                            event_data,
+                        );
 
-
-    let event_data: &str = "";
-
-
-
-    // W3C SCXML 6.2: Delayed send (1000ms)
-    engine.schedule_event(
-        Test242Event::Timeout2,
-        core::time::Duration::from_millis(1000),
-        &send_id,
-        event_data,
-    );
-
-
-    let _ = send_id;  // suppress unused warning when no send operation
-    let _ = event_data;  // suppress unused warning in branches that skip dispatch
-}
+                        let _ = send_id; // suppress unused warning when no send operation
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                    }
                 }
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
-                    let generated_invoke_id = format!("{}.{}._invoke_1",
-                        "s02", self as *const _ as usize);
+                    let generated_invoke_id =
+                        format!("{}.{}._invoke_1", "s02", self as *const _ as usize);
                     sce_rust_runtime::invoke::defer_invoke(
                         &mut self.pending_invokes,
                         sce_rust_runtime::invoke::PendingInvoke {
@@ -782,33 +809,27 @@ impl StatePolicy for Test242Policy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
+                    {
+                        let send_id = "__send_2".to_string();
 
+                        let event_data: &str = "";
 
-{
-    let send_id = "__send_2".to_string();
+                        // W3C SCXML 6.2: Delayed send (1000ms)
+                        engine.schedule_event(
+                            Test242Event::Timeout3,
+                            core::time::Duration::from_millis(1000),
+                            &send_id,
+                            event_data,
+                        );
 
-
-    let event_data: &str = "";
-
-
-
-    // W3C SCXML 6.2: Delayed send (1000ms)
-    engine.schedule_event(
-        Test242Event::Timeout3,
-        core::time::Duration::from_millis(1000),
-        &send_id,
-        event_data,
-    );
-
-
-    let _ = send_id;  // suppress unused warning when no send operation
-    let _ = event_data;  // suppress unused warning in branches that skip dispatch
-}
+                        let _ = send_id; // suppress unused warning when no send operation
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                    }
                 }
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
-                    let generated_invoke_id = format!("{}.{}._invoke_2",
-                        "s03", self as *const _ as usize);
+                    let generated_invoke_id =
+                        format!("{}.{}._invoke_2", "s03", self as *const _ as usize);
                     sce_rust_runtime::invoke::defer_invoke(
                         &mut self.pending_invokes,
                         sce_rust_runtime::invoke::PendingInvoke {
@@ -820,12 +841,11 @@ impl StatePolicy for Test242Policy {
             }
             _ => {}
         }
-
     }
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
     #[doc = "SCE-MAP: test242.scxml:6"]
-// SCE-MAP: test242.scxml:6
+    // SCE-MAP: test242.scxml:6
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -844,7 +864,8 @@ impl StatePolicy for Test242Policy {
                 if self.child_invoke_0.is_some() {
                     if !self.pending_done_invoke_invoke_0 {
                         engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            Test242Event::CancelInvoke));
+                            Test242Event::CancelInvoke,
+                        ));
                     }
                     self.child_invoke_0 = None;
                 }
@@ -861,7 +882,8 @@ impl StatePolicy for Test242Policy {
                 if self.child_invoke_1.is_some() {
                     if !self.pending_done_invoke_invoke_1 {
                         engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            Test242Event::CancelInvoke));
+                            Test242Event::CancelInvoke,
+                        ));
                     }
                     self.child_invoke_1 = None;
                 }
@@ -878,7 +900,8 @@ impl StatePolicy for Test242Policy {
                 if self.child_invoke_2.is_some() {
                     if !self.pending_done_invoke_invoke_2 {
                         engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            Test242Event::CancelInvoke));
+                            Test242Event::CancelInvoke,
+                        ));
                     }
                     self.child_invoke_2 = None;
                 }
@@ -892,11 +915,9 @@ impl StatePolicy for Test242Policy {
         }
     }
 
-
-
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
     #[doc = "SCE-MAP: test242.scxml:6"]
-// SCE-MAP: test242.scxml:6
+    // SCE-MAP: test242.scxml:6
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -905,16 +926,21 @@ impl StatePolicy for Test242Policy {
     ) -> bool {
         let mut transition_taken = false;
 
-
         // Flat state machine: no hierarchy, direct transition check
-        self.try_transition_in_state(*current_state, event, current_state, &mut transition_taken, engine);
+        self.try_transition_in_state(
+            *current_state,
+            event,
+            current_state,
+            &mut transition_taken,
+            engine,
+        );
 
         transition_taken
     }
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
     #[doc = "SCE-MAP: test242.scxml:6"]
-// SCE-MAP: test242.scxml:6
+    // SCE-MAP: test242.scxml:6
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         // W3C SCXML 3.13: No transition actions in this state machine
         let _ = engine;
@@ -952,36 +978,36 @@ impl Test242Policy {
                 // W3C SCXML 3.12: Event-triggered transitions (document order)
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == Test242Event::Timeout {
-                        // W3C SCXML 3.4: Track transition metadata
-                        self.last_transition_source_state = check_state;
-                        self.last_transition_is_internal = false;
-                        self.last_transition_is_targetless = false;
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
 
-                            *current_state = Test242State::Fail;
-                            *transition_taken = true;
-                        return true;
+                    *current_state = Test242State::Fail;
+                    *transition_taken = true;
+                    return true;
                 }
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == Test242Event::DoneInvoke {
-                        // W3C SCXML 3.4: Track transition metadata
-                        self.last_transition_source_state = check_state;
-                        self.last_transition_is_internal = false;
-                        self.last_transition_is_targetless = false;
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
 
-                            *current_state = Test242State::S02;
-                            *transition_taken = true;
-                        return true;
+                    *current_state = Test242State::S02;
+                    *transition_taken = true;
+                    return true;
                 }
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == Test242Event::Timeout1 {
-                        // W3C SCXML 3.4: Track transition metadata
-                        self.last_transition_source_state = check_state;
-                        self.last_transition_is_internal = false;
-                        self.last_transition_is_targetless = false;
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
 
-                            *current_state = Test242State::S03;
-                            *transition_taken = true;
-                        return true;
+                    *current_state = Test242State::S03;
+                    *transition_taken = true;
+                    return true;
                 }
                 false
             }
@@ -989,25 +1015,25 @@ impl Test242Policy {
                 // W3C SCXML 3.12: Event-triggered transitions (document order)
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == Test242Event::DoneInvoke {
-                        // W3C SCXML 3.4: Track transition metadata
-                        self.last_transition_source_state = check_state;
-                        self.last_transition_is_internal = false;
-                        self.last_transition_is_targetless = false;
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
 
-                            *current_state = Test242State::Pass;
-                            *transition_taken = true;
-                        return true;
+                    *current_state = Test242State::Pass;
+                    *transition_taken = true;
+                    return true;
                 }
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == Test242Event::Timeout2 {
-                        // W3C SCXML 3.4: Track transition metadata
-                        self.last_transition_source_state = check_state;
-                        self.last_transition_is_internal = false;
-                        self.last_transition_is_targetless = false;
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
 
-                            *current_state = Test242State::Fail;
-                            *transition_taken = true;
-                        return true;
+                    *current_state = Test242State::Fail;
+                    *transition_taken = true;
+                    return true;
                 }
                 false
             }
@@ -1015,33 +1041,29 @@ impl Test242Policy {
                 // W3C SCXML 3.12: Event-triggered transitions (document order)
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == Test242Event::Timeout3 {
-                        // W3C SCXML 3.4: Track transition metadata
-                        self.last_transition_source_state = check_state;
-                        self.last_transition_is_internal = false;
-                        self.last_transition_is_targetless = false;
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
 
-                            *current_state = Test242State::Pass;
-                            *transition_taken = true;
-                        return true;
+                    *current_state = Test242State::Pass;
+                    *transition_taken = true;
+                    return true;
                 }
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == Test242Event::DoneInvoke {
-                        // W3C SCXML 3.4: Track transition metadata
-                        self.last_transition_source_state = check_state;
-                        self.last_transition_is_internal = false;
-                        self.last_transition_is_targetless = false;
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
 
-                            *current_state = Test242State::Fail;
-                            *transition_taken = true;
-                        return true;
+                    *current_state = Test242State::Fail;
+                    *transition_taken = true;
+                    return true;
                 }
                 false
             }
             _ => false,
         }
     }
-
-
-
-
 }

@@ -67,9 +67,9 @@ use crate::helpers::{hierarchy, state_policy_concepts as concepts};
 #[cfg(not(feature = "no_std"))]
 use crate::http::{HttpSendRequest, HttpSendResponse};
 use crate::policy::StatePolicy;
-use crate::{sce_log_debug, SceString};
 #[cfg(feature = "no_std")]
 use crate::MAX_SCHEDULED_EVENTS;
+use crate::{sce_log_debug, SceString};
 
 // ─────────────────────────────────────────────────────────────────────
 // Scheduler time point alias (Watching-zenoh RFC §5.J.2 line 1984 HAL)
@@ -249,7 +249,6 @@ fn format_auto_send_id(counter: u64) -> SceString {
         s
     }
 }
-
 
 impl<E: Clone> Default for PullScheduler<E> {
     fn default() -> Self {
@@ -452,11 +451,7 @@ impl<P: StatePolicy> Engine<P> {
     /// See [`Self::execute_on_entry`] for the full safety rationale. The
     /// `pre_transition_active` slice is borrowed from the caller's stack and
     /// does not interact with the split borrow.
-    pub(crate) fn execute_on_exit(
-        &mut self,
-        state: P::State,
-        pre_transition_active: &[P::State],
-    ) {
+    pub(crate) fn execute_on_exit(&mut self, state: P::State, pre_transition_active: &[P::State]) {
         let policy_ptr: *mut P = &mut self.policy as *mut P;
         // SAFETY: same as execute_on_entry.
         unsafe {
@@ -554,7 +549,9 @@ impl<P: StatePolicy> Engine<P> {
         // to `!no_std` (see field declaration above).
         #[cfg(not(feature = "no_std"))]
         if self.is_in_final_state() && self.completion_callback.is_some() {
-            sce_log_debug!("Engine::initialize: reached final state during init, invoking completion callback");
+            sce_log_debug!(
+                "Engine::initialize: reached final state during init, invoking completion callback"
+            );
             let active = self.get_active_states();
             let final_state = self.current_state;
             self.execute_on_exit(final_state, &active);
@@ -592,7 +589,9 @@ impl<P: StatePolicy> Engine<P> {
         if self.is_in_final_state() {
             #[cfg(not(feature = "no_std"))]
             if let Some(cb) = self.completion_callback.as_mut() {
-                sce_log_debug!("Engine::tick: final state already reached, invoking completion callback");
+                sce_log_debug!(
+                    "Engine::tick: final state already reached, invoking completion callback"
+                );
                 cb();
             }
             return;
@@ -777,9 +776,7 @@ impl<P: StatePolicy> Engine<P> {
     /// Matches C++ `raiseExternal(const EventWithMetadata&)`. Preserves `invokeid`
     /// for parent finalize handlers.
     pub fn raise_external_with_meta(&mut self, event: EventWithMetadata<P::Event>) {
-        sce_log_debug!(
-            "Engine::raise_external_with_meta: enqueuing external event with metadata"
-        );
+        sce_log_debug!("Engine::raise_external_with_meta: enqueuing external event with metadata");
 
         // W3C SCXML 6.4.6: Autoforward.
         // `P::get_event_name` already returns `&'static str`; pass directly
@@ -913,7 +910,13 @@ impl<P: StatePolicy> Engine<P> {
         send_id: String,
     ) {
         if let Some(cb) = self.on_http_send.as_mut() {
-            let response = cb(HttpSendRequest { target, event_name, content, params, send_id });
+            let response = cb(HttpSendRequest {
+                target,
+                event_name,
+                content,
+                params,
+                send_id,
+            });
             if let Some(resp) = response {
                 if let Some(evt) = P::get_event_from_name(&resp.event_name) {
                     let mut meta = EventWithMetadata::new(evt);
@@ -970,14 +973,16 @@ impl<P: StatePolicy> Engine<P> {
         // W3C SCXML C.1: Internal queue first
         while let Some(event_with_meta) = self.internal_queue.pop() {
             // W3C SCXML 5.4.1: Stop if top-level final state reached
-            if P::is_final_state(self.current_state) && P::get_parent(self.current_state).is_none() {
+            if P::is_final_state(self.current_state) && P::get_parent(self.current_state).is_none()
+            {
                 sce_log_debug!(
                     "Engine::process_event_queues: top-level final state reached, stopping"
                 );
                 return;
             }
             // W3C SCXML 5.10: Populate policy metadata from event (ports C++ populatePolicyFromMetadata)
-            self.policy.populate_event_metadata(&event_with_meta.metadata);
+            self.policy
+                .populate_event_metadata(&event_with_meta.metadata);
             self.execute_transition(event_with_meta.event);
             self.policy.clear_event_metadata();
         }
@@ -993,7 +998,8 @@ impl<P: StatePolicy> Engine<P> {
                 }
             }
             // W3C SCXML 5.10: Populate policy metadata from event (ports C++ populatePolicyFromMetadata)
-            self.policy.populate_event_metadata(&event_with_meta.metadata);
+            self.policy
+                .populate_event_metadata(&event_with_meta.metadata);
             self.execute_transition(event_with_meta.event);
             self.policy.clear_event_metadata();
         }
@@ -1154,12 +1160,14 @@ impl<P: StatePolicy> Engine<P> {
             // `sort_by` (alloc-coupled): document-order values are distinct
             // by construction so stability is irrelevant, and the unstable
             // variant compiles under both std and `--features=no_std`.
-            descendants_to_exit.sort_unstable_by(|a, b| {
-                P::get_document_order(*b).cmp(&P::get_document_order(*a))
-            });
+            descendants_to_exit
+                .sort_unstable_by(|a, b| P::get_document_order(*b).cmp(&P::get_document_order(*a)));
 
             for descendant in descendants_to_exit {
-                sce_log_debug!("handle_hierarchical_transition: exit descendant {:?}", descendant);
+                sce_log_debug!(
+                    "handle_hierarchical_transition: exit descendant {:?}",
+                    descendant
+                );
                 self.execute_on_exit(descendant, pre_transition_states);
             }
 
@@ -1229,7 +1237,10 @@ impl<P: StatePolicy> Engine<P> {
 
             let entry_chain = hierarchy::build_entry_chain::<P>(new_state);
             for state in &entry_chain {
-                sce_log_debug!("handle_hierarchical_transition: enter from root: {:?}", state);
+                sce_log_debug!(
+                    "handle_hierarchical_transition: enter from root: {:?}",
+                    state
+                );
                 self.execute_on_entry(*state);
             }
 

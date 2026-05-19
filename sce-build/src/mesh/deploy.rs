@@ -1768,9 +1768,7 @@ impl AuthPolicyConfig {
                 None
             }
             "someip" => {
-                let opt_in = self
-                    .sd_denied_classifies_as_unauthorized
-                    .unwrap_or(false);
+                let opt_in = self.sd_denied_classifies_as_unauthorized.unwrap_or(false);
                 if !opt_in {
                     return Some(
                         "someip `auth: { required: true }` requires \
@@ -1825,7 +1823,10 @@ fn validate_sha256_fingerprint(fp: &str) -> Option<String> {
             hex_part.len(),
         ));
     }
-    if !hex_part.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+    if !hex_part
+        .bytes()
+        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
         return Some(format!(
             "peer_fingerprint hex portion ({:?}) must contain only lowercase hex characters \
              (`[0-9a-f]`) — uppercase hex and non-hex bytes are rejected for byte-for-byte \
@@ -4938,10 +4939,7 @@ fn validate_retry_policy(cfg: &DeployConfig) -> Result<(), DeployError> {
         for (machine_name, machine) in &device.machines {
             for (target_id, binding) in &machine.bindings {
                 if let Some(r) = &binding.retry {
-                    by_path.insert(
-                        (machine_name.to_string(), target_id.to_string()),
-                        r,
-                    );
+                    by_path.insert((machine_name.to_string(), target_id.to_string()), r);
                 }
             }
         }
@@ -4971,8 +4969,7 @@ fn validate_retry_policy(cfg: &DeployConfig) -> Result<(), DeployError> {
 /// canonical order regardless of HashMap iteration noise.
 fn validate_auth_policy(cfg: &DeployConfig) -> Result<(), DeployError> {
     use std::collections::BTreeMap;
-    let mut by_path: BTreeMap<(String, String), (&str, &AuthPolicyConfig)> =
-        BTreeMap::new();
+    let mut by_path: BTreeMap<(String, String), (&str, &AuthPolicyConfig)> = BTreeMap::new();
     for device in cfg.topology.values() {
         for (machine_name, machine) in &device.machines {
             for (target_id, binding) in &machine.bindings {
@@ -6653,7 +6650,10 @@ topology:
 "##;
         let cfg = parse_deploy_str(yaml).expect("parse");
         let machine = &cfg.topology["ecu1"].machines["brake"];
-        let binding = machine.bindings.get(&TargetId::new("#motor").unwrap()).unwrap();
+        let binding = machine
+            .bindings
+            .get(&TargetId::new("#motor").unwrap())
+            .unwrap();
         assert!(
             binding.retry.is_none(),
             "absent retry section must deserialize as None (opt-in gate — §16.7 row 3)"
@@ -6677,7 +6677,10 @@ topology:
 "##;
         let cfg = parse_deploy_str(yaml).expect("parse");
         let machine = &cfg.topology["ecu1"].machines["brake"];
-        let binding = machine.bindings.get(&TargetId::new("#motor").unwrap()).unwrap();
+        let binding = machine
+            .bindings
+            .get(&TargetId::new("#motor").unwrap())
+            .unwrap();
         let r = binding.retry.expect("retry must be Some");
         assert_eq!(r.max_retries, 3);
         // Defaults must populate from the per-field serde defaults.
@@ -6708,7 +6711,10 @@ topology:
 "##;
         let cfg = parse_deploy_str(yaml).expect("parse");
         let machine = &cfg.topology["ecu1"].machines["brake"];
-        let binding = machine.bindings.get(&TargetId::new("#motor").unwrap()).unwrap();
+        let binding = machine
+            .bindings
+            .get(&TargetId::new("#motor").unwrap())
+            .unwrap();
         let r = binding.retry.expect("retry must be Some");
         assert_eq!(r.max_retries, 5);
         assert_eq!(r.initial_backoff_ms, 50);
@@ -6733,7 +6739,11 @@ topology:
               max_retries: 0
 "##;
         match parse_deploy_str(yaml) {
-            Err(DeployError::InvalidRetryPolicy { machine, target, reason }) => {
+            Err(DeployError::InvalidRetryPolicy {
+                machine,
+                target,
+                reason,
+            }) => {
                 assert_eq!(machine, "brake");
                 assert_eq!(target, "#motor");
                 assert!(
@@ -6844,7 +6854,10 @@ topology:
 "##;
         let cfg = parse_deploy_str(yaml).expect("parse");
         let machine = &cfg.topology["ecu1"].machines["brake"];
-        let binding = machine.bindings.get(&TargetId::new("#motor").unwrap()).unwrap();
+        let binding = machine
+            .bindings
+            .get(&TargetId::new("#motor").unwrap())
+            .unwrap();
         assert!(
             binding.auth.is_none(),
             "absent auth section must deserialize as None (opt-in gate — §16.7 row 10)"
@@ -6869,7 +6882,10 @@ topology:
 "##;
         let cfg = parse_deploy_str(yaml).expect("parse");
         let machine = &cfg.topology["ecu1"].machines["brake"];
-        let binding = machine.bindings.get(&TargetId::new("#motor").unwrap()).unwrap();
+        let binding = machine
+            .bindings
+            .get(&TargetId::new("#motor").unwrap())
+            .unwrap();
         let a = binding.auth.as_ref().expect("auth must be Some");
         assert!(a.required);
         assert_eq!(
@@ -6897,7 +6913,10 @@ topology:
 "##;
         let cfg = parse_deploy_str(yaml).expect("parse");
         let machine = &cfg.topology["ecu1"].machines["brake"];
-        let binding = machine.bindings.get(&TargetId::new("#motor").unwrap()).unwrap();
+        let binding = machine
+            .bindings
+            .get(&TargetId::new("#motor").unwrap())
+            .unwrap();
         let a = binding.auth.as_ref().expect("auth must be Some");
         assert!(a.required);
         assert_eq!(a.sd_denied_classifies_as_unauthorized, Some(true));
@@ -7002,8 +7021,7 @@ topology:
         match parse_deploy_str(yaml) {
             Err(DeployError::InvalidAuthPolicy { reason, .. }) => {
                 assert!(
-                    reason.contains("custom_tcp")
-                        && reason.contains("row 10"),
+                    reason.contains("custom_tcp") && reason.contains("row 10"),
                     "reason must cite the transport rejection: {reason}",
                 );
             }

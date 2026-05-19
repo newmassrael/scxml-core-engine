@@ -3,7 +3,6 @@
 // template-hash: 73644a8c52ee83b6af224889edefc07c66120d6db7d21a41c918be4815ed8509
 // generated-at: 1779022531
 
-
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
 //
@@ -71,13 +70,11 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-
 #![doc = "SCE-MAP: test153.scxml:7"]
 // SCE-MAP: test153.scxml:7
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
-
 
 // ======================================================================
 // State enum (W3C SCXML 3.3)
@@ -173,13 +170,12 @@ impl Test153Policy {
         }
     }
 
-
-
     // W3C SCXML 5.10: Ensure session ID is initialized
     // Uses atomic counter (1:1 with C++ UniqueIdGenerator::generateSessionId)
     fn ensure_session_id(&mut self) {
         if self.session_id.is_none() {
-            static SESSION_COUNTER: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+            static SESSION_COUNTER: core::sync::atomic::AtomicU64 =
+                core::sync::atomic::AtomicU64::new(0);
             let id = SESSION_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             self.session_id = Some(format!("session_{}", id));
         }
@@ -205,7 +201,8 @@ impl Test153Policy {
         // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
         // W3C SCXML 5.2/5.3: Initialize 'Var1' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "Var1", "0") {
+            se, &sid, "Var1", "0",
+        ) {
             log::error!("global: {}", e);
         }
 
@@ -214,21 +211,17 @@ impl Test153Policy {
 
         // W3C SCXML B.2: Inline content for 'Var3' (global, eval with string fallback)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::eval_or_set_string(
-            se, &sid, "Var3",
-            "{1,2,3}",
-            "[1,2,3]") {
+            se, &sid, "Var3", "{1,2,3}", "[1,2,3]",
+        ) {
             log::error!("Failed to init 'Var3' in global: {}", e);
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'Var4' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "Var4", "1") {
+            se, &sid, "Var4", "1",
+        ) {
             log::error!("global: {}", e);
         }
-
-
-
-
 
         self.script_engine_initialized = true;
     }
@@ -254,9 +247,12 @@ impl Test153Policy {
         // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
         // W3C SCXML 5.2/5.3: Initialize 'Var1' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "Var1", "0") {
+            se, &sid, "Var1", "0",
+        ) {
             log::error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(Test153Event::ErrorExecution));
+            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                Test153Event::ErrorExecution,
+            ));
         }
 
         // W3C SCXML 5.2: Runtime variable 'Var2' (global, late binding, init to nil)
@@ -264,23 +260,23 @@ impl Test153Policy {
 
         // W3C SCXML B.2: Inline content for 'Var3' (global, eval with string fallback)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::eval_or_set_string(
-            se, &sid, "Var3",
-            "{1,2,3}",
-            "[1,2,3]") {
+            se, &sid, "Var3", "{1,2,3}", "[1,2,3]",
+        ) {
             log::error!("Failed to init 'Var3' in global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(Test153Event::ErrorExecution));
+            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                Test153Event::ErrorExecution,
+            ));
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'Var4' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "Var4", "1") {
+            se, &sid, "Var4", "1",
+        ) {
             log::error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(Test153Event::ErrorExecution));
+            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                Test153Event::ErrorExecution,
+            ));
         }
-
-
-
-
 
         self.script_engine_initialized = true;
     }
@@ -295,23 +291,40 @@ impl Test153Policy {
             Ok(val) => val.to_bool(),
             Err(e) => {
                 log::error!("Guard evaluation failed for '{}': {}", cond, e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(Test153Event::ErrorExecution));
+                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                    Test153Event::ErrorExecution,
+                ));
                 false
             }
         }
     }
 
     // W3C SCXML 5.10: Set _event system variable for current event
-    fn set_current_event_in_script_engine(&self, event_name: &str, event_data: &str,
-            event_type: &str, send_id: &str, origin: &str, origin_type: &str, invoke_id: &str) {
+    fn set_current_event_in_script_engine(
+        &self,
+        event_name: &str,
+        event_data: &str,
+        event_type: &str,
+        send_id: &str,
+        origin: &str,
+        origin_type: &str,
+        invoke_id: &str,
+    ) {
         if let Some(ref sid) = self.session_id {
             let se = self.script_engine.clone();
             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-            let _ = se.set_current_event(sid, event_name, event_data, event_type,
-                send_id, origin, origin_type, invoke_id);
+            let _ = se.set_current_event(
+                sid,
+                event_name,
+                event_data,
+                event_type,
+                send_id,
+                origin,
+                origin_type,
+                invoke_id,
+            );
         }
     }
-
 
     // W3C SCXML 6.4.1: Set parameter in child's script engine before invoke initialization
     // Matches C++ child->setParamInScriptEngine(name, expr)
@@ -321,17 +334,20 @@ impl Test153Policy {
         let se = self.script_engine.clone();
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         match se.evaluate_expression(&sid, expr) {
-            Ok(val) => { let _ = se.set_variable(&sid, name, val); }
+            Ok(val) => {
+                let _ = se.set_variable(&sid, name, val);
+            }
             Err(_) => {
                 // Fallback: set as string literal
-                let _ = se.set_variable(&sid, name,
-                    sce_rust_runtime::ScriptValue::String(expr.to_string()));
+                let _ = se.set_variable(
+                    &sid,
+                    name,
+                    sce_rust_runtime::ScriptValue::String(expr.to_string()),
+                );
             }
         }
     }
-
 }
-
 
 // ======================================================================
 // StatePolicy trait implementation
@@ -375,7 +391,6 @@ impl StatePolicy for Test153Policy {
             _ => false,
         }
     }
-
 
     fn is_descendant_of(desc: Self::State, anc: Self::State) -> bool {
         let mut current = desc;
@@ -432,7 +447,9 @@ impl StatePolicy for Test153Policy {
     // [`StateChain`] alias and the body uses `state_chain_from_slice` instead of
     // `vec![...]` so the emitted code compiles under `--no-std` (`vec!` is a
     // std-only macro; heapless has no equivalent).
-    fn get_initial_children(state: Self::State) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
+    fn get_initial_children(
+        state: Self::State,
+    ) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
         match state {
             _ => ::sce_rust_runtime::helpers::hierarchy::new_chain(),
         }
@@ -473,7 +490,6 @@ impl StatePolicy for Test153Policy {
         self.last_transition_source_state = state;
     }
 
-
     fn set_next_event_is_external(&mut self, value: bool) {
         self.next_event_is_external = value;
     }
@@ -505,133 +521,162 @@ impl StatePolicy for Test153Policy {
     // Instance methods - generated executable content
     // ======================================================================
 
-
-
     // W3C SCXML 3.7: Execute <onentry> actions for a state
     #[doc = "SCE-MAP: test153.scxml:7"]
-// SCE-MAP: test153.scxml:7
-    fn execute_entry_actions(&mut self, state: Self::State, engine: &mut sce_rust_runtime::Engine<Self>) {
+    // SCE-MAP: test153.scxml:7
+    fn execute_entry_actions(
+        &mut self,
+        state: Self::State,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
         match state {
             Test153State::S0 => {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
+                    {
+                        // W3C SCXML 5.6: <foreach array="Var3" item="Var2">
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
 
-{
-    // W3C SCXML 5.6: <foreach array="Var3" item="Var2">
-    self.ensure_script_engine();
-    let sid = self.session_id.as_ref().unwrap().clone();
-    let se = self.script_engine.clone();
-    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-
-    // Validate item attribute (1:1 with C++ ForeachHelper::isLegalVariableName).
-    // The empty-`item` case is decided at codegen time and never reaches the
-    // runtime guard; the guard only checks legality of a non-empty name to
-    // mirror the C++ helper for fixtures that supply a syntactically invalid
-    // identifier.
-    let item_name = "Var2";
-    if !sce_rust_runtime::helpers::foreach::is_legal_variable_name(item_name) {
-        log::error!("Foreach validation failed: '{}' is not a legal variable name", item_name);
-        engine.raise(sce_rust_runtime::EventWithMetadata::new(Test153Event::ErrorExecution));
-    } else {
-        // Evaluate array expression
-        match se.evaluate_expression(&sid, "Var3") {
-            Ok(sce_rust_runtime::ScriptValue::Array(arr)) => {
-                // W3C SCXML 4.6: Execute foreach loop with error handling
-                let mut foreach_success = true;
-                for (_idx, item_val) in arr.into_iter().enumerate() {
-                    // Set item variable
-                    if let Err(e) = se.set_variable(&sid, item_name, item_val) {
-                        log::error!("Foreach: failed to set item '{}': {}", item_name, e);
-                        foreach_success = false;
-                        break;
+                        // Validate item attribute (1:1 with C++ ForeachHelper::isLegalVariableName).
+                        // The empty-`item` case is decided at codegen time and never reaches the
+                        // runtime guard; the guard only checks legality of a non-empty name to
+                        // mirror the C++ helper for fixtures that supply a syntactically invalid
+                        // identifier.
+                        let item_name = "Var2";
+                        if !sce_rust_runtime::helpers::foreach::is_legal_variable_name(item_name) {
+                            log::error!(
+                                "Foreach validation failed: '{}' is not a legal variable name",
+                                item_name
+                            );
+                            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                Test153Event::ErrorExecution,
+                            ));
+                        } else {
+                            // Evaluate array expression
+                            match se.evaluate_expression(&sid, "Var3") {
+                                Ok(sce_rust_runtime::ScriptValue::Array(arr)) => {
+                                    // W3C SCXML 4.6: Execute foreach loop with error handling
+                                    let mut foreach_success = true;
+                                    for (_idx, item_val) in arr.into_iter().enumerate() {
+                                        // Set item variable
+                                        if let Err(e) = se.set_variable(&sid, item_name, item_val) {
+                                            log::error!(
+                                                "Foreach: failed to set item '{}': {}",
+                                                item_name,
+                                                e
+                                            );
+                                            foreach_success = false;
+                                            break;
+                                        }
+                                        // W3C SCXML 4.6: Execute body actions — stop on first error.
+                                        // Each body action runs inside a labeled block `'foreach_body`. Action
+                                        // templates that raise error.execution also `break 'foreach_body` so
+                                        // subsequent body actions for this iteration are skipped, then the
+                                        // outer loop is aborted (matches W3C spec and C++ ForeachHelper).
+                                        let mut iteration_success = true;
+                                        'foreach_body: {
+                                            // W3C SCXML 5.9: Script engine guard (Var1 < Var2)
+                                            if self.safe_evaluate_guard("Var1 < Var2", engine) {
+                                                {
+                                                    // W3C SCXML 5.3: <assign location="Var1">
+                                                    self.ensure_script_engine();
+                                                    let sid =
+                                                        self.session_id.as_ref().unwrap().clone();
+                                                    let se = self.script_engine.clone();
+                                                    let se: &dyn sce_rust_runtime::IScriptEngine =
+                                                        &*se;
+                                                    let expr = "Var2";
+                                                    // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                                    // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                                    // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                                    // and create a fresh table, breaking reference equality.
+                                                    let assign_script =
+                                                        format!("{} = {}", "Var1", expr);
+                                                    if let Err(e) =
+                                                        se.execute_script(&sid, &assign_script)
+                                                    {
+                                                        log::error!(
+                                                            "Assign failed for 'Var1': {}",
+                                                            e
+                                                        );
+                                                        engine.raise(sce_rust_runtime::EventWithMetadata::new(Test153Event::ErrorExecution));
+                                                        // W3C SCXML 4.6: Stop current foreach iteration and loop on error
+                                                        iteration_success = false;
+                                                        break 'foreach_body;
+                                                    }
+                                                }
+                                            } else {
+                                                {
+                                                    // W3C SCXML 5.3: <assign location="Var4">
+                                                    self.ensure_script_engine();
+                                                    let sid =
+                                                        self.session_id.as_ref().unwrap().clone();
+                                                    let se = self.script_engine.clone();
+                                                    let se: &dyn sce_rust_runtime::IScriptEngine =
+                                                        &*se;
+                                                    let expr = "0";
+                                                    // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                                                    // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                                                    // through evaluate_expression + set_variable would round-trip through ScriptValue
+                                                    // and create a fresh table, breaking reference equality.
+                                                    let assign_script =
+                                                        format!("{} = {}", "Var4", expr);
+                                                    if let Err(e) =
+                                                        se.execute_script(&sid, &assign_script)
+                                                    {
+                                                        log::error!(
+                                                            "Assign failed for 'Var4': {}",
+                                                            e
+                                                        );
+                                                        engine.raise(sce_rust_runtime::EventWithMetadata::new(Test153Event::ErrorExecution));
+                                                        // W3C SCXML 4.6: Stop current foreach iteration and loop on error
+                                                        iteration_success = false;
+                                                        break 'foreach_body;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        if !iteration_success {
+                                            log::debug!("Foreach: body action failed at iteration {}, stopping loop (W3C SCXML 4.6)", _idx);
+                                            foreach_success = false;
+                                            break;
+                                        }
+                                    }
+                                    if !foreach_success {
+                                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                            Test153Event::ErrorExecution,
+                                        ));
+                                    }
+                                }
+                                Ok(_) => {
+                                    // Not an array — raise error.execution (W3C SCXML 5.6)
+                                    log::error!("Foreach: 'Var3' is not an array");
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                        Test153Event::ErrorExecution,
+                                    ));
+                                }
+                                Err(e) => {
+                                    log::error!("Foreach: failed to evaluate array 'Var3': {}", e);
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                        Test153Event::ErrorExecution,
+                                    ));
+                                }
+                            }
+                        }
                     }
-                    // W3C SCXML 4.6: Execute body actions — stop on first error.
-                    // Each body action runs inside a labeled block `'foreach_body`. Action
-                    // templates that raise error.execution also `break 'foreach_body` so
-                    // subsequent body actions for this iteration are skipped, then the
-                    // outer loop is aborted (matches W3C spec and C++ ForeachHelper).
-                    let mut iteration_success = true;
-                    'foreach_body: {
-
-// W3C SCXML 5.9: Script engine guard (Var1 < Var2)
-if self.safe_evaluate_guard("Var1 < Var2", engine) {
-
-{
-    // W3C SCXML 5.3: <assign location="Var1">
-    self.ensure_script_engine();
-    let sid = self.session_id.as_ref().unwrap().clone();
-    let se = self.script_engine.clone();
-    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-    let expr = "Var2";
-    // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-    // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-    // through evaluate_expression + set_variable would round-trip through ScriptValue
-    // and create a fresh table, breaking reference equality.
-    let assign_script = format!("{} = {}", "Var1", expr);
-    if let Err(e) = se.execute_script(&sid, &assign_script) {
-        log::error!("Assign failed for 'Var1': {}", e);
-        engine.raise(sce_rust_runtime::EventWithMetadata::new(Test153Event::ErrorExecution));
-        // W3C SCXML 4.6: Stop current foreach iteration and loop on error
-        iteration_success = false;
-        break 'foreach_body;
-    }
-}
-} else {
-
-{
-    // W3C SCXML 5.3: <assign location="Var4">
-    self.ensure_script_engine();
-    let sid = self.session_id.as_ref().unwrap().clone();
-    let se = self.script_engine.clone();
-    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-    let expr = "0";
-    // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
-    // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
-    // through evaluate_expression + set_variable would round-trip through ScriptValue
-    // and create a fresh table, breaking reference equality.
-    let assign_script = format!("{} = {}", "Var4", expr);
-    if let Err(e) = se.execute_script(&sid, &assign_script) {
-        log::error!("Assign failed for 'Var4': {}", e);
-        engine.raise(sce_rust_runtime::EventWithMetadata::new(Test153Event::ErrorExecution));
-        // W3C SCXML 4.6: Stop current foreach iteration and loop on error
-        iteration_success = false;
-        break 'foreach_body;
-    }
-}
-}                    }
-                    if !iteration_success {
-                        log::debug!("Foreach: body action failed at iteration {}, stopping loop (W3C SCXML 4.6)", _idx);
-                        foreach_success = false;
-                        break;
-                    }
-                }
-                if !foreach_success {
-                    engine.raise(sce_rust_runtime::EventWithMetadata::new(Test153Event::ErrorExecution));
-                }
-            }
-            Ok(_) => {
-                // Not an array — raise error.execution (W3C SCXML 5.6)
-                log::error!("Foreach: 'Var3' is not an array");
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(Test153Event::ErrorExecution));
-            }
-            Err(e) => {
-                log::error!("Foreach: failed to evaluate array 'Var3': {}", e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(Test153Event::ErrorExecution));
-            }
-        }
-    }
-}
                 }
             }
             _ => {}
         }
-
     }
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
     #[doc = "SCE-MAP: test153.scxml:7"]
-// SCE-MAP: test153.scxml:7
+    // SCE-MAP: test153.scxml:7
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -640,11 +685,9 @@ if self.safe_evaluate_guard("Var1 < Var2", engine) {
     ) {
     }
 
-
-
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
     #[doc = "SCE-MAP: test153.scxml:7"]
-// SCE-MAP: test153.scxml:7
+    // SCE-MAP: test153.scxml:7
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -659,7 +702,8 @@ if self.safe_evaluate_guard("Var1 < Var2", engine) {
             let event_name = Self::get_event_name(event);
             self.pending_event_name = event_name.to_string();
             // W3C SCXML 5.10.1: Classify event type (ports C++ EventTypeHelper::classifyEventType)
-            let event_type = if event_name.starts_with("error.") || event_name.starts_with("done.") {
+            let event_type = if event_name.starts_with("error.") || event_name.starts_with("done.")
+            {
                 "platform"
             } else if self.next_event_is_external {
                 self.next_event_is_external = false;
@@ -675,19 +719,31 @@ if self.safe_evaluate_guard("Var1 < Var2", engine) {
             let ev_origintype: &str = &self.pending_event_origintype;
             let ev_invokeid: &str = &self.pending_event_invokeid;
             self.set_current_event_in_script_engine(
-                event_name, ev_data, event_type, ev_sendid, ev_origin, ev_origintype, ev_invokeid,
+                event_name,
+                ev_data,
+                event_type,
+                ev_sendid,
+                ev_origin,
+                ev_origintype,
+                ev_invokeid,
             );
         }
 
         // Flat state machine: no hierarchy, direct transition check
-        self.try_transition_in_state(*current_state, event, current_state, &mut transition_taken, engine);
+        self.try_transition_in_state(
+            *current_state,
+            event,
+            current_state,
+            &mut transition_taken,
+            engine,
+        );
 
         transition_taken
     }
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
     #[doc = "SCE-MAP: test153.scxml:7"]
-// SCE-MAP: test153.scxml:7
+    // SCE-MAP: test153.scxml:7
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         // W3C SCXML 3.13: No transition actions in this state machine
         let _ = engine;
@@ -697,7 +753,6 @@ if self.safe_evaluate_guard("Var1 < Var2", engine) {
     fn initialize_data_model(&mut self, engine: &mut Engine<Self>) {
         self.do_initialize_data_model(engine);
     }
-
 }
 
 // ======================================================================
@@ -720,21 +775,21 @@ impl Test153Policy {
             Test153State::S0 => {
                 // W3C SCXML 3.13: Eventless transitions
                 if event == Test153Event::Null {
-if self.safe_evaluate_guard("Var4 == 0", engine) {
+                    if self.safe_evaluate_guard("Var4 == 0", engine) {
                         // W3C SCXML 3.4: Track transition metadata
                         self.last_transition_source_state = check_state;
                         self.last_transition_is_internal = false;
                         self.last_transition_is_targetless = false;
-                            *current_state = Test153State::Fail;
-                            *transition_taken = true;
+                        *current_state = Test153State::Fail;
+                        *transition_taken = true;
                         return true;
                     } else {
                         // W3C SCXML 3.4: Track transition metadata
                         self.last_transition_source_state = check_state;
                         self.last_transition_is_internal = false;
                         self.last_transition_is_targetless = false;
-                            *current_state = Test153State::Pass;
-                            *transition_taken = true;
+                        *current_state = Test153State::Pass;
+                        *transition_taken = true;
                         return true;
                     }
                 }
@@ -743,8 +798,4 @@ if self.safe_evaluate_guard("Var4 == 0", engine) {
             _ => false,
         }
     }
-
-
-
-
 }

@@ -234,7 +234,12 @@ impl<'pool, M: SampleMeta + 'pool> Sample<'pool, M> {
         hook: &'pool dyn StageCopyHook,
         guard: SlotGuard<'pool>,
     ) -> Self {
-        Self { payload, meta, hook, _guard: guard }
+        Self {
+            payload,
+            meta,
+            hook,
+            _guard: guard,
+        }
     }
 
     /// Borrowed payload bytes. Tied to the slot's lifetime — the consumer
@@ -303,7 +308,10 @@ impl<'pool> SlotGuard<'pool> {
     /// Wrap a slot index + return sink. Called by the link's RX driver
     /// when handing a slot to the consumer.
     pub fn new(return_sink: &'pool Cell<Option<usize>>, slot_index: usize) -> Self {
-        Self { return_sink, slot_index }
+        Self {
+            return_sink,
+            slot_index,
+        }
     }
 }
 
@@ -331,7 +339,9 @@ pub struct LinkConfig {
 
 impl Default for LinkConfig {
     fn default() -> Self {
-        Self { stage_copy_hook: Box::new(PanicOnTakeHook) }
+        Self {
+            stage_copy_hook: Box::new(PanicOnTakeHook),
+        }
     }
 }
 
@@ -476,7 +486,10 @@ mod tests {
         {
             let sample: Sample<'_, TestMeta> = Sample::new(
                 &payload_buf,
-                TestBorrowed { key: key_buf, timestamp: 42 },
+                TestBorrowed {
+                    key: key_buf,
+                    timestamp: 42,
+                },
                 &hook,
                 SlotGuard::new(&return_sink, 7),
             );
@@ -498,7 +511,10 @@ mod tests {
 
         let sample: Sample<'_, TestMeta> = Sample::new(
             &payload_buf,
-            TestBorrowed { key: "owned/topic", timestamp: 100 },
+            TestBorrowed {
+                key: "owned/topic",
+                timestamp: 100,
+            },
             &hook,
             SlotGuard::new(&return_sink, 3),
         );
@@ -572,7 +588,10 @@ mod tests {
         // because SlotGuard isn't generic over the sink type — so this
         // test mirrors the body and verifies the SAME ordering invariant.
         let payload_buf = std::vec![0xAA, 0xBB];
-        let borrowed = TestBorrowed { key: "ord/topic", timestamp: 9 };
+        let borrowed = TestBorrowed {
+            key: "ord/topic",
+            timestamp: 9,
+        };
         let hook = OrderingHook {
             counter: counter.clone(),
             hook_observed: hook_observed.clone(),

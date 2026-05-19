@@ -2273,8 +2273,7 @@ fn render_codec(
     // render `sce:present-if` predicates and every backend can look
     // up `imp.type_name` for the embed's variant enum (consumer-
     // parity Gap 2 + Gap 3 closure).
-    let b5_nu_derivation_block_str =
-        b5_nu_derivation_block(&b5_nu_derivations, m, imports, lang);
+    let b5_nu_derivation_block_str = b5_nu_derivation_block(&b5_nu_derivations, m, imports, lang);
 
     // Apply B5-ν OR suffix to the encode_exprs simple-path emit. The
     // simple path is selected when the codec has no streaming-prefix
@@ -2291,7 +2290,9 @@ fn render_codec(
         encode_exprs
             .into_iter()
             .enumerate()
-            .map(|(i, e)| b5_nu_apply_simple_path_suffix(&e, i, &m.fields, &b5_nu_carrier_or_suffix, lang))
+            .map(|(i, e)| {
+                b5_nu_apply_simple_path_suffix(&e, i, &m.fields, &b5_nu_carrier_or_suffix, lang)
+            })
             .collect()
     };
 
@@ -2630,51 +2631,55 @@ fn render_codec(
             // directly — no shift/mask, no carrier. tag_type fixed at
             // Uint8 (β v1 lock).
             (SceType::Uint8, None)
-        } else { match (&v.peek_byte, &v.tag_flag) {
-            (Some(_), _) => {
-                let flag_def =
-                    peek_flag_def.expect("peek mode always carries a flag def per parser");
-                let width = flag_def.width.max(1);
-                let result_type = if width <= 8 {
-                    SceType::Uint8
-                } else if width <= 16 {
-                    SceType::Uint16
-                } else if width <= 32 {
-                    SceType::Uint32
-                } else {
-                    SceType::Uint64
-                };
-                (result_type, Some(flag_def))
+        } else {
+            match (&v.peek_byte, &v.tag_flag) {
+                (Some(_), _) => {
+                    let flag_def =
+                        peek_flag_def.expect("peek mode always carries a flag def per parser");
+                    let width = flag_def.width.max(1);
+                    let result_type = if width <= 8 {
+                        SceType::Uint8
+                    } else if width <= 16 {
+                        SceType::Uint16
+                    } else if width <= 32 {
+                        SceType::Uint32
+                    } else {
+                        SceType::Uint64
+                    };
+                    (result_type, Some(flag_def))
+                }
+                (None, None) => (carrier_type.clone(), None),
+                (None, Some(flag_name)) => {
+                    let tag_field_name = v
+                        .tag_field
+                        .as_ref()
+                        .expect("Local own-field implies tag_field is Some");
+                    let carrier_field = m
+                        .fields
+                        .iter()
+                        .find(|f| f.id == *tag_field_name)
+                        .expect("parser validated tag_field references an existing field");
+                    let flag_def = carrier_field
+                        .flags
+                        .iter()
+                        .find(|f| f.name == *flag_name)
+                        .expect(
+                            "parser validated tag_flag references an existing flag on the carrier",
+                        );
+                    let width = flag_def.width.max(1);
+                    let result_type = if width <= 8 {
+                        SceType::Uint8
+                    } else if width <= 16 {
+                        SceType::Uint16
+                    } else if width <= 32 {
+                        SceType::Uint32
+                    } else {
+                        SceType::Uint64
+                    };
+                    (result_type, Some(flag_def))
+                }
             }
-            (None, None) => (carrier_type.clone(), None),
-            (None, Some(flag_name)) => {
-                let tag_field_name = v
-                    .tag_field
-                    .as_ref()
-                    .expect("Local own-field implies tag_field is Some");
-                let carrier_field = m
-                    .fields
-                    .iter()
-                    .find(|f| f.id == *tag_field_name)
-                    .expect("parser validated tag_field references an existing field");
-                let flag_def = carrier_field
-                    .flags
-                    .iter()
-                    .find(|f| f.name == *flag_name)
-                    .expect("parser validated tag_flag references an existing flag on the carrier");
-                let width = flag_def.width.max(1);
-                let result_type = if width <= 8 {
-                    SceType::Uint8
-                } else if width <= 16 {
-                    SceType::Uint16
-                } else if width <= 32 {
-                    SceType::Uint32
-                } else {
-                    SceType::Uint64
-                };
-                (result_type, Some(flag_def))
-            }
-        } };
+        };
         let tag_native = l.type_name(&tag_type).to_string();
         let arm_value_suffix = match (lang, &tag_type) {
             (crate::generator::Language::Rust, SceType::Uint8) => "u8",
@@ -3038,11 +3043,7 @@ fn render_codec(
         // C11 own-field mode reads from `out->{field}` (the codec's
         // output struct member); peek mode and β caller-tag mode read
         // from bare locals/parameters.
-        let c11_carrier_qualifier = if peek_mode || caller_tag {
-            ""
-        } else {
-            "out->"
-        };
+        let c11_carrier_qualifier = if peek_mode || caller_tag { "" } else { "out->" };
         let (tag_match_expr, tag_store_expr) = match (&tag_flag_def, lang) {
             // ── Whole-field (B1-β back-compat) ──────────────────────
             (None, crate::generator::Language::Rust) => (carrier_id.clone(), carrier_id.clone()),
@@ -3557,8 +3558,7 @@ fn validate_cross_codec_parent_flags(
                         )));
                     }
                 }
-                let known: Vec<&str> =
-                    parent.fields.iter().map(|f| f.id.as_str()).collect();
+                let known: Vec<&str> = parent.fields.iter().map(|f| f.id.as_str()).collect();
                 return Err(ForgeError::Validation(
                     ValidationError::CodecParentFlagChainUnresolved {
                         body_codec: body_codec_name.to_string(),
@@ -3593,8 +3593,11 @@ fn validate_cross_codec_parent_flags(
                     {
                         Some(f) => f,
                         None => {
-                            let known: Vec<&str> =
-                                carrier_field.flags.iter().map(|f| f.name.as_str()).collect();
+                            let known: Vec<&str> = carrier_field
+                                .flags
+                                .iter()
+                                .map(|f| f.name.as_str())
+                                .collect();
                             return Err(mismatch(format!(
                                 "body declares <sce:flag name=\"{}\" bit=\"{}\"/> but \
                                  parent's <sce:flags id=\"{}\"> has no flag named '{}' \
@@ -3628,11 +3631,7 @@ fn validate_cross_codec_parent_flags(
             }
             FlagLayoutSource::Forwarding(parent_rpf) => {
                 for body_flag in &body_req.flags {
-                    let pf = match parent_rpf
-                        .flags
-                        .iter()
-                        .find(|f| f.name == body_flag.name)
-                    {
+                    let pf = match parent_rpf.flags.iter().find(|f| f.name == body_flag.name) {
                         Some(f) => f,
                         None => {
                             let known: Vec<&str> =
@@ -3707,8 +3706,10 @@ fn validate_cross_codec_variant_dispatch(
             Some(i) => i,
             None => continue,
         };
-        let imported_variant_arm_count: Option<usize> =
-            imp.codec_variant_arms_for_inversion.as_ref().map(|v| v.len());
+        let imported_variant_arm_count: Option<usize> = imp
+            .codec_variant_arms_for_inversion
+            .as_ref()
+            .map(|v| v.len());
         let imported_has_default_arm: bool = imp.codec_variant_has_default_arm.unwrap_or(false);
 
         match imp.embed_dispatch.as_ref() {
@@ -5096,7 +5097,9 @@ fn embed_parent_flags_thread_args(
                     Language::Kotlin => format!(", this.{}", carrier),
                     Language::Go => format!(", s.{}", filters::to_pascal_case(carrier.clone())),
                     Language::C11 => format!(", self->{}", filters::to_snake_case(carrier.clone())),
-                    Language::Python => format!(", self.{}", filters::to_snake_case(carrier.clone())),
+                    Language::Python => {
+                        format!(", self.{}", filters::to_snake_case(carrier.clone()))
+                    }
                 };
                 EmbedThreadArgs {
                     decode_arg: decode,
@@ -9606,10 +9609,7 @@ fn decode_multibyte_unified(
 /// Multiple embeds OR-ing onto the same parent carrier are grouped
 /// downstream by `b5_nu_derivation_block` and `b5_nu_carrier_or_suffix`
 /// so each carrier emits exactly one local + one OR injection site.
-fn collect_b5_nu_derivations(
-    m: &CodecModel,
-    imports: &[ImportContext],
-) -> Vec<B5NuDerivation> {
+fn collect_b5_nu_derivations(m: &CodecModel, imports: &[ImportContext]) -> Vec<B5NuDerivation> {
     let mut out = Vec::new();
     for f in &m.fields {
         if !f.is_embed() {
@@ -9730,7 +9730,9 @@ fn b5_nu_derivation_block(
     }
     let mut out = String::new();
     for (carrier, items) in &by_carrier {
-        out.push_str(&b5_nu_derivation_local_for_carrier(carrier, items, m, imports, lang));
+        out.push_str(&b5_nu_derivation_local_for_carrier(
+            carrier, items, m, imports, lang,
+        ));
     }
     out
 }
@@ -9765,7 +9767,9 @@ fn b5_nu_derivation_local_for_carrier(
                 .map(|d| b5_nu_match_term_cpp(d, imports))
                 .collect();
             let joined = terms.join(" | ");
-            format!("        const std::uint8_t {local_rust} = static_cast<std::uint8_t>({joined});\n")
+            format!(
+                "        const std::uint8_t {local_rust} = static_cast<std::uint8_t>({joined});\n"
+            )
         }
         Language::Kotlin => {
             let terms: Vec<String> = items
@@ -9800,8 +9804,7 @@ fn b5_nu_derivation_local_for_carrier(
             // C11 has no expression-form switch; emit a switch per embed
             // that ORs into a pre-declared local. uint8_t carrier per
             // v1 rpf lock-in.
-            let mut block =
-                format!("    uint8_t _derived_{carrier_snake} = 0u;\n");
+            let mut block = format!("    uint8_t _derived_{carrier_snake} = 0u;\n");
             for d in items {
                 block.push_str(&b5_nu_switch_block_c11(
                     d,
@@ -9847,9 +9850,7 @@ fn b5_nu_match_term_rust(d: &B5NuDerivation, imports: &[ImportContext]) -> Strin
     }
     let arms_str = arms.join(", ");
     if d.present_if.is_some() {
-        format!(
-            "match &self.{snake} {{ Some(x) => match &x.body {{ {arms_str} }}, None => 0u8 }}"
-        )
+        format!("match &self.{snake} {{ Some(x) => match &x.body {{ {arms_str} }}, None => 0u8 }}")
     } else {
         format!("match &self.{snake}.body {{ {arms_str} }}")
     }
@@ -10044,8 +10045,7 @@ fn b5_nu_carrier_or_suffix_map(
     if derivations.is_empty() {
         return out;
     }
-    let mut seen: std::collections::HashSet<String> =
-        std::collections::HashSet::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     for d in derivations {
         if !seen.insert(d.carrier_field_id.clone()) {
             continue;
@@ -10137,8 +10137,7 @@ fn b5_nu_apply_simple_path_suffix(
     // Reproduce `generate_encode_exprs`'s ordering: fixed-length fields
     // grouped by `byte_offset`, walked via BTreeMap. The entry index
     // therefore maps back to the i-th distinct byte_offset.
-    let mut byte_offsets: std::collections::BTreeSet<u32> =
-        std::collections::BTreeSet::new();
+    let mut byte_offsets: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
     for f in fields {
         if !f.is_variable_length() {
             byte_offsets.insert(f.byte_offset);

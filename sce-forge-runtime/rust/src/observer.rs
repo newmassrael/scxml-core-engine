@@ -137,12 +137,7 @@ impl<D: EventDomain, const CAP: usize> EventQueue<D, CAP> {
         // SAFETY: the prefix `[0..self.size]` has been written via `push()`,
         // so every entry in the range is initialized. `Event<D>` is `Copy`,
         // so reinterpreting `MaybeUninit<Event<D>>` as `Event<D>` is sound.
-        unsafe {
-            core::slice::from_raw_parts(
-                self.buffer.as_ptr() as *const Event<D>,
-                self.size,
-            )
-        }
+        unsafe { core::slice::from_raw_parts(self.buffer.as_ptr() as *const Event<D>, self.size) }
     }
 
     pub fn clear(&mut self) {

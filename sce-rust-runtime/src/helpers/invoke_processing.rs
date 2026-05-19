@@ -87,8 +87,7 @@ pub fn raise_done_invoke<P: StatePolicy>(
     engine: &mut Engine<P>,
 ) {
     let specific = format!("done.invoke.{}", invoke_id);
-    let event = P::get_event_from_name(&specific)
-        .or_else(|| P::get_event_from_name("done.invoke"));
+    let event = P::get_event_from_name(&specific).or_else(|| P::get_event_from_name("done.invoke"));
     if let Some(ev) = event {
         let mut meta = EventWithMetadata::new(ev);
         meta.metadata.invoke_id = invoke_id.to_string();

@@ -132,7 +132,11 @@ topology:
     let mut model = parse_brake();
     let result = sce_build::compile_mesh_transport(&mut model, &deploy_path, Language::Cpp)
         .expect("compile_mesh_transport");
-    assert_eq!(result.output.files.len(), 1, "one generated file per machine");
+    assert_eq!(
+        result.output.files.len(),
+        1,
+        "one generated file per machine"
+    );
     let (_name, code) = &result.output.files[0];
 
     // Header include for the RetryingDispatcher class.
@@ -259,7 +263,11 @@ topology:
         .expect("parse brake_invoke_retry");
     let result = sce_build::compile_mesh_transport(&mut model, &deploy_path, Language::Cpp)
         .expect("compile_mesh_transport");
-    assert_eq!(result.output.files.len(), 1, "one generated file per machine");
+    assert_eq!(
+        result.output.files.len(),
+        1,
+        "one generated file per machine"
+    );
     let (_name, code) = &result.output.files[0];
 
     // Helper method declaration appears exactly once.
@@ -286,8 +294,7 @@ topology:
         "invokeMeshRpc must allocate a dedicated envelope_uuid"
     );
     assert!(
-        code.contains("env.id = envelope_uuid;") &&
-        code.contains("env.invoke_id = invoke_uuid;"),
+        code.contains("env.id = envelope_uuid;") && code.contains("env.invoke_id = invoke_uuid;"),
         "envelope id must use envelope_uuid; invoke id must use invoke_uuid \
          so retry and invoke deadline keys are disjoint"
     );
@@ -324,8 +331,12 @@ topology:
     // envelope_uuid / rec.envelope_uuid / envelope_id_capture — NOT
     // invoke_uuid — because the retry scheduler key is env.id, not
     // env.invoke_id.
-    let cancel_envelope_calls = code.matches("cancelEnvelopeRetryById(envelope_uuid)").count()
-        + code.matches("cancelEnvelopeRetryById(rec.envelope_uuid)").count();
+    let cancel_envelope_calls = code
+        .matches("cancelEnvelopeRetryById(envelope_uuid)")
+        .count()
+        + code
+            .matches("cancelEnvelopeRetryById(rec.envelope_uuid)")
+            .count();
     assert!(
         cancel_envelope_calls >= 3,
         "expected cancelEnvelopeRetryById invoked from at least three someip cancel sites \
@@ -376,7 +387,11 @@ topology:
     let mut model = parse_brake();
     let result = sce_build::compile_mesh_transport(&mut model, &deploy_path, Language::Cpp)
         .expect("compile_mesh_transport");
-    assert_eq!(result.output.files.len(), 1, "one generated file per machine");
+    assert_eq!(
+        result.output.files.len(),
+        1,
+        "one generated file per machine"
+    );
     let (_name, code) = &result.output.files[0];
 
     assert!(

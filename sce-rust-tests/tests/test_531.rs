@@ -12,10 +12,7 @@ fn test_531() {
     let mut engine = sce_rust_runtime::Engine::new(policy);
     sce_rust_tests::harness::setup_http_test(&mut engine);
     engine.initialize();
-    let completed = engine.run_until_completion(
-        Duration::from_secs(5),
-        Duration::from_millis(10),
-    );
+    let completed = engine.run_until_completion(Duration::from_secs(5), Duration::from_millis(10));
     assert!(completed, "Test 531 timed out");
     assert_eq!(
         engine.get_current_state(),

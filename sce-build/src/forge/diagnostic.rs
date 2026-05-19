@@ -3202,9 +3202,7 @@ impl DiagnosticCode {
             CodecVariantDispatchFlagHasStaticValue => {
                 "codec/variant-dispatch-flag-has-static-value"
             }
-            CodecVariantDispatchCarrierAfterEmbed => {
-                "codec/variant-dispatch-carrier-after-embed"
-            }
+            CodecVariantDispatchCarrierAfterEmbed => "codec/variant-dispatch-carrier-after-embed",
             CodecPresentIfRefsLaterField => "codec/present-if-refs-later-field",
             CodecRepeatCountRefsLaterField => "codec/repeat-count-refs-later-field",
             AlgorithmTestVectorUnsupportedKind => "algorithm/test-vector-unsupported-kind",
@@ -4427,10 +4425,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 None
             } else {
                 Some(Fix::ReplaceOneOf {
-                    candidates: declared_arms
-                        .iter()
-                        .map(|v| format!("{v:#x}"))
-                        .collect(),
+                    candidates: declared_arms.iter().map(|v| format!("{v:#x}")).collect(),
                 })
             },
             key_fragments: vec![codec.clone(), format!("{overlay_arm_value:#x}")],
@@ -4491,11 +4486,9 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
         } => DiagnosticPayload {
             code: DiagnosticCode::CodecVariantDispatchArmsNotDistinguishableWithoutDefault,
             stage: Stage::Validation,
-            expected: Some(vec![
-                "<sce:variant-dispatch flag=\"...\"/> on the import \
+            expected: Some(vec!["<sce:variant-dispatch flag=\"...\"/> on the import \
                  OR <sce:arm default=\"true\"/> in the imported codec"
-                    .into(),
-            ]),
+                .into()]),
             actual: Some(embedded_codec.clone()),
             fix: None,
             key_fragments: vec![
@@ -4514,9 +4507,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             code: DiagnosticCode::CodecVariantDispatchFlagHasStaticValue,
             stage: Stage::Validation,
             expected: None,
-            actual: Some(format!(
-                "{parent_codec}.{carrier}.{flag}={static_value:#x}"
-            )),
+            actual: Some(format!("{parent_codec}.{carrier}.{flag}={static_value:#x}")),
             fix: None,
             key_fragments: vec![
                 parent_codec.clone(),
@@ -4672,11 +4663,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             expected: None,
             actual: Some(body_codec.clone()),
             fix: None,
-            key_fragments: vec![
-                body_codec.clone(),
-                parent_codec.clone(),
-                carrier.clone(),
-            ],
+            key_fragments: vec![body_codec.clone(), parent_codec.clone(), carrier.clone()],
         },
         ValidationError::CodecParentFlagChainBitDrift {
             body_codec,

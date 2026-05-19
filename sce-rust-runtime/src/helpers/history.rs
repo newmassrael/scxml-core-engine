@@ -87,9 +87,9 @@ pub fn filter_deep_history<P: StatePolicy>(
         }
 
         // Check if this is a leaf state (no active children)
-        let is_leaf = !active_states.iter().any(|&other| {
-            other != state && P::get_parent(other) == Some(state)
-        });
+        let is_leaf = !active_states
+            .iter()
+            .any(|&other| other != state && P::get_parent(other) == Some(state));
 
         // Only suppress for leaf check -- use active_set for completeness
         let _ = &active_set;
@@ -158,9 +158,7 @@ pub fn get_ancestors_to_enter<P: StatePolicy>(
 /// Returns the complete hierarchy from leaf to root.
 ///
 /// Ports C++ `HistoryHelper::getActiveHierarchy`.
-pub fn get_active_hierarchy<P: StatePolicy>(
-    current_state: P::State,
-) -> Vec<P::State> {
+pub fn get_active_hierarchy<P: StatePolicy>(current_state: P::State) -> Vec<P::State> {
     let mut active_states = Vec::new();
     let mut current = current_state;
 

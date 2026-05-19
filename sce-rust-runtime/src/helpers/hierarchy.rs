@@ -119,9 +119,7 @@ pub fn new_chain<S>() -> StateChain<S> {
 /// at codegen time from the SCXML document, so generator-bug detection is the
 /// only path that fires the panic.
 #[inline]
-pub fn state_chain_from_slice<S: core::fmt::Debug, const N: usize>(
-    items: [S; N],
-) -> StateChain<S> {
+pub fn state_chain_from_slice<S: core::fmt::Debug, const N: usize>(items: [S; N]) -> StateChain<S> {
     let mut chain = new_chain::<S>();
     for item in items {
         push_chain(&mut chain, item);

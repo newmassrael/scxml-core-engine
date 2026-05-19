@@ -65,8 +65,7 @@ const VSOMEIP_JSON: &str = r#"{
   }]
 }"#;
 
-const PINNED_FP: &str =
-    "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+const PINNED_FP: &str = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 struct Fixture {
     dir: PathBuf,
@@ -134,7 +133,11 @@ topology:
     let mut model = parse_brake();
     let result = sce_build::compile_mesh_transport(&mut model, &deploy_path, Language::Cpp)
         .expect("compile_mesh_transport");
-    assert_eq!(result.output.files.len(), 1, "one generated file per machine");
+    assert_eq!(
+        result.output.files.len(),
+        1,
+        "one generated file per machine"
+    );
     let (_name, code) = &result.output.files[0];
 
     // Per-target one-shot flag emitted.
@@ -212,7 +215,11 @@ topology:
     let mut model = parse_brake();
     let result = sce_build::compile_mesh_transport(&mut model, &deploy_path, Language::Cpp)
         .expect("compile_mesh_transport");
-    assert_eq!(result.output.files.len(), 1, "one generated file per machine");
+    assert_eq!(
+        result.output.files.len(),
+        1,
+        "one generated file per machine"
+    );
     let (_name, code) = &result.output.files[0];
 
     // Per-target one-shot flag emitted.
@@ -270,7 +277,11 @@ topology:
     let mut model = parse_brake();
     let result = sce_build::compile_mesh_transport(&mut model, &deploy_path, Language::Cpp)
         .expect("compile_mesh_transport");
-    assert_eq!(result.output.files.len(), 1, "one generated file per machine");
+    assert_eq!(
+        result.output.files.len(),
+        1,
+        "one generated file per machine"
+    );
     let (_name, code) = &result.output.files[0];
 
     assert!(

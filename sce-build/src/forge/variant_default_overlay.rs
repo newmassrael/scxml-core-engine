@@ -92,7 +92,10 @@ pub fn apply_variant_default_overlay(
         }
     };
 
-    let matched_index = variant.arms.iter().position(|a| a.value == overlay_arm_value);
+    let matched_index = variant
+        .arms
+        .iter()
+        .position(|a| a.value == overlay_arm_value);
     match matched_index {
         Some(idx) => {
             // Overlay wins — set is_default on the matched arm,

@@ -22,10 +22,7 @@ use crate::policy::StatePolicy;
 ///
 /// * `active_states` - Currently active states
 /// * `state_id` - State ID string to check for membership
-pub fn is_state_active<P: StatePolicy>(
-    active_states: &[P::State],
-    state_id: &str,
-) -> bool {
+pub fn is_state_active<P: StatePolicy>(active_states: &[P::State], state_id: &str) -> bool {
     active_states
         .iter()
         .any(|&state| P::get_state_name(state) == state_id)

@@ -3,7 +3,6 @@
 // template-hash: 73644a8c52ee83b6af224889edefc07c66120d6db7d21a41c918be4815ed8509
 // generated-at: 1779022531
 
-
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
 //
@@ -71,13 +70,11 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-
 #![doc = "SCE-MAP: test252__sce_synth_invoke__invoke_0.scxml:3"]
 // SCE-MAP: test252__sce_synth_invoke__invoke_0.scxml:3
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
-
 
 // ======================================================================
 // State enum (W3C SCXML 3.3)
@@ -137,10 +134,6 @@ impl Test252SceSynthInvokeInvoke0Policy {
             child_session_id: String::new(),
         }
     }
-
-
-
-
 }
 
 impl Default for Test252SceSynthInvokeInvoke0Policy {
@@ -189,7 +182,6 @@ impl StatePolicy for Test252SceSynthInvokeInvoke0Policy {
             _ => false,
         }
     }
-
 
     fn is_descendant_of(desc: Self::State, anc: Self::State) -> bool {
         let mut current = desc;
@@ -248,7 +240,9 @@ impl StatePolicy for Test252SceSynthInvokeInvoke0Policy {
     // [`StateChain`] alias and the body uses `state_chain_from_slice` instead of
     // `vec![...]` so the emitted code compiles under `--no-std` (`vec!` is a
     // std-only macro; heapless has no equivalent).
-    fn get_initial_children(state: Self::State) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
+    fn get_initial_children(
+        state: Self::State,
+    ) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
         match state {
             _ => ::sce_rust_runtime::helpers::hierarchy::new_chain(),
         }
@@ -289,56 +283,48 @@ impl StatePolicy for Test252SceSynthInvokeInvoke0Policy {
         self.last_transition_source_state = state;
     }
 
-
-
-
     // ======================================================================
     // Instance methods - generated executable content
     // ======================================================================
 
-
-
     // W3C SCXML 3.7: Execute <onentry> actions for a state
     #[doc = "SCE-MAP: test252__sce_synth_invoke__invoke_0.scxml:3"]
-// SCE-MAP: test252__sce_synth_invoke__invoke_0.scxml:3
-    fn execute_entry_actions(&mut self, state: Self::State, engine: &mut sce_rust_runtime::Engine<Self>) {
+    // SCE-MAP: test252__sce_synth_invoke__invoke_0.scxml:3
+    fn execute_entry_actions(
+        &mut self,
+        state: Self::State,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
         match state {
             Test252SceSynthInvokeInvoke0State::Sub0 => {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
+                    {
+                        let send_id = "__send_0".to_string();
 
+                        let event_data: &str = "";
 
-{
-    let send_id = "__send_0".to_string();
+                        // W3C SCXML 6.2: Delayed send (500ms)
+                        engine.schedule_event(
+                            Test252SceSynthInvokeInvoke0Event::Timeout,
+                            core::time::Duration::from_millis(500),
+                            &send_id,
+                            event_data,
+                        );
 
-
-    let event_data: &str = "";
-
-
-
-    // W3C SCXML 6.2: Delayed send (500ms)
-    engine.schedule_event(
-        Test252SceSynthInvokeInvoke0Event::Timeout,
-        core::time::Duration::from_millis(500),
-        &send_id,
-        event_data,
-    );
-
-
-    let _ = send_id;  // suppress unused warning when no send operation
-    let _ = event_data;  // suppress unused warning in branches that skip dispatch
-}
+                        let _ = send_id; // suppress unused warning when no send operation
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                    }
                 }
             }
             _ => {}
         }
-
     }
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
     #[doc = "SCE-MAP: test252__sce_synth_invoke__invoke_0.scxml:3"]
-// SCE-MAP: test252__sce_synth_invoke__invoke_0.scxml:3
+    // SCE-MAP: test252__sce_synth_invoke__invoke_0.scxml:3
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -350,39 +336,31 @@ impl StatePolicy for Test252SceSynthInvokeInvoke0Policy {
                 // W3C SCXML 3.9: onexit block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.9: error stops block)
                 'action_block: {
+                    {
+                        let send_id = "__send_1".to_string();
 
+                        let event_data: &str = "";
 
-{
-    let send_id = "__send_1".to_string();
+                        // W3C SCXML 6.2/6.4.5: Send to parent state machine via #_parent
+                        if let Some(ref parent_queue) = self.parent_external_queue {
+                            if let Ok(mut q) = parent_queue.lock() {
+                                q.push(("childToParent".to_string(), event_data.to_string()));
+                            }
+                        } else {
+                        }
 
-
-    let event_data: &str = "";
-
-
-
-    // W3C SCXML 6.2/6.4.5: Send to parent state machine via #_parent
-    if let Some(ref parent_queue) = self.parent_external_queue {
-        if let Ok(mut q) = parent_queue.lock() {
-            q.push(("childToParent".to_string(), event_data.to_string()));
-        }
-    } else {
-    }
-
-
-    let _ = send_id;  // suppress unused warning when no send operation
-    let _ = event_data;  // suppress unused warning in branches that skip dispatch
-}
+                        let _ = send_id; // suppress unused warning when no send operation
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                    }
                 }
             }
             _ => {}
         }
     }
 
-
-
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
     #[doc = "SCE-MAP: test252__sce_synth_invoke__invoke_0.scxml:3"]
-// SCE-MAP: test252__sce_synth_invoke__invoke_0.scxml:3
+    // SCE-MAP: test252__sce_synth_invoke__invoke_0.scxml:3
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -391,21 +369,25 @@ impl StatePolicy for Test252SceSynthInvokeInvoke0Policy {
     ) -> bool {
         let mut transition_taken = false;
 
-
         // Flat state machine: no hierarchy, direct transition check
-        self.try_transition_in_state(*current_state, event, current_state, &mut transition_taken, engine);
+        self.try_transition_in_state(
+            *current_state,
+            event,
+            current_state,
+            &mut transition_taken,
+            engine,
+        );
 
         transition_taken
     }
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
     #[doc = "SCE-MAP: test252__sce_synth_invoke__invoke_0.scxml:3"]
-// SCE-MAP: test252__sce_synth_invoke__invoke_0.scxml:3
+    // SCE-MAP: test252__sce_synth_invoke__invoke_0.scxml:3
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         // W3C SCXML 3.13: No transition actions in this state machine
         let _ = engine;
     }
-
 }
 
 // ======================================================================
@@ -427,14 +409,14 @@ impl Test252SceSynthInvokeInvoke0Policy {
                 // W3C SCXML 3.12: Event-triggered transitions (document order)
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == Test252SceSynthInvokeInvoke0Event::Timeout {
-                        // W3C SCXML 3.4: Track transition metadata
-                        self.last_transition_source_state = check_state;
-                        self.last_transition_is_internal = false;
-                        self.last_transition_is_targetless = false;
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
 
-                            *current_state = Test252SceSynthInvokeInvoke0State::SubFinal;
-                            *transition_taken = true;
-                        return true;
+                    *current_state = Test252SceSynthInvokeInvoke0State::SubFinal;
+                    *transition_taken = true;
+                    return true;
                 }
                 false
             }
@@ -442,8 +424,4 @@ impl Test252SceSynthInvokeInvoke0Policy {
             _ => false,
         }
     }
-
-
-
-
 }

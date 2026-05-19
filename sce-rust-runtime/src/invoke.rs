@@ -98,10 +98,7 @@ pub fn execute_pending_invokes<S: Copy + PartialEq + Debug, F>(
         return;
     }
 
-    log::debug!(
-        "InvokeHelper: Executing {} pending invokes",
-        pending.len()
-    );
+    log::debug!("InvokeHelper: Executing {} pending invokes", pending.len());
 
     // W3C SCXML 6.4: Take pending list to prevent iterator invalidation
     let invokes_to_execute = std::mem::take(pending);
@@ -127,9 +124,7 @@ pub fn is_valid_invoke_id(invoke_id: &str) -> bool {
 }
 
 /// W3C SCXML 6.4: Get count of pending invokes.
-pub fn get_pending_count<S: Copy + PartialEq + Debug>(
-    pending: &[PendingInvoke<S>],
-) -> usize {
+pub fn get_pending_count<S: Copy + PartialEq + Debug>(pending: &[PendingInvoke<S>]) -> usize {
     pending.len()
 }
 

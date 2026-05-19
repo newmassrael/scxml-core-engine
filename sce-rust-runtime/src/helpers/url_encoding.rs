@@ -60,10 +60,9 @@ pub fn url_decode(input: &str) -> String {
 
     while i < bytes.len() {
         if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let (Some(hi), Some(lo)) = (
-                hex_digit_value(bytes[i + 1]),
-                hex_digit_value(bytes[i + 2]),
-            ) {
+            if let (Some(hi), Some(lo)) =
+                (hex_digit_value(bytes[i + 1]), hex_digit_value(bytes[i + 2]))
+            {
                 decoded.push((hi << 4 | lo) as char);
                 i += 3;
                 continue;

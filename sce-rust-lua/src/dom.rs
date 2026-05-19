@@ -39,9 +39,9 @@ pub enum XmlNodeType {
 #[derive(Debug, Clone)]
 pub struct XmlNode {
     pub node_type: XmlNodeType,
-    pub tag: String,                         // element: tag name; else empty
-    pub text: String,                        // pcdata/cdata: content; else empty
-    pub attrs: Vec<(String, String)>,        // ordered, key/value pairs
+    pub tag: String,                  // element: tag name; else empty
+    pub text: String,                 // pcdata/cdata: content; else empty
+    pub attrs: Vec<(String, String)>, // ordered, key/value pairs
     pub first_child: Option<usize>,
     pub next_sibling: Option<usize>,
     pub parent: Option<usize>,
@@ -91,9 +91,7 @@ impl XmlDoc {
         }
 
         if p.pos >= p.src.len() || p.src[p.pos] != b'<' {
-            doc.error = Some(
-                "Failed to parse XML content: missing root element".to_string(),
-            );
+            doc.error = Some("Failed to parse XML content: missing root element".to_string());
             return doc;
         }
         match p.parse_element(&mut doc, None) {
@@ -116,9 +114,7 @@ impl XmlDoc {
             }
         }
         if p.pos != p.src.len() {
-            doc.error = Some(
-                "Failed to parse XML content: trailing data after root".to_string(),
-            );
+            doc.error = Some("Failed to parse XML content: trailing data after root".to_string());
             doc.root = None;
         }
 
@@ -143,10 +139,7 @@ impl XmlDoc {
     /// each child (self not matched).
     pub fn get_elements_by_tag_name_from(&self, node_id: usize, tag: &str) -> Vec<usize> {
         let mut out = Vec::new();
-        let mut child = self
-            .nodes
-            .get(node_id)
-            .and_then(|n| n.first_child);
+        let mut child = self.nodes.get(node_id).and_then(|n| n.first_child);
         while let Some(c) = child {
             self.collect(c, tag, &mut out);
             child = self.nodes[c].next_sibling;
@@ -789,7 +782,8 @@ mod tests {
     fn w3c_corpus_test557_inline_books() {
         // Mirrors the test557 corpus body so this module is anchored to
         // the W3C SCXML B.2 fixture's input.
-        let xml = "<books xmlns=\"\">\n  <book title=\"title1\"/>\n  <book title=\"title2\"/>\n</books>";
+        let xml =
+            "<books xmlns=\"\">\n  <book title=\"title1\"/>\n  <book title=\"title2\"/>\n</books>";
         let doc = XmlDoc::parse(xml);
         assert!(doc.is_valid(), "{:?}", doc.error);
         let xref = XmlRef::document(Arc::new(doc)).unwrap();

@@ -12,11 +12,7 @@
 /// when `needle == keys[i]` for some `i`, otherwise `None`. Keys must be
 /// unique (duplicates cause the earliest match to win, but the generated
 /// code validates uniqueness at parse time).
-pub fn lookup<K, V, const N: usize>(
-    keys: &[K; N],
-    values: &[V; N],
-    needle: K,
-) -> Option<V>
+pub fn lookup<K, V, const N: usize>(keys: &[K; N], values: &[V; N], needle: K) -> Option<V>
 where
     K: PartialEq + Copy,
     V: Copy,

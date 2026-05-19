@@ -3,7 +3,6 @@
 // template-hash: 73644a8c52ee83b6af224889edefc07c66120d6db7d21a41c918be4815ed8509
 // generated-at: 1779022531
 
-
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
 //
@@ -71,13 +70,11 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-
 #![doc = "SCE-MAP: test233__sce_synth_invoke__invoke_0.scxml:3"]
 // SCE-MAP: test233__sce_synth_invoke__invoke_0.scxml:3
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
-
 
 // ======================================================================
 // State enum (W3C SCXML 3.3)
@@ -167,13 +164,12 @@ impl Test233SceSynthInvokeInvoke0Policy {
         }
     }
 
-
-
     // W3C SCXML 5.10: Ensure session ID is initialized
     // Uses atomic counter (1:1 with C++ UniqueIdGenerator::generateSessionId)
     fn ensure_session_id(&mut self) {
         if self.session_id.is_none() {
-            static SESSION_COUNTER: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+            static SESSION_COUNTER: core::sync::atomic::AtomicU64 =
+                core::sync::atomic::AtomicU64::new(0);
             let id = SESSION_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             self.session_id = Some(format!("session_{}", id));
         }
@@ -192,14 +188,13 @@ impl Test233SceSynthInvokeInvoke0Policy {
 
         // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
         let io_processors = vec!["scxml".to_string()];
-        if let Err(e) = se.setup_system_variables(&sid, "test233__sce_synth_invoke__invoke_0", &io_processors) {
+        if let Err(e) =
+            se.setup_system_variables(&sid, "test233__sce_synth_invoke__invoke_0", &io_processors)
+        {
             log::error!("Failed to setup system variables: {}", e);
         }
 
         // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
-
-
-
 
         self.script_engine_initialized = true;
     }
@@ -218,14 +213,13 @@ impl Test233SceSynthInvokeInvoke0Policy {
 
         // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
         let io_processors = vec!["scxml".to_string()];
-        if let Err(e) = se.setup_system_variables(&sid, "test233__sce_synth_invoke__invoke_0", &io_processors) {
+        if let Err(e) =
+            se.setup_system_variables(&sid, "test233__sce_synth_invoke__invoke_0", &io_processors)
+        {
             log::error!("Failed to setup system variables: {}", e);
         }
 
         // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
-
-
-
 
         self.script_engine_initialized = true;
     }
@@ -240,23 +234,40 @@ impl Test233SceSynthInvokeInvoke0Policy {
             Ok(val) => val.to_bool(),
             Err(e) => {
                 log::error!("Guard evaluation failed for '{}': {}", cond, e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(Test233SceSynthInvokeInvoke0Event::ErrorExecution));
+                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                    Test233SceSynthInvokeInvoke0Event::ErrorExecution,
+                ));
                 false
             }
         }
     }
 
     // W3C SCXML 5.10: Set _event system variable for current event
-    fn set_current_event_in_script_engine(&self, event_name: &str, event_data: &str,
-            event_type: &str, send_id: &str, origin: &str, origin_type: &str, invoke_id: &str) {
+    fn set_current_event_in_script_engine(
+        &self,
+        event_name: &str,
+        event_data: &str,
+        event_type: &str,
+        send_id: &str,
+        origin: &str,
+        origin_type: &str,
+        invoke_id: &str,
+    ) {
         if let Some(ref sid) = self.session_id {
             let se = self.script_engine.clone();
             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-            let _ = se.set_current_event(sid, event_name, event_data, event_type,
-                send_id, origin, origin_type, invoke_id);
+            let _ = se.set_current_event(
+                sid,
+                event_name,
+                event_data,
+                event_type,
+                send_id,
+                origin,
+                origin_type,
+                invoke_id,
+            );
         }
     }
-
 
     // W3C SCXML 6.4.1: Set parameter in child's script engine before invoke initialization
     // Matches C++ child->setParamInScriptEngine(name, expr)
@@ -266,17 +277,20 @@ impl Test233SceSynthInvokeInvoke0Policy {
         let se = self.script_engine.clone();
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         match se.evaluate_expression(&sid, expr) {
-            Ok(val) => { let _ = se.set_variable(&sid, name, val); }
+            Ok(val) => {
+                let _ = se.set_variable(&sid, name, val);
+            }
             Err(_) => {
                 // Fallback: set as string literal
-                let _ = se.set_variable(&sid, name,
-                    sce_rust_runtime::ScriptValue::String(expr.to_string()));
+                let _ = se.set_variable(
+                    &sid,
+                    name,
+                    sce_rust_runtime::ScriptValue::String(expr.to_string()),
+                );
             }
         }
     }
-
 }
-
 
 // ======================================================================
 // StatePolicy trait implementation
@@ -319,7 +333,6 @@ impl StatePolicy for Test233SceSynthInvokeInvoke0Policy {
             _ => false,
         }
     }
-
 
     fn is_descendant_of(desc: Self::State, anc: Self::State) -> bool {
         let mut current = desc;
@@ -374,7 +387,9 @@ impl StatePolicy for Test233SceSynthInvokeInvoke0Policy {
     // [`StateChain`] alias and the body uses `state_chain_from_slice` instead of
     // `vec![...]` so the emitted code compiles under `--no-std` (`vec!` is a
     // std-only macro; heapless has no equivalent).
-    fn get_initial_children(state: Self::State) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
+    fn get_initial_children(
+        state: Self::State,
+    ) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
         match state {
             _ => ::sce_rust_runtime::helpers::hierarchy::new_chain(),
         }
@@ -415,7 +430,6 @@ impl StatePolicy for Test233SceSynthInvokeInvoke0Policy {
         self.last_transition_source_state = state;
     }
 
-
     fn set_next_event_is_external(&mut self, value: bool) {
         self.next_event_is_external = value;
     }
@@ -447,67 +461,68 @@ impl StatePolicy for Test233SceSynthInvokeInvoke0Policy {
     // Instance methods - generated executable content
     // ======================================================================
 
-
-
     // W3C SCXML 3.7: Execute <onentry> actions for a state
     #[doc = "SCE-MAP: test233__sce_synth_invoke__invoke_0.scxml:3"]
-// SCE-MAP: test233__sce_synth_invoke__invoke_0.scxml:3
-    fn execute_entry_actions(&mut self, state: Self::State, engine: &mut sce_rust_runtime::Engine<Self>) {
+    // SCE-MAP: test233__sce_synth_invoke__invoke_0.scxml:3
+    fn execute_entry_actions(
+        &mut self,
+        state: Self::State,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
         match state {
             Test233SceSynthInvokeInvoke0State::SubFinal => {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
+                    {
+                        let send_id = "__send_0".to_string();
 
+                        // W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+                        let event_data_string: String = {
+                            self.ensure_script_engine();
+                            let sid = self.session_id.as_ref().unwrap().clone();
+                            let se = self.script_engine.clone();
+                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                            let mut parts: Vec<String> = Vec::new();
+                            match se.evaluate_expression(&sid, "2") {
+                                Ok(val) => {
+                                    parts.push(format!(
+                                        "[{:?}]={}",
+                                        "aParam",
+                                        val.to_lua_literal()
+                                    ));
+                                }
+                                Err(e) => {
+                                    log::error!("send param 'aParam' eval failed: {}", e);
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                        Test233SceSynthInvokeInvoke0Event::ErrorExecution,
+                                    ));
+                                }
+                            }
+                            format!("{{{}}}", parts.join(","))
+                        };
+                        let event_data: &str = &event_data_string;
 
-{
-    let send_id = "__send_0".to_string();
+                        // W3C SCXML 6.2/6.4.5: Send to parent state machine via #_parent
+                        if let Some(ref parent_queue) = self.parent_external_queue {
+                            if let Ok(mut q) = parent_queue.lock() {
+                                q.push(("childToParent".to_string(), event_data.to_string()));
+                            }
+                        } else {
+                        }
 
-
-    // W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
-    let event_data_string: String = {
-        self.ensure_script_engine();
-        let sid = self.session_id.as_ref().unwrap().clone();
-        let se = self.script_engine.clone();
-        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-        let mut parts: Vec<String> = Vec::new();
-        match se.evaluate_expression(&sid, "2") {
-            Ok(val) => {
-                parts.push(format!("[{:?}]={}", "aParam", val.to_lua_literal()));
-            }
-            Err(e) => {
-                log::error!("send param 'aParam' eval failed: {}", e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(Test233SceSynthInvokeInvoke0Event::ErrorExecution));
-            }
-        }
-        format!("{{{}}}", parts.join(","))
-    };
-    let event_data: &str = &event_data_string;
-
-
-
-    // W3C SCXML 6.2/6.4.5: Send to parent state machine via #_parent
-    if let Some(ref parent_queue) = self.parent_external_queue {
-        if let Ok(mut q) = parent_queue.lock() {
-            q.push(("childToParent".to_string(), event_data.to_string()));
-        }
-    } else {
-    }
-
-
-    let _ = send_id;  // suppress unused warning when no send operation
-    let _ = event_data;  // suppress unused warning in branches that skip dispatch
-}
+                        let _ = send_id; // suppress unused warning when no send operation
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                    }
                 }
             }
             _ => {}
         }
-
     }
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
     #[doc = "SCE-MAP: test233__sce_synth_invoke__invoke_0.scxml:3"]
-// SCE-MAP: test233__sce_synth_invoke__invoke_0.scxml:3
+    // SCE-MAP: test233__sce_synth_invoke__invoke_0.scxml:3
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -516,11 +531,9 @@ impl StatePolicy for Test233SceSynthInvokeInvoke0Policy {
     ) {
     }
 
-
-
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
     #[doc = "SCE-MAP: test233__sce_synth_invoke__invoke_0.scxml:3"]
-// SCE-MAP: test233__sce_synth_invoke__invoke_0.scxml:3
+    // SCE-MAP: test233__sce_synth_invoke__invoke_0.scxml:3
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -535,7 +548,8 @@ impl StatePolicy for Test233SceSynthInvokeInvoke0Policy {
             let event_name = Self::get_event_name(event);
             self.pending_event_name = event_name.to_string();
             // W3C SCXML 5.10.1: Classify event type (ports C++ EventTypeHelper::classifyEventType)
-            let event_type = if event_name.starts_with("error.") || event_name.starts_with("done.") {
+            let event_type = if event_name.starts_with("error.") || event_name.starts_with("done.")
+            {
                 "platform"
             } else if self.next_event_is_external {
                 self.next_event_is_external = false;
@@ -551,19 +565,31 @@ impl StatePolicy for Test233SceSynthInvokeInvoke0Policy {
             let ev_origintype: &str = &self.pending_event_origintype;
             let ev_invokeid: &str = &self.pending_event_invokeid;
             self.set_current_event_in_script_engine(
-                event_name, ev_data, event_type, ev_sendid, ev_origin, ev_origintype, ev_invokeid,
+                event_name,
+                ev_data,
+                event_type,
+                ev_sendid,
+                ev_origin,
+                ev_origintype,
+                ev_invokeid,
             );
         }
 
         // Flat state machine: no hierarchy, direct transition check
-        self.try_transition_in_state(*current_state, event, current_state, &mut transition_taken, engine);
+        self.try_transition_in_state(
+            *current_state,
+            event,
+            current_state,
+            &mut transition_taken,
+            engine,
+        );
 
         transition_taken
     }
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
     #[doc = "SCE-MAP: test233__sce_synth_invoke__invoke_0.scxml:3"]
-// SCE-MAP: test233__sce_synth_invoke__invoke_0.scxml:3
+    // SCE-MAP: test233__sce_synth_invoke__invoke_0.scxml:3
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         // W3C SCXML 3.13: No transition actions in this state machine
         let _ = engine;
@@ -573,7 +599,6 @@ impl StatePolicy for Test233SceSynthInvokeInvoke0Policy {
     fn initialize_data_model(&mut self, engine: &mut Engine<Self>) {
         self.do_initialize_data_model(engine);
     }
-
 }
 
 // ======================================================================
@@ -595,8 +620,4 @@ impl Test233SceSynthInvokeInvoke0Policy {
             _ => false,
         }
     }
-
-
-
-
 }

@@ -19,9 +19,9 @@
 //!   `helpers::event_data` (whole-module `!no_std`-gated) and have no current
 //!   consumer; they are gated to `!no_std`.
 
-use crate::{sce_string_from_str, SceString};
 #[cfg(not(feature = "no_std"))]
 use crate::helpers::event_data;
+use crate::{sce_string_from_str, SceString};
 
 /// W3C SCXML 5.5: Emit an inline `<content>` literal as `_event.data`.
 ///

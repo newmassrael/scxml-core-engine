@@ -23,10 +23,7 @@ use crate::policy::StatePolicy;
 /// only guard type that can be evaluated without a script engine.
 ///
 /// Returns `true` if the state is active, `false` otherwise.
-pub fn evaluate_in_predicate<P: StatePolicy>(
-    active_states: &[P::State],
-    state_id: &str,
-) -> bool {
+pub fn evaluate_in_predicate<P: StatePolicy>(active_states: &[P::State], state_id: &str) -> bool {
     in_predicate::is_state_active::<P>(active_states, state_id)
 }
 

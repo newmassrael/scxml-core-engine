@@ -246,7 +246,9 @@ pub fn compute_transition_exit_set<P: StatePolicy>(
         let all_descendants = transition.targets.iter().all(|&target| {
             let source_compound =
                 P::is_compound_state(transition.source) && !P::is_parallel_state(transition.source);
-            source_compound && P::is_descendant_of(target, transition.source) && target != transition.source
+            source_compound
+                && P::is_descendant_of(target, transition.source)
+                && target != transition.source
         });
 
         if all_descendants {
@@ -290,10 +292,7 @@ pub fn compute_transition_exit_set<P: StatePolicy>(
 /// W3C SCXML C.1: Check if two transitions conflict.
 ///
 /// Ports C++ `ParallelTransitionHelper::hasConflict`.
-pub fn has_conflict<P: StatePolicy>(
-    t1: &Transition<P::State>,
-    t2: &Transition<P::State>,
-) -> bool {
+pub fn has_conflict<P: StatePolicy>(t1: &Transition<P::State>, t2: &Transition<P::State>) -> bool {
     // Check if exit sets intersect
     for state in &t1.exit_set {
         if t2.exit_set.contains(state) {
@@ -330,9 +329,7 @@ pub fn select_optimal_transitions<P: StatePolicy>(
     }
 
     // Sort by depth (deeper first -- preemption)
-    enabled_transitions.sort_by(|a, b| {
-        get_depth::<P>(b.source).cmp(&get_depth::<P>(a.source))
-    });
+    enabled_transitions.sort_by(|a, b| get_depth::<P>(b.source).cmp(&get_depth::<P>(a.source)));
 
     // Greedy selection
     let mut selected: Vec<Transition<P::State>> = Vec::new();
@@ -370,8 +367,7 @@ pub fn compute_effective_lca<P: StatePolicy>(
     is_internal: bool,
 ) -> Option<P::State> {
     if is_internal {
-        let source_compound =
-            P::is_compound_state(source) && !P::is_parallel_state(source);
+        let source_compound = P::is_compound_state(source) && !P::is_parallel_state(source);
         if source_compound && P::is_descendant_of(target, source) && target != source {
             return Some(source);
         }
@@ -415,9 +411,7 @@ pub fn compute_states_to_exit<P: StatePolicy>(
                     let should_exit_source = !trans.is_internal && trans.source == lca_state;
 
                     for &active_state in active_states {
-                        if active_state == lca_state
-                            && !should_exit_source
-                        {
+                        if active_state == lca_state && !should_exit_source {
                             continue;
                         }
 
@@ -459,20 +453,15 @@ pub fn compute_states_to_exit<P: StatePolicy>(
 /// W3C SCXML Appendix D.2: Sort transitions by source state document order.
 ///
 /// Ports C++ `ParallelTransitionHelper::sortTransitionsBySource`.
-pub fn sort_transitions_by_source<P: StatePolicy>(
-    transitions: &mut [Transition<P::State>],
-) {
-    transitions.sort_by(|a, b| {
-        P::get_document_order(a.source).cmp(&P::get_document_order(b.source))
-    });
+pub fn sort_transitions_by_source<P: StatePolicy>(transitions: &mut [Transition<P::State>]) {
+    transitions
+        .sort_by(|a, b| P::get_document_order(a.source).cmp(&P::get_document_order(b.source)));
 }
 
 /// W3C SCXML Appendix D.2: Sort transitions by target state document order.
 ///
 /// Ports C++ `ParallelTransitionHelper::sortTransitionsByTarget`.
-pub fn sort_transitions_by_target<P: StatePolicy>(
-    transitions: &mut [Transition<P::State>],
-) {
+pub fn sort_transitions_by_target<P: StatePolicy>(transitions: &mut [Transition<P::State>]) {
     transitions.sort_by(|a, b| {
         let target_a = a.targets.first().copied().unwrap_or(a.source);
         let target_b = b.targets.first().copied().unwrap_or(b.source);
@@ -515,9 +504,9 @@ pub fn are_all_regions_in_final<P: StatePolicy>(
     }
 
     for &region in regions {
-        let region_has_final = active_states.iter().any(|&active| {
-            P::get_parent(active) == Some(region) && P::is_final_state(active)
-        });
+        let region_has_final = active_states
+            .iter()
+            .any(|&active| P::get_parent(active) == Some(region) && P::is_final_state(active));
 
         if !region_has_final {
             return false;
@@ -618,10 +607,8 @@ pub trait ParallelStateManager<S, E> {
 /// W3C SCXML 3.4: Enter all regions of a parallel state.
 ///
 /// Ports C++ `ParallelProcessingAlgorithms::enterAllRegions`.
-pub fn enter_all_regions<S, E>(
-    manager: &mut dyn ParallelStateManager<S, E>,
-    regions: &[S],
-) where
+pub fn enter_all_regions<S, E>(manager: &mut dyn ParallelStateManager<S, E>, regions: &[S])
+where
     S: Copy,
 {
     for &region in regions {
@@ -674,10 +661,8 @@ where
 /// Exits in reverse order (matching C++ reverse iterator pattern).
 ///
 /// Ports C++ `ParallelProcessingAlgorithms::exitAllRegions`.
-pub fn exit_all_regions<S, E>(
-    manager: &mut dyn ParallelStateManager<S, E>,
-    regions: &[S],
-) where
+pub fn exit_all_regions<S, E>(manager: &mut dyn ParallelStateManager<S, E>, regions: &[S])
+where
     S: Copy,
 {
     // W3C SCXML: Exit in reverse document order

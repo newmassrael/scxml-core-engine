@@ -209,9 +209,6 @@ pub fn initialize_variable_from_expr(
 ) -> Result<(), String> {
     match se.evaluate_expression(sid, expr) {
         Ok(val) => se.set_variable(sid, var_id, val).map_err(|e| e.to_string()),
-        Err(e) => Err(format!(
-            "Failed to evaluate expr for '{}': {}",
-            var_id, e
-        )),
+        Err(e) => Err(format!("Failed to evaluate expr for '{}': {}", var_id, e)),
     }
 }

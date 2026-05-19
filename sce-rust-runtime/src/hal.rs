@@ -235,8 +235,14 @@ mod tests {
         let t0 = StdHal::now_ticks_ms();
         let t1 = StdHal::now_ticks_ms();
         let t2 = StdHal::now_ticks_ms();
-        assert!(t0 <= t1, "Hal::now_ticks_ms must be non-decreasing: {t0} > {t1}");
-        assert!(t1 <= t2, "Hal::now_ticks_ms must be non-decreasing: {t1} > {t2}");
+        assert!(
+            t0 <= t1,
+            "Hal::now_ticks_ms must be non-decreasing: {t0} > {t1}"
+        );
+        assert!(
+            t1 <= t2,
+            "Hal::now_ticks_ms must be non-decreasing: {t1} > {t2}"
+        );
     }
 
     #[test]

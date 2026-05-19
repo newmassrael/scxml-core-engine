@@ -47,11 +47,7 @@ pub fn execute_entry_blocks(blocks: &mut [Box<dyn FnMut()>], state_id: &str) {
     }
 
     for (i, block) in blocks.iter_mut().enumerate() {
-        sce_log_debug!(
-            "W3C SCXML 3.8: Executing onentry block {}/{}",
-            i + 1,
-            count
-        );
+        sce_log_debug!("W3C SCXML 3.8: Executing onentry block {}/{}", i + 1, count);
         // W3C SCXML 3.8: Each block runs independently; error in one
         // does not prevent execution of subsequent blocks.
         block();
@@ -89,11 +85,7 @@ pub fn execute_exit_blocks(blocks: &mut [Box<dyn FnMut()>], state_id: &str) {
     }
 
     for (i, block) in blocks.iter_mut().enumerate() {
-        sce_log_debug!(
-            "W3C SCXML 3.9: Executing onexit block {}/{}",
-            i + 1,
-            count
-        );
+        sce_log_debug!("W3C SCXML 3.9: Executing onexit block {}/{}", i + 1, count);
         block();
     }
 

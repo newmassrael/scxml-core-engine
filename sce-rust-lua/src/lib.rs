@@ -40,8 +40,8 @@ use sce_rust_runtime::scripting::{
 // ═══════════════════════════════════════════════════════════════════════════
 
 const LUA_KEYWORDS: &[&str] = &[
-    "and", "break", "do", "else", "elseif", "end", "false", "for", "function", "goto",
-    "if", "in", "local", "nil", "not", "or", "repeat", "return", "then", "true", "until", "while",
+    "and", "break", "do", "else", "elseif", "end", "false", "for", "function", "goto", "if", "in",
+    "local", "nil", "not", "or", "repeat", "return", "then", "true", "until", "while",
 ];
 
 /// Check if a single identifier is undeclared (not a keyword, not in declared_vars,
@@ -54,7 +54,9 @@ fn is_undeclared_identifier(name: &str, declared_vars: &HashSet<String>, lua: &L
         return false;
     }
     // Check if it's a Lua standard library global
-    let is_nil: bool = lua.globals().get::<LuaValue>(name)
+    let is_nil: bool = lua
+        .globals()
+        .get::<LuaValue>(name)
         .map(|v| matches!(v, LuaValue::Nil))
         .unwrap_or(true);
     is_nil
@@ -71,7 +73,8 @@ fn is_undeclared_simple_variable(expr: &str, declared_vars: &HashSet<String>, lu
         return false;
     }
     // Extract base identifier (before first '.' or '[')
-    let base_end = expr.bytes()
+    let base_end = expr
+        .bytes()
         .position(|b| !b.is_ascii_alphanumeric() && b != b'_')
         .unwrap_or(expr.len());
     if base_end == 0 {
@@ -174,17 +177,19 @@ impl LuaEngine {
         // _isArray(val): Check if value is a Lua sequence table (array)
         let is_array_fn = lua.create_function(|_, val: LuaValue| {
             Ok(match val {
-                LuaValue::Table(t) => t.raw_len() > 0 || {
-                    // Empty table or pure sequence check
-                    let mut count = 0;
-                    for pair in t.pairs::<LuaValue, LuaValue>() {
-                        if pair.is_err() {
-                            break;
+                LuaValue::Table(t) => {
+                    t.raw_len() > 0 || {
+                        // Empty table or pure sequence check
+                        let mut count = 0;
+                        for pair in t.pairs::<LuaValue, LuaValue>() {
+                            if pair.is_err() {
+                                break;
+                            }
+                            count += 1;
                         }
-                        count += 1;
+                        count == 0 // Empty table is array-like
                     }
-                    count == 0 // Empty table is array-like
-                },
+                }
                 _ => false,
             })
         })?;
@@ -288,14 +293,16 @@ impl LuaEngine {
                 (trimmed, radix)
             };
             // Parse leading digits in the given radix (strtoll semantics)
-            let valid_prefix: String = parse_str.chars()
+            let valid_prefix: String = parse_str
+                .chars()
                 .take_while(|c| c.is_digit(effective_radix))
                 .collect();
             if valid_prefix.is_empty() {
                 // Handle leading sign
                 if parse_str.starts_with('-') || parse_str.starts_with('+') {
                     let sign = if parse_str.starts_with('-') { "-" } else { "" };
-                    let digits: String = parse_str[1..].chars()
+                    let digits: String = parse_str[1..]
+                        .chars()
                         .take_while(|c| c.is_digit(effective_radix))
                         .collect();
                     if digits.is_empty() {
@@ -337,19 +344,24 @@ impl LuaEngine {
         globals.set("_UNDEFINED", LuaValue::Nil)?;
 
         // String metatable: make + work as concatenation via __add
-        lua.load(r#"
+        lua.load(
+            r#"
             local mt = getmetatable("")
             if mt then
                 mt.__add = function(a, b)
                     return tostring(a) .. tostring(b)
                 end
             end
-        "#).exec()?;
+        "#,
+        )
+        .exec()?;
 
         // W3C SCXML B.2: JSON.stringify / JSON.parse (Single Source of Truth)
         // Shared with C++ LuaEngine via sce/include/scripting/json_builtins.lua
-        lua.load(include_str!("../../sce/include/scripting/json_builtins.lua"))
-            .exec()?;
+        lua.load(include_str!(
+            "../../sce/include/scripting/json_builtins.lua"
+        ))
+        .exec()?;
 
         // Object.keys(tbl): returns array of string keys
         let object_table = lua.create_table()?;
@@ -424,9 +436,7 @@ fn lua_value_to_script(val: &LuaValue) -> ScriptValue {
                 ScriptValue::Double(*f)
             }
         }
-        LuaValue::String(s) => {
-            ScriptValue::String(s.to_string_lossy().to_string())
-        }
+        LuaValue::String(s) => ScriptValue::String(s.to_string_lossy().to_string()),
         LuaValue::Table(t) => {
             // Heuristic: sequence table (1..n keys) = Array, else Object
             let len = t.raw_len();
@@ -441,7 +451,11 @@ fn lua_value_to_script(val: &LuaValue) -> ScriptValue {
             } else {
                 let mut map = HashMap::new();
                 let mut is_empty = true;
-                if let Ok(pairs) = t.clone().pairs::<LuaValue, LuaValue>().collect::<Result<Vec<_>, _>>() {
+                if let Ok(pairs) = t
+                    .clone()
+                    .pairs::<LuaValue, LuaValue>()
+                    .collect::<Result<Vec<_>, _>>()
+                {
                     for (k, v) in pairs {
                         is_empty = false;
                         let key = match &k {
@@ -494,7 +508,9 @@ fn json_to_lua_table(json: &str) -> String {
                 let c = bytes[i] as char;
                 key.push(c);
                 i += 1;
-                if c == '"' { break; }
+                if c == '"' {
+                    break;
+                }
                 if c == '\\' && i < len {
                     key.push(bytes[i] as char);
                     i += 1;
@@ -508,7 +524,7 @@ fn json_to_lua_table(json: &str) -> String {
             }
             if i < len && bytes[i] == b':' {
                 i += 1; // consume ':'
-                // JSON key → Lua: ["key"] =
+                        // JSON key → Lua: ["key"] =
                 result.push('[');
                 result.push_str(&key);
                 result.push(']');
@@ -560,9 +576,14 @@ fn map_lua_err(e: mlua::Error) -> ScriptError {
 impl IScriptEngine for LuaEngine {
     fn execute_script(&self, session_id: &str, script: &str) -> ScriptResult<ScriptValue> {
         let sessions = self.sessions.lock().unwrap();
-        let session = sessions.get(session_id)
+        let session = sessions
+            .get(session_id)
             .ok_or_else(|| ScriptError::SessionNotFound(session_id.to_string()))?;
-        let result = session.lua.load(script).eval::<LuaValue>().map_err(map_lua_err)?;
+        let result = session
+            .lua
+            .load(script)
+            .eval::<LuaValue>()
+            .map_err(map_lua_err)?;
         Ok(lua_value_to_script(&result))
     }
 
@@ -571,22 +592,32 @@ impl IScriptEngine for LuaEngine {
             return Ok(ScriptValue::Null);
         }
         let sessions = self.sessions.lock().unwrap();
-        let session = sessions.get(session_id)
+        let session = sessions
+            .get(session_id)
             .ok_or_else(|| ScriptError::SessionNotFound(session_id.to_string()))?;
 
         // W3C SCXML: Detect undeclared simple variable references (C++ LuaEngine parity)
         // JavaScript throws ReferenceError for undeclared variables; Lua silently returns nil.
         if is_undeclared_simple_variable(expression, &session.declared_vars, &session.lua) {
-            return Err(ScriptError::RuntimeError(format!("ReferenceError: {} is not defined", expression)));
+            return Err(ScriptError::RuntimeError(format!(
+                "ReferenceError: {} is not defined",
+                expression
+            )));
         }
 
         // Wrap as return expression for Lua evaluation
         let lua_expr = format!("return {}", expression);
-        let result = session.lua.load(&lua_expr)
+        let result = session
+            .lua
+            .load(&lua_expr)
             .eval::<LuaValue>()
             .or_else(|first_err| {
                 // Fallback: try executing as statement (e.g., assignment)
-                log::debug!("evaluate_expression: 'return {}' failed ({}), trying as statement", expression, first_err);
+                log::debug!(
+                    "evaluate_expression: 'return {}' failed ({}), trying as statement",
+                    expression,
+                    first_err
+                );
                 session.lua.load(expression).eval::<LuaValue>()
             })
             .map_err(map_lua_err)?;
@@ -595,7 +626,8 @@ impl IScriptEngine for LuaEngine {
 
     fn validate_expression(&self, session_id: &str, expression: &str) -> ScriptResult<bool> {
         let sessions = self.sessions.lock().unwrap();
-        let session = sessions.get(session_id)
+        let session = sessions
+            .get(session_id)
             .ok_or_else(|| ScriptError::SessionNotFound(session_id.to_string()))?;
         let lua_expr = format!("return {}", expression);
         match session.lua.load(&lua_expr).into_function() {
@@ -609,32 +641,48 @@ impl IScriptEngine for LuaEngine {
 
     fn set_variable(&self, session_id: &str, name: &str, value: ScriptValue) -> ScriptResult<()> {
         let mut sessions = self.sessions.lock().unwrap();
-        let session = sessions.get_mut(session_id)
+        let session = sessions
+            .get_mut(session_id)
             .ok_or_else(|| ScriptError::SessionNotFound(session_id.to_string()))?;
         let lua_val = script_value_to_lua(&session.lua, &value).map_err(map_lua_err)?;
-        session.lua.globals().set(name, lua_val).map_err(map_lua_err)?;
+        session
+            .lua
+            .globals()
+            .set(name, lua_val)
+            .map_err(map_lua_err)?;
         session.declared_vars.insert(name.to_string());
         Ok(())
     }
 
     fn get_variable(&self, session_id: &str, name: &str) -> ScriptResult<ScriptValue> {
         let sessions = self.sessions.lock().unwrap();
-        let session = sessions.get(session_id)
+        let session = sessions
+            .get(session_id)
             .ok_or_else(|| ScriptError::SessionNotFound(session_id.to_string()))?;
         let val: LuaValue = session.lua.globals().get(name).map_err(map_lua_err)?;
         Ok(lua_value_to_script(&val))
     }
 
-    fn set_variable_as_dom(&self, session_id: &str, name: &str, xml_content: &str) -> ScriptResult<()> {
+    fn set_variable_as_dom(
+        &self,
+        session_id: &str,
+        name: &str,
+        xml_content: &str,
+    ) -> ScriptResult<()> {
         let mut sessions = self.sessions.lock().unwrap();
-        let session = sessions.get_mut(session_id)
+        let session = sessions
+            .get_mut(session_id)
             .ok_or_else(|| ScriptError::SessionNotFound(session_id.to_string()))?;
         // Parse into a full DOM tree (cpp pugixml mirror) and bind as
         // userdata.  Parse failure yields nil — same observable as cpp
         // `LuaDOMBinding::pushDOMObject` on `XMLDocument::isValid()` =
         // false, which leaves the var unbound rather than raising.
         let value = push_xml_as_userdata(&session.lua, xml_content).map_err(map_lua_err)?;
-        session.lua.globals().set(name, value).map_err(map_lua_err)?;
+        session
+            .lua
+            .globals()
+            .set(name, value)
+            .map_err(map_lua_err)?;
         session.declared_vars.insert(name.to_string());
         Ok(())
     }
@@ -659,7 +707,8 @@ impl IScriptEngine for LuaEngine {
         io_processors: &[String],
     ) -> ScriptResult<()> {
         let mut sessions = self.sessions.lock().unwrap();
-        let session = sessions.get_mut(session_id)
+        let session = sessions
+            .get_mut(session_id)
             .ok_or_else(|| ScriptError::SessionNotFound(session_id.to_string()))?;
         let globals = session.lua.globals();
 
@@ -675,10 +724,16 @@ impl IScriptEngine for LuaEngine {
         let io_table = session.lua.create_table().map_err(map_lua_err)?;
         for proc_name in io_processors {
             let proc_entry = session.lua.create_table().map_err(map_lua_err)?;
-            proc_entry.set("location", format!("#{}", proc_name)).map_err(map_lua_err)?;
-            io_table.set(proc_name.as_str(), proc_entry).map_err(map_lua_err)?;
+            proc_entry
+                .set("location", format!("#{}", proc_name))
+                .map_err(map_lua_err)?;
+            io_table
+                .set(proc_name.as_str(), proc_entry)
+                .map_err(map_lua_err)?;
         }
-        globals.set("_ioprocessors", io_table).map_err(map_lua_err)?;
+        globals
+            .set("_ioprocessors", io_table)
+            .map_err(map_lua_err)?;
         session.declared_vars.insert("_ioprocessors".to_string());
 
         // _event is NOT initialized here — W3C SCXML B.2: _event is unbound
@@ -700,7 +755,8 @@ impl IScriptEngine for LuaEngine {
         invoke_id: &str,
     ) -> ScriptResult<()> {
         let sessions = self.sessions.lock().unwrap();
-        let session = sessions.get(session_id)
+        let session = sessions
+            .get(session_id)
             .ok_or_else(|| ScriptError::SessionNotFound(session_id.to_string()))?;
 
         let event_table = session.lua.create_table().map_err(map_lua_err)?;
@@ -710,25 +766,36 @@ impl IScriptEngine for LuaEngine {
         if !event_data.is_empty() {
             // W3C SCXML B.2: XML data → DOM object (test 561)
             if event_data.trim_start().starts_with('<') {
-                let dom_value = push_xml_as_userdata(&session.lua, event_data)
-                    .map_err(map_lua_err)?;
+                let dom_value =
+                    push_xml_as_userdata(&session.lua, event_data).map_err(map_lua_err)?;
                 event_table.set("data", dom_value).map_err(map_lua_err)?;
             } else {
                 // Try to evaluate as Lua expression first
-                let data_result = session.lua.load(format!("return {}", event_data))
+                let data_result = session
+                    .lua
+                    .load(format!("return {}", event_data))
                     .eval::<LuaValue>();
                 match data_result {
-                    Ok(val) => { event_table.set("data", val).map_err(map_lua_err)?; }
+                    Ok(val) => {
+                        event_table.set("data", val).map_err(map_lua_err)?;
+                    }
                     Err(_) => {
                         // W3C SCXML B.2 test 578: Try JSON-to-Lua conversion ("key": val → ["key"] = val)
                         let lua_syntax = json_to_lua_table(event_data);
-                        let json_result = session.lua.load(format!("return {}", lua_syntax))
+                        let json_result = session
+                            .lua
+                            .load(format!("return {}", lua_syntax))
                             .eval::<LuaValue>();
                         match json_result {
-                            Ok(val) => { event_table.set("data", val).map_err(map_lua_err)?; }
+                            Ok(val) => {
+                                event_table.set("data", val).map_err(map_lua_err)?;
+                            }
                             Err(_) => {
                                 // W3C SCXML B.2 test 562: Fall back to whitespace-normalized string
-                                let normalized: String = event_data.split_whitespace().collect::<Vec<&str>>().join(" ");
+                                let normalized: String = event_data
+                                    .split_whitespace()
+                                    .collect::<Vec<&str>>()
+                                    .join(" ");
                                 event_table.set("data", normalized).map_err(map_lua_err)?;
                             }
                         }
@@ -746,12 +813,20 @@ impl IScriptEngine for LuaEngine {
         // W3C SCXML 5.10.1: Always set origin/origintype so targetexpr="_event.origin"
         // evaluates to empty string (not nil) when origin is unset (test 336).
         event_table.set("origin", origin).map_err(map_lua_err)?;
-        event_table.set("origintype", origin_type).map_err(map_lua_err)?;
+        event_table
+            .set("origintype", origin_type)
+            .map_err(map_lua_err)?;
         if !invoke_id.is_empty() {
-            event_table.set("invokeid", invoke_id).map_err(map_lua_err)?;
+            event_table
+                .set("invokeid", invoke_id)
+                .map_err(map_lua_err)?;
         }
 
-        session.lua.globals().set("_event", event_table).map_err(map_lua_err)?;
+        session
+            .lua
+            .globals()
+            .set("_event", event_table)
+            .map_err(map_lua_err)?;
         Ok(())
     }
 
@@ -768,9 +843,8 @@ impl IScriptEngine for LuaEngine {
         for session in sessions.values() {
             let cb = cb_arc.clone();
             if let Ok(f) = session.lua.create_function(move |_, args: LuaMultiValue| {
-                let script_args: Vec<ScriptValue> = args.into_vec().iter()
-                    .map(lua_value_to_script)
-                    .collect();
+                let script_args: Vec<ScriptValue> =
+                    args.into_vec().iter().map(lua_value_to_script).collect();
                 let result = cb(&script_args);
                 Ok(result.to_bool()) // simplified return
             }) {
@@ -800,9 +874,8 @@ impl IScriptEngine for LuaEngine {
         for (name, callback) in methods {
             let cb_arc: SharedNativeMethod = Arc::from(callback);
             let method_fn = match session.lua.create_function(move |_, args: LuaMultiValue| {
-                let script_args: Vec<ScriptValue> = args.into_vec().iter()
-                    .map(lua_value_to_script)
-                    .collect();
+                let script_args: Vec<ScriptValue> =
+                    args.into_vec().iter().map(lua_value_to_script).collect();
                 let result = cb_arc(&script_args);
                 Ok(match result {
                     ScriptValue::Bool(b) => LuaValue::Boolean(b),
@@ -814,7 +887,11 @@ impl IScriptEngine for LuaEngine {
             }) {
                 Ok(f) => f,
                 Err(e) => {
-                    log::error!("bindNativeObject: failed to create method '{}': {}", name, e);
+                    log::error!(
+                        "bindNativeObject: failed to create method '{}': {}",
+                        name,
+                        e
+                    );
                     return false;
                 }
             };
@@ -904,7 +981,11 @@ impl IScriptEngine for LuaEngine {
         let lua = Lua::new();
         // Setup builtins for this session
         if let Err(e) = Self::setup_builtins(&lua) {
-            log::error!("Failed to setup Lua builtins for session {}: {}", session_id, e);
+            log::error!(
+                "Failed to setup Lua builtins for session {}: {}",
+                session_id,
+                e
+            );
         }
 
         // Register any global functions added via register_global_function()
@@ -913,9 +994,8 @@ impl IScriptEngine for LuaEngine {
             for (name, cb) in gf.iter() {
                 let cb = cb.clone();
                 if let Ok(f) = lua.create_function(move |_, args: LuaMultiValue| {
-                    let script_args: Vec<ScriptValue> = args.into_vec().iter()
-                        .map(lua_value_to_script)
-                        .collect();
+                    let script_args: Vec<ScriptValue> =
+                        args.into_vec().iter().map(lua_value_to_script).collect();
                     let result = cb(&script_args);
                     Ok(result.to_bool())
                 }) {
@@ -924,11 +1004,14 @@ impl IScriptEngine for LuaEngine {
             }
         }
 
-        sessions.insert(session_id.to_string(), Session {
-            lua,
-            declared_vars: HashSet::new(),
-            state_query_callback: None,
-        });
+        sessions.insert(
+            session_id.to_string(),
+            Session {
+                lua,
+                declared_vars: HashSet::new(),
+                state_query_callback: None,
+            },
+        );
     }
 
     fn destroy_session(&self, session_id: &str) {

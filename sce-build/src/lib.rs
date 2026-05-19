@@ -2726,8 +2726,7 @@ fn validate_and_enrich_imports(
                             .map(|arm| (arm.body_alias.clone(), arm.value, arm.is_default))
                             .collect(),
                     );
-                    ctx.codec_variant_has_default_arm =
-                        Some(v.arms.iter().any(|a| a.is_default));
+                    ctx.codec_variant_has_default_arm = Some(v.arms.iter().any(|a| a.is_default));
                     // RFC B5-ν inversion β shape: tag-less `<sce:variant>`
                     // signals the imported codec uses caller-tag dispatch.
                     // Parents importing this codec MUST supply a `tag: u8`
@@ -2748,9 +2747,7 @@ fn validate_and_enrich_imports(
                     // preserve byte-stable goldens for non-B5-ν consumers.
                     let _ = v; // variant existence already gated this branch
                     let needs_variant_import = imp.embed_dispatch.is_some();
-                    if matches!(*language, generator::Language::Rust)
-                        && needs_variant_import
-                    {
+                    if matches!(*language, generator::Language::Rust) && needs_variant_import {
                         let snake = std::path::Path::new(&imp.src)
                             .file_stem()
                             .and_then(|s| s.to_str())
