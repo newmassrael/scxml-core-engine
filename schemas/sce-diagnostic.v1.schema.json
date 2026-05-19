@@ -202,6 +202,7 @@
         "mesh/deploy-invalid-server-query-timeout",
         "mesh/deploy-invalid-outbound-buffer",
         "mesh/deploy-invalid-retry-policy",
+        "mesh/deploy-invalid-auth-policy",
         "mesh/deploy-discovery-not-supported",
         "mesh/deploy-pool-not-supported-by-transport",
         "mesh/deploy-pool-missing-instance-list",

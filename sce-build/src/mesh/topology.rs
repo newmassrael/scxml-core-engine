@@ -365,6 +365,14 @@ pub struct ResolvedTarget {
     /// wraps the OutboundBuffer dispatcher.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retry: Option<crate::mesh::deploy::RetryPolicyConfig>,
+    /// SCE_MESH.md §16.7 row 10 auth policy. `None` ⇒ no row-10 wiring;
+    /// transport rejection stays classified as row 1 / row 8. `Some(_)`
+    /// ⇒ codegen emits the auth-classification arm at the transport's
+    /// rejection site (Zenoh ZException::what() inspection for cert
+    /// errors; SOMEIP `register_availability_handler(false)` upgrade to
+    /// row 10 when `sd_denied_classifies_as_unauthorized: true`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth: Option<crate::mesh::deploy::AuthPolicyConfig>,
     /// SCE_MESH.md §14.4 — runtime pool substitution plan, or `None` if
     /// this target has no placeholder bindings. The typed sum type
     /// (`Zenoh { placeholders }` vs `Someip { instance_from, instances }`)
@@ -1543,6 +1551,11 @@ pub(crate) struct PartialTarget {
     /// emits a `RetryingDispatcher` per opt-in target and wires the
     /// OutboundBuffer to it.
     pub retry: Option<crate::mesh::deploy::RetryPolicyConfig>,
+    /// SCE_MESH.md §16.7 row 10 auth policy, copied verbatim from the
+    /// `BindingConfig`. Threaded through `build_partials` /
+    /// `finalize_targets` so `ResolvedTarget.auth` is the codegen
+    /// source-of-truth.
+    pub auth: Option<crate::mesh::deploy::AuthPolicyConfig>,
     /// SCE_MESH.md §14.4 — raw `BindingConfig.instance_from` copied
     /// for SOME/IP pool resolution in [`finalize_targets`]. `None`
     /// means no SOME/IP pool is requested at this binding; the exact
@@ -1644,6 +1657,7 @@ pub(crate) fn contribute_send_partials(
                     invoke_sites: merged_sites,
                     ordering: binding.ordering,
                     retry: binding.retry,
+                    auth: binding.auth.clone(),
                     instance_from: binding.instance_from.clone(),
                     instances: binding.instances.clone(),
                     // Machine-lifetime subscription interest is layered
@@ -1925,6 +1939,7 @@ pub(crate) fn contribute_subscription_partials(
                 invoke_sites: Vec::new(),
                 ordering: binding.ordering,
                 retry: binding.retry,
+                auth: binding.auth.clone(),
                 instance_from: binding.instance_from.clone(),
                 instances: binding.instances.clone(),
                 subscription_events: vec![sub.event.clone()],
@@ -2175,6 +2190,7 @@ pub(crate) fn finalize_targets(
             invoke_sites: pt.invoke_sites,
             ordering: pt.ordering,
             retry: pt.retry,
+            auth: pt.auth,
             pool_plan,
         });
     }
@@ -3177,6 +3193,7 @@ mod tests {
             invoke_sites: Vec::new(),
             ordering: crate::mesh::deploy::OrderingRequirement::None,
             retry: None,
+            auth: None,
             pool_plan: None,
         }]
     }

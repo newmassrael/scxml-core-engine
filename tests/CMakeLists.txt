@@ -1354,6 +1354,35 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     add_test(NAME mesh_deadline_preempts_retry_verification
              COMMAND mesh_deadline_preempts_retry_test)
 
+    # ── AuthClassifier unit tests (SCE_MESH.md §16.7 row 10) ──────
+    # Pins the Q3-lock keyword set the row-10 classifier uses to
+    # decide row 1 TRANSPORT_UNAVAILABLE vs row 10 UNAUTHORIZED for
+    # zenoh ZException::what() inputs. Sole consumer is the generated
+    # router's ZException catch block, so a regression here directly
+    # breaks the §16.7 row 10 emit contract.
+    add_executable(mesh_auth_classifier_test
+        mesh/AuthClassifierTest.cpp
+    )
+
+    target_include_directories(mesh_auth_classifier_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+    )
+
+    target_link_libraries(mesh_auth_classifier_test
+        PRIVATE
+            sce_mesh_common
+            GTest::gtest_main
+            pthread
+    )
+
+    target_compile_features(mesh_auth_classifier_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_auth_classifier_test)
+
+    add_test(NAME mesh_auth_classifier_verification
+             COMMAND mesh_auth_classifier_test)
+
     # ── DedupRouter unit tests (SCE_MESH.md §10.5) ────────────────
     # Pure unit tests on the per-sender envelope-id dedup filter.
     # Verifies the 256-entry ring (novel/repeat/eviction/wrap) plus

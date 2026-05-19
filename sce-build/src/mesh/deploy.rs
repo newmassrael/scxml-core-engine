@@ -1652,6 +1652,190 @@ pub struct RetryPolicyConfig {
     pub backoff_jitter_pct: u32,
 }
 
+/// Per-binding authorization policy (SCE Mesh §16.7 row 10 UNAUTHORIZED).
+///
+/// Opt-in: absent section ⇒ no auth layer emitted; transport-level
+/// rejection (Zenoh `ZException` on `Session::open`, SOME/IP
+/// `register_availability_handler(false)`) routes through the existing
+/// row 1 TRANSPORT_UNAVAILABLE / row 8 PEER_PARTITIONED classifications.
+/// Section present ⇒ the generated router observes the transport's
+/// rejection signal and classifies a known-auth-fail subset (Zenoh
+/// `ZException::what()` containing certificate/tls/auth tokens; SOME/IP
+/// SD denial code) as UNAUTHORIZED row 10 instead of the generic
+/// row 1 / row 8.
+///
+/// Per-target granularity (Q1 = (b)): mirrors `RetryPolicyConfig`'s
+/// per-binding shape so each outbound target can pin a distinct peer
+/// fingerprint without dragging the whole binary into one trust
+/// boundary.
+///
+/// One-shot semantics (Q5 = one-shot per (binary-startup, target)):
+/// after UNAUTHORIZED fires for a target, the OutboundBuffer's
+/// `ready_` stays false; outbound envelopes accumulate up to
+/// `max_pending_per_target` and drop with BACKPRESSURE_DROP (row 9).
+/// The author's `error.communication` transition is the cleanup
+/// boundary; operator must restart the binary to re-trust.
+///
+/// Per-transport applicability (Q2 = (a) mTLS + (d) defer to binding):
+/// * `zenoh` — `peer_fingerprint` pins the peer cert; failed handshake
+///   classifies on `ZException::what()` text.
+/// * `someip` — `sd_denied_classifies_as_unauthorized: true` opts in
+///   to classifying SOMEIP SD denial as UNAUTHORIZED instead of
+///   PEER_PARTITIONED.
+/// * `custom_tcp` / `shm` — rejected at parse time: out of scope for
+///   v1 (Q2 lock-in). The validator surfaces a clear error message
+///   pointing authors at zenoh / someip.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AuthPolicyConfig {
+    /// Opt-in flag. Absent / `false` ⇒ no auth layer emitted (defaults
+    /// apply). `true` ⇒ transport-specific auth wiring kicks in; the
+    /// other fields below become honoured per-transport.
+    #[serde(default)]
+    pub required: bool,
+
+    /// SHA-256 peer-certificate fingerprint (`"sha256:<hex>"`). For
+    /// `zenoh` bindings: pinned against the peer's TLS handshake cert
+    /// chain. Required when `required: true` AND `transport == "zenoh"`.
+    /// Format validation at parse time: literal `"sha256:"` prefix
+    /// followed by 64 lowercase hex characters (the SHA-256 digest
+    /// length). Non-zenoh transports must omit this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub peer_fingerprint: Option<String>,
+
+    /// For `someip` bindings only: when `register_availability_handler`
+    /// reports `is_available=false`, classify as row 10 UNAUTHORIZED
+    /// (vs the row 8 PEER_PARTITIONED default). The SOMEIP wire
+    /// protocol does not surface a distinct auth-vs-network failure
+    /// signal — this flag is the author's contract with the SD
+    /// responder ("an availability=false event after I requested
+    /// service IS an auth denial in my deployment"). Required when
+    /// `required: true` AND `transport == "someip"`; ignored for other
+    /// transports.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_denied_classifies_as_unauthorized: Option<bool>,
+}
+
+impl AuthPolicyConfig {
+    /// Validate the constraints (independent of transport — the caller
+    /// supplies the transport-specific applicability check separately).
+    /// Returns the rejection reason without the machine / target name;
+    /// the caller wraps this into [`DeployError::InvalidAuthPolicy`].
+    fn validation_error(&self, transport: &str) -> Option<String> {
+        if !self.required {
+            // `required: false` (or omitted) ⇒ all other fields are
+            // ignored; presence of `peer_fingerprint` /
+            // `sd_denied_classifies_as_unauthorized` alongside
+            // `required: false` is a likely authoring mistake (the
+            // values would be silently ignored at codegen time).
+            if self.peer_fingerprint.is_some()
+                || self.sd_denied_classifies_as_unauthorized.is_some()
+            {
+                return Some(
+                    "`auth: { required: false }` cannot carry `peer_fingerprint` or \
+                     `sd_denied_classifies_as_unauthorized` — those fields are only \
+                     honoured when `required: true`. Either set `required: true` or \
+                     drop the ignored fields"
+                        .to_string(),
+                );
+            }
+            return None;
+        }
+        match transport {
+            "zenoh" => {
+                let fp = match &self.peer_fingerprint {
+                    Some(s) => s,
+                    None => {
+                        return Some(
+                            "zenoh `auth: { required: true }` requires `peer_fingerprint: \"sha256:<64-hex>\"` — \
+                             without a pinned cert digest there is nothing to authorize against. \
+                             Either pin the peer fingerprint or set `required: false`"
+                                .to_string(),
+                        );
+                    }
+                };
+                if let Some(reason) = validate_sha256_fingerprint(fp) {
+                    return Some(reason);
+                }
+                if self.sd_denied_classifies_as_unauthorized.is_some() {
+                    return Some(
+                        "zenoh `auth:` block must not declare \
+                         `sd_denied_classifies_as_unauthorized` — that field is \
+                         SOMEIP-specific"
+                            .to_string(),
+                    );
+                }
+                None
+            }
+            "someip" => {
+                let opt_in = self
+                    .sd_denied_classifies_as_unauthorized
+                    .unwrap_or(false);
+                if !opt_in {
+                    return Some(
+                        "someip `auth: { required: true }` requires \
+                         `sd_denied_classifies_as_unauthorized: true` — without \
+                         opting in to SD-denial classification, the SOMEIP availability \
+                         handler cannot distinguish row 8 PEER_PARTITIONED from row 10 \
+                         UNAUTHORIZED. Either set the flag or set `required: false`"
+                            .to_string(),
+                    );
+                }
+                if self.peer_fingerprint.is_some() {
+                    return Some(
+                        "someip `auth:` block must not declare `peer_fingerprint` — \
+                         that field is zenoh-specific (TLS handshake cert pinning). \
+                         SOMEIP authorization is delegated to the SD responder; this \
+                         binding observes the SD denial code, not a cert chain"
+                            .to_string(),
+                    );
+                }
+                None
+            }
+            other => Some(format!(
+                "transport '{}' does not support §16.7 row 10 UNAUTHORIZED in this release — \
+                 only `zenoh` (mTLS cert pinning) and `someip` (SD denial classification) \
+                 are wired. Either move the binding to a supported transport or set \
+                 `required: false`",
+                other,
+            )),
+        }
+    }
+}
+
+/// Validate that a string matches the `sha256:<64-hex>` literal shape.
+/// Returns the rejection reason on failure, `None` on success.
+fn validate_sha256_fingerprint(fp: &str) -> Option<String> {
+    const PREFIX: &str = "sha256:";
+    let hex_part = match fp.strip_prefix(PREFIX) {
+        Some(s) => s,
+        None => {
+            return Some(format!(
+                "peer_fingerprint ({:?}) must start with the literal prefix `sha256:` — \
+                 SCE Mesh §16.7 row 10 pins SHA-256 digests only in this release",
+                fp,
+            ));
+        }
+    };
+    if hex_part.len() != 64 {
+        return Some(format!(
+            "peer_fingerprint hex portion ({:?}) must be exactly 64 lowercase hex characters \
+             (SHA-256 digest length); observed length {}",
+            hex_part,
+            hex_part.len(),
+        ));
+    }
+    if !hex_part.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+        return Some(format!(
+            "peer_fingerprint hex portion ({:?}) must contain only lowercase hex characters \
+             (`[0-9a-f]`) — uppercase hex and non-hex bytes are rejected for byte-for-byte \
+             canonical-form pinning",
+            hex_part,
+        ));
+    }
+    None
+}
+
 fn default_initial_backoff_ms() -> u64 {
     100
 }
@@ -2405,6 +2589,18 @@ pub struct BindingConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retry: Option<RetryPolicyConfig>,
 
+    /// SCE Mesh §16.7 row 10 — per-binding authorization policy.
+    /// Opt-in: absent / `required: false` ⇒ transport-level rejection
+    /// signals stay classified as row 1 TRANSPORT_UNAVAILABLE or
+    /// row 8 PEER_PARTITIONED. Present + `required: true` ⇒ the
+    /// generated router observes the transport's reject signal and
+    /// classifies known-auth-fail patterns (Zenoh ZException::what()
+    /// containing certificate/tls/auth tokens; SOMEIP SD denial code)
+    /// as row 10 UNAUTHORIZED. Per-transport feature gates apply —
+    /// custom_tcp / shm bindings cannot opt in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth: Option<AuthPolicyConfig>,
+
     /// Per-target transport-native settings passed through to templates
     /// (zenoh `key:`, someip `protocol:`, shm `shm_arena_bytes:`, etc.).
     /// Reserved SOME/IP ID key names are collected here at parse time but
@@ -2478,6 +2674,7 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_stage_pool_transport(&cfg)?;
     validate_outbound_buffer(&cfg)?;
     validate_retry_policy(&cfg)?;
+    validate_auth_policy(&cfg)?;
     validate_discovery_not_supported(&cfg)?;
     validate_synth_invoke_infix(&cfg)?;
     validate_partitions_schema(&cfg)?;
@@ -4761,6 +4958,45 @@ fn validate_retry_policy(cfg: &DeployConfig) -> Result<(), DeployError> {
     Ok(())
 }
 
+/// Walk every binding that declared an explicit `auth:` section and
+/// reject malformed values + per-transport unsupported placements
+/// (SCE Mesh §16.7 row 10). Runs at parse time so the diagnostic
+/// surfaces the offending deploy.yaml line rather than generating a
+/// router whose row-10 wiring would silently no-op (custom_tcp / shm
+/// have no observable auth signal) or whose pinned fingerprint cannot
+/// be byte-for-byte canonicalized at runtime.
+///
+/// Mirrors [`validate_retry_policy`] for stable diagnostic ordering
+/// across runs: BTreeMap keyed on (machine, target) drains in
+/// canonical order regardless of HashMap iteration noise.
+fn validate_auth_policy(cfg: &DeployConfig) -> Result<(), DeployError> {
+    use std::collections::BTreeMap;
+    let mut by_path: BTreeMap<(String, String), (&str, &AuthPolicyConfig)> =
+        BTreeMap::new();
+    for device in cfg.topology.values() {
+        for (machine_name, machine) in &device.machines {
+            for (target_id, binding) in &machine.bindings {
+                if let Some(a) = &binding.auth {
+                    by_path.insert(
+                        (machine_name.to_string(), target_id.to_string()),
+                        (binding.transport.as_str(), a),
+                    );
+                }
+            }
+        }
+    }
+    for ((machine, target), (transport, policy)) in by_path {
+        if let Some(reason) = policy.validation_error(transport) {
+            return Err(DeployError::InvalidAuthPolicy {
+                machine,
+                target,
+                reason,
+            });
+        }
+    }
+    Ok(())
+}
+
 /// Walk every machine that declared an explicit `outbound_buffer:`
 /// section and reject capacity-zero values (SCE Mesh §10.10). Runs at
 /// parse time so the diagnostic surfaces the offending deploy.yaml
@@ -6588,6 +6824,217 @@ topology:
                 );
             }
             other => panic!("expected InvalidRetryPolicy, got {other:?}"),
+        }
+    }
+
+    // ── §16.7 row 10 auth-policy parser tests ─────────────────────
+
+    #[test]
+    fn auth_section_absent_is_none() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: zenoh
+"##;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        let machine = &cfg.topology["ecu1"].machines["brake"];
+        let binding = machine.bindings.get(&TargetId::new("#motor").unwrap()).unwrap();
+        assert!(
+            binding.auth.is_none(),
+            "absent auth section must deserialize as None (opt-in gate — §16.7 row 10)"
+        );
+    }
+
+    #[test]
+    fn auth_zenoh_with_valid_fingerprint_parses() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: zenoh
+            auth:
+              required: true
+              peer_fingerprint: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+"##;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        let machine = &cfg.topology["ecu1"].machines["brake"];
+        let binding = machine.bindings.get(&TargetId::new("#motor").unwrap()).unwrap();
+        let a = binding.auth.as_ref().expect("auth must be Some");
+        assert!(a.required);
+        assert_eq!(
+            a.peer_fingerprint.as_deref(),
+            Some("sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"),
+        );
+        assert!(a.sd_denied_classifies_as_unauthorized.is_none());
+    }
+
+    #[test]
+    fn auth_someip_with_sd_denied_flag_parses() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: someip
+            auth:
+              required: true
+              sd_denied_classifies_as_unauthorized: true
+"##;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        let machine = &cfg.topology["ecu1"].machines["brake"];
+        let binding = machine.bindings.get(&TargetId::new("#motor").unwrap()).unwrap();
+        let a = binding.auth.as_ref().expect("auth must be Some");
+        assert!(a.required);
+        assert_eq!(a.sd_denied_classifies_as_unauthorized, Some(true));
+        assert!(a.peer_fingerprint.is_none());
+    }
+
+    #[test]
+    fn auth_zenoh_required_without_fingerprint_rejected() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: zenoh
+            auth:
+              required: true
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::InvalidAuthPolicy { reason, .. }) => {
+                assert!(
+                    reason.contains("peer_fingerprint"),
+                    "reason must cite the missing knob: {reason}",
+                );
+            }
+            other => panic!("expected InvalidAuthPolicy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn auth_zenoh_malformed_fingerprint_rejected() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: zenoh
+            auth:
+              required: true
+              peer_fingerprint: "sha256:NOTHEX"
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::InvalidAuthPolicy { reason, .. }) => {
+                assert!(
+                    reason.contains("hex"),
+                    "reason must cite the malformed hex: {reason}",
+                );
+            }
+            other => panic!("expected InvalidAuthPolicy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn auth_someip_required_without_flag_rejected() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: someip
+            auth:
+              required: true
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::InvalidAuthPolicy { reason, .. }) => {
+                assert!(
+                    reason.contains("sd_denied_classifies_as_unauthorized"),
+                    "reason must cite the missing flag: {reason}",
+                );
+            }
+            other => panic!("expected InvalidAuthPolicy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn auth_custom_tcp_rejected() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: custom_tcp
+            auth:
+              required: true
+              peer_fingerprint: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::InvalidAuthPolicy { reason, .. }) => {
+                assert!(
+                    reason.contains("custom_tcp")
+                        && reason.contains("row 10"),
+                    "reason must cite the transport rejection: {reason}",
+                );
+            }
+            other => panic!("expected InvalidAuthPolicy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn auth_zenoh_fingerprint_with_required_false_rejected() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: zenoh
+            auth:
+              required: false
+              peer_fingerprint: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::InvalidAuthPolicy { reason, .. }) => {
+                assert!(
+                    reason.contains("required: false"),
+                    "reason must cite the ignored field placement: {reason}",
+                );
+            }
+            other => panic!("expected InvalidAuthPolicy, got {other:?}"),
         }
     }
 

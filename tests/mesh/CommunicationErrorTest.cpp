@@ -369,6 +369,36 @@ TEST(CommunicationErrorTest, DeliveryExhaustedShapeAfterRetries) {
               "\"attempts\":4}");
 }
 
+TEST(CommunicationErrorTest, UnauthorizedShape) {
+    // §16.7 row 10 — UNAUTHORIZED carries target + transport +
+    // transport_status. Fires when the peer rejects the binding at
+    // the trust-boundary handshake (Zenoh TLS denial, SOMEIP SD
+    // denial). JSON insertion order follows CommunicationError's
+    // declaration order: target → transport → transport_status.
+    // transport_status is the new row 10 field — sits adjacent to
+    // transport_error / attempts to keep the row 2 / 3 / 10 shapes
+    // visually congruent for authors comparing them.
+    //
+    // Authors guard on `_event.data.reason == 'UNAUTHORIZED' &&
+    //  _event.data.target == 'motor'` to surface the trust failure
+    // out-of-band; transport_status carries the raw API rejection
+    // text (Zenoh `ZException::what()` truncated to the auth-tied
+    // substring; SOMEIP SD response code label).
+    CommunicationError err;
+    err.reason = "UNAUTHORIZED";
+    err.target = "motor";
+    err.transport = "zenoh";
+    err.transport_status = "TLS: peer certificate fingerprint mismatch";
+
+    const auto out = bytes_to_string(err.toJsonBytes());
+    EXPECT_EQ(out,
+              "{\"errorName\":\"communication\","
+              "\"reason\":\"UNAUTHORIZED\","
+              "\"target\":\"motor\","
+              "\"transport\":\"zenoh\","
+              "\"transport_status\":\"TLS: peer certificate fingerprint mismatch\"}");
+}
+
 TEST(CommunicationErrorTest, DeliveryExhaustedShapeTerminalFastFail) {
     // §16.7 row 3 — when the dispatcher classified its first failure
     // as TERMINAL (SendResult.retryable == false), the retry layer

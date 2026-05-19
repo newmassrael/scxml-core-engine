@@ -487,6 +487,18 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 #include <chrono>
 #include <mutex>
 {% endif %}
+{%- set has_any_auth = namespace(v=false) %}
+{%- for target in targets if target.auth %}
+{%-   set has_any_auth.v = true %}
+{%- endfor %}
+{% if has_any_auth.v %}
+// SCE_MESH.md §16.7 row 10 UNAUTHORIZED — shared auth-fail classifier
+// (single source of truth for the ZException::what() keyword set so
+// the rule is unit-testable in isolation rather than locked inside
+// the codegen template).
+#include "mesh/AuthClassifier.h"
+#include <atomic>
+{% endif %}
 {% if machine_outbound_buffer %}
 // SCE Mesh §10.10: per-target readiness-gated outbound admit layer for
 // transports whose peer may not yet be ready when route_send runs
@@ -1354,6 +1366,17 @@ struct TransportRouter {
 {% if target.state.kind == "zenoh" %}
     std::optional<zenoh::Publisher> {{ target.target_snake }}_publisher_;
     std::optional<zenoh::MatchingListener<void>> {{ target.target_snake }}_matching_listener_;
+{% endif %}
+{% if target.auth %}
+    // SCE_MESH.md §16.7 row 10 (UNAUTHORIZED) — one-shot per
+    // (binary-startup, target) flag. Set when the transport's
+    // rejection signal fires (Zenoh ZException at session open with
+    // TLS / cert markers; SOMEIP `is_available=false` when the binding
+    // opted into SD-denial classification). Prevents repeated
+    // `error.communication` raises if the rejection signal flaps —
+    // the SCXML author's transition is the cleanup boundary; operator
+    // restart is the only path back to "ready" per Q5.
+    std::atomic<bool> {{ target.target_snake }}_auth_unauthorized_fired_{false};
 {% endif %}
 {% endfor %}
 {% endif %}
@@ -2548,6 +2571,26 @@ struct TransportRouter {
             [this](vsomeip::service_t, vsomeip::instance_t, bool is_available) {
                 if (is_available) {{ target.target_snake }}_outbound_.markReady();
                 else              {{ target.target_snake }}_outbound_.markNotReady();
+{% if target.auth and target.auth.sd_denied_classifies_as_unauthorized %}
+                // SCE_MESH.md §16.7 row 10 UNAUTHORIZED — binding opted
+                // into "SD denial = auth failure" classification (the
+                // SOMEIP wire surfaces no native auth-vs-network
+                // discriminator, so the author's deploy.yaml flag
+                // declares the responder's contract). One-shot per
+                // (binary-startup, target) per Q5 — repeated availability
+                // flaps do not re-raise.
+                if (!is_available &&
+                    !{{ target.target_snake }}_auth_unauthorized_fired_.exchange(
+                        true, std::memory_order_acq_rel)) {
+                    ::SCE::Mesh::CommunicationError __sce_auth_err;
+                    __sce_auth_err.reason = "UNAUTHORIZED";
+                    __sce_auth_err.target = "{{ target.target }}";
+                    __sce_auth_err.transport = "someip";
+                    __sce_auth_err.transport_status =
+                        "vsomeip SD denial (register_availability_handler is_available=false)";
+                    raiseCommunicationError(std::move(__sce_auth_err));
+                }
+{% endif %}
             });
 {% endif %}
         {{ target.target_snake }}_thread_ = std::thread([this]{ {{ target.target_snake }}_app_->start(); });
@@ -2887,10 +2930,39 @@ struct TransportRouter {
             config.insert_json5("listen/endpoints", {{ zenoh_session_json5.listen }});
 {% endif %}
             zenoh_session_.emplace(zenoh::Session::open(std::move(config)));
-        } catch (const zenoh::ZException&) {
+        } catch (const zenoh::ZException& __sce_zex) {
             // Zenoh signals config/open failures via ZException. Unknown
             // exception types should propagate (not be silently converted).
             // Tear down any SOME/IP threads spawned earlier in this init().
+{%- set zenoh_auth_targets = targets | selectattr("auth") | selectattr("state.kind", "equalto", "zenoh") | list %}
+{% if zenoh_auth_targets %}
+            // SCE_MESH.md §16.7 row 10 UNAUTHORIZED — at least one zenoh
+            // target opted into trust enforcement. Delegate the
+            // ZException::what() classification to
+            // `SCE::Mesh::isZenohAuthFailMessage`, which holds the
+            // single-source-of-truth keyword list (certificate / tls /
+            // auth / handshake, case-insensitive). Match ⇒ raise
+            // UNAUTHORIZED for every auth-required zenoh target so the
+            // author's `<transition event="error.communication">` can
+            // branch on `_event.data.reason == "UNAUTHORIZED"`. No
+            // match ⇒ the existing row 1 path stays unchanged.
+            const std::string __sce_what_msg = __sce_zex.what()
+                                                   ? __sce_zex.what()
+                                                   : "";
+            if (::SCE::Mesh::isZenohAuthFailMessage(__sce_what_msg)) {
+{% for t in zenoh_auth_targets %}
+                if (!{{ t.target_snake }}_auth_unauthorized_fired_.exchange(
+                        true, std::memory_order_acq_rel)) {
+                    ::SCE::Mesh::CommunicationError __sce_auth_err;
+                    __sce_auth_err.reason = "UNAUTHORIZED";
+                    __sce_auth_err.target = "{{ t.target }}";
+                    __sce_auth_err.transport = "zenoh";
+                    __sce_auth_err.transport_status = __sce_what_msg;
+                    raiseCommunicationError(std::move(__sce_auth_err));
+                }
+{% endfor %}
+            }
+{% endif %}
             shutdown();
             return false;
         }

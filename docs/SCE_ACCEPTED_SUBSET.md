@@ -667,6 +667,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/deploy-invalid-server-query-timeout` | Mesh Deploy |
 | `mesh/deploy-invalid-outbound-buffer` | Mesh Deploy |
 | `mesh/deploy-invalid-retry-policy` | Mesh Deploy |
+| `mesh/deploy-invalid-auth-policy` | Mesh Deploy |
 | `mesh/deploy-discovery-not-supported` | Mesh Deploy |
 | `mesh/deploy-pool-not-supported-by-transport` | Mesh Deploy |
 | `mesh/deploy-pool-missing-instance-list` | Mesh Deploy |

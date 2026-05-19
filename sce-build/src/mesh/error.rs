@@ -247,6 +247,23 @@ pub enum DeployError {
         reason: String,
     },
 
+    /// A per-binding `auth:` section is malformed or placed on a
+    /// transport that does not support §16.7 row 10 in this release
+    /// (custom_tcp / shm). Surfaced at parse time so authors do not
+    /// reach codegen with a silently-no-op auth wiring (the runtime
+    /// would never raise UNAUTHORIZED for those transports — the
+    /// rejection signal does not exist there) or a fingerprint string
+    /// whose digest cannot be canonicalized byte-for-byte.
+    #[error(
+        "machine '{machine}', binding '{target}': invalid `auth:` section in deploy.yaml — {reason}. \
+             Either fix the configuration or omit the section to opt out of §16.7 row 10 UNAUTHORIZED classification."
+    )]
+    InvalidAuthPolicy {
+        machine: String,
+        target: String,
+        reason: String,
+    },
+
     /// A `discovery:` top-level block appeared in deploy.yaml. SCE Mesh
     /// §3.3 invariant: transport-native routing is the source of truth
     /// for peer availability, and SCE does not maintain a peer table
@@ -2316,6 +2333,19 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             // (machine, target, reason) so two distinct retry
             // misconfigurations on the same machine surface as
             // distinct ids in the diagnostic stream.
+            actual: Some(machine.clone()),
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), target.clone(), reason.clone()],
+        },
+        DeployError::InvalidAuthPolicy { machine, target, reason } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployInvalidAuthPolicy,
+            stage: Stage::MeshDeploy,
+            // Mirror InvalidRetryPolicy's actual / key_fragments shape:
+            // `actual` highlights the offending machine; the
+            // (machine, target, reason) key hashes two distinct auth
+            // misconfigurations on the same machine to disjoint
+            // diagnostic ids.
             actual: Some(machine.clone()),
             expected: None,
             fix: None,

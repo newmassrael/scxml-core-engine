@@ -336,6 +336,15 @@ struct TargetContext {
     /// retrying wrapper.
     #[serde(skip_serializing_if = "Option::is_none")]
     retry: Option<RetryPolicyContext>,
+    /// SCE_MESH.md §16.7 row 10 — per-binding auth policy projected into
+    /// the template context. `None` ⇒ no row-10 wiring is emitted;
+    /// transport rejection signals stay classified as row 1 / row 8.
+    /// `Some(_)` ⇒ the generator's transport classify-arm reads
+    /// `peer_fingerprint` (zenoh) or `sd_denied_classifies_as_unauthorized`
+    /// (someip) and emits the UNAUTHORIZED classification at the
+    /// matching rejection site.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    auth: Option<AuthPolicyContext>,
     /// Per-event pattern metadata for pattern-aware send logic.
     event_patterns: Vec<EventPatternContext>,
     /// True if any event uses RPC patterns (ServiceRequest/ServiceResponse).
@@ -390,6 +399,47 @@ impl From<super::deploy::RetryPolicyConfig> for RetryPolicyContext {
             max_backoff_ms: c.max_backoff_ms,
             jitter_pct: c.backoff_jitter_pct,
         }
+    }
+}
+
+/// SCE Mesh §16.7 row 10 — codegen-side projection of the per-binding
+/// auth policy. Mirrors [`RetryPolicyContext`] in shape and rationale:
+/// the deploy.yaml struct is `Option`-rich, but the template only sees
+/// either "no auth wiring" (None at the TargetContext level) or a
+/// fully-populated record with the transport-required fields collapsed
+/// down to flat scalars. The validator (`validate_auth_policy`) has
+/// already proven the required fields are present for the transport,
+/// so this struct carries the post-validation invariant ("if you see
+/// this struct, you have everything you need to emit the auth wiring").
+#[derive(Debug, Clone, serde::Serialize)]
+struct AuthPolicyContext {
+    /// SHA-256 peer-cert fingerprint pinned for this target. Populated
+    /// only for zenoh bindings (validator rejected the field on
+    /// someip / custom_tcp / shm). When absent, the template emits the
+    /// SOMEIP variant of row-10 wiring instead of the zenoh variant.
+    peer_fingerprint: Option<String>,
+
+    /// SOMEIP-specific opt-in: classify `register_availability_handler(false)`
+    /// as row 10 instead of row 8. Populated only for someip bindings;
+    /// validator ensures this is `Some(true)` when the binding declared
+    /// `required: true` on a someip transport, and `None` on zenoh.
+    sd_denied_classifies_as_unauthorized: Option<bool>,
+}
+
+impl AuthPolicyContext {
+    /// Convert from the deploy.yaml shape. Returns `None` if the policy
+    /// is opt-out (`required: false` or absent) — the validator has
+    /// already proven the rest of the fields are blank in that case,
+    /// so the codegen path can short-circuit by treating `required:
+    /// false` identically to "no auth section".
+    fn from_config(c: super::deploy::AuthPolicyConfig) -> Option<Self> {
+        if !c.required {
+            return None;
+        }
+        Some(Self {
+            peer_fingerprint: c.peer_fingerprint,
+            sd_denied_classifies_as_unauthorized: c.sd_denied_classifies_as_unauthorized,
+        })
     }
 }
 
@@ -1213,6 +1263,7 @@ fn generate_cpp_mesh(
                 invoke_sites: t.invoke_sites.clone(),
                 pool_plan: t.pool_plan.clone(),
                 retry: t.retry.map(RetryPolicyContext::from),
+                auth: t.auth.clone().and_then(AuthPolicyContext::from_config),
             }
         })
         .collect();
@@ -2124,6 +2175,7 @@ mod tests {
             invoke_sites,
             pool_plan: None,
             retry: None,
+            auth: None,
         }
     }
 

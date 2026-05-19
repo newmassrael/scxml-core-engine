@@ -138,6 +138,21 @@ struct CommunicationError {
     /// underlying API decline that drove the final attempt's failure.
     std::optional<std::string> transport_error;
 
+    /// §16.7 row 10 (UNAUTHORIZED): underlying transport-API status
+    /// string captured at the moment the peer rejected on
+    /// authorization. Distinct from `transport_error` (row 2's
+    /// SEND_FAILED dispatcher-decline): row 10 fires at the trust-
+    /// boundary handshake (Zenoh TLS / SOMEIP SD denial), so the
+    /// status string is the raw rejection text from the underlying
+    /// API — `ZException::what()` for zenoh (carrying the TLS error
+    /// chain), the SD response code label for SOMEIP. Lets the author
+    /// log / correlate the rejection without re-deriving it from
+    /// transport telemetry, while keeping the SCE-authored reason
+    /// (`reason: "UNAUTHORIZED"`) on the wire as the SCE-level signal.
+    /// Absent on every other row's raise site — row 10 is the only
+    /// producer.
+    std::optional<std::string> transport_status;
+
     /// §16.7 row 3 (DELIVERY_EXHAUSTED): total number of dispatch
     /// attempts the retry layer made before giving up. Equals
     /// `max_retries + 1` for the common "exhausted after configured
@@ -265,6 +280,9 @@ struct CommunicationError {
         }
         if (transport_error) {
             j["transport_error"] = *transport_error;
+        }
+        if (transport_status) {
+            j["transport_status"] = *transport_status;
         }
         if (attempts) {
             j["attempts"] = *attempts;

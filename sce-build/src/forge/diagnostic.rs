@@ -1588,6 +1588,8 @@ pub enum DiagnosticCode {
     MeshDeployInvalidOutboundBuffer,
     #[serde(rename = "mesh/deploy-invalid-retry-policy")]
     MeshDeployInvalidRetryPolicy,
+    #[serde(rename = "mesh/deploy-invalid-auth-policy")]
+    MeshDeployInvalidAuthPolicy,
     #[serde(rename = "mesh/deploy-discovery-not-supported")]
     MeshDeployDiscoveryNotSupported,
     #[serde(rename = "mesh/deploy-pool-not-supported-by-transport")]
@@ -2428,6 +2430,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployInvalidServerQueryTimeout,
         MeshDeployInvalidOutboundBuffer,
         MeshDeployInvalidRetryPolicy,
+        MeshDeployInvalidAuthPolicy,
         MeshDeployDiscoveryNotSupported,
         MeshDeployPoolNotSupportedByTransport,
         MeshDeployPoolMissingInstanceList,
@@ -2851,6 +2854,7 @@ impl DiagnosticCode {
             MeshDeployInvalidServerQueryTimeout => Some("SCE Mesh §9.5"),
             MeshDeployInvalidOutboundBuffer => Some("SCE Mesh §10.10"),
             MeshDeployInvalidRetryPolicy => Some("SCE Mesh §16.7"),
+            MeshDeployInvalidAuthPolicy => Some("SCE Mesh §16.7"),
 
             // ── Discovery invariant (SCE_MESH.md §3.3) ──────────
             MeshDeployDiscoveryNotSupported => Some("SCE Mesh §3.3"),
@@ -3321,6 +3325,7 @@ impl DiagnosticCode {
             MeshDeployInvalidServerQueryTimeout => "mesh/deploy-invalid-server-query-timeout",
             MeshDeployInvalidOutboundBuffer => "mesh/deploy-invalid-outbound-buffer",
             MeshDeployInvalidRetryPolicy => "mesh/deploy-invalid-retry-policy",
+            MeshDeployInvalidAuthPolicy => "mesh/deploy-invalid-auth-policy",
             MeshDeployDiscoveryNotSupported => "mesh/deploy-discovery-not-supported",
             MeshDeployPoolNotSupportedByTransport => "mesh/deploy-pool-not-supported-by-transport",
             MeshDeployPoolMissingInstanceList => "mesh/deploy-pool-missing-instance-list",
@@ -8687,6 +8692,17 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:a595b4da59d04f93","code":"mesh/deploy-invalid-retry-policy","stage":"mesh-deploy","spec":"SCE Mesh §16.7","message":"machine 'throttle', binding '#motor': invalid `retry:` section in deploy.yaml — max_retries (0) must be >= 1 — a zero-retry policy is semantically equivalent to omitting the section (the dispatcher would fast-fail every failure and SEND_FAILED would fire per Stage 1/2 behaviour); omit the section entirely to opt out of retries instead. Either fix the value or omit the section entirely to opt out of §16.7 row 3 retry-layer wrapping.","actual":"throttle"}"#,
             ),
             (
+                "mesh/deploy-invalid-auth-policy",
+                DeployError::InvalidAuthPolicy {
+                    machine: "throttle".into(),
+                    target: "#motor".into(),
+                    reason: "transport 'custom_tcp' does not support §16.7 row 10 UNAUTHORIZED in this release — only `zenoh` (mTLS cert pinning) and `someip` (SD denial classification) are wired. Either move the binding to a supported transport or set `required: false`".into(),
+                }
+                .into(),
+                // Hash placeholder — patched by byte-stability assertion.
+                r#"{"v":1,"id":"fnv1a:d3592e1c5629d109","code":"mesh/deploy-invalid-auth-policy","stage":"mesh-deploy","spec":"SCE Mesh §16.7","message":"machine 'throttle', binding '#motor': invalid `auth:` section in deploy.yaml — transport 'custom_tcp' does not support §16.7 row 10 UNAUTHORIZED in this release — only `zenoh` (mTLS cert pinning) and `someip` (SD denial classification) are wired. Either move the binding to a supported transport or set `required: false`. Either fix the configuration or omit the section to opt out of §16.7 row 10 UNAUTHORIZED classification.","actual":"throttle"}"#,
+            ),
+            (
                 "mesh/deploy-discovery-not-supported",
                 DeployError::DiscoveryNotSupported {
                     content_kind: "object with keys [mode, resolution]".into(),
@@ -10527,6 +10543,7 @@ mod tests {
             | MeshDeployInvalidServerQueryTimeout
             | MeshDeployInvalidOutboundBuffer
             | MeshDeployInvalidRetryPolicy
+            | MeshDeployInvalidAuthPolicy
             | MeshDeployDiscoveryNotSupported
             | MeshDeployPoolNotSupportedByTransport
             | MeshDeployPoolMissingInstanceList
@@ -11037,6 +11054,7 @@ mod tests {
                 | MeshDeployInvalidServerQueryTimeout
                 | MeshDeployInvalidOutboundBuffer
                 | MeshDeployInvalidRetryPolicy
+                | MeshDeployInvalidAuthPolicy
                 | MeshDeployDiscoveryNotSupported
                 | MeshDeployPoolNotSupportedByTransport
                 | MeshDeployPoolMissingInstanceList
@@ -11152,7 +11170,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            287,
+            288,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries —\
              expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
