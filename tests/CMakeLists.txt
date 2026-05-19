@@ -1323,6 +1323,37 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
 
     add_test(NAME mesh_retrying_dispatcher_verification COMMAND mesh_retrying_dispatcher_test)
 
+    # ── Deadline preempts retry composition (SCE_MESH.md §16.7 row 3
+    #    follow-up) ────────────────────────────────────────────────
+    # Pins the wiring contract emitted by the codegen deadline lambda:
+    # `invoke_correlation_.handleDeadline(uuid)` followed by
+    # `cancelEnvelopeRetryById(uuid)`. Drives RetryingDispatcher +
+    # InvokeCorrelation + MeshDeadlineScheduler directly so the
+    # composition contract is verified without a full someip / zenoh
+    # transport in the loop.
+    add_executable(mesh_deadline_preempts_retry_test
+        mesh/test_mesh_deadline_preempts_retry.cpp
+    )
+
+    target_include_directories(mesh_deadline_preempts_retry_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+    )
+
+    target_link_libraries(mesh_deadline_preempts_retry_test
+        PRIVATE
+            sce_mesh_common
+            GTest::gtest_main
+            pthread
+    )
+
+    target_compile_features(mesh_deadline_preempts_retry_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_deadline_preempts_retry_test)
+
+    add_test(NAME mesh_deadline_preempts_retry_verification
+             COMMAND mesh_deadline_preempts_retry_test)
+
     # ── DedupRouter unit tests (SCE_MESH.md §10.5) ────────────────
     # Pure unit tests on the per-sender envelope-id dedup filter.
     # Verifies the 256-entry ring (novel/repeat/eviction/wrap) plus

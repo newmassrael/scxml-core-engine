@@ -190,6 +190,158 @@ topology:
     );
 }
 
+/// SCE_MESH.md §16.7 row 3 follow-up — when a binding declares both a
+/// retry policy and a mesh-rpc `<invoke>` site with a deadline, the
+/// generated invoke-lifecycle cancel sites (deadline lambda, author
+/// cancel, setup-fault cleanup, zenoh on_drop terminal) must fan out
+/// through the new `cancelEnvelopeRetryById` helper so the retry
+/// chain cannot fire DELIVERY_EXHAUSTED after the upstream invoke has
+/// already terminated.
+const BRAKE_INVOKE_RETRY_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" name="brake_invoke_retry" initial="idle">
+  <state id="idle">
+    <transition event="go" target="computing"/>
+  </state>
+  <state id="computing">
+    <invoke type="sce:mesh-rpc" src="#motor">
+      <param name="_mesh_event" expr="'service.request.compute'"/>
+      <param name="_mesh_deadline_ms" expr="50"/>
+    </invoke>
+    <transition event="done.invoke" target="ok"/>
+    <transition event="error.invoke" target="failed"/>
+  </state>
+  <final id="ok"/>
+  <final id="failed"/>
+</scxml>
+"##;
+
+#[test]
+fn retry_plus_mesh_rpc_emits_cancel_envelope_retry_by_id_wiring() {
+    let fx = Fixture::new("preempt");
+    fx.write("vsomeip.json", VSOMEIP_JSON);
+    fx.write("brake_invoke_retry.scxml", BRAKE_INVOKE_RETRY_SCXML);
+    fx.write("motor.scxml", MOTOR_SCXML);
+    let deploy_path = fx.write(
+        "deploy.yaml",
+        r##"
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      someip:
+        config: vsomeip.json
+        application_name: brake_app
+    machines:
+      brake_invoke_retry:
+        source: brake_invoke_retry.scxml
+        outbound_buffer:
+          max_pending_per_target: 8
+        bindings:
+          "#motor":
+            transport: someip
+            service: motor_control
+            method: activate
+            retry:
+              max_retries: 3
+              initial_backoff_ms: 50
+              backoff_multiplier: 2.0
+              max_backoff_ms: 1000
+              backoff_jitter_pct: 15
+      motor:
+        source: motor.scxml
+"##,
+    );
+
+    let mut parser = sce_build::parser::SCXMLParser::new();
+    let mut model = parser
+        .parse_string(BRAKE_INVOKE_RETRY_SCXML, "brake_invoke_retry")
+        .expect("parse brake_invoke_retry");
+    let result = sce_build::compile_mesh_transport(&mut model, &deploy_path, Language::Cpp)
+        .expect("compile_mesh_transport");
+    assert_eq!(result.output.files.len(), 1, "one generated file per machine");
+    let (_name, code) = &result.output.files[0];
+
+    // Helper method declaration appears exactly once.
+    assert!(
+        code.contains("void cancelEnvelopeRetryById("),
+        "helper method cancelEnvelopeRetryById must be emitted when has_any_retry.v"
+    );
+    assert!(
+        code.contains("(void)motor_retry_.cancelEnvelopeRetry(envelope_id);"),
+        "helper body must invoke cancelEnvelopeRetry on the motor retry dispatcher"
+    );
+
+    // Split-uuid invariant (SCE_MESH.md §16.7 row 3 follow-up):
+    // invokeMeshRpc emits TWO uuid v7 calls (one for invoke_uuid, one
+    // for envelope_uuid). The previous single-uuid pattern aliased the
+    // deadline scheduler key with the retry scheduler key, breaking
+    // mesh-rpc + retry composition.
+    assert!(
+        code.contains("const auto invoke_uuid = SCE::uuid::v7();"),
+        "invokeMeshRpc must allocate a dedicated invoke_uuid"
+    );
+    assert!(
+        code.contains("const auto envelope_uuid = SCE::uuid::v7();"),
+        "invokeMeshRpc must allocate a dedicated envelope_uuid"
+    );
+    assert!(
+        code.contains("env.id = envelope_uuid;") &&
+        code.contains("env.invoke_id = invoke_uuid;"),
+        "envelope id must use envelope_uuid; invoke id must use invoke_uuid \
+         so retry and invoke deadline keys are disjoint"
+    );
+
+    // Deadline scheduler keys off invoke_uuid; the lambda fans out
+    // cancelEnvelopeRetryById with envelope_uuid.
+    let hd_idx = code
+        .find("(void)invoke_correlation_.handleDeadline(invoke_uuid)")
+        .expect("deadline lambda must invoke handleDeadline with invoke_uuid");
+    let tail = &code[hd_idx..];
+    let next_stmt_idx = tail
+        .find("cancelEnvelopeRetryById(envelope_uuid)")
+        .expect("deadline lambda must invoke cancelEnvelopeRetryById(envelope_uuid)");
+    assert!(
+        next_stmt_idx < 200,
+        "cancelEnvelopeRetryById call site is too far from handleDeadline \
+         to be inside the same deadline lambda (delta={next_stmt_idx} chars)"
+    );
+
+    // active_invokes_ value is the ActiveInvokeRecord struct carrying
+    // both uuids (cancelMeshRpc reads both halves).
+    assert!(
+        code.contains("ActiveInvokeRecord"),
+        "active_invokes_ value type must be ActiveInvokeRecord (struct of \
+         invoke_uuid + envelope_uuid)"
+    );
+
+    // The cancel sites fan out through the helper using the ENVELOPE
+    // uuid (the retry scheduler key). For a someip binding the
+    // emitted sites are the deadline lambda, cleanupAbandonedMeshInvoke,
+    // and cancelMeshRpc (the fourth — onZenohQueryDropped — is only
+    // emitted when the binding is zenoh-transported and the
+    // has_zenoh_mesh_rpc gate fires). All sites must key off
+    // envelope_uuid / rec.envelope_uuid / envelope_id_capture — NOT
+    // invoke_uuid — because the retry scheduler key is env.id, not
+    // env.invoke_id.
+    let cancel_envelope_calls = code.matches("cancelEnvelopeRetryById(envelope_uuid)").count()
+        + code.matches("cancelEnvelopeRetryById(rec.envelope_uuid)").count();
+    assert!(
+        cancel_envelope_calls >= 3,
+        "expected cancelEnvelopeRetryById invoked from at least three someip cancel sites \
+         (deadline lambda, cleanupAbandonedMeshInvoke, cancelMeshRpc); \
+         observed {cancel_envelope_calls} call sites in generated code"
+    );
+    // Negative assertion: no cancel site may pass the INVOKE uuid to
+    // cancelEnvelopeRetryById — that would re-introduce the row 3
+    // key-space collision the split was designed to remove.
+    assert!(
+        !code.contains("cancelEnvelopeRetryById(invoke_uuid)"),
+        "no cancel site may pass invoke_uuid to cancelEnvelopeRetryById — \
+         the retry scheduler key is the envelope uuid"
+    );
+}
+
 #[test]
 fn no_retry_section_emits_no_retry_wiring() {
     let fx = Fixture::new("off");

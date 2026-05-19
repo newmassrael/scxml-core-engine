@@ -1521,7 +1521,7 @@ struct TransportRouter {
 {% endif %}
 
 {% if has_mesh_rpc.v %}
-    // active_invokes_: (target, fieldSuffix) → latest invoke UUID.
+    // active_invokes_: (target, fieldSuffix) → ActiveInvokeRecord.
     // The state-entry callback tracks UUIDs here so state-exit cancel
     // (performMeshCancel) can erase the matching correlation entry
     // without the state machine itself managing UUID storage. Mutex
@@ -1529,6 +1529,17 @@ struct TransportRouter {
     // transport callback threads that might fire handleReply in
     // parallel and mutate no shared state (handleReply only touches
     // invoke_correlation_, which has its own mutex).
+    //
+    // Two-uuid record (SCE_MESH.md §16.7 row 3 follow-up): the
+    // invoke deadline (`deadline_scheduler_`) keys off `invoke_uuid`,
+    // whereas the per-target retry layer (`RetryingDispatcher`)
+    // keys off `envelope_uuid` (== `env.id`). The two key spaces
+    // were aliased in the row 3 atomic — both were assigned the
+    // same uuid in invokeMeshRpc, so the retry layer's own
+    // `registerDeadline(env.id, ...)` collided with the invoke
+    // deadline's registration and silently rolled back into
+    // SEND_FAILED. Splitting the uuids restores the "key spaces
+    // never alias" invariant the Q4 lock-in described.
     //
     // InvokeSiteKey is a typed composite of (target, fieldSuffix). A
     // string-concat key (`target + ":" + fieldSuffix`) would have
@@ -1557,8 +1568,12 @@ struct TransportRouter {
             return h;
         }
     };
+    struct ActiveInvokeRecord {
+        std::array<std::uint8_t, 16> invoke_uuid;
+        std::array<std::uint8_t, 16> envelope_uuid;
+    };
     std::mutex active_invokes_mutex_;
-    std::unordered_map<InvokeSiteKey, std::array<std::uint8_t, 16>,
+    std::unordered_map<InvokeSiteKey, ActiveInvokeRecord,
                        InvokeSiteKeyHash> active_invokes_;
 {% endif %}
 
@@ -4386,11 +4401,42 @@ struct TransportRouter {
     /// reply that fired error.invoke.<id> and collided with the
     /// caller's error.execution raise at the invoke site. Cleanup
     /// semantics are now single-source.
-    void cleanupAbandonedMeshInvoke(const std::array<std::uint8_t, 16>& uuid,
+{% if has_any_retry.v %}
+    /// SCE_MESH.md §16.7 row 3 follow-up — when the §9.5 invoke
+    /// lifecycle terminates (deadline fire, author `<cancel>`,
+    /// pre-wire setup-fault, zenoh `on_drop` terminal), any pending
+    /// retry chain for the same envelope id must also be erased so
+    /// the retry layer's DELIVERY_EXHAUSTED emission cannot race the
+    /// invoke-side error.invoke.<id> / silent-drop raise. The router
+    /// fans out the cancel to every per-target `RetryingDispatcher`;
+    /// only one can hold the entry (the envelope's outbound target),
+    /// so non-owning dispatchers return false and the call is
+    /// idempotent on misses.
+    void cancelEnvelopeRetryById(
+        const std::array<std::uint8_t, 16>& envelope_id) noexcept {
+{% for target in targets if target.retry %}
+        (void){{ target.target_snake }}_retry_.cancelEnvelopeRetry(envelope_id);
+{% endfor %}
+    }
+
+{% endif %}
+    void cleanupAbandonedMeshInvoke(const std::array<std::uint8_t, 16>& invoke_uuid,
+{% if has_any_retry.v %}
+                                    const std::array<std::uint8_t, 16>& envelope_uuid,
+{% endif %}
                                     const std::string& target,
                                     const std::string& fieldSuffix) {
-        invoke_correlation_.handleCancel(uuid);
-        (void)deadline_scheduler_.cancelDeadline(uuid);
+        invoke_correlation_.handleCancel(invoke_uuid);
+        (void)deadline_scheduler_.cancelDeadline(invoke_uuid);
+{% if has_any_retry.v %}
+        // §16.7 row 3 follow-up — retry chain for the same envelope
+        // would otherwise fire DELIVERY_EXHAUSTED after the §10.7.1
+        // error.execution raise has already moved the author past this
+        // invoke. cancelEnvelopeRetryById uses the ENVELOPE uuid (the
+        // retry layer's scheduler key) — disjoint from the invoke
+        // deadline key. Idempotent on misses.
+        cancelEnvelopeRetryById(envelope_uuid);
+{% endif %}
         {
             std::lock_guard<std::mutex> lock(active_invokes_mutex_);
             active_invokes_.erase(InvokeSiteKey{target, fieldSuffix});
@@ -4422,9 +4468,16 @@ struct TransportRouter {
                                      const std::string& invokeId,
                                      const std::string& data) {
         SCE::Mesh::MeshEnvelope env;
-        const auto uuid = SCE::uuid::v7();
-        env.id = uuid;
-        env.invoke_id = uuid;
+        // SCE_MESH.md §16.7 row 3 follow-up: invoke uuid (correlation
+        // + deadline key) is distinct from envelope uuid (retry +
+        // dedup key) so the per-target RetryingDispatcher's
+        // backoff scheduler entry cannot collide with the invoke
+        // deadline's entry — both share the same
+        // MeshDeadlineScheduler instance.
+        const auto invoke_uuid = SCE::uuid::v7();
+        const auto envelope_uuid = SCE::uuid::v7();
+        env.id = envelope_uuid;
+        env.invoke_id = invoke_uuid;
         env.source = "{{ machine_name }}";
         env.routing_id = routing_id_;
         env.pattern = SCE::Mesh::PatternKind::RpcRequest;
@@ -4443,9 +4496,22 @@ struct TransportRouter {
             // Fires handleDeadline on the invoke_correlation_ table which
             // invokes the deliver callback with RpcStatus::DeadlineExceeded —
             // surfaced to the parent as error.invoke.<invokeId>.
-            deadline_scheduler_.registerDeadline(uuid,
+            //
+            // §16.7 row 3 follow-up — when the binding declared a retry
+            // policy, the deadline preempts any pending retry chain for
+            // the same envelope so the retry layer's DELIVERY_EXHAUSTED
+            // emission cannot race the deadline's error.invoke.<id>
+            // raise. cancelEnvelopeRetryById fans out to every per-target
+            // RetryingDispatcher with the ENVELOPE uuid (the retry
+            // layer's own scheduler key); idempotent on misses.
+            deadline_scheduler_.registerDeadline(invoke_uuid,
                 std::chrono::milliseconds({{ site.deadline_ms }}),
-                [this, uuid]{ (void)invoke_correlation_.handleDeadline(uuid); });
+                [this, invoke_uuid{% if has_any_retry.v %}, envelope_uuid{% endif %}]{
+                    (void)invoke_correlation_.handleDeadline(invoke_uuid);
+{% if has_any_retry.v %}
+                    cancelEnvelopeRetryById(envelope_uuid);
+{% endif %}
+                });
 {% endif %}
             matched_site = true;
         }
@@ -4464,7 +4530,7 @@ struct TransportRouter {
         // codegen, so `sessions_[0]` is the sole session here.
         SenderEngine* sender_ptr = sessions_[0];
         std::string captured_invoke_id = invokeId;
-        invoke_correlation_.registerInvoke(uuid, target,
+        invoke_correlation_.registerInvoke(invoke_uuid, target,
             [sender_ptr, captured_invoke_id](
                 SCE::Mesh::RpcStatus status,
                 std::vector<std::uint8_t> payload) {
@@ -4478,11 +4544,14 @@ struct TransportRouter {
                 sender_ptr->raiseExternal(evt);
             });
 
-        // Track (target, fieldSuffix) → uuid so a later cancel from
-        // onexit can erase the matching correlation + deadline entries.
+        // Track both uuids per (target, fieldSuffix) so a later cancel
+        // / setup-fault / zenoh on_drop has the envelope uuid available
+        // for the retry-cancel fanout in addition to the invoke uuid
+        // for the correlation/deadline erase.
         {
             std::lock_guard<std::mutex> lock(active_invokes_mutex_);
-            active_invokes_[InvokeSiteKey{target, fieldSuffix}] = uuid;
+            active_invokes_[InvokeSiteKey{target, fieldSuffix}] =
+                ActiveInvokeRecord{invoke_uuid, envelope_uuid};
         }
 
 {% for target in targets if target.pool_plan and target.pool_plan.kind == "someip" %}
@@ -4498,18 +4567,21 @@ struct TransportRouter {
             std::string pool_json(env.data.begin(), env.data.end());
             auto pool_parsed = ::SCE::EventDataHelper::jsonStringToScriptValue(pool_json);
             if (!pool_parsed) {
-                cleanupAbandonedMeshInvoke(uuid, target, fieldSuffix);
+                cleanupAbandonedMeshInvoke(invoke_uuid,
+{%- if has_any_retry.v %} envelope_uuid,{% endif %} target, fieldSuffix);
                 return false;
             }
             auto* pool_obj_sp = std::get_if<std::shared_ptr<::ScriptObject>>(&*pool_parsed);
             if (!pool_obj_sp || !*pool_obj_sp) {
-                cleanupAbandonedMeshInvoke(uuid, target, fieldSuffix);
+                cleanupAbandonedMeshInvoke(invoke_uuid,
+{%- if has_any_retry.v %} envelope_uuid,{% endif %} target, fieldSuffix);
                 return false;
             }
             auto& pool_obj = **pool_obj_sp;
             auto inst_it = pool_obj.properties.find("{{ target.pool_plan.instance_from }}");
             if (inst_it == pool_obj.properties.end()) {
-                cleanupAbandonedMeshInvoke(uuid, target, fieldSuffix);
+                cleanupAbandonedMeshInvoke(invoke_uuid,
+{%- if has_any_retry.v %} envelope_uuid,{% endif %} target, fieldSuffix);
                 return false;
             }
             std::string inst_str = ::SCE::EventDataHelper::scriptValueToJsonString(inst_it->second);
@@ -4521,7 +4593,8 @@ struct TransportRouter {
             const char* inst_end = inst_begin + inst_str.size();
             auto parse = std::from_chars(inst_begin, inst_end, inst_ul);
             if (parse.ec != std::errc() || parse.ptr != inst_end || inst_ul > 0xFFFFu) {
-                cleanupAbandonedMeshInvoke(uuid, target, fieldSuffix);
+                cleanupAbandonedMeshInvoke(invoke_uuid,
+{%- if has_any_retry.v %} envelope_uuid,{% endif %} target, fieldSuffix);
                 return false;
             }
             vsomeip::instance_t runtime_instance = static_cast<vsomeip::instance_t>(inst_ul);
@@ -4532,7 +4605,8 @@ struct TransportRouter {
             if (std::find(std::begin(pool_instances_{{ target.target_snake }}),
                           std::end(pool_instances_{{ target.target_snake }}),
                           runtime_instance) == std::end(pool_instances_{{ target.target_snake }})) {
-                cleanupAbandonedMeshInvoke(uuid, target, fieldSuffix);
+                cleanupAbandonedMeshInvoke(invoke_uuid,
+{%- if has_any_retry.v %} envelope_uuid,{% endif %} target, fieldSuffix);
                 return false;
             }
             vsomeip::method_t method_id = 0;
@@ -4544,7 +4618,8 @@ struct TransportRouter {
             }
 {% endfor %}
             if (!method_set) {
-                cleanupAbandonedMeshInvoke(uuid, target, fieldSuffix);
+                cleanupAbandonedMeshInvoke(invoke_uuid,
+{%- if has_any_retry.v %} envelope_uuid,{% endif %} target, fieldSuffix);
                 return false;
             }
             auto request = vsomeip::runtime::get()->create_request(
@@ -4573,18 +4648,21 @@ struct TransportRouter {
         // branch — semantics must stay in sync).
         if (target == "{{ target.target }}") {
             if (!zenoh_session_) {
-                cleanupAbandonedMeshInvoke(uuid, target, fieldSuffix);
+                cleanupAbandonedMeshInvoke(invoke_uuid,
+{%- if has_any_retry.v %} envelope_uuid,{% endif %} target, fieldSuffix);
                 return false;
             }
             std::string pool_json(env.data.begin(), env.data.end());
             auto pool_parsed = ::SCE::EventDataHelper::jsonStringToScriptValue(pool_json);
             if (!pool_parsed) {
-                cleanupAbandonedMeshInvoke(uuid, target, fieldSuffix);
+                cleanupAbandonedMeshInvoke(invoke_uuid,
+{%- if has_any_retry.v %} envelope_uuid,{% endif %} target, fieldSuffix);
                 return false;
             }
             auto* pool_obj_sp = std::get_if<std::shared_ptr<::ScriptObject>>(&*pool_parsed);
             if (!pool_obj_sp || !*pool_obj_sp) {
-                cleanupAbandonedMeshInvoke(uuid, target, fieldSuffix);
+                cleanupAbandonedMeshInvoke(invoke_uuid,
+{%- if has_any_retry.v %} envelope_uuid,{% endif %} target, fieldSuffix);
                 return false;
             }
             auto& pool_obj = **pool_obj_sp;
@@ -4593,7 +4671,8 @@ struct TransportRouter {
             {
                 auto it = pool_obj.properties.find("{{ ph }}");
                 if (it == pool_obj.properties.end()) {
-                    cleanupAbandonedMeshInvoke(uuid, target, fieldSuffix);
+                    cleanupAbandonedMeshInvoke(invoke_uuid,
+{%- if has_any_retry.v %} envelope_uuid,{% endif %} target, fieldSuffix);
                     return false;
                 }
                 // scriptValueToJsonString wraps strings in quotes; strip
@@ -4605,7 +4684,8 @@ struct TransportRouter {
                 const std::string token = "{{ '{' }}{{ ph }}{{ '}' }}";
                 auto pos = pool_key.find(token);
                 if (pos == std::string::npos) {
-                    cleanupAbandonedMeshInvoke(uuid, target, fieldSuffix);
+                    cleanupAbandonedMeshInvoke(invoke_uuid,
+{%- if has_any_retry.v %} envelope_uuid,{% endif %} target, fieldSuffix);
                     return false;
                 }
                 pool_key.replace(pos, token.size(), pv);
@@ -4620,6 +4700,12 @@ struct TransportRouter {
                 opts.payload = zenoh::Bytes(std::move(encoded));
                 auto reply_seen = std::make_shared<std::atomic<bool>>(false);
                 std::optional<std::array<std::uint8_t, 16>> invoke_id_capture = env.invoke_id;
+{% if has_any_retry.v %}
+                // Envelope uuid is captured separately so on_drop's
+                // retry-cancel fanout (§16.7 row 3 follow-up) keys off
+                // the retry layer's scheduler key, not the invoke key.
+                const auto envelope_id_capture = env.id;
+{% endif %}
                 zenoh_session_->get(
                     pool_kexpr, "",
                     [this, reply_event,
@@ -4635,15 +4721,16 @@ struct TransportRouter {
                         resp.pattern = SCE::Mesh::PatternKind::RpcReply;
                         (void)this->admitZenohInbound(target_owned, resp);
                     },
-                    [this, reply_seen, invoke_id_capture]() noexcept {
+                    [this, reply_seen, invoke_id_capture{% if has_any_retry.v %}, envelope_id_capture{% endif %}]() noexcept {
                         if (reply_seen->load(std::memory_order_acquire)) return;
                         if (!invoke_id_capture) return;
-                        this->onZenohQueryDropped(*invoke_id_capture);
+                        this->onZenohQueryDropped(*invoke_id_capture{% if has_any_retry.v %}, envelope_id_capture{% endif %});
                     },
                     std::move(opts));
                 return true;
             } catch (const zenoh::ZException&) {
-                cleanupAbandonedMeshInvoke(uuid, target, fieldSuffix);
+                cleanupAbandonedMeshInvoke(invoke_uuid,
+{%- if has_any_retry.v %} envelope_uuid,{% endif %} target, fieldSuffix);
                 return false;
             }
         }
@@ -4662,16 +4749,24 @@ struct TransportRouter {
     /// cancel, false if already fired or never registered.
     [[nodiscard]] bool cancelMeshRpc(const std::string& target,
                                      const std::string& fieldSuffix) {
-        std::array<std::uint8_t, 16> uuid;
+        ActiveInvokeRecord rec;
         {
             std::lock_guard<std::mutex> lock(active_invokes_mutex_);
             auto it = active_invokes_.find(InvokeSiteKey{target, fieldSuffix});
             if (it == active_invokes_.end()) return false;
-            uuid = it->second;
+            rec = it->second;
             active_invokes_.erase(it);
         }
-        (void)deadline_scheduler_.cancelDeadline(uuid);
-        return invoke_correlation_.handleCancel(uuid);
+        (void)deadline_scheduler_.cancelDeadline(rec.invoke_uuid);
+{% if has_any_retry.v %}
+        // §16.7 row 3 follow-up — author <cancel> moved past the invoke;
+        // any pending retry chain for the same envelope must not fire
+        // DELIVERY_EXHAUSTED as a stale post-cancel signal. The retry
+        // dispatcher's scheduler key is the envelope uuid; the invoke
+        // deadline key is the invoke uuid — they are disjoint.
+        cancelEnvelopeRetryById(rec.envelope_uuid);
+{% endif %}
+        return invoke_correlation_.handleCancel(rec.invoke_uuid);
     }
 {% if has_zenoh_mesh_rpc %}
 
@@ -4708,13 +4803,24 @@ struct TransportRouter {
     /// (§9.5): a router being destroyed cannot deliver events, so
     /// dropped queries observe the same silent outcome as cancel.
     void onZenohQueryDropped(
-        const std::array<std::uint8_t, 16>& uuid) noexcept {
+        const std::array<std::uint8_t, 16>& invoke_uuid
+{%- if has_any_retry.v %},
+        const std::array<std::uint8_t, 16>& envelope_uuid
+{%- endif %}) noexcept {
         if (zenoh_shutdown_in_progress_.load(std::memory_order_acquire)) {
             return;
         }
-        (void)deadline_scheduler_.cancelDeadline(uuid);
+        (void)deadline_scheduler_.cancelDeadline(invoke_uuid);
+{% if has_any_retry.v %}
+        // §16.7 row 3 follow-up — zenoh query terminated (timeout /
+        // session teardown / last reply). Any pending retry chain for
+        // the same envelope is now moot; suppress its DELIVERY_EXHAUSTED.
+        // Retry scheduler key is the envelope uuid (distinct from the
+        // invoke uuid above).
+        cancelEnvelopeRetryById(envelope_uuid);
+{% endif %}
         (void)invoke_correlation_.handleReply(
-            uuid, SCE::Mesh::RpcStatus::Unavailable, {});
+            invoke_uuid, SCE::Mesh::RpcStatus::Unavailable, {});
     }
 {% endif %}
 {% endif %}
@@ -4907,6 +5013,14 @@ struct TransportRouter {
             // there is no InvokeCorrelation entry to cancel.
             auto reply_seen = std::make_shared<std::atomic<bool>>(false);
             std::optional<std::array<std::uint8_t, 16>> invoke_id_capture = env.invoke_id;
+{% if has_any_retry.v %}
+            // §16.7 row 3 follow-up — envelope uuid is captured so the
+            // on_drop closure can fan out cancelEnvelopeRetryById to
+            // the per-target RetryingDispatchers. Always present (every
+            // outbound envelope carries env.id), unlike invoke_id which
+            // is mesh-rpc-only.
+            const auto envelope_id_capture = env.id;
+{% endif %}
 {% endif %}
             zenoh_session_->get(
                 key, "",
@@ -4951,10 +5065,10 @@ struct TransportRouter {
                 // `RpcStatus::Unavailable`. Non-invoke queries (plain
                 // `<send>` RpcRequest, no `invoke_id`) have no
                 // correlation entry to cancel — the branch short-circuits.
-                [this, reply_seen, invoke_id_capture]() noexcept {
+                [this, reply_seen, invoke_id_capture{% if has_any_retry.v %}, envelope_id_capture{% endif %}]() noexcept {
                     if (reply_seen->load(std::memory_order_acquire)) return;
                     if (!invoke_id_capture) return;
-                    this->onZenohQueryDropped(*invoke_id_capture);
+                    this->onZenohQueryDropped(*invoke_id_capture{% if has_any_retry.v %}, envelope_id_capture{% endif %});
                 },
 {% else %}
                 // on_drop fires once at query termination. No mesh-rpc
