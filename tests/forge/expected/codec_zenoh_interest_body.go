@@ -43,7 +43,7 @@ func DecodeCodecZenohInterestBody(cursor *codec.SceCursor) (*CodecZenohInterestB
 	}
 	var Keyexpr *codec_zenoh_wireexpr.CodecZenohWireexpr
 	if (Header & 0x10) != 0 {
-		_emb, err := codec_zenoh_wireexpr.DecodeCodecZenohWireexpr(cursor, Header)
+		_emb, err := codec_zenoh_wireexpr.DecodeCodecZenohWireexpr(cursor, byte((Header >> 5) & 0x1))
 		if err != nil {
 			return nil, err
 		}
@@ -167,7 +167,7 @@ func (s *CodecZenohInterestBody) Encode() []byte {
 	r := make([]byte, 0, 257)
 	r = append(r, s.Header)
 	if s.Keyexpr != nil {
-		r = append(r, s.Keyexpr.Encode(s.Header)...)
+		r = append(r, s.Keyexpr.Encode(byte((s.Header >> 5) & 0x1))...)
 	}
 	return r
 }

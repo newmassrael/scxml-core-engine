@@ -22,7 +22,7 @@ type CodecZenohUndeclToken struct {
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail
 // is shorter than the declared minimum frame (RFC §5.B L494-519).
 // VLE codecs may also return `codec.ErrVLEWidthOverflow`.
-func DecodeCodecZenohUndeclToken(cursor *codec.SceCursor, parentFlags byte) (*CodecZenohUndeclToken, error) {
+func DecodeCodecZenohUndeclToken(cursor *codec.SceCursor, Z byte) (*CodecZenohUndeclToken, error) {
 	// RFC §5.B B1-δ + B2-β present-if primitive: streaming decode
 	// advances the cursor per field. Gated fields use `*T` for fixed
 	// (nil = absent) or `[]byte` (nil = absent) for tail/length-ref;
@@ -33,7 +33,7 @@ func DecodeCodecZenohUndeclToken(cursor *codec.SceCursor, parentFlags byte) (*Co
 	Id, err := cursor.ReadVLEU32()
 	if err != nil { return nil, err }
 	var ExtKeyexpr *codec_zenoh_decl_ext_keyexpr.CodecZenohDeclExtKeyexpr
-	if (parentFlags & 0x80) != 0 {
+	if (Z & 0x01) != 0 {
 		_emb, err := codec_zenoh_decl_ext_keyexpr.DecodeCodecZenohDeclExtKeyexpr(cursor)
 		if err != nil {
 			return nil, err
@@ -47,7 +47,7 @@ func DecodeCodecZenohUndeclToken(cursor *codec.SceCursor, parentFlags byte) (*Co
 }
 
 // Encode serializes the CodecZenohUndeclToken into raw bytes.
-func (s *CodecZenohUndeclToken) Encode(parentFlags byte) []byte {
+func (s *CodecZenohUndeclToken) Encode(Z byte) []byte {
 	// RFC §5.B B1-δ + B2-β present-if encode: per-field byte append.
 	// Gated fields skip the append on nil pointer / nil slice. Per-
 	// field `is_repeat` routes Repeat fields to the dedicated helper.

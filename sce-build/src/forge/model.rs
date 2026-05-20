@@ -1201,10 +1201,7 @@ pub struct FlagBind {
 #[serde(rename_all = "snake_case")]
 pub enum FlagBindSource {
     /// `source="<carrier>.<flag>"` — parent's local flags-carrier.
-    Carrier {
-        carrier: String,
-        flag: String,
-    },
+    Carrier { carrier: String, flag: String },
     /// `source="<input>"` — parent's own flag-input (chain forwarder).
     Input { name: String },
 }

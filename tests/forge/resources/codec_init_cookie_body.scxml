@@ -36,15 +36,15 @@
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="codec_init_cookie_body">
-  <sce:requires-parent-flags carrier="header">
-    <sce:flag name="A" bit="5"/>
-  </sce:requires-parent-flags>
+  <sce:flag-inputs>
+    <sce:flag-input name="A" width="1"/>
+  </sce:flag-inputs>
   <datamodel>
     <sce:field id="version" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
     <sce:field id="cookie_size" sce:type="uint16" sce:byte="1" sce:bit-size="vle"
-               sce:present-if="parent.A"/>
+               sce:present-if="A"/>
     <sce:field id="cookie" sce:type="bytes" sce:byte="2" sce:bit-size="length-ref"
-               sce:length-field="cookie_size" sce:present-if="parent.A"
+               sce:length-field="cookie_size" sce:present-if="A"
                sce:max-size="64"/>
   </datamodel>
 </scxml>

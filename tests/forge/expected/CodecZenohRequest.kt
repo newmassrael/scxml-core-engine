@@ -107,7 +107,7 @@ data class CodecZenohRequest(
             }
             r.add(_w.toByte())
         }
-        r.addAll(this.keyexpr.encode(this.header).toList())
+        r.addAll(this.keyexpr.encode((((this.header.toInt() shr 5) and 0x1).toUByte())).toList())
         this.extensions?.let { _list ->
             for (_e in _list) {
                 r.addAll(_e.encode().toList())
@@ -142,7 +142,7 @@ data class CodecZenohRequest(
                 _v
             }
             val rid = cursor.readVleU64() ?: return null
-            val keyexpr = CodecZenohWireexpr.decode(cursor, header) ?: return null
+            val keyexpr = CodecZenohWireexpr.decode(cursor, (((header.toInt() shr 5) and 0x1).toUByte())) ?: return null
             val extensions: MutableList<CodecZenohExtEntry>? = if ((header.toInt() and 0x80) != 0) {
             mutableListOf<CodecZenohExtEntry>().also {
                 for (_i in 0 until 4) {

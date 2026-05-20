@@ -102,7 +102,7 @@ static inline sce_forge_codec_status_t codec_zenoh_request_decode(sce_forge_curs
     }
     out->rid = rid;
     {
-        sce_forge_codec_status_t _st = codec_zenoh_wireexpr_decode(cursor, &out->keyexpr, out->header);
+        sce_forge_codec_status_t _st = codec_zenoh_wireexpr_decode(cursor, &out->keyexpr, (uint8_t)((out->header >> 5) & 0x1));
         if (_st != SCE_FORGE_CODEC_OK) return _st;
     }
     out->extensions_len = 0;
@@ -171,7 +171,7 @@ static inline codec_zenoh_request_encoded_t codec_zenoh_request_encode(const cod
         r.bytes[r.len++] = (uint8_t)_w;
     }
     {
-        codec_zenoh_wireexpr_encoded_t _sub = codec_zenoh_wireexpr_encode(&self->keyexpr, self->header);
+        codec_zenoh_wireexpr_encoded_t _sub = codec_zenoh_wireexpr_encode(&self->keyexpr, (uint8_t)((self->header >> 5) & 0x1));
         if (r.len + _sub.len <= sizeof(r.bytes)) {
             for (size_t _ej = 0; _ej < _sub.len; ++_ej) r.bytes[r.len + _ej] = _sub.bytes[_ej];
             r.len += _sub.len;

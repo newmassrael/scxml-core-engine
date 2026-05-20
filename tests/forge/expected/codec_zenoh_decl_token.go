@@ -22,7 +22,7 @@ type CodecZenohDeclToken struct {
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail
 // is shorter than the declared minimum frame (RFC §5.B L494-519).
 // VLE codecs may also return `codec.ErrVLEWidthOverflow`.
-func DecodeCodecZenohDeclToken(cursor *codec.SceCursor, parentFlags byte) (*CodecZenohDeclToken, error) {
+func DecodeCodecZenohDeclToken(cursor *codec.SceCursor, N byte) (*CodecZenohDeclToken, error) {
 	// Streaming codec: each field reads from cursor directly
 	// (VLE base-128 chain). Local var name reuses the Go-PascalCase
 	// `field.id` — the struct literal's `Foo: Foo` is unambiguous
@@ -34,7 +34,7 @@ func DecodeCodecZenohDeclToken(cursor *codec.SceCursor, parentFlags byte) (*Code
 	if err != nil { return nil, err }
 	var Wireexpr codec_zenoh_wireexpr.CodecZenohWireexpr
 	{
-		_emb, err := codec_zenoh_wireexpr.DecodeCodecZenohWireexpr(cursor, parentFlags)
+		_emb, err := codec_zenoh_wireexpr.DecodeCodecZenohWireexpr(cursor, N)
 		if err != nil {
 			return nil, err
 		}
@@ -47,7 +47,7 @@ func DecodeCodecZenohDeclToken(cursor *codec.SceCursor, parentFlags byte) (*Code
 }
 
 // Encode serializes the CodecZenohDeclToken into raw bytes.
-func (s *CodecZenohDeclToken) Encode(parentFlags byte) []byte {
+func (s *CodecZenohDeclToken) Encode(N byte) []byte {
 	// RFC §5.B B4: per-field bit-size dispatch routes Fixed /
 	// LengthRef siblings of VLE fields through
 	// `present_if_encode_block` (predicate=None arms). Pure-VLE
@@ -61,6 +61,6 @@ func (s *CodecZenohDeclToken) Encode(parentFlags byte) []byte {
 		}
 		r = append(r, byte(_w))
 	}
-	r = append(r, s.Wireexpr.Encode(parentFlags)...)
+	r = append(r, s.Wireexpr.Encode(N)...)
 	return r
 }

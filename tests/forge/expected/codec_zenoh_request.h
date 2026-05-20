@@ -78,7 +78,7 @@ struct CodecZenohRequest {
         auto rid_opt = cursor.read_vle_u64();
         if (!rid_opt.has_value()) return std::nullopt;
         auto rid = static_cast<std::uint64_t>(*rid_opt);
-        auto _emb_keyexpr = ::SCE::Generated::CodecZenohWireexpr::CodecZenohWireexpr::decode(cursor, header);
+        auto _emb_keyexpr = ::SCE::Generated::CodecZenohWireexpr::CodecZenohWireexpr::decode(cursor, static_cast<std::uint8_t>((header >> 5) & 0x1));
         if (!_emb_keyexpr.has_value()) return std::nullopt;
         auto keyexpr = std::move(*_emb_keyexpr);
         std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions;
@@ -218,7 +218,7 @@ struct CodecZenohRequest {
             r.push_back(static_cast<std::uint8_t>(_w));
         }
         {
-            auto _sub = keyexpr.encode(header);
+            auto _sub = keyexpr.encode(static_cast<std::uint8_t>((this->header >> 5) & 0x1));
             r.insert(r.end(), _sub.begin(), _sub.end());
         }
         if (this->extensions.has_value()) {

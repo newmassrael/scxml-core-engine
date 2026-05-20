@@ -70,8 +70,8 @@ data class CodecInitSynEnvelope(
         r.add(header.toByte())
         // Append the active arm body's encoded bytes.
         when (val _b = this.body) {
-            is CodecInitSynEnvelopeVariant.CodecInitSynBody -> r.addAll(_b.body.encode(this.header).toList())
-            is CodecInitSynEnvelopeVariant.Default -> r.addAll(_b.body.encode(this.header).toList())
+            is CodecInitSynEnvelopeVariant.CodecInitSynBody -> r.addAll(_b.body.encode().toList())
+            is CodecInitSynEnvelopeVariant.Default -> r.addAll(_b.body.encode().toList())
         }
         return r.toByteArray()
     }
@@ -92,11 +92,11 @@ data class CodecInitSynEnvelope(
             // onto the wire.
             val body: CodecInitSynEnvelopeVariant = when (((header.toInt() shr 0) and 0x1F)) {
                 1 -> {
-                    val _arm = com.sce.generated.codec_init_syn_body.CodecInitSynBody.decode(cursor, header) ?: return null
+                    val _arm = com.sce.generated.codec_init_syn_body.CodecInitSynBody.decode(cursor) ?: return null
                     CodecInitSynEnvelopeVariant.CodecInitSynBody(_arm)
                 }
                 else -> {
-                    val _arm = com.sce.generated.codec_init_syn_body.CodecInitSynBody.decode(cursor, header) ?: return null
+                    val _arm = com.sce.generated.codec_init_syn_body.CodecInitSynBody.decode(cursor) ?: return null
                     CodecInitSynEnvelopeVariant.Default(tag = ((header.toInt() shr 0) and 0x1F).toUByte(), body = _arm)
                 }
             }

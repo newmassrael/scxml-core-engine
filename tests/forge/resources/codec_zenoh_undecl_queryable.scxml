@@ -25,12 +25,12 @@
        sce:kind="codec" sce:default-endian="big" name="codec_zenoh_undecl_queryable">
   <sce:import src="codec_zenoh_decl_ext_keyexpr.scxml" kind="codec"
               as="codec_zenoh_decl_ext_keyexpr"/>
-  <sce:requires-parent-flags carrier="header">
-    <sce:flag name="Z" bit="7"/>
-  </sce:requires-parent-flags>
+  <sce:flag-inputs>
+    <sce:flag-input name="Z" width="1"/>
+  </sce:flag-inputs>
   <datamodel>
     <sce:field id="id" sce:type="uint32" sce:byte="0" sce:bit-size="vle"/>
     <sce:embed id="ext_keyexpr" type="codec_zenoh_decl_ext_keyexpr" sce:byte="1"
-               sce:present-if="parent.Z"/>
+               sce:present-if="Z"/>
   </datamodel>
 </scxml>

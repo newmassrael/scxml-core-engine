@@ -51,7 +51,7 @@ data class CodecZenohHello(
     }
 
     @Suppress("UNUSED_PARAMETER")
-    fun encode(parentFlags: UByte): ByteArray {
+    fun encode(L: UByte): ByteArray {
         // RFC §5.B B1-δ + B2-β present-if encode: per-field byte
         // append. Gated fields skip the append when the optional is
         // null. Per-field `is_repeat` routes Repeat fields to the
@@ -85,7 +85,7 @@ data class CodecZenohHello(
         /// cursor's tail is shorter than the declared minimum frame
         /// (RFC §5.B L494-519).
         @Suppress("UNUSED_PARAMETER")
-        fun decode(cursor: SceCursor, parentFlags: UByte): CodecZenohHello? {
+        fun decode(cursor: SceCursor, L: UByte): CodecZenohHello? {
             // RFC §5.B B1-δ + B2-β present-if primitive: streaming
             // decode advances the cursor per field. Gated fields wrap
             // their read inside an `if predicate ... else null` block.
@@ -113,13 +113,13 @@ data class CodecZenohHello(
                 if (!cursor.advance(_n)) return null
                 _v
             }
-            val num_locators: ULong? = if ((parentFlags.toInt() and 0x20) != 0) {
+            val num_locators: ULong? = if ((L.toInt() and 0x01) != 0) {
                 val _v = cursor.readVleU64() ?: return null
                 _v
             } else {
                 null
             }
-            val locators: MutableList<CodecZenohLocator>? = if ((parentFlags.toInt() and 0x20) != 0) {
+            val locators: MutableList<CodecZenohLocator>? = if ((L.toInt() and 0x01) != 0) {
                 val _n = num_locators!!
                 mutableListOf<CodecZenohLocator>().apply {
                     repeat(_n.toInt()) {

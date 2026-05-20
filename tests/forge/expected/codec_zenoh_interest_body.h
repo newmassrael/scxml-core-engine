@@ -45,7 +45,7 @@ struct CodecZenohInterestBody {
         }
         std::optional<::SCE::Generated::CodecZenohWireexpr::CodecZenohWireexpr> keyexpr;
         if ((header & 0x10) != 0) {
-            auto _emb = ::SCE::Generated::CodecZenohWireexpr::CodecZenohWireexpr::decode(cursor, header);
+            auto _emb = ::SCE::Generated::CodecZenohWireexpr::CodecZenohWireexpr::decode(cursor, static_cast<std::uint8_t>((header >> 5) & 0x1));
             if (!_emb.has_value()) return std::nullopt;
             keyexpr = std::move(*_emb);
         }
@@ -166,7 +166,7 @@ struct CodecZenohInterestBody {
         r.reserve(257);
         r.push_back(header);
         if (this->keyexpr.has_value()) {
-            auto _sub = this->keyexpr->encode(header);
+            auto _sub = this->keyexpr->encode(static_cast<std::uint8_t>((this->header >> 5) & 0x1));
             r.insert(r.end(), _sub.begin(), _sub.end());
         }
         return r;

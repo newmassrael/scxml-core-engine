@@ -8923,23 +8923,55 @@ fn forge_codec_length_arith_out_of_range_rejects() {
 /// codegen-time cross-codec validator surfaces
 /// `codec/parent-flag-mismatch` with a precise reason naming the
 /// offending flag and both bit positions.
+///
+/// Body fixture is inlined here (rather than reusing
+/// `codec_init_syn_body.scxml`) because Axis-1 inversion Phase C migrated
+/// the resource fixture to `<sce:flag-inputs>` — this test exercises the
+/// legacy `<sce:requires-parent-flags>` chain-bit-drift validator which
+/// will be removed in Phase D along with the codec/parent-flag-chain-*
+/// diagnostic codes.
 #[test]
 fn forge_codec_parent_flag_bit_mismatch_rejects() {
     use sce_build::forge::error::{ForgeError, ValidationError};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let dir = std::env::temp_dir().join(format!("sce_parent_flag_bit_mismatch_{pid}_{id}"));
+    std::fs::create_dir_all(&dir).expect("mkdir fixture");
+
+    let body_scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_parent_flag_bit_mismatch_body">
+  <sce:requires-parent-flags carrier="header">
+    <sce:flag name="S" bit="6"/>
+  </sce:requires-parent-flags>
+  <datamodel>
+    <sce:field id="version" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="sn_res" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="parent.S"/>
+  </datamodel>
+</scxml>"##;
+    std::fs::write(
+        dir.join("codec_parent_flag_bit_mismatch_body.scxml"),
+        body_scxml,
+    )
+    .expect("write body fixture");
 
     let parent_scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="codec_init_syn_envelope_mismatch">
-  <sce:import src="codec_init_syn_body.scxml" kind="codec" as="codec_init_syn_body"/>
+  <sce:import src="codec_parent_flag_bit_mismatch_body.scxml" kind="codec" as="codec_parent_flag_bit_mismatch_body"/>
   <datamodel>
     <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
       <sce:flag name="mid" bit="0" width="5"/>
       <sce:flag name="S"   bit="5"/>
     </sce:flags>
     <sce:variant tag="header.mid">
-      <sce:arm value="0x01" type="codec_init_syn_body"/>
-      <sce:default type="codec_init_syn_body"/>
+      <sce:arm value="0x01" type="codec_parent_flag_bit_mismatch_body" default="true"/>
+      <sce:default type="codec_parent_flag_bit_mismatch_body"/>
     </sce:variant>
   </datamodel>
 </scxml>"##;
@@ -8947,7 +8979,7 @@ fn forge_codec_parent_flag_bit_mismatch_rejects() {
         parent_scxml,
         sce_build::DocumentLabel::symmetric("codec_init_syn_envelope_mismatch"),
         sce_build::generator::Language::Rust,
-        &resource_dir(),
+        &dir,
         &sce_build::ForgeCompileOptions::default(),
     );
     let err = match result {
@@ -8974,6 +9006,8 @@ fn forge_codec_parent_flag_bit_mismatch_rejects() {
         "must surface CodecParentFlagChainBitDrift; got: {:?}",
         err.error
     );
+
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 // ═══════════════════════════════════════════════════════════════

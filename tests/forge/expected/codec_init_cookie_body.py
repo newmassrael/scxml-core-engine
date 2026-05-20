@@ -19,21 +19,12 @@ class CodecInitCookieBody:
     cookie: Optional[bytes] = None
 
     @classmethod
-    def decode(cls, cursor: SceCursor, parent_flags: int) -> Optional[CodecInitCookieBody]:
+    def decode(cls, cursor: SceCursor, a: int) -> Optional[CodecInitCookieBody]:
         """Decode the next frame from ``cursor``. Returns ``None`` when
         the cursor's tail is shorter than the declared minimum frame
         (RFC §5.B L494-519); on success the cursor advances past the
         consumed bytes. VLE codecs also return ``None`` on
         ``VleWidthOverflow``."""
-        # RFC §5.B B5-γ: ``parent_flags`` is the parent codec's flags
-        # carrier value, threaded by the variant arm dispatcher. Body
-        # fields gated via ``parent.<flag>`` predicates read from this
-        # parameter; the ``_ = parent_flags`` defensive guard suppresses
-        # unused-variable warnings (mirrors Rust's ``let _ = parent_flags;``,
-        # Cpp's ``(void)parent_flags;`` defensive guards) for codecs
-        # that declare ``<sce:requires-parent-flags>`` without any
-        # consuming gated field.
-        _ = parent_flags
         # RFC §5.B B1-δ + B2-β present-if primitive: streaming decode
         # advances the cursor per field. Per-field statements live
         # inside one outer `try:` block so the first peek/advance
@@ -45,12 +36,12 @@ class CodecInitCookieBody:
             raw = cursor.peek_slice(1)
             version = raw[0]
             cursor.advance(1)
-            if (parent_flags & 0x20) != 0:
+            if (a & 0x01) != 0:
                 _v = cursor.read_vle_u16()
                 cookie_size = _v
             else:
                 cookie_size = None
-            if (parent_flags & 0x20) != 0:
+            if (a & 0x01) != 0:
                 _n = cookie_size
                 raw = cursor.peek_slice(_n)
                 _v = bytes(raw)
@@ -66,9 +57,7 @@ class CodecInitCookieBody:
             cookie=cookie,
         )
 
-    def encode(self, parent_flags: int) -> bytes:
-        # RFC §5.B B5-γ: see ``decode`` — same parameter, same suppress.
-        _ = parent_flags
+    def encode(self, a: int) -> bytes:
         # RFC §5.B B1-δ + B2-β present-if encode: per-field byte
         # append. Gated fields skip the append when the optional is
         # `None`. Per-field `is_repeat` routes Repeat fields to the

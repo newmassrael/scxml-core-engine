@@ -24,7 +24,7 @@ type CodecZenohDeclQueryable struct {
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail
 // is shorter than the declared minimum frame (RFC §5.B L494-519).
 // VLE codecs may also return `codec.ErrVLEWidthOverflow`.
-func DecodeCodecZenohDeclQueryable(cursor *codec.SceCursor, parentFlags byte) (*CodecZenohDeclQueryable, error) {
+func DecodeCodecZenohDeclQueryable(cursor *codec.SceCursor, N byte, Z byte) (*CodecZenohDeclQueryable, error) {
 	// RFC §5.B B1-δ + B2-β present-if primitive: streaming decode
 	// advances the cursor per field. Gated fields use `*T` for fixed
 	// (nil = absent) or `[]byte` (nil = absent) for tail/length-ref;
@@ -36,14 +36,14 @@ func DecodeCodecZenohDeclQueryable(cursor *codec.SceCursor, parentFlags byte) (*
 	if err != nil { return nil, err }
 	var Wireexpr codec_zenoh_wireexpr.CodecZenohWireexpr
 	{
-		_emb, err := codec_zenoh_wireexpr.DecodeCodecZenohWireexpr(cursor, parentFlags)
+		_emb, err := codec_zenoh_wireexpr.DecodeCodecZenohWireexpr(cursor, N)
 		if err != nil {
 			return nil, err
 		}
 		Wireexpr = *_emb
 	}
 	var ExtType *uint8
-	if (parentFlags & 0x80) != 0 {
+	if (Z & 0x01) != 0 {
 		raw, err := cursor.PeekSlice(1)
 		if err != nil {
 			return nil, err
@@ -55,7 +55,7 @@ func DecodeCodecZenohDeclQueryable(cursor *codec.SceCursor, parentFlags byte) (*
 		ExtType = &_v
 	}
 	var ExtValue *uint64
-	if (parentFlags & 0x80) != 0 {
+	if (Z & 0x01) != 0 {
 		_v, err := cursor.ReadVLEU64()
 	if err != nil { return nil, err }
 		ExtValue = &_v
@@ -69,7 +69,7 @@ func DecodeCodecZenohDeclQueryable(cursor *codec.SceCursor, parentFlags byte) (*
 }
 
 // Encode serializes the CodecZenohDeclQueryable into raw bytes.
-func (s *CodecZenohDeclQueryable) Encode(parentFlags byte) []byte {
+func (s *CodecZenohDeclQueryable) Encode(N byte, Z byte) []byte {
 	// RFC §5.B B1-δ + B2-β present-if encode: per-field byte append.
 	// Gated fields skip the append on nil pointer / nil slice. Per-
 	// field `is_repeat` routes Repeat fields to the dedicated helper.
@@ -84,7 +84,7 @@ func (s *CodecZenohDeclQueryable) Encode(parentFlags byte) []byte {
 		}
 		r = append(r, byte(_w))
 	}
-	r = append(r, s.Wireexpr.Encode(parentFlags)...)
+	r = append(r, s.Wireexpr.Encode(N)...)
 	if s.ExtType != nil {
 		_v := *s.ExtType
 		r = append(r, _v)

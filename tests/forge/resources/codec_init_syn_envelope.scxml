@@ -24,7 +24,9 @@
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="codec_init_syn_envelope">
-  <sce:import src="codec_init_syn_body.scxml" kind="codec" as="codec_init_syn_body"/>
+  <sce:import src="codec_init_syn_body.scxml" kind="codec" as="codec_init_syn_body">
+    <sce:flag-bind input="S" source="header.S"/>
+  </sce:import>
   <datamodel>
     <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
       <sce:flag name="mid" bit="0" width="5"/>

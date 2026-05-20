@@ -28,14 +28,11 @@ struct CodecZenohDeclSubscriber {
     /// bytes (RFC §5.B L494-519). Returns `std::nullopt` on the
     /// `NeedMoreBytes` boundary; later phases attach a typed error via
     /// `cursor.last_error()`.
-    static std::optional<CodecZenohDeclSubscriber> decode(::SCE::Forge::SceCursor& cursor, std::uint8_t parent_flags) {
-        // RFC §5.B B5-γ: `parent_flags` is the parent codec's flags
-        // carrier value, threaded by the variant arm dispatcher.
-        // Defensive (void) suppress for codecs that declare
-        // `<sce:requires-parent-flags>` but don't yet wire any
-        // gated field — keeps the param accessible to per-field
-        // gates without UB on unused-parameter warnings.
-        (void)parent_flags;
+    static std::optional<CodecZenohDeclSubscriber> decode(::SCE::Forge::SceCursor& cursor, std::uint8_t n) {
+        // RFC Axis-1 inversion: defensive (void) suppress per declared
+        // `<sce:flag-input>` so codecs that haven't (yet) consumed an
+        // input via `present-if` compile cleanly under -Wunused.
+        (void)n;
         // Streaming codec: each field reads from the cursor directly
         // (VLE base-128 chain, 1..=ceil(N/7) bytes per field). RFC §5.B
         // B4: per-field bit-size dispatch routes Fixed / LengthRef
@@ -46,7 +43,7 @@ struct CodecZenohDeclSubscriber {
         auto id_opt = cursor.read_vle_u32();
         if (!id_opt.has_value()) return std::nullopt;
         auto id = static_cast<std::uint32_t>(*id_opt);
-        auto _emb_wireexpr = ::SCE::Generated::CodecZenohWireexpr::CodecZenohWireexpr::decode(cursor, parent_flags);
+        auto _emb_wireexpr = ::SCE::Generated::CodecZenohWireexpr::CodecZenohWireexpr::decode(cursor, n);
         if (!_emb_wireexpr.has_value()) return std::nullopt;
         auto wireexpr = std::move(*_emb_wireexpr);
         return CodecZenohDeclSubscriber{
@@ -55,8 +52,8 @@ struct CodecZenohDeclSubscriber {
         };
     }
 
-    std::vector<uint8_t> encode(std::uint8_t parent_flags) const {
-        (void)parent_flags;
+    std::vector<uint8_t> encode(std::uint8_t n) const {
+        (void)n;
         // RFC §5.B B4: per-field bit-size dispatch routes Fixed /
         // LengthRef siblings of VLE fields through
         // `present_if_encode_block` (predicate=None arms). Pure-VLE
@@ -74,7 +71,7 @@ struct CodecZenohDeclSubscriber {
             r.push_back(static_cast<std::uint8_t>(_w));
         }
         {
-            auto _sub = wireexpr.encode(parent_flags);
+            auto _sub = wireexpr.encode(n);
             r.insert(r.end(), _sub.begin(), _sub.end());
         }
         return r;

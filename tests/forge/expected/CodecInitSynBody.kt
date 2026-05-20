@@ -18,7 +18,7 @@ data class CodecInitSynBody(
     var batch_size: UShort? = null
 ) {
     @Suppress("UNUSED_PARAMETER")
-    fun encode(parentFlags: UByte): ByteArray {
+    fun encode(S: UByte): ByteArray {
         // RFC §5.B B1-δ + B2-β present-if encode: per-field byte
         // append. Gated fields skip the append when the optional is
         // null. Per-field `is_repeat` routes Repeat fields to the
@@ -42,7 +42,7 @@ data class CodecInitSynBody(
         /// cursor's tail is shorter than the declared minimum frame
         /// (RFC §5.B L494-519).
         @Suppress("UNUSED_PARAMETER")
-        fun decode(cursor: SceCursor, parentFlags: UByte): CodecInitSynBody? {
+        fun decode(cursor: SceCursor, S: UByte): CodecInitSynBody? {
             // RFC §5.B B1-δ + B2-β present-if primitive: streaming
             // decode advances the cursor per field. Gated fields wrap
             // their read inside an `if predicate ... else null` block.
@@ -57,7 +57,7 @@ data class CodecInitSynBody(
                 if (!cursor.advance(1)) return null
                 _v
             }
-            val sn_res = if ((parentFlags.toInt() and 0x40) != 0) {
+            val sn_res = if ((S.toInt() and 0x01) != 0) {
                 val raw = cursor.peekSlice(1) ?: return null
                 val _v = raw[0].toUByte()
                 if (!cursor.advance(1)) return null
@@ -65,7 +65,7 @@ data class CodecInitSynBody(
             } else {
                 null
             }
-            val batch_size = if ((parentFlags.toInt() and 0x40) != 0) {
+            val batch_size = if ((S.toInt() and 0x01) != 0) {
                 val raw = cursor.peekSlice(2) ?: return null
                 val _v = (((raw[0].toInt() and 0xFF) shl 8) or (raw[1].toInt() and 0xFF)).toUShort()
                 if (!cursor.advance(2)) return null

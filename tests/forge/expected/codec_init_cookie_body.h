@@ -28,14 +28,11 @@ struct CodecInitCookieBody {
     /// bytes (RFC §5.B L494-519). Returns `std::nullopt` on the
     /// `NeedMoreBytes` boundary; later phases attach a typed error via
     /// `cursor.last_error()`.
-    static std::optional<CodecInitCookieBody> decode(::SCE::Forge::SceCursor& cursor, std::uint8_t parent_flags) {
-        // RFC §5.B B5-γ: `parent_flags` is the parent codec's flags
-        // carrier value, threaded by the variant arm dispatcher.
-        // Defensive (void) suppress for codecs that declare
-        // `<sce:requires-parent-flags>` but don't yet wire any
-        // gated field — keeps the param accessible to per-field
-        // gates without UB on unused-parameter warnings.
-        (void)parent_flags;
+    static std::optional<CodecInitCookieBody> decode(::SCE::Forge::SceCursor& cursor, std::uint8_t a) {
+        // RFC Axis-1 inversion: defensive (void) suppress per declared
+        // `<sce:flag-input>` so codecs that haven't (yet) consumed an
+        // input via `present-if` compile cleanly under -Wunused.
+        (void)a;
         // RFC §5.B B1-δ + B2-β present-if: per-field cursor advance.
         // Gated fields hold std::optional<T>; B2-β extends gating to
         // Tail / LengthRef / Vle bit-sizes via dispatch inside
@@ -51,14 +48,14 @@ struct CodecInitCookieBody {
             if (!cursor.advance(1)) return std::nullopt;
         }
         std::optional<uint16_t> cookie_size;
-        if ((parent_flags & 0x20) != 0) {
+        if ((a & 0x01) != 0) {
             auto _v_opt = cursor.read_vle_u16();
         if (!_v_opt.has_value()) return std::nullopt;
         auto _v = static_cast<std::uint16_t>(*_v_opt);
             cookie_size = _v;
         }
         std::optional<std::vector<uint8_t>> cookie;
-        if ((parent_flags & 0x20) != 0) {
+        if ((a & 0x01) != 0) {
             std::size_t _n = static_cast<std::size_t>(cookie_size.value());
             const std::uint8_t* raw = cursor.peek_slice(_n);
             if (raw == nullptr) return std::nullopt;
@@ -72,8 +69,8 @@ struct CodecInitCookieBody {
         };
     }
 
-    std::vector<uint8_t> encode(std::uint8_t parent_flags) const {
-        (void)parent_flags;
+    std::vector<uint8_t> encode(std::uint8_t a) const {
+        (void)a;
         // RFC §5.B B1-δ + B2-β present-if encode: per-field byte
         // append. Gated fields skip the append when the optional is
         // empty. Per-field `is_repeat` routes Repeat fields to the

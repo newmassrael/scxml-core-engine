@@ -41,9 +41,9 @@
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="little" name="codec_zenoh_join">
-  <sce:requires-parent-flags carrier="header">
-    <sce:flag name="S" bit="6"/>
-  </sce:requires-parent-flags>
+  <sce:flag-inputs>
+    <sce:flag-input name="S" width="1"/>
+  </sce:flag-inputs>
   <datamodel>
     <sce:field id="version" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
     <sce:flags id="cbyte" sce:type="uint8" sce:byte="1" sce:bit-size="8">
@@ -54,9 +54,9 @@
                sce:length-field="cbyte.zid_len_m1" sce:length-arith="+1"
                sce:max-size="16"/>
     <sce:field id="sn_res" sce:type="uint8" sce:byte="3" sce:bit-size="8"
-               sce:present-if="parent.S"/>
+               sce:present-if="S"/>
     <sce:field id="batch_size" sce:type="uint16" sce:byte="4" sce:bit-size="16"
-               sce:present-if="parent.S"/>
+               sce:present-if="S"/>
     <sce:field id="lease"               sce:type="uint64" sce:byte="6" sce:bit-size="vle"/>
     <sce:field id="next_sn_reliable"    sce:type="uint64" sce:byte="7" sce:bit-size="vle"/>
     <sce:field id="next_sn_best_effort" sce:type="uint64" sce:byte="8" sce:bit-size="vle"/>

@@ -86,7 +86,7 @@ func DecodeCodecZenohDeclaration(cursor *codec.SceCursor) (*CodecZenohDeclaratio
 	body := CodecZenohDeclarationVariant{}
 	switch uint8((Header >> 0) & 0x1F) {
 	case 0:
-		_arm, err := codec_zenoh_decl_kexpr.DecodeCodecZenohDeclKexpr(cursor, Header)
+		_arm, err := codec_zenoh_decl_kexpr.DecodeCodecZenohDeclKexpr(cursor)
 		if err != nil {
 			return nil, err
 		}
@@ -98,37 +98,37 @@ func DecodeCodecZenohDeclaration(cursor *codec.SceCursor) (*CodecZenohDeclaratio
 		}
 		body.CodecZenohUndeclKexpr = _arm
 	case 2:
-		_arm, err := codec_zenoh_decl_subscriber.DecodeCodecZenohDeclSubscriber(cursor, Header)
+		_arm, err := codec_zenoh_decl_subscriber.DecodeCodecZenohDeclSubscriber(cursor)
 		if err != nil {
 			return nil, err
 		}
 		body.CodecZenohDeclSubscriber = _arm
 	case 3:
-		_arm, err := codec_zenoh_undecl_subscriber.DecodeCodecZenohUndeclSubscriber(cursor, Header)
+		_arm, err := codec_zenoh_undecl_subscriber.DecodeCodecZenohUndeclSubscriber(cursor)
 		if err != nil {
 			return nil, err
 		}
 		body.CodecZenohUndeclSubscriber = _arm
 	case 4:
-		_arm, err := codec_zenoh_decl_queryable.DecodeCodecZenohDeclQueryable(cursor, Header)
+		_arm, err := codec_zenoh_decl_queryable.DecodeCodecZenohDeclQueryable(cursor)
 		if err != nil {
 			return nil, err
 		}
 		body.CodecZenohDeclQueryable = _arm
 	case 5:
-		_arm, err := codec_zenoh_undecl_queryable.DecodeCodecZenohUndeclQueryable(cursor, Header)
+		_arm, err := codec_zenoh_undecl_queryable.DecodeCodecZenohUndeclQueryable(cursor)
 		if err != nil {
 			return nil, err
 		}
 		body.CodecZenohUndeclQueryable = _arm
 	case 6:
-		_arm, err := codec_zenoh_decl_token.DecodeCodecZenohDeclToken(cursor, Header)
+		_arm, err := codec_zenoh_decl_token.DecodeCodecZenohDeclToken(cursor)
 		if err != nil {
 			return nil, err
 		}
 		body.CodecZenohDeclToken = _arm
 	case 7:
-		_arm, err := codec_zenoh_undecl_token.DecodeCodecZenohUndeclToken(cursor, Header)
+		_arm, err := codec_zenoh_undecl_token.DecodeCodecZenohUndeclToken(cursor)
 		if err != nil {
 			return nil, err
 		}
@@ -218,21 +218,21 @@ func (s *CodecZenohDeclaration) Encode() []byte {
 	// Append the active arm body's encoded bytes.
 	switch {
 	case s.Body.CodecZenohDeclKexpr != nil:
-		r = append(r, s.Body.CodecZenohDeclKexpr.Encode(s.Header)...)
+		r = append(r, s.Body.CodecZenohDeclKexpr.Encode()...)
 	case s.Body.CodecZenohUndeclKexpr != nil:
 		r = append(r, s.Body.CodecZenohUndeclKexpr.Encode()...)
 	case s.Body.CodecZenohDeclSubscriber != nil:
-		r = append(r, s.Body.CodecZenohDeclSubscriber.Encode(s.Header)...)
+		r = append(r, s.Body.CodecZenohDeclSubscriber.Encode()...)
 	case s.Body.CodecZenohUndeclSubscriber != nil:
-		r = append(r, s.Body.CodecZenohUndeclSubscriber.Encode(s.Header)...)
+		r = append(r, s.Body.CodecZenohUndeclSubscriber.Encode()...)
 	case s.Body.CodecZenohDeclQueryable != nil:
-		r = append(r, s.Body.CodecZenohDeclQueryable.Encode(s.Header)...)
+		r = append(r, s.Body.CodecZenohDeclQueryable.Encode()...)
 	case s.Body.CodecZenohUndeclQueryable != nil:
-		r = append(r, s.Body.CodecZenohUndeclQueryable.Encode(s.Header)...)
+		r = append(r, s.Body.CodecZenohUndeclQueryable.Encode()...)
 	case s.Body.CodecZenohDeclToken != nil:
-		r = append(r, s.Body.CodecZenohDeclToken.Encode(s.Header)...)
+		r = append(r, s.Body.CodecZenohDeclToken.Encode()...)
 	case s.Body.CodecZenohUndeclToken != nil:
-		r = append(r, s.Body.CodecZenohUndeclToken.Encode(s.Header)...)
+		r = append(r, s.Body.CodecZenohUndeclToken.Encode()...)
 	case s.Body.CodecZenohDeclFinal != nil:
 		r = append(r, s.Body.CodecZenohDeclFinal.Encode()...)
 	case s.Body.Default != nil:

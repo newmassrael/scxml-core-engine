@@ -62,13 +62,13 @@ struct CodecInitSynEnvelope {
         CodecInitSynEnvelopeVariant body;
         switch (static_cast<uint8_t>((header >> 0) & static_cast<uint8_t>(0x1F))) {
             case 1: {
-                auto _arm = ::SCE::Generated::CodecInitSynBody::CodecInitSynBody::decode(cursor, header);
+                auto _arm = ::SCE::Generated::CodecInitSynBody::CodecInitSynBody::decode(cursor);
                 if (!_arm.has_value()) return std::nullopt;
                 body = *_arm;
                 break;
             }
             default: {
-                auto _arm = ::SCE::Generated::CodecInitSynBody::CodecInitSynBody::decode(cursor, header);
+                auto _arm = ::SCE::Generated::CodecInitSynBody::CodecInitSynBody::decode(cursor);
                 if (!_arm.has_value()) return std::nullopt;
                 body = CodecInitSynEnvelopeDefault{
                     .tag = static_cast<uint8_t>((header >> 0) & static_cast<uint8_t>(0x1F)),
@@ -127,11 +127,11 @@ struct CodecInitSynEnvelope {
         r.push_back(header);
         // Append the active arm body's encoded bytes.
         if (auto _p = std::get_if<::SCE::Generated::CodecInitSynBody::CodecInitSynBody>(&body)) {
-            auto _sub = _p->encode(header);
+            auto _sub = _p->encode();
             r.insert(r.end(), _sub.begin(), _sub.end());
         }
         if (auto _p = std::get_if<CodecInitSynEnvelopeDefault>(&body)) {
-            auto _sub = _p->body.encode(header);
+            auto _sub = _p->body.encode();
             r.insert(r.end(), _sub.begin(), _sub.end());
         }
         return r;

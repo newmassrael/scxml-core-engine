@@ -23,7 +23,7 @@ type CodecZenohWireexpr struct {
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail
 // is shorter than the declared minimum frame (RFC §5.B L494-519).
 // VLE codecs may also return `codec.ErrVLEWidthOverflow`.
-func DecodeCodecZenohWireexpr(cursor *codec.SceCursor, parentFlags byte) (*CodecZenohWireexpr, error) {
+func DecodeCodecZenohWireexpr(cursor *codec.SceCursor, N byte) (*CodecZenohWireexpr, error) {
 	// RFC §5.B B1-δ + B2-β present-if primitive: streaming decode
 	// advances the cursor per field. Gated fields use `*T` for fixed
 	// (nil = absent) or `[]byte` (nil = absent) for tail/length-ref;
@@ -34,13 +34,13 @@ func DecodeCodecZenohWireexpr(cursor *codec.SceCursor, parentFlags byte) (*Codec
 	Id, err := cursor.ReadVLEU64()
 	if err != nil { return nil, err }
 	var SuffixLen *uint64
-	if (parentFlags & 0x20) != 0 {
+	if (N & 0x01) != 0 {
 		_v, err := cursor.ReadVLEU64()
 	if err != nil { return nil, err }
 		SuffixLen = &_v
 	}
 	var Suffix *string
-	if (parentFlags & 0x20) != 0 {
+	if (N & 0x01) != 0 {
 		_n := int(*SuffixLen)
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
@@ -63,7 +63,7 @@ func DecodeCodecZenohWireexpr(cursor *codec.SceCursor, parentFlags byte) (*Codec
 }
 
 // Encode serializes the CodecZenohWireexpr into raw bytes.
-func (s *CodecZenohWireexpr) Encode(parentFlags byte) []byte {
+func (s *CodecZenohWireexpr) Encode(N byte) []byte {
 	// RFC §5.B B1-δ + B2-β present-if encode: per-field byte append.
 	// Gated fields skip the append on nil pointer / nil slice. Per-
 	// field `is_repeat` routes Repeat fields to the dedicated helper.

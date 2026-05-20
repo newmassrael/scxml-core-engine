@@ -81,13 +81,13 @@ static inline sce_forge_codec_status_t codec_init_syn_envelope_decode(sce_forge_
     switch ((uint8_t)((out->header >> 0) & (uint8_t)0x1F)) {
         case 1:
             out->body.kind = CODEC_INIT_SYN_ENVELOPE_BODY_KIND_CODEC_INIT_SYN_BODY;
-            _arm_st = codec_init_syn_body_decode(cursor, &out->body.arm.codec_init_syn_body, out->header);
+            _arm_st = codec_init_syn_body_decode(cursor, &out->body.arm.codec_init_syn_body);
             if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
             break;
         default:
             out->body.kind = CODEC_INIT_SYN_ENVELOPE_BODY_KIND_DEFAULT;
             out->body.default_tag = (uint8_t)((out->header >> 0) & (uint8_t)0x1F);
-            _arm_st = codec_init_syn_body_decode(cursor, &out->body.arm.default_body, out->header);
+            _arm_st = codec_init_syn_body_decode(cursor, &out->body.arm.default_body);
             if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
             break;
     }
@@ -105,7 +105,7 @@ static inline codec_init_syn_envelope_encoded_t codec_init_syn_envelope_encode(c
     /* Append the active arm body's encoded bytes. */
     switch (self->body.kind) {
         case CODEC_INIT_SYN_ENVELOPE_BODY_KIND_CODEC_INIT_SYN_BODY: {
-            codec_init_syn_body_encoded_t _sub = codec_init_syn_body_encode(&self->body.arm.codec_init_syn_body, self->header);
+            codec_init_syn_body_encoded_t _sub = codec_init_syn_body_encode(&self->body.arm.codec_init_syn_body);
             if (r.len + _sub.len <= CODEC_INIT_SYN_ENVELOPE_MAX_BYTES) {
                 for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
                 r.len += _sub.len;
@@ -113,7 +113,7 @@ static inline codec_init_syn_envelope_encoded_t codec_init_syn_envelope_encode(c
             break;
         }
         case CODEC_INIT_SYN_ENVELOPE_BODY_KIND_DEFAULT: {
-            codec_init_syn_body_encoded_t _sub = codec_init_syn_body_encode(&self->body.arm.default_body, self->header);
+            codec_init_syn_body_encoded_t _sub = codec_init_syn_body_encode(&self->body.arm.default_body);
             if (r.len + _sub.len <= CODEC_INIT_SYN_ENVELOPE_MAX_BYTES) {
                 for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
                 r.len += _sub.len;

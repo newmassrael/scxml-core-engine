@@ -27,7 +27,7 @@ type CodecZenohJoin struct {
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail
 // is shorter than the declared minimum frame (RFC §5.B L494-519).
 // VLE codecs may also return `codec.ErrVLEWidthOverflow`.
-func DecodeCodecZenohJoin(cursor *codec.SceCursor, parentFlags byte) (*CodecZenohJoin, error) {
+func DecodeCodecZenohJoin(cursor *codec.SceCursor, S byte) (*CodecZenohJoin, error) {
 	// RFC §5.B B1-δ + B2-β present-if primitive: streaming decode
 	// advances the cursor per field. Gated fields use `*T` for fixed
 	// (nil = absent) or `[]byte` (nil = absent) for tail/length-ref;
@@ -70,7 +70,7 @@ func DecodeCodecZenohJoin(cursor *codec.SceCursor, parentFlags byte) (*CodecZeno
 		}
 	}
 	var SnRes *uint8
-	if (parentFlags & 0x40) != 0 {
+	if (S & 0x01) != 0 {
 		raw, err := cursor.PeekSlice(1)
 		if err != nil {
 			return nil, err
@@ -82,7 +82,7 @@ func DecodeCodecZenohJoin(cursor *codec.SceCursor, parentFlags byte) (*CodecZeno
 		SnRes = &_v
 	}
 	var BatchSize *uint16
-	if (parentFlags & 0x40) != 0 {
+	if (S & 0x01) != 0 {
 		raw, err := cursor.PeekSlice(2)
 		if err != nil {
 			return nil, err
@@ -138,7 +138,7 @@ func (s *CodecZenohJoin) SetZidLenM1(v uint8) {
 }
 
 // Encode serializes the CodecZenohJoin into raw bytes.
-func (s *CodecZenohJoin) Encode(parentFlags byte) []byte {
+func (s *CodecZenohJoin) Encode(S byte) []byte {
 	// RFC §5.B B1-δ + B2-β present-if encode: per-field byte append.
 	// Gated fields skip the append on nil pointer / nil slice. Per-
 	// field `is_repeat` routes Repeat fields to the dedicated helper.

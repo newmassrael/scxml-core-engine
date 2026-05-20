@@ -34,15 +34,12 @@ impl CodecZenohDeclSubscriber {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'_>, parent_flags: u8) -> Result<Self, CodecError> {
-        // RFC §5.B B5-γ: `parent_flags` is the parent codec's flags
-        // carrier value, threaded through by the variant arm dispatcher.
-        // Body fields gated via `parent.<flag>` predicates read from
-        // this parameter; suppress unused-variable warnings when no
-        // gated field happens to consume it (defensive guard for
-        // codecs that declare `<sce:requires-parent-flags>` but
-        // don't yet wire any predicate to it).
-        let _ = parent_flags;
+    pub fn decode(cursor: &mut SceCursor<'_>, n: u8) -> Result<Self, CodecError> {
+        // RFC Axis-1 inversion: defensive suppress per declared
+        // `<sce:flag-input>` so codecs that haven't (yet) consumed an
+        // input via `present-if` compile cleanly. The validator enforces
+        // declaration; consumption is a per-codec design choice.
+        let _ = n;
         // Streaming codec: each field reads its own bytes from the
         // cursor (VLE = base-128 1..=ceil(N/7) bytes). No pre-peek of
         // a fixed window; cursor advances per-field. RFC §5.B B4:
@@ -52,16 +49,17 @@ impl CodecZenohDeclSubscriber {
         // because the non-gated VLE arm there reuses
         // `vle_decode_stmt` verbatim.
         let id = cursor.read_vle_u32()?;
-        let wireexpr = CodecZenohWireexpr::decode(cursor, parent_flags)?;
+        let wireexpr = CodecZenohWireexpr::decode(cursor, n)?;
         Ok(Self {
             id,
             wireexpr,
         })
     }
 
-    pub fn encode(&self, parent_flags: u8) -> Vec<u8> {
-        // RFC §5.B B5-γ: see `decode` — same parameter, same suppress.
-        let _ = parent_flags;
+    pub fn encode(&self, n: u8) -> Vec<u8> {
+        // RFC Axis-1 inversion: see `decode` — same suppress per
+        // declared `<sce:flag-input>`.
+        let _ = n;
         // RFC §5.B B4: per-field bit-size dispatch routes Fixed /
         // LengthRef / Tail siblings of VLE fields through
         // `present_if_encode_block` (predicate=None arms). Pure-VLE
@@ -77,7 +75,7 @@ impl CodecZenohDeclSubscriber {
             }
             r.push(_w as u8);
         }
-        r.extend(self.wireexpr.encode(parent_flags));
+        r.extend(self.wireexpr.encode(n));
         r
     }
 }

@@ -62,14 +62,14 @@ class CodecInitSynEnvelope:
         body = CodecInitSynEnvelopeVariant()
         if ((header >> 0) & 0x1F) == 1:
             body.kind = "CodecInitSynBody"
-            _arm = CodecInitSynBody.decode(cursor, header)
+            _arm = CodecInitSynBody.decode(cursor)
             if _arm is None:
                 return None
             body.codec_init_syn_body = _arm
         else:
             body.kind = "Default"
             body.default_tag = ((header >> 0) & 0x1F)
-            _arm = CodecInitSynBody.decode(cursor, header)
+            _arm = CodecInitSynBody.decode(cursor)
             if _arm is None:
                 return None
             body.default_body = _arm
@@ -111,7 +111,7 @@ class CodecInitSynEnvelope:
         r.append(self.header & 0xFF)
         # Append the active arm body's encoded bytes.
         if self.body.kind == "CodecInitSynBody":
-            r.extend(self.body.codec_init_syn_body.encode(self.header))
+            r.extend(self.body.codec_init_syn_body.encode())
         elif self.body.kind == "Default":
-            r.extend(self.body.default_body.encode(self.header))
+            r.extend(self.body.default_body.encode())
         return bytes(r)

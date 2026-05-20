@@ -42,9 +42,9 @@
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="codec_zenoh_hello">
   <sce:import src="codec_zenoh_locator.scxml" kind="codec" as="codec_zenoh_locator"/>
-  <sce:requires-parent-flags carrier="header">
-    <sce:flag name="L" bit="5"/>
-  </sce:requires-parent-flags>
+  <sce:flag-inputs>
+    <sce:flag-input name="L" width="1"/>
+  </sce:flag-inputs>
   <datamodel>
     <sce:field id="version" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
     <sce:flags id="cbyte" sce:type="uint8" sce:byte="1" sce:bit-size="8">
@@ -55,9 +55,9 @@
                sce:length-field="cbyte.zid_len_m1" sce:length-arith="+1"
                sce:max-size="16"/>
     <sce:field id="num_locators" sce:type="uint64" sce:byte="3" sce:bit-size="vle"
-               sce:present-if="parent.L"/>
+               sce:present-if="L"/>
     <sce:repeat id="locators" type="codec_zenoh_locator" sce:byte="4"
                 count="num_locators" max-count="64"
-                sce:present-if="parent.L"/>
+                sce:present-if="L"/>
   </datamodel>
 </scxml>

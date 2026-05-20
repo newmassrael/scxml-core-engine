@@ -41,16 +41,16 @@
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="codec_zenoh_open_body">
-  <sce:requires-parent-flags carrier="header">
-    <sce:flag name="A" bit="5"/>
-  </sce:requires-parent-flags>
+  <sce:flag-inputs>
+    <sce:flag-input name="A" width="1"/>
+  </sce:flag-inputs>
   <datamodel>
     <sce:field id="lease"      sce:type="uint64" sce:byte="0" sce:bit-size="vle"/>
     <sce:field id="initial_sn" sce:type="uint64" sce:byte="1" sce:bit-size="vle"/>
     <sce:field id="cookie_len" sce:type="uint64" sce:byte="2" sce:bit-size="vle"
-               sce:present-if="!parent.A"/>
+               sce:present-if="!A"/>
     <sce:field id="cookie" sce:type="bytes" sce:byte="3" sce:bit-size="length-ref"
                sce:length-field="cookie_len" sce:max-size="128"
-               sce:present-if="!parent.A"/>
+               sce:present-if="!A"/>
   </datamodel>
 </scxml>

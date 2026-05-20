@@ -112,7 +112,7 @@ data class CodecZenohInterestBody(
         val r = mutableListOf<Byte>()
         r.add(this.header.toByte())
         this.keyexpr?.let { _v ->
-            r.addAll(_v.encode(this.header).toList())
+            r.addAll(_v.encode((((this.header.toInt() shr 5) and 0x1).toUByte())).toList())
         }
         return r.toByteArray()
     }
@@ -138,7 +138,7 @@ data class CodecZenohInterestBody(
                 _v
             }
             val keyexpr: CodecZenohWireexpr? = if ((header.toInt() and 0x10) != 0) {
-                CodecZenohWireexpr.decode(cursor, header) ?: return null
+                CodecZenohWireexpr.decode(cursor, (((header.toInt() shr 5) and 0x1).toUByte())) ?: return null
             } else {
                 null
             }

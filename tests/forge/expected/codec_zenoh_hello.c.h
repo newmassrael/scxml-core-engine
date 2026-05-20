@@ -40,15 +40,11 @@ typedef struct {
  * (without advancing) when the cursor's tail is shorter than the
  * declared minimum frame (RFC §5.B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
-static inline sce_forge_codec_status_t codec_zenoh_hello_decode(sce_forge_cursor_t *cursor, codec_zenoh_hello_t *out, uint8_t parent_flags) {
-    /* RFC §5.B B5-γ: `parent_flags` is the parent codec's flags
-     * carrier value, threaded by the variant arm dispatcher. Body
-     * fields gated via `parent.<flag>` predicates read from this
-     * parameter; defensive `(void)parent_flags` suppresses the
-     * `-Wunused-parameter` warning when no gated field happens to
-     * consume it (mirrors the Rust `let _ = parent_flags;` and Cpp
-     * `(void)parent_flags;` defensive guards). */
-    (void)parent_flags;
+static inline sce_forge_codec_status_t codec_zenoh_hello_decode(sce_forge_cursor_t *cursor, codec_zenoh_hello_t *out, uint8_t l) {
+    /* RFC Axis-1 inversion: defensive (void) suppress per declared
+     * `<sce:flag-input>` so codecs that haven't consumed an input via
+     * `present-if` yet compile cleanly under -Wunused-parameter. */
+    (void)l;
     /* RFC §5.B B1-δ + B2-β present-if primitive: streaming decode
      * advances the cursor per field. C11 has no nullable wrapper so
      * the gated field's storage stays as plain `T` (with `_len = 0`
@@ -79,7 +75,7 @@ static inline sce_forge_codec_status_t codec_zenoh_hello_decode(sce_forge_cursor
         out->zid_len = _n;
         if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     }
-    if ((parent_flags & 0x20) != 0) {
+    if ((l & 0x01) != 0) {
         uint64_t _v;
     {
         sce_forge_codec_status_t _vle_st = sce_forge_cursor_read_vle_u64(cursor, &_v);
@@ -89,7 +85,7 @@ static inline sce_forge_codec_status_t codec_zenoh_hello_decode(sce_forge_cursor
     } else {
         out->num_locators = 0;
     }
-    if ((parent_flags & 0x20) != 0) {
+    if ((l & 0x01) != 0) {
         size_t _n = (size_t)out->num_locators;
         if (_n > 64) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         for (size_t _i = 0; _i < _n; ++_i) {
@@ -103,9 +99,9 @@ static inline sce_forge_codec_status_t codec_zenoh_hello_decode(sce_forge_cursor
     return SCE_FORGE_CODEC_OK;
 }
 
-static inline codec_zenoh_hello_encoded_t codec_zenoh_hello_encode(const codec_zenoh_hello_t *self, uint8_t parent_flags) {
-    /* RFC §5.B B5-γ: see decode — same parameter, same suppress. */
-    (void)parent_flags;
+static inline codec_zenoh_hello_encoded_t codec_zenoh_hello_encode(const codec_zenoh_hello_t *self, uint8_t l) {
+    /* RFC Axis-1 inversion: see decode — same suppress per input. */
+    (void)l;
     codec_zenoh_hello_encoded_t r;
     /* RFC §5.B B1-δ + B2-β present-if encode: per-field byte append.
      * Gated fields skip the append when the carrier's flag bit is
@@ -116,7 +112,7 @@ static inline codec_zenoh_hello_encoded_t codec_zenoh_hello_encode(const codec_z
     r.bytes[r.len++] = self->version;
     r.bytes[r.len++] = self->cbyte;
     for (size_t _bi = 0; _bi < self->zid_len && _bi < (size_t)((int64_t)(size_t)((self->cbyte >> 4) & 0xF) + 1); ++_bi) r.bytes[r.len++] = self->zid[_bi];
-    if ((parent_flags & 0x20) != 0) {
+    if ((l & 0x01) != 0) {
     {
         uint64_t _w = (uint64_t)(self->num_locators);
         while (_w >= 0x80u) {
@@ -126,7 +122,7 @@ static inline codec_zenoh_hello_encoded_t codec_zenoh_hello_encode(const codec_z
         r.bytes[r.len++] = (uint8_t)_w;
     }
     }
-    if ((parent_flags & 0x20) != 0) {
+    if ((l & 0x01) != 0) {
         for (size_t _ri = 0; _ri < self->locators_len; ++_ri) {
             codec_zenoh_locator_encoded_t _sub = codec_zenoh_locator_encode(&self->locators[_ri]);
             if (r.len + _sub.len <= sizeof(r.bytes)) {

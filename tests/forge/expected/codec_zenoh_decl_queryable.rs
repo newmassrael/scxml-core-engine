@@ -36,15 +36,13 @@ impl CodecZenohDeclQueryable {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'_>, parent_flags: u8) -> Result<Self, CodecError> {
-        // RFC §5.B B5-γ: `parent_flags` is the parent codec's flags
-        // carrier value, threaded through by the variant arm dispatcher.
-        // Body fields gated via `parent.<flag>` predicates read from
-        // this parameter; suppress unused-variable warnings when no
-        // gated field happens to consume it (defensive guard for
-        // codecs that declare `<sce:requires-parent-flags>` but
-        // don't yet wire any predicate to it).
-        let _ = parent_flags;
+    pub fn decode(cursor: &mut SceCursor<'_>, n: u8, z: u8) -> Result<Self, CodecError> {
+        // RFC Axis-1 inversion: defensive suppress per declared
+        // `<sce:flag-input>` so codecs that haven't (yet) consumed an
+        // input via `present-if` compile cleanly. The validator enforces
+        // declaration; consumption is a per-codec design choice.
+        let _ = n;
+        let _ = z;
         // RFC §5.B B1-δ + B2-β present-if primitive: streaming decode
         // advances the cursor per field. Gated fields wrap their
         // read inside an `if predicate { Some(...) } else { None }`
@@ -57,8 +55,8 @@ impl CodecZenohDeclQueryable {
         // Note: this branch fires before has_vle_fields so a codec
         // mixing VLE + present-if uses the unified streaming path.
         let id = cursor.read_vle_u32()?;
-        let wireexpr = CodecZenohWireexpr::decode(cursor, parent_flags)?;
-        let ext_type = if (parent_flags & 0x80u8) != 0 {
+        let wireexpr = CodecZenohWireexpr::decode(cursor, n)?;
+        let ext_type = if (z & 0x01u8) != 0 {
             let raw = cursor.peek_slice(1)?;
             let _v = raw[0];
             cursor.advance(1)?;
@@ -66,7 +64,7 @@ impl CodecZenohDeclQueryable {
         } else {
             None
         };
-        let ext_value = if (parent_flags & 0x80u8) != 0 {
+        let ext_value = if (z & 0x01u8) != 0 {
             let _v = cursor.read_vle_u64()?;
             Some(_v)
         } else {
@@ -80,9 +78,11 @@ impl CodecZenohDeclQueryable {
         })
     }
 
-    pub fn encode(&self, parent_flags: u8) -> Vec<u8> {
-        // RFC §5.B B5-γ: see `decode` — same parameter, same suppress.
-        let _ = parent_flags;
+    pub fn encode(&self, n: u8, z: u8) -> Vec<u8> {
+        // RFC Axis-1 inversion: see `decode` — same suppress per
+        // declared `<sce:flag-input>`.
+        let _ = n;
+        let _ = z;
         // RFC §5.B B1-δ + B2-β present-if encode: every field appends
         // its bytes via a per-field block; gated fields skip the
         // append when the optional is None. Per-field `is_repeat` /
@@ -101,7 +101,7 @@ impl CodecZenohDeclQueryable {
             }
             r.push(_w as u8);
         }
-        r.extend(self.wireexpr.encode(parent_flags));
+        r.extend(self.wireexpr.encode(n));
         if let Some(_v) = self.ext_type {
             r.push(_v);
         }

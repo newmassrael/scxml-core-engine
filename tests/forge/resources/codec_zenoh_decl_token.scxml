@@ -28,12 +28,12 @@
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="codec_zenoh_decl_token">
-  <sce:import src="codec_zenoh_wireexpr.scxml" kind="codec" as="codec_zenoh_wireexpr"/>
-  <sce:requires-parent-flags carrier="header">
-    <sce:flag name="N" bit="5"/>
-    <sce:flag name="M" bit="6"/>
-    <sce:flag name="Z" bit="7"/>
-  </sce:requires-parent-flags>
+  <sce:import src="codec_zenoh_wireexpr.scxml" kind="codec" as="codec_zenoh_wireexpr">
+    <sce:flag-bind input="N" source="N"/>
+  </sce:import>
+  <sce:flag-inputs>
+    <sce:flag-input name="N" width="1"/>
+  </sce:flag-inputs>
   <datamodel>
     <sce:field id="id" sce:type="uint32" sce:byte="0" sce:bit-size="vle"/>
     <sce:embed id="wireexpr" type="codec_zenoh_wireexpr" sce:byte="1"/>

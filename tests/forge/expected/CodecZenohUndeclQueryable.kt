@@ -18,7 +18,7 @@ data class CodecZenohUndeclQueryable(
     var ext_keyexpr: CodecZenohDeclExtKeyexpr? = null
 ) {
     @Suppress("UNUSED_PARAMETER")
-    fun encode(parentFlags: UByte): ByteArray {
+    fun encode(Z: UByte): ByteArray {
         // RFC §5.B B1-δ + B2-β present-if encode: per-field byte
         // append. Gated fields skip the append when the optional is
         // null. Per-field `is_repeat` routes Repeat fields to the
@@ -45,7 +45,7 @@ data class CodecZenohUndeclQueryable(
         /// cursor's tail is shorter than the declared minimum frame
         /// (RFC §5.B L494-519).
         @Suppress("UNUSED_PARAMETER")
-        fun decode(cursor: SceCursor, parentFlags: UByte): CodecZenohUndeclQueryable? {
+        fun decode(cursor: SceCursor, Z: UByte): CodecZenohUndeclQueryable? {
             // RFC §5.B B1-δ + B2-β present-if primitive: streaming
             // decode advances the cursor per field. Gated fields wrap
             // their read inside an `if predicate ... else null` block.
@@ -55,7 +55,7 @@ data class CodecZenohUndeclQueryable(
             // helper. Branch fires before has_vle_fields so a codec
             // mixing VLE + present-if uses the unified streaming path.
             val id = cursor.readVleU32() ?: return null
-            val ext_keyexpr: CodecZenohDeclExtKeyexpr? = if ((parentFlags.toInt() and 0x80) != 0) {
+            val ext_keyexpr: CodecZenohDeclExtKeyexpr? = if ((Z.toInt() and 0x01) != 0) {
                 CodecZenohDeclExtKeyexpr.decode(cursor) ?: return null
             } else {
                 null

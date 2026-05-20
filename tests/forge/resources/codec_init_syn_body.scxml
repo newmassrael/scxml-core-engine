@@ -30,14 +30,14 @@
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="codec_init_syn_body">
-  <sce:requires-parent-flags carrier="header">
-    <sce:flag name="S" bit="6"/>
-  </sce:requires-parent-flags>
+  <sce:flag-inputs>
+    <sce:flag-input name="S" width="1"/>
+  </sce:flag-inputs>
   <datamodel>
     <sce:field id="version" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
     <sce:field id="sn_res" sce:type="uint8" sce:byte="1" sce:bit-size="8"
-               sce:present-if="parent.S"/>
+               sce:present-if="S"/>
     <sce:field id="batch_size" sce:type="uint16" sce:byte="2" sce:bit-size="16"
-               sce:present-if="parent.S"/>
+               sce:present-if="S"/>
   </datamodel>
 </scxml>

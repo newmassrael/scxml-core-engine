@@ -35,15 +35,12 @@ typedef struct {
  * (without advancing) when the cursor's tail is shorter than the
  * declared minimum frame (RFC §5.B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
-static inline sce_forge_codec_status_t codec_zenoh_decl_queryable_decode(sce_forge_cursor_t *cursor, codec_zenoh_decl_queryable_t *out, uint8_t parent_flags) {
-    /* RFC §5.B B5-γ: `parent_flags` is the parent codec's flags
-     * carrier value, threaded by the variant arm dispatcher. Body
-     * fields gated via `parent.<flag>` predicates read from this
-     * parameter; defensive `(void)parent_flags` suppresses the
-     * `-Wunused-parameter` warning when no gated field happens to
-     * consume it (mirrors the Rust `let _ = parent_flags;` and Cpp
-     * `(void)parent_flags;` defensive guards). */
-    (void)parent_flags;
+static inline sce_forge_codec_status_t codec_zenoh_decl_queryable_decode(sce_forge_cursor_t *cursor, codec_zenoh_decl_queryable_t *out, uint8_t n, uint8_t z) {
+    /* RFC Axis-1 inversion: defensive (void) suppress per declared
+     * `<sce:flag-input>` so codecs that haven't consumed an input via
+     * `present-if` yet compile cleanly under -Wunused-parameter. */
+    (void)n;
+    (void)z;
     /* RFC §5.B B1-δ + B2-β present-if primitive: streaming decode
      * advances the cursor per field. C11 has no nullable wrapper so
      * the gated field's storage stays as plain `T` (with `_len = 0`
@@ -60,10 +57,10 @@ static inline sce_forge_codec_status_t codec_zenoh_decl_queryable_decode(sce_for
     }
     out->id = id;
     {
-        sce_forge_codec_status_t _st = codec_zenoh_wireexpr_decode(cursor, &out->wireexpr, parent_flags);
+        sce_forge_codec_status_t _st = codec_zenoh_wireexpr_decode(cursor, &out->wireexpr, n);
         if (_st != SCE_FORGE_CODEC_OK) return _st;
     }
-    if ((parent_flags & 0x80) != 0) {
+    if ((z & 0x01) != 0) {
         const uint8_t *raw = sce_forge_cursor_peek(cursor, 1);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         out->ext_type = (uint8_t)(raw[0]);
@@ -71,7 +68,7 @@ static inline sce_forge_codec_status_t codec_zenoh_decl_queryable_decode(sce_for
     } else {
         out->ext_type = 0;
     }
-    if ((parent_flags & 0x80) != 0) {
+    if ((z & 0x01) != 0) {
         uint64_t _v;
     {
         sce_forge_codec_status_t _vle_st = sce_forge_cursor_read_vle_u64(cursor, &_v);
@@ -84,9 +81,10 @@ static inline sce_forge_codec_status_t codec_zenoh_decl_queryable_decode(sce_for
     return SCE_FORGE_CODEC_OK;
 }
 
-static inline codec_zenoh_decl_queryable_encoded_t codec_zenoh_decl_queryable_encode(const codec_zenoh_decl_queryable_t *self, uint8_t parent_flags) {
-    /* RFC §5.B B5-γ: see decode — same parameter, same suppress. */
-    (void)parent_flags;
+static inline codec_zenoh_decl_queryable_encoded_t codec_zenoh_decl_queryable_encode(const codec_zenoh_decl_queryable_t *self, uint8_t n, uint8_t z) {
+    /* RFC Axis-1 inversion: see decode — same suppress per input. */
+    (void)n;
+    (void)z;
     codec_zenoh_decl_queryable_encoded_t r;
     /* RFC §5.B B1-δ + B2-β present-if encode: per-field byte append.
      * Gated fields skip the append when the carrier's flag bit is
@@ -103,16 +101,16 @@ static inline codec_zenoh_decl_queryable_encoded_t codec_zenoh_decl_queryable_en
         r.bytes[r.len++] = (uint8_t)_w;
     }
     {
-        codec_zenoh_wireexpr_encoded_t _sub = codec_zenoh_wireexpr_encode(&self->wireexpr, parent_flags);
+        codec_zenoh_wireexpr_encoded_t _sub = codec_zenoh_wireexpr_encode(&self->wireexpr, n);
         if (r.len + _sub.len <= sizeof(r.bytes)) {
             for (size_t _ej = 0; _ej < _sub.len; ++_ej) r.bytes[r.len + _ej] = _sub.bytes[_ej];
             r.len += _sub.len;
         }
     }
-    if ((parent_flags & 0x80) != 0) {
+    if ((z & 0x01) != 0) {
         r.bytes[r.len++] = self->ext_type;
     }
-    if ((parent_flags & 0x80) != 0) {
+    if ((z & 0x01) != 0) {
     {
         uint64_t _w = (uint64_t)(self->ext_value);
         while (_w >= 0x80u) {

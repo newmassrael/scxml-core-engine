@@ -53,15 +53,15 @@
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="codec_zenoh_wireexpr">
-  <sce:requires-parent-flags carrier="header">
-    <sce:flag name="N" bit="5"/>
-  </sce:requires-parent-flags>
+  <sce:flag-inputs>
+    <sce:flag-input name="N" width="1"/>
+  </sce:flag-inputs>
   <datamodel>
     <sce:field id="id" sce:type="uint64" sce:byte="0" sce:bit-size="vle"/>
     <sce:field id="suffix_len" sce:type="uint64" sce:byte="1" sce:bit-size="vle"
-               sce:present-if="parent.N"/>
+               sce:present-if="N"/>
     <sce:field id="suffix" sce:type="string" sce:byte="2" sce:bit-size="length-ref"
                sce:length-field="suffix_len" sce:max-size="128"
-               sce:present-if="parent.N"/>
+               sce:present-if="N"/>
   </datamodel>
 </scxml>

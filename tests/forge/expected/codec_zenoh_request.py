@@ -64,7 +64,7 @@ class CodecZenohRequest:
             header = raw[0]
             cursor.advance(1)
             rid = cursor.read_vle_u64()
-            keyexpr = CodecZenohWireexpr.decode(cursor, header)
+            keyexpr = CodecZenohWireexpr.decode(cursor, ((header >> 5) & 0x1))
             if keyexpr is None:
                 return None
             if (header & 0x80) != 0:
@@ -177,7 +177,7 @@ class CodecZenohRequest:
             r.append((_w & 0x7F) | 0x80)
             _w >>= 7
         r.append(_w)
-        r.extend(self.keyexpr.encode(self.header))
+        r.extend(self.keyexpr.encode(((self.header >> 5) & 0x1)))
         if self.extensions is not None:
             for _e in self.extensions:
                 r.extend(_e.encode())

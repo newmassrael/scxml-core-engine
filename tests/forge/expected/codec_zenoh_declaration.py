@@ -78,7 +78,7 @@ class CodecZenohDeclaration:
         body = CodecZenohDeclarationVariant()
         if ((header >> 0) & 0x1F) == 0:
             body.kind = "CodecZenohDeclKexpr"
-            _arm = CodecZenohDeclKexpr.decode(cursor, header)
+            _arm = CodecZenohDeclKexpr.decode(cursor)
             if _arm is None:
                 return None
             body.codec_zenoh_decl_kexpr = _arm
@@ -90,37 +90,37 @@ class CodecZenohDeclaration:
             body.codec_zenoh_undecl_kexpr = _arm
         elif ((header >> 0) & 0x1F) == 2:
             body.kind = "CodecZenohDeclSubscriber"
-            _arm = CodecZenohDeclSubscriber.decode(cursor, header)
+            _arm = CodecZenohDeclSubscriber.decode(cursor)
             if _arm is None:
                 return None
             body.codec_zenoh_decl_subscriber = _arm
         elif ((header >> 0) & 0x1F) == 3:
             body.kind = "CodecZenohUndeclSubscriber"
-            _arm = CodecZenohUndeclSubscriber.decode(cursor, header)
+            _arm = CodecZenohUndeclSubscriber.decode(cursor)
             if _arm is None:
                 return None
             body.codec_zenoh_undecl_subscriber = _arm
         elif ((header >> 0) & 0x1F) == 4:
             body.kind = "CodecZenohDeclQueryable"
-            _arm = CodecZenohDeclQueryable.decode(cursor, header)
+            _arm = CodecZenohDeclQueryable.decode(cursor)
             if _arm is None:
                 return None
             body.codec_zenoh_decl_queryable = _arm
         elif ((header >> 0) & 0x1F) == 5:
             body.kind = "CodecZenohUndeclQueryable"
-            _arm = CodecZenohUndeclQueryable.decode(cursor, header)
+            _arm = CodecZenohUndeclQueryable.decode(cursor)
             if _arm is None:
                 return None
             body.codec_zenoh_undecl_queryable = _arm
         elif ((header >> 0) & 0x1F) == 6:
             body.kind = "CodecZenohDeclToken"
-            _arm = CodecZenohDeclToken.decode(cursor, header)
+            _arm = CodecZenohDeclToken.decode(cursor)
             if _arm is None:
                 return None
             body.codec_zenoh_decl_token = _arm
         elif ((header >> 0) & 0x1F) == 7:
             body.kind = "CodecZenohUndeclToken"
-            _arm = CodecZenohUndeclToken.decode(cursor, header)
+            _arm = CodecZenohUndeclToken.decode(cursor)
             if _arm is None:
                 return None
             body.codec_zenoh_undecl_token = _arm
@@ -193,21 +193,21 @@ class CodecZenohDeclaration:
         r.append(self.header & 0xFF)
         # Append the active arm body's encoded bytes.
         if self.body.kind == "CodecZenohDeclKexpr":
-            r.extend(self.body.codec_zenoh_decl_kexpr.encode(self.header))
+            r.extend(self.body.codec_zenoh_decl_kexpr.encode())
         elif self.body.kind == "CodecZenohUndeclKexpr":
             r.extend(self.body.codec_zenoh_undecl_kexpr.encode())
         elif self.body.kind == "CodecZenohDeclSubscriber":
-            r.extend(self.body.codec_zenoh_decl_subscriber.encode(self.header))
+            r.extend(self.body.codec_zenoh_decl_subscriber.encode())
         elif self.body.kind == "CodecZenohUndeclSubscriber":
-            r.extend(self.body.codec_zenoh_undecl_subscriber.encode(self.header))
+            r.extend(self.body.codec_zenoh_undecl_subscriber.encode())
         elif self.body.kind == "CodecZenohDeclQueryable":
-            r.extend(self.body.codec_zenoh_decl_queryable.encode(self.header))
+            r.extend(self.body.codec_zenoh_decl_queryable.encode())
         elif self.body.kind == "CodecZenohUndeclQueryable":
-            r.extend(self.body.codec_zenoh_undecl_queryable.encode(self.header))
+            r.extend(self.body.codec_zenoh_undecl_queryable.encode())
         elif self.body.kind == "CodecZenohDeclToken":
-            r.extend(self.body.codec_zenoh_decl_token.encode(self.header))
+            r.extend(self.body.codec_zenoh_decl_token.encode())
         elif self.body.kind == "CodecZenohUndeclToken":
-            r.extend(self.body.codec_zenoh_undecl_token.encode(self.header))
+            r.extend(self.body.codec_zenoh_undecl_token.encode())
         elif self.body.kind == "CodecZenohDeclFinal":
             r.extend(self.body.codec_zenoh_decl_final.encode())
         elif self.body.kind == "Default":

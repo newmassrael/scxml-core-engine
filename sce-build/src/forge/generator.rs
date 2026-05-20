@@ -2564,9 +2564,8 @@ fn render_codec(
     // arg (decode's `cursor`, encode's `self`); the `_first` form omits
     // the comma for sites where the param appears in first position
     // (Rust/Cpp/Kotlin encode have no `self`-style preceding arg).
-    let (flag_input_params_decl, flag_input_params_first) = compute_flag_input_param_fragments(
-        &m.flag_inputs, lang,
-    );
+    let (flag_input_params_decl, flag_input_params_first) =
+        compute_flag_input_param_fragments(&m.flag_inputs, lang);
     ctx.insert(
         "flag_input_params_decl".into(),
         flag_input_params_decl.clone().into(),
@@ -3990,13 +3989,14 @@ fn validate_cross_codec_flag_bind(
     use crate::forge::model::FlagBindSource;
 
     // Build parent-side resolution helpers once.
-    let parent_carrier_lookup = |carrier_name: &str| -> Option<(usize, &crate::forge::model::CodecField)> {
-        parent
-            .fields
-            .iter()
-            .enumerate()
-            .find(|(_, f)| f.id == carrier_name && f.is_flags_carrier())
-    };
+    let parent_carrier_lookup =
+        |carrier_name: &str| -> Option<(usize, &crate::forge::model::CodecField)> {
+            parent
+                .fields
+                .iter()
+                .enumerate()
+                .find(|(_, f)| f.id == carrier_name && f.is_flags_carrier())
+        };
     let parent_input_widths: std::collections::BTreeMap<&str, u32> = parent
         .flag_inputs
         .iter()
@@ -4010,11 +4010,7 @@ fn validate_cross_codec_flag_bind(
         .fields
         .iter()
         .enumerate()
-        .filter_map(|(idx, f)| {
-            f.embed_body_alias
-                .as_deref()
-                .map(|alias| (alias, idx))
-        })
+        .filter_map(|(idx, f)| f.embed_body_alias.as_deref().map(|alias| (alias, idx)))
         .collect();
 
     for imp in imports {
@@ -4029,10 +4025,7 @@ fn validate_cross_codec_flag_bind(
             leaf_inputs.iter().map(|fi| fi.name.as_str()).collect();
         for bind in binds {
             if !leaf_input_names.contains(bind.input.as_str()) {
-                let available: Vec<&str> = leaf_inputs
-                    .iter()
-                    .map(|fi| fi.name.as_str())
-                    .collect();
+                let available: Vec<&str> = leaf_inputs.iter().map(|fi| fi.name.as_str()).collect();
                 return Err(ForgeError::Validation(
                     ValidationError::CodecFlagBindInputNotDeclared {
                         parent_codec: parent.name.clone(),
@@ -5566,17 +5559,13 @@ fn embed_flag_bind_thread_args(
                         format!(", ((self.{carrier} >> {bit}) & 0x{mask:X}) as u8"),
                     ),
                     Language::Cpp => (
-                        format!(
-                            ", static_cast<std::uint8_t>(({carrier} >> {bit}) & 0x{mask:X})"
-                        ),
+                        format!(", static_cast<std::uint8_t>(({carrier} >> {bit}) & 0x{mask:X})"),
                         format!(
                             ", static_cast<std::uint8_t>((this->{carrier} >> {bit}) & 0x{mask:X})"
                         ),
                     ),
                     Language::Kotlin => (
-                        format!(
-                            ", ((({carrier}.toInt() shr {bit}) and 0x{mask:X}).toUByte())"
-                        ),
+                        format!(", ((({carrier}.toInt() shr {bit}) and 0x{mask:X}).toUByte())"),
                         format!(
                             ", (((this.{carrier}.toInt() shr {bit}) and 0x{mask:X}).toUByte())"
                         ),
@@ -5653,7 +5642,12 @@ fn compute_flag_input_unused_suppress(
     match lang {
         Language::Rust => inputs
             .iter()
-            .map(|fi| format!("        let _ = {};", filters::to_snake_case(fi.name.clone())))
+            .map(|fi| {
+                format!(
+                    "        let _ = {};",
+                    filters::to_snake_case(fi.name.clone())
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n"),
         Language::Cpp => inputs
@@ -5710,7 +5704,6 @@ fn compute_flag_input_param_fragments(
     let decl = format!(", {first}");
     (decl, first)
 }
-
 
 /// RFC B5-ν inversion β shape (caller-tag): compose the leading-comma
 /// `tag: u8` argument the parent codec must pass to a β-leaf's decode
@@ -9655,12 +9648,33 @@ fn present_if_test_literal_clause(
                 SceType::Uint64 => "u64",
                 _ => "",
             };
+            // Axis-1 inversion Input scope: read the typed function
+            // parameter declared by `compute_flag_input_param_fragments`,
+            // which converts the leaf-declared input name to snake_case
+            // (Rust convention). The predicate test must match that
+            // conversion so an uppercase leaf-side declaration (`name="N"`)
+            // resolves to the parameter `n` rather than the literal `N`.
+            let rust_id = if matches!(carrier, PresentIfCarrier::Input) {
+                filters::to_snake_case(id.to_string())
+            } else {
+                id.to_string()
+            };
             format!(
-                "({id} & 0x{mask:0width$X}{suffix}) {op} 0",
+                "({rust_id} & 0x{mask:0width$X}{suffix}) {op} 0",
                 width = hex_digits
             )
         }
-        Language::Cpp => format!("({id} & 0x{mask:0width$X}) {op} 0", width = hex_digits),
+        Language::Cpp => {
+            // Mirror Rust: snake_case the Input-scope identifier so
+            // `<sce:flag-input name="N">` reads through the parameter
+            // `n` declared by `compute_flag_input_param_fragments`.
+            let cpp_id = if matches!(carrier, PresentIfCarrier::Input) {
+                filters::to_snake_case(id.to_string())
+            } else {
+                id.to_string()
+            };
+            format!("({cpp_id} & 0x{mask:0width$X}) {op} 0", width = hex_digits)
+        }
         // Go: bitwise `&` accepts the carrier type directly (no widening
         // gymnastics). Hex literal needs no suffix because Go infers
         // the type from the operand. For Local scope the carrier id
@@ -9735,10 +9749,7 @@ fn present_if_test_literal_clause(
             // For Axis-1 inversion Input scope, the flag-input is a Kotlin
             // function parameter declared in camelCase (`hasSuffix: UByte`),
             // so the same camelCase conversion applies.
-            let kt_id = if matches!(
-                carrier,
-                PresentIfCarrier::Parent | PresentIfCarrier::Input
-            ) {
+            let kt_id = if matches!(carrier, PresentIfCarrier::Parent | PresentIfCarrier::Input) {
                 filters::to_camel_case(id.to_string())
             } else {
                 id.to_string()

@@ -99,12 +99,12 @@ static inline sce_forge_codec_status_t codec_transport_envelope_decode(sce_forge
     switch ((uint8_t)((out->header >> 0) & (uint8_t)0x1F)) {
         case 1:
             out->body.kind = CODEC_TRANSPORT_ENVELOPE_BODY_KIND_CODEC_ZENOH_INIT_BODY;
-            _arm_st = codec_zenoh_init_body_decode(cursor, &out->body.arm.codec_zenoh_init_body, out->header);
+            _arm_st = codec_zenoh_init_body_decode(cursor, &out->body.arm.codec_zenoh_init_body);
             if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
             break;
         case 2:
             out->body.kind = CODEC_TRANSPORT_ENVELOPE_BODY_KIND_CODEC_ZENOH_OPEN_BODY;
-            _arm_st = codec_zenoh_open_body_decode(cursor, &out->body.arm.codec_zenoh_open_body, out->header);
+            _arm_st = codec_zenoh_open_body_decode(cursor, &out->body.arm.codec_zenoh_open_body);
             if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
             break;
         case 3:
@@ -129,7 +129,7 @@ static inline sce_forge_codec_status_t codec_transport_envelope_decode(sce_forge
             break;
         case 7:
             out->body.kind = CODEC_TRANSPORT_ENVELOPE_BODY_KIND_CODEC_ZENOH_JOIN;
-            _arm_st = codec_zenoh_join_decode(cursor, &out->body.arm.codec_zenoh_join, out->header);
+            _arm_st = codec_zenoh_join_decode(cursor, &out->body.arm.codec_zenoh_join);
             if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
             break;
         default:
@@ -153,7 +153,7 @@ static inline codec_transport_envelope_encoded_t codec_transport_envelope_encode
     /* Append the active arm body's encoded bytes. */
     switch (self->body.kind) {
         case CODEC_TRANSPORT_ENVELOPE_BODY_KIND_CODEC_ZENOH_INIT_BODY: {
-            codec_zenoh_init_body_encoded_t _sub = codec_zenoh_init_body_encode(&self->body.arm.codec_zenoh_init_body, self->header);
+            codec_zenoh_init_body_encoded_t _sub = codec_zenoh_init_body_encode(&self->body.arm.codec_zenoh_init_body);
             if (r.len + _sub.len <= CODEC_TRANSPORT_ENVELOPE_MAX_BYTES) {
                 for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
                 r.len += _sub.len;
@@ -161,7 +161,7 @@ static inline codec_transport_envelope_encoded_t codec_transport_envelope_encode
             break;
         }
         case CODEC_TRANSPORT_ENVELOPE_BODY_KIND_CODEC_ZENOH_OPEN_BODY: {
-            codec_zenoh_open_body_encoded_t _sub = codec_zenoh_open_body_encode(&self->body.arm.codec_zenoh_open_body, self->header);
+            codec_zenoh_open_body_encoded_t _sub = codec_zenoh_open_body_encode(&self->body.arm.codec_zenoh_open_body);
             if (r.len + _sub.len <= CODEC_TRANSPORT_ENVELOPE_MAX_BYTES) {
                 for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
                 r.len += _sub.len;
@@ -201,7 +201,7 @@ static inline codec_transport_envelope_encoded_t codec_transport_envelope_encode
             break;
         }
         case CODEC_TRANSPORT_ENVELOPE_BODY_KIND_CODEC_ZENOH_JOIN: {
-            codec_zenoh_join_encoded_t _sub = codec_zenoh_join_encode(&self->body.arm.codec_zenoh_join, self->header);
+            codec_zenoh_join_encoded_t _sub = codec_zenoh_join_encode(&self->body.arm.codec_zenoh_join);
             if (r.len + _sub.len <= CODEC_TRANSPORT_ENVELOPE_MAX_BYTES) {
                 for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
                 r.len += _sub.len;

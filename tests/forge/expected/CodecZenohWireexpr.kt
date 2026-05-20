@@ -18,7 +18,7 @@ data class CodecZenohWireexpr(
     var suffix: String? = null
 ) {
     @Suppress("UNUSED_PARAMETER")
-    fun encode(parentFlags: UByte): ByteArray {
+    fun encode(N: UByte): ByteArray {
         // RFC §5.B B1-δ + B2-β present-if encode: per-field byte
         // append. Gated fields skip the append when the optional is
         // null. Per-field `is_repeat` routes Repeat fields to the
@@ -55,7 +55,7 @@ data class CodecZenohWireexpr(
         /// cursor's tail is shorter than the declared minimum frame
         /// (RFC §5.B L494-519).
         @Suppress("UNUSED_PARAMETER")
-        fun decode(cursor: SceCursor, parentFlags: UByte): CodecZenohWireexpr? {
+        fun decode(cursor: SceCursor, N: UByte): CodecZenohWireexpr? {
             // RFC §5.B B1-δ + B2-β present-if primitive: streaming
             // decode advances the cursor per field. Gated fields wrap
             // their read inside an `if predicate ... else null` block.
@@ -65,13 +65,13 @@ data class CodecZenohWireexpr(
             // helper. Branch fires before has_vle_fields so a codec
             // mixing VLE + present-if uses the unified streaming path.
             val id = cursor.readVleU64() ?: return null
-            val suffix_len: ULong? = if ((parentFlags.toInt() and 0x20) != 0) {
+            val suffix_len: ULong? = if ((N.toInt() and 0x01) != 0) {
                 val _v = cursor.readVleU64() ?: return null
                 _v
             } else {
                 null
             }
-            val suffix = if ((parentFlags.toInt() and 0x20) != 0) {
+            val suffix = if ((N.toInt() and 0x01) != 0) {
                 val _n = suffix_len!!.toInt()
                 val raw = cursor.peekSlice(_n) ?: return null
                 val _v = try {

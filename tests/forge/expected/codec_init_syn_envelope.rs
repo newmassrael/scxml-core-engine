@@ -69,10 +69,10 @@ impl CodecInitSynEnvelope {
         // runtime tag value so encode can round-trip it back onto the
         // wire.
         let body = match ((header >> 0) & (0x1F as u8)) as u8 {
-            1u8 => CodecInitSynEnvelopeVariant::CodecInitSynBody(CodecInitSynBody::decode(cursor, header)?),
+            1u8 => CodecInitSynEnvelopeVariant::CodecInitSynBody(CodecInitSynBody::decode(cursor)?),
             other => CodecInitSynEnvelopeVariant::Default {
                 tag: other,
-                body: CodecInitSynBody::decode(cursor, header)?,
+                body: CodecInitSynBody::decode(cursor)?,
             },
         };
         Ok(Self {
@@ -120,10 +120,10 @@ impl CodecInitSynEnvelope {
         // Append the active arm's encoded bytes.
         match &self.body {
             CodecInitSynEnvelopeVariant::CodecInitSynBody(b) => {
-                r.extend(b.encode(self.header));
+                r.extend(b.encode());
             }
             CodecInitSynEnvelopeVariant::Default { body, .. } => {
-                r.extend(body.encode(self.header));
+                r.extend(body.encode());
             }
         }
         r

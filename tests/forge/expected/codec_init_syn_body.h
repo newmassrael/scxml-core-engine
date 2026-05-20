@@ -28,14 +28,11 @@ struct CodecInitSynBody {
     /// bytes (RFC §5.B L494-519). Returns `std::nullopt` on the
     /// `NeedMoreBytes` boundary; later phases attach a typed error via
     /// `cursor.last_error()`.
-    static std::optional<CodecInitSynBody> decode(::SCE::Forge::SceCursor& cursor, std::uint8_t parent_flags) {
-        // RFC §5.B B5-γ: `parent_flags` is the parent codec's flags
-        // carrier value, threaded by the variant arm dispatcher.
-        // Defensive (void) suppress for codecs that declare
-        // `<sce:requires-parent-flags>` but don't yet wire any
-        // gated field — keeps the param accessible to per-field
-        // gates without UB on unused-parameter warnings.
-        (void)parent_flags;
+    static std::optional<CodecInitSynBody> decode(::SCE::Forge::SceCursor& cursor, std::uint8_t s) {
+        // RFC Axis-1 inversion: defensive (void) suppress per declared
+        // `<sce:flag-input>` so codecs that haven't (yet) consumed an
+        // input via `present-if` compile cleanly under -Wunused.
+        (void)s;
         // RFC §5.B B1-δ + B2-β present-if: per-field cursor advance.
         // Gated fields hold std::optional<T>; B2-β extends gating to
         // Tail / LengthRef / Vle bit-sizes via dispatch inside
@@ -51,14 +48,14 @@ struct CodecInitSynBody {
             if (!cursor.advance(1)) return std::nullopt;
         }
         std::optional<uint8_t> sn_res;
-        if ((parent_flags & 0x40) != 0) {
+        if ((s & 0x01) != 0) {
             const std::uint8_t* raw = cursor.peek_slice(1);
             if (raw == nullptr) return std::nullopt;
             sn_res = static_cast<uint8_t>(raw[0]);
             if (!cursor.advance(1)) return std::nullopt;
         }
         std::optional<uint16_t> batch_size;
-        if ((parent_flags & 0x40) != 0) {
+        if ((s & 0x01) != 0) {
             const std::uint8_t* raw = cursor.peek_slice(2);
             if (raw == nullptr) return std::nullopt;
             batch_size = static_cast<uint16_t>(static_cast<uint16_t>((static_cast<uint16_t>(raw[0]) << 8) | raw[1]));
@@ -71,8 +68,8 @@ struct CodecInitSynBody {
         };
     }
 
-    std::vector<uint8_t> encode(std::uint8_t parent_flags) const {
-        (void)parent_flags;
+    std::vector<uint8_t> encode(std::uint8_t s) const {
+        (void)s;
         // RFC §5.B B1-δ + B2-β present-if encode: per-field byte
         // append. Gated fields skip the append when the optional is
         // empty. Per-field `is_repeat` routes Repeat fields to the

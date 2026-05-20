@@ -29,14 +29,11 @@ struct CodecZenohWireexpr {
     /// bytes (RFC §5.B L494-519). Returns `std::nullopt` on the
     /// `NeedMoreBytes` boundary; later phases attach a typed error via
     /// `cursor.last_error()`.
-    static std::optional<CodecZenohWireexpr> decode(::SCE::Forge::SceCursor& cursor, std::uint8_t parent_flags) {
-        // RFC §5.B B5-γ: `parent_flags` is the parent codec's flags
-        // carrier value, threaded by the variant arm dispatcher.
-        // Defensive (void) suppress for codecs that declare
-        // `<sce:requires-parent-flags>` but don't yet wire any
-        // gated field — keeps the param accessible to per-field
-        // gates without UB on unused-parameter warnings.
-        (void)parent_flags;
+    static std::optional<CodecZenohWireexpr> decode(::SCE::Forge::SceCursor& cursor, std::uint8_t n) {
+        // RFC Axis-1 inversion: defensive (void) suppress per declared
+        // `<sce:flag-input>` so codecs that haven't (yet) consumed an
+        // input via `present-if` compile cleanly under -Wunused.
+        (void)n;
         // RFC §5.B B1-δ + B2-β present-if: per-field cursor advance.
         // Gated fields hold std::optional<T>; B2-β extends gating to
         // Tail / LengthRef / Vle bit-sizes via dispatch inside
@@ -48,14 +45,14 @@ struct CodecZenohWireexpr {
         if (!id_opt.has_value()) return std::nullopt;
         auto id = static_cast<std::uint64_t>(*id_opt);
         std::optional<uint64_t> suffix_len;
-        if ((parent_flags & 0x20) != 0) {
+        if ((n & 0x01) != 0) {
             auto _v_opt = cursor.read_vle_u64();
         if (!_v_opt.has_value()) return std::nullopt;
         auto _v = static_cast<std::uint64_t>(*_v_opt);
             suffix_len = _v;
         }
         std::optional<std::string> suffix;
-        if ((parent_flags & 0x20) != 0) {
+        if ((n & 0x01) != 0) {
             std::size_t _n = static_cast<std::size_t>(suffix_len.value());
             const std::uint8_t* raw = cursor.peek_slice(_n);
             if (raw == nullptr) return std::nullopt;
@@ -70,8 +67,8 @@ struct CodecZenohWireexpr {
         };
     }
 
-    std::vector<uint8_t> encode(std::uint8_t parent_flags) const {
-        (void)parent_flags;
+    std::vector<uint8_t> encode(std::uint8_t n) const {
+        (void)n;
         // RFC §5.B B1-δ + B2-β present-if encode: per-field byte
         // append. Gated fields skip the append when the optional is
         // empty. Per-field `is_repeat` routes Repeat fields to the

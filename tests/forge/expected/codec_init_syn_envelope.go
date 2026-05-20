@@ -70,13 +70,13 @@ func DecodeCodecInitSynEnvelope(cursor *codec.SceCursor) (*CodecInitSynEnvelope,
 	body := CodecInitSynEnvelopeVariant{}
 	switch uint8((Header >> 0) & 0x1F) {
 	case 1:
-		_arm, err := codec_init_syn_body.DecodeCodecInitSynBody(cursor, Header)
+		_arm, err := codec_init_syn_body.DecodeCodecInitSynBody(cursor)
 		if err != nil {
 			return nil, err
 		}
 		body.CodecInitSynBody = _arm
 	default:
-		_arm, err := codec_init_syn_body.DecodeCodecInitSynBody(cursor, Header)
+		_arm, err := codec_init_syn_body.DecodeCodecInitSynBody(cursor)
 		if err != nil {
 			return nil, err
 		}
@@ -130,9 +130,9 @@ func (s *CodecInitSynEnvelope) Encode() []byte {
 	// Append the active arm body's encoded bytes.
 	switch {
 	case s.Body.CodecInitSynBody != nil:
-		r = append(r, s.Body.CodecInitSynBody.Encode(s.Header)...)
+		r = append(r, s.Body.CodecInitSynBody.Encode()...)
 	case s.Body.Default != nil:
-		r = append(r, s.Body.Default.Body.Encode(s.Header)...)
+		r = append(r, s.Body.Default.Body.Encode()...)
 	}
 	return r
 }

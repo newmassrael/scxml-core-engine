@@ -18,7 +18,7 @@ data class CodecZenohDeclKexpr(
     var wireexpr: CodecZenohWireexpr = CodecZenohWireexpr()
 ) {
     @Suppress("UNUSED_PARAMETER")
-    fun encode(parentFlags: UByte): ByteArray {
+    fun encode(N: UByte): ByteArray {
         // RFC §5.B B4: per-field bit-size dispatch routes Fixed /
         // LengthRef siblings of VLE fields through
         // `present_if_encode_block` (predicate=None arms). Pure-VLE
@@ -32,7 +32,7 @@ data class CodecZenohDeclKexpr(
             }
             r.add(_w.toByte())
         }
-        r.addAll(this.wireexpr.encode(parentFlags).toList())
+        r.addAll(this.wireexpr.encode(N).toList())
         return r.toByteArray()
     }
 
@@ -42,14 +42,14 @@ data class CodecZenohDeclKexpr(
         /// cursor's tail is shorter than the declared minimum frame
         /// (RFC §5.B L494-519).
         @Suppress("UNUSED_PARAMETER")
-        fun decode(cursor: SceCursor, parentFlags: UByte): CodecZenohDeclKexpr? {
+        fun decode(cursor: SceCursor, N: UByte): CodecZenohDeclKexpr? {
             // Streaming codec: each field reads from cursor directly
             // (VLE base-128 chain). RFC §5.B B4: per-field bit-size
             // dispatch routes Fixed / LengthRef siblings of VLE fields
             // through `present_if_decode_stmt` (predicate=None arms).
             // Pure-VLE codecs stay byte-stable.
             val id = cursor.readVleU16() ?: return null
-            val wireexpr = CodecZenohWireexpr.decode(cursor, parentFlags) ?: return null
+            val wireexpr = CodecZenohWireexpr.decode(cursor, N) ?: return null
             return CodecZenohDeclKexpr(
                 id = id,
                 wireexpr = wireexpr

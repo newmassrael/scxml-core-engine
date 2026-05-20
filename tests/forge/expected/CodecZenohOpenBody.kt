@@ -19,7 +19,7 @@ data class CodecZenohOpenBody(
     var cookie: ByteArray? = null
 ) {
     @Suppress("UNUSED_PARAMETER")
-    fun encode(parentFlags: UByte): ByteArray {
+    fun encode(A: UByte): ByteArray {
         // RFC §5.B B1-δ + B2-β present-if encode: per-field byte
         // append. Gated fields skip the append when the optional is
         // null. Per-field `is_repeat` routes Repeat fields to the
@@ -64,7 +64,7 @@ data class CodecZenohOpenBody(
         /// cursor's tail is shorter than the declared minimum frame
         /// (RFC §5.B L494-519).
         @Suppress("UNUSED_PARAMETER")
-        fun decode(cursor: SceCursor, parentFlags: UByte): CodecZenohOpenBody? {
+        fun decode(cursor: SceCursor, A: UByte): CodecZenohOpenBody? {
             // RFC §5.B B1-δ + B2-β present-if primitive: streaming
             // decode advances the cursor per field. Gated fields wrap
             // their read inside an `if predicate ... else null` block.
@@ -75,13 +75,13 @@ data class CodecZenohOpenBody(
             // mixing VLE + present-if uses the unified streaming path.
             val lease = cursor.readVleU64() ?: return null
             val initial_sn = cursor.readVleU64() ?: return null
-            val cookie_len: ULong? = if ((parentFlags.toInt() and 0x20) == 0) {
+            val cookie_len: ULong? = if ((A.toInt() and 0x01) == 0) {
                 val _v = cursor.readVleU64() ?: return null
                 _v
             } else {
                 null
             }
-            val cookie = if ((parentFlags.toInt() and 0x20) == 0) {
+            val cookie = if ((A.toInt() and 0x01) == 0) {
                 val _n = cookie_len!!.toInt()
                 val raw = cursor.peekSlice(_n) ?: return null
                 val _v = raw.copyOf()

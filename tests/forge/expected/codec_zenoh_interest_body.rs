@@ -53,7 +53,7 @@ impl CodecZenohInterestBody {
             _v
         };
         let keyexpr = if (header & 0x10u8) != 0 {
-            Some(CodecZenohWireexpr::decode(cursor, header)?)
+            Some(CodecZenohWireexpr::decode(cursor, ((header >> 5) & 0x1) as u8)?)
         } else {
             None
         };
@@ -178,7 +178,7 @@ impl CodecZenohInterestBody {
         let mut r: Vec<u8> = Vec::with_capacity(257);
         r.push(self.header);
         if let Some(_v) = &self.keyexpr {
-            r.extend(_v.encode(self.header));
+            r.extend(_v.encode(((self.header >> 5) & 0x1) as u8));
         }
         r
     }

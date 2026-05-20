@@ -1436,16 +1436,13 @@ fn parse_flag_binds(
             // (chain-forwarder pattern). Existence is verified at
             // cross-doc validator stage when the codec's own flag-inputs
             // list is available.
-            let is_ident = source
-                .chars()
-                .enumerate()
-                .all(|(i, c)| {
-                    if i == 0 {
-                        c.is_ascii_alphabetic() || c == '_'
-                    } else {
-                        c.is_ascii_alphanumeric() || c == '_'
-                    }
-                });
+            let is_ident = source.chars().enumerate().all(|(i, c)| {
+                if i == 0 {
+                    c.is_ascii_alphabetic() || c == '_'
+                } else {
+                    c.is_ascii_alphanumeric() || c == '_'
+                }
+            });
             if !is_ident {
                 return Err(located(
                     &child,
@@ -1578,12 +1575,8 @@ fn validate_codec_present_if_predicates(
                 // value at import-site. Here we only confirm the
                 // codec actually declared an input with the given
                 // name.
-                if !flag_inputs
-                    .iter()
-                    .any(|fi| fi.name == predicate.flag_name)
-                {
-                    let known: Vec<&str> =
-                        flag_inputs.iter().map(|fi| fi.name.as_str()).collect();
+                if !flag_inputs.iter().any(|fi| fi.name == predicate.flag_name) {
+                    let known: Vec<&str> = flag_inputs.iter().map(|fi| fi.name.as_str()).collect();
                     return Err(located(
                         datamodel,
                         label.diagnostic_label,

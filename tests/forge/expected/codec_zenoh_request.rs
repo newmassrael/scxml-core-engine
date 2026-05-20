@@ -100,7 +100,7 @@ impl CodecZenohRequest {
             _v
         };
         let rid = cursor.read_vle_u64()?;
-        let keyexpr = CodecZenohWireexpr::decode(cursor, header)?;
+        let keyexpr = CodecZenohWireexpr::decode(cursor, ((header >> 5) & 0x1) as u8)?;
         let extensions = if (header & 0x80u8) != 0 {
             let mut _vec: Vec<CodecZenohExtEntry> = Vec::with_capacity(4 as usize);
             for _ in 0..4u32 {
@@ -207,7 +207,7 @@ impl CodecZenohRequest {
             }
             r.push(_w as u8);
         }
-        r.extend(self.keyexpr.encode(self.header));
+        r.extend(self.keyexpr.encode(((self.header >> 5) & 0x1) as u8));
         if let Some(_list) = &self.extensions {
             for _e in _list {
                 r.extend(_e.encode());

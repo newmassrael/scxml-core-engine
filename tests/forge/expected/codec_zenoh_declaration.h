@@ -78,7 +78,7 @@ struct CodecZenohDeclaration {
         CodecZenohDeclarationVariant body;
         switch (static_cast<uint8_t>((header >> 0) & static_cast<uint8_t>(0x1F))) {
             case 0: {
-                auto _arm = ::SCE::Generated::CodecZenohDeclKexpr::CodecZenohDeclKexpr::decode(cursor, header);
+                auto _arm = ::SCE::Generated::CodecZenohDeclKexpr::CodecZenohDeclKexpr::decode(cursor);
                 if (!_arm.has_value()) return std::nullopt;
                 body = *_arm;
                 break;
@@ -90,37 +90,37 @@ struct CodecZenohDeclaration {
                 break;
             }
             case 2: {
-                auto _arm = ::SCE::Generated::CodecZenohDeclSubscriber::CodecZenohDeclSubscriber::decode(cursor, header);
+                auto _arm = ::SCE::Generated::CodecZenohDeclSubscriber::CodecZenohDeclSubscriber::decode(cursor);
                 if (!_arm.has_value()) return std::nullopt;
                 body = *_arm;
                 break;
             }
             case 3: {
-                auto _arm = ::SCE::Generated::CodecZenohUndeclSubscriber::CodecZenohUndeclSubscriber::decode(cursor, header);
+                auto _arm = ::SCE::Generated::CodecZenohUndeclSubscriber::CodecZenohUndeclSubscriber::decode(cursor);
                 if (!_arm.has_value()) return std::nullopt;
                 body = *_arm;
                 break;
             }
             case 4: {
-                auto _arm = ::SCE::Generated::CodecZenohDeclQueryable::CodecZenohDeclQueryable::decode(cursor, header);
+                auto _arm = ::SCE::Generated::CodecZenohDeclQueryable::CodecZenohDeclQueryable::decode(cursor);
                 if (!_arm.has_value()) return std::nullopt;
                 body = *_arm;
                 break;
             }
             case 5: {
-                auto _arm = ::SCE::Generated::CodecZenohUndeclQueryable::CodecZenohUndeclQueryable::decode(cursor, header);
+                auto _arm = ::SCE::Generated::CodecZenohUndeclQueryable::CodecZenohUndeclQueryable::decode(cursor);
                 if (!_arm.has_value()) return std::nullopt;
                 body = *_arm;
                 break;
             }
             case 6: {
-                auto _arm = ::SCE::Generated::CodecZenohDeclToken::CodecZenohDeclToken::decode(cursor, header);
+                auto _arm = ::SCE::Generated::CodecZenohDeclToken::CodecZenohDeclToken::decode(cursor);
                 if (!_arm.has_value()) return std::nullopt;
                 body = *_arm;
                 break;
             }
             case 7: {
-                auto _arm = ::SCE::Generated::CodecZenohUndeclToken::CodecZenohUndeclToken::decode(cursor, header);
+                auto _arm = ::SCE::Generated::CodecZenohUndeclToken::CodecZenohUndeclToken::decode(cursor);
                 if (!_arm.has_value()) return std::nullopt;
                 body = *_arm;
                 break;
@@ -215,7 +215,7 @@ struct CodecZenohDeclaration {
         r.push_back(header);
         // Append the active arm body's encoded bytes.
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohDeclKexpr::CodecZenohDeclKexpr>(&body)) {
-            auto _sub = _p->encode(header);
+            auto _sub = _p->encode();
             r.insert(r.end(), _sub.begin(), _sub.end());
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohUndeclKexpr::CodecZenohUndeclKexpr>(&body)) {
@@ -223,27 +223,27 @@ struct CodecZenohDeclaration {
             r.insert(r.end(), _sub.begin(), _sub.end());
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohDeclSubscriber::CodecZenohDeclSubscriber>(&body)) {
-            auto _sub = _p->encode(header);
+            auto _sub = _p->encode();
             r.insert(r.end(), _sub.begin(), _sub.end());
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohUndeclSubscriber::CodecZenohUndeclSubscriber>(&body)) {
-            auto _sub = _p->encode(header);
+            auto _sub = _p->encode();
             r.insert(r.end(), _sub.begin(), _sub.end());
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohDeclQueryable::CodecZenohDeclQueryable>(&body)) {
-            auto _sub = _p->encode(header);
+            auto _sub = _p->encode();
             r.insert(r.end(), _sub.begin(), _sub.end());
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohUndeclQueryable::CodecZenohUndeclQueryable>(&body)) {
-            auto _sub = _p->encode(header);
+            auto _sub = _p->encode();
             r.insert(r.end(), _sub.begin(), _sub.end());
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohDeclToken::CodecZenohDeclToken>(&body)) {
-            auto _sub = _p->encode(header);
+            auto _sub = _p->encode();
             r.insert(r.end(), _sub.begin(), _sub.end());
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohUndeclToken::CodecZenohUndeclToken>(&body)) {
-            auto _sub = _p->encode(header);
+            auto _sub = _p->encode();
             r.insert(r.end(), _sub.begin(), _sub.end());
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohDeclFinal::CodecZenohDeclFinal>(&body)) {

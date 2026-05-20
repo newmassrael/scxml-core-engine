@@ -25,7 +25,7 @@ type CodecZenohHello struct {
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail
 // is shorter than the declared minimum frame (RFC §5.B L494-519).
 // VLE codecs may also return `codec.ErrVLEWidthOverflow`.
-func DecodeCodecZenohHello(cursor *codec.SceCursor, parentFlags byte) (*CodecZenohHello, error) {
+func DecodeCodecZenohHello(cursor *codec.SceCursor, L byte) (*CodecZenohHello, error) {
 	// RFC §5.B B1-δ + B2-β present-if primitive: streaming decode
 	// advances the cursor per field. Gated fields use `*T` for fixed
 	// (nil = absent) or `[]byte` (nil = absent) for tail/length-ref;
@@ -68,13 +68,13 @@ func DecodeCodecZenohHello(cursor *codec.SceCursor, parentFlags byte) (*CodecZen
 		}
 	}
 	var NumLocators *uint64
-	if (parentFlags & 0x20) != 0 {
+	if (L & 0x01) != 0 {
 		_v, err := cursor.ReadVLEU64()
 	if err != nil { return nil, err }
 		NumLocators = &_v
 	}
 	var Locators []codec_zenoh_locator.CodecZenohLocator
-	if (parentFlags & 0x20) != 0 {
+	if (L & 0x01) != 0 {
 		_n := *NumLocators
 		Locators = make([]codec_zenoh_locator.CodecZenohLocator, 0, _n)
 		for _i := 0; _i < int(_n); _i++ {
@@ -121,7 +121,7 @@ func (s *CodecZenohHello) SetZidLenM1(v uint8) {
 }
 
 // Encode serializes the CodecZenohHello into raw bytes.
-func (s *CodecZenohHello) Encode(parentFlags byte) []byte {
+func (s *CodecZenohHello) Encode(L byte) []byte {
 	// RFC §5.B B1-δ + B2-β present-if encode: per-field byte append.
 	// Gated fields skip the append on nil pointer / nil slice. Per-
 	// field `is_repeat` routes Repeat fields to the dedicated helper.

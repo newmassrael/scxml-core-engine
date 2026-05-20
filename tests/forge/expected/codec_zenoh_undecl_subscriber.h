@@ -28,14 +28,11 @@ struct CodecZenohUndeclSubscriber {
     /// bytes (RFC §5.B L494-519). Returns `std::nullopt` on the
     /// `NeedMoreBytes` boundary; later phases attach a typed error via
     /// `cursor.last_error()`.
-    static std::optional<CodecZenohUndeclSubscriber> decode(::SCE::Forge::SceCursor& cursor, std::uint8_t parent_flags) {
-        // RFC §5.B B5-γ: `parent_flags` is the parent codec's flags
-        // carrier value, threaded by the variant arm dispatcher.
-        // Defensive (void) suppress for codecs that declare
-        // `<sce:requires-parent-flags>` but don't yet wire any
-        // gated field — keeps the param accessible to per-field
-        // gates without UB on unused-parameter warnings.
-        (void)parent_flags;
+    static std::optional<CodecZenohUndeclSubscriber> decode(::SCE::Forge::SceCursor& cursor, std::uint8_t z) {
+        // RFC Axis-1 inversion: defensive (void) suppress per declared
+        // `<sce:flag-input>` so codecs that haven't (yet) consumed an
+        // input via `present-if` compile cleanly under -Wunused.
+        (void)z;
         // RFC §5.B B1-δ + B2-β present-if: per-field cursor advance.
         // Gated fields hold std::optional<T>; B2-β extends gating to
         // Tail / LengthRef / Vle bit-sizes via dispatch inside
@@ -47,7 +44,7 @@ struct CodecZenohUndeclSubscriber {
         if (!id_opt.has_value()) return std::nullopt;
         auto id = static_cast<std::uint32_t>(*id_opt);
         std::optional<::SCE::Generated::CodecZenohDeclExtKeyexpr::CodecZenohDeclExtKeyexpr> ext_keyexpr;
-        if ((parent_flags & 0x80) != 0) {
+        if ((z & 0x01) != 0) {
             auto _emb = ::SCE::Generated::CodecZenohDeclExtKeyexpr::CodecZenohDeclExtKeyexpr::decode(cursor);
             if (!_emb.has_value()) return std::nullopt;
             ext_keyexpr = std::move(*_emb);
@@ -58,8 +55,8 @@ struct CodecZenohUndeclSubscriber {
         };
     }
 
-    std::vector<uint8_t> encode(std::uint8_t parent_flags) const {
-        (void)parent_flags;
+    std::vector<uint8_t> encode(std::uint8_t z) const {
+        (void)z;
         // RFC §5.B B1-δ + B2-β present-if encode: per-field byte
         // append. Gated fields skip the append when the optional is
         // empty. Per-field `is_repeat` routes Repeat fields to the

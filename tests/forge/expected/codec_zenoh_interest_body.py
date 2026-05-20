@@ -37,7 +37,7 @@ class CodecZenohInterestBody:
             header = raw[0]
             cursor.advance(1)
             if (header & 0x10) != 0:
-                keyexpr = CodecZenohWireexpr.decode(cursor, header)
+                keyexpr = CodecZenohWireexpr.decode(cursor, ((header >> 5) & 0x1))
                 if keyexpr is None:
                     return None
             else:
@@ -137,5 +137,5 @@ class CodecZenohInterestBody:
         r = bytearray()
         r.append(self.header & 0xFF)
         if self.keyexpr is not None:
-            r.extend(self.keyexpr.encode(self.header))
+            r.extend(self.keyexpr.encode(((self.header >> 5) & 0x1)))
         return bytes(r)

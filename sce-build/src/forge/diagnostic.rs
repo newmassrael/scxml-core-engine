@@ -4618,7 +4618,9 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             code: DiagnosticCode::CodecFlagBindInputNotDeclared,
             stage: Stage::Validation,
             expected: Some(vec![input.clone()]),
-            actual: Some(format!("declared on {embedded_codec}: [{available_inputs}]")),
+            actual: Some(format!(
+                "declared on {embedded_codec}: [{available_inputs}]"
+            )),
             fix: if available_inputs.is_empty() {
                 None
             } else {
@@ -4630,11 +4632,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                         .collect(),
                 })
             },
-            key_fragments: vec![
-                parent_codec.clone(),
-                embedded_alias.clone(),
-                input.clone(),
-            ],
+            key_fragments: vec![parent_codec.clone(), embedded_alias.clone(), input.clone()],
         },
         ValidationError::CodecFlagBindSourceNotResolved {
             parent_codec,
@@ -4693,11 +4691,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 element: format!("<sce:import as=\"{embedded_alias}\">"),
                 attr: format!("<sce:flag-bind input=\"{input}\" source=\"...\"/>"),
             }),
-            key_fragments: vec![
-                parent_codec.clone(),
-                embedded_alias.clone(),
-                input.clone(),
-            ],
+            key_fragments: vec![parent_codec.clone(), embedded_alias.clone(), input.clone()],
         },
         ValidationError::CodecFlagBindDuplicateInput {
             parent_codec,
@@ -4709,11 +4703,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             expected: None,
             actual: Some(format!("{embedded_alias}.{input}")),
             fix: None,
-            key_fragments: vec![
-                parent_codec.clone(),
-                embedded_alias.clone(),
-                input.clone(),
-            ],
+            key_fragments: vec![parent_codec.clone(), embedded_alias.clone(), input.clone()],
         },
         ValidationError::CodecFlagBindCarrierAfterEmbed {
             parent_codec,

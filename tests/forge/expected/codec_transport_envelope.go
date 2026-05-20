@@ -82,13 +82,13 @@ func DecodeCodecTransportEnvelope(cursor *codec.SceCursor) (*CodecTransportEnvel
 	body := CodecTransportEnvelopeVariant{}
 	switch uint8((Header >> 0) & 0x1F) {
 	case 1:
-		_arm, err := codec_zenoh_init_body.DecodeCodecZenohInitBody(cursor, Header)
+		_arm, err := codec_zenoh_init_body.DecodeCodecZenohInitBody(cursor)
 		if err != nil {
 			return nil, err
 		}
 		body.CodecZenohInitBody = _arm
 	case 2:
-		_arm, err := codec_zenoh_open_body.DecodeCodecZenohOpenBody(cursor, Header)
+		_arm, err := codec_zenoh_open_body.DecodeCodecZenohOpenBody(cursor)
 		if err != nil {
 			return nil, err
 		}
@@ -118,7 +118,7 @@ func DecodeCodecTransportEnvelope(cursor *codec.SceCursor) (*CodecTransportEnvel
 		}
 		body.CodecZenohFragment = _arm
 	case 7:
-		_arm, err := codec_zenoh_join.DecodeCodecZenohJoin(cursor, Header)
+		_arm, err := codec_zenoh_join.DecodeCodecZenohJoin(cursor)
 		if err != nil {
 			return nil, err
 		}
@@ -202,9 +202,9 @@ func (s *CodecTransportEnvelope) Encode() []byte {
 	// Append the active arm body's encoded bytes.
 	switch {
 	case s.Body.CodecZenohInitBody != nil:
-		r = append(r, s.Body.CodecZenohInitBody.Encode(s.Header)...)
+		r = append(r, s.Body.CodecZenohInitBody.Encode()...)
 	case s.Body.CodecZenohOpenBody != nil:
-		r = append(r, s.Body.CodecZenohOpenBody.Encode(s.Header)...)
+		r = append(r, s.Body.CodecZenohOpenBody.Encode()...)
 	case s.Body.CodecZenohClose != nil:
 		r = append(r, s.Body.CodecZenohClose.Encode()...)
 	case s.Body.CodecZenohKeepAlive != nil:
@@ -214,7 +214,7 @@ func (s *CodecTransportEnvelope) Encode() []byte {
 	case s.Body.CodecZenohFragment != nil:
 		r = append(r, s.Body.CodecZenohFragment.Encode()...)
 	case s.Body.CodecZenohJoin != nil:
-		r = append(r, s.Body.CodecZenohJoin.Encode(s.Header)...)
+		r = append(r, s.Body.CodecZenohJoin.Encode()...)
 	case s.Body.Default != nil:
 		r = append(r, s.Body.Default.Body.Encode()...)
 	}

@@ -20,7 +20,7 @@ data class CodecZenohDeclQueryable(
     var ext_value: ULong? = null
 ) {
     @Suppress("UNUSED_PARAMETER")
-    fun encode(parentFlags: UByte): ByteArray {
+    fun encode(N: UByte, Z: UByte): ByteArray {
         // RFC §5.B B1-δ + B2-β present-if encode: per-field byte
         // append. Gated fields skip the append when the optional is
         // null. Per-field `is_repeat` routes Repeat fields to the
@@ -35,7 +35,7 @@ data class CodecZenohDeclQueryable(
             }
             r.add(_w.toByte())
         }
-        r.addAll(this.wireexpr.encode(parentFlags).toList())
+        r.addAll(this.wireexpr.encode(N).toList())
         this.ext_type?.let { _v ->
             r.add(_v.toByte())
         }
@@ -58,7 +58,7 @@ data class CodecZenohDeclQueryable(
         /// cursor's tail is shorter than the declared minimum frame
         /// (RFC §5.B L494-519).
         @Suppress("UNUSED_PARAMETER")
-        fun decode(cursor: SceCursor, parentFlags: UByte): CodecZenohDeclQueryable? {
+        fun decode(cursor: SceCursor, N: UByte, Z: UByte): CodecZenohDeclQueryable? {
             // RFC §5.B B1-δ + B2-β present-if primitive: streaming
             // decode advances the cursor per field. Gated fields wrap
             // their read inside an `if predicate ... else null` block.
@@ -68,8 +68,8 @@ data class CodecZenohDeclQueryable(
             // helper. Branch fires before has_vle_fields so a codec
             // mixing VLE + present-if uses the unified streaming path.
             val id = cursor.readVleU32() ?: return null
-            val wireexpr = CodecZenohWireexpr.decode(cursor, parentFlags) ?: return null
-            val ext_type = if ((parentFlags.toInt() and 0x80) != 0) {
+            val wireexpr = CodecZenohWireexpr.decode(cursor, N) ?: return null
+            val ext_type = if ((Z.toInt() and 0x01) != 0) {
                 val raw = cursor.peekSlice(1) ?: return null
                 val _v = raw[0].toUByte()
                 if (!cursor.advance(1)) return null
@@ -77,7 +77,7 @@ data class CodecZenohDeclQueryable(
             } else {
                 null
             }
-            val ext_value: ULong? = if ((parentFlags.toInt() and 0x80) != 0) {
+            val ext_value: ULong? = if ((Z.toInt() and 0x01) != 0) {
                 val _v = cursor.readVleU64() ?: return null
                 _v
             } else {
