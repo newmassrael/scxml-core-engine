@@ -6,7 +6,7 @@ fn test_vector_codec_zenoh_close_l27() {
     let actual = CodecZenohClose {
         reason: 0x0u8,
     };
-    let encoded = actual.encode();
+    let encoded = actual.encode_to_vec();
     let expected: &[u8] = &[0x00u8];
     assert_eq!(
         encoded.as_slice(), expected,
@@ -31,7 +31,7 @@ fn test_vector_codec_zenoh_close_l30() {
     let actual = CodecZenohClose {
         reason: 0x1u8,
     };
-    let encoded = actual.encode();
+    let encoded = actual.encode_to_vec();
     let expected: &[u8] = &[0x01u8];
     assert_eq!(
         encoded.as_slice(), expected,
@@ -56,7 +56,7 @@ fn test_vector_codec_zenoh_close_l33() {
     let actual = CodecZenohClose {
         reason: 0x2u8,
     };
-    let encoded = actual.encode();
+    let encoded = actual.encode_to_vec();
     let expected: &[u8] = &[0x02u8];
     assert_eq!(
         encoded.as_slice(), expected,
@@ -81,7 +81,7 @@ fn test_vector_codec_zenoh_close_l36() {
     let actual = CodecZenohClose {
         reason: 0xffu8,
     };
-    let encoded = actual.encode();
+    let encoded = actual.encode_to_vec();
     let expected: &[u8] = &[0xffu8];
     assert_eq!(
         encoded.as_slice(), expected,

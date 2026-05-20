@@ -5,7 +5,7 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
-use sce_forge_runtime::codec::{CodecError, SceCursor};
+use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink, VecSink};
 
 use super::codec_zenoh_interest::CodecZenohInterest;
 use super::codec_zenoh_response_final::CodecZenohResponseFinal;
@@ -100,7 +100,17 @@ impl CodecZenohNetworkEnvelope {
         })
     }
 
-    pub fn encode(&self) -> Vec<u8> {
+    /// Worst-case encoded byte count for this codec — the upper bound
+    /// against which `VecSink::new` reserves capacity in the
+    /// `encode_to_vec` facade, and the natural reserve hint for
+    /// caller-owned `SliceSink` allocations.
+    pub const MAX_ENCODED_BYTES: usize = 1218;
+
+    /// Encode `self` into the caller-owned sink. Returns
+    /// `CodecError::BufferOverflow` from a bounded sink when the
+    /// destination has insufficient remaining capacity; growable
+    /// sinks (e.g. `VecSink`) are effectively infallible.
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
         // RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
         // streaming prefix encode (per-field present_if/tlv-chain/embed/
         // repeat helpers). Peek-byte mode: the arm body's encode prepends
@@ -108,34 +118,47 @@ impl CodecZenohNetworkEnvelope {
         // tag byte is emitted here. Streaming-prefix mode (own-field
         // variant): the carrier is part of the prefix fields and emits
         // through the same per-field path.
-        let mut r: Vec<u8> = Vec::with_capacity(1218);
         // Append the active arm's encoded bytes.
         match &self.body {
             CodecZenohNetworkEnvelopeVariant::CodecZenohInterest(b) => {
-                r.extend(b.encode());
+                b.encode(w)?;
             }
             CodecZenohNetworkEnvelopeVariant::CodecZenohResponseFinal(b) => {
-                r.extend(b.encode());
+                b.encode(w)?;
             }
             CodecZenohNetworkEnvelopeVariant::CodecZenohResponse(b) => {
-                r.extend(b.encode());
+                b.encode(w)?;
             }
             CodecZenohNetworkEnvelopeVariant::CodecZenohRequest(b) => {
-                r.extend(b.encode());
+                b.encode(w)?;
             }
             CodecZenohNetworkEnvelopeVariant::CodecZenohPush(b) => {
-                r.extend(b.encode());
+                b.encode(w)?;
             }
             CodecZenohNetworkEnvelopeVariant::CodecZenohDeclare(b) => {
-                r.extend(b.encode());
+                b.encode(w)?;
             }
             CodecZenohNetworkEnvelopeVariant::CodecZenohOam(b) => {
-                r.extend(b.encode());
+                b.encode(w)?;
             }
             CodecZenohNetworkEnvelopeVariant::Default { body, .. } => {
-                r.extend(body.encode());
+                body.encode(w)?;
             }
         }
-        r
+        Ok(())
+    }
+
+    /// Heap-backed convenience facade. Pre-reserves
+    /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
+    /// most one allocation, then delegates to `encode` over a
+    /// `VecSink`. Returns the freshly-encoded byte vector. Callers
+    /// targeting zero-alloc hot paths should call `encode` directly
+    /// against a caller-owned sink.
+    pub fn encode_to_vec(&self) -> Vec<u8> {
+        let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
+        let mut _sce_sink = VecSink::new(&mut _sce_v);
+        self.encode(&mut _sce_sink)
+            .expect("VecSink is infallible");
+        _sce_v
     }
 }

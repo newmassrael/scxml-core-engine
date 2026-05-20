@@ -7,7 +7,7 @@ fn test_vector_codec_length_ref_dotted_basic_l41() {
         carrier: 0x0u8,
         payload: Vec::<u8>::new(),
     };
-    let encoded = actual.encode();
+    let encoded = actual.encode_to_vec();
     let expected: &[u8] = &[0x00u8];
     assert_eq!(
         encoded.as_slice(), expected,
@@ -37,7 +37,7 @@ fn test_vector_codec_length_ref_dotted_basic_l45() {
         carrier: 0x21u8,
         payload: vec![0xaa, 0xbb],
     };
-    let encoded = actual.encode();
+    let encoded = actual.encode_to_vec();
     let expected: &[u8] = &[0x21u8, 0xaau8, 0xbbu8];
     assert_eq!(
         encoded.as_slice(), expected,
@@ -67,7 +67,7 @@ fn test_vector_codec_length_ref_dotted_basic_l49() {
         carrier: 0xf5u8,
         payload: vec![0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e],
     };
-    let encoded = actual.encode();
+    let encoded = actual.encode_to_vec();
     let expected: &[u8] = &[0xf5u8, 0x00u8, 0x01u8, 0x02u8, 0x03u8, 0x04u8, 0x05u8, 0x06u8, 0x07u8, 0x08u8, 0x09u8, 0x0au8, 0x0bu8, 0x0cu8, 0x0du8, 0x0eu8];
     assert_eq!(
         encoded.as_slice(), expected,

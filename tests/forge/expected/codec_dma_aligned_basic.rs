@@ -5,7 +5,7 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
-use sce_forge_runtime::codec::{CodecError, SceCursor};
+use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink, VecSink};
 // RFC §5.B B3 DMA alignment primitive: structural drift detection.
 // Build-time validation already guaranteed `byte_offset % burst_align
 // == 0` and that all preceding fields are Fixed bit-size. These
@@ -70,19 +70,42 @@ impl CodecDmaAlignedBasic {
         Ok(value)
     }
 
-    pub fn encode(&self) -> Vec<u8> {
-        let mut r: Vec<u8> = Vec::with_capacity(66);
-        r.push(self.msg_id);
-        r.push(self.reserved);
+    /// Worst-case encoded byte count for this codec — the upper bound
+    /// against which `VecSink::new` reserves capacity in the
+    /// `encode_to_vec` facade, and the natural reserve hint for
+    /// caller-owned `SliceSink` allocations.
+    pub const MAX_ENCODED_BYTES: usize = 66;
+
+    /// Encode `self` into the caller-owned sink. Returns
+    /// `CodecError::BufferOverflow` from a bounded sink when the
+    /// destination has insufficient remaining capacity; growable
+    /// sinks (e.g. `VecSink`) are effectively infallible.
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
+        w.write_u8(self.msg_id)?;
+        w.write_u8(self.reserved)?;
         // RFC §5.B B3 DMA padding: zero-fill any gap between the
         // current write position and this field's authored byte
         // offset (deterministic zeros on the wire so peers stay
         // byte-compatible regardless of host allocator — RFC §5.B
         // "wire layout, not host allocator").
-        while r.len() < 32 {
-            r.push(0);
+        while w.position() < 32 {
+            w.write_u8(0)?;
         }
-        r.extend_from_slice(&self.aligned_payload);
-        r
+        w.write_bytes(&self.aligned_payload)?;
+        Ok(())
+    }
+
+    /// Heap-backed convenience facade. Pre-reserves
+    /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
+    /// most one allocation, then delegates to `encode` over a
+    /// `VecSink`. Returns the freshly-encoded byte vector. Callers
+    /// targeting zero-alloc hot paths should call `encode` directly
+    /// against a caller-owned sink.
+    pub fn encode_to_vec(&self) -> Vec<u8> {
+        let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
+        let mut _sce_sink = VecSink::new(&mut _sce_v);
+        self.encode(&mut _sce_sink)
+            .expect("VecSink is infallible");
+        _sce_v
     }
 }

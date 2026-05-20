@@ -579,8 +579,15 @@ fn assert_inline_codec_structural(
                 "Rust: missing cursor-based decode signature"
             );
             assert!(
-                type_defs.contains("pub fn encode(&self) -> Vec<u8>"),
-                "Rust: missing encode signature"
+                type_defs.contains(
+                    "pub fn encode<S: ::sce_forge_runtime::codec::SceSink>(&self, w: &mut S) -> \
+                 Result<(), ::sce_forge_runtime::codec::CodecError>"
+                ),
+                "Rust: missing sink-based encode signature"
+            );
+            assert!(
+                type_defs.contains("pub fn encode_to_vec(&self) -> Vec<u8>"),
+                "Rust: missing encode_to_vec facade"
             );
         }
         Language::Go => {
@@ -9277,8 +9284,8 @@ fn forge_b5_nu_round_trip_local_nonlocal_rust() {
         "match must shift Nonlocal arm value 0x00 into bit 6 (0x00)\n{parent_rust}"
     );
     assert!(
-        parent_rust.contains("r.push(self.header | _derived_header);"),
-        "carrier emit must OR in _derived_header\n{parent_rust}"
+        parent_rust.contains("w.write_u8(self.header | _derived_header)?;"),
+        "carrier emit must OR in _derived_header through the sink\n{parent_rust}"
     );
 
     // Child variant codec's decode dispatches on parent_flags.
@@ -9430,8 +9437,8 @@ fn forge_b5_nu_inversion_round_trip_emits_derive_block() {
         "match must shift Local arm value 0x01 into bit 6 (0x40)\n{parent_rust}"
     );
     assert!(
-        parent_rust.contains("r.push(self.header | _derived_header);"),
-        "carrier emit must OR in _derived_header\n{parent_rust}"
+        parent_rust.contains("w.write_u8(self.header | _derived_header)?;"),
+        "carrier emit must OR in _derived_header through the sink\n{parent_rust}"
     );
 
     let _ = std::fs::remove_dir_all(&dir);
@@ -9683,10 +9690,11 @@ fn forge_b5_nu_inversion_beta_emits_caller_tag_signature() {
         leaf_rust.contains("pub fn decode(cursor: &mut SceCursor<'_>, tag: u8)"),
         "β leaf decode must take `tag: u8` parameter\n{leaf_rust}"
     );
-    // β leaf encode is unchanged — active arm from enum discriminant.
+    // β leaf encode is sink-based with no extra positional args —
+    // active arm from enum discriminant.
     assert!(
-        leaf_rust.contains("pub fn encode(&self)"),
-        "β leaf encode must remain (&self) signature\n{leaf_rust}"
+        leaf_rust.contains("pub fn encode<S: SceSink>(&self, w: &mut S)"),
+        "β leaf encode must be sink-based with (&self, w: &mut S) signature\n{leaf_rust}"
     );
     // β leaf dispatches by matching the `tag` parameter directly.
     assert!(
@@ -10236,11 +10244,11 @@ fn forge_b5_nu_consumer_parity_chain_forwarding_resolves() {
     // dispatcher's encode parameter, NOT `self.header` (no such field
     // on the chain-forwarder dispatcher).
     assert!(
-        disp_rust.contains("b.encode(n)"),
-        "dispatcher encode must pass `n` to arm body; got:\n{disp_rust}"
+        disp_rust.contains("b.encode(w, n)?;"),
+        "dispatcher encode must thread sink and pass `n` to arm body; got:\n{disp_rust}"
     );
     assert!(
-        !disp_rust.contains("b.encode(self.header)"),
+        !disp_rust.contains("b.encode(w, self.header)"),
         "dispatcher encode must NOT reference `self.header` \
          (no such field on chain-forwarder dispatcher);\n{disp_rust}"
     );
@@ -10479,7 +10487,7 @@ edition = "2021"
 path = "src/lib.rs"
 
 [dependencies]
-sce-forge-runtime = {{ path = "{}", default-features = false }}
+sce-forge-runtime = {{ path = "{}", default-features = false, features = ["alloc"] }}
 
 [workspace]
 
@@ -12417,8 +12425,8 @@ fn axis1_phase_b_emits_typed_param_and_predicate_consumption() {
         "leaf decode must take positional `has_suffix: u8`\n{leaf_rust}"
     );
     assert!(
-        leaf_rust.contains("pub fn encode(&self, has_suffix: u8)"),
-        "leaf encode must take positional `has_suffix: u8`\n{leaf_rust}"
+        leaf_rust.contains("pub fn encode<S: SceSink>(&self, w: &mut S, has_suffix: u8)"),
+        "leaf encode must take positional `has_suffix: u8` after sink param\n{leaf_rust}"
     );
     assert!(
         leaf_rust.contains("(has_suffix & 0x01u8) != 0"),
@@ -12573,10 +12581,10 @@ fn axis1_phase_d1_variant_arm_flag_bind_threading() {
         parent_rust.contains("CodecAxis1D1NoInput::decode(cursor)?"),
         "no-input arm decode must remain arg-less:\n{parent_rust}"
     );
-    // Encode site reads through `self.header`.
+    // Encode site reads through `self.header` and threads through the sink.
     assert!(
-        parent_rust.contains("b.encode(((self.header >> 6) & 0x1) as u8)"),
-        "variant arm encode must extract from self.header:\n{parent_rust}"
+        parent_rust.contains("b.encode(w, ((self.header >> 6) & 0x1) as u8)?;"),
+        "variant arm encode must thread sink and extract from self.header:\n{parent_rust}"
     );
 
     // End-to-end rustc-compile gate — substring assertions check shape;

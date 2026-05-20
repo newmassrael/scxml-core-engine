@@ -7,7 +7,7 @@ fn test_vector_codec_zenoh_fragment_l35() {
         sn: 0x0u64,
         payload: Vec::<u8>::new(),
     };
-    let encoded = actual.encode();
+    let encoded = actual.encode_to_vec();
     let expected: &[u8] = &[0x00u8];
     assert_eq!(
         encoded.as_slice(), expected,
@@ -37,7 +37,7 @@ fn test_vector_codec_zenoh_fragment_l39() {
         sn: 0x1u64,
         payload: vec![0xca, 0xfe],
     };
-    let encoded = actual.encode();
+    let encoded = actual.encode_to_vec();
     let expected: &[u8] = &[0x01u8, 0xcau8, 0xfeu8];
     assert_eq!(
         encoded.as_slice(), expected,
@@ -67,7 +67,7 @@ fn test_vector_codec_zenoh_fragment_l43() {
         sn: 0x7fu64,
         payload: vec![0xaa, 0xbb, 0xcc],
     };
-    let encoded = actual.encode();
+    let encoded = actual.encode_to_vec();
     let expected: &[u8] = &[0x7fu8, 0xaau8, 0xbbu8, 0xccu8];
     assert_eq!(
         encoded.as_slice(), expected,
@@ -97,7 +97,7 @@ fn test_vector_codec_zenoh_fragment_l47() {
         sn: 0x80u64,
         payload: vec![0xde, 0xad],
     };
-    let encoded = actual.encode();
+    let encoded = actual.encode_to_vec();
     let expected: &[u8] = &[0x80u8, 0x01u8, 0xdeu8, 0xadu8];
     assert_eq!(
         encoded.as_slice(), expected,

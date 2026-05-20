@@ -135,7 +135,7 @@ impl ProcedurePolicy for CrossfileProcedureCodec {
                         service: "Diag".to_string(),
                         subfunc: None,
                         addr: Some((self.ecu_addr).to_string()),
-                        payload: Some(self.frame.encode()),
+                        payload: Some(self.frame.encode_to_vec()),
                     };
                     let resp = handler(&req);
                     let event = if resp.success { Event::Ok } else { Event::Fail };

@@ -53,7 +53,7 @@
 {% endif %}
 {% endfor %}
         }
-        .encode();
+        .encode_to_vec();
         assert_eq!(
             encoded, expected_bytes,
             "{{ f.name }} case {i} encode"

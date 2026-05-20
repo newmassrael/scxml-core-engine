@@ -5,7 +5,7 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
-use sce_forge_runtime::codec::{CodecError, SceCursor};
+use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink, VecSink};
 
 use super::codec_variant_session_open::CodecVariantSessionOpen;
 use super::codec_variant_session_close::CodecVariantSessionClose;
@@ -84,26 +84,49 @@ impl CodecVariantDispatch {
         })
     }
 
-    pub fn encode(&self) -> Vec<u8> {
+    /// Worst-case encoded byte count for this codec — the upper bound
+    /// against which `VecSink::new` reserves capacity in the
+    /// `encode_to_vec` facade, and the natural reserve hint for
+    /// caller-owned `SliceSink` allocations.
+    pub const MAX_ENCODED_BYTES: usize = 3;
+
+    /// Encode `self` into the caller-owned sink. Returns
+    /// `CodecError::BufferOverflow` from a bounded sink when the
+    /// destination has insufficient remaining capacity; growable
+    /// sinks (e.g. `VecSink`) are effectively infallible.
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
         // Encode fixed prefix (tag field is part of the prefix). The
         // tag value is read from the struct field, NOT derived from
         // the body discriminant — keeping author-set msg_id / body in
         // sync is the caller's responsibility (v1 keeps the layout
         // simple; future extensions may auto-sync via a typed setter).
-        let mut r: Vec<u8> = Vec::with_capacity(3);
-        r.push(self.msg_id);
+        w.write_u8(self.msg_id)?;
         // Append the active arm's encoded bytes.
         match &self.body {
             CodecVariantDispatchVariant::CodecVariantSessionOpen(b) => {
-                r.extend(b.encode());
+                b.encode(w)?;
             }
             CodecVariantDispatchVariant::CodecVariantSessionClose(b) => {
-                r.extend(b.encode());
+                b.encode(w)?;
             }
             CodecVariantDispatchVariant::Default { body, .. } => {
-                r.extend(body.encode());
+                body.encode(w)?;
             }
         }
-        r
+        Ok(())
+    }
+
+    /// Heap-backed convenience facade. Pre-reserves
+    /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
+    /// most one allocation, then delegates to `encode` over a
+    /// `VecSink`. Returns the freshly-encoded byte vector. Callers
+    /// targeting zero-alloc hot paths should call `encode` directly
+    /// against a caller-owned sink.
+    pub fn encode_to_vec(&self) -> Vec<u8> {
+        let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
+        let mut _sce_sink = VecSink::new(&mut _sce_v);
+        self.encode(&mut _sce_sink)
+            .expect("VecSink is infallible");
+        _sce_v
     }
 }

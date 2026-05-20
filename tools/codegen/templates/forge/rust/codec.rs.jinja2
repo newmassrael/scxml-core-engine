@@ -8,7 +8,7 @@
 // Runtime: {{ runtime_dep }}
 // Do not edit — regenerate from the source SCXML file.
 
-use sce_forge_runtime::codec::{CodecError, SceCursor};
+use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink, VecSink};
 {% if all_imports %}
 
 {% for imp in all_imports %}
@@ -400,7 +400,17 @@ impl {{ struct_name }} {
 {% endif %}
 {% endfor %}
 {% endif %}
-    pub fn encode(&self{{ params_after_first_arg }}) -> Vec<u8> {
+    /// Worst-case encoded byte count for this codec — the upper bound
+    /// against which `VecSink::new` reserves capacity in the
+    /// `encode_to_vec` facade, and the natural reserve hint for
+    /// caller-owned `SliceSink` allocations.
+    pub const MAX_ENCODED_BYTES: usize = {{ max_bytes }};
+
+    /// Encode `self` into the caller-owned sink. Returns
+    /// `CodecError::BufferOverflow` from a bounded sink when the
+    /// destination has insufficient remaining capacity; growable
+    /// sinks (e.g. `VecSink`) are effectively infallible.
+    pub fn encode<S: SceSink>(&self, w: &mut S{{ params_after_first_arg }}) -> Result<(), CodecError> {
 {% if has_parent_flags %}
         // RFC §5.B B5-γ: see `decode` — same parameter, same suppress.
         let _ = parent_flags;
@@ -420,7 +430,10 @@ impl {{ struct_name }} {
 {% if has_no_fields %}
         // RFC §5.B B5-α empty body — zero-byte payload (the surrounding
         // wire-protocol header byte alone marks this codec on the wire).
-        Vec::new()
+        // Suppress the unused-sink warning explicitly so empty codecs
+        // stay warning-clean under `warnings = "deny"`.
+        let _ = w;
+        Ok(())
 {% elif has_variant %}
 {% if variant.has_streaming_prefix %}
         // RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
@@ -430,7 +443,6 @@ impl {{ struct_name }} {
         // tag byte is emitted here. Streaming-prefix mode (own-field
         // variant): the carrier is part of the prefix fields and emits
         // through the same per-field path.
-        let mut r: Vec<u8> = Vec::with_capacity({{ max_bytes }});
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
@@ -448,25 +460,24 @@ impl {{ struct_name }} {
         // the body discriminant — keeping author-set msg_id / body in
         // sync is the caller's responsibility (v1 keeps the layout
         // simple; future extensions may auto-sync via a typed setter).
-        let mut r: Vec<u8> = Vec::with_capacity({{ max_bytes }});
 {% for expr in encode_exprs %}
-        r.push({{ expr }});
+        w.write_u8({{ expr }})?;
 {% endfor %}
 {% endif %}
         // Append the active arm's encoded bytes.
         match &self.body {
 {% for arm in variant.arms %}
             {{ struct_name }}Variant::{{ arm.variant_name }}(b) => {
-                r.extend(b.encode({{ arm.body_encode_args_first }}));
+                b.encode(w{{ arm.body_encode_args_with_leading_comma }})?;
             }
 {% endfor %}
 {% if variant.default_arm %}
             {{ struct_name }}Variant::{{ variant.default_arm.variant_name }} { body, .. } => {
-                r.extend(body.encode({{ variant.default_arm.body_encode_args_first }}));
+                body.encode(w{{ variant.default_arm.body_encode_args_with_leading_comma }})?;
             }
 {% endif %}
         }
-        r
+        Ok(())
 {% elif has_present_if_fields %}
         // RFC §5.B B1-δ + B2-β present-if encode: every field appends
         // its bytes via a per-field block; gated fields skip the
@@ -477,7 +488,6 @@ impl {{ struct_name }} {
         // the variant primitive). Note: this branch fires before
         // has_vle_fields so a codec mixing VLE + present-if uses the
         // unified encode path.
-        let mut r: Vec<u8> = Vec::with_capacity({{ max_bytes }});
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
@@ -489,7 +499,7 @@ impl {{ struct_name }} {
 {{ field.present_if_encode_block }}
 {% endif %}
 {% endfor %}
-        r
+        Ok(())
 {% elif has_vle_fields %}
         // RFC §5.B B4: per-field bit-size dispatch routes Fixed /
         // LengthRef / Tail siblings of VLE fields through
@@ -497,7 +507,6 @@ impl {{ struct_name }} {
         // codecs stay byte-stable: the non-gated VLE arm there reuses
         // `vle_encode_block` with the language-appropriate self/
         // struct prefix.
-        let mut r: Vec<u8> = Vec::with_capacity({{ max_bytes }});
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
@@ -509,7 +518,7 @@ impl {{ struct_name }} {
 {{ field.present_if_encode_block }}
 {% endif %}
 {% endfor %}
-        r
+        Ok(())
 {% elif has_repeat_fields or has_tlv_chain_fields or has_embed_fields or has_string_fields %}
         // RFC §5.B B2 repeat / B3 TLV chain encode: fixed prefix
         // fields append byte-by-byte; list fields iterate the host-
@@ -517,7 +526,6 @@ impl {{ struct_name }} {
         // parent buffer. Author keeps the count field (repeat) /
         // chain length (tlv-chain) consistent with the list length
         // (same trust contract as variant tag/body).
-        let mut r: Vec<u8> = Vec::with_capacity({{ max_bytes }});
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
@@ -529,11 +537,10 @@ impl {{ struct_name }} {
 {{ field.present_if_encode_block }}
 {% endif %}
 {% endfor %}
-        r
+        Ok(())
 {% elif has_variable_fields %}
-        let mut r: Vec<u8> = Vec::with_capacity({{ max_bytes }});
 {% for expr in encode_exprs %}
-        r.push({{ expr }});
+        w.write_u8({{ expr }})?;
 {% endfor %}
 {% for field in fields %}
 {% if field.is_variable %}
@@ -543,20 +550,33 @@ impl {{ struct_name }} {
         // offset (deterministic zeros on the wire so peers stay
         // byte-compatible regardless of host allocator — RFC §5.B
         // "wire layout, not host allocator").
-        while r.len() < {{ field.byte_off }} {
-            r.push(0);
+        while w.position() < {{ field.byte_off }} {
+            w.write_u8(0)?;
         }
 {% endif %}
-        r.extend_from_slice(&self.{{ field.id }});
+        w.write_bytes(&self.{{ field.id }})?;
 {% endif %}
 {% endfor %}
-        r
+        Ok(())
 {% else %}
-        vec![
 {% for expr in encode_exprs %}
-            {{ expr }},
+        w.write_u8({{ expr }})?;
 {% endfor %}
-        ]
+        Ok(())
 {% endif %}
+    }
+
+    /// Heap-backed convenience facade. Pre-reserves
+    /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
+    /// most one allocation, then delegates to `encode` over a
+    /// `VecSink`. Returns the freshly-encoded byte vector. Callers
+    /// targeting zero-alloc hot paths should call `encode` directly
+    /// against a caller-owned sink.
+    pub fn encode_to_vec(&self{{ params_after_first_arg }}) -> Vec<u8> {
+        let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
+        let mut _sce_sink = VecSink::new(&mut _sce_v);
+        self.encode(&mut _sce_sink{{ params_first_arg_with_comma }})
+            .expect("VecSink is infallible");
+        _sce_v
     }
 }

@@ -2491,6 +2491,17 @@ fn render_codec(
         "params_first_arg".into(),
         flag_input_params_first.clone().into(),
     );
+    // Call-side form (names only, no types) for the Rust `encode_to_vec`
+    // wrapper that forwards flag-input args through to `encode` over a
+    // freshly-created `VecSink`. Leading-comma form so the substitution
+    // site `self.encode(&mut s{{ params_first_arg_with_comma }})` reads
+    // as `self.encode(&mut s)` when no flag inputs are declared, and
+    // `self.encode(&mut s, flag_x)` otherwise.
+    let flag_input_call_args_with_comma = compute_flag_input_call_args(&m.flag_inputs, lang);
+    ctx.insert(
+        "params_first_arg_with_comma".into(),
+        flag_input_call_args_with_comma.into(),
+    );
     // Per-language unused-input suppression block emitted at the top of
     // decode + encode bodies. Codecs that declare a `<sce:flag-input>`
     // but never reference it via `present-if="X"` would otherwise hit
@@ -4289,7 +4300,7 @@ fn repeat_streaming_encode_block(
     }
     match lang {
         Language::Rust => format!(
-            "        for _e in &self.{id} {{\n            r.extend(_e.encode());\n        }}"
+            "        for _e in &self.{id} {{\n            _e.encode(w)?;\n        }}"
         ),
         Language::Cpp => format!(
             "        for (const auto& _e : {id}) {{\n            \
@@ -4743,11 +4754,11 @@ fn embed_streaming_encode_block(
     match lang {
         Language::Rust => {
             if !has_present_if {
-                format!("        r.extend(self.{id}.encode({thread_arg_norm}));")
+                format!("        self.{id}.encode(w{thread_arg})?;")
             } else {
                 format!(
                     "        if let Some(_v) = &self.{id} {{\n            \
-                     r.extend(_v.encode({thread_arg_norm}));\n        \
+                     _v.encode(w{thread_arg})?;\n        \
                  }}"
                 )
             }
@@ -5138,6 +5149,31 @@ fn compute_flag_input_param_fragments(
     (decl, first)
 }
 
+/// Compose the call-site forwarding form for a codec's declared
+/// `<sce:flag-input>` parameters — names only, no types, leading
+/// comma — used by the Rust `encode_to_vec` wrapper to thread args
+/// from its own signature into the underlying `encode` call.
+fn compute_flag_input_call_args(
+    inputs: &[crate::forge::model::FlagInput],
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    if inputs.is_empty() {
+        return String::new();
+    }
+    let parts: Vec<String> = inputs
+        .iter()
+        .map(|fi| match lang {
+            Language::Rust | Language::C11 | Language::Python => {
+                filters::to_snake_case(fi.name.clone())
+            }
+            Language::Cpp => filters::to_snake_case(fi.name.clone()),
+            Language::Kotlin | Language::Go => filters::to_camel_case(fi.name.clone()),
+        })
+        .collect();
+    format!(", {}", parts.join(", "))
+}
+
 /// RFC B5-ν inversion β shape (caller-tag): compose the leading-comma
 /// `tag: u8` argument the parent codec must pass to a β-leaf's decode
 /// call. Two source paths:
@@ -5468,7 +5504,7 @@ fn repeat_streaming_encode_block_gated(
         Language::Rust => format!(
             "        if let Some(_list) = &self.{id} {{\n            \
                  for _e in _list {{\n                \
-                     r.extend(_e.encode());\n            \
+                     _e.encode(w)?;\n            \
                  }}\n        \
              }}"
         ),
@@ -5887,7 +5923,7 @@ fn tlv_chain_streaming_encode_block(
     let id = &field.id;
     match lang {
         Language::Rust => format!(
-            "        for _e in &self.{id} {{\n            r.extend(_e.encode());\n        }}"
+            "        for _e in &self.{id} {{\n            _e.encode(w)?;\n        }}"
         ),
         Language::C11 => {
             let id_snake = filters::to_snake_case(id.to_string());
@@ -6240,7 +6276,7 @@ fn tlv_chain_streaming_encode_block_gated(
         Language::Rust => format!(
             "        if let Some(_list) = &self.{id} {{\n            \
                  for _e in _list {{\n                \
-                     r.extend(_e.encode());\n            \
+                     _e.encode(w)?;\n            \
                  }}\n        \
              }}"
         ),
@@ -7906,10 +7942,10 @@ fn present_if_encode_tail(
     use crate::generator::Language;
     let id = field.id.as_str();
     match (lang, field.present_if.is_some()) {
-        (Language::Rust, false) => format!("        r.extend_from_slice(&self.{id});"),
+        (Language::Rust, false) => format!("        w.write_bytes(&self.{id})?;"),
         (Language::Rust, true) => format!(
             "        if let Some(_v) = &self.{id} {{\n            \
-                 r.extend_from_slice(_v);\n        \
+                 w.write_bytes(_v)?;\n        \
              }}"
         ),
         (Language::Cpp, false) => format!("        r.insert(r.end(), {id}.begin(), {id}.end());"),
@@ -7998,14 +8034,14 @@ fn present_if_encode_string_length_ref(
     use crate::generator::Language;
     let id = field.id.as_str();
     match (lang, &field.present_if) {
-        (Language::Rust, None) => format!("        r.extend_from_slice(self.{id}.as_bytes());"),
+        (Language::Rust, None) => format!("        w.write_bytes(self.{id}.as_bytes())?;"),
         // Wire RFC Phase B Y0a — gated String encode on Rust:
         // `Option<String>::as_ref()` borrows the inner String so
         // `.as_bytes()` resolves; `if let Some(_v) = ...` mirrors the
         // bytes shape exactly.
         (Language::Rust, Some(_)) => format!(
             "        if let Some(_v) = &self.{id} {{\n            \
-                 r.extend_from_slice(_v.as_bytes());\n        \
+                 w.write_bytes(_v.as_bytes())?;\n        \
              }}"
         ),
         // Cpp `std::string::data()` returns `const char*`; reinterpret-
@@ -8150,10 +8186,10 @@ fn present_if_encode_length_ref(
         return present_if_encode_string_length_ref(field, fields, lang);
     }
     match (lang, field.present_if.is_some()) {
-        (Language::Rust, false) => format!("        r.extend_from_slice(&self.{id});"),
+        (Language::Rust, false) => format!("        w.write_bytes(&self.{id})?;"),
         (Language::Rust, true) => format!(
             "        if let Some(_v) = &self.{id} {{\n            \
-                 r.extend_from_slice(_v);\n        \
+                 w.write_bytes(_v)?;\n        \
              }}"
         ),
         (Language::Cpp, false) => format!("        r.insert(r.end(), {id}.begin(), {id}.end());"),
@@ -8553,11 +8589,11 @@ fn streaming_fixed_field_encode_rust(field: &CodecField, default_endian: Endian,
             Endian::Big | Endian::Native => (n - 1 - i) * 8,
         };
         if n == 1 {
-            lines.push_str(&format!("        r.push(self.{id});\n"));
+            lines.push_str(&format!("        w.write_u8(self.{id})?;\n"));
         } else if shift == 0 {
-            lines.push_str(&format!("        r.push(self.{id} as u8);\n"));
+            lines.push_str(&format!("        w.write_u8(self.{id} as u8)?;\n"));
         } else {
-            lines.push_str(&format!("        r.push((self.{id} >> {shift}) as u8);\n"));
+            lines.push_str(&format!("        w.write_u8((self.{id} >> {shift}) as u8)?;\n"));
         }
     }
     lines.trim_end().to_string()
@@ -8579,11 +8615,11 @@ fn streaming_fixed_field_encode_rust_from_local(
             Endian::Big | Endian::Native => (n - 1 - i) * 8,
         };
         if n == 1 {
-            lines.push_str("            r.push(_v);\n");
+            lines.push_str("            w.write_u8(_v)?;\n");
         } else if shift == 0 {
-            lines.push_str("            r.push(_v as u8);\n");
+            lines.push_str("            w.write_u8(_v as u8)?;\n");
         } else {
-            lines.push_str(&format!("            r.push((_v >> {shift}) as u8);\n"));
+            lines.push_str(&format!("            w.write_u8((_v >> {shift}) as u8)?;\n"));
         }
     }
     lines.trim_end().to_string()
@@ -9230,12 +9266,12 @@ fn vle_encode_block(value_expr: &str, width_bits: u32, lang: crate::generator::L
     match lang {
         Language::Rust => format!(
             "        {{\n            \
-                 let mut _w = {value_expr} as u64;\n            \
-                 while _w >= 0x80 {{\n                \
-                     r.push((_w as u8 & 0x7F) | 0x80);\n                \
-                     _w >>= 7;\n            \
+                 let mut _vle = {value_expr} as u64;\n            \
+                 while _vle >= 0x80 {{\n                \
+                     w.write_u8((_vle as u8 & 0x7F) | 0x80)?;\n                \
+                     _vle >>= 7;\n            \
                  }}\n            \
-                 r.push(_w as u8);\n        \
+                 w.write_u8(_vle as u8)?;\n        \
              }}"
         ),
         Language::Cpp => format!(
@@ -10071,9 +10107,9 @@ fn inject_b5_nu_carrier_suffix(
     // `or_suffix` already begins with ` | ` / ` or ` per language.
     match lang {
         Language::Rust => {
-            // `        r.push(self.<id>);` → `        r.push(self.<id> | _derived_<id>);`
-            let needle = format!("r.push(self.{field_id});");
-            let replacement = format!("r.push(self.{field_id}{or_suffix});");
+            // `        w.write_u8(self.<id>)?;` → `        w.write_u8(self.<id> | _derived_<id>)?;`
+            let needle = format!("w.write_u8(self.{field_id})?;");
+            let replacement = format!("w.write_u8(self.{field_id}{or_suffix})?;");
             block.replace(&needle, &replacement)
         }
         Language::Cpp => {
@@ -13860,7 +13896,19 @@ fn stateful_import_method_renames(
                 generator::Language::Cpp | generator::Language::Kotlin => {
                     format!("{}.{}", imp.member_name, method)
                 }
-                generator::Language::Rust | generator::Language::Python => {
+                generator::Language::Rust => {
+                    // RFC §5.B B1-α: Rust codec's `encode` is the sink-based
+                    // primary (`encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError>`);
+                    // procedure call sites (`<send sce:payload="frame.encode()"/>`)
+                    // want the heap-backed facade that returns `Vec<u8>`.
+                    let target_method = if *method == "encode" {
+                        "encode_to_vec"
+                    } else {
+                        method
+                    };
+                    format!("self.{}.{}", imp.member_name, target_method)
+                }
+                generator::Language::Python => {
                     format!("self.{}.{}", imp.member_name, method)
                 }
                 generator::Language::Go => {
@@ -16026,12 +16074,23 @@ fn render_inline_codec_member(
                 "        cursor.advance({min_bytes})?;\n        Ok(value)\n    }}\n\n"
             ));
             let encode_exprs = generate_encode_exprs(codec_fields, default_endian, Language::Rust);
-            type_def.push_str("    pub fn encode(&self) -> Vec<u8> {\n        vec![\n");
-            for (i, expr_str) in encode_exprs.iter().enumerate() {
-                let comma = if i < encode_exprs.len() - 1 { "," } else { "" };
-                type_def.push_str(&format!("            {expr_str}{comma}\n"));
+            type_def.push_str(&format!(
+                "    pub const MAX_ENCODED_BYTES: usize = {min_bytes};\n\n"
+            ));
+            type_def.push_str(
+                "    pub fn encode<S: ::sce_forge_runtime::codec::SceSink>(&self, w: &mut S) -> Result<(), ::sce_forge_runtime::codec::CodecError> {\n",
+            );
+            for expr_str in &encode_exprs {
+                type_def.push_str(&format!("        w.write_u8({expr_str})?;\n"));
             }
-            type_def.push_str("        ]\n    }\n}");
+            type_def.push_str("        Ok(())\n    }\n\n");
+            type_def.push_str(
+                "    pub fn encode_to_vec(&self) -> Vec<u8> {\n        \
+                 let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);\n        \
+                 let mut _sce_sink = ::sce_forge_runtime::codec::VecSink::new(&mut _sce_v);\n        \
+                 self.encode(&mut _sce_sink).expect(\"VecSink is infallible\");\n        \
+                 _sce_v\n    }\n}",
+            );
             Ok((type_def, String::new()))
         }
 

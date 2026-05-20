@@ -5,7 +5,7 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
-use sce_forge_runtime::codec::{CodecError, SceCursor};
+use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink, VecSink};
 
 use super::codec_zenoh_encoding::CodecZenohEncoding;
 use super::codec_zenoh_ext_entry::CodecZenohExtEntry;
@@ -161,7 +161,17 @@ impl CodecZenohErr {
         }
     }
 
-    pub fn encode(&self) -> Vec<u8> {
+    /// Worst-case encoded byte count for this codec — the upper bound
+    /// against which `VecSink::new` reserves capacity in the
+    /// `encode_to_vec` facade, and the natural reserve hint for
+    /// caller-owned `SliceSink` allocations.
+    pub const MAX_ENCODED_BYTES: usize = 695;
+
+    /// Encode `self` into the caller-owned sink. Returns
+    /// `CodecError::BufferOverflow` from a bounded sink when the
+    /// destination has insufficient remaining capacity; growable
+    /// sinks (e.g. `VecSink`) are effectively infallible.
+    pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
         // RFC §5.B B1-δ + B2-β present-if encode: every field appends
         // its bytes via a per-field block; gated fields skip the
         // append when the optional is None. Per-field `is_repeat` /
@@ -171,25 +181,38 @@ impl CodecZenohErr {
         // the variant primitive). Note: this branch fires before
         // has_vle_fields so a codec mixing VLE + present-if uses the
         // unified encode path.
-        let mut r: Vec<u8> = Vec::with_capacity(695);
-        r.push(self.header);
+        w.write_u8(self.header)?;
         if let Some(_v) = &self.encoding {
-            r.extend(_v.encode());
+            _v.encode(w)?;
         }
         if let Some(_list) = &self.extensions {
             for _e in _list {
-                r.extend(_e.encode());
+                _e.encode(w)?;
             }
         }
         {
-            let mut _w = self.payload_len as u64;
-            while _w >= 0x80 {
-                r.push((_w as u8 & 0x7F) | 0x80);
-                _w >>= 7;
+            let mut _vle = self.payload_len as u64;
+            while _vle >= 0x80 {
+                w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
+                _vle >>= 7;
             }
-            r.push(_w as u8);
+            w.write_u8(_vle as u8)?;
         }
-        r.extend_from_slice(&self.payload);
-        r
+        w.write_bytes(&self.payload)?;
+        Ok(())
+    }
+
+    /// Heap-backed convenience facade. Pre-reserves
+    /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
+    /// most one allocation, then delegates to `encode` over a
+    /// `VecSink`. Returns the freshly-encoded byte vector. Callers
+    /// targeting zero-alloc hot paths should call `encode` directly
+    /// against a caller-owned sink.
+    pub fn encode_to_vec(&self) -> Vec<u8> {
+        let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
+        let mut _sce_sink = VecSink::new(&mut _sce_v);
+        self.encode(&mut _sce_sink)
+            .expect("VecSink is infallible");
+        _sce_v
     }
 }

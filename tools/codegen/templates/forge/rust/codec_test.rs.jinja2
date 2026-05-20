@@ -21,7 +21,7 @@ fn test_vector_{{ name }}_l{{ tv.source_line }}() {
         {{ f.name_snake }}: {{ f.value_literal_rust }},
 {% endfor %}
     };
-    let encoded = actual.encode();
+    let encoded = actual.encode_to_vec();
     let expected: &[u8] = {{ tv.bytes_literal_rust }};
     assert_eq!(
         encoded.as_slice(), expected,

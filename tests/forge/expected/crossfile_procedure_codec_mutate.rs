@@ -133,7 +133,7 @@ impl ProcedurePolicy for CrossfileProcedureCodecMutate {
                         service: "transport".to_string(),
                         subfunc: None,
                         addr: None,
-                        payload: Some(self.frame.encode()),
+                        payload: Some(self.frame.encode_to_vec()),
                     };
                     let resp = handler(&req);
                     let event = if resp.success { Event::Ok } else { Event::Fail };

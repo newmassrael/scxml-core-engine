@@ -193,6 +193,15 @@ pub trait SceSink {
     /// insufficient remaining capacity; growable sinks return `Ok(())`.
     fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), CodecError>;
 
+    /// Bytes written by this sink instance since it wrapped the
+    /// destination. Used by codec emit for offset-aware writes (DMA-
+    /// aligned field padding, length-prefix back-patching). Distinct
+    /// from "total bytes in destination" — a `VecSink` over a Vec
+    /// that already had bytes returns the delta, not the absolute
+    /// length, so codec emit positional math operates within its own
+    /// encoding regardless of coalesced-send prefix state.
+    fn position(&self) -> usize;
+
     /// Append a single byte. Default impl forwards to `write_bytes`.
     fn write_u8(&mut self, b: u8) -> Result<(), CodecError> {
         self.write_bytes(&[b])
@@ -274,6 +283,10 @@ impl<'a> SceSink for SliceSink<'a> {
         self.pos = end;
         Ok(())
     }
+
+    fn position(&self) -> usize {
+        self.pos
+    }
 }
 
 // ── Heap-backed sink (alloc-only) ────────────────────────────────
@@ -291,13 +304,19 @@ use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 pub struct VecSink<'a> {
     buf: &'a mut Vec<u8>,
+    start_len: usize,
 }
 
 #[cfg(feature = "alloc")]
 impl<'a> VecSink<'a> {
-    /// Wrap `buf` for append-only writes.
+    /// Wrap `buf` for append-only writes. Records the buffer's
+    /// current length so `position()` returns the bytes written by
+    /// this sink instance (not the absolute Vec length) — codec emit
+    /// stays positionally consistent when the destination is shared
+    /// with a coalesced-send prefix.
     pub fn new(buf: &'a mut Vec<u8>) -> Self {
-        Self { buf }
+        let start_len = buf.len();
+        Self { buf, start_len }
     }
 }
 
@@ -311,6 +330,10 @@ impl<'a> SceSink for VecSink<'a> {
     fn write_u8(&mut self, b: u8) -> Result<(), CodecError> {
         self.buf.push(b);
         Ok(())
+    }
+
+    fn position(&self) -> usize {
+        self.buf.len() - self.start_len
     }
 }
 
@@ -497,6 +520,34 @@ mod tests {
         s.write_u8(0xAB).unwrap();
         s.write_bytes(b"!").unwrap();
         assert_eq!(v, [0x78, 0x56, 0x34, 0x12, 0xAB, b'!']);
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn vec_sink_position_is_delta_not_absolute() {
+        // Critical for coalesced-send: VecSink wrapping a prefilled
+        // Vec must report bytes written by THIS sink (delta), not the
+        // absolute Vec length. Otherwise DMA-aligned codec padding
+        // computes against the wrong baseline and corrupts the wire.
+        let mut v: Vec<u8> = alloc::vec![0xAA, 0xBB, 0xCC];
+        let mut s = VecSink::new(&mut v);
+        assert_eq!(s.position(), 0, "fresh sink starts at delta 0");
+        s.write_u32_be(0x11_22_33_44).unwrap();
+        assert_eq!(s.position(), 4, "delta after 4-byte write");
+        assert_eq!(v, [0xAA, 0xBB, 0xCC, 0x11, 0x22, 0x33, 0x44]);
+    }
+
+    #[test]
+    fn slice_sink_position_matches_inherent_method() {
+        // Pin that the trait-routed position() and the inherent
+        // position() return the same value (both should — inherent
+        // delegates to the same `pos` field).
+        let mut buf = [0u8; 8];
+        let mut s = SliceSink::new(&mut buf);
+        s.write_u16_be(0xDEAD).unwrap();
+        let trait_pos = SceSink::position(&s);
+        assert_eq!(trait_pos, s.position());
+        assert_eq!(trait_pos, 2);
     }
 
     #[cfg(feature = "alloc")]

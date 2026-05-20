@@ -7,7 +7,7 @@ fn test_vector_codec_zenoh_locator_l38() {
         locator_len: 0x0u64,
         locator: String::from(""),
     };
-    let encoded = actual.encode();
+    let encoded = actual.encode_to_vec();
     let expected: &[u8] = &[0x00u8];
     assert_eq!(
         encoded.as_slice(), expected,
@@ -37,7 +37,7 @@ fn test_vector_codec_zenoh_locator_l42() {
         locator_len: 0x3u64,
         locator: String::from("abc"),
     };
-    let encoded = actual.encode();
+    let encoded = actual.encode_to_vec();
     let expected: &[u8] = &[0x03u8, 0x61u8, 0x62u8, 0x63u8];
     assert_eq!(
         encoded.as_slice(), expected,
@@ -67,7 +67,7 @@ fn test_vector_codec_zenoh_locator_l46() {
         locator_len: 0x12u64,
         locator: String::from("tcp/127.0.0.1:7447"),
     };
-    let encoded = actual.encode();
+    let encoded = actual.encode_to_vec();
     let expected: &[u8] = &[0x12u8, 0x74u8, 0x63u8, 0x70u8, 0x2fu8, 0x31u8, 0x32u8, 0x37u8, 0x2eu8, 0x30u8, 0x2eu8, 0x30u8, 0x2eu8, 0x31u8, 0x3au8, 0x37u8, 0x34u8, 0x34u8, 0x37u8];
     assert_eq!(
         encoded.as_slice(), expected,
@@ -97,7 +97,7 @@ fn test_vector_codec_zenoh_locator_l50() {
         locator_len: 0x6u64,
         locator: String::from("héllo"),
     };
-    let encoded = actual.encode();
+    let encoded = actual.encode_to_vec();
     let expected: &[u8] = &[0x06u8, 0x68u8, 0xc3u8, 0xa9u8, 0x6cu8, 0x6cu8, 0x6fu8];
     assert_eq!(
         encoded.as_slice(), expected,
