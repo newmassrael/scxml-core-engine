@@ -35,10 +35,13 @@ struct CodecTlvEntry {
         if (raw == nullptr) return std::nullopt;
         std::size_t len = _frame_len;  // shadowed for decode_expr(`raw + len`).
         (void)len;
+        uint8_t entry_type = raw[0];
+        uint8_t entry_len = raw[1];
+        std::vector<uint8_t> entry_body = std::vector<uint8_t>(raw + 2, raw + 2 + entry_len);
         CodecTlvEntry value{
-            .entry_type = raw[0],
-            .entry_len = raw[1],
-            .entry_body = std::vector<uint8_t>(raw + 2, raw + 2 + raw[1]),
+            .entry_type = entry_type,
+            .entry_len = entry_len,
+            .entry_body = entry_body,
         };
         if (!cursor.advance(_frame_len)) return std::nullopt;
         return value;

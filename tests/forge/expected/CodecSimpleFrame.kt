@@ -33,10 +33,13 @@ data class CodecSimpleFrame(
         /// (RFC §5.B L494-519).
         fun decode(cursor: SceCursor): CodecSimpleFrame? {
             val raw = cursor.peekSlice(4) ?: return null
+            val msgId = raw[0].toUByte()
+            val length = raw[1].toUByte()
+            val payload = (((raw[2].toInt() and 0xFF) shl 8) or (raw[3].toInt() and 0xFF)).toUShort()
             val value = CodecSimpleFrame(
-                msgId = raw[0].toUByte(),
-                length = raw[1].toUByte(),
-                payload = (((raw[2].toInt() and 0xFF) shl 8) or (raw[3].toInt() and 0xFF)).toUShort()
+                msgId = msgId,
+                length = length,
+                payload = payload
             )
             if (!cursor.advance(4)) return null
             return value

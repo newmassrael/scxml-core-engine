@@ -48,14 +48,17 @@ impl CodecScoutZidBody {
             return Err(CodecError::NeedMoreBytes);
         }
         let raw = cursor.peek_slice(_frame_len)?;
+        let zid_len_m1 = raw[0];
+        let zid = raw[1..1 + zid_len_m1 as usize + 1].to_vec();
         let value = Self {
-            zid_len_m1: raw[0],
-            zid: raw[1..1 + raw[0] as usize + 1].to_vec(),
+            zid_len_m1,
+            zid,
         };
         // Stream-correct: advance only the bytes actually decoded.
-        // For each length-ref field, end = byte_off + raw[byte_off-1]
-        // value (length-field byte is read just before). Take the max
-        // across all length-ref fields; min_bytes is the lower bound.
+        // For each length-ref field, end = byte_off + sibling local
+        // value (the sibling let-binding ran before the payload's).
+        // Take the max across all length-ref fields; min_bytes is the
+        // lower bound.
         let mut _consumed: usize = 1;
         {
             let _end = 1usize + value.zid.len();

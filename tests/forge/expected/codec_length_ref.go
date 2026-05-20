@@ -31,10 +31,13 @@ func DecodeCodecLengthRef(cursor *codec.SceCursor) (*CodecLengthRef, error) {
 	if err != nil {
 		return nil, err
 	}
+	MsgId := raw[0]
+	Len := raw[1]
+	Payload := raw[2:2+int(Len)]
 	value := &CodecLengthRef{
-		MsgId: raw[0],
-		Len: raw[1],
-		Payload: raw[2:2+int(raw[1])],
+		MsgId: MsgId,
+		Len: Len,
+		Payload: Payload,
 	}
 	if err := cursor.Advance(frameLen); err != nil {
 		return nil, err

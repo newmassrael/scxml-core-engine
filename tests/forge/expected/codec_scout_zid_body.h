@@ -34,9 +34,11 @@ struct CodecScoutZidBody {
         if (raw == nullptr) return std::nullopt;
         std::size_t len = _frame_len;  // shadowed for decode_expr(`raw + len`).
         (void)len;
+        uint8_t zid_len_m1 = raw[0];
+        std::vector<uint8_t> zid = std::vector<uint8_t>(raw + 1, raw + 1 + zid_len_m1 + 1);
         CodecScoutZidBody value{
-            .zid_len_m1 = raw[0],
-            .zid = std::vector<uint8_t>(raw + 1, raw + 1 + raw[0] + 1),
+            .zid_len_m1 = zid_len_m1,
+            .zid = zid,
         };
         if (!cursor.advance(_frame_len)) return std::nullopt;
         return value;

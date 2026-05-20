@@ -27,10 +27,13 @@ func DecodeCodecLittleEndian(cursor *codec.SceCursor) (*CodecLittleEndian, error
 	if err != nil {
 		return nil, err
 	}
+	SensorId := raw[0]
+	Value := uint16(raw[1]) | uint16(raw[2])<<8
+	Status := raw[3]
 	value := &CodecLittleEndian{
-		SensorId: raw[0],
-		Value: uint16(raw[1]) | uint16(raw[2])<<8,
-		Status: raw[3],
+		SensorId: SensorId,
+		Value: Value,
+		Status: Status,
 	}
 	if err := cursor.Advance(4); err != nil {
 		return nil, err

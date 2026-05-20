@@ -29,8 +29,9 @@ struct CodecZenohPut {
     static std::optional<CodecZenohPut> decode(::SCE::Forge::SceCursor& cursor) {
         const std::uint8_t* raw = cursor.peek_slice(1);
         if (raw == nullptr) return std::nullopt;
+        uint8_t payload = raw[0];
         CodecZenohPut value{
-            .payload = raw[0],
+            .payload = payload,
         };
         if (!cursor.advance(1)) return std::nullopt;
         return value;

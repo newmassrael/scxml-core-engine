@@ -31,10 +31,13 @@ func DecodeCodecTlvEntry(cursor *codec.SceCursor) (*CodecTlvEntry, error) {
 	if err != nil {
 		return nil, err
 	}
+	EntryType := raw[0]
+	EntryLen := raw[1]
+	EntryBody := raw[2:2+int(EntryLen)]
 	value := &CodecTlvEntry{
-		EntryType: raw[0],
-		EntryLen: raw[1],
-		EntryBody: raw[2:2+int(raw[1])],
+		EntryType: EntryType,
+		EntryLen: EntryLen,
+		EntryBody: EntryBody,
 	}
 	if err := cursor.Advance(frameLen); err != nil {
 		return nil, err

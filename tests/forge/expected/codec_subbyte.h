@@ -31,10 +31,13 @@ struct CodecSubbyte {
     static std::optional<CodecSubbyte> decode(::SCE::Forge::SceCursor& cursor) {
         const std::uint8_t* raw = cursor.peek_slice(1);
         if (raw == nullptr) return std::nullopt;
+        uint8_t priority = static_cast<uint8_t>((raw[0] >> 5) & 0x07);
+        uint8_t channel = static_cast<uint8_t>((raw[0] >> 2) & 0x07);
+        uint8_t direction = static_cast<uint8_t>((raw[0] >> 0) & 0x03);
         CodecSubbyte value{
-            .priority = static_cast<uint8_t>((raw[0] >> 5) & 0x07),
-            .channel = static_cast<uint8_t>((raw[0] >> 2) & 0x07),
-            .direction = static_cast<uint8_t>((raw[0] >> 0) & 0x03),
+            .priority = priority,
+            .channel = channel,
+            .direction = direction,
         };
         if (!cursor.advance(1)) return std::nullopt;
         return value;

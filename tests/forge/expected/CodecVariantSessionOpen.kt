@@ -29,8 +29,9 @@ data class CodecVariantSessionOpen(
         /// (RFC §5.B L494-519).
         fun decode(cursor: SceCursor): CodecVariantSessionOpen? {
             val raw = cursor.peekSlice(2) ?: return null
+            val version = (((raw[0].toInt() and 0xFF) shl 8) or (raw[1].toInt() and 0xFF)).toUShort()
             val value = CodecVariantSessionOpen(
-                version = (((raw[0].toInt() and 0xFF) shl 8) or (raw[1].toInt() and 0xFF)).toUShort()
+                version = version
             )
             if (!cursor.advance(2)) return null
             return value

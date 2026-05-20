@@ -29,10 +29,13 @@ class CodecSubbyte:
             raw = cursor.peek_slice(1)
         except NeedMoreBytes:
             return None
+        priority = (raw[0] >> 5) & 0x07
+        channel = (raw[0] >> 2) & 0x07
+        direction = (raw[0] >> 0) & 0x03
         value = cls(
-            priority=(raw[0] >> 5) & 0x07,
-            channel=(raw[0] >> 2) & 0x07,
-            direction=(raw[0] >> 0) & 0x03,
+            priority=priority,
+            channel=channel,
+            direction=direction,
         )
         try:
             cursor.advance(1)

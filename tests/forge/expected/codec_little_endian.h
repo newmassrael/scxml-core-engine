@@ -31,10 +31,13 @@ struct CodecLittleEndian {
     static std::optional<CodecLittleEndian> decode(::SCE::Forge::SceCursor& cursor) {
         const std::uint8_t* raw = cursor.peek_slice(4);
         if (raw == nullptr) return std::nullopt;
+        uint8_t sensorId = raw[0];
+        uint16_t value = static_cast<uint16_t>(raw[1] | (static_cast<uint16_t>(raw[2]) << 8));
+        uint8_t status = raw[3];
         CodecLittleEndian value{
-            .sensorId = raw[0],
-            .value = static_cast<uint16_t>(raw[1] | (static_cast<uint16_t>(raw[2]) << 8)),
-            .status = raw[3],
+            .sensorId = sensorId,
+            .value = value,
+            .status = status,
         };
         if (!cursor.advance(4)) return std::nullopt;
         return value;

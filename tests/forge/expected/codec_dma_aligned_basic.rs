@@ -58,10 +58,13 @@ impl CodecDmaAlignedBasic {
             return Err(CodecError::NeedMoreBytes);
         }
         let raw = cursor.peek_slice(_frame_len)?;
+        let msg_id = raw[0];
+        let reserved = raw[1];
+        let aligned_payload = raw[32..].to_vec();
         let value = Self {
-            msg_id: raw[0],
-            reserved: raw[1],
-            aligned_payload: raw[32..].to_vec(),
+            msg_id,
+            reserved,
+            aligned_payload,
         };
         cursor.advance(_frame_len)?;
         Ok(value)

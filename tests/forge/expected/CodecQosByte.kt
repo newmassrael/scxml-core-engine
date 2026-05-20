@@ -88,8 +88,9 @@ data class CodecQosByte(
         /// (RFC §5.B L494-519).
         fun decode(cursor: SceCursor): CodecQosByte? {
             val raw = cursor.peekSlice(1) ?: return null
+            val qos = raw[0].toUByte()
             val value = CodecQosByte(
-                qos = raw[0].toUByte()
+                qos = qos
             )
             if (!cursor.advance(1)) return null
             return value

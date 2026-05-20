@@ -29,8 +29,9 @@ struct CodecQosByte {
     static std::optional<CodecQosByte> decode(::SCE::Forge::SceCursor& cursor) {
         const std::uint8_t* raw = cursor.peek_slice(1);
         if (raw == nullptr) return std::nullopt;
+        uint8_t qos = raw[0];
         CodecQosByte value{
-            .qos = raw[0],
+            .qos = qos,
         };
         if (!cursor.advance(1)) return std::nullopt;
         return value;

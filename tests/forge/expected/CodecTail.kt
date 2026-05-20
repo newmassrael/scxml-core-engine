@@ -34,10 +34,13 @@ data class CodecTail(
             val frameLen = cursor.remaining()
             if (frameLen < 2) return null
             val raw = cursor.peekSlice(frameLen) ?: return null
+            val msgId = raw[0].toUByte()
+            val status = raw[1].toUByte()
+            val payload = raw.copyOfRange(2, raw.size)
             val value = CodecTail(
-                msgId = raw[0].toUByte(),
-                status = raw[1].toUByte(),
-                payload = raw.copyOfRange(2, raw.size)
+                msgId = msgId,
+                status = status,
+                payload = payload
             )
             if (!cursor.advance(frameLen)) return null
             return value

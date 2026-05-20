@@ -28,8 +28,9 @@ data class CodecZenohPut(
         /// (RFC §5.B L494-519).
         fun decode(cursor: SceCursor): CodecZenohPut? {
             val raw = cursor.peekSlice(1) ?: return null
+            val payload = raw[0].toUByte()
             val value = CodecZenohPut(
-                payload = raw[0].toUByte()
+                payload = payload
             )
             if (!cursor.advance(1)) return null
             return value

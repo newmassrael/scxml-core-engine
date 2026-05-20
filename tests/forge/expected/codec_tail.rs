@@ -49,10 +49,13 @@ impl CodecTail {
             return Err(CodecError::NeedMoreBytes);
         }
         let raw = cursor.peek_slice(_frame_len)?;
+        let msg_id = raw[0];
+        let status = raw[1];
+        let payload = raw[2..].to_vec();
         let value = Self {
-            msg_id: raw[0],
-            status: raw[1],
-            payload: raw[2..].to_vec(),
+            msg_id,
+            status,
+            payload,
         };
         cursor.advance(_frame_len)?;
         Ok(value)

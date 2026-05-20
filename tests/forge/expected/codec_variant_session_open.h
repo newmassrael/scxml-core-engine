@@ -29,8 +29,9 @@ struct CodecVariantSessionOpen {
     static std::optional<CodecVariantSessionOpen> decode(::SCE::Forge::SceCursor& cursor) {
         const std::uint8_t* raw = cursor.peek_slice(2);
         if (raw == nullptr) return std::nullopt;
+        uint16_t version = static_cast<uint16_t>((static_cast<uint16_t>(raw[0]) << 8) | raw[1]);
         CodecVariantSessionOpen value{
-            .version = static_cast<uint16_t>((static_cast<uint16_t>(raw[0]) << 8) | raw[1]),
+            .version = version,
         };
         if (!cursor.advance(2)) return std::nullopt;
         return value;

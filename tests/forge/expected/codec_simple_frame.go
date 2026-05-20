@@ -27,10 +27,13 @@ func DecodeCodecSimpleFrame(cursor *codec.SceCursor) (*CodecSimpleFrame, error) 
 	if err != nil {
 		return nil, err
 	}
+	MsgId := raw[0]
+	Length := raw[1]
+	Payload := uint16(raw[2])<<8 | uint16(raw[3])
 	value := &CodecSimpleFrame{
-		MsgId: raw[0],
-		Length: raw[1],
-		Payload: uint16(raw[2])<<8 | uint16(raw[3]),
+		MsgId: MsgId,
+		Length: Length,
+		Payload: Payload,
 	}
 	if err := cursor.Advance(4); err != nil {
 		return nil, err

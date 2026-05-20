@@ -62,9 +62,11 @@ data class CodecLengthRefDottedBasic(
             val frameLen = cursor.remaining()
             if (frameLen < 1) return null
             val raw = cursor.peekSlice(frameLen) ?: return null
+            val carrier = raw[0].toUByte()
+            val payload = raw.copyOfRange(1, 1 + ((carrier.toInt() ushr 4) and 0xF))
             val value = CodecLengthRefDottedBasic(
-                carrier = raw[0].toUByte(),
-                payload = raw.copyOfRange(1, 1 + ((raw[0].toInt() ushr 4) and 0xF))
+                carrier = carrier,
+                payload = payload
             )
             if (!cursor.advance(frameLen)) return null
             return value

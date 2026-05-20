@@ -25,8 +25,9 @@ func DecodeCodecVariantSessionOpen(cursor *codec.SceCursor) (*CodecVariantSessio
 	if err != nil {
 		return nil, err
 	}
+	Version := uint16(raw[0])<<8 | uint16(raw[1])
 	value := &CodecVariantSessionOpen{
-		Version: uint16(raw[0])<<8 | uint16(raw[1]),
+		Version: Version,
 	}
 	if err := cursor.Advance(2); err != nil {
 		return nil, err

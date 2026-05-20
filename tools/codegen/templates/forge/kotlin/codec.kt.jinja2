@@ -381,18 +381,24 @@ data class {{ struct_name }}(
             val frameLen = cursor.remaining()
             if (frameLen < {{ min_bytes }}) return null
             val raw = cursor.peekSlice(frameLen) ?: return null
+{% for field in fields %}
+            val {{ field.id }} = {{ field.decode_expr }}
+{% endfor %}
             val value = {{ struct_name }}(
 {% for field in fields %}
-                {{ field.id }} = {{ field.decode_expr }}{{ "," if not loop.last else "" }}
+                {{ field.id }} = {{ field.id }}{{ "," if not loop.last else "" }}
 {% endfor %}
             )
             if (!cursor.advance(frameLen)) return null
             return value
 {% else %}
             val raw = cursor.peekSlice({{ min_bytes }}) ?: return null
+{% for field in fields %}
+            val {{ field.id }} = {{ field.decode_expr }}
+{% endfor %}
             val value = {{ struct_name }}(
 {% for field in fields %}
-                {{ field.id }} = {{ field.decode_expr }}{{ "," if not loop.last else "" }}
+                {{ field.id }} = {{ field.id }}{{ "," if not loop.last else "" }}
 {% endfor %}
             )
             if (!cursor.advance({{ min_bytes }})) return null

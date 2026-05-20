@@ -32,9 +32,11 @@ data class CodecExtAttachment(
             val frameLen = cursor.remaining()
             if (frameLen < 1) return null
             val raw = cursor.peekSlice(frameLen) ?: return null
+            val length = raw[0].toUByte()
+            val body = raw.copyOfRange(1, 1 + length.toInt())
             val value = CodecExtAttachment(
-                length = raw[0].toUByte(),
-                body = raw.copyOfRange(1, 1 + raw[0].toInt())
+                length = length,
+                body = body
             )
             if (!cursor.advance(frameLen)) return null
             return value

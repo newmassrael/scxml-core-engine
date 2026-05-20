@@ -32,10 +32,13 @@ class CodecTlvEntry:
             raw = cursor.peek_slice(_frame_len)
         except NeedMoreBytes:
             return None
+        entry_type = raw[0]
+        entry_len = raw[1]
+        entry_body = raw[2:2 + entry_len]
         value = cls(
-            entry_type=raw[0],
-            entry_len=raw[1],
-            entry_body=raw[2:2 + raw[1]],
+            entry_type=entry_type,
+            entry_len=entry_len,
+            entry_body=entry_body,
         )
         try:
             cursor.advance(_frame_len)

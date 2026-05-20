@@ -30,10 +30,13 @@ data class CodecSubbyte(
         /// (RFC §5.B L494-519).
         fun decode(cursor: SceCursor): CodecSubbyte? {
             val raw = cursor.peekSlice(1) ?: return null
+            val priority = ((raw[0].toInt() ushr 5) and 0x07).toUByte()
+            val channel = ((raw[0].toInt() ushr 2) and 0x07).toUByte()
+            val direction = ((raw[0].toInt() ushr 0) and 0x03).toUByte()
             val value = CodecSubbyte(
-                priority = ((raw[0].toInt() ushr 5) and 0x07).toUByte(),
-                channel = ((raw[0].toInt() ushr 2) and 0x07).toUByte(),
-                direction = ((raw[0].toInt() ushr 0) and 0x03).toUByte()
+                priority = priority,
+                channel = channel,
+                direction = direction
             )
             if (!cursor.advance(1)) return null
             return value

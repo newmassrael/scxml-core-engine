@@ -29,10 +29,13 @@ class CodecSimpleFrame:
             raw = cursor.peek_slice(4)
         except NeedMoreBytes:
             return None
+        msg_id = raw[0]
+        length = raw[1]
+        payload = (raw[2] << 8) | raw[3]
         value = cls(
-            msg_id=raw[0],
-            length=raw[1],
-            payload=(raw[2] << 8) | raw[3],
+            msg_id=msg_id,
+            length=length,
+            payload=payload,
         )
         try:
             cursor.advance(4)

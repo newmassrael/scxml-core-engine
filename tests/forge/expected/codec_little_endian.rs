@@ -35,10 +35,13 @@ impl CodecLittleEndian {
     /// bytes (RFC §5.B L494-519).
     pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
         let raw = cursor.peek_slice(4)?;
+        let sensor_id = raw[0];
+        let value = raw[1] as u16 | ((raw[2] as u16) << 8);
+        let status = raw[3];
         let value = Self {
-            sensor_id: raw[0],
-            value: raw[1] as u16 | ((raw[2] as u16) << 8),
-            status: raw[3],
+            sensor_id,
+            value,
+            status,
         };
         cursor.advance(4)?;
         Ok(value)

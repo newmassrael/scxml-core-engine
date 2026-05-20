@@ -30,9 +30,11 @@ func DecodeCodecExtAttachment(cursor *codec.SceCursor) (*CodecExtAttachment, err
 	if err != nil {
 		return nil, err
 	}
+	Length := raw[0]
+	Body := raw[1:1+int(Length)]
 	value := &CodecExtAttachment{
-		Length: raw[0],
-		Body: raw[1:1+int(raw[0])],
+		Length: Length,
+		Body: Body,
 	}
 	if err := cursor.Advance(frameLen); err != nil {
 		return nil, err

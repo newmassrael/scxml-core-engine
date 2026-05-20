@@ -30,9 +30,11 @@ func DecodeCodecScoutZidBody(cursor *codec.SceCursor) (*CodecScoutZidBody, error
 	if err != nil {
 		return nil, err
 	}
+	ZidLenM1 := raw[0]
+	Zid := raw[1:1+int(ZidLenM1) + 1]
 	value := &CodecScoutZidBody{
-		ZidLenM1: raw[0],
-		Zid: raw[1:1+int(raw[0]) + 1],
+		ZidLenM1: ZidLenM1,
+		Zid: Zid,
 	}
 	if err := cursor.Advance(frameLen); err != nil {
 		return nil, err

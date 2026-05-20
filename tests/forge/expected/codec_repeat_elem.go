@@ -25,8 +25,9 @@ func DecodeCodecRepeatElem(cursor *codec.SceCursor) (*CodecRepeatElem, error) {
 	if err != nil {
 		return nil, err
 	}
+	Seq := uint16(raw[0])<<8 | uint16(raw[1])
 	value := &CodecRepeatElem{
-		Seq: uint16(raw[0])<<8 | uint16(raw[1]),
+		Seq: Seq,
 	}
 	if err := cursor.Advance(2); err != nil {
 		return nil, err

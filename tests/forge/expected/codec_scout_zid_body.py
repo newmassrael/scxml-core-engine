@@ -31,9 +31,11 @@ class CodecScoutZidBody:
             raw = cursor.peek_slice(_frame_len)
         except NeedMoreBytes:
             return None
+        zid_len_m1 = raw[0]
+        zid = raw[1:1 + zid_len_m1 + 1]
         value = cls(
-            zid_len_m1=raw[0],
-            zid=raw[1:1 + raw[0] + 1],
+            zid_len_m1=zid_len_m1,
+            zid=zid,
         )
         try:
             cursor.advance(_frame_len)

@@ -47,9 +47,11 @@ data class CodecPeekArmB(
         /// (RFC §5.B L494-519).
         fun decode(cursor: SceCursor): CodecPeekArmB? {
             val raw = cursor.peekSlice(3) ?: return null
+            val header = raw[0].toUByte()
+            val payload = (((raw[1].toInt() and 0xFF) shl 8) or (raw[2].toInt() and 0xFF)).toUShort()
             val value = CodecPeekArmB(
-                header = raw[0].toUByte(),
-                payload = (((raw[1].toInt() and 0xFF) shl 8) or (raw[2].toInt() and 0xFF)).toUShort()
+                header = header,
+                payload = payload
             )
             if (!cursor.advance(3)) return null
             return value

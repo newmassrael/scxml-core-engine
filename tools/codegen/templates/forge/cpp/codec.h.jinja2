@@ -241,9 +241,12 @@ struct {{ struct_name }} {
         if (raw == nullptr) return std::nullopt;
         std::size_t len = _frame_len;  // shadowed for decode_expr(`raw + len`).
         (void)len;
+{% for field in fields %}
+        {{ field.cpp_type }} {{ field.id }} = {{ field.decode_expr }};
+{% endfor %}
         {{ struct_name }} value{
 {% for field in fields %}
-            .{{ field.id }} = {{ field.decode_expr }},
+            .{{ field.id }} = {{ field.id }},
 {% endfor %}
         };
         if (!cursor.advance(_frame_len)) return std::nullopt;
@@ -251,9 +254,12 @@ struct {{ struct_name }} {
 {% else %}
         const std::uint8_t* raw = cursor.peek_slice({{ min_bytes }});
         if (raw == nullptr) return std::nullopt;
+{% for field in fields %}
+        {{ field.cpp_type }} {{ field.id }} = {{ field.decode_expr }};
+{% endfor %}
         {{ struct_name }} value{
 {% for field in fields %}
-            .{{ field.id }} = {{ field.decode_expr }},
+            .{{ field.id }} = {{ field.id }},
 {% endfor %}
         };
         if (!cursor.advance({{ min_bytes }})) return std::nullopt;

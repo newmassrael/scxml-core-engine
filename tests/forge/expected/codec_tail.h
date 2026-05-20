@@ -35,10 +35,13 @@ struct CodecTail {
         if (raw == nullptr) return std::nullopt;
         std::size_t len = _frame_len;  // shadowed for decode_expr(`raw + len`).
         (void)len;
+        uint8_t msgId = raw[0];
+        uint8_t status = raw[1];
+        std::vector<uint8_t> payload = std::vector<uint8_t>(raw + 2, raw + len);
         CodecTail value{
-            .msgId = raw[0],
-            .status = raw[1],
-            .payload = std::vector<uint8_t>(raw + 2, raw + len),
+            .msgId = msgId,
+            .status = status,
+            .payload = payload,
         };
         if (!cursor.advance(_frame_len)) return std::nullopt;
         return value;

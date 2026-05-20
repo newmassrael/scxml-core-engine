@@ -29,8 +29,9 @@ struct CodecFlagsBasic {
     static std::optional<CodecFlagsBasic> decode(::SCE::Forge::SceCursor& cursor) {
         const std::uint8_t* raw = cursor.peek_slice(1);
         if (raw == nullptr) return std::nullopt;
+        uint8_t header = raw[0];
         CodecFlagsBasic value{
-            .header = raw[0],
+            .header = header,
         };
         if (!cursor.advance(1)) return std::nullopt;
         return value;

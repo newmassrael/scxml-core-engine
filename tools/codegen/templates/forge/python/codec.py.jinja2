@@ -263,9 +263,12 @@ class {{ struct_name }}:
             raw = cursor.peek_slice(_frame_len)
         except NeedMoreBytes:
             return None
+{% for field in fields %}
+        {{ field.id }} = {{ field.decode_expr }}
+{% endfor %}
         value = cls(
 {% for field in fields %}
-            {{ field.id }}={{ field.decode_expr }},
+            {{ field.id }}={{ field.id }},
 {% endfor %}
         )
         try:
@@ -278,9 +281,12 @@ class {{ struct_name }}:
             raw = cursor.peek_slice({{ min_bytes }})
         except NeedMoreBytes:
             return None
+{% for field in fields %}
+        {{ field.id }} = {{ field.decode_expr }}
+{% endfor %}
         value = cls(
 {% for field in fields %}
-            {{ field.id }}={{ field.decode_expr }},
+            {{ field.id }}={{ field.id }},
 {% endfor %}
         )
         try:

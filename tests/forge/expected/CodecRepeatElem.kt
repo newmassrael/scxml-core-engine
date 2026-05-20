@@ -29,8 +29,9 @@ data class CodecRepeatElem(
         /// (RFC §5.B L494-519).
         fun decode(cursor: SceCursor): CodecRepeatElem? {
             val raw = cursor.peekSlice(2) ?: return null
+            val seq = (((raw[0].toInt() and 0xFF) shl 8) or (raw[1].toInt() and 0xFF)).toUShort()
             val value = CodecRepeatElem(
-                seq = (((raw[0].toInt() and 0xFF) shl 8) or (raw[1].toInt() and 0xFF)).toUShort()
+                seq = seq
             )
             if (!cursor.advance(2)) return null
             return value

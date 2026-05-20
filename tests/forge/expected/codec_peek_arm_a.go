@@ -39,9 +39,11 @@ func DecodeCodecPeekArmA(cursor *codec.SceCursor) (*CodecPeekArmA, error) {
 	if err != nil {
 		return nil, err
 	}
+	Header := raw[0]
+	Payload := raw[1]
 	value := &CodecPeekArmA{
-		Header: raw[0],
-		Payload: raw[1],
+		Header: Header,
+		Payload: Payload,
 	}
 	if err := cursor.Advance(2); err != nil {
 		return nil, err

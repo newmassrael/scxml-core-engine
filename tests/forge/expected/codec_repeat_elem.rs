@@ -33,8 +33,9 @@ impl CodecRepeatElem {
     /// bytes (RFC §5.B L494-519).
     pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
         let raw = cursor.peek_slice(2)?;
+        let seq = ((raw[0] as u16) << 8) | raw[1] as u16;
         let value = Self {
-            seq: ((raw[0] as u16) << 8) | raw[1] as u16,
+            seq,
         };
         cursor.advance(2)?;
         Ok(value)

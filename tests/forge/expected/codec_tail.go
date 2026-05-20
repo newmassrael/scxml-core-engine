@@ -31,10 +31,13 @@ func DecodeCodecTail(cursor *codec.SceCursor) (*CodecTail, error) {
 	if err != nil {
 		return nil, err
 	}
+	MsgId := raw[0]
+	Status := raw[1]
+	Payload := raw[2:]
 	value := &CodecTail{
-		MsgId: raw[0],
-		Status: raw[1],
-		Payload: raw[2:],
+		MsgId: MsgId,
+		Status: Status,
+		Payload: Payload,
 	}
 	if err := cursor.Advance(frameLen); err != nil {
 		return nil, err

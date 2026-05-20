@@ -25,8 +25,9 @@ func DecodeCodecZenohPut(cursor *codec.SceCursor) (*CodecZenohPut, error) {
 	if err != nil {
 		return nil, err
 	}
+	Payload := raw[0]
 	value := &CodecZenohPut{
-		Payload: raw[0],
+		Payload: Payload,
 	}
 	if err := cursor.Advance(1); err != nil {
 		return nil, err

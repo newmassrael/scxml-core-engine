@@ -33,10 +33,13 @@ data class CodecLittleEndian(
         /// (RFC §5.B L494-519).
         fun decode(cursor: SceCursor): CodecLittleEndian? {
             val raw = cursor.peekSlice(4) ?: return null
+            val sensorId = raw[0].toUByte()
+            val value = ((raw[1].toInt() and 0xFF) or ((raw[2].toInt() and 0xFF) shl 8)).toUShort()
+            val status = raw[3].toUByte()
             val value = CodecLittleEndian(
-                sensorId = raw[0].toUByte(),
-                value = ((raw[1].toInt() and 0xFF) or ((raw[2].toInt() and 0xFF) shl 8)).toUShort(),
-                status = raw[3].toUByte()
+                sensorId = sensorId,
+                value = value,
+                status = status
             )
             if (!cursor.advance(4)) return null
             return value

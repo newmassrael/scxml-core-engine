@@ -25,8 +25,9 @@ func DecodeCodecFlagsBasic(cursor *codec.SceCursor) (*CodecFlagsBasic, error) {
 	if err != nil {
 		return nil, err
 	}
+	Header := raw[0]
 	value := &CodecFlagsBasic{
-		Header: raw[0],
+		Header: Header,
 	}
 	if err := cursor.Advance(1); err != nil {
 		return nil, err

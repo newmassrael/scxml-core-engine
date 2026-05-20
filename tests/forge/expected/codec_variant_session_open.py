@@ -27,8 +27,9 @@ class CodecVariantSessionOpen:
             raw = cursor.peek_slice(2)
         except NeedMoreBytes:
             return None
+        version = (raw[0] << 8) | raw[1]
         value = cls(
-            version=(raw[0] << 8) | raw[1],
+            version=version,
         )
         try:
             cursor.advance(2)

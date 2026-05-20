@@ -32,10 +32,13 @@ class CodecLengthRef:
             raw = cursor.peek_slice(_frame_len)
         except NeedMoreBytes:
             return None
+        msg_id = raw[0]
+        len = raw[1]
+        payload = raw[2:2 + len]
         value = cls(
-            msg_id=raw[0],
-            len=raw[1],
-            payload=raw[2:2 + raw[1]],
+            msg_id=msg_id,
+            len=len,
+            payload=payload,
         )
         try:
             cursor.advance(_frame_len)

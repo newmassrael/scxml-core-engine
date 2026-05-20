@@ -49,15 +49,19 @@ impl CodecLengthRef {
             return Err(CodecError::NeedMoreBytes);
         }
         let raw = cursor.peek_slice(_frame_len)?;
+        let msg_id = raw[0];
+        let len = raw[1];
+        let payload = raw[2..2 + len as usize].to_vec();
         let value = Self {
-            msg_id: raw[0],
-            len: raw[1],
-            payload: raw[2..2 + raw[1] as usize].to_vec(),
+            msg_id,
+            len,
+            payload,
         };
         // Stream-correct: advance only the bytes actually decoded.
-        // For each length-ref field, end = byte_off + raw[byte_off-1]
-        // value (length-field byte is read just before). Take the max
-        // across all length-ref fields; min_bytes is the lower bound.
+        // For each length-ref field, end = byte_off + sibling local
+        // value (the sibling let-binding ran before the payload's).
+        // Take the max across all length-ref fields; min_bytes is the
+        // lower bound.
         let mut _consumed: usize = 2;
         {
             let _end = 2usize + value.payload.len();

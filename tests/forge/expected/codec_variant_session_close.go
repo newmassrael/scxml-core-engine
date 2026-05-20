@@ -25,8 +25,9 @@ func DecodeCodecVariantSessionClose(cursor *codec.SceCursor) (*CodecVariantSessi
 	if err != nil {
 		return nil, err
 	}
+	Reason := raw[0]
 	value := &CodecVariantSessionClose{
-		Reason: raw[0],
+		Reason: Reason,
 	}
 	if err := cursor.Advance(1); err != nil {
 		return nil, err

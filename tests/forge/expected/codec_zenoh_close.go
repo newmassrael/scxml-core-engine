@@ -25,8 +25,9 @@ func DecodeCodecZenohClose(cursor *codec.SceCursor) (*CodecZenohClose, error) {
 	if err != nil {
 		return nil, err
 	}
+	Reason := raw[0]
 	value := &CodecZenohClose{
-		Reason: raw[0],
+		Reason: Reason,
 	}
 	if err := cursor.Advance(1); err != nil {
 		return nil, err

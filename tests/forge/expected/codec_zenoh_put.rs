@@ -33,8 +33,9 @@ impl CodecZenohPut {
     /// bytes (RFC §5.B L494-519).
     pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
         let raw = cursor.peek_slice(1)?;
+        let payload = raw[0];
         let value = Self {
-            payload: raw[0],
+            payload,
         };
         cursor.advance(1)?;
         Ok(value)

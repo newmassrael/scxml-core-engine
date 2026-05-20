@@ -34,9 +34,11 @@ struct CodecLengthRefDottedBasic {
         if (raw == nullptr) return std::nullopt;
         std::size_t len = _frame_len;  // shadowed for decode_expr(`raw + len`).
         (void)len;
+        uint8_t carrier = raw[0];
+        std::vector<uint8_t> payload = std::vector<uint8_t>(raw + 1, raw + 1 + ((carrier >> 4) & 0xF));
         CodecLengthRefDottedBasic value{
-            .carrier = raw[0],
-            .payload = std::vector<uint8_t>(raw + 1, raw + 1 + ((raw[0] >> 4) & 0xF)),
+            .carrier = carrier,
+            .payload = payload,
         };
         if (!cursor.advance(_frame_len)) return std::nullopt;
         return value;

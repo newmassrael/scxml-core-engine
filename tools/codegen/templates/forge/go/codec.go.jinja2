@@ -251,9 +251,12 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor{{ parent_flags_param_decl }
 	if err != nil {
 		return nil, err
 	}
+{% for field in fields %}
+	{{ field.id }} := {{ field.decode_expr }}
+{% endfor %}
 	value := &{{ struct_name }}{
 {% for field in fields %}
-		{{ field.id }}: {{ field.decode_expr }},
+		{{ field.id }}: {{ field.id }},
 {% endfor %}
 	}
 	if err := cursor.Advance(frameLen); err != nil {
@@ -265,9 +268,12 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor{{ parent_flags_param_decl }
 	if err != nil {
 		return nil, err
 	}
+{% for field in fields %}
+	{{ field.id }} := {{ field.decode_expr }}
+{% endfor %}
 	value := &{{ struct_name }}{
 {% for field in fields %}
-		{{ field.id }}: {{ field.decode_expr }},
+		{{ field.id }}: {{ field.id }},
 {% endfor %}
 	}
 	if err := cursor.Advance({{ min_bytes }}); err != nil {

@@ -74,8 +74,9 @@ data class CodecFlagsBasic(
         /// (RFC §5.B L494-519).
         fun decode(cursor: SceCursor): CodecFlagsBasic? {
             val raw = cursor.peekSlice(1) ?: return null
+            val header = raw[0].toUByte()
             val value = CodecFlagsBasic(
-                header = raw[0].toUByte()
+                header = header
             )
             if (!cursor.advance(1)) return null
             return value

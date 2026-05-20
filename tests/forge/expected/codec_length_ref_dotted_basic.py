@@ -31,9 +31,11 @@ class CodecLengthRefDottedBasic:
             raw = cursor.peek_slice(_frame_len)
         except NeedMoreBytes:
             return None
+        carrier = raw[0]
+        payload = raw[1:1 + ((carrier >> 4) & 0xF)]
         value = cls(
-            carrier=raw[0],
-            payload=raw[1:1 + ((raw[0] >> 4) & 0xF)],
+            carrier=carrier,
+            payload=payload,
         )
         try:
             cursor.advance(_frame_len)

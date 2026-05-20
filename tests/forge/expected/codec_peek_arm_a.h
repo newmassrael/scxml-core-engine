@@ -30,9 +30,11 @@ struct CodecPeekArmA {
     static std::optional<CodecPeekArmA> decode(::SCE::Forge::SceCursor& cursor) {
         const std::uint8_t* raw = cursor.peek_slice(2);
         if (raw == nullptr) return std::nullopt;
+        uint8_t header = raw[0];
+        uint8_t payload = raw[1];
         CodecPeekArmA value{
-            .header = raw[0],
-            .payload = raw[1],
+            .header = header,
+            .payload = payload,
         };
         if (!cursor.advance(2)) return std::nullopt;
         return value;

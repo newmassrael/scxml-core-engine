@@ -28,8 +28,9 @@ data class CodecZenohClose(
         /// (RFC §5.B L494-519).
         fun decode(cursor: SceCursor): CodecZenohClose? {
             val raw = cursor.peekSlice(1) ?: return null
+            val reason = raw[0].toUByte()
             val value = CodecZenohClose(
-                reason = raw[0].toUByte()
+                reason = reason
             )
             if (!cursor.advance(1)) return null
             return value

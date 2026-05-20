@@ -33,8 +33,9 @@ impl CodecFlagsBasic {
     /// bytes (RFC §5.B L494-519).
     pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
         let raw = cursor.peek_slice(1)?;
+        let header = raw[0];
         let value = Self {
-            header: raw[0],
+            header,
         };
         cursor.advance(1)?;
         Ok(value)

@@ -29,10 +29,13 @@ class CodecLittleEndian:
             raw = cursor.peek_slice(4)
         except NeedMoreBytes:
             return None
+        sensor_id = raw[0]
+        value = raw[1] | (raw[2] << 8)
+        status = raw[3]
         value = cls(
-            sensor_id=raw[0],
-            value=raw[1] | (raw[2] << 8),
-            status=raw[3],
+            sensor_id=sensor_id,
+            value=value,
+            status=status,
         )
         try:
             cursor.advance(4)

@@ -27,10 +27,13 @@ func DecodeCodecSubbyte(cursor *codec.SceCursor) (*CodecSubbyte, error) {
 	if err != nil {
 		return nil, err
 	}
+	Priority := (raw[0] >> 5) & 0x07
+	Channel := (raw[0] >> 2) & 0x07
+	Direction := (raw[0] >> 0) & 0x03
 	value := &CodecSubbyte{
-		Priority: (raw[0] >> 5) & 0x07,
-		Channel: (raw[0] >> 2) & 0x07,
-		Direction: (raw[0] >> 0) & 0x03,
+		Priority: Priority,
+		Channel: Channel,
+		Direction: Direction,
 	}
 	if err := cursor.Advance(1); err != nil {
 		return nil, err

@@ -12,10 +12,13 @@ func DecodeFrame(cursor *codec.SceCursor) (*Frame, error) {
 	if err != nil {
 		return nil, err
 	}
+	MsgId := raw[0]
+	Length := raw[1]
+	Payload := uint16(raw[2])<<8 | uint16(raw[3])
 	value := &Frame{
-		MsgId: raw[0],
-		Length: raw[1],
-		Payload: uint16(raw[2])<<8 | uint16(raw[3]),
+		MsgId: MsgId,
+		Length: Length,
+		Payload: Payload,
 	}
 	if err := cursor.Advance(4); err != nil {
 		return nil, err

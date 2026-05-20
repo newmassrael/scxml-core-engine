@@ -27,8 +27,9 @@ class CodecRepeatElem:
             raw = cursor.peek_slice(2)
         except NeedMoreBytes:
             return None
+        seq = (raw[0] << 8) | raw[1]
         value = cls(
-            seq=(raw[0] << 8) | raw[1],
+            seq=seq,
         )
         try:
             cursor.advance(2)

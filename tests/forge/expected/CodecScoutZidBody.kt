@@ -32,9 +32,11 @@ data class CodecScoutZidBody(
             val frameLen = cursor.remaining()
             if (frameLen < 1) return null
             val raw = cursor.peekSlice(frameLen) ?: return null
+            val zid_len_m1 = raw[0].toUByte()
+            val zid = raw.copyOfRange(1, 1 + zid_len_m1.toInt() + 1)
             val value = CodecScoutZidBody(
-                zid_len_m1 = raw[0].toUByte(),
-                zid = raw.copyOfRange(1, 1 + raw[0].toInt() + 1)
+                zid_len_m1 = zid_len_m1,
+                zid = zid
             )
             if (!cursor.advance(frameLen)) return null
             return value

@@ -27,8 +27,9 @@ class CodecFlagsBasic:
             raw = cursor.peek_slice(1)
         except NeedMoreBytes:
             return None
+        header = raw[0]
         value = cls(
-            header=raw[0],
+            header=header,
         )
         try:
             cursor.advance(1)

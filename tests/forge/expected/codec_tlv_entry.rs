@@ -49,15 +49,19 @@ impl CodecTlvEntry {
             return Err(CodecError::NeedMoreBytes);
         }
         let raw = cursor.peek_slice(_frame_len)?;
+        let entry_type = raw[0];
+        let entry_len = raw[1];
+        let entry_body = raw[2..2 + entry_len as usize].to_vec();
         let value = Self {
-            entry_type: raw[0],
-            entry_len: raw[1],
-            entry_body: raw[2..2 + raw[1] as usize].to_vec(),
+            entry_type,
+            entry_len,
+            entry_body,
         };
         // Stream-correct: advance only the bytes actually decoded.
-        // For each length-ref field, end = byte_off + raw[byte_off-1]
-        // value (length-field byte is read just before). Take the max
-        // across all length-ref fields; min_bytes is the lower bound.
+        // For each length-ref field, end = byte_off + sibling local
+        // value (the sibling let-binding ran before the payload's).
+        // Take the max across all length-ref fields; min_bytes is the
+        // lower bound.
         let mut _consumed: usize = 2;
         {
             let _end = 2usize + value.entry_body.len();

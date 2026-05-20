@@ -9,10 +9,13 @@ pub struct Frame {
 impl Frame {
     pub fn decode(cursor: &mut ::sce_forge_runtime::codec::SceCursor<'_>) -> Result<Self, ::sce_forge_runtime::codec::CodecError> {
         let raw = cursor.peek_slice(4)?;
+        let msg_id = raw[0];
+        let length = raw[1];
+        let payload = ((raw[2] as u16) << 8) | raw[3] as u16;
         let value = Self {
-            msg_id: raw[0],
-            length: raw[1],
-            payload: ((raw[2] as u16) << 8) | raw[3] as u16,
+            msg_id,
+            length,
+            payload,
         };
         cursor.advance(4)?;
         Ok(value)

@@ -31,10 +31,13 @@ struct CodecSimpleFrame {
     static std::optional<CodecSimpleFrame> decode(::SCE::Forge::SceCursor& cursor) {
         const std::uint8_t* raw = cursor.peek_slice(4);
         if (raw == nullptr) return std::nullopt;
+        uint8_t msgId = raw[0];
+        uint8_t length = raw[1];
+        uint16_t payload = static_cast<uint16_t>((static_cast<uint16_t>(raw[2]) << 8) | raw[3]);
         CodecSimpleFrame value{
-            .msgId = raw[0],
-            .length = raw[1],
-            .payload = static_cast<uint16_t>((static_cast<uint16_t>(raw[2]) << 8) | raw[3]),
+            .msgId = msgId,
+            .length = length,
+            .payload = payload,
         };
         if (!cursor.advance(4)) return std::nullopt;
         return value;

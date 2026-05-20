@@ -25,8 +25,9 @@ func DecodeCodecQosByte(cursor *codec.SceCursor) (*CodecQosByte, error) {
 	if err != nil {
 		return nil, err
 	}
+	Qos := raw[0]
 	value := &CodecQosByte{
-		Qos: raw[0],
+		Qos: Qos,
 	}
 	if err := cursor.Advance(1); err != nil {
 		return nil, err
