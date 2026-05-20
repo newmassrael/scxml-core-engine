@@ -741,43 +741,14 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/dma-alignment-unsatisfiable")]
     CodecDmaAlignmentUnsatisfiable,
 
-    // ── §5.B B5-γ parent-flags dependency (watching-zenoh RFC §5.B) ──
-    //    A body codec with `<sce:requires-parent-flags carrier="X">`
-    //    declares its body fields read flags from a parent codec's
-    //    flags carrier (Zenoh upstream pattern: `_z_init_decode(..,
-    //    uint8_t header)` gates `sn_res + req_id_res + batch_size`
-    //    on the parent header's S-flag). The cross-codec validator
-    //    (variant arm wire-up) confirms the parent codec has
-    //    `<sce:flags id="<carrier>">` of uint8 with each declared
-    //    flag name + bit position matching exactly. Mismatch
-    //    surfaces here on three axes: (a) parent codec lacks the
-    //    named carrier; (b) carrier is not flags-bearing or is not
-    //    uint8; (c) declared flag name+bit doesn't match the parent
-    //    layout. Repair is structural — fix the body's declared
-    //    parent-flag layout to match the parent's carrier shape,
-    //    or wire the body codec to a different parent. Stage =
-    //    Validation. ──
-    #[serde(rename = "codec/parent-flag-mismatch")]
-    CodecParentFlagMismatch,
-
-    /// RFC §5.B B5-γ × B5-ν composition — parent codec satisfies
-    /// neither the Terminal nor the Forwarding source for the body's
-    /// declared `<sce:requires-parent-flags carrier="X">`. Common
-    /// trigger: a B5-ν dispatcher used as the parent of an arm body
-    /// that consults a sibling parent flag; the dispatcher must
-    /// declare its own forwarding `<sce:requires-parent-flags>` so
-    /// the inductive chain resolves at the grandparent.
-    #[serde(rename = "codec/parent-flag-chain-unresolved")]
-    CodecParentFlagChainUnresolved,
-
-    /// RFC §5.B B5-γ × B5-ν composition — body's `<sce:flag>` bit
-    /// position diverges from the parent's flag layout at this
-    /// composition level. Applies uniformly to the Terminal source
-    /// (parent's own `<sce:flags>` element) and the Forwarding source
-    /// (parent's RPF flag list). The parent's bit position is the
-    /// wire-format truth; repair by aligning the body's `bit=`.
-    #[serde(rename = "codec/parent-flag-chain-bit-drift")]
-    CodecParentFlagChainBitDrift,
+    /// RFC §5.B Y3 atomic 2b-ii peek-byte cross-codec contract — a
+    /// parent variant's `<sce:peek-byte>` flag layout and an arm body
+    /// codec's first `<sce:flags>` field must agree exactly on bit and
+    /// width for each named flag. Mismatch surfaces at variant arm
+    /// wire-up; repair is structural (align one side). Stage =
+    /// Validation.
+    #[serde(rename = "codec/peek-byte-flag-layout-mismatch")]
+    CodecPeekByteFlagLayoutMismatch,
 
     // ── §5.C link kind (watching-zenoh RFC §5.C, B6-α/γ). MCU-class
     //    byte-stream link endpoint. Three of seven §5.C diagnostic
@@ -2371,11 +2342,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CodecTlvChainDepthUnspecified,
         // Codec §5.B B3 DMA alignment primitive (watching-zenoh RFC §5.B)
         CodecDmaAlignmentUnsatisfiable,
-        // Codec §5.B B5-γ parent-flags dependency (watching-zenoh RFC §5.B)
-        CodecParentFlagMismatch,
-        // Codec §5.B B5-γ × B5-ν consumer-parity — chain resolution (2 codes)
-        CodecParentFlagChainUnresolved,
-        CodecParentFlagChainBitDrift,
+        // Codec §5.B Y3 atomic 2b-ii peek-byte cross-codec layout match
+        CodecPeekByteFlagLayoutMismatch,
         // Link §5.C byte-stream link endpoint (watching-zenoh RFC §5.C, B6-α/γ/η + B6-α')
         LinkFramerMissing,
         LinkLinkClassUnknown,
@@ -2746,9 +2714,7 @@ impl DiagnosticCode {
             | AlgorithmTestVectorUnsupportedKind
             | CodecTlvChainDepthUnspecified
             | CodecDmaAlignmentUnsatisfiable
-            | CodecParentFlagMismatch
-            | CodecParentFlagChainUnresolved
-            | CodecParentFlagChainBitDrift => Some("watching-zenoh RFC §5.B"),
+            | CodecPeekByteFlagLayoutMismatch => Some("watching-zenoh RFC §5.B"),
 
             // ── Link §5.C byte-stream link endpoint (B6) ─────────
             LinkFramerMissing
@@ -3274,9 +3240,7 @@ impl DiagnosticCode {
             AlgorithmTestVectorUnsupportedKind => "algorithm/test-vector-unsupported-kind",
             CodecTlvChainDepthUnspecified => "codec/tlv-chain-depth-unspecified",
             CodecDmaAlignmentUnsatisfiable => "codec/dma-alignment-unsatisfiable",
-            CodecParentFlagMismatch => "codec/parent-flag-mismatch",
-            CodecParentFlagChainUnresolved => "codec/parent-flag-chain-unresolved",
-            CodecParentFlagChainBitDrift => "codec/parent-flag-chain-bit-drift",
+            CodecPeekByteFlagLayoutMismatch => "codec/peek-byte-flag-layout-mismatch",
             LinkFramerMissing => "link/framer-missing",
             LinkLinkClassUnknown => "link/link-class-unknown",
             LinkBackpressureUndeclared => "link/backpressure-undeclared",
@@ -4819,66 +4783,21 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![codec.clone(), field.clone(), burst_align.to_string()],
         },
-        ValidationError::CodecParentFlagMismatch {
+        ValidationError::CodecPeekByteFlagLayoutMismatch {
             body_codec,
             parent_codec,
             reason: _,
         } => DiagnosticPayload {
-            code: DiagnosticCode::CodecParentFlagMismatch,
+            code: DiagnosticCode::CodecPeekByteFlagLayoutMismatch,
             stage: Stage::Validation,
-            // Repair is structural (fix the body's declared parent-
-            // flag layout to match the parent's carrier shape, or
-            // wire the body codec to a different parent) — no
-            // closed candidate set. (body_codec, parent_codec) keys
-            // the violation across multiple variant arm wire-ups
-            // referencing the same body codec.
+            // Repair is structural (align one side's peek-byte vs body
+            // flag layout); no closed candidate set. (body_codec,
+            // parent_codec) keys the violation across multiple
+            // peek-byte arm wire-ups.
             expected: None,
             actual: Some(body_codec.clone()),
             fix: None,
             key_fragments: vec![body_codec.clone(), parent_codec.clone()],
-        },
-        ValidationError::CodecParentFlagChainUnresolved {
-            body_codec,
-            parent_codec,
-            carrier,
-            known_parent_fields: _,
-            parent_has_rpf: _,
-        } => DiagnosticPayload {
-            code: DiagnosticCode::CodecParentFlagChainUnresolved,
-            stage: Stage::Validation,
-            // Repair is structural — declare the missing carrier on
-            // the parent (either a concrete `<sce:flags>` field or a
-            // forwarding `<sce:requires-parent-flags>`). Open
-            // candidate set; v1 surfaces no `fix` and relies on the
-            // message prose to direct the author.
-            expected: None,
-            actual: Some(body_codec.clone()),
-            fix: None,
-            key_fragments: vec![body_codec.clone(), parent_codec.clone(), carrier.clone()],
-        },
-        ValidationError::CodecParentFlagChainBitDrift {
-            body_codec,
-            parent_codec,
-            carrier,
-            flag,
-            body_bit: _,
-            parent_bit: _,
-        } => DiagnosticPayload {
-            code: DiagnosticCode::CodecParentFlagChainBitDrift,
-            stage: Stage::Validation,
-            // Repair is deterministic — align the body's `bit=` to
-            // the parent's bit position (the wire-format truth). No
-            // fix struct emitted because the parent bit is already in
-            // the message prose; the author's diff is mechanical.
-            expected: None,
-            actual: Some(body_codec.clone()),
-            fix: None,
-            key_fragments: vec![
-                body_codec.clone(),
-                parent_codec.clone(),
-                carrier.clone(),
-                flag.clone(),
-            ],
         },
         ValidationError::LinkFramerMissing { name } => DiagnosticPayload {
             code: DiagnosticCode::LinkFramerMissing,
@@ -8513,42 +8432,16 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:98584368c0e405fa","code":"codec/dma-alignment-unsatisfiable","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': field 'aligned_payload' with sce:dma-burst-align=\"32\" cannot be honored — preceding field 'value' has bit-size 'vle' (variable-length); static padding cannot honor sce:dma-burst-align when any prior field's wire size depends on runtime values (RFC §5.B \"fixed-offset positions only — no VLE-following alignment\")","actual":"aligned_payload"}"#,
             ),
-            // ── §5.B B5-γ parent-flags dependency (watching-zenoh RFC §5.B) ─
+            // ── §5.B Y3 atomic 2b-ii peek-byte cross-codec layout ─
             (
-                "forge/codec-parent-flag-mismatch",
-                ValidationError::CodecParentFlagMismatch {
-                    body_codec: "codec_init_syn_body".into(),
-                    parent_codec: "codec_init_envelope".into(),
-                    reason: "body declares <sce:flag name=\"S\" bit=\"6\"/> but parent codec's <sce:flags id=\"header\"> has 'S' at bit=5 (Zenoh transport header layout: S-flag is bit 6 — fix one side to align)".into(),
+                "forge/codec-peek-byte-flag-layout-mismatch",
+                ValidationError::CodecPeekByteFlagLayoutMismatch {
+                    body_codec: "codec_peek_arm_a".into(),
+                    parent_codec: "codec_variant_peek_basic".into(),
+                    reason: "parent <sce:peek-byte id=\"peek\"> places flag 'kind' at bit=0 width=2 but arm body 'codec_peek_arm_a' header field 'header' places 'kind' at bit=1 width=2 — fix one side (the peeked byte and the arm body's own first byte are the same wire byte, so the two declarations MUST agree)".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:a724cb80443a21ac","code":"codec/parent-flag-mismatch","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'codec_init_syn_body' (body): requires-parent-flags layout mismatch against parent codec 'codec_init_envelope' — body declares <sce:flag name=\"S\" bit=\"6\"/> but parent codec's <sce:flags id=\"header\"> has 'S' at bit=5 (Zenoh transport header layout: S-flag is bit 6 — fix one side to align)","actual":"codec_init_syn_body"}"#,
-            ),
-            // ── §5.B B5-γ × B5-ν consumer-parity chain resolution ─
-            (
-                "forge/codec-parent-flag-chain-unresolved",
-                ValidationError::CodecParentFlagChainUnresolved {
-                    body_codec: "wireexpr_local".into(),
-                    parent_codec: "wireexpr".into(),
-                    carrier: "header".into(),
-                    known_parent_fields: "".into(),
-                    parent_has_rpf: true,
-                }
-                .into(),
-                r#"{"v":1,"id":"fnv1a:5c619cbe2a5fe09e","code":"codec/parent-flag-chain-unresolved","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'wireexpr_local' (body): requires-parent-flags carrier 'header' unresolved at parent codec 'wireexpr' — neither <sce:flags id=\"header\"> field nor forwarding <sce:requires-parent-flags carrier=\"header\"> declared on the parent (known parent fields: []; parent has its own requires-parent-flags: true)","actual":"wireexpr_local"}"#,
-            ),
-            (
-                "forge/codec-parent-flag-chain-bit-drift",
-                ValidationError::CodecParentFlagChainBitDrift {
-                    body_codec: "wireexpr_local".into(),
-                    parent_codec: "interest_body".into(),
-                    carrier: "header".into(),
-                    flag: "N".into(),
-                    body_bit: 5,
-                    parent_bit: 4,
-                }
-                .into(),
-                r#"{"v":1,"id":"fnv1a:214796b3809f3802","code":"codec/parent-flag-chain-bit-drift","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'wireexpr_local' (body): requires-parent-flags bit drift against parent codec 'interest_body' — body declares <sce:flag name=\"N\" bit=\"5\"/> but parent's flag layout for 'header' places 'N' at bit=4 (the parent's bit position is the wire-format truth)","actual":"wireexpr_local"}"#,
+                r#"{"v":1,"id":"fnv1a:f143872e85c94270","code":"codec/peek-byte-flag-layout-mismatch","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'codec_peek_arm_a' (arm body): peek-byte flag layout mismatch against parent codec 'codec_variant_peek_basic' — parent <sce:peek-byte id=\"peek\"> places flag 'kind' at bit=0 width=2 but arm body 'codec_peek_arm_a' header field 'header' places 'kind' at bit=1 width=2 — fix one side (the peeked byte and the arm body's own first byte are the same wire byte, so the two declarations MUST agree)","actual":"codec_peek_arm_a"}"#,
             ),
             // ── §5.C B6-α link kind (watching-zenoh RFC §5.C) ─
             (
@@ -10791,9 +10684,7 @@ mod tests {
             | AlgorithmTestVectorUnsupportedKind
             | CodecTlvChainDepthUnspecified
             | CodecDmaAlignmentUnsatisfiable
-            | CodecParentFlagMismatch
-            | CodecParentFlagChainUnresolved
-            | CodecParentFlagChainBitDrift
+            | CodecPeekByteFlagLayoutMismatch
             | LinkFramerMissing
             | LinkBackpressureUndeclared
             | LinkPoolSlotSmallerThanFramerMax
@@ -11282,9 +11173,7 @@ mod tests {
                 | AlgorithmTestVectorUnsupportedKind
                 | CodecTlvChainDepthUnspecified
                 | CodecDmaAlignmentUnsatisfiable
-                | CodecParentFlagMismatch
-                | CodecParentFlagChainUnresolved
-                | CodecParentFlagChainBitDrift
+                | CodecPeekByteFlagLayoutMismatch
                 | LinkFramerMissing
                 | LinkLinkClassUnknown
                 | LinkBackpressureUndeclared
@@ -11476,7 +11365,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            294,
+            292,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries —\
              expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \

@@ -922,38 +922,26 @@ fn parse_codec(
     // diagnostic surfaces from `parse_codec_variant` instead, with
     // a precise repair hint.
 
-    // RFC §5.B B5-γ parent-flags dependency — codec-level
-    // `<sce:requires-parent-flags carrier="X">` block declaring
-    // the codec's body fields read flags from a parent codec's
-    // flags carrier (Zenoh upstream pattern: `_z_init_decode(..,
-    // uint8_t header)`). Cross-codec layout match against the
-    // actual parent codec is deferred to the variant arm wire-up
-    // validator (codegen-time) per `codec/parent-flag-mismatch`.
-    let requires_parent_flags = parse_requires_parent_flags(root, label.diagnostic_label)?;
-
     // RFC Axis-1 inversion — codec-level `<sce:flag-inputs>` block
     // declaring named flag-shaped inputs the codec receives from its
-    // caller. Replaces `<sce:requires-parent-flags>` for the inverted
-    // ownership shape. Both forms coexist during Phase A; a future
-    // atomic deletes RPF + the `parent.X` predicate form once all
-    // fixtures migrate.
+    // caller (Zenoh upstream pattern: `_z_init_decode(.., uint8_t s,
+    // uint8_t a)` typed per-input). Cross-codec layout match against
+    // the actual parent codec's import-site `<sce:flag-bind>` is
+    // deferred to the codegen-time validator per
+    // `codec/flag-input-unbound`.
     let flag_inputs = parse_flag_inputs(root, label.diagnostic_label)?;
 
-    // RFC §5.B B1-δ + B5-γ present-if validation — every gated
-    // field's predicate must reference either a flags-bearing
-    // carrier declared earlier (Local scope) or a flag declared
-    // in the codec's `<sce:requires-parent-flags>` block (Parent
-    // scope). Forward references and unknown Local carriers split
-    // into distinct diagnostics (`codec/present-if-refs-later-field`
-    // for the ordering case so the author gets a precise repair
-    // hint; `validation/invalid-attribute` for missing carrier or
-    // missing flag, since both reduce to "fix the attribute text").
-    // Parent-scope predicates check flag existence in the declared
-    // requires-parent-flags block; cross-codec match defers to
-    // codegen-time validator.
+    // RFC §5.B B1-δ + Axis-1 inversion present-if validation —
+    // every gated field's predicate must reference either a flags-
+    // bearing carrier declared earlier (Local scope) or a declared
+    // `<sce:flag-input>` on the codec itself (Input scope). Forward
+    // references and unknown Local carriers split into distinct
+    // diagnostics (`codec/present-if-refs-later-field` for the
+    // ordering case so the author gets a precise repair hint;
+    // `validation/invalid-attribute` for missing carrier or missing
+    // flag, since both reduce to "fix the attribute text").
     validate_codec_present_if_predicates(
         &fields,
-        requires_parent_flags.as_ref(),
         &flag_inputs,
         label,
         &datamodel,
@@ -1013,17 +1001,12 @@ fn parse_codec(
     // codec's own field list; arm body aliases (resolved against
     // <sce:import> aliases) are validated downstream by the codegen
     // step which has the import set.
-    //
-    // B5-ν: parser also accepts `tag="parent.<flag>"`; threading
-    // requires_parent_flags lets the parser validate the named flag
-    // exists in the codec's declared dependency block and surface
-    // `codec/variant-parent-tag-*` diagnostics without a second pass.
-    let variant = parse_codec_variant(&datamodel, &fields, requires_parent_flags.as_ref(), label)?;
+    let variant = parse_codec_variant(&datamodel, &fields, label)?;
 
     // RFC §5.B B5-θ inline test vectors. Parsed against the field list
     // so each `<sce:decoded field="..." value|hex|string="..."/>` row
     // resolves to a typed value matching the field's `SceType`. Trunk
-    // accepts plain (non-variant, non-TLV-chain, non-parent-flags)
+    // accepts plain (non-variant, non-TLV-chain, non-flag-input)
     // codecs only — the per-language sidecar emitter rejects the
     // out-of-trunk shapes through `render_codec_test_vector_sidecar`'s
     // gate so the parser surface stays uniform across closures.
@@ -1035,161 +1018,11 @@ fn parse_codec(
         input_length,
         fields,
         variant,
-        requires_parent_flags,
         flag_inputs,
         test_vectors,
         source_location: forge_source_location_of(root, label.diagnostic_label),
     })
 }
-
-/// RFC §5.B B5-γ — parse the optional codec-level
-/// `<sce:requires-parent-flags carrier="X">` element with `<sce:flag
-/// name="N" bit="B"/>` children. Returns `None` when the element is
-/// absent. The carrier attribute is required (names the parent
-/// codec's flags-carrier field id); each child `<sce:flag>` declares
-/// a named bit in the parent's carrier. v1 single-bit only (no
-/// `width` attribute) — multi-bit parent-flag access defers to a
-/// later B-stage when a reachable consumer surfaces.
-///
-/// Cross-codec layout match against the parent codec's
-/// `<sce:flags id="<carrier>">` happens at variant arm wire-up time
-/// (codegen-time validator) per `codec/parent-flag-mismatch`. Here
-/// we only validate intra-element shape (carrier non-empty, flag
-/// name uniqueness, bit within u8 range — v1 fixes parent flag
-/// carrier type at uint8 per Zenoh transport pattern).
-fn parse_requires_parent_flags(
-    codec_root: &roxmltree::Node,
-    doc_name: &str,
-) -> Result<Option<RequiresParentFlags>, Located<ForgeError>> {
-    let block = codec_root.children().find(|n| {
-        n.is_element()
-            && n.tag_name().namespace() == Some(SCE_NAMESPACE)
-            && n.tag_name().name() == "requires-parent-flags"
-    });
-    let block = match block {
-        Some(b) => b,
-        None => return Ok(None),
-    };
-    // `carrier` is an unqualified attribute (matches the
-    // `<sce:arm value/type>` / `<sce:flag name/bit>` convention used
-    // throughout the codec sub-elements; only globally-shared attrs
-    // like `sce:byte` keep the namespace prefix).
-    let carrier = block
-        .attribute("carrier")
-        .map(|s| s.trim().to_string())
-        .unwrap_or_default();
-    if carrier.is_empty() {
-        return Err(located(
-            &block,
-            doc_name,
-            ValidationError::InvalidAttribute {
-                element: "<sce:requires-parent-flags>".into(),
-                attr: "carrier".into(),
-                value: String::new(),
-                expected: "non-empty parent codec flags-carrier field id \
-                           (e.g. carrier=\"header\")"
-                    .into(),
-            },
-        ));
-    }
-    let mut flags: Vec<FlagDef> = Vec::new();
-    for child in block.children().filter(|n| n.is_element()) {
-        if child.tag_name().namespace() != Some(SCE_NAMESPACE) {
-            continue;
-        }
-        if child.tag_name().name() != "flag" {
-            continue;
-        }
-        let name = child
-            .attribute("name")
-            .map(|s| s.trim().to_string())
-            .unwrap_or_default();
-        if name.is_empty() {
-            return Err(located(
-                &child,
-                doc_name,
-                ValidationError::InvalidAttribute {
-                    element: "<sce:flag> in <sce:requires-parent-flags>".into(),
-                    attr: "name".into(),
-                    value: String::new(),
-                    expected: "non-empty flag name (matches a flag declared on \
-                               the parent codec's <sce:flags> carrier)"
-                        .into(),
-                },
-            ));
-        }
-        let bit_str = child
-            .attribute("bit")
-            .map(|s| s.trim().to_string())
-            .unwrap_or_default();
-        let bit: u32 = parse_int(&bit_str).ok_or_else(|| {
-            located(
-                &child,
-                doc_name,
-                ValidationError::InvalidAttribute {
-                    element: format!("<sce:flag name=\"{}\">", name),
-                    attr: "bit".into(),
-                    value: bit_str.clone(),
-                    expected: "non-negative integer bit position within the \
-                               parent carrier (v1 fixes parent type at uint8: \
-                               bit ∈ [0, 7])"
-                        .into(),
-                },
-            )
-        })?;
-        if bit >= 8 {
-            return Err(located(
-                &child,
-                doc_name,
-                ValidationError::InvalidAttribute {
-                    element: format!("<sce:flag name=\"{}\">", name),
-                    attr: "bit".into(),
-                    value: bit_str,
-                    expected: "bit position must lie within the parent flags \
-                               carrier (v1 fixes parent type at uint8: \
-                               bit ∈ [0, 7])"
-                        .into(),
-                },
-            ));
-        }
-        if flags.iter().any(|f| f.name == name) {
-            return Err(located(
-                &child,
-                doc_name,
-                ValidationError::InvalidAttribute {
-                    element: "<sce:requires-parent-flags>".into(),
-                    attr: "name".into(),
-                    value: name.clone(),
-                    expected: "unique flag name within the requires-parent-flags \
-                               block"
-                        .into(),
-                },
-            ));
-        }
-        flags.push(FlagDef {
-            name,
-            bit,
-            width: 1,
-            value: None,
-        });
-    }
-    if flags.is_empty() {
-        return Err(located(
-            &block,
-            doc_name,
-            ValidationError::InvalidAttribute {
-                element: "<sce:requires-parent-flags>".into(),
-                attr: "child elements".into(),
-                value: String::new(),
-                expected: "at least one <sce:flag name=\"N\" bit=\"B\"/> child \
-                           (an empty parent-flags block has no purpose)"
-                    .into(),
-            },
-        ));
-    }
-    Ok(Some(RequiresParentFlags { carrier, flags }))
-}
-
 /// RFC Axis-1 inversion — parse the optional codec-level
 /// `<sce:flag-inputs>` block containing `<sce:flag-input name="X"
 /// width="N"/>` children. Returns an empty `Vec` when the element is
@@ -1492,7 +1325,6 @@ fn parse_flag_binds(
 /// because the repair is still "fix the attribute text".
 fn validate_codec_present_if_predicates(
     fields: &[CodecField],
-    requires_parent_flags: Option<&RequiresParentFlags>,
     flag_inputs: &[crate::forge::model::FlagInput],
     label: DocumentLabel<'_>,
     datamodel: &roxmltree::Node,
@@ -1502,71 +1334,12 @@ fn validate_codec_present_if_predicates(
     for field in fields {
         // RFC §5.B Y3 atomic 2b-ii: validate every clause of the
         // disjunction chain (`a.X || b.Y || ...`) — each clause
-        // independently must satisfy the same Local/Parent scope rules
+        // independently must satisfy the same Local/Input scope rules
         // as the v1 single-clause grammar. Walk the chain via the
         // `or_with` recursive tail; the head is `field.present_if`.
         let mut clause_opt = field.present_if.as_ref();
         while let Some(predicate) = clause_opt {
-            // RFC §5.B B5-γ: parent-scope predicates resolve against
-            // the codec's `<sce:requires-parent-flags>` block, not
-            // against sibling fields. The cross-codec match against
-            // the actual parent codec's `<sce:flags id="<carrier>">`
-            // happens at variant arm wire-up time (Task 5 cross-codec
-            // validator); here we only confirm the codec authored a
-            // declared parent contract and the flag name appears in
-            // it. Mismatch reuses `validation/invalid-attribute`
-            // because the repair is "fix the attribute text or add
-            // the flag to the requires-parent-flags block".
-            if predicate.scope == PresentIfScope::Parent {
-                let parent = match requires_parent_flags {
-                    Some(p) => p,
-                    None => {
-                        return Err(located(
-                            datamodel,
-                            label.diagnostic_label,
-                            ValidationError::InvalidAttribute {
-                                element: format!(
-                                    "field '{}' in codec '{}'",
-                                    field.id, label.identifier
-                                ),
-                                attr: "sce:present-if".into(),
-                                value: format!("parent.{}", predicate.flag_name),
-                                expected: "codec must declare \
-                                     <sce:requires-parent-flags carrier=\"...\"> \
-                                     before using a 'parent.<flag>' predicate"
-                                    .into(),
-                            },
-                        ));
-                    }
-                };
-                if !parent.flags.iter().any(|f| f.name == predicate.flag_name) {
-                    let known: Vec<&str> = parent.flags.iter().map(|f| f.name.as_str()).collect();
-                    return Err(located(
-                        datamodel,
-                        label.diagnostic_label,
-                        ValidationError::InvalidAttribute {
-                            element: format!(
-                                "field '{}' in codec '{}'",
-                                field.id, label.identifier
-                            ),
-                            attr: "sce:present-if".into(),
-                            value: format!("parent.{}", predicate.flag_name),
-                            expected: format!(
-                                "flag name must be declared in \
-                                 <sce:requires-parent-flags carrier=\"{}\">: \
-                                 known flags = [{}]",
-                                parent.carrier,
-                                known.join(", ")
-                            ),
-                        },
-                    ));
-                }
-                // Parent predicate validated. Fall through so the
-                // chain walker advances to the `or_with` tail; the
-                // outer for-loop's by_id_so_far insert (after the
-                // while-loop) handles field-id visibility for
-                // subsequent fields uniformly across both scopes.
-            } else if predicate.scope == PresentIfScope::Input {
+            if predicate.scope == PresentIfScope::Input {
                 // Axis-1 inversion: bare-name predicate resolves to a
                 // codec-declared `<sce:flag-input>`. The leaf-side
                 // contract owns nothing about the parent's carrier;
@@ -1932,7 +1705,6 @@ fn parse_peek_byte_from_variant_node(
 fn parse_codec_variant(
     datamodel: &roxmltree::Node,
     fields: &[CodecField],
-    requires_parent_flags: Option<&RequiresParentFlags>,
     label: DocumentLabel<'_>,
 ) -> Result<Option<CodecVariant>, Located<ForgeError>> {
     let variant_node = match datamodel.children().find(|n| {
@@ -1960,10 +1732,9 @@ fn parse_codec_variant(
     // `decode(cursor, tag: u8)` and the parent's encode/decode paths
     // own the carrier byte directly.
     //
-    // Legacy form: `tag` attribute is required and carries either a
-    // bare field id (B1-β whole-field), a `<carrier>.<flag>` dotted
-    // path (B5-β multi-bit-flag), or `parent.<flag>` (B5-ν leaf-side,
-    // deprecated by inversion — kept alive through #12, removed in #4).
+    // Tagged form: `tag` attribute carries either a bare field id
+    // (B1-β whole-field) or a `<carrier>.<flag>` dotted path (B5-β
+    // multi-bit-flag).
     let raw_tag: Option<String> = variant_node.attribute("tag").map(|s| s.to_string());
 
     // RFC §5.B B5-β multi-bit-flag dispatch: `tag="<carrier>.<flag>"`
@@ -1971,13 +1742,6 @@ fn parse_codec_variant(
     // `tag="<field>"` (B1-β whole-field form) keeps the original
     // semantics. Grammar mirrors B1-δ present-if predicate exactly so
     // authors learn one dotted-path convention.
-    //
-    // B5-ν: `tag="parent.<flag>"` dispatches on a flag in the codec's
-    // declared `<sce:requires-parent-flags>` carrier. Resolution sets
-    // `tag_field` to the rpf carrier name + `tag_scope` to `Parent`;
-    // downstream codegen reads from the `parent_flags` parameter
-    // threaded by the parent codec's variant arm dispatcher instead
-    // of from a self-owned field.
     //
     // β shape (`raw_tag.is_none()`): tag_field stays `None` all the
     // way through. Both `tag_flag` and `tag_scope` default to their
@@ -1998,11 +1762,9 @@ fn parse_codec_variant(
                             attr: "tag".into(),
                             value: raw.to_string(),
                             expected: "either a bare field id (e.g. 'msg_id') for whole-field \
-                                       dispatch, a '<carrier>.<flag>' dotted path (e.g. \
-                                       'header.mid') for multi-bit-flag dispatch, or \
-                                       'parent.<flag>' (B5-ν) for dispatch on a flag in the \
-                                       codec's declared <sce:requires-parent-flags> carrier \
-                                       — both halves must be non-empty"
+                                       dispatch, or a '<carrier>.<flag>' dotted path (e.g. \
+                                       'header.mid') for multi-bit-flag dispatch — both halves \
+                                       must be non-empty"
                                 .into(),
                         },
                     ));
@@ -2012,22 +1774,6 @@ fn parse_codec_variant(
             None => (Some(raw.to_string()), None),
         },
     };
-
-    // B5-ν: detect parent-scope tag (`tag="parent.<flag>"`). The
-    // literal `parent` token mirrors the B5-γ present-if convention.
-    // When detected we redirect `tag_field` to the codec's declared
-    // `requires_parent_flags.carrier` and validate the named flag
-    // against that block — the codec MUST declare a matching
-    // `<sce:requires-parent-flags>` element, and the named flag MUST
-    // appear in its flag list. Both checks surface dedicated
-    // diagnostics (CodecVariantParentTagWithoutRequiresParentFlags /
-    // CodecVariantParentTagFlagNotDeclared) so author repair is
-    // attribute-text-level.
-    // RFC B5-ν inversion β shape: legacy `tag="parent.<flag>"` form
-    // removed. Dispatch on a parent flag is now declared at the
-    // parent's `<sce:import>` via `<sce:variant-dispatch>`; the leaf
-    // omits `tag=` entirely.
-    let _ = requires_parent_flags; // RPF stays alive for B5-γ — not consumed here.
 
     // Y3 atomic 2b-ii peek-byte: peek-byte mode dispatches the tag from
     // the cursor's NEXT byte (peek-without-advance) rather than from
@@ -2904,28 +2650,13 @@ fn parse_present_if_predicate(
         }
         None => None,
     };
-    // RFC §5.B B5-γ: `parent` is a reserved LHS keyword that
-    // references the codec's declared `<sce:requires-parent-flags>`
-    // block. The cross-codec validator confirms the carrier and
-    // flag exist on the parent codec at variant arm wire-up time;
-    // here we only record the scope so codegen can branch on it.
-    if lhs == "parent" {
-        Ok(PresentIfPredicate {
-            scope: PresentIfScope::Parent,
-            field_id: String::new(),
-            flag_name: rhs.to_string(),
-            negate,
-            or_with,
-        })
-    } else {
-        Ok(PresentIfPredicate {
-            scope: PresentIfScope::Local,
-            field_id: lhs.to_string(),
-            flag_name: rhs.to_string(),
-            negate,
-            or_with,
-        })
-    }
+    Ok(PresentIfPredicate {
+        scope: PresentIfScope::Local,
+        field_id: lhs.to_string(),
+        flag_name: rhs.to_string(),
+        negate,
+        or_with,
+    })
 }
 
 /// RFC §5.B B1-γ flags primitive — parse `<sce:flags id=... sce:type=...
@@ -4080,7 +3811,6 @@ fn format_present_if_predicate_for_diag(p: &PresentIfPredicate) -> String {
     let prefix = if p.negate { "!" } else { "" };
     let head = match p.scope {
         PresentIfScope::Local => format!("{prefix}{}.{}", p.field_id, p.flag_name),
-        PresentIfScope::Parent => format!("{prefix}parent.{}", p.flag_name),
         PresentIfScope::Input => format!("{prefix}{}", p.flag_name),
     };
     match &p.or_with {

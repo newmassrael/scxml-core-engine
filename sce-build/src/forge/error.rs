@@ -954,73 +954,20 @@ pub enum ValidationError {
         reason: String,
     },
 
-    /// RFC §5.B B5-γ parent-flags dependency: a body codec declared
-    /// `<sce:requires-parent-flags carrier="X">` and a parent carrier
-    /// source was found, but the carrier or one of the named flags has
-    /// the wrong shape. Two remaining structural causes (bit-drift was
-    /// split into `CodecParentFlagChainBitDrift`, source-unresolved
-    /// into `CodecParentFlagChainUnresolved`):
-    ///   (b) the named Terminal carrier exists but is not a
-    ///       `<sce:flags>` container, or is not a uint8 (v1 fixes
-    ///       parent flag carrier type at uint8 per Zenoh transport
-    ///       pattern);
-    ///   (c) a flag declared in the body's block has a name that
-    ///       doesn't appear in the parent's flag layout (Terminal
-    ///       `<sce:flags>` children OR Forwarding RPF flag list).
-    /// Repair is structural: fix the body's declared parent-flag
-    /// layout to match the parent's carrier shape, or wire the body
-    /// codec to a different parent.
+    /// RFC §5.B Y3 atomic 2b-ii peek-byte cross-codec contract — a
+    /// parent variant declares `<sce:peek-byte id="X"><sce:flag name=
+    /// "F" bit="B" width="W"/></sce:peek-byte>` and an arm body codec
+    /// declares its first `<sce:flags>` field with a `<sce:flag>` of
+    /// the same name but a different bit / width. Since the peeked byte
+    /// IS the arm body's first wire byte, both declarations must agree
+    /// exactly. Repair by aligning one side to the other.
     #[error(
-        "codec '{body_codec}' (body): requires-parent-flags layout mismatch against parent codec '{parent_codec}' — {reason}"
+        "codec '{body_codec}' (arm body): peek-byte flag layout mismatch against parent codec '{parent_codec}' — {reason}"
     )]
-    CodecParentFlagMismatch {
+    CodecPeekByteFlagLayoutMismatch {
         body_codec: String,
         parent_codec: String,
         reason: String,
-    },
-
-    /// RFC §5.B B5-γ × B5-ν composition — body codec declared
-    /// `<sce:requires-parent-flags carrier="X">` but the parent codec
-    /// neither declares `<sce:flags id="X">` in its own datamodel nor
-    /// forwards the same carrier via its own `<sce:requires-parent-
-    /// flags carrier="X">`. The parent cannot satisfy the body's
-    /// flag-carrier dependency at this composition level. Common
-    /// trigger: a B5-ν dispatcher used as the parent of an arm body
-    /// that consults a sibling flag — the dispatcher must declare
-    /// its own `<sce:requires-parent-flags>` covering that flag so
-    /// the inductive chain resolves at the grandparent.
-    /// Repair: add the missing flag declaration to the parent (either
-    /// a concrete `<sce:flags>` field or a forwarding
-    /// `<sce:requires-parent-flags>`).
-    #[error(
-        "codec '{body_codec}' (body): requires-parent-flags carrier '{carrier}' unresolved at parent codec '{parent_codec}' — neither <sce:flags id=\"{carrier}\"> field nor forwarding <sce:requires-parent-flags carrier=\"{carrier}\"> declared on the parent (known parent fields: [{known_parent_fields}]; parent has its own requires-parent-flags: {parent_has_rpf})"
-    )]
-    CodecParentFlagChainUnresolved {
-        body_codec: String,
-        parent_codec: String,
-        carrier: String,
-        known_parent_fields: String,
-        parent_has_rpf: bool,
-    },
-
-    /// RFC §5.B B5-γ × B5-ν composition — body codec declared
-    /// `<sce:flag name="F" bit="N"/>` inside its
-    /// `<sce:requires-parent-flags>` but the parent's flag layout
-    /// places `F` at a different bit position. Applies uniformly to
-    /// the Terminal source (parent's own `<sce:flags>` element) and
-    /// the Forwarding source (parent's own RPF flag list). The
-    /// parent's bit position is the wire-format truth.
-    /// Repair: align body's `bit=` to the parent declaration.
-    #[error(
-        "codec '{body_codec}' (body): requires-parent-flags bit drift against parent codec '{parent_codec}' — body declares <sce:flag name=\"{flag}\" bit=\"{body_bit}\"/> but parent's flag layout for '{carrier}' places '{flag}' at bit={parent_bit} (the parent's bit position is the wire-format truth)"
-    )]
-    CodecParentFlagChainBitDrift {
-        body_codec: String,
-        parent_codec: String,
-        carrier: String,
-        flag: String,
-        body_bit: u32,
-        parent_bit: u32,
     },
 
     /// RFC §5.C B6-α byte-stream link endpoint: `<sce:framer ref="..."/>`

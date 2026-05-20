@@ -366,9 +366,9 @@
        child declarations. Each input becomes a positional typed
        parameter on the generated `decode`/`encode` signatures; the
        parent supplies values at import-site via `<sce:flag-bind>`.
-       Replaces `<sce:requires-parent-flags>` for the inverted
-       ownership shape; both coexist during Phase A until a later
-       atomic deletes the legacy form. -->
+       Owns the entire codec-to-codec flag-shaped dependency surface
+       (the legacy `<sce:requires-parent-flags>` block was deleted
+       in Axis-1 Phase D). -->
   <xs:element name="flag-inputs">
     <xs:complexType>
       <xs:sequence>
@@ -805,51 +805,6 @@
            sibling integer field's value. Author-trust on encode
            (sibling value must match emitted byte count). -->
       <xs:attribute ref="sce:length-from"/>
-    </xs:complexType>
-  </xs:element>
-
-  <!-- ═══════════════════════════════════════════════════════════════
-       RFC §5.B B5-γ parent-flags dependency
-
-       Codec-level annotation declaring that a body codec's fields
-       read flags from a parent codec's flags carrier (Zenoh upstream
-       pattern: `_z_init_decode(.., uint8_t header)` gates the body's
-       `sn_res + req_id_res + batch_size` triplet on the parent
-       header's S-flag at bit 6). Authored as a direct child of the
-       codec's `<scxml>` root, alongside `<datamodel>`:
-
-         <sce:requires-parent-flags carrier="header">
-           <sce:flag name="S" bit="6"/>
-           <sce:flag name="A" bit="5"/>
-         </sce:requires-parent-flags>
-
-       Codegen extends the codec's decode/encode signature with a
-       `parent_flags: u8` parameter when this element is present;
-       the variant arm dispatcher threads the parent's flag-carrier
-       value into the arm decoder call. Body-field gating uses the
-       existing `sce:present-if="parent.<flag>"` grammar (B5-γ
-       extension of B1-δ).
-
-       Cross-codec layout match against the parent codec's
-       `<sce:flags id="<carrier>">` happens at variant arm wire-up
-       (codegen-time) and rejects with `codec/parent-flag-mismatch`
-       on (a) carrier missing on parent, (b) carrier not flags-
-       bearing or not uint8, or (c) flag name+bit mismatch.
-
-       v1 fixes the parent flag carrier type at uint8 (Zenoh
-       transport pattern; widening to uint16+ defers until a
-       reachable consumer surfaces). Declared on `<sce:flag>` here
-       with `bit ∈ [0, 7]`; sce-build enforces.
-       ═══════════════════════════════════════════════════════════════ -->
-
-  <xs:element name="requires-parent-flags">
-    <xs:complexType>
-      <xs:sequence>
-        <xs:element ref="sce:flag" minOccurs="1" maxOccurs="unbounded"/>
-      </xs:sequence>
-      <!-- Parent codec's flags-carrier field id (e.g. carrier="header").
-           Cross-codec match validated at variant arm wire-up. -->
-      <xs:attribute name="carrier" type="xs:string" use="required"/>
     </xs:complexType>
   </xs:element>
 

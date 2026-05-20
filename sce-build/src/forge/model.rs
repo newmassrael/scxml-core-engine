@@ -1022,12 +1022,10 @@ pub struct FlagDef {
     pub value: Option<u64>,
 }
 
-/// RFC §5.B B5-γ + Axis-1 inversion present-if predicate scope —
-/// distinguishes the B1-δ local form (carrier in same codec) from the
-/// B5-γ parent form (carrier in declared `<sce:requires-parent-flags>`
-/// block, passed by value as `parent_flags`) and the Axis-1 inversion
-/// input form (bare name resolves to a declared `<sce:flag-input>`,
-/// passed as a positional typed parameter).
+/// RFC §5.B B1-δ + Axis-1 inversion present-if predicate scope —
+/// distinguishes the local form (carrier in same codec) from the
+/// Axis-1 inversion input form (bare name resolves to a declared
+/// `<sce:flag-input>`, passed as a positional typed parameter).
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum PresentIfScope {
@@ -1035,11 +1033,6 @@ pub enum PresentIfScope {
     /// flags-bearing sibling field declared earlier in the same
     /// codec; predicate reads `(self.<carrier> & mask) != 0`.
     Local,
-    /// `parent.<flag_name>` — B5-γ form. Carrier is the codec's
-    /// declared `requires_parent_flags`; predicate reads
-    /// `(parent_flags & mask) != 0` against the value threaded in
-    /// by the variant arm dispatcher.
-    Parent,
     /// `<name>` (bare, no dot) — Axis-1 inversion form. Resolves to a
     /// declared `<sce:flag-input name="X">` on the codec itself; the
     /// input arrives as a typed positional parameter (`X: u8` for v1
@@ -1049,22 +1042,20 @@ pub enum PresentIfScope {
     Input,
 }
 
-/// RFC §5.B B1-δ + B5-γ + B5-λ present-if predicate — a single
+/// RFC §5.B B1-δ + RFC Axis-1 + B5-λ present-if predicate — a single
 /// bit-test on either a flags-bearing sibling field declared earlier
-/// in the same codec (B1-δ Local scope) or a flag declared in the
-/// codec's `<sce:requires-parent-flags>` block (B5-γ Parent scope).
+/// in the same codec (B1-δ Local scope) or a declared
+/// `<sce:flag-input>` on the codec itself (RFC Axis-1 Input scope).
 ///
-/// v1 grammar covers six forms:
+/// v1 grammar covers four forms:
 ///   - `<field_id>.<flag_name>` (Local positive) — predicate is true
 ///     iff the named flag bit on the local carrier is set.
 ///   - `!<field_id>.<flag_name>` (Local negative, B5-λ) — predicate
 ///     is true iff the bit is clear. Required for Zenoh OpenSyn body
-///     where cookie is present iff parent.A is NOT set.
-///   - `parent.<flag_name>` (Parent positive) — true iff the named
-///     flag bit is set on the value passed in by the parent variant
-///     dispatcher.
-///   - `!parent.<flag_name>` (Parent negative, B5-λ) — true iff the
-///     bit is clear. Same Zenoh OpenSyn rationale at parent scope.
+///     where cookie is present iff the `A` input is NOT set.
+///   - `<name>` (Input positive) — true iff the named `<sce:flag-input>`
+///     value is non-zero. Single-bit input (v1 width=1).
+///   - `!<name>` (Input negative, B5-λ) — true iff the input is zero.
 ///   - `<a> || <b> [|| <c> ...]` (Disjunction, Y3 atomic 2b-ii) —
 ///     predicate is true iff ANY listed clause is true. Each clause
 ///     is itself one of the four forms above (each can independently
@@ -1074,22 +1065,22 @@ pub enum PresentIfScope {
 ///     `interest.h:35`. Outer negation `!(a || b)` defers to a
 ///     future RFC stage.
 ///
-/// `field_id` is empty when scope = Parent (carrier is implicit —
-/// the codec's declared `requires_parent_flags.carrier`).
+/// `field_id` is empty when `scope = Input` (carrier is implicit —
+/// the codec's own `<sce:flag-input>` parameter).
 ///
 /// Conjunction (`flag1 && flag2`) and equality (`field == value`)
 /// remain deferred to later B-stages when a reachable consumer
 /// surfaces.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PresentIfPredicate {
-    /// Predicate scope. Defaults to `Local` for back-compat with
-    /// pre-B5-γ goldens; serialized only when `Parent` to keep
-    /// existing local-scope JSON shape byte-stable.
+    /// Predicate scope. Defaults to `Local`; serialized only for
+    /// non-Local scopes (`Input`) to keep pre-Axis-1 local-scope
+    /// JSON shape byte-stable.
     #[serde(skip_serializing_if = "is_local_scope")]
     pub scope: PresentIfScope,
     /// Carrier field id when `scope = Local`. Empty when `scope =
-    /// Parent` (the carrier is implicit — the codec's declared
-    /// `requires_parent_flags.carrier`).
+    /// Input` (the carrier is the codec's own `<sce:flag-input>`
+    /// parameter named by `flag_name`).
     pub field_id: String,
     pub flag_name: String,
     /// B5-λ negation: when true, predicate fires when the named flag
@@ -1113,37 +1104,9 @@ fn is_local_scope(scope: &PresentIfScope) -> bool {
     matches!(scope, PresentIfScope::Local)
 }
 
-/// RFC §5.B B5-γ — the codec's declared dependency on a parent
-/// codec's flags carrier. Authored as `<sce:requires-parent-flags
-/// carrier="X"><sce:flag name="N" bit="B"/></sce:requires-parent-flags>`
-/// under `<sce:codec>`.
-///
-/// Validator (cross-codec, at variant arm wire-up) confirms the
-/// parent codec has `<sce:flags id="<carrier>">` of `uint8` with
-/// each declared flag name + bit position matching exactly.
-/// Mismatch surfaces as `codec/parent-flag-mismatch`.
-///
-/// Codegen extends the codec's decode/encode signature with a
-/// `parent_flags: u8` parameter (per-language idiom) when this
-/// field is `Some`; variant arm dispatcher threads the parent's
-/// flag-carrier value into the arm decoder call.
-///
-/// v1 fixes the parent flag carrier type at `uint8` (Zenoh
-/// transport pattern). Future widening to uint16+ defers to a
-/// reachable consumer.
-#[derive(Debug, Clone, Serialize)]
-pub struct RequiresParentFlags {
-    /// Parent codec's flags-carrier field id (e.g. `"header"`).
-    pub carrier: String,
-    /// Per-flag declarations mirroring the parent's `<sce:flags>`
-    /// child layout. Validator confirms exact name + bit match
-    /// against the parent codec.
-    pub flags: Vec<FlagDef>,
-}
-
 /// RFC Axis-1 inversion — a named flag-shaped input the codec receives
-/// from its caller. Replaces [`RequiresParentFlags`] for the inverted
-/// ownership shape: leaf declares logical input names + bit widths only,
+/// from its caller. Replaces the legacy `<sce:requires-parent-flags>`
+/// shape: leaf declares logical input names + bit widths only,
 /// with no claim about the parent's carrier name or bit position.
 ///
 /// Authored as `<sce:flag-inputs><sce:flag-input name="X" width="N"/>
@@ -1542,18 +1505,6 @@ pub struct CodecModel {
     /// than a flat struct.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub variant: Option<CodecVariant>,
-    /// RFC §5.B B5-γ parent-flags dependency — the codec's body
-    /// fields read flags from a parent codec's flags carrier
-    /// (Zenoh upstream pattern: `_z_init_decode(.., uint8_t header)`
-    /// gates `sn_res + req_id_res + batch_size` on parent's S-flag
-    /// bit 6). When `Some`, codegen extends the decode/encode
-    /// signature with a `parent_flags: u8` parameter and the variant
-    /// arm dispatcher threads the parent's flag-carrier value
-    /// through. Cross-codec validator confirms the parent codec's
-    /// `<sce:flags id="<carrier>">` matches the body's declared
-    /// flag layout (name + bit).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub requires_parent_flags: Option<RequiresParentFlags>,
     /// RFC Axis-1 inversion — declared flag-shaped inputs the codec
     /// receives from its caller. Empty when the codec needs no caller-
     /// supplied flags. Each [`FlagInput`] becomes a positional typed
@@ -1719,14 +1670,6 @@ impl CodecModel {
         self.has_dma_aligned_fields()
     }
 
-    /// Whether the codec declares a `<sce:requires-parent-flags>`
-    /// block (RFC §5.B B5-γ). Drives the per-backend signature
-    /// extension that adds a `parent_flags: u8` parameter to
-    /// decode/encode and the variant arm dispatcher's threading
-    /// of the parent's flag-carrier value through the call.
-    pub fn has_parent_flags(&self) -> bool {
-        self.requires_parent_flags.is_some()
-    }
 }
 
 // ── Codec test vectors (RFC §5.B B5-θ) ────────────────────────

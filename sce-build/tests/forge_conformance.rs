@@ -8917,99 +8917,6 @@ fn forge_codec_length_arith_out_of_range_rejects() {
     }
 }
 
-/// RFC §5.B B5-γ: cross-codec parent-flag layout mismatch — the body
-/// codec declares `<sce:flag name="S" bit="6"/>` but the parent codec's
-/// `<sce:flags id="header">` places 'S' at a DIFFERENT bit. The
-/// codegen-time cross-codec validator surfaces
-/// `codec/parent-flag-mismatch` with a precise reason naming the
-/// offending flag and both bit positions.
-///
-/// Body fixture is inlined here (rather than reusing
-/// `codec_init_syn_body.scxml`) because Axis-1 inversion Phase C migrated
-/// the resource fixture to `<sce:flag-inputs>` — this test exercises the
-/// legacy `<sce:requires-parent-flags>` chain-bit-drift validator which
-/// will be removed in Phase D along with the codec/parent-flag-chain-*
-/// diagnostic codes.
-#[test]
-fn forge_codec_parent_flag_bit_mismatch_rejects() {
-    use sce_build::forge::error::{ForgeError, ValidationError};
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
-    let pid = std::process::id();
-    let dir = std::env::temp_dir().join(format!("sce_parent_flag_bit_mismatch_{pid}_{id}"));
-    std::fs::create_dir_all(&dir).expect("mkdir fixture");
-
-    let body_scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="codec_parent_flag_bit_mismatch_body">
-  <sce:requires-parent-flags carrier="header">
-    <sce:flag name="S" bit="6"/>
-  </sce:requires-parent-flags>
-  <datamodel>
-    <sce:field id="version" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
-    <sce:field id="sn_res" sce:type="uint8" sce:byte="1" sce:bit-size="8"
-               sce:present-if="parent.S"/>
-  </datamodel>
-</scxml>"##;
-    std::fs::write(
-        dir.join("codec_parent_flag_bit_mismatch_body.scxml"),
-        body_scxml,
-    )
-    .expect("write body fixture");
-
-    let parent_scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="codec_init_syn_envelope_mismatch">
-  <sce:import src="codec_parent_flag_bit_mismatch_body.scxml" kind="codec" as="codec_parent_flag_bit_mismatch_body"/>
-  <datamodel>
-    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
-      <sce:flag name="mid" bit="0" width="5"/>
-      <sce:flag name="S"   bit="5"/>
-    </sce:flags>
-    <sce:variant tag="header.mid">
-      <sce:arm value="0x01" type="codec_parent_flag_bit_mismatch_body" default="true"/>
-      <sce:default type="codec_parent_flag_bit_mismatch_body"/>
-    </sce:variant>
-  </datamodel>
-</scxml>"##;
-    let result = sce_build::compile_forge_with_imports(
-        parent_scxml,
-        sce_build::DocumentLabel::symmetric("codec_init_syn_envelope_mismatch"),
-        sce_build::generator::Language::Rust,
-        &dir,
-        &sce_build::ForgeCompileOptions::default(),
-    );
-    let err = match result {
-        Ok(_) => {
-            panic!("parent flag bit-mismatch must reject with codec/parent-flag-chain-bit-drift")
-        }
-        Err(e) => e,
-    };
-    // RFC B5-ν consumer-parity (claudedocs/rfc-b5-nu-consumer-parity.md)
-    // unified Terminal + Forwarding bit-drift onto a single typed
-    // variant. The legacy CodecParentFlagMismatch path stays for
-    // wrong-shape / wrong-type / flag-name-not-found cases; pure bit-
-    // position divergence now routes to the chain-bit-drift variant.
-    assert!(
-        matches!(
-            &err.error,
-            ForgeError::Validation(ValidationError::CodecParentFlagChainBitDrift {
-                ref flag,
-                ref body_bit,
-                ref parent_bit,
-                ..
-            }) if flag == "S" && *body_bit == 6 && *parent_bit == 5
-        ),
-        "must surface CodecParentFlagChainBitDrift; got: {:?}",
-        err.error
-    );
-
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
 // ═══════════════════════════════════════════════════════════════
 // ── Rust golden compile gate ─────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
@@ -9966,14 +9873,12 @@ fn forge_b5_nu_inversion_dispatch_carrier_after_embed_rejects() {
 //   (`if let Some` for Rust; absent → derived carrier bit = 0).
 //
 // * Gap 1 positive (`forge_b5_nu_consumer_parity_chain_forwarding_
-//   resolves`) — dispatcher itself has `<sce:requires-parent-flags>`
-//   forwarding the carrier; arm bodies' RPF must resolve against the
-//   forwarding source.
-//
-// * Gap 1 negatives (`..._chain_unresolved_rejects` +
-//   `..._chain_bit_drift_rejects`) — neither Terminal nor Forwarding
-//   covers the body's carrier (ChainUnresolved); Forwarding has the
-//   flag at a different bit than the body (ChainBitDrift).
+//   resolves`) — dispatcher itself receives the flag via its own
+//   `<sce:flag-inputs>` and forwards it to the arm body via a bare-
+//   name `<sce:flag-bind source="...">` on the variant-arm import
+//   (RFC Axis-1 inversion replaces the legacy RPF chain mechanism).
+//   The negative pair (chain_unresolved/chain_bit_drift) is gone —
+//   their typed validators were removed with the RPF struct.
 
 /// RFC B5-ν consumer-parity Gap 2 — alias ≠ stem at the parent's
 /// import. The dispatcher's stem (`b5nu_consumer_disp`) drives the
@@ -10236,20 +10141,25 @@ fn forge_b5_nu_consumer_parity_chain_forwarding_resolves() {
     let dir = std::env::temp_dir().join(format!("sce_b5nu_chain_pos_{pid}_{id}"));
     std::fs::create_dir_all(&dir).expect("mkdir fixture");
 
-    // dispatcher: β-shape variant (caller-tag) + RPF for N to forward
-    // to arm_a via B5-γ chain (per Q-D-9=(b) RPF stays alive for B5-γ).
-    // M-dispatch lives at the parent's import-site `<sce:variant-dispatch>`
-    // — not shown in this fixture since the test compiles the
-    // dispatcher in isolation to exercise the chain-forwarding path.
+    // dispatcher: β-shape variant (caller-tag) + flag-input `N` that
+    // the dispatcher receives from its grandparent and forwards to
+    // arm_a via a bare-name flag-bind on the variant-arm import.
+    // Chain-forwarding is no longer a separate mechanism — it is just
+    // a parent codec whose `<sce:flag-bind source="N">` references
+    // its own `<sce:flag-input name="N">` rather than a local
+    // carrier flag (RFC Axis-1 Q-11 folded B5-γ chain forwarding
+    // into the flag-input shape).
     let dispatcher = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:codec-id="b5nu_chain_disp" sce:default-endian="big">
-  <sce:import src="b5nu_chain_arm_a.scxml" kind="codec" as="b5nu_chain_arm_a"/>
+  <sce:import src="b5nu_chain_arm_a.scxml" kind="codec" as="b5nu_chain_arm_a">
+    <sce:flag-bind input="N" source="N"/>
+  </sce:import>
   <sce:import src="b5nu_chain_arm_b.scxml" kind="codec" as="b5nu_chain_arm_b"/>
-  <sce:requires-parent-flags carrier="header">
-    <sce:flag name="N" bit="5"/>
-  </sce:requires-parent-flags>
+  <sce:flag-inputs>
+    <sce:flag-input name="N" width="1"/>
+  </sce:flag-inputs>
   <datamodel>
     <sce:variant>
       <sce:arm value="0x00" type="b5nu_chain_arm_b" default="true"/>
@@ -10258,17 +10168,18 @@ fn forge_b5_nu_consumer_parity_chain_forwarding_resolves() {
   </datamodel>
 </scxml>"#;
 
-    // arm_a declares RPF for header.N — the parent (dispatcher) must
-    // satisfy this via its forwarding RPF.
+    // arm_a declares its own flag-input `N` — the dispatcher
+    // satisfies this via `<sce:flag-bind input="N" source="N"/>` on
+    // its variant-arm import, forwarding its own `n` parameter.
     let arm_a = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:codec-id="b5nu_chain_arm_a" sce:default-endian="big">
-  <sce:requires-parent-flags carrier="header">
-    <sce:flag name="N" bit="5"/>
-  </sce:requires-parent-flags>
+  <sce:flag-inputs>
+    <sce:flag-input name="N" width="1"/>
+  </sce:flag-inputs>
   <datamodel>
-    <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8" sce:present-if="parent.N"/>
+    <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8" sce:present-if="N"/>
   </datamodel>
 </scxml>"#;
 
@@ -10299,38 +10210,39 @@ fn forge_b5_nu_consumer_parity_chain_forwarding_resolves() {
     )
     .expect("chain-forwarding source must resolve arm body's RPF");
 
-    // RFC B5-ν dispatcher-self-gen Gap 4 + 5 — the dispatcher's own
-    // generated decode/encode must pass `parent_flags` (the dispatcher's
-    // function parameter) to arm bodies, NOT a bare `header` identifier
-    // (which would reference a nonexistent local at decode and a
-    // nonexistent field at encode).
+    // RFC Axis-1 inversion Phase D — the dispatcher's own generated
+    // decode/encode must thread `n` (the dispatcher's own flag-input
+    // parameter, name resolved via `<sce:flag-bind source="N"/>`'s
+    // bare-name chain-forwarder shape) to arm bodies, NOT a bare
+    // `header` identifier (which would reference a nonexistent local
+    // at decode and a nonexistent field at encode).
     let disp_rust = output
         .files
         .iter()
         .find(|(name, _)| name.contains("b5nu_chain_disp"))
         .map(|(_, body)| body.clone())
         .expect("dispatcher codec emit");
-    // Decode site (Gap 4): arm body's decode receives parent_flags.
+    // Decode site: arm body's decode receives the dispatcher's `n`
+    // input verbatim (FlagBindSource::Input passthrough).
     assert!(
-        disp_rust.contains("B5nuChainArmA::decode(cursor, parent_flags)"),
-        "dispatcher decode must pass `parent_flags` to arm_a; got:\n{disp_rust}"
+        disp_rust.contains("B5nuChainArmA::decode(cursor, n)"),
+        "dispatcher decode must pass `n` to arm_a; got:\n{disp_rust}"
     );
     assert!(
         !disp_rust.contains("B5nuChainArmA::decode(cursor, header)"),
-        "dispatcher decode must NOT pass bare `header` (Gap 4 regression);\n{disp_rust}"
+        "dispatcher decode must NOT pass bare `header`;\n{disp_rust}"
     );
-    // Encode site (Gap 5): arm body's encode invocation reads
-    // parent_flags from the dispatcher's encode parameter, NOT
-    // `self.header` (no such field on the Forwarding dispatcher).
+    // Encode site: arm body's encode invocation reads `n` from the
+    // dispatcher's encode parameter, NOT `self.header` (no such field
+    // on the chain-forwarder dispatcher).
     assert!(
-        disp_rust.contains("b.encode(parent_flags)"),
-        "dispatcher encode must pass `parent_flags` to arm body; \
-         got:\n{disp_rust}"
+        disp_rust.contains("b.encode(n)"),
+        "dispatcher encode must pass `n` to arm body; got:\n{disp_rust}"
     );
     assert!(
         !disp_rust.contains("b.encode(self.header)"),
         "dispatcher encode must NOT reference `self.header` \
-         (no such field on Forwarding dispatcher; Gap 5 regression);\n{disp_rust}"
+         (no such field on chain-forwarder dispatcher);\n{disp_rust}"
     );
 
     // RFC §5.B dispatcher self-gen Q-DSG-3 — end-to-end rustc-compile
@@ -10351,190 +10263,6 @@ fn forge_b5_nu_consumer_parity_chain_forwarding_resolves() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// RFC B5-ν consumer-parity Gap 1 negative — neither parent's own
-/// `<sce:flags>` nor its `<sce:requires-parent-flags>` declares the
-/// carrier the arm body's RPF requires. ChainUnresolved fires.
-#[test]
-fn forge_b5_nu_consumer_parity_chain_unresolved_rejects() {
-    use sce_build::forge::error::{ForgeError, ValidationError};
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
-    let pid = std::process::id();
-    let dir = std::env::temp_dir().join(format!("sce_b5nu_chain_unres_{pid}_{id}"));
-    std::fs::create_dir_all(&dir).expect("mkdir fixture");
-
-    // Dispatcher: β-shape variant (caller-tag); RPF declares `header.M`
-    // but arm_a's body needs `trailer.X`, which neither the dispatcher's
-    // own flags nor its forwarding RPF cover. The chain cannot resolve.
-    let dispatcher = r#"<?xml version="1.0"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="b5nu_chain_unres_disp" sce:default-endian="big">
-  <sce:import src="b5nu_chain_unres_arm_a.scxml" kind="codec" as="b5nu_chain_unres_arm_a"/>
-  <sce:import src="b5nu_chain_unres_arm_b.scxml" kind="codec" as="b5nu_chain_unres_arm_b"/>
-  <sce:requires-parent-flags carrier="header">
-    <sce:flag name="M" bit="6"/>
-  </sce:requires-parent-flags>
-  <datamodel>
-    <sce:variant>
-      <sce:arm value="0x00" type="b5nu_chain_unres_arm_b" default="true"/>
-      <sce:arm value="0x01" type="b5nu_chain_unres_arm_a"/>
-    </sce:variant>
-  </datamodel>
-</scxml>"#;
-
-    let arm_a = r#"<?xml version="1.0"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="b5nu_chain_unres_arm_a" sce:default-endian="big">
-  <sce:requires-parent-flags carrier="trailer">
-    <sce:flag name="X" bit="3"/>
-  </sce:requires-parent-flags>
-  <datamodel>
-    <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8" sce:present-if="parent.X"/>
-  </datamodel>
-</scxml>"#;
-
-    let arm_b = r#"<?xml version="1.0"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="b5nu_chain_unres_arm_b" sce:default-endian="big">
-  <datamodel>
-    <sce:field id="payload" sce:type="uint16" sce:byte="0" sce:bit-size="16"/>
-  </datamodel>
-</scxml>"#;
-
-    std::fs::write(dir.join("b5nu_chain_unres_disp.scxml"), dispatcher).expect("write disp");
-    std::fs::write(dir.join("b5nu_chain_unres_arm_a.scxml"), arm_a).expect("write arm_a");
-    std::fs::write(dir.join("b5nu_chain_unres_arm_b.scxml"), arm_b).expect("write arm_b");
-
-    let err = match sce_build::compile_forge_with_imports(
-        dispatcher,
-        sce_build::DocumentLabel::symmetric("b5nu_chain_unres_disp"),
-        sce_build::generator::Language::Rust,
-        &dir,
-        &sce_build::ForgeCompileOptions::default(),
-    ) {
-        Ok(_) => panic!("validator must reject unresolved carrier chain"),
-        Err(e) => e,
-    };
-    assert!(
-        matches!(
-            err.error,
-            ForgeError::Validation(
-                ValidationError::CodecParentFlagChainUnresolved {
-                    ref body_codec,
-                    ref parent_codec,
-                    ref carrier,
-                    parent_has_rpf,
-                    ..
-                }
-            ) if body_codec == "b5nu_chain_unres_arm_a"
-                && parent_codec == "b5nu_chain_unres_disp"
-                && carrier == "trailer"
-                && parent_has_rpf
-        ),
-        "got: {:?}",
-        err.error
-    );
-
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-/// RFC B5-ν consumer-parity Gap 1 negative — dispatcher forwards the
-/// carrier but the flag's bit position diverges between body and
-/// forwarding RPF. ChainBitDrift fires (Forwarding-source path).
-#[test]
-fn forge_b5_nu_consumer_parity_chain_bit_drift_rejects() {
-    use sce_build::forge::error::{ForgeError, ValidationError};
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
-    let pid = std::process::id();
-    let dir = std::env::temp_dir().join(format!("sce_b5nu_chain_drift_{pid}_{id}"));
-    std::fs::create_dir_all(&dir).expect("mkdir fixture");
-
-    // Dispatcher: β-shape variant + RPF forwards `header.N` at bit=4;
-    // arm_a's RPF declares `header.N` at bit=5 — the body and parent
-    // layouts disagree (ChainBitDrift).
-    let dispatcher = r#"<?xml version="1.0"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="b5nu_chain_drift_disp" sce:default-endian="big">
-  <sce:import src="b5nu_chain_drift_arm_a.scxml" kind="codec" as="b5nu_chain_drift_arm_a"/>
-  <sce:import src="b5nu_chain_drift_arm_b.scxml" kind="codec" as="b5nu_chain_drift_arm_b"/>
-  <sce:requires-parent-flags carrier="header">
-    <sce:flag name="N" bit="4"/>
-  </sce:requires-parent-flags>
-  <datamodel>
-    <sce:variant>
-      <sce:arm value="0x00" type="b5nu_chain_drift_arm_b" default="true"/>
-      <sce:arm value="0x01" type="b5nu_chain_drift_arm_a"/>
-    </sce:variant>
-  </datamodel>
-</scxml>"#;
-
-    let arm_a = r#"<?xml version="1.0"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="b5nu_chain_drift_arm_a" sce:default-endian="big">
-  <sce:requires-parent-flags carrier="header">
-    <sce:flag name="N" bit="5"/>
-  </sce:requires-parent-flags>
-  <datamodel>
-    <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8" sce:present-if="parent.N"/>
-  </datamodel>
-</scxml>"#;
-
-    let arm_b = r#"<?xml version="1.0"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:codec-id="b5nu_chain_drift_arm_b" sce:default-endian="big">
-  <datamodel>
-    <sce:field id="payload" sce:type="uint16" sce:byte="0" sce:bit-size="16"/>
-  </datamodel>
-</scxml>"#;
-
-    std::fs::write(dir.join("b5nu_chain_drift_disp.scxml"), dispatcher).expect("write disp");
-    std::fs::write(dir.join("b5nu_chain_drift_arm_a.scxml"), arm_a).expect("write arm_a");
-    std::fs::write(dir.join("b5nu_chain_drift_arm_b.scxml"), arm_b).expect("write arm_b");
-
-    let err = match sce_build::compile_forge_with_imports(
-        dispatcher,
-        sce_build::DocumentLabel::symmetric("b5nu_chain_drift_disp"),
-        sce_build::generator::Language::Rust,
-        &dir,
-        &sce_build::ForgeCompileOptions::default(),
-    ) {
-        Ok(_) => panic!("validator must reject Forwarding-source bit drift"),
-        Err(e) => e,
-    };
-    assert!(
-        matches!(
-            err.error,
-            ForgeError::Validation(
-                ValidationError::CodecParentFlagChainBitDrift {
-                    ref body_codec,
-                    ref parent_codec,
-                    ref carrier,
-                    ref flag,
-                    body_bit,
-                    parent_bit,
-                }
-            ) if body_codec == "b5nu_chain_drift_arm_a"
-                && parent_codec == "b5nu_chain_drift_disp"
-                && carrier == "header"
-                && flag == "N"
-                && body_bit == 5
-                && parent_bit == 4
-        ),
-        "got: {:?}",
-        err.error
-    );
-
-    let _ = std::fs::remove_dir_all(&dir);
-}
 
 // RFC §5.B B5-ν dispatcher self-gen (claudedocs/rfc-b5-nu-dispatcher-
 // self-gen.md) — per-backend regression fixtures for the variant arm
@@ -10545,10 +10273,12 @@ fn forge_b5_nu_consumer_parity_chain_bit_drift_rejects() {
 // argument substitution) + per-backend variant body discrimination
 // (Gap 7 Go field-presence, Gap 8 Python `.kind` string).
 
-/// Helper — write the standard B5-ν dispatcher-self-gen fixture set:
-/// dispatcher with own RPF carrier="header" + flag M (variant tag)
-/// + flag N (forwarded to arm_a's body which gates a payload byte
-/// on `parent.N`), plus arm_a (with RPF on N) and arm_b (plain).
+/// Helper — write the standard B5-ν dispatcher-self-gen fixture set
+/// (RFC Axis-1 inversion shape): dispatcher with its own
+/// `<sce:flag-input name="N">` (chain-forwarder receiving N from its
+/// own caller) + variant arm imports binding arm_a's input `N` via
+/// bare-name source (`<sce:flag-bind input="N" source="N"/>`), plus
+/// arm_a (declares `<sce:flag-input name="N">`) and arm_b (plain).
 fn b5_nu_dsg_write_fixture(namespace: &str) -> (std::path::PathBuf, String, String, String) {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -10566,11 +10296,13 @@ fn b5_nu_dsg_write_fixture(namespace: &str) -> (std::path::PathBuf, String, Stri
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:codec-id="{disp_id}" sce:default-endian="big">
-  <sce:import src="{arm_a_id}.scxml" kind="codec" as="{arm_a_id}"/>
+  <sce:import src="{arm_a_id}.scxml" kind="codec" as="{arm_a_id}">
+    <sce:flag-bind input="N" source="N"/>
+  </sce:import>
   <sce:import src="{arm_b_id}.scxml" kind="codec" as="{arm_b_id}"/>
-  <sce:requires-parent-flags carrier="header">
-    <sce:flag name="N" bit="5"/>
-  </sce:requires-parent-flags>
+  <sce:flag-inputs>
+    <sce:flag-input name="N" width="1"/>
+  </sce:flag-inputs>
   <datamodel>
     <sce:variant>
       <sce:arm value="0x00" type="{arm_b_id}" default="true"/>
@@ -10585,11 +10317,11 @@ fn b5_nu_dsg_write_fixture(namespace: &str) -> (std::path::PathBuf, String, Stri
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:codec-id="{arm_a_id}" sce:default-endian="big">
-  <sce:requires-parent-flags carrier="header">
-    <sce:flag name="N" bit="5"/>
-  </sce:requires-parent-flags>
+  <sce:flag-inputs>
+    <sce:flag-input name="N" width="1"/>
+  </sce:flag-inputs>
   <datamodel>
-    <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8" sce:present-if="parent.N"/>
+    <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8" sce:present-if="N"/>
   </datamodel>
 </scxml>"#
     );
@@ -10850,20 +10582,22 @@ warnings = "deny"
     Ok(())
 }
 
-/// RFC B5-ν dispatcher self-gen — Cpp dispatcher emit threads
-/// `parent_flags` to arm body decode/encode calls.
+/// RFC B5-ν dispatcher self-gen — Cpp dispatcher emit threads its
+/// own `<sce:flag-input name="N">` parameter (snake `n`) to arm body
+/// decode/encode calls via the bare-name flag-bind on the variant arm
+/// import (RFC Axis-1 chain-forwarder shape).
 #[test]
 fn forge_b5_nu_dispatcher_self_gen_cpp() {
     let (dir, disp_id, arm_a_id, arm_b_id) = b5_nu_dsg_write_fixture("cpp");
     let disp = b5_nu_dsg_compile_disp(&dir, &disp_id, sce_build::generator::Language::Cpp);
     let arm_a_pascal = b5_nu_id_to_pascal(&arm_a_id);
     assert!(
-        disp.contains(&format!("{arm_a_pascal}::decode(cursor, parent_flags)")),
-        "Cpp dispatcher decode must pass parent_flags to arm_a; got:\n{disp}"
+        disp.contains(&format!("{arm_a_pascal}::decode(cursor, n)")),
+        "Cpp dispatcher decode must pass `n` to arm_a; got:\n{disp}"
     );
     assert!(
         !disp.contains(&format!("{arm_a_pascal}::decode(cursor, header)")),
-        "Cpp dispatcher decode must NOT pass bare `header` (Gap 4);\n{disp}"
+        "Cpp dispatcher decode must NOT pass bare `header`;\n{disp}"
     );
     let arm_a_file = format!("{arm_a_id}.scxml");
     let arm_b_file = format!("{arm_b_id}.scxml");
@@ -10877,19 +10611,20 @@ fn forge_b5_nu_dispatcher_self_gen_cpp() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// RFC B5-ν dispatcher self-gen — Kotlin dispatcher emit threads
-/// `parentFlags` (camelCase) to arm body encode calls.
+/// RFC B5-ν dispatcher self-gen — Kotlin dispatcher emit threads its
+/// `N` flag-input parameter to arm body encode calls (Kotlin uses
+/// to_camel_case; single-letter uppercase `N` is identity).
 #[test]
 fn forge_b5_nu_dispatcher_self_gen_kotlin() {
     let (dir, disp_id, arm_a_id, arm_b_id) = b5_nu_dsg_write_fixture("kotlin");
     let disp = b5_nu_dsg_compile_disp(&dir, &disp_id, sce_build::generator::Language::Kotlin);
     assert!(
-        disp.contains("parentFlags"),
-        "Kotlin dispatcher must reference parentFlags param; got:\n{disp}"
+        disp.contains("N: UByte"),
+        "Kotlin dispatcher must declare `N: UByte` flag-input param; got:\n{disp}"
     );
     assert!(
         !disp.contains("this.header"),
-        "Kotlin dispatcher must NOT reference this.header on Forwarding-source dispatcher (Gap 5);\n{disp}"
+        "Kotlin dispatcher must NOT reference this.header on chain-forwarder dispatcher;\n{disp}"
     );
     let disp_file = format!("{disp_id}.scxml");
     let arm_a_file = format!("{arm_a_id}.scxml");
@@ -10903,24 +10638,25 @@ fn forge_b5_nu_dispatcher_self_gen_kotlin() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// RFC B5-ν dispatcher self-gen — Go dispatcher emit threads
-/// `parentFlags` (camelCase) at arm calls.
+/// RFC B5-ν dispatcher self-gen — Go dispatcher emit threads its `N`
+/// flag-input parameter at arm calls (Go uses to_camel_case for input
+/// names; single-letter uppercase `N` is identity).
 #[test]
 fn forge_b5_nu_dispatcher_self_gen_go() {
     let (dir, disp_id, arm_a_id, arm_b_id) = b5_nu_dsg_write_fixture("go");
     let disp = b5_nu_dsg_compile_disp(&dir, &disp_id, sce_build::generator::Language::Go);
     let arm_a_pascal = b5_nu_id_to_pascal(&arm_a_id);
     assert!(
-        disp.contains(&format!("Decode{arm_a_pascal}(cursor, parentFlags)")),
-        "Go dispatcher decode must pass parentFlags to arm_a; got:\n{disp}"
+        disp.contains(&format!("Decode{arm_a_pascal}(cursor, N)")),
+        "Go dispatcher decode must pass `N` to arm_a; got:\n{disp}"
     );
     assert!(
-        disp.contains(".Encode(parentFlags)"),
-        "Go dispatcher encode must pass parentFlags to arm body; got:\n{disp}"
+        disp.contains(".Encode(N)"),
+        "Go dispatcher encode must pass `N` to arm body; got:\n{disp}"
     );
     assert!(
         !disp.contains("s.Header"),
-        "Go dispatcher must NOT reference s.Header on Forwarding-source dispatcher;\n{disp}"
+        "Go dispatcher must NOT reference s.Header on chain-forwarder dispatcher;\n{disp}"
     );
     let disp_file = format!("{disp_id}.scxml");
     let arm_a_file = format!("{arm_a_id}.scxml");
@@ -10934,19 +10670,19 @@ fn forge_b5_nu_dispatcher_self_gen_go() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// RFC B5-ν dispatcher self-gen — C11 dispatcher emit threads
-/// `parent_flags` (snake_case) at arm calls.
+/// RFC B5-ν dispatcher self-gen — C11 dispatcher emit threads its `n`
+/// flag-input parameter (snake_case) at arm calls.
 #[test]
 fn forge_b5_nu_dispatcher_self_gen_c11() {
     let (dir, disp_id, arm_a_id, arm_b_id) = b5_nu_dsg_write_fixture("c11");
     let disp = b5_nu_dsg_compile_disp(&dir, &disp_id, sce_build::generator::Language::C11);
     assert!(
-        disp.contains("parent_flags"),
-        "C11 dispatcher must reference parent_flags param; got:\n{disp}"
+        disp.contains("uint8_t n"),
+        "C11 dispatcher must declare `uint8_t n` flag-input param; got:\n{disp}"
     );
     assert!(
         !disp.contains("decode(cursor, out->header)") && !disp.contains("decode(cursor, self->header)"),
-        "C11 dispatcher must NOT reference out->/self->header at arm calls on Forwarding-source dispatcher;\n{disp}"
+        "C11 dispatcher must NOT reference out->/self->header at arm calls on chain-forwarder dispatcher;\n{disp}"
     );
     let disp_file = format!("{disp_id}.scxml");
     let arm_a_file = format!("{arm_a_id}.scxml");
