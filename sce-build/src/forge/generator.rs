@@ -1401,6 +1401,12 @@ fn render_codec(
     // the 5 checks plus the Q-D-3a no-dispatch + no-default-arm gate.
     validate_cross_codec_variant_dispatch(m, imports)?;
 
+    // RFC Axis-1 inversion + B5-ν inversion β shape: reject the
+    // variant-arm-body-is-caller-tag-dispatcher configuration upfront
+    // so the author sees a typed diagnostic at codegen time instead of
+    // a cross-language compiler arity-mismatch error downstream.
+    validate_cross_codec_variant_arm_not_caller_tag(m, imports)?;
+
     // RFC Axis-1 inversion (Phase A): parent-local cross-doc validator
     // for the `<sce:flag-bind>` import-site declaration. Walks every
     // codec-kind import and confirms binding-completeness + source
@@ -3512,6 +3518,61 @@ fn validate_cross_codec_variant_dispatch(
 /// only as variant arm bodies (B5-β/γ dispatcher pattern) also surface
 /// — the dispatcher's local `header` carrier is exactly the kind of
 /// source the binds reach for.
+
+/// RFC Axis-1 inversion + B5-ν inversion β shape — reject the
+/// variant-arm-body-is-caller-tag-dispatcher configuration. Walks
+/// `parent.variant.arms` (and the `<sce:default>` arm if present) and
+/// rejects any arm whose `body_alias` resolves to an import whose
+/// `codec_variant_is_caller_tag` is true. β-shape leaves require the
+/// caller to supply the dispatch tag positionally; in a variant-arm
+/// context there is no natural source for that tag (the parent
+/// dispatcher uses its own tag to select WHICH arm, not to forward
+/// onward), so codegen would emit a call missing the tag arg →
+/// downstream rustc/g++/etc. arity mismatch. Rejecting upstream gives
+/// the author a typed diagnostic with the structural repair (add
+/// `tag=` to the inner codec, or expose it via `<sce:embed>` instead).
+///
+/// Walks BOTH enumerated arms and the catch-all `<sce:default>` arm
+/// since both go through the same arm-body codegen call site and have
+/// the same arity requirement.
+fn validate_cross_codec_variant_arm_not_caller_tag(
+    parent: &CodecModel,
+    imports: &[ImportContext],
+) -> Result<(), ForgeError> {
+    use crate::forge::error::ValidationError;
+    let variant = match parent.variant.as_ref() {
+        Some(v) => v,
+        None => return Ok(()),
+    };
+    let check_arm = |body_alias: &str, arm_value: u64| -> Result<(), ForgeError> {
+        let imp = match imports.iter().find(|i| i.alias == body_alias) {
+            Some(i) => i,
+            None => return Ok(()),
+        };
+        if imp.codec_variant_is_caller_tag {
+            return Err(ForgeError::Validation(
+                ValidationError::CodecVariantArmBodyCallerTagUnsupported {
+                    parent_codec: parent.name.clone(),
+                    arm_value,
+                    embedded_alias: body_alias.to_string(),
+                    embedded_codec: body_alias.to_string(),
+                },
+            ));
+        }
+        Ok(())
+    };
+    for arm in &variant.arms {
+        check_arm(&arm.body_alias, arm.value)?;
+    }
+    if let Some(default_arm) = variant.default_arm.as_ref() {
+        // The `<sce:default>` catch-all has no specific arm value; use
+        // 0 as a sentinel for the diagnostic's expected= slot. The
+        // body_alias is the discriminating key fragment.
+        check_arm(&default_arm.body_alias, 0)?;
+    }
+    Ok(())
+}
+
 fn validate_cross_codec_flag_bind(
     parent: &CodecModel,
     imports: &[ImportContext],

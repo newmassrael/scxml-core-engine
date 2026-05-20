@@ -12780,94 +12780,205 @@ fn axis1_inversion_embed_dispatcher_arg_order() {
     // has a unique bit-extract syntax, so the asserted substring is
     // language-specific; the shared invariant is the relative order
     // (`>>5` for N flag-bind appears BEFORE `>>6` for M variant-dispatch).
-    let per_lang_emit_checks: &[(
-        sce_build::generator::Language,
-        &str, // file stem hint (for find)
-        &str, // positive: flag-bind (>>5) before variant-dispatch (>>6)
-        &str, // negative: bugged order (>>6) before (>>5)
-    )] = &[
-        (
-            sce_build::generator::Language::Rust,
-            "codec_axis1_embed_disp_parent",
-            "((header >> 5) & 0x1) as u8, ((header >> 6) & 0x1) as u8",
-            "((header >> 6) & 0x1) as u8, ((header >> 5) & 0x1) as u8",
-        ),
-        (
-            sce_build::generator::Language::Cpp,
-            "codec_axis1_embed_disp_parent",
-            "static_cast<std::uint8_t>((header >> 5) & 0x1), \
-             static_cast<std::uint8_t>((header >> 6) & 0x1)",
-            "static_cast<std::uint8_t>((header >> 6) & 0x1), \
-             static_cast<std::uint8_t>((header >> 5) & 0x1)",
-        ),
-        (
-            sce_build::generator::Language::Kotlin,
-            "CodecAxis1EmbedDispParent",
-            "(((header.toInt() shr 5) and 0x1).toUByte()), \
-             (((header.toInt() shr 6) and 0x1).toUByte())",
-            "(((header.toInt() shr 6) and 0x1).toUByte()), \
-             (((header.toInt() shr 5) and 0x1).toUByte())",
-        ),
-        (
-            sce_build::generator::Language::Go,
-            "codec_axis1_embed_disp_parent",
-            "byte((Header >> 5) & 0x1), byte((Header >> 6) & 0x1)",
-            "byte((Header >> 6) & 0x1), byte((Header >> 5) & 0x1)",
-        ),
-        (
-            sce_build::generator::Language::Python,
-            "codec_axis1_embed_disp_parent",
-            "((header >> 5) & 0x1), ((header >> 6) & 0x1)",
-            "((header >> 6) & 0x1), ((header >> 5) & 0x1)",
-        ),
-        (
-            sce_build::generator::Language::C11,
-            "codec_axis1_embed_disp_parent",
-            "(uint8_t)((out->header >> 5) & 0x1), (uint8_t)((out->header >> 6) & 0x1)",
-            "(uint8_t)((out->header >> 6) & 0x1), (uint8_t)((out->header >> 5) & 0x1)",
-        ),
+    // Per-language emit-shape table. Each row pins TWO invariants
+    // independently:
+    //   - caller_*  — the parent's `<sce:embed>` call site emits the
+    //                 args in callee positional order (flag-bind first,
+    //                 then variant-dispatch).
+    //   - callee_*  — the dispatcher's own `decode` signature emits
+    //                 `params_after_first_arg` (flag-inputs) BEFORE
+    //                 `dispatch_tag_param_decl` (tag). Without this,
+    //                 a single-backend template drift could swap the
+    //                 signature order; the caller-side substring would
+    //                 still pass (caller emit unchanged), but the
+    //                 callee binding would silently flip the args at
+    //                 runtime on that backend only.
+    struct LangEmitCheck {
+        lang: sce_build::generator::Language,
+        parent_stem: &'static str,
+        dispatcher_stem: &'static str,
+        caller_positive: &'static str,
+        caller_negative: &'static str,
+        callee_positive: &'static str,
+        callee_negative: &'static str,
+    }
+    let per_lang_emit_checks: &[LangEmitCheck] = &[
+        LangEmitCheck {
+            lang: sce_build::generator::Language::Rust,
+            parent_stem: "codec_axis1_embed_disp_parent",
+            dispatcher_stem: "codec_axis1_embed_disp.rs",
+            caller_positive: "((header >> 5) & 0x1) as u8, ((header >> 6) & 0x1) as u8",
+            caller_negative: "((header >> 6) & 0x1) as u8, ((header >> 5) & 0x1) as u8",
+            callee_positive: "pub fn decode(cursor: &mut SceCursor<'_>, n: u8, tag: u8)",
+            callee_negative: "pub fn decode(cursor: &mut SceCursor<'_>, tag: u8, n: u8)",
+        },
+        LangEmitCheck {
+            lang: sce_build::generator::Language::Cpp,
+            parent_stem: "codec_axis1_embed_disp_parent",
+            dispatcher_stem: "codec_axis1_embed_disp.h",
+            caller_positive: "static_cast<std::uint8_t>((header >> 5) & 0x1), \
+                              static_cast<std::uint8_t>((header >> 6) & 0x1)",
+            caller_negative: "static_cast<std::uint8_t>((header >> 6) & 0x1), \
+                              static_cast<std::uint8_t>((header >> 5) & 0x1)",
+            // In-tree codegen emits the signature unwrapped; the CLI
+            // binary applies clang-format which then wraps it. Assert
+            // against the raw template form (what the in-tree harness
+            // sees) since that's what the test consumes.
+            callee_positive: "decode(::SCE::Forge::SceCursor& cursor, \
+                              std::uint8_t n, std::uint8_t tag)",
+            callee_negative: "decode(::SCE::Forge::SceCursor& cursor, \
+                              std::uint8_t tag, std::uint8_t n)",
+        },
+        LangEmitCheck {
+            lang: sce_build::generator::Language::Kotlin,
+            parent_stem: "CodecAxis1EmbedDispParent",
+            dispatcher_stem: "CodecAxis1EmbedDisp.kt",
+            caller_positive: "(((header.toInt() shr 5) and 0x1).toUByte()), \
+                              (((header.toInt() shr 6) and 0x1).toUByte())",
+            caller_negative: "(((header.toInt() shr 6) and 0x1).toUByte()), \
+                              (((header.toInt() shr 5) and 0x1).toUByte())",
+            // Kotlin flag-input identifier preserves source-case `N`
+            // (no to_snake_case); chain-forwarder signature reads
+            // `N: UByte, tag: UByte`.
+            callee_positive: "fun decode(cursor: SceCursor, N: UByte, tag: UByte)",
+            callee_negative: "fun decode(cursor: SceCursor, tag: UByte, N: UByte)",
+        },
+        LangEmitCheck {
+            lang: sce_build::generator::Language::Go,
+            parent_stem: "codec_axis1_embed_disp_parent",
+            dispatcher_stem: "codec_axis1_embed_disp.go",
+            caller_positive: "byte((Header >> 5) & 0x1), byte((Header >> 6) & 0x1)",
+            caller_negative: "byte((Header >> 6) & 0x1), byte((Header >> 5) & 0x1)",
+            // Go identifier uses to_camel_case; single-letter `N`
+            // stays uppercase under camel-case (identity transform).
+            callee_positive: "func DecodeCodecAxis1EmbedDisp(cursor *codec.SceCursor, \
+                              N byte, tag byte)",
+            callee_negative: "func DecodeCodecAxis1EmbedDisp(cursor *codec.SceCursor, \
+                              tag byte, N byte)",
+        },
+        LangEmitCheck {
+            lang: sce_build::generator::Language::Python,
+            parent_stem: "codec_axis1_embed_disp_parent",
+            dispatcher_stem: "codec_axis1_embed_disp.py",
+            caller_positive: "((header >> 5) & 0x1), ((header >> 6) & 0x1)",
+            caller_negative: "((header >> 6) & 0x1), ((header >> 5) & 0x1)",
+            callee_positive: "def decode(cls, cursor: SceCursor, n: int, tag: int)",
+            callee_negative: "def decode(cls, cursor: SceCursor, tag: int, n: int)",
+        },
+        LangEmitCheck {
+            lang: sce_build::generator::Language::C11,
+            parent_stem: "codec_axis1_embed_disp_parent",
+            dispatcher_stem: "codec_axis1_embed_disp.h",
+            caller_positive: "(uint8_t)((out->header >> 5) & 0x1), \
+                              (uint8_t)((out->header >> 6) & 0x1)",
+            caller_negative: "(uint8_t)((out->header >> 6) & 0x1), \
+                              (uint8_t)((out->header >> 5) & 0x1)",
+            callee_positive: "codec_axis1_embed_disp_decode(sce_forge_cursor_t *cursor, \
+                              codec_axis1_embed_disp_t *out, uint8_t n, uint8_t tag)",
+            callee_negative: "codec_axis1_embed_disp_decode(sce_forge_cursor_t *cursor, \
+                              codec_axis1_embed_disp_t *out, uint8_t tag, uint8_t n)",
+        },
     ];
     // Collect-then-assert so a multi-backend regression surfaces with
-    // every failing backend listed at once rather than stopping at the
-    // first language's substring miss. Makes the rare "future template
-    // change drifts the dispatch arg order on N backends" case easier
-    // to diagnose — a single panic prints the full failure matrix.
+    // every failing (caller, callee) row listed at once rather than
+    // stopping at the first language's substring miss. Makes the rare
+    // "future template change drifts the dispatch arg order on N
+    // backends" case easier to diagnose.
     let mut failures: Vec<String> = Vec::new();
-    for (lang, stem_hint, positive, negative) in per_lang_emit_checks {
+    for check in per_lang_emit_checks {
         let mut opts = sce_build::ForgeCompileOptions::default();
-        if matches!(lang, sce_build::generator::Language::Go) {
+        if matches!(check.lang, sce_build::generator::Language::Go) {
             opts.go_module_prefix = Some("github.com/test/codec".to_string());
         }
-        let out = sce_build::compile_forge_with_imports(
+        // Parent compile — emits the parent struct + its embed-site
+        // decode call (caller-side substring lives here).
+        let parent_out = sce_build::compile_forge_with_imports(
             parent,
             sce_build::DocumentLabel::symmetric("codec_axis1_embed_disp_parent"),
-            *lang,
+            check.lang,
             &dir,
             &opts,
         )
-        .unwrap_or_else(|e| panic!("embed-dispatcher parent codegen failed on {lang:?}: {e:?}"));
-        let body = out
+        .unwrap_or_else(|e| {
+            panic!(
+                "embed-dispatcher parent codegen failed on {:?}: {e:?}",
+                check.lang
+            )
+        });
+        // Dispatcher compile — emits the dispatcher's own decode
+        // signature (callee-side substring lives here).
+        // `compile_forge_with_imports` only emits the requested codec,
+        // not its transitive imports, so we must compile the
+        // dispatcher SCXML in a separate call.
+        let dispatcher_out = sce_build::compile_forge_with_imports(
+            dispatcher,
+            sce_build::DocumentLabel::symmetric("codec_axis1_embed_disp"),
+            check.lang,
+            &dir,
+            &opts,
+        )
+        .unwrap_or_else(|e| {
+            panic!(
+                "embed-dispatcher self codegen failed on {:?}: {e:?}",
+                check.lang
+            )
+        });
+        let parent_body = parent_out
             .files
             .iter()
-            .find(|(name, _)| name.contains(stem_hint))
+            .find(|(name, _)| name.contains(check.parent_stem))
             .map(|(_, b)| b.clone())
-            .unwrap_or_else(|| panic!("{lang:?}: no emit file matched stem `{stem_hint}`"));
-        if !body.contains(positive) {
+            .unwrap_or_else(|| {
+                panic!(
+                    "{:?}: no emit file matched parent stem `{}`",
+                    check.lang, check.parent_stem
+                )
+            });
+        let dispatcher_body = dispatcher_out
+            .files
+            .iter()
+            .find(|(name, _)| name.ends_with(check.dispatcher_stem))
+            .map(|(_, b)| b.clone())
+            .unwrap_or_else(|| {
+                panic!(
+                    "{:?}: no emit file matched dispatcher stem `{}`",
+                    check.lang, check.dispatcher_stem
+                )
+            });
+        if !parent_body.contains(check.caller_positive) {
             failures.push(format!(
-                "{lang:?}: missing expected substring `{positive}` — flag-bind arg must \
-                 precede variant-dispatch arg at the embed-site decode call"
+                "{:?} caller: missing expected substring `{}` — flag-bind arg must \
+                 precede variant-dispatch arg at the embed-site decode call",
+                check.lang, check.caller_positive
             ));
         }
-        if body.contains(negative) {
+        if parent_body.contains(check.caller_negative) {
             failures.push(format!(
-                "{lang:?}: found bugged substring `{negative}` — variant-dispatch arg \
-                 must NOT precede flag-bind arg"
+                "{:?} caller: found bugged substring `{}` — variant-dispatch arg \
+                 must NOT precede flag-bind arg",
+                check.lang, check.caller_negative
+            ));
+        }
+        if !dispatcher_body.contains(check.callee_positive) {
+            failures.push(format!(
+                "{:?} callee: missing expected dispatcher signature substring `{}` \
+                 — flag-input params MUST be emitted before the variant-dispatch tag \
+                 param per the order the caller-side emitter assumes",
+                check.lang, check.callee_positive
+            ));
+        }
+        if dispatcher_body.contains(check.callee_negative) {
+            failures.push(format!(
+                "{:?} callee: found dispatcher signature substring `{}` — tag MUST NOT \
+                 precede flag-input params (would silently re-bind the caller's args)",
+                check.lang, check.callee_negative
             ));
         }
     }
     assert!(
         failures.is_empty(),
-        "embed-dispatcher arg-order substring assertions failed on {} backend(s):\n  - {}",
+        "embed-dispatcher arg-order substring assertions failed on {} site(s) \
+         across caller + callee axes:\n  - {}",
         failures.len(),
         failures.join("\n  - ")
     );
@@ -13007,6 +13118,135 @@ fn round_trip_arm_a_with_suffix() {
          order (n, tag); pre-fix the swapped args either select the wrong variant or hit \
          NeedMoreBytes on the M != N corners",
     );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// RFC Axis-1 inversion + B5-ν inversion β shape negative — the
+/// validator rejects a parent codec whose variant arm body resolves to
+/// a codec in caller-tag β shape (no `tag=` attribute on the inner
+/// `<sce:variant>`). Without this upstream rejection the codegen
+/// would emit `ArmBody::decode(cursor)` while the callee signature is
+/// `decode(cursor, tag: u8)`, producing a cross-language compiler
+/// arity-mismatch error (rustc E0061: "argument #2 of type `u8` is
+/// missing"). Moving the failure point upstream gives the author a
+/// typed diagnostic with the structural repair hint at codegen time
+/// instead of at downstream compile time.
+///
+/// Positive shape: parent dispatcher D1 with `tag="tag"` (own tag
+/// field) has an enumerated arm whose body is D2, where D2 is itself
+/// a `<sce:variant>` in β shape (no `tag=`). D2 would need a caller-
+/// supplied tag at decode, but D1's arm-body call site has nothing
+/// to forward — the validator must reject before codegen runs.
+#[test]
+fn axis1_inversion_variant_arm_body_caller_tag_rejected() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let dir = std::env::temp_dir().join(format!("sce_axis1_nested_beta_{pid}_{id}"));
+    std::fs::create_dir_all(&dir).expect("mkdir fixture");
+
+    // D1: parent dispatcher with its own `tag` field, two arms. Arm
+    // value 0x00 imports D2 (caller-tag β shape), arm value 0x01
+    // imports a normal leaf. `<sce:default>` reuses the normal leaf
+    // so the variant has a Default-trait starting arm per Q-V4 (a).
+    let d1 = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_axis1_nested_d1" sce:default-endian="big">
+  <sce:import src="codec_axis1_nested_d2.scxml" kind="codec" as="codec_axis1_nested_d2"/>
+  <sce:import src="codec_axis1_nested_arm_b.scxml" kind="codec" as="codec_axis1_nested_arm_b"/>
+  <datamodel>
+    <data id="tag" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:variant tag="tag">
+      <sce:arm value="0x00" type="codec_axis1_nested_d2" default="true"/>
+      <sce:arm value="0x01" type="codec_axis1_nested_arm_b"/>
+      <sce:default type="codec_axis1_nested_arm_b"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#;
+
+    // D2: caller-tag β shape — `<sce:variant>` has no `tag=` attribute,
+    // so the dispatch tag is supplied by the caller as a positional
+    // decode argument. Importing this as a variant arm body has no
+    // valid tag source.
+    let d2 = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_axis1_nested_d2" sce:default-endian="big">
+  <sce:import src="codec_axis1_nested_d2_arm_a.scxml" kind="codec" as="codec_axis1_nested_d2_arm_a"/>
+  <sce:import src="codec_axis1_nested_d2_arm_b.scxml" kind="codec" as="codec_axis1_nested_d2_arm_b"/>
+  <datamodel>
+    <sce:variant>
+      <sce:arm value="0x00" type="codec_axis1_nested_d2_arm_a" default="true"/>
+      <sce:arm value="0x01" type="codec_axis1_nested_d2_arm_b"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#;
+
+    let leaf = |id: &str, field: &str| -> String {
+        format!(
+            r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="{id}" sce:default-endian="big">
+  <datamodel><sce:field id="{field}" sce:type="uint8" sce:byte="0" sce:bit-size="8"/></datamodel>
+</scxml>"#
+        )
+    };
+
+    std::fs::write(dir.join("codec_axis1_nested_d1.scxml"), d1).expect("write d1");
+    std::fs::write(dir.join("codec_axis1_nested_d2.scxml"), d2).expect("write d2");
+    std::fs::write(
+        dir.join("codec_axis1_nested_d2_arm_a.scxml"),
+        leaf("codec_axis1_nested_d2_arm_a", "x"),
+    )
+    .expect("write d2_arm_a");
+    std::fs::write(
+        dir.join("codec_axis1_nested_d2_arm_b.scxml"),
+        leaf("codec_axis1_nested_d2_arm_b", "y"),
+    )
+    .expect("write d2_arm_b");
+    std::fs::write(
+        dir.join("codec_axis1_nested_arm_b.scxml"),
+        leaf("codec_axis1_nested_arm_b", "z"),
+    )
+    .expect("write arm_b");
+
+    // Run codegen on D1 — the validator must reject before any code
+    // is emitted. Targeting Rust is sufficient since the validator
+    // runs language-independently; the rejection has nothing to do
+    // with the chosen backend.
+    let result = sce_build::compile_forge_with_imports(
+        d1,
+        sce_build::DocumentLabel::symmetric("codec_axis1_nested_d1"),
+        sce_build::generator::Language::Rust,
+        &dir,
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let located_err = match result {
+        Ok(_) => panic!(
+            "expected variant-arm-body-caller-tag-unsupported rejection; codegen succeeded \
+             — the unsupported configuration would surface as cross-language compiler \
+             arity mismatch downstream"
+        ),
+        Err(e) => e,
+    };
+    match located_err.error {
+        ForgeError::Validation(ValidationError::CodecVariantArmBodyCallerTagUnsupported {
+            parent_codec,
+            arm_value,
+            embedded_alias,
+            embedded_codec,
+        }) => {
+            assert_eq!(parent_codec, "codec_axis1_nested_d1");
+            assert_eq!(arm_value, 0x00, "arm value of the β-shape import");
+            assert_eq!(embedded_alias, "codec_axis1_nested_d2");
+            assert_eq!(embedded_codec, "codec_axis1_nested_d2");
+        }
+        other => panic!("expected CodecVariantArmBodyCallerTagUnsupported, got: {other:?}"),
+    }
 
     let _ = std::fs::remove_dir_all(&dir);
 }

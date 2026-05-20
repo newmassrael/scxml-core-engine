@@ -627,6 +627,19 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/variant-arm-inner-mid-undeclared")]
     CodecVariantArmInnerMidUndeclared,
 
+    // ── RFC Axis-1 inversion + B5-ν inversion β shape: a variant arm
+    //    body resolves to a codec whose `<sce:variant>` is itself in
+    //    caller-tag β shape (no `tag=` attribute). β-shape requires the
+    //    caller to supply the dispatch tag positionally; in a
+    //    variant-arm context there is no natural source for that tag
+    //    (the parent dispatcher's own tag selects WHICH arm, not what
+    //    to forward), and codegen would emit a call missing the tag
+    //    arg → downstream rustc/g++/etc. arity mismatch. Reject
+    //    upstream with a typed diagnostic so the author sees the
+    //    constraint at codegen time. Stage = Validation. ──
+    #[serde(rename = "codec/variant-arm-body-caller-tag-unsupported")]
+    CodecVariantArmBodyCallerTagUnsupported,
+
     // ── RFC variant-default-overlay Atomic A: deploy.yaml
     //    `variant_defaults:` names a codec + arm value, but the codec
     //    has no <sce:variant> or its declared arms do not include the
@@ -2368,6 +2381,9 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CodecVariantArmMidMismatch,
         // RFC variant-default-uniformity Atomic γ-1 — inner codec missing wire-MID constant
         CodecVariantArmInnerMidUndeclared,
+        // RFC Axis-1 inversion + B5-ν inversion β shape — variant arm body
+        // is a caller-tag dispatcher with no natural tag source
+        CodecVariantArmBodyCallerTagUnsupported,
         // RFC variant-default-uniformity Atomic γ-3 — every variant must mark a default arm
         CodecVariantNoDefaultArm,
         // RFC variant-default-overlay Atomic A — deploy.yaml overlay names an undeclared arm
@@ -2749,6 +2765,7 @@ impl DiagnosticCode {
             | CodecVariantDuplicateDefaultArm
             | CodecVariantArmMidMismatch
             | CodecVariantArmInnerMidUndeclared
+            | CodecVariantArmBodyCallerTagUnsupported
             | CodecVariantNoDefaultArm
             | CodecVariantDefaultOverlayArmNotDeclared
             | CodecVariantDispatchFlagNotResolved
@@ -3303,6 +3320,9 @@ impl DiagnosticCode {
             CodecVariantDuplicateDefaultArm => "codec/variant-duplicate-default-arm",
             CodecVariantArmMidMismatch => "codec/variant-arm-mid-mismatch",
             CodecVariantArmInnerMidUndeclared => "codec/variant-arm-inner-mid-undeclared",
+            CodecVariantArmBodyCallerTagUnsupported => {
+                "codec/variant-arm-body-caller-tag-unsupported"
+            }
             CodecVariantNoDefaultArm => "codec/variant-no-default-arm",
             CodecVariantDefaultOverlayArmNotDeclared => {
                 "codec/variant-default-overlay-arm-not-declared"
@@ -4807,6 +4827,28 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 format!("{arm_value:#x}"),
                 inner_codec.clone(),
                 expected_flag.clone(),
+            ],
+        },
+        ValidationError::CodecVariantArmBodyCallerTagUnsupported {
+            parent_codec,
+            arm_value,
+            embedded_alias,
+            embedded_codec,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CodecVariantArmBodyCallerTagUnsupported,
+            stage: Stage::Validation,
+            // Repair is structural — either add `tag=` to the inner
+            // codec or move the import from variant arm to <sce:embed>.
+            // Both alternatives are deterministic for the author, so
+            // `fix: None` per NeutralOrDeterministic class.
+            expected: Some(vec![format!("{arm_value:#x}")]),
+            actual: Some(embedded_codec.clone()),
+            fix: None,
+            key_fragments: vec![
+                parent_codec.clone(),
+                format!("{arm_value:#x}"),
+                embedded_alias.clone(),
+                embedded_codec.clone(),
             ],
         },
         ValidationError::CodecRepeatCountRefsLaterField {
@@ -8528,6 +8570,18 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:0bf3318e19f672aa","code":"codec/variant-arm-inner-mid-undeclared","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': <sce:arm value=0x2/> selects inner codec 'session_put', but 'session_put' does not declare a <sce:flag value=\"...\"/> constant on its dispatch field — the inner's Default would zero-fill the wire byte and break round-trip; add <sce:flag name='mid' value=0x2/> to 'session_put'","expected":["0x2"],"actual":"session_put"}"#,
             ),
+            // ── RFC Axis-1 inversion + B5-ν β shape — variant arm body is caller-tag dispatcher ─
+            (
+                "forge/codec-variant-arm-body-caller-tag-unsupported",
+                ValidationError::CodecVariantArmBodyCallerTagUnsupported {
+                    parent_codec: "session_envelope".into(),
+                    arm_value: 0x03,
+                    embedded_alias: "session_inner".into(),
+                    embedded_codec: "session_inner".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:8259656376e7288f","code":"codec/variant-arm-body-caller-tag-unsupported","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': variant arm value=0x3 (alias 'session_inner') resolves to codec 'session_inner' whose <sce:variant> is in caller-tag β shape (no tag= attribute) — there is no natural source for the inner tag in a variant-arm context. Either add tag=\"<field>\" to 'session_inner' so it reads its tag from its own wire bytes, or expose 'session_inner' via <sce:embed> + <sce:variant-dispatch> on a parent flag instead of as a variant arm body.","expected":["0x3"],"actual":"session_inner"}"#,
+            ),
             // ── RFC variant-default-uniformity Atomic γ-3 — no default arm declared ─
             (
                 "forge/codec-variant-no-default-arm",
@@ -11006,6 +11060,7 @@ mod tests {
             | CodecVariantDuplicateDefaultArm
             | CodecVariantArmMidMismatch
             | CodecVariantArmInnerMidUndeclared
+            | CodecVariantArmBodyCallerTagUnsupported
             | CodecVariantNoDefaultArm
             | CodecVariantDispatchBitWidthMismatch
             | CodecVariantDispatchArmsNotDistinguishableWithoutDefault
@@ -11500,6 +11555,7 @@ mod tests {
                 | CodecVariantDuplicateDefaultArm
                 | CodecVariantArmMidMismatch
                 | CodecVariantArmInnerMidUndeclared
+                | CodecVariantArmBodyCallerTagUnsupported
                 | CodecVariantNoDefaultArm
                 | CodecVariantDefaultOverlayArmNotDeclared
                 | CodecVariantDispatchFlagNotResolved
@@ -11704,7 +11760,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            299,
+            300,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries —\
              expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \

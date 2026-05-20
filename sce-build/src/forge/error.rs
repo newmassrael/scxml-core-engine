@@ -612,6 +612,41 @@ pub enum ValidationError {
         expected_flag: String,
     },
 
+    /// RFC Axis-1 inversion + B5-ν inversion β shape — a variant arm
+    /// body resolves to a codec whose `<sce:variant>` is itself in
+    /// caller-tag β shape (no `tag=` attribute). β-shape leaves require
+    /// the caller to supply the dispatch tag as a positional decode
+    /// argument; in a variant-arm context there is no natural source
+    /// for that tag (the parent dispatcher uses its OWN tag field to
+    /// select which arm to invoke, not to forward a tag onward). The
+    /// codegen would emit `ArmBody::decode(cursor, [flag-binds…])`
+    /// without the required `tag` arg, producing a downstream compile
+    /// error (`rustc E0061: missing argument of type u8`). Reject
+    /// upstream with a typed diagnostic so the author sees the
+    /// constraint at codegen time instead of through a cross-language
+    /// compiler error.
+    ///
+    /// Repair: either give the arm body its own `tag=` attribute on
+    /// `<sce:variant>` so it reads the tag from its own wire bytes,
+    /// or redesign so the dispatcher consumes the β-shape leaf through
+    /// `<sce:embed>` with `<sce:variant-dispatch>` (the embed-site
+    /// path which threads the tag from a parent flag — already
+    /// supported).
+    #[error(
+        "codec '{parent_codec}': variant arm value={arm_value:#x} (alias '{embedded_alias}') \
+         resolves to codec '{embedded_codec}' whose <sce:variant> is in caller-tag β shape \
+         (no tag= attribute) — there is no natural source for the inner tag in a variant-arm \
+         context. Either add tag=\"<field>\" to '{embedded_codec}' so it reads its tag from its \
+         own wire bytes, or expose '{embedded_codec}' via <sce:embed> + <sce:variant-dispatch> \
+         on a parent flag instead of as a variant arm body."
+    )]
+    CodecVariantArmBodyCallerTagUnsupported {
+        parent_codec: String,
+        arm_value: u64,
+        embedded_alias: String,
+        embedded_codec: String,
+    },
+
     /// RFC variant-default-uniformity Atomic γ-3 (Q-V4 (a)): the
     /// `<sce:variant>` declares no `<sce:arm default="true"/>` —
     /// every variant must name a deliberate default arm so the
