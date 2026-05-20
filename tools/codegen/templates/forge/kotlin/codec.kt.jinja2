@@ -10,7 +10,10 @@
 
 package com.sce.generated.{{ package }}
 
+import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
+import com.sce.forge.runtime.SceSink
 {% for imp in all_imports %}
 {% if imp.include_stmt %}
 {{ imp.include_stmt }}
@@ -105,10 +108,15 @@ data class {{ struct_name }}(
 {% endif %}
 {% endfor %}
 {% endif %}
+    /// RFC §5.B B1-α encode-side primary: write `self` into the
+    /// caller-owned `w` sink. Returns `null` on success;
+    /// `CodecError.BufferOverflow` from a bounded sink when the
+    /// destination has insufficient remaining capacity; growable
+    /// sinks (e.g. `MutableListSink`) are effectively infallible.
 {% if has_parent_flags or has_flag_inputs %}
     @Suppress("UNUSED_PARAMETER")
 {% endif %}
-    fun encode({{ params_first_arg }}): ByteArray {
+    fun encode(w: SceSink{{ params_after_first_arg }}): CodecError? {
 {% if has_parent_tag_derivation %}
         // RFC §5.B B5-ν Phase B — derive carrier bits from each embedded
         // parent-tag variant's active arm before the carrier byte is
@@ -118,7 +126,7 @@ data class {{ struct_name }}(
 {% endif %}
 {% if has_no_fields %}
         // RFC §5.B B5-α empty body — zero-byte payload.
-        return ByteArray(0)
+        return null
 {% elif has_variant %}
 {% if variant.has_streaming_prefix %}
         // RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
@@ -127,7 +135,6 @@ data class {{ struct_name }}(
         // separate tag byte here. Streaming-prefix mode (own-field):
         // carrier is part of the prefix fields and emits via the same
         // per-field path.
-        val r = mutableListOf<Byte>()
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
@@ -144,28 +151,26 @@ data class {{ struct_name }}(
         // The tag value is read from the struct field, NOT derived from
         // the body discriminant — keeping author-set tag / body in sync
         // is the caller's responsibility (v1 keeps the layout simple).
-        val r = mutableListOf<Byte>()
 {% for expr in encode_exprs %}
-        r.add({{ expr }})
+        w.writeU8({{ expr }})?.let { return it }
 {% endfor %}
 {% endif %}
-        // Append the active arm body's encoded bytes.
+        // Append the active arm body's encoded bytes via the same sink.
         when (val _b = this.body) {
 {% for arm in variant.arms %}
-            is {{ struct_name }}Variant.{{ arm.variant_name }} -> r.addAll(_b.body.encode({{ arm.body_encode_args_first }}).toList())
+            is {{ struct_name }}Variant.{{ arm.variant_name }} -> _b.body.encode(w{{ arm.body_encode_args_with_leading_comma }})?.let { return it }
 {% endfor %}
 {% if variant.default_arm %}
-            is {{ struct_name }}Variant.{{ variant.default_arm.variant_name }} -> r.addAll(_b.body.encode({{ variant.default_arm.body_encode_args_first }}).toList())
+            is {{ struct_name }}Variant.{{ variant.default_arm.variant_name }} -> _b.body.encode(w{{ variant.default_arm.body_encode_args_with_leading_comma }})?.let { return it }
 {% endif %}
         }
-        return r.toByteArray()
+        return null
 {% elif has_present_if_fields %}
         // RFC §5.B B1-δ + B2-β present-if encode: per-field byte
         // append. Gated fields skip the append when the optional is
         // null. Per-field `is_repeat` routes Repeat fields to the
         // dedicated helper. Branch fires before has_vle_fields so a
         // codec mixing VLE + present-if uses the unified encode path.
-        val r = mutableListOf<Byte>()
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
@@ -177,13 +182,12 @@ data class {{ struct_name }}(
 {{ field.present_if_encode_block }}
 {% endif %}
 {% endfor %}
-        return r.toByteArray()
+        return null
 {% elif has_vle_fields %}
         // RFC §5.B B4: per-field bit-size dispatch routes Fixed /
         // LengthRef siblings of VLE fields through
         // `present_if_encode_block` (predicate=None arms). Pure-VLE
         // codecs stay byte-stable.
-        val r = mutableListOf<Byte>()
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
@@ -195,13 +199,12 @@ data class {{ struct_name }}(
 {{ field.present_if_encode_block }}
 {% endif %}
 {% endfor %}
-        return r.toByteArray()
+        return null
 {% elif has_repeat_fields or has_tlv_chain_fields or has_embed_fields or has_string_fields %}
         // RFC §5.B B2 encode: fixed prefix appends byte-by-byte;
-        // repeat fields iterate the host MutableList and splice each
-        // element's encode().toList() into the parent buffer. Author
-        // keeps count field == list length (trust contract).
-        val r = mutableListOf<Byte>()
+        // list fields iterate the host MutableList and write each
+        // element's encode(w) through the same sink. Author keeps
+        // count field == list length (trust contract).
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
@@ -213,25 +216,33 @@ data class {{ struct_name }}(
 {{ field.present_if_encode_block }}
 {% endif %}
 {% endfor %}
-        return r.toByteArray()
+        return null
 {% elif has_variable_fields %}
-        val r = mutableListOf<Byte>()
 {% for expr in encode_exprs %}
-        r.add({{ expr }})
+        w.writeU8({{ expr }})?.let { return it }
 {% endfor %}
 {% for field in fields %}
 {% if field.is_variable %}
-        r.addAll({{ field.id }}.toList())
+        w.writeBytes({{ field.id }})?.let { return it }
 {% endif %}
 {% endfor %}
-        return r.toByteArray()
+        return null
 {% else %}
-        return byteArrayOf(
 {% for expr in encode_exprs %}
-            {{ expr }}{{ "," if not loop.last else "" }}
+        w.writeU8({{ expr }})?.let { return it }
 {% endfor %}
-        )
+        return null
 {% endif %}
+    }
+
+    /// Heap-backed convenience facade. Runs `encode` over a
+    /// `MutableListSink` and returns the freshly-encoded ByteArray.
+    /// Callers targeting zero-alloc hot paths should call `encode`
+    /// directly against a caller-owned sink (e.g. `ByteArraySink`).
+    fun encodeToByteArray({{ params_first_arg }}): ByteArray {
+        val _list = mutableListOf<Byte>()
+        encode(MutableListSink(_list){{ params_first_arg_with_comma }})
+        return _list.toByteArray()
     }
 
     companion object {

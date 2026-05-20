@@ -105,11 +105,16 @@ class TestDefaultRoundTrip(unittest.TestCase):
         cls._tmp.cleanup()
 
     def test_round_trip_lands_in_declared_default_arm(self):
-        from sce_forge_runtime.codec import SceCursor
+        from sce_forge_runtime.codec import (
+            BufferOverflow,
+            BytearraySink,
+            MemoryviewSink,
+            SceCursor,
+        )
 
         Outer = self._outer.CodecVariantDefaultMarker
         original = Outer()
-        wire = original.encode()
+        wire = original.encode_to_bytes()
 
         self.assertEqual(
             len(wire),
@@ -141,12 +146,40 @@ class TestDefaultRoundTrip(unittest.TestCase):
             f"round-trip must land in arm B (the marked-default); got kind={decoded.body.kind!r}",
         )
 
-        re_encoded = decoded.encode()
+        re_encoded = decoded.encode_to_bytes()
         self.assertEqual(
             wire,
             re_encoded,
             "decode → encode must produce byte-equal output (round-trip stability)",
         )
+
+        # RFC §5.B B1-α writer-direct path: BytearraySink-backed encode
+        # must produce bytes equal to the facade output.
+        dst = bytearray()
+        result = decoded.encode(BytearraySink(dst))
+        self.assertIsNone(result, "BytearraySink-backed encode returns None")
+        self.assertEqual(
+            wire,
+            bytes(dst),
+            "BytearraySink encode must equal facade encode_to_bytes output",
+        )
+
+        # MemoryviewSink with sufficient capacity — same bytes.
+        buf = bytearray(16)
+        ms = MemoryviewSink(memoryview(buf))
+        decoded.encode(ms)
+        self.assertEqual(ms.position(), len(wire),
+                         "MemoryviewSink position must equal wire length")
+        self.assertEqual(wire, bytes(buf[:ms.position()]),
+                         "MemoryviewSink encode prefix must equal wire bytes")
+
+        # Bounded-buffer BufferOverflow path: a MemoryviewSink sized
+        # strictly smaller than the actual wire length must raise.
+        if len(wire) > 0:
+            tiny = bytearray(len(wire) - 1)
+            tiny_sink = MemoryviewSink(memoryview(tiny))
+            with self.assertRaises(BufferOverflow):
+                decoded.encode(tiny_sink)
 
 
 if __name__ == "__main__":

@@ -157,17 +157,29 @@ func (s *CodecZenohInterestBody) SetAggregate(v bool) {
 	}
 }
 
-// Encode serializes the CodecZenohInterestBody into raw bytes.
-func (s *CodecZenohInterestBody) Encode() []byte {
-	// RFC §5.B B1-δ + B2-β present-if encode: per-field byte append.
-	// Gated fields skip the append on nil pointer / nil slice. Per-
-	// field `is_repeat` routes Repeat fields to the dedicated helper.
-	// Branch fires before has_vle_fields so a codec mixing VLE +
-	// present-if uses the unified encode path.
-	r := make([]byte, 0, 257)
-	r = append(r, s.Header)
-	if s.Keyexpr != nil {
-		r = append(r, s.Keyexpr.Encode(byte((s.Header >> 5) & 0x1))...)
+// Encode writes the CodecZenohInterestBody into the caller-owned sink.
+// Returns nil on success; codec.ErrBufferOverflow from a bounded sink
+// when the destination has insufficient remaining capacity; growable
+// sinks (e.g. BytesSink) are effectively infallible.
+func (s *CodecZenohInterestBody) Encode(w codec.SceSink) error {
+	// RFC §5.B B1-δ + B2-β present-if encode.
+	if err := w.WriteBytes([]byte{ s.Header }); err != nil {
+		return err
 	}
-	return r
+	if s.Keyexpr != nil {
+		if err := s.Keyexpr.Encode(w, byte((s.Header >> 5) & 0x1)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// EncodeToBytes is the heap-backed convenience facade. Runs Encode
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecZenohInterestBody) EncodeToBytes() []byte {
+	_dst := make([]byte, 0, 257)
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }

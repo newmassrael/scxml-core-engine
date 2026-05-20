@@ -40,7 +40,7 @@
                 {{ field.name }} = input{{ field.name | to_pascal_case }}{% if not loop.last %},{% endif %}
 {% endfor %}
             )
-            val encoded = valueObj.encode()
+            val encoded = valueObj.encodeToByteArray()
             assertTrue(
                 encoded.contentEquals(expectedBytes),
                 "{{ f.name }} case $i encode: actual=${encoded.joinToString()} expected=${expectedBytes.joinToString()}",

@@ -322,8 +322,11 @@ func (s *{{ struct_name }}) {{ fl.name_set }}(v bool) {
 {% endif %}
 {% endfor %}
 {% endif %}
-// Encode serializes the {{ struct_name }} into raw bytes.
-func (s *{{ struct_name }}) Encode({{ params_first_arg }}) []byte {
+// Encode writes the {{ struct_name }} into the caller-owned sink.
+// Returns nil on success; codec.ErrBufferOverflow from a bounded sink
+// when the destination has insufficient remaining capacity; growable
+// sinks (e.g. BytesSink) are effectively infallible.
+func (s *{{ struct_name }}) Encode(w codec.SceSink{{ params_after_first_arg }}) error {
 {% if has_parent_tag_derivation %}
 	// RFC §5.B B5-ν Phase B — derive carrier bits from each embedded
 	// parent-tag variant's active arm before the carrier byte is
@@ -333,16 +336,11 @@ func (s *{{ struct_name }}) Encode({{ params_first_arg }}) []byte {
 {% endif %}
 {% if has_no_fields %}
 	// RFC §5.B B5-α empty body — zero-byte payload.
-	return []byte{}
+	_ = w
+	return nil
 {% elif has_variant %}
 {% if variant.has_streaming_prefix %}
-	// RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
-	// streaming prefix encode. Peek-byte mode: arm body's encode
-	// prepends its own header byte (which the decoder peeked); no
-	// separate tag byte here. Streaming-prefix mode (own-field):
-	// carrier is part of the prefix fields and emits via the same
-	// per-field path.
-	r := make([]byte, 0, {{ max_bytes }})
+	// RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix.
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
@@ -356,33 +354,30 @@ func (s *{{ struct_name }}) Encode({{ params_first_arg }}) []byte {
 {% endfor %}
 {% else %}
 	// Encode fixed prefix (tag field bytes are part of the prefix).
-	// The tag value is read from the struct field, NOT derived from
-	// the body discriminant — keeping author-set tag / body in sync
-	// is the caller's responsibility (v1 keeps the layout simple).
-	r := make([]byte, 0, {{ max_bytes }})
 {% for expr in encode_exprs %}
-	r = append(r, {{ expr }})
+	if err := w.WriteBytes([]byte{ {{ expr }} }); err != nil {
+		return err
+	}
 {% endfor %}
 {% endif %}
-	// Append the active arm body's encoded bytes.
+	// Append the active arm body's encoded bytes via the same sink.
 	switch {
 {% for arm in variant.arms %}
 	case s.Body.{{ arm.variant_name }} != nil:
-		r = append(r, s.Body.{{ arm.variant_name }}.Encode({{ arm.body_encode_args_first }})...)
+		if err := s.Body.{{ arm.variant_name }}.Encode(w{{ arm.body_encode_args_with_leading_comma }}); err != nil {
+			return err
+		}
 {% endfor %}
 {% if variant.default_arm %}
 	case s.Body.{{ variant.default_arm.variant_name }} != nil:
-		r = append(r, s.Body.{{ variant.default_arm.variant_name }}.Body.Encode({{ variant.default_arm.body_encode_args_first }})...)
+		if err := s.Body.{{ variant.default_arm.variant_name }}.Body.Encode(w{{ variant.default_arm.body_encode_args_with_leading_comma }}); err != nil {
+			return err
+		}
 {% endif %}
 	}
-	return r
+	return nil
 {% elif has_present_if_fields %}
-	// RFC §5.B B1-δ + B2-β present-if encode: per-field byte append.
-	// Gated fields skip the append on nil pointer / nil slice. Per-
-	// field `is_repeat` routes Repeat fields to the dedicated helper.
-	// Branch fires before has_vle_fields so a codec mixing VLE +
-	// present-if uses the unified encode path.
-	r := make([]byte, 0, {{ max_bytes }})
+	// RFC §5.B B1-δ + B2-β present-if encode.
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
@@ -394,13 +389,9 @@ func (s *{{ struct_name }}) Encode({{ params_first_arg }}) []byte {
 {{ field.present_if_encode_block }}
 {% endif %}
 {% endfor %}
-	return r
+	return nil
 {% elif has_vle_fields %}
-	// RFC §5.B B4: per-field bit-size dispatch routes Fixed /
-	// LengthRef siblings of VLE fields through
-	// `present_if_encode_block` (predicate=None arms). Pure-VLE
-	// codecs stay byte-stable.
-	r := make([]byte, 0, {{ max_bytes }})
+	// RFC §5.B B4: per-field bit-size dispatch.
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
@@ -412,13 +403,10 @@ func (s *{{ struct_name }}) Encode({{ params_first_arg }}) []byte {
 {{ field.present_if_encode_block }}
 {% endif %}
 {% endfor %}
-	return r
+	return nil
 {% elif has_repeat_fields or has_tlv_chain_fields or has_embed_fields or has_string_fields %}
-	// RFC §5.B B2 encode: fixed prefix appends byte-by-byte; repeat
-	// fields range over `s.<Pascal>` and spread each element's
-	// `Encode()` bytes into the parent buffer. Author keeps count
-	// field == slice length (trust contract).
-	r := make([]byte, 0, {{ max_bytes }})
+	// RFC §5.B B2 encode: list fields range over s.<Pascal> and
+	// write each element through the same sink.
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
@@ -430,23 +418,37 @@ func (s *{{ struct_name }}) Encode({{ params_first_arg }}) []byte {
 {{ field.present_if_encode_block }}
 {% endif %}
 {% endfor %}
-	return r
+	return nil
 {% elif has_variable_fields %}
-	r := make([]byte, 0, {{ max_bytes }})
 {% for expr in encode_exprs %}
-	r = append(r, {{ expr }})
+	if err := w.WriteBytes([]byte{ {{ expr }} }); err != nil {
+		return err
+	}
 {% endfor %}
 {% for field in fields %}
 {% if field.is_variable %}
-	r = append(r, s.{{ field.id }}...)
-{% endif %}
-{% endfor %}
-	return r
-{% else %}
-	return []byte{
-{% for expr in encode_exprs %}
-		{{ expr }},
-{% endfor %}
+	if err := w.WriteBytes(s.{{ field.id }}); err != nil {
+		return err
 	}
 {% endif %}
+{% endfor %}
+	return nil
+{% else %}
+{% for expr in encode_exprs %}
+	if err := w.WriteBytes([]byte{ {{ expr }} }); err != nil {
+		return err
+	}
+{% endfor %}
+	return nil
+{% endif %}
+}
+
+// EncodeToBytes is the heap-backed convenience facade. Runs Encode
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *{{ struct_name }}) EncodeToBytes({{ params_first_arg }}) []byte {
+	_dst := make([]byte, 0, {{ max_bytes }})
+	_ = s.Encode(codec.NewBytesSink(&_dst){{ params_first_arg_with_comma }})
+	return _dst
 }

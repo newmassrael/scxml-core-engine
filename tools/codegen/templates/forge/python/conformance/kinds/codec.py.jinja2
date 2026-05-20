@@ -4,7 +4,7 @@
 {# Codec kind — round-trip { decoded, encoded } cases. Python's generated
    dataclass uses snake_case field names, so every SCXML-source-case
    (camelCase) name in fixtures.json is converted via `to_snake_case`.
-   `encode()` returns `bytes`; `decode(cursor)` is a classmethod taking
+   `encode_to_bytes()` returns `bytes`; `decode(cursor)` is a classmethod taking
    an `sce_forge_runtime.codec.SceCursor` and returning `Optional[...]`. #}
 {% if not f.oracle_eligible %}
         # Compile-only probe: oracle_eligible=false because the fixture's
@@ -38,7 +38,7 @@
                 {{ field.name | to_snake_case }}=input_{{ field.name | to_snake_case }}{% if not loop.last %},{% endif %}
 {% endfor %}
             )
-            encoded = value.encode()
+            encoded = value.encode_to_bytes()
             self.assertEqual(
                 encoded,
                 expected_bytes,

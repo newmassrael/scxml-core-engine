@@ -16,6 +16,7 @@
 	// mismatch in struct literals) is already caught upstream by
 	// `go build`. This zero-value declaration additionally exercises
 	// the type's identity so the unused-import linter stays quiet.
+	_ = ref
 	var _codecVal {{ f.name }}.{{ f.name | to_pascal_case }}
 	_ = _codecVal
 {% else %}
@@ -38,7 +39,7 @@
 			{{ field.name | to_pascal_case }}: d.{{ field.name | to_pascal_case }},
 {% endfor %}
 		}
-		encoded := value.Encode()
+		encoded := value.EncodeToBytes()
 		if len(encoded) != len(expectedBytes) {
 			t.Errorf("{{ f.name }} case %d encode: length actual=%d expected=%d", i, len(encoded), len(expectedBytes))
 		} else {

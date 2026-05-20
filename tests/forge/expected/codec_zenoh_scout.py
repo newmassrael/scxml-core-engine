@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import CodecError, NeedMoreBytes, SceCursor
+from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
 
 from dataclasses import dataclass
 from typing import Optional
@@ -87,15 +87,23 @@ class CodecZenohScout:
         _val = (v & 0x0F) << 4
         self.cbyte = ((self.cbyte & (0xFF ^ _shifted_mask)) | _val) & 0xFF
 
-    def encode(self) -> bytes:
-        # RFC §5.B B1-δ + B2-β present-if encode: per-field byte
-        # append. Gated fields skip the append when the optional is
-        # `None`. Per-field `is_repeat` routes Repeat fields to the
-        # dedicated helper. Branch fires before has_vle_fields so a
-        # codec mixing VLE + present-if uses the unified encode path.
-        r = bytearray()
-        r.append(self.version & 0xFF)
-        r.append(self.cbyte & 0xFF)
+    def encode(self, w: SceSink) -> None:
+        """RFC §5.B B1-α encode-side primary: write ``self`` into the
+        caller-owned ``w`` sink. Returns ``None`` on success; raises
+        :class:`BufferOverflow` from a bounded sink when the destination
+        has insufficient remaining capacity; growable sinks (e.g.
+        :class:`BytearraySink`) are effectively infallible."""
+        # RFC §5.B B1-δ + B2-β present-if encode.
+        w.write_u8(self.version & 0xFF)
+        w.write_u8(self.cbyte & 0xFF)
         if self.zid is not None:
-            r.extend(self.zid)
-        return bytes(r)
+            w.write_bytes(self.zid)
+
+    def encode_to_bytes(self) -> bytes:
+        """Heap-backed convenience facade. Runs :meth:`encode` over a
+        :class:`BytearraySink` and returns the freshly-encoded bytes.
+        Callers targeting zero-alloc hot paths should call :meth:`encode`
+        directly against a caller-owned sink."""
+        _dst = bytearray()
+        self.encode(BytearraySink(_dst))
+        return bytes(_dst)

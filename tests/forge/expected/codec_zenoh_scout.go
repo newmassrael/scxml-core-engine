@@ -109,18 +109,32 @@ func (s *CodecZenohScout) SetZidLenM1(v uint8) {
 	s.Cbyte = (s.Cbyte &^ _shiftedMask) | _val
 }
 
-// Encode serializes the CodecZenohScout into raw bytes.
-func (s *CodecZenohScout) Encode() []byte {
-	// RFC §5.B B1-δ + B2-β present-if encode: per-field byte append.
-	// Gated fields skip the append on nil pointer / nil slice. Per-
-	// field `is_repeat` routes Repeat fields to the dedicated helper.
-	// Branch fires before has_vle_fields so a codec mixing VLE +
-	// present-if uses the unified encode path.
-	r := make([]byte, 0, 18)
-	r = append(r, s.Version)
-	r = append(r, s.Cbyte)
-	if s.Zid != nil {
-		r = append(r, s.Zid...)
+// Encode writes the CodecZenohScout into the caller-owned sink.
+// Returns nil on success; codec.ErrBufferOverflow from a bounded sink
+// when the destination has insufficient remaining capacity; growable
+// sinks (e.g. BytesSink) are effectively infallible.
+func (s *CodecZenohScout) Encode(w codec.SceSink) error {
+	// RFC §5.B B1-δ + B2-β present-if encode.
+	if err := w.WriteBytes([]byte{ s.Version }); err != nil {
+		return err
 	}
-	return r
+	if err := w.WriteBytes([]byte{ s.Cbyte }); err != nil {
+		return err
+	}
+	if s.Zid != nil {
+		if err := w.WriteBytes(s.Zid); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// EncodeToBytes is the heap-backed convenience facade. Runs Encode
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecZenohScout) EncodeToBytes() []byte {
+	_dst := make([]byte, 0, 18)
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }

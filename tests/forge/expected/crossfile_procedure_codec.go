@@ -88,7 +88,7 @@ func (p *policy) ExecuteEntryActions(s int) (int, string) {
 			req := forge.ProcedureServiceRequest{
 				Service: "Diag",
 				Addr: &addrVal,
-				Payload: p.Frame.Encode(),
+				Payload: p.Frame.EncodeToBytes(),
 			}
 			resp := p.serviceHandler(req)
 			if resp.Success {

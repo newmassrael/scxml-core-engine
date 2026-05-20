@@ -61,6 +61,14 @@ class TlvChainOverflow(CodecError):
     only convention)."""
 
 
+class BufferOverflow(CodecError):
+    """RFC §5.B B1-α encode-side counterpart to :class:`NeedMoreBytes`:
+    raised when an encode write would exceed the destination sink's
+    remaining capacity. Only the bounded :class:`MemoryviewSink`
+    (caller-owned ``memoryview`` + ``cap``) can raise this; the
+    growable :class:`BytearraySink` is effectively infallible."""
+
+
 class SceCursor:
     """Read-only cursor over a borrowed input ``bytes`` / ``memoryview``.
 
@@ -132,3 +140,135 @@ class SceCursor:
     def read_vle_u64(self) -> int:
         """Read a vle_u64 field (1-10 wire bytes). Canonical Zenoh ZInt."""
         return self._read_vle_inner(64)
+
+
+# ── Write-side sink ──────────────────────────────────────────────
+
+
+import abc as _abc
+from typing import Union as _Union
+
+
+class SceSink(_abc.ABC):
+    """RFC §5.B B1-α encode-side sink. Generated ``encode`` bodies
+    append bytes through this surface.
+
+    Concrete sinks own the destination storage (``bytearray`` or
+    ``memoryview``); the sink only holds a reference. Failure mode:
+    bounded sinks raise :class:`BufferOverflow`; growable sinks never
+    raise. ``position()`` returns bytes written by this sink instance
+    since construction (delta — not absolute destination length) so
+    coalesced-send paths stay positionally consistent.
+
+    Subclasses MUST implement ``write_bytes`` and ``position``; the
+    per-width helpers (``write_u8`` / ``write_u16_le`` / …) are
+    default-implemented in terms of ``write_bytes``.
+
+    Defined as an :class:`abc.ABC` rather than a :class:`Protocol`
+    so codegen can ``isinstance``-check at runtime without
+    ``runtime_checkable`` ceremony, matching the cpp/kotlin/go
+    interface conventions on the same boundary.
+    """
+
+    @_abc.abstractmethod
+    def write_bytes(self, data: _Union[bytes, bytearray, memoryview]) -> None:
+        """Append ``data`` to the underlying storage. Raises
+        :class:`BufferOverflow` when a bounded destination has
+        insufficient remaining capacity."""
+
+    @_abc.abstractmethod
+    def position(self) -> int:
+        """Bytes written by this sink instance since construction."""
+
+    def write_u8(self, v: int) -> None:
+        """Append a single byte (``0 ≤ v < 256``)."""
+        self.write_bytes(bytes((v & 0xFF,)))
+
+    def write_u16_le(self, v: int) -> None:
+        self.write_bytes(bytes(((v & 0xFF), ((v >> 8) & 0xFF))))
+
+    def write_u16_be(self, v: int) -> None:
+        self.write_bytes(bytes((((v >> 8) & 0xFF), (v & 0xFF))))
+
+    def write_u32_le(self, v: int) -> None:
+        self.write_bytes(bytes((
+            (v & 0xFF), ((v >> 8) & 0xFF), ((v >> 16) & 0xFF), ((v >> 24) & 0xFF),
+        )))
+
+    def write_u32_be(self, v: int) -> None:
+        self.write_bytes(bytes((
+            ((v >> 24) & 0xFF), ((v >> 16) & 0xFF), ((v >> 8) & 0xFF), (v & 0xFF),
+        )))
+
+    def write_u64_le(self, v: int) -> None:
+        self.write_bytes(bytes((
+            (v & 0xFF), ((v >> 8) & 0xFF), ((v >> 16) & 0xFF), ((v >> 24) & 0xFF),
+            ((v >> 32) & 0xFF), ((v >> 40) & 0xFF), ((v >> 48) & 0xFF), ((v >> 56) & 0xFF),
+        )))
+
+    def write_u64_be(self, v: int) -> None:
+        self.write_bytes(bytes((
+            ((v >> 56) & 0xFF), ((v >> 48) & 0xFF), ((v >> 40) & 0xFF), ((v >> 32) & 0xFF),
+            ((v >> 24) & 0xFF), ((v >> 16) & 0xFF), ((v >> 8) & 0xFF), (v & 0xFF),
+        )))
+
+
+class BytearraySink(SceSink):
+    """Growable sink backed by a caller-owned :class:`bytearray`.
+    Infallible (``write_bytes`` never raises :class:`BufferOverflow`).
+    Natural sink behind ``encode_to_bytes()`` facades."""
+
+    __slots__ = ("_dst", "_start_len")
+
+    def __init__(self, dst: bytearray) -> None:
+        self._dst = dst
+        self._start_len = len(dst)
+
+    def write_bytes(self, data: _Union[bytes, bytearray, memoryview]) -> None:
+        if len(data) == 0:
+            return
+        self._dst.extend(data)
+
+    def write_u8(self, v: int) -> None:
+        self._dst.append(v & 0xFF)
+
+    def position(self) -> int:
+        return len(self._dst) - self._start_len
+
+
+class MemoryviewSink(SceSink):
+    """Bounded sink backed by a caller-owned :class:`memoryview` + write
+    position. Raises :class:`BufferOverflow` when a write would exceed
+    the view's length. Natural sink for fixed-frame / DMA-aligned
+    call sites."""
+
+    __slots__ = ("_buf", "_pos", "_start_pos")
+
+    def __init__(self, buf: memoryview, pos: int = 0) -> None:
+        if buf.format != "B" and buf.itemsize != 1:
+            raise TypeError("MemoryviewSink requires a byte-wide memoryview")
+        self._buf = buf
+        self._pos = pos
+        self._start_pos = pos
+
+    def write_bytes(self, data: _Union[bytes, bytearray, memoryview]) -> None:
+        n = len(data)
+        if n == 0:
+            return
+        if len(self._buf) - self._pos < n:
+            raise BufferOverflow()
+        self._buf[self._pos : self._pos + n] = data
+        self._pos += n
+
+    def write_u8(self, v: int) -> None:
+        if self._pos >= len(self._buf):
+            raise BufferOverflow()
+        self._buf[self._pos] = v & 0xFF
+        self._pos += 1
+
+    def position(self) -> int:
+        return self._pos - self._start_pos
+
+    def remaining(self) -> int:
+        """Remaining capacity from current position to end of view."""
+        return len(self._buf) - self._pos

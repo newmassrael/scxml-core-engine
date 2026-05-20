@@ -25,8 +25,22 @@ func DecodeCodecZenohDeclFinal(cursor *codec.SceCursor) (*CodecZenohDeclFinal, e
 	return &CodecZenohDeclFinal{}, nil
 }
 
-// Encode serializes the CodecZenohDeclFinal into raw bytes.
-func (s *CodecZenohDeclFinal) Encode() []byte {
+// Encode writes the CodecZenohDeclFinal into the caller-owned sink.
+// Returns nil on success; codec.ErrBufferOverflow from a bounded sink
+// when the destination has insufficient remaining capacity; growable
+// sinks (e.g. BytesSink) are effectively infallible.
+func (s *CodecZenohDeclFinal) Encode(w codec.SceSink) error {
 	// RFC §5.B B5-α empty body — zero-byte payload.
-	return []byte{}
+	_ = w
+	return nil
+}
+
+// EncodeToBytes is the heap-backed convenience facade. Runs Encode
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecZenohDeclFinal) EncodeToBytes() []byte {
+	_dst := make([]byte, 0, 0)
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }

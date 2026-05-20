@@ -207,36 +207,67 @@ func (s *CodecZenohDeclaration) SetZ(v bool) {
 	}
 }
 
-// Encode serializes the CodecZenohDeclaration into raw bytes.
-func (s *CodecZenohDeclaration) Encode() []byte {
+// Encode writes the CodecZenohDeclaration into the caller-owned sink.
+// Returns nil on success; codec.ErrBufferOverflow from a bounded sink
+// when the destination has insufficient remaining capacity; growable
+// sinks (e.g. BytesSink) are effectively infallible.
+func (s *CodecZenohDeclaration) Encode(w codec.SceSink) error {
 	// Encode fixed prefix (tag field bytes are part of the prefix).
-	// The tag value is read from the struct field, NOT derived from
-	// the body discriminant — keeping author-set tag / body in sync
-	// is the caller's responsibility (v1 keeps the layout simple).
-	r := make([]byte, 0, 275)
-	r = append(r, byte(s.Header))
-	// Append the active arm body's encoded bytes.
+	if err := w.WriteBytes([]byte{ byte(s.Header) }); err != nil {
+		return err
+	}
+	// Append the active arm body's encoded bytes via the same sink.
 	switch {
 	case s.Body.CodecZenohDeclKexpr != nil:
-		r = append(r, s.Body.CodecZenohDeclKexpr.Encode(byte((s.Header >> 5) & 0x1))...)
+		if err := s.Body.CodecZenohDeclKexpr.Encode(w, byte((s.Header >> 5) & 0x1)); err != nil {
+			return err
+		}
 	case s.Body.CodecZenohUndeclKexpr != nil:
-		r = append(r, s.Body.CodecZenohUndeclKexpr.Encode()...)
+		if err := s.Body.CodecZenohUndeclKexpr.Encode(w); err != nil {
+			return err
+		}
 	case s.Body.CodecZenohDeclSubscriber != nil:
-		r = append(r, s.Body.CodecZenohDeclSubscriber.Encode(byte((s.Header >> 5) & 0x1))...)
+		if err := s.Body.CodecZenohDeclSubscriber.Encode(w, byte((s.Header >> 5) & 0x1)); err != nil {
+			return err
+		}
 	case s.Body.CodecZenohUndeclSubscriber != nil:
-		r = append(r, s.Body.CodecZenohUndeclSubscriber.Encode(byte((s.Header >> 7) & 0x1))...)
+		if err := s.Body.CodecZenohUndeclSubscriber.Encode(w, byte((s.Header >> 7) & 0x1)); err != nil {
+			return err
+		}
 	case s.Body.CodecZenohDeclQueryable != nil:
-		r = append(r, s.Body.CodecZenohDeclQueryable.Encode(byte((s.Header >> 5) & 0x1), byte((s.Header >> 7) & 0x1))...)
+		if err := s.Body.CodecZenohDeclQueryable.Encode(w, byte((s.Header >> 5) & 0x1), byte((s.Header >> 7) & 0x1)); err != nil {
+			return err
+		}
 	case s.Body.CodecZenohUndeclQueryable != nil:
-		r = append(r, s.Body.CodecZenohUndeclQueryable.Encode(byte((s.Header >> 7) & 0x1))...)
+		if err := s.Body.CodecZenohUndeclQueryable.Encode(w, byte((s.Header >> 7) & 0x1)); err != nil {
+			return err
+		}
 	case s.Body.CodecZenohDeclToken != nil:
-		r = append(r, s.Body.CodecZenohDeclToken.Encode(byte((s.Header >> 5) & 0x1))...)
+		if err := s.Body.CodecZenohDeclToken.Encode(w, byte((s.Header >> 5) & 0x1)); err != nil {
+			return err
+		}
 	case s.Body.CodecZenohUndeclToken != nil:
-		r = append(r, s.Body.CodecZenohUndeclToken.Encode(byte((s.Header >> 7) & 0x1))...)
+		if err := s.Body.CodecZenohUndeclToken.Encode(w, byte((s.Header >> 7) & 0x1)); err != nil {
+			return err
+		}
 	case s.Body.CodecZenohDeclFinal != nil:
-		r = append(r, s.Body.CodecZenohDeclFinal.Encode()...)
+		if err := s.Body.CodecZenohDeclFinal.Encode(w); err != nil {
+			return err
+		}
 	case s.Body.Default != nil:
-		r = append(r, s.Body.Default.Body.Encode()...)
+		if err := s.Body.Default.Body.Encode(w); err != nil {
+			return err
+		}
 	}
-	return r
+	return nil
+}
+
+// EncodeToBytes is the heap-backed convenience facade. Runs Encode
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecZenohDeclaration) EncodeToBytes() []byte {
+	_dst := make([]byte, 0, 275)
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }

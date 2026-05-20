@@ -95,21 +95,35 @@ func (s *CodecPresentIfString) SetHasText(v bool) {
 	}
 }
 
-// Encode serializes the CodecPresentIfString into raw bytes.
-func (s *CodecPresentIfString) Encode() []byte {
-	// RFC §5.B B1-δ + B2-β present-if encode: per-field byte append.
-	// Gated fields skip the append on nil pointer / nil slice. Per-
-	// field `is_repeat` routes Repeat fields to the dedicated helper.
-	// Branch fires before has_vle_fields so a codec mixing VLE +
-	// present-if uses the unified encode path.
-	r := make([]byte, 0, 34)
-	r = append(r, s.Carrier)
+// Encode writes the CodecPresentIfString into the caller-owned sink.
+// Returns nil on success; codec.ErrBufferOverflow from a bounded sink
+// when the destination has insufficient remaining capacity; growable
+// sinks (e.g. BytesSink) are effectively infallible.
+func (s *CodecPresentIfString) Encode(w codec.SceSink) error {
+	// RFC §5.B B1-δ + B2-β present-if encode.
+	if err := w.WriteBytes([]byte{ s.Carrier }); err != nil {
+		return err
+	}
 	if s.TextLen != nil {
 		_v := *s.TextLen
-		r = append(r, _v)
+		if err := w.WriteBytes([]byte{ _v }); err != nil {
+			return err
+		}
 	}
 	if s.Text != nil {
-		r = append(r, []byte(*s.Text)...)
+		if err := w.WriteBytes([]byte(*s.Text)); err != nil {
+			return err
+		}
 	}
-	return r
+	return nil
+}
+
+// EncodeToBytes is the heap-backed convenience facade. Runs Encode
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecPresentIfString) EncodeToBytes() []byte {
+	_dst := make([]byte, 0, 34)
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }

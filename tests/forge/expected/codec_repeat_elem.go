@@ -35,10 +35,26 @@ func DecodeCodecRepeatElem(cursor *codec.SceCursor) (*CodecRepeatElem, error) {
 	return value, nil
 }
 
-// Encode serializes the CodecRepeatElem into raw bytes.
-func (s *CodecRepeatElem) Encode() []byte {
-	return []byte{
-		byte(s.Seq >> 8 & 0xFF),
-		byte(s.Seq & 0xFF),
+// Encode writes the CodecRepeatElem into the caller-owned sink.
+// Returns nil on success; codec.ErrBufferOverflow from a bounded sink
+// when the destination has insufficient remaining capacity; growable
+// sinks (e.g. BytesSink) are effectively infallible.
+func (s *CodecRepeatElem) Encode(w codec.SceSink) error {
+	if err := w.WriteBytes([]byte{ byte(s.Seq >> 8 & 0xFF) }); err != nil {
+		return err
 	}
+	if err := w.WriteBytes([]byte{ byte(s.Seq & 0xFF) }); err != nil {
+		return err
+	}
+	return nil
+}
+
+// EncodeToBytes is the heap-backed convenience facade. Runs Encode
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecRepeatElem) EncodeToBytes() []byte {
+	_dst := make([]byte, 0, 2)
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }

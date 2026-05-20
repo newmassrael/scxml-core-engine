@@ -62,7 +62,7 @@ class CrossfileProcedureCodecMutate : ProcedureStateMachine<State, Event>() {
                 serviceHandler?.let { handler ->
                     val req = ProcedureServiceRequest(
                         service = "transport",
-                        payload = frame.encode(),
+                        payload = frame.encodeToByteArray(),
                     )
                     val resp = handler(req)
                     return Pair(if (resp.success) Event.Ok else Event.Fail, resp.data)

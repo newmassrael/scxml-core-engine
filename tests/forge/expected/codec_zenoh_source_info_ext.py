@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import CodecError, NeedMoreBytes, SceCursor
+from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
 from .codec_zenoh_source_info import CodecZenohSourceInfo
 
 from dataclasses import dataclass
@@ -47,16 +47,25 @@ class CodecZenohSourceInfoExt:
             info=info,
         )
 
-    def encode(self) -> bytes:
-        # RFC §5.B B4: per-field bit-size dispatch routes Fixed /
-        # LengthRef siblings of VLE fields through
-        # `present_if_encode_block` (predicate=None arms). Pure-VLE
-        # codecs stay byte-stable.
-        r = bytearray()
-        _w = int(self.ext_size)
-        while _w >= 0x80:
-            r.append((_w & 0x7F) | 0x80)
-            _w >>= 7
-        r.append(_w)
-        r.extend(self.info.encode())
-        return bytes(r)
+    def encode(self, w: SceSink) -> None:
+        """RFC §5.B B1-α encode-side primary: write ``self`` into the
+        caller-owned ``w`` sink. Returns ``None`` on success; raises
+        :class:`BufferOverflow` from a bounded sink when the destination
+        has insufficient remaining capacity; growable sinks (e.g.
+        :class:`BytearraySink`) are effectively infallible."""
+        # RFC §5.B B4: per-field bit-size dispatch.
+        _vle = int(self.ext_size)
+        while _vle >= 0x80:
+            w.write_u8((_vle & 0x7F) | 0x80)
+            _vle >>= 7
+        w.write_u8(_vle)
+        self.info.encode(w)
+
+    def encode_to_bytes(self) -> bytes:
+        """Heap-backed convenience facade. Runs :meth:`encode` over a
+        :class:`BytearraySink` and returns the freshly-encoded bytes.
+        Callers targeting zero-alloc hot paths should call :meth:`encode`
+        directly against a caller-owned sink."""
+        _dst = bytearray()
+        self.encode(BytearraySink(_dst))
+        return bytes(_dst)

@@ -31,6 +31,11 @@ sealed class CodecError {
     /// A `vle_u<N>` field's continuation chain implies a value wider
     /// than the declared type. RFC §5.B `codec/vle-width-overflow`.
     object VleWidthOverflow : CodecError()
+    /// RFC §5.B B1-α encode-side counterpart to NeedMoreBytes: the
+    /// destination sink reported insufficient remaining capacity for
+    /// the next write. Only the bounded [ByteArraySink] can raise
+    /// this; the growable [MutableListSink] is effectively infallible.
+    object BufferOverflow : CodecError()
 }
 
 /// Read-only cursor over a borrowed input buffer. Decode bodies use
@@ -97,4 +102,135 @@ class SceCursor(private val buf: ByteArray, private var pos: Int = 0) {
         lastVleOverflow = true
         return null
     }
+}
+
+// ── Write-side sink ──────────────────────────────────────────────
+
+/// Write-side cursor for codec emit. Interface that generated `encode`
+/// bodies accept by reference.
+///
+/// Return contract: `null` on success; populated [CodecError] on
+/// failure (mirrors the decode-side `T?` convention — decode returns
+/// Optional<Value>, encode returns Optional<Error>). Generated code
+/// propagates via `?.let { return it }`.
+///
+/// `SceSink` is an interface rather than abstract class so Kotlin
+/// callers can implement it on platform-native buffer wrappers
+/// (Android ByteBuffer, JVM OutputStream, …) without inheritance.
+interface SceSink {
+    /// Append `len` bytes starting at `off` from `bytes` to the
+    /// underlying storage. Concrete sinks return
+    /// [CodecError.BufferOverflow] when the destination has
+    /// insufficient remaining capacity; growable sinks return `null`.
+    fun writeBytes(bytes: ByteArray, off: Int = 0, len: Int = bytes.size): CodecError?
+
+    /// Bytes written by this sink instance since construction. Used by
+    /// codec emit for offset-aware writes (DMA-aligned field padding,
+    /// length-prefix back-patching).
+    fun position(): Int
+
+    // Default per-width helpers — concrete sinks MAY override for
+    // efficiency. All forward to `writeBytes`.
+    fun writeU8(v: Byte): CodecError? = writeBytes(byteArrayOf(v), 0, 1)
+
+    fun writeU16Le(v: UShort): CodecError? = writeBytes(byteArrayOf(
+        v.toByte(), (v.toInt() ushr 8).toByte()
+    ), 0, 2)
+
+    fun writeU16Be(v: UShort): CodecError? = writeBytes(byteArrayOf(
+        (v.toInt() ushr 8).toByte(), v.toByte()
+    ), 0, 2)
+
+    fun writeU32Le(v: UInt): CodecError? = writeBytes(byteArrayOf(
+        v.toByte(),
+        (v.toInt() ushr 8).toByte(),
+        (v.toInt() ushr 16).toByte(),
+        (v.toInt() ushr 24).toByte(),
+    ), 0, 4)
+
+    fun writeU32Be(v: UInt): CodecError? = writeBytes(byteArrayOf(
+        (v.toInt() ushr 24).toByte(),
+        (v.toInt() ushr 16).toByte(),
+        (v.toInt() ushr 8).toByte(),
+        v.toByte(),
+    ), 0, 4)
+
+    fun writeU64Le(v: ULong): CodecError? = writeBytes(byteArrayOf(
+        v.toByte(),
+        (v.toLong() ushr 8).toByte(),
+        (v.toLong() ushr 16).toByte(),
+        (v.toLong() ushr 24).toByte(),
+        (v.toLong() ushr 32).toByte(),
+        (v.toLong() ushr 40).toByte(),
+        (v.toLong() ushr 48).toByte(),
+        (v.toLong() ushr 56).toByte(),
+    ), 0, 8)
+
+    fun writeU64Be(v: ULong): CodecError? = writeBytes(byteArrayOf(
+        (v.toLong() ushr 56).toByte(),
+        (v.toLong() ushr 48).toByte(),
+        (v.toLong() ushr 40).toByte(),
+        (v.toLong() ushr 32).toByte(),
+        (v.toLong() ushr 24).toByte(),
+        (v.toLong() ushr 16).toByte(),
+        (v.toLong() ushr 8).toByte(),
+        v.toByte(),
+    ), 0, 8)
+}
+
+/// Growable sink backed by a caller-owned `MutableList<Byte>`. Infallible
+/// (never returns [CodecError.BufferOverflow]). Natural sink for std
+/// JVM consumers and the engine behind `encodeToByteArray()`.
+class MutableListSink(private val dst: MutableList<Byte>) : SceSink {
+    private val startLen: Int = dst.size
+
+    override fun writeBytes(bytes: ByteArray, off: Int, len: Int): CodecError? {
+        if (len == 0) return null
+        val end = off + len
+        for (i in off until end) {
+            dst.add(bytes[i])
+        }
+        return null
+    }
+
+    override fun writeU8(v: Byte): CodecError? {
+        dst.add(v)
+        return null
+    }
+
+    override fun position(): Int = dst.size - startLen
+}
+
+/// Bounded sink backed by a caller-owned `ByteArray` + position
+/// cursor. Raises [CodecError.BufferOverflow] when a write would
+/// exceed the array's capacity. Natural sink for fixed-frame /
+/// DMA-aligned call sites.
+class ByteArraySink(private val buf: ByteArray, private var pos: Int = 0) : SceSink {
+    private val startPos: Int = pos
+
+    override fun writeBytes(bytes: ByteArray, off: Int, len: Int): CodecError? {
+        if (len == 0) return null
+        if (buf.size - pos < len) return CodecError.BufferOverflow
+        for (i in 0 until len) {
+            buf[pos + i] = bytes[off + i]
+        }
+        pos += len
+        return null
+    }
+
+    override fun writeU8(v: Byte): CodecError? {
+        if (pos >= buf.size) return CodecError.BufferOverflow
+        buf[pos] = v
+        pos += 1
+        return null
+    }
+
+    override fun position(): Int = pos - startPos
+
+    /// Remaining capacity from current position to end of buffer.
+    fun remaining(): Int = buf.size - pos
+
+    /// Return the byte prefix containing the bytes written by this
+    /// sink (excluding any prefix that was present at construction).
+    fun written(): ByteArray = buf.copyOfRange(startPos, pos)
 }

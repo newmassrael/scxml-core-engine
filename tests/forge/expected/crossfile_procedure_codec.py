@@ -80,7 +80,7 @@ class CrossfileProcedureCodec(ProcedureStateMachine):
                 req = ProcedureServiceRequest(
                     service="Diag",
                     addr=str(self._ecu_addr),
-                    payload=self.frame.encode(),
+                    payload=self.frame.encode_to_bytes(),
                 )
                 resp = self._service_handler(req)
                 event = Event.Ok if resp.success else Event.Fail

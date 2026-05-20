@@ -42,13 +42,35 @@ func DecodeCodecLengthRefUint32Le(cursor *codec.SceCursor) (*CodecLengthRefUint3
 	return value, nil
 }
 
-// Encode serializes the CodecLengthRefUint32Le into raw bytes.
-func (s *CodecLengthRefUint32Le) Encode() []byte {
-	r := make([]byte, 0, 1028)
-	r = append(r, byte(s.PayloadLen & 0xFF))
-	r = append(r, byte(s.PayloadLen >> 8 & 0xFF))
-	r = append(r, byte(s.PayloadLen >> 16 & 0xFF))
-	r = append(r, byte(s.PayloadLen >> 24 & 0xFF))
-	r = append(r, s.Payload...)
-	return r
+// Encode writes the CodecLengthRefUint32Le into the caller-owned sink.
+// Returns nil on success; codec.ErrBufferOverflow from a bounded sink
+// when the destination has insufficient remaining capacity; growable
+// sinks (e.g. BytesSink) are effectively infallible.
+func (s *CodecLengthRefUint32Le) Encode(w codec.SceSink) error {
+	if err := w.WriteBytes([]byte{ byte(s.PayloadLen & 0xFF) }); err != nil {
+		return err
+	}
+	if err := w.WriteBytes([]byte{ byte(s.PayloadLen >> 8 & 0xFF) }); err != nil {
+		return err
+	}
+	if err := w.WriteBytes([]byte{ byte(s.PayloadLen >> 16 & 0xFF) }); err != nil {
+		return err
+	}
+	if err := w.WriteBytes([]byte{ byte(s.PayloadLen >> 24 & 0xFF) }); err != nil {
+		return err
+	}
+	if err := w.WriteBytes(s.Payload); err != nil {
+		return err
+	}
+	return nil
+}
+
+// EncodeToBytes is the heap-backed convenience facade. Runs Encode
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecLengthRefUint32Le) EncodeToBytes() []byte {
+	_dst := make([]byte, 0, 1028)
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }

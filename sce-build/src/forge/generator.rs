@@ -4315,25 +4315,25 @@ fn repeat_streaming_encode_block(
                  if (auto _se = _e.encode(w); _se) return _se;\n        \
              }}"
         ),
-        // Kotlin: `for (_e in this.<id>) { r.addAll(_e.encode().toList()) }`.
-        // The codec-level `r` is the `mutableListOf<Byte>()` declared
-        // by the encode template; the imported codec's `encode()`
-        // returns `ByteArray`, converted to `List<Byte>` for `addAll`.
-        // 8-space indent matches the surrounding template context.
+        // Kotlin: `for (_e in this.<id>) { _e.encode(w)?.let { return it } }`.
+        // Nested encode threads the parent sink — no intermediate
+        // toList()/toByteArray splice. The `?.let { return it }` is
+        // Kotlin's idiomatic propagation form (mirrors Rust `?`).
         Language::Kotlin => format!(
             "        for (_e in this.{id}) {{\n            \
-                 r.addAll(_e.encode().toList())\n        \
+                 _e.encode(w)?.let {{ return it }}\n        \
              }}"
         ),
         // Go: range over `s.<Pascal>` by value (`_e` is a copy of
-        // each element); `_e.Encode()` returns `[]byte`, spread via
-        // `...` into the parent's `r` slice. One-tab outer indent
-        // matches the surrounding `Encode()` body context.
+        // each element); each element's Encode threads the parent
+        // sink directly (no `[]byte` splice).
         Language::Go => {
             let go_id = filters::to_pascal_case(id.to_string());
             format!(
-                "\tfor _, _e := range s.{go_id} {{\n\t\t\
-                     r = append(r, _e.Encode()...)\n\t\
+                "\tfor _i := range s.{go_id} {{\n\t\t\
+                     if err := s.{go_id}[_i].Encode(w); err != nil {{\n\t\t\t\
+                         return err\n\t\t\
+                     }}\n\t\
                  }}"
             )
         }
@@ -4360,13 +4360,12 @@ fn repeat_streaming_encode_block(
             )
         }
         // Python: iterate `self.<id>` and extend the bytearray with
-        // each element's `encode()` bytes. 8-space indent matches the
-        // surrounding `encode()` method body context.
+        // each element's encode threads the parent sink directly.
         Language::Python => {
             let py_id = filters::to_snake_case(id.to_string());
             format!(
                 "        for _e in self.{py_id}:\n            \
-                     r.extend(_e.encode())"
+                     _e.encode(w)"
             )
         }
     }
@@ -4779,24 +4778,44 @@ fn embed_streaming_encode_block(
             }
         }
         Language::Kotlin => {
+            // Embed encode threads the parent sink through the nested
+            // codec (no intermediate ByteArray splice).
+            let comma_thread = if thread_arg_norm.is_empty() {
+                String::new()
+            } else {
+                format!(", {thread_arg_norm}")
+            };
             if !has_present_if {
-                format!("        r.addAll(this.{id}.encode({thread_arg_norm}).toList())")
+                format!("        this.{id}.encode(w{comma_thread})?.let {{ return it }}")
             } else {
                 format!(
                     "        this.{id}?.let {{ _v ->\n            \
-                     r.addAll(_v.encode({thread_arg_norm}).toList())\n        \
+                     _v.encode(w{comma_thread})?.let {{ return it }}\n        \
                  }}"
                 )
             }
         }
         Language::Go => {
             let go_id = filters::to_pascal_case(id.to_string());
+            // Embed encode threads the parent sink through the nested
+            // codec (no `[]byte` splice).
+            let comma_thread = if thread_arg_norm.is_empty() {
+                String::new()
+            } else {
+                format!(", {thread_arg_norm}")
+            };
             if !has_present_if {
-                format!("\tr = append(r, s.{go_id}.Encode({thread_arg_norm})...)")
+                format!(
+                    "\tif err := s.{go_id}.Encode(w{comma_thread}); err != nil {{\n\t\t\
+                         return err\n\t\
+                     }}"
+                )
             } else {
                 format!(
                     "\tif s.{go_id} != nil {{\n\t\t\
-                         r = append(r, s.{go_id}.Encode({thread_arg_norm})...)\n\t\
+                         if err := s.{go_id}.Encode(w{comma_thread}); err != nil {{\n\t\t\t\
+                             return err\n\t\t\
+                         }}\n\t\
                      }}"
                 )
             }
@@ -4828,12 +4847,19 @@ fn embed_streaming_encode_block(
         }
         Language::Python => {
             let py_id = filters::to_snake_case(id.to_string());
+            // Embed encode threads the parent sink through the nested
+            // codec (no intermediate bytes splice).
+            let comma_thread = if thread_arg_norm.is_empty() {
+                String::new()
+            } else {
+                format!(", {thread_arg_norm}")
+            };
             if !has_present_if {
-                format!("        r.extend(self.{py_id}.encode({thread_arg_norm}))")
+                format!("        self.{py_id}.encode(w{comma_thread})")
             } else {
                 format!(
                     "        if self.{py_id} is not None:\n            \
-                         r.extend(self.{py_id}.encode({thread_arg_norm}))"
+                         self.{py_id}.encode(w{comma_thread})"
                 )
             }
         }
@@ -5500,7 +5526,7 @@ fn repeat_streaming_encode_block_gated(
         Language::Kotlin => format!(
             "        this.{id}?.let {{ _list ->\n            \
                  for (_e in _list) {{\n                \
-                     r.addAll(_e.encode().toList())\n            \
+                     _e.encode(w)?.let {{ return it }}\n            \
                  }}\n        \
              }}"
         ),
@@ -5513,8 +5539,10 @@ fn repeat_streaming_encode_block_gated(
             let go_id = filters::to_pascal_case(id.to_string());
             format!(
                 "\tif s.{go_id} != nil {{\n\t\t\
-                     for _, _e := range s.{go_id} {{\n\t\t\t\
-                         r = append(r, _e.Encode()...)\n\t\t\
+                     for _i := range s.{go_id} {{\n\t\t\t\
+                         if err := s.{go_id}[_i].Encode(w); err != nil {{\n\t\t\t\t\
+                             return err\n\t\t\t\
+                         }}\n\t\t\
                      }}\n\t\
                  }}"
             )
@@ -5550,7 +5578,7 @@ fn repeat_streaming_encode_block_gated(
             format!(
                 "        if self.{py_id} is not None:\n            \
                      for _e in self.{py_id}:\n                \
-                         r.extend(_e.encode())"
+                         _e.encode(w)"
             )
         }
     }
@@ -5920,14 +5948,16 @@ fn tlv_chain_streaming_encode_block(
         ),
         Language::Kotlin => format!(
             "        for (_e in this.{id}) {{\n            \
-                 r.addAll(_e.encode().toList())\n        \
+                 _e.encode(w)?.let {{ return it }}\n        \
              }}"
         ),
         Language::Go => {
             let go_id = filters::to_pascal_case(id.to_string());
             format!(
-                "\tfor _, _e := range s.{go_id} {{\n\t\t\
-                     r = append(r, _e.Encode()...)\n\t\
+                "\tfor _i := range s.{go_id} {{\n\t\t\
+                     if err := s.{go_id}[_i].Encode(w); err != nil {{\n\t\t\t\
+                         return err\n\t\t\
+                     }}\n\t\
                  }}"
             )
         }
@@ -5935,7 +5965,7 @@ fn tlv_chain_streaming_encode_block(
             let py_id = filters::to_snake_case(id.to_string());
             format!(
                 "        for _e in self.{py_id}:\n            \
-                     r.extend(_e.encode())"
+                     _e.encode(w)"
             )
         }
     }
@@ -6252,15 +6282,17 @@ fn tlv_chain_streaming_encode_block_gated(
         Language::Kotlin => format!(
             "        this.{id}?.let {{ _list ->\n            \
                  for (_e in _list) {{\n                \
-                     r.addAll(_e.encode().toList())\n            \
+                     _e.encode(w)?.let {{ return it }}\n            \
                  }}\n        \
              }}"
         ),
         Language::Go => {
             let go_id = filters::to_pascal_case(id.to_string());
             format!(
-                "\tfor _, _e := range s.{go_id} {{\n\t\t\
-                     r = append(r, _e.Encode()...)\n\t\
+                "\tfor _i := range s.{go_id} {{\n\t\t\
+                     if err := s.{go_id}[_i].Encode(w); err != nil {{\n\t\t\t\
+                         return err\n\t\t\
+                     }}\n\t\
                  }}"
             )
         }
@@ -6282,7 +6314,7 @@ fn tlv_chain_streaming_encode_block_gated(
             format!(
                 "        if self.{py_id} is not None:\n            \
                      for _e in self.{py_id}:\n                \
-                         r.extend(_e.encode())"
+                         _e.encode(w)"
             )
         }
     }
@@ -7908,17 +7940,22 @@ fn present_if_encode_tail(
                  if (auto _e = w.write_bytes({id}->data(), {id}->size()); _e) return _e;\n        \
              }}"
         ),
-        // Kotlin: ByteArray's `.toList()` boxes each Byte so addAll
-        // accepts it (mirrors the pattern from `has_variable_fields`).
-        (Language::Kotlin, false) => format!("        r.addAll(this.{id}.toList())"),
+        // Kotlin: writer-based emit threads the parent sink directly.
+        (Language::Kotlin, false) => {
+            format!("        w.writeBytes(this.{id})?.let {{ return it }}")
+        }
         (Language::Kotlin, true) => format!(
             "        this.{id}?.let {{ _v ->\n            \
-                 r.addAll(_v.toList())\n        \
+                 w.writeBytes(_v)?.let {{ return it }}\n        \
              }}"
         ),
         (Language::Go, false) => {
             let go_id = filters::to_pascal_case(id.to_string());
-            format!("\tr = append(r, s.{go_id}...)")
+            format!(
+                "\tif err := w.WriteBytes(s.{go_id}); err != nil {{\n\t\t\
+                     return err\n\t\
+                 }}"
+            )
         }
         (Language::Go, true) => {
             let go_id = filters::to_pascal_case(id.to_string());
@@ -7927,7 +7964,9 @@ fn present_if_encode_tail(
             // the decode side which sets the slice via `append([]byte(nil), ...)`.
             format!(
                 "\tif s.{go_id} != nil {{\n\t\t\
-                     r = append(r, s.{go_id}...)\n\t\
+                     if err := w.WriteBytes(s.{go_id}); err != nil {{\n\t\t\t\
+                         return err\n\t\t\
+                     }}\n\t\
                  }}"
             )
         }
@@ -7959,13 +7998,13 @@ fn present_if_encode_tail(
         }
         (Language::Python, false) => {
             let py_id = filters::to_snake_case(id.to_string());
-            format!("        r.extend(self.{py_id})")
+            format!("        w.write_bytes(self.{py_id})")
         }
         (Language::Python, true) => {
             let py_id = filters::to_snake_case(id.to_string());
             format!(
                 "        if self.{py_id} is not None:\n            \
-                     r.extend(self.{py_id})"
+                     w.write_bytes(self.{py_id})"
             )
         }
     }
@@ -8020,15 +8059,15 @@ fn present_if_encode_string_length_ref(
         // call for charset-encoded byte serialization; UTF-8 is total
         // on String (Kotlin's String is UTF-16 internally but
         // toByteArray reencodes losslessly to UTF-8).
-        (Language::Kotlin, None) => {
-            format!("        r.addAll(this.{id}.toByteArray(Charsets.UTF_8).toList())")
-        }
+        (Language::Kotlin, None) => format!(
+            "        w.writeBytes(this.{id}.toByteArray(Charsets.UTF_8))?.let {{ return it }}"
+        ),
         // Wire RFC Phase B Y0a — gated String encode on Kotlin:
         // `String?` + safe-call `?.let { _v -> ... }` mirrors the
         // bytes encode arm.
         (Language::Kotlin, Some(_)) => format!(
             "        this.{id}?.let {{ _v ->\n            \
-                 r.addAll(_v.toByteArray(Charsets.UTF_8).toList())\n        \
+                 w.writeBytes(_v.toByteArray(Charsets.UTF_8))?.let {{ return it }}\n        \
              }}"
         ),
         // Go `[]byte(s)` reinterprets the string's underlying bytes;
@@ -8036,7 +8075,11 @@ fn present_if_encode_string_length_ref(
         // from UTF-8 source) this is a zero-copy encoding.
         (Language::Go, None) => {
             let go_id = filters::to_pascal_case(id.to_string());
-            format!("\tr = append(r, []byte(s.{go_id})...)")
+            format!(
+                "\tif err := w.WriteBytes([]byte(s.{go_id})); err != nil {{\n\t\t\
+                     return err\n\t\
+                 }}"
+            )
         }
         // Wire RFC Phase B Y0a — gated String encode on Go: pointer-
         // wrap via `*string` (mirrors gated bytes' `[]byte` slice
@@ -8045,7 +8088,9 @@ fn present_if_encode_string_length_ref(
             let go_id = filters::to_pascal_case(id.to_string());
             format!(
                 "\tif s.{go_id} != nil {{\n\t\t\
-                     r = append(r, []byte(*s.{go_id})...)\n\t\
+                     if err := w.WriteBytes([]byte(*s.{go_id})); err != nil {{\n\t\t\t\
+                         return err\n\t\t\
+                     }}\n\t\
                  }}"
             )
         }
@@ -8053,7 +8098,7 @@ fn present_if_encode_string_length_ref(
         // from the str's internal Unicode representation.
         (Language::Python, None) => {
             let py_id = filters::to_snake_case(id.to_string());
-            format!("        r.extend(self.{py_id}.encode('utf-8'))")
+            format!("        w.write_bytes(self.{py_id}.encode('utf-8'))")
         }
         // Wire RFC Phase B Y0a — gated String encode on Python:
         // `Optional[str]` + `is not None` + same `.encode('utf-8')`.
@@ -8061,7 +8106,7 @@ fn present_if_encode_string_length_ref(
             let py_id = filters::to_snake_case(id.to_string());
             format!(
                 "        if self.{py_id} is not None:\n            \
-                     r.extend(self.{py_id}.encode('utf-8'))"
+                     w.write_bytes(self.{py_id}.encode('utf-8'))"
             )
         }
         // RFC §5.B B5-ζ Surface H C11 closure: append the codec
@@ -8148,21 +8193,29 @@ fn present_if_encode_length_ref(
                  if (auto _e = w.write_bytes({id}->data(), {id}->size()); _e) return _e;\n        \
              }}"
         ),
-        (Language::Kotlin, false) => format!("        r.addAll(this.{id}.toList())"),
+        (Language::Kotlin, false) => {
+            format!("        w.writeBytes(this.{id})?.let {{ return it }}")
+        }
         (Language::Kotlin, true) => format!(
             "        this.{id}?.let {{ _v ->\n            \
-                 r.addAll(_v.toList())\n        \
+                 w.writeBytes(_v)?.let {{ return it }}\n        \
              }}"
         ),
         (Language::Go, false) => {
             let go_id = filters::to_pascal_case(id.to_string());
-            format!("\tr = append(r, s.{go_id}...)")
+            format!(
+                "\tif err := w.WriteBytes(s.{go_id}); err != nil {{\n\t\t\
+                     return err\n\t\
+                 }}"
+            )
         }
         (Language::Go, true) => {
             let go_id = filters::to_pascal_case(id.to_string());
             format!(
                 "\tif s.{go_id} != nil {{\n\t\t\
-                     r = append(r, s.{go_id}...)\n\t\
+                     if err := w.WriteBytes(s.{go_id}); err != nil {{\n\t\t\t\
+                         return err\n\t\t\
+                     }}\n\t\
                  }}"
             )
         }
@@ -8205,13 +8258,13 @@ fn present_if_encode_length_ref(
         }
         (Language::Python, false) => {
             let py_id = filters::to_snake_case(id.to_string());
-            format!("        r.extend(self.{py_id})")
+            format!("        w.write_bytes(self.{py_id})")
         }
         (Language::Python, true) => {
             let py_id = filters::to_snake_case(id.to_string());
             format!(
                 "        if self.{py_id} is not None:\n            \
-                     r.extend(self.{py_id})"
+                     w.write_bytes(self.{py_id})"
             )
         }
     }
@@ -8334,11 +8387,11 @@ fn present_if_encode_vle(
             let py_id = filters::to_snake_case(id.to_string());
             format!(
                 "        if self.{py_id} is not None:\n            \
-                     _w = int(self.{py_id})\n            \
-                     while _w >= 0x80:\n                \
-                         r.append((_w & 0x7F) | 0x80)\n                \
-                         _w >>= 7\n            \
-                     r.append(_w)"
+                     _vle = int(self.{py_id})\n            \
+                     while _vle >= 0x80:\n                \
+                         w.write_u8((_vle & 0x7F) | 0x80)\n                \
+                         _vle >>= 7\n            \
+                     w.write_u8(_vle)"
             )
         }
     }
@@ -8656,7 +8709,11 @@ fn streaming_fixed_field_encode_kotlin(
     let endian = field.effective_endian(default_endian);
     let mut lines = String::new();
     if n == 1 {
-        lines.push_str(&format!("        r.add(this.{id}.toByte())\n"));
+        // Bare carrier path — Kotlin Byte fits write_u8 directly.
+        // Keeps B5-ν injection needle simple (`writeU8(this.<id>.toByte())`).
+        lines.push_str(&format!(
+            "        w.writeU8(this.{id}.toByte())?.let {{ return it }}\n"
+        ));
     } else {
         let use_long = n > 4;
         let (view, mask) = if use_long {
@@ -8671,11 +8728,11 @@ fn streaming_fixed_field_encode_kotlin(
             };
             if shift == 0 {
                 lines.push_str(&format!(
-                    "        r.add((this.{id}.{view}() and {mask}).toByte())\n"
+                    "        w.writeU8((this.{id}.{view}() and {mask}).toByte())?.let {{ return it }}\n"
                 ));
             } else {
                 lines.push_str(&format!(
-                    "        r.add((this.{id}.{view}() ushr {shift} and {mask}).toByte())\n"
+                    "        w.writeU8((this.{id}.{view}() ushr {shift} and {mask}).toByte())?.let {{ return it }}\n"
                 ));
             }
         }
@@ -8692,19 +8749,26 @@ fn streaming_fixed_field_encode_go(field: &CodecField, default_endian: Endian, n
     let go_id = filters::to_pascal_case(id.to_string());
     let endian = field.effective_endian(default_endian);
     let mut lines = String::new();
+    let emit = |buf: &str| -> String {
+        format!(
+            "\tif err := w.WriteBytes([]byte{{ {buf} }}); err != nil {{\n\t\treturn err\n\t}}\n"
+        )
+    };
     if n == 1 {
-        lines.push_str(&format!("\tr = append(r, s.{go_id})\n"));
+        // Bare carrier path keeps B5-ν injection needle simple.
+        lines.push_str(&emit(&format!("s.{go_id}")));
     } else {
         for i in 0..n {
             let shift = match endian {
                 Endian::Little => i * 8,
                 Endian::Big | Endian::Native => (n - 1 - i) * 8,
             };
-            if shift == 0 {
-                lines.push_str(&format!("\tr = append(r, byte(s.{go_id}))\n"));
+            let b = if shift == 0 {
+                format!("byte(s.{go_id})")
             } else {
-                lines.push_str(&format!("\tr = append(r, byte(s.{go_id}>>{shift}))\n"));
-            }
+                format!("byte(s.{go_id}>>{shift})")
+            };
+            lines.push_str(&emit(&b));
         }
     }
     lines.trim_end().to_string()
@@ -8793,7 +8857,7 @@ fn streaming_fixed_field_encode_python(
     let endian = field.effective_endian(default_endian);
     let mut lines = String::new();
     if n == 1 {
-        lines.push_str(&format!("        r.append(self.{py_id} & 0xFF)\n"));
+        lines.push_str(&format!("        w.write_u8(self.{py_id} & 0xFF)\n"));
     } else {
         for i in 0..n {
             let shift = match endian {
@@ -8801,10 +8865,10 @@ fn streaming_fixed_field_encode_python(
                 Endian::Big | Endian::Native => (n - 1 - i) * 8,
             };
             if shift == 0 {
-                lines.push_str(&format!("        r.append(self.{py_id} & 0xFF)\n"));
+                lines.push_str(&format!("        w.write_u8(self.{py_id} & 0xFF)\n"));
             } else {
                 lines.push_str(&format!(
-                    "        r.append((self.{py_id} >> {shift}) & 0xFF)\n"
+                    "        w.write_u8((self.{py_id} >> {shift}) & 0xFF)\n"
                 ));
             }
         }
@@ -8826,7 +8890,7 @@ fn streaming_fixed_field_encode_python_inner(
     let endian = field.effective_endian(default_endian);
     let mut lines = String::new();
     if n == 1 {
-        lines.push_str(&format!("            r.append(self.{py_id} & 0xFF)\n"));
+        lines.push_str(&format!("            w.write_u8(self.{py_id} & 0xFF)\n"));
     } else {
         for i in 0..n {
             let shift = match endian {
@@ -8834,10 +8898,10 @@ fn streaming_fixed_field_encode_python_inner(
                 Endian::Big | Endian::Native => (n - 1 - i) * 8,
             };
             if shift == 0 {
-                lines.push_str(&format!("            r.append(self.{py_id} & 0xFF)\n"));
+                lines.push_str(&format!("            w.write_u8(self.{py_id} & 0xFF)\n"));
             } else {
                 lines.push_str(&format!(
-                    "            r.append((self.{py_id} >> {shift}) & 0xFF)\n"
+                    "            w.write_u8((self.{py_id} >> {shift}) & 0xFF)\n"
                 ));
             }
         }
@@ -8855,19 +8919,25 @@ fn streaming_fixed_field_encode_go_from_local(
 ) -> String {
     let endian = field.effective_endian(default_endian);
     let mut lines = String::new();
+    let emit = |buf: &str| -> String {
+        format!(
+            "\t\tif err := w.WriteBytes([]byte{{ {buf} }}); err != nil {{\n\t\t\treturn err\n\t\t}}\n"
+        )
+    };
     if n == 1 {
-        lines.push_str("\t\tr = append(r, _v)\n");
+        lines.push_str(&emit("_v"));
     } else {
         for i in 0..n {
             let shift = match endian {
                 Endian::Little => i * 8,
                 Endian::Big | Endian::Native => (n - 1 - i) * 8,
             };
-            if shift == 0 {
-                lines.push_str("\t\tr = append(r, byte(_v))\n");
+            let b = if shift == 0 {
+                "byte(_v)".to_string()
             } else {
-                lines.push_str(&format!("\t\tr = append(r, byte(_v>>{shift}))\n"));
-            }
+                format!("byte(_v>>{shift})")
+            };
+            lines.push_str(&emit(&b));
         }
     }
     lines.trim_end().to_string()
@@ -8884,7 +8954,7 @@ fn streaming_fixed_field_encode_kotlin_from_local(
     let endian = field.effective_endian(default_endian);
     let mut lines = String::new();
     if n == 1 {
-        lines.push_str("            r.add(_v.toByte())\n");
+        lines.push_str("            w.writeU8(_v.toByte())?.let { return it }\n");
     } else {
         let use_long = n > 4;
         let (view, mask) = if use_long {
@@ -8899,11 +8969,11 @@ fn streaming_fixed_field_encode_kotlin_from_local(
             };
             if shift == 0 {
                 lines.push_str(&format!(
-                    "            r.add((_v.{view}() and {mask}).toByte())\n"
+                    "            w.writeU8((_v.{view}() and {mask}).toByte())?.let {{ return it }}\n"
                 ));
             } else {
                 lines.push_str(&format!(
-                    "            r.add((_v.{view}() ushr {shift} and {mask}).toByte())\n"
+                    "            w.writeU8((_v.{view}() ushr {shift} and {mask}).toByte())?.let {{ return it }}\n"
                 ));
             }
         }
@@ -9265,30 +9335,34 @@ fn vle_encode_block(value_expr: &str, width_bits: u32, lang: crate::generator::L
         ),
         Language::Kotlin => format!(
             "        run {{\n            \
-                 var _w: ULong = ({value_expr}).toULong()\n            \
-                 while (_w >= 0x80UL) {{\n                \
-                     r.add((_w.toLong() and 0x7F or 0x80).toByte())\n                \
-                     _w = _w shr 7\n            \
+                 var _vle: ULong = ({value_expr}).toULong()\n            \
+                 while (_vle >= 0x80UL) {{\n                \
+                     w.writeU8((_vle.toLong() and 0x7F or 0x80).toByte())?.let {{ return it }}\n                \
+                     _vle = _vle shr 7\n            \
                  }}\n            \
-                 r.add(_w.toByte())\n        \
+                 w.writeU8(_vle.toByte())?.let {{ return it }}\n        \
              }}"
         ),
         Language::Go => format!(
             "\t{{\n\t\t\
-                 _w := uint64({value_expr})\n\t\t\
-                 for _w >= 0x80 {{\n\t\t\t\
-                     r = append(r, byte(_w&0x7F)|0x80)\n\t\t\t\
-                     _w >>= 7\n\t\t\
+                 _vle := uint64({value_expr})\n\t\t\
+                 for _vle >= 0x80 {{\n\t\t\t\
+                     if err := w.WriteBytes([]byte{{ byte(_vle&0x7F) | 0x80 }}); err != nil {{\n\t\t\t\t\
+                         return err\n\t\t\t\
+                     }}\n\t\t\t\
+                     _vle >>= 7\n\t\t\
                  }}\n\t\t\
-                 r = append(r, byte(_w))\n\t\
+                 if err := w.WriteBytes([]byte{{ byte(_vle) }}); err != nil {{\n\t\t\t\
+                     return err\n\t\t\
+                 }}\n\t\
              }}"
         ),
         Language::Python => format!(
-            "        _w = int({value_expr})\n        \
-             while _w >= 0x80:\n            \
-                 r.append((_w & 0x7F) | 0x80)\n            \
-                 _w >>= 7\n        \
-             r.append(_w)"
+            "        _vle = int({value_expr})\n        \
+             while _vle >= 0x80:\n            \
+                 w.write_u8((_vle & 0x7F) | 0x80)\n            \
+                 _vle >>= 7\n        \
+             w.write_u8(_vle)"
         ),
         #[allow(unreachable_patterns)]
         _ => format!("/* unsupported vle_u{width_bits} encode on {lang:?} */"),
@@ -10093,16 +10167,17 @@ fn inject_b5_nu_carrier_suffix(
             block.replace(&needle, &replacement)
         }
         Language::Kotlin => {
-            // `        r.add(this.<id>.toByte())` → `        r.add((this.<id> or _derived<Id>).toByte())`
-            let needle = format!("r.add(this.{field_id}.toByte())");
-            let replacement = format!("r.add((this.{field_id}{or_suffix}).toByte())");
+            // Sink-based emit: `w.writeU8(this.<id>.toByte())` → `w.writeU8((this.<id> or _derived<Id>).toByte())`.
+            let needle = format!("w.writeU8(this.{field_id}.toByte())");
+            let replacement = format!("w.writeU8((this.{field_id}{or_suffix}).toByte())");
             block.replace(&needle, &replacement)
         }
         Language::Go => {
-            // `\tr = append(r, s.<Pascal>)` → `\tr = append(r, s.<Pascal> | _derived<Pascal>)`
+            // Sink-based emit: `w.WriteBytes([]byte{ s.<Pascal> })` →
+            // `w.WriteBytes([]byte{ s.<Pascal> | _derived<Pascal> })`.
             let pascal = filters::to_pascal_case(field_id.to_string());
-            let needle = format!("r = append(r, s.{pascal})");
-            let replacement = format!("r = append(r, s.{pascal}{or_suffix})");
+            let needle = format!("w.WriteBytes([]byte{{ s.{pascal} }})");
+            let replacement = format!("w.WriteBytes([]byte{{ s.{pascal}{or_suffix} }})");
             block.replace(&needle, &replacement)
         }
         Language::C11 => {
@@ -10116,10 +10191,11 @@ fn inject_b5_nu_carrier_suffix(
             block.replace(&needle, &replacement)
         }
         Language::Python => {
-            // `        r.append(self.<snake> & 0xFF)` → `        r.append((self.<snake> | _derived_<snake>) & 0xFF)`
+            // Sink-based emit: `w.write_u8(self.<snake> & 0xFF)` →
+            // `w.write_u8((self.<snake> | _derived_<snake>) & 0xFF)`.
             let snake = filters::to_snake_case(field_id.to_string());
-            let needle = format!("r.append(self.{snake} & 0xFF)");
-            let replacement = format!("r.append((self.{snake}{or_suffix}) & 0xFF)");
+            let needle = format!("w.write_u8(self.{snake} & 0xFF)");
+            let replacement = format!("w.write_u8((self.{snake}{or_suffix}) & 0xFF)");
             block.replace(&needle, &replacement)
         }
     }
@@ -13883,7 +13959,15 @@ fn stateful_import_method_renames(
                     format!("{}.{}", imp.member_name, target_method)
                 }
                 generator::Language::Kotlin => {
-                    format!("{}.{}", imp.member_name, method)
+                    // RFC §5.B B1-α: Kotlin codec's `encode` is the
+                    // sink-based primary; procedure call sites want
+                    // the heap-backed facade returning ByteArray.
+                    let target_method = if *method == "encode" {
+                        "encodeToByteArray"
+                    } else {
+                        method
+                    };
+                    format!("{}.{}", imp.member_name, target_method)
                 }
                 generator::Language::Rust => {
                     // RFC §5.B B1-α: Rust codec's `encode` is the sink-based
@@ -13898,10 +13982,25 @@ fn stateful_import_method_renames(
                     format!("self.{}.{}", imp.member_name, target_method)
                 }
                 generator::Language::Python => {
-                    format!("self.{}.{}", imp.member_name, method)
+                    // RFC §5.B B1-α: Python codec's `encode` is the
+                    // sink-based primary; procedure call sites want
+                    // the heap-backed facade returning `bytes`.
+                    let target_method = if *method == "encode" {
+                        "encode_to_bytes"
+                    } else {
+                        method
+                    };
+                    format!("self.{}.{}", imp.member_name, target_method)
                 }
                 generator::Language::Go => {
-                    let target_method = filters::to_pascal_case(method.to_string());
+                    // RFC §5.B B1-α: Go codec's `Encode` is the sink-
+                    // based primary; procedure call sites want the
+                    // heap-backed facade returning `[]byte`.
+                    let target_method = if *method == "encode" {
+                        "EncodeToBytes".to_string()
+                    } else {
+                        filters::to_pascal_case(method.to_string())
+                    };
                     format!("p.{}.{}", imp.member_name, target_method)
                 }
                 // C11 cannot express method-call lowering through a

@@ -80,35 +80,53 @@ func (s *CodecZenohEncoding) SetHasSchema(v bool) {
 	}
 }
 
-// Encode serializes the CodecZenohEncoding into raw bytes.
-func (s *CodecZenohEncoding) Encode() []byte {
-	// RFC §5.B B1-δ + B2-β present-if encode: per-field byte append.
-	// Gated fields skip the append on nil pointer / nil slice. Per-
-	// field `is_repeat` routes Repeat fields to the dedicated helper.
-	// Branch fires before has_vle_fields so a codec mixing VLE +
-	// present-if uses the unified encode path.
-	r := make([]byte, 0, 143)
+// Encode writes the CodecZenohEncoding into the caller-owned sink.
+// Returns nil on success; codec.ErrBufferOverflow from a bounded sink
+// when the destination has insufficient remaining capacity; growable
+// sinks (e.g. BytesSink) are effectively infallible.
+func (s *CodecZenohEncoding) Encode(w codec.SceSink) error {
+	// RFC §5.B B1-δ + B2-β present-if encode.
 	{
-		_w := uint64(s.PackedId)
-		for _w >= 0x80 {
-			r = append(r, byte(_w&0x7F)|0x80)
-			_w >>= 7
+		_vle := uint64(s.PackedId)
+		for _vle >= 0x80 {
+			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
+				return err
+			}
+			_vle >>= 7
 		}
-		r = append(r, byte(_w))
+		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
+			return err
+		}
 	}
 	if s.SchemaLen != nil {
 		_v := *s.SchemaLen
 	{
-		_w := uint64(_v)
-		for _w >= 0x80 {
-			r = append(r, byte(_w&0x7F)|0x80)
-			_w >>= 7
+		_vle := uint64(_v)
+		for _vle >= 0x80 {
+			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
+				return err
+			}
+			_vle >>= 7
 		}
-		r = append(r, byte(_w))
+		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
+			return err
+		}
 	}
 	}
 	if s.Schema != nil {
-		r = append(r, []byte(*s.Schema)...)
+		if err := w.WriteBytes([]byte(*s.Schema)); err != nil {
+			return err
+		}
 	}
-	return r
+	return nil
+}
+
+// EncodeToBytes is the heap-backed convenience facade. Runs Encode
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecZenohEncoding) EncodeToBytes() []byte {
+	_dst := make([]byte, 0, 143)
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }

@@ -49,6 +49,13 @@ var ErrInvalidUTF8 = errors.New("sce/codec: invalid utf-8")
 // declaration-only convention).
 var ErrTlvChainOverflow = errors.New("sce/codec: tlv chain overflow")
 
+// ErrBufferOverflow is returned by Encode when a write would exceed
+// the destination sink's remaining capacity (RFC §5.B B1-α). Only
+// bounded sinks (BoundedSink wrapping a caller-owned `[]byte` +
+// fixed cap) can return this; the growable BytesSink (wrapping
+// `*[]byte`) is effectively infallible.
+var ErrBufferOverflow = errors.New("sce/codec: buffer overflow")
+
 // SceCursor is a read-only cursor over a borrowed input slice. Decode
 // bodies use PeekSlice to bounds-check + read fixed-offset bytes
 // positionally, then Advance after the construction succeeds.
@@ -132,4 +139,104 @@ func (c *SceCursor) ReadVLEU32() (uint32, error) {
 // ReadVLEU64 reads a vle_u64 field (1-10 wire bytes). Canonical Zenoh ZInt.
 func (c *SceCursor) ReadVLEU64() (uint64, error) {
 	return c.readVLEInner(64)
+}
+
+// ── Write-side sink ──────────────────────────────────────────────
+
+// SceSink is the write-side cursor for codec emit. Generated `Encode`
+// bodies accept it by interface so callers own the destination storage
+// (a `*[]byte` for growable sinks, a `[]byte` + capacity for bounded
+// sinks). The return contract mirrors the decode-side `error` shape:
+// `nil` on success, an `error` (typically `ErrBufferOverflow`) on
+// failure. Generated bodies propagate via `if err := ...; err != nil
+// { return err }`.
+type SceSink interface {
+	// WriteBytes appends data to the underlying storage. Bounded
+	// sinks return ErrBufferOverflow when the destination has
+	// insufficient remaining capacity; growable sinks return nil.
+	WriteBytes(data []byte) error
+
+	// Position returns bytes written by this sink instance since
+	// construction. Used by codec emit for offset-aware writes
+	// (DMA-aligned field padding, length-prefix back-patching).
+	Position() int
+}
+
+// BytesSink is a growable sink backed by a caller-owned `*[]byte`.
+// Writes append to the pointed slice; WriteBytes always returns nil.
+// Natural sink behind `EncodeToBytes` facades and coalesced-send
+// paths that pack multiple frames into one buffer.
+type BytesSink struct {
+	dst      *[]byte
+	startLen int
+}
+
+// NewBytesSink wraps dst for append-only writes. Records the slice's
+// current length so Position() returns the bytes written by this
+// sink instance (delta) — codec emit positional math stays consistent
+// when the destination is shared with a coalesced-send prefix.
+func NewBytesSink(dst *[]byte) *BytesSink {
+	return &BytesSink{dst: dst, startLen: len(*dst)}
+}
+
+// WriteBytes appends data to the destination slice. Infallible —
+// always returns nil.
+func (s *BytesSink) WriteBytes(data []byte) error {
+	if len(data) == 0 {
+		return nil
+	}
+	*s.dst = append(*s.dst, data...)
+	return nil
+}
+
+// Position returns the bytes written since construction.
+func (s *BytesSink) Position() int {
+	return len(*s.dst) - s.startLen
+}
+
+// BoundedSink is a bounded sink backed by a caller-owned `[]byte` +
+// position cursor. Returns ErrBufferOverflow when a write would
+// exceed the slice's capacity. Natural sink for fixed-frame /
+// DMA-aligned call sites.
+type BoundedSink struct {
+	buf      []byte
+	pos      int
+	startPos int
+}
+
+// NewBoundedSink wraps buf with write position 0. The caller owns the
+// storage; the sink does not extend or free it.
+func NewBoundedSink(buf []byte) *BoundedSink {
+	return &BoundedSink{buf: buf, pos: 0, startPos: 0}
+}
+
+// WriteBytes appends data to the bounded slice; returns ErrBufferOverflow
+// when len(data) > Remaining().
+func (s *BoundedSink) WriteBytes(data []byte) error {
+	n := len(data)
+	if n == 0 {
+		return nil
+	}
+	if len(s.buf)-s.pos < n {
+		return ErrBufferOverflow
+	}
+	copy(s.buf[s.pos:s.pos+n], data)
+	s.pos += n
+	return nil
+}
+
+// Position returns the bytes written since construction.
+func (s *BoundedSink) Position() int {
+	return s.pos - s.startPos
+}
+
+// Remaining returns the bytes left in the bounded slice.
+func (s *BoundedSink) Remaining() int {
+	return len(s.buf) - s.pos
+}
+
+// Written returns the slice prefix containing the bytes written by
+// this sink (excluding any prefix that was present at construction).
+func (s *BoundedSink) Written() []byte {
+	return s.buf[s.startPos:s.pos]
 }

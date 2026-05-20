@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import CodecError, NeedMoreBytes, SceCursor, TlvChainOverflow
+from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink, TlvChainOverflow
 from .codec_tlv_entry import CodecTlvEntry
 
 from dataclasses import dataclass, field
@@ -53,13 +53,23 @@ class CodecTlvChainBasic:
             extensions=extensions,
         )
 
-    def encode(self) -> bytes:
-        # RFC §5.B B2 encode: fixed prefix appends byte-by-byte; repeat
-        # fields iterate `self.<id>` and extend the bytearray with each
-        # element's `encode()`. Author keeps count field == list length
-        # (trust contract).
-        r = bytearray()
-        r.append(self.header_flags & 0xFF)
+    def encode(self, w: SceSink) -> None:
+        """RFC §5.B B1-α encode-side primary: write ``self`` into the
+        caller-owned ``w`` sink. Returns ``None`` on success; raises
+        :class:`BufferOverflow` from a bounded sink when the destination
+        has insufficient remaining capacity; growable sinks (e.g.
+        :class:`BytearraySink`) are effectively infallible."""
+        # RFC §5.B B2 encode: list fields iterate ``self.<id>`` and
+        # write each element through the same sink.
+        w.write_u8(self.header_flags & 0xFF)
         for _e in self.extensions:
-            r.extend(_e.encode())
-        return bytes(r)
+            _e.encode(w)
+
+    def encode_to_bytes(self) -> bytes:
+        """Heap-backed convenience facade. Runs :meth:`encode` over a
+        :class:`BytearraySink` and returns the freshly-encoded bytes.
+        Callers targeting zero-alloc hot paths should call :meth:`encode`
+        directly against a caller-owned sink."""
+        _dst = bytearray()
+        self.encode(BytearraySink(_dst))
+        return bytes(_dst)

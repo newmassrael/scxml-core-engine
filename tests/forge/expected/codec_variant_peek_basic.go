@@ -83,21 +83,32 @@ func DecodeCodecVariantPeekBasic(cursor *codec.SceCursor) (*CodecVariantPeekBasi
 	}, nil
 }
 
-// Encode serializes the CodecVariantPeekBasic into raw bytes.
-func (s *CodecVariantPeekBasic) Encode() []byte {
-	// RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
-	// streaming prefix encode. Peek-byte mode: arm body's encode
-	// prepends its own header byte (which the decoder peeked); no
-	// separate tag byte here. Streaming-prefix mode (own-field):
-	// carrier is part of the prefix fields and emits via the same
-	// per-field path.
-	r := make([]byte, 0, 3)
-	// Append the active arm body's encoded bytes.
+// Encode writes the CodecVariantPeekBasic into the caller-owned sink.
+// Returns nil on success; codec.ErrBufferOverflow from a bounded sink
+// when the destination has insufficient remaining capacity; growable
+// sinks (e.g. BytesSink) are effectively infallible.
+func (s *CodecVariantPeekBasic) Encode(w codec.SceSink) error {
+	// RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix.
+	// Append the active arm body's encoded bytes via the same sink.
 	switch {
 	case s.Body.CodecPeekArmA != nil:
-		r = append(r, s.Body.CodecPeekArmA.Encode()...)
+		if err := s.Body.CodecPeekArmA.Encode(w); err != nil {
+			return err
+		}
 	case s.Body.CodecPeekArmB != nil:
-		r = append(r, s.Body.CodecPeekArmB.Encode()...)
+		if err := s.Body.CodecPeekArmB.Encode(w); err != nil {
+			return err
+		}
 	}
-	return r
+	return nil
+}
+
+// EncodeToBytes is the heap-backed convenience facade. Runs Encode
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecVariantPeekBasic) EncodeToBytes() []byte {
+	_dst := make([]byte, 0, 3)
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }

@@ -35,9 +35,23 @@ func DecodeCodecZenohPut(cursor *codec.SceCursor) (*CodecZenohPut, error) {
 	return value, nil
 }
 
-// Encode serializes the CodecZenohPut into raw bytes.
-func (s *CodecZenohPut) Encode() []byte {
-	return []byte{
-		byte(s.Payload),
+// Encode writes the CodecZenohPut into the caller-owned sink.
+// Returns nil on success; codec.ErrBufferOverflow from a bounded sink
+// when the destination has insufficient remaining capacity; growable
+// sinks (e.g. BytesSink) are effectively infallible.
+func (s *CodecZenohPut) Encode(w codec.SceSink) error {
+	if err := w.WriteBytes([]byte{ byte(s.Payload) }); err != nil {
+		return err
 	}
+	return nil
+}
+
+// EncodeToBytes is the heap-backed convenience facade. Runs Encode
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecZenohPut) EncodeToBytes() []byte {
+	_dst := make([]byte, 0, 1)
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }

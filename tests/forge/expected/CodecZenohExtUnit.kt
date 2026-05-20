@@ -6,15 +6,33 @@
 
 package com.sce.generated.codec_zenoh_ext_unit
 
+import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
+import com.sce.forge.runtime.SceSink
 
 // RFC §5.B B5-α empty body — Kotlin's `data class` requires at least
 // one primary-ctor parameter, so empty-body codecs (e.g. Zenoh
 // KeepAlive) emit as a plain class with a no-arg constructor.
 class CodecZenohExtUnit {
-    fun encode(): ByteArray {
+    /// RFC §5.B B1-α encode-side primary: write `self` into the
+    /// caller-owned `w` sink. Returns `null` on success;
+    /// `CodecError.BufferOverflow` from a bounded sink when the
+    /// destination has insufficient remaining capacity; growable
+    /// sinks (e.g. `MutableListSink`) are effectively infallible.
+    fun encode(w: SceSink): CodecError? {
         // RFC §5.B B5-α empty body — zero-byte payload.
-        return ByteArray(0)
+        return null
+    }
+
+    /// Heap-backed convenience facade. Runs `encode` over a
+    /// `MutableListSink` and returns the freshly-encoded ByteArray.
+    /// Callers targeting zero-alloc hot paths should call `encode`
+    /// directly against a caller-owned sink (e.g. `ByteArraySink`).
+    fun encodeToByteArray(): ByteArray {
+        val _list = mutableListOf<Byte>()
+        encode(MutableListSink(_list))
+        return _list.toByteArray()
     }
 
     companion object {

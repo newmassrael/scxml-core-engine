@@ -45,11 +45,29 @@ func DecodeCodecLengthRef(cursor *codec.SceCursor) (*CodecLengthRef, error) {
 	return value, nil
 }
 
-// Encode serializes the CodecLengthRef into raw bytes.
-func (s *CodecLengthRef) Encode() []byte {
-	r := make([]byte, 0, 34)
-	r = append(r, byte(s.MsgId))
-	r = append(r, byte(s.Len))
-	r = append(r, s.Payload...)
-	return r
+// Encode writes the CodecLengthRef into the caller-owned sink.
+// Returns nil on success; codec.ErrBufferOverflow from a bounded sink
+// when the destination has insufficient remaining capacity; growable
+// sinks (e.g. BytesSink) are effectively infallible.
+func (s *CodecLengthRef) Encode(w codec.SceSink) error {
+	if err := w.WriteBytes([]byte{ byte(s.MsgId) }); err != nil {
+		return err
+	}
+	if err := w.WriteBytes([]byte{ byte(s.Len) }); err != nil {
+		return err
+	}
+	if err := w.WriteBytes(s.Payload); err != nil {
+		return err
+	}
+	return nil
+}
+
+// EncodeToBytes is the heap-backed convenience facade. Runs Encode
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecLengthRef) EncodeToBytes() []byte {
+	_dst := make([]byte, 0, 34)
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }

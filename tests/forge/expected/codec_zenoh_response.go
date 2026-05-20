@@ -220,57 +220,88 @@ func (s *CodecZenohResponse) SetZ(v bool) {
 	}
 }
 
-// Encode serializes the CodecZenohResponse into raw bytes.
-func (s *CodecZenohResponse) Encode() []byte {
-	// RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
-	// streaming prefix encode. Peek-byte mode: arm body's encode
-	// prepends its own header byte (which the decoder peeked); no
-	// separate tag byte here. Streaming-prefix mode (own-field):
-	// carrier is part of the prefix fields and emits via the same
-	// per-field path.
-	r := make([]byte, 0, 977)
-	r = append(r, s.Header)
-	{
-		_w := uint64(s.RequestId)
-		for _w >= 0x80 {
-			r = append(r, byte(_w&0x7F)|0x80)
-			_w >>= 7
-		}
-		r = append(r, byte(_w))
+// Encode writes the CodecZenohResponse into the caller-owned sink.
+// Returns nil on success; codec.ErrBufferOverflow from a bounded sink
+// when the destination has insufficient remaining capacity; growable
+// sinks (e.g. BytesSink) are effectively infallible.
+func (s *CodecZenohResponse) Encode(w codec.SceSink) error {
+	// RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix.
+	if err := w.WriteBytes([]byte{ s.Header }); err != nil {
+		return err
 	}
 	{
-		_w := uint64(s.KeyId)
-		for _w >= 0x80 {
-			r = append(r, byte(_w&0x7F)|0x80)
-			_w >>= 7
+		_vle := uint64(s.RequestId)
+		for _vle >= 0x80 {
+			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
+				return err
+			}
+			_vle >>= 7
 		}
-		r = append(r, byte(_w))
+		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
+			return err
+		}
+	}
+	{
+		_vle := uint64(s.KeyId)
+		for _vle >= 0x80 {
+			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
+				return err
+			}
+			_vle >>= 7
+		}
+		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
+			return err
+		}
 	}
 	if s.SuffixLen != nil {
 		_v := *s.SuffixLen
 	{
-		_w := uint64(_v)
-		for _w >= 0x80 {
-			r = append(r, byte(_w&0x7F)|0x80)
-			_w >>= 7
+		_vle := uint64(_v)
+		for _vle >= 0x80 {
+			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
+				return err
+			}
+			_vle >>= 7
 		}
-		r = append(r, byte(_w))
+		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
+			return err
+		}
 	}
 	}
 	if s.Suffix != nil {
-		r = append(r, []byte(*s.Suffix)...)
+		if err := w.WriteBytes([]byte(*s.Suffix)); err != nil {
+			return err
+		}
 	}
-	for _, _e := range s.Extensions {
-		r = append(r, _e.Encode()...)
+	for _i := range s.Extensions {
+		if err := s.Extensions[_i].Encode(w); err != nil {
+			return err
+		}
 	}
-	// Append the active arm body's encoded bytes.
+	// Append the active arm body's encoded bytes via the same sink.
 	switch {
 	case s.Body.CodecZenohReply != nil:
-		r = append(r, s.Body.CodecZenohReply.Encode()...)
+		if err := s.Body.CodecZenohReply.Encode(w); err != nil {
+			return err
+		}
 	case s.Body.CodecZenohErr != nil:
-		r = append(r, s.Body.CodecZenohErr.Encode()...)
+		if err := s.Body.CodecZenohErr.Encode(w); err != nil {
+			return err
+		}
 	case s.Body.Default != nil:
-		r = append(r, s.Body.Default.Body.Encode()...)
+		if err := s.Body.Default.Body.Encode(w); err != nil {
+			return err
+		}
 	}
-	return r
+	return nil
+}
+
+// EncodeToBytes is the heap-backed convenience facade. Runs Encode
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecZenohResponse) EncodeToBytes() []byte {
+	_dst := make([]byte, 0, 977)
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }

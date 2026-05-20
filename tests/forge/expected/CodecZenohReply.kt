@@ -6,7 +6,10 @@
 
 package com.sce.generated.codec_zenoh_reply
 
+import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
+import com.sce.forge.runtime.SceSink
 import com.sce.generated.codec_zenoh_ext_entry.*
 import com.sce.generated.codec_zenoh_push_body.*
 
@@ -68,24 +71,38 @@ data class CodecZenohReply(
         }
     }
 
-    fun encode(): ByteArray {
+    /// RFC §5.B B1-α encode-side primary: write `self` into the
+    /// caller-owned `w` sink. Returns `null` on success;
+    /// `CodecError.BufferOverflow` from a bounded sink when the
+    /// destination has insufficient remaining capacity; growable
+    /// sinks (e.g. `MutableListSink`) are effectively infallible.
+    fun encode(w: SceSink): CodecError? {
         // RFC §5.B B1-δ + B2-β present-if encode: per-field byte
         // append. Gated fields skip the append when the optional is
         // null. Per-field `is_repeat` routes Repeat fields to the
         // dedicated helper. Branch fires before has_vle_fields so a
         // codec mixing VLE + present-if uses the unified encode path.
-        val r = mutableListOf<Byte>()
-        r.add(this.header.toByte())
+        w.writeU8(this.header.toByte())?.let { return it }
         this.consolidation?.let { _v ->
-            r.add(_v.toByte())
+            w.writeU8(_v.toByte())?.let { return it }
         }
         this.extensions?.let { _list ->
             for (_e in _list) {
-                r.addAll(_e.encode().toList())
+                _e.encode(w)?.let { return it }
             }
         }
-        r.addAll(this.body.encode().toList())
-        return r.toByteArray()
+        this.body.encode(w)?.let { return it }
+        return null
+    }
+
+    /// Heap-backed convenience facade. Runs `encode` over a
+    /// `MutableListSink` and returns the freshly-encoded ByteArray.
+    /// Callers targeting zero-alloc hot paths should call `encode`
+    /// directly against a caller-owned sink (e.g. `ByteArraySink`).
+    fun encodeToByteArray(): ByteArray {
+        val _list = mutableListOf<Byte>()
+        encode(MutableListSink(_list))
+        return _list.toByteArray()
     }
 
     companion object {

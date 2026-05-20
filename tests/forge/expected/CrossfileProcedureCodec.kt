@@ -64,7 +64,7 @@ class CrossfileProcedureCodec : ProcedureStateMachine<State, Event>() {
                     val req = ProcedureServiceRequest(
                         service = "Diag",
                         addr = (ecuAddr).toString(),
-                        payload = frame.encode(),
+                        payload = frame.encodeToByteArray(),
                     )
                     val resp = handler(req)
                     return Pair(if (resp.success) Event.Ok else Event.Fail, resp.data)

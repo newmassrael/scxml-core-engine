@@ -72,23 +72,39 @@ func DecodeCodecInitSynBody(cursor *codec.SceCursor, S byte) (*CodecInitSynBody,
 	}, nil
 }
 
-// Encode serializes the CodecInitSynBody into raw bytes.
-func (s *CodecInitSynBody) Encode(S byte) []byte {
-	// RFC §5.B B1-δ + B2-β present-if encode: per-field byte append.
-	// Gated fields skip the append on nil pointer / nil slice. Per-
-	// field `is_repeat` routes Repeat fields to the dedicated helper.
-	// Branch fires before has_vle_fields so a codec mixing VLE +
-	// present-if uses the unified encode path.
-	r := make([]byte, 0, 4)
-	r = append(r, s.Version)
+// Encode writes the CodecInitSynBody into the caller-owned sink.
+// Returns nil on success; codec.ErrBufferOverflow from a bounded sink
+// when the destination has insufficient remaining capacity; growable
+// sinks (e.g. BytesSink) are effectively infallible.
+func (s *CodecInitSynBody) Encode(w codec.SceSink, S byte) error {
+	// RFC §5.B B1-δ + B2-β present-if encode.
+	if err := w.WriteBytes([]byte{ s.Version }); err != nil {
+		return err
+	}
 	if s.SnRes != nil {
 		_v := *s.SnRes
-		r = append(r, _v)
+		if err := w.WriteBytes([]byte{ _v }); err != nil {
+			return err
+		}
 	}
 	if s.BatchSize != nil {
 		_v := *s.BatchSize
-		r = append(r, byte(_v>>8))
-		r = append(r, byte(_v))
+		if err := w.WriteBytes([]byte{ byte(_v>>8) }); err != nil {
+			return err
+		}
+		if err := w.WriteBytes([]byte{ byte(_v) }); err != nil {
+			return err
+		}
 	}
-	return r
+	return nil
+}
+
+// EncodeToBytes is the heap-backed convenience facade. Runs Encode
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecInitSynBody) EncodeToBytes(S byte) []byte {
+	_dst := make([]byte, 0, 4)
+	_ = s.Encode(codec.NewBytesSink(&_dst), S)
+	return _dst
 }

@@ -84,7 +84,7 @@ func (p *policy) ExecuteEntryActions(s int) (int, string) {
 		if p.serviceHandler != nil {
 			req := forge.ProcedureServiceRequest{
 				Service: "transport",
-				Payload: p.Frame.Encode(),
+				Payload: p.Frame.EncodeToBytes(),
 			}
 			resp := p.serviceHandler(req)
 			if resp.Success {

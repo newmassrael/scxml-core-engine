@@ -120,32 +120,52 @@ func (s *CodecZenohHello) SetZidLenM1(v uint8) {
 	s.Cbyte = (s.Cbyte &^ _shiftedMask) | _val
 }
 
-// Encode serializes the CodecZenohHello into raw bytes.
-func (s *CodecZenohHello) Encode(L byte) []byte {
-	// RFC §5.B B1-δ + B2-β present-if encode: per-field byte append.
-	// Gated fields skip the append on nil pointer / nil slice. Per-
-	// field `is_repeat` routes Repeat fields to the dedicated helper.
-	// Branch fires before has_vle_fields so a codec mixing VLE +
-	// present-if uses the unified encode path.
-	r := make([]byte, 0, 8860)
-	r = append(r, s.Version)
-	r = append(r, s.Cbyte)
-	r = append(r, s.Zid...)
+// Encode writes the CodecZenohHello into the caller-owned sink.
+// Returns nil on success; codec.ErrBufferOverflow from a bounded sink
+// when the destination has insufficient remaining capacity; growable
+// sinks (e.g. BytesSink) are effectively infallible.
+func (s *CodecZenohHello) Encode(w codec.SceSink, L byte) error {
+	// RFC §5.B B1-δ + B2-β present-if encode.
+	if err := w.WriteBytes([]byte{ s.Version }); err != nil {
+		return err
+	}
+	if err := w.WriteBytes([]byte{ s.Cbyte }); err != nil {
+		return err
+	}
+	if err := w.WriteBytes(s.Zid); err != nil {
+		return err
+	}
 	if s.NumLocators != nil {
 		_v := *s.NumLocators
 	{
-		_w := uint64(_v)
-		for _w >= 0x80 {
-			r = append(r, byte(_w&0x7F)|0x80)
-			_w >>= 7
+		_vle := uint64(_v)
+		for _vle >= 0x80 {
+			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
+				return err
+			}
+			_vle >>= 7
 		}
-		r = append(r, byte(_w))
+		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
+			return err
+		}
 	}
 	}
 	if s.Locators != nil {
-		for _, _e := range s.Locators {
-			r = append(r, _e.Encode()...)
+		for _i := range s.Locators {
+			if err := s.Locators[_i].Encode(w); err != nil {
+				return err
+			}
 		}
 	}
-	return r
+	return nil
+}
+
+// EncodeToBytes is the heap-backed convenience facade. Runs Encode
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecZenohHello) EncodeToBytes(L byte) []byte {
+	_dst := make([]byte, 0, 8860)
+	_ = s.Encode(codec.NewBytesSink(&_dst), L)
+	return _dst
 }

@@ -6,7 +6,10 @@
 
 package com.sce.generated.codec_zenoh_push_body
 
+import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
+import com.sce.forge.runtime.SceSink
 import com.sce.generated.codec_zenoh_put.*
 import com.sce.generated.codec_zenoh_del.*
 
@@ -65,20 +68,34 @@ data class CodecZenohPushBody(
         this.header = ((_carrier and _shifted_mask.inv()) or _val).toUByte()
     }
 
-    fun encode(): ByteArray {
+    /// RFC §5.B B1-α encode-side primary: write `self` into the
+    /// caller-owned `w` sink. Returns `null` on success;
+    /// `CodecError.BufferOverflow` from a bounded sink when the
+    /// destination has insufficient remaining capacity; growable
+    /// sinks (e.g. `MutableListSink`) are effectively infallible.
+    fun encode(w: SceSink): CodecError? {
         // Encode fixed prefix (tag field bytes are part of the prefix).
         // The tag value is read from the struct field, NOT derived from
         // the body discriminant — keeping author-set tag / body in sync
         // is the caller's responsibility (v1 keeps the layout simple).
-        val r = mutableListOf<Byte>()
-        r.add(header.toByte())
-        // Append the active arm body's encoded bytes.
+        w.writeU8(header.toByte())?.let { return it }
+        // Append the active arm body's encoded bytes via the same sink.
         when (val _b = this.body) {
-            is CodecZenohPushBodyVariant.CodecZenohPut -> r.addAll(_b.body.encode().toList())
-            is CodecZenohPushBodyVariant.CodecZenohDel -> r.addAll(_b.body.encode().toList())
-            is CodecZenohPushBodyVariant.Default -> r.addAll(_b.body.encode().toList())
+            is CodecZenohPushBodyVariant.CodecZenohPut -> _b.body.encode(w)?.let { return it }
+            is CodecZenohPushBodyVariant.CodecZenohDel -> _b.body.encode(w)?.let { return it }
+            is CodecZenohPushBodyVariant.Default -> _b.body.encode(w)?.let { return it }
         }
-        return r.toByteArray()
+        return null
+    }
+
+    /// Heap-backed convenience facade. Runs `encode` over a
+    /// `MutableListSink` and returns the freshly-encoded ByteArray.
+    /// Callers targeting zero-alloc hot paths should call `encode`
+    /// directly against a caller-owned sink (e.g. `ByteArraySink`).
+    fun encodeToByteArray(): ByteArray {
+        val _list = mutableListOf<Byte>()
+        encode(MutableListSink(_list))
+        return _list.toByteArray()
     }
 
     companion object {

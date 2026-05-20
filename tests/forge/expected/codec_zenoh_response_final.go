@@ -110,25 +110,41 @@ func (s *CodecZenohResponseFinal) SetZ(v bool) {
 	}
 }
 
-// Encode serializes the CodecZenohResponseFinal into raw bytes.
-func (s *CodecZenohResponseFinal) Encode() []byte {
-	// RFC §5.B B1-δ + B2-β present-if encode: per-field byte append.
-	// Gated fields skip the append on nil pointer / nil slice. Per-
-	// field `is_repeat` routes Repeat fields to the dedicated helper.
-	// Branch fires before has_vle_fields so a codec mixing VLE +
-	// present-if uses the unified encode path.
-	r := make([]byte, 0, 183)
-	r = append(r, s.Header)
+// Encode writes the CodecZenohResponseFinal into the caller-owned sink.
+// Returns nil on success; codec.ErrBufferOverflow from a bounded sink
+// when the destination has insufficient remaining capacity; growable
+// sinks (e.g. BytesSink) are effectively infallible.
+func (s *CodecZenohResponseFinal) Encode(w codec.SceSink) error {
+	// RFC §5.B B1-δ + B2-β present-if encode.
+	if err := w.WriteBytes([]byte{ s.Header }); err != nil {
+		return err
+	}
 	{
-		_w := uint64(s.RequestId)
-		for _w >= 0x80 {
-			r = append(r, byte(_w&0x7F)|0x80)
-			_w >>= 7
+		_vle := uint64(s.RequestId)
+		for _vle >= 0x80 {
+			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
+				return err
+			}
+			_vle >>= 7
 		}
-		r = append(r, byte(_w))
+		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
+			return err
+		}
 	}
-	for _, _e := range s.Extensions {
-		r = append(r, _e.Encode()...)
+	for _i := range s.Extensions {
+		if err := s.Extensions[_i].Encode(w); err != nil {
+			return err
+		}
 	}
-	return r
+	return nil
+}
+
+// EncodeToBytes is the heap-backed convenience facade. Runs Encode
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecZenohResponseFinal) EncodeToBytes() []byte {
+	_dst := make([]byte, 0, 183)
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }

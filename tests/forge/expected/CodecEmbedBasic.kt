@@ -6,7 +6,10 @@
 
 package com.sce.generated.codec_embed_basic
 
+import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
+import com.sce.forge.runtime.SceSink
 import com.sce.generated.codec_zenoh_locator.*
 
 // Default-valued primary constructor: the generated procedure_l2 code
@@ -17,15 +20,29 @@ data class CodecEmbedBasic(
     var tag: UByte = 0.toUByte(),
     var locator: CodecZenohLocator = CodecZenohLocator()
 ) {
-    fun encode(): ByteArray {
+    /// RFC §5.B B1-α encode-side primary: write `self` into the
+    /// caller-owned `w` sink. Returns `null` on success;
+    /// `CodecError.BufferOverflow` from a bounded sink when the
+    /// destination has insufficient remaining capacity; growable
+    /// sinks (e.g. `MutableListSink`) are effectively infallible.
+    fun encode(w: SceSink): CodecError? {
         // RFC §5.B B2 encode: fixed prefix appends byte-by-byte;
-        // repeat fields iterate the host MutableList and splice each
-        // element's encode().toList() into the parent buffer. Author
-        // keeps count field == list length (trust contract).
-        val r = mutableListOf<Byte>()
-        r.add(this.tag.toByte())
-        r.addAll(this.locator.encode().toList())
-        return r.toByteArray()
+        // list fields iterate the host MutableList and write each
+        // element's encode(w) through the same sink. Author keeps
+        // count field == list length (trust contract).
+        w.writeU8(this.tag.toByte())?.let { return it }
+        this.locator.encode(w)?.let { return it }
+        return null
+    }
+
+    /// Heap-backed convenience facade. Runs `encode` over a
+    /// `MutableListSink` and returns the freshly-encoded ByteArray.
+    /// Callers targeting zero-alloc hot paths should call `encode`
+    /// directly against a caller-owned sink (e.g. `ByteArraySink`).
+    fun encodeToByteArray(): ByteArray {
+        val _list = mutableListOf<Byte>()
+        encode(MutableListSink(_list))
+        return _list.toByteArray()
     }
 
     companion object {

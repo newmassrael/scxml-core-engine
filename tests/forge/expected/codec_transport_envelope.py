@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import CodecError, NeedMoreBytes, SceCursor
+from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
 from .codec_zenoh_init_body import CodecZenohInitBody
 from .codec_zenoh_open_body import CodecZenohOpenBody
 from .codec_zenoh_close import CodecZenohClose
@@ -168,28 +168,37 @@ class CodecTransportEnvelope:
         else:
             self.header = self.header & (0xFF ^ 0x80)
 
-    def encode(self) -> bytes:
+    def encode(self, w: SceSink) -> None:
+        """RFC §5.B B1-α encode-side primary: write ``self`` into the
+        caller-owned ``w`` sink. Returns ``None`` on success; raises
+        :class:`BufferOverflow` from a bounded sink when the destination
+        has insufficient remaining capacity; growable sinks (e.g.
+        :class:`BytearraySink`) are effectively infallible."""
         # Encode fixed prefix (tag field bytes are part of the prefix).
-        # The tag value is read from the struct field, NOT derived from
-        # the body discriminant — keeping author-set tag / body in sync
-        # is the caller's responsibility (v1 keeps the layout simple).
-        r = bytearray()
-        r.append(self.header & 0xFF)
-        # Append the active arm body's encoded bytes.
+        w.write_u8(self.header & 0xFF)
+        # Append the active arm body's encoded bytes via the same sink.
         if self.body.kind == "CodecZenohInitBody":
-            r.extend(self.body.codec_zenoh_init_body.encode(((self.header >> 6) & 0x1), ((self.header >> 5) & 0x1)))
+            self.body.codec_zenoh_init_body.encode(w, ((self.header >> 6) & 0x1), ((self.header >> 5) & 0x1))
         elif self.body.kind == "CodecZenohOpenBody":
-            r.extend(self.body.codec_zenoh_open_body.encode(((self.header >> 5) & 0x1)))
+            self.body.codec_zenoh_open_body.encode(w, ((self.header >> 5) & 0x1))
         elif self.body.kind == "CodecZenohClose":
-            r.extend(self.body.codec_zenoh_close.encode())
+            self.body.codec_zenoh_close.encode(w)
         elif self.body.kind == "CodecZenohKeepAlive":
-            r.extend(self.body.codec_zenoh_keep_alive.encode())
+            self.body.codec_zenoh_keep_alive.encode(w)
         elif self.body.kind == "CodecZenohFrame":
-            r.extend(self.body.codec_zenoh_frame.encode())
+            self.body.codec_zenoh_frame.encode(w)
         elif self.body.kind == "CodecZenohFragment":
-            r.extend(self.body.codec_zenoh_fragment.encode())
+            self.body.codec_zenoh_fragment.encode(w)
         elif self.body.kind == "CodecZenohJoin":
-            r.extend(self.body.codec_zenoh_join.encode(((self.header >> 6) & 0x1)))
+            self.body.codec_zenoh_join.encode(w, ((self.header >> 6) & 0x1))
         elif self.body.kind == "Default":
-            r.extend(self.body.default_body.encode())
-        return bytes(r)
+            self.body.default_body.encode(w)
+
+    def encode_to_bytes(self) -> bytes:
+        """Heap-backed convenience facade. Runs :meth:`encode` over a
+        :class:`BytearraySink` and returns the freshly-encoded bytes.
+        Callers targeting zero-alloc hot paths should call :meth:`encode`
+        directly against a caller-owned sink."""
+        _dst = bytearray()
+        self.encode(BytearraySink(_dst))
+        return bytes(_dst)

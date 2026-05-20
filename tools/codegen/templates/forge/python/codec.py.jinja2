@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import CodecError, {{ "InvalidUtf8, " if has_string_fields else "" }}NeedMoreBytes, SceCursor{{ ", TlvChainOverflow" if has_tlv_chain_fields else "" }}
+from sce_forge_runtime.codec import BytearraySink, CodecError, {{ "InvalidUtf8, " if has_string_fields else "" }}NeedMoreBytes, SceCursor, SceSink{{ ", TlvChainOverflow" if has_tlv_chain_fields else "" }}
 {% if all_imports %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}
@@ -331,7 +331,12 @@ class {{ struct_name }}:
 {% endif %}
 {% endfor %}
 {% endif %}
-    def encode(self{{ params_after_first_arg }}) -> bytes:
+    def encode(self, w: SceSink{{ params_after_first_arg }}) -> None:
+        """RFC §5.B B1-α encode-side primary: write ``self`` into the
+        caller-owned ``w`` sink. Returns ``None`` on success; raises
+        :class:`BufferOverflow` from a bounded sink when the destination
+        has insufficient remaining capacity; growable sinks (e.g.
+        :class:`BytearraySink`) are effectively infallible."""
 {% if has_parent_flags %}
         # RFC §5.B B5-γ: see ``decode`` — same parameter, same suppress.
         _ = parent_flags
@@ -345,16 +350,12 @@ class {{ struct_name }}:
 {% endif %}
 {% if has_no_fields %}
         # RFC §5.B B5-α empty body — zero-byte payload.
-        return b""
+        _ = w
+        return
 {% elif has_variant %}
 {% if variant.has_streaming_prefix %}
         # RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
-        # streaming prefix encode. Peek-byte mode: arm body's encode
-        # prepends its own header byte (which the decoder peeked); no
-        # separate tag byte here. Streaming-prefix mode (own-field):
-        # carrier is part of the prefix fields and emits via the same
-        # per-field path.
-        r = bytearray()
+        # streaming prefix encode.
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
@@ -368,31 +369,21 @@ class {{ struct_name }}:
 {% endfor %}
 {% else %}
         # Encode fixed prefix (tag field bytes are part of the prefix).
-        # The tag value is read from the struct field, NOT derived from
-        # the body discriminant — keeping author-set tag / body in sync
-        # is the caller's responsibility (v1 keeps the layout simple).
-        r = bytearray()
 {% for expr in encode_exprs %}
-        r.append({{ expr }})
+        w.write_u8({{ expr }})
 {% endfor %}
 {% endif %}
-        # Append the active arm body's encoded bytes.
+        # Append the active arm body's encoded bytes via the same sink.
 {% for arm in variant.arms %}
         {{ "if" if loop.first else "elif" }} self.body.kind == "{{ arm.variant_name }}":
-            r.extend(self.body.{{ arm.c_union_field }}.encode({{ arm.body_encode_args_first }}))
+            self.body.{{ arm.c_union_field }}.encode(w{{ arm.body_encode_args_with_leading_comma }})
 {% endfor %}
 {% if variant.default_arm %}
         elif self.body.kind == "{{ variant.default_arm.variant_name }}":
-            r.extend(self.body.{{ variant.default_arm.c_union_field }}.encode({{ variant.default_arm.body_encode_args_first }}))
+            self.body.{{ variant.default_arm.c_union_field }}.encode(w{{ variant.default_arm.body_encode_args_with_leading_comma }})
 {% endif %}
-        return bytes(r)
 {% elif has_present_if_fields %}
-        # RFC §5.B B1-δ + B2-β present-if encode: per-field byte
-        # append. Gated fields skip the append when the optional is
-        # `None`. Per-field `is_repeat` routes Repeat fields to the
-        # dedicated helper. Branch fires before has_vle_fields so a
-        # codec mixing VLE + present-if uses the unified encode path.
-        r = bytearray()
+        # RFC §5.B B1-δ + B2-β present-if encode.
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
@@ -404,13 +395,8 @@ class {{ struct_name }}:
 {{ field.present_if_encode_block }}
 {% endif %}
 {% endfor %}
-        return bytes(r)
 {% elif has_vle_fields %}
-        # RFC §5.B B4: per-field bit-size dispatch routes Fixed /
-        # LengthRef siblings of VLE fields through
-        # `present_if_encode_block` (predicate=None arms). Pure-VLE
-        # codecs stay byte-stable.
-        r = bytearray()
+        # RFC §5.B B4: per-field bit-size dispatch.
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
@@ -422,13 +408,9 @@ class {{ struct_name }}:
 {{ field.present_if_encode_block }}
 {% endif %}
 {% endfor %}
-        return bytes(r)
 {% elif has_repeat_fields or has_tlv_chain_fields or has_embed_fields or has_string_fields %}
-        # RFC §5.B B2 encode: fixed prefix appends byte-by-byte; repeat
-        # fields iterate `self.<id>` and extend the bytearray with each
-        # element's `encode()`. Author keeps count field == list length
-        # (trust contract).
-        r = bytearray()
+        # RFC §5.B B2 encode: list fields iterate ``self.<id>`` and
+        # write each element through the same sink.
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
@@ -440,22 +422,26 @@ class {{ struct_name }}:
 {{ field.present_if_encode_block }}
 {% endif %}
 {% endfor %}
-        return bytes(r)
 {% elif has_variable_fields %}
-        r = bytearray()
 {% for expr in encode_exprs %}
-        r.append({{ expr }})
+        w.write_u8({{ expr }})
 {% endfor %}
 {% for field in fields %}
 {% if field.is_variable %}
-        r.extend(self.{{ field.id }})
+        w.write_bytes(self.{{ field.id }})
 {% endif %}
 {% endfor %}
-        return bytes(r)
 {% else %}
-        return bytes([
 {% for expr in encode_exprs %}
-            {{ expr }},
+        w.write_u8({{ expr }})
 {% endfor %}
-        ])
 {% endif %}
+
+    def encode_to_bytes(self{{ params_after_first_arg }}) -> bytes:
+        """Heap-backed convenience facade. Runs :meth:`encode` over a
+        :class:`BytearraySink` and returns the freshly-encoded bytes.
+        Callers targeting zero-alloc hot paths should call :meth:`encode`
+        directly against a caller-owned sink."""
+        _dst = bytearray()
+        self.encode(BytearraySink(_dst){{ params_first_arg_with_comma }})
+        return bytes(_dst)

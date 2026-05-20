@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import CodecError, InvalidUtf8, NeedMoreBytes, SceCursor
+from sce_forge_runtime.codec import BytearraySink, CodecError, InvalidUtf8, NeedMoreBytes, SceCursor, SceSink
 
 from dataclasses import dataclass
 from typing import Optional
@@ -58,24 +58,32 @@ class CodecZenohWireexpr:
             suffix=suffix,
         )
 
-    def encode(self, n: int) -> bytes:
-        # RFC §5.B B1-δ + B2-β present-if encode: per-field byte
-        # append. Gated fields skip the append when the optional is
-        # `None`. Per-field `is_repeat` routes Repeat fields to the
-        # dedicated helper. Branch fires before has_vle_fields so a
-        # codec mixing VLE + present-if uses the unified encode path.
-        r = bytearray()
-        _w = int(self.id)
-        while _w >= 0x80:
-            r.append((_w & 0x7F) | 0x80)
-            _w >>= 7
-        r.append(_w)
+    def encode(self, w: SceSink, n: int) -> None:
+        """RFC §5.B B1-α encode-side primary: write ``self`` into the
+        caller-owned ``w`` sink. Returns ``None`` on success; raises
+        :class:`BufferOverflow` from a bounded sink when the destination
+        has insufficient remaining capacity; growable sinks (e.g.
+        :class:`BytearraySink`) are effectively infallible."""
+        # RFC §5.B B1-δ + B2-β present-if encode.
+        _vle = int(self.id)
+        while _vle >= 0x80:
+            w.write_u8((_vle & 0x7F) | 0x80)
+            _vle >>= 7
+        w.write_u8(_vle)
         if self.suffix_len is not None:
-            _w = int(self.suffix_len)
-            while _w >= 0x80:
-                r.append((_w & 0x7F) | 0x80)
-                _w >>= 7
-            r.append(_w)
+            _vle = int(self.suffix_len)
+            while _vle >= 0x80:
+                w.write_u8((_vle & 0x7F) | 0x80)
+                _vle >>= 7
+            w.write_u8(_vle)
         if self.suffix is not None:
-            r.extend(self.suffix.encode('utf-8'))
-        return bytes(r)
+            w.write_bytes(self.suffix.encode('utf-8'))
+
+    def encode_to_bytes(self, n: int) -> bytes:
+        """Heap-backed convenience facade. Runs :meth:`encode` over a
+        :class:`BytearraySink` and returns the freshly-encoded bytes.
+        Callers targeting zero-alloc hot paths should call :meth:`encode`
+        directly against a caller-owned sink."""
+        _dst = bytearray()
+        self.encode(BytearraySink(_dst), n)
+        return bytes(_dst)

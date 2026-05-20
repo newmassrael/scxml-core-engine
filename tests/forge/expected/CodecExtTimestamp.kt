@@ -6,7 +6,10 @@
 
 package com.sce.generated.codec_ext_timestamp
 
+import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
+import com.sce.forge.runtime.SceSink
 
 // Default-valued primary constructor: the generated procedure_l2 code
 // holds codec instances as owned members and initializes them with
@@ -17,23 +20,37 @@ data class CodecExtTimestamp(
     var zid_size: UByte = 0.toUByte(),
     var zid: ByteArray = byteArrayOf()
 ) {
-    fun encode(): ByteArray {
+    /// RFC §5.B B1-α encode-side primary: write `self` into the
+    /// caller-owned `w` sink. Returns `null` on success;
+    /// `CodecError.BufferOverflow` from a bounded sink when the
+    /// destination has insufficient remaining capacity; growable
+    /// sinks (e.g. `MutableListSink`) are effectively infallible.
+    fun encode(w: SceSink): CodecError? {
         // RFC §5.B B4: per-field bit-size dispatch routes Fixed /
         // LengthRef siblings of VLE fields through
         // `present_if_encode_block` (predicate=None arms). Pure-VLE
         // codecs stay byte-stable.
-        val r = mutableListOf<Byte>()
         run {
-            var _w: ULong = (time).toULong()
-            while (_w >= 0x80UL) {
-                r.add((_w.toLong() and 0x7F or 0x80).toByte())
-                _w = _w shr 7
+            var _vle: ULong = (time).toULong()
+            while (_vle >= 0x80UL) {
+                w.writeU8((_vle.toLong() and 0x7F or 0x80).toByte())?.let { return it }
+                _vle = _vle shr 7
             }
-            r.add(_w.toByte())
+            w.writeU8(_vle.toByte())?.let { return it }
         }
-        r.add(this.zid_size.toByte())
-        r.addAll(this.zid.toList())
-        return r.toByteArray()
+        w.writeU8(this.zid_size.toByte())?.let { return it }
+        w.writeBytes(this.zid)?.let { return it }
+        return null
+    }
+
+    /// Heap-backed convenience facade. Runs `encode` over a
+    /// `MutableListSink` and returns the freshly-encoded ByteArray.
+    /// Callers targeting zero-alloc hot paths should call `encode`
+    /// directly against a caller-owned sink (e.g. `ByteArraySink`).
+    fun encodeToByteArray(): ByteArray {
+        val _list = mutableListOf<Byte>()
+        encode(MutableListSink(_list))
+        return _list.toByteArray()
     }
 
     companion object {

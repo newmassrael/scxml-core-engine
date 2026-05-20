@@ -137,49 +137,81 @@ func (s *CodecZenohJoin) SetZidLenM1(v uint8) {
 	s.Cbyte = (s.Cbyte &^ _shiftedMask) | _val
 }
 
-// Encode serializes the CodecZenohJoin into raw bytes.
-func (s *CodecZenohJoin) Encode(S byte) []byte {
-	// RFC §5.B B1-δ + B2-β present-if encode: per-field byte append.
-	// Gated fields skip the append on nil pointer / nil slice. Per-
-	// field `is_repeat` routes Repeat fields to the dedicated helper.
-	// Branch fires before has_vle_fields so a codec mixing VLE +
-	// present-if uses the unified encode path.
-	r := make([]byte, 0, 52)
-	r = append(r, s.Version)
-	r = append(r, s.Cbyte)
-	r = append(r, s.Zid...)
+// Encode writes the CodecZenohJoin into the caller-owned sink.
+// Returns nil on success; codec.ErrBufferOverflow from a bounded sink
+// when the destination has insufficient remaining capacity; growable
+// sinks (e.g. BytesSink) are effectively infallible.
+func (s *CodecZenohJoin) Encode(w codec.SceSink, S byte) error {
+	// RFC §5.B B1-δ + B2-β present-if encode.
+	if err := w.WriteBytes([]byte{ s.Version }); err != nil {
+		return err
+	}
+	if err := w.WriteBytes([]byte{ s.Cbyte }); err != nil {
+		return err
+	}
+	if err := w.WriteBytes(s.Zid); err != nil {
+		return err
+	}
 	if s.SnRes != nil {
 		_v := *s.SnRes
-		r = append(r, _v)
+		if err := w.WriteBytes([]byte{ _v }); err != nil {
+			return err
+		}
 	}
 	if s.BatchSize != nil {
 		_v := *s.BatchSize
-		r = append(r, byte(_v))
-		r = append(r, byte(_v>>8))
+		if err := w.WriteBytes([]byte{ byte(_v) }); err != nil {
+			return err
+		}
+		if err := w.WriteBytes([]byte{ byte(_v>>8) }); err != nil {
+			return err
+		}
 	}
 	{
-		_w := uint64(s.Lease)
-		for _w >= 0x80 {
-			r = append(r, byte(_w&0x7F)|0x80)
-			_w >>= 7
+		_vle := uint64(s.Lease)
+		for _vle >= 0x80 {
+			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
+				return err
+			}
+			_vle >>= 7
 		}
-		r = append(r, byte(_w))
+		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
+			return err
+		}
 	}
 	{
-		_w := uint64(s.NextSnReliable)
-		for _w >= 0x80 {
-			r = append(r, byte(_w&0x7F)|0x80)
-			_w >>= 7
+		_vle := uint64(s.NextSnReliable)
+		for _vle >= 0x80 {
+			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
+				return err
+			}
+			_vle >>= 7
 		}
-		r = append(r, byte(_w))
+		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
+			return err
+		}
 	}
 	{
-		_w := uint64(s.NextSnBestEffort)
-		for _w >= 0x80 {
-			r = append(r, byte(_w&0x7F)|0x80)
-			_w >>= 7
+		_vle := uint64(s.NextSnBestEffort)
+		for _vle >= 0x80 {
+			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
+				return err
+			}
+			_vle >>= 7
 		}
-		r = append(r, byte(_w))
+		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
+			return err
+		}
 	}
-	return r
+	return nil
+}
+
+// EncodeToBytes is the heap-backed convenience facade. Runs Encode
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecZenohJoin) EncodeToBytes(S byte) []byte {
+	_dst := make([]byte, 0, 52)
+	_ = s.Encode(codec.NewBytesSink(&_dst), S)
+	return _dst
 }

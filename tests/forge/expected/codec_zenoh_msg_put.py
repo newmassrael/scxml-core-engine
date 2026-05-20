@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import CodecError, NeedMoreBytes, SceCursor, TlvChainOverflow
+from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink, TlvChainOverflow
 from .codec_zenoh_timestamp import CodecZenohTimestamp
 from .codec_zenoh_encoding import CodecZenohEncoding
 from .codec_zenoh_ext_entry import CodecZenohExtEntry
@@ -125,25 +125,33 @@ class CodecZenohMsgPut:
         else:
             self.header = self.header & (0xFF ^ 0x80)
 
-    def encode(self) -> bytes:
-        # RFC §5.B B1-δ + B2-β present-if encode: per-field byte
-        # append. Gated fields skip the append when the optional is
-        # `None`. Per-field `is_repeat` routes Repeat fields to the
-        # dedicated helper. Branch fires before has_vle_fields so a
-        # codec mixing VLE + present-if uses the unified encode path.
-        r = bytearray()
-        r.append(self.header & 0xFF)
+    def encode(self, w: SceSink) -> None:
+        """RFC §5.B B1-α encode-side primary: write ``self`` into the
+        caller-owned ``w`` sink. Returns ``None`` on success; raises
+        :class:`BufferOverflow` from a bounded sink when the destination
+        has insufficient remaining capacity; growable sinks (e.g.
+        :class:`BytearraySink`) are effectively infallible."""
+        # RFC §5.B B1-δ + B2-β present-if encode.
+        w.write_u8(self.header & 0xFF)
         if self.timestamp is not None:
-            r.extend(self.timestamp.encode())
+            self.timestamp.encode(w)
         if self.encoding is not None:
-            r.extend(self.encoding.encode())
+            self.encoding.encode(w)
         if self.extensions is not None:
             for _e in self.extensions:
-                r.extend(_e.encode())
-        _w = int(self.payload_len)
-        while _w >= 0x80:
-            r.append((_w & 0x7F) | 0x80)
-            _w >>= 7
-        r.append(_w)
-        r.extend(self.payload)
-        return bytes(r)
+                _e.encode(w)
+        _vle = int(self.payload_len)
+        while _vle >= 0x80:
+            w.write_u8((_vle & 0x7F) | 0x80)
+            _vle >>= 7
+        w.write_u8(_vle)
+        w.write_bytes(self.payload)
+
+    def encode_to_bytes(self) -> bytes:
+        """Heap-backed convenience facade. Runs :meth:`encode` over a
+        :class:`BytearraySink` and returns the freshly-encoded bytes.
+        Callers targeting zero-alloc hot paths should call :meth:`encode`
+        directly against a caller-owned sink."""
+        _dst = bytearray()
+        self.encode(BytearraySink(_dst))
+        return bytes(_dst)

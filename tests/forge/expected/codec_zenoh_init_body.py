@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import CodecError, NeedMoreBytes, SceCursor
+from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
 
 from dataclasses import dataclass
 from typing import Optional
@@ -109,27 +109,35 @@ class CodecZenohInitBody:
         _val = (v & 0x0F) << 4
         self.cbyte = ((self.cbyte & (0xFF ^ _shifted_mask)) | _val) & 0xFF
 
-    def encode(self, s: int, a: int) -> bytes:
-        # RFC §5.B B1-δ + B2-β present-if encode: per-field byte
-        # append. Gated fields skip the append when the optional is
-        # `None`. Per-field `is_repeat` routes Repeat fields to the
-        # dedicated helper. Branch fires before has_vle_fields so a
-        # codec mixing VLE + present-if uses the unified encode path.
-        r = bytearray()
-        r.append(self.version & 0xFF)
-        r.append(self.cbyte & 0xFF)
-        r.extend(self.zid)
+    def encode(self, w: SceSink, s: int, a: int) -> None:
+        """RFC §5.B B1-α encode-side primary: write ``self`` into the
+        caller-owned ``w`` sink. Returns ``None`` on success; raises
+        :class:`BufferOverflow` from a bounded sink when the destination
+        has insufficient remaining capacity; growable sinks (e.g.
+        :class:`BytearraySink`) are effectively infallible."""
+        # RFC §5.B B1-δ + B2-β present-if encode.
+        w.write_u8(self.version & 0xFF)
+        w.write_u8(self.cbyte & 0xFF)
+        w.write_bytes(self.zid)
         if self.sn_res is not None:
-            r.append(self.sn_res & 0xFF)
+            w.write_u8(self.sn_res & 0xFF)
         if self.batch_size is not None:
-            r.append(self.batch_size & 0xFF)
-            r.append((self.batch_size >> 8) & 0xFF)
+            w.write_u8(self.batch_size & 0xFF)
+            w.write_u8((self.batch_size >> 8) & 0xFF)
         if self.cookie_len is not None:
-            _w = int(self.cookie_len)
-            while _w >= 0x80:
-                r.append((_w & 0x7F) | 0x80)
-                _w >>= 7
-            r.append(_w)
+            _vle = int(self.cookie_len)
+            while _vle >= 0x80:
+                w.write_u8((_vle & 0x7F) | 0x80)
+                _vle >>= 7
+            w.write_u8(_vle)
         if self.cookie is not None:
-            r.extend(self.cookie)
-        return bytes(r)
+            w.write_bytes(self.cookie)
+
+    def encode_to_bytes(self, s: int, a: int) -> bytes:
+        """Heap-backed convenience facade. Runs :meth:`encode` over a
+        :class:`BytearraySink` and returns the freshly-encoded bytes.
+        Callers targeting zero-alloc hot paths should call :meth:`encode`
+        directly against a caller-owned sink."""
+        _dst = bytearray()
+        self.encode(BytearraySink(_dst), s, a)
+        return bytes(_dst)

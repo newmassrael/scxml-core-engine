@@ -91,23 +91,37 @@ func (s *CodecRepeatPresentIfBasic) SetHasList(v bool) {
 	}
 }
 
-// Encode serializes the CodecRepeatPresentIfBasic into raw bytes.
-func (s *CodecRepeatPresentIfBasic) Encode() []byte {
-	// RFC §5.B B1-δ + B2-β present-if encode: per-field byte append.
-	// Gated fields skip the append on nil pointer / nil slice. Per-
-	// field `is_repeat` routes Repeat fields to the dedicated helper.
-	// Branch fires before has_vle_fields so a codec mixing VLE +
-	// present-if uses the unified encode path.
-	r := make([]byte, 0, 66)
-	r = append(r, s.Carrier)
+// Encode writes the CodecRepeatPresentIfBasic into the caller-owned sink.
+// Returns nil on success; codec.ErrBufferOverflow from a bounded sink
+// when the destination has insufficient remaining capacity; growable
+// sinks (e.g. BytesSink) are effectively infallible.
+func (s *CodecRepeatPresentIfBasic) Encode(w codec.SceSink) error {
+	// RFC §5.B B1-δ + B2-β present-if encode.
+	if err := w.WriteBytes([]byte{ s.Carrier }); err != nil {
+		return err
+	}
 	if s.NumElems != nil {
 		_v := *s.NumElems
-		r = append(r, _v)
-	}
-	if s.Elems != nil {
-		for _, _e := range s.Elems {
-			r = append(r, _e.Encode()...)
+		if err := w.WriteBytes([]byte{ _v }); err != nil {
+			return err
 		}
 	}
-	return r
+	if s.Elems != nil {
+		for _i := range s.Elems {
+			if err := s.Elems[_i].Encode(w); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeToBytes is the heap-backed convenience facade. Runs Encode
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecRepeatPresentIfBasic) EncodeToBytes() []byte {
+	_dst := make([]byte, 0, 66)
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }

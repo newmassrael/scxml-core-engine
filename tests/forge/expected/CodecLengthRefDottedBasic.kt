@@ -6,7 +6,10 @@
 
 package com.sce.generated.codec_length_ref_dotted_basic
 
+import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
+import com.sce.forge.runtime.SceSink
 
 // Default-valued primary constructor: the generated procedure_l2 code
 // holds codec instances as owned members and initializes them with
@@ -46,11 +49,25 @@ data class CodecLengthRefDottedBasic(
         this.carrier = ((_carrier and _shifted_mask.inv()) or _val).toUByte()
     }
 
-    fun encode(): ByteArray {
-        val r = mutableListOf<Byte>()
-        r.add(carrier.toByte())
-        r.addAll(payload.toList())
-        return r.toByteArray()
+    /// RFC §5.B B1-α encode-side primary: write `self` into the
+    /// caller-owned `w` sink. Returns `null` on success;
+    /// `CodecError.BufferOverflow` from a bounded sink when the
+    /// destination has insufficient remaining capacity; growable
+    /// sinks (e.g. `MutableListSink`) are effectively infallible.
+    fun encode(w: SceSink): CodecError? {
+        w.writeU8(carrier.toByte())?.let { return it }
+        w.writeBytes(payload)?.let { return it }
+        return null
+    }
+
+    /// Heap-backed convenience facade. Runs `encode` over a
+    /// `MutableListSink` and returns the freshly-encoded ByteArray.
+    /// Callers targeting zero-alloc hot paths should call `encode`
+    /// directly against a caller-owned sink (e.g. `ByteArraySink`).
+    fun encodeToByteArray(): ByteArray {
+        val _list = mutableListOf<Byte>()
+        encode(MutableListSink(_list))
+        return _list.toByteArray()
     }
 
     companion object {

@@ -6,7 +6,10 @@
 
 package com.sce.generated.codec_zenoh_request
 
+import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
+import com.sce.forge.runtime.SceSink
 import com.sce.generated.codec_zenoh_wireexpr.*
 import com.sce.generated.codec_zenoh_ext_entry.*
 import com.sce.generated.codec_zenoh_msg_put.*
@@ -90,37 +93,51 @@ data class CodecZenohRequest(
         }
     }
 
-    fun encode(): ByteArray {
+    /// RFC §5.B B1-α encode-side primary: write `self` into the
+    /// caller-owned `w` sink. Returns `null` on success;
+    /// `CodecError.BufferOverflow` from a bounded sink when the
+    /// destination has insufficient remaining capacity; growable
+    /// sinks (e.g. `MutableListSink`) are effectively infallible.
+    fun encode(w: SceSink): CodecError? {
         // RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
         // streaming prefix encode. Peek-byte mode: arm body's encode
         // prepends its own header byte (which the decoder peeked); no
         // separate tag byte here. Streaming-prefix mode (own-field):
         // carrier is part of the prefix fields and emits via the same
         // per-field path.
-        val r = mutableListOf<Byte>()
-        r.add(this.header.toByte())
+        w.writeU8(this.header.toByte())?.let { return it }
         run {
-            var _w: ULong = (rid).toULong()
-            while (_w >= 0x80UL) {
-                r.add((_w.toLong() and 0x7F or 0x80).toByte())
-                _w = _w shr 7
+            var _vle: ULong = (rid).toULong()
+            while (_vle >= 0x80UL) {
+                w.writeU8((_vle.toLong() and 0x7F or 0x80).toByte())?.let { return it }
+                _vle = _vle shr 7
             }
-            r.add(_w.toByte())
+            w.writeU8(_vle.toByte())?.let { return it }
         }
-        r.addAll(this.keyexpr.encode((((this.header.toInt() shr 5) and 0x1).toUByte())).toList())
+        this.keyexpr.encode(w, (((this.header.toInt() shr 5) and 0x1).toUByte()))?.let { return it }
         this.extensions?.let { _list ->
             for (_e in _list) {
-                r.addAll(_e.encode().toList())
+                _e.encode(w)?.let { return it }
             }
         }
-        // Append the active arm body's encoded bytes.
+        // Append the active arm body's encoded bytes via the same sink.
         when (val _b = this.body) {
-            is CodecZenohRequestVariant.CodecZenohMsgPut -> r.addAll(_b.body.encode().toList())
-            is CodecZenohRequestVariant.CodecZenohMsgDel -> r.addAll(_b.body.encode().toList())
-            is CodecZenohRequestVariant.CodecZenohQuery -> r.addAll(_b.body.encode().toList())
-            is CodecZenohRequestVariant.Default -> r.addAll(_b.body.encode().toList())
+            is CodecZenohRequestVariant.CodecZenohMsgPut -> _b.body.encode(w)?.let { return it }
+            is CodecZenohRequestVariant.CodecZenohMsgDel -> _b.body.encode(w)?.let { return it }
+            is CodecZenohRequestVariant.CodecZenohQuery -> _b.body.encode(w)?.let { return it }
+            is CodecZenohRequestVariant.Default -> _b.body.encode(w)?.let { return it }
         }
-        return r.toByteArray()
+        return null
+    }
+
+    /// Heap-backed convenience facade. Runs `encode` over a
+    /// `MutableListSink` and returns the freshly-encoded ByteArray.
+    /// Callers targeting zero-alloc hot paths should call `encode`
+    /// directly against a caller-owned sink (e.g. `ByteArraySink`).
+    fun encodeToByteArray(): ByteArray {
+        val _list = mutableListOf<Byte>()
+        encode(MutableListSink(_list))
+        return _list.toByteArray()
     }
 
     companion object {

@@ -49,21 +49,36 @@ func DecodeCodecZenohFragment(cursor *codec.SceCursor) (*CodecZenohFragment, err
 	}, nil
 }
 
-// Encode serializes the CodecZenohFragment into raw bytes.
-func (s *CodecZenohFragment) Encode() []byte {
-	// RFC §5.B B4: per-field bit-size dispatch routes Fixed /
-	// LengthRef siblings of VLE fields through
-	// `present_if_encode_block` (predicate=None arms). Pure-VLE
-	// codecs stay byte-stable.
-	r := make([]byte, 0, 65546)
+// Encode writes the CodecZenohFragment into the caller-owned sink.
+// Returns nil on success; codec.ErrBufferOverflow from a bounded sink
+// when the destination has insufficient remaining capacity; growable
+// sinks (e.g. BytesSink) are effectively infallible.
+func (s *CodecZenohFragment) Encode(w codec.SceSink) error {
+	// RFC §5.B B4: per-field bit-size dispatch.
 	{
-		_w := uint64(s.Sn)
-		for _w >= 0x80 {
-			r = append(r, byte(_w&0x7F)|0x80)
-			_w >>= 7
+		_vle := uint64(s.Sn)
+		for _vle >= 0x80 {
+			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
+				return err
+			}
+			_vle >>= 7
 		}
-		r = append(r, byte(_w))
+		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
+			return err
+		}
 	}
-	r = append(r, s.Payload...)
-	return r
+	if err := w.WriteBytes(s.Payload); err != nil {
+		return err
+	}
+	return nil
+}
+
+// EncodeToBytes is the heap-backed convenience facade. Runs Encode
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecZenohFragment) EncodeToBytes() []byte {
+	_dst := make([]byte, 0, 65546)
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }

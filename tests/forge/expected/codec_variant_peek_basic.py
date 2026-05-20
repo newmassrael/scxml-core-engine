@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import CodecError, NeedMoreBytes, SceCursor
+from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
 from .codec_peek_arm_a import CodecPeekArmA
 from .codec_peek_arm_b import CodecPeekArmB
 
@@ -77,17 +77,25 @@ class CodecVariantPeekBasic:
             body=body,
         )
 
-    def encode(self) -> bytes:
+    def encode(self, w: SceSink) -> None:
+        """RFC §5.B B1-α encode-side primary: write ``self`` into the
+        caller-owned ``w`` sink. Returns ``None`` on success; raises
+        :class:`BufferOverflow` from a bounded sink when the destination
+        has insufficient remaining capacity; growable sinks (e.g.
+        :class:`BytearraySink`) are effectively infallible."""
         # RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
-        # streaming prefix encode. Peek-byte mode: arm body's encode
-        # prepends its own header byte (which the decoder peeked); no
-        # separate tag byte here. Streaming-prefix mode (own-field):
-        # carrier is part of the prefix fields and emits via the same
-        # per-field path.
-        r = bytearray()
-        # Append the active arm body's encoded bytes.
+        # streaming prefix encode.
+        # Append the active arm body's encoded bytes via the same sink.
         if self.body.kind == "CodecPeekArmA":
-            r.extend(self.body.codec_peek_arm_a.encode())
+            self.body.codec_peek_arm_a.encode(w)
         elif self.body.kind == "CodecPeekArmB":
-            r.extend(self.body.codec_peek_arm_b.encode())
-        return bytes(r)
+            self.body.codec_peek_arm_b.encode(w)
+
+    def encode_to_bytes(self) -> bytes:
+        """Heap-backed convenience facade. Runs :meth:`encode` over a
+        :class:`BytearraySink` and returns the freshly-encoded bytes.
+        Callers targeting zero-alloc hot paths should call :meth:`encode`
+        directly against a caller-owned sink."""
+        _dst = bytearray()
+        self.encode(BytearraySink(_dst))
+        return bytes(_dst)

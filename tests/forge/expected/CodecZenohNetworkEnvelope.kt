@@ -6,7 +6,10 @@
 
 package com.sce.generated.codec_zenoh_network_envelope
 
+import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
+import com.sce.forge.runtime.SceSink
 import com.sce.generated.codec_zenoh_interest.*
 import com.sce.generated.codec_zenoh_response_final.*
 import com.sce.generated.codec_zenoh_response.*
@@ -44,26 +47,40 @@ data class CodecZenohNetworkEnvelope(
     // codec's `<sce:flag value=>`-baked default fields above.
     var body: CodecZenohNetworkEnvelopeVariant = CodecZenohNetworkEnvelopeVariant.CodecZenohOam(com.sce.generated.codec_zenoh_oam.CodecZenohOam())
 ) {
-    fun encode(): ByteArray {
+    /// RFC §5.B B1-α encode-side primary: write `self` into the
+    /// caller-owned `w` sink. Returns `null` on success;
+    /// `CodecError.BufferOverflow` from a bounded sink when the
+    /// destination has insufficient remaining capacity; growable
+    /// sinks (e.g. `MutableListSink`) are effectively infallible.
+    fun encode(w: SceSink): CodecError? {
         // RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
         // streaming prefix encode. Peek-byte mode: arm body's encode
         // prepends its own header byte (which the decoder peeked); no
         // separate tag byte here. Streaming-prefix mode (own-field):
         // carrier is part of the prefix fields and emits via the same
         // per-field path.
-        val r = mutableListOf<Byte>()
-        // Append the active arm body's encoded bytes.
+        // Append the active arm body's encoded bytes via the same sink.
         when (val _b = this.body) {
-            is CodecZenohNetworkEnvelopeVariant.CodecZenohInterest -> r.addAll(_b.body.encode().toList())
-            is CodecZenohNetworkEnvelopeVariant.CodecZenohResponseFinal -> r.addAll(_b.body.encode().toList())
-            is CodecZenohNetworkEnvelopeVariant.CodecZenohResponse -> r.addAll(_b.body.encode().toList())
-            is CodecZenohNetworkEnvelopeVariant.CodecZenohRequest -> r.addAll(_b.body.encode().toList())
-            is CodecZenohNetworkEnvelopeVariant.CodecZenohPush -> r.addAll(_b.body.encode().toList())
-            is CodecZenohNetworkEnvelopeVariant.CodecZenohDeclare -> r.addAll(_b.body.encode().toList())
-            is CodecZenohNetworkEnvelopeVariant.CodecZenohOam -> r.addAll(_b.body.encode().toList())
-            is CodecZenohNetworkEnvelopeVariant.Default -> r.addAll(_b.body.encode().toList())
+            is CodecZenohNetworkEnvelopeVariant.CodecZenohInterest -> _b.body.encode(w)?.let { return it }
+            is CodecZenohNetworkEnvelopeVariant.CodecZenohResponseFinal -> _b.body.encode(w)?.let { return it }
+            is CodecZenohNetworkEnvelopeVariant.CodecZenohResponse -> _b.body.encode(w)?.let { return it }
+            is CodecZenohNetworkEnvelopeVariant.CodecZenohRequest -> _b.body.encode(w)?.let { return it }
+            is CodecZenohNetworkEnvelopeVariant.CodecZenohPush -> _b.body.encode(w)?.let { return it }
+            is CodecZenohNetworkEnvelopeVariant.CodecZenohDeclare -> _b.body.encode(w)?.let { return it }
+            is CodecZenohNetworkEnvelopeVariant.CodecZenohOam -> _b.body.encode(w)?.let { return it }
+            is CodecZenohNetworkEnvelopeVariant.Default -> _b.body.encode(w)?.let { return it }
         }
-        return r.toByteArray()
+        return null
+    }
+
+    /// Heap-backed convenience facade. Runs `encode` over a
+    /// `MutableListSink` and returns the freshly-encoded ByteArray.
+    /// Callers targeting zero-alloc hot paths should call `encode`
+    /// directly against a caller-owned sink (e.g. `ByteArraySink`).
+    fun encodeToByteArray(): ByteArray {
+        val _list = mutableListOf<Byte>()
+        encode(MutableListSink(_list))
+        return _list.toByteArray()
     }
 
     companion object {

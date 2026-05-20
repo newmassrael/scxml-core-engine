@@ -10657,9 +10657,11 @@ fn forge_b5_nu_dispatcher_self_gen_go() {
         disp.contains(&format!("Decode{arm_a_pascal}(cursor, N)")),
         "Go dispatcher decode must pass `N` to arm_a; got:\n{disp}"
     );
+    // RFC §5.B B1-α writer-based encode: arm body call now threads
+    // the parent sink first, then the dispatch tag (`Encode(w, N)`).
     assert!(
-        disp.contains(".Encode(N)"),
-        "Go dispatcher encode must pass `N` to arm body; got:\n{disp}"
+        disp.contains(".Encode(w, N)"),
+        "Go dispatcher encode must pass `w` + `N` to arm body; got:\n{disp}"
     );
     assert!(
         !disp.contains("s.Header"),

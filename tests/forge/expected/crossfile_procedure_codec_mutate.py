@@ -78,7 +78,7 @@ class CrossfileProcedureCodecMutate(ProcedureStateMachine):
             if self._service_handler is not None:
                 req = ProcedureServiceRequest(
                     service="transport",
-                    payload=self.frame.encode(),
+                    payload=self.frame.encode_to_bytes(),
                 )
                 resp = self._service_handler(req)
                 event = Event.Ok if resp.success else Event.Fail
