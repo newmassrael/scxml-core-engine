@@ -131,8 +131,8 @@ mod schema_drift {
 
     fn render_generated() -> String {
         let schema = schemars::schema_for!(ForgeAstEnvelopeOwned);
-        let mut json = serde_json::to_value(&schema)
-            .expect("schemars output serialises as serde_json::Value");
+        let mut json =
+            serde_json::to_value(&schema).expect("schemars output serialises as serde_json::Value");
 
         // Tighten the `v` property: schemars renders a u32 field as
         // `{type: integer, format: uint32, minimum: 0}` — a wide
@@ -168,8 +168,9 @@ mod schema_drift {
             let mut reordered = serde_json::Map::with_capacity(obj.len() + 2);
             reordered.insert(
                 "$schema".into(),
-                obj.remove("$schema")
-                    .unwrap_or_else(|| serde_json::json!("http://json-schema.org/draft-07/schema#")),
+                obj.remove("$schema").unwrap_or_else(|| {
+                    serde_json::json!("http://json-schema.org/draft-07/schema#")
+                }),
             );
             reordered.insert("$id".into(), serde_json::json!(SCHEMA_ID));
             reordered.insert(
@@ -185,8 +186,7 @@ mod schema_drift {
 
         // Pretty-print so the checked-in file stays diff-able when a
         // consumer reviews a wire-format change.
-        let mut out =
-            serde_json::to_string_pretty(&json).expect("schema value serialises as JSON");
+        let mut out = serde_json::to_string_pretty(&json).expect("schema value serialises as JSON");
         // Trailing newline so POSIX-aware editors don't flag "no
         // newline at end of file" on every regeneration.
         out.push('\n');
@@ -212,11 +212,7 @@ mod schema_drift {
             // having to diff externally.
             let max_show = 40usize;
             let mut first_diff: Option<usize> = None;
-            for (i, (a, b)) in checked_in
-                .lines()
-                .zip(generated.lines())
-                .enumerate()
-            {
+            for (i, (a, b)) in checked_in.lines().zip(generated.lines()).enumerate() {
                 if a != b {
                     first_diff = Some(i);
                     break;
@@ -254,7 +250,11 @@ mod schema_drift {
                  that triggered the drift.\n\
                  {}\n\
                  (Up to {} lines of context shown.)",
-                context.lines().take(max_show).collect::<Vec<_>>().join("\n"),
+                context
+                    .lines()
+                    .take(max_show)
+                    .collect::<Vec<_>>()
+                    .join("\n"),
                 max_show
             );
         }
@@ -308,10 +308,7 @@ pub fn write_envelope<W: std::io::Write>(
 /// Serialise an envelope to a file path. Wraps `write_envelope` with
 /// `std::fs::File::create`; intended for direct CLI use. Atomically
 /// truncates the destination per `File::create` semantics.
-pub fn write_envelope_to_path(
-    path: &std::path::Path,
-    parsed: &ParsedForge,
-) -> std::io::Result<()> {
+pub fn write_envelope_to_path(path: &std::path::Path, parsed: &ParsedForge) -> std::io::Result<()> {
     let mut f = std::fs::File::create(path)?;
     write_envelope(&mut f, parsed)
 }

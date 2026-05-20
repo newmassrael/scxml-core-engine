@@ -52,10 +52,9 @@ fn repo_root() -> PathBuf {
 
 fn load_schema() -> Value {
     let path = repo_root().join("apis/forge-ast.v1.schema.json");
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-    serde_json::from_str(&text)
-        .unwrap_or_else(|e| panic!("parse {}: {e}", path.display()))
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    serde_json::from_str(&text).unwrap_or_else(|e| panic!("parse {}: {e}", path.display()))
 }
 
 fn fixture(name: &str) -> PathBuf {
@@ -63,8 +62,8 @@ fn fixture(name: &str) -> PathBuf {
 }
 
 fn parse_fixture(path: &PathBuf) -> sce_build::forge::model::ParsedForge {
-    let content = std::fs::read_to_string(path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let content =
+        std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     let stem = path
         .file_stem()
         .and_then(|s| s.to_str())
@@ -354,8 +353,7 @@ fn round_trip_every_kind() {
         // Round-trip: parse → serialize → re-parse JSON → check kind.
         let mut buf = Vec::new();
         write_envelope(&mut buf, &parsed).expect("write_envelope succeeds");
-        let json: Value =
-            serde_json::from_slice(&buf).expect("emitted envelope re-parses as JSON");
+        let json: Value = serde_json::from_slice(&buf).expect("emitted envelope re-parses as JSON");
 
         // Real JSON Schema validation — the strongest sanity check.
         // A consumer running their own validator against our output
@@ -372,7 +370,8 @@ fn round_trip_every_kind() {
         }
 
         assert_eq!(
-            json["v"], Value::from(FORGE_AST_WIRE_VERSION),
+            json["v"],
+            Value::from(FORGE_AST_WIRE_VERSION),
             "fixture {fixture_name}: envelope `v` field"
         );
         let actual_kind = json["ast"]["document"]["kind"]
@@ -387,7 +386,10 @@ fn round_trip_every_kind() {
         // `parse_fixture` via `DocumentLabel.identifier`; assert it
         // round-trips so a regression in `DocumentLabel` plumbing
         // (or a `name` field rename on a kind model) surfaces here.
-        let stem = path.file_stem().and_then(|s| s.to_str()).expect("UTF-8 stem");
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .expect("UTF-8 stem");
         assert_eq!(
             json["ast"]["document"]["name"],
             Value::from(stem),

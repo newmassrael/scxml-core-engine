@@ -1198,9 +1198,7 @@ fn emit_orchestrate_asts(
         };
 
         let out_path = dir_path.join(format!("{stem}.ast.json"));
-        if let Err(e) =
-            sce_build::forge::ast_export::write_envelope_to_path(&out_path, &parsed)
-        {
+        if let Err(e) = sce_build::forge::ast_export::write_envelope_to_path(&out_path, &parsed) {
             error_format.emit_and_exit(
                 &CliError::WriteOutput {
                     path: out_path.display().to_string(),
@@ -1324,17 +1322,15 @@ fn cmd_generate(
             // architectural mismatch where the CLI parsed for emit and
             // `compile_forge_with_imports` parsed again internally —
             // `ParsedForge` is a cacheable artefact, not throwaway work.
-            let parsed = match sce_build::forge::parser::parse_forge_with_imports(
-                &scxml_content,
-                doc_label,
-            ) {
-                Ok(Some(p)) => p,
-                Ok(None) => {
-                    // Defensive — `classify_document` already routed
-                    // Statechart to the Scxml arm. A future classifier
-                    // refactor must not silently land here.
-                    error_format.emit_forge_and_exit(
-                        &sce_build::forge::error::Located::new(
+            let parsed =
+                match sce_build::forge::parser::parse_forge_with_imports(&scxml_content, doc_label)
+                {
+                    Ok(Some(p)) => p,
+                    Ok(None) => {
+                        // Defensive — `classify_document` already routed
+                        // Statechart to the Scxml arm. A future classifier
+                        // refactor must not silently land here.
+                        error_format.emit_forge_and_exit(&sce_build::forge::error::Located::new(
                             sce_build::forge::error::ValidationError::WrongPipeline {
                                 kind: sce_build::forge::model::ForgeKind::Statechart,
                             }
@@ -1342,16 +1338,14 @@ fn cmd_generate(
                             doc_label.diagnostic_label,
                             None,
                             None,
-                        ),
-                    );
-                }
-                Err(e) => error_format.emit_forge_and_exit(&e),
-            };
+                        ));
+                    }
+                    Err(e) => error_format.emit_forge_and_exit(&e),
+                };
 
             if let Some(ast_path) = emit_ast_path {
                 let path = std::path::Path::new(ast_path);
-                if let Err(e) =
-                    sce_build::forge::ast_export::write_envelope_to_path(path, &parsed)
+                if let Err(e) = sce_build::forge::ast_export::write_envelope_to_path(path, &parsed)
                 {
                     error_format.emit_and_exit(
                         &CliError::WriteOutput {

@@ -80,14 +80,8 @@ fn happy_path_multiple_externs_preserve_order() {
     );
     let parsed = parse_fixture(&scxml).expect("3 registry-clean declarations");
     assert_eq!(parsed.externs.len(), 3);
-    assert_eq!(
-        parsed.externs[0].name,
-        "sce_atomic_load_acquire_u32"
-    );
-    assert_eq!(
-        parsed.externs[1].name,
-        "sce_atomic_fence_seq_cst"
-    );
+    assert_eq!(parsed.externs[0].name, "sce_atomic_load_acquire_u32");
+    assert_eq!(parsed.externs[1].name, "sce_atomic_fence_seq_cst");
     assert_eq!(parsed.externs[2].name, "sce_irq_save");
     // Explicit `crate` attribute overrides the registry's canonical
     // crate (atomic-A storage of plugin-extension future axis).
