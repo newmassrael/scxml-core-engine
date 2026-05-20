@@ -2657,6 +2657,104 @@ pub enum ValidationError {
         /// echo matches the original SCXML attribute value verbatim.
         kind: String,
     },
+
+    /// Axis-3 inversion Phase B partial-claim (RFC Q-A7 (a) — typed-
+    /// per-direction) — a deploy.yaml link declares `role: listener`
+    /// but its machine's source SCXML carries no
+    /// `<sce:session-role kind="accept-side"/>` declaration. The
+    /// implicit-claim hazard that C10-α's `Accepting.*` substate
+    /// pattern walker silently degraded on — now typed.
+    ///
+    /// Repair: add `<sce:session-role kind="accept-side"/>` to the
+    /// machine's source SCXML if it implements the canonical session-
+    /// FSM accept-side state machine, OR remove `role: listener` from
+    /// the deploy link config if the link is not a listener half.
+    /// `NeutralOrDeterministic` non_overlap class (Q-C10-7 a precedent,
+    /// 2-axis repair).
+    #[error(
+        "deploy machine '{machine}' link '{link_name}': declares `role: listener` but \
+         its source SCXML carries no `<sce:session-role kind=\"accept-side\"/>` top-level \
+         declaration. Repair: add `<sce:session-role kind=\"accept-side\"/>` to the SCXML \
+         root if it implements the session-FSM accept-side, OR remove `role: listener` \
+         from the deploy link if the link is not a listener half. See \
+         claudedocs/rfc-axis3-listener-role-declarations.md."
+    )]
+    LinkDeployRoleListenerWithoutScxmlAcceptSideRole {
+        /// Deploy `machines.<n>` that declared the listener role.
+        machine: String,
+        /// `<sce:link name="X">` body name. Same shape as the
+        /// `reassembly/binding-on-unpaired-listener` `key_fragments`
+        /// quoting (C10-α precedent) so external consumers can join
+        /// diagnostic streams on `(machine, link_name)`.
+        link_name: String,
+    },
+
+    /// Axis-3 inversion Phase B partial-claim (RFC Q-A7 (a) — typed-
+    /// per-direction) — an SCXML doc declares
+    /// `<sce:session-role kind="accept-side"/>` but no deploy.yaml
+    /// link on the machine that sources this SCXML has
+    /// `role: listener`. The mirror direction of the
+    /// `LinkDeployRoleListenerWithoutScxmlAcceptSideRole` partial-
+    /// claim.
+    ///
+    /// Repair: declare `role: listener` on the deploy link that hosts
+    /// the accept-side handshake, OR remove the
+    /// `<sce:session-role kind="accept-side"/>` element if the SCXML
+    /// is not actually serving as the accept-side FSM.
+    /// `NeutralOrDeterministic` (2-axis repair).
+    #[error(
+        "SCXML machine '{machine}' (source `{scxml_source}`): declares \
+         `<sce:session-role kind=\"accept-side\"/>` but no deploy link on this machine \
+         has `role: listener`. Repair: add `role: listener` to the deploy link that \
+         hosts the accept-side handshake, OR remove the `<sce:session-role>` element \
+         from the SCXML if it does not serve as the accept-side FSM. See \
+         claudedocs/rfc-axis3-listener-role-declarations.md."
+    )]
+    ScxmlAcceptSideRoleWithoutListenerLink {
+        /// Deploy `machines.<n>` whose source SCXML carries the
+        /// accept-side role declaration.
+        machine: String,
+        /// Source SCXML basename (deploy `machine.source` value).
+        /// Surfaces in `key_fragments` so consumers can navigate to
+        /// the offending SCXML file without parsing the message body.
+        /// Named `scxml_source` (not `source`) to avoid thiserror's
+        /// `#[source]` magic — a plain `source: String` is interpreted
+        /// as a wrapped error source.
+        scxml_source: String,
+    },
+
+    /// Axis-3 inversion Phase B Q-A4 (d) matrix — a deploy.yaml link
+    /// declares `role: listener` but `trust_class != session_arming`.
+    /// The combination is structurally invalid because the only trust
+    /// tier where pre-handshake listener semantics apply is
+    /// `session_arming` (`docs/SCE_ACCEPTED_SUBSET.md` §C13-β +
+    /// `mesh/deploy.rs::TrustClass` doc). The new explicit `role`
+    /// field decouples the listener-role declaration from the trust
+    /// tier (per axis-3 design) — so an explicit
+    /// `role: listener` + `trust_class: untrusted` combination must
+    /// be rejected eagerly rather than silently dropped.
+    ///
+    /// Repair: flip `trust_class` to `session_arming` if the link
+    /// genuinely carries pre-handshake traffic, OR remove
+    /// `role: listener` if the link is on a different trust tier.
+    /// `NeutralOrDeterministic` (2-axis repair).
+    #[error(
+        "deploy machine '{machine}' link '{link_name}': declares `role: listener` but \
+         `trust_class: {trust_class}` (not `session_arming`). The listener-role \
+         declaration applies only to pre-handshake traffic, which lives on the \
+         `session_arming` trust tier. Repair: change `trust_class` to `session_arming`, \
+         OR remove `role: listener`. See claudedocs/rfc-axis3-listener-role-declarations.md."
+    )]
+    LinkRoleListenerWithNonSessionArmingTrustClass {
+        /// Deploy `machines.<n>`.
+        machine: String,
+        /// `<sce:link name="X">` body name.
+        link_name: String,
+        /// Trust-class wire form from
+        /// [`crate::mesh::deploy::TrustClass::as_str`] — stable across
+        /// Rust edition / `Debug`-impl changes.
+        trust_class: String,
+    },
 }
 
 /// watching-zenoh RFC §5.E B7-η' Atomic A2 callback-path failure

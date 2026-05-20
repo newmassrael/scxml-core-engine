@@ -2040,14 +2040,41 @@ pub fn compile_scxml_with_imports(
     // burst_pps + tick_period_us + arrivals_per_tick / drain_per_second);
     // forge-side reassembly validators emit `ValidationError`
     // directly per the existing `#[from]` flow.
-    // ── C10-α listener-pair resolution ──
+    // ── Axis-3 Phase B cross-doc role validation ──
+    //
+    // Runs BEFORE listener-link resolution so partial-claim failures
+    // surface as typed `link/...` or `scxml/...` diagnostics rather
+    // than silently dropping into the listener-set union. Three typed
+    // codes from RFC Q-A7 fire here:
+    //   - link/deploy-role-listener-without-scxml-accept-side-role
+    //   - scxml/accept-side-role-without-listener-link
+    //   - link/role-listener-with-non-session-arming-trust-class
+    // Legacy fixtures (no explicit role / session-role declarations)
+    // silent-pass per Q-A9 staged migration discipline; Phase C
+    // migration extends explicit declarations to every listener.
+    if let Some(deploy_cfg) = deploy {
+        validate_cross_doc_listener_roles(deploy_cfg, &scxml_models).map_err(|e| {
+            Located::new(
+                forge::error::ForgeError::Validation(e),
+                "deploy.yaml",
+                None,
+                None,
+            )
+        })?;
+    }
+
+    // ── C10-α listener-pair resolution + Axis-3 Phase B explicit-
+    //    role join ──
     //
     // Computed unconditionally so deploy-aware downstream consumers
     // (the C13 cross-doc validators + the per-doc compile_forge_with_imports
     // codegen pass) see a single source of truth. Defaults to an
     // empty set on `deploy: None` paths — silent-skip per Q-η5 (a):
     // no deploy ⇒ no machine.source × session_arming axis to scan;
-    // listener-pair synthesis cannot fire.
+    // listener-pair synthesis cannot fire. Phase B keeps both join
+    // paths active simultaneously (legacy substate walker + new
+    // explicit-role join); Phase D will delete the walker after
+    // Phase C migrates every fixture to the explicit-role shape.
     let listener_links: std::collections::BTreeSet<String> = match deploy {
         Some(deploy_cfg) => resolve_listener_links(deploy_cfg, &scxml_models),
         None => std::collections::BTreeSet::new(),
@@ -3163,23 +3190,30 @@ pub fn accepting_substate_present(model: &SCXMLModel) -> bool {
 }
 
 /// watching-zenoh RFC §5.C lines 802-833 + §5.M lines 2771-2828
-/// (C10-α) — resolve the listener-pair set for the deploy + parsed
-/// SCXML corpus. A `<sce:link>` becomes a listener (sibling-emitting)
-/// when BOTH conditions hold per spec line 806:
+/// (C10-α) + Axis-3 inversion Phase B
+/// (claudedocs/rfc-axis3-listener-role-declarations.md) — resolve the
+/// listener-pair set for the deploy + parsed SCXML corpus.
 ///
-/// 1. Deploy-side: `machines.<m>.links.<name>.domain_attrs.trust_class`
-///    is `session_arming`.
-/// 2. SCXML-side: the machine's `source` SCXML doc contains any state
-///    whose `id` matches the `Accepting.*` dot-glob per
+/// A `<sce:link>` becomes a listener (sibling-emitting) when EITHER
+/// path holds:
+///
+/// 1. **Legacy substate path** (C10-α, unchanged in Phase B): deploy
+///    declares `trust_class: session_arming` AND the machine's
+///    source SCXML contains an `Accepting.*` state per
 ///    [`accepting_substate_present`].
+/// 2. **Explicit-role path** (Axis-3 Phase B): deploy declares
+///    `role: listener` AND the machine's source SCXML declares
+///    `<sce:session-role kind="accept-side"/>` per
+///    [`crate::model::SCXMLModel::declared_session_roles`].
 ///
-/// Either-condition-alone ⇒ silent-skip (single Listener-only
-/// instance, no sibling synthesized). The silent-skip discipline
-/// mirrors [[feedback-silently-broken-hooks]] —
-/// `binding-on-unpaired-listener` exists precisely to surface the
-/// missing-sibling case where SCXML targets the half (currently
-/// unreachable from author surface; future-proofing per spec line
-/// 2982-2994).
+/// Both paths union into `listener_links`. Phase D will delete path 1
+/// after Phase C migrates every fixture to path 2. During the Phase
+/// B / C transition window both shapes resolve correctly; the typed
+/// cross-doc validator
+/// [`validate_cross_doc_listener_roles`] catches partial declarations
+/// (one side adopts the new shape, the other does not) and surfaces
+/// them as `link/deploy-role-listener-without-scxml-accept-side-role`
+/// or `scxml/accept-side-role-without-listener-link`.
 ///
 /// Returns the sorted `BTreeSet<String>` of listener link names —
 /// the cross-doc consumer ([`crate::mesh::deploy::validate_reassembly_cross_doc`]
@@ -3191,7 +3225,8 @@ pub fn resolve_listener_links(
     deploy_cfg: &mesh::deploy::DeployConfig,
     scxml_models: &[(std::path::PathBuf, SCXMLModel)],
 ) -> std::collections::BTreeSet<String> {
-    use mesh::deploy::TrustClass;
+    use crate::model::SessionRoleKind;
+    use mesh::deploy::{LinkRole, TrustClass};
     let mut listener_links: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for device in deploy_cfg.topology.values() {
         for (_machine_name, machine) in device.machines.iter() {
@@ -3215,6 +3250,25 @@ pub fn resolve_listener_links(
                 // absence per Q-η5 (a)).
                 continue;
             };
+            // ── Axis-3 Phase B: explicit-role path ──────────────────
+            // When BOTH sides explicitly opt into the new shape, the
+            // link joins listener_links without consulting the legacy
+            // walker. This is independent of trust_class — the
+            // explicit `role: listener` declaration carries the
+            // listener semantics on its own, while the Q-A4 (d)
+            // matrix validator separately enforces that the trust
+            // tier is `session_arming`.
+            let scxml_declares_accept_side = model
+                .declared_session_roles
+                .contains(&SessionRoleKind::AcceptSide);
+            for (link_name, link) in machine.links.iter() {
+                let deploy_role_is_listener = matches!(link.role, Some(LinkRole::Listener));
+                if deploy_role_is_listener && scxml_declares_accept_side {
+                    listener_links.insert(link_name.clone());
+                }
+            }
+            // ── Legacy substate path (C10-α, scheduled for deletion
+            //    in Phase D per Q-A8) ────────────────────────────────
             if !accepting_substate_present(model) {
                 continue;
             }
@@ -3229,6 +3283,138 @@ pub fn resolve_listener_links(
         }
     }
     listener_links
+}
+
+/// Axis-3 inversion Phase B
+/// (claudedocs/rfc-axis3-listener-role-declarations.md Q-A4 + Q-A7)
+/// — cross-document validation of explicit listener-role declarations.
+/// Runs BEFORE [`resolve_listener_links`] so a partial-claim failure
+/// is surfaced as a typed `link/...` or `scxml/...` diagnostic rather
+/// than silently dropping into the listener-set union.
+///
+/// Three checks (each NeutralOrDeterministic non_overlap class):
+///
+/// 1. **Q-A4 (d) matrix**: deploy declares `role: listener` but
+///    `trust_class != session_arming` ⇒
+///    `link/role-listener-with-non-session-arming-trust-class`.
+/// 2. **Deploy→SCXML partial-claim**: deploy declares `role: listener`
+///    but the machine's source SCXML has no `<sce:session-role
+///    kind="accept-side"/>` declaration ⇒
+///    `link/deploy-role-listener-without-scxml-accept-side-role`.
+/// 3. **SCXML→Deploy partial-claim**: SCXML declares `<sce:session-
+///    role kind="accept-side"/>` but no deploy link on the matched
+///    machine has `role: listener` ⇒
+///    `scxml/accept-side-role-without-listener-link`.
+///
+/// Silent-pass cases (matching Q-A4 row table):
+/// - `(role, trust_class) = (Some(Listener), SessionArming)`
+/// - `role = Some(Initiator)` (forward-compat, v1 has no consumer)
+/// - `role = None` (legacy fixtures pre-migration; partial-claim
+///    discipline applies only when explicit declarations are present)
+///
+/// Per RFC Q-A9 the Phase B atomic does NOT require `role: listener`
+/// on every `session_arming` link — that promotion happens after
+/// Phase C migrates every fixture. Phase B requires consistency only
+/// among the explicit declarations actually present.
+pub fn validate_cross_doc_listener_roles(
+    deploy_cfg: &mesh::deploy::DeployConfig,
+    scxml_models: &[(std::path::PathBuf, SCXMLModel)],
+) -> Result<(), crate::forge::error::ValidationError> {
+    use crate::forge::error::ValidationError;
+    use crate::model::SessionRoleKind;
+    use mesh::deploy::{LinkRole, TrustClass};
+
+    for device in deploy_cfg.topology.values() {
+        for (machine_name, machine) in device.machines.iter() {
+            // Q-A4 (d) matrix — runs independently of the SCXML
+            // model lookup since it's a deploy-internal check.
+            for (link_name, link) in machine.links.iter() {
+                if !matches!(link.role, Some(LinkRole::Listener)) {
+                    continue;
+                }
+                let trust_class = link.domain_attrs.as_ref().map(|d| d.trust_class);
+                match trust_class {
+                    Some(TrustClass::SessionArming) => {
+                        // Happy path — role/trust pair matches.
+                    }
+                    Some(other) => {
+                        return Err(
+                            ValidationError::LinkRoleListenerWithNonSessionArmingTrustClass {
+                                machine: machine_name.clone(),
+                                link_name: link_name.clone(),
+                                trust_class: other.as_str().to_string(),
+                            },
+                        );
+                    }
+                    None => {
+                        // `role: listener` without any `domain_attrs`
+                        // block — still a matrix violation. The
+                        // `actual` payload echoes the absent trust
+                        // tier as `(absent)` so the failure shape is
+                        // distinguishable from a present-but-wrong
+                        // trust tier.
+                        return Err(
+                            ValidationError::LinkRoleListenerWithNonSessionArmingTrustClass {
+                                machine: machine_name.clone(),
+                                link_name: link_name.clone(),
+                                trust_class: "(absent)".to_string(),
+                            },
+                        );
+                    }
+                }
+            }
+
+            // Cross-doc partial-claim — requires the matching SCXML
+            // model to be in this compile call. Silent-skip when the
+            // model is absent (mirrors `resolve_listener_links`
+            // discipline; the existing cross-doc reassembly + burst
+            // validators silent-skip on the same join absence per
+            // Q-η5 (a)).
+            let machine_source = machine.source.as_str();
+            let model = scxml_models.iter().find(|(path, _)| {
+                path.file_name()
+                    .and_then(|s| s.to_str())
+                    .map(|n| n == machine_source)
+                    .unwrap_or(false)
+                    || path.to_str().map(|p| p == machine_source).unwrap_or(false)
+            });
+            let Some((_, model)) = model else {
+                continue;
+            };
+
+            let scxml_declares_accept_side = model
+                .declared_session_roles
+                .contains(&SessionRoleKind::AcceptSide);
+
+            // Direction 1: deploy → SCXML.
+            for (link_name, link) in machine.links.iter() {
+                let deploy_role_is_listener = matches!(link.role, Some(LinkRole::Listener));
+                if deploy_role_is_listener && !scxml_declares_accept_side {
+                    return Err(
+                        ValidationError::LinkDeployRoleListenerWithoutScxmlAcceptSideRole {
+                            machine: machine_name.clone(),
+                            link_name: link_name.clone(),
+                        },
+                    );
+                }
+            }
+
+            // Direction 2: SCXML → deploy.
+            if scxml_declares_accept_side {
+                let any_listener_on_machine = machine
+                    .links
+                    .values()
+                    .any(|link| matches!(link.role, Some(LinkRole::Listener)));
+                if !any_listener_on_machine {
+                    return Err(ValidationError::ScxmlAcceptSideRoleWithoutListenerLink {
+                        machine: machine_name.clone(),
+                        scxml_source: machine_source.to_string(),
+                    });
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// `cpp_type` / `kotlin_type` / etc. helpers.

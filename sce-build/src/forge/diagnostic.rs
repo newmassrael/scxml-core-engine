@@ -460,6 +460,19 @@ pub enum DiagnosticCode {
     ScxmlUnknownSessionRoleKind,
     #[serde(rename = "scxml/duplicate-session-role-declaration")]
     ScxmlDuplicateSessionRoleDeclaration,
+    // ── Axis-3 inversion Phase B (RFC Q-A7 (a) — typed-per-direction)
+    //    cross-doc partial-claim family + Q-A4 (d) matrix validator.
+    //    Three NeutralOrDeterministic codes covering each direction
+    //    of the listener-role declaration cross-claim. C10-α's
+    //    silent-skip discipline at `lib.rs:3210-3220` becomes a typed
+    //    diagnostic with `key_fragments` on `(machine, link_name)` or
+    //    `(machine, source)`.
+    #[serde(rename = "link/deploy-role-listener-without-scxml-accept-side-role")]
+    LinkDeployRoleListenerWithoutScxmlAcceptSideRole,
+    #[serde(rename = "scxml/accept-side-role-without-listener-link")]
+    ScxmlAcceptSideRoleWithoutListenerLink,
+    #[serde(rename = "link/role-listener-with-non-session-arming-trust-class")]
+    LinkRoleListenerWithNonSessionArmingTrustClass,
 
     #[serde(rename = "expression/empty")]
     ExpressionEmpty,
@@ -2285,6 +2298,10 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // Axis-3 inversion Phase A — top-level `<sce:session-role>` structural codes
         ScxmlUnknownSessionRoleKind,
         ScxmlDuplicateSessionRoleDeclaration,
+        // Axis-3 inversion Phase B — cross-doc partial-claim + matrix validators
+        LinkDeployRoleListenerWithoutScxmlAcceptSideRole,
+        ScxmlAcceptSideRoleWithoutListenerLink,
+        LinkRoleListenerWithNonSessionArmingTrustClass,
         // Expression
         ExpressionEmpty,
         ExpressionLex,
@@ -3130,14 +3147,17 @@ impl DiagnosticCode {
             | MeshCodegenEventNameCollision
             | MeshCodegenPoolWithRpcClientUnsupported
             | MeshIo
-            // Axis-3 inversion Phase A — RFC is SCE-internal at
+            // Axis-3 inversion Phase A + B — RFC is SCE-internal at
             // `claudedocs/rfc-axis3-listener-role-declarations.md`,
             // not a watching-zenoh spec section. The codes describe
             // an SCE-only cross-doc role contract; spec_anchor stays
             // None until / unless a future spec section adopts the
             // same vocabulary.
             | ScxmlUnknownSessionRoleKind
-            | ScxmlDuplicateSessionRoleDeclaration => None,
+            | ScxmlDuplicateSessionRoleDeclaration
+            | LinkDeployRoleListenerWithoutScxmlAcceptSideRole
+            | ScxmlAcceptSideRoleWithoutListenerLink
+            | LinkRoleListenerWithNonSessionArmingTrustClass => None,
         }
     }
 
@@ -3208,6 +3228,15 @@ impl DiagnosticCode {
             ScxmlOnSampleLinkWrongKind => "scxml/on-sample-link-wrong-kind",
             ScxmlUnknownSessionRoleKind => "scxml/unknown-session-role-kind",
             ScxmlDuplicateSessionRoleDeclaration => "scxml/duplicate-session-role-declaration",
+            LinkDeployRoleListenerWithoutScxmlAcceptSideRole => {
+                "link/deploy-role-listener-without-scxml-accept-side-role"
+            }
+            ScxmlAcceptSideRoleWithoutListenerLink => {
+                "scxml/accept-side-role-without-listener-link"
+            }
+            LinkRoleListenerWithNonSessionArmingTrustClass => {
+                "link/role-listener-with-non-session-arming-trust-class"
+            }
             ExpressionEmpty => "expression/empty",
             ExpressionLex => "expression/lex",
             ExpressionUnsupportedConstruct => "expression/unsupported-construct",
@@ -5214,6 +5243,56 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![kind.clone()],
         },
+        ValidationError::LinkDeployRoleListenerWithoutScxmlAcceptSideRole { machine, link_name } => {
+            DiagnosticPayload {
+                // Axis-3 inversion Phase B — typed partial-claim.
+                // 2-axis repair (add SCXML role OR remove deploy role);
+                // NeutralOrDeterministic per C10-α Q-C10-7 precedent.
+                // `actual` carries the link name; `key_fragments`
+                // mirror the C10-α `reassembly/binding-on-unpaired-
+                // listener` `(machine, link_name)` shape so external
+                // consumers can join diagnostic streams without
+                // re-parsing.
+                code: DiagnosticCode::LinkDeployRoleListenerWithoutScxmlAcceptSideRole,
+                stage: Stage::Validation,
+                expected: None,
+                actual: Some(link_name.clone()),
+                fix: None,
+                key_fragments: vec![machine.clone(), link_name.clone()],
+            }
+        }
+        ValidationError::ScxmlAcceptSideRoleWithoutListenerLink {
+            machine,
+            scxml_source,
+        } => DiagnosticPayload {
+            // Axis-3 inversion Phase B — typed partial-claim mirror
+            // direction. 2-axis repair. `actual` carries the SCXML
+            // source basename so consumers can navigate to the
+            // offending file; `key_fragments` carry both fields.
+            code: DiagnosticCode::ScxmlAcceptSideRoleWithoutListenerLink,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(scxml_source.clone()),
+            fix: None,
+            key_fragments: vec![machine.clone(), scxml_source.clone()],
+        },
+        ValidationError::LinkRoleListenerWithNonSessionArmingTrustClass {
+            machine,
+            link_name,
+            trust_class,
+        } => DiagnosticPayload {
+            // Axis-3 inversion Phase B — Q-A4 (d) matrix check.
+            // 2-axis repair (change trust_class OR remove role);
+            // NeutralOrDeterministic. `actual` carries the wrong
+            // trust_class wire-form value so the violation is visible
+            // without re-reading deploy.yaml.
+            code: DiagnosticCode::LinkRoleListenerWithNonSessionArmingTrustClass,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(trust_class.clone()),
+            fix: None,
+            key_fragments: vec![machine.clone(), link_name.clone(), trust_class.clone()],
+        },
         ValidationError::PoolSampleTakeWithoutStagePool {
             state_id,
             link,
@@ -7202,6 +7281,41 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:ebc5cc71107bd7e9","code":"scxml/duplicate-session-role-declaration","stage":"validation","message":"<sce:session-role kind=\"accept-side\"/>: declared more than once on this SCXML document. Each session-role kind may appear at most once per document. Repair: delete the duplicate `<sce:session-role kind=\"accept-side\"/>` element.","actual":"accept-side"}"#,
+            ),
+            (
+                // Axis-3 inversion Phase B — deploy declares listener
+                // role but SCXML lacks accept-side declaration. Hash
+                // placeholder — patched by byte-stability assertion.
+                "forge/link-deploy-role-listener-without-scxml-accept-side-role",
+                ValidationError::LinkDeployRoleListenerWithoutScxmlAcceptSideRole {
+                    machine: "mcu_node".into(),
+                    link_name: "udp_listener".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:c2f9a854621bdaa3","code":"link/deploy-role-listener-without-scxml-accept-side-role","stage":"validation","message":"deploy machine 'mcu_node' link 'udp_listener': declares `role: listener` but its source SCXML carries no `<sce:session-role kind=\"accept-side\"/>` top-level declaration. Repair: add `<sce:session-role kind=\"accept-side\"/>` to the SCXML root if it implements the session-FSM accept-side, OR remove `role: listener` from the deploy link if the link is not a listener half. See claudedocs/rfc-axis3-listener-role-declarations.md.","actual":"udp_listener"}"#,
+            ),
+            (
+                // Axis-3 inversion Phase B — SCXML declares accept-side
+                // but no deploy link has listener role. Hash placeholder.
+                "forge/scxml-accept-side-role-without-listener-link",
+                ValidationError::ScxmlAcceptSideRoleWithoutListenerLink {
+                    machine: "mcu_node".into(),
+                    scxml_source: "session_fsm.scxml".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:126e3b7664c66f4a","code":"scxml/accept-side-role-without-listener-link","stage":"validation","message":"SCXML machine 'mcu_node' (source `session_fsm.scxml`): declares `<sce:session-role kind=\"accept-side\"/>` but no deploy link on this machine has `role: listener`. Repair: add `role: listener` to the deploy link that hosts the accept-side handshake, OR remove the `<sce:session-role>` element from the SCXML if it does not serve as the accept-side FSM. See claudedocs/rfc-axis3-listener-role-declarations.md.","actual":"session_fsm.scxml"}"#,
+            ),
+            (
+                // Axis-3 inversion Phase B Q-A4 (d) matrix — listener
+                // role with wrong trust_class. Hash placeholder.
+                "forge/link-role-listener-with-non-session-arming-trust-class",
+                ValidationError::LinkRoleListenerWithNonSessionArmingTrustClass {
+                    machine: "mcu_node".into(),
+                    link_name: "udp_listener".into(),
+                    trust_class: "untrusted".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:df7bcfc9e6b3e2ec","code":"link/role-listener-with-non-session-arming-trust-class","stage":"validation","message":"deploy machine 'mcu_node' link 'udp_listener': declares `role: listener` but `trust_class: untrusted` (not `session_arming`). The listener-role declaration applies only to pre-handshake traffic, which lives on the `session_arming` trust tier. Repair: change `trust_class` to `session_arming`, OR remove `role: listener`. See claudedocs/rfc-axis3-listener-role-declarations.md.","actual":"untrusted"}"#,
             ),
             (
                 // RFC §5.E B7-η' Atomic A1: on-sample subscriber on a
@@ -10727,6 +10841,12 @@ mod tests {
             // is single-axis (delete the duplicate); no closed
             // candidate list. NeutralOrDeterministic.
             | ScxmlDuplicateSessionRoleDeclaration
+            // Axis-3 inversion Phase B partial-claim codes — all
+            // three are NeutralOrDeterministic (C10-α Q-C10-7
+            // precedent: 2-axis repair, no closed candidate set).
+            | LinkDeployRoleListenerWithoutScxmlAcceptSideRole
+            | ScxmlAcceptSideRoleWithoutListenerLink
+            | LinkRoleListenerWithNonSessionArmingTrustClass
             | ExpressionEmpty
             | ExpressionLex
             | ExpressionUnsupportedConstruct
@@ -11230,6 +11350,9 @@ mod tests {
                 | ScxmlOnSampleLinkWrongKind
                 | ScxmlUnknownSessionRoleKind
                 | ScxmlDuplicateSessionRoleDeclaration
+                | LinkDeployRoleListenerWithoutScxmlAcceptSideRole
+                | ScxmlAcceptSideRoleWithoutListenerLink
+                | LinkRoleListenerWithNonSessionArmingTrustClass
                 | ExpressionEmpty | ExpressionLex
                 | ExpressionUnsupportedConstruct | ExpressionStrictEquality
                 | ExpressionParseMismatch | ExpressionUnexpectedToken
@@ -11456,7 +11579,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            294,
+            297,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries —\
              expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \

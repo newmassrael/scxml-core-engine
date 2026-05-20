@@ -488,7 +488,7 @@ no typed interpretation or are explicitly excluded:
 
 ---
 
-## Appendix — `DiagnosticCode` index (294 codes)
+## Appendix — `DiagnosticCode` index (297 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -646,6 +646,9 @@ Codes that the author can avoid by writing a better SCXML /
 | `scxml/on-sample-link-wrong-kind` | Validation |
 | `scxml/unknown-session-role-kind` | Validation |
 | `scxml/duplicate-session-role-declaration` | Validation |
+| `link/deploy-role-listener-without-scxml-accept-side-role` | Validation |
+| `scxml/accept-side-role-without-listener-link` | Validation |
+| `link/role-listener-with-non-session-arming-trust-class` | Validation |
 | `codegen/no-std-script-not-supported` | Generate |
 | `codegen/no-std-http-not-supported` | Generate |
 | `codegen/no-std-fs-load-not-supported` | Generate |
