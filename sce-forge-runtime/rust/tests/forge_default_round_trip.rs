@@ -1,6 +1,17 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
-//
+
+// RFC §5.B B1-α: the round-trip uses `encode_to_vec`, the heap-backed
+// convenience facade gated on the `alloc` feature (see
+// `sce-forge-runtime/rust/src/codec.rs`). Without `alloc` the generated
+// codecs include the gated `VecSink` import (also alloc-only), so the
+// whole file would fail to compile under default-features. The pre-push
+// hook builds the workspace with default features only — gate the
+// entire test file so cargo test passes there too. Locally invoke with
+// `cargo test --features alloc` (or `cargo test -p sce-forge-runtime
+// --features alloc`) to exercise this test.
+#![cfg(feature = "alloc")]
+
 // RFC variant-default-uniformity Atomic β-Rust runtime round-trip test.
 //
 // The pattern-check tests in `sce-build/tests/forge_conformance.rs` assert

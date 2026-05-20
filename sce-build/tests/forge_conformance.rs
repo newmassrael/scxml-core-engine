@@ -10486,6 +10486,16 @@ edition = "2021"
 [lib]
 path = "src/lib.rs"
 
+[features]
+# RFC §5.B B1-α: generated codec modules carry `#[cfg(feature = "alloc")]`
+# guards around `VecSink` / `encode_to_vec` so MCU / no_std consumers see
+# only the sink-based primary. The harness opts the entire crate into
+# `alloc` so the heap facade is exercised in the rustc-check + sidecar
+# round-trip tests. Default = ["alloc"] so a bare `cargo build` /
+# `cargo test` reproduces what watching-zenoh sees.
+default = ["alloc"]
+alloc = []
+
 [dependencies]
 sce-forge-runtime = {{ path = "{}", default-features = false, features = ["alloc"] }}
 

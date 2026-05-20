@@ -5,7 +5,17 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 
-use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink, VecSink};
+use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink};
+// RFC §5.B B1-α: `VecSink` and the heap-backed `encode_to_vec` facade
+// are gated on the `alloc` feature (see
+// `sce-forge-runtime/rust/src/codec.rs`). MCU / `no_std` consumers see
+// only the sink-based primary `encode` + `SliceSink` paths.
+#[cfg(feature = "alloc")]
+extern crate alloc;
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
+#[cfg(feature = "alloc")]
+use sce_forge_runtime::codec::VecSink;
 
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
 // §6 codec). The kind-agnostic conformance harness only references a
@@ -128,6 +138,12 @@ impl CodecPresentIfDisjunction {
     /// `VecSink`. Returns the freshly-encoded byte vector. Callers
     /// targeting zero-alloc hot paths should call `encode` directly
     /// against a caller-owned sink.
+    ///
+    /// Gated on the `alloc` feature — `VecSink` lives behind the
+    /// same gate (see `sce-forge-runtime/rust/src/codec.rs`). MCU /
+    /// `no_std` builds without `alloc` only see the sink-based
+    /// primary `encode`.
+    #[cfg(feature = "alloc")]
     pub fn encode_to_vec(&self) -> Vec<u8> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
