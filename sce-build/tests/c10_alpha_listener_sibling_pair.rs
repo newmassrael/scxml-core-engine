@@ -122,13 +122,42 @@ fn session_arming_link_yaml() -> String {
     "          udp_listener:\n            bind: \"0.0.0.0:7447\"\n            driver: lwip_udp\n            mtu_bytes: 1500\n            domain_attrs:\n              trust_class: session_arming\n            session_arming_quota: 8\n            accept_rate_per_sec: 4\n            accept_rate_burst: 8\n".to_string()
 }
 
+/// Axis-3 Phase C migration shape — the deploy half adds explicit
+/// `role: listener` alongside the existing `trust_class: session_arming`
+/// trust tier. Pairs with an SCXML that declares
+/// `<sce:session-role kind="accept-side"/>` (mirrored on the test side
+/// by `declared_session_roles.insert(AcceptSide)` on the SCXMLModel).
+/// Phase D will delete the legacy `session_arming_link_yaml` helper +
+/// its three callers once the walker is repurposed.
+fn session_arming_listener_link_yaml_axis3() -> String {
+    "          udp_listener:\n            bind: \"0.0.0.0:7447\"\n            driver: lwip_udp\n            mtu_bytes: 1500\n            role: listener\n            domain_attrs:\n              trust_class: session_arming\n            session_arming_quota: 8\n            accept_rate_per_sec: 4\n            accept_rate_burst: 8\n".to_string()
+}
+
 #[test]
-fn resolve_listener_links_pairs_session_arming_with_accepting_substate() {
-    let yaml = deploy_with_listener_source("session_fsm.scxml", &session_arming_link_yaml());
+fn resolve_listener_links_pairs_explicit_role_with_accept_side_declaration() {
+    // Axis-3 Phase C migration of the C10-α canonical positive
+    // listener-pair test. Pre-migration this exercised the legacy
+    // walker (session_arming + Accepting.* substate); post-migration
+    // it exercises the new explicit-role path (deploy role: listener
+    // + SCXML <sce:session-role kind="accept-side"/>).
+    //
+    // The fixture deliberately retains the `Accepting.AwaitingInitSyn`
+    // substate to mirror real-world session-FSM SCXML — both join
+    // paths fire and BTreeSet dedupes per Phase B union semantics.
+    // Phase D will delete the legacy walker; the `Accepting.*` states
+    // remain as the canonical session-FSM implementation, but only
+    // the explicit-role declaration triggers listener-pair synthesis.
+    let yaml = deploy_with_listener_source(
+        "session_fsm.scxml",
+        &session_arming_listener_link_yaml_axis3(),
+    );
     let cfg = parse_deploy_str(&yaml).expect("deploy parses");
 
     let mut session_fsm = SCXMLModel::default();
     session_fsm.name = "session_fsm".into();
+    session_fsm
+        .declared_session_roles
+        .insert(sce_build::model::SessionRoleKind::AcceptSide);
     session_fsm
         .states
         .insert("Accepting.AwaitingInitSyn".to_string(), State::default());
@@ -137,7 +166,14 @@ fn resolve_listener_links_pairs_session_arming_with_accepting_substate() {
     let listener_links = resolve_listener_links(&cfg, &scxml_models);
     assert!(
         listener_links.contains("udp_listener"),
-        "session_arming + Accepting.* substate-present must mark the link as a listener"
+        "explicit role: listener + <sce:session-role kind=\"accept-side\"/> must mark \
+         the link as a listener"
+    );
+    assert_eq!(
+        listener_links.len(),
+        1,
+        "dual-path resolution must dedupe to a single listener entry, got {:?}",
+        listener_links
     );
 }
 
