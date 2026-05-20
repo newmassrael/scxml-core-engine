@@ -23,14 +23,6 @@ typedef struct {
     char _reserved;
 } codec_zenoh_decl_final_t;
 
-typedef struct {
-    /* RFC §5.B B5-α empty body — C11 forbids zero-length arrays so the
-     * placeholder is `bytes[1]`; the encoder sets `len = 0` and never
-     * writes to `bytes`, so callers read 0 bytes from the wire. */
-    uint8_t bytes[1];
-    size_t  len;
-} codec_zenoh_decl_final_encoded_t;
-
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
  * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
  * (without advancing) when the cursor's tail is shorter than the
@@ -45,13 +37,31 @@ static inline sce_forge_codec_status_t codec_zenoh_decl_final_decode(sce_forge_c
     return SCE_FORGE_CODEC_OK;
 }
 
-static inline codec_zenoh_decl_final_encoded_t codec_zenoh_decl_final_encode(const codec_zenoh_decl_final_t *self) {
-    codec_zenoh_decl_final_encoded_t r;
+/* RFC §5.B B1-α encode-side primary: write `*self` into the caller-
+ * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
+ * Callers either pre-reserve CODEC_ZENOH_DECL_FINAL_MAX_BYTES bytes and use
+ * `codec_zenoh_decl_final_encode_to_buf` (below), or run the writer themselves
+ * for coalesced-send paths. */
+static inline sce_forge_codec_status_t codec_zenoh_decl_final_encode(const codec_zenoh_decl_final_t *self, sce_forge_writer_t *w) {
     /* RFC §5.B B5-α empty body — zero-byte payload. */
     (void)self;
-    r.bytes[0] = 0;
-    r.len = 0;
-    return r;
+    (void)w;
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* Heap-free convenience facade: wrap the caller-owned `buf` + `cap`
+ * in a writer, run the primary encode, and report the resulting byte
+ * count via `*out_len`. Returns SCE_FORGE_CODEC_OK on success;
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW when `cap < CODEC_ZENOH_DECL_FINAL_MAX_BYTES`
+ * was insufficient for this codec's wire bytes. Worst-case bound is
+ * `CODEC_ZENOH_DECL_FINAL_MAX_BYTES` — callers sizing `buf` accordingly never
+ * see overflow. */
+static inline sce_forge_codec_status_t codec_zenoh_decl_final_encode_to_buf(const codec_zenoh_decl_final_t *self, uint8_t *buf, size_t cap, size_t *out_len) {
+    sce_forge_writer_t _w = sce_forge_writer_init_buf(buf, cap);
+    sce_forge_codec_status_t _st = codec_zenoh_decl_final_encode(self, &_w);
+    *out_len = _w.pos;
+    return _st;
 }
 
 #endif  /* SCE_FORGE_CODEC_ZENOH_DECL_FINAL_H */

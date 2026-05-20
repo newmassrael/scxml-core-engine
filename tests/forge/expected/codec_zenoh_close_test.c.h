@@ -13,14 +13,17 @@ static inline int test_vector_codec_zenoh_close(void) {
     {
         codec_zenoh_close_t actual = {0};
         actual.reason = (uint8_t)0x0u;
-        codec_zenoh_close_encoded_t encoded = codec_zenoh_close_encode(&actual);
+        uint8_t _encoded_buf[CODEC_ZENOH_CLOSE_MAX_BYTES];
+        size_t _encoded_len = 0;
+        sce_forge_codec_status_t _enc_st = codec_zenoh_close_encode_to_buf(&actual, _encoded_buf, sizeof(_encoded_buf), &_encoded_len);
+        (void)_enc_st;
         static const uint8_t _expected[] = { 0x00 };
-        if (encoded.len != sizeof _expected
-            || memcmp(encoded.bytes, _expected, encoded.len) != 0) {
+        if (_encoded_len != sizeof _expected
+            || memcmp(_encoded_buf, _expected, _encoded_len) != 0) {
             fprintf(stderr,
                 "FAIL: codec_zenoh_close test_vector @SCXML L27: "
                 "encode length=%zu (expected %zu)\n",
-                encoded.len, sizeof _expected);
+                _encoded_len, sizeof _expected);
             ++failures;
         }
         sce_forge_cursor_t _cursor = sce_forge_cursor_init(_expected, sizeof _expected);
@@ -49,14 +52,17 @@ static inline int test_vector_codec_zenoh_close(void) {
     {
         codec_zenoh_close_t actual = {0};
         actual.reason = (uint8_t)0x1u;
-        codec_zenoh_close_encoded_t encoded = codec_zenoh_close_encode(&actual);
+        uint8_t _encoded_buf[CODEC_ZENOH_CLOSE_MAX_BYTES];
+        size_t _encoded_len = 0;
+        sce_forge_codec_status_t _enc_st = codec_zenoh_close_encode_to_buf(&actual, _encoded_buf, sizeof(_encoded_buf), &_encoded_len);
+        (void)_enc_st;
         static const uint8_t _expected[] = { 0x01 };
-        if (encoded.len != sizeof _expected
-            || memcmp(encoded.bytes, _expected, encoded.len) != 0) {
+        if (_encoded_len != sizeof _expected
+            || memcmp(_encoded_buf, _expected, _encoded_len) != 0) {
             fprintf(stderr,
                 "FAIL: codec_zenoh_close test_vector @SCXML L30: "
                 "encode length=%zu (expected %zu)\n",
-                encoded.len, sizeof _expected);
+                _encoded_len, sizeof _expected);
             ++failures;
         }
         sce_forge_cursor_t _cursor = sce_forge_cursor_init(_expected, sizeof _expected);
@@ -85,14 +91,17 @@ static inline int test_vector_codec_zenoh_close(void) {
     {
         codec_zenoh_close_t actual = {0};
         actual.reason = (uint8_t)0x2u;
-        codec_zenoh_close_encoded_t encoded = codec_zenoh_close_encode(&actual);
+        uint8_t _encoded_buf[CODEC_ZENOH_CLOSE_MAX_BYTES];
+        size_t _encoded_len = 0;
+        sce_forge_codec_status_t _enc_st = codec_zenoh_close_encode_to_buf(&actual, _encoded_buf, sizeof(_encoded_buf), &_encoded_len);
+        (void)_enc_st;
         static const uint8_t _expected[] = { 0x02 };
-        if (encoded.len != sizeof _expected
-            || memcmp(encoded.bytes, _expected, encoded.len) != 0) {
+        if (_encoded_len != sizeof _expected
+            || memcmp(_encoded_buf, _expected, _encoded_len) != 0) {
             fprintf(stderr,
                 "FAIL: codec_zenoh_close test_vector @SCXML L33: "
                 "encode length=%zu (expected %zu)\n",
-                encoded.len, sizeof _expected);
+                _encoded_len, sizeof _expected);
             ++failures;
         }
         sce_forge_cursor_t _cursor = sce_forge_cursor_init(_expected, sizeof _expected);
@@ -121,14 +130,17 @@ static inline int test_vector_codec_zenoh_close(void) {
     {
         codec_zenoh_close_t actual = {0};
         actual.reason = (uint8_t)0xffu;
-        codec_zenoh_close_encoded_t encoded = codec_zenoh_close_encode(&actual);
+        uint8_t _encoded_buf[CODEC_ZENOH_CLOSE_MAX_BYTES];
+        size_t _encoded_len = 0;
+        sce_forge_codec_status_t _enc_st = codec_zenoh_close_encode_to_buf(&actual, _encoded_buf, sizeof(_encoded_buf), &_encoded_len);
+        (void)_enc_st;
         static const uint8_t _expected[] = { 0xff };
-        if (encoded.len != sizeof _expected
-            || memcmp(encoded.bytes, _expected, encoded.len) != 0) {
+        if (_encoded_len != sizeof _expected
+            || memcmp(_encoded_buf, _expected, _encoded_len) != 0) {
             fprintf(stderr,
                 "FAIL: codec_zenoh_close test_vector @SCXML L36: "
                 "encode length=%zu (expected %zu)\n",
-                encoded.len, sizeof _expected);
+                _encoded_len, sizeof _expected);
             ++failures;
         }
         sce_forge_cursor_t _cursor = sce_forge_cursor_init(_expected, sizeof _expected);

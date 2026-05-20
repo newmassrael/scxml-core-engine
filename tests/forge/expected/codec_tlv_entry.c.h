@@ -25,11 +25,6 @@ typedef struct {
     size_t  entry_body_len;
 } codec_tlv_entry_t;
 
-typedef struct {
-    uint8_t bytes[CODEC_TLV_ENTRY_MAX_BYTES];
-    size_t  len;
-} codec_tlv_entry_encoded_t;
-
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
  * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
  * (without advancing) when the cursor's tail is shorter than the
@@ -63,16 +58,33 @@ static inline sce_forge_codec_status_t codec_tlv_entry_decode(sce_forge_cursor_t
     return SCE_FORGE_CODEC_OK;
 }
 
-static inline codec_tlv_entry_encoded_t codec_tlv_entry_encode(const codec_tlv_entry_t *self) {
-    codec_tlv_entry_encoded_t r;
-    r.len = CODEC_TLV_ENTRY_MIN_BYTES;
-    r.bytes[0] = self->entry_type;
-    r.bytes[1] = self->entry_len;
+/* RFC §5.B B1-α encode-side primary: write `*self` into the caller-
+ * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
+ * Callers either pre-reserve CODEC_TLV_ENTRY_MAX_BYTES bytes and use
+ * `codec_tlv_entry_encode_to_buf` (below), or run the writer themselves
+ * for coalesced-send paths. */
+static inline sce_forge_codec_status_t codec_tlv_entry_encode(const codec_tlv_entry_t *self, sce_forge_writer_t *w) {
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->entry_type));
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->entry_len));
     if (self->entry_body_len <= 32) {
-        memcpy(&r.bytes[2], self->entry_body, self->entry_body_len);
-        r.len = 2 + self->entry_body_len;
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->entry_body, self->entry_body_len));
     }
-    return r;
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* Heap-free convenience facade: wrap the caller-owned `buf` + `cap`
+ * in a writer, run the primary encode, and report the resulting byte
+ * count via `*out_len`. Returns SCE_FORGE_CODEC_OK on success;
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW when `cap < CODEC_TLV_ENTRY_MAX_BYTES`
+ * was insufficient for this codec's wire bytes. Worst-case bound is
+ * `CODEC_TLV_ENTRY_MAX_BYTES` — callers sizing `buf` accordingly never
+ * see overflow. */
+static inline sce_forge_codec_status_t codec_tlv_entry_encode_to_buf(const codec_tlv_entry_t *self, uint8_t *buf, size_t cap, size_t *out_len) {
+    sce_forge_writer_t _w = sce_forge_writer_init_buf(buf, cap);
+    sce_forge_codec_status_t _st = codec_tlv_entry_encode(self, &_w);
+    *out_len = _w.pos;
+    return _st;
 }
 
 #endif  /* SCE_FORGE_CODEC_TLV_ENTRY_H */

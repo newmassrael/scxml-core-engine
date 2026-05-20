@@ -30,11 +30,6 @@ typedef struct {
     uint64_t next_sn_best_effort;
 } codec_zenoh_join_t;
 
-typedef struct {
-    uint8_t bytes[CODEC_ZENOH_JOIN_MAX_BYTES];
-    size_t  len;
-} codec_zenoh_join_encoded_t;
-
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
  * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
  * (without advancing) when the cursor's tail is shorter than the
@@ -112,51 +107,73 @@ static inline sce_forge_codec_status_t codec_zenoh_join_decode(sce_forge_cursor_
     return SCE_FORGE_CODEC_OK;
 }
 
-static inline codec_zenoh_join_encoded_t codec_zenoh_join_encode(const codec_zenoh_join_t *self, uint8_t s) {
+/* RFC §5.B B1-α encode-side primary: write `*self` into the caller-
+ * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
+ * Callers either pre-reserve CODEC_ZENOH_JOIN_MAX_BYTES bytes and use
+ * `codec_zenoh_join_encode_to_buf` (below), or run the writer themselves
+ * for coalesced-send paths. */
+static inline sce_forge_codec_status_t codec_zenoh_join_encode(const codec_zenoh_join_t *self, sce_forge_writer_t *w, uint8_t s) {
     /* RFC Axis-1 inversion: see decode — same suppress per input. */
     (void)s;
-    codec_zenoh_join_encoded_t r;
     /* RFC §5.B B1-δ + B2-β present-if encode: per-field byte append.
      * Gated fields skip the append when the carrier's flag bit is
      * clear. Per-field `is_repeat` / `is_tlv_chain` route to dedicated
      * helpers. Branch fires before has_vle_fields so a codec mixing
      * VLE + present-if uses the unified encode path. */
-    r.len = 0;
-    r.bytes[r.len++] = self->version;
-    r.bytes[r.len++] = self->cbyte;
-    for (size_t _bi = 0; _bi < self->zid_len && _bi < (size_t)((int64_t)(size_t)((self->cbyte >> 4) & 0xF) + 1); ++_bi) r.bytes[r.len++] = self->zid[_bi];
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->version));
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->cbyte));
+    {
+        size_t _n = self->zid_len;
+        if (_n > (size_t)((int64_t)(size_t)((self->cbyte >> 4) & 0xF) + 1)) _n = (size_t)((int64_t)(size_t)((self->cbyte >> 4) & 0xF) + 1);
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->zid, _n));
+    }
     if ((s & 0x01) != 0) {
-        r.bytes[r.len++] = self->sn_res;
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->sn_res));
     }
     if ((s & 0x01) != 0) {
-        r.bytes[r.len++] = (uint8_t)(self->batch_size & 0xFF);
-        r.bytes[r.len++] = (uint8_t)((self->batch_size >> 8) & 0xFF);
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)(self->batch_size & 0xFF)));
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((self->batch_size >> 8) & 0xFF)));
     }
     {
-        uint64_t _w = (uint64_t)(self->lease);
-        while (_w >= 0x80u) {
-            r.bytes[r.len++] = (uint8_t)((_w & 0x7Fu) | 0x80u);
-            _w >>= 7;
+        uint64_t _vle = (uint64_t)(self->lease);
+        while (_vle >= 0x80u) {
+            SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
+            _vle >>= 7;
         }
-        r.bytes[r.len++] = (uint8_t)_w;
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
     }
     {
-        uint64_t _w = (uint64_t)(self->next_sn_reliable);
-        while (_w >= 0x80u) {
-            r.bytes[r.len++] = (uint8_t)((_w & 0x7Fu) | 0x80u);
-            _w >>= 7;
+        uint64_t _vle = (uint64_t)(self->next_sn_reliable);
+        while (_vle >= 0x80u) {
+            SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
+            _vle >>= 7;
         }
-        r.bytes[r.len++] = (uint8_t)_w;
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
     }
     {
-        uint64_t _w = (uint64_t)(self->next_sn_best_effort);
-        while (_w >= 0x80u) {
-            r.bytes[r.len++] = (uint8_t)((_w & 0x7Fu) | 0x80u);
-            _w >>= 7;
+        uint64_t _vle = (uint64_t)(self->next_sn_best_effort);
+        while (_vle >= 0x80u) {
+            SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
+            _vle >>= 7;
         }
-        r.bytes[r.len++] = (uint8_t)_w;
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
     }
-    return r;
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* Heap-free convenience facade: wrap the caller-owned `buf` + `cap`
+ * in a writer, run the primary encode, and report the resulting byte
+ * count via `*out_len`. Returns SCE_FORGE_CODEC_OK on success;
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW when `cap < CODEC_ZENOH_JOIN_MAX_BYTES`
+ * was insufficient for this codec's wire bytes. Worst-case bound is
+ * `CODEC_ZENOH_JOIN_MAX_BYTES` — callers sizing `buf` accordingly never
+ * see overflow. */
+static inline sce_forge_codec_status_t codec_zenoh_join_encode_to_buf(const codec_zenoh_join_t *self, uint8_t *buf, size_t cap, size_t *out_len, uint8_t s) {
+    sce_forge_writer_t _w = sce_forge_writer_init_buf(buf, cap);
+    sce_forge_codec_status_t _st = codec_zenoh_join_encode(self, &_w, s);
+    *out_len = _w.pos;
+    return _st;
 }
 
 /* RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over

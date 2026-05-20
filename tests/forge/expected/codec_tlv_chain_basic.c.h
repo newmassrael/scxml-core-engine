@@ -25,11 +25,6 @@ typedef struct {
     size_t  extensions_len;
 } codec_tlv_chain_basic_t;
 
-typedef struct {
-    uint8_t bytes[CODEC_TLV_CHAIN_BASIC_MAX_BYTES];
-    size_t  len;
-} codec_tlv_chain_basic_encoded_t;
-
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
  * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
  * (without advancing) when the cursor's tail is shorter than the
@@ -62,23 +57,36 @@ static inline sce_forge_codec_status_t codec_tlv_chain_basic_decode(sce_forge_cu
     return SCE_FORGE_CODEC_OK;
 }
 
-static inline codec_tlv_chain_basic_encoded_t codec_tlv_chain_basic_encode(const codec_tlv_chain_basic_t *self) {
-    codec_tlv_chain_basic_encoded_t r;
+/* RFC §5.B B1-α encode-side primary: write `*self` into the caller-
+ * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
+ * Callers either pre-reserve CODEC_TLV_CHAIN_BASIC_MAX_BYTES bytes and use
+ * `codec_tlv_chain_basic_encode_to_buf` (below), or run the writer themselves
+ * for coalesced-send paths. */
+static inline sce_forge_codec_status_t codec_tlv_chain_basic_encode(const codec_tlv_chain_basic_t *self, sce_forge_writer_t *w) {
     /* RFC §5.B B2 / B3 encode: fixed prefix appends byte-by-byte;
-     * list fields walk the per-codec encoded_t splice loop, bounded
-     * by `sizeof(r.bytes)` (== MAX_BYTES). Author keeps count field
-     * (repeat) / `<id>_len` ≤ max_depth (tlv-chain) consistent with
-     * the in-struct entry count (trust contract). */
-    r.len = 0;
-    r.bytes[r.len++] = self->header_flags;
+     * list fields walk an in-place writer loop. Author keeps count
+     * field (repeat) / `<id>_len` ≤ max_depth (tlv-chain) consistent
+     * with the in-struct entry count (trust contract). */
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->header_flags));
     for (size_t _ti = 0; _ti < self->extensions_len; ++_ti) {
-        codec_tlv_entry_encoded_t _sub = codec_tlv_entry_encode(&self->extensions[_ti]);
-        if (r.len + _sub.len <= sizeof(r.bytes)) {
-            for (size_t _tj = 0; _tj < _sub.len; ++_tj) r.bytes[r.len + _tj] = _sub.bytes[_tj];
-            r.len += _sub.len;
-        }
+        SCE_FORGE_TRY_WRITE(codec_tlv_entry_encode(&self->extensions[_ti], w));
     }
-    return r;
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* Heap-free convenience facade: wrap the caller-owned `buf` + `cap`
+ * in a writer, run the primary encode, and report the resulting byte
+ * count via `*out_len`. Returns SCE_FORGE_CODEC_OK on success;
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW when `cap < CODEC_TLV_CHAIN_BASIC_MAX_BYTES`
+ * was insufficient for this codec's wire bytes. Worst-case bound is
+ * `CODEC_TLV_CHAIN_BASIC_MAX_BYTES` — callers sizing `buf` accordingly never
+ * see overflow. */
+static inline sce_forge_codec_status_t codec_tlv_chain_basic_encode_to_buf(const codec_tlv_chain_basic_t *self, uint8_t *buf, size_t cap, size_t *out_len) {
+    sce_forge_writer_t _w = sce_forge_writer_init_buf(buf, cap);
+    sce_forge_codec_status_t _st = codec_tlv_chain_basic_encode(self, &_w);
+    *out_len = _w.pos;
+    return _st;
 }
 
 #endif  /* SCE_FORGE_CODEC_TLV_CHAIN_BASIC_H */

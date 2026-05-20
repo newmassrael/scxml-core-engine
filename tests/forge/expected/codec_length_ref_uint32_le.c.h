@@ -23,11 +23,6 @@ typedef struct {
     uint8_t payload[1024];
 } codec_length_ref_uint32_le_t;
 
-typedef struct {
-    uint8_t bytes[CODEC_LENGTH_REF_UINT32_LE_MAX_BYTES];
-    size_t  len;
-} codec_length_ref_uint32_le_encoded_t;
-
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
  * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
  * (without advancing) when the cursor's tail is shorter than the
@@ -60,18 +55,35 @@ static inline sce_forge_codec_status_t codec_length_ref_uint32_le_decode(sce_for
     return SCE_FORGE_CODEC_OK;
 }
 
-static inline codec_length_ref_uint32_le_encoded_t codec_length_ref_uint32_le_encode(const codec_length_ref_uint32_le_t *self) {
-    codec_length_ref_uint32_le_encoded_t r;
-    r.len = CODEC_LENGTH_REF_UINT32_LE_MIN_BYTES;
-    r.bytes[0] = (uint8_t)(self->payload_len & 0xFF);
-    r.bytes[1] = (uint8_t)((self->payload_len >> 8) & 0xFF);
-    r.bytes[2] = (uint8_t)((self->payload_len >> 16) & 0xFF);
-    r.bytes[3] = (uint8_t)((self->payload_len >> 24) & 0xFF);
+/* RFC §5.B B1-α encode-side primary: write `*self` into the caller-
+ * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
+ * Callers either pre-reserve CODEC_LENGTH_REF_UINT32_LE_MAX_BYTES bytes and use
+ * `codec_length_ref_uint32_le_encode_to_buf` (below), or run the writer themselves
+ * for coalesced-send paths. */
+static inline sce_forge_codec_status_t codec_length_ref_uint32_le_encode(const codec_length_ref_uint32_le_t *self, sce_forge_writer_t *w) {
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)(self->payload_len & 0xFF)));
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((self->payload_len >> 8) & 0xFF)));
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((self->payload_len >> 16) & 0xFF)));
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((self->payload_len >> 24) & 0xFF)));
     if (self->payload_len <= 1024) {
-        memcpy(&r.bytes[4], self->payload, self->payload_len);
-        r.len = 4 + self->payload_len;
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->payload, self->payload_len));
     }
-    return r;
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* Heap-free convenience facade: wrap the caller-owned `buf` + `cap`
+ * in a writer, run the primary encode, and report the resulting byte
+ * count via `*out_len`. Returns SCE_FORGE_CODEC_OK on success;
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW when `cap < CODEC_LENGTH_REF_UINT32_LE_MAX_BYTES`
+ * was insufficient for this codec's wire bytes. Worst-case bound is
+ * `CODEC_LENGTH_REF_UINT32_LE_MAX_BYTES` — callers sizing `buf` accordingly never
+ * see overflow. */
+static inline sce_forge_codec_status_t codec_length_ref_uint32_le_encode_to_buf(const codec_length_ref_uint32_le_t *self, uint8_t *buf, size_t cap, size_t *out_len) {
+    sce_forge_writer_t _w = sce_forge_writer_init_buf(buf, cap);
+    sce_forge_codec_status_t _st = codec_length_ref_uint32_le_encode(self, &_w);
+    *out_len = _w.pos;
+    return _st;
 }
 
 #endif  /* SCE_FORGE_CODEC_LENGTH_REF_UINT32_LE_H */

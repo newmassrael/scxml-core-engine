@@ -47,6 +47,7 @@ pub fn register_filters(env: &mut minijinja::Environment) {
     register_invoke_filters(env);
     env.add_filter("to_snake_case", to_snake_case);
     env.add_filter("to_pascal_case", to_pascal_case);
+    env.add_filter("to_upper_snake_case", to_upper_snake_case);
     env.add_filter("to_rust_variant", to_rust_variant);
     env.add_filter("to_rust_type", to_rust_type);
     env.add_filter("escape_rust", escape_rust);
@@ -88,6 +89,12 @@ pub fn to_snake_case(name: String) -> String {
         result.push(ch);
     }
     result.to_lowercase()
+}
+
+/// Convert identifier to UPPER_SNAKE_CASE for macros, constant names, and
+/// `_MAX_BYTES`-style enclosing-scope references in generated code.
+pub fn to_upper_snake_case(name: String) -> String {
+    to_snake_case(name).to_uppercase()
 }
 
 /// Convert identifier to PascalCase for Rust struct/enum/variant names.

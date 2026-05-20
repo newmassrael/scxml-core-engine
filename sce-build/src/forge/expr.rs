@@ -157,7 +157,7 @@ pub fn transpile_typed(
 /// SCXML-source method spelling (`"encode"`, `"update"`, ...) to the actual
 /// C11 free-function symbol the lowering should emit. This split lets the
 /// codec lowering point at a per-procedure wrapper that converts the
-/// codec's `<snake>_encoded_t` to `sce_forge_bytes_t` while the filter
+/// codec's writer-based encode output to `sce_forge_bytes_t` while the filter
 /// lowering points directly at the kind's `<snake>_update` free function
 /// (filter returns a primitive — no wrapper conversion needed). Calls
 /// whose `(alias, method)` pair is not registered here fall through to the

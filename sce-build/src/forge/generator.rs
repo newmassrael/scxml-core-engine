@@ -3171,6 +3171,14 @@ fn render_codec(
         );
         ctx.insert("c_decode_func".into(), format!("{snake}_decode").into());
         ctx.insert("c_encode_func".into(), format!("{snake}_encode").into());
+        // RFC §5.B B1-α: heap-free convenience facade name —
+        // `{snake}_encode_to_buf(self, buf, cap, *out_len)` initialises a
+        // writer over the caller-owned buffer and forwards into the
+        // writer-based primary `{snake}_encode`.
+        ctx.insert(
+            "c_encode_to_buf_func".into(),
+            format!("{snake}_encode_to_buf").into(),
+        );
         ctx.insert(
             "c_max_bytes_macro".into(),
             format!("{upper}_MAX_BYTES").into(),
@@ -4339,27 +4347,16 @@ fn repeat_streaming_encode_block(
         // compiler folds it. Mirrors the variant arm body splice
         // pattern.
         Language::C11 => {
+            let _ = body_encoder;
             let id_snake = filters::to_snake_case(id.to_string());
-            // Imported codec encode returns `<snake>_encoded_t`. The
-            // body_encoder is `<snake>_encode`; the snake portion of
-            // the encoded type matches the body_encoder's prefix.
-            let encoded_t = if let Some(stripped) = body_encoder.strip_suffix("_encode") {
-                format!("{stripped}_encoded_t")
-            } else {
-                // Defensive fallback: fall back to body_encoder + "_t"
-                // so a future mismatch surfaces at compile time (the
-                // emitted C11 will fail to typecheck) rather than
-                // silently rendering empty.
-                format!("{body_encoder}_t")
-            };
+            // RFC B1-α: nested encode now writes directly into the
+            // parent writer `w` — no splice via the legacy `_encoded_t`
+            // struct return. Status propagates via `SCE_FORGE_TRY_WRITE`.
             format!(
                 "    for (size_t _ri = 0; _ri < self->{id_snake}_len; ++_ri) {{\n        \
-                     {encoded_t} _sub = {body_encoder}(&self->{id_snake}[_ri]);\n        \
-                     if (r.len + _sub.len <= sizeof(r.bytes)) {{\n            \
-                         for (size_t _rj = 0; _rj < _sub.len; ++_rj) r.bytes[r.len + _rj] = _sub.bytes[_rj];\n            \
-                         r.len += _sub.len;\n        \
-                     }}\n    \
-                 }}"
+                     SCE_FORGE_TRY_WRITE({body_encoder}(&self->{id_snake}[_ri], w));\n    \
+                 }}",
+                body_encoder = body_encoder,
             )
         }
         // Python: iterate `self.<id>` and extend the bytearray with
@@ -4806,19 +4803,13 @@ fn embed_streaming_encode_block(
         }
         Language::C11 => {
             let id_snake = filters::to_snake_case(id.to_string());
-            // Imported codec encode returns `<snake>_encoded_t`. The
-            // body_encoder is `<snake>_encode`; strip the suffix to
-            // form the encoded-type name.
-            let encoded_t = if let Some(stripped) = body_encoder.strip_suffix("_encode") {
-                format!("{stripped}_encoded_t")
-            } else {
-                format!("{body_encoder}_t")
-            };
+            // RFC B1-α: embed encode writes through the parent writer
+            // `w` — no splice via legacy `_encoded_t` struct return.
             // C11 has no nullable wrapper — Y0b gating reads the
             // carrier flag bit directly (present_if_test_literal
             // emits `(self-><carrier> & mask) != 0` for Local scope
             // or `(parent_flags & mask) != 0` for Parent scope).
-            // When the gate is off, the splice is skipped; the
+            // When the gate is off, the write is skipped; the
             // embedded struct's bytes are absent from the wire and
             // the parent struct's nested-struct member retains
             // whatever value the caller initialised it to (typically
@@ -4826,21 +4817,11 @@ fn embed_streaming_encode_block(
             // before decode).
             match &test_lit_c11 {
                 None => format!(
-                    "    {{\n        \
-                         {encoded_t} _sub = {body_encoder}(&self->{id_snake}{thread_arg});\n        \
-                         if (r.len + _sub.len <= sizeof(r.bytes)) {{\n            \
-                             for (size_t _ej = 0; _ej < _sub.len; ++_ej) r.bytes[r.len + _ej] = _sub.bytes[_ej];\n            \
-                             r.len += _sub.len;\n        \
-                         }}\n    \
-                     }}"
+                    "    SCE_FORGE_TRY_WRITE({body_encoder}(&self->{id_snake}, w{thread_arg}));"
                 ),
                 Some(test) => format!(
                     "    if ({test}) {{\n        \
-                         {encoded_t} _sub = {body_encoder}(&self->{id_snake}{thread_arg});\n        \
-                         if (r.len + _sub.len <= sizeof(r.bytes)) {{\n            \
-                             for (size_t _ej = 0; _ej < _sub.len; ++_ej) r.bytes[r.len + _ej] = _sub.bytes[_ej];\n            \
-                             r.len += _sub.len;\n        \
-                         }}\n    \
+                         SCE_FORGE_TRY_WRITE({body_encoder}(&self->{id_snake}, w{thread_arg}));\n    \
                      }}"
                 ),
             }
@@ -5555,19 +5536,10 @@ fn repeat_streaming_encode_block_gated(
                 // a struct member.
                 PresentIfCarrier::Input => filters::to_snake_case(pred.flag_name.clone()),
             };
-            let encoded_t = if let Some(stripped) = body_encoder.strip_suffix("_encode") {
-                format!("{stripped}_encoded_t")
-            } else {
-                format!("{body_encoder}_t")
-            };
             format!(
                 "    if (({test_id} & 0x{mask:0width$X}) {op} 0) {{\n        \
                      for (size_t _ri = 0; _ri < self->{id_snake}_len; ++_ri) {{\n            \
-                         {encoded_t} _sub = {body_encoder}(&self->{id_snake}[_ri]);\n            \
-                         if (r.len + _sub.len <= sizeof(r.bytes)) {{\n                \
-                             for (size_t _rj = 0; _rj < _sub.len; ++_rj) r.bytes[r.len + _rj] = _sub.bytes[_rj];\n                \
-                             r.len += _sub.len;\n            \
-                         }}\n        \
+                         SCE_FORGE_TRY_WRITE({body_encoder}(&self->{id_snake}[_ri], w));\n        \
                      }}\n    \
                  }}",
                 width = hex_digits
@@ -5927,18 +5899,9 @@ fn tlv_chain_streaming_encode_block(
         }
         Language::C11 => {
             let id_snake = filters::to_snake_case(id.to_string());
-            let encoded_t = if let Some(stripped) = body_encoder.strip_suffix("_encode") {
-                format!("{stripped}_encoded_t")
-            } else {
-                format!("{body_encoder}_t")
-            };
             format!(
                 "    for (size_t _ti = 0; _ti < self->{id_snake}_len; ++_ti) {{\n        \
-                     {encoded_t} _sub = {body_encoder}(&self->{id_snake}[_ti]);\n        \
-                     if (r.len + _sub.len <= sizeof(r.bytes)) {{\n            \
-                         for (size_t _tj = 0; _tj < _sub.len; ++_tj) r.bytes[r.len + _tj] = _sub.bytes[_tj];\n            \
-                         r.len += _sub.len;\n        \
-                     }}\n    \
+                     SCE_FORGE_TRY_WRITE({body_encoder}(&self->{id_snake}[_ti], w));\n    \
                  }}"
             )
         }
@@ -6306,19 +6269,10 @@ fn tlv_chain_streaming_encode_block_gated(
             // C11 carrier-bit-as-truth: same loop body as plain
             // (walks `_len` entries), but wrap in a presence test
             // so absent gates skip the write entirely.
-            let encoded_t = if let Some(stripped) = body_encoder.strip_suffix("_encode") {
-                format!("{stripped}_encoded_t")
-            } else {
-                format!("{body_encoder}_t")
-            };
             format!(
                 "    if ({test}) {{\n        \
                      for (size_t _ti = 0; _ti < self->{id_snake}_len; ++_ti) {{\n            \
-                         {encoded_t} _sub = {body_encoder}(&self->{id_snake}[_ti]);\n            \
-                         if (r.len + _sub.len <= sizeof(r.bytes)) {{\n                \
-                             for (size_t _tj = 0; _tj < _sub.len; ++_tj) r.bytes[r.len + _tj] = _sub.bytes[_tj];\n                \
-                             r.len += _sub.len;\n            \
-                         }}\n        \
+                         SCE_FORGE_TRY_WRITE({body_encoder}(&self->{id_snake}[_ti], w));\n        \
                      }}\n    \
                  }}"
             )
@@ -7980,8 +7934,7 @@ fn present_if_encode_tail(
         (Language::C11, false) => {
             let id_snake = filters::to_snake_case(id.to_string());
             format!(
-                "    for (size_t _bi = 0; _bi < self->{id_snake}_len; ++_bi) \
-                 r.bytes[r.len++] = self->{id_snake}[_bi];"
+                "    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->{id_snake}, self->{id_snake}_len));"
             )
         }
         (Language::C11, true) => {
@@ -8000,8 +7953,7 @@ fn present_if_encode_tail(
             let test = present_if_test_literal_encode(fields, p, Language::C11);
             format!(
                 "    if ({test}) {{\n        \
-                     for (size_t _bi = 0; _bi < self->{id_snake}_len; ++_bi) \
-                     r.bytes[r.len++] = self->{id_snake}[_bi];\n    \
+                     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->{id_snake}, self->{id_snake}_len));\n    \
                  }}"
             )
         }
@@ -8126,8 +8078,7 @@ fn present_if_encode_string_length_ref(
         (Language::C11, None) => {
             let id_snake = filters::to_snake_case(id.to_string());
             format!(
-                "    for (size_t _bi = 0; _bi < self->{id_snake}_len; ++_bi) \
-                 r.bytes[r.len++] = (uint8_t)self->{id_snake}[_bi];"
+                "    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, (const uint8_t*)self->{id_snake}, self->{id_snake}_len));"
             )
         }
         // Wire RFC Phase B Y0a — gated String encode on C11: gate the
@@ -8146,8 +8097,7 @@ fn present_if_encode_string_length_ref(
             let test = present_if_test_literal_encode(fields, p, lang);
             format!(
                 "    if ({test}) {{\n        \
-                     for (size_t _bi = 0; _bi < self->{id_snake}_len; ++_bi) \
-                     r.bytes[r.len++] = (uint8_t)self->{id_snake}[_bi];\n    \
+                     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, (const uint8_t*)self->{id_snake}, self->{id_snake}_len));\n    \
                  }}"
             )
         }
@@ -8226,8 +8176,11 @@ fn present_if_encode_length_ref(
             // reuse the same `_n` computation the decode side uses.
             let upper = compute_n_c11_encode(len_field, fields, field.length_arith.unwrap_or(0));
             format!(
-                "    for (size_t _bi = 0; _bi < self->{id_snake}_len && _bi < {upper}; ++_bi) \
-                 r.bytes[r.len++] = self->{id_snake}[_bi];"
+                "    {{\n        \
+                     size_t _n = self->{id_snake}_len;\n        \
+                     if (_n > {upper}) _n = {upper};\n        \
+                     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->{id_snake}, _n));\n    \
+                 }}"
             )
         }
         (Language::C11, true) => {
@@ -8244,8 +8197,9 @@ fn present_if_encode_length_ref(
             let test = present_if_test_literal_encode(fields, p, Language::C11);
             format!(
                 "    if ({test}) {{\n        \
-                     for (size_t _bi = 0; _bi < self->{id_snake}_len && _bi < {upper}; ++_bi) \
-                     r.bytes[r.len++] = self->{id_snake}[_bi];\n    \
+                     size_t _n = self->{id_snake}_len;\n        \
+                     if (_n > {upper}) _n = {upper};\n        \
+                     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->{id_snake}, _n));\n    \
                  }}"
             )
         }
@@ -8766,7 +8720,9 @@ fn streaming_fixed_field_encode_c11(field: &CodecField, default_endian: Endian, 
     let endian = field.effective_endian(default_endian);
     let mut lines = String::new();
     if n == 1 {
-        lines.push_str(&format!("    r.bytes[r.len++] = self->{id_snake};\n"));
+        lines.push_str(&format!(
+            "    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->{id_snake}));\n"
+        ));
     } else {
         for i in 0..n {
             let shift = match endian {
@@ -8775,11 +8731,11 @@ fn streaming_fixed_field_encode_c11(field: &CodecField, default_endian: Endian, 
             };
             if shift == 0 {
                 lines.push_str(&format!(
-                    "    r.bytes[r.len++] = (uint8_t)(self->{id_snake} & 0xFF);\n"
+                    "    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)(self->{id_snake} & 0xFF)));\n"
                 ));
             } else {
                 lines.push_str(&format!(
-                    "    r.bytes[r.len++] = (uint8_t)((self->{id_snake} >> {shift}) & 0xFF);\n"
+                    "    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((self->{id_snake} >> {shift}) & 0xFF)));\n"
                 ));
             }
         }
@@ -8800,7 +8756,9 @@ fn streaming_fixed_field_encode_c11_inner(
     let endian = field.effective_endian(default_endian);
     let mut lines = String::new();
     if n == 1 {
-        lines.push_str(&format!("        r.bytes[r.len++] = self->{id_snake};\n"));
+        lines.push_str(&format!(
+            "        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->{id_snake}));\n"
+        ));
     } else {
         for i in 0..n {
             let shift = match endian {
@@ -8809,11 +8767,11 @@ fn streaming_fixed_field_encode_c11_inner(
             };
             if shift == 0 {
                 lines.push_str(&format!(
-                    "        r.bytes[r.len++] = (uint8_t)(self->{id_snake} & 0xFF);\n"
+                    "        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)(self->{id_snake} & 0xFF)));\n"
                 ));
             } else {
                 lines.push_str(&format!(
-                    "        r.bytes[r.len++] = (uint8_t)((self->{id_snake} >> {shift}) & 0xFF);\n"
+                    "        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((self->{id_snake} >> {shift}) & 0xFF)));\n"
                 ));
             }
         }
@@ -9297,12 +9255,12 @@ fn vle_encode_block(value_expr: &str, width_bits: u32, lang: crate::generator::L
         ),
         Language::C11 => format!(
             "    {{\n        \
-                 uint64_t _w = (uint64_t)({value_expr});\n        \
-                 while (_w >= 0x80u) {{\n            \
-                     r.bytes[r.len++] = (uint8_t)((_w & 0x7Fu) | 0x80u);\n            \
-                     _w >>= 7;\n        \
+                 uint64_t _vle = (uint64_t)({value_expr});\n        \
+                 while (_vle >= 0x80u) {{\n            \
+                     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));\n            \
+                     _vle >>= 7;\n        \
                  }}\n        \
-                 r.bytes[r.len++] = (uint8_t)_w;\n    \
+                 SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));\n    \
              }}"
         ),
         Language::Kotlin => format!(
@@ -10148,10 +10106,13 @@ fn inject_b5_nu_carrier_suffix(
             block.replace(&needle, &replacement)
         }
         Language::C11 => {
-            // `    r.bytes[r.len++] = self-><snake>;` → `    r.bytes[r.len++] = self-><snake> | _derived_<snake>;`
+            // Sink-based emit: `sce_forge_writer_write_u8(w, self-><snake>)`
+            // → `sce_forge_writer_write_u8(w, self-><snake> | _derived_<snake>)`.
+            // The B5-ν derivation v1 lock-in only targets uint8 carriers,
+            // so the n=1 form is the only relevant needle.
             let snake = filters::to_snake_case(field_id.to_string());
-            let needle = format!("r.bytes[r.len++] = self->{snake};");
-            let replacement = format!("r.bytes[r.len++] = self->{snake}{or_suffix};");
+            let needle = format!("sce_forge_writer_write_u8(w, self->{snake}));");
+            let replacement = format!("sce_forge_writer_write_u8(w, self->{snake}{or_suffix}));");
             block.replace(&needle, &replacement)
         }
         Language::Python => {
@@ -13538,8 +13499,8 @@ fn render_procedure_c_l2(
     //
     // `import_wrappers` is gated on `imp.kind == "codec"` so a filter (or
     // any other non-codec stateful import) does not emit a stale
-    // `_encode` wrapper that would reference a non-existent
-    // `<snake>_encoded_t` typedef.
+    // `_encode` wrapper that would reference a non-existent codec
+    // function.
     let import_wrappers: Vec<serde_json::Value> = imports
         .iter()
         .filter(|imp| imp.is_stateful && imp.kind.as_str() == "codec")
@@ -13548,7 +13509,6 @@ fn render_procedure_c_l2(
             serde_json::json!({
                 "wrapper_encode": format!("{}_encode", wrapper_prefix),
                 "codec_struct_t": format!("{}_t", imp.namespace),
-                "codec_encoded_t": format!("{}_encoded_t", imp.namespace),
                 "codec_encode_fn": format!("{}_encode", imp.namespace),
             })
         })
@@ -16235,7 +16195,6 @@ fn render_inline_codec_member(
             let id_snake = filters::to_snake_case(id.to_string());
             let id_upper = id_snake.to_uppercase();
             let struct_typedef = format!("{sm_snake}_{id_snake}_t");
-            let encoded_typedef = format!("{sm_snake}_{id_snake}_encoded_t");
             let decode_func = format!("{sm_snake}_{id_snake}_decode");
             let encode_func = format!("{sm_snake}_{id_snake}_encode");
             let min_macro = format!("{sm_upper}_{id_upper}_MIN_BYTES");
@@ -16253,11 +16212,6 @@ fn render_inline_codec_member(
             }
             code.push_str(&format!("}} {struct_typedef};\n\n"));
 
-            code.push_str("typedef struct {\n");
-            code.push_str(&format!("    uint8_t bytes[{max_macro}];\n"));
-            code.push_str("    size_t  len;\n");
-            code.push_str(&format!("}} {encoded_typedef};\n\n"));
-
             code.push_str(&format!(
                 "static inline sce_forge_codec_status_t {decode_func}(sce_forge_cursor_t *cursor, {struct_typedef} *out) {{\n\
                  \x20   const uint8_t *raw = sce_forge_cursor_peek(cursor, {min_macro});\n\
@@ -16273,16 +16227,20 @@ fn render_inline_codec_member(
                  \x20   return SCE_FORGE_CODEC_OK;\n}}\n\n"
             ));
 
+            // RFC §5.B B1-α: writer-based inline encode mirrors the
+            // standalone codec.h.jinja2 shape — write each fixed-prefix
+            // byte through `sce_forge_writer_write_u8` and propagate
+            // overflow via `SCE_FORGE_TRY_WRITE`.
             let encode_exprs = generate_encode_exprs(codec_fields, default_endian, Language::C11);
             code.push_str(&format!(
-                "static inline {encoded_typedef} {encode_func}(const {struct_typedef} *self) {{\n\
-                 \x20   {encoded_typedef} r;\n\
-                 \x20   r.len = {min_macro};\n"
+                "static inline sce_forge_codec_status_t {encode_func}(const {struct_typedef} *self, sce_forge_writer_t *w) {{\n"
             ));
-            for (i, expr_str) in encode_exprs.iter().enumerate() {
-                code.push_str(&format!("    r.bytes[{i}] = {expr_str};\n"));
+            for expr_str in encode_exprs.iter() {
+                code.push_str(&format!(
+                    "    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, {expr_str}));\n"
+                ));
             }
-            code.push_str("    return r;\n}");
+            code.push_str("    return SCE_FORGE_CODEC_OK;\n}");
             Ok((String::new(), code))
         }
     }
@@ -18797,8 +18755,18 @@ fn render_codec_test_vector_sidecar(
     );
 
     if matches!(lang, Language::C11) {
-        let guard = format!("SCE_FORGE_{}_TEST_H", to_upper_snake(&m.name));
+        let upper = to_upper_snake(&m.name);
+        let guard = format!("SCE_FORGE_{}_TEST_H", upper);
         ctx.insert("guard".into(), guard.into());
+        // RFC §5.B B1-α writer facade: surface the codec's worst-case
+        // byte count macro so the sidecar's stack buffer is sized
+        // exactly to `{NAME}_MAX_BYTES` (the same macro the codec
+        // header defines). Hoists per-template `to_upper_snake` math
+        // out of jinja into Rust.
+        ctx.insert(
+            "max_bytes_macro".into(),
+            format!("{upper}_MAX_BYTES").into(),
+        );
     }
 
     let l = LangCtx::new(lang);

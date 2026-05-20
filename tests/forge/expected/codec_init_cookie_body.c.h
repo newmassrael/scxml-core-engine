@@ -25,11 +25,6 @@ typedef struct {
     size_t  cookie_len;
 } codec_init_cookie_body_t;
 
-typedef struct {
-    uint8_t bytes[CODEC_INIT_COOKIE_BODY_MAX_BYTES];
-    size_t  len;
-} codec_init_cookie_body_encoded_t;
-
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
  * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
  * (without advancing) when the cursor's tail is shorter than the
@@ -79,31 +74,51 @@ static inline sce_forge_codec_status_t codec_init_cookie_body_decode(sce_forge_c
     return SCE_FORGE_CODEC_OK;
 }
 
-static inline codec_init_cookie_body_encoded_t codec_init_cookie_body_encode(const codec_init_cookie_body_t *self, uint8_t a) {
+/* RFC §5.B B1-α encode-side primary: write `*self` into the caller-
+ * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
+ * Callers either pre-reserve CODEC_INIT_COOKIE_BODY_MAX_BYTES bytes and use
+ * `codec_init_cookie_body_encode_to_buf` (below), or run the writer themselves
+ * for coalesced-send paths. */
+static inline sce_forge_codec_status_t codec_init_cookie_body_encode(const codec_init_cookie_body_t *self, sce_forge_writer_t *w, uint8_t a) {
     /* RFC Axis-1 inversion: see decode — same suppress per input. */
     (void)a;
-    codec_init_cookie_body_encoded_t r;
     /* RFC §5.B B1-δ + B2-β present-if encode: per-field byte append.
      * Gated fields skip the append when the carrier's flag bit is
      * clear. Per-field `is_repeat` / `is_tlv_chain` route to dedicated
      * helpers. Branch fires before has_vle_fields so a codec mixing
      * VLE + present-if uses the unified encode path. */
-    r.len = 0;
-    r.bytes[r.len++] = self->version;
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->version));
     if ((a & 0x01) != 0) {
     {
-        uint64_t _w = (uint64_t)(self->cookie_size);
-        while (_w >= 0x80u) {
-            r.bytes[r.len++] = (uint8_t)((_w & 0x7Fu) | 0x80u);
-            _w >>= 7;
+        uint64_t _vle = (uint64_t)(self->cookie_size);
+        while (_vle >= 0x80u) {
+            SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
+            _vle >>= 7;
         }
-        r.bytes[r.len++] = (uint8_t)_w;
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
     }
     }
     if ((a & 0x01) != 0) {
-        for (size_t _bi = 0; _bi < self->cookie_len && _bi < self->cookie_size; ++_bi) r.bytes[r.len++] = self->cookie[_bi];
+        size_t _n = self->cookie_len;
+        if (_n > self->cookie_size) _n = self->cookie_size;
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->cookie, _n));
     }
-    return r;
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* Heap-free convenience facade: wrap the caller-owned `buf` + `cap`
+ * in a writer, run the primary encode, and report the resulting byte
+ * count via `*out_len`. Returns SCE_FORGE_CODEC_OK on success;
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW when `cap < CODEC_INIT_COOKIE_BODY_MAX_BYTES`
+ * was insufficient for this codec's wire bytes. Worst-case bound is
+ * `CODEC_INIT_COOKIE_BODY_MAX_BYTES` — callers sizing `buf` accordingly never
+ * see overflow. */
+static inline sce_forge_codec_status_t codec_init_cookie_body_encode_to_buf(const codec_init_cookie_body_t *self, uint8_t *buf, size_t cap, size_t *out_len, uint8_t a) {
+    sce_forge_writer_t _w = sce_forge_writer_init_buf(buf, cap);
+    sce_forge_codec_status_t _st = codec_init_cookie_body_encode(self, &_w, a);
+    *out_len = _w.pos;
+    return _st;
 }
 
 #endif  /* SCE_FORGE_CODEC_INIT_COOKIE_BODY_H */

@@ -60,11 +60,6 @@ typedef struct {
     }, \
 }
 
-typedef struct {
-    uint8_t bytes[CODEC_VARIANT_DISPATCH_MAX_BYTES];
-    size_t  len;
-} codec_variant_dispatch_encoded_t;
-
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
  * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
  * (without advancing) when the cursor's tail is shorter than the
@@ -102,42 +97,45 @@ static inline sce_forge_codec_status_t codec_variant_dispatch_decode(sce_forge_c
     return SCE_FORGE_CODEC_OK;
 }
 
-static inline codec_variant_dispatch_encoded_t codec_variant_dispatch_encode(const codec_variant_dispatch_t *self) {
-    codec_variant_dispatch_encoded_t r;
+/* RFC §5.B B1-α encode-side primary: write `*self` into the caller-
+ * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
+ * Callers either pre-reserve CODEC_VARIANT_DISPATCH_MAX_BYTES bytes and use
+ * `codec_variant_dispatch_encode_to_buf` (below), or run the writer themselves
+ * for coalesced-send paths. */
+static inline sce_forge_codec_status_t codec_variant_dispatch_encode(const codec_variant_dispatch_t *self, sce_forge_writer_t *w) {
     /* Encode fixed prefix (tag field bytes are part of the prefix).
      * The tag value is read from the struct field, NOT derived from
      * the body discriminant — keeping author-set tag / body in sync
      * is the caller's responsibility (v1 keeps the layout simple). */
-    r.len = CODEC_VARIANT_DISPATCH_MIN_BYTES;
-    r.bytes[0] = self->msg_id;
-    /* Append the active arm body's encoded bytes. */
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->msg_id));
+    /* Append the active arm body's encoded bytes via the same writer. */
     switch (self->body.kind) {
-        case CODEC_VARIANT_DISPATCH_BODY_KIND_CODEC_VARIANT_SESSION_OPEN: {
-            codec_variant_session_open_encoded_t _sub = codec_variant_session_open_encode(&self->body.arm.codec_variant_session_open);
-            if (r.len + _sub.len <= CODEC_VARIANT_DISPATCH_MAX_BYTES) {
-                for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
-                r.len += _sub.len;
-            }
+        case CODEC_VARIANT_DISPATCH_BODY_KIND_CODEC_VARIANT_SESSION_OPEN:
+            SCE_FORGE_TRY_WRITE(codec_variant_session_open_encode(&self->body.arm.codec_variant_session_open, w));
             break;
-        }
-        case CODEC_VARIANT_DISPATCH_BODY_KIND_CODEC_VARIANT_SESSION_CLOSE: {
-            codec_variant_session_close_encoded_t _sub = codec_variant_session_close_encode(&self->body.arm.codec_variant_session_close);
-            if (r.len + _sub.len <= CODEC_VARIANT_DISPATCH_MAX_BYTES) {
-                for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
-                r.len += _sub.len;
-            }
+        case CODEC_VARIANT_DISPATCH_BODY_KIND_CODEC_VARIANT_SESSION_CLOSE:
+            SCE_FORGE_TRY_WRITE(codec_variant_session_close_encode(&self->body.arm.codec_variant_session_close, w));
             break;
-        }
-        case CODEC_VARIANT_DISPATCH_BODY_KIND_DEFAULT: {
-            codec_variant_session_close_encoded_t _sub = codec_variant_session_close_encode(&self->body.arm.default_body);
-            if (r.len + _sub.len <= CODEC_VARIANT_DISPATCH_MAX_BYTES) {
-                for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
-                r.len += _sub.len;
-            }
+        case CODEC_VARIANT_DISPATCH_BODY_KIND_DEFAULT:
+            SCE_FORGE_TRY_WRITE(codec_variant_session_close_encode(&self->body.arm.default_body, w));
             break;
-        }
     }
-    return r;
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* Heap-free convenience facade: wrap the caller-owned `buf` + `cap`
+ * in a writer, run the primary encode, and report the resulting byte
+ * count via `*out_len`. Returns SCE_FORGE_CODEC_OK on success;
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW when `cap < CODEC_VARIANT_DISPATCH_MAX_BYTES`
+ * was insufficient for this codec's wire bytes. Worst-case bound is
+ * `CODEC_VARIANT_DISPATCH_MAX_BYTES` — callers sizing `buf` accordingly never
+ * see overflow. */
+static inline sce_forge_codec_status_t codec_variant_dispatch_encode_to_buf(const codec_variant_dispatch_t *self, uint8_t *buf, size_t cap, size_t *out_len) {
+    sce_forge_writer_t _w = sce_forge_writer_init_buf(buf, cap);
+    sce_forge_codec_status_t _st = codec_variant_dispatch_encode(self, &_w);
+    *out_len = _w.pos;
+    return _st;
 }
 
 #endif  /* SCE_FORGE_CODEC_VARIANT_DISPATCH_H */

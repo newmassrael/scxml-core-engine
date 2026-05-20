@@ -614,22 +614,22 @@ fn assert_inline_codec_structural(
                 "C11: missing payload typedef"
             );
             assert!(
-                member_fns.contains("} inline_codec_frame_encoded_t;"),
-                "C11: missing encoded envelope typedef"
-            );
-            assert!(
                 member_fns.contains(
                     "static inline sce_forge_codec_status_t inline_codec_frame_decode(\
                  sce_forge_cursor_t *cursor, inline_codec_frame_t *out)"
                 ),
                 "C11: missing cursor-based decode signature"
             );
+            // RFC §5.B B1-α writer-based encode: signature now takes a
+            // caller-owned `sce_forge_writer_t *w` and returns
+            // `sce_forge_codec_status_t`; the legacy `_encoded_t`
+            // envelope typedef no longer exists.
             assert!(
                 member_fns.contains(
-                    "static inline inline_codec_frame_encoded_t \
-                 inline_codec_frame_encode(const inline_codec_frame_t *self)"
+                    "static inline sce_forge_codec_status_t inline_codec_frame_encode(\
+                 const inline_codec_frame_t *self, sce_forge_writer_t *w)"
                 ),
-                "C11: missing encode signature"
+                "C11: missing writer-based encode signature"
             );
             // self->{snake} member access on encode side
             assert!(

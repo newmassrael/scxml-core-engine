@@ -75,11 +75,6 @@ typedef struct {
     }, \
 }
 
-typedef struct {
-    uint8_t bytes[CODEC_TRANSPORT_ENVELOPE_MAX_BYTES];
-    size_t  len;
-} codec_transport_envelope_encoded_t;
-
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
  * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
  * (without advancing) when the cursor's tail is shorter than the
@@ -142,82 +137,60 @@ static inline sce_forge_codec_status_t codec_transport_envelope_decode(sce_forge
     return SCE_FORGE_CODEC_OK;
 }
 
-static inline codec_transport_envelope_encoded_t codec_transport_envelope_encode(const codec_transport_envelope_t *self) {
-    codec_transport_envelope_encoded_t r;
+/* RFC §5.B B1-α encode-side primary: write `*self` into the caller-
+ * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
+ * Callers either pre-reserve CODEC_TRANSPORT_ENVELOPE_MAX_BYTES bytes and use
+ * `codec_transport_envelope_encode_to_buf` (below), or run the writer themselves
+ * for coalesced-send paths. */
+static inline sce_forge_codec_status_t codec_transport_envelope_encode(const codec_transport_envelope_t *self, sce_forge_writer_t *w) {
     /* Encode fixed prefix (tag field bytes are part of the prefix).
      * The tag value is read from the struct field, NOT derived from
      * the body discriminant — keeping author-set tag / body in sync
      * is the caller's responsibility (v1 keeps the layout simple). */
-    r.len = CODEC_TRANSPORT_ENVELOPE_MIN_BYTES;
-    r.bytes[0] = self->header;
-    /* Append the active arm body's encoded bytes. */
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->header));
+    /* Append the active arm body's encoded bytes via the same writer. */
     switch (self->body.kind) {
-        case CODEC_TRANSPORT_ENVELOPE_BODY_KIND_CODEC_ZENOH_INIT_BODY: {
-            codec_zenoh_init_body_encoded_t _sub = codec_zenoh_init_body_encode(&self->body.arm.codec_zenoh_init_body, (uint8_t)((self->header >> 6) & 0x1), (uint8_t)((self->header >> 5) & 0x1));
-            if (r.len + _sub.len <= CODEC_TRANSPORT_ENVELOPE_MAX_BYTES) {
-                for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
-                r.len += _sub.len;
-            }
+        case CODEC_TRANSPORT_ENVELOPE_BODY_KIND_CODEC_ZENOH_INIT_BODY:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_init_body_encode(&self->body.arm.codec_zenoh_init_body, w, (uint8_t)((self->header >> 6) & 0x1), (uint8_t)((self->header >> 5) & 0x1)));
             break;
-        }
-        case CODEC_TRANSPORT_ENVELOPE_BODY_KIND_CODEC_ZENOH_OPEN_BODY: {
-            codec_zenoh_open_body_encoded_t _sub = codec_zenoh_open_body_encode(&self->body.arm.codec_zenoh_open_body, (uint8_t)((self->header >> 5) & 0x1));
-            if (r.len + _sub.len <= CODEC_TRANSPORT_ENVELOPE_MAX_BYTES) {
-                for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
-                r.len += _sub.len;
-            }
+        case CODEC_TRANSPORT_ENVELOPE_BODY_KIND_CODEC_ZENOH_OPEN_BODY:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_open_body_encode(&self->body.arm.codec_zenoh_open_body, w, (uint8_t)((self->header >> 5) & 0x1)));
             break;
-        }
-        case CODEC_TRANSPORT_ENVELOPE_BODY_KIND_CODEC_ZENOH_CLOSE: {
-            codec_zenoh_close_encoded_t _sub = codec_zenoh_close_encode(&self->body.arm.codec_zenoh_close);
-            if (r.len + _sub.len <= CODEC_TRANSPORT_ENVELOPE_MAX_BYTES) {
-                for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
-                r.len += _sub.len;
-            }
+        case CODEC_TRANSPORT_ENVELOPE_BODY_KIND_CODEC_ZENOH_CLOSE:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_close_encode(&self->body.arm.codec_zenoh_close, w));
             break;
-        }
-        case CODEC_TRANSPORT_ENVELOPE_BODY_KIND_CODEC_ZENOH_KEEP_ALIVE: {
-            codec_zenoh_keep_alive_encoded_t _sub = codec_zenoh_keep_alive_encode(&self->body.arm.codec_zenoh_keep_alive);
-            if (r.len + _sub.len <= CODEC_TRANSPORT_ENVELOPE_MAX_BYTES) {
-                for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
-                r.len += _sub.len;
-            }
+        case CODEC_TRANSPORT_ENVELOPE_BODY_KIND_CODEC_ZENOH_KEEP_ALIVE:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_keep_alive_encode(&self->body.arm.codec_zenoh_keep_alive, w));
             break;
-        }
-        case CODEC_TRANSPORT_ENVELOPE_BODY_KIND_CODEC_ZENOH_FRAME: {
-            codec_zenoh_frame_encoded_t _sub = codec_zenoh_frame_encode(&self->body.arm.codec_zenoh_frame);
-            if (r.len + _sub.len <= CODEC_TRANSPORT_ENVELOPE_MAX_BYTES) {
-                for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
-                r.len += _sub.len;
-            }
+        case CODEC_TRANSPORT_ENVELOPE_BODY_KIND_CODEC_ZENOH_FRAME:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_frame_encode(&self->body.arm.codec_zenoh_frame, w));
             break;
-        }
-        case CODEC_TRANSPORT_ENVELOPE_BODY_KIND_CODEC_ZENOH_FRAGMENT: {
-            codec_zenoh_fragment_encoded_t _sub = codec_zenoh_fragment_encode(&self->body.arm.codec_zenoh_fragment);
-            if (r.len + _sub.len <= CODEC_TRANSPORT_ENVELOPE_MAX_BYTES) {
-                for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
-                r.len += _sub.len;
-            }
+        case CODEC_TRANSPORT_ENVELOPE_BODY_KIND_CODEC_ZENOH_FRAGMENT:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_fragment_encode(&self->body.arm.codec_zenoh_fragment, w));
             break;
-        }
-        case CODEC_TRANSPORT_ENVELOPE_BODY_KIND_CODEC_ZENOH_JOIN: {
-            codec_zenoh_join_encoded_t _sub = codec_zenoh_join_encode(&self->body.arm.codec_zenoh_join, (uint8_t)((self->header >> 6) & 0x1));
-            if (r.len + _sub.len <= CODEC_TRANSPORT_ENVELOPE_MAX_BYTES) {
-                for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
-                r.len += _sub.len;
-            }
+        case CODEC_TRANSPORT_ENVELOPE_BODY_KIND_CODEC_ZENOH_JOIN:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_join_encode(&self->body.arm.codec_zenoh_join, w, (uint8_t)((self->header >> 6) & 0x1)));
             break;
-        }
-        case CODEC_TRANSPORT_ENVELOPE_BODY_KIND_DEFAULT: {
-            codec_zenoh_close_encoded_t _sub = codec_zenoh_close_encode(&self->body.arm.default_body);
-            if (r.len + _sub.len <= CODEC_TRANSPORT_ENVELOPE_MAX_BYTES) {
-                for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
-                r.len += _sub.len;
-            }
+        case CODEC_TRANSPORT_ENVELOPE_BODY_KIND_DEFAULT:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_close_encode(&self->body.arm.default_body, w));
             break;
-        }
     }
-    return r;
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* Heap-free convenience facade: wrap the caller-owned `buf` + `cap`
+ * in a writer, run the primary encode, and report the resulting byte
+ * count via `*out_len`. Returns SCE_FORGE_CODEC_OK on success;
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW when `cap < CODEC_TRANSPORT_ENVELOPE_MAX_BYTES`
+ * was insufficient for this codec's wire bytes. Worst-case bound is
+ * `CODEC_TRANSPORT_ENVELOPE_MAX_BYTES` — callers sizing `buf` accordingly never
+ * see overflow. */
+static inline sce_forge_codec_status_t codec_transport_envelope_encode_to_buf(const codec_transport_envelope_t *self, uint8_t *buf, size_t cap, size_t *out_len) {
+    sce_forge_writer_t _w = sce_forge_writer_init_buf(buf, cap);
+    sce_forge_codec_status_t _st = codec_transport_envelope_encode(self, &_w);
+    *out_len = _w.pos;
+    return _st;
 }
 
 /* RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over

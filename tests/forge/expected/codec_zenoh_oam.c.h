@@ -70,11 +70,6 @@ typedef struct {
     }, \
 }
 
-typedef struct {
-    uint8_t bytes[CODEC_ZENOH_OAM_MAX_BYTES];
-    size_t  len;
-} codec_zenoh_oam_encoded_t;
-
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
  * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
  * (without advancing) when the cursor's tail is shorter than the
@@ -140,69 +135,63 @@ static inline sce_forge_codec_status_t codec_zenoh_oam_decode(sce_forge_cursor_t
     return SCE_FORGE_CODEC_OK;
 }
 
-static inline codec_zenoh_oam_encoded_t codec_zenoh_oam_encode(const codec_zenoh_oam_t *self) {
-    codec_zenoh_oam_encoded_t r;
+/* RFC §5.B B1-α encode-side primary: write `*self` into the caller-
+ * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
+ * Callers either pre-reserve CODEC_ZENOH_OAM_MAX_BYTES bytes and use
+ * `codec_zenoh_oam_encode_to_buf` (below), or run the writer themselves
+ * for coalesced-send paths. */
+static inline sce_forge_codec_status_t codec_zenoh_oam_encode(const codec_zenoh_oam_t *self, sce_forge_writer_t *w) {
     /* RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
      * streaming prefix encode. Peek-byte mode: arm body's encode
      * prepends its own header byte (which the decoder peeked); no
      * separate tag byte here. Streaming-prefix mode (own-field):
      * carrier is part of the prefix fields and emits via the same
      * per-field path. */
-    r.len = 0;
-    r.bytes[r.len++] = self->header;
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->header));
     {
-        uint64_t _w = (uint64_t)(self->id);
-        while (_w >= 0x80u) {
-            r.bytes[r.len++] = (uint8_t)((_w & 0x7Fu) | 0x80u);
-            _w >>= 7;
+        uint64_t _vle = (uint64_t)(self->id);
+        while (_vle >= 0x80u) {
+            SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
+            _vle >>= 7;
         }
-        r.bytes[r.len++] = (uint8_t)_w;
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
     }
     if ((self->header & 0x80) != 0) {
         for (size_t _ti = 0; _ti < self->extensions_len; ++_ti) {
-            codec_zenoh_ext_entry_encoded_t _sub = codec_zenoh_ext_entry_encode(&self->extensions[_ti]);
-            if (r.len + _sub.len <= sizeof(r.bytes)) {
-                for (size_t _tj = 0; _tj < _sub.len; ++_tj) r.bytes[r.len + _tj] = _sub.bytes[_tj];
-                r.len += _sub.len;
-            }
+            SCE_FORGE_TRY_WRITE(codec_zenoh_ext_entry_encode(&self->extensions[_ti], w));
         }
     }
-    /* Append the active arm body's encoded bytes. */
+    /* Append the active arm body's encoded bytes via the same writer. */
     switch (self->body.kind) {
-        case CODEC_ZENOH_OAM_BODY_KIND_CODEC_ZENOH_EXT_UNIT: {
-            codec_zenoh_ext_unit_encoded_t _sub = codec_zenoh_ext_unit_encode(&self->body.arm.codec_zenoh_ext_unit);
-            if (r.len + _sub.len <= CODEC_ZENOH_OAM_MAX_BYTES) {
-                for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
-                r.len += _sub.len;
-            }
+        case CODEC_ZENOH_OAM_BODY_KIND_CODEC_ZENOH_EXT_UNIT:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_ext_unit_encode(&self->body.arm.codec_zenoh_ext_unit, w));
             break;
-        }
-        case CODEC_ZENOH_OAM_BODY_KIND_CODEC_ZENOH_EXT_ZINT: {
-            codec_zenoh_ext_zint_encoded_t _sub = codec_zenoh_ext_zint_encode(&self->body.arm.codec_zenoh_ext_zint);
-            if (r.len + _sub.len <= CODEC_ZENOH_OAM_MAX_BYTES) {
-                for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
-                r.len += _sub.len;
-            }
+        case CODEC_ZENOH_OAM_BODY_KIND_CODEC_ZENOH_EXT_ZINT:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_ext_zint_encode(&self->body.arm.codec_zenoh_ext_zint, w));
             break;
-        }
-        case CODEC_ZENOH_OAM_BODY_KIND_CODEC_ZENOH_EXT_ZBUF: {
-            codec_zenoh_ext_zbuf_encoded_t _sub = codec_zenoh_ext_zbuf_encode(&self->body.arm.codec_zenoh_ext_zbuf);
-            if (r.len + _sub.len <= CODEC_ZENOH_OAM_MAX_BYTES) {
-                for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
-                r.len += _sub.len;
-            }
+        case CODEC_ZENOH_OAM_BODY_KIND_CODEC_ZENOH_EXT_ZBUF:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_ext_zbuf_encode(&self->body.arm.codec_zenoh_ext_zbuf, w));
             break;
-        }
-        case CODEC_ZENOH_OAM_BODY_KIND_DEFAULT: {
-            codec_zenoh_ext_unit_encoded_t _sub = codec_zenoh_ext_unit_encode(&self->body.arm.default_body);
-            if (r.len + _sub.len <= CODEC_ZENOH_OAM_MAX_BYTES) {
-                for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
-                r.len += _sub.len;
-            }
+        case CODEC_ZENOH_OAM_BODY_KIND_DEFAULT:
+            SCE_FORGE_TRY_WRITE(codec_zenoh_ext_unit_encode(&self->body.arm.default_body, w));
             break;
-        }
     }
-    return r;
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* Heap-free convenience facade: wrap the caller-owned `buf` + `cap`
+ * in a writer, run the primary encode, and report the resulting byte
+ * count via `*out_len`. Returns SCE_FORGE_CODEC_OK on success;
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW when `cap < CODEC_ZENOH_OAM_MAX_BYTES`
+ * was insufficient for this codec's wire bytes. Worst-case bound is
+ * `CODEC_ZENOH_OAM_MAX_BYTES` — callers sizing `buf` accordingly never
+ * see overflow. */
+static inline sce_forge_codec_status_t codec_zenoh_oam_encode_to_buf(const codec_zenoh_oam_t *self, uint8_t *buf, size_t cap, size_t *out_len) {
+    sce_forge_writer_t _w = sce_forge_writer_init_buf(buf, cap);
+    sce_forge_codec_status_t _st = codec_zenoh_oam_encode(self, &_w);
+    *out_len = _w.pos;
+    return _st;
 }
 
 /* RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over

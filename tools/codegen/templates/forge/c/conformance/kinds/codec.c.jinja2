@@ -2,8 +2,8 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
 {# Codec kind — round-trip { decoded, encoded } cases. C11 uses the
-   header's `<f.name>_t` struct + `<f.name>_encoded_t` β-shape return
-   from encode() and cursor-based status decode() per RFC §5.B L494-519.
+   header's `<f.name>_t` struct + writer-based encode() per RFC §5.B
+   B1-α + cursor-based status decode() per RFC §5.B L494-519.
 
    Bytes / String fields surface as a buffer + len pair on both the
    case struct and the codec struct (V1β); they assign via `memcpy`
@@ -93,12 +93,15 @@ static void test_{{ f.name }}(void) {
         val.{{ field.name | to_snake_case }} = cases[i].input_{{ field.name | to_snake_case }};
 {% endif %}
 {% endfor %}
-        {{ f.name }}_encoded_t encoded = {{ f.name }}_encode(&val);
-        if (encoded.len != cases[i].expected_len ||
-            memcmp(encoded.bytes, cases[i].expected_bytes, cases[i].expected_len) != 0) {
+        uint8_t encoded_buf[{{ f.name | to_upper_snake_case }}_MAX_BYTES];
+        size_t encoded_len = 0;
+        sce_forge_codec_status_t _enc_st = {{ f.name }}_encode_to_buf(&val, encoded_buf, sizeof(encoded_buf), &encoded_len);
+        if (_enc_st != SCE_FORGE_CODEC_OK ||
+            encoded_len != cases[i].expected_len ||
+            memcmp(encoded_buf, cases[i].expected_bytes, cases[i].expected_len) != 0) {
             fprintf(stderr,
                 "FAIL: {{ f.name }} case %zu encode: len actual=%zu expected=%zu\n",
-                i, encoded.len, cases[i].expected_len);
+                i, encoded_len, cases[i].expected_len);
             ++g_failures;
             continue;
         }

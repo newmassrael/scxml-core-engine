@@ -16,14 +16,17 @@ static inline int test_vector_codec_length_ref_dotted_basic(void) {
         {
             actual.payload_len = 0;
         }
-        codec_length_ref_dotted_basic_encoded_t encoded = codec_length_ref_dotted_basic_encode(&actual);
+        uint8_t _encoded_buf[CODEC_LENGTH_REF_DOTTED_BASIC_MAX_BYTES];
+        size_t _encoded_len = 0;
+        sce_forge_codec_status_t _enc_st = codec_length_ref_dotted_basic_encode_to_buf(&actual, _encoded_buf, sizeof(_encoded_buf), &_encoded_len);
+        (void)_enc_st;
         static const uint8_t _expected[] = { 0x00 };
-        if (encoded.len != sizeof _expected
-            || memcmp(encoded.bytes, _expected, encoded.len) != 0) {
+        if (_encoded_len != sizeof _expected
+            || memcmp(_encoded_buf, _expected, _encoded_len) != 0) {
             fprintf(stderr,
                 "FAIL: codec_length_ref_dotted_basic test_vector @SCXML L41: "
                 "encode length=%zu (expected %zu)\n",
-                encoded.len, sizeof _expected);
+                _encoded_len, sizeof _expected);
             ++failures;
         }
         sce_forge_cursor_t _cursor = sce_forge_cursor_init(_expected, sizeof _expected);
@@ -66,14 +69,17 @@ static inline int test_vector_codec_length_ref_dotted_basic(void) {
             memcpy(actual.payload, _bytes, sizeof _bytes);
             actual.payload_len = sizeof _bytes;
         }
-        codec_length_ref_dotted_basic_encoded_t encoded = codec_length_ref_dotted_basic_encode(&actual);
+        uint8_t _encoded_buf[CODEC_LENGTH_REF_DOTTED_BASIC_MAX_BYTES];
+        size_t _encoded_len = 0;
+        sce_forge_codec_status_t _enc_st = codec_length_ref_dotted_basic_encode_to_buf(&actual, _encoded_buf, sizeof(_encoded_buf), &_encoded_len);
+        (void)_enc_st;
         static const uint8_t _expected[] = { 0x21, 0xaa, 0xbb };
-        if (encoded.len != sizeof _expected
-            || memcmp(encoded.bytes, _expected, encoded.len) != 0) {
+        if (_encoded_len != sizeof _expected
+            || memcmp(_encoded_buf, _expected, _encoded_len) != 0) {
             fprintf(stderr,
                 "FAIL: codec_length_ref_dotted_basic test_vector @SCXML L45: "
                 "encode length=%zu (expected %zu)\n",
-                encoded.len, sizeof _expected);
+                _encoded_len, sizeof _expected);
             ++failures;
         }
         sce_forge_cursor_t _cursor = sce_forge_cursor_init(_expected, sizeof _expected);
@@ -119,14 +125,17 @@ static inline int test_vector_codec_length_ref_dotted_basic(void) {
             memcpy(actual.payload, _bytes, sizeof _bytes);
             actual.payload_len = sizeof _bytes;
         }
-        codec_length_ref_dotted_basic_encoded_t encoded = codec_length_ref_dotted_basic_encode(&actual);
+        uint8_t _encoded_buf[CODEC_LENGTH_REF_DOTTED_BASIC_MAX_BYTES];
+        size_t _encoded_len = 0;
+        sce_forge_codec_status_t _enc_st = codec_length_ref_dotted_basic_encode_to_buf(&actual, _encoded_buf, sizeof(_encoded_buf), &_encoded_len);
+        (void)_enc_st;
         static const uint8_t _expected[] = { 0xf5, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e };
-        if (encoded.len != sizeof _expected
-            || memcmp(encoded.bytes, _expected, encoded.len) != 0) {
+        if (_encoded_len != sizeof _expected
+            || memcmp(_encoded_buf, _expected, _encoded_len) != 0) {
             fprintf(stderr,
                 "FAIL: codec_length_ref_dotted_basic test_vector @SCXML L49: "
                 "encode length=%zu (expected %zu)\n",
-                encoded.len, sizeof _expected);
+                _encoded_len, sizeof _expected);
             ++failures;
         }
         sce_forge_cursor_t _cursor = sce_forge_cursor_init(_expected, sizeof _expected);

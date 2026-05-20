@@ -146,18 +146,6 @@ typedef struct {
 }
 
 {% endif %}
-typedef struct {
-{% if has_no_fields %}
-    /* RFC §5.B B5-α empty body — C11 forbids zero-length arrays so the
-     * placeholder is `bytes[1]`; the encoder sets `len = 0` and never
-     * writes to `bytes`, so callers read 0 bytes from the wire. */
-    uint8_t bytes[1];
-{% else %}
-    uint8_t bytes[{{ c_max_bytes_macro }}];
-{% endif %}
-    size_t  len;
-} {{ c_encoded_typedef }};
-
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
  * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
  * (without advancing) when the cursor's tail is shorter than the
@@ -372,7 +360,13 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
 {% endif %}
 }
 
-static inline {{ c_encoded_typedef }} {{ c_encode_func }}(const {{ c_struct_typedef }} *self{{ params_after_first_arg }}) {
+/* RFC §5.B B1-α encode-side primary: write `*self` into the caller-
+ * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
+ * Callers either pre-reserve {{ c_max_bytes_macro }} bytes and use
+ * `{{ c_encode_to_buf_func }}` (below), or run the writer themselves
+ * for coalesced-send paths. */
+static inline sce_forge_codec_status_t {{ c_encode_func }}(const {{ c_struct_typedef }} *self, sce_forge_writer_t *w{{ params_after_first_arg }}) {
 {% if has_parent_flags %}
     /* RFC §5.B B5-γ: see decode — same parameter, same suppress. */
     (void)parent_flags;
@@ -381,7 +375,6 @@ static inline {{ c_encoded_typedef }} {{ c_encode_func }}(const {{ c_struct_type
     /* RFC Axis-1 inversion: see decode — same suppress per input. */
 {{ flag_input_unused_suppress }}
 {% endif %}
-    {{ c_encoded_typedef }} r;
 {% if has_parent_tag_derivation %}
     /* RFC §5.B B5-ν Phase B — derive carrier bits from each embedded
      * parent-tag variant's active arm before the carrier byte is
@@ -392,8 +385,8 @@ static inline {{ c_encoded_typedef }} {{ c_encode_func }}(const {{ c_struct_type
 {% if has_no_fields %}
     /* RFC §5.B B5-α empty body — zero-byte payload. */
     (void)self;
-    r.bytes[0] = 0;
-    r.len = 0;
+    (void)w;
+    return SCE_FORGE_CODEC_OK;
 {% elif has_variant %}
 {% if variant.has_streaming_prefix %}
     /* RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
@@ -402,7 +395,6 @@ static inline {{ c_encoded_typedef }} {{ c_encode_func }}(const {{ c_struct_type
      * separate tag byte here. Streaming-prefix mode (own-field):
      * carrier is part of the prefix fields and emits via the same
      * per-field path. */
-    r.len = 0;
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
@@ -419,41 +411,30 @@ static inline {{ c_encoded_typedef }} {{ c_encode_func }}(const {{ c_struct_type
      * The tag value is read from the struct field, NOT derived from
      * the body discriminant — keeping author-set tag / body in sync
      * is the caller's responsibility (v1 keeps the layout simple). */
-    r.len = {{ c_min_bytes_macro }};
 {% for expr in encode_exprs %}
-    r.bytes[{{ loop.index0 }}] = {{ expr }};
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, {{ expr }}));
 {% endfor %}
 {% endif %}
-    /* Append the active arm body's encoded bytes. */
+    /* Append the active arm body's encoded bytes via the same writer. */
     switch (self->body.kind) {
 {% for arm in variant.arms %}
-        case {{ arm.c_kind_constant }}: {
-            {{ arm.c_body_encoded_type }} _sub = {{ arm.body_encoder }}(&self->body.arm.{{ arm.c_union_field }}{{ arm.body_encode_args_with_leading_comma }});
-            if (r.len + _sub.len <= {{ c_max_bytes_macro }}) {
-                for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
-                r.len += _sub.len;
-            }
+        case {{ arm.c_kind_constant }}:
+            SCE_FORGE_TRY_WRITE({{ arm.body_encoder }}(&self->body.arm.{{ arm.c_union_field }}, w{{ arm.body_encode_args_with_leading_comma }}));
             break;
-        }
 {% endfor %}
 {% if variant.default_arm %}
-        case {{ variant.default_arm.c_kind_constant }}: {
-            {{ variant.default_arm.c_body_encoded_type }} _sub = {{ variant.default_arm.body_encoder }}(&self->body.arm.{{ variant.default_arm.c_union_field }}{{ variant.default_arm.body_encode_args_with_leading_comma }});
-            if (r.len + _sub.len <= {{ c_max_bytes_macro }}) {
-                for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
-                r.len += _sub.len;
-            }
+        case {{ variant.default_arm.c_kind_constant }}:
+            SCE_FORGE_TRY_WRITE({{ variant.default_arm.body_encoder }}(&self->body.arm.{{ variant.default_arm.c_union_field }}, w{{ variant.default_arm.body_encode_args_with_leading_comma }}));
             break;
-        }
 {% endif %}
     }
+    return SCE_FORGE_CODEC_OK;
 {% elif has_present_if_fields %}
     /* RFC §5.B B1-δ + B2-β present-if encode: per-field byte append.
      * Gated fields skip the append when the carrier's flag bit is
      * clear. Per-field `is_repeat` / `is_tlv_chain` route to dedicated
      * helpers. Branch fires before has_vle_fields so a codec mixing
      * VLE + present-if uses the unified encode path. */
-    r.len = 0;
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
@@ -465,12 +446,12 @@ static inline {{ c_encoded_typedef }} {{ c_encode_func }}(const {{ c_struct_type
 {{ field.present_if_encode_block }}
 {% endif %}
 {% endfor %}
+    return SCE_FORGE_CODEC_OK;
 {% elif has_vle_fields %}
     /* RFC §5.B B4: per-field bit-size dispatch routes Fixed /
      * LengthRef / Tail siblings of VLE fields through
      * `present_if_encode_block` (predicate=None arms). Pure-VLE
      * codecs stay byte-stable. */
-    r.len = 0;
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
@@ -482,13 +463,12 @@ static inline {{ c_encoded_typedef }} {{ c_encode_func }}(const {{ c_struct_type
 {{ field.present_if_encode_block }}
 {% endif %}
 {% endfor %}
+    return SCE_FORGE_CODEC_OK;
 {% elif has_repeat_fields or has_tlv_chain_fields or has_embed_fields %}
     /* RFC §5.B B2 / B3 encode: fixed prefix appends byte-by-byte;
-     * list fields walk the per-codec encoded_t splice loop, bounded
-     * by `sizeof(r.bytes)` (== MAX_BYTES). Author keeps count field
-     * (repeat) / `<id>_len` ≤ max_depth (tlv-chain) consistent with
-     * the in-struct entry count (trust contract). */
-    r.len = 0;
+     * list fields walk an in-place writer loop. Author keeps count
+     * field (repeat) / `<id>_len` ≤ max_depth (tlv-chain) consistent
+     * with the in-struct entry count (trust contract). */
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
@@ -500,31 +480,45 @@ static inline {{ c_encoded_typedef }} {{ c_encode_func }}(const {{ c_struct_type
 {{ field.present_if_encode_block }}
 {% endif %}
 {% endfor %}
+    return SCE_FORGE_CODEC_OK;
 {% else %}
 {% if has_dma_aligned_fields %}
-    /* RFC §5.B B3 DMA padding: zero-fill the encoded buffer so any
-     * gap between fixed-prefix fields and aligned variable fields
-     * lands as deterministic zeros on the wire (peers MUST see the
-     * same byte sequence regardless of host allocator). The
-     * positional `r.bytes[<idx>] = ...` writes below overwrite the
-     * fixed-field slots; the gap bytes between MIN_BYTES and the
-     * aligned field's byte offset stay zero. */
-    memset(r.bytes, 0, sizeof(r.bytes));
+    /* RFC §5.B B3 DMA padding: zero-fill the gap between the current
+     * writer position and any aligned field's authored byte_offset
+     * (deterministic zeros on the wire so peers stay byte-compatible
+     * regardless of host allocator). */
 {% endif %}
-    r.len = {{ c_min_bytes_macro }};
 {% for expr in encode_exprs %}
-    r.bytes[{{ loop.index0 }}] = {{ expr }};
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, {{ expr }}));
 {% endfor %}
 {% for field in fields %}
 {% if field.is_variable %}
+{% if has_dma_aligned_fields %}
+    while (sce_forge_writer_position(w) < {{ field.byte_off }}) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, 0));
+    }
+{% endif %}
     if (self->{{ field.id }}_len <= {{ field.max_size }}) {
-        memcpy(&r.bytes[{{ field.byte_off }}], self->{{ field.id }}, self->{{ field.id }}_len);
-        r.len = {{ field.byte_off }} + self->{{ field.id }}_len;
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->{{ field.id }}, self->{{ field.id }}_len));
     }
 {% endif %}
 {% endfor %}
+    return SCE_FORGE_CODEC_OK;
 {% endif %}
-    return r;
+}
+
+/* Heap-free convenience facade: wrap the caller-owned `buf` + `cap`
+ * in a writer, run the primary encode, and report the resulting byte
+ * count via `*out_len`. Returns SCE_FORGE_CODEC_OK on success;
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW when `cap < {{ c_max_bytes_macro }}`
+ * was insufficient for this codec's wire bytes. Worst-case bound is
+ * `{{ c_max_bytes_macro }}` — callers sizing `buf` accordingly never
+ * see overflow. */
+static inline sce_forge_codec_status_t {{ c_encode_to_buf_func }}(const {{ c_struct_typedef }} *self, uint8_t *buf, size_t cap, size_t *out_len{{ params_after_first_arg }}) {
+    sce_forge_writer_t _w = sce_forge_writer_init_buf(buf, cap);
+    sce_forge_codec_status_t _st = {{ c_encode_func }}(self, &_w{{ params_first_arg_with_comma }});
+    *out_len = _w.pos;
+    return _st;
 }
 
 {% if has_flags %}

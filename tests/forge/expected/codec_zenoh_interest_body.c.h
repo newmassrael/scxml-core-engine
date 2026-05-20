@@ -23,11 +23,6 @@ typedef struct {
     codec_zenoh_wireexpr_t keyexpr;
 } codec_zenoh_interest_body_t;
 
-typedef struct {
-    uint8_t bytes[CODEC_ZENOH_INTEREST_BODY_MAX_BYTES];
-    size_t  len;
-} codec_zenoh_interest_body_encoded_t;
-
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
  * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
  * (without advancing) when the cursor's tail is shorter than the
@@ -56,23 +51,37 @@ static inline sce_forge_codec_status_t codec_zenoh_interest_body_decode(sce_forg
     return SCE_FORGE_CODEC_OK;
 }
 
-static inline codec_zenoh_interest_body_encoded_t codec_zenoh_interest_body_encode(const codec_zenoh_interest_body_t *self) {
-    codec_zenoh_interest_body_encoded_t r;
+/* RFC §5.B B1-α encode-side primary: write `*self` into the caller-
+ * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
+ * Callers either pre-reserve CODEC_ZENOH_INTEREST_BODY_MAX_BYTES bytes and use
+ * `codec_zenoh_interest_body_encode_to_buf` (below), or run the writer themselves
+ * for coalesced-send paths. */
+static inline sce_forge_codec_status_t codec_zenoh_interest_body_encode(const codec_zenoh_interest_body_t *self, sce_forge_writer_t *w) {
     /* RFC §5.B B1-δ + B2-β present-if encode: per-field byte append.
      * Gated fields skip the append when the carrier's flag bit is
      * clear. Per-field `is_repeat` / `is_tlv_chain` route to dedicated
      * helpers. Branch fires before has_vle_fields so a codec mixing
      * VLE + present-if uses the unified encode path. */
-    r.len = 0;
-    r.bytes[r.len++] = self->header;
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->header));
     if ((self->header & 0x10) != 0) {
-        codec_zenoh_wireexpr_encoded_t _sub = codec_zenoh_wireexpr_encode(&self->keyexpr, (uint8_t)((self->header >> 5) & 0x1));
-        if (r.len + _sub.len <= sizeof(r.bytes)) {
-            for (size_t _ej = 0; _ej < _sub.len; ++_ej) r.bytes[r.len + _ej] = _sub.bytes[_ej];
-            r.len += _sub.len;
-        }
+        SCE_FORGE_TRY_WRITE(codec_zenoh_wireexpr_encode(&self->keyexpr, w, (uint8_t)((self->header >> 5) & 0x1)));
     }
-    return r;
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* Heap-free convenience facade: wrap the caller-owned `buf` + `cap`
+ * in a writer, run the primary encode, and report the resulting byte
+ * count via `*out_len`. Returns SCE_FORGE_CODEC_OK on success;
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW when `cap < CODEC_ZENOH_INTEREST_BODY_MAX_BYTES`
+ * was insufficient for this codec's wire bytes. Worst-case bound is
+ * `CODEC_ZENOH_INTEREST_BODY_MAX_BYTES` — callers sizing `buf` accordingly never
+ * see overflow. */
+static inline sce_forge_codec_status_t codec_zenoh_interest_body_encode_to_buf(const codec_zenoh_interest_body_t *self, uint8_t *buf, size_t cap, size_t *out_len) {
+    sce_forge_writer_t _w = sce_forge_writer_init_buf(buf, cap);
+    sce_forge_codec_status_t _st = codec_zenoh_interest_body_encode(self, &_w);
+    *out_len = _w.pos;
+    return _st;
 }
 
 /* RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over

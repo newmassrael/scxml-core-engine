@@ -24,11 +24,6 @@ typedef struct {
     uint8_t zid[16];
 } codec_zenoh_timestamp_t;
 
-typedef struct {
-    uint8_t bytes[CODEC_ZENOH_TIMESTAMP_MAX_BYTES];
-    size_t  len;
-} codec_zenoh_timestamp_encoded_t;
-
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
  * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
  * (without advancing) when the cursor's tail is shorter than the
@@ -66,31 +61,53 @@ static inline sce_forge_codec_status_t codec_zenoh_timestamp_decode(sce_forge_cu
     return SCE_FORGE_CODEC_OK;
 }
 
-static inline codec_zenoh_timestamp_encoded_t codec_zenoh_timestamp_encode(const codec_zenoh_timestamp_t *self) {
-    codec_zenoh_timestamp_encoded_t r;
+/* RFC §5.B B1-α encode-side primary: write `*self` into the caller-
+ * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
+ * Callers either pre-reserve CODEC_ZENOH_TIMESTAMP_MAX_BYTES bytes and use
+ * `codec_zenoh_timestamp_encode_to_buf` (below), or run the writer themselves
+ * for coalesced-send paths. */
+static inline sce_forge_codec_status_t codec_zenoh_timestamp_encode(const codec_zenoh_timestamp_t *self, sce_forge_writer_t *w) {
     /* RFC §5.B B4: per-field bit-size dispatch routes Fixed /
      * LengthRef / Tail siblings of VLE fields through
      * `present_if_encode_block` (predicate=None arms). Pure-VLE
      * codecs stay byte-stable. */
-    r.len = 0;
     {
-        uint64_t _w = (uint64_t)(self->time);
-        while (_w >= 0x80u) {
-            r.bytes[r.len++] = (uint8_t)((_w & 0x7Fu) | 0x80u);
-            _w >>= 7;
+        uint64_t _vle = (uint64_t)(self->time);
+        while (_vle >= 0x80u) {
+            SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
+            _vle >>= 7;
         }
-        r.bytes[r.len++] = (uint8_t)_w;
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
     }
     {
-        uint64_t _w = (uint64_t)(self->zid_len);
-        while (_w >= 0x80u) {
-            r.bytes[r.len++] = (uint8_t)((_w & 0x7Fu) | 0x80u);
-            _w >>= 7;
+        uint64_t _vle = (uint64_t)(self->zid_len);
+        while (_vle >= 0x80u) {
+            SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
+            _vle >>= 7;
         }
-        r.bytes[r.len++] = (uint8_t)_w;
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
     }
-    for (size_t _bi = 0; _bi < self->zid_len && _bi < self->zid_len; ++_bi) r.bytes[r.len++] = self->zid[_bi];
-    return r;
+    {
+        size_t _n = self->zid_len;
+        if (_n > self->zid_len) _n = self->zid_len;
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->zid, _n));
+    }
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* Heap-free convenience facade: wrap the caller-owned `buf` + `cap`
+ * in a writer, run the primary encode, and report the resulting byte
+ * count via `*out_len`. Returns SCE_FORGE_CODEC_OK on success;
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW when `cap < CODEC_ZENOH_TIMESTAMP_MAX_BYTES`
+ * was insufficient for this codec's wire bytes. Worst-case bound is
+ * `CODEC_ZENOH_TIMESTAMP_MAX_BYTES` — callers sizing `buf` accordingly never
+ * see overflow. */
+static inline sce_forge_codec_status_t codec_zenoh_timestamp_encode_to_buf(const codec_zenoh_timestamp_t *self, uint8_t *buf, size_t cap, size_t *out_len) {
+    sce_forge_writer_t _w = sce_forge_writer_init_buf(buf, cap);
+    sce_forge_codec_status_t _st = codec_zenoh_timestamp_encode(self, &_w);
+    *out_len = _w.pos;
+    return _st;
 }
 
 #endif  /* SCE_FORGE_CODEC_ZENOH_TIMESTAMP_H */

@@ -11,11 +11,17 @@
  * resumes after additional bytes arrive (DMA boundary, fragmented
  * network read).
  *
- * Phase B1-prep: minimum API for fixed-width codec fixtures
- * (sce_forge_cursor_peek + advance + remaining). Streaming readers
- * (read_u8, read_vle_*, read_tag) land in B1-α/β with their first
- * consumer. Encode-side cursor + SCE_FORGE_CODEC_BUFFER_OVERFLOW lands
- * in B1-α.
+ * Phase B1-prep ships the minimum API for fixed-width codec fixtures
+ * (sce_forge_cursor_peek + advance + remaining). Encode-side
+ * `sce_forge_writer_t` + SCE_FORGE_CODEC_BUFFER_OVERFLOW lands in B1-α:
+ * `sce_forge_writer_init_buf` wraps a caller-owned buffer + capacity,
+ * raises BUFFER_OVERFLOW when a write would exceed the cap.
+ *
+ * C11 runtime intentionally has no heap-backed writer variant — `alloc`
+ * is the inversion-1 contract boundary (MCU + AP targets share the
+ * no-alloc primary). Callers needing dynamic sizing should
+ * pre-reserve `{NAME}_MAX_ENCODED_BYTES` (per-codec macro) on the
+ * stack or in a static arena and run `{name}_encode_to_buf` over it.
  */
 
 #ifndef SCE_FORGE_CODEC_H
@@ -53,6 +59,14 @@ typedef enum {
      * `std::optional<T>` / `T?` truncation sentinel because their
      * signatures are type-narrow). */
     SCE_FORGE_CODEC_INVALID_UTF8 = 4,
+    /* RFC §5.B B1-α encode-side counterpart to NEED_MORE_BYTES: the
+     * destination writer reported insufficient remaining capacity for
+     * the next write. Only the bounded `sce_forge_writer_t`
+     * (caller-owned buf + cap) can raise this; C11 has no heap-backed
+     * variant per the runtime's no-alloc primary contract. Codec
+     * authors pre-reserve `{NAME}_MAX_ENCODED_BYTES` for the codec
+     * being emitted, so a sized buffer never produces this status. */
+    SCE_FORGE_CODEC_BUFFER_OVERFLOW = 5,
 } sce_forge_codec_status_t;
 
 /* Read-only cursor over a borrowed input buffer. Decode bodies bind a
@@ -145,6 +159,128 @@ static inline sce_forge_codec_status_t sce_forge_cursor_read_vle_u32(sce_forge_c
 static inline sce_forge_codec_status_t sce_forge_cursor_read_vle_u64(sce_forge_cursor_t *c, uint64_t *out) {
     return sce_forge_cursor_read_vle_inner(c, 64, out);
 }
+
+/* ── Write-side writer ──────────────────────────────────────────── */
+
+/* Write-side cursor for codec emit. Wraps a caller-owned `uint8_t*`
+ * buffer + capacity; bounded — raises SCE_FORGE_CODEC_BUFFER_OVERFLOW
+ * when a write would exceed `cap`. Mirrors the read-side
+ * `sce_forge_cursor_t` borrow contract: the caller owns the
+ * destination storage, the writer holds a non-owning pointer.
+ *
+ * Fields are exposed by name (not opaque) so generated encode bodies
+ * can fast-path through `bytes[pos++] = X` in the inlined helpers
+ * below without an accessor call per byte. */
+typedef struct {
+    uint8_t *bytes;
+    size_t   cap;
+    size_t   pos;
+} sce_forge_writer_t;
+
+/* Wrap `buf` with write position 0. Caller owns the storage; the
+ * writer does not free or extend it. */
+static inline sce_forge_writer_t sce_forge_writer_init_buf(uint8_t *buf, size_t cap) {
+    sce_forge_writer_t w;
+    w.bytes = buf;
+    w.cap = cap;
+    w.pos = 0;
+    return w;
+}
+
+/* Bytes written by this writer instance since `init_buf`. Mirrors the
+ * cpp `SceSink::position()` semantics — distinct from
+ * `cap - remaining` so the same accessor lifts onto a future
+ * heap-backed writer without contract change. Used by codec emit for
+ * offset-aware writes (DMA-aligned field padding, length-prefix
+ * back-patching). */
+static inline size_t sce_forge_writer_position(const sce_forge_writer_t *w) {
+    return w->pos;
+}
+
+/* Remaining capacity from current position to end of buffer. */
+static inline size_t sce_forge_writer_remaining(const sce_forge_writer_t *w) {
+    return w->cap - w->pos;
+}
+
+/* Append `n` bytes from `data` to the underlying storage. Raises
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the destination has
+ * insufficient remaining capacity. Zero-length writes succeed even at
+ * exact saturation (codec emit sites pass zero counts for absent
+ * optional fields). */
+static inline sce_forge_codec_status_t sce_forge_writer_write_bytes(
+    sce_forge_writer_t *w, const uint8_t *data, size_t n) {
+    if (n == 0) return SCE_FORGE_CODEC_OK;
+    if (w->cap - w->pos < n) return SCE_FORGE_CODEC_BUFFER_OVERFLOW;
+    for (size_t i = 0; i < n; ++i) w->bytes[w->pos + i] = data[i];
+    w->pos += n;
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* Append a single byte. Inlined to keep the codec emit hot path one
+ * branch per write. */
+static inline sce_forge_codec_status_t sce_forge_writer_write_u8(
+    sce_forge_writer_t *w, uint8_t v) {
+    if (w->pos >= w->cap) return SCE_FORGE_CODEC_BUFFER_OVERFLOW;
+    w->bytes[w->pos++] = v;
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* Multi-byte helpers — explicit endianness, no host-byte-order
+ * dependence. Forwards to `write_bytes` so the bounded check fires
+ * once per call. */
+static inline sce_forge_codec_status_t sce_forge_writer_write_u16_le(
+    sce_forge_writer_t *w, uint16_t v) {
+    uint8_t buf[2] = { (uint8_t)v, (uint8_t)(v >> 8) };
+    return sce_forge_writer_write_bytes(w, buf, 2);
+}
+static inline sce_forge_codec_status_t sce_forge_writer_write_u16_be(
+    sce_forge_writer_t *w, uint16_t v) {
+    uint8_t buf[2] = { (uint8_t)(v >> 8), (uint8_t)v };
+    return sce_forge_writer_write_bytes(w, buf, 2);
+}
+static inline sce_forge_codec_status_t sce_forge_writer_write_u32_le(
+    sce_forge_writer_t *w, uint32_t v) {
+    uint8_t buf[4] = {
+        (uint8_t)v, (uint8_t)(v >> 8), (uint8_t)(v >> 16), (uint8_t)(v >> 24)
+    };
+    return sce_forge_writer_write_bytes(w, buf, 4);
+}
+static inline sce_forge_codec_status_t sce_forge_writer_write_u32_be(
+    sce_forge_writer_t *w, uint32_t v) {
+    uint8_t buf[4] = {
+        (uint8_t)(v >> 24), (uint8_t)(v >> 16), (uint8_t)(v >> 8), (uint8_t)v
+    };
+    return sce_forge_writer_write_bytes(w, buf, 4);
+}
+static inline sce_forge_codec_status_t sce_forge_writer_write_u64_le(
+    sce_forge_writer_t *w, uint64_t v) {
+    uint8_t buf[8] = {
+        (uint8_t)v,         (uint8_t)(v >> 8),  (uint8_t)(v >> 16), (uint8_t)(v >> 24),
+        (uint8_t)(v >> 32), (uint8_t)(v >> 40), (uint8_t)(v >> 48), (uint8_t)(v >> 56)
+    };
+    return sce_forge_writer_write_bytes(w, buf, 8);
+}
+static inline sce_forge_codec_status_t sce_forge_writer_write_u64_be(
+    sce_forge_writer_t *w, uint64_t v) {
+    uint8_t buf[8] = {
+        (uint8_t)(v >> 56), (uint8_t)(v >> 48), (uint8_t)(v >> 40), (uint8_t)(v >> 32),
+        (uint8_t)(v >> 24), (uint8_t)(v >> 16), (uint8_t)(v >> 8),  (uint8_t)v
+    };
+    return sce_forge_writer_write_bytes(w, buf, 8);
+}
+
+/* Generated codec emit helper: propagate writer status or continue.
+ * Each write call in a generated encode body returns
+ * `sce_forge_codec_status_t`; this macro folds the "if non-OK, return"
+ * pattern that would otherwise need a 4-line block per write. Lives in
+ * the runtime header (not generated per-codec) so its semantics are
+ * reviewable in one place. Local `_sce_fw_st` is name-mangled to keep
+ * it from clashing with caller-scoped locals. */
+#define SCE_FORGE_TRY_WRITE(expr)                                      \
+    do {                                                               \
+        sce_forge_codec_status_t _sce_fw_st = (expr);                  \
+        if (_sce_fw_st != SCE_FORGE_CODEC_OK) return _sce_fw_st;       \
+    } while (0)
 
 /* RFC §5.B B5-ζ Surface H — validate that `[p, p + n)` is a well-formed
  * UTF-8 byte sequence. Returns true for valid UTF-8 (including the

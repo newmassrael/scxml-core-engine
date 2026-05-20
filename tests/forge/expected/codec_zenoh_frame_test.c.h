@@ -16,14 +16,17 @@ static inline int test_vector_codec_zenoh_frame(void) {
         {
             actual.payload_len = 0;
         }
-        codec_zenoh_frame_encoded_t encoded = codec_zenoh_frame_encode(&actual);
+        uint8_t _encoded_buf[CODEC_ZENOH_FRAME_MAX_BYTES];
+        size_t _encoded_len = 0;
+        sce_forge_codec_status_t _enc_st = codec_zenoh_frame_encode_to_buf(&actual, _encoded_buf, sizeof(_encoded_buf), &_encoded_len);
+        (void)_enc_st;
         static const uint8_t _expected[] = { 0x00 };
-        if (encoded.len != sizeof _expected
-            || memcmp(encoded.bytes, _expected, encoded.len) != 0) {
+        if (_encoded_len != sizeof _expected
+            || memcmp(_encoded_buf, _expected, _encoded_len) != 0) {
             fprintf(stderr,
                 "FAIL: codec_zenoh_frame test_vector @SCXML L38: "
                 "encode length=%zu (expected %zu)\n",
-                encoded.len, sizeof _expected);
+                _encoded_len, sizeof _expected);
             ++failures;
         }
         sce_forge_cursor_t _cursor = sce_forge_cursor_init(_expected, sizeof _expected);
@@ -66,14 +69,17 @@ static inline int test_vector_codec_zenoh_frame(void) {
             memcpy(actual.payload, _bytes, sizeof _bytes);
             actual.payload_len = sizeof _bytes;
         }
-        codec_zenoh_frame_encoded_t encoded = codec_zenoh_frame_encode(&actual);
+        uint8_t _encoded_buf[CODEC_ZENOH_FRAME_MAX_BYTES];
+        size_t _encoded_len = 0;
+        sce_forge_codec_status_t _enc_st = codec_zenoh_frame_encode_to_buf(&actual, _encoded_buf, sizeof(_encoded_buf), &_encoded_len);
+        (void)_enc_st;
         static const uint8_t _expected[] = { 0x01, 0xca, 0xfe };
-        if (encoded.len != sizeof _expected
-            || memcmp(encoded.bytes, _expected, encoded.len) != 0) {
+        if (_encoded_len != sizeof _expected
+            || memcmp(_encoded_buf, _expected, _encoded_len) != 0) {
             fprintf(stderr,
                 "FAIL: codec_zenoh_frame test_vector @SCXML L42: "
                 "encode length=%zu (expected %zu)\n",
-                encoded.len, sizeof _expected);
+                _encoded_len, sizeof _expected);
             ++failures;
         }
         sce_forge_cursor_t _cursor = sce_forge_cursor_init(_expected, sizeof _expected);
@@ -119,14 +125,17 @@ static inline int test_vector_codec_zenoh_frame(void) {
             memcpy(actual.payload, _bytes, sizeof _bytes);
             actual.payload_len = sizeof _bytes;
         }
-        codec_zenoh_frame_encoded_t encoded = codec_zenoh_frame_encode(&actual);
+        uint8_t _encoded_buf[CODEC_ZENOH_FRAME_MAX_BYTES];
+        size_t _encoded_len = 0;
+        sce_forge_codec_status_t _enc_st = codec_zenoh_frame_encode_to_buf(&actual, _encoded_buf, sizeof(_encoded_buf), &_encoded_len);
+        (void)_enc_st;
         static const uint8_t _expected[] = { 0x7f, 0xaa, 0xbb, 0xcc };
-        if (encoded.len != sizeof _expected
-            || memcmp(encoded.bytes, _expected, encoded.len) != 0) {
+        if (_encoded_len != sizeof _expected
+            || memcmp(_encoded_buf, _expected, _encoded_len) != 0) {
             fprintf(stderr,
                 "FAIL: codec_zenoh_frame test_vector @SCXML L46: "
                 "encode length=%zu (expected %zu)\n",
-                encoded.len, sizeof _expected);
+                _encoded_len, sizeof _expected);
             ++failures;
         }
         sce_forge_cursor_t _cursor = sce_forge_cursor_init(_expected, sizeof _expected);
@@ -172,14 +181,17 @@ static inline int test_vector_codec_zenoh_frame(void) {
             memcpy(actual.payload, _bytes, sizeof _bytes);
             actual.payload_len = sizeof _bytes;
         }
-        codec_zenoh_frame_encoded_t encoded = codec_zenoh_frame_encode(&actual);
+        uint8_t _encoded_buf[CODEC_ZENOH_FRAME_MAX_BYTES];
+        size_t _encoded_len = 0;
+        sce_forge_codec_status_t _enc_st = codec_zenoh_frame_encode_to_buf(&actual, _encoded_buf, sizeof(_encoded_buf), &_encoded_len);
+        (void)_enc_st;
         static const uint8_t _expected[] = { 0x80, 0x01, 0xde, 0xad };
-        if (encoded.len != sizeof _expected
-            || memcmp(encoded.bytes, _expected, encoded.len) != 0) {
+        if (_encoded_len != sizeof _expected
+            || memcmp(_encoded_buf, _expected, _encoded_len) != 0) {
             fprintf(stderr,
                 "FAIL: codec_zenoh_frame test_vector @SCXML L50: "
                 "encode length=%zu (expected %zu)\n",
-                encoded.len, sizeof _expected);
+                _encoded_len, sizeof _expected);
             ++failures;
         }
         sce_forge_cursor_t _cursor = sce_forge_cursor_init(_expected, sizeof _expected);

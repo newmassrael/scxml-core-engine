@@ -59,24 +59,27 @@ static inline int test_vector_{{ name }}(void) {
         actual.{{ f.name_snake }} = {{ f.value_literal_c }};
 {% endif %}
 {% endfor %}
-        {{ name }}_encoded_t encoded = {{ name }}_encode(&actual);
+        uint8_t _encoded_buf[{{ max_bytes_macro }}];
+        size_t _encoded_len = 0;
+        sce_forge_codec_status_t _enc_st = {{ name }}_encode_to_buf(&actual, _encoded_buf, sizeof(_encoded_buf), &_encoded_len);
+        (void)_enc_st;
 {% if tv.hex_bytes %}
         static const uint8_t _expected[] = {{ '{' }} {{ tv.hex_bytes_literal_c }} {{ '}' }};
-        if (encoded.len != sizeof _expected
-            || memcmp(encoded.bytes, _expected, encoded.len) != 0) {
+        if (_encoded_len != sizeof _expected
+            || memcmp(_encoded_buf, _expected, _encoded_len) != 0) {
             fprintf(stderr,
                 "FAIL: {{ name }} test_vector @SCXML L{{ tv.source_line }}: "
                 "encode length=%zu (expected %zu)\n",
-                encoded.len, sizeof _expected);
+                _encoded_len, sizeof _expected);
             ++failures;
         }
         sce_forge_cursor_t _cursor = sce_forge_cursor_init(_expected, sizeof _expected);
 {% else %}
-        if (encoded.len != 0) {
+        if (_encoded_len != 0) {
             fprintf(stderr,
                 "FAIL: {{ name }} test_vector @SCXML L{{ tv.source_line }}: "
                 "expected empty encode, got len=%zu\n",
-                encoded.len);
+                _encoded_len);
             ++failures;
         }
         sce_forge_cursor_t _cursor = sce_forge_cursor_init(NULL, 0);

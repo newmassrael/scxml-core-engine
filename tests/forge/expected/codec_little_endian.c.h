@@ -22,11 +22,6 @@ typedef struct {
     uint8_t status;
 } codec_little_endian_t;
 
-typedef struct {
-    uint8_t bytes[CODEC_LITTLE_ENDIAN_MAX_BYTES];
-    size_t  len;
-} codec_little_endian_encoded_t;
-
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
  * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
  * (without advancing) when the cursor's tail is shorter than the
@@ -42,14 +37,32 @@ static inline sce_forge_codec_status_t codec_little_endian_decode(sce_forge_curs
     return SCE_FORGE_CODEC_OK;
 }
 
-static inline codec_little_endian_encoded_t codec_little_endian_encode(const codec_little_endian_t *self) {
-    codec_little_endian_encoded_t r;
-    r.len = CODEC_LITTLE_ENDIAN_MIN_BYTES;
-    r.bytes[0] = self->sensor_id;
-    r.bytes[1] = (uint8_t)(self->value & 0xFF);
-    r.bytes[2] = (uint8_t)((self->value >> 8) & 0xFF);
-    r.bytes[3] = self->status;
-    return r;
+/* RFC §5.B B1-α encode-side primary: write `*self` into the caller-
+ * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
+ * Callers either pre-reserve CODEC_LITTLE_ENDIAN_MAX_BYTES bytes and use
+ * `codec_little_endian_encode_to_buf` (below), or run the writer themselves
+ * for coalesced-send paths. */
+static inline sce_forge_codec_status_t codec_little_endian_encode(const codec_little_endian_t *self, sce_forge_writer_t *w) {
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->sensor_id));
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)(self->value & 0xFF)));
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((self->value >> 8) & 0xFF)));
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->status));
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* Heap-free convenience facade: wrap the caller-owned `buf` + `cap`
+ * in a writer, run the primary encode, and report the resulting byte
+ * count via `*out_len`. Returns SCE_FORGE_CODEC_OK on success;
+ * SCE_FORGE_CODEC_BUFFER_OVERFLOW when `cap < CODEC_LITTLE_ENDIAN_MAX_BYTES`
+ * was insufficient for this codec's wire bytes. Worst-case bound is
+ * `CODEC_LITTLE_ENDIAN_MAX_BYTES` — callers sizing `buf` accordingly never
+ * see overflow. */
+static inline sce_forge_codec_status_t codec_little_endian_encode_to_buf(const codec_little_endian_t *self, uint8_t *buf, size_t cap, size_t *out_len) {
+    sce_forge_writer_t _w = sce_forge_writer_init_buf(buf, cap);
+    sce_forge_codec_status_t _st = codec_little_endian_encode(self, &_w);
+    *out_len = _w.pos;
+    return _st;
 }
 
 #endif  /* SCE_FORGE_CODEC_LITTLE_ENDIAN_H */
