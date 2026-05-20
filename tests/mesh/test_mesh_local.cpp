@@ -40,6 +40,13 @@ struct MockEngine {
         }
     };
 
+    // SCE::Core::AotSmMeshIntegration concept requires the engine type
+    // to expose `PolicyType` as a nested typedef alias for the policy
+    // class. The AOT-emitted SM class uses the same name; the mock
+    // mirrors it so the static_assert in TransportRouter passes against
+    // the same contract production code is checked against.
+    using PolicyType = Policy;
+
     // Mirror the production engine's metadata surface so MeshDispatch routes
     // this mock through the same raiseExternal(EventWithMetadata) overload —
     // a simpler shape would force dispatchEnvelope into a feature-detected

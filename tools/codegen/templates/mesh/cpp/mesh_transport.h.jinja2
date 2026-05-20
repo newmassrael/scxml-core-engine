@@ -232,6 +232,7 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 #include <cassert>
 #include <cstring>
 
+#include "core/AotSmMeshConcept.h"
 #include "core/LogMacros.h"
 #include "mesh/MeshDispatch.h"
 #include "mesh/MeshEnvelope.h"
@@ -898,6 +899,18 @@ inline void send_to_{{ target.target_snake }}(
 ///   router.init();  // only for transports with a connect/start lifecycle
 template<typename SenderEngine{% for target in targets if target.state.kind == "local" %}, typename {{ target.target_pascal }}Engine{% endfor %}>
 struct TransportRouter {
+#if __cpp_concepts >= 202002L
+    // SCE Mesh — AOT-emitted SM integration contract (axis-4
+    // schema completeness, sce/include/core/AotSmMeshConcept.h).
+    // Catches drift between state_machine.jinja2 (PolicyType /
+    // EventWithMetadata / Event typedef emission) and this template's
+    // consumption of those typedefs at compile time, in the project's
+    // own build rather than downstream user code.
+    static_assert(::SCE::Core::AotSmMeshIntegration<SenderEngine>,
+        "SenderEngine must be an AOT-emitted SCXML state machine "
+        "exposing PolicyType, EventWithMetadata, and Event typedefs. "
+        "See sce/include/core/AotSmMeshConcept.h.");
+#endif
 {# ── (D1) Per-target fields ── #}
 {# Data-driven filter: `has_per_target_field` encodes transport shape — #}
 {# per-target transports emit one field per target; shared-session transports skip. #}
