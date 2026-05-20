@@ -143,7 +143,7 @@ struct {{ struct_name }} {
         switch ({{ variant.tag_match_expr }}) {
 {% for arm in variant.arms %}
             case {{ arm.value_literal }}: {
-                auto _arm = {{ arm.body_type }}::decode(cursor{{ arm.body_parent_flags_arg }});
+                auto _arm = {{ arm.body_type }}::decode(cursor{{ arm.body_decode_args_after_cursor }});
                 if (!_arm.has_value()) return std::nullopt;
                 body = *_arm;
                 break;
@@ -151,7 +151,7 @@ struct {{ struct_name }} {
 {% endfor %}
             default: {
 {% if variant.default_arm %}
-                auto _arm = {{ variant.default_arm.body_type }}::decode(cursor{{ variant.default_arm.body_parent_flags_arg }});
+                auto _arm = {{ variant.default_arm.body_type }}::decode(cursor{{ variant.default_arm.body_decode_args_after_cursor }});
                 if (!_arm.has_value()) return std::nullopt;
                 body = {{ struct_name }}{{ variant.default_arm.variant_name }}{
                     .tag = {{ variant.tag_store_expr }},
@@ -368,13 +368,13 @@ struct {{ struct_name }} {
         // Append the active arm body's encoded bytes.
 {% for arm in variant.arms %}
         if (auto _p = std::get_if<{{ arm.body_type }}>(&body)) {
-            auto _sub = _p->encode({{ arm.body_parent_flags_arg_first }});
+            auto _sub = _p->encode({{ arm.body_encode_args_first }});
             r.insert(r.end(), _sub.begin(), _sub.end());
         }
 {% endfor %}
 {% if variant.default_arm %}
         if (auto _p = std::get_if<{{ struct_name }}{{ variant.default_arm.variant_name }}>(&body)) {
-            auto _sub = _p->body.encode({{ variant.default_arm.body_parent_flags_arg_first }});
+            auto _sub = _p->body.encode({{ variant.default_arm.body_encode_args_first }});
             r.insert(r.end(), _sub.begin(), _sub.end());
         }
 {% endif %}

@@ -106,14 +106,14 @@ data class CodecZenohDeclaration(
         r.add(header.toByte())
         // Append the active arm body's encoded bytes.
         when (val _b = this.body) {
-            is CodecZenohDeclarationVariant.CodecZenohDeclKexpr -> r.addAll(_b.body.encode().toList())
+            is CodecZenohDeclarationVariant.CodecZenohDeclKexpr -> r.addAll(_b.body.encode((((this.header.toInt() shr 5) and 0x1).toUByte())).toList())
             is CodecZenohDeclarationVariant.CodecZenohUndeclKexpr -> r.addAll(_b.body.encode().toList())
-            is CodecZenohDeclarationVariant.CodecZenohDeclSubscriber -> r.addAll(_b.body.encode().toList())
-            is CodecZenohDeclarationVariant.CodecZenohUndeclSubscriber -> r.addAll(_b.body.encode().toList())
-            is CodecZenohDeclarationVariant.CodecZenohDeclQueryable -> r.addAll(_b.body.encode().toList())
-            is CodecZenohDeclarationVariant.CodecZenohUndeclQueryable -> r.addAll(_b.body.encode().toList())
-            is CodecZenohDeclarationVariant.CodecZenohDeclToken -> r.addAll(_b.body.encode().toList())
-            is CodecZenohDeclarationVariant.CodecZenohUndeclToken -> r.addAll(_b.body.encode().toList())
+            is CodecZenohDeclarationVariant.CodecZenohDeclSubscriber -> r.addAll(_b.body.encode((((this.header.toInt() shr 5) and 0x1).toUByte())).toList())
+            is CodecZenohDeclarationVariant.CodecZenohUndeclSubscriber -> r.addAll(_b.body.encode((((this.header.toInt() shr 7) and 0x1).toUByte())).toList())
+            is CodecZenohDeclarationVariant.CodecZenohDeclQueryable -> r.addAll(_b.body.encode((((this.header.toInt() shr 5) and 0x1).toUByte()), (((this.header.toInt() shr 7) and 0x1).toUByte())).toList())
+            is CodecZenohDeclarationVariant.CodecZenohUndeclQueryable -> r.addAll(_b.body.encode((((this.header.toInt() shr 7) and 0x1).toUByte())).toList())
+            is CodecZenohDeclarationVariant.CodecZenohDeclToken -> r.addAll(_b.body.encode((((this.header.toInt() shr 5) and 0x1).toUByte())).toList())
+            is CodecZenohDeclarationVariant.CodecZenohUndeclToken -> r.addAll(_b.body.encode((((this.header.toInt() shr 7) and 0x1).toUByte())).toList())
             is CodecZenohDeclarationVariant.CodecZenohDeclFinal -> r.addAll(_b.body.encode().toList())
             is CodecZenohDeclarationVariant.Default -> r.addAll(_b.body.encode().toList())
         }
@@ -136,7 +136,7 @@ data class CodecZenohDeclaration(
             // onto the wire.
             val body: CodecZenohDeclarationVariant = when (((header.toInt() shr 0) and 0x1F)) {
                 0 -> {
-                    val _arm = com.sce.generated.codec_zenoh_decl_kexpr.CodecZenohDeclKexpr.decode(cursor) ?: return null
+                    val _arm = com.sce.generated.codec_zenoh_decl_kexpr.CodecZenohDeclKexpr.decode(cursor, (((header.toInt() shr 5) and 0x1).toUByte())) ?: return null
                     CodecZenohDeclarationVariant.CodecZenohDeclKexpr(_arm)
                 }
                 1 -> {
@@ -144,27 +144,27 @@ data class CodecZenohDeclaration(
                     CodecZenohDeclarationVariant.CodecZenohUndeclKexpr(_arm)
                 }
                 2 -> {
-                    val _arm = com.sce.generated.codec_zenoh_decl_subscriber.CodecZenohDeclSubscriber.decode(cursor) ?: return null
+                    val _arm = com.sce.generated.codec_zenoh_decl_subscriber.CodecZenohDeclSubscriber.decode(cursor, (((header.toInt() shr 5) and 0x1).toUByte())) ?: return null
                     CodecZenohDeclarationVariant.CodecZenohDeclSubscriber(_arm)
                 }
                 3 -> {
-                    val _arm = com.sce.generated.codec_zenoh_undecl_subscriber.CodecZenohUndeclSubscriber.decode(cursor) ?: return null
+                    val _arm = com.sce.generated.codec_zenoh_undecl_subscriber.CodecZenohUndeclSubscriber.decode(cursor, (((header.toInt() shr 7) and 0x1).toUByte())) ?: return null
                     CodecZenohDeclarationVariant.CodecZenohUndeclSubscriber(_arm)
                 }
                 4 -> {
-                    val _arm = com.sce.generated.codec_zenoh_decl_queryable.CodecZenohDeclQueryable.decode(cursor) ?: return null
+                    val _arm = com.sce.generated.codec_zenoh_decl_queryable.CodecZenohDeclQueryable.decode(cursor, (((header.toInt() shr 5) and 0x1).toUByte()), (((header.toInt() shr 7) and 0x1).toUByte())) ?: return null
                     CodecZenohDeclarationVariant.CodecZenohDeclQueryable(_arm)
                 }
                 5 -> {
-                    val _arm = com.sce.generated.codec_zenoh_undecl_queryable.CodecZenohUndeclQueryable.decode(cursor) ?: return null
+                    val _arm = com.sce.generated.codec_zenoh_undecl_queryable.CodecZenohUndeclQueryable.decode(cursor, (((header.toInt() shr 7) and 0x1).toUByte())) ?: return null
                     CodecZenohDeclarationVariant.CodecZenohUndeclQueryable(_arm)
                 }
                 6 -> {
-                    val _arm = com.sce.generated.codec_zenoh_decl_token.CodecZenohDeclToken.decode(cursor) ?: return null
+                    val _arm = com.sce.generated.codec_zenoh_decl_token.CodecZenohDeclToken.decode(cursor, (((header.toInt() shr 5) and 0x1).toUByte())) ?: return null
                     CodecZenohDeclarationVariant.CodecZenohDeclToken(_arm)
                 }
                 7 -> {
-                    val _arm = com.sce.generated.codec_zenoh_undecl_token.CodecZenohUndeclToken.decode(cursor) ?: return null
+                    val _arm = com.sce.generated.codec_zenoh_undecl_token.CodecZenohUndeclToken.decode(cursor, (((header.toInt() shr 7) and 0x1).toUByte())) ?: return null
                     CodecZenohDeclarationVariant.CodecZenohUndeclToken(_arm)
                 }
                 26 -> {

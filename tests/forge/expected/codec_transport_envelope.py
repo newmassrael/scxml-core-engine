@@ -74,13 +74,13 @@ class CodecTransportEnvelope:
         body = CodecTransportEnvelopeVariant()
         if ((header >> 0) & 0x1F) == 1:
             body.kind = "CodecZenohInitBody"
-            _arm = CodecZenohInitBody.decode(cursor)
+            _arm = CodecZenohInitBody.decode(cursor, ((header >> 6) & 0x1), ((header >> 5) & 0x1))
             if _arm is None:
                 return None
             body.codec_zenoh_init_body = _arm
         elif ((header >> 0) & 0x1F) == 2:
             body.kind = "CodecZenohOpenBody"
-            _arm = CodecZenohOpenBody.decode(cursor)
+            _arm = CodecZenohOpenBody.decode(cursor, ((header >> 5) & 0x1))
             if _arm is None:
                 return None
             body.codec_zenoh_open_body = _arm
@@ -110,7 +110,7 @@ class CodecTransportEnvelope:
             body.codec_zenoh_fragment = _arm
         elif ((header >> 0) & 0x1F) == 7:
             body.kind = "CodecZenohJoin"
-            _arm = CodecZenohJoin.decode(cursor)
+            _arm = CodecZenohJoin.decode(cursor, ((header >> 6) & 0x1))
             if _arm is None:
                 return None
             body.codec_zenoh_join = _arm
@@ -177,9 +177,9 @@ class CodecTransportEnvelope:
         r.append(self.header & 0xFF)
         # Append the active arm body's encoded bytes.
         if self.body.kind == "CodecZenohInitBody":
-            r.extend(self.body.codec_zenoh_init_body.encode())
+            r.extend(self.body.codec_zenoh_init_body.encode(((self.header >> 6) & 0x1), ((self.header >> 5) & 0x1)))
         elif self.body.kind == "CodecZenohOpenBody":
-            r.extend(self.body.codec_zenoh_open_body.encode())
+            r.extend(self.body.codec_zenoh_open_body.encode(((self.header >> 5) & 0x1)))
         elif self.body.kind == "CodecZenohClose":
             r.extend(self.body.codec_zenoh_close.encode())
         elif self.body.kind == "CodecZenohKeepAlive":
@@ -189,7 +189,7 @@ class CodecTransportEnvelope:
         elif self.body.kind == "CodecZenohFragment":
             r.extend(self.body.codec_zenoh_fragment.encode())
         elif self.body.kind == "CodecZenohJoin":
-            r.extend(self.body.codec_zenoh_join.encode())
+            r.extend(self.body.codec_zenoh_join.encode(((self.header >> 6) & 0x1)))
         elif self.body.kind == "Default":
             r.extend(self.body.default_body.encode())
         return bytes(r)

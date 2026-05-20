@@ -202,12 +202,12 @@ impl {{ struct_name }} {
         // wire.
         let body = match {{ variant.tag_match_expr }} {
 {% for arm in variant.arms %}
-            {{ arm.value_literal }} => {{ struct_name }}Variant::{{ arm.variant_name }}({{ arm.body_type }}::decode(cursor{{ arm.body_parent_flags_arg }})?),
+            {{ arm.value_literal }} => {{ struct_name }}Variant::{{ arm.variant_name }}({{ arm.body_type }}::decode(cursor{{ arm.body_decode_args_after_cursor }})?),
 {% endfor %}
 {% if variant.default_arm %}
             other => {{ struct_name }}Variant::{{ variant.default_arm.variant_name }} {
                 tag: other,
-                body: {{ variant.default_arm.body_type }}::decode(cursor{{ variant.default_arm.body_parent_flags_arg }})?,
+                body: {{ variant.default_arm.body_type }}::decode(cursor{{ variant.default_arm.body_decode_args_after_cursor }})?,
             },
 {% else %}
             // Build-time `codec/variant-arm-unreachable` proves the
@@ -457,12 +457,12 @@ impl {{ struct_name }} {
         match &self.body {
 {% for arm in variant.arms %}
             {{ struct_name }}Variant::{{ arm.variant_name }}(b) => {
-                r.extend(b.encode({{ arm.body_parent_flags_arg_first }}));
+                r.extend(b.encode({{ arm.body_encode_args_first }}));
             }
 {% endfor %}
 {% if variant.default_arm %}
             {{ struct_name }}Variant::{{ variant.default_arm.variant_name }} { body, .. } => {
-                r.extend(body.encode({{ variant.default_arm.body_parent_flags_arg_first }}));
+                r.extend(body.encode({{ variant.default_arm.body_encode_args_first }}));
             }
 {% endif %}
         }

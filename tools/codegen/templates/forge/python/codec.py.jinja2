@@ -154,7 +154,7 @@ class {{ struct_name }}:
 {% for arm in variant.arms %}
         {{ "if" if loop.first else "elif" }} {{ variant.tag_match_expr }} == {{ arm.value_literal }}:
             body.kind = "{{ arm.variant_name }}"
-            _arm = {{ arm.body_type }}.decode(cursor{{ arm.body_parent_flags_arg }})
+            _arm = {{ arm.body_type }}.decode(cursor{{ arm.body_decode_args_after_cursor }})
             if _arm is None:
                 return None
             body.{{ arm.c_union_field }} = _arm
@@ -163,7 +163,7 @@ class {{ struct_name }}:
 {% if variant.default_arm %}
             body.kind = "{{ variant.default_arm.variant_name }}"
             body.default_tag = {{ variant.tag_store_expr }}
-            _arm = {{ variant.default_arm.body_type }}.decode(cursor{{ variant.default_arm.body_parent_flags_arg }})
+            _arm = {{ variant.default_arm.body_type }}.decode(cursor{{ variant.default_arm.body_decode_args_after_cursor }})
             if _arm is None:
                 return None
             body.{{ variant.default_arm.c_union_field }} = _arm
@@ -379,11 +379,11 @@ class {{ struct_name }}:
         # Append the active arm body's encoded bytes.
 {% for arm in variant.arms %}
         {{ "if" if loop.first else "elif" }} self.body.kind == "{{ arm.variant_name }}":
-            r.extend(self.body.{{ arm.c_union_field }}.encode({{ arm.body_parent_flags_arg_first }}))
+            r.extend(self.body.{{ arm.c_union_field }}.encode({{ arm.body_encode_args_first }}))
 {% endfor %}
 {% if variant.default_arm %}
         elif self.body.kind == "{{ variant.default_arm.variant_name }}":
-            r.extend(self.body.{{ variant.default_arm.c_union_field }}.encode({{ variant.default_arm.body_parent_flags_arg_first }}))
+            r.extend(self.body.{{ variant.default_arm.c_union_field }}.encode({{ variant.default_arm.body_encode_args_first }}))
 {% endif %}
         return bytes(r)
 {% elif has_present_if_fields %}

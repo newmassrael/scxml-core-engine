@@ -2925,6 +2925,28 @@ fn render_codec(
                         | crate::generator::Language::Python => String::new(),
                     })
                     .unwrap_or_default();
+                // RFC Axis-1 inversion D1 — per-arm flag-bind threading.
+                // When the imported arm body declares `<sce:flag-inputs>`
+                // and the parent's `<sce:import>` declares matching
+                // `<sce:flag-bind>` entries, the dispatcher must extract
+                // each bound source's bit value from the parent's
+                // carrier (or pass through the parent's own input by
+                // name for chain-forwarder shape) and thread the typed
+                // positional args to the arm's `decode`/`encode` call —
+                // structurally identical to the existing direct-embed
+                // threading at `embed_parent_flags_thread_args`.
+                let arm_import = imports.iter().find(|i| i.alias == arm.body_alias);
+                let arm_flag_bind_args = embed_flag_bind_thread_args(arm_import, m, lang);
+                let (
+                    body_decode_args_after_cursor,
+                    body_encode_args_first,
+                    body_encode_args_with_leading_comma,
+                ) = combine_arm_call_args(
+                    &body_parent_flags_arg,
+                    &body_parent_flags_arg_first,
+                    &body_parent_flags_arg_encode,
+                    &arm_flag_bind_args,
+                );
                 let mut obj = serde_json::Map::new();
                 obj.insert("value_literal".into(), value_literal.into());
                 obj.insert("variant_name".into(), variant_name.into());
@@ -2942,6 +2964,23 @@ fn render_codec(
                 obj.insert(
                     "body_parent_flags_arg_first".into(),
                     body_parent_flags_arg_first.into(),
+                );
+                // RFC Axis-1 inversion D1 — combined arg ctx keys for the
+                // 6-backend variant arm dispatchers. Templates consume
+                // these instead of the standalone `body_parent_flags_*`
+                // keys so the same substitution sites work whether the
+                // arm body uses RPF, flag-inputs, both, or neither.
+                obj.insert(
+                    "body_decode_args_after_cursor".into(),
+                    body_decode_args_after_cursor.into(),
+                );
+                obj.insert(
+                    "body_encode_args_first".into(),
+                    body_encode_args_first.into(),
+                );
+                obj.insert(
+                    "body_encode_args_with_leading_comma".into(),
+                    body_encode_args_with_leading_comma.into(),
                 );
                 // RFC variant-default-uniformity Atomic β: surface the
                 // `default="true"` marker so the Rust template can pick
@@ -3075,6 +3114,24 @@ fn render_codec(
                         | crate::generator::Language::Python => String::new(),
                     })
                     .unwrap_or_default();
+                // RFC Axis-1 inversion D1 — per-arm flag-bind threading
+                // for default arm. Same shape as enumerated arms above;
+                // default arms can also import a flag-input-declaring
+                // body (e.g. transport_envelope's default → close which
+                // has no inputs today, but the threading machinery is
+                // structural).
+                let default_import = imports.iter().find(|i| i.alias == d.body_alias);
+                let default_flag_bind_args = embed_flag_bind_thread_args(default_import, m, lang);
+                let (
+                    body_decode_args_after_cursor,
+                    body_encode_args_first,
+                    body_encode_args_with_leading_comma,
+                ) = combine_arm_call_args(
+                    &body_parent_flags_arg,
+                    &body_parent_flags_arg_first,
+                    &body_parent_flags_arg_encode,
+                    &default_flag_bind_args,
+                );
                 let mut obj = serde_json::Map::new();
                 obj.insert("variant_name".into(), "Default".to_string().into());
                 obj.insert("body_type".into(), body_type.into());
@@ -3093,6 +3150,18 @@ fn render_codec(
                 obj.insert(
                     "body_parent_flags_arg_encode".into(),
                     body_parent_flags_arg_encode.into(),
+                );
+                obj.insert(
+                    "body_decode_args_after_cursor".into(),
+                    body_decode_args_after_cursor.into(),
+                );
+                obj.insert(
+                    "body_encode_args_first".into(),
+                    body_encode_args_first.into(),
+                );
+                obj.insert(
+                    "body_encode_args_with_leading_comma".into(),
+                    body_encode_args_with_leading_comma.into(),
                 );
                 Ok::<_, ForgeError>(serde_json::Value::Object(obj))
             })
@@ -5613,6 +5682,60 @@ fn embed_flag_bind_thread_args(
         decode_arg: decode_out,
         encode_arg: encode_out,
     }
+}
+
+/// RFC Axis-1 inversion Phase D1 — compose per-arm combined call-args for
+/// variant arm dispatchers across all 6 backend templates. The dispatcher
+/// must thread BOTH the legacy `<sce:requires-parent-flags>` carrier
+/// (RFC §5.B B5-γ — `body_parent_flags_arg*`) AND the new
+/// `<sce:flag-bind>` inputs (RFC Axis-1 — `<sce:flag-inputs>` declared
+/// at the arm body) to the arm body's `decode`/`encode` call. Separate
+/// ctx keys per family would force every template to know the combining
+/// order; a single combined key per call-site keeps templates simple and
+/// keeps Phase D2 (RPF deletion) byte-stable since only the helper's
+/// parent-flags branch goes away.
+///
+/// Returns `(decode_args_after_cursor, encode_args_first,
+/// encode_args_with_leading_comma)`:
+///   - `decode_args_after_cursor` — leading `, ` per arg; consumed by
+///     `decode(cursor{{ this }})` site on every backend. Empty when the
+///     arm body has neither RPF nor flag-inputs.
+///   - `encode_args_first` — NO leading comma; consumed by non-C11
+///     `b.encode({{ this }})` sites. Two args become `"x, y"`.
+///   - `encode_args_with_leading_comma` — leading `, ` per arg; consumed
+///     by C11 `arm_encoder(&self->body.arm.x{{ this }})` site (where
+///     `&self->body.arm.x` already supplies the first arg).
+///
+/// `flag_bind_args.encode_arg` carries leading `, ` per arg by
+/// `embed_flag_bind_thread_args` convention; strip on the
+/// `_first` path when there is no preceding `body_parent_flags`.
+fn combine_arm_call_args(
+    body_parent_flags_arg_decode: &str,
+    body_parent_flags_arg_first: &str,
+    body_parent_flags_arg_encode: &str,
+    flag_bind_args: &EmbedThreadArgs,
+) -> (String, String, String) {
+    let decode_after_cursor = format!(
+        "{body_parent_flags_arg_decode}{}",
+        flag_bind_args.decode_arg
+    );
+    let encode_with_leading_comma = format!(
+        "{body_parent_flags_arg_encode}{}",
+        flag_bind_args.encode_arg
+    );
+    let encode_first = if body_parent_flags_arg_first.is_empty() {
+        flag_bind_args
+            .encode_arg
+            .strip_prefix(", ")
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| flag_bind_args.encode_arg.clone())
+    } else {
+        format!(
+            "{body_parent_flags_arg_first}{}",
+            flag_bind_args.encode_arg
+        )
+    };
+    (decode_after_cursor, encode_first, encode_with_leading_comma)
 }
 
 /// RFC Axis-1 inversion — defensive unused-parameter suppression for

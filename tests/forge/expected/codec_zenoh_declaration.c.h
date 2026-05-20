@@ -105,7 +105,7 @@ static inline sce_forge_codec_status_t codec_zenoh_declaration_decode(sce_forge_
     switch ((uint8_t)((out->header >> 0) & (uint8_t)0x1F)) {
         case 0:
             out->body.kind = CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_DECL_KEXPR;
-            _arm_st = codec_zenoh_decl_kexpr_decode(cursor, &out->body.arm.codec_zenoh_decl_kexpr);
+            _arm_st = codec_zenoh_decl_kexpr_decode(cursor, &out->body.arm.codec_zenoh_decl_kexpr, (uint8_t)((out->header >> 5) & 0x1));
             if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
             break;
         case 1:
@@ -115,32 +115,32 @@ static inline sce_forge_codec_status_t codec_zenoh_declaration_decode(sce_forge_
             break;
         case 2:
             out->body.kind = CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_DECL_SUBSCRIBER;
-            _arm_st = codec_zenoh_decl_subscriber_decode(cursor, &out->body.arm.codec_zenoh_decl_subscriber);
+            _arm_st = codec_zenoh_decl_subscriber_decode(cursor, &out->body.arm.codec_zenoh_decl_subscriber, (uint8_t)((out->header >> 5) & 0x1));
             if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
             break;
         case 3:
             out->body.kind = CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_UNDECL_SUBSCRIBER;
-            _arm_st = codec_zenoh_undecl_subscriber_decode(cursor, &out->body.arm.codec_zenoh_undecl_subscriber);
+            _arm_st = codec_zenoh_undecl_subscriber_decode(cursor, &out->body.arm.codec_zenoh_undecl_subscriber, (uint8_t)((out->header >> 7) & 0x1));
             if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
             break;
         case 4:
             out->body.kind = CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_DECL_QUERYABLE;
-            _arm_st = codec_zenoh_decl_queryable_decode(cursor, &out->body.arm.codec_zenoh_decl_queryable);
+            _arm_st = codec_zenoh_decl_queryable_decode(cursor, &out->body.arm.codec_zenoh_decl_queryable, (uint8_t)((out->header >> 5) & 0x1), (uint8_t)((out->header >> 7) & 0x1));
             if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
             break;
         case 5:
             out->body.kind = CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_UNDECL_QUERYABLE;
-            _arm_st = codec_zenoh_undecl_queryable_decode(cursor, &out->body.arm.codec_zenoh_undecl_queryable);
+            _arm_st = codec_zenoh_undecl_queryable_decode(cursor, &out->body.arm.codec_zenoh_undecl_queryable, (uint8_t)((out->header >> 7) & 0x1));
             if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
             break;
         case 6:
             out->body.kind = CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_DECL_TOKEN;
-            _arm_st = codec_zenoh_decl_token_decode(cursor, &out->body.arm.codec_zenoh_decl_token);
+            _arm_st = codec_zenoh_decl_token_decode(cursor, &out->body.arm.codec_zenoh_decl_token, (uint8_t)((out->header >> 5) & 0x1));
             if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
             break;
         case 7:
             out->body.kind = CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_UNDECL_TOKEN;
-            _arm_st = codec_zenoh_undecl_token_decode(cursor, &out->body.arm.codec_zenoh_undecl_token);
+            _arm_st = codec_zenoh_undecl_token_decode(cursor, &out->body.arm.codec_zenoh_undecl_token, (uint8_t)((out->header >> 7) & 0x1));
             if (_arm_st != SCE_FORGE_CODEC_OK) return _arm_st;
             break;
         case 26:
@@ -169,7 +169,7 @@ static inline codec_zenoh_declaration_encoded_t codec_zenoh_declaration_encode(c
     /* Append the active arm body's encoded bytes. */
     switch (self->body.kind) {
         case CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_DECL_KEXPR: {
-            codec_zenoh_decl_kexpr_encoded_t _sub = codec_zenoh_decl_kexpr_encode(&self->body.arm.codec_zenoh_decl_kexpr);
+            codec_zenoh_decl_kexpr_encoded_t _sub = codec_zenoh_decl_kexpr_encode(&self->body.arm.codec_zenoh_decl_kexpr, (uint8_t)((self->header >> 5) & 0x1));
             if (r.len + _sub.len <= CODEC_ZENOH_DECLARATION_MAX_BYTES) {
                 for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
                 r.len += _sub.len;
@@ -185,7 +185,7 @@ static inline codec_zenoh_declaration_encoded_t codec_zenoh_declaration_encode(c
             break;
         }
         case CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_DECL_SUBSCRIBER: {
-            codec_zenoh_decl_subscriber_encoded_t _sub = codec_zenoh_decl_subscriber_encode(&self->body.arm.codec_zenoh_decl_subscriber);
+            codec_zenoh_decl_subscriber_encoded_t _sub = codec_zenoh_decl_subscriber_encode(&self->body.arm.codec_zenoh_decl_subscriber, (uint8_t)((self->header >> 5) & 0x1));
             if (r.len + _sub.len <= CODEC_ZENOH_DECLARATION_MAX_BYTES) {
                 for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
                 r.len += _sub.len;
@@ -193,7 +193,7 @@ static inline codec_zenoh_declaration_encoded_t codec_zenoh_declaration_encode(c
             break;
         }
         case CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_UNDECL_SUBSCRIBER: {
-            codec_zenoh_undecl_subscriber_encoded_t _sub = codec_zenoh_undecl_subscriber_encode(&self->body.arm.codec_zenoh_undecl_subscriber);
+            codec_zenoh_undecl_subscriber_encoded_t _sub = codec_zenoh_undecl_subscriber_encode(&self->body.arm.codec_zenoh_undecl_subscriber, (uint8_t)((self->header >> 7) & 0x1));
             if (r.len + _sub.len <= CODEC_ZENOH_DECLARATION_MAX_BYTES) {
                 for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
                 r.len += _sub.len;
@@ -201,7 +201,7 @@ static inline codec_zenoh_declaration_encoded_t codec_zenoh_declaration_encode(c
             break;
         }
         case CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_DECL_QUERYABLE: {
-            codec_zenoh_decl_queryable_encoded_t _sub = codec_zenoh_decl_queryable_encode(&self->body.arm.codec_zenoh_decl_queryable);
+            codec_zenoh_decl_queryable_encoded_t _sub = codec_zenoh_decl_queryable_encode(&self->body.arm.codec_zenoh_decl_queryable, (uint8_t)((self->header >> 5) & 0x1), (uint8_t)((self->header >> 7) & 0x1));
             if (r.len + _sub.len <= CODEC_ZENOH_DECLARATION_MAX_BYTES) {
                 for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
                 r.len += _sub.len;
@@ -209,7 +209,7 @@ static inline codec_zenoh_declaration_encoded_t codec_zenoh_declaration_encode(c
             break;
         }
         case CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_UNDECL_QUERYABLE: {
-            codec_zenoh_undecl_queryable_encoded_t _sub = codec_zenoh_undecl_queryable_encode(&self->body.arm.codec_zenoh_undecl_queryable);
+            codec_zenoh_undecl_queryable_encoded_t _sub = codec_zenoh_undecl_queryable_encode(&self->body.arm.codec_zenoh_undecl_queryable, (uint8_t)((self->header >> 7) & 0x1));
             if (r.len + _sub.len <= CODEC_ZENOH_DECLARATION_MAX_BYTES) {
                 for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
                 r.len += _sub.len;
@@ -217,7 +217,7 @@ static inline codec_zenoh_declaration_encoded_t codec_zenoh_declaration_encode(c
             break;
         }
         case CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_DECL_TOKEN: {
-            codec_zenoh_decl_token_encoded_t _sub = codec_zenoh_decl_token_encode(&self->body.arm.codec_zenoh_decl_token);
+            codec_zenoh_decl_token_encoded_t _sub = codec_zenoh_decl_token_encode(&self->body.arm.codec_zenoh_decl_token, (uint8_t)((self->header >> 5) & 0x1));
             if (r.len + _sub.len <= CODEC_ZENOH_DECLARATION_MAX_BYTES) {
                 for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
                 r.len += _sub.len;
@@ -225,7 +225,7 @@ static inline codec_zenoh_declaration_encoded_t codec_zenoh_declaration_encode(c
             break;
         }
         case CODEC_ZENOH_DECLARATION_BODY_KIND_CODEC_ZENOH_UNDECL_TOKEN: {
-            codec_zenoh_undecl_token_encoded_t _sub = codec_zenoh_undecl_token_encode(&self->body.arm.codec_zenoh_undecl_token);
+            codec_zenoh_undecl_token_encoded_t _sub = codec_zenoh_undecl_token_encode(&self->body.arm.codec_zenoh_undecl_token, (uint8_t)((self->header >> 7) & 0x1));
             if (r.len + _sub.len <= CODEC_ZENOH_DECLARATION_MAX_BYTES) {
                 for (size_t _i = 0; _i < _sub.len; ++_i) r.bytes[r.len + _i] = _sub.bytes[_i];
                 r.len += _sub.len;

@@ -12707,3 +12707,158 @@ fn axis1_phase_b_emits_typed_param_and_predicate_consumption() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// RFC Axis-1 inversion Phase D1 — variant arm flag-bind threading.
+///
+/// Phase B closed the direct-`<sce:embed>` flag-bind threading gap;
+/// Phase D1 closes the variant-arm-dispatcher gap. The dispatcher must
+/// extract the bound source bits from the parent's carrier and thread
+/// them to the arm body's `decode`/`encode` call — without this, an
+/// arm body that declares `<sce:flag-inputs>` is invoked via
+/// `Arm::decode(cursor)?` (zero arg slot beyond the cursor), which
+/// rustc rejects since the leaf signature is `decode(cursor, s: u8)`.
+///
+/// This test exercises the variant arm path with TWO arm bodies (one
+/// with flag-inputs, one without) plus a default arm. Compile-smoke on
+/// all 6 backends + Rust emit-shape assertions + an end-to-end
+/// `rustc_compile_codec_set` gate that proves the threaded code
+/// actually compiles cleanly under cargo + rustc + `deny(warnings)`.
+#[test]
+fn axis1_phase_d1_variant_arm_flag_bind_threading() {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let dir = std::env::temp_dir().join(format!("sce_axis1_phase_d1_{pid}_{id}"));
+    std::fs::create_dir_all(&dir).expect("mkdir fixture");
+
+    // Parent envelope: 1-byte header with `mid:5 + S:1`. Variant
+    // dispatch on `header.mid`. Arm 0x01 imports a leaf that declares
+    // `<sce:flag-input name="S">`; the parent's import binds
+    // `input="S" source="header.S"`. Arm 0x02 imports a leaf with no
+    // flag-inputs. Default arm reuses the no-input leaf.
+    let parent = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_axis1_d1_parent" sce:default-endian="big">
+  <sce:import src="codec_axis1_d1_with_input.scxml" kind="codec" as="codec_axis1_d1_with_input">
+    <sce:flag-bind input="S" source="header.S"/>
+  </sce:import>
+  <sce:import src="codec_axis1_d1_no_input.scxml" kind="codec" as="codec_axis1_d1_no_input"/>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="mid" bit="0" width="5"/>
+      <sce:flag name="S"   bit="6"/>
+    </sce:flags>
+    <sce:variant tag="header.mid">
+      <sce:arm value="0x01" type="codec_axis1_d1_with_input" default="true"/>
+      <sce:arm value="0x02" type="codec_axis1_d1_no_input"/>
+      <sce:default type="codec_axis1_d1_no_input"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#;
+
+    let with_input = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_axis1_d1_with_input" sce:default-endian="big">
+  <sce:flag-inputs>
+    <sce:flag-input name="S" width="1"/>
+  </sce:flag-inputs>
+  <datamodel>
+    <sce:field id="version" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="opt"     sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="S"/>
+  </datamodel>
+</scxml>"#;
+
+    let no_input = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_axis1_d1_no_input" sce:default-endian="big">
+  <datamodel>
+    <sce:field id="reason" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+  </datamodel>
+</scxml>"#;
+
+    std::fs::write(dir.join("codec_axis1_d1_parent.scxml"), parent).expect("write parent");
+    std::fs::write(dir.join("codec_axis1_d1_with_input.scxml"), with_input)
+        .expect("write with_input");
+    std::fs::write(dir.join("codec_axis1_d1_no_input.scxml"), no_input).expect("write no_input");
+
+    // Compile-smoke on all 6 backends so a single-language regression
+    // surfaces immediately rather than via the per-language conformance
+    // golden tests.
+    for lang in [
+        sce_build::generator::Language::Rust,
+        sce_build::generator::Language::Cpp,
+        sce_build::generator::Language::Kotlin,
+        sce_build::generator::Language::Go,
+        sce_build::generator::Language::Python,
+        sce_build::generator::Language::C11,
+    ] {
+        let mut opts = sce_build::ForgeCompileOptions::default();
+        if matches!(lang, sce_build::generator::Language::Go) {
+            opts.go_module_prefix = Some("github.com/test/codec".to_string());
+        }
+        let _ = sce_build::compile_forge_with_imports(
+            parent,
+            sce_build::DocumentLabel::symmetric("codec_axis1_d1_parent"),
+            lang,
+            &dir,
+            &opts,
+        )
+        .unwrap_or_else(|e| panic!("Phase D1 parent codegen failed on {lang:?}: {e:?}"));
+    }
+
+    // Rust emit-shape assertions on the dispatcher.
+    let parent_out = sce_build::compile_forge_with_imports(
+        parent,
+        sce_build::DocumentLabel::symmetric("codec_axis1_d1_parent"),
+        sce_build::generator::Language::Rust,
+        &dir,
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .expect("parent Rust emit");
+
+    let parent_rust = parent_out
+        .files
+        .iter()
+        .find(|(name, _)| name.contains("codec_axis1_d1_parent"))
+        .map(|(_, body)| body.clone())
+        .expect("parent codec emit");
+
+    // Arm dispatch decode site must extract S from `header` and thread.
+    assert!(
+        parent_rust
+            .contains("CodecAxis1D1WithInput::decode(cursor, ((header >> 6) & 0x1) as u8)?"),
+        "variant arm decode must thread `((header >> 6) & 0x1) as u8`:\n{parent_rust}"
+    );
+    // No-input arm must NOT pick up any spurious arg.
+    assert!(
+        parent_rust.contains("CodecAxis1D1NoInput::decode(cursor)?"),
+        "no-input arm decode must remain arg-less:\n{parent_rust}"
+    );
+    // Encode site reads through `self.header`.
+    assert!(
+        parent_rust.contains("b.encode(((self.header >> 6) & 0x1) as u8)"),
+        "variant arm encode must extract from self.header:\n{parent_rust}"
+    );
+
+    // End-to-end rustc-compile gate — substring assertions check shape;
+    // this proves the dispatcher + arm bodies compose into a compilable
+    // crate (Phase D1 regression: without this gate the threaded code
+    // emit would shape-match goldens but fail at the leaf decode arity).
+    rustc_compile_codec_set(
+        &dir,
+        &[
+            "codec_axis1_d1_parent.scxml",
+            "codec_axis1_d1_with_input.scxml",
+            "codec_axis1_d1_no_input.scxml",
+        ],
+        "axis1_phase_d1",
+    )
+    .expect("Phase D1 variant arm flag-bind threading must rustc-compile clean");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

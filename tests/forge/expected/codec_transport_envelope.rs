@@ -81,13 +81,13 @@ impl CodecTransportEnvelope {
         // runtime tag value so encode can round-trip it back onto the
         // wire.
         let body = match ((header >> 0) & (0x1F as u8)) as u8 {
-            1u8 => CodecTransportEnvelopeVariant::CodecZenohInitBody(CodecZenohInitBody::decode(cursor)?),
-            2u8 => CodecTransportEnvelopeVariant::CodecZenohOpenBody(CodecZenohOpenBody::decode(cursor)?),
+            1u8 => CodecTransportEnvelopeVariant::CodecZenohInitBody(CodecZenohInitBody::decode(cursor, ((header >> 6) & 0x1) as u8, ((header >> 5) & 0x1) as u8)?),
+            2u8 => CodecTransportEnvelopeVariant::CodecZenohOpenBody(CodecZenohOpenBody::decode(cursor, ((header >> 5) & 0x1) as u8)?),
             3u8 => CodecTransportEnvelopeVariant::CodecZenohClose(CodecZenohClose::decode(cursor)?),
             4u8 => CodecTransportEnvelopeVariant::CodecZenohKeepAlive(CodecZenohKeepAlive::decode(cursor)?),
             5u8 => CodecTransportEnvelopeVariant::CodecZenohFrame(CodecZenohFrame::decode(cursor)?),
             6u8 => CodecTransportEnvelopeVariant::CodecZenohFragment(CodecZenohFragment::decode(cursor)?),
-            7u8 => CodecTransportEnvelopeVariant::CodecZenohJoin(CodecZenohJoin::decode(cursor)?),
+            7u8 => CodecTransportEnvelopeVariant::CodecZenohJoin(CodecZenohJoin::decode(cursor, ((header >> 6) & 0x1) as u8)?),
             other => CodecTransportEnvelopeVariant::Default {
                 tag: other,
                 body: CodecZenohClose::decode(cursor)?,
@@ -162,10 +162,10 @@ impl CodecTransportEnvelope {
         // Append the active arm's encoded bytes.
         match &self.body {
             CodecTransportEnvelopeVariant::CodecZenohInitBody(b) => {
-                r.extend(b.encode());
+                r.extend(b.encode(((self.header >> 6) & 0x1) as u8, ((self.header >> 5) & 0x1) as u8));
             }
             CodecTransportEnvelopeVariant::CodecZenohOpenBody(b) => {
-                r.extend(b.encode());
+                r.extend(b.encode(((self.header >> 5) & 0x1) as u8));
             }
             CodecTransportEnvelopeVariant::CodecZenohClose(b) => {
                 r.extend(b.encode());
@@ -180,7 +180,7 @@ impl CodecTransportEnvelope {
                 r.extend(b.encode());
             }
             CodecTransportEnvelopeVariant::CodecZenohJoin(b) => {
-                r.extend(b.encode());
+                r.extend(b.encode(((self.header >> 6) & 0x1) as u8));
             }
             CodecTransportEnvelopeVariant::Default { body, .. } => {
                 r.extend(body.encode());

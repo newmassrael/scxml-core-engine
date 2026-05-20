@@ -74,13 +74,13 @@ struct CodecTransportEnvelope {
         CodecTransportEnvelopeVariant body;
         switch (static_cast<uint8_t>((header >> 0) & static_cast<uint8_t>(0x1F))) {
             case 1: {
-                auto _arm = ::SCE::Generated::CodecZenohInitBody::CodecZenohInitBody::decode(cursor);
+                auto _arm = ::SCE::Generated::CodecZenohInitBody::CodecZenohInitBody::decode(cursor, static_cast<std::uint8_t>((header >> 6) & 0x1), static_cast<std::uint8_t>((header >> 5) & 0x1));
                 if (!_arm.has_value()) return std::nullopt;
                 body = *_arm;
                 break;
             }
             case 2: {
-                auto _arm = ::SCE::Generated::CodecZenohOpenBody::CodecZenohOpenBody::decode(cursor);
+                auto _arm = ::SCE::Generated::CodecZenohOpenBody::CodecZenohOpenBody::decode(cursor, static_cast<std::uint8_t>((header >> 5) & 0x1));
                 if (!_arm.has_value()) return std::nullopt;
                 body = *_arm;
                 break;
@@ -110,7 +110,7 @@ struct CodecTransportEnvelope {
                 break;
             }
             case 7: {
-                auto _arm = ::SCE::Generated::CodecZenohJoin::CodecZenohJoin::decode(cursor);
+                auto _arm = ::SCE::Generated::CodecZenohJoin::CodecZenohJoin::decode(cursor, static_cast<std::uint8_t>((header >> 6) & 0x1));
                 if (!_arm.has_value()) return std::nullopt;
                 body = *_arm;
                 break;
@@ -199,11 +199,11 @@ struct CodecTransportEnvelope {
         r.push_back(header);
         // Append the active arm body's encoded bytes.
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohInitBody::CodecZenohInitBody>(&body)) {
-            auto _sub = _p->encode();
+            auto _sub = _p->encode(static_cast<std::uint8_t>((this->header >> 6) & 0x1), static_cast<std::uint8_t>((this->header >> 5) & 0x1));
             r.insert(r.end(), _sub.begin(), _sub.end());
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohOpenBody::CodecZenohOpenBody>(&body)) {
-            auto _sub = _p->encode();
+            auto _sub = _p->encode(static_cast<std::uint8_t>((this->header >> 5) & 0x1));
             r.insert(r.end(), _sub.begin(), _sub.end());
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohClose::CodecZenohClose>(&body)) {
@@ -223,7 +223,7 @@ struct CodecTransportEnvelope {
             r.insert(r.end(), _sub.begin(), _sub.end());
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohJoin::CodecZenohJoin>(&body)) {
-            auto _sub = _p->encode();
+            auto _sub = _p->encode(static_cast<std::uint8_t>((this->header >> 6) & 0x1));
             r.insert(r.end(), _sub.begin(), _sub.end());
         }
         if (auto _p = std::get_if<CodecTransportEnvelopeDefault>(&body)) {

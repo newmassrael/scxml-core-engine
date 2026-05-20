@@ -142,7 +142,7 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor{{ params_after_first_arg }}
 	switch {{ variant.tag_match_expr }} {
 {% for arm in variant.arms %}
 	case {{ arm.value_literal }}:
-		_arm, err := {{ arm.body_decoder }}(cursor{{ arm.body_parent_flags_arg }})
+		_arm, err := {{ arm.body_decoder }}(cursor{{ arm.body_decode_args_after_cursor }})
 		if err != nil {
 			return nil, err
 		}
@@ -150,7 +150,7 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor{{ params_after_first_arg }}
 {% endfor %}
 	default:
 {% if variant.default_arm %}
-		_arm, err := {{ variant.default_arm.body_decoder }}(cursor{{ variant.default_arm.body_parent_flags_arg }})
+		_arm, err := {{ variant.default_arm.body_decoder }}(cursor{{ variant.default_arm.body_decode_args_after_cursor }})
 		if err != nil {
 			return nil, err
 		}
@@ -368,11 +368,11 @@ func (s *{{ struct_name }}) Encode({{ params_first_arg }}) []byte {
 	switch {
 {% for arm in variant.arms %}
 	case s.Body.{{ arm.variant_name }} != nil:
-		r = append(r, s.Body.{{ arm.variant_name }}.Encode({{ arm.body_parent_flags_arg_first }})...)
+		r = append(r, s.Body.{{ arm.variant_name }}.Encode({{ arm.body_encode_args_first }})...)
 {% endfor %}
 {% if variant.default_arm %}
 	case s.Body.{{ variant.default_arm.variant_name }} != nil:
-		r = append(r, s.Body.{{ variant.default_arm.variant_name }}.Body.Encode({{ variant.default_arm.body_parent_flags_arg_first }})...)
+		r = append(r, s.Body.{{ variant.default_arm.variant_name }}.Body.Encode({{ variant.default_arm.body_encode_args_first }})...)
 {% endif %}
 	}
 	return r
