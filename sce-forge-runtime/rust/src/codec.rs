@@ -15,8 +15,13 @@
 //! `skip_field`) land alongside their first consumer in B1-α/β/δ — VLE,
 //! variant, present-if respectively.
 //!
-//! Encode-side cursor + `BufferOverflow` lands in B1-α (variable-length
-//! VLE encode is the first reachable consumer).
+//! Encode-side sink + `BufferOverflow` is the symmetric write half of
+//! the cursor contract: `SceSink` is the object-safe trait that codec
+//! `encode` bodies emit into; `VecSink` (heap-backed, infallible) and
+//! `SliceSink` (caller-owned `&mut [u8]`, raises `BufferOverflow` at
+//! the cap) are the two concrete impls shipped here. Caller owns the
+//! destination storage, mirroring the borrow contract on the decode
+//! cursor side.
 
 /// Typed decode error. The enum is `#[non_exhaustive]` to keep
 /// additive variants from breaking downstream `match` arms before
@@ -58,6 +63,15 @@ pub enum CodecError {
     /// construct typed `CodecError` variants at runtime, mirroring the
     /// existing VleWidthOverflow declaration-only convention.
     InvalidUtf8,
+    /// Encode-side counterpart to `NeedMoreBytes`: the destination sink
+    /// reported insufficient remaining capacity for the next write.
+    /// Only the bounded `SliceSink` (caller-owned `&mut [u8]`) can
+    /// raise this; the heap-backed `VecSink` grows on demand and is
+    /// effectively infallible. Codec authors decide per call site
+    /// whether the destination is bounded; a fixed-frame on-wire codec
+    /// driving a DMA bounce buffer will run on `SliceSink` and surface
+    /// overflow as a typed error rather than aborting.
+    BufferOverflow,
 }
 
 /// Read-only cursor over a borrowed input slice. Decode bodies use
@@ -155,6 +169,148 @@ impl<'a> SceCursor<'a> {
     /// Read a `vle_u64` field (1-10 wire bytes). Canonical Zenoh ZInt.
     pub fn read_vle_u64(&mut self) -> Result<u64, CodecError> {
         self.read_vle_inner(64)
+    }
+}
+
+// ── Write-side sink ──────────────────────────────────────────────
+
+/// Write-side cursor for codec emit. Object-safe write surface that
+/// generated `encode` bodies accept.
+///
+/// `SceSink` mirrors the read-side `SceCursor` borrow contract: callers
+/// own the destination storage, and codec bodies append bytes to it
+/// positionally without owning the buffer. The required method writes
+/// raw bytes; per-width helpers (`write_u8`, `write_u16_le`, …) are
+/// provided as default methods so concrete sinks MAY override them for
+/// efficiency without changing the call surface.
+///
+/// Object safety: no `Self` in return positions, no generics on trait
+/// methods, no associated types. Callers may coerce a concrete sink to
+/// `&mut dyn SceSink` when monomorphization cost is not desired.
+pub trait SceSink {
+    /// Append `bytes` to the underlying storage. Concrete sinks raise
+    /// `CodecError::BufferOverflow` when the destination has
+    /// insufficient remaining capacity; growable sinks return `Ok(())`.
+    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), CodecError>;
+
+    /// Append a single byte. Default impl forwards to `write_bytes`.
+    fn write_u8(&mut self, b: u8) -> Result<(), CodecError> {
+        self.write_bytes(&[b])
+    }
+
+    /// Append a little-endian `u16` (2 bytes).
+    fn write_u16_le(&mut self, v: u16) -> Result<(), CodecError> {
+        self.write_bytes(&v.to_le_bytes())
+    }
+
+    /// Append a big-endian `u16` (2 bytes).
+    fn write_u16_be(&mut self, v: u16) -> Result<(), CodecError> {
+        self.write_bytes(&v.to_be_bytes())
+    }
+
+    /// Append a little-endian `u32` (4 bytes).
+    fn write_u32_le(&mut self, v: u32) -> Result<(), CodecError> {
+        self.write_bytes(&v.to_le_bytes())
+    }
+
+    /// Append a big-endian `u32` (4 bytes).
+    fn write_u32_be(&mut self, v: u32) -> Result<(), CodecError> {
+        self.write_bytes(&v.to_be_bytes())
+    }
+
+    /// Append a little-endian `u64` (8 bytes).
+    fn write_u64_le(&mut self, v: u64) -> Result<(), CodecError> {
+        self.write_bytes(&v.to_le_bytes())
+    }
+
+    /// Append a big-endian `u64` (8 bytes).
+    fn write_u64_be(&mut self, v: u64) -> Result<(), CodecError> {
+        self.write_bytes(&v.to_be_bytes())
+    }
+}
+
+/// Bounded sink over a caller-owned `&mut [u8]`. Raises
+/// `CodecError::BufferOverflow` when an append would exceed the slice
+/// capacity. The natural sink for MCU / DMA / fixed-frame call sites.
+///
+/// Available on `no_std` without `alloc` — the underlying storage is a
+/// borrowed slice the caller already owns.
+pub struct SliceSink<'a> {
+    buf: &'a mut [u8],
+    pos: usize,
+}
+
+impl<'a> SliceSink<'a> {
+    /// Wrap `buf` with write position 0.
+    pub fn new(buf: &'a mut [u8]) -> Self {
+        Self { buf, pos: 0 }
+    }
+
+    /// Current write position (bytes written so far).
+    pub const fn position(&self) -> usize {
+        self.pos
+    }
+
+    /// Remaining capacity from current position to end of buffer.
+    pub const fn remaining(&self) -> usize {
+        self.buf.len() - self.pos
+    }
+
+    /// Consume the sink and return the prefix of the original buffer
+    /// containing the bytes written. Callers use this to recover the
+    /// exact-size view for downstream syscalls (e.g. `send(2)`).
+    pub fn into_written(self) -> &'a mut [u8] {
+        &mut self.buf[..self.pos]
+    }
+}
+
+impl<'a> SceSink for SliceSink<'a> {
+    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), CodecError> {
+        if self.remaining() < bytes.len() {
+            return Err(CodecError::BufferOverflow);
+        }
+        let end = self.pos + bytes.len();
+        self.buf[self.pos..end].copy_from_slice(bytes);
+        self.pos = end;
+        Ok(())
+    }
+}
+
+// ── Heap-backed sink (alloc-only) ────────────────────────────────
+
+#[cfg(feature = "alloc")]
+extern crate alloc;
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
+
+/// Heap-backed sink over a caller-owned `&mut Vec<u8>`. The vector
+/// grows on demand, so `write_bytes` never returns `BufferOverflow` —
+/// the implementation is effectively infallible. The natural sink for
+/// std / `no_std + alloc` consumers and the engine behind the
+/// generated `encode_to_vec()` facade.
+#[cfg(feature = "alloc")]
+pub struct VecSink<'a> {
+    buf: &'a mut Vec<u8>,
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> VecSink<'a> {
+    /// Wrap `buf` for append-only writes.
+    pub fn new(buf: &'a mut Vec<u8>) -> Self {
+        Self { buf }
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> SceSink for VecSink<'a> {
+    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), CodecError> {
+        self.buf.extend_from_slice(bytes);
+        Ok(())
+    }
+
+    fn write_u8(&mut self, b: u8) -> Result<(), CodecError> {
+        self.buf.push(b);
+        Ok(())
     }
 }
 
@@ -270,5 +426,102 @@ mod tests {
         assert_ne!(e, CodecError::NeedMoreBytes);
         assert_ne!(e, CodecError::VleWidthOverflow);
         assert_ne!(e, CodecError::TlvChainOverflow);
+    }
+
+    // ── BufferOverflow variant pin ───────────────────────────────
+
+    #[test]
+    fn buffer_overflow_is_distinct_codec_error() {
+        let e = CodecError::BufferOverflow;
+        assert_ne!(e, CodecError::NeedMoreBytes);
+        assert_ne!(e, CodecError::VleWidthOverflow);
+        assert_ne!(e, CodecError::TlvChainOverflow);
+        assert_ne!(e, CodecError::InvalidUtf8);
+    }
+
+    // ── SliceSink ─────────────────────────────────────────────────
+
+    #[test]
+    fn slice_sink_records_position_after_writes() {
+        let mut buf = [0u8; 8];
+        let mut s = SliceSink::new(&mut buf);
+        s.write_u8(0x11).unwrap();
+        s.write_u16_le(0x4433).unwrap();
+        s.write_u32_be(0xDEAD_BEEF).unwrap();
+        assert_eq!(s.position(), 7);
+        assert_eq!(s.remaining(), 1);
+        assert_eq!(buf[..7], [0x11, 0x33, 0x44, 0xDE, 0xAD, 0xBE, 0xEF]);
+    }
+
+    #[test]
+    fn slice_sink_overflow_when_write_exceeds_cap() {
+        let mut buf = [0u8; 3];
+        let mut s = SliceSink::new(&mut buf);
+        s.write_u16_le(0xCAFE).unwrap();
+        assert_eq!(s.write_u16_le(0xBABE), Err(CodecError::BufferOverflow));
+        assert_eq!(s.position(), 2);
+    }
+
+    #[test]
+    fn slice_sink_into_written_returns_exact_prefix() {
+        let mut buf = [0u8; 16];
+        {
+            let mut s = SliceSink::new(&mut buf);
+            s.write_bytes(b"abcd").unwrap();
+            let view = s.into_written();
+            assert_eq!(view, b"abcd");
+        }
+        assert_eq!(&buf[..4], b"abcd");
+    }
+
+    #[test]
+    fn slice_sink_zero_byte_write_succeeds_at_boundary() {
+        // Zero-length write must not advance the cursor and must not
+        // raise BufferOverflow even at exact saturation. Codec emit
+        // sites pass empty slices for absent optional fields.
+        let mut buf = [0u8; 2];
+        let mut s = SliceSink::new(&mut buf);
+        s.write_u16_le(0xAAAA).unwrap();
+        s.write_bytes(&[]).unwrap();
+        assert_eq!(s.position(), 2);
+    }
+
+    // ── VecSink (alloc-only) ──────────────────────────────────────
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn vec_sink_appends_to_caller_buffer() {
+        let mut v: Vec<u8> = Vec::new();
+        let mut s = VecSink::new(&mut v);
+        s.write_u32_le(0x1234_5678).unwrap();
+        s.write_u8(0xAB).unwrap();
+        s.write_bytes(b"!").unwrap();
+        assert_eq!(v, [0x78, 0x56, 0x34, 0x12, 0xAB, b'!']);
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn vec_sink_preserves_existing_prefix() {
+        // VecSink appends — existing bytes in the destination remain.
+        // Critical for coalesced-send paths that write multiple frames
+        // into one wire buffer.
+        let mut v: Vec<u8> = alloc::vec![0xDE, 0xAD];
+        let mut s = VecSink::new(&mut v);
+        s.write_u16_be(0xBEEF).unwrap();
+        assert_eq!(v, [0xDE, 0xAD, 0xBE, 0xEF]);
+    }
+
+    // ── Object-safe trait pin ────────────────────────────────────
+
+    #[test]
+    fn sce_sink_is_object_safe_via_dyn() {
+        // If SceSink ever gains a Self-returning method, generic param,
+        // or associated type, this line stops compiling. The pin
+        // protects the documented object-safety guarantee.
+        let mut buf = [0u8; 4];
+        let mut s = SliceSink::new(&mut buf);
+        let d: &mut dyn SceSink = &mut s;
+        d.write_u32_le(0x0102_0304).unwrap();
+        assert_eq!(buf, [0x04, 0x03, 0x02, 0x01]);
     }
 }
