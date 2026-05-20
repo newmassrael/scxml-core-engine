@@ -93,6 +93,49 @@ The SOMEIP arm of row 10 (binding-declared SD-denial classification via
 `sd_denied_classifies_as_unauthorized: true`) is unaffected by this
 limitation — no text inspection is involved.
 
+### A6-002 — `SomeipAvailabilityProbe` (vsomeip initial-edge callback claim)
+
+- **Header**: `sce/include/mesh/third_party/SomeipAvailabilityProbe.h`
+- **Asserted upstream surface**: vsomeip fires
+  `register_availability_handler`'s callback on the initial
+  `NOT_AVAILABLE → AVAILABLE` transition, and SCE's `OutboundBuffer`
+  drain logic depends on that callback to leave the not-ready state.
+- **Drift consequence**: if vsomeip's contract changes (initial-callback
+  debounce, or first-callback semantics altered in any minor release),
+  the `OutboundBuffer` never drains and SCE silently hangs at startup
+  with no error event raised. The author has no diagnostic.
+- **Absorber technique**: B (defensive idempotent absorption).
+- **Absorber API**:
+  `SCE::Mesh::ThirdParty::probeAndDispatch(app, service, instance,
+  handler)` calls `register_availability_handler` then synthesizes a
+  single immediate handler invocation carrying the current
+  `is_available(service, instance)` value. Single-call API forces the
+  absorption — a two-call API (`registerHandler()` + separate
+  `probeNow()`) would let a caller skip the probe and lose the
+  guarantee. Templated on the application type so unit tests can pass
+  a minimal duck-typed mock without inheriting the full
+  `vsomeip::application` abstract interface.
+- **Absorber fixture**: `tests/mesh/SomeipAvailabilityProbeTest.cpp`
+  exercises the probe against a duck-typed mock that deliberately
+  does NOT fire the initial callback, asserts the handler is invoked
+  exactly once via the probe path with the correct availability
+  state, and pins the idempotency contract (handler invoked twice
+  when the mock DOES fire its initial callback).
+- **Codegen integration**: `tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2`
+  replaces the prior direct `register_availability_handler` call (for
+  the per-target `<target>_app_` outbound-buffer wiring) with
+  `::SCE::Mesh::ThirdParty::probeAndDispatch(...)`. Handler bodies are
+  unchanged (markReady / markNotReady + row-10 auth one-shot).
+  Idempotency requirements documented at the handler's emit site:
+  `markReady`/`markNotReady` on an OutboundBuffer absorb repeated
+  identical states; the row-10 `_auth_unauthorized_fired_.exchange(true)`
+  is naturally one-shot.
+- **Version pin**: the CI test gate uses `find_package(vsomeip3 3 QUIET)`
+  to require vsomeip major version 3.x. Future major-version upgrades
+  (vsomeip4) require explicit review of the initial-callback contract
+  against this absorber's assumptions.
+- **Origin**: ownership-inversion 26-instance audit (2026-05-20).
+
 ## Reactivation protocol
 
 When a future audit, consumer-project signal, or runtime incident surfaces a

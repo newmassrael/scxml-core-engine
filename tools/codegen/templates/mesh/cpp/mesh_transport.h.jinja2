@@ -390,6 +390,12 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 #include <thread>
 #include <unordered_map>
 #include <vsomeip/vsomeip.hpp>
+
+// SCE_MESH.md §10.10 — vsomeip initial-edge absorber (axis-6 A6-002,
+// docs/SCE_AXIS_6_PATTERNS.md). Routes `register_availability_handler`
+// through a defensive synchronous probe so vsomeip's initial-callback
+// contract cannot silently degrade SCE startup.
+#include "mesh/third_party/SomeipAvailabilityProbe.h"
 {% if targets | selectattr('pool_plan') | selectattr('state.kind', 'equalto', 'someip') | list | length > 0 %}
 // SCE_MESH.md §14.4 SOME/IP pool: runtime instance-id validation against the
 // static `pool_plan.instances[]` and numeric parsing of the `<param>` value
@@ -2560,12 +2566,19 @@ struct TransportRouter {
         // SCE Mesh §10.10: feed the per-target OutboundBuffer's readiness
         // state from vsomeip's availability handler. Registered BEFORE
         // start() so the initial NOT_AVAILABLE → AVAILABLE transition is
-        // observed — vsomeip only fires the callback on state changes,
-        // so a handler installed after start() would miss the anchor
-        // edge and the buffer would never drain. Availability is
-        // service-level (one bool per (service, instance) pair), so the
-        // buffer gates ALL outbound patterns on this SOME/IP target.
-        {{ target.target_snake }}_app_->register_availability_handler(
+        // observed. The registration is routed through
+        // `SCE::Mesh::ThirdParty::SomeipAvailabilityProbe::probeAndDispatch`
+        // (axis-6 A6-002, docs/SCE_AXIS_6_PATTERNS.md) so vsomeip's
+        // initial-callback contract is absorbed by a defensive
+        // synchronous `is_available()` probe — if vsomeip ever skips
+        // the initial-edge callback, the handler still runs once via
+        // the probe path. Handler is idempotent (markReady/markNotReady
+        // collapse repeated identical states; row-10 auth one-shot is
+        // exchange-gated). Availability is service-level (one bool per
+        // (service, instance) pair), so the buffer gates ALL outbound
+        // patterns on this SOME/IP target.
+        ::SCE::Mesh::ThirdParty::probeAndDispatch(
+            {{ target.target_snake }}_app_,
             SOMEIP_SERVICE_{{ target.target_snake | upper }},
             SOMEIP_INSTANCE_{{ target.target_snake | upper }},
             [this](vsomeip::service_t, vsomeip::instance_t, bool is_available) {

@@ -1431,6 +1431,46 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
         message(STATUS "axis-6: openssl binary or zenoh-cpp not found — skipping mesh_auth_classifier_ci_fixture")
     endif()
 
+    # ── SomeipAvailabilityProbe unit tests (docs/SCE_AXIS_6_PATTERNS.md
+    # A6-002) ─────────────────────────────────────────────────────
+    # Pins the defensive-idempotent absorption contract: the probe
+    # invokes the caller's handler at least once even if the mock
+    # vsomeip application skips the initial-edge callback, and the
+    # synthesized invocation carries the application's current
+    # is_available() state. The probe is templated on the application
+    # type, so the test uses a minimal duck-typed mock — no vsomeip
+    # runtime dependency in the test fixture itself, only the vsomeip
+    # headers (availability_handler_t typedef + primitive_types).
+    # vsomeip3 major-version pinned — vsomeip4 would require review
+    # of the initial-callback contract against the probe's assumptions.
+    find_package(vsomeip3 3 QUIET)
+    if(vsomeip3_FOUND)
+        add_executable(mesh_someip_availability_probe_test
+            mesh/SomeipAvailabilityProbeTest.cpp
+        )
+
+        target_include_directories(mesh_someip_availability_probe_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+        )
+
+        target_link_libraries(mesh_someip_availability_probe_test
+            PRIVATE
+                vsomeip3
+                GTest::gtest_main
+                pthread
+        )
+
+        target_compile_features(mesh_someip_availability_probe_test PRIVATE cxx_std_17)
+
+        apply_sce_test_policies(mesh_someip_availability_probe_test)
+
+        add_test(NAME mesh_someip_availability_probe_verification
+                 COMMAND mesh_someip_availability_probe_test)
+    else()
+        message(STATUS "axis-6: vsomeip3 not found — skipping mesh_someip_availability_probe_test")
+    endif()
+
     # ── DedupRouter unit tests (SCE_MESH.md §10.5) ────────────────
     # Pure unit tests on the per-sender envelope-id dedup filter.
     # Verifies the 256-entry ring (novel/repeat/eviction/wrap) plus
