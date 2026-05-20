@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: length-ref bytes with uint16 big-endian
+     length-field. BE variant of codec_length_ref_uint16_le —
+     locks the multi-byte fold for the opposite byte order. For
+     length=256 the wire is 0x01 0x00; the pre-refactor decode read
+     only raw[0]=0x01 and produced a 1-byte payload slice instead of
+     256 bytes.
+
+     Wire shape:
+       byte 0..1 : payload_len (uint16 BE)
+       byte 2+   : payload     (bytes, length = payload_len) -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_length_ref_uint16_be">
+  <datamodel>
+    <sce:field id="payload_len" sce:type="uint16" sce:byte="0" sce:bit-size="16"/>
+    <sce:field id="payload"     sce:type="bytes"  sce:byte="2" sce:bit-size="length-ref"
+               sce:length-field="payload_len" sce:max-size="1024"/>
+  </datamodel>
+  <sce:test-vector hex="0000">
+    <sce:decoded field="payload_len" value="0"/>
+    <sce:decoded field="payload" hex=""/>
+  </sce:test-vector>
+  <sce:test-vector hex="0004aabbccdd">
+    <sce:decoded field="payload_len" value="4"/>
+    <sce:decoded field="payload" hex="aabbccdd"/>
+  </sce:test-vector>
+  <sce:test-vector hex="0100ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff">
+    <sce:decoded field="payload_len" value="256"/>
+    <sce:decoded field="payload" hex="ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"/>
+  </sce:test-vector>
+</scxml>

@@ -10637,6 +10637,31 @@ fn rustc_compile_codec_set(
     scxml_filenames: &[&str],
     test_id: &str,
 ) -> Result<(), String> {
+    rustc_run_codec_set(dir, scxml_filenames, test_id, "build")
+}
+
+/// `<sce:test-vector>` round-trip runtime harness. Same setup as
+/// `rustc_compile_codec_set` but invokes `cargo test` so the
+/// sidecar's `#[test]` functions actually execute. Required when a
+/// fixture's assertion IS the verification (e.g. multi-byte
+/// length-ref locks the simple-path let-binding refactor — byte
+/// goldens only prove sidecar SOURCE is stable; running the
+/// generated round-trip is what proves the codec encodes and
+/// decodes the multi-byte payload correctly at runtime).
+fn rustc_test_codec_set(
+    dir: &std::path::Path,
+    scxml_filenames: &[&str],
+    test_id: &str,
+) -> Result<(), String> {
+    rustc_run_codec_set(dir, scxml_filenames, test_id, "test")
+}
+
+fn rustc_run_codec_set(
+    dir: &std::path::Path,
+    scxml_filenames: &[&str],
+    test_id: &str,
+    cargo_subcommand: &str,
+) -> Result<(), String> {
     use std::collections::HashSet;
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -10728,12 +10753,15 @@ warnings = "deny"
             .file_stem()
             .and_then(|s| s.to_str())
             .ok_or_else(|| format!("invalid filename: {filename}"))?;
-        // Test-vector sidecar conventionally ends with `_test`. Including
-        // it as a `pub mod` would force its `#[test]` items into the
-        // sce_rustc_check_<id> crate's test surface — we just want to
-        // verify it compiles, not run it. Treat it as a non-public
-        // module so the items are reachable for type-check but not
-        // exported.
+        // Test-vector sidecar conventionally ends with `_test`. Per
+        // the codec_test.rs.jinja2 / algorithm_test.rs.jinja2
+        // convention, the sidecar body references the codec struct +
+        // SceCursor by bare name — it's authored to be `include!`d
+        // inside a wrapping module that provides those imports.
+        // Plain `mod <stem>;` would compile only under `cargo build`
+        // (which skips `#[cfg(test)]`); `cargo test` surfaces the
+        // unresolved names. Wrap with the expected import scope so
+        // both `cargo build` and `cargo test` succeed.
         let is_test_sidecar = stem.ends_with("_test");
         if !seen.insert(stem.to_string()) {
             continue;
@@ -10741,7 +10769,16 @@ warnings = "deny"
         std::fs::write(proj_dir.join("src").join(format!("{stem}.rs")), content)
             .map_err(|e| format!("write {stem}.rs: {e}"))?;
         if is_test_sidecar {
-            lib_rs.push_str(&format!("#[cfg(test)]\nmod {stem};\n"));
+            let codec_stem = stem.trim_end_matches("_test");
+            lib_rs.push_str(&format!(
+                "#[cfg(test)]\nmod {stem} {{\n    \
+                    #[allow(unused_imports)]\n    \
+                    use crate::{codec_stem}::*;\n    \
+                    #[allow(unused_imports)]\n    \
+                    use ::sce_forge_runtime::codec::SceCursor;\n    \
+                    include!(\"{stem}.rs\");\n\
+                 }}\n"
+            ));
         } else {
             lib_rs.push_str(&format!("pub mod {stem};\n"));
         }
@@ -10759,18 +10796,18 @@ warnings = "deny"
         .join("sce_rustc_check");
 
     let output = std::process::Command::new("cargo")
-        .arg("build")
+        .arg(cargo_subcommand)
         .arg("--quiet")
         .current_dir(&proj_dir)
         .env("CARGO_TARGET_DIR", &workspace_target)
         .output()
-        .map_err(|e| format!("cargo build invocation: {e}"))?;
+        .map_err(|e| format!("cargo {cargo_subcommand} invocation: {e}"))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
         return Err(format!(
-            "rustc-compile FAILED for {test_id}\nproj_dir: {}\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}",
+            "cargo {cargo_subcommand} FAILED for {test_id}\nproj_dir: {}\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}",
             proj_dir.display()
         ));
     }
@@ -11703,3 +11740,338 @@ fn compile_codec_set_kotlin(
 // obsolete `CodecVariantParentScopeDefaultArmForbidden` diagnostic
 // (one of the 5 deprecate codes per Q-D-6 (d)); deleted with the
 // code itself in the 5-code reverse-sync step.
+
+// ── Multi-byte plain-id length-field regression matrix ─────────
+//
+// Locks the simple-path let-binding refactor (commit 948f73d0):
+// for plain-id `sce:length-field` whose sibling is multi-byte
+// fixed (uint16/uint32), the decode RHS now reads the named
+// sibling local (full multi-byte fold) instead of the historical
+// `raw[len_off]` single-byte truncation. Each fixture's
+// `<sce:test-vector hex="...len=256">` row would have produced a
+// 0- or 1-byte payload slice under the pre-refactor emit; the
+// sidecar round-trip tests assert the full 256-byte payload
+// reaches both encode and decode sides.
+
+#[test]
+fn forge_codec_length_ref_uint16_le_cpp() {
+    assert_standalone_forge(
+        "codec_length_ref_uint16_le",
+        "codec_length_ref_uint16_le.h",
+    );
+}
+
+#[test]
+fn forge_kotlin_codec_length_ref_uint16_le() {
+    assert_standalone_forge_kotlin(
+        "codec_length_ref_uint16_le",
+        "CodecLengthRefUint16Le.kt",
+    );
+}
+
+#[test]
+fn forge_rust_codec_length_ref_uint16_le() {
+    assert_standalone_forge_rust(
+        "codec_length_ref_uint16_le",
+        "codec_length_ref_uint16_le.rs",
+    );
+}
+
+#[test]
+fn forge_go_codec_length_ref_uint16_le() {
+    assert_standalone_forge_go(
+        "codec_length_ref_uint16_le",
+        "codec_length_ref_uint16_le.go",
+    );
+}
+
+#[test]
+fn forge_python_codec_length_ref_uint16_le() {
+    assert_standalone_forge_python(
+        "codec_length_ref_uint16_le",
+        "codec_length_ref_uint16_le.py",
+    );
+}
+
+#[test]
+fn forge_c11_codec_length_ref_uint16_le() {
+    assert_standalone_forge_c(
+        "codec_length_ref_uint16_le",
+        "codec_length_ref_uint16_le.c.h",
+    );
+}
+
+#[test]
+fn forge_codec_length_ref_uint16_be_cpp() {
+    assert_standalone_forge(
+        "codec_length_ref_uint16_be",
+        "codec_length_ref_uint16_be.h",
+    );
+}
+
+#[test]
+fn forge_kotlin_codec_length_ref_uint16_be() {
+    assert_standalone_forge_kotlin(
+        "codec_length_ref_uint16_be",
+        "CodecLengthRefUint16Be.kt",
+    );
+}
+
+#[test]
+fn forge_rust_codec_length_ref_uint16_be() {
+    assert_standalone_forge_rust(
+        "codec_length_ref_uint16_be",
+        "codec_length_ref_uint16_be.rs",
+    );
+}
+
+#[test]
+fn forge_go_codec_length_ref_uint16_be() {
+    assert_standalone_forge_go(
+        "codec_length_ref_uint16_be",
+        "codec_length_ref_uint16_be.go",
+    );
+}
+
+#[test]
+fn forge_python_codec_length_ref_uint16_be() {
+    assert_standalone_forge_python(
+        "codec_length_ref_uint16_be",
+        "codec_length_ref_uint16_be.py",
+    );
+}
+
+#[test]
+fn forge_c11_codec_length_ref_uint16_be() {
+    assert_standalone_forge_c(
+        "codec_length_ref_uint16_be",
+        "codec_length_ref_uint16_be.c.h",
+    );
+}
+
+#[test]
+fn forge_codec_length_ref_uint32_le_cpp() {
+    assert_standalone_forge(
+        "codec_length_ref_uint32_le",
+        "codec_length_ref_uint32_le.h",
+    );
+}
+
+#[test]
+fn forge_kotlin_codec_length_ref_uint32_le() {
+    assert_standalone_forge_kotlin(
+        "codec_length_ref_uint32_le",
+        "CodecLengthRefUint32Le.kt",
+    );
+}
+
+#[test]
+fn forge_rust_codec_length_ref_uint32_le() {
+    assert_standalone_forge_rust(
+        "codec_length_ref_uint32_le",
+        "codec_length_ref_uint32_le.rs",
+    );
+}
+
+#[test]
+fn forge_go_codec_length_ref_uint32_le() {
+    assert_standalone_forge_go(
+        "codec_length_ref_uint32_le",
+        "codec_length_ref_uint32_le.go",
+    );
+}
+
+#[test]
+fn forge_python_codec_length_ref_uint32_le() {
+    assert_standalone_forge_python(
+        "codec_length_ref_uint32_le",
+        "codec_length_ref_uint32_le.py",
+    );
+}
+
+#[test]
+fn forge_c11_codec_length_ref_uint32_le() {
+    assert_standalone_forge_c(
+        "codec_length_ref_uint32_le",
+        "codec_length_ref_uint32_le.c.h",
+    );
+}
+
+// Sidecar round-trip gates: Rust + C11 emit the
+// `<sce:test-vector>`-driven sidecar today; cpp/kotlin/go/python
+// stay on the trunk-gated no-sidecar shape until their B5-θ
+// closures land (rotation pattern mirrors the dotted_basic
+// section above).
+
+#[test]
+fn forge_rust_codec_length_ref_uint16_le_test_vector_sidecar() {
+    assert_sidecar_forge_lang(
+        "codec_length_ref_uint16_le",
+        "codec_length_ref_uint16_le_test.rs",
+        sce_build::generator::Language::Rust,
+    );
+}
+
+#[test]
+fn forge_c11_codec_length_ref_uint16_le_test_vector_sidecar() {
+    assert_sidecar_forge_lang(
+        "codec_length_ref_uint16_le",
+        "codec_length_ref_uint16_le_test.c.h",
+        sce_build::generator::Language::C11,
+    );
+}
+
+#[test]
+fn forge_codec_length_ref_uint16_le_cpp_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure(
+        "codec_length_ref_uint16_le",
+        sce_build::generator::Language::Cpp,
+    );
+}
+
+#[test]
+fn forge_codec_length_ref_uint16_le_kotlin_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure(
+        "codec_length_ref_uint16_le",
+        sce_build::generator::Language::Kotlin,
+    );
+}
+
+#[test]
+fn forge_codec_length_ref_uint16_le_go_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure(
+        "codec_length_ref_uint16_le",
+        sce_build::generator::Language::Go,
+    );
+}
+
+#[test]
+fn forge_codec_length_ref_uint16_le_python_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure(
+        "codec_length_ref_uint16_le",
+        sce_build::generator::Language::Python,
+    );
+}
+
+#[test]
+fn forge_rust_codec_length_ref_uint16_be_test_vector_sidecar() {
+    assert_sidecar_forge_lang(
+        "codec_length_ref_uint16_be",
+        "codec_length_ref_uint16_be_test.rs",
+        sce_build::generator::Language::Rust,
+    );
+}
+
+#[test]
+fn forge_c11_codec_length_ref_uint16_be_test_vector_sidecar() {
+    assert_sidecar_forge_lang(
+        "codec_length_ref_uint16_be",
+        "codec_length_ref_uint16_be_test.c.h",
+        sce_build::generator::Language::C11,
+    );
+}
+
+#[test]
+fn forge_codec_length_ref_uint16_be_cpp_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure(
+        "codec_length_ref_uint16_be",
+        sce_build::generator::Language::Cpp,
+    );
+}
+
+#[test]
+fn forge_codec_length_ref_uint16_be_kotlin_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure(
+        "codec_length_ref_uint16_be",
+        sce_build::generator::Language::Kotlin,
+    );
+}
+
+#[test]
+fn forge_codec_length_ref_uint16_be_go_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure(
+        "codec_length_ref_uint16_be",
+        sce_build::generator::Language::Go,
+    );
+}
+
+#[test]
+fn forge_codec_length_ref_uint16_be_python_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure(
+        "codec_length_ref_uint16_be",
+        sce_build::generator::Language::Python,
+    );
+}
+
+#[test]
+fn forge_rust_codec_length_ref_uint32_le_test_vector_sidecar() {
+    assert_sidecar_forge_lang(
+        "codec_length_ref_uint32_le",
+        "codec_length_ref_uint32_le_test.rs",
+        sce_build::generator::Language::Rust,
+    );
+}
+
+#[test]
+fn forge_c11_codec_length_ref_uint32_le_test_vector_sidecar() {
+    assert_sidecar_forge_lang(
+        "codec_length_ref_uint32_le",
+        "codec_length_ref_uint32_le_test.c.h",
+        sce_build::generator::Language::C11,
+    );
+}
+
+#[test]
+fn forge_codec_length_ref_uint32_le_cpp_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure(
+        "codec_length_ref_uint32_le",
+        sce_build::generator::Language::Cpp,
+    );
+}
+
+#[test]
+fn forge_codec_length_ref_uint32_le_kotlin_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure(
+        "codec_length_ref_uint32_le",
+        sce_build::generator::Language::Kotlin,
+    );
+}
+
+#[test]
+fn forge_codec_length_ref_uint32_le_go_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure(
+        "codec_length_ref_uint32_le",
+        sce_build::generator::Language::Go,
+    );
+}
+
+#[test]
+fn forge_codec_length_ref_uint32_le_python_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure(
+        "codec_length_ref_uint32_le",
+        sce_build::generator::Language::Python,
+    );
+}
+
+// Runtime round-trip gate: actually execute the sidecar `#[test]`
+// functions via `cargo test`, not just byte-compare their source.
+// This is the load-bearing assertion that the simple-path
+// let-binding refactor fixes the multi-byte fold — the 256-byte
+// test vector in each fixture would have round-tripped to a 0- or
+// 1-byte payload under the pre-refactor `raw[len_off]` emit, so
+// passing this gate is the runtime proof. One test compiles +
+// runs all 3 fixtures together to amortise the cargo build cost.
+
+#[test]
+fn forge_codec_length_ref_multibyte_round_trip_runtime() {
+    rustc_test_codec_set(
+        &resource_dir(),
+        &[
+            "codec_length_ref_uint16_le.scxml",
+            "codec_length_ref_uint16_be.scxml",
+            "codec_length_ref_uint32_le.scxml",
+        ],
+        "length_ref_multibyte_round_trip",
+    )
+    .expect("multi-byte length-ref fixtures must round-trip via cargo test");
+}

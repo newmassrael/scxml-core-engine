@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: length-ref bytes with uint16 little-endian
+     length-field. Multi-byte plain-id length-field exercises the
+     full sibling-value fold — before the simple-path let-binding
+     refactor (commit 948f73d0), the decode emit read only the first
+     byte of the length-field and silently truncated payloads ≥ 256
+     bytes. The length=256 test vector locks the regression.
+
+     Wire shape:
+       byte 0..1 : payload_len (uint16 LE)
+       byte 2+   : payload     (bytes, length = payload_len) -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="little" name="codec_length_ref_uint16_le">
+  <datamodel>
+    <sce:field id="payload_len" sce:type="uint16" sce:byte="0" sce:bit-size="16"/>
+    <sce:field id="payload"     sce:type="bytes"  sce:byte="2" sce:bit-size="length-ref"
+               sce:length-field="payload_len" sce:max-size="1024"/>
+  </datamodel>
+  <!-- Round-trip vectors at single-byte (4), single-byte boundary
+       (255), and first-multi-byte (256) widths. The 256 case is the
+       load-bearing regression guard — single-byte decode would slice
+       0 payload bytes (raw[0]=0x00), and the test asserts the full
+       payload round-trips. -->
+  <sce:test-vector hex="0000">
+    <sce:decoded field="payload_len" value="0"/>
+    <sce:decoded field="payload" hex=""/>
+  </sce:test-vector>
+  <sce:test-vector hex="0400aabbccdd">
+    <sce:decoded field="payload_len" value="4"/>
+    <sce:decoded field="payload" hex="aabbccdd"/>
+  </sce:test-vector>
+  <sce:test-vector hex="0001ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff">
+    <sce:decoded field="payload_len" value="256"/>
+    <sce:decoded field="payload" hex="ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"/>
+  </sce:test-vector>
+</scxml>
