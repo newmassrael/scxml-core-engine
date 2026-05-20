@@ -3226,10 +3226,20 @@ pub struct WorkerModel {
 // ── Forge document ─────────────────────────────────────────────
 
 /// Top-level forge document — dispatched by `sce:kind` on `<scxml>` root.
+///
+/// `Statechart(Box<SCXMLModel>)` is the W3C SCXML arm — added in the
+/// AST-export v1 second atomic to close the internal symmetry left
+/// open by the Forge-only first cut. The `Box` is required because
+/// `SCXMLModel` is substantially larger than every other variant
+/// (~500 bytes vs ~50-200 for the forge kinds); without it,
+/// `clippy::large_enum_variant` fires and every `Lookup` /
+/// `Condition` allocation pays the SCXMLModel size tax.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "kind")]
 pub enum ForgeDocument {
+    #[serde(rename = "statechart")]
+    Statechart(Box<crate::model::SCXMLModel>),
     #[serde(rename = "transform")]
     Transform(TransformModel),
     #[serde(rename = "lookup")]
@@ -3265,6 +3275,7 @@ pub enum ForgeDocument {
 impl ForgeDocument {
     pub fn name(&self) -> &str {
         match self {
+            Self::Statechart(m) => &m.name,
             Self::Transform(m) => &m.name,
             Self::Lookup(m) => &m.name,
             Self::Condition(m) => &m.name,
@@ -3285,6 +3296,7 @@ impl ForgeDocument {
 
     pub fn kind(&self) -> ForgeKind {
         match self {
+            Self::Statechart(_) => ForgeKind::Statechart,
             Self::Transform(_) => ForgeKind::Transform,
             Self::Lookup(_) => ForgeKind::Lookup,
             Self::Condition(_) => ForgeKind::Condition,
@@ -3312,6 +3324,11 @@ impl ForgeDocument {
     ///   - Lookup: string output (enum dispatch) = None, numeric = ForgeRuntime.
     pub fn runtime_dep(&self) -> RuntimeDep {
         match self {
+            // W3C SCXML statechart — built on the SCE runtime
+            // (sce_runtime). Matches `ForgeKind::Statechart`'s
+            // conservative upper bound; AST export does not change
+            // the runtime tier semantics.
+            Self::Statechart(_) => RuntimeDep::SceRuntime,
             Self::Transform(_) | Self::Condition(_) | Self::Codec(_) | Self::Validator(_) => {
                 RuntimeDep::None
             }

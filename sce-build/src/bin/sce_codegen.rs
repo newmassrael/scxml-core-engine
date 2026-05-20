@@ -612,15 +612,21 @@ enum Commands {
         /// repo.
         #[arg(long)]
         input_root: Option<String>,
-        /// Emit the parsed Forge document as JSON to `<path>` before
+        /// Emit the parsed document as JSON to `<path>` before
         /// codegen runs. The envelope shape is `apis/forge-ast.v1.schema.json`;
         /// see `docs/SCE_FORGE_AST.md` for the consumer contract.
         ///
-        /// Silent no-op for statechart documents (kind detection
-        /// routes them to the SCXML pipeline, which has no
-        /// `ForgeDocument` to serialise). Codegen still runs after
-        /// the emit — `--emit-ast` is an addition to the pipeline,
-        /// not a replacement.
+        /// Covers every kind in the v1 envelope: 15 forge kinds plus
+        /// `statechart` (the `oneOf` discriminator distinguishes them
+        /// via `ast.document.kind`). Statechart documents flow through
+        /// the SCXML pipeline and are emitted post-analyzer, before
+        /// any deploy-time mutations or codegen prep.
+        ///
+        /// Codegen still runs after the emit — `--emit-ast` is an
+        /// addition to the pipeline, not a replacement. Documents
+        /// rejected by W3C SCXML 5.8 (`document_rejected`) skip the
+        /// emit and continue to the existing rejection-stub codegen
+        /// path; the absence of `<path>` is the consumer signal.
         #[arg(long)]
         emit_ast: Option<String>,
     },
@@ -657,12 +663,15 @@ enum Commands {
         /// skip semantics).
         #[arg(long)]
         deploy: Option<String>,
-        /// Directory to write per-doc Forge AST envelopes into. One
-        /// `<doc_stem>.ast.json` is emitted per `--forge` input that
-        /// classifies as a forge document. `--scxml` inputs and any
-        /// document the parser classifies as statechart are silently
-        /// skipped (no envelope, no error) — statechart AST export
-        /// is not part of v1.
+        /// Directory to write per-doc AST envelopes into. One
+        /// `<doc_stem>.ast.json` is emitted per `--forge` input AND
+        /// per `--scxml` input — the v1 envelope's `oneOf` arm covers
+        /// statechart documents (`ast.document.kind = "statechart"`)
+        /// alongside the 15 forge kinds, so the orchestrate emit path
+        /// is uniform across both classifier outputs. Documents
+        /// rejected by W3C SCXML 5.8 (`document_rejected`) skip emit
+        /// silently — matching the single-doc `generate --emit-ast`
+        /// contract.
         ///
         /// Envelope shape: `apis/forge-ast.v1.schema.json`. Consumer
         /// contract: `docs/SCE_FORGE_AST.md`. Useful for batch tools
@@ -1158,12 +1167,40 @@ fn emit_orchestrate_asts(
         );
     }
 
-    // SCXML inputs are not part of v1 AST export. The orchestrator
-    // still receives the paths for cross-doc validation; we
-    // explicitly iterate them only to keep the silent-skip
-    // semantics visible at the call site.
-    for _scxml in scxml_paths {
-        // No-op — see docstring.
+    // Statechart AST emit — parallel to the forge loop below. Each
+    // `--scxml` input is parsed + analyzed (the SCXML pipeline's
+    // post-analyzer step, Q-S-6 (b)) and serialised as the
+    // `statechart` arm of the v1 envelope. Q-S-5 (b) skip-on-rejected:
+    // documents the analyzer flags via W3C 5.8 (`document_rejected`)
+    // skip emit and fall through silently — the absence of
+    // `<stem>.ast.json` is the consumer signal, matching the
+    // single-doc `generate --emit-ast` contract.
+    for scxml_path_str in scxml_paths {
+        let scxml_path = std::path::Path::new(scxml_path_str);
+        let stem = scxml_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown");
+        let mut parser = sce_build::parser::SCXMLParser::new();
+        let mut model = match parser.parse_file(scxml_path_str) {
+            Ok(m) => m,
+            Err(e) => error_format.emit_and_exit(&e, ""),
+        };
+        sce_build::analyzer::analyze(&mut model, scxml_path_str);
+        if model.document_rejected {
+            continue;
+        }
+        let parsed = sce_build::forge::ast_export::statechart_parsed_forge(model);
+        let out_path = dir_path.join(format!("{stem}.ast.json"));
+        if let Err(e) = sce_build::forge::ast_export::write_envelope_to_path(&out_path, &parsed) {
+            error_format.emit_and_exit(
+                &CliError::WriteOutput {
+                    path: out_path.display().to_string(),
+                    source: e,
+                },
+                "",
+            );
+        }
     }
 
     for forge_path_str in forge_paths {
@@ -1408,6 +1445,33 @@ fn cmd_generate(
     }
 
     analyzer::analyze(&mut model, scxml_path);
+
+    // AST export — emit the analyzed model BEFORE any deploy-time
+    // mutations (resolve_source_path, inject_server_model_mutations,
+    // inject_partition_context_for, populate_event_queue_capacity_
+    // from_deploy) so the envelope captures the parser+analyzer IR
+    // — the statechart parallel of `ParsedForge` for forge kinds.
+    //
+    // Q-S-5 (b) skip-on-rejected: document_rejected is the W3C 5.8
+    // structured rejection (unloadable external script). Skip the
+    // emit and fall through to the rejection-stub codegen path
+    // below; the absence of the envelope file is the consumer
+    // signal, matching the Forge precedent "parse fails → no envelope".
+    if let Some(ast_path) = emit_ast_path {
+        if !model.document_rejected {
+            let parsed = sce_build::forge::ast_export::statechart_parsed_forge(model.clone());
+            let path = Path::new(ast_path);
+            if let Err(e) = sce_build::forge::ast_export::write_envelope_to_path(path, &parsed) {
+                error_format.emit_and_exit(
+                    &CliError::WriteOutput {
+                        path: ast_path.to_string(),
+                        source: e,
+                    },
+                    "",
+                );
+            }
+        }
+    }
 
     // W3C SCXML 5.8: Document rejected at parse time (e.g., unloadable external script)
     // Generate a language-appropriate rejection stub so AOT test reports PASS.

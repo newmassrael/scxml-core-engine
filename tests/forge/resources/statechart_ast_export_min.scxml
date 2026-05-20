@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Minimal W3C SCXML statechart document for the AST export drift guard
+  (apis/forge-ast.v1.schema.json). The envelope's `oneOf` arm with
+  `ast.document.kind = "statechart"` carries the parsed-and-analyzed
+  `SCXMLModel` IR; this fixture exercises the round-trip through
+  `ForgeDocument::Statechart` from a deliberately small surface
+  (single state + single transition + single final state) so a
+  regression in any nested type (Transition / Action / State /
+  HistoryInfo / Invoke / DoneData) surfaces on schema validation
+  rather than getting lost in the noise of a deep production fixture.
+
+  No `sce:kind` attribute — the parser's classifier defaults the
+  absent attribute to `Statechart`, the same path every production
+  W3C SCXML document takes. Standalone (no `<sce:import>`) so the
+  AST export's parse-only pass needs no sibling files on disk —
+  parallel to the `*_ast_export_min.scxml` fixtures shipped for the
+  three MCU-class forge kinds (link / buffer-pool / worker).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       datamodel="ecmascript"
+       initial="s0"
+       name="statechart_ast_export_min">
+  <state id="s0">
+    <transition event="go" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

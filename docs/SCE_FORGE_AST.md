@@ -18,16 +18,20 @@ the output.
 Two entry points produce the v1 envelope:
 
 * **`sce-codegen generate --emit-ast=<path>`** — single-document
-  emit. Writes one envelope file at `<path>`. Statechart inputs are
-  routed to the SCXML pipeline before the flag fires, so the flag
-  is a no-op for them.
+  emit. Writes one envelope file at `<path>`. Covers both forge
+  documents (Pipeline::Forge) and W3C SCXML statecharts
+  (Pipeline::Scxml); the `oneOf` discriminator on `ast.document.kind`
+  distinguishes the two. Documents rejected by W3C SCXML 5.8
+  (`document_rejected`) skip emit and fall through to the existing
+  rejection-stub codegen path; the absence of `<path>` is the
+  consumer signal.
 * **`sce-codegen orchestrate --emit-ast-dir=<dir>`** — multi-document
   batch emit. Writes one `<doc_stem>.ast.json` per `--forge` input
-  that classifies as a forge document; `--scxml` inputs and any
-  document the parser routes to statechart are silently skipped (no
-  envelope, no error). Useful for batch tools that consume the IR
-  across an entire multi-doc build without invoking SCE codegen per
-  file.
+  AND per `--scxml` input — the v1 envelope's `oneOf` arm covers
+  statechart documents (`ast.document.kind = "statechart"`)
+  alongside the 15 forge kinds. Useful for batch tools that consume
+  the IR across an entire multi-doc build without invoking SCE
+  codegen per file.
 
 Both forms produce byte-identical envelopes for the same input —
 the orchestrate form is purely a batch convenience.
@@ -165,7 +169,7 @@ producer evolution:
    tooling should still tolerate `None` — XSD-level failures and
    synthesised IR nodes have no source position.
 8. **`source_location.file` path semantics are producer-defined.**
-   See [§9](#9-source_locationfile-path-semantics) for the full
+   See [§10](#10-source_locationfile-path-semantics) for the full
    contract; consumers MUST NOT assume any particular root.
 
 ## 5. Supported kinds (v1)
@@ -174,6 +178,7 @@ The closed enum, in declaration order:
 
 | Discriminator | Model | Producer notes |
 |---|---|---|
+| `statechart` | `SCXMLModel` | W3C SCXML state machine — emitted post-analyzer, pre-deploy-mutation. See [§8](#8-worked-example--statechart-kind). |
 | `transform` | `TransformModel` | Pure formula. `inputs` + `outputs` arrays of `ForgeField`. |
 | `lookup` | `LookupModel` | Key-value mapping with `miss_policy` (internally-tagged: `{kind: "default", value: "..."}` or `{kind: "error"}`). |
 | `condition` | `ConditionModel` | Named boolean expression. |
@@ -190,11 +195,12 @@ The closed enum, in declaration order:
 | `worker` | `WorkerModel` | Concurrent execution context driven by a `<sce:link-rx>` source. |
 | `bounded-collection` | `BoundedCollectionModel` | Build-time capacity container with runtime occupancy. |
 
-The Rust enum's `Statechart` variant is a parser-side sentinel only;
-W3C SCXML statecharts are not currently emitted through
-`--emit-ast` (they route to the SCXML pipeline which has no
-`ForgeDocument`). Adding statechart support is a candidate for a
-future v1.1 extension when a consumer demand surfaces.
+The 16 kinds cover SCE's full IR surface: the 15 forge kinds plus
+the W3C SCXML statechart arm. `imports` and `externs` are always
+empty for `statechart` documents — W3C SCXML carries no
+`<sce:import>` or `<sce:extern>` declarations of its own — so the
+discriminator on `ast.document.kind` is the single signal that
+distinguishes the statechart arm from forge arms.
 
 ## 6. Worked example — `transform` kind
 
@@ -278,7 +284,82 @@ Note the internally-tagged `miss_policy` enum: the discriminator
 field is also `kind` (different from the document-level `kind`),
 matching serde's `tag = "kind"` convention used throughout the IR.
 
-## 8. Reference
+## 8. Worked example — `statechart` kind
+
+Input (minimal W3C SCXML state machine, no `sce:kind` attribute):
+
+```xml
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript"
+       initial="s0" name="example_machine">
+  <state id="s0">
+    <transition event="go" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>
+```
+
+Emit (truncated — the full envelope mirrors `SCXMLModel`'s
+serialised form, ~50 keys; only the load-bearing surface is shown
+here):
+
+```json
+{
+  "v": 1,
+  "ast": {
+    "document": {
+      "kind": "statechart",
+      "name": "example_machine",
+      "scxml_name": "example_machine",
+      "initial": "s0",
+      "initial_leaf": "s0",
+      "datamodel_type": "ecmascript",
+      "binding": "early",
+      "states": {
+        "s0": {
+          "id": "s0", "is_final": false, "is_parallel": false,
+          "document_order": 0,
+          "transitions": [
+            {
+              "event": "go", "target": "done",
+              "type": "external",
+              "matching_enum_values": ["go"],
+              "prefix_matching_events": ["go"]
+            }
+          ]
+        },
+        "done": {
+          "id": "done", "is_final": true, "is_parallel": false,
+          "document_order": 1
+        }
+      },
+      "events": ["go"],
+      "has_history_states": false,
+      "has_parallel_states": false,
+      "source_location": { "file": "...", "line": 20, "col": 1 }
+    },
+    "imports": [],
+    "externs": []
+  }
+}
+```
+
+The shape is the post-analyzer `SCXMLModel` IR: every derived
+field the analyzer enriched (`has_parent_communication`,
+`needs_event_data`, `is_remote_invoke_target`, etc.) appears at
+the top level, and the per-state `transitions[]` array carries
+every analyzed metadata field (matching-enum values, prefix
+matchers, source location) needed by downstream consumers to
+mirror what the codegen pipeline sees.
+
+`imports` and `externs` are always `[]` for the statechart arm —
+W3C SCXML carries no cross-doc references of its own. Consumers
+that need to walk a multi-doc statechart graph (an `<invoke>`
+parent + child) should emit AST for each document separately
+(orchestrate's per-doc fanout handles this) and join on
+`invokes[].src`.
+
+## 9. Reference
 
 * Authoritative producer:
   [`sce-build/src/forge/ast_export.rs`](../sce-build/src/forge/ast_export.rs)
@@ -297,7 +378,7 @@ matching serde's `tag = "kind"` convention used throughout the IR.
 * General `apis/` contract:
   [`apis/README.md`](../apis/README.md)
 
-## 9. `source_location.file` path semantics
+## 10. `source_location.file` path semantics
 
 The `source_location.file` string carries whatever the producer was
 given as the document's diagnostic label. The SCE CLI today passes
@@ -333,7 +414,7 @@ Future schema revisions may add a richer `source_location` with a
 canonical-path field, but v1 stays minimal — the line/col fields
 are the load-bearing part for IDE consumers.
 
-## 10. Canonical form
+## 11. Canonical form
 
 Consumers that hash or sign envelopes for content addressing should
 treat the SCE-emitted form as the canonical baseline for v1:
@@ -359,14 +440,3 @@ Consumers requiring a stricter canonical form (e.g. RFC 8785) MUST
 re-serialise through a canonicalisation library; SCE does not
 guarantee RFC 8785 byte-equality across releases.
 
-## 11. Future extension — statechart AST
-
-W3C SCXML statechart documents are *not* covered by v1: the
-`ast.document.kind` discriminator carries the 15 emittable Forge
-kinds, no `"statechart"` variant exists today. The two memo-identified
-consumers most likely to demand statechart AST (UI mirror generator,
-GM Console) are speculative — when a real consumer signal arrives,
-adding a `statechart` arm to `ForgeDocument` (or a sibling envelope
-field) is purely additive within v1 and does not bump the schema
-version. Authoring against the current `oneOf` discriminator pattern
-keeps the door open.

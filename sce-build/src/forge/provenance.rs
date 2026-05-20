@@ -268,6 +268,11 @@ pub fn forge_doc_source_location(doc: &ForgeDocument) -> Option<&SourceLocation>
 /// preserved.
 fn forge_doc_provenance(doc: &ForgeDocument) -> (&'static str, &str, &Option<SourceLocation>) {
     match doc {
+        // Statechart documents reach this helper only through the
+        // AST-export path that wraps the analyzed `SCXMLModel` in
+        // `ForgeDocument::Statechart` (no `sce:kind` attribute on the
+        // root, so the element label is the bare `<scxml>`).
+        ForgeDocument::Statechart(m) => ("<scxml>", &m.name, &m.source_location),
         ForgeDocument::Transform(m) => (
             "<scxml sce:kind=\"transform\">",
             &m.name,

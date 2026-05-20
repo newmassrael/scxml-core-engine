@@ -3,6 +3,198 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
   "definitions": {
+    "Action": {
+      "description": "W3C SCXML executable content action",
+      "properties": {
+        "actions": {
+          "description": "foreach body / transition actions",
+          "items": {
+            "$ref": "#/definitions/Action"
+          },
+          "type": "array"
+        },
+        "array": {
+          "type": "string"
+        },
+        "auto_send_id": {
+          "type": "string"
+        },
+        "cond": {
+          "type": "string"
+        },
+        "cond_cpp": {
+          "type": "string"
+        },
+        "cond_kt": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        },
+        "content_kt": {
+          "type": "string"
+        },
+        "content_transformed": {
+          "type": "string"
+        },
+        "contentexpr": {
+          "type": "string"
+        },
+        "delay": {
+          "type": "string"
+        },
+        "delay_ms": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "delayexpr": {
+          "type": "string"
+        },
+        "else_actions": {
+          "items": {
+            "$ref": "#/definitions/Action"
+          },
+          "type": "array"
+        },
+        "elseif_branches": {
+          "items": {
+            "$ref": "#/definitions/ElseIfBranch"
+          },
+          "type": "array"
+        },
+        "event": {
+          "type": "string"
+        },
+        "eventexpr": {
+          "type": "string"
+        },
+        "expr": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "idlocation": {
+          "type": "string"
+        },
+        "index": {
+          "type": "string"
+        },
+        "is_cpp_function": {
+          "default": false,
+          "type": "boolean"
+        },
+        "is_kt_function": {
+          "default": false,
+          "type": "boolean"
+        },
+        "is_pure_in_predicate": {
+          "default": false,
+          "type": "boolean"
+        },
+        "is_static_literal": {
+          "default": false,
+          "type": "boolean"
+        },
+        "item": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "location": {
+          "type": "string"
+        },
+        "namelist": {
+          "type": "string"
+        },
+        "params": {
+          "items": {
+            "$ref": "#/definitions/Param"
+          },
+          "type": "array"
+        },
+        "send_type": {
+          "type": "string"
+        },
+        "sendid": {
+          "type": "string"
+        },
+        "sendidexpr": {
+          "type": "string"
+        },
+        "source_location": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SourceLocation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Watching-zenoh RFC §5.O Atomic 0: post-preprocessor source position of the executable-content element this action represents (`<raise>` / `<send>` / `<assign>` / `<log>` / `<script>` / `<if>` / `<foreach>` / `<cancel>`). Populated by [`crate::parser::SCXMLParser::parse_executable_content_single`]. Used by §5.O Atomic 1 per-action attribution (Atomic 0 only emits function-level markers, so this field is read by the pre-emit `validate_emission_provenance` walker today)."
+        },
+        "static_value": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "targetexpr": {
+          "type": "string"
+        },
+        "then_actions": {
+          "items": {
+            "$ref": "#/definitions/Action"
+          },
+          "type": "array"
+        },
+        "type": {
+          "type": "string"
+        },
+        "typeexpr": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "actions",
+        "array",
+        "auto_send_id",
+        "cond",
+        "cond_cpp",
+        "cond_kt",
+        "content",
+        "content_kt",
+        "content_transformed",
+        "contentexpr",
+        "delay",
+        "delay_ms",
+        "delayexpr",
+        "else_actions",
+        "elseif_branches",
+        "event",
+        "eventexpr",
+        "expr",
+        "id",
+        "idlocation",
+        "index",
+        "item",
+        "label",
+        "location",
+        "namelist",
+        "params",
+        "send_type",
+        "sendid",
+        "sendidexpr",
+        "static_value",
+        "target",
+        "targetexpr",
+        "then_actions",
+        "type",
+        "typeexpr"
+      ],
+      "type": "object"
+    },
     "AlgorithmConst": {
       "description": "Build-time const inside an algorithm body. RFC §5.A v1 admits the scalar literal form (`<sce:const name=... type=... init=\"...\"/>`). The `<sce:const sce:compute-at=\"build\">` form with an `<sce:fold>` body resolves through RFC §5.F build-time const-fold; the IR shape lands in Phase A4-α (parser + model), the host interpreter and per-language emit land in A4-β.",
       "properties": {
@@ -876,6 +1068,30 @@
         }
       ]
     },
+    "ContextObject": {
+      "description": "Named Context object declaration",
+      "properties": {
+        "cpp_include": {
+          "type": "string"
+        },
+        "cpp_type": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kt_type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "cpp_include",
+        "cpp_type",
+        "id",
+        "kt_type"
+      ],
+      "type": "object"
+    },
     "CountRef": {
       "description": "RFC §5.B B2 repeat primitive — element count source for a `BitSize::Repeat` field.\n\nTwo shapes: - [`CountRef::LengthField`] — count comes from a sibling integer field declared earlier in the same codec (the count value is the decoded integer). Mirrors the `<sce:repeat sce:count=\"<id>\"/>` authoring form. - [`CountRef::UntilEof`] — count is implicit; the decoder consumes elements until the cursor's remaining bytes are exhausted. The last element MUST decode cleanly off a frame boundary; a partial final element returns `NeedMoreBytes`. Mirrors `<sce:repeat sce:until-eof=\"true\"/>`.",
       "oneOf": [
@@ -1072,6 +1288,173 @@
         "internal"
       ],
       "type": "string"
+    },
+    "DoneData": {
+      "description": "W3C SCXML 5.7: Done data for final states.\n\n`content` is a [`DoneDataContent`] sum so that the parser decision — `<content expr=\"...\">` vs `<content>literal</content>` vs omitted — is encoded in the type and survives into templates as a `{kind, text}` object. Templates dispatch on `donedata.content.kind` rather than the legacy truthy-check on two parallel strings.",
+      "properties": {
+        "content": {
+          "$ref": "#/definitions/DoneDataContent"
+        },
+        "params": {
+          "items": {
+            "$ref": "#/definitions/DoneDataParam"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "content",
+        "params"
+      ],
+      "type": "object"
+    },
+    "DoneDataContent": {
+      "description": "W3C SCXML 5.5: `<content>` body semantics.\n\n- [`DoneDataContent::None`] — no `<content>` child (`{\"kind\":\"none\"}`). - [`DoneDataContent::Expression`] — `<content expr=\"X\"/>`, MUST be evaluated against the active datamodel (`{\"kind\":\"expression\",\"text\":\"X\"}`). - [`DoneDataContent::Literal`] — `<content>inline text</content>`; per W3C SCXML 5.5 the children are used **as the content value**, not re-evaluated as an expression. Literal means no script engine required at runtime (`{\"kind\":\"literal\",\"text\":\"...\"}`).\n\nSerialized via adjacent tagging (`tag = \"kind\", content = \"text\"`) so minijinja consumers match on `donedata.content.kind` and read the payload from `.text` when present.",
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "enum": [
+                "none"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "enum": [
+                "expression"
+              ],
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "enum": [
+                "literal"
+              ],
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "text"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "DoneDataParam": {
+      "description": "W3C SCXML 5.7: Done data parameter.\n\n`expr` and `location` are `Option<String>` because W3C SCXML 6.2.4 mandates exactly one of them on each `<param>`. They are serialized as JSON `null` when absent (no `skip_serializing_if`) so that minijinja templates can distinguish \"attribute omitted\" (none) from \"attribute present but empty\" (Some(\"\")) via the canonical `is none` test — undefined-vs-null ambiguity would otherwise mis-route the empty-location structural-error branch.",
+      "properties": {
+        "expr": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "location": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "DriverRef": {
+      "description": "watching-zenoh RFC §5.E B7-η' — `<sce:on-sample>` SCXML extension. Wraps the spec line 1269 subscriber callback contract (\"the subscriber callback receives `&Sample<'_>`; the slot returns to the pool when the callback returns\") into a state-level declaration that the η' codegen template lowers to a per-state callback registration on the link's RX path.\n\nQ-OnSample-1 (Y) parser-AST extension; Q-OnSample-2 (a) valid only inside `<state>` and `<parallel>`; Q-OnSample-3 v1 attributes are Watching-zenoh RFC §5.2 Round F-α — top-level `<sce:driver href=\"...\"/>` declaration on the SCXML root. References an externally-authored driver header that the C11 backend `#include`s into the emitted `*_sm.c`. Author-time reference only; SCE does not parse the driver header itself (Q-Round-F-D2 lock — cross-TU signature verification is delegated to the C compiler).\n\nResolution happens at compile-model time: each `href` is joined against `deploy.yaml`'s `platform.driver_root` (or the SCXML file's parent directory as fallback), and an unresolved path surfaces `mcu/driver-header-not-found`. Only the C11 backend consumes this field for codegen emission (Q-Round-F-D5 / D6 locks).",
+      "properties": {
+        "document_order": {
+          "description": "0-based document order within the SCXML root's `<sce:driver>` declarations. Lets diagnostics quote a stable index when the source file lacks reliable line numbers.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "href": {
+          "description": "`href=\"...\"` — author-written path to the driver header. May be absolute or relative to the resolved root directory. Stored verbatim (no canonicalisation) so the original string can appear in `actual` payloads of `mcu/driver-header-not-found`.",
+          "type": "string"
+        },
+        "resolved_path": {
+          "description": "Post-resolution absolute path of the driver header, populated by the compile-model-time resolver (`crate::lib`-level entry points). `None` immediately after parser exit; `Some(...)` once the resolver has confirmed the file exists. Codegen consumes this field — not `href` — when emitting `#include` lines so the emitted path matches what was actually resolved.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_location": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SourceLocation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Source location of the `<sce:driver>` element (post-preprocessor row/col). `None` when the parser cannot reconstruct the position — diagnostics fall back to file-level anchoring in that case."
+        }
+      },
+      "required": [
+        "document_order",
+        "href"
+      ],
+      "type": "object"
+    },
+    "ElseIfBranch": {
+      "description": "W3C SCXML if/elseif branch",
+      "properties": {
+        "actions": {
+          "items": {
+            "$ref": "#/definitions/Action"
+          },
+          "type": "array"
+        },
+        "cond": {
+          "type": "string"
+        },
+        "cond_cpp": {
+          "type": "string"
+        },
+        "cond_kt": {
+          "type": "string"
+        },
+        "is_pure_in_predicate": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "actions",
+        "cond",
+        "cond_cpp",
+        "cond_kt",
+        "is_pure_in_predicate"
+      ],
+      "type": "object"
     },
     "EmbedDispatch": {
       "description": "RFC §5.B variant-dispatch (B5-ν inversion) — parent-side declaration of which of its own flags drives an imported variant codec's arm dispatch. Attached to a `ForgeImport` via the `<sce:variant-dispatch>` child of `<sce:import>`.\n\nThe dotted `flag_source` value names the parent's own carrier and flag (e.g. `\"header.M\"` means \"the M flag bit of the `header` field in this codec\"). Cross-doc validator confirms the named carrier field exists, the named flag exists on it, the flag has no conflicting `value=` constant, the flag's width fits the imported codec's arm count, and the carrier appears before the embed field in declaration order.",
@@ -1308,8 +1691,418 @@
       "type": "object"
     },
     "ForgeDocument": {
-      "description": "Top-level forge document — dispatched by `sce:kind` on `<scxml>` root.",
+      "description": "Top-level forge document — dispatched by `sce:kind` on `<scxml>` root.\n\n`Statechart(Box<SCXMLModel>)` is the W3C SCXML arm — added in the AST-export v1 second atomic to close the internal symmetry left open by the Forge-only first cut. The `Box` is required because `SCXMLModel` is substantially larger than every other variant (~500 bytes vs ~50-200 for the forge kinds); without it, `clippy::large_enum_variant` fires and every `Lookup` / `Condition` allocation pays the SCXMLModel size tax.",
       "oneOf": [
+        {
+          "description": "W3C SCXML: Complete state machine model",
+          "properties": {
+            "binding": {
+              "type": "string"
+            },
+            "c11_section_attribute_class": {
+              "description": "Watching-zenoh RFC §5.2 Round F-α-2 — section attribute payload for the C11 backend's `SCE_SM_FN` macro emission. Set by [`crate::compile_scxml_lang_typed_with_section`] when `deploy.yaml`'s `platform.c11_section_attribute.class` is present; `None` everywhere else (the parser never touches this field, the SCXML document does not encode the section choice).\n\nWhen `Some(\"<name>\")`, every C11 statechart function definition receives a `SCE_SM_FN` prefix that the emitted macro expands to `__attribute__((section(\"<name>\")))`. When `None`, the macro expands to nothing — function definitions stay textually `SCE_SM_FN <ret> name(...)` so a downstream sce-rust-runtime linker change can later swap the macro definition without re-emitting the per-function source.\n\nNon-C11 backends ignore this field (the section-attribute reject `mcu/section-attribute-on-non-mcu-target` fires at the orchestrator pass before any non-C11 codegen runs).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "context_objects": {
+              "items": {
+                "$ref": "#/definitions/ContextObject"
+              },
+              "type": "array"
+            },
+            "datamodel_type": {
+              "type": "string"
+            },
+            "declared_session_roles": {
+              "description": "Axis-3 inversion (RFC `claudedocs/rfc-axis3-listener-role-declarations.md`) — set of session-FSM roles this SCXML document explicitly declares via top-level `<sce:session-role kind=\"...\"/>` elements. Each variant appears at most once (parse-time uniqueness is enforced by [`crate::forge::error::ValidationError::ScxmlDuplicateSessionRoleDeclaration`]).\n\nEmpty when the document declares no roles (the common case for non-session-FSM SCXML). Non-empty: drives the orchestrator's cross-doc listener-pair join — see [`crate::resolve_listener_links`] for Phase B's consumer wire-up. During Phase A (foundation) the orchestrator does NOT yet read this field; the existing `accepting_substate_present` walker is unchanged. Phase B switches the join over to this set.\n\n`BTreeSet` keeps iteration order deterministic so any diagnostic quoting the declared-roles list produces a stable string.",
+              "items": {
+                "$ref": "#/definitions/SessionRoleKind"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "document_rejected": {
+              "type": "boolean"
+            },
+            "driver_refs": {
+              "description": "Watching-zenoh RFC §5.2 Round F-α — every top-level `<sce:driver href=\"...\"/>` reference on the document root, in document order. Each entry is an externally-authored driver header that the C11 backend `#include`s into the emitted `*_sm.c` so cross-TU symbol resolution is handled by the C compiler (Q-Round-F-D2 lock).\n\nEmpty when the machine declares no driver dependencies (the common case for non-MCU / hosted backends). Non-empty: each `href` is resolved at compile-model time against `deploy.yaml`'s `platform.driver_root` (or the SCXML file's parent directory as fallback); unresolved paths surface `mcu/driver-header-not-found`. Only the C11 backend consumes this field; other backends emit the references unchanged into their codegen context (no `#include` semantics translate outside C).",
+              "items": {
+                "$ref": "#/definitions/DriverRef"
+              },
+              "type": "array"
+            },
+            "event_queue_capacity": {
+              "description": "Watching-zenoh RFC §5.J.2 + §5.L (Q-RustNoStd-7 (a), C3 Atomic B-γ1): per-document event-queue capacity declared via `<scxml sce:capacity=\"N\">` on the root element. Drives the `heapless::spsc::Queue<E, N>` capacity literal that Atomic B-γ2's runtime port consumes when emitting the no_std event queue. Unit: events (not bytes).\n\nResolution rule (Q-RustNoStd-7 (a)): per-instance attribute wins; fallback to deploy.yaml `machines.<m>.scheduler.default_event_queue_capacity` when the attribute is absent. Both being absent is permitted today (`--no-std` codegen still works against std runtime); the capacity becomes load-bearing when B-γ2's heapless adoption lands.\n\nSchema invariant enforced by the parser: present-but-malformed (non-numeric, zero, or u32-overflow) surfaces `validation/invalid-attribute` — no silent coercion.",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "events": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "execute_entry_actions_needs_this": {
+              "default": false,
+              "description": "True iff the generated `executeEntryActions` body uses `this`.\n\nDrives the static/non-static decision in `tools/codegen/templates/entry_exit_actions.jinja2`. Each feature that emits a `this`-referencing expression into the body contributes to this predicate — adding a new feature means updating only this one spot rather than extending the template's conditional. Kept separate from `needs_nonstatic_method` (which gates lambda captures in parallel-region blocks) because the two sets of features overlap but are not identical — notably, mesh-rpc invokes synthesize a `reinterpret_cast<uintptr_t>(&engine)`-bearing block directly inside `executeEntryActions` but add no lambda captures, and scheduler state reached via `engine.scheduleEvent(...)` likewise touches `engine` (not `this`) but still leaks through the switch body.",
+              "type": "boolean"
+            },
+            "global_scripts": {
+              "items": {
+                "$ref": "#/definitions/Action"
+              },
+              "type": "array"
+            },
+            "has_autoforward_invoke": {
+              "description": "W3C SCXML 6.4 / test229: `true` iff any `<invoke>` in the document carries `autoforward=\"true\"`. Drives codegen of the `forward_to_autoforward_children` helper + its call site in the external-dequeue branch of `process_event_queues`. Set in [`crate::parser::SCXMLParser::parse_invoke`] alongside the per-invoke `autoforward` field so the helper is only emitted when at least one invoke needs it (rest of the corpus stays byte-identical).",
+              "type": "boolean"
+            },
+            "has_child_communication": {
+              "type": "boolean"
+            },
+            "has_dynamic_expressions": {
+              "type": "boolean"
+            },
+            "has_entry_actions": {
+              "type": "boolean"
+            },
+            "has_event_metadata": {
+              "type": "boolean"
+            },
+            "has_exit_actions": {
+              "type": "boolean"
+            },
+            "has_hierarchy": {
+              "type": "boolean"
+            },
+            "has_history_states": {
+              "type": "boolean"
+            },
+            "has_parallel_states": {
+              "type": "boolean"
+            },
+            "has_parent_communication": {
+              "type": "boolean"
+            },
+            "has_transition_actions": {
+              "type": "boolean"
+            },
+            "history_default_targets": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "history_states": {
+              "additionalProperties": {
+                "$ref": "#/definitions/HistoryInfo"
+              },
+              "type": "object"
+            },
+            "initial": {
+              "type": "string"
+            },
+            "initial_leaf": {
+              "type": "string"
+            },
+            "inline_kinds": {
+              "items": {
+                "$ref": "#/definitions/InlineKind"
+              },
+              "type": "array"
+            },
+            "invokes": {
+              "items": {
+                "$ref": "#/definitions/Invoke"
+              },
+              "type": "array"
+            },
+            "is_remote_invoke_target": {
+              "description": "SCE_MESH.md §9.6 — `true` when this machine serves as a remote `<invoke type=\"scxml\" src=\"#<this>\">` target for at least one sibling machine in the deploy.yaml topology (equivalently, when [`Self::scxml_remote_inbound_peers`] is non-empty). Derived in [`crate::collect_scxml_remote_peers`] and consumed by [`crate::analyzer::analyze`] to compute [`Self::needs_parent_template`] and by `actions/send.jinja2` to route `<send target=\"#_parent\">` through [`StaticExecutionEngine::performMeshSend`] instead of the local `parent_` pointer path. `ChildSessionAdapter<Engine>` (§9.6 child session lifecycle) default-constructs the engine, which requires the non-templated shape whenever a machine is used as an `<invoke>` worker.",
+              "type": "boolean"
+            },
+            "kind": {
+              "enum": [
+                "statechart"
+              ],
+              "type": "string"
+            },
+            "machine_liveliness_opt_in": {
+              "description": "SCE_MESH.md §16.4 / §16.7 liveness opt-in. `true` when the deploy declares a `liveliness:` block on the machine being codegen'd, regardless of whether this is a partition binary. Populated by [`crate::inject_partition_context_for`] from `deploy.yaml`.\n\nThe flag drives only the codegen-side observability gate [`crate::generator::reject_liveliness_without_handler`] (`feedback_silently_broken_hooks`): a machine declaring `liveliness:` without an `error.communication` handler in its SCXML is rejected at codegen because the row 8 `PEER_PARTITIONED` raise (on any machine with `liveliness:`) and the row 13 `REGION_PARTITIONED` raise (on a partitioned machine) both flow through `error.communication` and would be silently discarded. Transport emission is a different signal: per-partition row-13 token wiring is keyed on [`Self::partition_self_name`], and machine-level row-8 token wiring lives in the mesh transport codegen that reads `deploy.yaml`'s `liveliness:` directly.\n\n`false` when the machine declares no `liveliness:` section.",
+              "type": "boolean"
+            },
+            "name": {
+              "type": "string"
+            },
+            "needs_assign_helper": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "needs_dom_helper": {
+              "description": "W3C SCXML B.2: any reachable `<data>` content / `<data src=...>` loaded payload / `<send><content>` literal whose first non-WS character is `<` triggers the host-side XML DOM helper (C11 backend only — cpp / Rust / Go / Kotlin handle the same surface through their own pipelines). Gates `lua_dom_register_metatable` emission in scriptengine.jinja2 and the XML branches in the var.content / send.content / event-promotion sites.",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "needs_donedata_helper": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "needs_event_data": {
+              "type": "boolean"
+            },
+            "needs_event_data_helper": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "needs_event_invokeid": {
+              "type": "boolean"
+            },
+            "needs_event_matching_helper": {
+              "type": "boolean"
+            },
+            "needs_event_name": {
+              "type": "boolean"
+            },
+            "needs_event_origin": {
+              "type": "boolean"
+            },
+            "needs_event_origintype": {
+              "type": "boolean"
+            },
+            "needs_event_scheduler": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "needs_event_sendid": {
+              "type": "boolean"
+            },
+            "needs_event_type": {
+              "type": "boolean"
+            },
+            "needs_event_type_helper": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "needs_external_flag": {
+              "type": "boolean"
+            },
+            "needs_foreach": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "needs_guard_helper": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "needs_http_send": {
+              "type": "boolean"
+            },
+            "needs_namelist_helper": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "needs_nonstatic_method": {
+              "type": "boolean"
+            },
+            "needs_parent_template": {
+              "description": "SCE_MESH.md §9.6 — codegen-shape seam. `true` when the machine must emit the non-templated child shape (no `ParentStateMachine` template param, no `parent_` pointer field, `#_parent` routed through `performMeshSend`). Derived by [`crate::analyzer::analyze`] as `has_parent_communication && !is_remote_invoke_target`. The two shapes converge once §9.6 adopts a mesh-callback shim for local invokes; until then this flag keeps W3C local-invoke tests (test233/338) on the existing template shape while the mesh worker emits the default-constructible shape required by `ChildSessionAdapter<Engine>` (see §9.6 child session lifecycle).",
+              "type": "boolean"
+            },
+            "needs_script_engine": {
+              "type": "boolean"
+            },
+            "needs_send_helper": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "needs_transition_helper": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "on_sample_links": {
+              "description": "watching-zenoh RFC §5.E B7-η' codegen wire-up — sorted set of every `link` name referenced by any state's `<sce:on-sample link=\"X\" .../>` block. Derived in [`crate::analyzer::analyze_model_features`] as the union over `state.on_sample_blocks`. Empty when the machine has no sample subscriptions (the common case); non-empty drives the Rust state_machine template's `deliver_link_X_sample` method emission per Q-Wire-9 (host-driven delivery, generic over `M: SampleMeta` so the codegen does not need to know the link's concrete metadata type at template-render time).",
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "parallel_regions": {
+              "additionalProperties": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "type": "object"
+            },
+            "partition_barrier_timeouts": {
+              "additionalProperties": {
+                "format": "uint32",
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              "description": "SCE_MESH.md §16.5 L3500 barrier-timeout runtime. Maps each `<parallel>` id **Rooted by the current partition** to the deploy-declared `partitions.<root>.barrier_timeout_ms:` value. An entry absent from the map is the W3C normative infinity (no finite timer armed at first region completion); an entry present ⇒ the generated Root SM installs `TimerHooks` on the matching `ParallelCompletionTracker`.\n\nPopulated by [`crate::inject_partition_context_for`] whenever the selected partition declares `barrier_timeout_ms:` AND claims at least one root here. NonRoot partitions never see an entry (they hold no tracker). Empty in every non-partitioned build.",
+              "type": "object"
+            },
+            "partition_context_present": {
+              "description": "SCE_MESH.md §14 rule 12: set to `true` when this machine is listed under any `partitions.<name>.machines:` entry in a `--deploy` deploy.yaml. Gates the delegation from `entry_exit_actions.jinja2`'s inline `<parallel>`-final branch to `mesh/cpp/parallel_final.jinja2`. The delegate's body now also inspects [`Self::partition_parallel_roles`] to select between single-partition fallback, root-branch, and non-root branch emission — so a partition-listed machine built without a `--partition` argument still produces P0-compatible code (role map empty ⇒ every parallel falls through to the single-partition branch).",
+              "type": "boolean"
+            },
+            "partition_parallel_roles": {
+              "additionalProperties": {
+                "$ref": "#/definitions/PartitionRole"
+              },
+              "description": "SCE_MESH.md §14 rule 12: per-`<parallel>` role assignment for the partition currently being codegen'd, keyed by `<parallel>` element id. Populated by [`crate::inject_partition_context_flag`] **only** when a `--partition <name>` argument is supplied — a partitioned machine built without a partition argument keeps this map empty, and the `mesh/cpp/parallel_final.jinja2` template falls through to the single-partition branch (preserving P0 output for fixtures that exercise the scaffolding hook alone). A `<parallel>` id absent from the map renders as single-partition regardless of whether other parallels in the same machine are distributed.",
+              "type": "object"
+            },
+            "partition_self_name": {
+              "description": "The current partition's name as supplied to `--partition`. `None` when codegen runs without `--partition`. Codegen reads this to disambiguate channel name constants for shared templates (e.g. the wire-21 channel name encodes both source and destination partition names).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "partition_wire21_inbound_sources": {
+              "description": "SCE_MESH.md §16.5 wire-21 inbound source partitions for the partition currently being codegen'd. Sorted, deduplicated list of NonRoot partitions whose region-final entries forward `ParallelRegionDone` envelopes here (this partition Roots one or more parallels they host). Codegen materializes one inbound shm channel per source for [`crate::inject_partition_context_for`] to thread through. Empty when this partition Roots no distributed `<parallel>`.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "partition_wire21_outbound_routes": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "SCE_MESH.md §16.5 wire-21 outbound routes for the partition currently being codegen'd. Maps each `<parallel>` whose role here is [`PartitionRole::NonRoot`] to the **destination partition name** — the partition that claims the parallel's root via `partitions.<root>.hosts_parallel_roots:`. Codegen uses this to pick the outbound shm channel inside `sendParallelRegionDone(parallel_id, ...)`. Empty when the partition is pure-Root, has no NonRoot parallels, or codegen runs without `--partition`.",
+              "type": "object"
+            },
+            "scxml_base_path": {
+              "type": "string"
+            },
+            "scxml_name": {
+              "description": "The `name` attribute from `<scxml name=\"...\">`. Distinct from `name` (which is the file stem). Used by server-side codegen to derive the self-target for injected response sends (e.g., the motor SCXML declares `name=\"motor\"` and `#motor` is the conventional self-target for server response routing). Empty if the SCXML element has no name attribute.",
+              "type": "string"
+            },
+            "scxml_remote_inbound_peers": {
+              "description": "SCE_MESH.md §9.6.2 wire-14 inbound peers — deploy.yaml machine names of other machines whose SCXML issues a remote `<invoke type=\"scxml\" src=\"#<this>\">`, with `<this>` equal to the machine currently being codegen'd. Sorted by `.name`, deduplicated. The `transport:` field mirrors the parent's `bindings[\"#<this>\"]` entry (cross-device case) or `None` (same-device implicit shm); the symmetry is required so the worker-side codegen can emit the matching transport channel when Session 2 extends past shm. Codegen materializes one inbound `ScxmlInvokeChannel` per entry for receiving wire-14 `InvokeStart`, paired with an outbound `ScxmlInvokeChannel` for answering with wire-20 `InvokeError` carrying `SESSION_F_NOT_IMPLEMENTED` until the child-session runtime lands. Empty when no peer invokes this machine.",
+              "items": {
+                "$ref": "#/definitions/ScxmlRemotePeerBinding"
+              },
+              "type": "array"
+            },
+            "scxml_remote_outbound_peers": {
+              "description": "SCE_MESH.md §9.6.2 wire-14 outbound peers — deploy.yaml machine names referenced by any `<invoke type=\"scxml\" src=\"#peer\">` in this machine's SCXML that the classifier (`classify_remote_scxml_invokes`) marked with `remote_mesh_target`. Sorted by `.name`, deduplicated. Each entry also carries the author-declared `transport:` from the parent's `bindings[\"#<peer>\"]` entry (cross-device case) or `None` (same-device implicit shm). Codegen materializes one outbound `ScxmlInvokeChannel` (shm) per entry for the §9.6.2 `InvokeStart` envelope, paired with an inbound `ScxmlInvokeChannel` for the peer's wire-20 `InvokeError` reply. Empty when the machine issues no remote SCXML invokes.",
+              "items": {
+                "$ref": "#/definitions/ScxmlRemotePeerBinding"
+              },
+              "type": "array"
+            },
+            "scxml_source_path": {
+              "type": "string"
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Watching-zenoh RFC §5.O Atomic 0: post-preprocessor source position of the `<scxml>` root element. Populated by [`crate::parser::SCXMLParser::parse_impl`]. Drives the per-backend SCE-MAP marker above the generated state machine's top-level definition (`impl <SmName>` / `class <SmName>` / `struct <SmName>` / `fn main` for procedure-test wrappers). XInclude / sce:template expanded content gets the position in the *included* source via the preprocessor coordinate map."
+            },
+            "states": {
+              "additionalProperties": {
+                "$ref": "#/definitions/State"
+              },
+              "type": "object"
+            },
+            "uses_in_predicate": {
+              "type": "boolean"
+            },
+            "variables": {
+              "items": {
+                "$ref": "#/definitions/Variable"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "binding",
+            "context_objects",
+            "datamodel_type",
+            "document_rejected",
+            "events",
+            "global_scripts",
+            "has_autoforward_invoke",
+            "has_child_communication",
+            "has_dynamic_expressions",
+            "has_entry_actions",
+            "has_event_metadata",
+            "has_exit_actions",
+            "has_hierarchy",
+            "has_history_states",
+            "has_parallel_states",
+            "has_parent_communication",
+            "has_transition_actions",
+            "history_default_targets",
+            "history_states",
+            "initial",
+            "initial_leaf",
+            "invokes",
+            "is_remote_invoke_target",
+            "kind",
+            "name",
+            "needs_event_data",
+            "needs_event_invokeid",
+            "needs_event_matching_helper",
+            "needs_event_name",
+            "needs_event_origin",
+            "needs_event_origintype",
+            "needs_event_sendid",
+            "needs_event_type",
+            "needs_external_flag",
+            "needs_http_send",
+            "needs_nonstatic_method",
+            "needs_parent_template",
+            "needs_script_engine",
+            "parallel_regions",
+            "states",
+            "uses_in_predicate",
+            "variables"
+          ],
+          "type": "object"
+        },
         {
           "description": "Transform: pure mathematical formula. Input -> computation -> output. No state, no side effects. Generates an inline function.",
           "properties": {
@@ -2428,6 +3221,37 @@
         }
       ]
     },
+    "HistoryInfo": {
+      "description": "W3C SCXML 3.11: History state information",
+      "properties": {
+        "default_actions": {
+          "items": {
+            "$ref": "#/definitions/Action"
+          },
+          "type": "array"
+        },
+        "default_target": {
+          "type": "string"
+        },
+        "leaf_target": {
+          "type": "string"
+        },
+        "parent": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "default_actions",
+        "default_target",
+        "leaf_target",
+        "parent",
+        "type"
+      ],
+      "type": "object"
+    },
     "InboxConfig": {
       "description": "`<sce:inbox>` configuration — RFC §5.D line 894 + §5.I lines 1752-1758. SPSC ring-buffer inbox shape; per Q-C2-8 lock, the producer/consumer split is the type-level FSM (`heapless::spsc::{Producer,Consumer}` on Rust; opaque `sce_inbox_{producer,consumer}_t` family on C11). No separate FSM IR module — slot lifecycle is 2-state (free/in-use), degenerate compared to BufferPool's 7-state DMA lifecycle.\n\nC2-α schema: only `depth` attribute (spec verbatim). C2-β adds the `ordering` attribute as required (RFC §5.I lines 1757-1758 spec- verbatim per `feedback_spec_mirror_parity.md`; SCE's error-only wire realizes the spec \"warning, codegen defaults to acq/rel\" as a required-when-worker-exists error so the author makes an explicit choice before codegen emits ambiguous atomic ops). MPSC variant deferred until consumer signal (RFC §6 tracked).",
       "properties": {
@@ -2471,6 +3295,128 @@
         }
       ]
     },
+    "InlineKind": {
+      "description": "An inline kind declaration within a statechart.",
+      "properties": {
+        "data": {
+          "$ref": "#/definitions/InlineKindData"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "data",
+        "id"
+      ],
+      "type": "object"
+    },
+    "InlineKindData": {
+      "description": "Inline kind data — embedded within a statechart `<data>` element. Derived values (unique_values, entries_by_value) are computed by the generator at render time, not stored in the model (state normalization).",
+      "oneOf": [
+        {
+          "properties": {
+            "default_value": {
+              "type": "string"
+            },
+            "entries": {
+              "items": {
+                "$ref": "#/definitions/LookupEntry"
+              },
+              "type": "array"
+            },
+            "input_id": {
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "lookup"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "default_value",
+            "entries",
+            "input_id",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "expr": {
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "condition"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "expr",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "default_endian": {
+              "$ref": "#/definitions/Endian"
+            },
+            "fields": {
+              "items": {
+                "$ref": "#/definitions/CodecField"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "enum": [
+                "codec"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "default_endian",
+            "fields",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "expr": {
+              "type": "string"
+            },
+            "inputs": {
+              "items": {
+                "$ref": "#/definitions/ForgeField"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "enum": [
+                "transform"
+              ],
+              "type": "string"
+            },
+            "output_type": {
+              "$ref": "#/definitions/SceType"
+            }
+          },
+          "required": [
+            "expr",
+            "inputs",
+            "kind",
+            "output_type"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "InterpolationAxis": {
       "description": "Axis definition for interpolation (breakpoints for one dimension).",
       "properties": {
@@ -2500,6 +3446,276 @@
         "bilinear"
       ],
       "type": "string"
+    },
+    "Invoke": {
+      "description": "An invoke declared on a state, keyed by kind.\n\nW3C SCXML §6.4 leaves `<invoke type=\"...\">` open for implementation-defined values; SCE treats the three supported kinds as distinct lifecycles:\n\n- [`Invoke::Scxml`] — static child SCXML session (`src` or inline `<content>`). - [`Invoke::Hybrid`] — SCXML session whose target is resolved at runtime (`srcexpr` / `contentexpr`). - [`Invoke::MeshRpc`] — single request / single reply RPC over Mesh (§9.5 `<invoke type=\"sce:mesh-rpc\">`), no child session.\n\nEach variant wraps a dedicated struct that holds only the fields its kind actually needs — `finalize_content`/`src`/`namelist` never appear on a hybrid invoke, `srcexpr`/`contentexpr` never appear on a static invoke. The type system enforces these invariants; nothing at the call site has to remember which fields apply to which variant.\n\nSerialised with an internal `kind` tag so minijinja templates can dispatch on `{% if invoke.kind == \"Scxml\" %}` without needing tuple-style access. The inner structs use `#[serde(flatten)]` for `common`, so templates keep reading `invoke.invoke_id` / `invoke.autoforward` at the top level.",
+      "oneOf": [
+        {
+          "description": "W3C SCXML 6.4: Static invoke (`<invoke src=\"...\"` or inline `<content>`).\n\nHolds only the fields the static lifecycle actually uses. Hybrid-only fields (`srcexpr`, `contentexpr`) do not appear here — the type system guarantees `Invoke::Scxml` never carries them. Common metadata lives on [`InvokeSessionCommon`] and is accessible via `Deref` so `scxml_info.invoke_id` still reads naturally.\n\nInline `<content><scxml>` is resolved to a concrete child SCXML file during parse (see `SCXMLParser::parse_invoke`); by the time this struct exists, `src` already points at the final path and `child_name` is set. There is no \"awaiting extraction\" transient state.",
+          "properties": {
+            "autoforward": {
+              "type": "boolean"
+            },
+            "child_datamodel_vars": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "child_has_send_to_parent": {
+              "default": false,
+              "description": "W3C SCXML 6.4 (test226/240/241/243/244/245/276): the child SCXML has at least one `<send target=\"#_parent\" event=\"...\"/>`. Codegen uses this to gate parent_sm / parent_dispatch wiring at child spawn time so parent-routed events reach the parent's external queue. Mirrors the C++ reuse of `child_model.has_parent_communication` surfaced via the parsed child model — populated by `collect_child_to_parent_events` during invoke metadata resolution.",
+              "type": "boolean"
+            },
+            "child_name": {
+              "type": "string"
+            },
+            "child_needs_event_scheduler": {
+              "default": false,
+              "description": "W3C SCXML 6.2 (test207): the child SCXML carries a non-empty `<send delay=\"...\">` so its codegen emitted a scheduler queue + a `_tick` entry point. Parents that drive active children from `_drive_active_children` need to call the child's `_tick` (not just `_step`) so scheduled child events promote onto the child's internal queue and drive its macrostep on the same outer-step iteration. Top-level fixtures know about this derived from the child SCXML at parse time, mirroring how `child_needs_script_engine` is populated.",
+              "type": "boolean"
+            },
+            "child_needs_script_engine": {
+              "type": "boolean"
+            },
+            "field_suffix": {
+              "description": "Identifier suffix derived from [`Self::invoke_id`] by trimming the SCXML auto-id leading underscore. User-supplied ids round-trip unchanged. Used by Rust/C++ templates to compose field names like `child_{field_suffix}` without producing double underscores.",
+              "type": "string"
+            },
+            "finalize_content": {
+              "type": "string"
+            },
+            "idlocation": {
+              "type": "string"
+            },
+            "invoke_id": {
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "Scxml"
+              ],
+              "type": "string"
+            },
+            "namelist": {
+              "type": "string"
+            },
+            "params": {
+              "items": {
+                "$ref": "#/definitions/Param"
+              },
+              "type": "array"
+            },
+            "remote_mesh_target": {
+              "description": "SCE_MESH.md §9.6 remote `<invoke type=\"scxml\">`. When `src` is of the form `#<name>` and `<name>` matches a distinct mesh machine declared in `deploy.yaml`, this carries that machine name (without the leading `#`). C++ codegen branches on this field to emit the §10.7.1 `SESSION_F_NOT_IMPLEMENTED` scaffold until Session F lands the wire patterns 14-20 runtime. `None` for local W3C invokes (inline `<content>` or file-relative `src`) and for non-mesh builds — those flow through the existing local-invoke path unchanged. Populated by [`crate::inject_partition_context_for`] from the deploy topology.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "remote_mesh_transport": {
+              "description": "SCE_MESH.md §9.6 L1393 cross-device transport — the author-declared transport on `machines.<parent>.bindings[\"#<peer>\"]` when the peer is cross-device. `None` when `remote_mesh_target` is also `None` (not a remote invoke) OR the invoke is cross-partition same-device (implicit shm fallback, today's only wired codegen path). The Session 1 cross-device validator rejects cross-device declarations whose transport is not yet wired by Session 2 C++ dispatch, so this field is only a diagnostic payload until Session 2 lands.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "src": {
+              "type": "string"
+            },
+            "state_name": {
+              "type": "string"
+            },
+            "use_specific_event": {
+              "default": false,
+              "description": "W3C SCXML 6.4: Use specific done.invoke.{id} event instead of generic done.invoke",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "autoforward",
+            "child_name",
+            "child_needs_script_engine",
+            "field_suffix",
+            "finalize_content",
+            "idlocation",
+            "invoke_id",
+            "kind",
+            "namelist",
+            "params",
+            "src",
+            "state_name"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "W3C SCXML 6.4: Hybrid invoke (runtime `srcexpr`/`contentexpr`).\n\nScxml-only fields (`finalize_content`, `src`, `namelist`) do not appear here; hybrid invokes never run a `<finalize>` block and resolve their target at runtime, so the legacy flat struct's mixed fields are now variant-scoped.",
+          "properties": {
+            "autoforward": {
+              "type": "boolean"
+            },
+            "child_datamodel_vars": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "child_has_send_to_parent": {
+              "default": false,
+              "description": "W3C SCXML 6.4 (test226/240/241/243/244/245/276): the child SCXML has at least one `<send target=\"#_parent\" event=\"...\"/>`. Codegen uses this to gate parent_sm / parent_dispatch wiring at child spawn time so parent-routed events reach the parent's external queue. Mirrors the C++ reuse of `child_model.has_parent_communication` surfaced via the parsed child model — populated by `collect_child_to_parent_events` during invoke metadata resolution.",
+              "type": "boolean"
+            },
+            "child_name": {
+              "type": "string"
+            },
+            "child_needs_event_scheduler": {
+              "default": false,
+              "description": "W3C SCXML 6.2 (test207): the child SCXML carries a non-empty `<send delay=\"...\">` so its codegen emitted a scheduler queue + a `_tick` entry point. Parents that drive active children from `_drive_active_children` need to call the child's `_tick` (not just `_step`) so scheduled child events promote onto the child's internal queue and drive its macrostep on the same outer-step iteration. Top-level fixtures know about this derived from the child SCXML at parse time, mirroring how `child_needs_script_engine` is populated.",
+              "type": "boolean"
+            },
+            "child_needs_script_engine": {
+              "type": "boolean"
+            },
+            "contentexpr": {
+              "description": "Runtime expression that produces inline SCXML content. Empty if `srcexpr` is used instead.",
+              "type": "string"
+            },
+            "field_suffix": {
+              "description": "Identifier suffix derived from [`Self::invoke_id`] by trimming the SCXML auto-id leading underscore. User-supplied ids round-trip unchanged. Used by Rust/C++ templates to compose field names like `child_{field_suffix}` without producing double underscores.",
+              "type": "string"
+            },
+            "idlocation": {
+              "type": "string"
+            },
+            "invoke_id": {
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "Hybrid"
+              ],
+              "type": "string"
+            },
+            "params": {
+              "items": {
+                "$ref": "#/definitions/Param"
+              },
+              "type": "array"
+            },
+            "srcexpr": {
+              "description": "Runtime expression that resolves to a child SCXML path. Empty if `contentexpr` is used instead.",
+              "type": "string"
+            },
+            "state_name": {
+              "type": "string"
+            },
+            "use_specific_event": {
+              "default": false,
+              "description": "W3C SCXML 6.4: Use specific done.invoke.{id} event instead of generic done.invoke",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "autoforward",
+            "child_name",
+            "child_needs_script_engine",
+            "contentexpr",
+            "field_suffix",
+            "idlocation",
+            "invoke_id",
+            "kind",
+            "params",
+            "srcexpr",
+            "state_name"
+          ],
+          "type": "object"
+        },
+        {
+          "anyOf": [
+            {
+              "description": "Static `src=\"#<machine_name>\"`. Topology resolves it to a deploy.yaml binding at build time.",
+              "properties": {
+                "src": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "src"
+              ],
+              "type": "object"
+            },
+            {
+              "description": "Runtime `srcexpr=\"<datamodel expression>\"`. Evaluated at `<invoke>` entry; result must be a `#<machine_name>` string matching a static binding (no peer discovery implied — §3.3).",
+              "properties": {
+                "srcexpr": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "srcexpr"
+              ],
+              "type": "object"
+            }
+          ],
+          "description": "SCE Mesh §9.5: short-lived RPC invoke (`<invoke type=\"sce:mesh-rpc\">`).\n\nDistinct from the SCXML-session kinds because mesh-rpc is a single request / single reply RPC layered over W3C invoke lifecycle events — no child session, no `<finalize>` stream, no autoforward. Only the truly universal invoke fields ([`InvokeBase`]) are shared; `child_name` / `autoforward` do not apply here and the type rejects setting them.",
+          "properties": {
+            "deadline_ms": {
+              "description": "Value of the optional `<param name=\"_mesh_deadline_ms\">`, if present. `<param>` deadline overrides any deploy.yaml binding-level deadline (§9.5 precedence rule).\n\nSerializes to JSON `null` when absent (no `skip_serializing_if`), aligning with [`crate::model::DoneDataParam`] so minijinja templates can use the canonical `is not none` test without tripping over `undefined` vs `null` ambiguity.",
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "field_suffix": {
+              "description": "Identifier suffix derived from [`Self::invoke_id`] by trimming the SCXML auto-id leading underscore. User-supplied ids round-trip unchanged. Used by Rust/C++ templates to compose field names like `child_{field_suffix}` without producing double underscores.",
+              "type": "string"
+            },
+            "idlocation": {
+              "type": "string"
+            },
+            "invoke_id": {
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "MeshRpc"
+              ],
+              "type": "string"
+            },
+            "mesh_event": {
+              "description": "Value of the required `<param name=\"_mesh_event\">`. This populates the envelope `type` field — never taken from any author-named `<param>`.",
+              "type": "string"
+            },
+            "params": {
+              "items": {
+                "$ref": "#/definitions/Param"
+              },
+              "type": "array"
+            },
+            "state_name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "field_suffix",
+            "idlocation",
+            "invoke_id",
+            "kind",
+            "mesh_event",
+            "params",
+            "state_name"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "LinkClass": {
       "description": "`<sce:link-class>` enumeration — RFC §5.C \"Link-class enumeration\" table. Five strings shipped today; OS-specific classes (e.g. `unix_socket`, `qnx_msg`) land additively in later phases.",
@@ -2632,6 +3848,38 @@
         }
       ]
     },
+    "OnSampleNode": {
+      "description": "`link` (forge link kind artifact name) + `event` (SCXML event name dispatched on Sample arrival), both required. B7-η' Atomic A2 adds optional `callback` attribute (Q-Callback-1 Option α + Q-Callback-2 `rust:` prefix-typed reference into the user's symbol space).",
+      "properties": {
+        "callback": {
+          "description": "`callback=\"rust:crate::path::fn\"` — optional extern reference into the user's symbol space (Q-Callback-1 Option α). When present, codegen emits `path(&sample)` at the dispatch site, forcing borrow-mode at the call boundary; rustc enforces the user's signature shape against the borrow contract. The language prefix today is `rust:` only; future axes (`c:`, `kotlin:`, …) reuse the same attribute via Q-Callback-2's language-typed parsing. Absence (`None`) means codegen synthesizes a default dispatch shim — backwards-compat with the landed Atomic A/B `<sce:on-sample link/event>` shape (Q-Callback-5).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "document_order": {
+          "description": "0-based document order within this state's `<sce:on-sample>` blocks. Lets diagnostics quote a stable per-state index even when the source file lacks reliable line numbers.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "event": {
+          "description": "`event=\"X\"` — SCXML event name raised when a Sample arrives. State-level `<transition event=\"X\">` blocks dispatch normally per W3C SCXML §5.10, with `_event.data` carrying the borrowed `&Sample<'_>` reference.",
+          "type": "string"
+        },
+        "link": {
+          "description": "`link=\"X\"` — forge link kind artifact name. Cross-reference resolution against the build's [`crate::forge::pool_registry`]-style `SceCrossDocRegistry` is the Atomic B follow-on; structural validators in this atomic do not consult the registry.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "document_order",
+        "event",
+        "link"
+      ],
+      "type": "object"
+    },
     "OutOfBounds": {
       "description": "Out-of-bounds handling for interpolation.",
       "enum": [
@@ -2667,6 +3915,34 @@
         }
       ]
     },
+    "Param": {
+      "description": "W3C SCXML 6.2.4: Send parameter",
+      "properties": {
+        "expr": {
+          "type": "string"
+        },
+        "is_static_literal": {
+          "type": "boolean"
+        },
+        "location": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "static_value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "expr",
+        "is_static_literal",
+        "location",
+        "name",
+        "static_value"
+      ],
+      "type": "object"
+    },
     "ParsedForge": {
       "description": "Parsed forge result — combines the document model with cross-file imports. The `imports` field is empty for standalone documents (no `<sce:import>` elements).",
       "properties": {
@@ -2693,6 +3969,32 @@
         "imports"
       ],
       "type": "object"
+    },
+    "PartitionRole": {
+      "description": "SCE_MESH.md §14 rule 12 — partition's role for a specific `<parallel>`. A machine's partitions each hold one of these per `<parallel>` the machine declares. Only surfaced when codegen is invoked with `--partition <name>`; absent (map-missing) implies single-partition fallback.",
+      "oneOf": [
+        {
+          "description": "This partition claims the `<parallel>` root via `hosts_parallel_roots:`. Owns the §16.5 `ParallelCompletionTracker` and raises `done.state.<parallel_id>` into the SM's local external queue on threshold.",
+          "enum": [
+            "Root"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "This partition hosts one or more regions of the `<parallel>` but is not the root. Emits wire-21 `ParallelRegionDone` envelopes on local region-final entry; holds no tracker.",
+          "enum": [
+            "NonRoot"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "All regions of this `<parallel>` live in this same partition — equivalent to a single-process parallel. The template uses the legacy `ParallelCompletionHelper` path (P0 body).",
+          "enum": [
+            "SinglePartition"
+          ],
+          "type": "string"
+        }
+      ]
     },
     "PeekByteSpec": {
       "description": "RFC §5.B Y3 atomic 2b-ii peek-byte — peek-byte dispatch shape on a `<sce:variant>`. When `Some` on `CodecVariant.peek_byte`, the tag reads the cursor's NEXT byte without advancing; the arm body codec then reads that same byte as its own header. Models Zenoh response/request body dispatch where the next-byte MID identifies the inner body codec (per `network.c:347-364` + `220-235` — `_z_uint8_decode(&inner_header, ...)` consumed by outer decoder then passed by VALUE to arm body decoder).\n\n`id` names the peek slot — referenced by the variant's `tag=\"<id>.<flag>\"` dotted form (parser-enforced — peek mode tag MUST be dotted, MUST equal `peek_byte.id` for the carrier half).\n\n`flags` mirrors `<sce:flags>`-style children: `<sce:flag name=\"X\" bit=\"N\" width=\"W\"/>`. v1 fixes the peeked width at uint8 (Zenoh single-byte network dispatch); future widening to peek-multi-byte is a separate primitive (peek-bytes) when a reachable consumer surfaces, NOT a `sce:type` widening on this element.\n\nCross-codec validator confirms the dispatch flag (the one named in the variant's tag) matches every arm body codec's own first flag-bearing field's `<sce:flag>` declaration of the same (name, bit, width) — the peeked byte == arm body's own header byte, so the flag layout must agree on the dispatch bit-range.",
@@ -3031,6 +4333,42 @@
       ],
       "type": "string"
     },
+    "ScxmlRemotePeerBinding": {
+      "description": "SCE_MESH.md §9.6.2 wire-14/20 peer entry — a machine name paired with the author-selected deploy.yaml transport for the scxml-remote invoke channel. `transport` is `None` for same-device cross-partition peers that take the implicit shm fallback (today's only wired codegen path); `Some(<name>)` carries a cross-device declaration resolved from `machines.<parent>.bindings[\"#<peer>\"].transport`. Session 1 of the cross-device roll-out records the field on the model; Session 2 adds `connect_endpoint` so custom_tcp codegen has the peer's listen address available for the per-peer `CustomTcp::Client` ctor args.\n\n`connect_endpoint` mirrors `transport`: it is `Some` only when the peer actually needs an endpoint (currently custom_tcp only) AND the peer's device has `transports.custom_tcp.listen` declared in deploy.yaml; all other paths (shm, local, missing device config) keep it `None`. Stored unquoted — the template emits the quoted C++ string literal.",
+      "properties": {
+        "connect_endpoint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "transport": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "SessionRoleKind": {
+      "description": "Axis-3 inversion — closed-set vocabulary for the cross-document session-FSM role that a SCXML document declares via the top-level `<sce:session-role kind=\"...\"/>` extension.\n\nv1 ships a single variant ([`AcceptSide`]) covering the canonical session-FSM accept-side state machine (`docs/session-fsm.md` §2.6 — `Accepting`, `Accepting.AwaitingInitSyn`, `Accepting.SentInitAck`, etc.). Future variants (initiator-side, broker-side, …) extend this enum in lockstep with their codegen- side semantics; declaring any unknown `kind` value at parse time fires [`crate::forge::error::ValidationError::ScxmlUnknownSessionRoleKind`] with the current vocabulary list embedded in the message.\n\nThe orchestrator (`crate::resolve_listener_links`) joins by named role only: a deploy.yaml link with `role: listener` pairs with the machine's source SCXML iff that SCXML declares `<sce:session-role kind=\"accept-side\"/>`. Partial-claim cases (either side declares the role but not the other) fire typed cross-doc diagnostics — see RFC Axis-3 Q-A7.\n\n`kind` values use the canonical session-FSM vocabulary (`accept-side`), NOT the wire-side deploy vocabulary (`listener`). The asymmetric pairing is hardcoded in the orchestrator per RFC Axis-3 Q-A6 (a) — each domain uses its native term; the orchestrator knows the pairing table.\n\n[`AcceptSide`]: SessionRoleKind::AcceptSide",
+      "oneOf": [
+        {
+          "description": "Implements the canonical session-FSM accept-side state machine (`docs/session-fsm.md` §2.6). Pairs 1:1 with a deploy.yaml link configured as `role: listener` + `trust_class: session_arming`.",
+          "enum": [
+            "accept-side"
+          ],
+          "type": "string"
+        }
+      ]
+    },
     "SourceLocation": {
       "description": "Source location attached to an error for machine-readable diagnostics.\n\nCarried by the [`Located`] wrapper struct (below) to answer *where* an error was raised. The leaf error enums stay focused on *what* is wrong — identity, expected/actual values, stage — and remain orthogonal to position.\n\nWatching-zenoh RFC §5.O Atomic 0: also reused as the per-IR-node provenance record. Every emission-eligible node carries an `Option<SourceLocation>` so codegen templates can emit per-backend SCE-MAP markers (`#line` / `//line` / `// SCE-MAP:` / `#[doc]`) above the function header that node lowers to. Serialised so minijinja templates can `{% if state.source_location %}{{ ... }}{% endif %}`.",
       "properties": {
@@ -3059,6 +4397,141 @@
       },
       "required": [
         "file"
+      ],
+      "type": "object"
+    },
+    "State": {
+      "description": "W3C SCXML 3.3: State element",
+      "properties": {
+        "datamodel": {
+          "items": {
+            "$ref": "#/definitions/Variable"
+          },
+          "type": "array"
+        },
+        "document_order": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "donedata": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DoneData"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "initial": {
+          "type": "string"
+        },
+        "initial_children": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "initial_history_default_actions": {
+          "items": {
+            "$ref": "#/definitions/Action"
+          },
+          "type": "array"
+        },
+        "initial_history_default_target": {
+          "type": "string"
+        },
+        "initial_history_id": {
+          "type": "string"
+        },
+        "initial_transition_actions": {
+          "items": {
+            "$ref": "#/definitions/Action"
+          },
+          "type": "array"
+        },
+        "invokes": {
+          "description": "Every `<invoke>` on this state in document order, typed by kind ([`Invoke::Scxml`] / [`Invoke::Hybrid`] / [`Invoke::MeshRpc`]). Templates dispatch on `invoke.kind`; Rust consumers pattern-match.",
+          "items": {
+            "$ref": "#/definitions/Invoke"
+          },
+          "type": "array"
+        },
+        "is_final": {
+          "type": "boolean"
+        },
+        "is_parallel": {
+          "type": "boolean"
+        },
+        "on_entry_blocks": {
+          "items": {
+            "items": {
+              "$ref": "#/definitions/Action"
+            },
+            "type": "array"
+          },
+          "type": "array"
+        },
+        "on_exit_blocks": {
+          "items": {
+            "items": {
+              "$ref": "#/definitions/Action"
+            },
+            "type": "array"
+          },
+          "type": "array"
+        },
+        "on_sample_blocks": {
+          "description": "`<sce:on-sample>` declarations on this state, in document order. Empty for states without sample subscriptions. Q-OnSample-5 (a) allows multiple blocks (one per link) per state with a uniqueness validator on the `link` attribute.",
+          "items": {
+            "$ref": "#/definitions/OnSampleNode"
+          },
+          "type": "array"
+        },
+        "parent": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_location": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SourceLocation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Watching-zenoh RFC §5.O Atomic 0: post-preprocessor source position of the `<state>` / `<final>` / `<parallel>` element. Populated by [`crate::parser::SCXMLParser::parse_states`]. Drives the per-state SCE-MAP marker that codegen templates emit above the on-entry / on-exit / transition-handler functions this state lowers to."
+        },
+        "transitions": {
+          "items": {
+            "$ref": "#/definitions/Transition"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "datamodel",
+        "document_order",
+        "id",
+        "initial",
+        "initial_children",
+        "initial_history_default_actions",
+        "initial_history_default_target",
+        "initial_history_id",
+        "initial_transition_actions",
+        "invokes",
+        "is_final",
+        "is_parallel",
+        "on_entry_blocks",
+        "on_exit_blocks",
+        "transitions"
       ],
       "type": "object"
     },
@@ -3255,6 +4728,125 @@
         }
       ]
     },
+    "Transition": {
+      "description": "W3C SCXML 3.3: Transition element",
+      "properties": {
+        "actions": {
+          "items": {
+            "$ref": "#/definitions/Action"
+          },
+          "type": "array"
+        },
+        "cond": {
+          "type": "string"
+        },
+        "cond_cpp": {
+          "type": "string"
+        },
+        "cond_cpp_transformed": {
+          "type": "string"
+        },
+        "cond_kt": {
+          "type": "string"
+        },
+        "event": {
+          "type": "string"
+        },
+        "history_leaf_target": {
+          "description": "W3C SCXML 3.11: Resolved leaf target for history default (Kotlin Phase 1)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "history_target": {
+          "description": "W3C SCXML 3.11: History target if transition targets a history state",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "internal_source": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "is_cpp_condition": {
+          "type": "boolean"
+        },
+        "is_kt_condition": {
+          "type": "boolean"
+        },
+        "is_pure_in_predicate": {
+          "type": "boolean"
+        },
+        "is_true_internal": {
+          "description": "W3C SCXML 3.13: True internal transition (target is descendant of source)",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "matching_enum_values": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "needs_string_matching": {
+          "type": "boolean"
+        },
+        "prefix_matching_events": {
+          "description": "Prefix matching events for Kotlin templates",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "source_location": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SourceLocation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Watching-zenoh RFC §5.O Atomic 0: post-preprocessor source position of the `<transition>` element, populated by [`crate::parser::SCXMLParser::parse_transition`] from `roxmltree::Document::text_pos_at`. Templates emit per-backend SCE-MAP markers above the transition's emitted handler function (Rust `// SCE-MAP:` + `#[doc]`, C/C++ `#line`, Go `//line`, Kotlin `// SCE-MAP:`)."
+        },
+        "target": {
+          "type": "string"
+        },
+        "transition_index": {
+          "description": "Original index within parent state's transition list",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "actions",
+        "cond",
+        "cond_cpp",
+        "cond_cpp_transformed",
+        "cond_kt",
+        "event",
+        "is_cpp_condition",
+        "is_kt_condition",
+        "is_pure_in_predicate",
+        "matching_enum_values",
+        "needs_string_matching",
+        "prefix_matching_events",
+        "target",
+        "transition_index",
+        "type"
+      ],
+      "type": "object"
+    },
     "ValidatorRules": {
       "description": "Validation rules container.",
       "properties": {
@@ -3280,6 +4872,35 @@
       "required": [
         "ranges",
         "rate_of_changes"
+      ],
+      "type": "object"
+    },
+    "Variable": {
+      "description": "W3C SCXML 5.2: Datamodel variable",
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "expr": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "src": {
+          "type": "string"
+        },
+        "type": {
+          "description": "Classified type: int, string, bool, runtime",
+          "type": "string"
+        }
+      },
+      "required": [
+        "content",
+        "expr",
+        "id",
+        "src",
+        "type"
       ],
       "type": "object"
     },

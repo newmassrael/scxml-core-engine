@@ -45,6 +45,7 @@ pub const SCXML_NAMESPACE: &str = "http://www.w3.org/2005/07/scxml";
 
 /// W3C SCXML 3.3: Transition element
 #[derive(Debug, Clone, Serialize, Default)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Transition {
     pub event: String,
     pub target: String,
@@ -89,6 +90,7 @@ pub struct Transition {
 
 /// W3C SCXML executable content action
 #[derive(Debug, Clone, Serialize, Default)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Action {
     #[serde(rename = "type")]
     pub action_type: String,
@@ -191,6 +193,7 @@ pub struct Action {
 
 /// W3C SCXML if/elseif branch
 #[derive(Debug, Clone, Serialize, Default)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ElseIfBranch {
     pub cond: String,
     pub cond_cpp: String,
@@ -201,6 +204,7 @@ pub struct ElseIfBranch {
 
 /// W3C SCXML 6.2.4: Send parameter
 #[derive(Debug, Clone, Serialize, Default)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Param {
     pub name: String,
     pub expr: String,
@@ -213,6 +217,7 @@ pub struct Param {
 
 /// W3C SCXML 5.2: Datamodel variable
 #[derive(Debug, Clone, Serialize, Default)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Variable {
     pub id: String,
     pub expr: String,
@@ -225,6 +230,7 @@ pub struct Variable {
 
 /// W3C SCXML 3.11: History state information
 #[derive(Debug, Clone, Serialize, Default)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct HistoryInfo {
     pub parent: String,
     #[serde(rename = "type")]
@@ -242,6 +248,7 @@ pub struct HistoryInfo {
 /// object. Templates dispatch on `donedata.content.kind` rather than the
 /// legacy truthy-check on two parallel strings.
 #[derive(Debug, Clone, Serialize, Default)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct DoneData {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub params: Vec<DoneDataParam>,
@@ -262,6 +269,7 @@ pub struct DoneData {
 /// minijinja consumers match on `donedata.content.kind` and read the payload
 /// from `.text` when present.
 #[derive(Debug, Clone, Serialize, Default)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "kind", content = "text", rename_all = "snake_case")]
 pub enum DoneDataContent {
     #[default]
@@ -279,6 +287,7 @@ pub enum DoneDataContent {
 /// (Some("")) via the canonical `is none` test — undefined-vs-null ambiguity
 /// would otherwise mis-route the empty-location structural-error branch.
 #[derive(Debug, Clone, Serialize, Default)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct DoneDataParam {
     pub name: String,
     pub expr: Option<String>,
@@ -287,6 +296,7 @@ pub struct DoneDataParam {
 
 /// Named Context object declaration
 #[derive(Debug, Clone, Serialize, Default)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ContextObject {
     pub id: String,
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -319,6 +329,7 @@ pub struct ContextObject {
 /// The inner structs use `#[serde(flatten)]` for `common`, so templates keep
 /// reading `invoke.invoke_id` / `invoke.autoforward` at the top level.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "kind")]
 pub enum Invoke {
     Scxml(ScxmlInvokeInfo),
@@ -339,6 +350,7 @@ pub enum Invoke {
 /// `child_` + `_invoke_0` produce the double-underscore artifact
 /// `child__invoke_0`.
 #[derive(Debug, Clone, Serialize, Default)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct InvokeBase {
     pub invoke_id: String,
     /// Identifier suffix derived from [`Self::invoke_id`] by trimming the
@@ -355,6 +367,7 @@ pub struct InvokeBase {
 /// session naming, autoforward, finalize metadata, child datamodel hints.
 /// MeshRpc has no child session and therefore no `InvokeSessionCommon`.
 #[derive(Debug, Clone, Serialize, Default)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct InvokeSessionCommon {
     #[serde(flatten)]
     pub base: InvokeBase,
@@ -418,6 +431,7 @@ impl std::ops::DerefMut for InvokeSessionCommon {
 /// distinguished by field name, so untagged deserialisation has no
 /// string-shape ambiguity to resolve.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(untagged)]
 pub enum MeshRpcTarget {
     /// Static `src="#<machine_name>"`. Topology resolves it to a
@@ -456,6 +470,7 @@ impl MeshRpcTarget {
 /// universal invoke fields ([`InvokeBase`]) are shared; `child_name` /
 /// `autoforward` do not apply here and the type rejects setting them.
 #[derive(Debug, Clone, Serialize, Default)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct MeshRpcInvokeInfo {
     #[serde(flatten)]
     pub base: InvokeBase,
@@ -509,6 +524,7 @@ impl std::ops::DerefMut for MeshRpcInvokeInfo {
 /// other paths (shm, local, missing device config) keep it `None`. Stored
 /// unquoted — the template emits the quoted C++ string literal.
 #[derive(Debug, Clone, Serialize, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ScxmlRemotePeerBinding {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -544,6 +560,7 @@ impl ScxmlRemotePeerBinding {
 /// exists, `src` already points at the final path and `child_name` is set.
 /// There is no "awaiting extraction" transient state.
 #[derive(Debug, Clone, Serialize, Default)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ScxmlInvokeInfo {
     #[serde(flatten)]
     pub common: InvokeSessionCommon,
@@ -580,6 +597,7 @@ pub struct ScxmlInvokeInfo {
 /// target at runtime, so the legacy flat struct's mixed fields are now
 /// variant-scoped.
 #[derive(Debug, Clone, Serialize, Default)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct HybridInvokeInfo {
     #[serde(flatten)]
     pub common: InvokeSessionCommon,
@@ -639,6 +657,7 @@ impl std::ops::DerefMut for HybridInvokeInfo {
 /// `mcu/driver-header-not-found`. Only the C11 backend consumes this
 /// field for codegen emission (Q-Round-F-D5 / D6 locks).
 #[derive(Debug, Clone, Serialize, Default)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct DriverRef {
     /// `href="..."` — author-written path to the driver header. May be
     /// absolute or relative to the resolved root directory. Stored
@@ -692,6 +711,7 @@ pub struct DriverRef {
 ///
 /// [`AcceptSide`]: SessionRoleKind::AcceptSide
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "kebab-case")]
 pub enum SessionRoleKind {
     /// Implements the canonical session-FSM accept-side state machine
@@ -736,6 +756,7 @@ impl SessionRoleKind {
 /// optional `callback` attribute (Q-Callback-1 Option α + Q-Callback-2
 /// `rust:` prefix-typed reference into the user's symbol space).
 #[derive(Debug, Clone, Serialize, Default)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct OnSampleNode {
     /// `link="X"` — forge link kind artifact name. Cross-reference
     /// resolution against the build's [`crate::forge::pool_registry`]-style
@@ -768,6 +789,7 @@ pub struct OnSampleNode {
 
 /// W3C SCXML 3.3: State element
 #[derive(Debug, Clone, Serialize, Default)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct State {
     pub id: String,
     pub initial: String,
@@ -809,6 +831,7 @@ pub struct State {
 
 /// W3C SCXML: Complete state machine model
 #[derive(Debug, Clone, Serialize, Default)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct SCXMLModel {
     pub name: String,
     /// The `name` attribute from `<scxml name="...">`. Distinct from
@@ -1011,13 +1034,26 @@ pub struct SCXMLModel {
     pub execute_entry_actions_needs_this: bool,
 
     // SCE Forge: Inline kind declarations from <data sce:kind="..."> elements.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    //
+    // `default` keeps the AST-export v1 schema consistent with the
+    // wire form: schemars marks a field with `skip_serializing_if`
+    // but no `default` as required, which contradicts the actual
+    // emit behaviour (empty Vec is skipped). Adding `default` aligns
+    // the schema with the wire — matches the convention every other
+    // skip-when-empty field on `SCXMLModel` already follows.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub inline_kinds: Vec<InlineKind>,
 
-    // Path info
-    #[serde(skip_serializing_if = "String::is_empty")]
+    // Path info — environment-specific paths populated by
+    // `resolve_source_path` (lib.rs) and `compute_scxml_base_path`
+    // (analyzer.rs). Marked `default` for the same schema-alignment
+    // reason as `inline_kinds`: the AST-export path emits
+    // post-analyzer + pre-deploy-mutation, so `scxml_source_path`
+    // (set in the codegen-prep stage) is empty there and the schema
+    // treats it as optional.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub scxml_source_path: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub scxml_base_path: String,
 
     // Analysis helpers (set by analyzer)
@@ -1212,6 +1248,7 @@ pub struct SCXMLModel {
 /// invoked with `--partition <name>`; absent (map-missing) implies
 /// single-partition fallback.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub enum PartitionRole {
     /// This partition claims the `<parallel>` root via
     /// `hosts_parallel_roots:`. Owns the §16.5

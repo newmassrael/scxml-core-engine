@@ -295,6 +295,7 @@ fn walk_action_block(
 /// hooks]]).
 fn forge_doc_name(doc: &ForgeDocument) -> &str {
     match doc {
+        ForgeDocument::Statechart(m) => &m.name,
         ForgeDocument::Transform(m) => &m.name,
         ForgeDocument::Lookup(m) => &m.name,
         ForgeDocument::Condition(m) => &m.name,

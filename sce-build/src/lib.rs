@@ -3734,6 +3734,11 @@ fn discover_stateful_member_fields(
     use forge::model::ForgeDocument;
     let mut out = Vec::new();
     match doc {
+        // Statechart never reaches forge codegen — SCXML pipeline owns it.
+        ForgeDocument::Statechart(_) => unreachable!(
+            "discover_stateful_member_fields called on Statechart — only forge \
+             pipeline reaches this helper (see `classify_document`)"
+        ),
         ForgeDocument::Codec(m) => {
             for f in &m.fields {
                 out.push((f.id.clone(), f.sce_type.clone()));
@@ -3822,6 +3827,11 @@ fn discover_stateful_member_methods(
 ) -> Vec<(String, Vec<forge::model::SceType>, forge::model::SceType)> {
     use forge::model::{ForgeDocument, SceType};
     match doc {
+        // Statechart never reaches forge codegen — SCXML pipeline owns it.
+        ForgeDocument::Statechart(_) => unreachable!(
+            "discover_stateful_member_methods called on Statechart — only forge \
+             pipeline reaches this helper (see `classify_document`)"
+        ),
         ForgeDocument::Codec(_) => vec![("encode".to_string(), vec![], SceType::Bytes)],
         ForgeDocument::Filter(m) => vec![(
             "update".to_string(),
@@ -3872,6 +3882,11 @@ fn discover_primary_function(
     language: &generator::Language,
 ) -> Option<String> {
     match doc {
+        // Statechart never reaches forge codegen — SCXML pipeline owns it.
+        forge::model::ForgeDocument::Statechart(_) => unreachable!(
+            "discover_primary_function called on Statechart — only forge \
+             pipeline reaches this helper (see `classify_document`)"
+        ),
         forge::model::ForgeDocument::Transform(m) => {
             let output_id = m.outputs.first()?.id.clone();
             Some(match language {

@@ -312,3 +312,25 @@ pub fn write_envelope_to_path(path: &std::path::Path, parsed: &ParsedForge) -> s
     let mut f = std::fs::File::create(path)?;
     write_envelope(&mut f, parsed)
 }
+
+/// Wrap a parsed-and-analyzed `SCXMLModel` in the `ParsedForge`
+/// envelope shape so the v1 AST export pipeline (`write_envelope` /
+/// `write_envelope_to_path`) handles it identically to a forge
+/// document. W3C SCXML carries no `<sce:import>` cross-doc references
+/// and no `<sce:extern>` declarations of its own (those live on
+/// forge kinds), so `imports` and `externs` are always empty for
+/// statechart documents — the wire schema's `oneOf` discriminator on
+/// `ast.document.kind` is the single signal that distinguishes the
+/// statechart arm from the forge arms.
+///
+/// Takes the model by value (consuming) because `ForgeDocument::Statechart`
+/// owns a `Box<SCXMLModel>`. Callers retaining the model for downstream
+/// codegen must clone first — typically a one-off cost on the
+/// `--emit-ast` path that is not in the hot loop.
+pub fn statechart_parsed_forge(model: crate::model::SCXMLModel) -> ParsedForge {
+    ParsedForge {
+        document: crate::forge::model::ForgeDocument::Statechart(Box::new(model)),
+        imports: Vec::new(),
+        externs: Vec::new(),
+    }
+}

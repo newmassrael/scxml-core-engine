@@ -61,6 +61,14 @@ fn fixture(name: &str) -> PathBuf {
     repo_root().join("tests/forge/resources").join(name)
 }
 
+/// Parse a fixture into the AST-export `ParsedForge` envelope shape.
+/// Routes statechart fixtures through the SCXML parser+analyzer (the
+/// production AST-export path used by `cmd_generate` / `emit_orchestrate_
+/// asts`) and every other fixture through the forge `parse_forge_with_
+/// imports` path. The two arms converge on `ParsedForge` via
+/// `ast_export::statechart_parsed_forge` so downstream test code (the
+/// schema-validation loop, the round-trip checks) does not branch
+/// on kind.
 fn parse_fixture(path: &PathBuf) -> sce_build::forge::model::ParsedForge {
     let content =
         std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
@@ -72,9 +80,21 @@ fn parse_fixture(path: &PathBuf) -> sce_build::forge::model::ParsedForge {
         identifier: stem,
         diagnostic_label: stem,
     };
-    parse_forge_with_imports(&content, label)
-        .unwrap_or_else(|e| panic!("parse {}: {e:?}", path.display()))
-        .unwrap_or_else(|| panic!("{}: classified as statechart", path.display()))
+    match parse_forge_with_imports(&content, label) {
+        Ok(Some(parsed)) => parsed,
+        Ok(None) => {
+            // Statechart: run the SCXML pipeline's parse + analyze
+            // and wrap the analyzed model in the v1 envelope.
+            let mut parser = sce_build::parser::SCXMLParser::new();
+            let path_str = path.to_str().expect("UTF-8 fixture path");
+            let mut model = parser
+                .parse_file(path_str)
+                .unwrap_or_else(|e| panic!("scxml parse {}: {e:?}", path.display()));
+            sce_build::analyzer::analyze(&mut model, path_str);
+            sce_build::forge::ast_export::statechart_parsed_forge(model)
+        }
+        Err(e) => panic!("parse {}: {e:?}", path.display()),
+    }
 }
 
 #[test]
@@ -120,20 +140,15 @@ fn envelope_top_level_required_fields_frozen() {
     );
 }
 
-/// Schema's `ast.document.kind` enum lists only the kinds that
-/// actually appear in `enum ForgeDocument`. `ForgeKind::Statechart`
-/// exists as a sentinel — the parser uses it to signal "this is a
-/// W3C SCXML statechart, route to the SCXML pipeline" before any
-/// `ForgeDocument` is built — but no `ForgeDocument` variant carries
-/// it. Filtering `ALL_ATTR_NAMES` here keeps the catalog co-located
-/// with the canonical declaration in model.rs without adding a second
-/// public surface that could drift.
+/// Schema's `ast.document.kind` enum lists every kind that appears in
+/// `enum ForgeDocument`. Every variant of `ForgeKind::ALL_ATTR_NAMES`
+/// carries a matching `ForgeDocument` arm — including `Statechart`,
+/// which the AST-export v1 second atomic added so the envelope covers
+/// SCE's full IR surface (15 forge kinds + 1 statechart). No filter is
+/// applied: the test fails loudly if a future kind addition lands in
+/// `ForgeKind` without a matching `ForgeDocument` variant.
 fn emittable_kind_attr_names() -> Vec<&'static str> {
-    ForgeKind::ALL_ATTR_NAMES
-        .iter()
-        .copied()
-        .filter(|&s| s != "statechart")
-        .collect()
+    ForgeKind::ALL_ATTR_NAMES.to_vec()
 }
 
 #[test]
@@ -300,6 +315,7 @@ fn emitted_envelope_kind_is_in_schema_discriminator_set() {
 /// table is solely for round-tripping the parsed IR through the wire
 /// envelope.
 const FIXTURE_PER_KIND: &[(&str, &str)] = &[
+    ("statechart", "statechart_ast_export_min.scxml"),
     ("transform", "transform_multi_output.scxml"),
     ("lookup", "lookup_gear_position.scxml"),
     ("condition", "condition_range.scxml"),

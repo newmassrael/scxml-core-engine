@@ -912,6 +912,16 @@ pub fn generate_cpp_with_imports_and_externs(
     inject_source_location_global(&mut env, doc);
 
     let code = match doc {
+        // Statechart documents flow through the SCXML pipeline
+        // (`classify_document` routes `sce:kind="statechart"` to
+        // `Pipeline::Scxml` before any forge codegen entry runs).
+        // The AST-export path that wraps a parsed `SCXMLModel` in
+        // `ForgeDocument::Statechart` only serialises — it never
+        // calls forge `generate_*` helpers.
+        ForgeDocument::Statechart(_) => unreachable!(
+            "ForgeDocument::Statechart never reaches forge codegen — \
+             SCXML pipeline owns statechart emit (see `classify_document`)"
+        ),
         ForgeDocument::Transform(m) => {
             render_transform(&env, m, imports, crate::generator::Language::Cpp)?
         }
@@ -10805,6 +10815,16 @@ pub fn generate_kotlin_with_imports(
     inject_source_location_global(&mut env, doc);
 
     let code = match doc {
+        // Statechart documents flow through the SCXML pipeline
+        // (`classify_document` routes `sce:kind="statechart"` to
+        // `Pipeline::Scxml` before any forge codegen entry runs).
+        // The AST-export path that wraps a parsed `SCXMLModel` in
+        // `ForgeDocument::Statechart` only serialises — it never
+        // calls forge `generate_*` helpers.
+        ForgeDocument::Statechart(_) => unreachable!(
+            "ForgeDocument::Statechart never reaches forge codegen — \
+             SCXML pipeline owns statechart emit (see `classify_document`)"
+        ),
         ForgeDocument::Transform(m) => {
             render_transform(&env, m, imports, crate::generator::Language::Kotlin)?
         }
@@ -10955,6 +10975,16 @@ pub fn generate_rust_with_imports_and_externs(
     inject_source_location_global(&mut env, doc);
 
     let code = match doc {
+        // Statechart documents flow through the SCXML pipeline
+        // (`classify_document` routes `sce:kind="statechart"` to
+        // `Pipeline::Scxml` before any forge codegen entry runs).
+        // The AST-export path that wraps a parsed `SCXMLModel` in
+        // `ForgeDocument::Statechart` only serialises — it never
+        // calls forge `generate_*` helpers.
+        ForgeDocument::Statechart(_) => unreachable!(
+            "ForgeDocument::Statechart never reaches forge codegen — \
+             SCXML pipeline owns statechart emit (see `classify_document`)"
+        ),
         ForgeDocument::Transform(m) => {
             render_transform(&env, m, imports, crate::generator::Language::Rust)?
         }
@@ -12434,6 +12464,16 @@ pub fn generate_go_with_imports(
     inject_source_location_global(&mut env, doc);
 
     let code = match doc {
+        // Statechart documents flow through the SCXML pipeline
+        // (`classify_document` routes `sce:kind="statechart"` to
+        // `Pipeline::Scxml` before any forge codegen entry runs).
+        // The AST-export path that wraps a parsed `SCXMLModel` in
+        // `ForgeDocument::Statechart` only serialises — it never
+        // calls forge `generate_*` helpers.
+        ForgeDocument::Statechart(_) => unreachable!(
+            "ForgeDocument::Statechart never reaches forge codegen — \
+             SCXML pipeline owns statechart emit (see `classify_document`)"
+        ),
         ForgeDocument::Transform(m) => {
             render_transform(&env, m, imports, crate::generator::Language::Go)?
         }
@@ -12562,6 +12602,16 @@ pub fn generate_python_with_imports(
     inject_source_location_global(&mut env, doc);
 
     let code = match doc {
+        // Statechart documents flow through the SCXML pipeline
+        // (`classify_document` routes `sce:kind="statechart"` to
+        // `Pipeline::Scxml` before any forge codegen entry runs).
+        // The AST-export path that wraps a parsed `SCXMLModel` in
+        // `ForgeDocument::Statechart` only serialises — it never
+        // calls forge `generate_*` helpers.
+        ForgeDocument::Statechart(_) => unreachable!(
+            "ForgeDocument::Statechart never reaches forge codegen — \
+             SCXML pipeline owns statechart emit (see `classify_document`)"
+        ),
         ForgeDocument::Transform(m) => {
             render_transform(&env, m, imports, crate::generator::Language::Python)?
         }
@@ -12699,6 +12749,16 @@ pub fn generate_c11_with_imports_and_externs(
     inject_source_location_global(&mut env, doc);
 
     let code = match doc {
+        // Statechart documents flow through the SCXML pipeline
+        // (`classify_document` routes `sce:kind="statechart"` to
+        // `Pipeline::Scxml` before any forge codegen entry runs).
+        // The AST-export path that wraps a parsed `SCXMLModel` in
+        // `ForgeDocument::Statechart` only serialises — it never
+        // calls forge `generate_*` helpers.
+        ForgeDocument::Statechart(_) => unreachable!(
+            "ForgeDocument::Statechart never reaches forge codegen — \
+             SCXML pipeline owns statechart emit (see `classify_document`)"
+        ),
         ForgeDocument::Transform(m) => {
             render_transform(&env, m, imports, crate::generator::Language::C11)?
         }
