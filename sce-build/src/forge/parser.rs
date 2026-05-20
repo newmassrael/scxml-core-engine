@@ -3396,10 +3396,7 @@ fn validate_codec_length_field_refs(
                     datamodel,
                     label.diagnostic_label,
                     ValidationError::InvalidAttribute {
-                        element: format!(
-                            "field '{}' in codec '{}'",
-                            field.id, label.identifier
-                        ),
+                        element: format!("field '{}' in codec '{}'", field.id, label.identifier),
                         attr: "sce:length-field".into(),
                         value: raw.to_string(),
                         expected,

@@ -15905,12 +15905,7 @@ fn render_inline_codec_member(
                  \x20           if (raw == nullptr) return std::nullopt;\n"
             ));
             for f in codec_fields {
-                let decode = generate_decode_expr(
-                    f,
-                    default_endian,
-                    Language::Cpp,
-                    codec_fields,
-                );
+                let decode = generate_decode_expr(f, default_endian, Language::Cpp, codec_fields);
                 code.push_str(&format!(
                     "            {} {} = {};\n",
                     cpp_type(&f.sce_type),
@@ -15958,12 +15953,8 @@ fn render_inline_codec_member(
                  \x20               val raw = cursor.peekSlice({min_bytes}) ?: return null\n"
             ));
             for f in codec_fields {
-                let decode = generate_decode_expr(
-                    f,
-                    default_endian,
-                    Language::Kotlin,
-                    codec_fields,
-                );
+                let decode =
+                    generate_decode_expr(f, default_endian, Language::Kotlin, codec_fields);
                 code.push_str(&format!("                val {} = {}\n", f.id, decode));
             }
             code.push_str(&format!("                val value = {struct_name}(\n"));
@@ -16008,12 +15999,7 @@ fn render_inline_codec_member(
                  \x20       let raw = cursor.peek_slice({min_bytes})?;\n"
             ));
             for f in codec_fields {
-                let decode = generate_decode_expr(
-                    f,
-                    default_endian,
-                    Language::Rust,
-                    codec_fields,
-                );
+                let decode = generate_decode_expr(f, default_endian, Language::Rust, codec_fields);
                 let field_id = filters::to_snake_case(f.id.clone());
                 type_def.push_str(&format!("        let {field_id} = {decode};\n"));
             }
@@ -16061,12 +16047,7 @@ fn render_inline_codec_member(
                  \t}}\n"
             ));
             for f in codec_fields {
-                let decode = generate_decode_expr(
-                    f,
-                    default_endian,
-                    Language::Go,
-                    codec_fields,
-                );
+                let decode = generate_decode_expr(f, default_endian, Language::Go, codec_fields);
                 let field_id = filters::to_pascal_case(f.id.clone());
                 type_def.push_str(&format!("\t{field_id} := {decode}\n"));
             }
@@ -16115,12 +16096,8 @@ fn render_inline_codec_member(
                  \x20               return None\n"
             ));
             for f in codec_fields {
-                let decode = generate_decode_expr(
-                    f,
-                    default_endian,
-                    Language::Python,
-                    codec_fields,
-                );
+                let decode =
+                    generate_decode_expr(f, default_endian, Language::Python, codec_fields);
                 let field_id = filters::to_snake_case(f.id.clone());
                 code.push_str(&format!("            {field_id} = {decode}\n"));
             }
@@ -16187,12 +16164,7 @@ fn render_inline_codec_member(
             ));
             for f in codec_fields {
                 let field_id = filters::to_snake_case(f.id.clone());
-                let decode = generate_decode_expr(
-                    f,
-                    default_endian,
-                    Language::C11,
-                    codec_fields,
-                );
+                let decode = generate_decode_expr(f, default_endian, Language::C11, codec_fields);
                 code.push_str(&format!("    out->{field_id} = {decode};\n"));
             }
             code.push_str(&format!(

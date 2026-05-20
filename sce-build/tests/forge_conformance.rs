@@ -11755,18 +11755,12 @@ fn compile_codec_set_kotlin(
 
 #[test]
 fn forge_codec_length_ref_uint16_le_cpp() {
-    assert_standalone_forge(
-        "codec_length_ref_uint16_le",
-        "codec_length_ref_uint16_le.h",
-    );
+    assert_standalone_forge("codec_length_ref_uint16_le", "codec_length_ref_uint16_le.h");
 }
 
 #[test]
 fn forge_kotlin_codec_length_ref_uint16_le() {
-    assert_standalone_forge_kotlin(
-        "codec_length_ref_uint16_le",
-        "CodecLengthRefUint16Le.kt",
-    );
+    assert_standalone_forge_kotlin("codec_length_ref_uint16_le", "CodecLengthRefUint16Le.kt");
 }
 
 #[test]
@@ -11803,18 +11797,12 @@ fn forge_c11_codec_length_ref_uint16_le() {
 
 #[test]
 fn forge_codec_length_ref_uint16_be_cpp() {
-    assert_standalone_forge(
-        "codec_length_ref_uint16_be",
-        "codec_length_ref_uint16_be.h",
-    );
+    assert_standalone_forge("codec_length_ref_uint16_be", "codec_length_ref_uint16_be.h");
 }
 
 #[test]
 fn forge_kotlin_codec_length_ref_uint16_be() {
-    assert_standalone_forge_kotlin(
-        "codec_length_ref_uint16_be",
-        "CodecLengthRefUint16Be.kt",
-    );
+    assert_standalone_forge_kotlin("codec_length_ref_uint16_be", "CodecLengthRefUint16Be.kt");
 }
 
 #[test]
@@ -11851,18 +11839,12 @@ fn forge_c11_codec_length_ref_uint16_be() {
 
 #[test]
 fn forge_codec_length_ref_uint32_le_cpp() {
-    assert_standalone_forge(
-        "codec_length_ref_uint32_le",
-        "codec_length_ref_uint32_le.h",
-    );
+    assert_standalone_forge("codec_length_ref_uint32_le", "codec_length_ref_uint32_le.h");
 }
 
 #[test]
 fn forge_kotlin_codec_length_ref_uint32_le() {
-    assert_standalone_forge_kotlin(
-        "codec_length_ref_uint32_le",
-        "CodecLengthRefUint32Le.kt",
-    );
+    assert_standalone_forge_kotlin("codec_length_ref_uint32_le", "CodecLengthRefUint32Le.kt");
 }
 
 #[test]
@@ -12096,7 +12078,9 @@ fn assert_length_field_rejects(scxml: &str, name: &str, substring: &str) {
         &sce_build::ForgeCompileOptions::default(),
     );
     let err = match result {
-        Ok(_) => panic!("{name}: must reject with validation/invalid-attribute on sce:length-field"),
+        Ok(_) => {
+            panic!("{name}: must reject with validation/invalid-attribute on sce:length-field")
+        }
         Err(e) => e,
     };
     match &err.error {
