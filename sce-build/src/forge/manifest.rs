@@ -242,6 +242,7 @@ mod tests {
                     alias: "frame".to_string(),
                     line: None,
                     embed_dispatch: None,
+                    flag_binds: Vec::new(),
                 }],
             },
         ];
@@ -263,6 +264,7 @@ mod tests {
                     alias: "b".to_string(),
                     line: None,
                     embed_dispatch: None,
+                    flag_binds: Vec::new(),
                 }],
             },
             ManifestEntry {
@@ -276,6 +278,7 @@ mod tests {
                     alias: "a".to_string(),
                     line: None,
                     embed_dispatch: None,
+                    flag_binds: Vec::new(),
                 }],
             },
         ];

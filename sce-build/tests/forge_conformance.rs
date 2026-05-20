@@ -12151,3 +12151,376 @@ fn forge_codec_length_field_rejects_forward_reference() {
         "declared earlier",
     );
 }
+
+// ── RFC Axis-1 inversion Phase A — flag-input + flag-bind foundation ──
+//
+// Phase A adds the new `<sce:flag-inputs>` + `<sce:flag-bind>` syntax
+// alongside the legacy `<sce:requires-parent-flags>` + `parent.X`
+// predicate form (additive — coexists during Phase A). These tests
+// exercise parse + cross-doc validate on the new shape. Phase B
+// (codegen) and Phase C (fixture migration) land in later atomics.
+
+/// Helper: write a Phase-A inversion fixture pair to a fresh temp dir.
+/// Parent codec declares a local `<sce:flags id="header">` carrier and
+/// imports a leaf codec via `<sce:flag-bind input="has_suffix"
+/// source="header.N"/>`. Leaf declares `<sce:flag-inputs>` with one
+/// 1-bit input `has_suffix`.
+fn axis1_phase_a_write_fixture() -> (std::path::PathBuf, std::path::PathBuf) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let dir = std::env::temp_dir().join(format!("sce_axis1_phase_a_{pid}_{id}"));
+    std::fs::create_dir_all(&dir).expect("mkdir fixture");
+
+    let parent = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_axis1_parent" sce:default-endian="big">
+  <sce:import src="codec_axis1_leaf.scxml" kind="codec" as="codec_axis1_leaf">
+    <sce:flag-bind input="has_suffix" source="header.N"/>
+  </sce:import>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="mid" bit="0" width="5"/>
+      <sce:flag name="N"   bit="5"/>
+    </sce:flags>
+    <sce:embed id="body" type="codec_axis1_leaf" sce:byte="1"/>
+  </datamodel>
+</scxml>"#;
+
+    let leaf = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_axis1_leaf" sce:default-endian="big">
+  <sce:flag-inputs>
+    <sce:flag-input name="has_suffix" width="1"/>
+  </sce:flag-inputs>
+  <datamodel>
+    <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+  </datamodel>
+</scxml>"#;
+
+    std::fs::write(dir.join("codec_axis1_parent.scxml"), parent).expect("write parent");
+    std::fs::write(dir.join("codec_axis1_leaf.scxml"), leaf).expect("write leaf");
+
+    let parent_path = dir.join("codec_axis1_parent.scxml");
+    (dir, parent_path)
+}
+
+/// Phase A positive — leaf with `<sce:flag-inputs>` + parent with
+/// `<sce:flag-bind>` parses + validates cleanly. Codegen emit (Phase B)
+/// is not yet wired; this test confirms the foundation only.
+#[test]
+fn axis1_phase_a_flag_input_binding_parses_and_validates() {
+    let (dir, parent_path) = axis1_phase_a_write_fixture();
+
+    let content = std::fs::read_to_string(&parent_path).expect("read parent");
+    let result = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("codec_axis1_parent"),
+        sce_build::generator::Language::Rust,
+        &dir,
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    // Phase A: parse + validators succeed; codegen for the new shape
+    // isn't yet wired, but the existing codegen path emits a plain
+    // embed (no axis-1 threading) since the leaf has no other axis-1
+    // consumer surface besides the recorded `flag_inputs` field. The
+    // test asserts compile-completes — any error is a Phase A regression.
+    if let Err(e) = result {
+        panic!("Phase A axis-1 must parse + validate cleanly; got: {e:?}");
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Phase A negative — leaf declares `<sce:flag-input>` but parent's
+/// import has no `<sce:flag-bind>` for it. Fires
+/// `codec/flag-input-unbound`.
+#[test]
+fn axis1_phase_a_flag_input_unbound_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let dir = std::env::temp_dir().join(format!("sce_axis1_unbound_{pid}_{id}"));
+    std::fs::create_dir_all(&dir).expect("mkdir fixture");
+
+    // Parent omits `<sce:flag-bind>` but leaf declares `has_suffix`.
+    let parent = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_axis1_unbound_parent" sce:default-endian="big">
+  <sce:import src="codec_axis1_unbound_leaf.scxml" kind="codec" as="codec_axis1_unbound_leaf"/>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="N" bit="5"/>
+    </sce:flags>
+    <sce:embed id="body" type="codec_axis1_unbound_leaf" sce:byte="1"/>
+  </datamodel>
+</scxml>"#;
+
+    let leaf = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_axis1_unbound_leaf" sce:default-endian="big">
+  <sce:flag-inputs>
+    <sce:flag-input name="has_suffix" width="1"/>
+  </sce:flag-inputs>
+  <datamodel>
+    <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+  </datamodel>
+</scxml>"#;
+
+    std::fs::write(dir.join("codec_axis1_unbound_parent.scxml"), parent).expect("write parent");
+    std::fs::write(dir.join("codec_axis1_unbound_leaf.scxml"), leaf).expect("write leaf");
+
+    let parent_path = dir.join("codec_axis1_unbound_parent.scxml");
+    let content = std::fs::read_to_string(&parent_path).expect("read parent");
+    let result = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("codec_axis1_unbound_parent"),
+        sce_build::generator::Language::Rust,
+        &dir,
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!("axis-1 unbound input must surface diagnostic"),
+        Err(e) => e,
+    };
+    match err.error {
+        ForgeError::Validation(ValidationError::CodecFlagInputUnbound {
+            parent_codec,
+            embedded_alias,
+            input,
+            ..
+        }) => {
+            assert_eq!(parent_codec, "codec_axis1_unbound_parent");
+            assert_eq!(embedded_alias, "codec_axis1_unbound_leaf");
+            assert_eq!(input, "has_suffix");
+        }
+        other => panic!("expected CodecFlagInputUnbound, got: {other:?}"),
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Phase A negative — parent's `<sce:flag-bind input="...">` targets
+/// an input the leaf does not declare. Fires
+/// `codec/flag-bind-input-not-declared`.
+#[test]
+fn axis1_phase_a_flag_bind_input_not_declared_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let dir = std::env::temp_dir().join(format!("sce_axis1_undeclared_{pid}_{id}"));
+    std::fs::create_dir_all(&dir).expect("mkdir fixture");
+
+    let parent = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_axis1_undeclared_parent" sce:default-endian="big">
+  <sce:import src="codec_axis1_undeclared_leaf.scxml" kind="codec" as="codec_axis1_undeclared_leaf">
+    <sce:flag-bind input="is_admin" source="header.N"/>
+  </sce:import>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="N" bit="5"/>
+    </sce:flags>
+    <sce:embed id="body" type="codec_axis1_undeclared_leaf" sce:byte="1"/>
+  </datamodel>
+</scxml>"#;
+
+    let leaf = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_axis1_undeclared_leaf" sce:default-endian="big">
+  <sce:flag-inputs>
+    <sce:flag-input name="has_suffix" width="1"/>
+  </sce:flag-inputs>
+  <datamodel>
+    <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+  </datamodel>
+</scxml>"#;
+
+    std::fs::write(dir.join("codec_axis1_undeclared_parent.scxml"), parent).expect("write parent");
+    std::fs::write(dir.join("codec_axis1_undeclared_leaf.scxml"), leaf).expect("write leaf");
+
+    let parent_path = dir.join("codec_axis1_undeclared_parent.scxml");
+    let content = std::fs::read_to_string(&parent_path).expect("read parent");
+    let result = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("codec_axis1_undeclared_parent"),
+        sce_build::generator::Language::Rust,
+        &dir,
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!("axis-1 undeclared input must surface diagnostic"),
+        Err(e) => e,
+    };
+    match err.error {
+        ForgeError::Validation(ValidationError::CodecFlagBindInputNotDeclared {
+            parent_codec,
+            embedded_alias,
+            input,
+            available_inputs,
+            ..
+        }) => {
+            assert_eq!(parent_codec, "codec_axis1_undeclared_parent");
+            assert_eq!(embedded_alias, "codec_axis1_undeclared_leaf");
+            assert_eq!(input, "is_admin");
+            assert!(
+                available_inputs.contains("has_suffix"),
+                "available_inputs must list the leaf's declared 'has_suffix' input; got: {available_inputs}"
+            );
+        }
+        other => panic!("expected CodecFlagBindInputNotDeclared, got: {other:?}"),
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Phase A negative — parent's flag-bind source names a carrier flag
+/// that does not exist on the parent. Fires
+/// `codec/flag-bind-source-not-resolved`.
+#[test]
+fn axis1_phase_a_flag_bind_source_not_resolved_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let dir = std::env::temp_dir().join(format!("sce_axis1_unresolved_{pid}_{id}"));
+    std::fs::create_dir_all(&dir).expect("mkdir fixture");
+
+    let parent = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_axis1_unresolved_parent" sce:default-endian="big">
+  <sce:import src="codec_axis1_unresolved_leaf.scxml" kind="codec" as="codec_axis1_unresolved_leaf">
+    <sce:flag-bind input="has_suffix" source="header.K"/>
+  </sce:import>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="N" bit="5"/>
+    </sce:flags>
+    <sce:embed id="body" type="codec_axis1_unresolved_leaf" sce:byte="1"/>
+  </datamodel>
+</scxml>"#;
+
+    let leaf = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_axis1_unresolved_leaf" sce:default-endian="big">
+  <sce:flag-inputs>
+    <sce:flag-input name="has_suffix" width="1"/>
+  </sce:flag-inputs>
+  <datamodel>
+    <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+  </datamodel>
+</scxml>"#;
+
+    std::fs::write(dir.join("codec_axis1_unresolved_parent.scxml"), parent).expect("write parent");
+    std::fs::write(dir.join("codec_axis1_unresolved_leaf.scxml"), leaf).expect("write leaf");
+
+    let parent_path = dir.join("codec_axis1_unresolved_parent.scxml");
+    let content = std::fs::read_to_string(&parent_path).expect("read parent");
+    let result = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("codec_axis1_unresolved_parent"),
+        sce_build::generator::Language::Rust,
+        &dir,
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!("axis-1 unresolved source must surface diagnostic"),
+        Err(e) => e,
+    };
+    match err.error {
+        ForgeError::Validation(ValidationError::CodecFlagBindSourceNotResolved {
+            parent_codec,
+            embedded_alias,
+            input,
+            bind_source,
+            ..
+        }) => {
+            assert_eq!(parent_codec, "codec_axis1_unresolved_parent");
+            assert_eq!(embedded_alias, "codec_axis1_unresolved_leaf");
+            assert_eq!(input, "has_suffix");
+            assert_eq!(bind_source, "header.K");
+        }
+        other => panic!("expected CodecFlagBindSourceNotResolved, got: {other:?}"),
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Phase A positive — chain-forwarder pattern: parent declares its own
+/// `<sce:flag-input>` and uses bare-name form on `<sce:flag-bind>` to
+/// forward it inward. Mirrors the legacy B5-γ chain forwarding shape
+/// translated into the inverted vocabulary.
+#[test]
+fn axis1_phase_a_chain_forwarder_bare_name_validates() {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let dir = std::env::temp_dir().join(format!("sce_axis1_chain_{pid}_{id}"));
+    std::fs::create_dir_all(&dir).expect("mkdir fixture");
+
+    // Middle codec: declares its own `has_suffix` input, then forwards
+    // it to the inner leaf via bare-name source.
+    let middle = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_axis1_chain_middle" sce:default-endian="big">
+  <sce:flag-inputs>
+    <sce:flag-input name="has_suffix" width="1"/>
+  </sce:flag-inputs>
+  <sce:import src="codec_axis1_chain_inner.scxml" kind="codec" as="codec_axis1_chain_inner">
+    <sce:flag-bind input="has_suffix" source="has_suffix"/>
+  </sce:import>
+  <datamodel>
+    <sce:field id="id" sce:type="uint16" sce:byte="0" sce:bit-size="vle"/>
+    <sce:embed id="body" type="codec_axis1_chain_inner" sce:byte="1"/>
+  </datamodel>
+</scxml>"#;
+
+    let inner = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_axis1_chain_inner" sce:default-endian="big">
+  <sce:flag-inputs>
+    <sce:flag-input name="has_suffix" width="1"/>
+  </sce:flag-inputs>
+  <datamodel>
+    <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+  </datamodel>
+</scxml>"#;
+
+    std::fs::write(dir.join("codec_axis1_chain_middle.scxml"), middle).expect("write middle");
+    std::fs::write(dir.join("codec_axis1_chain_inner.scxml"), inner).expect("write inner");
+
+    let middle_path = dir.join("codec_axis1_chain_middle.scxml");
+    let content = std::fs::read_to_string(&middle_path).expect("read middle");
+    let result = sce_build::compile_forge_with_imports(
+        &content,
+        sce_build::DocumentLabel::symmetric("codec_axis1_chain_middle"),
+        sce_build::generator::Language::Rust,
+        &dir,
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    if let Err(e) = result {
+        panic!("Phase A chain forwarder must parse + validate cleanly; got: {e:?}");
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

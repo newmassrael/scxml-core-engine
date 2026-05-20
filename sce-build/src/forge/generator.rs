@@ -225,6 +225,30 @@ pub struct ImportContext {
     /// and codecs with the legacy own-field / parent-scope dispatch.
     #[serde(skip)]
     pub codec_variant_is_caller_tag: bool,
+
+    /// RFC Axis-1 inversion: for codec imports whose model declares
+    /// `<sce:flag-inputs>`, the imported leaf's declared input list.
+    /// Captured at enrichment time from the parsed `CodecModel`.
+    /// Cross-doc validator uses this to confirm every leaf-declared
+    /// input is bound exactly once via the parent's authored
+    /// `<sce:flag-bind>` directives (see [`flag_binds`]). Empty when
+    /// the imported leaf declares no flag-inputs.
+    ///
+    /// [`flag_binds`]: ImportContext::flag_binds
+    #[serde(skip)]
+    pub codec_flag_inputs: Vec<crate::forge::model::FlagInput>,
+
+    /// RFC Axis-1 inversion: parent-side bindings authored at this
+    /// `<sce:import>` site. Each [`FlagBind`] supplies one leaf-declared
+    /// input from either a local flags-carrier flag or one of the
+    /// parent's own [`FlagInput`]s (chain-forwarder). Empty when no
+    /// `<sce:flag-bind>` children authored — valid only if the imported
+    /// leaf also declares no `<sce:flag-inputs>`.
+    ///
+    /// [`FlagBind`]: crate::forge::model::FlagBind
+    /// [`FlagInput`]: crate::forge::model::FlagInput
+    #[serde(skip)]
+    pub flag_binds: Vec<crate::forge::model::FlagBind>,
 }
 
 /// Resolve a list of `ForgeImport` into template-ready `ImportContext`.
@@ -360,6 +384,8 @@ fn resolve_single_import(
                 codec_variant_arms_for_inversion: None,
                 codec_variant_has_default_arm: None,
                 codec_variant_is_caller_tag: false,
+                codec_flag_inputs: Vec::new(),
+                flag_binds: imp.flag_binds.clone(),
             }
         }
         crate::generator::Language::Kotlin => {
@@ -397,6 +423,8 @@ fn resolve_single_import(
                 codec_variant_arms_for_inversion: None,
                 codec_variant_has_default_arm: None,
                 codec_variant_is_caller_tag: false,
+                codec_flag_inputs: Vec::new(),
+                flag_binds: imp.flag_binds.clone(),
             }
         }
         crate::generator::Language::Rust => {
@@ -436,6 +464,8 @@ fn resolve_single_import(
                 codec_variant_arms_for_inversion: None,
                 codec_variant_has_default_arm: None,
                 codec_variant_is_caller_tag: false,
+                codec_flag_inputs: Vec::new(),
+                flag_binds: imp.flag_binds.clone(),
             }
         }
         crate::generator::Language::Go => {
@@ -501,6 +531,8 @@ fn resolve_single_import(
                 codec_variant_arms_for_inversion: None,
                 codec_variant_has_default_arm: None,
                 codec_variant_is_caller_tag: false,
+                codec_flag_inputs: Vec::new(),
+                flag_binds: imp.flag_binds.clone(),
             }
         }
         crate::generator::Language::Python => {
@@ -540,6 +572,8 @@ fn resolve_single_import(
                 codec_variant_arms_for_inversion: None,
                 codec_variant_has_default_arm: None,
                 codec_variant_is_caller_tag: false,
+                codec_flag_inputs: Vec::new(),
+                flag_binds: imp.flag_binds.clone(),
             }
         }
         crate::generator::Language::C11 => {
@@ -580,6 +614,8 @@ fn resolve_single_import(
                 codec_variant_arms_for_inversion: None,
                 codec_variant_has_default_arm: None,
                 codec_variant_is_caller_tag: false,
+                codec_flag_inputs: Vec::new(),
+                flag_binds: imp.flag_binds.clone(),
             }
         }
     }
@@ -1379,6 +1415,14 @@ fn render_codec(
     // against parent's own fields/flags — see function doc-comment for
     // the 5 checks plus the Q-D-3a no-dispatch + no-default-arm gate.
     validate_cross_codec_variant_dispatch(m, imports)?;
+
+    // RFC Axis-1 inversion (Phase A): parent-local cross-doc validator
+    // for the `<sce:flag-bind>` import-site declaration. Walks every
+    // codec-kind import and confirms binding-completeness + source
+    // resolution + width + carrier-before-embed ordering. Phase A is
+    // additive — coexists with the legacy RPF / `parent.X` predicate
+    // validators until a later atomic deletes the legacy forms.
+    validate_cross_codec_flag_bind(m, imports)?;
 
     // RFC §5.B B5-γ closures complete: all six backends (Rust / Cpp /
     // Kotlin / Go / C11 / Python) emit codec parent-flags dependency.
@@ -3838,6 +3882,235 @@ fn validate_cross_codec_variant_dispatch(
                             embedded_index,
                         },
                     ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// RFC Axis-1 inversion — parent-local cross-doc validator for the
+/// `<sce:flag-bind>` import-site declaration. Walks every codec-kind
+/// import; for each, confirms that:
+///
+/// 1. Binding-completeness: every `<sce:flag-input>` declared by the
+///    imported leaf has exactly one matching `<sce:flag-bind input="X" ...>`
+///    on the parent's import. Missing bindings fire `CodecFlagInputUnbound`;
+///    extra (input not on the leaf) fires `CodecFlagBindInputNotDeclared`.
+/// 2. Source resolution: each bind's `source` resolves to either a
+///    local `<sce:flags id="X">` flag (dotted form `X.Y`) or one of the
+///    parent's own `<sce:flag-input>` declarations (bare-name form).
+///    Unresolved sources fire `CodecFlagBindSourceNotResolved`.
+/// 3. Width agreement: leaf-side input width matches source width. v1
+///    fixes width=1, so any non-unit source width fires
+///    `CodecFlagBindWidthMismatch`.
+/// 4. Carrier-before-embed ordering: when the bind source is a local
+///    carrier flag, the carrier field must precede the embed (the
+///    streaming decoder reads the carrier byte before reaching the
+///    embed). Violations fire `CodecFlagBindCarrierAfterEmbed`.
+///
+/// Duplicate `input=` checking is parse-time (see `parse_flag_binds`),
+/// not repeated here.
+///
+/// Walks the entire `<sce:import>` set rather than restricting to the
+/// fields' embed targets so that author errors on imports referenced
+/// only as variant arm bodies (B5-β/γ dispatcher pattern) also surface
+/// — the dispatcher's local `header` carrier is exactly the kind of
+/// source the binds reach for.
+fn validate_cross_codec_flag_bind(
+    parent: &CodecModel,
+    imports: &[ImportContext],
+) -> Result<(), ForgeError> {
+    use crate::forge::error::ValidationError;
+    use crate::forge::model::FlagBindSource;
+
+    // Build parent-side resolution helpers once.
+    let parent_carrier_lookup = |carrier_name: &str| -> Option<(usize, &crate::forge::model::CodecField)> {
+        parent
+            .fields
+            .iter()
+            .enumerate()
+            .find(|(_, f)| f.id == carrier_name && f.is_flags_carrier())
+    };
+    let parent_input_widths: std::collections::BTreeMap<&str, u32> = parent
+        .flag_inputs
+        .iter()
+        .map(|fi| (fi.name.as_str(), fi.width))
+        .collect();
+    // Map from import alias → first embed field-index that consumes it
+    // (variant arm dispatch may have no embed field; default to 0 in
+    // that case for the ordering check — the binding still gates the
+    // variant decode at the dispatch site).
+    let alias_first_consumer_index: std::collections::BTreeMap<&str, usize> = parent
+        .fields
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, f)| {
+            f.embed_body_alias
+                .as_deref()
+                .map(|alias| (alias, idx))
+        })
+        .collect();
+
+    for imp in imports {
+        // Quick skip when nothing axis-1 applies to this import.
+        let leaf_inputs = &imp.codec_flag_inputs;
+        let binds = &imp.flag_binds;
+        if leaf_inputs.is_empty() && binds.is_empty() {
+            continue;
+        }
+        // Check 1a: every bind targets a declared leaf input.
+        let leaf_input_names: std::collections::BTreeSet<&str> =
+            leaf_inputs.iter().map(|fi| fi.name.as_str()).collect();
+        for bind in binds {
+            if !leaf_input_names.contains(bind.input.as_str()) {
+                let available: Vec<&str> = leaf_inputs
+                    .iter()
+                    .map(|fi| fi.name.as_str())
+                    .collect();
+                return Err(ForgeError::Validation(
+                    ValidationError::CodecFlagBindInputNotDeclared {
+                        parent_codec: parent.name.clone(),
+                        embedded_alias: imp.alias.clone(),
+                        embedded_codec: imp.alias.clone(),
+                        input: bind.input.clone(),
+                        available_inputs: available.join(", "),
+                    },
+                ));
+            }
+        }
+        // Check 1b: every leaf input has a matching bind.
+        let bound_inputs: std::collections::BTreeSet<&str> =
+            binds.iter().map(|b| b.input.as_str()).collect();
+        for input in leaf_inputs {
+            if !bound_inputs.contains(input.name.as_str()) {
+                return Err(ForgeError::Validation(
+                    ValidationError::CodecFlagInputUnbound {
+                        parent_codec: parent.name.clone(),
+                        embedded_alias: imp.alias.clone(),
+                        embedded_codec: imp.alias.clone(),
+                        input: input.name.clone(),
+                    },
+                ));
+            }
+        }
+        // Check 2-4: per-bind source resolution + width + ordering.
+        let embed_index = alias_first_consumer_index.get(imp.alias.as_str()).copied();
+        for bind in binds {
+            // Leaf-side declared width (lookup is infallible — Check 1a
+            // confirmed the input exists).
+            let input_width = leaf_inputs
+                .iter()
+                .find(|fi| fi.name == bind.input)
+                .map(|fi| fi.width)
+                .unwrap_or(1);
+            match &bind.source {
+                FlagBindSource::Carrier { carrier, flag } => {
+                    let bind_source_text = format!("{carrier}.{flag}");
+                    let (carrier_index, carrier_field) = match parent_carrier_lookup(carrier) {
+                        Some(t) => t,
+                        None => {
+                            return Err(ForgeError::Validation(
+                                ValidationError::CodecFlagBindSourceNotResolved {
+                                    parent_codec: parent.name.clone(),
+                                    embedded_alias: imp.alias.clone(),
+                                    input: bind.input.clone(),
+                                    bind_source: bind_source_text,
+                                    detail: format!(
+                                        "carrier '{carrier}' is not declared on this codec, or is \
+                                         declared as a plain field rather than a <sce:flags> container"
+                                    ),
+                                },
+                            ));
+                        }
+                    };
+                    let flag_def = match carrier_field.flags.iter().find(|f| f.name == *flag) {
+                        Some(f) => f,
+                        None => {
+                            return Err(ForgeError::Validation(
+                                ValidationError::CodecFlagBindSourceNotResolved {
+                                    parent_codec: parent.name.clone(),
+                                    embedded_alias: imp.alias.clone(),
+                                    input: bind.input.clone(),
+                                    bind_source: bind_source_text,
+                                    detail: format!(
+                                        "flag '{flag}' is not declared on local carrier '{carrier}'"
+                                    ),
+                                },
+                            ));
+                        }
+                    };
+                    if flag_def.width != input_width {
+                        return Err(ForgeError::Validation(
+                            ValidationError::CodecFlagBindWidthMismatch {
+                                parent_codec: parent.name.clone(),
+                                embedded_alias: imp.alias.clone(),
+                                input: bind.input.clone(),
+                                bind_source: bind_source_text,
+                                source_width: flag_def.width,
+                                input_width,
+                            },
+                        ));
+                    }
+                    if let Some(embed_idx) = embed_index {
+                        if carrier_index >= embed_idx {
+                            // Find a stable name for the consumer field
+                            // for the diagnostic message.
+                            let embedded_field = parent
+                                .fields
+                                .get(embed_idx)
+                                .map(|f| f.id.clone())
+                                .unwrap_or_else(|| imp.alias.clone());
+                            return Err(ForgeError::Validation(
+                                ValidationError::CodecFlagBindCarrierAfterEmbed {
+                                    parent_codec: parent.name.clone(),
+                                    embedded_alias: imp.alias.clone(),
+                                    embedded_field,
+                                    input: bind.input.clone(),
+                                    carrier: carrier.clone(),
+                                    flag: flag.clone(),
+                                    carrier_index,
+                                    embedded_index: embed_idx,
+                                },
+                            ));
+                        }
+                    }
+                }
+                FlagBindSource::Input { name } => {
+                    let bind_source_text = name.clone();
+                    let parent_width = match parent_input_widths.get(name.as_str()) {
+                        Some(w) => *w,
+                        None => {
+                            return Err(ForgeError::Validation(
+                                ValidationError::CodecFlagBindSourceNotResolved {
+                                    parent_codec: parent.name.clone(),
+                                    embedded_alias: imp.alias.clone(),
+                                    input: bind.input.clone(),
+                                    bind_source: bind_source_text,
+                                    detail: format!(
+                                        "this codec declares no <sce:flag-input name=\"{name}\"/> \
+                                         — the bare-name form forwards one of the parent's own \
+                                         flag-inputs"
+                                    ),
+                                },
+                            ));
+                        }
+                    };
+                    if parent_width != input_width {
+                        return Err(ForgeError::Validation(
+                            ValidationError::CodecFlagBindWidthMismatch {
+                                parent_codec: parent.name.clone(),
+                                embedded_alias: imp.alias.clone(),
+                                input: bind.input.clone(),
+                                bind_source: bind_source_text,
+                                source_width: parent_width,
+                                input_width,
+                            },
+                        ));
+                    }
+                    // Bare-name forwarding has no carrier-ordering
+                    // constraint — flag-inputs are positional decode/
+                    // encode parameters, available at the call site.
                 }
             }
         }
@@ -19392,6 +19665,7 @@ mod tests {
             alias: "t".to_string(),
             line: None,
             embed_dispatch: None,
+            flag_binds: Vec::new(),
         }];
         let opts = crate::ForgeCompileOptions {
             go_module_prefix: None,
@@ -19409,6 +19683,7 @@ mod tests {
             alias: "t".to_string(),
             line: None,
             embed_dispatch: None,
+            flag_binds: Vec::new(),
         }];
         let opts = crate::ForgeCompileOptions {
             go_module_prefix: Some("".to_string()),
@@ -19426,6 +19701,7 @@ mod tests {
             alias: "t".to_string(),
             line: None,
             embed_dispatch: None,
+            flag_binds: Vec::new(),
         }];
         let opts = crate::ForgeCompileOptions {
             go_module_prefix: Some("github.com/acme /gen".to_string()),
@@ -19443,6 +19719,7 @@ mod tests {
             alias: "t".to_string(),
             line: None,
             embed_dispatch: None,
+            flag_binds: Vec::new(),
         }];
         let opts = crate::ForgeCompileOptions {
             go_module_prefix: Some("github.com/acme/gen".to_string()),
@@ -19470,6 +19747,7 @@ mod tests {
             alias: "t".to_string(),
             line: None,
             embed_dispatch: None,
+            flag_binds: Vec::new(),
         }];
         let opts = crate::ForgeCompileOptions {
             go_module_prefix: None,
@@ -19488,6 +19766,7 @@ mod tests {
             alias: "temp".to_string(),
             line: None,
             embed_dispatch: None,
+            flag_binds: Vec::new(),
         }
     }
 
@@ -19498,6 +19777,7 @@ mod tests {
             alias: "frame".to_string(),
             line: None,
             embed_dispatch: None,
+            flag_binds: Vec::new(),
         }
     }
 
@@ -19665,6 +19945,8 @@ mod tests {
                 codec_variant_arms_for_inversion: None,
                 codec_variant_has_default_arm: None,
                 codec_variant_is_caller_tag: false,
+                codec_flag_inputs: Vec::new(),
+                flag_binds: Vec::new(),
             },
             ImportContext {
                 alias: "c".to_string(),
@@ -19691,6 +19973,8 @@ mod tests {
                 codec_variant_arms_for_inversion: None,
                 codec_variant_has_default_arm: None,
                 codec_variant_is_caller_tag: false,
+                codec_flag_inputs: Vec::new(),
+                flag_binds: Vec::new(),
             },
         ];
         let (has, _all, _stateful) = build_template_imports(&imports);

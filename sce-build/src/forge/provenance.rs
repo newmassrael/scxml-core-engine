@@ -482,6 +482,7 @@ mod tests {
                 fields: Vec::new(),
                 variant: None,
                 requires_parent_flags: None,
+                flag_inputs: Vec::new(),
                 test_vectors: Vec::new(),
                 source_location: None,
             }),

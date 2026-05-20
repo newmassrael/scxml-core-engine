@@ -769,6 +769,108 @@ pub enum ValidationError {
         embedded_index: usize,
     },
 
+    /// RFC Axis-1 inversion: parent's `<sce:flag-bind input="X" ...>`
+    /// references a leaf-side input name that the imported codec does
+    /// not declare in its `<sce:flag-inputs>` block. Either the leaf
+    /// renamed the input or the parent's bind has a typo. Repair: align
+    /// the bind's `input=` attribute with the leaf's
+    /// `<sce:flag-input name="...">`.
+    #[error(
+        "codec '{parent_codec}': <sce:flag-bind input=\"{input}\"/> on <sce:import as=\"{embedded_alias}\"> targets a leaf-side input that '{embedded_codec}' does not declare. Available inputs on the imported leaf: [{available_inputs}]. Align the bind's input= attribute with a declared <sce:flag-input name=\"…\">, or remove the bind if the leaf no longer needs that input."
+    )]
+    CodecFlagBindInputNotDeclared {
+        parent_codec: String,
+        embedded_alias: String,
+        embedded_codec: String,
+        input: String,
+        available_inputs: String,
+    },
+
+    /// RFC Axis-1 inversion: parent's `<sce:flag-bind source="...">`
+    /// references a source identifier that does not resolve to either
+    /// (a) a local flags-carrier flag in `<carrier>.<flag>` dotted form,
+    /// or (b) one of the parent's own `<sce:flag-input>` declarations
+    /// for the chain-forwarder bare-name form. The carrier or flag name
+    /// is typo'd, or the chain-forwarder source is missing from the
+    /// parent's own `<sce:flag-inputs>`.
+    #[error(
+        "codec '{parent_codec}': <sce:flag-bind input=\"{input}\" source=\"{bind_source}\"/> on <sce:import as=\"{embedded_alias}\"> cannot be resolved against this codec's namespace. {detail}. Use <carrier>.<flag> form to reference a local flags-carrier flag, or the bare input name to forward one of this codec's own <sce:flag-input> declarations."
+    )]
+    CodecFlagBindSourceNotResolved {
+        parent_codec: String,
+        embedded_alias: String,
+        input: String,
+        bind_source: String,
+        detail: String,
+    },
+
+    /// RFC Axis-1 inversion: parent's `<sce:flag-bind>` source width
+    /// does not match the leaf-side input's declared width. v1 fixes
+    /// flag-input width at 1 (single-bit), so this fires when the
+    /// parent's source flag declares `width != 1`. Multi-bit input
+    /// widening defers to a reachable consumer.
+    #[error(
+        "codec '{parent_codec}': <sce:flag-bind input=\"{input}\" source=\"{bind_source}\"/> on <sce:import as=\"{embedded_alias}\"> has source width {source_width} but leaf-side input '{input}' declares width {input_width}. v1 lock-in fixes flag-input width at 1; multi-bit inputs defer to a reachable consumer."
+    )]
+    CodecFlagBindWidthMismatch {
+        parent_codec: String,
+        embedded_alias: String,
+        input: String,
+        bind_source: String,
+        source_width: u32,
+        input_width: u32,
+    },
+
+    /// RFC Axis-1 inversion: the imported leaf codec declares a
+    /// `<sce:flag-input name="X" .../>` but the parent's `<sce:import>`
+    /// does not supply a matching `<sce:flag-bind input="X" .../>` —
+    /// the leaf would receive an undefined value for that input. Repair:
+    /// add the missing `<sce:flag-bind input="X" source="..."/>` child
+    /// to the `<sce:import>`.
+    #[error(
+        "codec '{parent_codec}': <sce:import as=\"{embedded_alias}\"> imports '{embedded_codec}' which declares <sce:flag-input name=\"{input}\"/> but no matching <sce:flag-bind input=\"{input}\"/> is supplied. Bind the input to one of this codec's local flags-carrier flags (<sce:flag-bind input=\"{input}\" source=\"carrier.flag\"/>) or to one of this codec's own <sce:flag-input> declarations (<sce:flag-bind input=\"{input}\" source=\"local_input\"/>)."
+    )]
+    CodecFlagInputUnbound {
+        parent_codec: String,
+        embedded_alias: String,
+        embedded_codec: String,
+        input: String,
+    },
+
+    /// RFC Axis-1 inversion: a parent's `<sce:import>` declares two
+    /// `<sce:flag-bind>` children with the same `input=` attribute.
+    /// Each leaf-side input must be bound at most once.
+    #[error(
+        "codec '{parent_codec}': <sce:import as=\"{embedded_alias}\"> has duplicate <sce:flag-bind input=\"{input}\"/> declarations. Each leaf-side input may be bound at most once per import site."
+    )]
+    CodecFlagBindDuplicateInput {
+        parent_codec: String,
+        embedded_alias: String,
+        input: String,
+    },
+
+    /// RFC Axis-1 inversion: parent's `<sce:flag-bind source="X.Y">`
+    /// references a local carrier flag whose carrier field is declared
+    /// AFTER the embed field that depends on it. The streaming codec
+    /// cannot read the flag's bit before reaching the embed; the
+    /// carrier must precede the embed in field declaration order.
+    /// Mirrors the legacy
+    /// `codec/requires-parent-flags-carrier-after-embed` ordering
+    /// constraint translated into the inverted shape.
+    #[error(
+        "codec '{parent_codec}': <sce:flag-bind input=\"{input}\" source=\"{carrier}.{flag}\"/> on <sce:import as=\"{embedded_alias}\"> references a carrier '{carrier}' declared at field-index {carrier_index} but the embed '{embedded_field}' (which consumes the bound input) is at field-index {embedded_index}. Streaming decode requires carrier to precede consumer — reorder the fields so '{carrier}' is declared before '{embedded_field}'."
+    )]
+    CodecFlagBindCarrierAfterEmbed {
+        parent_codec: String,
+        embedded_alias: String,
+        embedded_field: String,
+        input: String,
+        carrier: String,
+        flag: String,
+        carrier_index: usize,
+        embedded_index: usize,
+    },
+
     /// RFC §5.B present-if primitive (B1-δ): the predicate on a
     /// `sce:present-if` attribute references a field that is **not**
     /// declared earlier in the same codec — either declared later

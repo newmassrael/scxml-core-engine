@@ -640,6 +640,53 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/variant-dispatch-carrier-after-embed")]
     CodecVariantDispatchCarrierAfterEmbed,
 
+    // ── RFC Axis-1 inversion: parent's `<sce:flag-bind input="X" ...>`
+    //    references a leaf-side input name that the imported codec does
+    //    not declare in its `<sce:flag-inputs>` block. Either the leaf
+    //    renamed the input or the parent's bind has a typo. Candidates
+    //    list supplies the leaf's available input names for typo repair.
+    //    Stage = Validation. ──
+    #[serde(rename = "codec/flag-bind-input-not-declared")]
+    CodecFlagBindInputNotDeclared,
+
+    // ── RFC Axis-1 inversion: parent's `<sce:flag-bind source="...">`
+    //    references a source that resolves to neither a local flags-
+    //    carrier flag (dotted `<carrier>.<flag>` form) nor one of the
+    //    parent's own `<sce:flag-input>` declarations (bare-name chain-
+    //    forwarder form). Stage = Validation. ──
+    #[serde(rename = "codec/flag-bind-source-not-resolved")]
+    CodecFlagBindSourceNotResolved,
+
+    // ── RFC Axis-1 inversion: parent's `<sce:flag-bind>` source width
+    //    does not match the leaf-side input's declared width. v1 fixes
+    //    flag-input width at 1; multi-bit inputs defer to a reachable
+    //    consumer. Stage = Validation. ──
+    #[serde(rename = "codec/flag-bind-width-mismatch")]
+    CodecFlagBindWidthMismatch,
+
+    // ── RFC Axis-1 inversion: the imported leaf codec declares a
+    //    `<sce:flag-input name="X" .../>` but the parent's `<sce:import>`
+    //    does not supply a matching `<sce:flag-bind input="X" .../>`.
+    //    The leaf would receive an undefined value for that input —
+    //    binding-completeness invariant. Stage = Validation. ──
+    #[serde(rename = "codec/flag-input-unbound")]
+    CodecFlagInputUnbound,
+
+    // ── RFC Axis-1 inversion: a parent's `<sce:import>` declares two
+    //    `<sce:flag-bind>` children with the same `input=` attribute.
+    //    Each leaf-side input must be bound at most once. Stage =
+    //    Validation. ──
+    #[serde(rename = "codec/flag-bind-duplicate-input")]
+    CodecFlagBindDuplicateInput,
+
+    // ── RFC Axis-1 inversion: a parent's `<sce:flag-bind source="X.Y">`
+    //    names a local carrier whose field is declared AFTER the embed
+    //    that consumes the bound input. Streaming-order requires
+    //    carrier-first. Mirrors the legacy carrier-after-embed ordering
+    //    constraint for the inverted shape. Stage = Validation. ──
+    #[serde(rename = "codec/flag-bind-carrier-after-embed")]
+    CodecFlagBindCarrierAfterEmbed,
+
     // ── §5.B present-if primitive (watching-zenoh RFC §5.B, B1-δ).
     //    Build-time check on `<sce:field sce:present-if="X.Y"/>`: the
     //    referenced field `X` must be declared earlier in the same
@@ -2307,6 +2354,13 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CodecVariantDispatchArmsNotDistinguishableWithoutDefault,
         CodecVariantDispatchFlagHasStaticValue,
         CodecVariantDispatchCarrierAfterEmbed,
+        // RFC Axis-1 inversion — parent-side flag-bind (6 codes)
+        CodecFlagBindInputNotDeclared,
+        CodecFlagBindSourceNotResolved,
+        CodecFlagBindWidthMismatch,
+        CodecFlagInputUnbound,
+        CodecFlagBindDuplicateInput,
+        CodecFlagBindCarrierAfterEmbed,
         // Codec §5.B present-if primitive (watching-zenoh RFC §5.B, B1-δ)
         CodecPresentIfRefsLaterField,
         // Codec §5.B repeat primitive (watching-zenoh RFC §5.B, B2)
@@ -2681,6 +2735,12 @@ impl DiagnosticCode {
             | CodecVariantDispatchArmsNotDistinguishableWithoutDefault
             | CodecVariantDispatchFlagHasStaticValue
             | CodecVariantDispatchCarrierAfterEmbed
+            | CodecFlagBindInputNotDeclared
+            | CodecFlagBindSourceNotResolved
+            | CodecFlagBindWidthMismatch
+            | CodecFlagInputUnbound
+            | CodecFlagBindDuplicateInput
+            | CodecFlagBindCarrierAfterEmbed
             | CodecPresentIfRefsLaterField
             | CodecRepeatCountRefsLaterField
             | AlgorithmTestVectorUnsupportedKind
@@ -3203,6 +3263,12 @@ impl DiagnosticCode {
                 "codec/variant-dispatch-flag-has-static-value"
             }
             CodecVariantDispatchCarrierAfterEmbed => "codec/variant-dispatch-carrier-after-embed",
+            CodecFlagBindInputNotDeclared => "codec/flag-bind-input-not-declared",
+            CodecFlagBindSourceNotResolved => "codec/flag-bind-source-not-resolved",
+            CodecFlagBindWidthMismatch => "codec/flag-bind-width-mismatch",
+            CodecFlagInputUnbound => "codec/flag-input-unbound",
+            CodecFlagBindDuplicateInput => "codec/flag-bind-duplicate-input",
+            CodecFlagBindCarrierAfterEmbed => "codec/flag-bind-carrier-after-embed",
             CodecPresentIfRefsLaterField => "codec/present-if-refs-later-field",
             CodecRepeatCountRefsLaterField => "codec/repeat-count-refs-later-field",
             AlgorithmTestVectorUnsupportedKind => "algorithm/test-vector-unsupported-kind",
@@ -4538,6 +4604,141 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 parent_codec.clone(),
                 embedded_alias.clone(),
                 embedded_field.clone(),
+                carrier.clone(),
+                flag.clone(),
+            ],
+        },
+        ValidationError::CodecFlagBindInputNotDeclared {
+            parent_codec,
+            embedded_alias,
+            embedded_codec,
+            input,
+            available_inputs,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CodecFlagBindInputNotDeclared,
+            stage: Stage::Validation,
+            expected: Some(vec![input.clone()]),
+            actual: Some(format!("declared on {embedded_codec}: [{available_inputs}]")),
+            fix: if available_inputs.is_empty() {
+                None
+            } else {
+                Some(Fix::ReplaceOneOf {
+                    candidates: available_inputs
+                        .split(", ")
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.to_string())
+                        .collect(),
+                })
+            },
+            key_fragments: vec![
+                parent_codec.clone(),
+                embedded_alias.clone(),
+                input.clone(),
+            ],
+        },
+        ValidationError::CodecFlagBindSourceNotResolved {
+            parent_codec,
+            embedded_alias,
+            input,
+            bind_source,
+            detail: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CodecFlagBindSourceNotResolved,
+            stage: Stage::Validation,
+            expected: Some(vec![bind_source.clone()]),
+            actual: Some(parent_codec.clone()),
+            fix: None,
+            key_fragments: vec![
+                parent_codec.clone(),
+                embedded_alias.clone(),
+                input.clone(),
+                bind_source.clone(),
+            ],
+        },
+        ValidationError::CodecFlagBindWidthMismatch {
+            parent_codec,
+            embedded_alias,
+            input,
+            bind_source,
+            source_width,
+            input_width,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CodecFlagBindWidthMismatch,
+            stage: Stage::Validation,
+            expected: Some(vec![format!("input width {input_width}")]),
+            actual: Some(format!("source width {source_width}")),
+            fix: None,
+            key_fragments: vec![
+                parent_codec.clone(),
+                embedded_alias.clone(),
+                input.clone(),
+                bind_source.clone(),
+            ],
+        },
+        ValidationError::CodecFlagInputUnbound {
+            parent_codec,
+            embedded_alias,
+            embedded_codec,
+            input,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CodecFlagInputUnbound,
+            stage: Stage::Validation,
+            expected: Some(vec![format!(
+                "<sce:flag-bind input=\"{input}\" source=\"...\"/>"
+            )]),
+            actual: Some(format!(
+                "{embedded_codec} declares <sce:flag-input name=\"{input}\"/>"
+            )),
+            fix: Some(Fix::AddAttribute {
+                element: format!("<sce:import as=\"{embedded_alias}\">"),
+                attr: format!("<sce:flag-bind input=\"{input}\" source=\"...\"/>"),
+            }),
+            key_fragments: vec![
+                parent_codec.clone(),
+                embedded_alias.clone(),
+                input.clone(),
+            ],
+        },
+        ValidationError::CodecFlagBindDuplicateInput {
+            parent_codec,
+            embedded_alias,
+            input,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CodecFlagBindDuplicateInput,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(format!("{embedded_alias}.{input}")),
+            fix: None,
+            key_fragments: vec![
+                parent_codec.clone(),
+                embedded_alias.clone(),
+                input.clone(),
+            ],
+        },
+        ValidationError::CodecFlagBindCarrierAfterEmbed {
+            parent_codec,
+            embedded_alias,
+            embedded_field,
+            input,
+            carrier,
+            flag,
+            carrier_index,
+            embedded_index,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CodecFlagBindCarrierAfterEmbed,
+            stage: Stage::Validation,
+            expected: Some(vec![format!(
+                "carrier '{carrier}' before field '{embedded_field}'"
+            )]),
+            actual: Some(format!(
+                "carrier at index {carrier_index}, embed at index {embedded_index}"
+            )),
+            fix: None,
+            key_fragments: vec![
+                parent_codec.clone(),
+                embedded_alias.clone(),
+                embedded_field.clone(),
+                input.clone(),
                 carrier.clone(),
                 flag.clone(),
             ],
@@ -8194,6 +8395,80 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:ca182b36796032f0","code":"codec/variant-dispatch-carrier-after-embed","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"parent codec 'codec_zenoh_push': field 'key' (import 'key') has <sce:variant-dispatch flag=\"header.M\"/>, but carrier 'header' is declared at field index 1 which is AFTER the embed field at index 0. Reorder fields so 'header' precedes 'key'.","expected":["carrier 'header' before field 'key'"],"actual":"carrier at index 1, embed at index 0"}"#,
             ),
+            // ── RFC Axis-1 inversion — parent-side flag-bind validators ─
+            (
+                "forge/codec-flag-bind-input-not-declared",
+                ValidationError::CodecFlagBindInputNotDeclared {
+                    parent_codec: "codec_zenoh_request".into(),
+                    embedded_alias: "key".into(),
+                    embedded_codec: "codec_zenoh_wireexpr".into(),
+                    input: "is_admin".into(),
+                    available_inputs: "has_suffix".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:218d5e66e1cbff7a","code":"codec/flag-bind-input-not-declared","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'codec_zenoh_request': <sce:flag-bind input=\"is_admin\"/> on <sce:import as=\"key\"> targets a leaf-side input that 'codec_zenoh_wireexpr' does not declare. Available inputs on the imported leaf: [has_suffix]. Align the bind's input= attribute with a declared <sce:flag-input name=\"…\">, or remove the bind if the leaf no longer needs that input.","expected":["is_admin"],"actual":"declared on codec_zenoh_wireexpr: [has_suffix]","fix":{"kind":"replace_one_of","candidates":["has_suffix"]}}"#,
+            ),
+            (
+                "forge/codec-flag-bind-source-not-resolved",
+                ValidationError::CodecFlagBindSourceNotResolved {
+                    parent_codec: "codec_zenoh_request".into(),
+                    embedded_alias: "key".into(),
+                    input: "has_suffix".into(),
+                    bind_source: "header.K".into(),
+                    detail: "flag 'K' is not declared on local carrier 'header'".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:52e7c2d46ebfffe6","code":"codec/flag-bind-source-not-resolved","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'codec_zenoh_request': <sce:flag-bind input=\"has_suffix\" source=\"header.K\"/> on <sce:import as=\"key\"> cannot be resolved against this codec's namespace. flag 'K' is not declared on local carrier 'header'. Use <carrier>.<flag> form to reference a local flags-carrier flag, or the bare input name to forward one of this codec's own <sce:flag-input> declarations.","expected":["header.K"],"actual":"codec_zenoh_request"}"#,
+            ),
+            (
+                "forge/codec-flag-bind-width-mismatch",
+                ValidationError::CodecFlagBindWidthMismatch {
+                    parent_codec: "codec_zenoh_request".into(),
+                    embedded_alias: "key".into(),
+                    input: "has_suffix".into(),
+                    bind_source: "header.priority".into(),
+                    source_width: 3,
+                    input_width: 1,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:29ec86e6e42266e2","code":"codec/flag-bind-width-mismatch","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'codec_zenoh_request': <sce:flag-bind input=\"has_suffix\" source=\"header.priority\"/> on <sce:import as=\"key\"> has source width 3 but leaf-side input 'has_suffix' declares width 1. v1 lock-in fixes flag-input width at 1; multi-bit inputs defer to a reachable consumer.","expected":["input width 1"],"actual":"source width 3"}"#,
+            ),
+            (
+                "forge/codec-flag-input-unbound",
+                ValidationError::CodecFlagInputUnbound {
+                    parent_codec: "codec_zenoh_request".into(),
+                    embedded_alias: "key".into(),
+                    embedded_codec: "codec_zenoh_wireexpr".into(),
+                    input: "has_suffix".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:6f64a9b2f3e7bfd3","code":"codec/flag-input-unbound","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'codec_zenoh_request': <sce:import as=\"key\"> imports 'codec_zenoh_wireexpr' which declares <sce:flag-input name=\"has_suffix\"/> but no matching <sce:flag-bind input=\"has_suffix\"/> is supplied. Bind the input to one of this codec's local flags-carrier flags (<sce:flag-bind input=\"has_suffix\" source=\"carrier.flag\"/>) or to one of this codec's own <sce:flag-input> declarations (<sce:flag-bind input=\"has_suffix\" source=\"local_input\"/>).","expected":["<sce:flag-bind input=\"has_suffix\" source=\"...\"/>"],"actual":"codec_zenoh_wireexpr declares <sce:flag-input name=\"has_suffix\"/>","fix":{"kind":"add_attribute","element":"<sce:import as=\"key\">","attr":"<sce:flag-bind input=\"has_suffix\" source=\"...\"/>"}}"#,
+            ),
+            (
+                "forge/codec-flag-bind-duplicate-input",
+                ValidationError::CodecFlagBindDuplicateInput {
+                    parent_codec: "codec_zenoh_request".into(),
+                    embedded_alias: "key".into(),
+                    input: "has_suffix".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:171f17f551b318d7","code":"codec/flag-bind-duplicate-input","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'codec_zenoh_request': <sce:import as=\"key\"> has duplicate <sce:flag-bind input=\"has_suffix\"/> declarations. Each leaf-side input may be bound at most once per import site.","actual":"key.has_suffix"}"#,
+            ),
+            (
+                "forge/codec-flag-bind-carrier-after-embed",
+                ValidationError::CodecFlagBindCarrierAfterEmbed {
+                    parent_codec: "codec_zenoh_request".into(),
+                    embedded_alias: "key".into(),
+                    embedded_field: "key".into(),
+                    input: "has_suffix".into(),
+                    carrier: "header".into(),
+                    flag: "N".into(),
+                    carrier_index: 1,
+                    embedded_index: 0,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:3bb9387760da5afb","code":"codec/flag-bind-carrier-after-embed","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'codec_zenoh_request': <sce:flag-bind input=\"has_suffix\" source=\"header.N\"/> on <sce:import as=\"key\"> references a carrier 'header' declared at field-index 1 but the embed 'key' (which consumes the bound input) is at field-index 0. Streaming decode requires carrier to precede consumer — reorder the fields so 'header' is declared before 'key'.","expected":["carrier 'header' before field 'key'"],"actual":"carrier at index 1, embed at index 0"}"#,
+            ),
             // ── §5.B present-if primitive (watching-zenoh RFC §5.B, B1-δ) ─
             (
                 "forge/codec-present-if-refs-later-field",
@@ -10248,7 +10523,16 @@ mod tests {
             //    dotted reference repair (carrier-missing case lists
             //    parent fields; flag-missing-on-carrier case lists
             //    flags on the resolved carrier).
-            | CodecVariantDispatchFlagNotResolved => FixCarriesCandidates,
+            | CodecVariantDispatchFlagNotResolved
+            // ── RFC Axis-1 inversion — `flag-bind-input-not-declared`
+            //    carries the leaf-side declared input names as a
+            //    closed-set candidate list for typo repair.
+            //    `flag-input-unbound` rides `Fix::AddAttribute` with the
+            //    canonical `<sce:flag-bind input="X" source="..."/>`
+            //    repair shape, also closed-form (deterministic), but
+            //    `AddAttribute` is not a candidate-list fix and thus
+            //    routes to NeutralOrDeterministic below.
+            | CodecFlagBindInputNotDeclared => FixCarriesCandidates,
 
             // ── `expected` carries non-repair metadata ────────
             ExpressionParseMismatch | MeshExternalAmbiguousEventGroup => ExpectedIsMetadata,
@@ -10707,7 +10991,28 @@ mod tests {
             //    to c11 / split deploys) — also open-ended. Both fall
             //    outside FixCarriesCandidates by design.
             | McuDriverHeaderNotFound
-            | McuSectionAttributeOnNonMcuTarget => NeutralOrDeterministic,
+            | McuSectionAttributeOnNonMcuTarget
+            // ── RFC Axis-1 inversion — flag-bind sibling codes that
+            //    don't carry candidate lists:
+            //   - `flag-bind-source-not-resolved`: open-ended repair
+            //     (author edits the source attribute or adds a missing
+            //     local input); no closed candidate set.
+            //   - `flag-bind-width-mismatch`: invariant repair (v1
+            //     fixes width=1); deterministic single repair, no
+            //     candidate list.
+            //   - `flag-input-unbound`: deterministic `Fix::AddAttribute`
+            //     with the canonical `<sce:flag-bind input="X"
+            //     source="..."/>` repair shape — no candidate list.
+            //   - `flag-bind-duplicate-input`: deterministic "delete
+            //     one of the duplicates"; no candidate list.
+            //   - `flag-bind-carrier-after-embed`: deterministic
+            //     reorder repair (move carrier before embed); no
+            //     candidate list. ──
+            | CodecFlagBindSourceNotResolved
+            | CodecFlagBindWidthMismatch
+            | CodecFlagInputUnbound
+            | CodecFlagBindDuplicateInput
+            | CodecFlagBindCarrierAfterEmbed => NeutralOrDeterministic,
         }
     }
 
@@ -11158,7 +11463,18 @@ mod tests {
                 // boundary codes; both ride NeutralOrDeterministic per
                 // the non_overlap_class match above.
                 | McuDriverHeaderNotFound
-                | McuSectionAttributeOnNonMcuTarget => true,
+                | McuSectionAttributeOnNonMcuTarget
+                // RFC Axis-1 inversion — parent-side flag-bind cross-doc
+                // validator codes. One in FixCarriesCandidates
+                // (`flag-bind-input-not-declared`) and five in
+                // NeutralOrDeterministic (the other five) per the
+                // `non_overlap_class` match above.
+                | CodecFlagBindInputNotDeclared
+                | CodecFlagBindSourceNotResolved
+                | CodecFlagBindWidthMismatch
+                | CodecFlagInputUnbound
+                | CodecFlagBindDuplicateInput
+                | CodecFlagBindCarrierAfterEmbed => true,
             }
         }
         for &code in ALL_DIAGNOSTIC_CODES {
@@ -11170,7 +11486,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            288,
+            294,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries —\
              expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
@@ -11838,7 +12154,20 @@ mod tests {
              unreachable. NeutralOrDeterministic — author removes the \
              `<sce:default>` element; existing \
              `codec/variant-arm-unreachable` covers any gap in the \
-             enumeration. 285 → 286.",
+             enumeration. 285 → 286. Then RFC Axis-1 inversion Phase A \
+             (claudedocs/rfc-axis1-flag-input-binding.md) adds 6 parent- \
+             side flag-bind cross-doc validator codes: \
+             `codec/flag-bind-input-not-declared` (parent's flag-bind \
+             names an input the leaf does not declare — FixCarriesCandidates \
+             over the leaf's declared input names); \
+             `codec/flag-bind-source-not-resolved` (source resolves to \
+             neither a local carrier flag nor a parent's own flag-input); \
+             `codec/flag-bind-width-mismatch` (v1 lock-in width=1); \
+             `codec/flag-input-unbound` (leaf declares input X but parent's \
+             import supplies no flag-bind for X); \
+             `codec/flag-bind-duplicate-input` (two binds for same input \
+             per import); `codec/flag-bind-carrier-after-embed` (parent's \
+             source carrier declared after the embed). 288 → 294.",
         );
     }
 

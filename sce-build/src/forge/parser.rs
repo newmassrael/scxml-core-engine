@@ -931,6 +931,14 @@ fn parse_codec(
     // validator (codegen-time) per `codec/parent-flag-mismatch`.
     let requires_parent_flags = parse_requires_parent_flags(root, label.diagnostic_label)?;
 
+    // RFC Axis-1 inversion — codec-level `<sce:flag-inputs>` block
+    // declaring named flag-shaped inputs the codec receives from its
+    // caller. Replaces `<sce:requires-parent-flags>` for the inverted
+    // ownership shape. Both forms coexist during Phase A; a future
+    // atomic deletes RPF + the `parent.X` predicate form once all
+    // fixtures migrate.
+    let flag_inputs = parse_flag_inputs(root, label.diagnostic_label)?;
+
     // RFC §5.B B1-δ + B5-γ present-if validation — every gated
     // field's predicate must reference either a flags-bearing
     // carrier declared earlier (Local scope) or a flag declared
@@ -1027,6 +1035,7 @@ fn parse_codec(
         fields,
         variant,
         requires_parent_flags,
+        flag_inputs,
         test_vectors,
         source_location: forge_source_location_of(root, label.diagnostic_label),
     })
@@ -1178,6 +1187,286 @@ fn parse_requires_parent_flags(
         ));
     }
     Ok(Some(RequiresParentFlags { carrier, flags }))
+}
+
+/// RFC Axis-1 inversion — parse the optional codec-level
+/// `<sce:flag-inputs>` block containing `<sce:flag-input name="X"
+/// width="N"/>` children. Returns an empty `Vec` when the element is
+/// absent (the common case for codecs that need no caller-supplied
+/// flags). Per Q-1=(b), this replaces `<sce:requires-parent-flags>`
+/// for the inverted ownership shape; both coexist during Phase A
+/// while fixtures migrate, and the legacy form is deleted in a
+/// later atomic.
+///
+/// Validation: each `<sce:flag-input>` must carry a non-empty
+/// `name`; names are unique within the block; `width` (v1 lock-in)
+/// must equal 1 (multi-bit input widening defers to a reachable
+/// consumer per Q-6). An empty `<sce:flag-inputs>` element is
+/// rejected — same rationale as the RPF empty-block check (no
+/// purpose).
+fn parse_flag_inputs(
+    codec_root: &roxmltree::Node,
+    doc_name: &str,
+) -> Result<Vec<crate::forge::model::FlagInput>, Located<ForgeError>> {
+    use crate::forge::model::FlagInput;
+    let block = codec_root.children().find(|n| {
+        n.is_element()
+            && n.tag_name().namespace() == Some(SCE_NAMESPACE)
+            && n.tag_name().name() == "flag-inputs"
+    });
+    let block = match block {
+        Some(b) => b,
+        None => return Ok(Vec::new()),
+    };
+    let mut inputs: Vec<FlagInput> = Vec::new();
+    for child in block.children().filter(|n| n.is_element()) {
+        if child.tag_name().namespace() != Some(SCE_NAMESPACE) {
+            continue;
+        }
+        if child.tag_name().name() != "flag-input" {
+            return Err(located(
+                &child,
+                doc_name,
+                ValidationError::InvalidAttribute {
+                    element: "<sce:flag-inputs>".into(),
+                    attr: "child element".into(),
+                    value: format!("<{}>", child.tag_name().name()),
+                    expected: "only <sce:flag-input name=\"X\" width=\"N\"/> \
+                               children are accepted"
+                        .into(),
+                },
+            ));
+        }
+        let name = child
+            .attribute("name")
+            .map(|s| s.trim().to_string())
+            .unwrap_or_default();
+        if name.is_empty() {
+            return Err(located(
+                &child,
+                doc_name,
+                ValidationError::InvalidAttribute {
+                    element: "<sce:flag-input>".into(),
+                    attr: "name".into(),
+                    value: String::new(),
+                    expected: "non-empty logical input name (referenced by \
+                               <sce:flag-bind input=\"<name>\"/> at parent's \
+                               import site and by sce:present-if=\"<name>\" \
+                               in this codec's body)"
+                        .into(),
+                },
+            ));
+        }
+        let width_str = child
+            .attribute("width")
+            .map(|s| s.trim().to_string())
+            .unwrap_or_else(|| "1".to_string());
+        let width: u32 = parse_int(&width_str).ok_or_else(|| {
+            located(
+                &child,
+                doc_name,
+                ValidationError::InvalidAttribute {
+                    element: format!("<sce:flag-input name=\"{}\">", name),
+                    attr: "width".into(),
+                    value: width_str.clone(),
+                    expected: "positive integer bit-width (v1 lock-in: width=1; \
+                               wider inputs defer to a reachable consumer)"
+                        .into(),
+                },
+            )
+        })?;
+        if width != 1 {
+            return Err(located(
+                &child,
+                doc_name,
+                ValidationError::InvalidAttribute {
+                    element: format!("<sce:flag-input name=\"{}\">", name),
+                    attr: "width".into(),
+                    value: width_str,
+                    expected: "v1 fixes flag-input width at 1 (single-bit). \
+                               Multi-bit dispatch inputs defer to a reachable \
+                               consumer"
+                        .into(),
+                },
+            ));
+        }
+        if inputs.iter().any(|f| f.name == name) {
+            return Err(located(
+                &child,
+                doc_name,
+                ValidationError::InvalidAttribute {
+                    element: "<sce:flag-inputs>".into(),
+                    attr: "name".into(),
+                    value: name.clone(),
+                    expected: "unique flag-input name within the <sce:flag-inputs> \
+                               block"
+                        .into(),
+                },
+            ));
+        }
+        inputs.push(FlagInput { name, width });
+    }
+    if inputs.is_empty() {
+        return Err(located(
+            &block,
+            doc_name,
+            ValidationError::InvalidAttribute {
+                element: "<sce:flag-inputs>".into(),
+                attr: "child elements".into(),
+                value: String::new(),
+                expected: "at least one <sce:flag-input name=\"X\" width=\"N\"/> \
+                           child (an empty flag-inputs block has no purpose)"
+                    .into(),
+            },
+        ));
+    }
+    Ok(inputs)
+}
+
+/// RFC Axis-1 inversion — parse `<sce:flag-bind input="X" source="Y.Z"/>`
+/// children inside an `<sce:import>` element. Returns the resolved
+/// bindings list (empty when the import has no `<sce:flag-bind>`
+/// children). Each binding's `source` parses via the dotted-form rule:
+/// `<carrier>.<flag>` ⇒ `FlagBindSource::Carrier`; bare `<name>` ⇒
+/// `FlagBindSource::Input` (chain-forwarder pattern).
+///
+/// Intra-element validation: `input` and `source` are both required
+/// and non-empty; `source` parses as either dotted or bare identifier
+/// (no embedded whitespace, no leading digits). Cross-doc validation
+/// (binding resolves against parent's local carriers / inputs; every
+/// imported leaf's input is bound exactly once; widths agree) defers
+/// to `validate_cross_codec_flag_bind` at the variant arm wire-up
+/// stage.
+fn parse_flag_binds(
+    import_node: &roxmltree::Node,
+    doc_name: &str,
+) -> Result<Vec<crate::forge::model::FlagBind>, Located<ForgeError>> {
+    use crate::forge::model::{FlagBind, FlagBindSource};
+    let mut binds: Vec<FlagBind> = Vec::new();
+    for child in import_node.children().filter(|n| n.is_element()) {
+        if child.tag_name().namespace() != Some(SCE_NAMESPACE) {
+            continue;
+        }
+        if child.tag_name().name() != "flag-bind" {
+            // Other child elements (e.g. <sce:variant-dispatch>) are
+            // handled by their own parsers — ignore here.
+            continue;
+        }
+        let input = child
+            .attribute("input")
+            .map(|s| s.trim().to_string())
+            .unwrap_or_default();
+        if input.is_empty() {
+            return Err(located(
+                &child,
+                doc_name,
+                ValidationError::InvalidAttribute {
+                    element: "<sce:flag-bind>".into(),
+                    attr: "input".into(),
+                    value: String::new(),
+                    expected: "non-empty leaf-side flag-input name (must match a \
+                               <sce:flag-input name=\"X\"/> declared on the \
+                               imported codec)"
+                        .into(),
+                },
+            ));
+        }
+        let source = child
+            .attribute("source")
+            .map(|s| s.trim().to_string())
+            .unwrap_or_default();
+        if source.is_empty() {
+            return Err(located(
+                &child,
+                doc_name,
+                ValidationError::InvalidAttribute {
+                    element: format!("<sce:flag-bind input=\"{}\">", input),
+                    attr: "source".into(),
+                    value: String::new(),
+                    expected: "non-empty source — either <carrier>.<flag> (local \
+                               flags-carrier flag) or bare <input> (this codec's \
+                               own flag-input, for chain-forwarder pattern)"
+                        .into(),
+                },
+            ));
+        }
+        // Duplicate-input check is parent-local — fires the new
+        // `codec/flag-bind-duplicate-input` diagnostic. Reusing
+        // ValidationError::InvalidAttribute for Phase A; the typed
+        // ValidationError variant lands with cross-doc validator wire-up.
+        if binds.iter().any(|b| b.input == input) {
+            return Err(located(
+                &child,
+                doc_name,
+                ValidationError::InvalidAttribute {
+                    element: "<sce:flag-bind>".into(),
+                    attr: "input".into(),
+                    value: input.clone(),
+                    expected: "each leaf-side input must be bound at most once \
+                               per <sce:import> site"
+                        .into(),
+                },
+            ));
+        }
+        // Resolve source shape via the dotted-form rule.
+        let source_kind = if let Some((carrier, flag)) = source.split_once('.') {
+            let carrier = carrier.trim();
+            let flag = flag.trim();
+            if carrier.is_empty() || flag.is_empty() {
+                return Err(located(
+                    &child,
+                    doc_name,
+                    ValidationError::InvalidAttribute {
+                        element: format!("<sce:flag-bind input=\"{}\">", input),
+                        attr: "source".into(),
+                        value: source.clone(),
+                        expected: "dotted form requires both sides non-empty: \
+                                   <carrier>.<flag>"
+                            .into(),
+                    },
+                ));
+            }
+            FlagBindSource::Carrier {
+                carrier: carrier.to_string(),
+                flag: flag.to_string(),
+            }
+        } else {
+            // Bare identifier — references this codec's own flag-input
+            // (chain-forwarder pattern). Existence is verified at
+            // cross-doc validator stage when the codec's own flag-inputs
+            // list is available.
+            let is_ident = source
+                .chars()
+                .enumerate()
+                .all(|(i, c)| {
+                    if i == 0 {
+                        c.is_ascii_alphabetic() || c == '_'
+                    } else {
+                        c.is_ascii_alphanumeric() || c == '_'
+                    }
+                });
+            if !is_ident {
+                return Err(located(
+                    &child,
+                    doc_name,
+                    ValidationError::InvalidAttribute {
+                        element: format!("<sce:flag-bind input=\"{}\">", input),
+                        attr: "source".into(),
+                        value: source.clone(),
+                        expected: "bare-name form must be a valid identifier \
+                                   (alphanumeric + underscore, no leading digit)"
+                            .into(),
+                    },
+                ));
+            }
+            FlagBindSource::Input { name: source }
+        };
+        binds.push(FlagBind {
+            input,
+            source: source_kind,
+        });
+    }
+    Ok(binds)
 }
 
 /// RFC §5.B variant primitive — parse `<sce:variant>` element under
@@ -7664,12 +7953,23 @@ fn parse_imports(
             });
         }
 
+        // RFC Axis-1 inversion — parse `<sce:flag-bind>` children. Each
+        // supplies one of the imported leaf codec's declared
+        // `<sce:flag-inputs>` from either a local flags-carrier flag
+        // (dotted form) or one of this codec's own flag-inputs (chain-
+        // forwarder bare-name form). Cross-doc resolution (binding
+        // completeness, source existence, width agreement) defers to
+        // `validate_cross_codec_flag_bind` once both parent and leaf
+        // models are in scope.
+        let flag_binds = parse_flag_binds(&child, doc_name)?;
+
         imports.push(ForgeImport {
             src,
             kind,
             alias,
             line,
             embed_dispatch,
+            flag_binds,
         });
     }
 

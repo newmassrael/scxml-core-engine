@@ -314,6 +314,17 @@
     <xs:complexType>
       <xs:sequence>
         <xs:element ref="sce:variant-dispatch" minOccurs="0" maxOccurs="1"/>
+        <!-- RFC Axis-1 inversion: parent-side flag-bind declarations
+             supply values for the imported leaf's declared
+             `<sce:flag-inputs>`. Each `<sce:flag-bind>` names one
+             leaf-side input and a source on the parent (either a
+             local flags-carrier flag in dotted form, or one of the
+             parent's own `<sce:flag-input>` declarations by bare
+             name for the chain-forwarder pattern). The cross-doc
+             validator `validate_cross_codec_flag_bind` enforces
+             binding-completeness, source resolution, width
+             agreement, and carrier-before-embed ordering. -->
+        <xs:element ref="sce:flag-bind" minOccurs="0" maxOccurs="unbounded"/>
       </xs:sequence>
       <xs:attribute name="src" type="xs:string" use="required"/>
       <xs:attribute name="kind" type="sce:kindType" use="required"/>
@@ -331,6 +342,52 @@
   <xs:element name="variant-dispatch">
     <xs:complexType>
       <xs:attribute name="flag" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- RFC Axis-1 inversion: parent-side `<sce:flag-bind>` directive
+       (child of `<sce:import>`). The `input=` attribute names one of
+       the imported leaf's declared `<sce:flag-input name="X" .../>`
+       declarations. The `source=` attribute resolves via the dotted-
+       form rule: `<carrier>.<flag>` references a local
+       `<sce:flags id="X">` flag; bare name references one of the
+       parent's own `<sce:flag-input>` declarations (chain-forwarder
+       pattern). Cross-doc validator enforces resolution and width
+       agreement. -->
+  <xs:element name="flag-bind">
+    <xs:complexType>
+      <xs:attribute name="input" type="xs:NCName" use="required"/>
+      <xs:attribute name="source" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- RFC Axis-1 inversion: codec-level `<sce:flag-inputs>` block
+       containing one or more `<sce:flag-input name="X" width="N"/>`
+       child declarations. Each input becomes a positional typed
+       parameter on the generated `decode`/`encode` signatures; the
+       parent supplies values at import-site via `<sce:flag-bind>`.
+       Replaces `<sce:requires-parent-flags>` for the inverted
+       ownership shape; both coexist during Phase A until a later
+       atomic deletes the legacy form. -->
+  <xs:element name="flag-inputs">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="sce:flag-input" minOccurs="1" maxOccurs="unbounded"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- RFC Axis-1 inversion: a single `<sce:flag-input>` child of
+       `<sce:flag-inputs>`. The `name=` is the logical input name
+       (referenced by `<sce:flag-bind input="X" .../>` at the parent's
+       import site, and by `sce:present-if="X"` predicates in this
+       codec's body). The `width=` is the bit-width — v1 lock-in
+       fixes width=1 (multi-bit inputs defer to a reachable
+       consumer). -->
+  <xs:element name="flag-input">
+    <xs:complexType>
+      <xs:attribute name="name" type="xs:NCName" use="required"/>
+      <xs:attribute name="width" type="xs:positiveInteger" use="required"/>
     </xs:complexType>
   </xs:element>
 

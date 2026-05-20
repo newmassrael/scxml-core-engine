@@ -2681,6 +2681,14 @@ fn validate_and_enrich_imports(
                 // and the cross-codec validator can confirm layout
                 // match against the parent's `<sce:flags id="X">`.
                 ctx.codec_requires_parent_flags = cm.requires_parent_flags.clone();
+                // RFC Axis-1 inversion: capture the imported leaf
+                // codec's declared `<sce:flag-inputs>` so the parent-
+                // local cross-doc validator can confirm every input is
+                // bound exactly once via the parent's authored
+                // `<sce:flag-bind>` directives. Empty when the leaf
+                // declares no flag-inputs (additive Phase A — coexists
+                // with RPF until later atomic deletes the legacy form).
+                ctx.codec_flag_inputs = cm.flag_inputs.clone();
                 // RFC §5.B Y3 atomic 2b-ii peek-byte: capture the
                 // imported body codec's FIRST `<sce:flags>`-bearing
                 // field at byte_offset=0 so the parent variant's

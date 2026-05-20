@@ -1133,6 +1133,74 @@ pub struct RequiresParentFlags {
     pub flags: Vec<FlagDef>,
 }
 
+/// RFC Axis-1 inversion — a named flag-shaped input the codec receives
+/// from its caller. Replaces [`RequiresParentFlags`] for the inverted
+/// ownership shape: leaf declares logical input names + bit widths only,
+/// with no claim about the parent's carrier name or bit position.
+///
+/// Authored as `<sce:flag-inputs><sce:flag-input name="X" width="N"/>
+/// </sce:flag-inputs>` under `<scxml sce:kind="codec">`. The leaf's
+/// `decode`/`encode` signature gains one typed parameter per declared
+/// input (positional order = declaration order). Predicates inside the
+/// leaf body reference the input by bare name (e.g.
+/// `sce:present-if="X"`), evaluating `X != 0` on the local typed
+/// parameter — no carrier-byte threading, no shift+mask.
+///
+/// The parent codec, at its `<sce:import>` site, supplies values via
+/// `<sce:flag-bind input="X" source="Y.Z"/>` directives — see
+/// [`FlagBind`].
+#[derive(Debug, Clone, Serialize)]
+pub struct FlagInput {
+    /// Logical input name. Author-visible in predicates
+    /// (`present-if="<name>"`) and as a positional parameter in the
+    /// generated `decode`/`encode` signatures.
+    pub name: String,
+    /// Bit-width of the input value. v1 lock-in: width = 1 (single-bit
+    /// flag carrying 0/1). Future widening to width > 1 (multi-bit
+    /// dispatch inputs) defers to a reachable consumer.
+    pub width: u32,
+}
+
+/// RFC Axis-1 inversion — a parent codec's binding of one of its own
+/// flags to a leaf's declared flag-input. Lives on `<sce:import>` as a
+/// child element: `<sce:import src="..." as="..."><sce:flag-bind
+/// input="X" source="Y.Z"/></sce:import>`.
+///
+/// `source` resolves via the standard dotted-form rule:
+///   - `<carrier>.<flag>` ⇒ parent has a local `<sce:flags id="<carrier>">`
+///     declaring `<sce:flag name="<flag>" bit=... width=.../>`. Codegen
+///     extracts `(carrier_value >> bit) & ((1 << width) - 1)` at the
+///     embed call-site and threads it as the leaf's named parameter.
+///   - `<name>` (no dot) ⇒ parent has a local `<sce:flag-input name=
+///     "<name>" width=.../>` of its own (chain-forwarder pattern). The
+///     parent's own input is threaded into the leaf's input by name.
+///
+/// Cross-doc validator (`validate_cross_codec_flag_bind`, parent-local)
+/// confirms each `<sce:flag-bind>` resolves to a parent-side flag-input
+/// or carrier+flag; every leaf-declared input is bound exactly once;
+/// widths agree.
+#[derive(Debug, Clone, Serialize)]
+pub struct FlagBind {
+    /// Leaf-side input name being supplied.
+    pub input: String,
+    /// Parent-side source kind, resolved at parse time.
+    pub source: FlagBindSource,
+}
+
+/// RFC Axis-1 inversion — resolved binding source. Two variants per the
+/// dotted-form rule documented on [`FlagBind`].
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FlagBindSource {
+    /// `source="<carrier>.<flag>"` — parent's local flags-carrier.
+    Carrier {
+        carrier: String,
+        flag: String,
+    },
+    /// `source="<input>"` — parent's own flag-input (chain forwarder).
+    Input { name: String },
+}
+
 /// A single field in a codec's byte layout.
 #[derive(Debug, Clone, Serialize)]
 pub struct CodecField {
@@ -1481,6 +1549,16 @@ pub struct CodecModel {
     /// flag layout (name + bit).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub requires_parent_flags: Option<RequiresParentFlags>,
+    /// RFC Axis-1 inversion — declared flag-shaped inputs the codec
+    /// receives from its caller. Empty when the codec needs no caller-
+    /// supplied flags. Each [`FlagInput`] becomes a positional typed
+    /// parameter on the generated `decode`/`encode` signatures (in
+    /// declaration order), addressable by bare name in
+    /// `sce:present-if="<name>"` predicates. See [`FlagInput`] for the
+    /// per-input shape and [`FlagBind`] for the parent-side binding
+    /// directive at import-site.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub flag_inputs: Vec<FlagInput>,
     /// RFC §5.B B5-θ inline test vectors. Each row carries one wire
     /// `hex` byte sequence + the expected decoded field-value tree.
     /// Generates a per-backend round-trip sidecar (`<fixture>_test.{rs,h}`)
@@ -1991,6 +2069,17 @@ pub struct ForgeImport {
     /// named carrier + flag exist in the parent's own model.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub embed_dispatch: Option<EmbedDispatch>,
+    /// RFC Axis-1 inversion — parent-side bindings supplying values for
+    /// the imported leaf codec's declared `<sce:flag-inputs>`. Each
+    /// [`FlagBind`] names one leaf-side input and a source on the
+    /// parent (either a local flags-carrier flag in dotted form, or
+    /// one of the parent's own [`FlagInput`]s by bare name for the
+    /// chain-forwarder pattern). Empty when the import declares no
+    /// `<sce:flag-bind>` children — valid only when the imported leaf
+    /// declares no `<sce:flag-inputs>` (cross-doc validator enforces
+    /// the binding-completeness invariant).
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub flag_binds: Vec<FlagBind>,
 }
 
 /// RFC §5.B variant-dispatch (B5-ν inversion) — parent-side declaration
@@ -3296,6 +3385,7 @@ mod tests {
             alias: "a".into(),
             line: Some(42),
             embed_dispatch: None,
+            flag_binds: Vec::new(),
         };
         let json = serde_json::to_value(&imp).expect("serialize ForgeImport");
         assert!(
