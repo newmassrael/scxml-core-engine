@@ -940,12 +940,7 @@ fn parse_codec(
     // ordering case so the author gets a precise repair hint;
     // `validation/invalid-attribute` for missing carrier or missing
     // flag, since both reduce to "fix the attribute text").
-    validate_codec_present_if_predicates(
-        &fields,
-        &flag_inputs,
-        label,
-        &datamodel,
-    )?;
+    validate_codec_present_if_predicates(&fields, &flag_inputs, label, &datamodel)?;
 
     // RFC §5.B B2 repeat validation — every <sce:repeat sce:count="X"/>
     // must reference a sibling integer field declared earlier (so the

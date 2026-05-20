@@ -116,10 +116,7 @@ fn scxml_with_unknown_session_role_kind_rejects() {
                 "v1 vocabulary list must contain 'accept-side', got {allowed:?}"
             );
         }
-        other => panic!(
-            "expected ScxmlUnknownSessionRoleKind, got: {:?}",
-            other
-        ),
+        other => panic!("expected ScxmlUnknownSessionRoleKind, got: {:?}", other),
     }
 }
 

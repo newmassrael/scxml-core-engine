@@ -140,8 +140,7 @@ fn session_arming_link_no_role() -> String {
 fn scxml_with_accept_side() -> SCXMLModel {
     let mut m = SCXMLModel::default();
     m.name = "session_fsm".into();
-    m.declared_session_roles
-        .insert(SessionRoleKind::AcceptSide);
+    m.declared_session_roles.insert(SessionRoleKind::AcceptSide);
     m
 }
 
@@ -198,14 +197,14 @@ fn pre_axis3_fixture_without_explicit_role_silent_skips() {
     // from source; this test constructs the SCXMLModel directly so
     // the parser path is bypassed and the only observable behavior
     // is that the explicit-role join silent-skips.
-    let yaml =
-        deploy_with_listener_source("session_fsm.scxml", &session_arming_link_no_role());
+    let yaml = deploy_with_listener_source("session_fsm.scxml", &session_arming_link_no_role());
     let cfg = parse_deploy_str(&yaml).expect("deploy parses");
     let scxml = scxml_with_legacy_accepting_substate();
     let models = vec![(PathBuf::from("session_fsm.scxml"), scxml)];
 
-    validate_cross_doc_listener_roles(&cfg, &models)
-        .expect("pre-axis3 fixture (no explicit role on either side) silent-passes the cross-doc check");
+    validate_cross_doc_listener_roles(&cfg, &models).expect(
+        "pre-axis3 fixture (no explicit role on either side) silent-passes the cross-doc check",
+    );
 
     let listener_links = resolve_listener_links(&cfg, &models);
     assert!(
@@ -227,8 +226,8 @@ fn deploy_role_listener_without_scxml_accept_side_fires() {
     let scxml = scxml_plain();
     let models = vec![(PathBuf::from("session_fsm.scxml"), scxml)];
 
-    let err = validate_cross_doc_listener_roles(&cfg, &models)
-        .expect_err("partial-claim must reject");
+    let err =
+        validate_cross_doc_listener_roles(&cfg, &models).expect_err("partial-claim must reject");
     match err {
         ValidationError::LinkDeployRoleListenerWithoutScxmlAcceptSideRole {
             machine,
@@ -252,8 +251,8 @@ fn scxml_accept_side_without_deploy_listener_fires() {
     let scxml = scxml_with_accept_side();
     let models = vec![(PathBuf::from("session_fsm.scxml"), scxml)];
 
-    let err = validate_cross_doc_listener_roles(&cfg, &models)
-        .expect_err("partial-claim must reject");
+    let err =
+        validate_cross_doc_listener_roles(&cfg, &models).expect_err("partial-claim must reject");
     match err {
         ValidationError::ScxmlAcceptSideRoleWithoutListenerLink {
             machine,
@@ -300,8 +299,10 @@ fn role_listener_with_untrusted_trust_class_fires() {
 
 #[test]
 fn role_listener_without_domain_attrs_fires_matrix_with_absent_payload() {
-    let yaml =
-        deploy_with_listener_source("session_fsm.scxml", &listener_link_role_only_no_domain_attrs());
+    let yaml = deploy_with_listener_source(
+        "session_fsm.scxml",
+        &listener_link_role_only_no_domain_attrs(),
+    );
     let cfg = parse_deploy_str(&yaml).expect("deploy parses");
     let scxml = scxml_with_accept_side();
     let models = vec![(PathBuf::from("session_fsm.scxml"), scxml)];
@@ -309,9 +310,7 @@ fn role_listener_without_domain_attrs_fires_matrix_with_absent_payload() {
     let err = validate_cross_doc_listener_roles(&cfg, &models)
         .expect_err("absent domain_attrs with role: listener is still a matrix violation");
     match err {
-        ValidationError::LinkRoleListenerWithNonSessionArmingTrustClass {
-            trust_class, ..
-        } => {
+        ValidationError::LinkRoleListenerWithNonSessionArmingTrustClass { trust_class, .. } => {
             assert_eq!(
                 trust_class, "(absent)",
                 "absent domain_attrs surfaces as `(absent)` actual payload so the failure is \
@@ -330,8 +329,7 @@ fn role_listener_without_domain_attrs_fires_matrix_with_absent_payload() {
 
 #[test]
 fn legacy_session_arming_without_role_silent_passes_validator() {
-    let yaml =
-        deploy_with_listener_source("session_fsm.scxml", &session_arming_link_no_role());
+    let yaml = deploy_with_listener_source("session_fsm.scxml", &session_arming_link_no_role());
     let cfg = parse_deploy_str(&yaml).expect("deploy parses");
     let scxml = scxml_plain();
     let models = vec![(PathBuf::from("session_fsm.scxml"), scxml)];
@@ -410,8 +408,7 @@ fn both_join_paths_dedupe_into_single_listener_entry() {
         .insert("Accepting.AwaitingInitSyn".to_string(), State::default());
     let models = vec![(PathBuf::from("session_fsm.scxml"), scxml)];
 
-    validate_cross_doc_listener_roles(&cfg, &models)
-        .expect("happy fixture must pass");
+    validate_cross_doc_listener_roles(&cfg, &models).expect("happy fixture must pass");
 
     let listener_links = resolve_listener_links(&cfg, &models);
     assert_eq!(

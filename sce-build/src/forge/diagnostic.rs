@@ -5257,7 +5257,10 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![kind.clone()],
         },
-        ValidationError::LinkDeployRoleListenerWithoutScxmlAcceptSideRole { machine, link_name } => {
+        ValidationError::LinkDeployRoleListenerWithoutScxmlAcceptSideRole {
+            machine,
+            link_name,
+        } => {
             DiagnosticPayload {
                 // Axis-3 inversion Phase B — typed partial-claim.
                 // 2-axis repair (add SCXML role OR remove deploy role);

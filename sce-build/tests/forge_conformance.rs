@@ -10263,7 +10263,6 @@ fn forge_b5_nu_consumer_parity_chain_forwarding_resolves() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-
 // RFC §5.B B5-ν dispatcher self-gen (claudedocs/rfc-b5-nu-dispatcher-
 // self-gen.md) — per-backend regression fixtures for the variant arm
 // dispatch substitution when the dispatcher resolves the flag carrier
@@ -12566,8 +12565,7 @@ fn axis1_phase_d1_variant_arm_flag_bind_threading() {
 
     // Arm dispatch decode site must extract S from `header` and thread.
     assert!(
-        parent_rust
-            .contains("CodecAxis1D1WithInput::decode(cursor, ((header >> 6) & 0x1) as u8)?"),
+        parent_rust.contains("CodecAxis1D1WithInput::decode(cursor, ((header >> 6) & 0x1) as u8)?"),
         "variant arm decode must thread `((header >> 6) & 0x1) as u8`:\n{parent_rust}"
     );
     // No-input arm must NOT pick up any spurious arg.

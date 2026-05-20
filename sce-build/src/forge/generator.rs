@@ -4285,13 +4285,7 @@ fn repeat_streaming_encode_block(
     // through the wrapped storage shape (Option<Vec> / std::optional
     // / MutableList? / Optional[List] / Go nilness / C11 carrier-bit).
     if let Some(pred) = &field.present_if {
-        return repeat_streaming_encode_block_gated(
-            field,
-            fields,
-            pred,
-            body_encoder,
-            lang,
-        );
+        return repeat_streaming_encode_block_gated(field, fields, pred, body_encoder, lang);
     }
     match lang {
         Language::Rust => format!(
@@ -4888,10 +4882,7 @@ fn embed_parent_flags_thread_args(
     let flag_bind_args = embed_flag_bind_thread_args(imp, parent, lang);
 
     EmbedThreadArgs {
-        decode_arg: format!(
-            "{}{}",
-            caller_tag_decode_arg, flag_bind_args.decode_arg
-        ),
+        decode_arg: format!("{}{}", caller_tag_decode_arg, flag_bind_args.decode_arg),
         encode_arg: flag_bind_args.encode_arg,
     }
 }
@@ -5046,9 +5037,7 @@ fn embed_flag_bind_thread_args(
 /// `flag_bind_args.encode_arg` carries leading `, ` per arg by
 /// `embed_flag_bind_thread_args` convention; strip on the `_first`
 /// path so non-C11 encode sites receive a leading-comma-free fragment.
-fn combine_arm_call_args(
-    flag_bind_args: &EmbedThreadArgs,
-) -> (String, String, String) {
+fn combine_arm_call_args(flag_bind_args: &EmbedThreadArgs) -> (String, String, String) {
     let decode_after_cursor = flag_bind_args.decode_arg.clone();
     let encode_with_leading_comma = flag_bind_args.encode_arg.clone();
     let encode_first = flag_bind_args
@@ -6495,9 +6484,7 @@ fn present_if_streaming_decode_stmt(
         }
         BitSize::Tail => present_if_decode_tail(field, fields, lang),
         BitSize::LengthRef => present_if_decode_length_ref(field, fields, lang),
-        BitSize::Vle { width_bits } => {
-            present_if_decode_vle(field, fields, lang, *width_bits)
-        }
+        BitSize::Vle { width_bits } => present_if_decode_vle(field, fields, lang, *width_bits),
         // Repeat / TLV-chain / Embed fields are routed to their dedicated
         // streaming helpers by the template's per-field dispatch —
         // this helper is still called eagerly for every field in the
@@ -7792,9 +7779,7 @@ fn present_if_streaming_encode_block(
         }
         BitSize::Tail => present_if_encode_tail(field, fields, lang),
         BitSize::LengthRef => present_if_encode_length_ref(field, fields, lang),
-        BitSize::Vle { width_bits } => {
-            present_if_encode_vle(field, fields, lang, *width_bits)
-        }
+        BitSize::Vle { width_bits } => present_if_encode_vle(field, fields, lang, *width_bits),
         // Repeat / TLV-chain / Embed fields render via their dedicated
         // streaming encode helpers through the template's per-field
         // dispatch; this helper is still called eagerly for every
@@ -10032,11 +10017,7 @@ fn b5_nu_switch_block_c11(
     }
     switch_block.push_str("    default: break;\n    }\n");
     if let Some(p) = &d.present_if {
-        let test = present_if_test_literal_encode(
-            &m.fields,
-            p,
-            crate::generator::Language::C11,
-        );
+        let test = present_if_test_literal_encode(&m.fields, p, crate::generator::Language::C11);
         format!("    if ({test}) {{\n{switch_block}    }}\n")
     } else {
         switch_block

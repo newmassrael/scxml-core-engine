@@ -1669,7 +1669,6 @@ impl CodecModel {
     pub fn has_mcu_only_features(&self) -> bool {
         self.has_dma_aligned_fields()
     }
-
 }
 
 // ── Codec test vectors (RFC §5.B B5-θ) ────────────────────────
