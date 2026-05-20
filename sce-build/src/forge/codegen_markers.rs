@@ -68,7 +68,10 @@ mod tests {
     #[test]
     fn rejects_missing_kind() {
         let r = "// SCE-EMIT: kind=other.invariant\n";
-        assert!(!contains_emit_marker(r, "link.listener.established-session"));
+        assert!(!contains_emit_marker(
+            r,
+            "link.listener.established-session"
+        ));
     }
 
     #[test]
@@ -76,12 +79,18 @@ mod tests {
         // `link.listener` is a prefix but not the full kind — a partial
         // match must not pass.
         let r = "// SCE-EMIT: kind=link.listener\n";
-        assert!(!contains_emit_marker(r, "link.listener.established-session"));
+        assert!(!contains_emit_marker(
+            r,
+            "link.listener.established-session"
+        ));
     }
 
     #[test]
     fn rejects_absent_marker() {
         let r = "pub struct XEstablishedSession;";
-        assert!(!contains_emit_marker(r, "link.listener.established-session"));
+        assert!(!contains_emit_marker(
+            r,
+            "link.listener.established-session"
+        ));
     }
 }

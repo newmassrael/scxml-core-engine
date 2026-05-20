@@ -11354,10 +11354,7 @@ fn check_reassembly_peer_id_zid_invariant_rust(
     rendered_rs: &str,
 ) -> Result<(), ForgeError> {
     // Axis-5 reverse-linkage: template-declared invariant `peer-id-zid`.
-    if crate::forge::codegen_markers::contains_emit_marker(
-        rendered_rs,
-        "reassembly.peer-id-zid",
-    ) {
+    if crate::forge::codegen_markers::contains_emit_marker(rendered_rs, "reassembly.peer-id-zid") {
         Ok(())
     } else {
         Err(ForgeError::Validation(
@@ -12208,10 +12205,7 @@ fn check_reassembly_peer_id_zid_invariant_c11(
     rendered_h: &str,
 ) -> Result<(), ForgeError> {
     let _ = snake_name;
-    if crate::forge::codegen_markers::contains_emit_marker(
-        rendered_h,
-        "reassembly.peer-id-zid",
-    ) {
+    if crate::forge::codegen_markers::contains_emit_marker(rendered_h, "reassembly.peer-id-zid") {
         Ok(())
     } else {
         Err(ForgeError::Validation(
@@ -12272,10 +12266,7 @@ fn check_inter_pool_padding_invariant(
     pool_name: &str,
     rendered_ld: &str,
 ) -> Result<(), ForgeError> {
-    if crate::forge::codegen_markers::contains_emit_marker(
-        rendered_ld,
-        "mem.inter-pool-padding",
-    ) {
+    if crate::forge::codegen_markers::contains_emit_marker(rendered_ld, "mem.inter-pool-padding") {
         Ok(())
     } else {
         Err(ForgeError::Validation(
