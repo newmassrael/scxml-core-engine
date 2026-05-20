@@ -125,10 +125,13 @@ static inline void {{ snake_name }}_link_poll(
  * fields per RFC §5.C lines 816-820 (those are meaningful only on
  * the `session_arming` half).
  *
- * The `_established_session_t` typedef suffix is the durable
- * post-render self-check anchor — the C10-α codegen self-check
- * `link/listener-link-not-paired-with-established-sibling`
- * (Q-C10-3 a) greps for this suffix; absence fires the diagnostic. */
+ * Axis-5 reverse-linkage: the validator reads the marker below
+ * instead of grepping for the `_established_session_t` typedef
+ * suffix in the rendered output. Removing or renaming the kind in
+ * this marker fires the
+ * `link/listener-link-not-paired-with-established-sibling` diagnostic.
+ */
+/* SCE-EMIT: kind=link.listener.established-session */
 typedef struct {
     sce_forge_link_t driver;
 } {{ snake_name }}_established_session_t;

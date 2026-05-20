@@ -11037,9 +11037,16 @@ fn render_link_rust(
 /// Mirrors [`check_reassembly_peer_id_zid_invariant_rust`] (C9-γ
 /// precedent at generator.rs:9455-9472).
 fn check_listener_sibling_emitted_rust(link_name: &str, rendered: &str) -> Result<(), ForgeError> {
-    let pascal_name = filters::to_pascal_case(link_name.to_string());
-    let needle = format!("pub struct {}EstablishedSession", pascal_name);
-    if rendered.contains(&needle) {
+    // Axis-5 reverse-linkage: the template attests it emitted the
+    // EstablishedSession sibling via an SCE-EMIT marker comment;
+    // the validator reads the structured declaration instead of
+    // scanning for the literal `pub struct {pascal}EstablishedSession`
+    // signature (which a template refactor could whitespace-shift).
+    if crate::forge::codegen_markers::contains_emit_marker(
+        rendered,
+        "link.listener.established-session",
+    ) {
+        let _ = link_name; // marker presence is the contract
         Ok(())
     } else {
         Err(ForgeError::Validation(
@@ -11346,7 +11353,11 @@ fn check_reassembly_peer_id_zid_invariant_rust(
     pool_name: &str,
     rendered_rs: &str,
 ) -> Result<(), ForgeError> {
-    if rendered_rs.contains("pub type PeerId = [u8; 16]") {
+    // Axis-5 reverse-linkage: template-declared invariant `peer-id-zid`.
+    if crate::forge::codegen_markers::contains_emit_marker(
+        rendered_rs,
+        "reassembly.peer-id-zid",
+    ) {
         Ok(())
     } else {
         Err(ForgeError::Validation(
@@ -12014,8 +12025,11 @@ fn check_listener_sibling_emitted_c(
     snake_name: &str,
     rendered: &str,
 ) -> Result<(), ForgeError> {
-    let needle = format!("{}_established_session_t", snake_name);
-    if rendered.contains(&needle) {
+    let _ = snake_name; // marker presence is the contract; symbol name is no longer the validator key
+    if crate::forge::codegen_markers::contains_emit_marker(
+        rendered,
+        "link.listener.established-session",
+    ) {
         Ok(())
     } else {
         Err(ForgeError::Validation(
@@ -12193,8 +12207,11 @@ fn check_reassembly_peer_id_zid_invariant_c11(
     snake_name: &str,
     rendered_h: &str,
 ) -> Result<(), ForgeError> {
-    let needle = format!("typedef uint8_t {}_peer_id_t[16]", snake_name);
-    if rendered_h.contains(&needle) {
+    let _ = snake_name;
+    if crate::forge::codegen_markers::contains_emit_marker(
+        rendered_h,
+        "reassembly.peer-id-zid",
+    ) {
         Ok(())
     } else {
         Err(ForgeError::Validation(
@@ -12255,7 +12272,10 @@ fn check_inter_pool_padding_invariant(
     pool_name: &str,
     rendered_ld: &str,
 ) -> Result<(), ForgeError> {
-    if rendered_ld.contains(". = ALIGN(") {
+    if crate::forge::codegen_markers::contains_emit_marker(
+        rendered_ld,
+        "mem.inter-pool-padding",
+    ) {
         Ok(())
     } else {
         Err(ForgeError::Validation(

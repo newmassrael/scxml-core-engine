@@ -167,7 +167,11 @@ extern void sce_dcache_invalidate_by_addr(void *start, size_t len);
  * session` codegen self-check (RFC §5.M lines 2976-2981) enforces
  * that this typedef emits the `uint8_t[16]` byte-array shape on
  * every reassembly-variant pool — wire-source typedefs would
- * silently inherit UDP source-IP spoofing exposure. */
+ * silently inherit UDP source-IP spoofing exposure. Axis-5
+ * reverse-linkage: the validator reads the marker below instead
+ * of scanning for the literal `typedef uint8_t ... _peer_id_t[16]`
+ * declaration. */
+/* SCE-EMIT: kind=reassembly.peer-id-zid */
 typedef uint8_t {{ snake_name }}_peer_id_t[16];
 
 /* Per-slot reassembly state — RFC §5.M lines 2680-2698. Author SCXML

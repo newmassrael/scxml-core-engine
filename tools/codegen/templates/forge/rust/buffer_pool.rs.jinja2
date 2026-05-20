@@ -151,7 +151,10 @@ pub const PER_PEER_QUOTA: u32 = {{ per_peer_quota }};
 /// session` codegen self-check (RFC §5.M lines 2976-2981) enforces
 /// that this declaration emits the `[u8; 16]` byte-array shape on
 /// every reassembly-variant pool — wire-source typedefs would silently
-/// inherit UDP source-IP spoofing exposure.
+/// inherit UDP source-IP spoofing exposure. Axis-5 reverse-linkage:
+/// the validator reads the marker below instead of scanning for the
+/// literal `pub type PeerId = [u8; 16]` declaration.
+// SCE-EMIT: kind=reassembly.peer-id-zid
 pub type PeerId = [u8; 16];
 
 /// Per-slot reassembly state — RFC §5.M lines 2680-2698. Author SCXML

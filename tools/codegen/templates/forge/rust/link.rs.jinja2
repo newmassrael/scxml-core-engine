@@ -125,10 +125,12 @@ impl<L: Link> {{ pascal_name }}<L> {
 // §5.C lines 816-820 (those are meaningful only on the
 // `session_arming` half).
 //
-// The `EstablishedSession` type-name suffix is the durable post-render
-// self-check anchor — the C10-α codegen self-check
-// `link/listener-link-not-paired-with-established-sibling`
-// (Q-C10-3 a) greps for this suffix; absence fires the diagnostic.
+// Axis-5 reverse-linkage marker: the validator reads this declaration
+// instead of grepping for the literal `pub struct ...EstablishedSession`
+// signature (which a template refactor could whitespace-shift). Removing
+// or renaming the kind in this marker fires the
+// `link/listener-link-not-paired-with-established-sibling` diagnostic.
+// SCE-EMIT: kind=link.listener.established-session
 pub struct {{ pascal_name }}EstablishedSession<L: Link> {
     driver: L,
 }
