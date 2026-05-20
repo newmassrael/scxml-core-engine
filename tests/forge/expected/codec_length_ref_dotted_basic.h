@@ -34,12 +34,12 @@ struct CodecLengthRefDottedBasic {
         if (raw == nullptr) return std::nullopt;
         uint8_t carrier = raw[0];
         std::vector<uint8_t> payload = std::vector<uint8_t>(raw + 1, raw + 1 + ((carrier >> 4) & 0xF));
-        CodecLengthRefDottedBasic value{
+        CodecLengthRefDottedBasic _decoded{
             .carrier = carrier,
             .payload = payload,
         };
         if (!cursor.advance(_frame_len)) return std::nullopt;
-        return value;
+        return _decoded;
     }
 
     // RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors.

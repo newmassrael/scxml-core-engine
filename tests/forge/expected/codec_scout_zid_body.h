@@ -34,12 +34,12 @@ struct CodecScoutZidBody {
         if (raw == nullptr) return std::nullopt;
         uint8_t zid_len_m1 = raw[0];
         std::vector<uint8_t> zid = std::vector<uint8_t>(raw + 1, raw + 1 + zid_len_m1 + 1);
-        CodecScoutZidBody value{
+        CodecScoutZidBody _decoded{
             .zid_len_m1 = zid_len_m1,
             .zid = zid,
         };
         if (!cursor.advance(_frame_len)) return std::nullopt;
-        return value;
+        return _decoded;
     }
 
     std::vector<uint8_t> encode() const {

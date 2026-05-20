@@ -36,13 +36,13 @@ struct CodecTail {
         uint8_t msgId = raw[0];
         uint8_t status = raw[1];
         std::vector<uint8_t> payload = std::vector<uint8_t>(raw + 2, raw + _frame_len);
-        CodecTail value{
+        CodecTail _decoded{
             .msgId = msgId,
             .status = status,
             .payload = payload,
         };
         if (!cursor.advance(_frame_len)) return std::nullopt;
-        return value;
+        return _decoded;
     }
 
     std::vector<uint8_t> encode() const {

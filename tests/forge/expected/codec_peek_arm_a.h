@@ -32,12 +32,12 @@ struct CodecPeekArmA {
         if (raw == nullptr) return std::nullopt;
         uint8_t header = raw[0];
         uint8_t payload = raw[1];
-        CodecPeekArmA value{
+        CodecPeekArmA _decoded{
             .header = header,
             .payload = payload,
         };
         if (!cursor.advance(2)) return std::nullopt;
-        return value;
+        return _decoded;
     }
 
     // RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors.

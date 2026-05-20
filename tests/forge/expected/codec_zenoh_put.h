@@ -30,11 +30,11 @@ struct CodecZenohPut {
         const std::uint8_t* raw = cursor.peek_slice(1);
         if (raw == nullptr) return std::nullopt;
         uint8_t payload = raw[0];
-        CodecZenohPut value{
+        CodecZenohPut _decoded{
             .payload = payload,
         };
         if (!cursor.advance(1)) return std::nullopt;
-        return value;
+        return _decoded;
     }
 
     std::vector<uint8_t> encode() const {

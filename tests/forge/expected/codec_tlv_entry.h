@@ -36,13 +36,13 @@ struct CodecTlvEntry {
         uint8_t entry_type = raw[0];
         uint8_t entry_len = raw[1];
         std::vector<uint8_t> entry_body = std::vector<uint8_t>(raw + 2, raw + 2 + entry_len);
-        CodecTlvEntry value{
+        CodecTlvEntry _decoded{
             .entry_type = entry_type,
             .entry_len = entry_len,
             .entry_body = entry_body,
         };
         if (!cursor.advance(_frame_len)) return std::nullopt;
-        return value;
+        return _decoded;
     }
 
     std::vector<uint8_t> encode() const {

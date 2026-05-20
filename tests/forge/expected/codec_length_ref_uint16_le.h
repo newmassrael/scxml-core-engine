@@ -34,12 +34,12 @@ struct CodecLengthRefUint16Le {
         if (raw == nullptr) return std::nullopt;
         uint16_t payload_len = static_cast<uint16_t>(raw[0] | (static_cast<uint16_t>(raw[1]) << 8));
         std::vector<uint8_t> payload = std::vector<uint8_t>(raw + 2, raw + 2 + payload_len);
-        CodecLengthRefUint16Le value{
+        CodecLengthRefUint16Le _decoded{
             .payload_len = payload_len,
             .payload = payload,
         };
         if (!cursor.advance(_frame_len)) return std::nullopt;
-        return value;
+        return _decoded;
     }
 
     std::vector<uint8_t> encode() const {

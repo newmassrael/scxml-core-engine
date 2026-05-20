@@ -34,13 +34,13 @@ struct CodecLittleEndian {
         uint8_t sensorId = raw[0];
         uint16_t value = static_cast<uint16_t>(raw[1] | (static_cast<uint16_t>(raw[2]) << 8));
         uint8_t status = raw[3];
-        CodecLittleEndian value{
+        CodecLittleEndian _decoded{
             .sensorId = sensorId,
             .value = value,
             .status = status,
         };
         if (!cursor.advance(4)) return std::nullopt;
-        return value;
+        return _decoded;
     }
 
     std::vector<uint8_t> encode() const {

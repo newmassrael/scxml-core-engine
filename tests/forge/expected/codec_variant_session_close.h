@@ -30,11 +30,11 @@ struct CodecVariantSessionClose {
         const std::uint8_t* raw = cursor.peek_slice(1);
         if (raw == nullptr) return std::nullopt;
         uint8_t reason = raw[0];
-        CodecVariantSessionClose value{
+        CodecVariantSessionClose _decoded{
             .reason = reason,
         };
         if (!cursor.advance(1)) return std::nullopt;
-        return value;
+        return _decoded;
     }
 
     std::vector<uint8_t> encode() const {

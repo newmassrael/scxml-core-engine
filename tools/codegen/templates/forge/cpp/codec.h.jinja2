@@ -242,26 +242,26 @@ struct {{ struct_name }} {
 {% for field in fields %}
         {{ field.cpp_type }} {{ field.id }} = {{ field.decode_expr }};
 {% endfor %}
-        {{ struct_name }} value{
+        {{ struct_name }} _decoded{
 {% for field in fields %}
             .{{ field.id }} = {{ field.id }},
 {% endfor %}
         };
         if (!cursor.advance(_frame_len)) return std::nullopt;
-        return value;
+        return _decoded;
 {% else %}
         const std::uint8_t* raw = cursor.peek_slice({{ min_bytes }});
         if (raw == nullptr) return std::nullopt;
 {% for field in fields %}
         {{ field.cpp_type }} {{ field.id }} = {{ field.decode_expr }};
 {% endfor %}
-        {{ struct_name }} value{
+        {{ struct_name }} _decoded{
 {% for field in fields %}
             .{{ field.id }} = {{ field.id }},
 {% endfor %}
         };
         if (!cursor.advance({{ min_bytes }})) return std::nullopt;
-        return value;
+        return _decoded;
 {% endif %}
     }
 

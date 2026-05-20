@@ -34,13 +34,13 @@ struct CodecSimpleFrame {
         uint8_t msgId = raw[0];
         uint8_t length = raw[1];
         uint16_t payload = static_cast<uint16_t>((static_cast<uint16_t>(raw[2]) << 8) | raw[3]);
-        CodecSimpleFrame value{
+        CodecSimpleFrame _decoded{
             .msgId = msgId,
             .length = length,
             .payload = payload,
         };
         if (!cursor.advance(4)) return std::nullopt;
-        return value;
+        return _decoded;
     }
 
     std::vector<uint8_t> encode() const {

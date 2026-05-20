@@ -30,11 +30,11 @@ struct CodecQosByte {
         const std::uint8_t* raw = cursor.peek_slice(1);
         if (raw == nullptr) return std::nullopt;
         uint8_t qos = raw[0];
-        CodecQosByte value{
+        CodecQosByte _decoded{
             .qos = qos,
         };
         if (!cursor.advance(1)) return std::nullopt;
-        return value;
+        return _decoded;
     }
 
     // RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors.

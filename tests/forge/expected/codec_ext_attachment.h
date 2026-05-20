@@ -34,12 +34,12 @@ struct CodecExtAttachment {
         if (raw == nullptr) return std::nullopt;
         uint8_t length = raw[0];
         std::vector<uint8_t> body = std::vector<uint8_t>(raw + 1, raw + 1 + length);
-        CodecExtAttachment value{
+        CodecExtAttachment _decoded{
             .length = length,
             .body = body,
         };
         if (!cursor.advance(_frame_len)) return std::nullopt;
-        return value;
+        return _decoded;
     }
 
     std::vector<uint8_t> encode() const {
