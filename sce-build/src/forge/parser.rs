@@ -954,6 +954,7 @@ fn parse_codec(
     validate_codec_present_if_predicates(
         &fields,
         requires_parent_flags.as_ref(),
+        &flag_inputs,
         label,
         &datamodel,
     )?;
@@ -1495,6 +1496,7 @@ fn parse_flag_binds(
 fn validate_codec_present_if_predicates(
     fields: &[CodecField],
     requires_parent_flags: Option<&RequiresParentFlags>,
+    flag_inputs: &[crate::forge::model::FlagInput],
     label: DocumentLabel<'_>,
     datamodel: &roxmltree::Node,
 ) -> Result<(), Located<ForgeError>> {
@@ -1567,6 +1569,40 @@ fn validate_codec_present_if_predicates(
                 // outer for-loop's by_id_so_far insert (after the
                 // while-loop) handles field-id visibility for
                 // subsequent fields uniformly across both scopes.
+            } else if predicate.scope == PresentIfScope::Input {
+                // Axis-1 inversion: bare-name predicate resolves to a
+                // codec-declared `<sce:flag-input>`. The leaf-side
+                // contract owns nothing about the parent's carrier;
+                // the cross-doc validator (`validate_cross_codec_flag_bind`)
+                // confirms the parent's `<sce:flag-bind>` supplies a
+                // value at import-site. Here we only confirm the
+                // codec actually declared an input with the given
+                // name.
+                if !flag_inputs
+                    .iter()
+                    .any(|fi| fi.name == predicate.flag_name)
+                {
+                    let known: Vec<&str> =
+                        flag_inputs.iter().map(|fi| fi.name.as_str()).collect();
+                    return Err(located(
+                        datamodel,
+                        label.diagnostic_label,
+                        ValidationError::InvalidAttribute {
+                            element: format!(
+                                "field '{}' in codec '{}'",
+                                field.id, label.identifier
+                            ),
+                            attr: "sce:present-if".into(),
+                            value: predicate.flag_name.clone(),
+                            expected: format!(
+                                "bare-name predicate must reference a declared \
+                                 <sce:flag-input name=\"...\">: known inputs \
+                                 = [{}]",
+                                known.join(", ")
+                            ),
+                        },
+                    ));
+                }
             } else {
                 match by_id_so_far.get(predicate.field_id.as_str()) {
                     None => {
@@ -2740,9 +2776,10 @@ pub fn parse_codec_field_from_node(
     })
 }
 
-/// RFC §5.B B1-δ + B5-γ + B5-λ present-if predicate grammar.
+/// RFC §5.B B1-δ + B5-γ + B5-λ + Axis-1 inversion present-if predicate
+/// grammar.
 ///
-/// Four forms in v1:
+/// Six forms in v1:
 ///   - `<field_id>.<flag_name>` (B1-δ Local positive) — `field_id`
 ///     names a flags-bearing sibling field declared earlier in the
 ///     same codec; predicate fires when the bit is set.
@@ -2755,8 +2792,17 @@ pub fn parse_codec_field_from_node(
 ///   - `!parent.<flag_name>` (B5-λ Parent negative) — fires when
 ///     the parent flag bit is clear. Required for Zenoh OpenSyn body
 ///     where cookie is present iff parent.A is NOT set.
+///   - `<name>` (Axis-1 inversion Input positive) — bare name (no dot)
+///     resolves to a declared `<sce:flag-input name="<name>">` on the
+///     codec itself; predicate fires when the input value is non-zero
+///     (single-bit envelope for v1 width=1).
+///   - `!<name>` (Axis-1 inversion Input negative) — same input,
+///     predicate fires when the input is zero. Mirrors the
+///     Local/Parent negative shape.
 ///
-/// `field_id` is empty when scope = Parent (carrier is implicit).
+/// `field_id` is empty when scope = Parent or Input (carrier is
+/// implicit — the codec's RPF block for Parent; the codec's flag-input
+/// declaration for Input).
 ///
 /// Both halves match the SCE attribute name shape (alphanumeric +
 /// `_`, non-empty). Conjunction (`flag1 && flag2`) and equality
@@ -2812,21 +2858,47 @@ fn parse_present_if_predicate(
         Some(rest) => (true, rest.trim_start()),
         None => (false, head_trim),
     };
-    let (lhs, rhs) = body.split_once('.').ok_or_else(invalid)?;
-    let lhs = lhs.trim();
-    let rhs = rhs.trim();
+    let is_ident = |s: &str| {
+        !s.is_empty()
+            && s.chars().enumerate().all(|(i, c)| {
+                if i == 0 {
+                    c.is_ascii_alphabetic() || c == '_'
+                } else {
+                    c.is_ascii_alphanumeric() || c == '_'
+                }
+            })
+    };
+    // Axis-1 inversion bare-name form (Input scope) — when the clause has
+    // no dot, treat the whole body as the leaf-declared flag-input name.
+    // Cross-codec carrier/bit-position assertions live on the parent's
+    // `<sce:flag-bind>` directive, so this leaf-side form references only
+    // a name in the codec's own scope.
+    let (lhs, rhs) = match body.split_once('.') {
+        Some((l, r)) => (l.trim(), r.trim()),
+        None => {
+            let name = body.trim();
+            if !is_ident(name) {
+                return Err(invalid());
+            }
+            let or_with_input = match tail_raw_opt {
+                Some(tail) => {
+                    let tail_pred = parse_present_if_predicate(tail, node, doc_name, field_id)?;
+                    Some(Box::new(tail_pred))
+                }
+                None => None,
+            };
+            return Ok(PresentIfPredicate {
+                scope: PresentIfScope::Input,
+                field_id: String::new(),
+                flag_name: name.to_string(),
+                negate,
+                or_with: or_with_input,
+            });
+        }
+    };
     if lhs.is_empty() || rhs.is_empty() {
         return Err(invalid());
     }
-    let is_ident = |s: &str| {
-        s.chars().enumerate().all(|(i, c)| {
-            if i == 0 {
-                c.is_ascii_alphabetic() || c == '_'
-            } else {
-                c.is_ascii_alphanumeric() || c == '_'
-            }
-        })
-    };
     if !is_ident(lhs) || !is_ident(rhs) {
         return Err(invalid());
     }
@@ -4016,6 +4088,7 @@ fn format_present_if_predicate_for_diag(p: &PresentIfPredicate) -> String {
     let head = match p.scope {
         PresentIfScope::Local => format!("{prefix}{}.{}", p.field_id, p.flag_name),
         PresentIfScope::Parent => format!("{prefix}parent.{}", p.flag_name),
+        PresentIfScope::Input => format!("{prefix}{}", p.flag_name),
     };
     match &p.or_with {
         None => head,

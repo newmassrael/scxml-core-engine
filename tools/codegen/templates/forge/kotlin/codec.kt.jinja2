@@ -105,10 +105,10 @@ data class {{ struct_name }}(
 {% endif %}
 {% endfor %}
 {% endif %}
-{% if has_parent_flags %}
+{% if has_parent_flags or has_flag_inputs %}
     @Suppress("UNUSED_PARAMETER")
 {% endif %}
-    fun encode({{ parent_flags_param_first }}): ByteArray {
+    fun encode({{ params_first_arg }}): ByteArray {
 {% if has_parent_tag_derivation %}
         // RFC §5.B B5-ν Phase B — derive carrier bits from each embedded
         // parent-tag variant's active arm before the carrier byte is
@@ -239,10 +239,10 @@ data class {{ struct_name }}(
         /// advances past the consumed bytes; returns `null` when the
         /// cursor's tail is shorter than the declared minimum frame
         /// (RFC §5.B L494-519).
-{% if has_parent_flags or has_caller_tag %}
+{% if has_parent_flags or has_caller_tag or has_flag_inputs %}
         @Suppress("UNUSED_PARAMETER")
 {% endif %}
-        fun decode(cursor: SceCursor{{ parent_flags_param_decl }}{{ dispatch_tag_param_decl }}): {{ struct_name }}? {
+        fun decode(cursor: SceCursor{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}): {{ struct_name }}? {
 {% if has_no_fields %}
             // RFC §5.B B5-α empty body — zero-byte payload, no cursor work.
             return {{ struct_name }}()

@@ -1022,11 +1022,12 @@ pub struct FlagDef {
     pub value: Option<u64>,
 }
 
-/// RFC §5.B B5-γ present-if predicate scope — distinguishes the
-/// B1-δ local form (carrier in same codec) from the B5-γ parent
-/// form (carrier in declared `<sce:requires-parent-flags>` block,
-/// passed by value into the codec's decode/encode signature as
-/// `parent_flags`).
+/// RFC §5.B B5-γ + Axis-1 inversion present-if predicate scope —
+/// distinguishes the B1-δ local form (carrier in same codec) from the
+/// B5-γ parent form (carrier in declared `<sce:requires-parent-flags>`
+/// block, passed by value as `parent_flags`) and the Axis-1 inversion
+/// input form (bare name resolves to a declared `<sce:flag-input>`,
+/// passed as a positional typed parameter).
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum PresentIfScope {
@@ -1039,6 +1040,13 @@ pub enum PresentIfScope {
     /// `(parent_flags & mask) != 0` against the value threaded in
     /// by the variant arm dispatcher.
     Parent,
+    /// `<name>` (bare, no dot) — Axis-1 inversion form. Resolves to a
+    /// declared `<sce:flag-input name="X">` on the codec itself; the
+    /// input arrives as a typed positional parameter (`X: u8` for v1
+    /// width=1). Predicate reads `(X & ((1<<width)-1)) != 0` against
+    /// the parameter directly — no carrier-byte threading, no struct
+    /// prefix.
+    Input,
 }
 
 /// RFC §5.B B1-δ + B5-γ + B5-λ present-if predicate — a single

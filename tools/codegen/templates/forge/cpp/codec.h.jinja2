@@ -81,7 +81,7 @@ struct {{ struct_name }} {
     /// bytes (RFC §5.B L494-519). Returns `std::nullopt` on the
     /// `NeedMoreBytes` boundary; later phases attach a typed error via
     /// `cursor.last_error()`.
-    static std::optional<{{ struct_name }}> decode(::SCE::Forge::SceCursor& cursor{{ parent_flags_param_decl }}{{ dispatch_tag_param_decl }}) {
+    static std::optional<{{ struct_name }}> decode(::SCE::Forge::SceCursor& cursor{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) {
 {% if has_parent_flags %}
         // RFC §5.B B5-γ: `parent_flags` is the parent codec's flags
         // carrier value, threaded by the variant arm dispatcher.
@@ -90,6 +90,12 @@ struct {{ struct_name }} {
         // gated field — keeps the param accessible to per-field
         // gates without UB on unused-parameter warnings.
         (void)parent_flags;
+{% endif %}
+{% if has_flag_inputs %}
+        // RFC Axis-1 inversion: defensive (void) suppress per declared
+        // `<sce:flag-input>` so codecs that haven't (yet) consumed an
+        // input via `present-if` compile cleanly under -Wunused.
+{{ flag_input_unused_suppress }}
 {% endif %}
 {% if has_caller_tag %}
         // RFC B5-ν inversion β shape: `tag` is the dispatch value
@@ -313,9 +319,12 @@ struct {{ struct_name }} {
 {% endif %}
 {% endfor %}
 {% endif %}
-    std::vector<uint8_t> encode({{ parent_flags_param_first }}) const {
+    std::vector<uint8_t> encode({{ params_first_arg }}) const {
 {% if has_parent_flags %}
         (void)parent_flags;
+{% endif %}
+{% if has_flag_inputs %}
+{{ flag_input_unused_suppress }}
 {% endif %}
 {% if has_parent_tag_derivation %}
         // RFC §5.B B5-ν Phase B — derive carrier bits from each embedded

@@ -2555,6 +2555,71 @@ fn render_codec(
         "parent_flags_param_first".into(),
         parent_flags_param_first.into(),
     );
+    // RFC Axis-1 inversion: when the codec declares `<sce:flag-inputs>`,
+    // decode/encode signatures gain one typed positional parameter per
+    // declared input. v1 width-1 lock-in fixes the per-language scalar
+    // type at uint8 (`u8` / `std::uint8_t` / `UByte` / `byte` /
+    // `uint8_t` / `int`). The `_decl` form prepends `, ` for use as an
+    // additional parameter on signatures that already have a preceding
+    // arg (decode's `cursor`, encode's `self`); the `_first` form omits
+    // the comma for sites where the param appears in first position
+    // (Rust/Cpp/Kotlin encode have no `self`-style preceding arg).
+    let (flag_input_params_decl, flag_input_params_first) = compute_flag_input_param_fragments(
+        &m.flag_inputs, lang,
+    );
+    ctx.insert(
+        "flag_input_params_decl".into(),
+        flag_input_params_decl.clone().into(),
+    );
+    ctx.insert(
+        "flag_input_params_first".into(),
+        flag_input_params_first.clone().into(),
+    );
+    ctx.insert("has_flag_inputs".into(), (!m.flag_inputs.is_empty()).into());
+    // Combined ctx keys factor out the per-language conditional comma
+    // logic so templates use a single substitution per signature site
+    // regardless of which parameter family (parent_flags, flag_inputs,
+    // or both) is declared:
+    //   - `params_after_first_arg`: trailing form (leading `, ` when
+    //     non-empty), used after `cursor` / `&self` / `*self` etc.
+    //   - `params_first_arg`: first-arg form (no leading comma), used
+    //     in Cpp/Kotlin/Go encode signatures that have no `self`-style
+    //     preceding arg. Empty when both families are absent.
+    // When only one family is present, the combined form reduces to
+    // that family's existing fragment (back-compat byte-stable for
+    // pre-Axis-1 goldens).
+    let combined_after = match (
+        parent_flags_param_decl.is_empty(),
+        flag_input_params_decl.is_empty(),
+    ) {
+        (true, true) => String::new(),
+        (false, true) => parent_flags_param_decl.to_string(),
+        (true, false) => flag_input_params_decl.clone(),
+        (false, false) => format!("{parent_flags_param_decl}{flag_input_params_decl}"),
+    };
+    let combined_first = match (
+        parent_flags_param_first.is_empty(),
+        flag_input_params_first.is_empty(),
+    ) {
+        (true, true) => String::new(),
+        (false, true) => parent_flags_param_first.to_string(),
+        (true, false) => flag_input_params_first.clone(),
+        (false, false) => format!("{parent_flags_param_first}, {flag_input_params_first}"),
+    };
+    ctx.insert("params_after_first_arg".into(), combined_after.into());
+    ctx.insert("params_first_arg".into(), combined_first.into());
+    // Per-language unused-input suppression block emitted at the top of
+    // decode + encode bodies. Codecs that declare a `<sce:flag-input>`
+    // but never reference it via `present-if="X"` would otherwise hit
+    // unused-parameter warnings (Rust/Kotlin) or hard errors (strict
+    // Cpp/C11 builds). The block emits one suppress per declared input
+    // — defensive parallel to the `has_parent_flags` block's
+    // `let _ = parent_flags;` line.
+    let flag_input_unused_suppress = compute_flag_input_unused_suppress(&m.flag_inputs, lang);
+    ctx.insert(
+        "flag_input_unused_suppress".into(),
+        flag_input_unused_suppress.into(),
+    );
     // RFC B5-ν inversion β shape: when this codec's `<sce:variant>` is
     // tag-less (caller-tag form), the leaf decode signature gains a
     // `tag: u8` parameter alongside any existing `parent_flags`
@@ -5405,11 +5470,247 @@ fn embed_parent_flags_thread_args(
         }
     };
 
+    // RFC Axis-1 inversion: when the imported codec declares
+    // `<sce:flag-inputs>` and the parent's import carries
+    // `<sce:flag-bind>` directives, extract each bound source's bit
+    // value from the parent's carrier (or pass through the parent's own
+    // flag-input by name for chain-forwarder shape) and append the
+    // typed positional args after any preceding parent_flags / tag.
+    // Decode and encode site identifiers differ for the carrier-source
+    // case (parent's struct member access shape), so the helper returns
+    // both arg strings.
+    let flag_bind_args = embed_flag_bind_thread_args(imp, parent, lang);
+
     EmbedThreadArgs {
-        decode_arg: format!("{}{}", parent_flags_args.decode_arg, caller_tag_decode_arg),
-        encode_arg: parent_flags_args.encode_arg,
+        decode_arg: format!(
+            "{}{}{}",
+            parent_flags_args.decode_arg, caller_tag_decode_arg, flag_bind_args.decode_arg
+        ),
+        encode_arg: format!(
+            "{}{}",
+            parent_flags_args.encode_arg, flag_bind_args.encode_arg
+        ),
     }
 }
+
+/// RFC Axis-1 inversion — compute the per-language flag-bind threading
+/// args for one embed import. Walks `imp.flag_binds` in leaf-declared
+/// input order (the order of `imp.codec_flag_inputs`) so the parent's
+/// call to the leaf matches the leaf's positional signature emitted by
+/// `flag_input_params_decl`. Returns decode/encode arg pair (each
+/// leading with `, ` per bound input; empty when the leaf has no
+/// inputs).
+///
+/// Per-bind source resolution:
+///   - `FlagBindSource::Carrier { carrier, flag }`: extract
+///     `(carrier_value >> bit) & mask` from the parent's local
+///     `<sce:flags id="<carrier>">` field. Decode-site reads the
+///     just-decoded local (Rust/Cpp/Kotlin: bare name; Go: PascalCase
+///     local; C11: `out-><snake>`; Python: snake_case local). Encode-
+///     site reads through the struct receiver (Rust: `self.<id>`;
+///     Cpp: bare `<id>` — the encode body already exposes carrier as a
+///     local in the existing pattern; Kotlin: `this.<id>`; Go:
+///     `s.<Pascal>`; C11: `self-><snake>`; Python: `self.<snake>`).
+///   - `FlagBindSource::Input { name }`: pass the parent's own
+///     `<sce:flag-input name="<name>">` parameter through verbatim
+///     (chain-forwarder shape — outer leaf takes a flag from its parent
+///     and re-threads to an inner grandchild). Identifier is identical
+///     on both decode and encode sites because flag-input parameters
+///     are function arguments with the same name in both methods.
+fn embed_flag_bind_thread_args(
+    imp: Option<&ImportContext>,
+    parent: &CodecModel,
+    lang: crate::generator::Language,
+) -> EmbedThreadArgs {
+    use crate::generator::Language;
+    let imp = match imp {
+        Some(i) => i,
+        None => {
+            return EmbedThreadArgs {
+                decode_arg: String::new(),
+                encode_arg: String::new(),
+            }
+        }
+    };
+    if imp.codec_flag_inputs.is_empty() {
+        return EmbedThreadArgs {
+            decode_arg: String::new(),
+            encode_arg: String::new(),
+        };
+    }
+    let mut decode_out = String::new();
+    let mut encode_out = String::new();
+    for input in &imp.codec_flag_inputs {
+        let bind = match imp.flag_binds.iter().find(|b| b.input == input.name) {
+            Some(b) => b,
+            // Validator should have raised `flag-input-unbound`; skip
+            // so the resulting compile failure surfaces the gap visibly.
+            None => continue,
+        };
+        match &bind.source {
+            crate::forge::model::FlagBindSource::Carrier { carrier, flag } => {
+                let carrier_field = parent
+                    .fields
+                    .iter()
+                    .find(|f| f.is_flags_carrier() && f.id == *carrier);
+                let (bit, width) = match carrier_field
+                    .and_then(|cf| cf.flags.iter().find(|fl| fl.name == *flag))
+                {
+                    Some(fl) => (fl.bit, fl.width.max(1)),
+                    None => continue,
+                };
+                let mask: u64 = (1u64 << width) - 1;
+                let (decode_arg, encode_arg) = match lang {
+                    Language::Rust => (
+                        format!(", (({carrier} >> {bit}) & 0x{mask:X}) as u8"),
+                        format!(", ((self.{carrier} >> {bit}) & 0x{mask:X}) as u8"),
+                    ),
+                    Language::Cpp => (
+                        format!(
+                            ", static_cast<std::uint8_t>(({carrier} >> {bit}) & 0x{mask:X})"
+                        ),
+                        format!(
+                            ", static_cast<std::uint8_t>((this->{carrier} >> {bit}) & 0x{mask:X})"
+                        ),
+                    ),
+                    Language::Kotlin => (
+                        format!(
+                            ", ((({carrier}.toInt() shr {bit}) and 0x{mask:X}).toUByte())"
+                        ),
+                        format!(
+                            ", (((this.{carrier}.toInt() shr {bit}) and 0x{mask:X}).toUByte())"
+                        ),
+                    ),
+                    Language::Go => {
+                        let pascal = filters::to_pascal_case(carrier.clone());
+                        (
+                            format!(", byte(({pascal} >> {bit}) & 0x{mask:X})"),
+                            format!(", byte((s.{pascal} >> {bit}) & 0x{mask:X})"),
+                        )
+                    }
+                    Language::C11 => {
+                        let snake = filters::to_snake_case(carrier.clone());
+                        (
+                            format!(", (uint8_t)((out->{snake} >> {bit}) & 0x{mask:X})"),
+                            format!(", (uint8_t)((self->{snake} >> {bit}) & 0x{mask:X})"),
+                        )
+                    }
+                    Language::Python => {
+                        let snake = filters::to_snake_case(carrier.clone());
+                        (
+                            format!(", (({snake} >> {bit}) & 0x{mask:X})"),
+                            format!(", ((self.{snake} >> {bit}) & 0x{mask:X})"),
+                        )
+                    }
+                };
+                decode_out.push_str(&decode_arg);
+                encode_out.push_str(&encode_arg);
+            }
+            crate::forge::model::FlagBindSource::Input { name } => {
+                let arg = match lang {
+                    Language::Rust | Language::Cpp | Language::C11 | Language::Python => {
+                        format!(", {}", filters::to_snake_case(name.clone()))
+                    }
+                    Language::Kotlin | Language::Go => {
+                        format!(", {}", filters::to_camel_case(name.clone()))
+                    }
+                };
+                decode_out.push_str(&arg);
+                encode_out.push_str(&arg);
+            }
+        }
+    }
+    EmbedThreadArgs {
+        decode_arg: decode_out,
+        encode_arg: encode_out,
+    }
+}
+
+/// RFC Axis-1 inversion — defensive unused-parameter suppression for
+/// codecs that declare `<sce:flag-input>`s but don't (yet) reference
+/// them via `present-if`. Mirrors the existing `let _ = parent_flags;`
+/// pattern in templates' `has_parent_flags` blocks.
+///
+/// Returns the empty string for codecs with no inputs (back-compat
+/// byte-stable). For Python and Go the language tolerates unused
+/// parameters silently, so the suppression block stays empty even
+/// when inputs are declared. Other languages emit per-input lines:
+///   - Rust: `let _ = <snake>;`
+///   - Cpp:  `(void)<snake>;`
+///   - Kotlin: per-input `@Suppress("UNUSED_PARAMETER")` annotations
+///     are emitted at the signature site, not in the body — see the
+///     template's `@Suppress` block. This helper returns empty for
+///     Kotlin because the template handles the annotation directly.
+///   - C11:  `(void)<snake>;`
+fn compute_flag_input_unused_suppress(
+    inputs: &[crate::forge::model::FlagInput],
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    if inputs.is_empty() {
+        return String::new();
+    }
+    match lang {
+        Language::Rust => inputs
+            .iter()
+            .map(|fi| format!("        let _ = {};", filters::to_snake_case(fi.name.clone())))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        Language::Cpp => inputs
+            .iter()
+            .map(|fi| format!("        (void){};", filters::to_snake_case(fi.name.clone())))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        Language::C11 => inputs
+            .iter()
+            .map(|fi| format!("    (void){};", filters::to_snake_case(fi.name.clone())))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        // Kotlin parameter-unused warnings need `@Suppress` annotation
+        // at the function signature site, not statements in the body.
+        // The template attaches the annotation directly via the
+        // `has_flag_inputs` predicate. Body-level no-op here.
+        Language::Kotlin => String::new(),
+        // Go and Python tolerate unused function parameters silently.
+        Language::Go | Language::Python => String::new(),
+    }
+}
+
+/// RFC Axis-1 inversion — compute per-language fragments for the
+/// `flag_input_params_decl` / `_first` context keys. Returns
+/// `("", "")` when the codec has no flag-inputs (keeps existing
+/// signatures byte-stable). When at least one input is declared,
+/// produces a positional parameter list (one `<name>: u8` per input,
+/// language-idiomatic naming + type).
+///
+/// v1 width-1 lock-in: every input is uint8 carrying 0/1. Future
+/// width >1 inputs defer to a reachable consumer.
+fn compute_flag_input_param_fragments(
+    inputs: &[crate::forge::model::FlagInput],
+    lang: crate::generator::Language,
+) -> (String, String) {
+    use crate::generator::Language;
+    if inputs.is_empty() {
+        return (String::new(), String::new());
+    }
+    let parts: Vec<String> = inputs
+        .iter()
+        .map(|fi| match lang {
+            Language::Rust => format!("{}: u8", filters::to_snake_case(fi.name.clone())),
+            Language::Cpp => {
+                format!("std::uint8_t {}", filters::to_snake_case(fi.name.clone()))
+            }
+            Language::Kotlin => format!("{}: UByte", filters::to_camel_case(fi.name.clone())),
+            Language::Go => format!("{} byte", filters::to_camel_case(fi.name.clone())),
+            Language::C11 => format!("uint8_t {}", filters::to_snake_case(fi.name.clone())),
+            Language::Python => format!("{}: int", filters::to_snake_case(fi.name.clone())),
+        })
+        .collect();
+    let first = parts.join(", ");
+    let decl = format!(", {first}");
+    (decl, first)
+}
+
 
 /// RFC B5-ν inversion β shape (caller-tag): compose the leading-comma
 /// `tag: u8` argument the parent codec must pass to a β-leaf's decode
@@ -5789,6 +6090,11 @@ fn repeat_streaming_encode_block_gated(
                     format!("self->{}", filters::to_snake_case(c.id.clone()))
                 }
                 PresentIfCarrier::Parent => "parent_flags".to_string(),
+                // Axis-1 inversion: encode-site predicate reads the
+                // bare snake_case flag-input parameter — no struct
+                // prefix because the input is a function argument, not
+                // a struct member.
+                PresentIfCarrier::Input => filters::to_snake_case(pred.flag_name.clone()),
             };
             let encoded_t = if let Some(stripped) = body_encoder.strip_suffix("_encode") {
                 format!("{stripped}_encoded_t")
@@ -9219,6 +9525,12 @@ fn streaming_fixed_field_encode_kotlin_from_local(
 enum PresentIfCarrier<'a> {
     Local(&'a CodecField),
     Parent,
+    /// Axis-1 inversion: the predicate references a codec-declared
+    /// `<sce:flag-input>`. The identifier is the predicate's own
+    /// `flag_name` (= function parameter name), type is `u8` per v1
+    /// width-1 lock-in; no codec-side lookup needed at codegen time
+    /// because the validator already confirmed the input was declared.
+    Input,
 }
 
 fn present_if_carrier_info<'a>(
@@ -9256,6 +9568,13 @@ fn present_if_carrier_info<'a>(
             let mask: u64 = 1u64 << flag.bit;
             // v1 fixes parent flag carrier type at uint8 — 2 hex digits.
             (mask, 2, PresentIfCarrier::Parent)
+        }
+        PresentIfScope::Input => {
+            // v1 width-1 lock-in: mask = 0x01 (single-bit envelope).
+            // Multi-bit inputs would store width on the predicate at
+            // parse time once a reachable consumer surfaces; for now
+            // any non-zero value of the supplied u8 fires the predicate.
+            (0x01, 2, PresentIfCarrier::Input)
         }
     }
 }
@@ -9315,6 +9634,10 @@ fn present_if_test_literal_clause(
     let (id_owned, carrier_type) = match &carrier {
         PresentIfCarrier::Local(c) => (c.id.clone(), c.sce_type.clone()),
         PresentIfCarrier::Parent => ("parent_flags".to_string(), SceType::Uint8),
+        // Axis-1 inversion: identifier is the flag-input name itself
+        // (= the typed positional parameter the parent threaded in).
+        // Carrier type is `Uint8` per v1 width-1 lock-in.
+        PresentIfCarrier::Input => (pred.flag_name.clone(), SceType::Uint8),
     };
     let id = id_owned.as_str();
     // B5-λ: negate flips the trailing `!= 0` test to `== 0`. The
@@ -9351,6 +9674,11 @@ fn present_if_test_literal_clause(
             let go_id = match carrier {
                 PresentIfCarrier::Parent => filters::to_camel_case(id.to_string()),
                 PresentIfCarrier::Local(_) => filters::to_pascal_case(id.to_string()),
+                // Axis-1 inversion: flag-input is a Go function parameter
+                // (camelCase per Go convention — the param decl emits
+                // `hasSuffix byte`, so the bare camelCase identifier reads
+                // correctly without struct prefix).
+                PresentIfCarrier::Input => filters::to_camel_case(id.to_string()),
             };
             format!("({go_id} & 0x{mask:0width$X}) {op} 0", width = hex_digits)
         }
@@ -9372,6 +9700,13 @@ fn present_if_test_literal_clause(
                     "(out->{c_id} & 0x{mask:0width$X}) {op} 0",
                     width = hex_digits
                 ),
+                // Axis-1 inversion: flag-input is a function parameter
+                // (`uint8_t has_suffix` declared by `flag_input_params_decl`).
+                // Bare snake_case identifier — no struct prefix on either
+                // decode or encode site.
+                PresentIfCarrier::Input => {
+                    format!("({c_id} & 0x{mask:0width$X}) {op} 0", width = hex_digits)
+                }
             }
         }
         // Python: bitwise `&` accepts unbounded ints directly. Carrier
@@ -9397,7 +9732,13 @@ fn present_if_test_literal_clause(
                 _ => (".toInt()", ""),
             };
             // For parent scope, Kotlin uses camelCase param `parentFlags`.
-            let kt_id = if matches!(carrier, PresentIfCarrier::Parent) {
+            // For Axis-1 inversion Input scope, the flag-input is a Kotlin
+            // function parameter declared in camelCase (`hasSuffix: UByte`),
+            // so the same camelCase conversion applies.
+            let kt_id = if matches!(
+                carrier,
+                PresentIfCarrier::Parent | PresentIfCarrier::Input
+            ) {
                 filters::to_camel_case(id.to_string())
             } else {
                 id.to_string()

@@ -12524,3 +12524,152 @@ fn axis1_phase_a_chain_forwarder_bare_name_validates() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// RFC Axis-1 Phase B — round-trip codegen with predicate consumption.
+/// Parent has `<sce:flag-bind input="has_suffix" source="header.N"/>`,
+/// leaf has `<sce:flag-input name="has_suffix" width="1"/>` AND a body
+/// field gated by `sce:present-if="has_suffix"`. Test asserts:
+///   1. Codegen succeeds on all 6 backends.
+///   2. Leaf decode/encode signature gains positional `has_suffix: u8`
+///      (Rust shape; per-language variants in other languages).
+///   3. Parent's embed call-site extracts `((header >> 5) & 0x1)` and
+///      threads the resulting u8 to the leaf.
+///   4. Leaf's present-if-gated field reads `(has_suffix & 0x01) != 0`.
+fn axis1_phase_b_write_consuming_fixture() -> (std::path::PathBuf, std::path::PathBuf) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let dir = std::env::temp_dir().join(format!("sce_axis1_phase_b_{pid}_{id}"));
+    std::fs::create_dir_all(&dir).expect("mkdir fixture");
+
+    let parent = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_axis1_b_parent" sce:default-endian="big">
+  <sce:import src="codec_axis1_b_leaf.scxml" kind="codec" as="codec_axis1_b_leaf">
+    <sce:flag-bind input="has_suffix" source="header.N"/>
+  </sce:import>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="mid" bit="0" width="5"/>
+      <sce:flag name="N"   bit="5"/>
+    </sce:flags>
+    <sce:embed id="body" type="codec_axis1_b_leaf" sce:byte="1"/>
+  </datamodel>
+</scxml>"#;
+
+    let leaf = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_axis1_b_leaf" sce:default-endian="big">
+  <sce:flag-inputs>
+    <sce:flag-input name="has_suffix" width="1"/>
+  </sce:flag-inputs>
+  <datamodel>
+    <sce:field id="payload" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="suffix"  sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="has_suffix"/>
+  </datamodel>
+</scxml>"#;
+
+    std::fs::write(dir.join("codec_axis1_b_parent.scxml"), parent).expect("write parent");
+    std::fs::write(dir.join("codec_axis1_b_leaf.scxml"), leaf).expect("write leaf");
+    let parent_path = dir.join("codec_axis1_b_parent.scxml");
+    (dir, parent_path)
+}
+
+#[test]
+fn axis1_phase_b_emits_typed_param_and_predicate_consumption() {
+    let (dir, parent_path) = axis1_phase_b_write_consuming_fixture();
+
+    let parent_content = std::fs::read_to_string(&parent_path).expect("read parent");
+    let leaf_path = dir.join("codec_axis1_b_leaf.scxml");
+    let leaf_content = std::fs::read_to_string(&leaf_path).expect("read leaf");
+
+    // Compile-smoke on all 6 backends so a single-language regression
+    // surfaces here rather than via the conformance compile-gate.
+    for lang in [
+        sce_build::generator::Language::Rust,
+        sce_build::generator::Language::Cpp,
+        sce_build::generator::Language::Kotlin,
+        sce_build::generator::Language::Go,
+        sce_build::generator::Language::Python,
+        sce_build::generator::Language::C11,
+    ] {
+        let mut opts = sce_build::ForgeCompileOptions::default();
+        if matches!(lang, sce_build::generator::Language::Go) {
+            opts.go_module_prefix = Some("github.com/test/codec".to_string());
+        }
+        let _ = sce_build::compile_forge_with_imports(
+            &parent_content,
+            sce_build::DocumentLabel::symmetric("codec_axis1_b_parent"),
+            lang,
+            &dir,
+            &opts,
+        )
+        .unwrap_or_else(|e| panic!("Phase B parent codegen failed on {lang:?}: {e:?}"));
+        let _ = sce_build::compile_forge_with_imports(
+            &leaf_content,
+            sce_build::DocumentLabel::symmetric("codec_axis1_b_leaf"),
+            lang,
+            &dir,
+            &opts,
+        )
+        .unwrap_or_else(|e| panic!("Phase B leaf codegen failed on {lang:?}: {e:?}"));
+    }
+
+    // Rust output assertions — signature + predicate + embed extract.
+    let parent_out = sce_build::compile_forge_with_imports(
+        &parent_content,
+        sce_build::DocumentLabel::symmetric("codec_axis1_b_parent"),
+        sce_build::generator::Language::Rust,
+        &dir,
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .expect("parent Rust emit");
+    let leaf_out = sce_build::compile_forge_with_imports(
+        &leaf_content,
+        sce_build::DocumentLabel::symmetric("codec_axis1_b_leaf"),
+        sce_build::generator::Language::Rust,
+        &dir,
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .expect("leaf Rust emit");
+
+    let leaf_rust = leaf_out
+        .files
+        .iter()
+        .find(|(name, _)| name.contains("codec_axis1_b_leaf"))
+        .map(|(_, body)| body.clone())
+        .expect("leaf codec emit");
+    assert!(
+        leaf_rust.contains("pub fn decode(cursor: &mut SceCursor<'_>, has_suffix: u8)"),
+        "leaf decode must take positional `has_suffix: u8`\n{leaf_rust}"
+    );
+    assert!(
+        leaf_rust.contains("pub fn encode(&self, has_suffix: u8)"),
+        "leaf encode must take positional `has_suffix: u8`\n{leaf_rust}"
+    );
+    assert!(
+        leaf_rust.contains("(has_suffix & 0x01u8) != 0"),
+        "leaf predicate must read bare flag-input param\n{leaf_rust}"
+    );
+
+    let parent_rust = parent_out
+        .files
+        .iter()
+        .find(|(name, _)| name.contains("codec_axis1_b_parent"))
+        .map(|(_, body)| body.clone())
+        .expect("parent codec emit");
+    assert!(
+        parent_rust.contains("((header >> 5) & 0x1) as u8"),
+        "parent decode embed-site must extract `((header >> 5) & 0x1) as u8`\n{parent_rust}"
+    );
+    assert!(
+        parent_rust.contains("((self.header >> 5) & 0x1) as u8"),
+        "parent encode embed-site must extract from self.header\n{parent_rust}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

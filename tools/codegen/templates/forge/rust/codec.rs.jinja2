@@ -131,7 +131,7 @@ impl {{ struct_name }} {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'_>{{ parent_flags_param_decl }}{{ dispatch_tag_param_decl }}) -> Result<Self, CodecError> {
+    pub fn decode(cursor: &mut SceCursor<'_>{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> Result<Self, CodecError> {
 {% if has_parent_flags %}
         // RFC §5.B B5-γ: `parent_flags` is the parent codec's flags
         // carrier value, threaded through by the variant arm dispatcher.
@@ -141,6 +141,13 @@ impl {{ struct_name }} {
         // codecs that declare `<sce:requires-parent-flags>` but
         // don't yet wire any predicate to it).
         let _ = parent_flags;
+{% endif %}
+{% if has_flag_inputs %}
+        // RFC Axis-1 inversion: defensive suppress per declared
+        // `<sce:flag-input>` so codecs that haven't (yet) consumed an
+        // input via `present-if` compile cleanly. The validator enforces
+        // declaration; consumption is a per-codec design choice.
+{{ flag_input_unused_suppress }}
 {% endif %}
 {% if has_caller_tag %}
         // RFC B5-ν inversion β shape: `tag` is the dispatch value the
@@ -393,10 +400,15 @@ impl {{ struct_name }} {
 {% endif %}
 {% endfor %}
 {% endif %}
-    pub fn encode(&self{{ parent_flags_param_decl }}) -> Vec<u8> {
+    pub fn encode(&self{{ params_after_first_arg }}) -> Vec<u8> {
 {% if has_parent_flags %}
         // RFC §5.B B5-γ: see `decode` — same parameter, same suppress.
         let _ = parent_flags;
+{% endif %}
+{% if has_flag_inputs %}
+        // RFC Axis-1 inversion: see `decode` — same suppress per
+        // declared `<sce:flag-input>`.
+{{ flag_input_unused_suppress }}
 {% endif %}
 {% if has_parent_tag_derivation %}
         // RFC §5.B B5-ν Phase B — derive carrier bits from each embedded
