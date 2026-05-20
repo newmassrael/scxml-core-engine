@@ -664,6 +664,73 @@ pub struct DriverRef {
     pub source_location: Option<SourceLocation>,
 }
 
+/// Axis-3 inversion — closed-set vocabulary for the cross-document
+/// session-FSM role that a SCXML document declares via the top-level
+/// `<sce:session-role kind="..."/>` extension.
+///
+/// v1 ships a single variant ([`AcceptSide`]) covering the
+/// canonical session-FSM accept-side state machine (`docs/session-fsm.md`
+/// §2.6 — `Accepting`, `Accepting.AwaitingInitSyn`,
+/// `Accepting.SentInitAck`, etc.). Future variants (initiator-side,
+/// broker-side, …) extend this enum in lockstep with their codegen-
+/// side semantics; declaring any unknown `kind` value at parse time
+/// fires [`crate::forge::error::ValidationError::ScxmlUnknownSessionRoleKind`]
+/// with the current vocabulary list embedded in the message.
+///
+/// The orchestrator (`crate::resolve_listener_links`) joins by named
+/// role only: a deploy.yaml link with `role: listener` pairs with the
+/// machine's source SCXML iff that SCXML declares
+/// `<sce:session-role kind="accept-side"/>`. Partial-claim cases
+/// (either side declares the role but not the other) fire typed
+/// cross-doc diagnostics — see RFC Axis-3 Q-A7.
+///
+/// `kind` values use the canonical session-FSM vocabulary
+/// (`accept-side`), NOT the wire-side deploy vocabulary
+/// (`listener`). The asymmetric pairing is hardcoded in the
+/// orchestrator per RFC Axis-3 Q-A6 (a) — each domain uses its native
+/// term; the orchestrator knows the pairing table.
+///
+/// [`AcceptSide`]: SessionRoleKind::AcceptSide
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SessionRoleKind {
+    /// Implements the canonical session-FSM accept-side state machine
+    /// (`docs/session-fsm.md` §2.6). Pairs 1:1 with a deploy.yaml link
+    /// configured as `role: listener` + `trust_class: session_arming`.
+    AcceptSide,
+}
+
+impl SessionRoleKind {
+    /// Wire-canonical kind string used in `<sce:session-role kind="...">`
+    /// XML and in diagnostic `actual` / `expected` payloads. Stable
+    /// across Rust edition / `Debug`-impl changes.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SessionRoleKind::AcceptSide => "accept-side",
+        }
+    }
+
+    /// Parse a `kind` attribute value into a [`SessionRoleKind`]. Returns
+    /// `None` for any value outside the v1 closed set; the parser uses
+    /// this to materialize the
+    /// [`crate::forge::error::ValidationError::ScxmlUnknownSessionRoleKind`]
+    /// diagnostic with the v1 vocabulary list.
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "accept-side" => Some(SessionRoleKind::AcceptSide),
+            _ => None,
+        }
+    }
+
+    /// Canonical sorted list of every variant's wire-string form, used
+    /// by [`Self::parse`] failure paths to populate the diagnostic
+    /// vocabulary list. Kept as a `'static` slice so the diagnostic's
+    /// `expected` payload can borrow without allocation.
+    pub fn all_wire_names() -> &'static [&'static str] {
+        &["accept-side"]
+    }
+}
+
 /// `link` (forge link kind artifact name) + `event` (SCXML event name
 /// dispatched on Sample arrival), both required. B7-η' Atomic A2 adds
 /// optional `callback` attribute (Q-Callback-1 Option α + Q-Callback-2
@@ -818,6 +885,25 @@ pub struct SCXMLModel {
     /// outside C).
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub driver_refs: Vec<DriverRef>,
+    /// Axis-3 inversion (RFC `claudedocs/rfc-axis3-listener-role-declarations.md`)
+    /// — set of session-FSM roles this SCXML document explicitly
+    /// declares via top-level `<sce:session-role kind="..."/>`
+    /// elements. Each variant appears at most once (parse-time
+    /// uniqueness is enforced by
+    /// [`crate::forge::error::ValidationError::ScxmlDuplicateSessionRoleDeclaration`]).
+    ///
+    /// Empty when the document declares no roles (the common case
+    /// for non-session-FSM SCXML). Non-empty: drives the orchestrator's
+    /// cross-doc listener-pair join — see
+    /// [`crate::resolve_listener_links`] for Phase B's consumer wire-up.
+    /// During Phase A (foundation) the orchestrator does NOT yet read
+    /// this field; the existing `accepting_substate_present` walker
+    /// is unchanged. Phase B switches the join over to this set.
+    ///
+    /// `BTreeSet` keeps iteration order deterministic so any diagnostic
+    /// quoting the declared-roles list produces a stable string.
+    #[serde(skip_serializing_if = "BTreeSet::is_empty", default)]
+    pub declared_session_roles: BTreeSet<SessionRoleKind>,
     /// Watching-zenoh RFC §5.2 Round F-α-2 — section attribute payload
     /// for the C11 backend's `SCE_SM_FN` macro emission. Set by
     /// [`crate::compile_scxml_lang_typed_with_section`] when

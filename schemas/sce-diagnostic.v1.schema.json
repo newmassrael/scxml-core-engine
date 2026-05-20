@@ -80,6 +80,8 @@
         "scxml/on-sample-event-name-conflict",
         "scxml/on-sample-link-not-declared",
         "scxml/on-sample-link-wrong-kind",
+        "scxml/unknown-session-role-kind",
+        "scxml/duplicate-session-role-declaration",
         "expression/empty",
         "expression/lex",
         "expression/unsupported-construct",

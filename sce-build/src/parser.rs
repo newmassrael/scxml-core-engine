@@ -522,6 +522,17 @@ impl SCXMLParser {
         // document-order index.
         self.parse_sce_drivers(&root, &mut model, diag_label)?;
 
+        // Axis-3 inversion (RFC `claudedocs/rfc-axis3-listener-role-
+        // declarations.md` Phase A) — capture every top-level
+        // `<sce:session-role kind="..."/>` declaration on the SCXML
+        // root. The orchestrator (Phase B) reads `declared_session_
+        // roles` to drive the cross-doc listener-pair join, replacing
+        // the C10-α `Accepting.*` substate string-match. Phase A
+        // surfaces parse-time `scxml/unknown-session-role-kind` (kind
+        // outside the v1 vocabulary) and `scxml/duplicate-session-
+        // role-declaration` (same kind declared twice on one doc).
+        self.parse_sce_session_roles(&root, &mut model, diag_label)?;
+
         // Parse states recursively
         self.parse_states(&root, None, &mut model, base_dir, diag_label)?;
 
@@ -2724,6 +2735,90 @@ impl SCXMLParser {
                 source_location,
             });
             document_order = document_order.saturating_add(1);
+        }
+        Ok(())
+    }
+
+    /// Axis-3 inversion (RFC `claudedocs/rfc-axis3-listener-role-
+    /// declarations.md` Phase A) — collect every top-level
+    /// `<sce:session-role kind="..."/>` element on the SCXML root.
+    /// Each declaration nominates one
+    /// [`crate::model::SessionRoleKind`] variant; the orchestrator
+    /// (Phase B `crate::resolve_listener_links`) joins these against
+    /// deploy.yaml `LinkConfig.role` declarations.
+    ///
+    /// Parse-time guarantees (Q-A2 (b) + Q-A5 (a) locks):
+    /// - `kind` attribute is required (missing fires
+    ///   `validation/missing-attribute` via [`ValidationError::
+    ///   MissingAttribute`]).
+    /// - `kind` value is in the v1 closed set
+    ///   ([`SessionRoleKind::all_wire_names`]); anything else fires
+    ///   [`ValidationError::ScxmlUnknownSessionRoleKind`] with the
+    ///   vocabulary list as `expected`.
+    /// - The same kind declared twice on one document fires
+    ///   [`ValidationError::ScxmlDuplicateSessionRoleDeclaration`].
+    ///   Set semantics — multiple distinct kinds are permitted
+    ///   (forward-compat for an initiator-side v2 entry alongside
+    ///   accept-side; v1 has only one variant so the parse path is
+    ///   exercised but the multi-kind case has no codegen consumer).
+    ///
+    /// Strays under non-root elements are ignored by design (same
+    /// rationale as `parse_sce_drivers` Q-Round-F-D6); the SCXML root
+    /// content model is `xs:any namespace="##any" lax`.
+    fn parse_sce_session_roles(
+        &self,
+        root: &roxmltree::Node,
+        model: &mut SCXMLModel,
+        source_name: &str,
+    ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
+        use crate::forge::error::{Located, ValidationError};
+        use crate::forge::model::SCE_NAMESPACE;
+        use crate::model::SessionRoleKind;
+        for child in root.children().filter(|n| n.is_element()) {
+            let is_sce_session_role = child.tag_name().namespace() == Some(SCE_NAMESPACE)
+                && child.tag_name().name() == "session-role";
+            if !is_sce_session_role {
+                continue;
+            }
+            let pos = child.document().text_pos_at(child.range().start);
+            let raw_kind = child.attribute("kind").ok_or_else(|| {
+                Located::new(
+                    ValidationError::MissingAttribute {
+                        element: "<sce:session-role>".to_string(),
+                        attr: "kind".to_string(),
+                    }
+                    .into(),
+                    source_name,
+                    Some(pos.row),
+                    Some(pos.col),
+                )
+            })?;
+            let kind = SessionRoleKind::parse(raw_kind).ok_or_else(|| {
+                Located::new(
+                    ValidationError::ScxmlUnknownSessionRoleKind {
+                        kind: raw_kind.to_string(),
+                        allowed: SessionRoleKind::all_wire_names()
+                            .iter()
+                            .map(|s| s.to_string())
+                            .collect(),
+                    }
+                    .into(),
+                    source_name,
+                    Some(pos.row),
+                    Some(pos.col),
+                )
+            })?;
+            if !model.declared_session_roles.insert(kind) {
+                return Err(Located::new(
+                    ValidationError::ScxmlDuplicateSessionRoleDeclaration {
+                        kind: kind.as_str().to_string(),
+                    }
+                    .into(),
+                    source_name,
+                    Some(pos.row),
+                    Some(pos.col),
+                ));
+            }
         }
         Ok(())
     }

@@ -655,6 +655,50 @@ impl TrustClass {
     }
 }
 
+/// Axis-3 inversion (RFC `claudedocs/rfc-axis3-listener-role-declarations.md`)
+/// — explicit cross-document role declaration for a deploy.yaml link.
+/// Decouples the implicit "trust_class: session_arming = listener"
+/// claim from C10-α into an explicit named-role contract that pairs
+/// with the SCXML-side `<sce:session-role kind="..."/>` declaration.
+///
+/// Top-level peer of `bind`, `driver`, `mtu_bytes`, `domain_attrs`
+/// (per RFC Q-A3 (a) — NOT nested under `domain_attrs` so the
+/// role and trust-tier remain conceptually distinct fields).
+///
+/// Cardinality: optional. Default `None` = "this link does not
+/// participate in a listener-pair role" (the common case for plain
+/// `established_session` links and for non-session-FSM machines).
+/// During Phase A (foundation) the parser captures the field but no
+/// orchestrator consumes it yet; Phase B wires the join.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LinkRole {
+    /// Pre-handshake listener half of the session-FSM accept-side
+    /// pair. Pairs with a machine SCXML that declares
+    /// `<sce:session-role kind="accept-side"/>`. Per RFC Q-A4 (d), a
+    /// `Listener` role on a link with `trust_class != session_arming`
+    /// fires the typed validator
+    /// `link/role-listener-with-non-session-arming-trust-class`.
+    Listener,
+    /// Initiator-side wire role. v1 is forward-compat — declaring it
+    /// captures the intent on the model but the orchestrator silently
+    /// passes it (no codegen path consumes the variant yet). Lands
+    /// when a reachable consumer requires initiator-side sibling
+    /// synthesis.
+    Initiator,
+}
+
+impl LinkRole {
+    /// Snake-case wire label. Used in diagnostic `actual` / `expected`
+    /// payloads (RFC Q-A7 codes) and in deploy.yaml deserialization.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            LinkRole::Listener => "listener",
+            LinkRole::Initiator => "initiator",
+        }
+    }
+}
+
 /// RX-dispatch policy for `machines.<n>.links.<name>.rx_dispatch`
 /// (watching-zenoh RFC §5.K line 2254-2262).
 ///
@@ -932,6 +976,25 @@ pub struct LinkConfig {
     /// `{lwip_udp, lwip_tcp}`; extended as new forge link-kind docs
     /// ship) AND from any cross-doc forge link-kind registry entry.
     pub driver: String,
+    /// `role:` (Axis-3 inversion, RFC
+    /// `claudedocs/rfc-axis3-listener-role-declarations.md` Q-A3 (a))
+    /// — explicit cross-document role declaration. Pairs with the
+    /// SCXML-side `<sce:session-role kind="..."/>` top-level element
+    /// on the machine's source SCXML.
+    ///
+    /// Phase A (foundation): the parser captures the field; no
+    /// validator or orchestrator consumes it yet. Phase B wires the
+    /// `resolve_listener_links` join + the three typed partial-claim
+    /// diagnostics (`link/deploy-role-listener-without-scxml-accept-
+    /// side-role`, `scxml/accept-side-role-without-listener-link`,
+    /// `link/role-listener-with-non-session-arming-trust-class`).
+    ///
+    /// Default `None` is the explicit "this link does not claim a
+    /// session-FSM role" case. Phase B enforces "required when
+    /// trust_class: session_arming" via typed diagnostic per
+    /// Q-A4 (d) — the deploy author MUST say so explicitly.
+    #[serde(default)]
+    pub role: Option<LinkRole>,
     /// `mtu_bytes:` (spec line 2236-2242) — link-layer MTU. REQUIRED
     /// for fragmenting links (per the C9-β `reassembly/max-fragments-
     /// insufficient-for-mtu` consumer, RFC §5.M line 2947). Optional at

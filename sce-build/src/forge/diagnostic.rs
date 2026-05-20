@@ -450,6 +450,17 @@ pub enum DiagnosticCode {
     #[serde(rename = "scxml/on-sample-link-wrong-kind")]
     ScxmlOnSampleLinkWrongKind,
 
+    // ── Axis-3 inversion (RFC `claudedocs/rfc-axis3-listener-role-
+    //    declarations.md`) Phase A — top-level `<sce:session-role
+    //    kind="..."/>` SCXML extension structural validators. Phase A
+    //    surfaces only the parse-time kind-value family; Phase B adds
+    //    three cross-doc partial-claim codes that join this set with
+    //    deploy.yaml `LinkConfig.role`.
+    #[serde(rename = "scxml/unknown-session-role-kind")]
+    ScxmlUnknownSessionRoleKind,
+    #[serde(rename = "scxml/duplicate-session-role-declaration")]
+    ScxmlDuplicateSessionRoleDeclaration,
+
     #[serde(rename = "expression/empty")]
     ExpressionEmpty,
     #[serde(rename = "expression/lex")]
@@ -2271,6 +2282,9 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ScxmlOnSampleEventNameConflict,
         ScxmlOnSampleLinkNotDeclared,
         ScxmlOnSampleLinkWrongKind,
+        // Axis-3 inversion Phase A — top-level `<sce:session-role>` structural codes
+        ScxmlUnknownSessionRoleKind,
+        ScxmlDuplicateSessionRoleDeclaration,
         // Expression
         ExpressionEmpty,
         ExpressionLex,
@@ -3115,7 +3129,15 @@ impl DiagnosticCode {
             | MeshCodegenTemplateRender
             | MeshCodegenEventNameCollision
             | MeshCodegenPoolWithRpcClientUnsupported
-            | MeshIo => None,
+            | MeshIo
+            // Axis-3 inversion Phase A — RFC is SCE-internal at
+            // `claudedocs/rfc-axis3-listener-role-declarations.md`,
+            // not a watching-zenoh spec section. The codes describe
+            // an SCE-only cross-doc role contract; spec_anchor stays
+            // None until / unless a future spec section adopts the
+            // same vocabulary.
+            | ScxmlUnknownSessionRoleKind
+            | ScxmlDuplicateSessionRoleDeclaration => None,
         }
     }
 
@@ -3184,6 +3206,8 @@ impl DiagnosticCode {
             ScxmlOnSampleEventNameConflict => "scxml/on-sample-event-name-conflict",
             ScxmlOnSampleLinkNotDeclared => "scxml/on-sample-link-not-declared",
             ScxmlOnSampleLinkWrongKind => "scxml/on-sample-link-wrong-kind",
+            ScxmlUnknownSessionRoleKind => "scxml/unknown-session-role-kind",
+            ScxmlDuplicateSessionRoleDeclaration => "scxml/duplicate-session-role-declaration",
             ExpressionEmpty => "expression/empty",
             ExpressionLex => "expression/lex",
             ExpressionUnsupportedConstruct => "expression/unsupported-construct",
@@ -5163,6 +5187,33 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             }),
             key_fragments: vec![state_id.clone(), link.clone(), actual_kind.clone()],
         },
+        ValidationError::ScxmlUnknownSessionRoleKind { kind, allowed } => DiagnosticPayload {
+            // Axis-3 inversion Phase A — closed-set kind vocabulary
+            // rides `Fix::ReplaceOneOf` per FixCarriesCandidates
+            // non-overlap class. `expected` stays None (the candidate
+            // list lives in fix, not expected, per the non-overlap
+            // contract).
+            code: DiagnosticCode::ScxmlUnknownSessionRoleKind,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(kind.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: allowed.clone(),
+            }),
+            key_fragments: vec![kind.clone()],
+        },
+        ValidationError::ScxmlDuplicateSessionRoleDeclaration { kind } => DiagnosticPayload {
+            // Axis-3 inversion Phase A — single-axis repair (delete
+            // the duplicate); no closed candidate list. `actual`
+            // surfaces the offending kind so CLI consumers see which
+            // kind was duplicated without parsing the message body.
+            code: DiagnosticCode::ScxmlDuplicateSessionRoleDeclaration,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(kind.clone()),
+            fix: None,
+            key_fragments: vec![kind.clone()],
+        },
         ValidationError::PoolSampleTakeWithoutStagePool {
             state_id,
             link,
@@ -7123,6 +7174,34 @@ mod tests {
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
                 r#"{"v":1,"id":"fnv1a:38b424712554fe91","code":"scxml/on-sample-link-wrong-kind","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"state 'running': <sce:on-sample link=\"scout_codec\"> resolves to a forge 'codec' kind, not 'link'. Only link kind documents back the on-sample subscriber contract. Repoint the reference at one of the build's link kind names. See watching-zenoh RFC §5.E.","actual":"codec","fix":{"kind":"replace_one_of","candidates":["scout_link"]}}"#,
+            ),
+            (
+                // Axis-3 inversion Phase A — `<sce:session-role kind="X"/>`
+                // unknown-kind structural diagnostic. Carries the
+                // closed-set vocabulary via `Fix::ReplaceOneOf` so
+                // authors get a closed picker even when v1 has only
+                // one variant. Hash placeholder — patched by byte-
+                // stability assertion.
+                "forge/scxml-unknown-session-role-kind",
+                ValidationError::ScxmlUnknownSessionRoleKind {
+                    kind: "listener".into(),
+                    allowed: vec!["accept-side".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:1a3bf2135f63c092","code":"scxml/unknown-session-role-kind","stage":"validation","message":"<sce:session-role kind=\"listener\"/>: unknown session-role kind. v1 vocabulary: [\"accept-side\"]. Repair: change `kind` to one of the listed values or remove the element if no session-FSM role applies.","actual":"listener","fix":{"kind":"replace_one_of","candidates":["accept-side"]}}"#,
+            ),
+            (
+                // Axis-3 inversion Phase A — duplicate
+                // `<sce:session-role>` declaration on one document.
+                // NeutralOrDeterministic non_overlap class; no
+                // candidate list. Hash placeholder — patched by byte-
+                // stability assertion.
+                "forge/scxml-duplicate-session-role-declaration",
+                ValidationError::ScxmlDuplicateSessionRoleDeclaration {
+                    kind: "accept-side".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:ebc5cc71107bd7e9","code":"scxml/duplicate-session-role-declaration","stage":"validation","message":"<sce:session-role kind=\"accept-side\"/>: declared more than once on this SCXML document. Each session-role kind may appear at most once per document. Repair: delete the duplicate `<sce:session-role kind=\"accept-side\"/>` element.","actual":"accept-side"}"#,
             ),
             (
                 // RFC §5.E B7-η' Atomic A1: on-sample subscriber on a
@@ -10278,6 +10357,12 @@ mod tests {
             | PoolSampleTakeWithoutStagePool
             | ScxmlOnSampleLinkNotDeclared
             | ScxmlOnSampleLinkWrongKind
+            // Axis-3 inversion Phase A — `<sce:session-role kind="X"/>`
+            // unknown-kind diagnostic rides `Fix::ReplaceOneOf` with
+            // the v1 vocabulary (currently `["accept-side"]`). Future
+            // kind variants extend the candidate list in lockstep
+            // without changing the non-overlap bucket.
+            | ScxmlUnknownSessionRoleKind
             | MeshDeployUnsupportedVersion
             | MeshTopologyMachineNotFound
             | MeshTopologySubscriptionSourceUnbound
@@ -10638,6 +10723,10 @@ mod tests {
             // ScxmlOnSampleLinkNotDeclared + ScxmlOnSampleLinkWrongKind
             // sit in FixCarriesCandidates above (cross-ref ride
             // `Fix::ReplaceOneOf` with the registry's name list).
+            // Axis-3 inversion Phase A duplicate-declaration: repair
+            // is single-axis (delete the duplicate); no closed
+            // candidate list. NeutralOrDeterministic.
+            | ScxmlDuplicateSessionRoleDeclaration
             | ExpressionEmpty
             | ExpressionLex
             | ExpressionUnsupportedConstruct
@@ -11139,6 +11228,8 @@ mod tests {
                 | ScxmlOnSampleEventNameConflict
                 | ScxmlOnSampleLinkNotDeclared
                 | ScxmlOnSampleLinkWrongKind
+                | ScxmlUnknownSessionRoleKind
+                | ScxmlDuplicateSessionRoleDeclaration
                 | ExpressionEmpty | ExpressionLex
                 | ExpressionUnsupportedConstruct | ExpressionStrictEquality
                 | ExpressionParseMismatch | ExpressionUnexpectedToken
@@ -11365,7 +11456,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            292,
+            294,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries —\
              expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \

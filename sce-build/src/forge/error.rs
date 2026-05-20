@@ -2607,6 +2607,56 @@ pub enum ValidationError {
         /// file's parent).
         resolved_dir: String,
     },
+
+    /// Axis-3 inversion (RFC `claudedocs/rfc-axis3-listener-role-
+    /// declarations.md` Phase A) — a `<sce:session-role kind="..."/>`
+    /// element on the SCXML root nominates a kind value outside the
+    /// v1 closed set ([`crate::model::SessionRoleKind::all_wire_names`]).
+    /// Fires at parse time so the author surfaces the typo before any
+    /// downstream cross-doc validator runs.
+    ///
+    /// Repair surface: pick a kind value from the embedded vocabulary
+    /// list. The `Fix::ReplaceOneOf` payload carries the v1 set, so
+    /// CLI / IDE consumers can surface a closed-set picker without
+    /// scraping the message body. Future kind variants extend the
+    /// vocabulary in lockstep with their codegen-side semantics.
+    #[error(
+        "<sce:session-role kind=\"{kind}\"/>: unknown session-role kind. \
+         v1 vocabulary: {allowed:?}. Repair: change `kind` to one of the \
+         listed values or remove the element if no session-FSM role applies."
+    )]
+    ScxmlUnknownSessionRoleKind {
+        /// Author-written `kind` attribute value, verbatim from the SCXML.
+        kind: String,
+        /// Closed-set vocabulary list — copy of
+        /// [`crate::model::SessionRoleKind::all_wire_names`] as
+        /// `Vec<String>` so the variant lives in a non-`'static` arm.
+        /// Powers the `Fix::ReplaceOneOf` candidate list.
+        allowed: Vec<String>,
+    },
+
+    /// Axis-3 inversion (RFC `claudedocs/rfc-axis3-listener-role-
+    /// declarations.md` Phase A) — the same session-role kind appears
+    /// in two distinct `<sce:session-role kind="..."/>` declarations on
+    /// one SCXML document root. Q-A2 (b) set semantics: multiple
+    /// distinct kinds are permitted, but duplicates of one kind are
+    /// not — the author intent is undefined and silently keeping only
+    /// one would obscure the authoring mistake.
+    ///
+    /// Repair: delete the duplicate declaration. The element has no
+    /// payload beyond `kind`, so two declarations with the same kind
+    /// carry no extra information.
+    #[error(
+        "<sce:session-role kind=\"{kind}\"/>: declared more than once on this SCXML \
+         document. Each session-role kind may appear at most once per document. \
+         Repair: delete the duplicate `<sce:session-role kind=\"{kind}\"/>` element."
+    )]
+    ScxmlDuplicateSessionRoleDeclaration {
+        /// Kind that was declared twice. Stable wire-form string from
+        /// [`crate::model::SessionRoleKind::as_str`] so the diagnostic
+        /// echo matches the original SCXML attribute value verbatim.
+        kind: String,
+    },
 }
 
 /// watching-zenoh RFC §5.E B7-η' Atomic A2 callback-path failure
