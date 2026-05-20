@@ -32,8 +32,6 @@ struct CodecExtAttachment {
         if (_frame_len < 1) return std::nullopt;
         const std::uint8_t* raw = cursor.peek_slice(_frame_len);
         if (raw == nullptr) return std::nullopt;
-        std::size_t len = _frame_len;  // shadowed for decode_expr(`raw + len`).
-        (void)len;
         uint8_t length = raw[0];
         std::vector<uint8_t> body = std::vector<uint8_t>(raw + 1, raw + 1 + length);
         CodecExtAttachment value{

@@ -9346,7 +9346,11 @@ fn generate_decode_expr(
             }
         }
         BitSize::Tail => match lang {
-            Language::Cpp => format!("std::vector<uint8_t>(raw + {byte_off}, raw + len)"),
+            // Cpp template binds `_frame_len = cursor.remaining()` before
+            // any field let-binding fires; reference it directly so a
+            // codec field named `len` (a common length-source id) can't
+            // collide with a `len` template-scope alias.
+            Language::Cpp => format!("std::vector<uint8_t>(raw + {byte_off}, raw + _frame_len)"),
             Language::Kotlin => format!("raw.copyOfRange({byte_off}, raw.size)"),
             Language::Rust => format!("raw[{byte_off}..].to_vec()"),
             Language::Go | Language::Python => format!("raw[{byte_off}:]"),

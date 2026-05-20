@@ -239,8 +239,6 @@ struct {{ struct_name }} {
         if (_frame_len < {{ min_bytes }}) return std::nullopt;
         const std::uint8_t* raw = cursor.peek_slice(_frame_len);
         if (raw == nullptr) return std::nullopt;
-        std::size_t len = _frame_len;  // shadowed for decode_expr(`raw + len`).
-        (void)len;
 {% for field in fields %}
         {{ field.cpp_type }} {{ field.id }} = {{ field.decode_expr }};
 {% endfor %}
