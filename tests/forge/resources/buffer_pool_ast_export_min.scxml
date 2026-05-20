@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Minimal `<scxml sce:kind="buffer-pool">` document for the AST export
+  drift guard. Shape mirrors c9_reassembly_variant.rs's happy-path
+  fixture: slot-count + slot-size + section + alignment +
+  cache-policy.
+
+  cache-policy="none" (not "maintain") so the parser doesn't
+  auto-inject the cache-maintenance trio synthetic `<sce:extern>`
+  declarations — keeps the emitted envelope's `extern_declarations`
+  empty for predictable round-trip assertion. `none` targets the
+  no-D-cache MCU class (Cortex-M0/M3/M4) per CachePolicy::None doc.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="buffer-pool" name="buffer_pool_ast_export_min" version="1.0">
+  <sce:slot-count>8</sce:slot-count>
+  <sce:slot-size>256</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>32</sce:alignment>
+  <sce:cache-policy>none</sce:cache-policy>
+</scxml>

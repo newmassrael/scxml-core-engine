@@ -612,6 +612,17 @@ enum Commands {
         /// repo.
         #[arg(long)]
         input_root: Option<String>,
+        /// Emit the parsed Forge document as JSON to `<path>` before
+        /// codegen runs. The envelope shape is `apis/forge-ast.v1.schema.json`;
+        /// see `docs/SCE_FORGE_AST.md` for the consumer contract.
+        ///
+        /// Silent no-op for statechart documents (kind detection
+        /// routes them to the SCXML pipeline, which has no
+        /// `ForgeDocument` to serialise). Codegen still runs after
+        /// the emit — `--emit-ast` is an addition to the pipeline,
+        /// not a replacement.
+        #[arg(long)]
+        emit_ast: Option<String>,
     },
     /// Multi-doc generate with cross-doc registry — wires
     /// `validate_on_sample_link_references` into production
@@ -646,6 +657,20 @@ enum Commands {
         /// skip semantics).
         #[arg(long)]
         deploy: Option<String>,
+        /// Directory to write per-doc Forge AST envelopes into. One
+        /// `<doc_stem>.ast.json` is emitted per `--forge` input that
+        /// classifies as a forge document. `--scxml` inputs and any
+        /// document the parser classifies as statechart are silently
+        /// skipped (no envelope, no error) — statechart AST export
+        /// is not part of v1.
+        ///
+        /// Envelope shape: `apis/forge-ast.v1.schema.json`. Consumer
+        /// contract: `docs/SCE_FORGE_AST.md`. Useful for batch tools
+        /// (sce-db-gen, sce-eventstore-adapter, sce-ui-gen) that
+        /// consume IR across an entire multi-doc build without
+        /// invoking SCE codegen per file.
+        #[arg(long)]
+        emit_ast_dir: Option<String>,
     },
     /// Batch generate W3C test state machines and test classes
     GenerateW3c {
@@ -867,6 +892,7 @@ fn main() {
             const_fold_budget,
             no_std,
             input_root,
+            emit_ast,
         } => cmd_generate(
             &scxml,
             &language,
@@ -883,6 +909,7 @@ fn main() {
             const_fold_budget,
             no_std,
             input_root.as_deref(),
+            emit_ast.as_deref(),
             error_format,
         ),
         Commands::Orchestrate {
@@ -891,12 +918,14 @@ fn main() {
             language,
             output_dir,
             deploy,
+            emit_ast_dir,
         } => cmd_orchestrate(
             &scxml,
             &forge,
             &language,
             &output_dir,
             deploy.as_deref(),
+            emit_ast_dir.as_deref(),
             error_format,
         ),
         Commands::GenerateW3c {
@@ -987,8 +1016,17 @@ fn cmd_orchestrate(
     language: &str,
     output_dir: &str,
     deploy_path: Option<&str>,
+    emit_ast_dir: Option<&str>,
     error_format: ErrorFormat,
 ) {
+    // Per-doc AST emit runs *before* the multi-doc compile so the AST
+    // surface is independent of any cross-doc validation outcome. A
+    // failing cross-doc validator must still produce ASTs for the
+    // docs that parsed successfully — consumer tooling treats AST
+    // emit as observation, not as compile commitment.
+    if let Some(dir) = emit_ast_dir {
+        emit_orchestrate_asts(scxml_paths, forge_paths, dir, error_format);
+    }
     let lang: Language = language.parse().unwrap_or_else(|_| {
         error_format.emit_and_exit(
             &CliError::UnknownLanguage {
@@ -1092,6 +1130,88 @@ fn cmd_orchestrate(
     }
 }
 
+/// Multi-doc AST emit helper for [`cmd_orchestrate`]. For every
+/// `--forge` input that parses as a forge document, writes
+/// `<doc_stem>.ast.json` under `dir`. `--scxml` inputs and any forge
+/// document the parser classifies as statechart are silently
+/// skipped (no envelope, no error) — statechart AST export is not
+/// part of v1.
+///
+/// Failures during parse propagate through the same NDJSON
+/// diagnostic channel `cmd_orchestrate` itself uses, so an
+/// `--error-format=json` consumer sees consistent records across
+/// the parse/emit/compile chain.
+fn emit_orchestrate_asts(
+    scxml_paths: &[String],
+    forge_paths: &[String],
+    dir: &str,
+    error_format: ErrorFormat,
+) {
+    let dir_path = std::path::Path::new(dir);
+    if let Err(e) = fs::create_dir_all(dir_path) {
+        error_format.emit_and_exit(
+            &CliError::WriteOutput {
+                path: dir.to_string(),
+                source: e,
+            },
+            "",
+        );
+    }
+
+    // SCXML inputs are not part of v1 AST export. The orchestrator
+    // still receives the paths for cross-doc validation; we
+    // explicitly iterate them only to keep the silent-skip
+    // semantics visible at the call site.
+    for _scxml in scxml_paths {
+        // No-op — see docstring.
+    }
+
+    for forge_path_str in forge_paths {
+        let forge_path = std::path::Path::new(forge_path_str);
+        let content = fs::read_to_string(forge_path).unwrap_or_else(|e| {
+            error_format.emit_and_exit(
+                &CliError::ReadInput {
+                    path: forge_path_str.to_string(),
+                    source: e,
+                },
+                "",
+            )
+        });
+        let stem = forge_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown");
+        let basename = forge_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(stem);
+        let label = sce_build::DocumentLabel {
+            identifier: stem,
+            diagnostic_label: basename,
+        };
+
+        let parsed = match sce_build::forge::parser::parse_forge_with_imports(&content, label) {
+            Ok(Some(p)) => p,
+            // Statechart: silent skip per v1 contract.
+            Ok(None) => continue,
+            Err(e) => error_format.emit_forge_and_exit(&e),
+        };
+
+        let out_path = dir_path.join(format!("{stem}.ast.json"));
+        if let Err(e) =
+            sce_build::forge::ast_export::write_envelope_to_path(&out_path, &parsed)
+        {
+            error_format.emit_and_exit(
+                &CliError::WriteOutput {
+                    path: out_path.display().to_string(),
+                    source: e,
+                },
+                "",
+            );
+        }
+    }
+}
+
 // ── Subcommand: generate ────────────────────────────────────────
 
 fn cmd_generate(
@@ -1110,6 +1230,7 @@ fn cmd_generate(
     const_fold_budget: Option<u64>,
     no_std: bool,
     input_root_override: Option<&str>,
+    emit_ast_path: Option<&str>,
     error_format: ErrorFormat,
 ) {
     let lang: Language = language.parse().unwrap_or_else(|_| {
@@ -1196,8 +1317,54 @@ fn cmd_generate(
                 const_fold_budget,
                 ..Default::default()
             };
-            match sce_build::compile_forge_with_imports(
+
+            // Single-parse path: parse once, emit AST if requested,
+            // then run codegen against the same `ParsedForge` value via
+            // `compile_forge_from_parsed`. Avoids the previous
+            // architectural mismatch where the CLI parsed for emit and
+            // `compile_forge_with_imports` parsed again internally —
+            // `ParsedForge` is a cacheable artefact, not throwaway work.
+            let parsed = match sce_build::forge::parser::parse_forge_with_imports(
                 &scxml_content,
+                doc_label,
+            ) {
+                Ok(Some(p)) => p,
+                Ok(None) => {
+                    // Defensive — `classify_document` already routed
+                    // Statechart to the Scxml arm. A future classifier
+                    // refactor must not silently land here.
+                    error_format.emit_forge_and_exit(
+                        &sce_build::forge::error::Located::new(
+                            sce_build::forge::error::ValidationError::WrongPipeline {
+                                kind: sce_build::forge::model::ForgeKind::Statechart,
+                            }
+                            .into(),
+                            doc_label.diagnostic_label,
+                            None,
+                            None,
+                        ),
+                    );
+                }
+                Err(e) => error_format.emit_forge_and_exit(&e),
+            };
+
+            if let Some(ast_path) = emit_ast_path {
+                let path = std::path::Path::new(ast_path);
+                if let Err(e) =
+                    sce_build::forge::ast_export::write_envelope_to_path(path, &parsed)
+                {
+                    error_format.emit_and_exit(
+                        &CliError::WriteOutput {
+                            path: ast_path.to_string(),
+                            source: e,
+                        },
+                        "",
+                    );
+                }
+            }
+
+            match sce_build::compile_forge_from_parsed(
+                &parsed,
                 doc_label,
                 lang,
                 base_dir,

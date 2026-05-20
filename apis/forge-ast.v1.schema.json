@@ -1,0 +1,3341 @@
+{
+  "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/apis/forge-ast.v1.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "definitions": {
+    "AlgorithmConst": {
+      "description": "Build-time const inside an algorithm body. RFC §5.A v1 admits the scalar literal form (`<sce:const name=... type=... init=\"...\"/>`). The `<sce:const sce:compute-at=\"build\">` form with an `<sce:fold>` body resolves through RFC §5.F build-time const-fold; the IR shape lands in Phase A4-α (parser + model), the host interpreter and per-language emit land in A4-β.",
+      "properties": {
+        "compute_at_build": {
+          "description": "`sce:compute-at=\"build\"` flag (§5.F hook). Required to be `true` when [`AlgorithmConst::fold`] is `Some`, and required to be `false` otherwise. The parser enforces this invariant.",
+          "type": "boolean"
+        },
+        "fold": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/FoldBody"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`<sce:fold>` body for `sce:compute-at=\"build\"` consts. `None` for scalar consts."
+        },
+        "init": {
+          "description": "Literal init expression for scalar consts. Lowered at codegen time via the typed expression pipeline (`forge::expr`). `None` when the const carries a `<sce:fold>` body instead — the parser enforces \"exactly one of `init` / `fold`\".",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/definitions/AlgorithmConstType"
+        }
+      },
+      "required": [
+        "compute_at_build",
+        "name",
+        "type"
+      ],
+      "type": "object"
+    },
+    "AlgorithmConstType": {
+      "anyOf": [
+        {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SceType"
+            }
+          ],
+          "description": "Scalar form (any `SceType`). Emitted as a language-native const."
+        },
+        {
+          "description": "Array form `array<T, N>` — emitted as a language-native static array literal once §5.F const-fold lands. Length is the fixed element count; element type is one of the scalar `SceType`s.",
+          "properties": {
+            "elem": {
+              "$ref": "#/definitions/SceType"
+            },
+            "len": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "elem",
+            "len"
+          ],
+          "type": "object"
+        }
+      ],
+      "description": "Type carried by an `<sce:const>` declaration. Scalar form is the only shape produced by hand-authored algorithm bodies (RFC §5.A); the array form is reserved for `sce:compute-at=\"build\"` consts whose body is an `<sce:fold>` block (RFC §5.F build-time const-fold). Keeping array out of [`SceType`] keeps the parameter / var / field surfaces scalar-only, which is the v1 contract everywhere else."
+    },
+    "AlgorithmParam": {
+      "description": "One parameter of an algorithm signature. Parameters are by-value scalars or by-reference slices for `bytes`. Read-only in v1 (assigning to a parameter raises `algorithm/lvalue-unsupported`).",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/definitions/SceType"
+        }
+      },
+      "required": [
+        "name",
+        "type"
+      ],
+      "type": "object"
+    },
+    "AlgorithmSignature": {
+      "description": "Algorithm signature — parameters and return type. `return_type = None` denotes void (no `<sce:return type=...>`); a body without a terminal `<sce:return>` raises `algorithm/return-missing` only when `return_type` is Some.",
+      "properties": {
+        "params": {
+          "items": {
+            "$ref": "#/definitions/AlgorithmParam"
+          },
+          "type": "array"
+        },
+        "return_type": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SceType"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "params"
+      ],
+      "type": "object"
+    },
+    "AlgorithmStmt": {
+      "description": "One statement in an algorithm body. Lowered to language-idiomatic constructs by each backend (RFC §5.J.5 emitter table).",
+      "oneOf": [
+        {
+          "description": "`<sce:var name=... type=... init=.../>` — local mutable binding.",
+          "properties": {
+            "init": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "stmt": {
+              "enum": [
+                "var"
+              ],
+              "type": "string"
+            },
+            "type": {
+              "$ref": "#/definitions/SceType"
+            }
+          },
+          "required": [
+            "init",
+            "name",
+            "stmt",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:assign target=\"lvalue\" expr=\".../>\"` — mutates an existing l-value. v1 l-values are identifier, member access, or index (RFC §5.A \"LValue scope v1\"). Stored as raw string and validated by the parser.",
+          "properties": {
+            "expr": {
+              "type": "string"
+            },
+            "stmt": {
+              "enum": [
+                "assign"
+              ],
+              "type": "string"
+            },
+            "target": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "expr",
+            "stmt",
+            "target"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:if cond=\"...\"> ... <sce:else>...</sce:else></sce:if>`.",
+          "properties": {
+            "cond": {
+              "type": "string"
+            },
+            "else_body": {
+              "items": {
+                "$ref": "#/definitions/AlgorithmStmt"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "stmt": {
+              "enum": [
+                "if"
+              ],
+              "type": "string"
+            },
+            "then_body": {
+              "items": {
+                "$ref": "#/definitions/AlgorithmStmt"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "cond",
+            "stmt",
+            "then_body"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:while cond=\"...\" max-iter=\"N\">...</sce:while>` — counted loop. `max_iter = None` is allowed only when the `cond` expression bounds itself; on MCU targets unbounded loops fire `algorithm/while-unbounded` (Phase B once deploy.yaml MCU detection lands).",
+          "properties": {
+            "body": {
+              "items": {
+                "$ref": "#/definitions/AlgorithmStmt"
+              },
+              "type": "array"
+            },
+            "cond": {
+              "type": "string"
+            },
+            "max_iter": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "stmt": {
+              "enum": [
+                "while"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "body",
+            "cond",
+            "stmt"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:foreach item=\"b\" in=\"data\">...</sce:foreach>` — iterate over a collection. Lowers to a counted byte-loop on `bytes`-typed sources.",
+          "properties": {
+            "body": {
+              "items": {
+                "$ref": "#/definitions/AlgorithmStmt"
+              },
+              "type": "array"
+            },
+            "item": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            },
+            "stmt": {
+              "enum": [
+                "foreach"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "body",
+            "item",
+            "source",
+            "stmt"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:return expr=\".../>\"` — terminate body with an optional expression. Required at the body terminus when the signature declares a non-void `return_type`.",
+          "properties": {
+            "expr": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "stmt": {
+              "enum": [
+                "return"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "stmt"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:call target=\"other_algo\" args=\"a, b\"/>` — invoke another algorithm kind imported via `<sce:import>`. v1 forbids recursion (`algorithm/call-cycle`).",
+          "properties": {
+            "args": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "stmt": {
+              "enum": [
+                "call"
+              ],
+              "type": "string"
+            },
+            "target": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args",
+            "stmt",
+            "target"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "BackpressurePolicy": {
+      "description": "`<sce:backpressure>` policy — RFC §5.C body. Three policies; B6-α surfaces all three at parse time but the rust template lowers them uniformly (the policy threading into the runtime crate is an implementation concern of `sce-link-runtime`).",
+      "oneOf": [
+        {
+          "description": "Drop incoming bytes when the consumer cannot keep up.",
+          "enum": [
+            "drop"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Block the driver until the consumer drains.",
+          "enum": [
+            "block"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Inject an `sce.link.<name>.overflow` event on the SCXML side.",
+          "enum": [
+            "signal-event"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "BitSize": {
+      "description": "Bit size specification for codec fields.",
+      "oneOf": [
+        {
+          "description": "Fixed bit count: 8, 16, 24, 32, 64.",
+          "properties": {
+            "bits": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "type": {
+              "enum": [
+                "Fixed"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "bits",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Remaining bytes from byte offset to end of frame.",
+          "properties": {
+            "type": {
+              "enum": [
+                "Tail"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Size determined by another field's value (see CodecField::length_field).",
+          "properties": {
+            "type": {
+              "enum": [
+                "LengthRef"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Variable-length encoded integer (RFC §5.B Appendix B). The `width_bits` cap (16/32/64) names the value-type max width; wire bytes consumed is `1..=ceil(width_bits / 7)`. Canonical Zenoh ZInt is `Vle { width_bits: 64 }`.",
+          "properties": {
+            "type": {
+              "enum": [
+                "Vle"
+              ],
+              "type": "string"
+            },
+            "width_bits": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "type",
+            "width_bits"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "RFC §5.B B2 repeat primitive — list of imported-codec elements. The decoded host type is `Vec<T>` / `std::vector<T>` / ... where T is resolved via the field's [`CodecField::repeat_body_alias`]. `count_ref` selects the loop termination strategy (length-field vs until-eof).",
+          "properties": {
+            "count_ref": {
+              "$ref": "#/definitions/CountRef"
+            },
+            "type": {
+              "enum": [
+                "Repeat"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "count_ref",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "RFC §5.B B3 TLV chain primitive — bounded extension list (Type-Length-Value). Iteratively decodes entries up to `max_depth` (RFC: \"iterative, never recursive\"); residual bytes after the cap are handled per [`TlvOverflowPolicy`]. Entry body codec is resolved via [`CodecField::tlv_chain_body_alias`] (mirrors `repeat_body_alias`). MCU-class — emits only on Rust + C11; cpp/kotlin/go/python codecs containing this field type are rejected at codegen via `codegen/mcu-class-kind-on-non-mcu-language` (the existing kind-class diagnostic is repurposed at the codec-content granularity, see RFC §5.B \"MCU-only codec sub-features\").",
+          "properties": {
+            "max_depth": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "on_overflow": {
+              "$ref": "#/definitions/TlvOverflowPolicy"
+            },
+            "terminate_on": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/TlvTerminateStrategy"
+                }
+              ],
+              "description": "RFC §5.B Y3 — termination strategy. Defaults to `ExhaustOrDepth` for backward-compat with B3 trunk fixtures (cursor-exhaust + max_depth). `EntryFlag(flag_name)` reads the entry's named flag after each decode and terminates the loop when the flag is clear — required when something follows the chain on the wire (zenoh-pico ext chains followed by message body variants)."
+            },
+            "type": {
+              "enum": [
+                "TlvChain"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "max_depth",
+            "on_overflow",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "RFC §5.B Y0c — single imported-codec field embedded inline. The host language emits a nested struct of the imported codec's type; the streaming codec calls the imported codec's decode/encode for this position. No wire-level boundary bytes (no length prefix, no tag) — the embedded codec's own field layout consumes/produces bytes directly. Imported codec is resolved via [`CodecField::embed_body_alias`] (mirrors `repeat_body_alias`). RFC §5.B B5-γ parent-flag threading applies when the embedded codec declares `<sce:requires-parent-flags>`.\n\nFirst reachable consumer: zenoh-pico declare/undeclare bodies (decl_keyexpr, decl_subscriber, decl_queryable, decl_token) embed `codec_zenoh_wireexpr` after a VLE id field.",
+          "properties": {
+            "type": {
+              "enum": [
+                "Embed"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "BufferPoolVariant": {
+      "description": "`<sce:variant>` on `<scxml sce:kind=\"buffer-pool\">` — RFC §5.M lines 2676-2698. The reassembly variant of §5.E carries three additional fields (`max-fragments-per-message`, `reassembly-timeout-ms`, `per-peer-quota`) bundled on the `Reassembly` arm via the [`ReassemblyConfig`] payload. The `Default` arm covers the absence of `<sce:variant>` (regular RX/TX/stage pool) — semantically the pre-C9 behavior of `<scxml sce:kind=\"buffer-pool\">`.\n\n**Why a sum type (Q-C9-1 a, RFC §3)**: the three reassembly-specific fields are cross-field-coupled — all three required when `variant=Reassembly`, all three forbidden when `variant=Default`. Lifting the discriminator + payload into a single enum makes that invariant type-system-enforced at every consumer; flat `Option<u32>` fields would spread the coupling across the `BufferPoolModel` struct.\n\nFuture variants per spec §5.E lines 1166-1180 \"FSM extension policy\" (TX-only, crypto-DMA, etc.) add new arms additively — the existing `Default` / `Reassembly` arms are stable.\n\n**Backend coverage (spec line 2659-2664)**: reassembly variant inherits §5.E backend coverage — emits only on `(rust, *)` and `(c11, bare_metal)`. The existing `codegen/mcu-class-kind-on-non-mcu-language` diagnostic on the `ForgeKind::BufferPool` axis (Q-C9-6 a) gates non-MCU targets; C9-α does not introduce a new MCU-class diagnostic.",
+      "oneOf": [
+        {
+          "description": "No `<sce:variant>` element (or the explicit form `<sce:variant>default</sce:variant>`). Regular RX / TX / stage pool semantics; carries no extra fields.",
+          "properties": {
+            "variant": {
+              "enum": [
+                "default"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "variant"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:variant>reassembly</sce:variant>` (RFC §5.M lines 2682, 2688-2690). Per-slot fragment-index bitmap + deadline + peer-id emission (codegen contract deferred to C9-γ). Parse-time enforces the three sibling elements `<sce:max-fragments-per-message>`, `<sce:reassembly-timeout-ms>`, `<sce:per-peer-quota>` are all present (single-arm payload).",
+          "properties": {
+            "max_fragments_per_message": {
+              "description": "`<sce:max-fragments-per-message>` (RFC §5.M line 2688) — fragment- index bitmap width per slot; bounds the worst-case fragment count per reassembled message. C9-α parse rejection: missing element (`mem/reassembly-pool-variant-missing-max-fragments`) or value == 0 (`<sce:max-fragments-per-message> body text: 0` generic `InvalidAttribute`).",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "per_peer_quota": {
+              "description": "`<sce:per-peer-quota>` (RFC §5.M lines 2690, 2841-2861) — caps the in-flight reassembly slots a single peer may hold. `peer_table.capacity × per-peer-quota ≥ slot_count` invariant defers to C9-β where the `peer_table.capacity` source lands (§5.K). C9-α parse rejection: missing element (we reuse the generic `MissingElement` rather than minting a third reassembly-specific code per [[feedback-no-versioning]] — the two spec-named codes are reserved for the cases the spec explicitly names at line 2944-2945) or value == 0 (generic).",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "reassembly_timeout_ms": {
+              "description": "`<sce:reassembly-timeout-ms>` (RFC §5.M line 2689) — per-slot deadline emitted at codegen time. C9-α parse rejection: missing element (`mem/reassembly-pool-variant-missing-timeout`) or value == 0 (generic `InvalidAttribute`).",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "variant": {
+              "enum": [
+                "reassembly"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "max_fragments_per_message",
+            "per_peer_quota",
+            "reassembly_timeout_ms",
+            "variant"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "CachePolicy": {
+      "description": "`<sce:cache-policy>` enum — RFC §5.E lines 948-957. Three policies determine how codegen positions cache-maintenance ops on FSM edges: `maintain` emits clean/invalidate around DMA boundaries (B7-δ); `non-cacheable` declares MPU non-cacheable region (deploy.yaml `attr: [non_cacheable]`); `none` targets without D-cache.\n\nB7-α parses the enum + carries it on `BufferPoolModel`. The cache- maintenance pinning that uses this field defers to B7-δ (gated on §5.I `<sce:call>` intrinsic registry).",
+      "oneOf": [
+        {
+          "description": "Codegen inserts `cache_clean` before DMA TX, `cache_invalidate` after DMA RX (B7-δ). Pool MUST live in a `cacheable` region.",
+          "enum": [
+            "maintain"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Pool MUST live in a `non_cacheable` MPU region; no maintenance ops emitted. CPU access pays the uncached-load penalty.",
+          "enum": [
+            "non-cacheable"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Target has no D-cache (e.g. Cortex-M0/M3/M4). No maintenance ops, no MPU setup. `cache-policy: maintain` on a `has_dcache: false` target raises `mem/cache-policy-unsupported-on-no-dcache-core` (B7-δ family).",
+          "enum": [
+            "none"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "CapacitySource": {
+      "description": "`<sce:capacity>` source — RFC §5.L lines 2553-2554 + 2600-2603.\n\nEither resolved from `deploy.yaml` at codegen time (`<sce:capacity source=\"deploy\" key=\"machines.X.limits.Y\"/>`) or a build-time constant (`<sce:capacity const=\"N\"/>`). Spec line 2583-2585 fixes the lowering: both shapes resolve to a per-language compile-time constant in the emitted code. The cross-backend parity contract (§6.2.6) verifies that the same insertion sequence produces the same iterator order on every backend.\n\nC6-α validates the XML attribute structure (exactly one of `source=\"deploy\" key=...` or `const=\"...\"`) at parse time; deploy-key resolution against `MachineDeployConfig.limits` lands in C6-γ behind `collection/capacity-unresolved`.",
+      "oneOf": [
+        {
+          "description": "`<sce:capacity source=\"deploy\" key=\"machines.X.limits.Y\"/>` — key path against deploy.yaml resolved at codegen time. Empty / missing `key` attribute parse-rejects.",
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "deploy_key"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "key",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:capacity const=\"N\"/>` — build-time constant. Positive `u32` only; `0` or non-numeric parse-rejects.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "compile_const"
+              ],
+              "type": "string"
+            },
+            "value": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "CodecField": {
+      "description": "A single field in a codec's byte layout.",
+      "properties": {
+        "bit_offset": {
+          "description": "Bit offset within the byte (for sub-byte fields).",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "bit_size": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/BitSize"
+            }
+          ],
+          "description": "Bit size of this field."
+        },
+        "byte_offset": {
+          "description": "Byte offset within the frame.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "dma_burst_align": {
+          "description": "RFC §5.B B3 DMA alignment primitive — `sce:dma-burst-align=\"N\"` declares this field's start offset within the encoded buffer is constrained to an N-byte boundary (typical N: 16, 32, 64). The constraint is build-time: codegen verifies `byte_offset % N == 0` (rejects with `codec/dma-alignment-unsatisfiable` otherwise) AND validates that every preceding field is Fixed bit-size (so the post-padding layout is statically computable). Codegen emits language-level alignment assertions (`_Static_assert` / `const _: () = assert!`) on the literal offset for drift protection. MCU-class — codecs containing this attribute emit only on Rust + C11. After B5-ε closures TLV chain is no longer MCU-only (Zenoh extension envelopes ship on server-class peers too); DMA align is the only remaining codec sub-feature gated to MCU backends. `None` when no alignment constraint.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "embed_body_alias": {
+          "description": "RFC §5.B Y0c — embedded imported-codec alias for `BitSize::Embed` fields. `Some(alias)` only when bit_size is Embed; mirrors `repeat_body_alias` / `tlv_chain_body_alias` for the single-codec inline case. Resolved against `<sce:import>` aliases at codegen time.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "embed_length_from": {
+          "description": "RFC §5.B Y0b — `sce:length-from=\"<id>\"` on a `BitSize::Embed` field bounds the embedded codec's decode-time cursor scope to the named sibling field's decoded value (a prior-position integer field — typically a VLE total-length prefix). The embedded codec consumes exactly that many bytes via an inner-cursor sub-window; encode side trusts the author to set the length sibling consistently with the embedded codec's emitted byte count (mirrors the `LengthRef` author-trust contract — round-trip correctness is the author's responsibility, not codec-derived).\n\nFirst reachable consumer: zenoh-pico `_z_decl_ext_keyexpr_encode` (declarations.c:38-50) where the outer envelope's VLE total-length prefix bounds the inner `wireexpr`-shaped body (inner_header + VLE id + suffix-Tail). `None` for the Y0c always-present always-cursor-direct shape.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "endian": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Endian"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Per-field endianness override."
+        },
+        "flags": {
+          "description": "Named bits — RFC §5.B B1-γ flags primitive. Empty for plain fields; populated when the field was authored as a `<sce:flags>` container with `<sce:flag name=... bit=N/>` children. Codegen emits per-flag get/set accessors after the encode/decode methods without changing the wire layout (the field still occupies the same bytes as a regular unsigned-int).",
+          "items": {
+            "$ref": "#/definitions/FlagDef"
+          },
+          "type": "array"
+        },
+        "id": {
+          "type": "string"
+        },
+        "length_arith": {
+          "description": "RFC §5.B B5-δ Surface F — arithmetic offset on the `length-field` source value. Authored as `sce:length-arith=\"+1\"` or `sce:length-arith=\"-1\"` paired with `sce:bit-size=\"length-ref\"` + `sce:length-field=\"...\"`. Effective payload length is `sibling_value + length_arith` bytes.\n\nFirst reachable consumer: zenoh-pico Scout/Hello/Init `zid`, where the wire stores `zid_len_m1 = actual_len - 1` to pack the length into 4 bits, and decode reconstructs `actual_len = zid_len_m1 + 1`.\n\nv1 grammar restricts the offset to `±1` (parser rejects 0 and `|x| > 1`). Widening defers to a reachable consumer. `length-arith` requires `length-field`; standalone `length-arith` without a sibling reference is rejected at parse time. Author trust contract: payload length stays `len_sibling + arith` bytes across encode/decode round-trips (mirrors the variant tag/body trust contract from B1-β).",
+          "format": "int32",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "length_field": {
+          "description": "Referenced field ID for LengthRef bit size.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "max_count": {
+          "description": "RFC §5.B B2 maximum element count for `BitSize::Repeat` fields — used by encode-buffer sizing to bound `min_frame + count * element_max`. Defaults to [`crate::forge::limits::REPEAT_DEFAULT_MAX_COUNT`] when absent (mirrors `max_size`'s fallback for Tail/LengthRef bytes).",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_size": {
+          "description": "Maximum size for variable-length fields (tail, length-ref).",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "present_if": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PresentIfPredicate"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "RFC §5.B B1-δ present-if primitive. `Some(predicate)` when the field carries a `sce:present-if=\"<carrier>.<flag>\"` attribute; the field's host-language type is wrapped as a per-language optional (`Option<T>` / `std::optional<T>` / `T?` / `*T` / `Optional[T]` / `bool has_<id>; T <id>` paired in C11) and the streaming decode/encode skips the field's bytes when the predicate is false."
+        },
+        "repeat_body_alias": {
+          "description": "RFC §5.B B2 repeat primitive — imported codec alias whose decode/encode handles each element. `Some(alias)` only when `bit_size = BitSize::Repeat`. Resolved against `<sce:import>` aliases at codegen time (mirrors variant arm body_alias resolution).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sce_type": {
+          "$ref": "#/definitions/SceType"
+        },
+        "tlv_chain_body_alias": {
+          "description": "RFC §5.B B3 TLV chain primitive — imported codec alias whose decode/encode handles each entry. `Some(alias)` only when `bit_size = BitSize::TlvChain`. Resolved against `<sce:import>` aliases at codegen time (mirrors `repeat_body_alias`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "bit_size",
+        "byte_offset",
+        "id",
+        "sce_type"
+      ],
+      "type": "object"
+    },
+    "CodecTestVector": {
+      "description": "One `<sce:test-vector hex=\"...\">` row on a codec. Captures the wire-byte form (`hex`) and the expected decoded field-value tree (`decoded`) so the per-backend sidecar can render a single round-trip oracle (encode → bytes parity, decode → field parity).\n\nTrunk shape (`Plain` only) covers codecs whose decoded form is a flat list of named fields. Variant / recursive-variant / TLV-chain expansions reuse the same `CodecTestVector` envelope and only add new arms to `DecodedValue` — keeps the parser + codegen surface uniform across B5-θ closures.",
+      "properties": {
+        "decoded": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/DecodedValue"
+            }
+          ],
+          "description": "Expected decoded value tree."
+        },
+        "hex": {
+          "description": "Decoded wire bytes (parsed from the `hex=` attribute).",
+          "items": {
+            "format": "uint8",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "source_line": {
+          "description": "1-based source line of the `<sce:test-vector>` element. Round-tripped to per-backend test-function naming so a failing row is locatable in the SCXML source from the test output.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "decoded",
+        "hex",
+        "source_line"
+      ],
+      "type": "object"
+    },
+    "CodecVariant": {
+      "description": "RFC §5.B B5-ν — variant tag scope. Determines whether the tag field reference is resolved within the codec itself (`Local` — B1-β / B5-β / peek-byte) or against the codec's `<sce:requires-parent-flags>` carrier (`Parent` — B5-ν).\n\n`Local` is the back-compat default and skips serialization so Discriminated-union suffix on a codec — RFC §5.B Codec DSL.\n\nDecode reads the named tag field (or named flag bit-range within it, when `tag_flag` is set), then dispatches into the matching arm's body codec. Encode writes the tag bytes followed by the active arm's body bytes. The optional `<sce:default>` arm catches any tag value not enumerated; absent default + non-exhaustive arm coverage fires `codec/variant-arm-unreachable` at build time (see RFC §5.B).",
+      "properties": {
+        "arms": {
+          "description": "Enumerated arms in document order.",
+          "items": {
+            "$ref": "#/definitions/VariantArm"
+          },
+          "type": "array"
+        },
+        "default_arm": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/VariantArm"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Catch-all arm for tag values outside the enumerated set. `None` ⇒ build-time `codec/variant-arm-unreachable` when the tag domain isn't fully covered by `arms`."
+        },
+        "peek_byte": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PeekByteSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "RFC §5.B Y3 atomic 2b-ii peek-byte — peek-byte mode dispatch (Zenoh response/request body MID). `Some` ⇒ variant tag reads `peek_byte`'s next-byte view (carrier is the cursor's next byte without advancing); arm body codec reads same byte as own header. `None` ⇒ B1-β own-field mode (back-compat: existing variant goldens omit this field via skip_serializing_if)."
+        },
+        "tag_field": {
+          "description": "`id` of the field whose decoded value (or named bit-range, see `tag_flag`) selects an arm. Must reference an unsigned-int field — enforced at parse time. `tag_field` resolves to a field in the codec's own `fields` (B1-β / B5-β whole-field or multi-bit-flag dispatch), or equals `peek_byte.id` when peek-byte mode is active.\n\n`None` ⇒ RFC B5-ν inversion β shape (caller-tag): `<sce:variant>` element with no `tag=` attribute. The leaf has no own carrier field; the dispatch value is supplied by the caller as the `tag: u8` decode parameter. Encode signature unchanged (active arm comes from the language-level enum discriminant).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tag_flag": {
+          "description": "RFC §5.B B5-β multi-bit-flag dispatch: when `Some(name)`, the `tag_field` MUST be a `<sce:flags>`-bearing carrier and `name` names one of its `<sce:flag>` bit-ranges. The dispatch value is `(carrier >> bit) & ((1 << width) - 1)` — the bit-range's shifted-and-masked unsigned scalar. When `None`, the dispatch reads the field's whole value (B1-β whole-field form).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "arms"
+      ],
+      "type": "object"
+    },
+    "CollectionOrdering": {
+      "description": "`<sce:ordering>` mode — RFC §5.L lines 2558-2559 + 2605.",
+      "oneOf": [
+        {
+          "description": "`<sce:ordering>insertion</sce:ordering>` — iterator yields entries in insertion order (default per spec line 2558).",
+          "enum": [
+            "insertion"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "`<sce:ordering>sorted-by(index-by)</sce:ordering>` — iterator yields entries sorted by the `<sce:index-by field=\"...\">` field. Requires `<sce:index-by>` to be present (validated by [`DiagnosticCode::CollectionOrderingSortedRequiresIndexBy`]).",
+          "enum": [
+            "sorted-by-index"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "ConcurrencyMode": {
+      "description": "`<sce:concurrency>` mode — RFC §5.L lines 2560-2562 + 2606.",
+      "oneOf": [
+        {
+          "description": "`<sce:concurrency>single-writer</sce:concurrency>` — exactly one task may call mutating ops. Default per spec line 2560.",
+          "enum": [
+            "single-writer"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "`<sce:concurrency>multi-writer</sce:concurrency>` — multiple tasks may call mutating ops. Requires §5.I `<sce:call>` atomic intrinsics imported (validated cross-doc by `collection/multi-writer-without-atomics` in C6-β).",
+          "enum": [
+            "multi-writer"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "CountRef": {
+      "description": "RFC §5.B B2 repeat primitive — element count source for a `BitSize::Repeat` field.\n\nTwo shapes: - [`CountRef::LengthField`] — count comes from a sibling integer field declared earlier in the same codec (the count value is the decoded integer). Mirrors the `<sce:repeat sce:count=\"<id>\"/>` authoring form. - [`CountRef::UntilEof`] — count is implicit; the decoder consumes elements until the cursor's remaining bytes are exhausted. The last element MUST decode cleanly off a frame boundary; a partial final element returns `NeedMoreBytes`. Mirrors `<sce:repeat sce:until-eof=\"true\"/>`.",
+      "oneOf": [
+        {
+          "description": "Sibling integer field id whose decoded value names the count. Validated at parse time against forward references and against non-integer-typed targets.",
+          "properties": {
+            "type": {
+              "enum": [
+                "LengthField"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": [
+            "object",
+            "string"
+          ]
+        },
+        {
+          "description": "Greedy consume-remaining; element count is whatever fits before cursor exhaustion.",
+          "properties": {
+            "type": {
+              "enum": [
+                "UntilEof"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "DecodedField": {
+      "description": "One `<sce:decoded field=\"...\" value|hex|string=\"...\"/>` row inside a `<sce:test-vector>`. Field name is matched against `CodecModel.fields` at parse time; value carries the typed scalar / bytes / string literal compatible with that field's `sce_type`.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/definitions/DecodedFieldValue"
+        }
+      },
+      "required": [
+        "name",
+        "value"
+      ],
+      "type": "object"
+    },
+    "DecodedFieldValue": {
+      "description": "Typed value literal for one `<sce:decoded>` row. Variant chosen at parse time from the matching codec field's `SceType`: integer types → `Uint` / `Int`, `Bool` → `Bool`, `Bytes` → `Bytes`, `String` → `String`. Float fields are not yet supported (no codec field uses them; closures land alongside the first consumer).",
+      "oneOf": [
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "bool"
+              ],
+              "type": "string"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Unsigned integer literal — narrowed at codegen time against the field's declared SceType (uint8/uint16/uint32/uint64).",
+          "properties": {
+            "type": {
+              "enum": [
+                "uint"
+              ],
+              "type": "string"
+            },
+            "value": {
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Signed integer literal — narrowed at codegen time against the field's declared SceType (int8/int16/int32/int64).",
+          "properties": {
+            "type": {
+              "enum": [
+                "int"
+              ],
+              "type": "string"
+            },
+            "value": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Byte sequence (parsed from the `hex=` attribute).",
+          "properties": {
+            "type": {
+              "enum": [
+                "bytes"
+              ],
+              "type": "string"
+            },
+            "value": {
+              "items": {
+                "format": "uint8",
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "UTF-8 string (parsed from the `string=` attribute). Decode validates UTF-8 invariant per B5-ζ codec contract; the test-vector value is stored as canonical Rust `String`.",
+          "properties": {
+            "type": {
+              "enum": [
+                "string"
+              ],
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "DecodedValue": {
+      "description": "Decoded value tree for a `<sce:test-vector>` row. Trunk only emits `Plain` (flat field list); variant / TLV-chain closures add `Variant` and `Chain` arms following the B1-β / B3-α trunk-then-closures cadence.",
+      "oneOf": [
+        {
+          "description": "Plain codec: ordered list of named field assignments. Field names + value types validated against the codec's `fields` list at parse time.",
+          "properties": {
+            "fields": {
+              "items": {
+                "$ref": "#/definitions/DecodedField"
+              },
+              "type": "array"
+            },
+            "shape": {
+              "enum": [
+                "plain"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "fields",
+            "shape"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Direction": {
+      "description": "Data flow direction for kind fields.",
+      "enum": [
+        "in",
+        "out",
+        "internal"
+      ],
+      "type": "string"
+    },
+    "EmbedDispatch": {
+      "description": "RFC §5.B variant-dispatch (B5-ν inversion) — parent-side declaration of which of its own flags drives an imported variant codec's arm dispatch. Attached to a `ForgeImport` via the `<sce:variant-dispatch>` child of `<sce:import>`.\n\nThe dotted `flag_source` value names the parent's own carrier and flag (e.g. `\"header.M\"` means \"the M flag bit of the `header` field in this codec\"). Cross-doc validator confirms the named carrier field exists, the named flag exists on it, the flag has no conflicting `value=` constant, the flag's width fits the imported codec's arm count, and the carrier appears before the embed field in declaration order.",
+      "properties": {
+        "flag_source": {
+          "description": "Dotted `<carrier>.<flag>` reference into the parent codec's own flag space. Parser splits on the dot; cross-doc validator resolves both halves against the parent's `fields` list.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "flag_source"
+      ],
+      "type": "object"
+    },
+    "Endian": {
+      "description": "Endianness for byte-level operations.",
+      "enum": [
+        "big",
+        "little",
+        "native"
+      ],
+      "type": "string"
+    },
+    "ExternDeclaration": {
+      "description": "One `<sce:extern>` declaration after parse-time validation has matched it against the §5.I baseline registry. Carried through `ParsedForge` so future codegen atomics can emit per-language `extern \"C\" { fn ... }` blocks without re-walking the XML.",
+      "properties": {
+        "abi": {
+          "description": "ABI as authored, normalized to lowercase. One of `c` / `rust`.",
+          "type": "string"
+        },
+        "crate_name": {
+          "description": "`crate=` attribute value. Defaults to the registry entry's `crate_name` (today, `sce_intrinsics_runtime`) when the author omits the attribute. Stored rather than always-defaulted so a future plugin extension that overrides `crate` per-symbol surfaces here directly.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Symbol name as authored — guaranteed to exactly match a registry entry's `name` (closed-set lookup at parse time).",
+          "type": "string"
+        },
+        "sig": {
+          "description": "Signature as authored — guaranteed to byte-match the registry entry's `sig`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "abi",
+        "crate_name",
+        "name",
+        "sig"
+      ],
+      "type": "object"
+    },
+    "FilterType": {
+      "description": "Filter type: algorithm used for signal filtering.",
+      "enum": [
+        "moving-average",
+        "low-pass",
+        "debounce"
+      ],
+      "type": "string"
+    },
+    "FlagBind": {
+      "description": "RFC Axis-1 inversion — a parent codec's binding of one of its own flags to a leaf's declared flag-input. Lives on `<sce:import>` as a child element: `<sce:import src=\"...\" as=\"...\"><sce:flag-bind input=\"X\" source=\"Y.Z\"/></sce:import>`.\n\n`source` resolves via the standard dotted-form rule: - `<carrier>.<flag>` ⇒ parent has a local `<sce:flags id=\"<carrier>\">` declaring `<sce:flag name=\"<flag>\" bit=... width=.../>`. Codegen extracts `(carrier_value >> bit) & ((1 << width) - 1)` at the embed call-site and threads it as the leaf's named parameter. - `<name>` (no dot) ⇒ parent has a local `<sce:flag-input name= \"<name>\" width=.../>` of its own (chain-forwarder pattern). The parent's own input is threaded into the leaf's input by name.\n\nCross-doc validator (`validate_cross_codec_flag_bind`, parent-local) confirms each `<sce:flag-bind>` resolves to a parent-side flag-input or carrier+flag; every leaf-declared input is bound exactly once; widths agree.",
+      "properties": {
+        "input": {
+          "description": "Leaf-side input name being supplied.",
+          "type": "string"
+        },
+        "source": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/FlagBindSource"
+            }
+          ],
+          "description": "Parent-side source kind, resolved at parse time."
+        }
+      },
+      "required": [
+        "input",
+        "source"
+      ],
+      "type": "object"
+    },
+    "FlagBindSource": {
+      "description": "RFC Axis-1 inversion — resolved binding source. Two variants per the dotted-form rule documented on [`FlagBind`].",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "`source=\"<carrier>.<flag>\"` — parent's local flags-carrier.",
+          "properties": {
+            "carrier": {
+              "properties": {
+                "carrier": {
+                  "type": "string"
+                },
+                "flag": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "carrier",
+                "flag"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "carrier"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "`source=\"<input>\"` — parent's own flag-input (chain forwarder).",
+          "properties": {
+            "input": {
+              "properties": {
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "input"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "FlagDef": {
+      "description": "A single named bit-range on a `<sce:flags>` carrier field — RFC §5.B B1-γ + B5-α. `bit` is the LSB position within the carrier's natural integer width (0 = LSB), validated at parse time against the carrier's [`SceType::int_bit_width`]. `width` is the contiguous bit-range size (defaults to 1 for B1-γ single-bit shape; >1 for B5-α multi-bit accessors like Zenoh's `_z_n_qos_t._val.priority:3`). `bit + width <= carrier_int_bit_width` is parser-enforced; per-flag bit-ranges within the same carrier may not overlap.\n\n`value` is the optional wire-constant baked into the carrier's `Default::default()` (RFC variant-default-uniformity Atomic α). Authors declare this on an inner codec's MID flag so the codec's default instance is wire-valid for its own dispatch tag — required for round-trip uniformity when the codec is referenced as the declared default arm of an outer `<sce:variant>`. The masked constant `(value & ((1 << width) - 1)) << bit` ORs into the carrier's Default. `None` ⇒ no constant, Default zero-fills the bit-range (back-compat with pre-Atomic-α goldens). Stored as `u64` to fit any carrier width up to uint64.",
+      "properties": {
+        "bit": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "description": "Optional wire-constant — see field doc. Skipped from serialization when `None` so pre-Atomic-α goldens (which never carry this attribute) keep their on-disk shape.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "width": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "bit",
+        "name",
+        "width"
+      ],
+      "type": "object"
+    },
+    "FlagInput": {
+      "description": "RFC Axis-1 inversion — a named flag-shaped input the codec receives from its caller. Replaces the legacy `<sce:requires-parent-flags>` shape: leaf declares logical input names + bit widths only, with no claim about the parent's carrier name or bit position.\n\nAuthored as `<sce:flag-inputs><sce:flag-input name=\"X\" width=\"N\"/> </sce:flag-inputs>` under `<scxml sce:kind=\"codec\">`. The leaf's `decode`/`encode` signature gains one typed parameter per declared input (positional order = declaration order). Predicates inside the leaf body reference the input by bare name (e.g. `sce:present-if=\"X\"`), evaluating `X != 0` on the local typed parameter — no carrier-byte threading, no shift+mask.\n\nThe parent codec, at its `<sce:import>` site, supplies values via `<sce:flag-bind input=\"X\" source=\"Y.Z\"/>` directives — see [`FlagBind`].",
+      "properties": {
+        "name": {
+          "description": "Logical input name. Author-visible in predicates (`present-if=\"<name>\"`) and as a positional parameter in the generated `decode`/`encode` signatures.",
+          "type": "string"
+        },
+        "width": {
+          "description": "Bit-width of the input value. v1 lock-in: width = 1 (single-bit flag carrying 0/1). Future widening to width > 1 (multi-bit dispatch inputs) defers to a reachable consumer.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "width"
+      ],
+      "type": "object"
+    },
+    "FoldBody": {
+      "description": "Body of an `<sce:fold>` element — RFC §5.F build-time evaluation.\n\nIterates `iter_var` over `[range_start, range_end)`, executing `body` against a fresh local scope per iteration and emitting `yield_expr` (typed at `elem_type`) as one element of the produced array.",
+      "properties": {
+        "body": {
+          "description": "Statements executed per iteration before `yield_expr`. Re-uses the algorithm-body statement vocabulary (Var / Assign / If / While / Foreach). `Return` and `Call` are forbidden inside a fold body (the host interpreter rejects them with `algorithm/const-not-foldable`).",
+          "items": {
+            "$ref": "#/definitions/AlgorithmStmt"
+          },
+          "type": "array"
+        },
+        "elem_type": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SceType"
+            }
+          ],
+          "description": "Element type — must match the array shape's `elem` and the static type of `yield_expr` (validated by Phase A4-γ diagnostic `algorithm/const-yield-type-mismatch`)."
+        },
+        "iter_var": {
+          "description": "Loop-variable name visible inside the fold body.",
+          "type": "string"
+        },
+        "range_end": {
+          "description": "Exclusive upper bound of the integer range driving the fold.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "range_start": {
+          "description": "Inclusive lower bound of the integer range driving the fold.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "yield_expr": {
+          "description": "Per-iteration yielded expression — its evaluated value at `elem_type` becomes the next array element.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "body",
+        "elem_type",
+        "iter_var",
+        "range_end",
+        "range_start",
+        "yield_expr"
+      ],
+      "type": "object"
+    },
+    "ForgeDocument": {
+      "description": "Top-level forge document — dispatched by `sce:kind` on `<scxml>` root.",
+      "oneOf": [
+        {
+          "description": "Transform: pure mathematical formula. Input -> computation -> output. No state, no side effects. Generates an inline function.",
+          "properties": {
+            "inputs": {
+              "items": {
+                "$ref": "#/definitions/ForgeField"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "enum": [
+                "transform"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "outputs": {
+              "items": {
+                "$ref": "#/definitions/ForgeField"
+              },
+              "type": "array"
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source position of the `<scxml sce:kind=\"transform\">` root element. Drives the per-kind body function's SCE-MAP marker."
+            }
+          },
+          "required": [
+            "inputs",
+            "kind",
+            "name",
+            "outputs"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Lookup: finite key→value mapping with an explicit miss policy.\n\nTwo orthogonal codegen strategies are chosen by the generator based on `output.sce_type`: * `string` output → enum + switch/case (symbolic dispatch). Every unique value becomes an enum variant; input matches select the variant. The `Default` policy embeds a `default:` branch; the `Error` policy wraps the return in the language's optional type. * non-string output → parallel `KEYS[]` / `VALUES[]` constants plus a call into `sce_forge_runtime::lookup::lookup()`. The `Default` policy unwraps with `or(default)`; the `Error` policy forwards the optional.",
+          "properties": {
+            "entries": {
+              "items": {
+                "$ref": "#/definitions/LookupEntry"
+              },
+              "type": "array"
+            },
+            "input": {
+              "$ref": "#/definitions/ForgeField"
+            },
+            "kind": {
+              "enum": [
+                "lookup"
+              ],
+              "type": "string"
+            },
+            "miss_policy": {
+              "$ref": "#/definitions/MissPolicy"
+            },
+            "name": {
+              "type": "string"
+            },
+            "output": {
+              "$ref": "#/definitions/ForgeField"
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source position of the `<scxml sce:kind=\"lookup\">` root element. Drives the per-kind body function's SCE-MAP marker."
+            }
+          },
+          "required": [
+            "entries",
+            "input",
+            "kind",
+            "miss_policy",
+            "name",
+            "output"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Condition: named boolean guard expression. Generates an inline bool function.",
+          "properties": {
+            "expr": {
+              "description": "ECMAScript expression that evaluates to boolean.",
+              "type": "string"
+            },
+            "inputs": {
+              "items": {
+                "$ref": "#/definitions/ForgeField"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "enum": [
+                "condition"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source position of the `<scxml sce:kind=\"condition\">` root element. Drives the per-kind body function's SCE-MAP marker."
+            }
+          },
+          "required": [
+            "expr",
+            "inputs",
+            "kind",
+            "name"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Codec: byte-level encode/decode. Generates struct with decode/encode methods.",
+          "properties": {
+            "default_endian": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/Endian"
+                }
+              ],
+              "description": "Document-level default endianness."
+            },
+            "fields": {
+              "description": "Ordered list of fields in the codec.",
+              "items": {
+                "$ref": "#/definitions/CodecField"
+              },
+              "type": "array"
+            },
+            "flag_inputs": {
+              "description": "RFC Axis-1 inversion — declared flag-shaped inputs the codec receives from its caller. Empty when the codec needs no caller- supplied flags. Each [`FlagInput`] becomes a positional typed parameter on the generated `decode`/`encode` signatures (in declaration order), addressable by bare name in `sce:present-if=\"<name>\"` predicates. See [`FlagInput`] for the per-input shape and [`FlagBind`] for the parent-side binding directive at import-site.",
+              "items": {
+                "$ref": "#/definitions/FlagInput"
+              },
+              "type": "array"
+            },
+            "input_length": {
+              "description": "Expected input frame length (from `sce:length` on input data).",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "kind": {
+              "enum": [
+                "codec"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source position of the `<scxml sce:kind=\"codec\">` root element. Drives the per-kind body function's SCE-MAP marker."
+            },
+            "test_vectors": {
+              "description": "RFC §5.B B5-θ inline test vectors. Each row carries one wire `hex` byte sequence + the expected decoded field-value tree. Generates a per-backend round-trip sidecar (`<fixture>_test.{rs,h}`) next to the codec header — symmetric with the algorithm `<sce:test-vector>` machinery (RFC §5.B B2). Trunk lands on Rust + C11 with plain (non-variant, non-TLV-chain, non-parent- flags) codecs only; variant + recursive-variant + TLV-chain + parent-flags codecs reject through the per-language gate in `render_codec_test_vector_sidecar` until B5-θ closures land.",
+              "items": {
+                "$ref": "#/definitions/CodecTestVector"
+              },
+              "type": "array"
+            },
+            "variant": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/CodecVariant"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional discriminated-union suffix — RFC §5.B variant primitive (B1-β). When present the codec emits a sum type per language (Rust enum, Kotlin sealed class, C11 tagged union, etc.) rather than a flat struct."
+            }
+          },
+          "required": [
+            "default_endian",
+            "fields",
+            "kind",
+            "name"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Validator: range/rate-of-change/plausibility checks. Has internal state (previous values for rate-of-change detection).",
+          "properties": {
+            "inputs": {
+              "items": {
+                "$ref": "#/definitions/ForgeField"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "enum": [
+                "validator"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "rules": {
+              "$ref": "#/definitions/ValidatorRules"
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source position of the `<scxml sce:kind=\"validator\">` root element. Drives the per-kind body function's SCE-MAP marker."
+            }
+          },
+          "required": [
+            "inputs",
+            "kind",
+            "name",
+            "rules"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Procedure: sequential branching logic with states and guarded transitions. Level 1 (guard-only): CRTP base + switch/case, stateless `execute()`. Level 2 (event-driven): StaticExecutionEngine<Policy> + `runToCompletion()`.",
+          "properties": {
+            "helpers": {
+              "description": "User-declared helper function DI points (see [`ProcedureHelper`]).",
+              "items": {
+                "$ref": "#/definitions/ProcedureHelper"
+              },
+              "type": "array"
+            },
+            "initial": {
+              "description": "Id of the initial state (from `initial` attribute on `<scxml>`).",
+              "type": "string"
+            },
+            "inputs": {
+              "description": "Input parameters (sce:direction=\"in\").",
+              "items": {
+                "$ref": "#/definitions/ForgeField"
+              },
+              "type": "array"
+            },
+            "internals": {
+              "description": "Internal state variables (sce:direction=\"internal\"). Level 2 only.",
+              "items": {
+                "$ref": "#/definitions/ForgeField"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "enum": [
+                "procedure"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source position of the `<scxml sce:kind=\"procedure\">` root element. Drives the per-kind body function's SCE-MAP marker."
+            },
+            "states": {
+              "description": "All states in document order (regular + final).",
+              "items": {
+                "$ref": "#/definitions/ProcedureState"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "initial",
+            "inputs",
+            "kind",
+            "name",
+            "states"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Filter: signal filtering with internal state (moving average, low-pass, debounce). Generates a struct with `update()` and `reset()` methods.",
+          "properties": {
+            "alpha": {
+              "description": "Smoothing factor (0..1) for low-pass filter.",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "filter_type": {
+              "$ref": "#/definitions/FilterType"
+            },
+            "input": {
+              "$ref": "#/definitions/ForgeField"
+            },
+            "kind": {
+              "enum": [
+                "filter"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "output": {
+              "$ref": "#/definitions/ForgeField"
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source position of the `<scxml sce:kind=\"filter\">` root element. Drives the per-kind body function's SCE-MAP marker."
+            },
+            "window": {
+              "description": "Window size for moving-average and debounce.",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "filter_type",
+            "input",
+            "kind",
+            "name",
+            "output"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Interpolation: 1D/2D table lookup with linear/bilinear interpolation. Generates a struct with static tables and a `lookup()` method.",
+          "properties": {
+            "axes": {
+              "description": "Axes in order (1 for linear, 2 for bilinear). First = rows, second = columns.",
+              "items": {
+                "$ref": "#/definitions/InterpolationAxis"
+              },
+              "type": "array"
+            },
+            "inputs": {
+              "items": {
+                "$ref": "#/definitions/ForgeField"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "enum": [
+                "interpolation"
+              ],
+              "type": "string"
+            },
+            "method": {
+              "$ref": "#/definitions/InterpolationMethod"
+            },
+            "name": {
+              "type": "string"
+            },
+            "out_of_bounds": {
+              "$ref": "#/definitions/OutOfBounds"
+            },
+            "output": {
+              "$ref": "#/definitions/ForgeField"
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source position of the `<scxml sce:kind=\"interpolation\">` root element. Drives the per-kind body function's SCE-MAP marker."
+            },
+            "values": {
+              "description": "Table values (flat, row-major for 2D).",
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "axes",
+            "inputs",
+            "kind",
+            "method",
+            "name",
+            "out_of_bounds",
+            "output",
+            "values"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Timer kind shape per watching-zenoh RFC §5.D line 880-886.\n\nOne timer per forge doc — keepalive, retry, watchdog, etc. The timer self-manages its lifecycle through `reset_on` (event-driven restart) and `cancel_on_state_exit` (state-exit-driven cancel), and emits `fire_event` when the period elapses.\n\n**Pre-C1 legacy shape removed.** Before 2026-05-12, this kind declared multiple `TimerEntry` records under `<datamodel>` with `sce:timer=\"periodic|timeout|delayed\"` + integer-millisecond attributes. The legacy shape did not cover the §5.D semantics (event-driven reset, state-exit cancel, single named timer per doc); C1 migrates SCE to the spec-mandated shape per `feedback_spec_mirror_parity.md` and `feedback_pre_release_no_compat.md` (pre-1.0 rename permitted).\n\nCodegen contract (RFC §5.D lines 902-906): - AP: deadline tracker on top of generic event queue (e.g. `tokio::time::interval` for Rust, `ScheduledExecutorService` for Kotlin, `time.AfterFunc` for Go, `asyncio.sleep` for Python) - MCU: compile-time slot in a static timer wheel\n\nDiagnostics (RFC §5.D lines 909-910): - `timer/period-below-tick-rate` — `period_us` declared shorter than `scheduler.tick_period_us`; cooperative scheduler cannot dispatch faster than its tick rate. - `timer/slot-overflow` — total timer doc count for a machine exceeds `scheduler.timer_wheel_depth`; the static wheel cannot hold any more.",
+          "properties": {
+            "cancel_on_state_exit": {
+              "description": "State id whose exit cancels the timer. `<sce:cancel-on state-exit=\"...\"/>` (optional).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "fire_event": {
+              "description": "Event name raised when the timer fires. `<sce:fire-event>...</sce:fire-event>` (required).",
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "timer"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "description": "Timer name from `<scxml sce:kind=\"timer\" name=\"...\">`. Used as the codegen struct prefix (`<Name>Timer` / `<name>_timer`).",
+              "type": "string"
+            },
+            "period_us": {
+              "description": "Timer period in microseconds (parsed from `<sce:period>` body text with unit suffix — `5s` / `100ms` / `30us` / `2m`). u64 chosen because periods up to ~5800 years fit; u32 microseconds would cap at ~71 minutes.",
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "reset_on_event": {
+              "description": "Event name that resets the timer's deadline when raised. `<sce:reset-on event=\"...\"/>` (optional).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source position of the `<scxml sce:kind=\"timer\">` root element. Drives the per-kind body function's SCE-MAP marker."
+            }
+          },
+          "required": [
+            "fire_event",
+            "kind",
+            "name",
+            "period_us"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Observer: threshold monitoring with hysteresis. Generates a struct with per-monitor boolean state and an `update()` method returning a collection of triggered events.",
+          "properties": {
+            "event_domain": {
+              "description": "Optional event domain tag declared via `sce:event-domain` on the `<scxml>` root. When present, generated code emits events of type `SCE::Forge::Event<Domain>`, enabling cross-file observer composition. When absent, the observer falls back to a file-local enum and cannot be composed with other observers (see SCE_FORGE.md §4.11).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "inputs": {
+              "items": {
+                "$ref": "#/definitions/ForgeField"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "enum": [
+                "observer"
+              ],
+              "type": "string"
+            },
+            "monitors": {
+              "items": {
+                "$ref": "#/definitions/ThresholdMonitor"
+              },
+              "type": "array"
+            },
+            "name": {
+              "type": "string"
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source position of the `<scxml sce:kind=\"observer\">` root element. Drives the per-kind body function's SCE-MAP marker."
+            }
+          },
+          "required": [
+            "inputs",
+            "kind",
+            "monitors",
+            "name"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Algorithm document — pure synchronous function (RFC §5.A).",
+          "properties": {
+            "body": {
+              "items": {
+                "$ref": "#/definitions/AlgorithmStmt"
+              },
+              "type": "array"
+            },
+            "consts": {
+              "items": {
+                "$ref": "#/definitions/AlgorithmConst"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "enum": [
+                "algorithm"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "signature": {
+              "$ref": "#/definitions/AlgorithmSignature"
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source position of the `<scxml sce:kind=\"algorithm\">` root element. Drives the per-kind body function's SCE-MAP marker."
+            },
+            "test_vectors": {
+              "description": "RFC §5.B \"Test vector\": inline `<sce:test-vector hex value/>` reference oracles. Each entry generates a per-backend round-trip test that runs the algorithm on `hex` and asserts the return value equals `value`. v1 supports algorithm kind only with scalar return — multi-field codec test-vector defers to B5.",
+              "items": {
+                "$ref": "#/definitions/TestVector"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "body",
+            "kind",
+            "name",
+            "signature"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Link document — RFC §5.C byte-stream link endpoint.",
+          "properties": {
+            "accept_stage_copy_rate": {
+              "description": "`<sce:accept-stage-copy-rate/>` — watching-zenoh RFC §5.K lines 2356-2361 + 2509-2511 per-link opt-out for the §5.M / ARCHITECTURE §9.3 stage-copy-rate gate. Presence of the element (no body / no attribute parsing in C13-γ scope per `[[feedback-no-versioning]]`) suppresses `reassembly/expected-fragmentation-rate-high` under `pool_defaults.stage_copy_policy: warn` and `pool/stage-copy-policy-error` under `error`. Under `forbid` (RFC line 2512-2516) the opt-out itself is rejected via `pool/stage-copy-accept-rejected-under-forbid`.\n\nDefault `false` so existing fixtures without the opt-out preserve their C13-α-2 behavior verbatim.",
+              "type": "boolean"
+            },
+            "backpressure": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/BackpressurePolicy"
+                }
+              ],
+              "description": "`<sce:backpressure>` policy. Required in B6-α; absence is the `link/backpressure-undeclared` diagnostic that B6-γ formalizes. For B6-α we accept the missing-element case as default `drop` (parser-side fallback) — the dedicated diagnostic ships with B6-γ's reject fixture."
+            },
+            "class": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/LinkClass"
+                }
+              ],
+              "description": "`<sce:link-class>` body text, parsed into the closed enum."
+            },
+            "framer": {
+              "description": "`<sce:framer ref=\"...\">` — the §5.B codec that decodes/encodes wire bytes. B6-α makes this required; absence raises `link/framer-missing` (parser).",
+              "type": "string"
+            },
+            "inbound": {
+              "description": "`<sce:events><sce:inbound .../></sce:events>` rows.",
+              "items": {
+                "$ref": "#/definitions/LinkInboundEvent"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "enum": [
+                "link"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "outbound": {
+              "description": "`<sce:events><sce:outbound .../></sce:events>` rows.",
+              "items": {
+                "$ref": "#/definitions/LinkOutboundEvent"
+              },
+              "type": "array"
+            },
+            "rx_pool": {
+              "description": "`<sce:rx-pool ref=\"...\">` — RX buffer-pool name (RFC §5.C body + §5.E B7-α schema-only). Authors who want zero-copy RX path declare a `<scxml sce:kind=\"buffer-pool\" name=\"...\">` document and bind it here. B7-α schema-only: parser accepts the element, emits the ref as a `pub const` on the generated wrapper. Cross- resolution validator (`link/pool-slot-smaller-than-framer-max`) defers to a later atomic that wires pool ↔ framer at `compile_forge_with_imports`.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source position of the `<scxml sce:kind=\"link\">` root element. Drives the per-kind body function's SCE-MAP marker."
+            },
+            "stage_pool": {
+              "description": "`<sce:stage-pool ref=\"...\">` — stage-copy destination pool. Single source of truth for `Sample::take()`'s copy target, per watching-zenoh RFC §5.E (B7-η' Atomic A1: schema locality belongs on the link kind, not on the deploy.yaml binding — rx_pool/tx_pool precedent). When a SCXML state declares `<sce:on-sample link=\"X\">`, the η' validator looks up link X in the [`super::cross_doc_registry::SceCrossDocRegistry`]; the link's `stage_pool` field decides whether `take()` is wired (resolves to a buffer-pool kind whose slots back the owned-copy destination) or whether `take()` will panic at runtime (`PanicOnTakeHook` default — Q-η'-5). Absence is legal for borrow-only callbacks that never call `take()`; presence + a missing on-sample subscriber is fine too (the field is link- declared, not on-sample-coupled). The SCXML-side enforcement raises `pool/sample-take-without-stage-pool` only when an on-sample subscriber exists for a link without `stage_pool`.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "tx_pool": {
+              "description": "`<sce:tx-pool ref=\"...\">` — TX buffer-pool counterpart. Same shape as `rx_pool`. Symmetric in B7-α; size validation defers alongside the rx-pool case.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "backpressure",
+            "class",
+            "framer",
+            "kind",
+            "name"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Buffer-pool document — RFC §5.E SRAM-placed, DMA-aligned slot table.\n\nB7-α schema (per `<scxml sce:kind=\"buffer-pool\">` body): - `<sce:slot-count>` (u32, > 0) — number of slots in the pool - `<sce:slot-size>` (u32, > 0) — bytes per slot - `<sce:section>` (string) — SRAM region name (matches deploy.yaml `machines.<m>.memory.sram_regions.<name>`); η-second-consumer validator `mem/pool-section-conflict` fires when the section is declared but absent from the resolved machine's memory map - `<sce:alignment>` (u32, power of 2, > 0) — DMA alignment requirement - `<sce:dma-channel>` (string, optional) — DMA channel binding (matches deploy.yaml `machines.<m>.memory.dma_channels` entry); `mem/dma-channel-collision` deferred to B7-γ - `<sce:cache-policy>` ([`CachePolicy`]) — `maintain` / `non-cacheable` / `none`; cache-maintenance pinning defers to B7-δ - `<sce:variant>` (optional, RFC §5.M line 2682) — `default` (no `<sce:variant>` element; semantic pre-C9 behavior) OR `reassembly` ([`ReassemblyConfig`] payload). C9-α.",
+          "properties": {
+            "alignment": {
+              "description": "`<sce:alignment>` — DMA alignment. Parser rejects 0; power-of-2 check defers to B7-β linker fragment emission.",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "cache_policy": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/CachePolicy"
+                }
+              ],
+              "description": "`<sce:cache-policy>` — `maintain` / `non-cacheable` / `none`."
+            },
+            "dma_channel": {
+              "description": "`<sce:dma-channel>` — DMA channel name (optional). Empty when the pool is purely CPU-managed. Cross-resolution defers to B7-γ.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "enum": [
+                "buffer-pool"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "section": {
+              "description": "`<sce:section>` — SRAM region name. Validated against deploy.yaml `memory.sram_regions` via [`compile_forge_with_deploy`] (B7-α).",
+              "type": "string"
+            },
+            "slot_count": {
+              "description": "`<sce:slot-count>` — slot count in the pool. Parser rejects 0.",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "slot_size": {
+              "description": "`<sce:slot-size>` — bytes per slot. Parser rejects 0.",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source position of the `<scxml sce:kind=\"buffer-pool\">` root element. Drives the per-kind body function's SCE-MAP marker."
+            },
+            "variant": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/BufferPoolVariant"
+                }
+              ],
+              "description": "`<sce:variant>` discriminator (RFC §5.M line 2682; C9-α). The `Default` arm covers the absence of `<sce:variant>` — pre-C9 regular RX/TX/stage pool behavior. `Reassembly` carries the three reassembly-specific fields (max-fragments-per-message, reassembly-timeout-ms, per-peer-quota)."
+            }
+          },
+          "required": [
+            "alignment",
+            "cache_policy",
+            "kind",
+            "name",
+            "section",
+            "slot_count",
+            "slot_size",
+            "variant"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Worker document — RFC §5.D concurrent execution context driven by a `<sce:link-rx>` source.\n\nC2-α schema (per `<scxml sce:kind=\"worker\">` body): - `<sce:link-rx ref=\"...\">` (required) — `<scxml sce:kind=\"link\">` document that drives this worker. Cross-resolution validator `worker/link-rx-ref-unknown` defers to C2-β (consumer-co-landed with codegen needing the resolved Link). - `<sce:inbox depth=\"N\"/>` (required) — SPSC ring-buffer inbox. Producer/consumer pair drawn from `heapless::spsc::split()` on Rust; opaque `sce_inbox_{producer,consumer}_t` on C11. - `<sce:outbox ref=\"...\">` (optional) — recipient worker/state- machine inbox for emitted events. Three cross-resolution validators (`worker/outbox-ref-unknown` + `worker/outbox-target-wrong-kind` + `worker/outbox-target-suffix-invalid`) live in [`crate::validate_worker_outbox_references`] (C2 follow-up Atomic B). Parser keeps `outbox` as an opaque `Option<String>`; semantic resolution against statechart + worker recipients happens against the [`crate::forge::cross_doc_registry::SceCrossDocRegistry`] in the orchestrator pass. - `<sce:body>` (optional, usually empty per spec line 897) — SCXML actions. C2-α scans for `worker/shared-mutable-state` violations (any `<sce:import kind=\"worker\">` in the document, plus body SCXML data-refs to foreign namespaces).\n\nMCU-class kind (RFC §5.J.4): Rust + C11 emitters only. cpp/kotlin/ go/python rejection via existing `codegen/mcu-class-kind-on-non- mcu-language` family (lands in C2-β alongside codegen).",
+          "properties": {
+            "inbox": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/InboxConfig"
+                }
+              ],
+              "description": "`<sce:inbox depth=\"N\"/>` — required typed event queue."
+            },
+            "kind": {
+              "enum": [
+                "worker"
+              ],
+              "type": "string"
+            },
+            "link_rx": {
+              "description": "`<sce:link-rx ref=\"...\">` — required driver source. Spec line 893 phrasing \"drives this worker\" → required. Empty-ref parse rejects; cross-ref resolution against `SceCrossDocRegistry` defers to C2-β.",
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "outbox": {
+              "description": "`<sce:outbox ref=\"...\">` — optional recipient inbox. When absent, the worker only injects events into the parent state machine via `<sce:link-rx>`-driven event mapping.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source position of the `<scxml sce:kind=\"worker\">` root element. Drives the per-kind body function's SCE-MAP marker."
+            }
+          },
+          "required": [
+            "inbox",
+            "kind",
+            "link_rx",
+            "name"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Bounded-collection document — RFC §5.L lines 2540-2655.\n\nTyped container with build-time-declared capacity but runtime-varying occupancy. The MCU use case (zenoh-pico parity) requires runtime subscription declare/undeclare + queryable + in-flight reassembly tables without a heap allocator.\n\nC6-α schema (per `<scxml sce:kind=\"bounded-collection\">` body): - `<sce:element-type>NAME</sce:element-type>` (required, body text) — references another forge kind by name (codec-kind struct or procedure-kind state record per spec line 2566-2567). C6-α stores as opaque `String`; cross-doc resolution against `SceCrossDocRegistry` (verifying the name resolves AND is a codec/procedure kind) lands in C6-β behind `collection/element-type-not-a-kind`. - `<sce:capacity .../>` (required, exactly one attribute form) — see [`CapacitySource`] doc. - `<sce:index-by field=\"FIELD\"/>` (optional) — enables `find_by_index` API per spec line 2615. C6-α stores the field name as `Option<String>`; cross-doc verification that the field exists in the element-type struct lands in C6-β behind `collection/index-by-field-missing`. - `<sce:on-overflow>POLICY</sce:on-overflow>` (optional, default `diagnostic-event`) — see [`OverflowPolicy`]. - `<sce:ordering>MODE</sce:ordering>` (optional, default `insertion`) — see [`CollectionOrdering`]. - `<sce:concurrency>MODE</sce:concurrency>` (optional, default `single-writer`) — see [`ConcurrencyMode`].\n\nParse-time validators (C6-α): - `collection/ordering-sorted-requires-index-by` — if `ordering` is `SortedByIndex`, `<sce:index-by>` must be present. - `collection/overflow-policy-oldest-wins-requires-ordering-insertion` — if `on_overflow` is `OldestWins`, `ordering` must be `Insertion` (spec line 2655).",
+          "properties": {
+            "capacity": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/CapacitySource"
+                }
+              ],
+              "description": "`<sce:capacity .../>` — deploy-key or compile-time constant."
+            },
+            "concurrency": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ConcurrencyMode"
+                }
+              ],
+              "description": "`<sce:concurrency>` — default `SingleWriter` per spec line 2560."
+            },
+            "element_type": {
+              "description": "`<sce:element-type>` body text — references another forge kind by name. C6-α opaque `String`; cross-doc resolution in C6-β.",
+              "type": "string"
+            },
+            "index_by": {
+              "description": "`<sce:index-by field=\"...\">` — optional index field for `find_by_index`. C6-α stores as opaque `Option<String>`; cross-doc element-struct field verification in C6-β.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "enum": [
+                "bounded-collection"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "on_overflow": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/OverflowPolicy"
+                }
+              ],
+              "description": "`<sce:on-overflow>` — default `DiagnosticEvent` per spec line 2556."
+            },
+            "ordering": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/CollectionOrdering"
+                }
+              ],
+              "description": "`<sce:ordering>` — default `Insertion` per spec line 2558."
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source position of the `<scxml sce:kind=\"bounded-collection\">` root element. Drives the per-kind body function's SCE-MAP marker."
+            }
+          },
+          "required": [
+            "capacity",
+            "concurrency",
+            "element_type",
+            "kind",
+            "name",
+            "on_overflow",
+            "ordering"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ForgeField": {
+      "description": "A typed data field common to all kinds.",
+      "properties": {
+        "direction": {
+          "$ref": "#/definitions/Direction"
+        },
+        "expr": {
+          "description": "ECMAScript expression (for computed/output fields).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "max_size": {
+          "description": "Per-slot capacity for `bytes`-typed fields, declared via `sce:max-size=\"N\"`. `None` ⇒ fall back to [`crate::forge::limits::BYTES_DEFAULT_MAX`]. Ignored for non-bytes types. See `claudedocs/rfc-forge-bytes-bounded.md` §3 B1.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "sce_type": {
+          "$ref": "#/definitions/SceType"
+        },
+        "unit": {
+          "description": "Documentation-only unit (no codegen effect).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "direction",
+        "id",
+        "sce_type"
+      ],
+      "type": "object"
+    },
+    "ForgeImport": {
+      "description": "A cross-file kind import declared via `<sce:import>` in an Extended SCXML document. Enables kind composition: e.g., a procedure referencing a codec's encode/decode.\n\n```xml <sce:import src=\"can_frame.scxml\" kind=\"codec\" as=\"frame\"/> ```\n\nThe `alias` is used in expressions to access the imported kind's API: - Codec: `frame.encode(...)`, `frame.decode(...)` - Transform: `keygen.compute(...)` - Condition: `check.evaluate(...)` - Lookup: `table.lookup(...)` - Validator: `val.validate(...)`",
+      "properties": {
+        "alias": {
+          "description": "Alias used in expressions to reference the imported kind.",
+          "type": "string"
+        },
+        "embed_dispatch": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/EmbedDispatch"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "RFC §5.B variant-dispatch (B5-ν inversion) — when the importing parent codec declares `<sce:variant-dispatch flag=\"X.Y\"/>` as a child of this `<sce:import>`, the imported variant codec's arm choice drives a bit value into the parent's named flag carrier at encode time. `None` for imports with no dispatch declaration (either the imported codec has no variant, or the parent author selects the arm explicitly without wire-level dispatch — see Q-D-3 in the inversion RFC). Cross-doc validator confirms the named carrier + flag exist in the parent's own model."
+        },
+        "flag_binds": {
+          "description": "RFC Axis-1 inversion — parent-side bindings supplying values for the imported leaf codec's declared `<sce:flag-inputs>`. Each [`FlagBind`] names one leaf-side input and a source on the parent (either a local flags-carrier flag in dotted form, or one of the parent's own [`FlagInput`]s by bare name for the chain-forwarder pattern). Empty when the import declares no `<sce:flag-bind>` children — valid only when the imported leaf declares no `<sce:flag-inputs>` (cross-doc validator enforces the binding-completeness invariant).",
+          "items": {
+            "$ref": "#/definitions/FlagBind"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ForgeKind"
+            }
+          ],
+          "description": "Kind of the imported document (for validation and API generation)."
+        },
+        "src": {
+          "description": "Relative path to the imported SCXML file.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "alias",
+        "kind",
+        "src"
+      ],
+      "type": "object"
+    },
+    "ForgeKind": {
+      "description": "SCE Forge kind — declares what pattern an Extended SCXML document represents. W3C SCXML Section 3.1 allows foreign namespace attributes on any element.",
+      "oneOf": [
+        {
+          "description": "Standard W3C SCXML state machine (default, existing pipeline).",
+          "enum": [
+            "statechart"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Pure mathematical formula: input -> computation -> output.",
+          "enum": [
+            "transform"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Discrete value mapping: enumerated input -> enumerated output.",
+          "enum": [
+            "lookup"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Named boolean guard expression.",
+          "enum": [
+            "condition"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Byte-level encode/decode with bit-field layout.",
+          "enum": [
+            "codec"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Sequential procedure with branching: states + guarded transitions + run-to-completion.",
+          "enum": [
+            "procedure"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Range/plausibility/rate-of-change validation.",
+          "enum": [
+            "validator"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Signal filtering: moving average, low-pass, debounce (Phase 3).",
+          "enum": [
+            "filter"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "1D/2D table interpolation (Phase 3).",
+          "enum": [
+            "interpolation"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Periodic/delayed task timing (Phase 3).",
+          "enum": [
+            "timer"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Threshold monitoring with hysteresis (Phase 3).",
+          "enum": [
+            "observer"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Pure synchronous function with bounded loops and mutable locals — watching-zenoh RFC §5.A (Phase A3). Free function emit on every backend (`#![no_std]`-clean on Rust when no bytes param).",
+          "enum": [
+            "algorithm"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Byte-stream link endpoint — watching-zenoh RFC §5.C. MCU-class kind (RFC §5.J.4): emits only on `(rust, *)` and `(c11, bare_metal)`. SCE owns the `Link` trait surface in `sce-link-runtime`; per-OS impls (`sce_link_runtime_lwip`, `_tokio`, `_qnx`) live downstream in watching-zenoh.",
+          "enum": [
+            "link"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "SRAM-placed, DMA-aligned slot table — watching-zenoh RFC §5.E. Second MCU-class kind (RFC §5.J.4): emits only on `(rust, *)` and `(c11, bare_metal)`. B7-α ships the minimum slot table on `(rust, std)` with `<sce:slot-count>` / `<sce:slot-size>` / `<sce:section>` / `<sce:alignment>` / `<sce:dma-channel>` / `<sce:cache-policy>` schema. The 7-state lifecycle FSM (`free` / `cpu-mut` / `dma-armed-{tx,rx}` / `dma-busy-{tx,rx}` / `cpu-ref`) defers to B7-γ; cache maintenance pinning defers to B7-δ (gated on §5.I `<sce:call>` intrinsic registry).",
+          "enum": [
+            "buffer_pool"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Concurrent execution context driven by a `<sce:link-rx>` source — watching-zenoh RFC §5.D lines 858-913. Third MCU-class kind (RFC §5.J.4): emits only on `(rust, *)` (tokio::spawn on AP, cooperative- scheduler slot on MCU) and `(c11, bare_metal)` (cooperative- scheduler slot, fixed ring-buffer inbox). C2-α ships the schema + parse-time author guard for `worker/shared-mutable-state`; codegen (Rust + C11 dual-emit using heapless::spsc / opaque sce_inbox_* types) lands in C2-β alongside cross-resolution + ordering codes; deploy-aware `MachineSchedulerConfig` + worker-count validation lands in C2-γ.",
+          "enum": [
+            "worker"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Typed container with build-time-declared capacity but runtime-varying occupancy — watching-zenoh RFC §5.L lines 2540-2655. zenoh-pico parity (runtime subscription declare/undeclare + queryable + reassembly tables) requires this on MCU where heap is forbidden. Six-language emitter table per §5.J.5 (Rust `heapless::Vec<T, N>` / C11 slot+bitmap struct / Cpp `std::array<T, N>` + `std::bitset<N>` / Kotlin `Array<T?>` + `BooleanArray` / Go fixed-array + mask / Python list + bytearray mask). C6-α ships the schema + parse-time validators for the two structure-only codes (`collection/ordering-sorted-requires- index-by` + `collection/overflow-policy-oldest-wins-requires-ordering- insertion`); cross-doc element-type resolution + index-by-field verification + atomics-import check land in C6-β; deploy-time capacity resolution + 6-backend codegen land in C6-γ.",
+          "enum": [
+            "bounded_collection"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "InboxConfig": {
+      "description": "`<sce:inbox>` configuration — RFC §5.D line 894 + §5.I lines 1752-1758. SPSC ring-buffer inbox shape; per Q-C2-8 lock, the producer/consumer split is the type-level FSM (`heapless::spsc::{Producer,Consumer}` on Rust; opaque `sce_inbox_{producer,consumer}_t` family on C11). No separate FSM IR module — slot lifecycle is 2-state (free/in-use), degenerate compared to BufferPool's 7-state DMA lifecycle.\n\nC2-α schema: only `depth` attribute (spec verbatim). C2-β adds the `ordering` attribute as required (RFC §5.I lines 1757-1758 spec- verbatim per `feedback_spec_mirror_parity.md`; SCE's error-only wire realizes the spec \"warning, codegen defaults to acq/rel\" as a required-when-worker-exists error so the author makes an explicit choice before codegen emits ambiguous atomic ops). MPSC variant deferred until consumer signal (RFC §6 tracked).",
+      "properties": {
+        "depth": {
+          "description": "`<sce:inbox depth=\"N\"/>` attribute body — fixed ring-buffer depth. Parser rejects 0. Spec line 894 verbatim attribute form.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "ordering": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/InboxOrdering"
+            }
+          ],
+          "description": "`<sce:inbox ordering=\"acq_rel|relaxed\"/>` (RFC §5.I lines 1752-1758). Required at parse time; absence fires `worker/inbox-ordering-unspecified`. Codegen wires the chosen memory ordering into the head/tail atomic operations on both Rust + C11 backends."
+        }
+      },
+      "required": [
+        "depth",
+        "ordering"
+      ],
+      "type": "object"
+    },
+    "InboxOrdering": {
+      "description": "SPSC inbox ordering choice (RFC §5.I lines 1752-1758, C2-β). Drives the atomic operations emitted on head/tail indices in both Rust and C11 codegen. `AcqRel` is the safe default (every push/pop pairs acquire+release on the index); `Relaxed` is the single-core fast-path (no inter-thread synchronization). Cross-core placement + `Relaxed` fires `worker/inbox-ordering-relaxed-across-cores` at codegen time per spec line 1755-1756.",
+      "oneOf": [
+        {
+          "description": "`ordering=\"acq_rel\"` — atomic load_acquire on head/tail reads, atomic store_release on writes. Required for any inbox whose producer + consumer halves are pinned to different cores.",
+          "enum": [
+            "acq-rel"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "`ordering=\"relaxed\"` — atomic load_relaxed / store_relaxed on head/tail. Single-core fast-path; cross-core placement with this choice raises `worker/inbox-ordering-relaxed-across-cores`.",
+          "enum": [
+            "relaxed"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "InterpolationAxis": {
+      "description": "Axis definition for interpolation (breakpoints for one dimension).",
+      "properties": {
+        "breakpoints": {
+          "description": "Breakpoint values (monotonically increasing).",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "input_id": {
+          "description": "Input field id this axis corresponds to.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "breakpoints",
+        "input_id"
+      ],
+      "type": "object"
+    },
+    "InterpolationMethod": {
+      "description": "Interpolation method.",
+      "enum": [
+        "linear",
+        "bilinear"
+      ],
+      "type": "string"
+    },
+    "LinkClass": {
+      "description": "`<sce:link-class>` enumeration — RFC §5.C \"Link-class enumeration\" table. Five strings shipped today; OS-specific classes (e.g. `unix_socket`, `qnx_msg`) land additively in later phases.",
+      "oneOf": [
+        {
+          "description": "Datagram, byte-stream framer (RFC §5.C row 1; A on MCU lwIP).",
+          "enum": [
+            "udp"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Stream, byte-stream framer (RFC §5.C row 2; B on MCU).",
+          "enum": [
+            "tcp"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "UART (RFC §5.C row 3; C on MCU).",
+          "enum": [
+            "serial"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "TCP + WebSocket framing (RFC §5.C row 4; C on MCU).",
+          "enum": [
+            "websocket"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "L2 frames, target-plugin only (RFC §5.C row 5; C MCU plugin).",
+          "enum": [
+            "raw_eth"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "LinkInboundEvent": {
+      "description": "`<sce:inbound>` — RX byte-stream → SCXML event injection contract.",
+      "properties": {
+        "event": {
+          "description": "SCXML event name to inject when the framer decode + `when` predicate succeed.",
+          "type": "string"
+        },
+        "when": {
+          "description": "Optional decode-side predicate (`when=\"decoded.msg_id == 0x02\"`). `None` means inject every successful decode.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "event"
+      ],
+      "type": "object"
+    },
+    "LinkOutboundEvent": {
+      "description": "`<sce:outbound>` — SCXML event → framer encode + driver send contract.",
+      "properties": {
+        "encode": {
+          "description": "Encoder codec reference — same `<sce:framer ref>` namespace.",
+          "type": "string"
+        },
+        "event": {
+          "description": "SCXML event name that triggers TX.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "encode",
+        "event"
+      ],
+      "type": "object"
+    },
+    "LookupEntry": {
+      "description": "A single key-value entry in a lookup table.",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "value"
+      ],
+      "type": "object"
+    },
+    "MissPolicy": {
+      "description": "Miss-handling policy for `sce:kind=\"lookup\"`. Captured from the `sce:on-miss` attribute on the mapping `<data>` element, with `sce:default` implied as `Default`. These are two orthogonal codegen strategies, not two different kinds — see SCE_FORGE.md Section 4.9.\n\n`Default(fallback)`: total function — every input produces an output, and the fallback string is the value returned when no entry key matches. Used by symbolic dispatch (gear positions, engine status, etc.).\n\n`Error`: partial function — the generated `lookup(x)` returns `Option<V>` / `std::optional<V>` / `(V, bool)` / `V?` depending on the target language. Callers must handle the miss case explicitly. Used by numeric data tables where an unknown key is a bug, not a fallback case.",
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "enum": [
+                "default"
+              ],
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "enum": [
+                "error"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "OutOfBounds": {
+      "description": "Out-of-bounds handling for interpolation.",
+      "enum": [
+        "clamp",
+        "extrapolate",
+        "error"
+      ],
+      "type": "string"
+    },
+    "OverflowPolicy": {
+      "description": "`<sce:on-overflow>` policy — RFC §5.L lines 2556-2557 + 2604.",
+      "oneOf": [
+        {
+          "description": "`<sce:on-overflow>diagnostic-event</sce:on-overflow>` — emit a runtime diagnostic event when the table is full (default per spec line 2556).",
+          "enum": [
+            "diagnostic-event"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "`<sce:on-overflow>reject</sce:on-overflow>` — return `Err(OverflowError)` from `insert`; caller decides.",
+          "enum": [
+            "reject"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "`<sce:on-overflow>oldest-wins</sce:on-overflow>` — drop the oldest entry to make room. Requires `<sce:ordering>insertion` (validated by [`DiagnosticCode::CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion`]).",
+          "enum": [
+            "oldest-wins"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "ParsedForge": {
+      "description": "Parsed forge result — combines the document model with cross-file imports. The `imports` field is empty for standalone documents (no `<sce:import>` elements).",
+      "properties": {
+        "document": {
+          "$ref": "#/definitions/ForgeDocument"
+        },
+        "externs": {
+          "default": [],
+          "description": "`<sce:extern>` declarations parsed from the document root (watching-zenoh RFC §5.I, Atomic A). Empty for documents that do not declare any externs. Each entry has already been validated against the §5.I baseline registry — wire-format rejection (4-code family `extern/symbol-not-in-whitelist` / `extern/abi-mismatch` / `extern/signature-mismatch` / `extern/ordering-unspecified`) raises during parsing, so a `ParsedForge` carrying any externs is guaranteed registry-clean. Atomic A produces this list; downstream codegen consumption (per-language `extern \"...\" {}` emission) lands with a future atomic gated on a published `sce_intrinsics_runtime` crate.\n\nWire shape: always emitted (even as `[]`) so consumers see a uniform schema. `imports` follows the same rule. Earlier `skip_serializing_if = \"Vec::is_empty\"` forced consumers to branch on presence-vs-empty, a paper cut the AST export's long-term-correctness review surfaced.",
+          "items": {
+            "$ref": "#/definitions/ExternDeclaration"
+          },
+          "type": "array"
+        },
+        "imports": {
+          "items": {
+            "$ref": "#/definitions/ForgeImport"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "document",
+        "imports"
+      ],
+      "type": "object"
+    },
+    "PeekByteSpec": {
+      "description": "RFC §5.B Y3 atomic 2b-ii peek-byte — peek-byte dispatch shape on a `<sce:variant>`. When `Some` on `CodecVariant.peek_byte`, the tag reads the cursor's NEXT byte without advancing; the arm body codec then reads that same byte as its own header. Models Zenoh response/request body dispatch where the next-byte MID identifies the inner body codec (per `network.c:347-364` + `220-235` — `_z_uint8_decode(&inner_header, ...)` consumed by outer decoder then passed by VALUE to arm body decoder).\n\n`id` names the peek slot — referenced by the variant's `tag=\"<id>.<flag>\"` dotted form (parser-enforced — peek mode tag MUST be dotted, MUST equal `peek_byte.id` for the carrier half).\n\n`flags` mirrors `<sce:flags>`-style children: `<sce:flag name=\"X\" bit=\"N\" width=\"W\"/>`. v1 fixes the peeked width at uint8 (Zenoh single-byte network dispatch); future widening to peek-multi-byte is a separate primitive (peek-bytes) when a reachable consumer surfaces, NOT a `sce:type` widening on this element.\n\nCross-codec validator confirms the dispatch flag (the one named in the variant's tag) matches every arm body codec's own first flag-bearing field's `<sce:flag>` declaration of the same (name, bit, width) — the peeked byte == arm body's own header byte, so the flag layout must agree on the dispatch bit-range.",
+      "properties": {
+        "flags": {
+          "description": "Per-flag bit-range layout on the peeked byte. Mirrors `<sce:flags>` semantics — unique flag names + non-overlapping bit-ranges within `[0, 8)` (peek width is uint8).",
+          "items": {
+            "$ref": "#/definitions/FlagDef"
+          },
+          "type": "array"
+        },
+        "id": {
+          "description": "Logical name for the peek slot. Used as the carrier half of the variant's `tag=\"<id>.<flag>\"` dotted form. Not a wire field — the byte stays on the cursor for the arm body to read.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "flags",
+        "id"
+      ],
+      "type": "object"
+    },
+    "PresentIfPredicate": {
+      "description": "RFC §5.B B1-δ + RFC Axis-1 + B5-λ present-if predicate — a single bit-test on either a flags-bearing sibling field declared earlier in the same codec (B1-δ Local scope) or a declared `<sce:flag-input>` on the codec itself (RFC Axis-1 Input scope).\n\nv1 grammar covers four forms: - `<field_id>.<flag_name>` (Local positive) — predicate is true iff the named flag bit on the local carrier is set. - `!<field_id>.<flag_name>` (Local negative, B5-λ) — predicate is true iff the bit is clear. Required for Zenoh OpenSyn body where cookie is present iff the `A` input is NOT set. - `<name>` (Input positive) — true iff the named `<sce:flag-input>` value is non-zero. Single-bit input (v1 width=1). - `!<name>` (Input negative, B5-λ) — true iff the input is zero. - `<a> || <b> [|| <c> ...]` (Disjunction, Y3 atomic 2b-ii) — predicate is true iff ANY listed clause is true. Each clause is itself one of the four forms above (each can independently carry a leading `!`). Required for Zenoh interest where `not is_final` is `header.CURRENT || header.FUTURE` — `_Z_INTEREST_NOT_FINAL_MASK = (CURRENT | FUTURE)` per `interest.h:35`. Outer negation `!(a || b)` defers to a future RFC stage.\n\n`field_id` is empty when `scope = Input` (carrier is implicit — the codec's own `<sce:flag-input>` parameter).\n\nConjunction (`flag1 && flag2`) and equality (`field == value`) remain deferred to later B-stages when a reachable consumer surfaces.",
+      "properties": {
+        "field_id": {
+          "description": "Carrier field id when `scope = Local`. Empty when `scope = Input` (the carrier is the codec's own `<sce:flag-input>` parameter named by `flag_name`).",
+          "type": "string"
+        },
+        "flag_name": {
+          "type": "string"
+        },
+        "negate": {
+          "description": "B5-λ negation: when true, predicate fires when the named flag bit is *clear* (not set). Defaults to false to preserve pre-B5-λ JSON shape byte-stable across all existing codec goldens (skip_serializing_if elides the field).",
+          "type": "boolean"
+        },
+        "or_with": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PresentIfPredicate"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "RFC §5.B Y3 atomic 2b-ii disjunction tail — when `Some`, the composite predicate is `<self> || <or_with>` (i.e. the named flag tests on this struct OR'd with the recursive tail). `or_with` is itself a `PresentIfPredicate`, so chains of length ≥ 3 (`a || b || c || ...`) compose by recursion. None for the v1 single-clause grammar (back-compat: existing goldens omit this field via skip_serializing_if)."
+        },
+        "scope": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/PresentIfScope"
+            }
+          ],
+          "description": "Predicate scope. Defaults to `Local`; serialized only for non-Local scopes (`Input`) to keep pre-Axis-1 local-scope JSON shape byte-stable."
+        }
+      },
+      "required": [
+        "field_id",
+        "flag_name",
+        "scope"
+      ],
+      "type": "object"
+    },
+    "PresentIfScope": {
+      "description": "RFC §5.B B1-δ + Axis-1 inversion present-if predicate scope — distinguishes the local form (carrier in same codec) from the Axis-1 inversion input form (bare name resolves to a declared `<sce:flag-input>`, passed as a positional typed parameter).",
+      "oneOf": [
+        {
+          "description": "`<field_id>.<flag_name>` — B1-δ form. Carrier is a flags-bearing sibling field declared earlier in the same codec; predicate reads `(self.<carrier> & mask) != 0`.",
+          "enum": [
+            "local"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "`<name>` (bare, no dot) — Axis-1 inversion form. Resolves to a declared `<sce:flag-input name=\"X\">` on the codec itself; the input arrives as a typed positional parameter (`X: u8` for v1 width=1). Predicate reads `(X & ((1<<width)-1)) != 0` against the parameter directly — no carrier-byte threading, no struct prefix.",
+          "enum": [
+            "input"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "ProcedureAssign": {
+      "description": "An `<assign>` action within a `<transition>` body. Mutates internal state during transition execution.",
+      "properties": {
+        "expr": {
+          "description": "Value expression (expr attribute).",
+          "type": "string"
+        },
+        "location": {
+          "description": "Target variable name (location attribute).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "expr",
+        "location"
+      ],
+      "type": "object"
+    },
+    "ProcedureDoneParam": {
+      "description": "A `<param>` within `<donedata>` on a `<final>` state. Provides result data when the procedure completes.",
+      "properties": {
+        "expr": {
+          "description": "Value expression.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Parameter name.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "expr",
+        "name"
+      ],
+      "type": "object"
+    },
+    "ProcedureHelper": {
+      "description": "A user-declared helper function referenced by procedure expressions (typically from `sce:payload` / `sce:addr` attributes). Declared as `<sce:helper name=\"...\" args=\"...\" returns=\"...\"/>` inside the procedure's `<datamodel>`. The generator emits a typed closure member + setter per helper, mirroring the existing `serviceHandler` dependency-injection pattern — rather than emitting the user's identifier verbatim and relying on it being in scope at compile time. The helper's signature seeds the expression-pipeline type context so inference can propagate return types through enclosing expressions.",
+      "properties": {
+        "args": {
+          "description": "Parameter types in positional order.",
+          "items": {
+            "$ref": "#/definitions/SceType"
+          },
+          "type": "array"
+        },
+        "name": {
+          "description": "User-visible identifier as it appears in expressions (e.g. `computeKey` in `sce:payload=\"computeKey(seed)\"`).",
+          "type": "string"
+        },
+        "returns": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SceType"
+            }
+          ],
+          "description": "Return type."
+        },
+        "returns_max_size": {
+          "description": "Cap on the bytes the helper closure may return when `returns = bytes`, declared via `sce:returns-max-size=\"N\"`. `None` ⇒ fall back to [`crate::forge::limits::BYTES_DEFAULT_MAX`]. Ignored when `returns` is non-bytes. See `claudedocs/rfc-forge-bytes-bounded.md` §3 B1.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "args",
+        "name",
+        "returns"
+      ],
+      "type": "object"
+    },
+    "ProcedureSendAction": {
+      "description": "A `<send>` action within `<onentry>` of a procedure state. Dispatches a service request through the procedure's service handler. W3C SCXML 6.2 + SCE extensions (sce:service, sce:subfunc, sce:addr, sce:payload).",
+      "properties": {
+        "addr": {
+          "description": "Address expression — typically a variable name (sce:addr attribute). Optional.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "payload": {
+          "description": "Payload expression (sce:payload attribute). Optional.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "response_max_size": {
+          "description": "Cap on the bytes the service handler may return as `_event.data`, declared via `sce:response-max-size=\"N\"`. `None` ⇒ fall back to [`crate::forge::limits::BYTES_DEFAULT_MAX`]. See `claudedocs/rfc-forge-bytes-bounded.md` §3 B1.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "service": {
+          "description": "Service name (sce:service attribute). Required.",
+          "type": "string"
+        },
+        "subfunc": {
+          "description": "Sub-function code (sce:subfunc attribute). Optional.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "service"
+      ],
+      "type": "object"
+    },
+    "ProcedureState": {
+      "description": "A state within a procedure (either regular or final).",
+      "properties": {
+        "done_params": {
+          "description": "Done data parameters (Level 2, final states only). Empty for Level 1.",
+          "items": {
+            "$ref": "#/definitions/ProcedureDoneParam"
+          },
+          "type": "array"
+        },
+        "id": {
+          "type": "string"
+        },
+        "is_final": {
+          "description": "Whether this is a `<final>` state (terminal — no outgoing transitions).",
+          "type": "boolean"
+        },
+        "on_entry_sends": {
+          "description": "Send actions in `<onentry>` (Level 2). Empty for Level 1.",
+          "items": {
+            "$ref": "#/definitions/ProcedureSendAction"
+          },
+          "type": "array"
+        },
+        "transitions": {
+          "description": "Ordered transitions (evaluated top-to-bottom). Empty for final states.",
+          "items": {
+            "$ref": "#/definitions/ProcedureTransition"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "is_final",
+        "transitions"
+      ],
+      "type": "object"
+    },
+    "ProcedureTransition": {
+      "description": "A single transition within a procedure state. Level 1: guard-only (cond + target). Level 2: event-driven (event + cond + target + assigns).",
+      "properties": {
+        "assigns": {
+          "description": "Assign actions executed during transition (Level 2). Empty for Level 1.",
+          "items": {
+            "$ref": "#/definitions/ProcedureAssign"
+          },
+          "type": "array"
+        },
+        "cond": {
+          "description": "Optional ECMAScript guard expression. `None` = unconditional (else branch).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "event": {
+          "description": "Event trigger (Level 2). `None` = eventless transition (guard-only).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "target": {
+          "description": "Target state id.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    },
+    "RangeRule": {
+      "description": "Range check: field value must be within [min, max].",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "max": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "min": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "RateOfChangeRule": {
+      "description": "Rate-of-change check: delta between successive calls must not exceed max_delta. sample_interval_ms is informational (documents expected call frequency).",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "max_delta": {
+          "type": "string"
+        },
+        "sample_interval_ms": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "max_delta",
+        "sample_interval_ms"
+      ],
+      "type": "object"
+    },
+    "SceType": {
+      "description": "Canonical SCE type — used in `sce:type` attributes. Language-specific mappings are in the generator module (SRP).",
+      "enum": [
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "float32",
+        "float64",
+        "bool",
+        "string",
+        "bytes"
+      ],
+      "type": "string"
+    },
+    "SourceLocation": {
+      "description": "Source location attached to an error for machine-readable diagnostics.\n\nCarried by the [`Located`] wrapper struct (below) to answer *where* an error was raised. The leaf error enums stay focused on *what* is wrong — identity, expected/actual values, stage — and remain orthogonal to position.\n\nWatching-zenoh RFC §5.O Atomic 0: also reused as the per-IR-node provenance record. Every emission-eligible node carries an `Option<SourceLocation>` so codegen templates can emit per-backend SCE-MAP markers (`#line` / `//line` / `// SCE-MAP:` / `#[doc]`) above the function header that node lowers to. Serialised so minijinja templates can `{% if state.source_location %}{{ ... }}{% endif %}`.",
+      "properties": {
+        "col": {
+          "description": "1-based source column. Optional — only node-precise raises carry column info.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "file": {
+          "description": "Producer-defined identifier for the source document — typically the SCXML file's basename, but consumers MUST treat it as an opaque label scoped to the current emit (see `docs/SCE_FORGE_AST.md` §9 for the consumer contract). Not guaranteed to be an absolute or workspace-relative path, and not guaranteed unique across emits when two inputs share a basename.",
+          "type": "string"
+        },
+        "line": {
+          "description": "1-based source line. Optional — XSD-level diagnostics carry no line; synthesised IR nodes have no source position.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "file"
+      ],
+      "type": "object"
+    },
+    "TestVector": {
+      "description": "Single `<sce:test-vector hex value/>` row (RFC §5.B). Captures the declared input bytes and expected output literal; the emitter pairs these with the algorithm's signature to render an idiomatic per-backend test function.",
+      "properties": {
+        "hex": {
+          "description": "Decoded input bytes (parsed from the `hex=` attribute).",
+          "items": {
+            "format": "uint8",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "source_line": {
+          "description": "1-based source line of the `<sce:test-vector>` element. Round-tripped to per-backend test-function naming so authors reading a failing test can find the SCXML row that produced it.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "value": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/TestVectorValue"
+            }
+          ],
+          "description": "Expected return value."
+        }
+      },
+      "required": [
+        "hex",
+        "source_line",
+        "value"
+      ],
+      "type": "object"
+    },
+    "TestVectorValue": {
+      "description": "RFC §5.B test-vector value literal. v1 covers the scalar types an algorithm signature can return; child-element form for multi-field codec results defers to B5 alongside the Zenoh msg-set authoring where the consumer signal first lands.",
+      "oneOf": [
+        {
+          "description": "Boolean literal (`true` / `false`).",
+          "properties": {
+            "type": {
+              "enum": [
+                "bool"
+              ],
+              "type": "string"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Unsigned integer literal (`0x29B1`, `42`). Source preserved as `u64` and narrowed at codegen time against the algorithm's declared return type.",
+          "properties": {
+            "type": {
+              "enum": [
+                "uint"
+              ],
+              "type": "string"
+            },
+            "value": {
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Signed integer literal (`-1`, `-127`). Distinct from `Uint` so the per-backend emitter can pick the correct signed integer type without inference.",
+          "properties": {
+            "type": {
+              "enum": [
+                "int"
+              ],
+              "type": "string"
+            },
+            "value": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ThresholdMonitor": {
+      "description": "A single threshold monitor within an observer kind.",
+      "properties": {
+        "enter_expr": {
+          "description": "ECMAScript expression for entering the active state.",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "leave_expr": {
+          "description": "ECMAScript expression for leaving the active state. Optional.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "on_enter": {
+          "description": "Event name emitted on entering active state.",
+          "type": "string"
+        },
+        "on_leave": {
+          "description": "Event name emitted on leaving active state. Optional.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "enter_expr",
+        "id",
+        "on_enter"
+      ],
+      "type": "object"
+    },
+    "TlvOverflowPolicy": {
+      "description": "RFC §5.B B3 TLV chain on-overflow policy. Names what the decoder does when the cursor still has bytes after `max_depth` entries have been consumed (i.e. the wire carries more entries than the codec author declared).\n\nv1 ships `Reject` + `Truncate`. `DiagnosticEvent` (RFC line 488) is deferred until §5.A diagnostic-event runtime infrastructure surfaces a reachable consumer — adding it now would be built-but-unconsumed.",
+      "oneOf": [
+        {
+          "description": "Return [`crate::forge::limits`]-sized `TlvChainOverflow` typed error. Caller treats the frame as corrupt.",
+          "enum": [
+            "reject"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Silently drop the post-cap bytes from the decoded list. Cursor is left advanced past whatever was consumed; the caller may inspect `cursor.remaining()` for the residual.",
+          "enum": [
+            "truncate"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "TlvTerminateStrategy": {
+      "description": "RFC §5.B Y3 — TLV chain termination strategy. Names how the chain decoder decides where the chain ends; pairs with the existing `max_depth` safety bound + `on_overflow` policy. v1 has two shapes:\n\n- [`TlvTerminateStrategy::ExhaustOrDepth`] (B3 trunk default): the chain consumes entries until the cursor exhausts or `max_depth` is reached. Used by `codec_tlv_chain_basic` + (pre-Y3) the `codec_zenoh_ext_envelope` demo. Acceptable when nothing follows the chain on the wire — the trailing cursor IS the chain's tail.\n\n- [`TlvTerminateStrategy::EntryFlag`] (Y3): each entry's outer header carries a \"next-entry follows\" boolean flag (zenoh-pico `_Z_FLAG_Z_Z = 0x80` at bit 7 in every ext_msg header). The chain decoder reads the flag *after* each entry and stops the loop when it's clear, leaving the cursor at the start of whatever follows the chain on the wire (e.g. zenoh-pico request body's query/put/del variant after the ext chain). Mirrors `_z_msg_ext_decode_iter` (ext.c:226-238) verbatim. `flag_name` references a flag declared on the entry codec's flags carrier (typically the entry's outer header byte). The codec author guarantees the entry codec exposes a flags-bearing carrier with that flag — codegen reads `entry.<flag_name>()` after each decode.\n\n`max_depth` and `on_overflow` apply uniformly across both strategies — they bound the worst case where the wire stream lies about chain length.",
+      "oneOf": [
+        {
+          "description": "Trunk default: chain ends on cursor exhaustion or `max_depth`.",
+          "properties": {
+            "type": {
+              "enum": [
+                "ExhaustOrDepth"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Y3: chain ends when the last-decoded entry's named flag bit is clear. Forward-compat with multi-ext zenoh wire format.",
+          "properties": {
+            "flag_name": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "EntryFlag"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "flag_name",
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ValidatorRules": {
+      "description": "Validation rules container.",
+      "properties": {
+        "plausibility": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ranges": {
+          "items": {
+            "$ref": "#/definitions/RangeRule"
+          },
+          "type": "array"
+        },
+        "rate_of_changes": {
+          "items": {
+            "$ref": "#/definitions/RateOfChangeRule"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "ranges",
+        "rate_of_changes"
+      ],
+      "type": "object"
+    },
+    "VariantArm": {
+      "description": "One arm of a discriminated-union variant suffix on a codec. `body_alias` references an `<sce:import>` alias whose imported codec type provides the arm's body. RFC §5.B \"Discriminated union\": `<sce:arm value=\"0x01\" type=\"SessionOpen\"/>` where `SessionOpen` is an imported codec alias (B1-β v1 limits arm bodies to imported codec kinds; primitive arm bodies and `<sce:default>` body inheritance arrive when their first reachable consumer ships).",
+      "properties": {
+        "body_alias": {
+          "description": "Import alias naming the body codec for this arm.",
+          "type": "string"
+        },
+        "is_default": {
+          "description": "`default=\"true\"` marker — declares this arm as the default chosen by the outer codec's `Default::default()` (RFC variant-default-uniformity Atomic α). Distinct from the catch-all `<sce:default>` arm (`CodecVariant::default_arm`) — that one fires on decode for unknown tag values; this flag only picks which `<sce:arm>`'s body type becomes the Default-trait starting value. At most one arm per variant may set this (parser-enforced via `codec/variant-duplicate-default-arm`). `false` ⇒ not the default arm; serialized only when `true` to keep pre-Atomic-α goldens byte-identical.",
+          "type": "boolean"
+        },
+        "value": {
+          "description": "Discriminator value (matches the tag field's read value). Held as `u64` to fit any unsigned tag width up to uint64.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "body_alias",
+        "value"
+      ],
+      "type": "object"
+    }
+  },
+  "description": "Compiler-IR-faithful serialization of a parsed SCE Forge document, emitted by `sce-codegen generate --emit-ast=<path>`. Authoritative definitions live in sce-build/src/forge/model.rs (`ForgeDocument`, `ParsedForge`). Consumers MUST ignore unknown fields inside `ast.document` (which mirrors the Rust IR type tree); the top-level envelope is closed. See docs/SCE_FORGE_AST.md for the consumer contract.",
+  "properties": {
+    "ast": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/ParsedForge"
+        }
+      ],
+      "description": "Parsed forge document body — mirrors `serde_json::to_string(&ParsedForge)`."
+    },
+    "sce_producer_version": {
+      "description": "SCE release that produced this payload. Optional in the schema so older consumers and `new_unversioned()` golden fixtures remain compatible.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "v": {
+      "const": 1,
+      "description": "Always `FORGE_AST_WIRE_VERSION` (1 for this schema revision).",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "ast",
+    "v"
+  ],
+  "title": "SCE Forge AST (wire schema v1)",
+  "type": "object",
+  "x-sce-schema-status": "pre-release"
+}

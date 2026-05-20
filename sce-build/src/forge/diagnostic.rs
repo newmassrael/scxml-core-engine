@@ -12005,7 +12005,7 @@ mod tests {
              surface must acknowledge atomic intrinsics) is build-wide \
              cross-doc per user direction: pass-1 of \
              `compile_scxml_with_imports` aggregates every parsed forge \
-             doc's `extern_declarations` into a single slice; the \
+             doc's `externs` into a single slice; the \
              validator scans for any entry whose registry-resolved \
              purpose starts with `\"atomic-\"`. NeutralOrDeterministic \
              non_overlap_class — the C4 baseline atomic family spans \

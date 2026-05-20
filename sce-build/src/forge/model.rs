@@ -29,6 +29,7 @@ pub const SCE_NAMESPACE: &str = "http://sce.dev/ext";
 /// new kind that violates either constraint forces an explicit policy decision
 /// rather than a silent pass.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum RuntimeDep {
     /// No runtime dependency. Pure inline code.
@@ -67,6 +68,7 @@ impl std::fmt::Display for RuntimeDep {
 /// SCE Forge kind — declares what pattern an Extended SCXML document represents.
 /// W3C SCXML Section 3.1 allows foreign namespace attributes on any element.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ForgeKind {
     /// Standard W3C SCXML state machine (default, existing pipeline).
@@ -341,6 +343,7 @@ impl std::fmt::Display for ForgeKind {
 /// Canonical SCE type — used in `sce:type` attributes.
 /// Language-specific mappings are in the generator module (SRP).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SceType {
     Uint8,
@@ -436,6 +439,7 @@ impl SceType {
 
 /// Data flow direction for kind fields.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum Direction {
     In,
@@ -458,6 +462,7 @@ impl Direction {
 
 /// A typed data field common to all kinds.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ForgeField {
     pub id: String,
     pub sce_type: SceType,
@@ -481,6 +486,7 @@ pub struct ForgeField {
 /// Transform: pure mathematical formula. Input -> computation -> output.
 /// No state, no side effects. Generates an inline function.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct TransformModel {
     pub name: String,
     pub inputs: Vec<ForgeField>,
@@ -496,6 +502,7 @@ pub struct TransformModel {
 
 /// A single key-value entry in a lookup table.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct LookupEntry {
     pub key: String,
     pub value: String,
@@ -515,6 +522,7 @@ pub struct LookupEntry {
 /// target language. Callers must handle the miss case explicitly. Used by
 /// numeric data tables where an unknown key is a bug, not a fallback case.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "kind", content = "value")]
 pub enum MissPolicy {
     #[serde(rename = "default")]
@@ -541,6 +549,7 @@ impl MissPolicy {
 ///     call into `sce_forge_runtime::lookup::lookup()`. The `Default` policy
 ///     unwraps with `or(default)`; the `Error` policy forwards the optional.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct LookupModel {
     pub name: String,
     pub input: ForgeField,
@@ -592,6 +601,7 @@ impl LookupModel {
 
 /// Condition: named boolean guard expression. Generates an inline bool function.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ConditionModel {
     pub name: String,
     pub inputs: Vec<ForgeField>,
@@ -609,6 +619,7 @@ pub struct ConditionModel {
 /// Validator: range/rate-of-change/plausibility checks.
 /// Has internal state (previous values for rate-of-change detection).
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ValidatorModel {
     pub name: String,
     pub inputs: Vec<ForgeField>,
@@ -622,6 +633,7 @@ pub struct ValidatorModel {
 
 /// Validation rules container.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ValidatorRules {
     pub ranges: Vec<RangeRule>,
     pub rate_of_changes: Vec<RateOfChangeRule>,
@@ -630,6 +642,7 @@ pub struct ValidatorRules {
 
 /// Range check: field value must be within [min, max].
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct RangeRule {
     pub id: String,
     pub min: Option<String>,
@@ -639,6 +652,7 @@ pub struct RangeRule {
 /// Rate-of-change check: delta between successive calls must not exceed max_delta.
 /// sample_interval_ms is informational (documents expected call frequency).
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct RateOfChangeRule {
     pub id: String,
     pub max_delta: String,
@@ -653,6 +667,7 @@ pub struct RateOfChangeRule {
 /// Dispatches a service request through the procedure's service handler.
 /// W3C SCXML 6.2 + SCE extensions (sce:service, sce:subfunc, sce:addr, sce:payload).
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ProcedureSendAction {
     /// Service name (sce:service attribute). Required.
     pub service: String,
@@ -676,6 +691,7 @@ pub struct ProcedureSendAction {
 /// An `<assign>` action within a `<transition>` body.
 /// Mutates internal state during transition execution.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ProcedureAssign {
     /// Target variable name (location attribute).
     pub location: String,
@@ -686,6 +702,7 @@ pub struct ProcedureAssign {
 /// A `<param>` within `<donedata>` on a `<final>` state.
 /// Provides result data when the procedure completes.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ProcedureDoneParam {
     /// Parameter name.
     pub name: String,
@@ -699,6 +716,7 @@ pub struct ProcedureDoneParam {
 /// Level 1: guard-only (cond + target).
 /// Level 2: event-driven (event + cond + target + assigns).
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ProcedureTransition {
     /// Target state id.
     pub target: String,
@@ -709,7 +727,7 @@ pub struct ProcedureTransition {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub event: Option<String>,
     /// Assign actions executed during transition (Level 2). Empty for Level 1.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub assigns: Vec<ProcedureAssign>,
     /// 1-based source line of the `<transition>` element. Populated by
     /// `parse_procedure_transitions` so post-loop validators (e.g. the
@@ -722,6 +740,7 @@ pub struct ProcedureTransition {
 
 /// A state within a procedure (either regular or final).
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ProcedureState {
     pub id: String,
     /// Whether this is a `<final>` state (terminal — no outgoing transitions).
@@ -729,10 +748,10 @@ pub struct ProcedureState {
     /// Ordered transitions (evaluated top-to-bottom). Empty for final states.
     pub transitions: Vec<ProcedureTransition>,
     /// Send actions in `<onentry>` (Level 2). Empty for Level 1.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub on_entry_sends: Vec<ProcedureSendAction>,
     /// Done data parameters (Level 2, final states only). Empty for Level 1.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub done_params: Vec<ProcedureDoneParam>,
     /// 1-based source line of the `<state>`/`<final>` element. Populated by
     /// `parse_procedure` so the post-loop "non-final state with no
@@ -753,6 +772,7 @@ pub struct ProcedureState {
 /// expression-pipeline type context so inference can propagate return types
 /// through enclosing expressions.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ProcedureHelper {
     /// User-visible identifier as it appears in expressions
     /// (e.g. `computeKey` in `sce:payload="computeKey(seed)"`).
@@ -774,15 +794,16 @@ pub struct ProcedureHelper {
 /// Level 1 (guard-only): CRTP base + switch/case, stateless `execute()`.
 /// Level 2 (event-driven): StaticExecutionEngine<Policy> + `runToCompletion()`.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ProcedureModel {
     pub name: String,
     /// Input parameters (sce:direction="in").
     pub inputs: Vec<ForgeField>,
     /// Internal state variables (sce:direction="internal"). Level 2 only.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub internals: Vec<ForgeField>,
     /// User-declared helper function DI points (see [`ProcedureHelper`]).
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub helpers: Vec<ProcedureHelper>,
     /// Id of the initial state (from `initial` attribute on `<scxml>`).
     pub initial: String,
@@ -817,6 +838,7 @@ impl ProcedureModel {
 
 /// Endianness for byte-level operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum Endian {
     Big,
@@ -855,6 +877,7 @@ impl Default for Endian {
 ///     final element returns `NeedMoreBytes`. Mirrors `<sce:repeat
 ///     sce:until-eof="true"/>`.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "type")]
 pub enum CountRef {
     /// Sibling integer field id whose decoded value names the count.
@@ -875,6 +898,7 @@ pub enum CountRef {
 /// deferred until §5.A diagnostic-event runtime infrastructure surfaces a
 /// reachable consumer — adding it now would be built-but-unconsumed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "kebab-case")]
 pub enum TlvOverflowPolicy {
     /// Return [`crate::forge::limits`]-sized `TlvChainOverflow` typed
@@ -915,6 +939,7 @@ pub enum TlvOverflowPolicy {
 /// strategies — they bound the worst case where the wire stream lies
 /// about chain length.
 #[derive(Debug, Clone, Default, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "type")]
 pub enum TlvTerminateStrategy {
     /// Trunk default: chain ends on cursor exhaustion or `max_depth`.
@@ -931,6 +956,7 @@ fn is_exhaust_or_depth(s: &TlvTerminateStrategy) -> bool {
 
 /// Bit size specification for codec fields.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "type")]
 pub enum BitSize {
     /// Fixed bit count: 8, 16, 24, 32, 64.
@@ -1011,6 +1037,7 @@ pub enum BitSize {
 /// bit-range (back-compat with pre-Atomic-α goldens). Stored as
 /// `u64` to fit any carrier width up to uint64.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct FlagDef {
     pub name: String,
     pub bit: u32,
@@ -1027,6 +1054,7 @@ pub struct FlagDef {
 /// Axis-1 inversion input form (bare name resolves to a declared
 /// `<sce:flag-input>`, passed as a positional typed parameter).
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum PresentIfScope {
     /// `<field_id>.<flag_name>` — B1-δ form. Carrier is a
@@ -1072,6 +1100,7 @@ pub enum PresentIfScope {
 /// remain deferred to later B-stages when a reachable consumer
 /// surfaces.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct PresentIfPredicate {
     /// Predicate scope. Defaults to `Local`; serialized only for
     /// non-Local scopes (`Input`) to keep pre-Axis-1 local-scope
@@ -1121,6 +1150,7 @@ fn is_local_scope(scope: &PresentIfScope) -> bool {
 /// `<sce:flag-bind input="X" source="Y.Z"/>` directives — see
 /// [`FlagBind`].
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct FlagInput {
     /// Logical input name. Author-visible in predicates
     /// (`present-if="<name>"`) and as a positional parameter in the
@@ -1151,6 +1181,7 @@ pub struct FlagInput {
 /// or carrier+flag; every leaf-declared input is bound exactly once;
 /// widths agree.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct FlagBind {
     /// Leaf-side input name being supplied.
     pub input: String,
@@ -1161,6 +1192,7 @@ pub struct FlagBind {
 /// RFC Axis-1 inversion — resolved binding source. Two variants per the
 /// dotted-form rule documented on [`FlagBind`].
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum FlagBindSource {
     /// `source="<carrier>.<flag>"` — parent's local flags-carrier.
@@ -1171,6 +1203,7 @@ pub enum FlagBindSource {
 
 /// A single field in a codec's byte layout.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct CodecField {
     pub id: String,
     pub sce_type: SceType,
@@ -1375,6 +1408,7 @@ impl CodecField {
 /// kinds; primitive arm bodies and `<sce:default>` body inheritance
 /// arrive when their first reachable consumer ships).
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct VariantArm {
     /// Discriminator value (matches the tag field's read value).
     /// Held as `u64` to fit any unsigned tag width up to uint64.
@@ -1421,6 +1455,7 @@ pub struct VariantArm {
 /// (name, bit, width) — the peeked byte == arm body's own header
 /// byte, so the flag layout must agree on the dispatch bit-range.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct PeekByteSpec {
     /// Logical name for the peek slot. Used as the carrier half of
     /// the variant's `tag="<id>.<flag>"` dotted form. Not a wire
@@ -1447,6 +1482,7 @@ pub struct PeekByteSpec {
 /// value not enumerated; absent default + non-exhaustive arm coverage
 /// fires `codec/variant-arm-unreachable` at build time (see RFC §5.B).
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct CodecVariant {
     /// `id` of the field whose decoded value (or named bit-range,
     /// see `tag_flag`) selects an arm. Must reference an unsigned-int
@@ -1490,6 +1526,7 @@ pub struct CodecVariant {
 
 /// Codec: byte-level encode/decode. Generates struct with decode/encode methods.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct CodecModel {
     pub name: String,
     /// Document-level default endianness.
@@ -1524,7 +1561,7 @@ pub struct CodecModel {
     /// flags) codecs only; variant + recursive-variant + TLV-chain +
     /// parent-flags codecs reject through the per-language gate in
     /// `render_codec_test_vector_sidecar` until B5-θ closures land.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub test_vectors: Vec<CodecTestVector>,
     /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
     /// position of the `<scxml sce:kind="codec">` root element.
@@ -1684,6 +1721,7 @@ impl CodecModel {
 /// new arms to `DecodedValue` — keeps the parser + codegen surface
 /// uniform across B5-θ closures.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct CodecTestVector {
     /// Decoded wire bytes (parsed from the `hex=` attribute).
     pub hex: Vec<u8>,
@@ -1700,6 +1738,7 @@ pub struct CodecTestVector {
 /// add `Variant` and `Chain` arms following the B1-β / B3-α
 /// trunk-then-closures cadence.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "shape", rename_all = "kebab-case")]
 pub enum DecodedValue {
     /// Plain codec: ordered list of named field assignments. Field
@@ -1713,6 +1752,7 @@ pub enum DecodedValue {
 /// `CodecModel.fields` at parse time; value carries the typed scalar
 /// / bytes / string literal compatible with that field's `sce_type`.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct DecodedField {
     pub name: String,
     pub value: DecodedFieldValue,
@@ -1724,6 +1764,7 @@ pub struct DecodedField {
 /// `String` → `String`. Float fields are not yet supported (no codec
 /// field uses them; closures land alongside the first consumer).
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "type", content = "value", rename_all = "kebab-case")]
 pub enum DecodedFieldValue {
     Bool(bool),
@@ -1745,6 +1786,7 @@ pub enum DecodedFieldValue {
 
 /// Filter type: algorithm used for signal filtering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "kebab-case")]
 pub enum FilterType {
     MovingAverage,
@@ -1775,6 +1817,7 @@ impl FilterType {
 /// Filter: signal filtering with internal state (moving average, low-pass, debounce).
 /// Generates a struct with `update()` and `reset()` methods.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct FilterModel {
     pub name: String,
     pub input: ForgeField,
@@ -1797,6 +1840,7 @@ pub struct FilterModel {
 
 /// Interpolation method.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum InterpolationMethod {
     Linear,
@@ -1815,6 +1859,7 @@ impl InterpolationMethod {
 
 /// Out-of-bounds handling for interpolation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum OutOfBounds {
     Clamp,
@@ -1849,6 +1894,7 @@ impl Default for OutOfBounds {
 
 /// Axis definition for interpolation (breakpoints for one dimension).
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct InterpolationAxis {
     /// Input field id this axis corresponds to.
     pub input_id: String,
@@ -1859,6 +1905,7 @@ pub struct InterpolationAxis {
 /// Interpolation: 1D/2D table lookup with linear/bilinear interpolation.
 /// Generates a struct with static tables and a `lookup()` method.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct InterpolationModel {
     pub name: String,
     pub inputs: Vec<ForgeField>,
@@ -1908,6 +1955,7 @@ pub struct InterpolationModel {
 ///   exceeds `scheduler.timer_wheel_depth`; the static wheel cannot
 ///   hold any more.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct TimerModel {
     /// Timer name from `<scxml sce:kind="timer" name="...">`. Used
     /// as the codegen struct prefix (`<Name>Timer` / `<name>_timer`).
@@ -1939,6 +1987,7 @@ pub struct TimerModel {
 
 /// A single threshold monitor within an observer kind.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ThresholdMonitor {
     pub id: String,
     /// ECMAScript expression for entering the active state.
@@ -1957,6 +2006,7 @@ pub struct ThresholdMonitor {
 /// Generates a struct with per-monitor boolean state and an `update()` method
 /// returning a collection of triggered events.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ObserverModel {
     pub name: String,
     pub inputs: Vec<ForgeField>,
@@ -1990,6 +2040,7 @@ pub struct ObserverModel {
 /// - Lookup: `table.lookup(...)`
 /// - Validator: `val.validate(...)`
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ForgeImport {
     /// Relative path to the imported SCXML file.
     pub src: String,
@@ -2042,6 +2093,7 @@ pub struct ForgeImport {
 /// codec's arm count, and the carrier appears before the embed field
 /// in declaration order.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct EmbedDispatch {
     /// Dotted `<carrier>.<flag>` reference into the parent codec's
     /// own flag space. Parser splits on the dot; cross-doc validator
@@ -2057,6 +2109,7 @@ pub struct EmbedDispatch {
 
 /// A single entry in a forge build manifest.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ManifestEntry {
     pub src: String,
     pub name: String,
@@ -2070,6 +2123,7 @@ pub struct ManifestEntry {
 /// Forge build manifest — dependency graph for a set of forge SCXML files.
 /// Includes topological build order (leaves first).
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ForgeManifest {
     pub entries: Vec<ManifestEntry>,
     pub build_order: Vec<String>,
@@ -2081,6 +2135,7 @@ pub struct ForgeManifest {
 /// Derived values (unique_values, entries_by_value) are computed by the
 /// generator at render time, not stored in the model (state normalization).
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "kind")]
 pub enum InlineKindData {
     #[serde(rename = "lookup")]
@@ -2106,6 +2161,7 @@ pub enum InlineKindData {
 
 /// An inline kind declaration within a statechart.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct InlineKind {
     pub id: String,
     pub data: InlineKindData,
@@ -2117,6 +2173,7 @@ pub struct InlineKind {
 /// scalars or by-reference slices for `bytes`. Read-only in v1
 /// (assigning to a parameter raises `algorithm/lvalue-unsupported`).
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct AlgorithmParam {
     pub name: String,
     #[serde(rename = "type")]
@@ -2128,6 +2185,7 @@ pub struct AlgorithmParam {
 /// terminal `<sce:return>` raises `algorithm/return-missing` only when
 /// `return_type` is Some.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct AlgorithmSignature {
     pub params: Vec<AlgorithmParam>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2141,6 +2199,7 @@ pub struct AlgorithmSignature {
 /// Keeping array out of [`SceType`] keeps the parameter / var / field
 /// surfaces scalar-only, which is the v1 contract everywhere else.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(untagged)]
 pub enum AlgorithmConstType {
     /// Scalar form (any `SceType`). Emitted as a language-native const.
@@ -2217,6 +2276,7 @@ fn parse_scetype_with_aliases(s: &str) -> Option<SceType> {
 /// `yield_expr` (typed at `elem_type`) as one element of the produced
 /// array.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct FoldBody {
     /// Inclusive lower bound of the integer range driving the fold.
     pub range_start: u32,
@@ -2246,6 +2306,7 @@ pub struct FoldBody {
 /// lands in Phase A4-α (parser + model), the host interpreter and
 /// per-language emit land in A4-β.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct AlgorithmConst {
     pub name: String,
     #[serde(rename = "type")]
@@ -2274,6 +2335,7 @@ fn is_false(b: &bool) -> bool {
 /// One statement in an algorithm body. Lowered to language-idiomatic
 /// constructs by each backend (RFC §5.J.5 emitter table).
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "stmt", rename_all = "snake_case")]
 pub enum AlgorithmStmt {
     /// `<sce:var name=... type=... init=.../>` — local mutable binding.
@@ -2329,10 +2391,11 @@ pub enum AlgorithmStmt {
 
 /// Algorithm document — pure synchronous function (RFC §5.A).
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct AlgorithmModel {
     pub name: String,
     pub signature: AlgorithmSignature,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub consts: Vec<AlgorithmConst>,
     pub body: Vec<AlgorithmStmt>,
     /// RFC §5.B "Test vector": inline `<sce:test-vector hex value/>`
@@ -2340,7 +2403,7 @@ pub struct AlgorithmModel {
     /// test that runs the algorithm on `hex` and asserts the return
     /// value equals `value`. v1 supports algorithm kind only with
     /// scalar return — multi-field codec test-vector defers to B5.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub test_vectors: Vec<TestVector>,
     /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
     /// position of the `<scxml sce:kind="algorithm">` root element.
@@ -2354,6 +2417,7 @@ pub struct AlgorithmModel {
 /// codec results defers to B5 alongside the Zenoh msg-set authoring
 /// where the consumer signal first lands.
 #[derive(Debug, Clone, Serialize, PartialEq)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "type", content = "value")]
 pub enum TestVectorValue {
     /// Boolean literal (`true` / `false`).
@@ -2376,6 +2440,7 @@ pub enum TestVectorValue {
 /// these with the algorithm's signature to render an idiomatic
 /// per-backend test function.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct TestVector {
     /// Decoded input bytes (parsed from the `hex=` attribute).
     pub hex: Vec<u8>,
@@ -2393,6 +2458,7 @@ pub struct TestVector {
 /// table. Five strings shipped today; OS-specific classes (e.g.
 /// `unix_socket`, `qnx_msg`) land additively in later phases.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum LinkClass {
     /// Datagram, byte-stream framer (RFC §5.C row 1; A on MCU lwIP).
@@ -2489,6 +2555,7 @@ impl std::fmt::Display for LinkClass {
 /// uniformly (the policy threading into the runtime crate is an
 /// implementation concern of `sce-link-runtime`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "kebab-case")]
 pub enum BackpressurePolicy {
     /// Drop incoming bytes when the consumer cannot keep up.
@@ -2522,6 +2589,7 @@ impl std::fmt::Display for BackpressurePolicy {
 
 /// `<sce:inbound>` — RX byte-stream → SCXML event injection contract.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct LinkInboundEvent {
     /// SCXML event name to inject when the framer decode + `when`
     /// predicate succeed.
@@ -2534,6 +2602,7 @@ pub struct LinkInboundEvent {
 
 /// `<sce:outbound>` — SCXML event → framer encode + driver send contract.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct LinkOutboundEvent {
     /// SCXML event name that triggers TX.
     pub event: String,
@@ -2543,6 +2612,7 @@ pub struct LinkOutboundEvent {
 
 /// Link document — RFC §5.C byte-stream link endpoint.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct LinkModel {
     pub name: String,
     /// `<sce:link-class>` body text, parsed into the closed enum.
@@ -2558,10 +2628,10 @@ pub struct LinkModel {
     /// B6-γ's reject fixture.
     pub backpressure: BackpressurePolicy,
     /// `<sce:events><sce:inbound .../></sce:events>` rows.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub inbound: Vec<LinkInboundEvent>,
     /// `<sce:events><sce:outbound .../></sce:events>` rows.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub outbound: Vec<LinkOutboundEvent>,
     /// `<sce:rx-pool ref="...">` — RX buffer-pool name (RFC §5.C body
     /// + §5.E B7-α schema-only). Authors who want zero-copy RX path
@@ -2632,6 +2702,7 @@ pub struct LinkModel {
 /// its static semantics (the runtime per-peer `Established` flag is
 /// out of reach at validate-time).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "kebab-case")]
 pub enum LinkInstanceRole {
     /// Pre-handshake half. Receives bytes while the per-peer session
@@ -2691,6 +2762,7 @@ impl LinkInstanceRole {
 /// these axes), and the validator + template never reach for the
 /// hardening fields on a Sibling instance.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ResolvedLinkInstance {
     /// Deploy `machines.<name>` that owns the source link declaration.
     /// The orchestrator preserves the original machine name so the
@@ -2730,6 +2802,7 @@ pub struct ResolvedLinkInstance {
 /// maintenance pinning that uses this field defers to B7-δ (gated on
 /// §5.I `<sce:call>` intrinsic registry).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "kebab-case")]
 pub enum CachePolicy {
     /// Codegen inserts `cache_clean` before DMA TX, `cache_invalidate`
@@ -2795,6 +2868,7 @@ impl std::fmt::Display for CachePolicy {
 /// `ForgeKind::BufferPool` axis (Q-C9-6 a) gates non-MCU targets;
 /// C9-α does not introduce a new MCU-class diagnostic.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "variant", rename_all = "kebab-case")]
 pub enum BufferPoolVariant {
     /// No `<sce:variant>` element (or the explicit form
@@ -2819,6 +2893,7 @@ pub enum BufferPoolVariant {
 /// domain_attrs.trust_class}` and the peer-table-capacity build-time
 /// invariant defer to C9-β co-landing with C13 §5.K `links:` block.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ReassemblyConfig {
     /// `<sce:max-fragments-per-message>` (RFC §5.M line 2688) — fragment-
     /// index bitmap width per slot; bounds the worst-case fragment count
@@ -2863,6 +2938,7 @@ pub struct ReassemblyConfig {
 ///   `<sce:variant>` element; semantic pre-C9 behavior) OR
 ///   `reassembly` ([`ReassemblyConfig`] payload). C9-α.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct BufferPoolModel {
     pub name: String,
     /// `<sce:slot-count>` — slot count in the pool. Parser rejects 0.
@@ -2904,6 +2980,7 @@ pub struct BufferPoolModel {
 /// `Relaxed` fires `worker/inbox-ordering-relaxed-across-cores` at
 /// codegen time per spec line 1755-1756.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "kebab-case")]
 pub enum InboxOrdering {
     /// `ordering="acq_rel"` — atomic load_acquire on head/tail reads,
@@ -2941,6 +3018,7 @@ impl std::fmt::Display for InboxOrdering {
 /// explicit choice before codegen emits ambiguous atomic ops).
 /// MPSC variant deferred until consumer signal (RFC §6 tracked).
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct InboxConfig {
     /// `<sce:inbox depth="N"/>` attribute body — fixed ring-buffer
     /// depth. Parser rejects 0. Spec line 894 verbatim attribute form.
@@ -2970,6 +3048,7 @@ pub struct InboxConfig {
 /// resolution against `MachineDeployConfig.limits` lands in C6-γ behind
 /// `collection/capacity-unresolved`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CapacitySource {
     /// `<sce:capacity source="deploy" key="machines.X.limits.Y"/>` — key
@@ -2983,6 +3062,7 @@ pub enum CapacitySource {
 
 /// `<sce:on-overflow>` policy — RFC §5.L lines 2556-2557 + 2604.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "kebab-case")]
 pub enum OverflowPolicy {
     /// `<sce:on-overflow>diagnostic-event</sce:on-overflow>` — emit a
@@ -3000,6 +3080,7 @@ pub enum OverflowPolicy {
 
 /// `<sce:ordering>` mode — RFC §5.L lines 2558-2559 + 2605.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "kebab-case")]
 pub enum CollectionOrdering {
     /// `<sce:ordering>insertion</sce:ordering>` — iterator yields entries
@@ -3014,6 +3095,7 @@ pub enum CollectionOrdering {
 
 /// `<sce:concurrency>` mode — RFC §5.L lines 2560-2562 + 2606.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "kebab-case")]
 pub enum ConcurrencyMode {
     /// `<sce:concurrency>single-writer</sce:concurrency>` — exactly one
@@ -3062,6 +3144,7 @@ pub enum ConcurrencyMode {
 ///   — if `on_overflow` is `OldestWins`, `ordering` must be `Insertion`
 ///   (spec line 2655).
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct BoundedCollectionModel {
     pub name: String,
     /// `<sce:element-type>` body text — references another forge kind by
@@ -3118,6 +3201,7 @@ pub struct BoundedCollectionModel {
 /// go/python rejection via existing `codegen/mcu-class-kind-on-non-
 /// mcu-language` family (lands in C2-β alongside codegen).
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct WorkerModel {
     pub name: String,
     /// `<sce:link-rx ref="...">` — required driver source. Spec line
@@ -3143,6 +3227,7 @@ pub struct WorkerModel {
 
 /// Top-level forge document — dispatched by `sce:kind` on `<scxml>` root.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "kind")]
 pub enum ForgeDocument {
     #[serde(rename = "transform")]
@@ -3273,6 +3358,7 @@ impl ForgeDocument {
 /// Parsed forge result — combines the document model with cross-file imports.
 /// The `imports` field is empty for standalone documents (no `<sce:import>` elements).
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ParsedForge {
     pub document: ForgeDocument,
     pub imports: Vec<ForgeImport>,
@@ -3287,8 +3373,14 @@ pub struct ParsedForge {
     /// Atomic A produces this list; downstream codegen consumption
     /// (per-language `extern "..." {}` emission) lands with a future
     /// atomic gated on a published `sce_intrinsics_runtime` crate.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub extern_declarations: Vec<ExternDeclaration>,
+    ///
+    /// Wire shape: always emitted (even as `[]`) so consumers see a
+    /// uniform schema. `imports` follows the same rule. Earlier
+    /// `skip_serializing_if = "Vec::is_empty"` forced consumers to
+    /// branch on presence-vs-empty, a paper cut the AST export's
+    /// long-term-correctness review surfaced.
+    #[serde(default)]
+    pub externs: Vec<ExternDeclaration>,
 }
 
 /// One `<sce:extern>` declaration after parse-time validation has
@@ -3296,6 +3388,7 @@ pub struct ParsedForge {
 /// `ParsedForge` so future codegen atomics can emit per-language
 /// `extern "C" { fn ... }` blocks without re-walking the XML.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ExternDeclaration {
     /// Symbol name as authored — guaranteed to exactly match a
     /// registry entry's `name` (closed-set lookup at parse time).

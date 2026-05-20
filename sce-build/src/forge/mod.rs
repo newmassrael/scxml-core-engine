@@ -6,6 +6,7 @@
 // Extends W3C SCXML with `sce:kind` attribute to support code generation
 // beyond state machines: transforms, lookups, conditions, codecs, and more.
 
+pub mod ast_export;
 pub mod buffer_pool_fsm;
 pub mod codegen_markers;
 pub mod codegen_matrix;

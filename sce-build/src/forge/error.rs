@@ -29,9 +29,21 @@ use std::path::PathBuf;
 /// above the function header that node lowers to. Serialised so
 /// minijinja templates can `{% if state.source_location %}{{ ... }}{% endif %}`.
 #[derive(Debug, Clone, serde::Serialize, Default)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct SourceLocation {
+    /// Producer-defined identifier for the source document — typically
+    /// the SCXML file's basename, but consumers MUST treat it as an
+    /// opaque label scoped to the current emit (see
+    /// `docs/SCE_FORGE_AST.md` §9 for the consumer contract). Not
+    /// guaranteed to be an absolute or workspace-relative path, and
+    /// not guaranteed unique across emits when two inputs share a
+    /// basename.
     pub file: String,
+    /// 1-based source line. Optional — XSD-level diagnostics carry
+    /// no line; synthesised IR nodes have no source position.
     pub line: Option<u32>,
+    /// 1-based source column. Optional — only node-precise raises
+    /// carry column info.
     pub col: Option<u32>,
 }
 
@@ -2370,7 +2382,7 @@ pub enum ValidationError {
     /// Check is build-wide cross-doc per user direction (Gate B Q2
     /// `C6-β 에 포함, 빌드 단위 cross-doc 검사`): pass-1 of
     /// [`crate::compile_scxml_with_imports`] aggregates every parsed
-    /// forge doc's `extern_declarations` into a single slice; the
+    /// forge doc's `externs` into a single slice; the
     /// validator scans for any entry whose registry-resolved purpose
     /// starts with `"atomic-"` (the C4 atomic A baseline registry
     /// tags atomic-load / atomic-store / atomic-cas-* / atomic-fetch-*

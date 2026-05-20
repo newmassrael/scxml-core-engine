@@ -275,7 +275,7 @@ fn cache_maintain_auto_injects_three_externs_in_sidecar_rust() {
 
 #[test]
 fn cache_non_cacheable_emits_no_externs_sidecar() {
-    // Sidecar emit is gated on non-empty extern_declarations; when no
+    // Sidecar emit is gated on non-empty externs; when no
     // author externs and cache-policy != maintain, no sidecar emits.
     let out = compile_pool_with_deploy(
         "non-cacheable",
@@ -614,5 +614,5 @@ fn cache_maintain_document_kind_is_buffer_pool() {
         .expect("parses")
         .expect("buffer-pool produces ParsedForge");
     assert!(matches!(parsed.document, ForgeDocument::BufferPool(_)));
-    assert_eq!(parsed.extern_declarations.len(), 3);
+    assert_eq!(parsed.externs.len(), 3);
 }

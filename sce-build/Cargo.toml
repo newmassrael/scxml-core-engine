@@ -59,6 +59,13 @@ cli = ["clap"]
 # checked-in `tests/forge/conformance/fixtures.schema.json` diverges.
 [dev-dependencies]
 schemars = "0.8"
+# Full JSON Schema validator. Drives the AST export drift guard's
+# round-trip assertions through the same code path a real consumer
+# would use — catches issues that serde_json::Value structural
+# inspection misses (e.g. const mismatch, type narrowing on an
+# optional field, ref resolution failure). Dev-only — production
+# emit paths never validate, only produce.
+jsonschema = { version = "0.18", default-features = false }
 syn = { version = "2", features = ["parsing", "full"] }
 # Sandboxed directories for XInclude expansion tests. Lets each
 # `#[test]` build a transient file tree without touching the crate's
@@ -184,6 +191,21 @@ path = "tests/cli_meta_and_workspace_root.rs"
 required-features = ["cli"]
 
 
+
+# Forge AST export wire-format drift guard. Reads the checked-in
+# `apis/forge-ast.v1.schema.json` and round-trips every emittable
+# kind through `forge::ast_export::write_envelope`, validating each
+# fixture's output against the schema with the `jsonschema` crate.
+# Also drives `sce-codegen orchestrate --emit-ast-dir` end-to-end,
+# which is why this target needs the `cli` feature (the binary
+# itself is feature-gated). Any rename / removal of a `ForgeKind`
+# variant, drop of an envelope field, or shape regression that
+# breaks roundtrip surfaces here before consumers (sce-db-gen,
+# sce-eventstore-adapter, etc.) hit it.
+[[test]]
+name = "forge_ast_export"
+path = "tests/forge_ast_export.rs"
+required-features = ["cli"]
 
 [lints]
 workspace = true

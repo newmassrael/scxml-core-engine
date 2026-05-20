@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Minimal `<scxml sce:kind="worker">` document for the AST export
+  drift guard. Shape mirrors sce-build/tests/c2_worker_alpha.rs's
+  `worker_minimal_parses` — single link-rx + inbox.
+
+  No `<sce:import>` declaration means cross-doc resolution
+  (`validate_worker_cross_refs`) will reject this at compile time —
+  but the AST export runs against the *parsed* IR alone, before
+  cross-doc resolution. The fixture round-trips cleanly through
+  parse → emit even though it would never compile.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="worker" name="worker_ast_export_min" version="1.0">
+  <sce:link-rx ref="udp_scout"/>
+  <sce:inbox depth="16" ordering="acq_rel"/>
+</scxml>

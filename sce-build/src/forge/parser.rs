@@ -159,7 +159,7 @@ pub fn parse_forge_with_imports_and_plugin(
     }
 
     let imports = parse_imports(&root, diag)?;
-    let mut extern_declarations = parse_extern_declarations(&root, diag, plugin)?;
+    let mut externs = parse_externs(&root, diag, plugin)?;
     let document = parse_forge_from_node(&root, label, kind)?;
 
     // C5 auto-inject (spec §5.E lines 1222-1227 + lines 1736-1740):
@@ -171,18 +171,18 @@ pub fn parse_forge_with_imports_and_plugin(
     // `<snake>_externs.{rs,h}`"), the parser appends 3 synthetic
     // ExternDeclaration entries here. Author authoring of the cache
     // trio is forbidden per `pool/cache-maintenance-misplaced`
-    // (rejected in `parse_extern_declarations` above), so no
+    // (rejected in `parse_externs` above), so no
     // duplicates are possible at this point.
     if let crate::forge::model::ForgeDocument::BufferPool(ref bp) = document {
         if bp.cache_policy == crate::forge::model::CachePolicy::Maintain {
-            extern_declarations.extend(synthesize_cache_extern_declarations());
+            externs.extend(synthesize_cache_externs());
         }
     }
 
     Ok(Some(ParsedForge {
         document,
         imports,
-        extern_declarations,
+        externs,
     }))
 }
 
@@ -197,7 +197,7 @@ pub fn parse_forge_with_imports_and_plugin(
 /// authored at any source line — the build pipeline is the author.
 /// Downstream sidecar emit (atomic C) treats `line: None` no
 /// differently from author-supplied entries.
-fn synthesize_cache_extern_declarations() -> Vec<crate::forge::model::ExternDeclaration> {
+fn synthesize_cache_externs() -> Vec<crate::forge::model::ExternDeclaration> {
     use crate::forge::intrinsic_registry::{lookup_symbol, CACHE_MAINTENANCE_TRIO};
     use crate::forge::model::ExternDeclaration;
 
@@ -243,7 +243,7 @@ fn synthesize_cache_extern_declarations() -> Vec<crate::forge::model::ExternDecl
 ///
 /// Returns the parsed declarations in document order so downstream
 /// codegen consumers can emit `extern "..." {}` blocks deterministically.
-fn parse_extern_declarations(
+fn parse_externs(
     root: &roxmltree::Node,
     doc_name: &str,
     plugin: &[crate::forge::target_plugin::PluginSymbol],

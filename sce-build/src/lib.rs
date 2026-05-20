@@ -761,7 +761,7 @@ pub fn compile_forge_with_deploy(
                     None,
                 )
             })?;
-    let extern_decls = parsed.extern_declarations.clone();
+    let extern_decls = parsed.externs.clone();
     let mut doc = parsed.document;
 
     // RFC variant-default-overlay Atomic A — apply deploy.yaml
@@ -1243,7 +1243,7 @@ pub fn compile_forge_with_deploy(
     // [`compile_forge_with_imports`]; the deploy-aware path catches
     // the rejection one stage later (after potential plugin loading)
     // because plugin entries also count as `<sce:extern>` declarations
-    // through `parsed.extern_declarations`. Reuses the existing
+    // through `parsed.externs`. Reuses the existing
     // `codegen/mcu-class-kind-on-non-mcu-language` family per Q-Call-7
     // prose, with `kind = "<sce:extern>"` to disambiguate from kind-
     // axis rejection on the same code.
@@ -1617,6 +1617,33 @@ pub fn compile_forge_with_imports(
             None,
         )
     })?;
+    compile_forge_from_parsed(&parsed, label, language, base_dir, options)
+}
+
+/// Forge codegen entry point for callers who already hold a
+/// [`forge::model::ParsedForge`].
+///
+/// Splits the parse step out of [`compile_forge_with_imports`] so
+/// downstream consumers — most importantly the `sce-codegen` CLI when
+/// `--emit-ast=<path>` is set — can parse exactly once, observe or
+/// emit the parsed IR, and only then trigger codegen. Eliminates the
+/// previous double-parse on the AST emit path: parser cost is bounded
+/// today but the typed-expression pipeline and XSD validator are
+/// growth axes, and re-parsing the same document twice is an
+/// architecture mismatch (`ParsedForge` is a cacheable artefact —
+/// callers should not have to throw it away just to get codegen).
+///
+/// Semantics are byte-identical to `compile_forge_with_imports`
+/// running on the same input: the wrapper now just funnels through
+/// here after parsing. Existing call sites do not change.
+pub fn compile_forge_from_parsed(
+    parsed: &forge::model::ParsedForge,
+    label: DocumentLabel<'_>,
+    language: generator::Language,
+    base_dir: &Path,
+    options: &ForgeCompileOptions,
+) -> Result<generator::GeneratedOutput, forge::error::Located<forge::error::ForgeError>> {
+    use forge::error::Located;
 
     // Watching-zenoh RFC §5.O Atomic 0c — forge IR provenance pre-emit
     // guard. Runs before import resolution + cross-doc validators so a
@@ -1677,10 +1704,10 @@ pub fn compile_forge_with_imports(
     // mcu-language family"); the `kind` field carries the literal
     // string `<sce:extern>` to disambiguate from an MCU-class-kind
     // rejection on the same code (kind-axis rejection puts a kind name
-    // there). Atomics A/B build the `parsed.extern_declarations` slice;
+    // there). Atomics A/B build the `parsed.externs` slice;
     // this gate is the consumer that closes the built-but-unconsumed
     // path on non-MCU backends.
-    if !parsed.extern_declarations.is_empty()
+    if !parsed.externs.is_empty()
         && matches!(
             language,
             generator::Language::Kotlin | generator::Language::Go | generator::Language::Python
@@ -1703,7 +1730,7 @@ pub fn compile_forge_with_imports(
             &parsed.document,
             &template_base,
             &import_ctx,
-            &parsed.extern_declarations,
+            &parsed.externs,
             options,
         ),
         generator::Language::Kotlin => forge::generator::generate_kotlin_with_imports(
@@ -1716,7 +1743,7 @@ pub fn compile_forge_with_imports(
             &parsed.document,
             &template_base,
             &import_ctx,
-            &parsed.extern_declarations,
+            &parsed.externs,
             options,
         ),
         generator::Language::Go => forge::generator::generate_go_with_imports(
@@ -1735,7 +1762,7 @@ pub fn compile_forge_with_imports(
             &parsed.document,
             &template_base,
             &import_ctx,
-            &parsed.extern_declarations,
+            &parsed.externs,
             options,
         ),
     }
@@ -1792,7 +1819,7 @@ pub fn compile_scxml_with_imports(
     // Q-Outbox-3 (b)).
     //
     // Bounded-collection docs + codec/procedure docs + aggregated
-    // extern_declarations are captured for the C6-β cross-doc
+    // externs are captured for the C6-β cross-doc
     // resolution pass (`validate_bounded_collection_cross_refs`). The
     // `SceCrossDocRegistry` reserves SCXML-cross-reference semantics
     // for Link / Statechart / Worker kinds (those that SCXML
@@ -1810,7 +1837,7 @@ pub fn compile_scxml_with_imports(
         String,
         forge::model::ForgeDocument,
     > = std::collections::HashMap::new();
-    let mut all_extern_declarations: Vec<forge::model::ExternDeclaration> = Vec::new();
+    let mut all_externs: Vec<forge::model::ExternDeclaration> = Vec::new();
     // C13-α-1 + C13-α-2 cross-doc validators (`validate_links_cross_doc`,
     // `validate_links_burst_invariants`, `validate_reassembly_cross_doc`)
     // need the parsed forge LinkModel + BufferPoolModel by name. Capture
@@ -1884,14 +1911,14 @@ pub fn compile_scxml_with_imports(
                 None,
             )
         })?;
-        // Aggregate every parsed doc's extern_declarations into the
+        // Aggregate every parsed doc's externs into the
         // build-wide slice consumed by the C6-β multi-writer atomic-
         // import check. The spec contract is "atomic imports must
         // exist somewhere in the build", so the union across all
         // forge docs is the relevant surface; per-doc isolation would
         // force authors to redeclare atomics in every BC doc, which
         // contradicts the §5.I trust-surface design.
-        all_extern_declarations.extend(parsed.extern_declarations.iter().cloned());
+        all_externs.extend(parsed.externs.iter().cloned());
 
         // Capture per-kind for downstream cross-doc validators. The
         // C2 follow-up Atomic B outbox path needs workers; the C6-β
@@ -1997,7 +2024,7 @@ pub fn compile_scxml_with_imports(
     // ── C6 Atomic β bounded-collection cross-doc resolution ──
     //
     // Runs after pass-1 captures all parsed forge docs (so
-    // `element_type_candidates` + `all_extern_declarations` are
+    // `element_type_candidates` + `all_externs` are
     // populated) and after worker outbox so cross-doc validators run
     // in spec-section order (§5.D outbox before §5.L bounded-
     // collection). Independent of SCXML statechart registration — the
@@ -2009,7 +2036,7 @@ pub fn compile_scxml_with_imports(
     validate_bounded_collection_cross_refs(
         &bounded_collections_for_xref,
         &element_type_candidates,
-        &all_extern_declarations,
+        &all_externs,
     )?;
 
     // ── C13-α-1 + C13-α-2 deploy-aware cross-doc validators ──
@@ -3447,7 +3474,7 @@ fn extract_bounded_collection_index_field_sce_type(
 ///   `ProcedureModel.inputs[].id + .internals[].id` for procedures).
 /// * `collection/multi-writer-without-atomics` — `<sce:concurrency>`
 ///   declared as `multi-writer` while the build's aggregated
-///   `extern_declarations` slice contains no entry whose registry-
+///   `externs` slice contains no entry whose registry-
 ///   resolved purpose starts with `\"atomic-\"`. The C4 atomic A
 ///   baseline registry tags `atomic-load` / `atomic-store` /
 ///   `atomic-cas-*` / `atomic-fetch-*` uniformly via the
@@ -3477,7 +3504,7 @@ fn extract_bounded_collection_index_field_sce_type(
 fn validate_bounded_collection_cross_refs(
     bounded_collections: &[(String, forge::model::BoundedCollectionModel)],
     element_type_candidates: &std::collections::HashMap<String, forge::model::ForgeDocument>,
-    extern_declarations: &[forge::model::ExternDeclaration],
+    externs: &[forge::model::ExternDeclaration],
 ) -> Result<(), forge::error::Located<forge::error::ForgeError>> {
     use forge::error::{Located, ValidationError};
     use forge::model::{ConcurrencyMode, ForgeDocument};
@@ -3500,7 +3527,7 @@ fn validate_bounded_collection_cross_refs(
     // plugin author who wires an atomic-family symbol still benefits
     // from declaring the appropriate purpose tag at registry merge
     // time per C4 atomic B's plugin loader contract.
-    let build_has_atomic_import = extern_declarations.iter().any(|decl| {
+    let build_has_atomic_import = externs.iter().any(|decl| {
         forge::intrinsic_registry::lookup_symbol(&decl.name)
             .map(|sym| sym.purpose.starts_with("atomic-"))
             .unwrap_or(false)

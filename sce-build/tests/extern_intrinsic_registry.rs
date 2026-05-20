@@ -10,7 +10,7 @@
 //     (`extern/symbol-not-in-whitelist`, `extern/abi-mismatch`,
 //     `extern/signature-mismatch`, `extern/ordering-unspecified`)
 //   - 1 happy fixture proving registry-clean declarations roundtrip
-//     into `ParsedForge.extern_declarations`
+//     into `ParsedForge.externs`
 //
 // The fixtures wrap each `<sce:extern>` in a minimal `transform` kind
 // (precedent: `tests/forge/resources/transform_*.scxml`) — the kind
@@ -55,8 +55,8 @@ fn happy_path_atomic_load_acquire_u32_roundtrips() {
         r##"<sce:extern name="sce_atomic_load_acquire_u32" sig="(*const u32) -> u32" abi="c"/>"##,
     );
     let parsed = parse_fixture(&scxml).expect("registry-clean declaration");
-    assert_eq!(parsed.extern_declarations.len(), 1);
-    let decl = &parsed.extern_declarations[0];
+    assert_eq!(parsed.externs.len(), 1);
+    let decl = &parsed.externs[0];
     assert_eq!(decl.name, "sce_atomic_load_acquire_u32");
     assert_eq!(decl.sig, "(*const u32) -> u32");
     assert_eq!(decl.abi, "c");
@@ -79,19 +79,19 @@ fn happy_path_multiple_externs_preserve_order() {
   <sce:extern name="sce_irq_save" sig="() -> irq_state_t" abi="c" crate="custom_crate"/>"##,
     );
     let parsed = parse_fixture(&scxml).expect("3 registry-clean declarations");
-    assert_eq!(parsed.extern_declarations.len(), 3);
+    assert_eq!(parsed.externs.len(), 3);
     assert_eq!(
-        parsed.extern_declarations[0].name,
+        parsed.externs[0].name,
         "sce_atomic_load_acquire_u32"
     );
     assert_eq!(
-        parsed.extern_declarations[1].name,
+        parsed.externs[1].name,
         "sce_atomic_fence_seq_cst"
     );
-    assert_eq!(parsed.extern_declarations[2].name, "sce_irq_save");
+    assert_eq!(parsed.externs[2].name, "sce_irq_save");
     // Explicit `crate` attribute overrides the registry's canonical
     // crate (atomic-A storage of plugin-extension future axis).
-    assert_eq!(parsed.extern_declarations[2].crate_name, "custom_crate");
+    assert_eq!(parsed.externs[2].crate_name, "custom_crate");
 }
 
 #[test]
@@ -177,10 +177,10 @@ fn reject_ordering_unspecified() {
 }
 
 #[test]
-fn empty_extern_declarations_when_none_authored() {
+fn empty_externs_when_none_authored() {
     // A document with zero `<sce:extern>` children must yield an empty
     // list — confirms the parser hook does not synthesize entries.
     let scxml = fixture_transform_with_externs("");
     let parsed = parse_fixture(&scxml).expect("happy path with no externs");
-    assert!(parsed.extern_declarations.is_empty());
+    assert!(parsed.externs.is_empty());
 }

@@ -951,7 +951,7 @@ pub fn lookup_symbol(name: &str) -> Option<&'static Symbol> {
 /// spec §5.I lines 1736-1740. C5 uses this list to (a) reject
 /// author authoring of the cache trio in `<sce:extern>` declarations
 /// per spec lines 1222-1227 author-must-not, and (b) auto-inject the
-/// 3 entries into `ParsedForge.extern_declarations` when a buffer-
+/// 3 entries into `ParsedForge.externs` when a buffer-
 /// pool with `cache-policy: maintain` is parsed so atomic C's sidecar
 /// emit picks them up automatically.
 pub const CACHE_MAINTENANCE_TRIO: &[&str] = &[

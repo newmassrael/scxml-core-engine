@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Minimal `<scxml sce:kind="link">` document for the AST export drift
+  guard (apis/forge-ast.v1.schema.json). Shape mirrors the inline
+  fixtures used by sce-build/tests/c2_worker_outbox.rs and the C11
+  cross-validator tests — udp link class + named framer + drop
+  backpressure + stage-pool ref.
+
+  Standalone (no `<sce:import>` declarations) so the AST export's
+  parse-only pass reaches `ForgeDocument::Link` without needing any
+  sibling files. Codegen-time cross-resolution is exercised by other
+  tests; this fixture is solely for round-tripping the parsed IR
+  through the wire envelope.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="link" name="link_ast_export_min" version="1.0">
+  <sce:link-class>udp</sce:link-class>
+  <sce:framer ref="scout_frame_codec"/>
+  <sce:backpressure>drop</sce:backpressure>
+  <sce:stage-pool ref="scout_stage_pool"/>
+</scxml>
