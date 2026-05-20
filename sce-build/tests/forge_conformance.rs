@@ -12767,72 +12767,109 @@ fn axis1_inversion_embed_dispatcher_arg_order() {
     std::fs::write(dir.join("codec_axis1_arm_a.scxml"), arm_a).expect("write arm_a");
     std::fs::write(dir.join("codec_axis1_arm_b.scxml"), arm_b).expect("write arm_b");
 
-    // Compile-smoke on all 6 backends so a per-language regression in
-    // the same concat site (or a future template that consumes the
-    // ctx keys in the wrong order) surfaces immediately.
-    for lang in [
-        sce_build::generator::Language::Rust,
-        sce_build::generator::Language::Cpp,
-        sce_build::generator::Language::Kotlin,
-        sce_build::generator::Language::Go,
-        sce_build::generator::Language::Python,
-        sce_build::generator::Language::C11,
-    ] {
+    // Compile-smoke on all 6 backends + per-language substring emit
+    // assertion. The concat order fix lives in the per-language emitter
+    // `embed_parent_flags_thread_args` (which all 6 backends share),
+    // but the callee-side signature is rendered by 6 separate jinja2
+    // templates that each emit `flag-input` params BEFORE the `tag`
+    // param. The substring assertions below pin that cross-template
+    // invariant: a future regression that swaps the order in just one
+    // backend's template would silently produce wrong wire bytes on
+    // that backend (rustc / kotlinc / etc. would accept both orderings
+    // since flag-input and tag are both u8/UByte/byte). Each backend
+    // has a unique bit-extract syntax, so the asserted substring is
+    // language-specific; the shared invariant is the relative order
+    // (`>>5` for N flag-bind appears BEFORE `>>6` for M variant-dispatch).
+    let per_lang_emit_checks: &[(
+        sce_build::generator::Language,
+        &str, // file stem hint (for find)
+        &str, // positive: flag-bind (>>5) before variant-dispatch (>>6)
+        &str, // negative: bugged order (>>6) before (>>5)
+    )] = &[
+        (
+            sce_build::generator::Language::Rust,
+            "codec_axis1_embed_disp_parent",
+            "((header >> 5) & 0x1) as u8, ((header >> 6) & 0x1) as u8",
+            "((header >> 6) & 0x1) as u8, ((header >> 5) & 0x1) as u8",
+        ),
+        (
+            sce_build::generator::Language::Cpp,
+            "codec_axis1_embed_disp_parent",
+            "static_cast<std::uint8_t>((header >> 5) & 0x1), \
+             static_cast<std::uint8_t>((header >> 6) & 0x1)",
+            "static_cast<std::uint8_t>((header >> 6) & 0x1), \
+             static_cast<std::uint8_t>((header >> 5) & 0x1)",
+        ),
+        (
+            sce_build::generator::Language::Kotlin,
+            "CodecAxis1EmbedDispParent",
+            "(((header.toInt() shr 5) and 0x1).toUByte()), \
+             (((header.toInt() shr 6) and 0x1).toUByte())",
+            "(((header.toInt() shr 6) and 0x1).toUByte()), \
+             (((header.toInt() shr 5) and 0x1).toUByte())",
+        ),
+        (
+            sce_build::generator::Language::Go,
+            "codec_axis1_embed_disp_parent",
+            "byte((Header >> 5) & 0x1), byte((Header >> 6) & 0x1)",
+            "byte((Header >> 6) & 0x1), byte((Header >> 5) & 0x1)",
+        ),
+        (
+            sce_build::generator::Language::Python,
+            "codec_axis1_embed_disp_parent",
+            "((header >> 5) & 0x1), ((header >> 6) & 0x1)",
+            "((header >> 6) & 0x1), ((header >> 5) & 0x1)",
+        ),
+        (
+            sce_build::generator::Language::C11,
+            "codec_axis1_embed_disp_parent",
+            "(uint8_t)((out->header >> 5) & 0x1), (uint8_t)((out->header >> 6) & 0x1)",
+            "(uint8_t)((out->header >> 6) & 0x1), (uint8_t)((out->header >> 5) & 0x1)",
+        ),
+    ];
+    // Collect-then-assert so a multi-backend regression surfaces with
+    // every failing backend listed at once rather than stopping at the
+    // first language's substring miss. Makes the rare "future template
+    // change drifts the dispatch arg order on N backends" case easier
+    // to diagnose — a single panic prints the full failure matrix.
+    let mut failures: Vec<String> = Vec::new();
+    for (lang, stem_hint, positive, negative) in per_lang_emit_checks {
         let mut opts = sce_build::ForgeCompileOptions::default();
         if matches!(lang, sce_build::generator::Language::Go) {
             opts.go_module_prefix = Some("github.com/test/codec".to_string());
         }
-        let _ = sce_build::compile_forge_with_imports(
+        let out = sce_build::compile_forge_with_imports(
             parent,
             sce_build::DocumentLabel::symmetric("codec_axis1_embed_disp_parent"),
-            lang,
+            *lang,
             &dir,
             &opts,
         )
         .unwrap_or_else(|e| panic!("embed-dispatcher parent codegen failed on {lang:?}: {e:?}"));
+        let body = out
+            .files
+            .iter()
+            .find(|(name, _)| name.contains(stem_hint))
+            .map(|(_, b)| b.clone())
+            .unwrap_or_else(|| panic!("{lang:?}: no emit file matched stem `{stem_hint}`"));
+        if !body.contains(positive) {
+            failures.push(format!(
+                "{lang:?}: missing expected substring `{positive}` — flag-bind arg must \
+                 precede variant-dispatch arg at the embed-site decode call"
+            ));
+        }
+        if body.contains(negative) {
+            failures.push(format!(
+                "{lang:?}: found bugged substring `{negative}` — variant-dispatch arg \
+                 must NOT precede flag-bind arg"
+            ));
+        }
     }
-
-    // Rust emit-shape assertion — proves the args at the parent's
-    // embed-site call to the dispatcher are emitted in callee
-    // positional order (flag-bind first, then variant-dispatch).
-    let parent_out = sce_build::compile_forge_with_imports(
-        parent,
-        sce_build::DocumentLabel::symmetric("codec_axis1_embed_disp_parent"),
-        sce_build::generator::Language::Rust,
-        &dir,
-        &sce_build::ForgeCompileOptions::default(),
-    )
-    .expect("parent Rust emit");
-
-    let parent_rust = parent_out
-        .files
-        .iter()
-        .find(|(name, _)| name.contains("codec_axis1_embed_disp_parent"))
-        .map(|(_, body)| body.clone())
-        .expect("parent codec emit");
-
-    // Order-locked substring: flag-bind for N (`>> 5`) MUST precede
-    // variant-dispatch for M (`>> 6`) within the dispatcher decode call.
-    // Pre-fix this emitted `((header >> 6) ..., ((header >> 5) ...`.
     assert!(
-        parent_rust.contains(
-            "CodecAxis1EmbedDisp::decode(cursor, \
-             ((header >> 5) & 0x1) as u8, \
-             ((header >> 6) & 0x1) as u8)?"
-        ),
-        "parent embed-site MUST emit flag-bind arg (>>5) before \
-         variant-dispatch arg (>>6) to match callee signature \
-         `decode(cursor, n, tag)`:\n{parent_rust}"
-    );
-    // Negative — the bugged order would emit (>>6) before (>>5).
-    assert!(
-        !parent_rust.contains(
-            "CodecAxis1EmbedDisp::decode(cursor, \
-             ((header >> 6) & 0x1) as u8, \
-             ((header >> 5) & 0x1) as u8)?"
-        ),
-        "parent embed-site must NOT emit variant-dispatch before \
-         flag-bind (bug regression):\n{parent_rust}"
+        failures.is_empty(),
+        "embed-dispatcher arg-order substring assertions failed on {} backend(s):\n  - {}",
+        failures.len(),
+        failures.join("\n  - ")
     );
 
     // Round-trip sidecar: a hand-written `#[test]` block runs encode →
