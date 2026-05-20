@@ -10410,7 +10410,7 @@ fn rustc_compile_codec_set(
     scxml_filenames: &[&str],
     test_id: &str,
 ) -> Result<(), String> {
-    rustc_run_codec_set(dir, scxml_filenames, test_id, "build")
+    rustc_run_codec_set(dir, scxml_filenames, &[], test_id, "build")
 }
 
 /// `<sce:test-vector>` round-trip runtime harness. Same setup as
@@ -10426,12 +10426,34 @@ fn rustc_test_codec_set(
     scxml_filenames: &[&str],
     test_id: &str,
 ) -> Result<(), String> {
-    rustc_run_codec_set(dir, scxml_filenames, test_id, "test")
+    rustc_run_codec_set(dir, scxml_filenames, &[], test_id, "test")
+}
+
+/// Variant of `rustc_test_codec_set` that injects extra hand-written
+/// source files into the temp Cargo project alongside the generated
+/// codec modules. Required when the regression assertion is a
+/// cross-codec runtime invariant (e.g. parent → dispatcher arg-order
+/// round-trip) that `<sce:test-vector>` cannot express because it is
+/// flat-field-only and does not decode through variant arms / embeds.
+///
+/// `extra_sources` entries are `(filename_with_ext, file_contents)`
+/// pairs; the helper writes each into the project's `src/` and adds
+/// the expected `mod` declaration to `src/lib.rs`. Use the `_test`
+/// suffix to opt into the same `#[cfg(test)] mod` wrapper the
+/// generated sidecars receive.
+fn rustc_test_codec_set_with_extra(
+    dir: &std::path::Path,
+    scxml_filenames: &[&str],
+    extra_sources: &[(&str, &str)],
+    test_id: &str,
+) -> Result<(), String> {
+    rustc_run_codec_set(dir, scxml_filenames, extra_sources, test_id, "test")
 }
 
 fn rustc_run_codec_set(
     dir: &std::path::Path,
     scxml_filenames: &[&str],
+    extra_sources: &[(&str, &str)],
     test_id: &str,
     cargo_subcommand: &str,
 ) -> Result<(), String> {
@@ -10459,6 +10481,9 @@ fn rustc_run_codec_set(
         )
         .map_err(|e| format!("codegen {filename}: {e:?}"))?;
         all_files.extend(output.files.into_iter());
+    }
+    for (filename, content) in extra_sources {
+        all_files.push((filename.to_string(), content.to_string()));
     }
 
     // Standalone temp Cargo project. `[workspace]` empty section
@@ -12613,6 +12638,338 @@ fn axis1_phase_d1_variant_arm_flag_bind_threading() {
         "axis1_phase_d1",
     )
     .expect("Phase D1 variant arm flag-bind threading must rustc-compile clean");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// RFC Axis-1 inversion + B5-ν inversion β shape — regression gate
+/// for the embed-site call-arg ORDER when the parent's
+/// `<sce:import>` of a dispatcher leaf carries BOTH
+/// `<sce:variant-dispatch>` AND `<sce:flag-bind>` directives.
+///
+/// The dispatcher's decode signature is emitted as
+/// `decode(cursor{{ params_after_first_arg }}{{ dispatch_tag_param_decl }})`
+/// across all 6 backends — i.e. `flag-input` params come BEFORE the
+/// caller-tag `tag: u8` param. The parent's `<sce:embed>` call site
+/// MUST emit args in the same positional order; emitting `(tag, n)`
+/// instead of `(n, tag)` compiles cleanly (both are `u8`) but binds
+/// the dispatcher's `n` and `tag` to each other's values at runtime,
+/// silently selecting the wrong variant arm at decode and reading
+/// the wrong wire bytes.
+///
+/// Phase D1's fixture (`axis1_phase_d1_variant_arm_flag_bind_threading`)
+/// only exercises the DISPATCHER-side arm threading (dispatcher calling
+/// its own arm bodies). The parent-imports-a-dispatcher pattern with
+/// both directives on the same import was unexercised until this test,
+/// which let the order-swap regression land unnoticed (compile-only
+/// gating + identical `u8` types = silent semantic corruption).
+///
+/// Coverage:
+///   1. Rust emit-shape substring assertion — proves `((header >> 5)
+///      & 0x1) as u8` (flag-bind for N) is emitted BEFORE
+///      `((header >> 6) & 0x1) as u8` (variant-dispatch for M).
+///   2. End-to-end round-trip via `rustc_test_codec_set_with_extra` —
+///      a hand-written sidecar exercises the four-corner truth table
+///      of (M, N) ∈ {0,1}² with variant discriminant + payload-byte
+///      assertions. Cases where `M != N` would either decode to the
+///      wrong variant or fail with `NeedMoreBytes` under the bug.
+///   3. Compile-smoke on the other 5 backends — the order-swap exists
+///      symmetrically in `embed_parent_flags_thread_args` for all
+///      backends (single concat call site), so verifying every backend
+///      compiles the embed-site emit cleanly catches any per-language
+///      drift.
+#[test]
+fn axis1_inversion_embed_dispatcher_arg_order() {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let dir = std::env::temp_dir().join(format!("sce_axis1_embed_disp_{pid}_{id}"));
+    std::fs::create_dir_all(&dir).expect("mkdir fixture");
+
+    // Parent envelope: header (N at bit 5, M at bit 6) + embed of
+    // dispatcher. Import carries BOTH variant-dispatch (on header.M)
+    // and flag-bind (input N ← source header.N) — the (variant-dispatch
+    // + flag-bind) tuple on a single import is the precise pattern
+    // missing from Phase D1's coverage.
+    let parent = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_axis1_embed_disp_parent" sce:default-endian="big">
+  <sce:import src="codec_axis1_embed_disp.scxml" kind="codec" as="codec_axis1_embed_disp">
+    <sce:variant-dispatch flag="header.M"/>
+    <sce:flag-bind input="N" source="header.N"/>
+  </sce:import>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="N" bit="5"/>
+      <sce:flag name="M" bit="6"/>
+    </sce:flags>
+    <sce:embed id="payload" type="codec_axis1_embed_disp" sce:byte="1"/>
+  </datamodel>
+</scxml>"#;
+
+    // Dispatcher: β-shape variant (no own tag wire byte — caller
+    // supplies tag via the parent's variant-dispatch) + flag-input N
+    // forwarded to arm_a via a bare-name flag-bind on the variant arm
+    // import (chain-forwarder shape). arm_b has no flag-inputs.
+    let dispatcher = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_axis1_embed_disp" sce:default-endian="big">
+  <sce:import src="codec_axis1_arm_a.scxml" kind="codec" as="codec_axis1_arm_a">
+    <sce:flag-bind input="N" source="N"/>
+  </sce:import>
+  <sce:import src="codec_axis1_arm_b.scxml" kind="codec" as="codec_axis1_arm_b"/>
+  <sce:flag-inputs>
+    <sce:flag-input name="N" width="1"/>
+  </sce:flag-inputs>
+  <datamodel>
+    <sce:variant>
+      <sce:arm value="0x00" type="codec_axis1_arm_a" default="true"/>
+      <sce:arm value="0x01" type="codec_axis1_arm_b"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#;
+
+    // arm_a: always-present `version` byte + N-gated `opt` suffix. The
+    // N-gating is what surfaces the bug: when caller→callee args are
+    // swapped, n binds to M's value (which differs from N in the
+    // M != N test cases), so the suffix gate misfires.
+    let arm_a = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_axis1_arm_a" sce:default-endian="big">
+  <sce:flag-inputs>
+    <sce:flag-input name="N" width="1"/>
+  </sce:flag-inputs>
+  <datamodel>
+    <sce:field id="version" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="opt"     sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="N"/>
+  </datamodel>
+</scxml>"#;
+
+    // arm_b: single `reason` byte, no flag-inputs. Distinct first byte
+    // (0xBB vs arm_a's 0xAA convention) makes wire-shape assertions
+    // unambiguous in the round-trip test.
+    let arm_b = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_axis1_arm_b" sce:default-endian="big">
+  <datamodel>
+    <sce:field id="reason" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+  </datamodel>
+</scxml>"#;
+
+    std::fs::write(dir.join("codec_axis1_embed_disp_parent.scxml"), parent).expect("write parent");
+    std::fs::write(dir.join("codec_axis1_embed_disp.scxml"), dispatcher).expect("write dispatcher");
+    std::fs::write(dir.join("codec_axis1_arm_a.scxml"), arm_a).expect("write arm_a");
+    std::fs::write(dir.join("codec_axis1_arm_b.scxml"), arm_b).expect("write arm_b");
+
+    // Compile-smoke on all 6 backends so a per-language regression in
+    // the same concat site (or a future template that consumes the
+    // ctx keys in the wrong order) surfaces immediately.
+    for lang in [
+        sce_build::generator::Language::Rust,
+        sce_build::generator::Language::Cpp,
+        sce_build::generator::Language::Kotlin,
+        sce_build::generator::Language::Go,
+        sce_build::generator::Language::Python,
+        sce_build::generator::Language::C11,
+    ] {
+        let mut opts = sce_build::ForgeCompileOptions::default();
+        if matches!(lang, sce_build::generator::Language::Go) {
+            opts.go_module_prefix = Some("github.com/test/codec".to_string());
+        }
+        let _ = sce_build::compile_forge_with_imports(
+            parent,
+            sce_build::DocumentLabel::symmetric("codec_axis1_embed_disp_parent"),
+            lang,
+            &dir,
+            &opts,
+        )
+        .unwrap_or_else(|e| panic!("embed-dispatcher parent codegen failed on {lang:?}: {e:?}"));
+    }
+
+    // Rust emit-shape assertion — proves the args at the parent's
+    // embed-site call to the dispatcher are emitted in callee
+    // positional order (flag-bind first, then variant-dispatch).
+    let parent_out = sce_build::compile_forge_with_imports(
+        parent,
+        sce_build::DocumentLabel::symmetric("codec_axis1_embed_disp_parent"),
+        sce_build::generator::Language::Rust,
+        &dir,
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .expect("parent Rust emit");
+
+    let parent_rust = parent_out
+        .files
+        .iter()
+        .find(|(name, _)| name.contains("codec_axis1_embed_disp_parent"))
+        .map(|(_, body)| body.clone())
+        .expect("parent codec emit");
+
+    // Order-locked substring: flag-bind for N (`>> 5`) MUST precede
+    // variant-dispatch for M (`>> 6`) within the dispatcher decode call.
+    // Pre-fix this emitted `((header >> 6) ..., ((header >> 5) ...`.
+    assert!(
+        parent_rust.contains(
+            "CodecAxis1EmbedDisp::decode(cursor, \
+             ((header >> 5) & 0x1) as u8, \
+             ((header >> 6) & 0x1) as u8)?"
+        ),
+        "parent embed-site MUST emit flag-bind arg (>>5) before \
+         variant-dispatch arg (>>6) to match callee signature \
+         `decode(cursor, n, tag)`:\n{parent_rust}"
+    );
+    // Negative — the bugged order would emit (>>6) before (>>5).
+    assert!(
+        !parent_rust.contains(
+            "CodecAxis1EmbedDisp::decode(cursor, \
+             ((header >> 6) & 0x1) as u8, \
+             ((header >> 5) & 0x1) as u8)?"
+        ),
+        "parent embed-site must NOT emit variant-dispatch before \
+         flag-bind (bug regression):\n{parent_rust}"
+    );
+
+    // Round-trip sidecar: a hand-written `#[test]` block runs encode →
+    // decode across the four-corner (M, N) truth table and asserts on
+    // the decoded variant discriminant + payload bytes. The M != N
+    // cases (M=0,N=1 and M=1,N=0) are the ones that silently
+    // corrupt under the pre-fix arg-swap; the M == N cases pass under
+    // both bug and fix (included for completeness so future regressions
+    // surface as a partial test failure rather than total).
+    let sidecar = r#"
+use crate::codec_axis1_embed_disp::{CodecAxis1EmbedDisp, CodecAxis1EmbedDispVariant};
+use crate::codec_axis1_arm_a::CodecAxis1ArmA;
+use crate::codec_axis1_arm_b::CodecAxis1ArmB;
+
+// M=0, N=1: wire selects ArmA + suffix. Pre-fix the swapped args
+// bind tag=N=1 -> ArmB, then ArmB::decode reads `reason=0xAA` and
+// leaves the 0x55 suffix byte unconsumed (silent shape mismatch).
+#[test]
+fn decode_arm_a_with_suffix_m0_n1() {
+    let wire = [0x20u8, 0xAAu8, 0x55u8];
+    let mut cursor = SceCursor::new(&wire);
+    let p = CodecAxis1EmbedDispParent::decode(&mut cursor)
+        .expect("well-formed wire must decode");
+    match p.payload.body {
+        CodecAxis1EmbedDispVariant::CodecAxis1ArmA(arm) => {
+            assert_eq!(arm.version, 0xAA, "ArmA.version");
+            assert_eq!(arm.opt, Some(0x55), "ArmA.opt (N-gated, N=1)");
+        }
+        CodecAxis1EmbedDispVariant::CodecAxis1ArmB(_) => {
+            panic!("expected ArmA (M=0) but arg-swap selected ArmB");
+        }
+    }
+}
+
+// M=1, N=0: wire selects ArmB, no suffix. Pre-fix the swapped args
+// bind tag=N=0 -> ArmA, then ArmA::decode(cursor, n=M=1) tries to
+// read an N-gated `opt` byte that is not on the wire -> NeedMoreBytes.
+#[test]
+fn decode_arm_b_no_suffix_m1_n0() {
+    let wire = [0x40u8, 0xBBu8];
+    let mut cursor = SceCursor::new(&wire);
+    let p = CodecAxis1EmbedDispParent::decode(&mut cursor)
+        .expect("well-formed wire must decode (pre-fix: NeedMoreBytes)");
+    match p.payload.body {
+        CodecAxis1EmbedDispVariant::CodecAxis1ArmB(arm) => {
+            assert_eq!(arm.reason, 0xBB, "ArmB.reason");
+        }
+        CodecAxis1EmbedDispVariant::CodecAxis1ArmA(_) => {
+            panic!("expected ArmB (M=1) but arg-swap selected ArmA");
+        }
+    }
+}
+
+// M=0, N=0: wire selects ArmA, no suffix. Passes under both bug
+// and fix because the swap leaves tag=0,n=0 unchanged; included so
+// the four-corner table is complete.
+#[test]
+fn decode_arm_a_no_suffix_m0_n0() {
+    let wire = [0x00u8, 0xAAu8];
+    let mut cursor = SceCursor::new(&wire);
+    let p = CodecAxis1EmbedDispParent::decode(&mut cursor)
+        .expect("well-formed wire must decode");
+    match p.payload.body {
+        CodecAxis1EmbedDispVariant::CodecAxis1ArmA(arm) => {
+            assert_eq!(arm.version, 0xAA);
+            assert_eq!(arm.opt, None);
+        }
+        _ => panic!("expected ArmA"),
+    }
+}
+
+// M=1, N=1: wire selects ArmB. ArmB ignores its flag-input (no
+// present-if), so this case passes under both bug and fix (tag
+// stays 1 either way); fourth corner of the truth table.
+#[test]
+fn decode_arm_b_with_n_set_m1_n1() {
+    let wire = [0x60u8, 0xBBu8];
+    let mut cursor = SceCursor::new(&wire);
+    let p = CodecAxis1EmbedDispParent::decode(&mut cursor)
+        .expect("well-formed wire must decode");
+    match p.payload.body {
+        CodecAxis1EmbedDispVariant::CodecAxis1ArmB(arm) => {
+            assert_eq!(arm.reason, 0xBB);
+        }
+        _ => panic!("expected ArmB"),
+    }
+}
+
+// Round-trip: construct -> encode -> decode -> assert variant and
+// payload preserved. Exercises the encode side of the
+// derivation-block + parent-flag-bind composition end-to-end on the
+// (M=0, N=1) corner that's most sensitive to the arg-swap.
+#[test]
+fn round_trip_arm_a_with_suffix() {
+    let p = CodecAxis1EmbedDispParent {
+        header: 0x20, // N=1; M is derived from variant choice by parent encode.
+        payload: CodecAxis1EmbedDisp {
+            body: CodecAxis1EmbedDispVariant::CodecAxis1ArmA(CodecAxis1ArmA {
+                version: 0xAA,
+                opt: Some(0x55),
+            }),
+        },
+    };
+    let bytes = p.encode_to_vec();
+    assert_eq!(bytes, vec![0x20u8, 0xAAu8, 0x55u8], "encode wire bytes");
+    let mut cursor = SceCursor::new(&bytes);
+    let decoded = CodecAxis1EmbedDispParent::decode(&mut cursor)
+        .expect("round-trip decode");
+    match decoded.payload.body {
+        CodecAxis1EmbedDispVariant::CodecAxis1ArmA(arm) => {
+            assert_eq!(arm.version, 0xAA);
+            assert_eq!(arm.opt, Some(0x55));
+        }
+        _ => panic!("round-trip changed variant"),
+    }
+    // Suppress unused-import lint on the cross-arm symbol when the
+    // ArmB construction path is not exercised in this specific test.
+    let _ = std::mem::size_of::<CodecAxis1ArmB>();
+}
+"#;
+
+    rustc_test_codec_set_with_extra(
+        &dir,
+        &[
+            "codec_axis1_embed_disp_parent.scxml",
+            "codec_axis1_embed_disp.scxml",
+            "codec_axis1_arm_a.scxml",
+            "codec_axis1_arm_b.scxml",
+        ],
+        &[("codec_axis1_embed_disp_parent_test.rs", sidecar)],
+        "axis1_embed_disp_arg_order",
+    )
+    .expect(
+        "embed-dispatcher arg-order round-trip MUST decode the wire in callee positional \
+         order (n, tag); pre-fix the swapped args either select the wrong variant or hit \
+         NeedMoreBytes on the M != N corners",
+    );
 
     let _ = std::fs::remove_dir_all(&dir);
 }

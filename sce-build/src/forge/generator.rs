@@ -4906,12 +4906,18 @@ fn embed_parent_flags_thread_args(
     // `<sce:flag-inputs>` and the parent's import carries
     // `<sce:flag-bind>` directives, extract each bound source's bit
     // value from the parent's carrier (or pass through the parent's
-    // own flag-input by name for chain-forwarder shape) and append
-    // the typed positional args after any preceding caller-tag arg.
+    // own flag-input by name for chain-forwarder shape).
     let flag_bind_args = embed_flag_bind_thread_args(imp, parent, lang);
 
+    // Concat order matches the callee signature emitted by the codec
+    // template: `decode(cursor{{ params_after_first_arg }}{{ dispatch_tag_param_decl }})`
+    // i.e. `flag-inputs` first, then `tag`. The caller MUST emit args
+    // in the same positional order so the dispatcher binds `n` and
+    // `tag` correctly; emitting `(tag, n)` would compile (both `u8`)
+    // but silently swap them at the call site, selecting the wrong
+    // variant arm at decode.
     EmbedThreadArgs {
-        decode_arg: format!("{}{}", caller_tag_decode_arg, flag_bind_args.decode_arg),
+        decode_arg: format!("{}{}", flag_bind_args.decode_arg, caller_tag_decode_arg),
         encode_arg: flag_bind_args.encode_arg,
     }
 }
