@@ -14,6 +14,7 @@
 
 #include "mesh/MeshEnvelope.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -40,6 +41,17 @@ inline constexpr int kEnvelopeKeyRoutingId       = 15;
 inline constexpr int kEnvelopeKeyParallelId      = 16;  // SCE_MESH.md §16.5 wire-21 region routing
 inline constexpr int kEnvelopeKeyRegionId        = 17;  // SCE_MESH.md §16.5 wire-21 region routing
 inline constexpr int kEnvelopeKeyChildSessionId  = 18;  // SCE_MESH.md §9.6.2 wire-15 child session URI
+
+/// Single source for the SCE mesh envelope payload size ceiling.
+///
+/// 16 MiB matches the practical SOME/IP message ceiling and is the
+/// hard reject threshold during CBOR decode (`MeshEnvelopeCodec.cpp`
+/// data-length validation). Every downstream transport with its own
+/// pre-decode size check (custom_tcp's frame reader, future TCP-like
+/// wires) must reference this constant directly rather than redeclare
+/// a numerically-equivalent literal — the constant is the wire spec,
+/// duplicated literals were ownership-inversion via co-declaration.
+inline constexpr std::size_t kMaxEnvelopeBytes = 16u * 1024u * 1024u;
 
 /// Encode envelope into canonical CBOR bytes.
 ///

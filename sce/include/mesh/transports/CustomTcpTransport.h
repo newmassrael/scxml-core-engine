@@ -192,12 +192,15 @@ inline ReadResult read_envelope(int fd, SCE::Mesh::MeshEnvelope& out,
     uint32_t net_len = 0;
     if (!read_exact(fd, &net_len, sizeof(net_len))) return ReadResult::SocketClosed;
     uint32_t len = ntohl(net_len);
-    // Cap at a sane upper bound. The harness only carries small test
-    // envelopes; a multi-megabyte length is almost certainly a framing
-    // bug or hostile peer. 16 MiB matches the practical SOME/IP payload
-    // ceiling and is far above any envelope the harness will ever emit.
-    constexpr uint32_t kMaxPayload = 16u * 1024u * 1024u;
-    if (len == 0 || len > kMaxPayload) return ReadResult::SocketClosed;
+    // Cap at the SCE-mesh wire ceiling exported by MeshEnvelopeCodec.h.
+    // Rebinding the literal here would be ownership-inversion via
+    // co-declaration with the CBOR decoder's identical check —
+    // consume the single source instead so any future spec change
+    // moves both sites together.
+    if (len == 0 ||
+        static_cast<std::size_t>(len) > ::SCE::Mesh::kMaxEnvelopeBytes) {
+        return ReadResult::SocketClosed;
+    }
     scratch.resize(len);
     if (!read_exact(fd, scratch.data(), len)) return ReadResult::SocketClosed;
     return SCE::Mesh::decodeEnvelope(scratch.data(), scratch.size(), out)

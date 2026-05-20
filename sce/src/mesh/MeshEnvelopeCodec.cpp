@@ -140,7 +140,11 @@ CborError tryEncode(const MeshEnvelope &env, uint8_t *buf, size_t cap, size_t &o
 // Max lengths for variable-size fields. Rejects CBOR headers that claim
 // unreasonable sizes before any allocation — prevents a crafted envelope
 // from triggering multi-GB allocations on the receiver (DoS mitigation).
-constexpr size_t kMaxDataLen   = 16 * 1024 * 1024;  // 16 MiB payload
+// kMaxDataLen is the single source `SCE::Mesh::kMaxEnvelopeBytes`
+// re-exported from MeshEnvelopeCodec.h so downstream transports
+// (custom_tcp frame reader, future TCP-like wires) consume the same
+// value without rebinding a literal.
+constexpr size_t kMaxDataLen   = ::SCE::Mesh::kMaxEnvelopeBytes;
 constexpr size_t kMaxStringLen = 256 * 1024;         // 256 KiB per text field
 
 bool readBytes16(CborValue *it, std::array<uint8_t, 16> &out) {
