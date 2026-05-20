@@ -173,7 +173,7 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
    `position` stays absent because tinycbor's bool return does not
    expose a post-failure cursor. #}
 {%- macro raise_envelope_corrupt(transport) -%}
-{ ::SCE::Mesh::CommunicationError __sce_decode_err; __sce_decode_err.reason = "ENVELOPE_CORRUPT"; __sce_decode_err.transport = "{{ transport }}"; __sce_decode_err.codec = "cbor"; raiseCommunicationError(std::move(__sce_decode_err)); return; }
+{ ::SCE::Mesh::CommunicationError __sce_decode_err; __sce_decode_err.reason = ::SCE::Mesh::ReasonCode::EnvelopeCorrupt; __sce_decode_err.transport = "{{ transport }}"; __sce_decode_err.codec = "cbor"; raiseCommunicationError(std::move(__sce_decode_err)); return; }
 {%- endmacro %}
 {# Lambda-body variant: same emit, no trailing `return;`. Used at
    hand-written endpoint decode-error callback sites (`ShmChannel::drainWith`,
@@ -183,7 +183,7 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
    bool-returning early-exit shape of `raise_envelope_corrupt` is wrong
    for those call sites. #}
 {%- macro raise_envelope_corrupt_lambda(transport) -%}
-{ ::SCE::Mesh::CommunicationError __sce_decode_err; __sce_decode_err.reason = "ENVELOPE_CORRUPT"; __sce_decode_err.transport = "{{ transport }}"; __sce_decode_err.codec = "cbor"; raiseCommunicationError(std::move(__sce_decode_err)); }
+{ ::SCE::Mesh::CommunicationError __sce_decode_err; __sce_decode_err.reason = ::SCE::Mesh::ReasonCode::EnvelopeCorrupt; __sce_decode_err.transport = "{{ transport }}"; __sce_decode_err.codec = "cbor"; raiseCommunicationError(std::move(__sce_decode_err)); }
 {%- endmacro %}
 {#
   SCE_MESH.md §10.6: per-target admit layering for ordered routes.
@@ -2609,7 +2609,7 @@ struct TransportRouter {
                     !{{ target.target_snake }}_auth_unauthorized_fired_.exchange(
                         true, std::memory_order_acq_rel)) {
                     ::SCE::Mesh::CommunicationError __sce_auth_err;
-                    __sce_auth_err.reason = "UNAUTHORIZED";
+                    __sce_auth_err.reason = ::SCE::Mesh::ReasonCode::Unauthorized;
                     __sce_auth_err.target = "{{ target.target }}";
                     __sce_auth_err.transport = "someip";
                     __sce_auth_err.transport_status =
@@ -2721,7 +2721,7 @@ struct TransportRouter {
                 SCE::Mesh::Someip::availabilityChangeSafely(
                     [this]() {
                         SCE::Mesh::CommunicationError err;
-                        err.reason = "REGION_PARTITIONED";
+                        err.reason = ::SCE::Mesh::ReasonCode::RegionPartitioned;
                         err.machine = "{{ machine_name }}";
                         err.partition = "{{ peer.partition }}";
                         raiseCommunicationError(std::move(err));
@@ -2757,7 +2757,7 @@ struct TransportRouter {
                 SCE::Mesh::Someip::availabilityChangeSafely(
                     [this]() {
                         SCE::Mesh::CommunicationError err;
-                        err.reason = "PEER_PARTITIONED";
+                        err.reason = ::SCE::Mesh::ReasonCode::PeerPartitioned;
                         err.target = "{{ peer.machine }}";
                         raiseCommunicationError(std::move(err));
 {% if has_mesh_rpc.v %}
@@ -2776,7 +2776,7 @@ struct TransportRouter {
                             "{{ peer.machine }}",
                             [this](const SCE::Mesh::InvokeCorrelation::Key& uuid) {
                                 SCE::Mesh::CommunicationError row5;
-                                row5.reason = "INVOKE_CHILD_LOST";
+                                row5.reason = ::SCE::Mesh::ReasonCode::InvokeChildLost;
                                 row5.invoke_id = SCE::uuid::to_string(uuid);
                                 row5.target = "{{ peer.machine }}";
                                 raiseCommunicationError(std::move(row5));
@@ -2980,7 +2980,7 @@ struct TransportRouter {
                 if (!{{ t.target_snake }}_auth_unauthorized_fired_.exchange(
                         true, std::memory_order_acq_rel)) {
                     ::SCE::Mesh::CommunicationError __sce_auth_err;
-                    __sce_auth_err.reason = "UNAUTHORIZED";
+                    __sce_auth_err.reason = ::SCE::Mesh::ReasonCode::Unauthorized;
                     __sce_auth_err.target = "{{ t.target }}";
                     __sce_auth_err.transport = "zenoh";
                     __sce_auth_err.transport_status = __sce_what_msg;
@@ -3243,11 +3243,11 @@ struct TransportRouter {
                     if (is_region_level) {
                         // `remainder` is "<machine>/<partition>"; split
                         // on the single internal '/' identified above.
-                        err.reason = "REGION_PARTITIONED";
+                        err.reason = ::SCE::Mesh::ReasonCode::RegionPartitioned;
                         err.machine = remainder.substr(0, slash_pos);
                         err.partition = remainder.substr(slash_pos + 1);
                     } else {
-                        err.reason = "PEER_PARTITIONED";
+                        err.reason = ::SCE::Mesh::ReasonCode::PeerPartitioned;
                         err.target = std::move(remainder);
                     }
                     if (last_seen_ms_ago) {
@@ -3269,7 +3269,7 @@ struct TransportRouter {
                             peer_for_mesh_rpc,
                             [this, &peer_for_mesh_rpc](const SCE::Mesh::InvokeCorrelation::Key& uuid) {
                                 SCE::Mesh::CommunicationError row5;
-                                row5.reason = "INVOKE_CHILD_LOST";
+                                row5.reason = ::SCE::Mesh::ReasonCode::InvokeChildLost;
                                 row5.invoke_id = SCE::uuid::to_string(uuid);
                                 row5.target = peer_for_mesh_rpc;
                                 raiseCommunicationError(std::move(row5));
@@ -3328,7 +3328,7 @@ struct TransportRouter {
                     const std::string peer_for_mesh_rpc = remainder;
 {% endif %}
                     SCE::Mesh::CommunicationError err;
-                    err.reason = "PEER_PARTITIONED";
+                    err.reason = ::SCE::Mesh::ReasonCode::PeerPartitioned;
                     err.target = std::move(remainder);
                     if (last_seen_ms_ago) {
                         err.last_seen_ms_ago = *last_seen_ms_ago;
@@ -3346,7 +3346,7 @@ struct TransportRouter {
                         peer_for_mesh_rpc,
                         [this, &peer_for_mesh_rpc](const SCE::Mesh::InvokeCorrelation::Key& uuid) {
                             SCE::Mesh::CommunicationError row5;
-                            row5.reason = "INVOKE_CHILD_LOST";
+                            row5.reason = ::SCE::Mesh::ReasonCode::InvokeChildLost;
                             row5.invoke_id = SCE::uuid::to_string(uuid);
                             row5.target = peer_for_mesh_rpc;
                             raiseCommunicationError(std::move(row5));
@@ -3738,7 +3738,7 @@ struct TransportRouter {
             [this](const SCE::Mesh::InvokeCorrelation::Key& uuid,
                    const std::string& target) {
                 SCE::Mesh::CommunicationError err;
-                err.reason = "INVOKE_CHILD_LOST";
+                err.reason = ::SCE::Mesh::ReasonCode::InvokeChildLost;
                 err.invoke_id = SCE::uuid::to_string(uuid);
                 err.target = target;
                 raiseCommunicationError(std::move(err));
@@ -4119,7 +4119,7 @@ struct TransportRouter {
             // '<peer>'` to react to the specific peer overrunning
             // the window.
             ::SCE::Mesh::CommunicationError __sce_dedup_err;
-            __sce_dedup_err.reason = "DEDUP_WINDOW_OVERFLOW";
+            __sce_dedup_err.reason = ::SCE::Mesh::ReasonCode::DedupWindowOverflow;
             __sce_dedup_err.source = env.source;
             __sce_dedup_err.window_size =
                 static_cast<std::int64_t>(::SCE::Mesh::DedupWindow::kCapacity);
@@ -4207,7 +4207,7 @@ struct TransportRouter {
         // from other transport threads are not blocked by this loop.
         for (const auto& gap : result.gaps) {
             SCE::Mesh::CommunicationError err;
-            err.reason = "ORDERING_GAP";
+            err.reason = ::SCE::Mesh::ReasonCode::OrderingGap;
             err.source = gap.source;
             err.lost_seq_lo = gap.lost_lo;
             err.lost_seq_hi = gap.lost_hi;
@@ -4226,7 +4226,7 @@ struct TransportRouter {
                 // §16.7 row 7 — same overflow surface as admitInbound
                 // (separate dispatch entry, identical raise contract).
                 ::SCE::Mesh::CommunicationError __sce_dedup_err;
-                __sce_dedup_err.reason = "DEDUP_WINDOW_OVERFLOW";
+                __sce_dedup_err.reason = ::SCE::Mesh::ReasonCode::DedupWindowOverflow;
                 __sce_dedup_err.source = env.source;
                 __sce_dedup_err.window_size =
                     static_cast<std::int64_t>(::SCE::Mesh::DedupWindow::kCapacity);
@@ -4325,7 +4325,7 @@ struct TransportRouter {
             // §10.6.3 drift: raise MISSING_SEQUENCE so the engine
             // sees the condition, then drop from the ordering domain.
             SCE::Mesh::CommunicationError err;
-            err.reason = "MISSING_SEQUENCE";
+            err.reason = ::SCE::Mesh::ReasonCode::MissingSequence;
             err.source = env.source;
             err.envelope_id = env.id;
             raiseCommunicationError(std::move(err));

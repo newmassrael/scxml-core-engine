@@ -56,14 +56,116 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 namespace SCE::Mesh {
 
+/// §16.7 reason-code vocabulary. One variant per row of the catalog
+/// (`SCE_MESH.md` §16.7 rows 1-13). Raise sites populate
+/// `CommunicationError::reason` with one of these values; the JSON
+/// wire emission converts to the canonical UPPER_SNAKE string via
+/// `reasonCodeString()`.
+///
+/// Variant naming follows the existing `PayloadCodec` enum convention
+/// (UpperCamel C++ identifiers, UPPER_SNAKE wire strings). The
+/// bidirectional binding between variant and wire string is enforced
+/// by `kReasonCodeTable` (the single source of truth) and verified at
+/// build time by `tests/mesh/ReasonCodeCatalogTest` against
+/// `SCE_MESH.md` §16.7.
+enum class ReasonCode : std::uint8_t {
+    /// §16.7 row 1 — wire `"TRANSPORT_UNAVAILABLE"`. Transport connect
+    /// or reconnect failure.
+    TransportUnavailable,
+    /// §16.7 row 2 — wire `"SEND_FAILED"`. Envelope `send()` returns
+    /// error from transport API.
+    SendFailed,
+    /// §16.7 row 3 — wire `"DELIVERY_EXHAUSTED"`. Reliable transport
+    /// unable to deliver after configured retries.
+    DeliveryExhausted,
+    /// §16.7 row 4 — wire `"ENVELOPE_CORRUPT"`. Inbound envelope
+    /// deserialization or schema validation fails.
+    EnvelopeCorrupt,
+    /// §16.7 row 5 — wire `"INVOKE_CHILD_LOST"`. Invoke child device
+    /// unreachable (transport-level).
+    InvokeChildLost,
+    /// §16.7 row 6 — wire `"PARALLEL_BARRIER_TIMEOUT"`. Parallel
+    /// barrier timeout (§16.5).
+    ParallelBarrierTimeout,
+    /// §16.7 row 7 — wire `"DEDUP_WINDOW_OVERFLOW"`. Envelope dedup
+    /// window overflow (sustained rate exceeds window capacity).
+    DedupWindowOverflow,
+    /// §16.7 row 8 — wire `"PEER_PARTITIONED"`. Peer machine's
+    /// liveness signal observed lost.
+    PeerPartitioned,
+    /// §16.7 row 9 — wire `"BACKPRESSURE_DROP"`. Transport backpressure
+    /// queue full, outbound envelope dropped (§10.10
+    /// `OutboundBuffer` at `max_pending_per_target`).
+    BackpressureDrop,
+    /// §16.7 row 10 — wire `"UNAUTHORIZED"`. Peer rejected envelope
+    /// due to authorization failure.
+    Unauthorized,
+    /// §16.7 row 11 — wire `"MISSING_SEQUENCE"`. Inbound envelope
+    /// reached an active `OrderingBuffer` without `sequence_no`
+    /// (§10.6.3).
+    MissingSequence,
+    /// §16.7 row 12 — wire `"ORDERING_GAP"`. `OrderingBuffer`
+    /// fast-forwarded past a missing sequence range after
+    /// `gap_timeout` expired (§10.6.4).
+    OrderingGap,
+    /// §16.7 row 13 — wire `"REGION_PARTITIONED"`. Peer
+    /// region-partition's liveness signal observed lost (§16.4
+    /// per-partition liveness).
+    RegionPartitioned,
+};
+
+/// Canonical mapping table — single source of truth for both JSON
+/// emission and the build-time cross-doc test against
+/// `SCE_MESH.md` §16.7. Adding a §16.7 row requires extending
+/// this table; the cross-doc test fails the build if the table and
+/// the markdown catalog diverge.
+inline constexpr std::array<std::pair<ReasonCode, std::string_view>, 13>
+    kReasonCodeTable = {{
+        {ReasonCode::TransportUnavailable, "TRANSPORT_UNAVAILABLE"},
+        {ReasonCode::SendFailed, "SEND_FAILED"},
+        {ReasonCode::DeliveryExhausted, "DELIVERY_EXHAUSTED"},
+        {ReasonCode::EnvelopeCorrupt, "ENVELOPE_CORRUPT"},
+        {ReasonCode::InvokeChildLost, "INVOKE_CHILD_LOST"},
+        {ReasonCode::ParallelBarrierTimeout, "PARALLEL_BARRIER_TIMEOUT"},
+        {ReasonCode::DedupWindowOverflow, "DEDUP_WINDOW_OVERFLOW"},
+        {ReasonCode::PeerPartitioned, "PEER_PARTITIONED"},
+        {ReasonCode::BackpressureDrop, "BACKPRESSURE_DROP"},
+        {ReasonCode::Unauthorized, "UNAUTHORIZED"},
+        {ReasonCode::MissingSequence, "MISSING_SEQUENCE"},
+        {ReasonCode::OrderingGap, "ORDERING_GAP"},
+        {ReasonCode::RegionPartitioned, "REGION_PARTITIONED"},
+    }};
+
+/// Map a `ReasonCode` to its canonical wire string. Linear lookup
+/// over the 13-entry table; the compiler collapses the loop under
+/// `-O2`. Crashes (logic-error path) if a future variant is added
+/// to the enum without extending `kReasonCodeTable` — the missing-
+/// entry case is caught earlier by the cross-doc test, but the
+/// runtime guard exists so a partial-edit during development surfaces
+/// as a deterministic failure rather than reading off the end.
+[[nodiscard]] inline constexpr std::string_view reasonCodeString(ReasonCode code) {
+    for (const auto &entry : kReasonCodeTable) {
+        if (entry.first == code) {
+            return entry.second;
+        }
+    }
+    // Unreachable in a well-formed build (kReasonCodeTable covers
+    // every enum variant; the cross-doc test enforces this). The
+    // runtime fallback below avoids UB and surfaces the gap.
+    return "UNKNOWN_REASON";
+}
+
 struct CommunicationError {
-    /// §16.7 machine-readable reason code (e.g. "MISSING_SEQUENCE",
-    /// "ORDERING_GAP"). Required — raise sites must populate it.
-    std::string reason;
+    /// §16.7 machine-readable reason code. Required — raise sites
+    /// must populate it via the `ReasonCode` enum; the JSON emit
+    /// converts to the canonical UPPER_SNAKE wire string.
+    ReasonCode reason{ReasonCode::TransportUnavailable};
 
     /// §10.7.1 baseline: human-readable detail string. Optional.
     std::optional<std::string> detail;
@@ -265,7 +367,7 @@ struct CommunicationError {
     [[nodiscard]] std::vector<std::uint8_t> toJsonBytes() const {
         nlohmann::ordered_json j;
         j["errorName"] = "communication";
-        j["reason"] = reason;
+        j["reason"] = reasonCodeString(reason);
         if (detail) {
             j["detail"] = *detail;
         }

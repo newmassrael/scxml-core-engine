@@ -165,8 +165,8 @@ topology:
         "auth raise must guard on the one-shot flag exchange"
     );
     assert!(
-        code.contains("__sce_auth_err.reason = \"UNAUTHORIZED\""),
-        "auth raise must stamp reason=UNAUTHORIZED"
+        code.contains("__sce_auth_err.reason = ::SCE::Mesh::ReasonCode::Unauthorized"),
+        "auth raise must stamp reason=ReasonCode::Unauthorized"
     );
     assert!(
         code.contains("__sce_auth_err.transport = \"zenoh\""),
@@ -236,8 +236,8 @@ topology:
         "auth raise must guard on the one-shot flag exchange"
     );
     assert!(
-        code.contains("__sce_auth_err.reason = \"UNAUTHORIZED\""),
-        "auth raise must stamp reason=UNAUTHORIZED"
+        code.contains("__sce_auth_err.reason = ::SCE::Mesh::ReasonCode::Unauthorized"),
+        "auth raise must stamp reason=ReasonCode::Unauthorized"
     );
     assert!(
         code.contains("__sce_auth_err.transport = \"someip\""),
@@ -289,7 +289,7 @@ topology:
         "auth one-shot flag must NOT be emitted when no binding declares auth"
     );
     assert!(
-        !code.contains("UNAUTHORIZED"),
+        !code.contains("ReasonCode::Unauthorized"),
         "no UNAUTHORIZED raise may appear when auth is absent — row-10 stays \
          dormant and rejection signals route through row 1 / row 8 as before"
     );

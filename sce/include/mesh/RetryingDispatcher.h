@@ -301,7 +301,7 @@ private:
             return;
         }
         CommunicationError err;
-        err.reason = "DELIVERY_EXHAUSTED";
+        err.reason = ::SCE::Mesh::ReasonCode::DeliveryExhausted;
         err.target = policy_.target;
         err.transport = policy_.transport;
         if (last_transport_error) {

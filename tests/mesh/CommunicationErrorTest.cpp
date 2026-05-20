@@ -35,6 +35,7 @@
 #include <string>
 
 using SCE::Mesh::CommunicationError;
+using SCE::Mesh::ReasonCode;
 
 namespace {
 
@@ -48,7 +49,7 @@ TEST(CommunicationErrorTest, MissingSequenceMinimalShape) {
     // §16.7 row 11 — MISSING_SEQUENCE carries source + envelope_id; no
     // reason-specific extras beyond the baseline.
     CommunicationError err;
-    err.reason = "MISSING_SEQUENCE";
+    err.reason = ReasonCode::MissingSequence;
     err.source = "motor";
     err.envelope_id = std::array<std::uint8_t, 16>{
         0x01, 0x82, 0x0b, 0xc0, 0xde, 0xad, 0x7e, 0x50,
@@ -67,7 +68,7 @@ TEST(CommunicationErrorTest, OrderingGapFullShape) {
     // plus the baseline `source`. Field order must match declaration
     // order in toJsonBytes so the wire shape is stable.
     CommunicationError err;
-    err.reason = "ORDERING_GAP";
+    err.reason = ReasonCode::OrderingGap;
     err.source = "motor";
     err.lost_seq_lo = 2;
     err.lost_seq_hi = 5;
@@ -87,7 +88,7 @@ TEST(CommunicationErrorTest, PeerPartitionedShape) {
     // by any specific inbound envelope — the observation is the peer's
     // liveliness DELETE sample.
     CommunicationError err;
-    err.reason = "PEER_PARTITIONED";
+    err.reason = ReasonCode::PeerPartitioned;
     err.target = "motor";
     err.last_seen_ms_ago = 142;
 
@@ -110,7 +111,7 @@ TEST(CommunicationErrorTest, BarrierTimeoutShape) {
     //   cond="_event.data.reason == 'PARALLEL_BARRIER_TIMEOUT' &&
     //         _event.data.parallel_id == 'root'">`).
     CommunicationError err;
-    err.reason = "PARALLEL_BARRIER_TIMEOUT";
+    err.reason = ReasonCode::ParallelBarrierTimeout;
     err.parallel_id = "root";
     err.missing_regions = std::vector<std::string>{"right"};
     err.timeout_ms = 150;
@@ -136,7 +137,7 @@ TEST(CommunicationErrorTest, RegionPartitionedShape) {
     //  _event.data.machine == '<m>' &&
     //  _event.data.partition == '<p>'`.
     CommunicationError err;
-    err.reason = "REGION_PARTITIONED";
+    err.reason = ReasonCode::RegionPartitioned;
     err.last_seen_ms_ago = 142;
     err.machine = "motor";
     err.partition = "motor_right";
@@ -162,7 +163,7 @@ TEST(CommunicationErrorTest, BackpressureDropShape) {
     // backing up; `queue_depth` carries the observed buffer depth
     // at the moment of overflow for diagnostics.
     CommunicationError err;
-    err.reason = "BACKPRESSURE_DROP";
+    err.reason = ReasonCode::BackpressureDrop;
     err.target = "motor";
     err.transport = "someip";
     err.queue_depth = 1024;
@@ -188,7 +189,7 @@ TEST(CommunicationErrorTest, EnvelopeCorruptShape) {
     // decodes because the parser does not expose a post-failure
     // cursor through decodeEnvelope's bool return.
     CommunicationError err;
-    err.reason = "ENVELOPE_CORRUPT";
+    err.reason = ReasonCode::EnvelopeCorrupt;
     err.transport = "someip";
     err.codec = "cbor";
 
@@ -206,7 +207,7 @@ TEST(CommunicationErrorTest, EnvelopeCorruptShapeWithPosition) {
     // and `queue_depth` so future codec backends that report fault
     // offsets stay wire-shape compatible.
     CommunicationError err;
-    err.reason = "ENVELOPE_CORRUPT";
+    err.reason = ReasonCode::EnvelopeCorrupt;
     err.transport = "zenoh";
     err.codec = "cbor";
     err.position = 42;
@@ -243,7 +244,7 @@ TEST(CommunicationErrorTest, InvokeChildLostShapeMeshRpc) {
     // binding was active and the transport reached Shutdown with
     // outstanding work.
     CommunicationError err;
-    err.reason = "INVOKE_CHILD_LOST";
+    err.reason = ReasonCode::InvokeChildLost;
     err.invoke_id = "01820bc0-dead-7e50-81ab-cafebabebeef";
     err.target = "motor";
 
@@ -265,7 +266,7 @@ TEST(CommunicationErrorTest, InvokeChildLostShapeScxmlInvoke) {
     // know the failure was on the §9.6 scxml-invoke axis (W3C
     // `<invoke type="scxml">` over §9.6 worker host).
     CommunicationError err;
-    err.reason = "INVOKE_CHILD_LOST";
+    err.reason = ReasonCode::InvokeChildLost;
     err.invoke_id = "myInvoke";
     err.target = "worker";
 
@@ -300,7 +301,7 @@ TEST(CommunicationErrorTest, SendFailedShape) {
     //  _event.data.target == '<peer>'` to react to dropped outbound
     // work for a specific peer.
     CommunicationError err;
-    err.reason = "SEND_FAILED";
+    err.reason = ReasonCode::SendFailed;
     err.target = "motor";
     err.transport = "someip";
 
@@ -325,7 +326,7 @@ TEST(CommunicationErrorTest, SendFailedShapeWithTransportError) {
     //  _event.data.transport_error == '<api-decline>'` to react to
     // a specific underlying API failure.
     CommunicationError err;
-    err.reason = "SEND_FAILED";
+    err.reason = ReasonCode::SendFailed;
     err.target = "motor";
     err.transport = "zenoh";
     err.transport_error = "ZException: closed session";
@@ -353,7 +354,7 @@ TEST(CommunicationErrorTest, DeliveryExhaustedShapeAfterRetries) {
     //  _event.data.target == 'motor' && _event.data.attempts >= 4` to
     // route into an out-of-band fallback once SCE has given up.
     CommunicationError err;
-    err.reason = "DELIVERY_EXHAUSTED";
+    err.reason = ReasonCode::DeliveryExhausted;
     err.target = "motor";
     err.transport = "zenoh";
     err.transport_error = "ZException: closed session";
@@ -385,7 +386,7 @@ TEST(CommunicationErrorTest, UnauthorizedShape) {
     // text (Zenoh `ZException::what()` truncated to the auth-tied
     // substring; SOMEIP SD response code label).
     CommunicationError err;
-    err.reason = "UNAUTHORIZED";
+    err.reason = ReasonCode::Unauthorized;
     err.target = "motor";
     err.transport = "zenoh";
     err.transport_status = "TLS: peer certificate fingerprint mismatch";
@@ -410,7 +411,7 @@ TEST(CommunicationErrorTest, DeliveryExhaustedShapeTerminalFastFail) {
     // dispatchers stamp on terminal classification (per the codegen
     // dispatcher closures in mesh_transport.h.jinja2).
     CommunicationError err;
-    err.reason = "DELIVERY_EXHAUSTED";
+    err.reason = ReasonCode::DeliveryExhausted;
     err.target = "motor";
     err.transport = "someip";
     err.transport_error = "vsomeip app not initialized";
@@ -443,7 +444,7 @@ TEST(CommunicationErrorTest, TransportUnavailableShape) {
     //  _event.data.target == '<peer>'` to switch to a fallback path for
     // a specific peer's transport drop.
     CommunicationError err;
-    err.reason = "TRANSPORT_UNAVAILABLE";
+    err.reason = ReasonCode::TransportUnavailable;
     err.target = "motor";
     err.transport = "someip";
 
@@ -465,7 +466,7 @@ TEST(CommunicationErrorTest, DedupWindowOverflowShape) {
     // so authors can correlate the raise with the configured ring
     // depth without parsing extra context.
     CommunicationError err;
-    err.reason = "DEDUP_WINDOW_OVERFLOW";
+    err.reason = ReasonCode::DedupWindowOverflow;
     err.source = "motor";
     err.window_size = 256;
 
@@ -481,7 +482,7 @@ TEST(CommunicationErrorTest, OptionalFieldsAbsentAreSkipped) {
     // Only `reason` is required; all other fields default to absent
     // and must not appear in the output (not even as `null`).
     CommunicationError err;
-    err.reason = "MISSING_SEQUENCE";
+    err.reason = ReasonCode::MissingSequence;
 
     const auto out = bytes_to_string(err.toJsonBytes());
     EXPECT_EQ(out, "{\"errorName\":\"communication\",\"reason\":\"MISSING_SEQUENCE\"}");
@@ -492,7 +493,7 @@ TEST(CommunicationErrorTest, EnvelopeIdRendersAsCanonicalUuidString) {
     // which produces the RFC 4122 §3 canonical 36-char form. Guard
     // that we haven't regressed to hex-without-dashes or similar.
     CommunicationError err;
-    err.reason = "MISSING_SEQUENCE";
+    err.reason = ReasonCode::MissingSequence;
     err.envelope_id = std::array<std::uint8_t, 16>{
         0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
         0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff};
@@ -508,7 +509,7 @@ TEST(CommunicationErrorTest, StringEscapesQuotesAndBackslashes) {
     // which today are alphanumeric but the JSON writer must be
     // defensible against a future machine name containing quotes.
     CommunicationError err;
-    err.reason = "MISSING_SEQUENCE";
+    err.reason = ReasonCode::MissingSequence;
     err.source = std::string("a\"b\\c\n");
 
     const auto out = bytes_to_string(err.toJsonBytes());

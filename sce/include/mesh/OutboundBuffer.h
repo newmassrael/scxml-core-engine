@@ -256,7 +256,7 @@ public:
         }
         if (overflow) {
             CommunicationError err;
-            err.reason = "BACKPRESSURE_DROP";
+            err.reason = ::SCE::Mesh::ReasonCode::BackpressureDrop;
             err.transport = transport_name_;
             err.target = target_;
             err.queue_depth = static_cast<std::int64_t>(depth_at_overflow);
@@ -265,7 +265,7 @@ public:
         }
         if (send_failed) {
             CommunicationError err;
-            err.reason = "SEND_FAILED";
+            err.reason = ::SCE::Mesh::ReasonCode::SendFailed;
             err.target = target_;
             err.transport = transport_name_;
             if (send_failed_transport_error) {
@@ -319,7 +319,7 @@ public:
         }
         for (auto& transport_error : failures) {
             CommunicationError err;
-            err.reason = "SEND_FAILED";
+            err.reason = ::SCE::Mesh::ReasonCode::SendFailed;
             err.target = target_;
             err.transport = transport_name_;
             if (transport_error) {
@@ -361,7 +361,7 @@ public:
         }
         if (was_ready) {
             CommunicationError err;
-            err.reason = "TRANSPORT_UNAVAILABLE";
+            err.reason = ::SCE::Mesh::ReasonCode::TransportUnavailable;
             err.target = target_;
             err.transport = transport_name_;
             raise_error_(std::move(err));

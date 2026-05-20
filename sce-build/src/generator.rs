@@ -1604,8 +1604,8 @@ mod tests {
             "infinity (no barrier_timeout_ms) must not emit `TimerHooks`; body was:\n{body}"
         );
         assert!(
-            !body.contains("PARALLEL_BARRIER_TIMEOUT"),
-            "infinity must not emit the §16.7 row 6 reason string"
+            !body.contains("ParallelBarrierTimeout"),
+            "infinity must not emit the §16.7 row 6 ReasonCode raise path"
         );
         assert!(
             !body.contains("__sce_barrier_timeout_"),
@@ -1625,8 +1625,8 @@ mod tests {
             "finite barrier_timeout_ms must emit the TimerHooks aggregate; body was:\n{body}"
         );
         assert!(
-            body.contains("PARALLEL_BARRIER_TIMEOUT"),
-            "finite barrier_timeout_ms must pin the §16.7 row 6 reason string"
+            body.contains("ReasonCode::ParallelBarrierTimeout"),
+            "finite barrier_timeout_ms must pin the §16.7 row 6 ReasonCode raise path"
         );
         assert!(
             body.contains("__sce_barrier_timeout_root"),

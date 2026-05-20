@@ -751,7 +751,7 @@ public:
             },
             /* arm */ [this](std::uint64_t timeout_ms, std::vector<std::string> missing_regions) {
                 ::SCE::Mesh::CommunicationError err;
-                err.reason = "PARALLEL_BARRIER_TIMEOUT";
+                err.reason = ::SCE::Mesh::ReasonCode::ParallelBarrierTimeout;
                 err.parallel_id = std::string("{{ _pid }}");
                 err.missing_regions = std::move(missing_regions);
                 err.timeout_ms = timeout_ms;

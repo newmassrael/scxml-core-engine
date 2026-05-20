@@ -1587,6 +1587,43 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
 
     add_test(NAME mesh_communication_error_verification COMMAND mesh_communication_error_test)
 
+    # ── ReasonCode catalog drift guard (SCE_MESH.md §16.7) ──────────
+    # Axis-5 inversion fix — binds the C++ `SCE::Mesh::ReasonCode`
+    # enum + `kReasonCodeTable` to the canonical §16.7 row catalog
+    # in SCE_MESH.md. Bidirectional coverage assertion catches:
+    #   * variant added to enum without §16.7 row update;
+    #   * §16.7 row added without enum extension;
+    #   * wire-string typo in either source.
+    # The markdown path is injected via target_compile_definitions so
+    # the test resolves the file deterministically regardless of the
+    # working directory (CI, packaging, IDE runs).
+    add_executable(mesh_reason_code_catalog_test
+        mesh/ReasonCodeCatalogTest.cpp
+    )
+
+    target_include_directories(mesh_reason_code_catalog_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+    )
+
+    target_link_libraries(mesh_reason_code_catalog_test
+        PRIVATE
+            sce_mesh_common
+            GTest::gtest_main
+            pthread
+    )
+
+    target_compile_features(mesh_reason_code_catalog_test PRIVATE cxx_std_17)
+
+    target_compile_definitions(mesh_reason_code_catalog_test
+        PRIVATE
+            SCE_MESH_MD_PATH="${CMAKE_SOURCE_DIR}/SCE_MESH.md"
+    )
+
+    apply_sce_test_policies(mesh_reason_code_catalog_test)
+
+    add_test(NAME mesh_reason_code_catalog_verification COMMAND mesh_reason_code_catalog_test)
+
     # ── MeshDeadlineScheduler unit tests (SCE_MESH.md §9.5 F3c) ───
     # Pure unit tests on the callback-based deadline timer that backs
     # the mesh-rpc `_mesh_deadline_ms` behaviour. Covers the register /

@@ -100,7 +100,7 @@ TEST(OutboundBufferTest, BackpressureOverflowRaisesRow9) {
 
     ASSERT_EQ(sink.call_count, 1) << "exactly one raise per overflow admit";
     ASSERT_TRUE(sink.last.has_value());
-    EXPECT_EQ(sink.last->reason, "BACKPRESSURE_DROP");
+    EXPECT_EQ(sink.last->reason, ::SCE::Mesh::ReasonCode::BackpressureDrop);
     ASSERT_TRUE(sink.last->target.has_value());
     EXPECT_EQ(*sink.last->target, "motor");
     ASSERT_TRUE(sink.last->transport.has_value());
@@ -179,7 +179,7 @@ TEST(OutboundBufferTest, MarkNotReadyAfterReadyRaisesRow1) {
     buf.markNotReady();                  // Active → Disconnected → row 1
     ASSERT_EQ(sink.call_count, 1);
     ASSERT_TRUE(sink.last.has_value());
-    EXPECT_EQ(sink.last->reason, "TRANSPORT_UNAVAILABLE");
+    EXPECT_EQ(sink.last->reason, ::SCE::Mesh::ReasonCode::TransportUnavailable);
     ASSERT_TRUE(sink.last->target.has_value());
     EXPECT_EQ(*sink.last->target, "motor");
     ASSERT_TRUE(sink.last->transport.has_value());
@@ -212,7 +212,7 @@ TEST(OutboundBufferTest, AdmitFastPathDispatchFailRaisesRow2) {
         << "dispatcher declined: admit returns false to caller";
 
     ASSERT_EQ(sink.call_count, 1);
-    EXPECT_EQ(sink.last->reason, "SEND_FAILED");
+    EXPECT_EQ(sink.last->reason, ::SCE::Mesh::ReasonCode::SendFailed);
     ASSERT_TRUE(sink.last->target.has_value());
     EXPECT_EQ(*sink.last->target, "motor");
     ASSERT_TRUE(sink.last->transport.has_value());
@@ -242,7 +242,7 @@ TEST(OutboundBufferTest, AdmitFastPathDispatchFailRelaysTransportError) {
     EXPECT_FALSE(buf.admit(env));
 
     ASSERT_EQ(sink.call_count, 1);
-    EXPECT_EQ(sink.last->reason, "SEND_FAILED");
+    EXPECT_EQ(sink.last->reason, ::SCE::Mesh::ReasonCode::SendFailed);
     ASSERT_TRUE(sink.last->transport_error.has_value());
     EXPECT_EQ(*sink.last->transport_error, "ZException: closed session");
 }
@@ -290,7 +290,7 @@ TEST(OutboundBufferTest, MarkReadyDrainDispatchFailRaisesRow2PerEnvelope) {
 
     EXPECT_EQ(buf.queue_depth(), 0u) << "drain consumes the queue even on failure";
     ASSERT_EQ(sink.call_count, 3) << "one SEND_FAILED per failed drain dispatch";
-    EXPECT_EQ(sink.last->reason, "SEND_FAILED");
+    EXPECT_EQ(sink.last->reason, ::SCE::Mesh::ReasonCode::SendFailed);
     ASSERT_TRUE(sink.last->target.has_value());
     EXPECT_EQ(*sink.last->target, "motor");
     ASSERT_TRUE(sink.last->transport.has_value());
@@ -366,7 +366,7 @@ TEST(OutboundBufferTest, MarkReadyDrainMixedSuccessAndFailureRaisesPerFailure) {
 
     EXPECT_EQ(call_index, 4) << "drain visits every queued envelope";
     EXPECT_EQ(sink.call_count, 2) << "exactly the two declined envelopes raise";
-    EXPECT_EQ(sink.last->reason, "SEND_FAILED");
+    EXPECT_EQ(sink.last->reason, ::SCE::Mesh::ReasonCode::SendFailed);
 }
 
 TEST(OutboundBufferTest, RepeatedMarkNotReadyRaisesPerTransitionOnly) {

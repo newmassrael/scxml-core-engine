@@ -607,7 +607,7 @@
         }
         for (const auto& iid : erased_invoke_ids) {
             ::SCE::Mesh::CommunicationError err;
-            err.reason = "INVOKE_CHILD_LOST";
+            err.reason = ::SCE::Mesh::ReasonCode::InvokeChildLost;
             err.invoke_id = iid;
             err.target = peer;
             const auto json_bytes = err.toJsonBytes();

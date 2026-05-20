@@ -199,7 +199,7 @@ TEST(RetryingDispatcherTest, ExhaustionRaisesDeliveryExhaustedWithAttempts) {
     ASSERT_TRUE(recorder.waitFor(1, 1000ms));
     auto raised = recorder.snapshot();
     ASSERT_EQ(raised.size(), 1u);
-    EXPECT_EQ(raised[0].reason, "DELIVERY_EXHAUSTED");
+    EXPECT_EQ(raised[0].reason, ::SCE::Mesh::ReasonCode::DeliveryExhausted);
     EXPECT_EQ(raised[0].target, "motor");
     EXPECT_EQ(raised[0].transport, "zenoh");
     ASSERT_TRUE(raised[0].attempts.has_value());
@@ -231,7 +231,7 @@ TEST(RetryingDispatcherTest, TerminalFailureFastFailsWithAttemptsOne) {
 
     auto raised = recorder.snapshot();
     ASSERT_EQ(raised.size(), 1u);
-    EXPECT_EQ(raised[0].reason, "DELIVERY_EXHAUSTED");
+    EXPECT_EQ(raised[0].reason, ::SCE::Mesh::ReasonCode::DeliveryExhausted);
     ASSERT_TRUE(raised[0].attempts.has_value());
     EXPECT_EQ(*raised[0].attempts, 1);
     EXPECT_EQ(*raised[0].transport_error, "vsomeip app not initialized");
@@ -422,7 +422,7 @@ TEST(RetryingDispatcherTest, OutboundBufferWiringExhaustionRaisesDeliveryExhaust
     ASSERT_TRUE(delivery_recorder.waitFor(1, 1000ms));
     auto raised = delivery_recorder.snapshot();
     ASSERT_EQ(raised.size(), 1u);
-    EXPECT_EQ(raised[0].reason, "DELIVERY_EXHAUSTED");
+    EXPECT_EQ(raised[0].reason, ::SCE::Mesh::ReasonCode::DeliveryExhausted);
     EXPECT_TRUE(raised[0].attempts.has_value());
     EXPECT_EQ(*raised[0].attempts, 2);
     // SEND_FAILED must NOT have fired (per Q6=(c) "DELIVERY_EXHAUSTED
