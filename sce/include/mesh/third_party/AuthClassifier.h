@@ -25,7 +25,7 @@
 #include <string>
 #include <string_view>
 
-namespace SCE::Mesh {
+namespace SCE::Mesh::ThirdParty {
 
 /// SCE_MESH.md §16.7 row 10 — case-insensitive substring scan against
 /// the four spec-named auth-fail keywords. Returns `true` iff the
@@ -56,4 +56,4 @@ namespace SCE::Mesh {
            lower.find("handshake")   != std::string::npos;
 }
 
-}  // namespace SCE::Mesh
+}  // namespace SCE::Mesh::ThirdParty

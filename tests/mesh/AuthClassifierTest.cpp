@@ -10,11 +10,11 @@
 // delegates to this helper, so a regression here directly breaks
 // the §16.7 row 10 emit contract.
 
-#include "mesh/AuthClassifier.h"
+#include "mesh/third_party/AuthClassifier.h"
 
 #include <gtest/gtest.h>
 
-using SCE::Mesh::isZenohAuthFailMessage;
+using SCE::Mesh::ThirdParty::isZenohAuthFailMessage;
 
 TEST(AuthClassifierTest, MatchesCertificate) {
     EXPECT_TRUE(isZenohAuthFailMessage("Certificate verification failed"));

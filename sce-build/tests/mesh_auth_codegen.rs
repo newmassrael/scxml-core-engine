@@ -150,11 +150,11 @@ topology:
     // helper (single source of truth for the keyword set; unit-tested
     // separately in mesh_auth_classifier_test.cpp).
     assert!(
-        code.contains("#include \"mesh/AuthClassifier.h\""),
+        code.contains("#include \"mesh/third_party/AuthClassifier.h\""),
         "auth header include must be emitted when any binding declares auth"
     );
     assert!(
-        code.contains("::SCE::Mesh::isZenohAuthFailMessage("),
+        code.contains("::SCE::Mesh::ThirdParty::isZenohAuthFailMessage("),
         "ZException catch block must delegate to the shared classifier"
     );
 

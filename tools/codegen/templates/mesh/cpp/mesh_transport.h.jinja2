@@ -496,7 +496,7 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 // (single source of truth for the ZException::what() keyword set so
 // the rule is unit-testable in isolation rather than locked inside
 // the codegen template).
-#include "mesh/AuthClassifier.h"
+#include "mesh/third_party/AuthClassifier.h"
 #include <atomic>
 {% endif %}
 {% if machine_outbound_buffer %}
@@ -2939,7 +2939,7 @@ struct TransportRouter {
             // SCE_MESH.md §16.7 row 10 UNAUTHORIZED — at least one zenoh
             // target opted into trust enforcement. Delegate the
             // ZException::what() classification to
-            // `SCE::Mesh::isZenohAuthFailMessage`, which holds the
+            // `SCE::Mesh::ThirdParty::isZenohAuthFailMessage`, which holds the
             // single-source-of-truth keyword list (certificate / tls /
             // auth / handshake, case-insensitive). Match ⇒ raise
             // UNAUTHORIZED for every auth-required zenoh target so the
@@ -2949,7 +2949,7 @@ struct TransportRouter {
             const std::string __sce_what_msg = __sce_zex.what()
                                                    ? __sce_zex.what()
                                                    : "";
-            if (::SCE::Mesh::isZenohAuthFailMessage(__sce_what_msg)) {
+            if (::SCE::Mesh::ThirdParty::isZenohAuthFailMessage(__sce_what_msg)) {
 {% for t in zenoh_auth_targets %}
                 if (!{{ t.target_snake }}_auth_unauthorized_fired_.exchange(
                         true, std::memory_order_acq_rel)) {
