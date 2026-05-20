@@ -481,6 +481,16 @@ pub enum DiagnosticCode {
     //    rather than deleting it outright.
     #[serde(rename = "scxml/accept-side-states-without-role-declaration")]
     ScxmlAcceptSideStatesWithoutRoleDeclaration,
+    // ── Axis-2 declared-consumption Phase Z (watching-zenoh RFC §5.M
+    //    lines 2841-2861) — `peer_table.capacity × per_peer_quota ≥
+    //    slot_count` invariant. Forge buffer-pool declares its quota
+    //    + slot count; deploy.yaml link declares its peer-table
+    //    capacity; cross-doc validator catches violations. The
+    //    placeholder comment in `diagnostic.rs:1170` deferred this
+    //    to C9-β; it was never landed there and surfaces now as the
+    //    last open Axis-2 gap.
+    #[serde(rename = "reassembly/per-peer-quota-build-invariant-violated")]
+    ReassemblyPerPeerQuotaBuildInvariantViolated,
 
     #[serde(rename = "expression/empty")]
     ExpressionEmpty,
@@ -2312,6 +2322,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         LinkRoleListenerWithNonSessionArmingTrustClass,
         // Axis-3 inversion Phase D — migration-helper parser diagnostic
         ScxmlAcceptSideStatesWithoutRoleDeclaration,
+        // Axis-2 declared-consumption Phase Z — reassembly cross-doc invariant
+        ReassemblyPerPeerQuotaBuildInvariantViolated,
         // Expression
         ExpressionEmpty,
         ExpressionLex,
@@ -3169,6 +3181,11 @@ impl DiagnosticCode {
             | ScxmlAcceptSideRoleWithoutListenerLink
             | LinkRoleListenerWithNonSessionArmingTrustClass
             | ScxmlAcceptSideStatesWithoutRoleDeclaration => None,
+            // Axis-2 Phase Z carries the spec anchor that lived in the
+            // diagnostic.rs:1170 placeholder comment.
+            ReassemblyPerPeerQuotaBuildInvariantViolated => {
+                Some("watching-zenoh RFC §5.M")
+            }
         }
     }
 
@@ -3250,6 +3267,9 @@ impl DiagnosticCode {
             }
             ScxmlAcceptSideStatesWithoutRoleDeclaration => {
                 "scxml/accept-side-states-without-role-declaration"
+            }
+            ReassemblyPerPeerQuotaBuildInvariantViolated => {
+                "reassembly/per-peer-quota-build-invariant-violated"
             }
             ExpressionEmpty => "expression/empty",
             ExpressionLex => "expression/lex",
@@ -5327,6 +5347,37 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 key_fragments: offending_ids.clone(),
             }
         }
+        ValidationError::ReassemblyPerPeerQuotaBuildInvariantViolated {
+            pool_name,
+            slot_count,
+            machine,
+            link_name,
+            peer_table_capacity,
+            per_peer_quota,
+            product,
+        } => DiagnosticPayload {
+            // Axis-2 Phase Z — peer_table.capacity × per_peer_quota
+            // >= slot_count. 3-axis repair; NeutralOrDeterministic.
+            // `actual` carries the violating product so consumers can
+            // see the shortfall without parsing the message body.
+            code: DiagnosticCode::ReassemblyPerPeerQuotaBuildInvariantViolated,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(format!(
+                "{product} < {slot_count}",
+                product = product,
+                slot_count = slot_count
+            )),
+            fix: None,
+            key_fragments: vec![
+                pool_name.clone(),
+                machine.clone(),
+                link_name.clone(),
+                slot_count.to_string(),
+                peer_table_capacity.to_string(),
+                per_peer_quota.to_string(),
+            ],
+        },
         ValidationError::PoolSampleTakeWithoutStagePool {
             state_id,
             link,
@@ -7363,6 +7414,22 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:9c490c868c1407cc","code":"scxml/accept-side-states-without-role-declaration","stage":"validation","message":"SCXML doc carries state ids matching the reserved `Accepting.*` prefix ([\"Accepting\", \"Accepting.AwaitingInitSyn\"]) but no top-level `<sce:session-role kind=\"accept-side\"/>` declaration. The canonical session-FSM accept-side state names are reserved for documents that claim the accept-side role. Repair: add `<sce:session-role kind=\"accept-side\"/>` to the SCXML root if the doc implements the session-FSM accept-side, OR rename the offending state ids to avoid the `Accepting.*` reservation. See claudedocs/rfc-axis3-listener-role-declarations.md.","actual":"Accepting,Accepting.AwaitingInitSyn"}"#,
+            ),
+            (
+                // Axis-2 Phase Z — reassembly per-peer-quota peer-table
+                // build invariant violated. Hash placeholder.
+                "forge/reassembly-per-peer-quota-build-invariant-violated",
+                ValidationError::ReassemblyPerPeerQuotaBuildInvariantViolated {
+                    pool_name: "rx_reassembly_pool".into(),
+                    slot_count: 16,
+                    machine: "mcu_node".into(),
+                    link_name: "udp_listener".into(),
+                    peer_table_capacity: 2,
+                    per_peer_quota: 4,
+                    product: 8,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:3c94c473897424b8","code":"reassembly/per-peer-quota-build-invariant-violated","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"reassembly-variant buffer-pool 'rx_reassembly_pool' (slot_count=16) bound to machine 'mcu_node' link 'udp_listener' violates the per-peer-quota build invariant: `peer_table.capacity (2) × per_peer_quota (4) = 8` < `slot_count (16)`. RFC §5.M lines 2841-2861 — without this bound a peer storm can occupy more slots than the per-peer cap permits, silently degrading per-peer accounting into shared-pool contention. Repair: raise `peer_table.capacity` on the link's `stateless_accept`, raise `per_peer_quota` on the pool, or lower `slot_count` on the pool.","actual":"8 < 16"}"#,
             ),
             (
                 // RFC §5.E B7-η' Atomic A1: on-sample subscriber on a
@@ -10899,6 +10966,10 @@ mod tests {
             // NeutralOrDeterministic (2-axis repair: add role or
             // rename states).
             | ScxmlAcceptSideStatesWithoutRoleDeclaration
+            // Axis-2 declared-consumption — 3-axis repair (raise
+            // peer_table.capacity, raise per_peer_quota, or lower
+            // slot_count); no closed candidate set.
+            | ReassemblyPerPeerQuotaBuildInvariantViolated
             | ExpressionEmpty
             | ExpressionLex
             | ExpressionUnsupportedConstruct
@@ -11406,6 +11477,7 @@ mod tests {
                 | ScxmlAcceptSideRoleWithoutListenerLink
                 | LinkRoleListenerWithNonSessionArmingTrustClass
                 | ScxmlAcceptSideStatesWithoutRoleDeclaration
+                | ReassemblyPerPeerQuotaBuildInvariantViolated
                 | ExpressionEmpty | ExpressionLex
                 | ExpressionUnsupportedConstruct | ExpressionStrictEquality
                 | ExpressionParseMismatch | ExpressionUnexpectedToken
@@ -11632,7 +11704,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            298,
+            299,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries —\
              expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \

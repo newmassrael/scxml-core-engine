@@ -86,6 +86,7 @@
         "scxml/accept-side-role-without-listener-link",
         "link/role-listener-with-non-session-arming-trust-class",
         "scxml/accept-side-states-without-role-declaration",
+        "reassembly/per-peer-quota-build-invariant-violated",
         "expression/empty",
         "expression/lex",
         "expression/unsupported-construct",

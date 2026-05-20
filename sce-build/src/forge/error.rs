@@ -2797,6 +2797,45 @@ pub enum ValidationError {
         /// the parser layer for determinism.
         offending_ids: Vec<String>,
     },
+
+    /// Axis-2 declared-consumption Phase Z (watching-zenoh RFC §5.M
+    /// lines 2841-2861, deferred from C9-β `per-peer-quota-build-
+    /// invariant-violated` placeholder in `forge/diagnostic.rs:1170`):
+    /// the build-time invariant
+    /// `peer_table.capacity × per_peer_quota >= slot_count` is
+    /// violated for a reassembly-variant buffer-pool bound to a
+    /// session-arming link with a declared `peer_table`. Without the
+    /// guarantee, a peer storm under attack can occupy more slots
+    /// than the per-peer cap allows — the per-peer accounting silently
+    /// degrades into shared-pool contention.
+    ///
+    /// Fields surface every input the invariant needs so authors
+    /// repair on the appropriate axis: raise `peer_table.capacity`,
+    /// raise `per_peer_quota`, or lower `slot_count`.
+    /// `NeutralOrDeterministic` (3-axis repair).
+    #[error(
+        "reassembly-variant buffer-pool '{pool_name}' (slot_count={slot_count}) bound to \
+         machine '{machine}' link '{link_name}' violates the per-peer-quota build invariant: \
+         `peer_table.capacity ({peer_table_capacity}) × per_peer_quota ({per_peer_quota}) = \
+         {product}` < `slot_count ({slot_count})`. RFC §5.M lines 2841-2861 — without this \
+         bound a peer storm can occupy more slots than the per-peer cap permits, silently \
+         degrading per-peer accounting into shared-pool contention. Repair: raise \
+         `peer_table.capacity` on the link's `stateless_accept`, raise `per_peer_quota` on \
+         the pool, or lower `slot_count` on the pool."
+    )]
+    ReassemblyPerPeerQuotaBuildInvariantViolated {
+        pool_name: String,
+        slot_count: u32,
+        machine: String,
+        link_name: String,
+        peer_table_capacity: u32,
+        per_peer_quota: u32,
+        /// `peer_table.capacity × per_peer_quota` — surfaced verbatim
+        /// so authors don't need to recompute from the other fields.
+        /// `u64` to absorb the multiplication without overflow on the
+        /// extreme corner (`u32::MAX × 1` is the realistic ceiling).
+        product: u64,
+    },
 }
 
 /// watching-zenoh RFC §5.E B7-η' Atomic A2 callback-path failure

@@ -3628,6 +3628,57 @@ pub fn validate_reassembly_cross_doc(
                             },
                         );
                     }
+
+                    // ── Axis-2 declared-consumption — reassembly/
+                    //    per-peer-quota-build-invariant-violated ──
+                    //
+                    // Spec line 2841-2861 verbatim:
+                    //   `peer_table.capacity × per-peer-quota ≥ slot_count`
+                    //
+                    // The placeholder comment in `forge/diagnostic.rs:1170`
+                    // deferred this to C9-β where the `peer_table.capacity`
+                    // source becomes available; it lands here in Axis-2
+                    // Phase Z (the last open Axis-2 declared-consumption
+                    // gap per the 6-axis program audit).
+                    //
+                    // Silent-skip per Q-η5 (a) when:
+                    //   - link.stateless_accept absent (no session_arming
+                    //     hardening block on the link — the peer_table
+                    //     source is unreachable)
+                    //   - stateless_accept.peer_table absent (block
+                    //     declared but capacity not enumerated)
+                    //   - pool.variant.per_peer_quota == 0 (parse-time
+                    //     rejection already covers; defense-in-depth)
+                    //
+                    // The check fires only when peer_table IS declared
+                    // AND the multiplication shortfall is real. Mirrors
+                    // the existing `SessionArmingQuotaVsPeerTableInvariantViolated`
+                    // discipline at lines 3084-3124 above (same
+                    // multiplication structure, different multiplicands).
+                    if reassembly_cfg.per_peer_quota > 0 {
+                        if let Some(peer_table) = link
+                            .stateless_accept
+                            .as_ref()
+                            .and_then(|sa| sa.peer_table.as_ref())
+                        {
+                            let pool_slot_count = pool.slot_count;
+                            let product =
+                                peer_table.capacity as u64 * reassembly_cfg.per_peer_quota as u64;
+                            if product < pool_slot_count as u64 {
+                                return Err(
+                                    ValidationError::ReassemblyPerPeerQuotaBuildInvariantViolated {
+                                        pool_name: pool_name.to_string(),
+                                        slot_count: pool_slot_count,
+                                        machine: machine_name.clone(),
+                                        link_name: link_name.clone(),
+                                        peer_table_capacity: peer_table.capacity,
+                                        per_peer_quota: reassembly_cfg.per_peer_quota,
+                                        product,
+                                    },
+                                );
+                            }
+                        }
+                    }
                 }
 
                 // ── C13-γ pool/stage-copy-accept-rejected-under-forbid ──
