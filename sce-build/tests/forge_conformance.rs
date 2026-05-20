@@ -12075,3 +12075,95 @@ fn forge_codec_length_ref_multibyte_round_trip_runtime() {
     )
     .expect("multi-byte length-ref fixtures must round-trip via cargo test");
 }
+
+// Plain-id `sce:length-field` sibling-shape validator (parser-time
+// rejection). Covers the three reachable failure modes:
+//   (1) Fixed sibling with bit-size ∉ {8, 16, 24, 32} — uint64 is
+//       unsafe on 32-bit targets; sub-byte non-aligned widths aren't
+//       in the per-language fold table.
+//   (2) Non-Fixed/Vle sibling (e.g. another length-ref) — can't
+//       supply an integer length value.
+//   (3) Forward reference — sibling declared after the length-ref
+//       payload.
+
+fn assert_length_field_rejects(scxml: &str, name: &str, substring: &str) {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+    let result = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric(name),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!("{name}: must reject with validation/invalid-attribute on sce:length-field"),
+        Err(e) => e,
+    };
+    match &err.error {
+        ForgeError::Validation(ValidationError::InvalidAttribute { attr, expected, .. })
+            if attr == "sce:length-field" =>
+        {
+            assert!(
+                expected.contains(substring),
+                "{name}: expected message to mention {substring:?}, got: {expected}"
+            );
+        }
+        other => panic!(
+            "{name}: must surface ValidationError::InvalidAttribute on sce:length-field; got: {other:?}"
+        ),
+    }
+}
+
+#[test]
+fn forge_codec_length_field_rejects_uint64_sibling() {
+    assert_length_field_rejects(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="little" name="codec_length_ref_uint64_reject">
+  <datamodel>
+    <sce:field id="payload_len" sce:type="uint64" sce:byte="0" sce:bit-size="64"/>
+    <sce:field id="payload"     sce:type="bytes"  sce:byte="8" sce:bit-size="length-ref"
+               sce:length-field="payload_len" sce:max-size="64"/>
+  </datamodel>
+</scxml>"#,
+        "codec_length_ref_uint64_reject",
+        "bit-size=64",
+    );
+}
+
+#[test]
+fn forge_codec_length_field_rejects_non_byte_aligned_sibling() {
+    assert_length_field_rejects(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="little" name="codec_length_ref_12bit_reject">
+  <datamodel>
+    <sce:field id="payload_len" sce:type="uint16" sce:byte="0" sce:bit-size="12"/>
+    <sce:field id="payload"     sce:type="bytes"  sce:byte="2" sce:bit-size="length-ref"
+               sce:length-field="payload_len" sce:max-size="64"/>
+  </datamodel>
+</scxml>"#,
+        "codec_length_ref_12bit_reject",
+        "bit-size=12",
+    );
+}
+
+#[test]
+fn forge_codec_length_field_rejects_forward_reference() {
+    assert_length_field_rejects(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="little" name="codec_length_ref_forward_reject">
+  <datamodel>
+    <sce:field id="payload"     sce:type="bytes"  sce:byte="0" sce:bit-size="length-ref"
+               sce:length-field="payload_len" sce:max-size="64"/>
+    <sce:field id="payload_len" sce:type="uint8"  sce:byte="64" sce:bit-size="8"/>
+  </datamodel>
+</scxml>"#,
+        "codec_length_ref_forward_reject",
+        "declared earlier",
+    );
+}

@@ -3358,20 +3358,30 @@ fn parse_codec_embed_from_node(
 
 /// RFC §5.B B2 repeat cross-field validation. Walks the field list
 /// in source order; every `BitSize::Repeat { LengthField(id) }` must
-/// RFC §5.B B5-κ Surface L — `sce:length-field` cross-field validation
-/// for the dotted-path form `<carrier>.<flag>`. The plain bare-id form
-/// is left untyped (codegen-time lookup at the use site, mirroring the
-/// pre-B5-κ behavior). Mirrors the B1-δ present-if validator on three
-/// axes: forward-reference, carrier-shape, flag existence — plus a
-/// fourth gate specific to length-field semantics: the referenced flag
-/// must be MULTI-BIT (`width > 1`), since a single-bit flag's value is
-/// only ever 0 or 1 — that's the present-if grammar's purpose, not
-/// length-source.
+/// RFC §5.B B5-κ Surface L — `sce:length-field` cross-field validation.
 ///
-/// All four failure modes fold into `validation/invalid-attribute`
-/// because the repair is attribute-text-level (pick a different
-/// carrier, declare the missing flag, widen the flag, or reorder the
-/// declarations). No new diagnostic.
+/// Dotted-path form `<carrier>.<flag>` mirrors the B1-δ present-if
+/// validator on three axes (forward-reference, carrier-shape, flag
+/// existence) plus a fourth specific to length semantics: the flag
+/// must be MULTI-BIT (`width > 1`) since width-1 flags are 0/1
+/// (present-if domain), not length sources.
+///
+/// Plain bare-id form requires the sibling to (a) exist earlier in
+/// the codec (forward-reference guard, matches the dotted-path
+/// rule) and (b) carry a shape that can supply a usize-bound
+/// length value: byte-aligned Fixed bits ∈ {8, 16, 24, 32} (the
+/// widths `decode_multibyte_unified` natively folds across all 6
+/// backends) or Vle (streaming-path `compute_n_*` reads the typed
+/// local). uint64 Fixed is rejected because it can exceed usize on
+/// 32-bit targets; non-byte-aligned Fixed (e.g. bits=12) is
+/// rejected because the per-language emit table doesn't cover
+/// those widths. Sub-bit length sources route through the dotted
+/// form instead.
+///
+/// All failure modes fold into `validation/invalid-attribute` —
+/// the repair is attribute-text-level (pick a different sibling,
+/// declare it earlier, widen/narrow the bit-size, switch to
+/// dotted form). No new diagnostic.
 fn validate_codec_length_field_refs(
     fields: &[CodecField],
     label: DocumentLabel<'_>,
@@ -3381,24 +3391,24 @@ fn validate_codec_length_field_refs(
     let mut by_id_so_far: BTreeMap<&str, &CodecField> = BTreeMap::new();
     for field in fields {
         if let Some(raw) = field.length_field.as_deref() {
+            let invalid = |expected: String| {
+                located(
+                    datamodel,
+                    label.diagnostic_label,
+                    ValidationError::InvalidAttribute {
+                        element: format!(
+                            "field '{}' in codec '{}'",
+                            field.id, label.identifier
+                        ),
+                        attr: "sce:length-field".into(),
+                        value: raw.to_string(),
+                        expected,
+                    },
+                )
+            };
             if let Some((carrier_id, flag_name)) = raw.split_once('.') {
                 let carrier_id = carrier_id.trim();
                 let flag_name = flag_name.trim();
-                let invalid = |expected: String| {
-                    located(
-                        datamodel,
-                        label.diagnostic_label,
-                        ValidationError::InvalidAttribute {
-                            element: format!(
-                                "field '{}' in codec '{}'",
-                                field.id, label.identifier
-                            ),
-                            attr: "sce:length-field".into(),
-                            value: raw.to_string(),
-                            expected,
-                        },
-                    )
-                };
                 if carrier_id.is_empty() || flag_name.is_empty() {
                     return Err(invalid(
                         "dotted-path 'sce:length-field=\"<carrier>.<flag>\"' \
@@ -3441,6 +3451,63 @@ fn validate_codec_length_field_refs(
                          sce:present-if, not sce:length-field",
                         flag.width
                     )));
+                }
+            } else {
+                let sibling_id = raw.trim();
+                if sibling_id.is_empty() {
+                    return Err(invalid(
+                        "'sce:length-field' requires a non-empty sibling \
+                         field identifier"
+                            .into(),
+                    ));
+                }
+                let sibling = by_id_so_far.get(sibling_id).ok_or_else(|| {
+                    invalid(format!(
+                        "sibling '{sibling_id}' must be declared earlier in \
+                         the same codec (forward references are rejected so \
+                         the decoder reads the length value before reaching \
+                         the length-ref payload)"
+                    ))
+                })?;
+                match &sibling.bit_size {
+                    BitSize::Fixed { bits } if matches!(bits, 8 | 16 | 24 | 32) => {
+                        // OK — byte-aligned width that decode_multibyte_unified
+                        // folds natively across all 6 backends.
+                    }
+                    BitSize::Vle { .. } => {
+                        // OK — streaming-path compute_n_* reads the typed
+                        // local that the VLE decode bound earlier.
+                    }
+                    BitSize::Fixed { bits } => {
+                        return Err(invalid(format!(
+                            "sibling '{sibling_id}' has bit-size={bits} but \
+                             plain-id length-field requires Fixed bits ∈ \
+                             {{8, 16, 24, 32}} (byte-aligned widths fold \
+                             cleanly to usize via decode_multibyte_unified; \
+                             uint64 can exceed usize on 32-bit targets; \
+                             non-byte-aligned widths are not in the per- \
+                             language emit table). Use a dotted-path form \
+                             '<carrier>.<flag>' for sub-byte length sources"
+                        )));
+                    }
+                    other => {
+                        let kind = match other {
+                            BitSize::Tail => "tail",
+                            BitSize::LengthRef => "length-ref",
+                            BitSize::Repeat { .. } => "repeat",
+                            BitSize::TlvChain { .. } => "tlv-chain",
+                            BitSize::Embed => "embed",
+                            BitSize::Fixed { .. } | BitSize::Vle { .. } => {
+                                unreachable!("matched by prior arms")
+                            }
+                        };
+                        return Err(invalid(format!(
+                            "sibling '{sibling_id}' has bit-size '{kind}' \
+                             which cannot supply a length value; only Fixed \
+                             (bits ∈ {{8, 16, 24, 32}}) and Vle integer \
+                             fields are valid length-sources"
+                        )));
+                    }
                 }
             }
         }
