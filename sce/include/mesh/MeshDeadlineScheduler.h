@@ -40,6 +40,8 @@
 
 #pragma once
 
+#include "mesh/MeshUuidKey.h"
+
 #include <array>
 #include <chrono>
 #include <condition_variable>
@@ -58,9 +60,11 @@ namespace SCE::Mesh {
 class MeshDeadlineScheduler {
 public:
     /// Wire-level invoke id: 16-byte UUID v7 from `MeshEnvelope.invoke_id`.
-    /// Mirrors `InvokeCorrelation::Key` so callers can share UUIDs without
-    /// conversion.
-    using Key = std::array<std::uint8_t, 16>;
+    /// Aliases the shared SCE::Mesh::MeshUuidKey single-source type
+    /// (see `mesh/MeshUuidKey.h`) so MeshDeadlineScheduler shares the
+    /// concept with InvokeCorrelation and RetryingDispatcher without
+    /// inversion-via-duplication.
+    using Key = MeshUuidKey;
 
     /// Fired on the scheduler thread exactly once per `registerDeadline`
     /// call IFF the deadline elapses before `cancelDeadline` erases the
@@ -157,19 +161,10 @@ private:
         }
     };
 
-    /// FNV-1a over 16 bytes. Same hash family as InvokeCorrelation's
-    /// KeyHash — adequate for the small set of in-flight deadlines
-    /// typically outstanding at once.
-    struct KeyHash {
-        std::size_t operator()(const Key& k) const noexcept {
-            std::size_t h = 14695981039346656037ULL;
-            for (std::uint8_t b : k) {
-                h ^= b;
-                h *= 1099511628211ULL;
-            }
-            return h;
-        }
-    };
+    /// Aliases the shared SCE::Mesh::MeshUuidKeyHash so InvokeCorrelation,
+    /// MeshDeadlineScheduler, and RetryingDispatcher reach the same
+    /// FNV-1a hash for their UUID-v7-keyed maps (see `mesh/MeshUuidKey.h`).
+    using KeyHash = MeshUuidKeyHash;
 
     /// True when the front-of-heap entry is still the live registration
     /// for its uuid (i.e. not cancelled, not superseded by a later

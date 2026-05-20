@@ -33,6 +33,7 @@
 
 #pragma once
 
+#include "mesh/MeshUuidKey.h"
 #include "mesh/RpcStatus.h"
 
 #include <array>
@@ -54,7 +55,11 @@ public:
     /// Equal across the matched request/reply pair; the parent-side
     /// SCXML invoke id string is captured by the `DeliverCallback`
     /// closure (not stored here), keeping this class payload-free.
-    using Key = std::array<std::uint8_t, 16>;
+    /// Aliases the shared SCE::Mesh::MeshUuidKey single-source type
+    /// (see `mesh/MeshUuidKey.h`) so InvokeCorrelation, MeshDeadlineScheduler,
+    /// and RetryingDispatcher reach the same key concept without
+    /// inversion-via-duplication.
+    using Key = MeshUuidKey;
 
     /// Invoked exactly once per successful [`registerInvoke`]:
     ///
@@ -222,22 +227,11 @@ public:
     }
 
 private:
-    /// FNV-1a over 16 bytes. Cheaper than SipHash and adequate here:
-    /// the map only holds actively in-flight invokes, bounded by how
-    /// many mesh-rpc invokes a single parent has outstanding
-    /// simultaneously — typically single digits, never adversarially
-    /// large. The key is a random UUID v7 so distribution quality of
-    /// FNV-1a is not load-bearing against a hostile workload.
-    struct KeyHash {
-        std::size_t operator()(const Key& k) const noexcept {
-            std::size_t h = 14695981039346656037ULL;
-            for (std::uint8_t b : k) {
-                h ^= b;
-                h *= 1099511628211ULL;
-            }
-            return h;
-        }
-    };
+    /// Aliases the shared SCE::Mesh::MeshUuidKeyHash so InvokeCorrelation,
+    /// MeshDeadlineScheduler, and RetryingDispatcher use the same FNV-1a
+    /// hash function for their UUID-v7-keyed maps (see `mesh/MeshUuidKey.h`
+    /// for the design rationale + uniformity contract).
+    using KeyHash = MeshUuidKeyHash;
 
     /// Per-entry payload: the peer machine name the invoke is bound
     /// to plus the deliver callback. Target is stored explicitly

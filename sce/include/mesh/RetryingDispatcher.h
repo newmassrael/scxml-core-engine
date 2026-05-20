@@ -73,6 +73,7 @@
 #include "mesh/CommunicationError.h"
 #include "mesh/MeshDeadlineScheduler.h"
 #include "mesh/MeshEnvelope.h"
+#include "mesh/MeshUuidKey.h"
 #include "mesh/OutboundBuffer.h"
 
 #include <algorithm>
@@ -337,23 +338,8 @@ private:
     InnerDispatcher inner_;
     ErrorRaiseCallback raise_;
 
-    /// FNV-1a over the 16-byte UUID v7 envelope id. Same hash
-    /// `InvokeCorrelation` uses for the same payload shape; inlined
-    /// here rather than depending on InvokeCorrelation's private
-    /// struct so the two classes stay independently usable.
-    struct KeyHash {
-        std::size_t operator()(const MeshDeadlineScheduler::Key& k) const noexcept {
-            std::size_t h = 14695981039346656037ULL;
-            for (std::uint8_t b : k) {
-                h ^= b;
-                h *= 1099511628211ULL;
-            }
-            return h;
-        }
-    };
-
     mutable std::mutex state_mutex_;
-    std::unordered_map<MeshDeadlineScheduler::Key, RetryState, KeyHash> state_;
+    std::unordered_map<MeshDeadlineScheduler::Key, RetryState, MeshUuidKeyHash> state_;
 
     std::mutex rng_mutex_;
     std::mt19937 rng_;
