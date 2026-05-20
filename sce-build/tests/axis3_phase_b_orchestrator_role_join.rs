@@ -182,11 +182,22 @@ fn explicit_role_pair_resolves_into_listener_links() {
     );
 }
 
-// ── Direction 2: legacy substate path still works (Phase B preserves
-//    Phase A test invariant by union of both join paths) ───────────
+// ── Direction 2: pre-explicit-declaration fixtures silent-skip
+//    after Phase D walker deletion ────────────────────────────────
 
 #[test]
-fn legacy_substate_path_still_resolves_in_phase_b() {
+fn pre_axis3_fixture_without_explicit_role_silent_skips() {
+    // Phase D deletion of the substate-driven walker means a deploy
+    // that declares `session_arming` trust class but does not declare
+    // `role: listener`, paired with an SCXML that carries `Accepting.*`
+    // states but no `<sce:session-role>` declaration, no longer
+    // resolves into listener_links. The matching parser-time
+    // migration-helper diagnostic
+    // `scxml/accept-side-states-without-role-declaration` catches
+    // the partial-claim shape at parse time when the SCXML is read
+    // from source; this test constructs the SCXMLModel directly so
+    // the parser path is bypassed and the only observable behavior
+    // is that the explicit-role join silent-skips.
     let yaml =
         deploy_with_listener_source("session_fsm.scxml", &session_arming_link_no_role());
     let cfg = parse_deploy_str(&yaml).expect("deploy parses");
@@ -194,12 +205,12 @@ fn legacy_substate_path_still_resolves_in_phase_b() {
     let models = vec![(PathBuf::from("session_fsm.scxml"), scxml)];
 
     validate_cross_doc_listener_roles(&cfg, &models)
-        .expect("legacy fixture (no explicit role) must silent-pass");
+        .expect("pre-axis3 fixture (no explicit role on either side) silent-passes the cross-doc check");
 
     let listener_links = resolve_listener_links(&cfg, &models);
     assert!(
-        listener_links.contains("udp_listener"),
-        "legacy substate path must still resolve in Phase B (delete in Phase D), got {:?}",
+        listener_links.is_empty(),
+        "without explicit role declarations on BOTH sides, no listener pair resolves; got {:?}",
         listener_links
     );
 }

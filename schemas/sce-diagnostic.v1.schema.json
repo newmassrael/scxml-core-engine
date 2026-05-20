@@ -85,6 +85,7 @@
         "link/deploy-role-listener-without-scxml-accept-side-role",
         "scxml/accept-side-role-without-listener-link",
         "link/role-listener-with-non-session-arming-trust-class",
+        "scxml/accept-side-states-without-role-declaration",
         "expression/empty",
         "expression/lex",
         "expression/unsupported-construct",

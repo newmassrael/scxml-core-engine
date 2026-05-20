@@ -473,6 +473,14 @@ pub enum DiagnosticCode {
     ScxmlAcceptSideRoleWithoutListenerLink,
     #[serde(rename = "link/role-listener-with-non-session-arming-trust-class")]
     LinkRoleListenerWithNonSessionArmingTrustClass,
+    // ── Axis-3 inversion Phase D migration-helper (RFC Q-A8 (c) flip)
+    //    — fires when an SCXML carries reserved `Accepting.*` state
+    //    ids but no `<sce:session-role kind="accept-side"/>`
+    //    declaration. Repurposes the legacy `accepting_substate_
+    //    present` walker into a typed parser-time author diagnostic
+    //    rather than deleting it outright.
+    #[serde(rename = "scxml/accept-side-states-without-role-declaration")]
+    ScxmlAcceptSideStatesWithoutRoleDeclaration,
 
     #[serde(rename = "expression/empty")]
     ExpressionEmpty,
@@ -2302,6 +2310,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         LinkDeployRoleListenerWithoutScxmlAcceptSideRole,
         ScxmlAcceptSideRoleWithoutListenerLink,
         LinkRoleListenerWithNonSessionArmingTrustClass,
+        // Axis-3 inversion Phase D — migration-helper parser diagnostic
+        ScxmlAcceptSideStatesWithoutRoleDeclaration,
         // Expression
         ExpressionEmpty,
         ExpressionLex,
@@ -3157,7 +3167,8 @@ impl DiagnosticCode {
             | ScxmlDuplicateSessionRoleDeclaration
             | LinkDeployRoleListenerWithoutScxmlAcceptSideRole
             | ScxmlAcceptSideRoleWithoutListenerLink
-            | LinkRoleListenerWithNonSessionArmingTrustClass => None,
+            | LinkRoleListenerWithNonSessionArmingTrustClass
+            | ScxmlAcceptSideStatesWithoutRoleDeclaration => None,
         }
     }
 
@@ -3236,6 +3247,9 @@ impl DiagnosticCode {
             }
             LinkRoleListenerWithNonSessionArmingTrustClass => {
                 "link/role-listener-with-non-session-arming-trust-class"
+            }
+            ScxmlAcceptSideStatesWithoutRoleDeclaration => {
+                "scxml/accept-side-states-without-role-declaration"
             }
             ExpressionEmpty => "expression/empty",
             ExpressionLex => "expression/lex",
@@ -5293,6 +5307,23 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![machine.clone(), link_name.clone(), trust_class.clone()],
         },
+        ValidationError::ScxmlAcceptSideStatesWithoutRoleDeclaration { offending_ids } => {
+            DiagnosticPayload {
+                // Axis-3 inversion Phase D migration-helper. 2-axis
+                // repair (add role declaration OR rename states); no
+                // closed candidate set so `fix: None`. `actual`
+                // serializes the offending id list in document order
+                // — joined with comma so the wire format is a single
+                // string (per the DiagnosticPayload `actual: Option<
+                // String>` contract).
+                code: DiagnosticCode::ScxmlAcceptSideStatesWithoutRoleDeclaration,
+                stage: Stage::Validation,
+                expected: None,
+                actual: Some(offending_ids.join(",")),
+                fix: None,
+                key_fragments: offending_ids.clone(),
+            }
+        }
         ValidationError::PoolSampleTakeWithoutStagePool {
             state_id,
             link,
@@ -7318,6 +7349,19 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:df7bcfc9e6b3e2ec","code":"link/role-listener-with-non-session-arming-trust-class","stage":"validation","message":"deploy machine 'mcu_node' link 'udp_listener': declares `role: listener` but `trust_class: untrusted` (not `session_arming`). The listener-role declaration applies only to pre-handshake traffic, which lives on the `session_arming` trust tier. Repair: change `trust_class` to `session_arming`, OR remove `role: listener`. See claudedocs/rfc-axis3-listener-role-declarations.md.","actual":"untrusted"}"#,
             ),
             (
+                // Axis-3 inversion Phase D migration-helper — Accepting.*
+                // state ids without role declaration. Hash placeholder.
+                "forge/scxml-accept-side-states-without-role-declaration",
+                ValidationError::ScxmlAcceptSideStatesWithoutRoleDeclaration {
+                    offending_ids: vec![
+                        "Accepting".to_string(),
+                        "Accepting.AwaitingInitSyn".to_string(),
+                    ],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:9c490c868c1407cc","code":"scxml/accept-side-states-without-role-declaration","stage":"validation","message":"SCXML doc carries state ids matching the reserved `Accepting.*` prefix ([\"Accepting\", \"Accepting.AwaitingInitSyn\"]) but no top-level `<sce:session-role kind=\"accept-side\"/>` declaration. The canonical session-FSM accept-side state names are reserved for documents that claim the accept-side role. Repair: add `<sce:session-role kind=\"accept-side\"/>` to the SCXML root if the doc implements the session-FSM accept-side, OR rename the offending state ids to avoid the `Accepting.*` reservation. See claudedocs/rfc-axis3-listener-role-declarations.md.","actual":"Accepting,Accepting.AwaitingInitSyn"}"#,
+            ),
+            (
                 // RFC §5.E B7-η' Atomic A1: on-sample subscriber on a
                 // link whose forge document has no `<sce:stage-pool>` —
                 // `Sample::take()` would route to the runtime's
@@ -7700,8 +7744,9 @@ mod tests {
             (
                 // RFC §5.M lines 2982-2994: reassembly binding on
                 // session_arming link without paired sibling.
-                // NeutralOrDeterministic; two valid repair paths
-                // (add `Accepting.*` substate vs remove binding).
+                // NeutralOrDeterministic; two valid repair paths after
+                // Axis-3 Phase D (declare explicit role on both sides
+                // OR remove the binding).
                 "forge/reassembly-binding-on-unpaired-listener",
                 ValidationError::ReassemblyBindingOnUnpairedListener {
                     pool_name: "rx_reassembly_pool".into(),
@@ -7710,7 +7755,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:c9d90099f8ed9a01","code":"reassembly/binding-on-unpaired-listener","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"reassembly-variant buffer-pool 'rx_reassembly_pool' is bound to link 'udp_listener' on machine 'mcu_node'; the link declares `trust_class: session_arming` but its machine source SCXML has no `Accepting.*` substate, so codegen cannot synthesize the paired `established_session` sibling. watching-zenoh RFC §5.M lines 2982-2994 — only listeners (machine source SCXML carrying `Accepting.*`) auto-rebind a `session_arming` reassembly binding to the `established_session` sibling; without that pairing the binding has no valid landing site. Repair: add an `Accepting.*` substate to machine 'mcu_node's source SCXML (making link 'udp_listener' a real listener so the sibling auto-synthesizes), or remove the reassembly-pool binding from link 'udp_listener'."}"#,
+                r#"{"v":1,"id":"fnv1a:c9d90099f8ed9a01","code":"reassembly/binding-on-unpaired-listener","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"reassembly-variant buffer-pool 'rx_reassembly_pool' is bound to link 'udp_listener' on machine 'mcu_node'; the link declares `trust_class: session_arming` but its machine source SCXML did not pair with a listener-role declaration (deploy `role: listener` + SCXML `<sce:session-role kind=\"accept-side\"/>`), so codegen cannot synthesize the paired `established_session` sibling. watching-zenoh RFC §5.M lines 2982-2994 — only listeners (the explicit Axis-3 deploy/SCXML role pair, see claudedocs/rfc-axis3-listener-role-declarations.md) auto-rebind a `session_arming` reassembly binding to the `established_session` sibling; without that pairing the binding has no valid landing site. Repair: declare `role: listener` on the deploy link AND add `<sce:session-role kind=\"accept-side\"/>` to machine 'mcu_node's source SCXML (making link 'udp_listener' a real listener so the sibling auto-synthesizes), or remove the reassembly-pool binding from link 'udp_listener'."}"#,
             ),
             (
                 // RFC §5.N line 3062: cross-doc link has inbound
@@ -10847,6 +10892,10 @@ mod tests {
             | LinkDeployRoleListenerWithoutScxmlAcceptSideRole
             | ScxmlAcceptSideRoleWithoutListenerLink
             | LinkRoleListenerWithNonSessionArmingTrustClass
+            // Axis-3 inversion Phase D migration-helper —
+            // NeutralOrDeterministic (2-axis repair: add role or
+            // rename states).
+            | ScxmlAcceptSideStatesWithoutRoleDeclaration
             | ExpressionEmpty
             | ExpressionLex
             | ExpressionUnsupportedConstruct
@@ -11353,6 +11402,7 @@ mod tests {
                 | LinkDeployRoleListenerWithoutScxmlAcceptSideRole
                 | ScxmlAcceptSideRoleWithoutListenerLink
                 | LinkRoleListenerWithNonSessionArmingTrustClass
+                | ScxmlAcceptSideStatesWithoutRoleDeclaration
                 | ExpressionEmpty | ExpressionLex
                 | ExpressionUnsupportedConstruct | ExpressionStrictEquality
                 | ExpressionParseMismatch | ExpressionUnexpectedToken
@@ -11579,7 +11629,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            297,
+            298,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries —\
              expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \

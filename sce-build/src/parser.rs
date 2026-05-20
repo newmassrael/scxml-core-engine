@@ -553,6 +553,17 @@ impl SCXMLParser {
         validate_on_sample_event_names(&model, diag_label)?;
         validate_on_sample_callback_paths(&model, diag_label)?;
 
+        // Axis-3 inversion Phase D migration-helper (RFC Q-A8 (c)) —
+        // an SCXML carrying any `Accepting` or `Accepting.*` state id
+        // claims the canonical session-FSM accept-side state shape;
+        // it must declare the role explicitly via
+        // `<sce:session-role kind="accept-side"/>` or it is either a
+        // pre-Axis-3 migration miss or a name collision. The Phase D
+        // walker repurpose (formerly the substate-driven join in
+        // `resolve_listener_links`) lands here so the partial-claim
+        // surfaces at parse time, independently of any deploy.yaml.
+        validate_axis3_accept_side_state_naming(&model, diag_label)?;
+
         // Feature detection
         self.detect_features(&mut model);
 
@@ -3170,6 +3181,52 @@ fn collect_on_sample_blocks(parent: &roxmltree::Node, out: &mut Vec<crate::model
             document_order,
         });
     }
+}
+
+/// Axis-3 inversion Phase D migration-helper (RFC Q-A8 (c) flip) —
+/// fires `scxml/accept-side-states-without-role-declaration` when an
+/// SCXML carries any state-id matching the canonical session-FSM
+/// accept-side prefix (`Accepting` or `Accepting.*` per the trailing-
+/// dot guard the C10-α walker used) but has no top-level
+/// `<sce:session-role kind="accept-side"/>` declaration. Repurposes
+/// the predicate behaviour that was previously consumed by
+/// `resolve_listener_links`'s substate-walker join; the prefix-match
+/// matrix is unchanged — only the consumer flipped.
+///
+/// The check is parser-internal (no deploy.yaml needed) so the
+/// diagnostic surfaces on any SCXML the build sees, regardless of
+/// whether the document participates in a deploy listener pair.
+/// `offending_ids` ride the diagnostic in document-order (the natural
+/// `BTreeMap::keys` iteration on `SCXMLModel.states`) so the message
+/// is deterministic across rebuilds.
+fn validate_axis3_accept_side_state_naming(
+    model: &crate::model::SCXMLModel,
+    diag_label: &str,
+) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
+    use crate::forge::error::{Located, ValidationError};
+    use crate::model::SessionRoleKind;
+    if model
+        .declared_session_roles
+        .contains(&SessionRoleKind::AcceptSide)
+    {
+        // Author claimed the role — naming is sanctioned.
+        return Ok(());
+    }
+    let offending_ids: Vec<String> = model
+        .states
+        .keys()
+        .filter(|id| *id == "Accepting" || id.starts_with("Accepting."))
+        .cloned()
+        .collect();
+    if offending_ids.is_empty() {
+        return Ok(());
+    }
+    Err(Located::new(
+        ValidationError::ScxmlAcceptSideStatesWithoutRoleDeclaration { offending_ids }.into(),
+        diag_label,
+        None,
+        None,
+    ))
 }
 
 /// watching-zenoh RFC §5.E B7-η' Q-OnSample-2 (a) placement validator.

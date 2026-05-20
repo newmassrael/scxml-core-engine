@@ -2193,18 +2193,20 @@ pub enum ValidationError {
     /// [`crate::mesh::deploy::validate_reassembly_cross_doc`] (C13-α-2
     /// + C13-γ landing site): when the bound link's trust_class is
     /// `session_arming` AND the orchestrator-resolved listener-link
-    /// set does NOT contain the link name (i.e. no `Accepting.*`
-    /// substate on the machine's source SCXML), the validator fires
-    /// this code in place of the historic
+    /// set does NOT contain the link name (i.e. the deploy link has
+    /// no `role: listener` AND/OR the machine's source SCXML has no
+    /// `<sce:session-role kind="accept-side"/>` declaration after
+    /// Axis-3 Phase D walker deletion), the validator fires this
+    /// code in place of the historic
     /// `reassembly/untrusted-link-binding` for the session-arming
     /// subcase. NeutralOrDeterministic — two valid repair paths:
-    /// add an `Accepting.*` substate to the machine's source SCXML
+    /// declare the explicit listener-pair role on both sides
     /// (making the link a real listener so the sibling auto-
     /// synthesizes), or remove the reassembly-pool binding.
     #[error(
-        "reassembly-variant buffer-pool '{pool_name}' is bound to link '{link_name}' on machine '{machine}'; the link declares `trust_class: session_arming` but its machine source SCXML has no `Accepting.*` substate, so codegen cannot synthesize the paired `established_session` sibling. \
-         watching-zenoh RFC §5.M lines 2982-2994 — only listeners (machine source SCXML carrying `Accepting.*`) auto-rebind a `session_arming` reassembly binding to the `established_session` sibling; without that pairing the binding has no valid landing site. \
-         Repair: add an `Accepting.*` substate to machine '{machine}'s source SCXML (making link '{link_name}' a real listener so the sibling auto-synthesizes), or remove the reassembly-pool binding from link '{link_name}'."
+        "reassembly-variant buffer-pool '{pool_name}' is bound to link '{link_name}' on machine '{machine}'; the link declares `trust_class: session_arming` but its machine source SCXML did not pair with a listener-role declaration (deploy `role: listener` + SCXML `<sce:session-role kind=\"accept-side\"/>`), so codegen cannot synthesize the paired `established_session` sibling. \
+         watching-zenoh RFC §5.M lines 2982-2994 — only listeners (the explicit Axis-3 deploy/SCXML role pair, see claudedocs/rfc-axis3-listener-role-declarations.md) auto-rebind a `session_arming` reassembly binding to the `established_session` sibling; without that pairing the binding has no valid landing site. \
+         Repair: declare `role: listener` on the deploy link AND add `<sce:session-role kind=\"accept-side\"/>` to machine '{machine}'s source SCXML (making link '{link_name}' a real listener so the sibling auto-synthesizes), or remove the reassembly-pool binding from link '{link_name}'."
     )]
     ReassemblyBindingOnUnpairedListener {
         pool_name: String,
@@ -2754,6 +2756,46 @@ pub enum ValidationError {
         /// [`crate::mesh::deploy::TrustClass::as_str`] — stable across
         /// Rust edition / `Debug`-impl changes.
         trust_class: String,
+    },
+
+    /// Axis-3 inversion Phase D migration-helper (RFC Q-A8 (c) flip)
+    /// — an SCXML document carries any `Accepting` or `Accepting.*`
+    /// state-id but no `<sce:session-role kind="accept-side"/>` top-
+    /// level declaration. The canonical session-FSM state naming
+    /// (`docs/session-fsm.md` §2.6) is reserved for the accept-side
+    /// session FSM; using it without claiming the role is either a
+    /// migration mistake (legacy pre-Axis-3 SCXML not yet declaring
+    /// the role) or a naming collision (an unrelated terms-acceptance
+    /// flow happening to share the stem).
+    ///
+    /// Repair: add `<sce:session-role kind="accept-side"/>` to the
+    /// SCXML root if the document genuinely implements the session-
+    /// FSM accept-side, OR rename the offending state ids so they do
+    /// not collide with the reserved `Accepting.*` prefix.
+    /// `NeutralOrDeterministic` (2-axis repair).
+    ///
+    /// Phase D invariant: after Phase C migration, the test corpus is
+    /// expected to be free of fixtures triggering this diagnostic.
+    /// Production SCXML adopting SCE must follow the same discipline.
+    #[error(
+        "SCXML doc carries state ids matching the reserved `Accepting.*` prefix \
+         ({offending_ids:?}) but no top-level \
+         `<sce:session-role kind=\"accept-side\"/>` declaration. The canonical \
+         session-FSM accept-side state names are reserved for documents that \
+         claim the accept-side role. Repair: add \
+         `<sce:session-role kind=\"accept-side\"/>` to the SCXML root if the doc \
+         implements the session-FSM accept-side, OR rename the offending state \
+         ids to avoid the `Accepting.*` reservation. See \
+         claudedocs/rfc-axis3-listener-role-declarations.md."
+    )]
+    ScxmlAcceptSideStatesWithoutRoleDeclaration {
+        /// Sorted list of state ids that triggered the reserved-prefix
+        /// check. Empty would not reach this variant, so the field is
+        /// always non-empty at the diagnostic emit site. `Vec` not
+        /// `BTreeSet` so insertion order is preserved for the
+        /// diagnostic's `actual` payload — sorted-by-construction at
+        /// the parser layer for determinism.
+        offending_ids: Vec<String>,
     },
 }
 
