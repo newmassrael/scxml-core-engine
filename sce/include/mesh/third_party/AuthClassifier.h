@@ -19,13 +19,46 @@
 // (kept small in practice — zenoh ZException::what() returns the
 // vendored zenoh-cpp error message, bounded by zenoh's own
 // formatting).
+//
+// docs/SCE_AXIS_6_PATTERNS.md A6-001 — production-deferred limitation.
+// zenoh-cpp current versions wrap every connection error (including
+// mTLS handshake failure) in a generic Z_ENETWORK ZException whose
+// what() payload reads `"Failed to open session(Error code: -4 )"`.
+// None of the manifest keywords match, so `isZenohAuthFailMessage`
+// always returns false in production — the row-10 emit path is dead
+// code under the current zenoh-cpp surface. The spec-side §16.7 row
+// 10 contract remains valid (author-facing closure shipped in
+// `73087043`), but live production emission of UNAUTHORIZED awaits
+// zenoh-cpp upstream exposing a typed auth-failure discriminator that
+// SCE can catch directly. The axis-6 CI fixture (Stage 2,
+// `tests/mesh/AuthClassifierCIFixture.cpp::RowTenLimitationIsLockedIn`)
+// locks the limitation in — when it ever fires, the remediation steps
+// are listed there. Header-only future-proofing is retained so the
+// runtime classifier transitions to live the moment upstream message
+// vocabulary starts containing a manifest keyword.
 
 #pragma once
 
+#include <array>
 #include <string>
 #include <string_view>
 
 namespace SCE::Mesh::ThirdParty {
+
+/// Single-source-of-truth keyword manifest for the zenoh-cpp auth-fail
+/// substring scan. Both the runtime classifier (`isZenohAuthFailMessage`)
+/// and the axis-6 CI fixture (`AuthClassifierCIFixture`) consume this
+/// array — adding a keyword requires adding a matching fixture line
+/// exercising the keyword under a real zenoh-cpp handshake failure;
+/// removing one fails the fixture. The conservative-widening rule from
+/// `docs/SCE_AXIS_6_PATTERNS.md` becomes structurally enforced rather
+/// than documentation-only.
+inline constexpr std::array<std::string_view, 4> kZenohAuthFailKeywords{
+    "certificate",
+    "tls",
+    "auth",
+    "handshake",
+};
 
 /// SCE_MESH.md §16.7 row 10 — case-insensitive substring scan against
 /// the four spec-named auth-fail keywords. Returns `true` iff the
@@ -50,10 +83,12 @@ namespace SCE::Mesh::ThirdParty {
         lower.push_back(
             (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c);
     }
-    return lower.find("certificate") != std::string::npos ||
-           lower.find("tls")         != std::string::npos ||
-           lower.find("auth")        != std::string::npos ||
-           lower.find("handshake")   != std::string::npos;
+    for (auto keyword : kZenohAuthFailKeywords) {
+        if (lower.find(keyword) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
 }
 
 }  // namespace SCE::Mesh::ThirdParty

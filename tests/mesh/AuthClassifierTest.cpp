@@ -94,3 +94,21 @@ TEST(AuthClassifierTest, SubstringRuleAcceptsAuthorityLikeWords) {
     EXPECT_FALSE(isZenohAuthFailMessage("automatic retry exhausted"));
     EXPECT_FALSE(isZenohAuthFailMessage("health-check failed"));
 }
+
+TEST(AuthClassifierTest, EveryManifestKeywordFires) {
+    // Drift guard: every keyword listed in kZenohAuthFailKeywords must
+    // independently trigger isZenohAuthFailMessage when embedded in an
+    // otherwise non-auth message. Adding a keyword to the manifest
+    // without exercising it via this test (or removing one while a
+    // per-keyword test still covers it) creates a silent split between
+    // manifest declaration and runtime behaviour — exactly the axis-6
+    // drift this header is meant to eliminate.
+    for (auto keyword : SCE::Mesh::ThirdParty::kZenohAuthFailKeywords) {
+        std::string msg = "zenoh peer reported '";
+        msg.append(keyword.data(), keyword.size());
+        msg.append("' fault");
+        EXPECT_TRUE(isZenohAuthFailMessage(msg))
+            << "manifest keyword '" << keyword
+            << "' did not fire isZenohAuthFailMessage()";
+    }
+}

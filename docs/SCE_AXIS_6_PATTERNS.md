@@ -52,46 +52,46 @@ callback, debounces it, or omits it entirely.
   flips every UNAUTHORIZED to TRANSPORT_UNAVAILABLE. SCXML author's
   `<transition cond="reason == 'UNAUTHORIZED'">` never fires.
 - **Absorber technique**: A (dynamic verification gate).
-- **Absorber fixture**: `tests/mesh/AuthClassifierCIFixture.cpp` spawns
-  zenohd with mTLS configured against fresh openssl-generated certs at ctest
-  run time, attempts connection with a mismatched client cert, captures
-  `ZException::what()`, and asserts each of the 4 keywords fires under a
-  distinct failure mode (cert subject mismatch / TLS version mismatch /
-  handshake timeout / auth credential refusal).
+- **Absorber fixture**: `tests/mesh/AuthClassifierCIFixture.cpp` generates
+  fresh CA-mismatched cert material at ctest run time (openssl shell-out
+  inside the fixture's test-suite setup), spins two in-process zenoh
+  Sessions configured for mTLS, captures the client-side
+  `ZException::what()`, and asserts both (a) the throw arrived (Stage 1)
+  and (b) the current limitation status (Stage 2 — see Limitation below).
 - **Keyword manifest**: `kZenohAuthFailKeywords` `constexpr` array in
   `AuthClassifier.h` — single source consumed by both the runtime classifier
   and the fixture. Conservative widening (per row-10 RFC Q3 lock-in) is
-  structurally enforced: adding a keyword requires adding a fixture line;
-  removing a keyword fails the fixture.
+  structurally enforced by the `EveryManifestKeywordFires` unit test:
+  adding a keyword requires adding a fixture line; removing a keyword
+  fails the unit test.
 - **Origin**: §16.7 row 10 UNAUTHORIZED closure (`73087043`); axis-6
   formalisation (this RFC).
 
-### A6-002 — `SomeipAvailabilityProbe` (vsomeip initial-edge callback claim)
+#### Limitation — production-deferred (2026-05-20)
 
-- **Header**: `sce/include/mesh/third_party/SomeipAvailabilityProbe.h`
-- **Asserted upstream surface**: vsomeip fires
-  `register_availability_handler`'s callback on the initial
-  `NOT_AVAILABLE → AVAILABLE` transition. SCE's `OutboundBuffer` drain logic
-  depends on this initial callback to leave the not-ready state.
-- **Drift consequence**: if vsomeip's contract changes (initial-callback
-  debounce, or first-callback semantics altered in any minor release), the
-  `OutboundBuffer` never drains — silent hang at startup, no error event
-  raised. The author has no diagnostic.
-- **Absorber technique**: A (dynamic verification gate) + B (defensive
-  idempotent absorption).
-- **Absorber API**:
-  `SCE::Mesh::ThirdParty::SomeipAvailabilityProbe::probeAndDispatch(app,
-  service, instance, handler)` performs `register_availability_handler` +
-  immediate `is_available` + synthetic handler invocation matching the
-  callback signature. Single-call API forces the absorption (no caller-side
-  footgun).
-- **Absorber fixture**: `tests/mesh/SomeipAvailabilityProbeTest.cpp`
-  exercises the probe with a vsomeip mock that does NOT fire the initial
-  callback, asserting the handler is still invoked exactly once via the
-  probe path with the correct availability state.
-- **Version pin**: vsomeip pinned via cmake `FetchContent_Declare(GIT_TAG)`
-  (or submodule). The pin is a real-version reference, not an SCE version.
-- **Origin**: ownership-inversion 26-instance audit (2026-05-20).
+The axis-6 fixture surfaced that current zenoh-cpp versions wrap every
+connection error (including mTLS handshake failure) in a generic
+`Z_ENETWORK = -4` `ZException` whose `what()` payload is `"Failed to open
+session(Error code: -4 )"`. None of the manifest keywords match that
+string, so the runtime `isZenohAuthFailMessage` returns false and SCE's
+§16.7 row-10 production codepath does not fire — the spec contract is
+shipped (closure `73087043`) but live production emission of
+`error.communication{reason: UNAUTHORIZED}` is deferred until zenoh-cpp
+upstream exposes a typed auth-failure discriminator (e.g.
+`ZAuthException`) that SCE can catch directly.
+
+The runtime classifier is retained as **future-proofing**: the moment a
+zenoh-cpp release ships with auth-fail messages containing a manifest
+keyword in `what()`, the production path activates without any SCE-side
+edit. The CI fixture's `RowTenLimitationIsLockedIn` assertion catches that
+transition — when it ever fails, the remediation steps are inline at the
+failing assertion (flip to `EXPECT_TRUE`, remove the limitation notes
+here and at `CommunicationError.h::transport_status`, add a release-note
+entry naming the activating zenoh-cpp version).
+
+The SOMEIP arm of row 10 (binding-declared SD-denial classification via
+`sd_denied_classifies_as_unauthorized: true`) is unaffected by this
+limitation — no text inspection is involved.
 
 ## Reactivation protocol
 

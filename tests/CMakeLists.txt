@@ -1383,6 +1383,54 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     add_test(NAME mesh_auth_classifier_verification
              COMMAND mesh_auth_classifier_test)
 
+    # ── AuthClassifier axis-6 CI fixture (docs/SCE_AXIS_6_PATTERNS.md
+    # A6-001) ─────────────────────────────────────────────────────
+    # Dynamic verification gate: exercises isZenohAuthFailMessage
+    # against the actually-linked zenoh-cpp binary by triggering a
+    # real mTLS handshake failure between two in-process Sessions.
+    # Catches zenoh-cpp upgrade-time drift in the auth-fail error
+    # text before consumers see the regression.
+    #
+    # Gated on BOTH `openssl` (binary, for fresh per-test cert
+    # generation) and zenoh-cpp (for the actual handshake). Either
+    # missing, the fixture is not built. We need only the executable —
+    # the test runtime shells out for cert generation rather than
+    # linking against libssl. find_package is called here directly so
+    # the gate doesn't depend on the zenoh-cpp compile block farther
+    # down evaluating before this one.
+    find_program(OPENSSL_EXECUTABLE openssl)
+    find_package(zenohc QUIET)
+    find_package(zenohcxx QUIET)
+    if(OPENSSL_EXECUTABLE AND zenohc_FOUND AND zenohcxx_FOUND)
+        add_executable(mesh_auth_classifier_ci_fixture
+            mesh/AuthClassifierCIFixture.cpp
+        )
+
+        target_include_directories(mesh_auth_classifier_ci_fixture
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+        )
+
+        target_link_libraries(mesh_auth_classifier_ci_fixture
+            PRIVATE
+                sce_mesh_common
+                zenohcxx::zenohc
+                GTest::gtest_main
+                pthread
+        )
+
+        target_compile_features(mesh_auth_classifier_ci_fixture PRIVATE cxx_std_17)
+
+        apply_sce_test_policies(mesh_auth_classifier_ci_fixture)
+
+        add_test(NAME mesh_auth_classifier_ci_verification
+                 COMMAND mesh_auth_classifier_ci_fixture)
+        set_tests_properties(mesh_auth_classifier_ci_verification PROPERTIES
+            TIMEOUT 30)
+    else()
+        message(STATUS "axis-6: openssl binary or zenoh-cpp not found — skipping mesh_auth_classifier_ci_fixture")
+    endif()
+
     # ── DedupRouter unit tests (SCE_MESH.md §10.5) ────────────────
     # Pure unit tests on the per-sender envelope-id dedup filter.
     # Verifies the 256-entry ring (novel/repeat/eviction/wrap) plus

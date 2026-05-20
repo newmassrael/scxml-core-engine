@@ -151,6 +151,15 @@ struct CommunicationError {
     /// (`reason: "UNAUTHORIZED"`) on the wire as the SCE-level signal.
     /// Absent on every other row's raise site — row 10 is the only
     /// producer.
+    ///
+    /// Production-deferred under current zenoh-cpp (axis-6 limitation,
+    /// docs/SCE_AXIS_6_PATTERNS.md A6-001). zenoh-cpp generic-wraps
+    /// every connection error into `Z_ENETWORK` so the `ZException::what()`
+    /// substring scan in `mesh/third_party/AuthClassifier.h` does not
+    /// fire — the zenoh-side row-10 raise path is dead code until
+    /// upstream exposes a typed auth-failure discriminator. The SOMEIP
+    /// SD-denial arm remains live (binding-declared classification, no
+    /// text inspection needed).
     std::optional<std::string> transport_status;
 
     /// §16.7 row 3 (DELIVERY_EXHAUSTED): total number of dispatch
