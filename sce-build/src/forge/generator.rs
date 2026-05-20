@@ -4299,13 +4299,12 @@ fn repeat_streaming_encode_block(
         return repeat_streaming_encode_block_gated(field, fields, pred, body_encoder, lang);
     }
     match lang {
-        Language::Rust => format!(
-            "        for _e in &self.{id} {{\n            _e.encode(w)?;\n        }}"
-        ),
+        Language::Rust => {
+            format!("        for _e in &self.{id} {{\n            _e.encode(w)?;\n        }}")
+        }
         Language::Cpp => format!(
             "        for (const auto& _e : {id}) {{\n            \
-                 auto _sub = _e.encode();\n            \
-                 r.insert(r.end(), _sub.begin(), _sub.end());\n        \
+                 if (auto _se = _e.encode(w); _se) return _se;\n        \
              }}"
         ),
         // Kotlin: `for (_e in this.<id>) { r.addAll(_e.encode().toList()) }`.
@@ -4764,18 +4763,20 @@ fn embed_streaming_encode_block(
             }
         }
         Language::Cpp => {
+            // Embed encode now threads the parent sink through the
+            // nested codec — no intermediate vector splice (mirrors
+            // the Rust arm's `b.encode(w, ...)?` shape).
+            let comma_thread = if thread_arg_norm.is_empty() {
+                String::new()
+            } else {
+                format!(", {thread_arg_norm}")
+            };
             if !has_present_if {
-                format!(
-                    "        {{\n            \
-                     auto _sub = {id}.encode({thread_arg_norm});\n            \
-                     r.insert(r.end(), _sub.begin(), _sub.end());\n        \
-                 }}"
-                )
+                format!("        if (auto _e = {id}.encode(w{comma_thread}); _e) return _e;")
             } else {
                 format!(
                     "        if (this->{id}.has_value()) {{\n            \
-                     auto _sub = this->{id}->encode({thread_arg_norm});\n            \
-                     r.insert(r.end(), _sub.begin(), _sub.end());\n        \
+                     if (auto _e = this->{id}->encode(w{comma_thread}); _e) return _e;\n        \
                  }}"
                 )
             }
@@ -5511,8 +5512,7 @@ fn repeat_streaming_encode_block_gated(
         Language::Cpp => format!(
             "        if (this->{id}.has_value()) {{\n            \
                  for (const auto& _e : *this->{id}) {{\n                \
-                     auto _sub = _e.encode();\n                \
-                     r.insert(r.end(), _sub.begin(), _sub.end());\n            \
+                     if (auto _se = _e.encode(w); _se) return _se;\n            \
                  }}\n        \
              }}"
         ),
@@ -5922,9 +5922,9 @@ fn tlv_chain_streaming_encode_block(
     use crate::generator::Language;
     let id = &field.id;
     match lang {
-        Language::Rust => format!(
-            "        for _e in &self.{id} {{\n            _e.encode(w)?;\n        }}"
-        ),
+        Language::Rust => {
+            format!("        for _e in &self.{id} {{\n            _e.encode(w)?;\n        }}")
+        }
         Language::C11 => {
             let id_snake = filters::to_snake_case(id.to_string());
             let encoded_t = if let Some(stripped) = body_encoder.strip_suffix("_encode") {
@@ -5952,8 +5952,7 @@ fn tlv_chain_streaming_encode_block(
         // contract).
         Language::Cpp => format!(
             "        for (const auto& _e : {id}) {{\n            \
-                 auto _sub = _e.encode();\n            \
-                 r.insert(r.end(), _sub.begin(), _sub.end());\n        \
+                 if (auto _se = _e.encode(w); _se) return _se;\n        \
              }}"
         ),
         Language::Kotlin => format!(
@@ -6283,8 +6282,7 @@ fn tlv_chain_streaming_encode_block_gated(
         Language::Cpp => format!(
             "        if (this->{id}.has_value()) {{\n            \
                  for (const auto& _e : *this->{id}) {{\n                \
-                     auto _sub = _e.encode();\n                \
-                     r.insert(r.end(), _sub.begin(), _sub.end());\n            \
+                     if (auto _se = _e.encode(w); _se) return _se;\n            \
                  }}\n        \
              }}"
         ),
@@ -7948,10 +7946,12 @@ fn present_if_encode_tail(
                  w.write_bytes(_v)?;\n        \
              }}"
         ),
-        (Language::Cpp, false) => format!("        r.insert(r.end(), {id}.begin(), {id}.end());"),
+        (Language::Cpp, false) => {
+            format!("        if (auto _e = w.write_bytes({id}.data(), {id}.size()); _e) return _e;")
+        }
         (Language::Cpp, true) => format!(
             "        if ({id}.has_value()) {{\n            \
-                 r.insert(r.end(), {id}->begin(), {id}->end());\n        \
+                 if (auto _e = w.write_bytes({id}->data(), {id}->size()); _e) return _e;\n        \
              }}"
         ),
         // Kotlin: ByteArray's `.toList()` boxes each Byte so addAll
@@ -8051,9 +8051,8 @@ fn present_if_encode_string_length_ref(
         // conversion warning that `r.insert(r.end(), str.begin(),
         // str.end())` would emit on `char → uint8_t`.
         (Language::Cpp, None) => format!(
-            "        r.insert(r.end(),\n            \
-                 reinterpret_cast<const std::uint8_t*>({id}.data()),\n            \
-                 reinterpret_cast<const std::uint8_t*>({id}.data()) + {id}.size());"
+            "        if (auto _e = w.write_bytes(\n            \
+                 reinterpret_cast<const std::uint8_t*>({id}.data()), {id}.size()); _e) return _e;"
         ),
         // Wire RFC Phase B Y0a — gated String encode on Cpp:
         // `std::optional<std::string>::has_value()` + arrow access on
@@ -8061,9 +8060,8 @@ fn present_if_encode_string_length_ref(
         // through `->data()` keeps the same byte-aliasing pattern.
         (Language::Cpp, Some(_)) => format!(
             "        if ({id}.has_value()) {{\n            \
-                 r.insert(r.end(),\n                \
-                     reinterpret_cast<const std::uint8_t*>({id}->data()),\n                \
-                     reinterpret_cast<const std::uint8_t*>({id}->data()) + {id}->size());\n        \
+                 if (auto _e = w.write_bytes(\n                \
+                     reinterpret_cast<const std::uint8_t*>({id}->data()), {id}->size()); _e) return _e;\n        \
              }}"
         ),
         // Kotlin `String.toByteArray(charset)` is the standard library
@@ -8192,10 +8190,12 @@ fn present_if_encode_length_ref(
                  w.write_bytes(_v)?;\n        \
              }}"
         ),
-        (Language::Cpp, false) => format!("        r.insert(r.end(), {id}.begin(), {id}.end());"),
+        (Language::Cpp, false) => {
+            format!("        if (auto _e = w.write_bytes({id}.data(), {id}.size()); _e) return _e;")
+        }
         (Language::Cpp, true) => format!(
             "        if ({id}.has_value()) {{\n            \
-                 r.insert(r.end(), {id}->begin(), {id}->end());\n        \
+                 if (auto _e = w.write_bytes({id}->data(), {id}->size()); _e) return _e;\n        \
              }}"
         ),
         (Language::Kotlin, false) => format!("        r.addAll(this.{id}.toList())"),
@@ -8593,7 +8593,9 @@ fn streaming_fixed_field_encode_rust(field: &CodecField, default_endian: Endian,
         } else if shift == 0 {
             lines.push_str(&format!("        w.write_u8(self.{id} as u8)?;\n"));
         } else {
-            lines.push_str(&format!("        w.write_u8((self.{id} >> {shift}) as u8)?;\n"));
+            lines.push_str(&format!(
+                "        w.write_u8((self.{id} >> {shift}) as u8)?;\n"
+            ));
         }
     }
     lines.trim_end().to_string()
@@ -8619,7 +8621,9 @@ fn streaming_fixed_field_encode_rust_from_local(
         } else if shift == 0 {
             lines.push_str("            w.write_u8(_v as u8)?;\n");
         } else {
-            lines.push_str(&format!("            w.write_u8((_v >> {shift}) as u8)?;\n"));
+            lines.push_str(&format!(
+                "            w.write_u8((_v >> {shift}) as u8)?;\n"
+            ));
         }
     }
     lines.trim_end().to_string()
@@ -8636,14 +8640,19 @@ fn streaming_fixed_field_encode_cpp(field: &CodecField, default_endian: Endian, 
             Endian::Big | Endian::Native => (n - 1 - i) * 8,
         };
         if n == 1 {
-            lines.push_str(&format!("        r.push_back({id});\n"));
+            // Single-byte uint8 carrier: no narrowing cast needed; the
+            // value already fits write_u8's parameter type. Keeps the
+            // B5-ν injection needle simple (`w.write_u8({id})`).
+            lines.push_str(&format!(
+                "        if (auto _e = w.write_u8({id}); _e) return _e;\n"
+            ));
         } else if shift == 0 {
             lines.push_str(&format!(
-                "        r.push_back(static_cast<std::uint8_t>({id}));\n"
+                "        if (auto _e = w.write_u8(static_cast<std::uint8_t>({id})); _e) return _e;\n"
             ));
         } else {
             lines.push_str(&format!(
-                "        r.push_back(static_cast<std::uint8_t>({id} >> {shift}));\n"
+                "        if (auto _e = w.write_u8(static_cast<std::uint8_t>({id} >> {shift})); _e) return _e;\n"
             ));
         }
     }
@@ -8664,12 +8673,14 @@ fn streaming_fixed_field_encode_cpp_from_local(
             Endian::Big | Endian::Native => (n - 1 - i) * 8,
         };
         if n == 1 {
-            lines.push_str("            r.push_back(_v);\n");
+            lines.push_str("            if (auto _e = w.write_u8(_v); _e) return _e;\n");
         } else if shift == 0 {
-            lines.push_str("            r.push_back(static_cast<std::uint8_t>(_v));\n");
+            lines.push_str(
+                "            if (auto _e = w.write_u8(static_cast<std::uint8_t>(_v)); _e) return _e;\n",
+            );
         } else {
             lines.push_str(&format!(
-                "            r.push_back(static_cast<std::uint8_t>(_v >> {shift}));\n"
+                "            if (auto _e = w.write_u8(static_cast<std::uint8_t>(_v >> {shift})); _e) return _e;\n"
             ));
         }
     }
@@ -9278,10 +9289,10 @@ fn vle_encode_block(value_expr: &str, width_bits: u32, lang: crate::generator::L
             "        {{\n            \
                  std::uint64_t _w = static_cast<std::uint64_t>({value_expr});\n            \
                  while (_w >= 0x80) {{\n                \
-                     r.push_back(static_cast<std::uint8_t>((_w & 0x7F) | 0x80));\n                \
+                     if (auto _e = w.write_u8(static_cast<std::uint8_t>((_w & 0x7F) | 0x80)); _e) return _e;\n                \
                      _w >>= 7;\n            \
                  }}\n            \
-                 r.push_back(static_cast<std::uint8_t>(_w));\n        \
+                 if (auto _e = w.write_u8(static_cast<std::uint8_t>(_w)); _e) return _e;\n        \
              }}"
         ),
         Language::C11 => format!(
@@ -10113,9 +10124,14 @@ fn inject_b5_nu_carrier_suffix(
             block.replace(&needle, &replacement)
         }
         Language::Cpp => {
-            // `        r.push_back(<id>);` → `        r.push_back(<id> | _derived_<id>);`
-            let needle = format!("r.push_back({field_id});");
-            let replacement = format!("r.push_back({field_id}{or_suffix});");
+            // Sink-based emit: `w.write_u8(<id>);` → `w.write_u8(<id> | _derived_<id>);`.
+            // The Cpp uint8 carrier path emits the bare identifier
+            // (no narrowing cast — see `streaming_fixed_field_encode_cpp`
+            // n=1 branch). B5-ν derivation v1 lock-in only targets uint8
+            // carriers, so the single-byte form is the only relevant
+            // needle.
+            let needle = format!("w.write_u8({field_id});");
+            let replacement = format!("w.write_u8({field_id}{or_suffix});");
             block.replace(&needle, &replacement)
         }
         Language::Kotlin => {
@@ -13893,7 +13909,20 @@ fn stateful_import_method_renames(
             //   Go       `p.{Member}.Method()`       `p.`, PascalCase
             //   Python   `self.{member}.method()`    `self.`
             let expansion = match language {
-                generator::Language::Cpp | generator::Language::Kotlin => {
+                generator::Language::Cpp => {
+                    // RFC §5.B B1-α: Cpp codec's `encode` is the sink-based
+                    // primary (`encode(SceSink&) → std::optional<CodecError>`);
+                    // procedure call sites (`<send sce:payload="frame.encode()"/>`)
+                    // want the heap-backed facade that returns
+                    // `std::vector<std::uint8_t>`.
+                    let target_method = if *method == "encode" {
+                        "encode_to_vec"
+                    } else {
+                        method
+                    };
+                    format!("{}.{}", imp.member_name, target_method)
+                }
+                generator::Language::Kotlin => {
                     format!("{}.{}", imp.member_name, method)
                 }
                 generator::Language::Rust => {

@@ -116,7 +116,7 @@ public:
                     SCE::Forge::ProcedureServiceRequest req;
                     req.service = "Diag";
                     req.addr = std::to_string(ecuAddr_);
-                    req.payload = frame_.encode();
+                    req.payload = frame_.encode_to_vec();
                     auto resp = serviceHandler_(req);
                     return { resp.success ? Event::Ok : Event::Fail, resp.data };
                 }

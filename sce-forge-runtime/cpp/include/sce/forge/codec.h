@@ -1,31 +1,35 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
-// sce_forge_runtime — codec cursor + typed error contract.
+// sce_forge_runtime — codec cursor + sink + typed error contract.
 //
 // Mirrors `sce-forge-runtime/rust/src/codec.rs`. RFC §5.B L494-519 pins
 // the per-language cursor + need-more-bytes contract on decode so a
-// truncated input never aborts.
-//
-// B1-prep ships the minimum API the existing fixed-width codec fixtures
-// need: `peek_slice`, `advance`, `remaining`. Streaming readers
-// (`read_u8`, `read_vle_*`, `read_tag`) land alongside their first
-// consumer in B1-α/β/δ. Encode-side cursor + `BufferOverflow` lands in
-// B1-α (variable-length VLE encode is the first reachable consumer).
+// truncated input never aborts. RFC B1-α extends the contract to the
+// write side: `SceSink` is the abstract base that codec `encode`
+// bodies emit into; `VectorSink` (heap-backed, infallible) and
+// `SpanSink` (caller-owned `uint8_t*` + cap, raises `BufferOverflow`
+// at the cap) are the two concrete impls. Caller owns the destination
+// storage, mirroring the borrow contract on the decode cursor side.
 
 #pragma once
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <optional>
+#include <vector>
 
 namespace SCE::Forge {
 
-/// Typed decode error. The B1-β variant primitive intentionally does
-/// NOT need a typed `UnknownVariantTag` — RFC §5.B requires
-/// `<sce:default>` when arms don't exhaust the tag domain (build-time
-/// `codec/variant-arm-unreachable` otherwise), so the default arm
-/// catches every unmatched tag at runtime.
+/// Typed codec error. Used by decode (returned via `std::nullopt`
+/// sentinel + cursor side-flag) and encode (`std::optional<CodecError>`
+/// return: `std::nullopt` = success, value = error).
+///
+/// The B1-β variant primitive intentionally does NOT need a typed
+/// `UnknownVariantTag` — RFC §5.B requires `<sce:default>` when arms
+/// don't exhaust the tag domain (build-time `codec/variant-arm-unreachable`
+/// otherwise), so the default arm catches every unmatched tag at runtime.
 ///
 /// The B3-α TLV chain primitive emits on cpp after the B5-ε closures
 /// (it was originally MCU-only as a conservative scope choice; Zenoh
@@ -40,6 +44,16 @@ enum class CodecError : std::uint8_t {
     /// A `vle_u<N>` field's continuation chain implies a value wider
     /// than the declared type. RFC §5.B `codec/vle-width-overflow`.
     VleWidthOverflow = 2,
+    /// RFC §5.B B1-α encode-side counterpart to `NeedMoreBytes`: the
+    /// destination sink reported insufficient remaining capacity for
+    /// the next write. Only the bounded `SpanSink` (caller-owned
+    /// `uint8_t*` + cap) can raise this; the heap-backed `VectorSink`
+    /// grows on demand and is effectively infallible. Codec authors
+    /// decide per call site whether the destination is bounded; a
+    /// fixed-frame on-wire codec driving a DMA bounce buffer will run
+    /// on `SpanSink` and surface overflow as a typed error rather
+    /// than aborting.
+    BufferOverflow = 3,
 };
 
 /// Read-only cursor over a borrowed input buffer. Decode bodies use
@@ -138,6 +152,180 @@ private:
 /// would otherwise force every String-bearing codec's signature to
 /// surface the variant (Rust + Go + Python construct the variant
 /// because their decode return types already distinguish error cases).
+// ── Write-side sink ──────────────────────────────────────────────
+
+/// Write-side cursor for codec emit. Object-oriented base class that
+/// generated `encode` bodies accept by reference.
+///
+/// `SceSink` mirrors the read-side `SceCursor` borrow contract: callers
+/// own the destination storage, and codec bodies append bytes to it
+/// positionally without owning the buffer. The pure-virtual
+/// `write_bytes` writes raw bytes; per-width helpers (`write_u8`,
+/// `write_u16_le`, …) are provided as non-virtual default methods so
+/// concrete sinks can override `write_bytes` once without re-stating
+/// the per-width call surface.
+///
+/// Return-shape mirror: encode returns `std::optional<CodecError>` —
+/// `std::nullopt` on success, populated variant on failure. This
+/// mirrors decode's `std::optional<T>` (decode returns Optional<Value>;
+/// encode returns Optional<Error>) and keeps the `CodecError` enum
+/// pure (no `Ok` sentinel polluting the error type).
+class SceSink {
+public:
+    virtual ~SceSink() = default;
+
+    /// Append `n` bytes from `data` to the underlying storage.
+    /// Concrete sinks raise `CodecError::BufferOverflow` when the
+    /// destination has insufficient remaining capacity; growable sinks
+    /// return `std::nullopt`.
+    [[nodiscard]] virtual std::optional<CodecError>
+    write_bytes(const std::uint8_t* data, std::size_t n) noexcept = 0;
+
+    /// Bytes written by this sink instance since it wrapped the
+    /// destination. Used by codec emit for offset-aware writes (DMA-
+    /// aligned field padding, length-prefix back-patching). Distinct
+    /// from "total bytes in destination" — a `VectorSink` over a
+    /// `std::vector` that already had bytes returns the delta, not
+    /// the absolute length, so codec emit positional math operates
+    /// within its own encoding regardless of coalesced-send prefix
+    /// state.
+    [[nodiscard]] virtual std::size_t position() const noexcept = 0;
+
+    /// Append a single byte. Default impl forwards to `write_bytes`.
+    [[nodiscard]] std::optional<CodecError> write_u8(std::uint8_t v) noexcept {
+        return write_bytes(&v, 1);
+    }
+
+    /// Append a little-endian `uint16_t` (2 bytes).
+    [[nodiscard]] std::optional<CodecError> write_u16_le(std::uint16_t v) noexcept {
+        std::uint8_t buf[2] = {
+            static_cast<std::uint8_t>(v),
+            static_cast<std::uint8_t>(v >> 8),
+        };
+        return write_bytes(buf, 2);
+    }
+
+    /// Append a big-endian `uint16_t` (2 bytes).
+    [[nodiscard]] std::optional<CodecError> write_u16_be(std::uint16_t v) noexcept {
+        std::uint8_t buf[2] = {
+            static_cast<std::uint8_t>(v >> 8),
+            static_cast<std::uint8_t>(v),
+        };
+        return write_bytes(buf, 2);
+    }
+
+    /// Append a little-endian `uint32_t` (4 bytes).
+    [[nodiscard]] std::optional<CodecError> write_u32_le(std::uint32_t v) noexcept {
+        std::uint8_t buf[4] = {
+            static_cast<std::uint8_t>(v),
+            static_cast<std::uint8_t>(v >> 8),
+            static_cast<std::uint8_t>(v >> 16),
+            static_cast<std::uint8_t>(v >> 24),
+        };
+        return write_bytes(buf, 4);
+    }
+
+    /// Append a big-endian `uint32_t` (4 bytes).
+    [[nodiscard]] std::optional<CodecError> write_u32_be(std::uint32_t v) noexcept {
+        std::uint8_t buf[4] = {
+            static_cast<std::uint8_t>(v >> 24),
+            static_cast<std::uint8_t>(v >> 16),
+            static_cast<std::uint8_t>(v >> 8),
+            static_cast<std::uint8_t>(v),
+        };
+        return write_bytes(buf, 4);
+    }
+
+    /// Append a little-endian `uint64_t` (8 bytes).
+    [[nodiscard]] std::optional<CodecError> write_u64_le(std::uint64_t v) noexcept {
+        std::uint8_t buf[8] = {
+            static_cast<std::uint8_t>(v),
+            static_cast<std::uint8_t>(v >> 8),
+            static_cast<std::uint8_t>(v >> 16),
+            static_cast<std::uint8_t>(v >> 24),
+            static_cast<std::uint8_t>(v >> 32),
+            static_cast<std::uint8_t>(v >> 40),
+            static_cast<std::uint8_t>(v >> 48),
+            static_cast<std::uint8_t>(v >> 56),
+        };
+        return write_bytes(buf, 8);
+    }
+
+    /// Append a big-endian `uint64_t` (8 bytes).
+    [[nodiscard]] std::optional<CodecError> write_u64_be(std::uint64_t v) noexcept {
+        std::uint8_t buf[8] = {
+            static_cast<std::uint8_t>(v >> 56),
+            static_cast<std::uint8_t>(v >> 48),
+            static_cast<std::uint8_t>(v >> 40),
+            static_cast<std::uint8_t>(v >> 32),
+            static_cast<std::uint8_t>(v >> 24),
+            static_cast<std::uint8_t>(v >> 16),
+            static_cast<std::uint8_t>(v >> 8),
+            static_cast<std::uint8_t>(v),
+        };
+        return write_bytes(buf, 8);
+    }
+};
+
+/// Heap-backed sink over a caller-owned `std::vector<uint8_t>&`. The
+/// vector grows on demand, so `write_bytes` never returns
+/// `BufferOverflow` — the implementation is effectively infallible.
+/// The natural sink for std consumers and the engine behind the
+/// generated `encode_to_vec()` facade.
+class VectorSink final : public SceSink {
+public:
+    explicit VectorSink(std::vector<std::uint8_t>& dst) noexcept
+        : dst_(dst), start_len_(dst.size()) {}
+
+    [[nodiscard]] std::optional<CodecError>
+    write_bytes(const std::uint8_t* data, std::size_t n) noexcept override {
+        dst_.insert(dst_.end(), data, data + n);
+        return std::nullopt;
+    }
+
+    [[nodiscard]] std::size_t position() const noexcept override {
+        return dst_.size() - start_len_;
+    }
+
+private:
+    std::vector<std::uint8_t>& dst_;
+    std::size_t start_len_;
+};
+
+/// Bounded sink over a caller-owned raw byte buffer + capacity. Raises
+/// `CodecError::BufferOverflow` when a write would exceed `cap`. The
+/// natural sink for DMA / fixed-frame call sites where the destination
+/// storage is owned by an upstream peripheral driver.
+class SpanSink final : public SceSink {
+public:
+    SpanSink(std::uint8_t* buf, std::size_t cap) noexcept
+        : buf_(buf), cap_(cap), pos_(0) {}
+
+    [[nodiscard]] std::optional<CodecError>
+    write_bytes(const std::uint8_t* data, std::size_t n) noexcept override {
+        if (cap_ - pos_ < n) {
+            return CodecError::BufferOverflow;
+        }
+        std::memcpy(buf_ + pos_, data, n);
+        pos_ += n;
+        return std::nullopt;
+    }
+
+    [[nodiscard]] std::size_t position() const noexcept override {
+        return pos_;
+    }
+
+    /// Remaining capacity from current position to end of buffer.
+    [[nodiscard]] std::size_t remaining() const noexcept {
+        return cap_ - pos_;
+    }
+
+private:
+    std::uint8_t* buf_;
+    std::size_t cap_;
+    std::size_t pos_;
+};
+
 [[nodiscard]] inline bool is_valid_utf8(const std::uint8_t* p, std::size_t n) noexcept {
     std::size_t i = 0;
     while (i < n) {

@@ -4,7 +4,7 @@
 {# Codec kind — round-trip { decoded, encoded } cases. Each case binds the
    per-field oracle values under an `input_<field>` prefix, assigns them
    to a `_codec_val` temporary via member access (C++17-safe, no designated
-   initializers), then calls `encode()`. `round_tripped` holds the
+   initializers), then calls `encode_to_vec()`. `round_tripped` holds the
    `decode()` result for reverse-direction assertions.
 
    Naming convention matches the Rust/Kotlin/Python codec fragments — any
@@ -46,7 +46,7 @@
 {% for field in f.fields %}
         _codec_val.{{ field.name }} = input_{{ field.name }};
 {% endfor %}
-        auto encoded = _codec_val.encode();
+        auto encoded = _codec_val.encode_to_vec();
         CHECK(encoded == expected_bytes,
               "{{ f.name }} case %d encode: size actual=%zu expected=%zu",
               i, encoded.size(), expected_bytes.size());

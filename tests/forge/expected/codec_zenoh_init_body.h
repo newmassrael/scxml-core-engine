@@ -152,7 +152,17 @@ struct CodecZenohInitBody {
         );
     }
 
-    std::vector<uint8_t> encode(std::uint8_t s, std::uint8_t a) const {
+    /// Worst-case encoded byte count for this codec — the upper bound
+    /// against which `VectorSink::new` reserves capacity in the
+    /// `encode_to_vec` facade, and the natural reserve hint for
+    /// caller-owned `SpanSink` allocations.
+    static constexpr std::size_t MAX_ENCODED_BYTES = 160;
+
+    /// Encode `self` into the caller-owned sink. Returns
+    /// `CodecError::BufferOverflow` from a bounded sink when the
+    /// destination has insufficient remaining capacity; growable sinks
+    /// (e.g. `VectorSink`) are effectively infallible.
+    [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w, std::uint8_t s, std::uint8_t a) const noexcept {
         (void)s;
         (void)a;
         // RFC §5.B B1-δ + B2-β present-if encode: per-field byte
@@ -160,35 +170,46 @@ struct CodecZenohInitBody {
         // empty. Per-field `is_repeat` routes Repeat fields to the
         // dedicated helper. Branch fires before has_vle_fields so a
         // codec mixing VLE + present-if uses the unified encode path.
-        std::vector<uint8_t> r;
-        r.reserve(160);
-        r.push_back(version);
-        r.push_back(cbyte);
-        r.insert(r.end(), zid.begin(), zid.end());
+        if (auto _e = w.write_u8(version); _e) return _e;
+        if (auto _e = w.write_u8(cbyte); _e) return _e;
+        if (auto _e = w.write_bytes(zid.data(), zid.size()); _e) return _e;
         if (sn_res.has_value()) {
             auto _v = *sn_res;
-            r.push_back(_v);
+            if (auto _e = w.write_u8(_v); _e) return _e;
         }
         if (batch_size.has_value()) {
             auto _v = *batch_size;
-            r.push_back(static_cast<std::uint8_t>(_v));
-            r.push_back(static_cast<std::uint8_t>(_v >> 8));
+            if (auto _e = w.write_u8(static_cast<std::uint8_t>(_v)); _e) return _e;
+            if (auto _e = w.write_u8(static_cast<std::uint8_t>(_v >> 8)); _e) return _e;
         }
         if (cookie_len.has_value()) {
             auto _v = *cookie_len;
         {
             std::uint64_t _w = static_cast<std::uint64_t>(_v);
             while (_w >= 0x80) {
-                r.push_back(static_cast<std::uint8_t>((_w & 0x7F) | 0x80));
+                if (auto _e = w.write_u8(static_cast<std::uint8_t>((_w & 0x7F) | 0x80)); _e) return _e;
                 _w >>= 7;
             }
-            r.push_back(static_cast<std::uint8_t>(_w));
+            if (auto _e = w.write_u8(static_cast<std::uint8_t>(_w)); _e) return _e;
         }
         }
         if (cookie.has_value()) {
-            r.insert(r.end(), cookie->begin(), cookie->end());
+            if (auto _e = w.write_bytes(cookie->data(), cookie->size()); _e) return _e;
         }
-        return r;
+        return std::nullopt;
+    }
+
+    /// Heap-backed convenience facade. Pre-reserves `MAX_ENCODED_BYTES`
+    /// so the worst-case write path performs at most one allocation,
+    /// then delegates to `encode` over a `VectorSink`. Returns the
+    /// freshly-encoded byte vector. Callers targeting zero-alloc hot
+    /// paths should call `encode` directly against a caller-owned sink.
+    [[nodiscard]] std::vector<std::uint8_t> encode_to_vec(std::uint8_t s, std::uint8_t a) const {
+        std::vector<std::uint8_t> _sce_v;
+        _sce_v.reserve(MAX_ENCODED_BYTES);
+        ::SCE::Forge::VectorSink _sce_sink(_sce_v);
+        (void)encode(_sce_sink, s, a);
+        return _sce_v;
     }
 };
 

@@ -319,7 +319,17 @@ struct {{ struct_name }} {
 {% endif %}
 {% endfor %}
 {% endif %}
-    std::vector<uint8_t> encode({{ params_first_arg }}) const {
+    /// Worst-case encoded byte count for this codec — the upper bound
+    /// against which `VectorSink::new` reserves capacity in the
+    /// `encode_to_vec` facade, and the natural reserve hint for
+    /// caller-owned `SpanSink` allocations.
+    static constexpr std::size_t MAX_ENCODED_BYTES = {{ max_bytes }};
+
+    /// Encode `self` into the caller-owned sink. Returns
+    /// `CodecError::BufferOverflow` from a bounded sink when the
+    /// destination has insufficient remaining capacity; growable sinks
+    /// (e.g. `VectorSink`) are effectively infallible.
+    [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w{{ params_after_first_arg }}) const noexcept {
 {% if has_parent_flags %}
         (void)parent_flags;
 {% endif %}
@@ -334,8 +344,12 @@ struct {{ struct_name }} {
 {{ parent_tag_derivation_block }}
 {% endif %}
 {% if has_no_fields %}
-        // RFC §5.B B5-α empty body — zero-byte payload.
-        return {};
+        // RFC §5.B B5-α empty body — zero-byte payload (the surrounding
+        // wire-protocol header byte alone marks this codec on the wire).
+        // Suppress the unused-sink warning explicitly so empty codecs
+        // stay warning-clean.
+        (void)w;
+        return std::nullopt;
 {% elif has_variant %}
 {% if variant.has_streaming_prefix %}
         // RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
@@ -344,8 +358,6 @@ struct {{ struct_name }} {
         // separate tag byte here. Streaming-prefix mode (own-field):
         // carrier is part of the prefix fields and emits via the same
         // per-field path.
-        std::vector<uint8_t> r;
-        r.reserve({{ max_bytes }});
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
@@ -359,34 +371,28 @@ struct {{ struct_name }} {
 {% endfor %}
 {% else %}
         // Encode fixed prefix (tag field bytes are part of the prefix).
-        std::vector<uint8_t> r;
-        r.reserve({{ max_bytes }});
 {% for expr in encode_exprs %}
-        r.push_back({{ expr }});
+        if (auto _e = w.write_u8({{ expr }}); _e) return _e;
 {% endfor %}
 {% endif %}
         // Append the active arm body's encoded bytes.
 {% for arm in variant.arms %}
         if (auto _p = std::get_if<{{ arm.body_type }}>(&body)) {
-            auto _sub = _p->encode({{ arm.body_encode_args_first }});
-            r.insert(r.end(), _sub.begin(), _sub.end());
+            if (auto _e = _p->encode(w{{ arm.body_encode_args_with_leading_comma }}); _e) return _e;
         }
 {% endfor %}
 {% if variant.default_arm %}
         if (auto _p = std::get_if<{{ struct_name }}{{ variant.default_arm.variant_name }}>(&body)) {
-            auto _sub = _p->body.encode({{ variant.default_arm.body_encode_args_first }});
-            r.insert(r.end(), _sub.begin(), _sub.end());
+            if (auto _e = _p->body.encode(w{{ variant.default_arm.body_encode_args_with_leading_comma }}); _e) return _e;
         }
 {% endif %}
-        return r;
+        return std::nullopt;
 {% elif has_present_if_fields %}
         // RFC §5.B B1-δ + B2-β present-if encode: per-field byte
         // append. Gated fields skip the append when the optional is
         // empty. Per-field `is_repeat` routes Repeat fields to the
         // dedicated helper. Branch fires before has_vle_fields so a
         // codec mixing VLE + present-if uses the unified encode path.
-        std::vector<uint8_t> r;
-        r.reserve({{ max_bytes }});
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
@@ -398,7 +404,7 @@ struct {{ struct_name }} {
 {{ field.present_if_encode_block }}
 {% endif %}
 {% endfor %}
-        return r;
+        return std::nullopt;
 {% elif has_vle_fields %}
         // RFC §5.B B4: per-field bit-size dispatch routes Fixed /
         // LengthRef siblings of VLE fields through
@@ -406,8 +412,6 @@ struct {{ struct_name }} {
         // codecs stay byte-stable because the non-gated VLE arm there
         // reuses `vle_encode_block` with the language-appropriate
         // self/struct prefix.
-        std::vector<uint8_t> r;
-        r.reserve({{ max_bytes }});
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
@@ -419,14 +423,12 @@ struct {{ struct_name }} {
 {{ field.present_if_encode_block }}
 {% endif %}
 {% endfor %}
-        return r;
+        return std::nullopt;
 {% elif has_repeat_fields or has_tlv_chain_fields or has_embed_fields or has_string_fields %}
         // RFC §5.B B2 encode: fixed prefix appends byte-by-byte;
         // repeat fields iterate the host vector and splice each
         // element's encode() into the parent buffer. Author keeps
         // count field == list length (trust contract).
-        std::vector<uint8_t> r;
-        r.reserve({{ max_bytes }});
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
@@ -438,26 +440,46 @@ struct {{ struct_name }} {
 {{ field.present_if_encode_block }}
 {% endif %}
 {% endfor %}
-        return r;
+        return std::nullopt;
 {% elif has_variable_fields %}
-        std::vector<uint8_t> r;
-        r.reserve({{ max_bytes }});
 {% for expr in encode_exprs %}
-        r.push_back({{ expr }});
+        if (auto _e = w.write_u8({{ expr }}); _e) return _e;
 {% endfor %}
 {% for field in fields %}
 {% if field.is_variable %}
-        r.insert(r.end(), {{ field.id }}.begin(), {{ field.id }}.end());
+{% if has_dma_aligned_fields %}
+        // RFC §5.B B3 DMA padding: zero-fill any gap between the
+        // current write position and this field's authored byte
+        // offset (deterministic zeros on the wire so peers stay
+        // byte-compatible regardless of host allocator — RFC §5.B
+        // "wire layout, not host allocator").
+        while (w.position() < {{ field.byte_off }}) {
+            if (auto _e = w.write_u8(0); _e) return _e;
+        }
+{% endif %}
+        if (auto _e = w.write_bytes(this->{{ field.id }}.data(), this->{{ field.id }}.size()); _e) return _e;
 {% endif %}
 {% endfor %}
-        return r;
+        return std::nullopt;
 {% else %}
-        return {
 {% for expr in encode_exprs %}
-            {{ expr }}{{ "," if not loop.last else "" }}
+        if (auto _e = w.write_u8({{ expr }}); _e) return _e;
 {% endfor %}
-        };
+        return std::nullopt;
 {% endif %}
+    }
+
+    /// Heap-backed convenience facade. Pre-reserves `MAX_ENCODED_BYTES`
+    /// so the worst-case write path performs at most one allocation,
+    /// then delegates to `encode` over a `VectorSink`. Returns the
+    /// freshly-encoded byte vector. Callers targeting zero-alloc hot
+    /// paths should call `encode` directly against a caller-owned sink.
+    [[nodiscard]] std::vector<std::uint8_t> encode_to_vec({{ params_first_arg }}) const {
+        std::vector<std::uint8_t> _sce_v;
+        _sce_v.reserve(MAX_ENCODED_BYTES);
+        ::SCE::Forge::VectorSink _sce_sink(_sce_v);
+        (void)encode(_sce_sink{{ params_first_arg_with_comma }});
+        return _sce_v;
     }
 };
 

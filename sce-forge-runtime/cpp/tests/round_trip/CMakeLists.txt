@@ -8,7 +8,7 @@
 #   - regenerates sce-codegen if cargo is available
 #   - generates the 3 default-marker fixtures into ${CMAKE_CURRENT_BINARY_DIR}/generated/
 #   - builds a small test binary that asserts
-#       T{}.encode() decodes back into the declared default arm with cursor.remaining() == 0
+#       T{}.encode_to_vec() decodes back into the declared default arm with cursor.remaining() == 0
 #       and re-encoding produces byte-equal output
 #
 # Configure + build + test:

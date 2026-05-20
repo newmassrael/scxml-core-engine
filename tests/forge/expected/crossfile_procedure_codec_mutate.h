@@ -115,7 +115,7 @@ public:
                 if (serviceHandler_) {
                     SCE::Forge::ProcedureServiceRequest req;
                     req.service = "transport";
-                    req.payload = frame_.encode();
+                    req.payload = frame_.encode_to_vec();
                     auto resp = serviceHandler_(req);
                     return { resp.success ? Event::Ok : Event::Fail, resp.data };
                 }

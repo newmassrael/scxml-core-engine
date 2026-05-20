@@ -211,68 +211,84 @@ struct CodecZenohResponse {
         }
     }
 
-    std::vector<uint8_t> encode() const {
+    /// Worst-case encoded byte count for this codec — the upper bound
+    /// against which `VectorSink::new` reserves capacity in the
+    /// `encode_to_vec` facade, and the natural reserve hint for
+    /// caller-owned `SpanSink` allocations.
+    static constexpr std::size_t MAX_ENCODED_BYTES = 977;
+
+    /// Encode `self` into the caller-owned sink. Returns
+    /// `CodecError::BufferOverflow` from a bounded sink when the
+    /// destination has insufficient remaining capacity; growable sinks
+    /// (e.g. `VectorSink`) are effectively infallible.
+    [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w) const noexcept {
         // RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
         // streaming prefix encode. Peek-byte mode: arm body's encode
         // prepends its own header byte (which the decoder peeked); no
         // separate tag byte here. Streaming-prefix mode (own-field):
         // carrier is part of the prefix fields and emits via the same
         // per-field path.
-        std::vector<uint8_t> r;
-        r.reserve(977);
-        r.push_back(header);
+        if (auto _e = w.write_u8(header); _e) return _e;
         {
             std::uint64_t _w = static_cast<std::uint64_t>(request_id);
             while (_w >= 0x80) {
-                r.push_back(static_cast<std::uint8_t>((_w & 0x7F) | 0x80));
+                if (auto _e = w.write_u8(static_cast<std::uint8_t>((_w & 0x7F) | 0x80)); _e) return _e;
                 _w >>= 7;
             }
-            r.push_back(static_cast<std::uint8_t>(_w));
+            if (auto _e = w.write_u8(static_cast<std::uint8_t>(_w)); _e) return _e;
         }
         {
             std::uint64_t _w = static_cast<std::uint64_t>(key_id);
             while (_w >= 0x80) {
-                r.push_back(static_cast<std::uint8_t>((_w & 0x7F) | 0x80));
+                if (auto _e = w.write_u8(static_cast<std::uint8_t>((_w & 0x7F) | 0x80)); _e) return _e;
                 _w >>= 7;
             }
-            r.push_back(static_cast<std::uint8_t>(_w));
+            if (auto _e = w.write_u8(static_cast<std::uint8_t>(_w)); _e) return _e;
         }
         if (suffix_len.has_value()) {
             auto _v = *suffix_len;
         {
             std::uint64_t _w = static_cast<std::uint64_t>(_v);
             while (_w >= 0x80) {
-                r.push_back(static_cast<std::uint8_t>((_w & 0x7F) | 0x80));
+                if (auto _e = w.write_u8(static_cast<std::uint8_t>((_w & 0x7F) | 0x80)); _e) return _e;
                 _w >>= 7;
             }
-            r.push_back(static_cast<std::uint8_t>(_w));
+            if (auto _e = w.write_u8(static_cast<std::uint8_t>(_w)); _e) return _e;
         }
         }
         if (suffix.has_value()) {
-            r.insert(r.end(),
-                reinterpret_cast<const std::uint8_t*>(suffix->data()),
-                reinterpret_cast<const std::uint8_t*>(suffix->data()) + suffix->size());
+            if (auto _e = w.write_bytes(
+                reinterpret_cast<const std::uint8_t*>(suffix->data()), suffix->size()); _e) return _e;
         }
         if (this->extensions.has_value()) {
             for (const auto& _e : *this->extensions) {
-                auto _sub = _e.encode();
-                r.insert(r.end(), _sub.begin(), _sub.end());
+                if (auto _se = _e.encode(w); _se) return _se;
             }
         }
         // Append the active arm body's encoded bytes.
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohReply::CodecZenohReply>(&body)) {
-            auto _sub = _p->encode();
-            r.insert(r.end(), _sub.begin(), _sub.end());
+            if (auto _e = _p->encode(w); _e) return _e;
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohErr::CodecZenohErr>(&body)) {
-            auto _sub = _p->encode();
-            r.insert(r.end(), _sub.begin(), _sub.end());
+            if (auto _e = _p->encode(w); _e) return _e;
         }
         if (auto _p = std::get_if<CodecZenohResponseDefault>(&body)) {
-            auto _sub = _p->body.encode();
-            r.insert(r.end(), _sub.begin(), _sub.end());
+            if (auto _e = _p->body.encode(w); _e) return _e;
         }
-        return r;
+        return std::nullopt;
+    }
+
+    /// Heap-backed convenience facade. Pre-reserves `MAX_ENCODED_BYTES`
+    /// so the worst-case write path performs at most one allocation,
+    /// then delegates to `encode` over a `VectorSink`. Returns the
+    /// freshly-encoded byte vector. Callers targeting zero-alloc hot
+    /// paths should call `encode` directly against a caller-owned sink.
+    [[nodiscard]] std::vector<std::uint8_t> encode_to_vec() const {
+        std::vector<std::uint8_t> _sce_v;
+        _sce_v.reserve(MAX_ENCODED_BYTES);
+        ::SCE::Forge::VectorSink _sce_sink(_sce_v);
+        (void)encode(_sce_sink);
+        return _sce_v;
     }
 };
 

@@ -31,13 +31,13 @@ namespace SCE::Forge {
 ///
 /// ```xml
 /// <send sce:service="Diag" sce:subfunc="0x02"
-///       sce:addr="ecuAddr" sce:payload="frame.encode()"/>
+///       sce:addr="ecuAddr" sce:payload="frame.encode_to_vec()"/>
 /// ```
 ///
 /// `service` is always present; the other three are `std::optional` so
 /// absent attributes are distinguishable from empty values. `payload` is
 /// typed as raw bytes (`std::vector<uint8_t>`) because its semantic role
-/// is a wire-format data blob originating from codec `encode()` calls.
+/// is a wire-format data blob originating from codec `encode_to_vec()` calls.
 /// `subfunc` and `addr` remain textual since the user may reference
 /// datamodel variables of any SCE type (uint8..uint64, std::string).
 struct ProcedureServiceRequest {

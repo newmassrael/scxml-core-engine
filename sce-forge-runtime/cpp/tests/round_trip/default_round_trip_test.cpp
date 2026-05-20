@@ -4,7 +4,7 @@
 // RFC variant-default-uniformity Atomic γ-3 cpp half — runtime round-trip
 // property test. Mirrors sce-forge-runtime/rust/tests/forge_default_round_trip.rs
 // for the C++ backend: compiles the generated codecs into the test binary
-// and runs `T{}.encode().decode()` to prove the watching-zenoh R87 defect
+// and runs `T{}.encode_to_vec().decode()` to prove the watching-zenoh R87 defect
 // cannot recur on the cpp branch either.
 //
 // Critical invariants verified:
@@ -42,7 +42,7 @@ static int failures = 0;
 
 int main() {
     const CodecVariantDefaultMarker original{};
-    const auto bytes = original.encode();
+    const auto bytes = original.encode_to_vec();
 
     EXPECT(bytes.size() == 3,
            "default-emit + arm B (uint16 payload) must produce 3 wire bytes");
@@ -66,9 +66,44 @@ int main() {
                "index 0 = legacy first-arm picked; index 2 = catch-all "
                "fallback (inner Default zero-filled the dispatch byte)");
 
-        const auto re_encoded = decoded->encode();
+        const auto re_encoded = decoded->encode_to_vec();
         EXPECT(re_encoded == bytes,
                "re-encoding the decoded value must produce byte-equal output");
+
+        // Also verify the sink-based encode contract directly: round-trip
+        // through a caller-owned VectorSink + SpanSink must produce
+        // byte-identical output to the heap facade.
+        constexpr std::size_t kMaxBytes = CodecVariantDefaultMarker::MAX_ENCODED_BYTES;
+        {
+            std::vector<std::uint8_t> via_vec_sink;
+            via_vec_sink.reserve(kMaxBytes);
+            ::SCE::Forge::VectorSink vs(via_vec_sink);
+            EXPECT(!decoded->encode(vs).has_value(),
+                   "VectorSink-backed encode must succeed (infallible)");
+            EXPECT(via_vec_sink == bytes,
+                   "VectorSink encode bytes must equal facade encode_to_vec output");
+        }
+        {
+            std::vector<std::uint8_t> span_buf;
+            span_buf.resize(kMaxBytes);
+            ::SCE::Forge::SpanSink ss(span_buf.data(), span_buf.size());
+            EXPECT(!decoded->encode(ss).has_value(),
+                   "SpanSink-backed encode must succeed when buffer >= MAX_ENCODED_BYTES");
+            span_buf.resize(ss.position());
+            EXPECT(span_buf == bytes,
+                   "SpanSink encode prefix must equal facade encode_to_vec output");
+        }
+        // Bounded-buffer BufferOverflow path: a SpanSink sized strictly
+        // smaller than the actual encoded length must surface the typed
+        // error (validates the encode-side typed error contract).
+        if (!bytes.empty()) {
+            std::vector<std::uint8_t> tiny;
+            tiny.resize(bytes.size() - 1);
+            ::SCE::Forge::SpanSink ss(tiny.data(), tiny.size());
+            auto err = decoded->encode(ss);
+            EXPECT(err.has_value() && *err == ::SCE::Forge::CodecError::BufferOverflow,
+                   "SpanSink encode must surface BufferOverflow when cap < bytes.size()");
+        }
     }
 
     if (failures == 0) {
