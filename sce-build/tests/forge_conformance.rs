@@ -13744,3 +13744,158 @@ fn axis1_present_if_camelcase_field_compiles() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Sibling of `axis1_present_if_camelcase_field_compiles` — same root
+/// cause (helper-rendered Rust code embedding raw `field.id` against
+/// a snake-cased struct declaration), different field kinds. The
+/// present-if fix covered `present_if_*` helpers; this test pins the
+/// fix that extends through `repeat_streaming_*`, `embed_streaming_*`,
+/// and `tlv_chain_streaming_*` (decode/encode/gated variants), plus
+/// cross-references like `count` / `embed-length-from` / sibling len
+/// fields that name another camelCase identifier inside the helper
+/// output.
+///
+/// Each kind authors a camelCase id (`myItems` / `myChild` /
+/// `myChain`) plus where applicable a camelCase sibling-ref
+/// (`lenN`) so both the field-id and sibling-id transforms are
+/// exercised. Compile-smoke on all 6 backends per kind; collect-then-
+/// assert lists every (kind, backend) pair that regresses.
+#[test]
+fn axis1_camelcase_field_kinds_compile() {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let pid = std::process::id();
+
+    // Shared inner codec used by repeat / embed (1-byte body).
+    let inner = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="camelcase_inner" sce:default-endian="big">
+  <datamodel>
+    <sce:field id="b" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+  </datamodel>
+</scxml>"#;
+
+    // TLV entry shape (mirrors codec_tlv_entry.scxml): type byte +
+    // length byte + length-ref body. Kept inline so the fixture is
+    // self-contained.
+    let tlv_entry = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="camelcase_tlv_entry" sce:default-endian="big">
+  <datamodel>
+    <sce:field id="entry_type" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="entry_len"  sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
+    <sce:field id="entry_body" sce:type="bytes" sce:byte="2"
+               sce:bit-size="length-ref" sce:length-field="entry_len"
+               sce:max-size="8"/>
+  </datamodel>
+</scxml>"#;
+
+    // Per-kind parent codec, each with a camelCase id (and where
+    // applicable a camelCase sibling-ref).
+    let repeat_parent = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="camelcase_repeat_parent" sce:default-endian="big">
+  <sce:import src="camelcase_inner.scxml" kind="codec" as="camelcase_inner"/>
+  <datamodel>
+    <sce:field  id="lenN"     sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:repeat id="myItems"  sce:byte="1" type="camelcase_inner"
+                count="lenN" max-count="8"/>
+  </datamodel>
+</scxml>"#;
+
+    let embed_parent = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="camelcase_embed_parent" sce:default-endian="big">
+  <sce:import src="camelcase_inner.scxml" kind="codec" as="camelcase_inner"/>
+  <datamodel>
+    <sce:embed id="myChild" type="camelcase_inner" sce:byte="0"/>
+  </datamodel>
+</scxml>"#;
+
+    let tlv_parent = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="camelcase_tlv_parent" sce:default-endian="big">
+  <sce:import src="camelcase_tlv_entry.scxml" kind="codec" as="camelcase_tlv_entry"/>
+  <datamodel>
+    <sce:tlv-chain id="myChain" type="camelcase_tlv_entry"
+                   sce:byte="0" max-depth="4"/>
+  </datamodel>
+</scxml>"#;
+
+    let kinds: &[(&str, &str, &str, &[&str])] = &[
+        (
+            "repeat",
+            "camelcase_inner.scxml",
+            "camelcase_repeat_parent.scxml",
+            &["camelcase_inner.scxml", "camelcase_repeat_parent.scxml"],
+        ),
+        (
+            "embed",
+            "camelcase_inner.scxml",
+            "camelcase_embed_parent.scxml",
+            &["camelcase_inner.scxml", "camelcase_embed_parent.scxml"],
+        ),
+        (
+            "tlv_chain",
+            "camelcase_tlv_entry.scxml",
+            "camelcase_tlv_parent.scxml",
+            &["camelcase_tlv_entry.scxml", "camelcase_tlv_parent.scxml"],
+        ),
+    ];
+
+    let mut failures: Vec<String> = Vec::new();
+
+    for (kind, inner_name, parent_name, scxmls) in kinds {
+        let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("sce_camelcase_kind_{kind}_{pid}_{id}"));
+        std::fs::create_dir_all(&dir).expect("mkdir fixture");
+
+        let inner_body = if *kind == "tlv_chain" { tlv_entry } else { inner };
+        let parent_body = match *kind {
+            "repeat" => repeat_parent,
+            "embed" => embed_parent,
+            "tlv_chain" => tlv_parent,
+            _ => unreachable!(),
+        };
+        std::fs::write(dir.join(inner_name), inner_body).expect("write inner");
+        std::fs::write(dir.join(parent_name), parent_body).expect("write parent");
+
+        let test_id = format!("axis1_camelcase_{kind}");
+
+        if let Err(e) = rustc_compile_codec_set(&dir, scxmls, &format!("{test_id}_rust")) {
+            failures.push(format!("[{kind}] Rust:\n{e}"));
+        }
+        if let Err(e) = compile_codec_set_cpp(&dir, scxmls, &format!("{test_id}_cpp")) {
+            failures.push(format!("[{kind}] Cpp:\n{e}"));
+        }
+        if let Err(e) = compile_codec_set_kotlin(&dir, scxmls, &format!("{test_id}_kotlin")) {
+            failures.push(format!("[{kind}] Kotlin:\n{e}"));
+        }
+        if let Err(e) = compile_codec_set_go(&dir, scxmls, &format!("{test_id}_go")) {
+            failures.push(format!("[{kind}] Go:\n{e}"));
+        }
+        if let Err(e) = compile_codec_set_python(&dir, scxmls, &format!("{test_id}_python")) {
+            failures.push(format!("[{kind}] Python:\n{e}"));
+        }
+        if let Err(e) = compile_codec_set_c11(&dir, scxmls, &format!("{test_id}_c11")) {
+            failures.push(format!("[{kind}] C11:\n{e}"));
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    assert!(
+        failures.is_empty(),
+        "camelCase field ids on repeat / embed / tlv-chain must produce \
+         compilable code on every backend — pre-fix the Rust helpers in \
+         the repeat_streaming_* / embed_streaming_* / tlv_chain_streaming_* \
+         family baked raw `field.id` against snake-cased struct fields. \
+         Failures:\n\n{}",
+        failures.join("\n\n"),
+    );
+}

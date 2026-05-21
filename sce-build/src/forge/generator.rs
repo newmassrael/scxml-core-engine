@@ -4145,7 +4145,13 @@ fn repeat_streaming_decode_stmt(
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
-    let id = &field.id;
+    // Per-language struct-field casing must match `codec_field_id` so
+    // the helper-rendered `let <id> = ...` / `self.<id>` references
+    // resolve to the same identifier the template emits at struct
+    // declaration. See `present_if_decode_fixed` for the parent
+    // rationale.
+    let id_owned = codec_field_local_name(&field.id, lang);
+    let id = id_owned.as_str();
     let count_ref = match &field.bit_size {
         BitSize::Repeat { count_ref } => count_ref,
         _ => unreachable!("repeat_streaming_decode_stmt called on non-repeat field"),
@@ -4179,15 +4185,23 @@ fn repeat_streaming_decode_stmt(
         // element count is not known up-front; vector growth is
         // amortized O(1) so the missing reservation is acceptable for
         // the v1 trunk shape.
-        (Language::Rust, CountRef::LengthField(len_field)) => format!(
-            "let {id} = {{\n            \
-                 let mut _vec: Vec<{body_type}> = Vec::with_capacity({len_field} as usize);\n            \
-                 for _ in 0..{len_field} {{\n                \
-                     _vec.push({body_type}::decode(cursor)?);\n            \
-                 }}\n            \
-                 _vec\n        \
-             }};"
-        ),
+        (Language::Rust, CountRef::LengthField(len_field)) => {
+            // Sibling-field reference: the count source's Rust local
+            // was bound under `codec_field_id` (snake_case) at the
+            // prior decode_stmt, so the capacity hint + loop bound
+            // must read the snake-cased name. Idempotent for
+            // already-snake ids.
+            let len_field_snake = filters::to_snake_case(len_field.clone());
+            format!(
+                "let {id} = {{\n            \
+                     let mut _vec: Vec<{body_type}> = Vec::with_capacity({len_field_snake} as usize);\n            \
+                     for _ in 0..{len_field_snake} {{\n                \
+                         _vec.push({body_type}::decode(cursor)?);\n            \
+                     }}\n            \
+                     _vec\n        \
+                 }};"
+            )
+        }
         (Language::Rust, CountRef::UntilEof) => format!(
             "let {id} = {{\n            \
                  let mut _vec: Vec<{body_type}> = Vec::new();\n            \
@@ -4370,7 +4384,8 @@ fn repeat_streaming_encode_block(
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
-    let id = &field.id;
+    let id_owned = codec_field_local_name(&field.id, lang);
+    let id = id_owned.as_str();
     // RFC §5.B B5-μ — when the repeat carries `sce:present-if`, the
     // encode body wraps in a per-language predicate test that reads
     // through the wrapped storage shape (Option<Vec> / std::optional
@@ -4465,7 +4480,8 @@ fn embed_streaming_decode_stmt(
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
-    let id = &field.id;
+    let id_owned = codec_field_local_name(&field.id, lang);
+    let id = id_owned.as_str();
     let len_from = field.embed_length_from.as_deref();
     let test_lit = field
         .present_if
@@ -4483,7 +4499,12 @@ fn embed_streaming_decode_stmt(
     // point.
     let len_expr = |lang: Language| -> Option<String> {
         len_from.map(|sibling| match lang {
-            Language::Rust | Language::Cpp | Language::Kotlin => sibling.to_string(),
+            // Rust's prior decode_stmt binds the sibling under
+            // `codec_field_id` (snake_case), so the reference here
+            // must match. Cpp/Kotlin keep raw (their codec_field_id
+            // is identity).
+            Language::Rust => filters::to_snake_case(sibling.to_string()),
+            Language::Cpp | Language::Kotlin => sibling.to_string(),
             Language::Go => filters::to_pascal_case(sibling.to_string()),
             Language::C11 => format!("out->{}", filters::to_snake_case(sibling.to_string())),
             Language::Python => filters::to_snake_case(sibling.to_string()),
@@ -4787,7 +4808,8 @@ fn embed_streaming_encode_block(
 ) -> String {
     use crate::generator::Language;
     let _ = body_type;
-    let id = &field.id;
+    let id_owned = codec_field_local_name(&field.id, lang);
+    let id = id_owned.as_str();
     // Non-C11 backends discriminate Y0b gated presence via the host
     // language's Optional / nullable / pointer wrapper. The carrier
     // flag bit and the Optional are kept in sync by the author trust
@@ -5366,7 +5388,8 @@ fn repeat_streaming_decode_stmt_gated(
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
-    let id = &field.id;
+    let id_owned = codec_field_local_name(&field.id, lang);
+    let id = id_owned.as_str();
     let test = present_if_test_literal(fields, pred, lang);
 
     match (lang, count_ref) {
@@ -5374,18 +5397,21 @@ fn repeat_streaming_decode_stmt_gated(
         // single unwrap site keeps the loop bound and capacity hint in
         // sync. UntilEof has no count field so the wrap reduces to
         // `if test { Some(<until-eof body>) } else { None }`.
-        (Language::Rust, CountRef::LengthField(len_field)) => format!(
-            "let {id} = if {test} {{\n            \
-                 let _n = {len_field}.expect(\"co-gating: count present-if matches repeat\");\n            \
-                 let mut _vec: Vec<{body_type}> = Vec::with_capacity(_n as usize);\n            \
-                 for _ in 0.._n {{\n                \
-                     _vec.push({body_type}::decode(cursor)?);\n            \
-                 }}\n            \
-                 Some(_vec)\n        \
-             }} else {{\n            \
-                 None\n        \
-             }};"
-        ),
+        (Language::Rust, CountRef::LengthField(len_field)) => {
+            let len_field_snake = filters::to_snake_case(len_field.clone());
+            format!(
+                "let {id} = if {test} {{\n            \
+                     let _n = {len_field_snake}.expect(\"co-gating: count present-if matches repeat\");\n            \
+                     let mut _vec: Vec<{body_type}> = Vec::with_capacity(_n as usize);\n            \
+                     for _ in 0.._n {{\n                \
+                         _vec.push({body_type}::decode(cursor)?);\n            \
+                     }}\n            \
+                     Some(_vec)\n        \
+                 }} else {{\n            \
+                     None\n        \
+                 }};"
+            )
+        }
         (Language::Rust, CountRef::UntilEof) => format!(
             "let {id} = if {test} {{\n            \
                  let mut _vec: Vec<{body_type}> = Vec::new();\n            \
@@ -5581,7 +5607,8 @@ fn repeat_streaming_encode_block_gated(
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
-    let id = &field.id;
+    let id_owned = codec_field_local_name(&field.id, lang);
+    let id = id_owned.as_str();
     match lang {
         // Rust: `if let Some(_list) = &self.<id>` mirrors B2-β tail
         // present-if encode (line 5217). Carrier bit isn't tested —
@@ -5695,7 +5722,8 @@ fn tlv_chain_streaming_decode_stmt(
     use crate::forge::model::TlvOverflowPolicy;
     use crate::forge::model::TlvTerminateStrategy;
     use crate::generator::Language;
-    let id = &field.id;
+    let id_owned = codec_field_local_name(&field.id, lang);
+    let id = id_owned.as_str();
     // RFC §5.B Y3 — entry-flag termination accessor, per-language. The
     // body codec's flags-bearing carrier (typically the entry's outer
     // header byte) exposes a per-flag accessor whose name mirrors
@@ -5998,7 +6026,8 @@ fn tlv_chain_streaming_encode_block(
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
-    let id = &field.id;
+    let id_owned = codec_field_local_name(&field.id, lang);
+    let id = id_owned.as_str();
     match lang {
         Language::Rust => {
             format!("        for _e in &self.{id} {{\n            _e.encode(w)?;\n        }}")
@@ -6080,7 +6109,8 @@ fn tlv_chain_streaming_decode_stmt_gated(
     use crate::forge::model::TlvOverflowPolicy;
     use crate::forge::model::TlvTerminateStrategy;
     use crate::generator::Language;
-    let id = &field.id;
+    let id_owned = codec_field_local_name(&field.id, lang);
+    let id = id_owned.as_str();
     let pred = field
         .present_if
         .as_ref()
@@ -6336,7 +6366,8 @@ fn tlv_chain_streaming_encode_block_gated(
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
-    let id = &field.id;
+    let id_owned = codec_field_local_name(&field.id, lang);
+    let id = id_owned.as_str();
     let pred = field
         .present_if
         .as_ref()
