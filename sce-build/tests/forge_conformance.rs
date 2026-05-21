@@ -3634,8 +3634,7 @@ fn forge_test_vector_invalid_hex_rejects() {
 </scxml>"#;
 
     let err = parse_forge(scxml, DocumentLabel::symmetric("crc_oracle"))
-        .err()
-        .expect("odd-length hex must reject");
+        .expect_err("odd-length hex must reject");
     assert!(
         matches!(
             err.error,
@@ -3673,8 +3672,7 @@ fn forge_test_vector_invalid_value_rejects() {
 </scxml>"#;
 
     let err = parse_forge(scxml, DocumentLabel::symmetric("crc_oracle"))
-        .err()
-        .expect("non-numeric value on integer return type must reject");
+        .expect_err("non-numeric value on integer return type must reject");
     assert!(
         matches!(
             err.error,
