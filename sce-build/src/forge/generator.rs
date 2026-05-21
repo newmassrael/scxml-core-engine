@@ -17898,11 +17898,7 @@ fn lower_algorithm_stmt(
                     Language::Python => format!("{pad}for {it} in {src_lowered}:\n"),
                 };
                 out.push_str(&header);
-                let inner_indent = if matches!(lang, Language::Python) {
-                    indent + 1
-                } else {
-                    indent + 1
-                };
+                let inner_indent = indent + 1;
                 let inner_pad = "    ".repeat(inner_indent);
                 for st in body {
                     lower_algorithm_stmt(
@@ -18056,12 +18052,10 @@ fn lower_algorithm_stmt(
                         Language::C11 => {
                             // C11: no namespaces — function prefix
                             // dispatch. BC method = `<bc_snake>_<method>(self, args...)`;
-                            // algorithm cross-call = `<algo_snake>_<func>(args)`.
-                            if imp.kind == "bounded-collection" {
-                                format!("{snake}_{method}", snake = imp.namespace)
-                            } else {
-                                format!("{ns}_{method}", ns = imp.namespace)
-                            }
+                            // algorithm cross-call = `<algo_snake>_<func>(args)`. Both
+                            // resolve to `<namespace>_<method>` so the dispatch shape
+                            // is uniform regardless of import kind.
+                            format!("{ns}_{method}", ns = imp.namespace)
                         }
                     }
                 };

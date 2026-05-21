@@ -416,9 +416,7 @@ fn filter_scxml_family(value: Value) -> Result<Value, minijinja::Error> {
     for item in value.try_iter()? {
         if let Ok(kind_val) = item.get_attr("kind") {
             if let Some(k) = kind_val.as_str() {
-                if k == "Hybrid" {
-                    out.push(item.clone());
-                } else if k == "Scxml" && !invoke_is_remote_mesh(&item) {
+                if k == "Hybrid" || (k == "Scxml" && !invoke_is_remote_mesh(&item)) {
                     out.push(item.clone());
                 }
             }
