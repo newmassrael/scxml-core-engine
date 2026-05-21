@@ -123,37 +123,4 @@ impl<E> EventWithMetadata<E> {
             target: SceString::new(),
         }
     }
-
-    /// Construct an `EventWithMetadata` with full metadata.
-    ///
-    /// Parameter order matches C++ constructor at `StaticExecutionEngine.h:129`:
-    /// `(event, data, origin, sendId, type, originType, invokeId, target)`.
-    // Justification (clippy::too_many_arguments): 8 fields ports the C++
-    // constructor verbatim; collapsing into an `EventBuilder` would diverge
-    // from the cross-language API contract documented in
-    // `sce/include/StaticExecutionEngine.h`.
-    #[allow(clippy::too_many_arguments)]
-    pub fn with_fields(
-        event: E,
-        data: SceString,
-        origin: SceString,
-        send_id: SceString,
-        event_type: EventType,
-        origin_type: SceString,
-        invoke_id: SceString,
-        target: SceString,
-    ) -> Self {
-        Self {
-            event,
-            metadata: EventMetadata {
-                data,
-                event_type,
-                send_id,
-                origin,
-                origin_type,
-                invoke_id,
-            },
-            target,
-        }
-    }
 }

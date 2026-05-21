@@ -737,16 +737,19 @@ impl<P: StatePolicy> Engine<P> {
     ///
     /// Matches C++ `raiseExternal(Event, const string&, const string&)`.
     pub fn raise_external(&mut self, event: P::Event, event_data: &str, origin: &str) {
-        let meta = EventWithMetadata::with_fields(
+        let meta = EventWithMetadata {
             event,
-            crate::sce_string_from_str(event_data),
-            crate::sce_string_from_str(origin),
-            SceString::new(), // send_id
-            EventType::External,
-            crate::sce_string_from_str(crate::helpers::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE),
-            SceString::new(), // invoke_id
-            SceString::new(), // target
-        );
+            metadata: EventMetadata {
+                data: crate::sce_string_from_str(event_data),
+                event_type: EventType::External,
+                origin: crate::sce_string_from_str(origin),
+                origin_type: crate::sce_string_from_str(
+                    crate::helpers::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE,
+                ),
+                ..Default::default()
+            },
+            target: SceString::new(),
+        };
         self.external_queue.raise(meta);
 
         // W3C SCXML 5.10.1: Mark next event as external for _event.type
