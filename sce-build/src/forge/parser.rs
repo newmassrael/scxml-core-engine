@@ -5761,7 +5761,7 @@ fn decode_hex(s: &str) -> Result<Vec<u8>, String> {
     if s.is_empty() {
         return Ok(Vec::new());
     }
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return Err(format!(
             "hex string must have an even number of digits (got {} characters)",
             s.len()
