@@ -1742,10 +1742,16 @@ fn render_codec(
                     };
                     obj.insert(type_key.into(), wrapped.into());
                     let decode_stmt = if f.present_if.is_some() {
-                        tlv_chain_streaming_decode_stmt_gated(
-                            f, &body_type, &body_decoder, *max_depth, *on_overflow, terminate_on,
-                            &m.fields, lang,
-                        )
+                        tlv_chain_streaming_decode_stmt_gated(TlvChainDecodeGated {
+                            field: f,
+                            fields: &m.fields,
+                            body_type: &body_type,
+                            body_decoder: &body_decoder,
+                            max_depth: *max_depth,
+                            on_overflow: *on_overflow,
+                            terminate_on,
+                            lang,
+                        })
                     } else {
                         tlv_chain_streaming_decode_stmt(
                             f, &body_type, &body_decoder, *max_depth, *on_overflow, terminate_on, lang,
@@ -4160,7 +4166,7 @@ fn repeat_streaming_decode_stmt(
     // its value via `.unwrap()` (or per-language equivalent) inside
     // the True arm is sound.
     if let Some(pred) = &field.present_if {
-        return repeat_streaming_decode_stmt_gated(
+        return repeat_streaming_decode_stmt_gated(RepeatDecodeGated {
             field,
             fields,
             pred,
@@ -4169,7 +4175,7 @@ fn repeat_streaming_decode_stmt(
             body_decoder,
             max_count,
             lang,
-        );
+        });
     }
 
     match (lang, count_ref) {
@@ -5379,17 +5385,34 @@ fn caller_tag_arg_decode(
 ///     but skip wire reads when `(out->carrier & mask) == 0`
 ///     (encode mirrors via `(self->carrier & mask) == 0` skip)
 ///   - Python:  `id = None`; populate inside `if test:` branch
-fn repeat_streaming_decode_stmt_gated(
-    field: &CodecField,
-    fields: &[CodecField],
-    pred: &PresentIfPredicate,
-    count_ref: &CountRef,
-    body_type: &str,
-    body_decoder: &str,
+/// Codec-emit inputs grouped for [`repeat_streaming_decode_stmt_gated`]
+/// — bundles the gating predicate, count source, and body codec pair
+/// alongside the field/sibling context so the per-language match in
+/// the body still reads each input by name (via destructure at entry)
+/// without an 8-arg call signature.
+struct RepeatDecodeGated<'a> {
+    field: &'a CodecField,
+    fields: &'a [CodecField],
+    pred: &'a PresentIfPredicate,
+    count_ref: &'a CountRef,
+    body_type: &'a str,
+    body_decoder: &'a str,
     max_count: u32,
     lang: crate::generator::Language,
-) -> String {
+}
+
+fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
     use crate::generator::Language;
+    let RepeatDecodeGated {
+        field,
+        fields,
+        pred,
+        count_ref,
+        body_type,
+        body_decoder,
+        max_count,
+        lang,
+    } = ctx;
     let id_owned = codec_field_local_name(&field.id, lang);
     let id = id_owned.as_str();
     let test = present_if_test_literal(fields, pred, lang);
@@ -6088,19 +6111,36 @@ fn tlv_chain_streaming_encode_block(
 ///     but skip wire reads when `(out->carrier & mask) == 0`
 ///     (encode mirrors via `(self->carrier & mask) == 0` skip)
 ///   - Python:  `id = None`; populate inside `if test:` branch
-fn tlv_chain_streaming_decode_stmt_gated(
-    field: &CodecField,
-    body_type: &str,
-    body_decoder: &str,
+/// Codec-emit inputs grouped for [`tlv_chain_streaming_decode_stmt_gated`]
+/// — sibling of [`RepeatDecodeGated`]; bundles the body codec pair, TLV
+/// chain parameters, and field/sibling context so the per-language
+/// branches in the body access each input via destructure rather than
+/// an 8-arg signature.
+struct TlvChainDecodeGated<'a> {
+    field: &'a CodecField,
+    fields: &'a [CodecField],
+    body_type: &'a str,
+    body_decoder: &'a str,
     max_depth: u32,
     on_overflow: crate::forge::model::TlvOverflowPolicy,
-    terminate_on: &crate::forge::model::TlvTerminateStrategy,
-    fields: &[CodecField],
+    terminate_on: &'a crate::forge::model::TlvTerminateStrategy,
     lang: crate::generator::Language,
-) -> String {
+}
+
+fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String {
     use crate::forge::model::TlvOverflowPolicy;
     use crate::forge::model::TlvTerminateStrategy;
     use crate::generator::Language;
+    let TlvChainDecodeGated {
+        field,
+        fields,
+        body_type,
+        body_decoder,
+        max_depth,
+        on_overflow,
+        terminate_on,
+        lang,
+    } = ctx;
     let id_owned = codec_field_local_name(&field.id, lang);
     let id = id_owned.as_str();
     let pred = field
