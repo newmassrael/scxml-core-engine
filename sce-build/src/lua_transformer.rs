@@ -1200,9 +1200,7 @@ fn transform_object_literals(input: &str) -> String {
                     while placeholder_start > 0 && b[placeholder_start - 1] != b'\x01' {
                         placeholder_start -= 1;
                     }
-                    if placeholder_start > 0 {
-                        placeholder_start -= 1;
-                    }
+                    placeholder_start = placeholder_start.saturating_sub(1);
                     let placeholder = &input[placeholder_start..placeholder_end];
                     let result_str = result.clone();
                     if let Some(ph_pos) = result_str.rfind(placeholder) {
