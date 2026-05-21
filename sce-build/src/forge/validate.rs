@@ -75,8 +75,7 @@ fn check_state_response_assigns(
     let representative_service = state
         .on_entry_sends
         .first()
-        .map(|s| s.service.as_str())
-        .unwrap_or("?");
+        .map_or("?", |s| s.service.as_str());
 
     for transition in &state.transitions {
         for assign in &transition.assigns {

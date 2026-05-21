@@ -617,9 +617,7 @@ pub fn c_literal_for(value: &serde_json::Value, ty: &str) -> String {
                     .iter()
                     .map(|e| match e {
                         serde_json::Value::Number(n) => n
-                            .as_u64()
-                            .map(|u| u.to_string())
-                            .unwrap_or_else(|| n.to_string()),
+                            .as_u64().map_or_else(|| n.to_string(), |u| u.to_string()),
                         _ => "/* non-int bytes element */".into(),
                     })
                     .collect();
@@ -2042,15 +2040,15 @@ mod tests {
             let has_cases = entry
                 .get("cases")
                 .and_then(|c| c.as_array())
-                .map_or(false, |a| !a.is_empty());
+                .is_some_and(|a| !a.is_empty());
             let has_sequence = entry
                 .get("sequence")
                 .and_then(|s| s.as_array())
-                .map_or(false, |a| !a.is_empty());
+                .is_some_and(|a| !a.is_empty());
             let has_timers = entry
                 .get("timers")
                 .and_then(|t| t.as_array())
-                .map_or(false, |a| !a.is_empty());
+                .is_some_and(|a| !a.is_empty());
             if !has_cases && !has_sequence && !has_timers {
                 failures.push(format!(
                     "{fixture_name}: oracle entry has no 'cases', 'sequence', or 'timers' test data"

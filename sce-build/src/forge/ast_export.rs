@@ -218,8 +218,13 @@ mod schema_drift {
                     break;
                 }
             }
-            let context = first_diff
-                .map(|i| {
+            let context = first_diff.map_or_else(|| {
+                    format!(
+                        "\nLength differs: checked-in {} bytes, generated {} bytes.",
+                        checked_in.len(),
+                        generated.len()
+                    )
+                }, |i| {
                     let lo = i.saturating_sub(2);
                     let hi = (i + 3).min(generated.lines().count());
                     let lines: Vec<&str> = generated.lines().collect();
@@ -233,13 +238,6 @@ mod schema_drift {
                         "\nFirst divergence around line {}:\n{}",
                         i + 1,
                         snippet.join("\n")
-                    )
-                })
-                .unwrap_or_else(|| {
-                    format!(
-                        "\nLength differs: checked-in {} bytes, generated {} bytes.",
-                        checked_in.len(),
-                        generated.len()
                     )
                 });
             panic!(

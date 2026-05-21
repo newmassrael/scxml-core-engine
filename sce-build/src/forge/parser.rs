@@ -710,17 +710,13 @@ fn parse_lookup(
             MissPolicy::Error
         }
         Some(oms) if oms.value == "default" => {
-            let value = explicit_default
-                .map(|da| da.value)
-                .unwrap_or_else(|| entries[0].value.clone());
+            let value = explicit_default.map_or_else(|| entries[0].value.clone(), |da| da.value);
             MissPolicy::Default(value)
         }
         None => {
             // Absent attribute matches "default": fall back to the
             // explicit sce:default value, or the first entry if none.
-            let value = explicit_default
-                .map(|da| da.value)
-                .unwrap_or_else(|| entries[0].value.clone());
+            let value = explicit_default.map_or_else(|| entries[0].value.clone(), |da| da.value);
             MissPolicy::Default(value)
         }
         Some(oms) => {
@@ -1087,9 +1083,7 @@ fn parse_flag_inputs(
             ));
         }
         let width_str = child
-            .attribute("width")
-            .map(|s| s.trim().to_string())
-            .unwrap_or_else(|| "1".to_string());
+            .attribute("width").map_or_else(|| "1".to_string(), |s| s.trim().to_string());
         let width: u32 = parse_int(&width_str).ok_or_else(|| {
             located(
                 &child,
@@ -5659,9 +5653,7 @@ fn parse_algorithm(
     // substitutes `alias` with `<namespace>::<algorithm_name>` and
     // the consumed symbol must match).
     let name = root
-        .attribute("name")
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| label.identifier.to_string());
+        .attribute("name").map_or_else(|| label.identifier.to_string(), |s| s.to_string());
 
     Ok(AlgorithmModel {
         name,

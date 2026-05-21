@@ -450,8 +450,7 @@ mod tests {
             // class` keywords inside this leaf's body.
             let next_class_offset = hdr[body_start..]
                 .find("\nclass Semantic")
-                .map(|rel| body_start + rel)
-                .unwrap_or(hdr.len());
+                .map_or(hdr.len(), |rel| body_start + rel);
             let body = &hdr[body_start..next_class_offset];
 
             let needle = format!("return \"{}\";", expected_code);

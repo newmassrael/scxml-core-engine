@@ -2978,8 +2978,7 @@ fn validate_links(cfg: &DeployConfig) -> Result<(), DeployError> {
                 let untrusted_source = link
                     .domain_attrs
                     .as_ref()
-                    .map(|d| d.untrusted_source)
-                    .unwrap_or(false);
+                    .is_some_and(|d| d.untrusted_source);
 
                 // 6. session-arming-fields-on-non-arming-link.
                 // The fields are "dead config" when trust_class is NOT
@@ -3013,9 +3012,7 @@ fn validate_links(cfg: &DeployConfig) -> Result<(), DeployError> {
                         // value (or "<absent>" when domain_attrs is
                         // entirely missing) so the wire payload names
                         // the axis the author got wrong.
-                        let trust_class_str = trust_class
-                            .map(|tc| tc.as_str().to_string())
-                            .unwrap_or_else(|| "<absent>".to_string());
+                        let trust_class_str = trust_class.map_or_else(|| "<absent>".to_string(), |tc| tc.as_str().to_string());
                         return Err(DeployError::SessionArmingFieldsOnNonArmingLink {
                             machine: machine_name.clone(),
                             link_name: link_name.clone(),
@@ -3466,8 +3463,7 @@ pub fn validate_reassembly_cross_doc(
             let (clock_freq_mhz, memcpy_cycles_per_byte) = machine
                 .platform
                 .as_ref()
-                .map(|p| (p.clock_freq_mhz, p.memcpy_cycles_per_byte))
-                .unwrap_or((None, None));
+                .map_or((None, None), |p| (p.clock_freq_mhz, p.memcpy_cycles_per_byte));
 
             for (link_name, link) in machine.links.iter() {
                 let Some((pool_name, _slot_count, variant)) = resolve_link_rx_pool_slot_count(
@@ -3693,8 +3689,7 @@ pub fn validate_reassembly_cross_doc(
                 let policy = machine.resolved_stage_copy_policy();
                 if matches!(policy, StageCopyPolicy::Forbid)
                     && forge_link
-                        .map(|l| l.accept_stage_copy_rate)
-                        .unwrap_or(false)
+                        .is_some_and(|l| l.accept_stage_copy_rate)
                 {
                     return Err(ValidationError::PoolStageCopyAcceptRejectedUnderForbid {
                         machine: machine_name.clone(),
@@ -3734,8 +3729,7 @@ pub fn validate_reassembly_cross_doc(
                                 (excess as u64 * 100 / expected_p99_bytes as u64) as u32;
                             if rate_percent > 25 {
                                 let opt_out = forge_link
-                                    .map(|l| l.accept_stage_copy_rate)
-                                    .unwrap_or(false);
+                                    .is_some_and(|l| l.accept_stage_copy_rate);
                                 // Opt-out suppresses the diagnostic
                                 // under `warn` and `error` per spec
                                 // line 2356-2361. Under `forbid` the
@@ -4077,8 +4071,7 @@ fn validate_machine_scheduler_link_concurrency(cfg: &DeployConfig) -> Result<(),
             let is_mcu = machine
                 .platform
                 .as_ref()
-                .map(|p| matches!(p.class, PlatformClass::Mcu))
-                .unwrap_or(false);
+                .is_some_and(|p| matches!(p.class, PlatformClass::Mcu));
             if !is_mcu {
                 continue;
             }
@@ -4731,8 +4724,7 @@ fn validate_server_pool_rejection(cfg: &DeployConfig) -> Result<(), DeployError>
             continue;
         }
         let supported = super::transport::lookup(&server.transport)
-            .map(|d| d.supports_multi_instance_server)
-            .unwrap_or(false);
+            .is_some_and(|d| d.supports_multi_instance_server);
         if !supported {
             return Err(DeployError::ServerPoolNotSupported {
                 machine: machine_name.to_string(),
@@ -5369,12 +5361,11 @@ pub(crate) fn assign_someip_liveness_service_ids(
             let sibling_partition_count = cfg
                 .partitions
                 .as_ref()
-                .map(|m| {
+                .map_or(0, |m| {
                     m.iter()
                         .filter(|(_, p)| p.machines.iter().any(|n| n == machine_name))
                         .count()
-                })
-                .unwrap_or(0);
+                });
             if sibling_partition_count < 2 {
                 continue;
             }

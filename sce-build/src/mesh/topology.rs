@@ -2443,9 +2443,7 @@ fn resolve_someip_ids(
 /// Uses serde_yaml_ng's built-in serialization, falling back to Debug
 /// if serialization fails (should not happen for valid input).
 fn render_yaml_value(v: &serde_yaml_ng::Value) -> String {
-    serde_yaml_ng::to_string(v)
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|_| format!("{v:?}"))
+    serde_yaml_ng::to_string(v).map_or_else(|_| format!("{v:?}"), |s| s.trim().to_string())
 }
 
 /// Find bindings for a machine across all devices in the topology.

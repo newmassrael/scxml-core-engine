@@ -424,8 +424,7 @@ pub fn rowcol_to_offset(expanded_text: &str, row: u32, col: u32) -> usize {
     // line's end (next newline or EOF).
     let line_end = line_starts
         .get(line_idx + 1)
-        .map(|&s| s - 1) // exclude the '\n' byte itself
-        .unwrap_or(expanded_text.len());
+        .map_or(expanded_text.len(), |&s| s - 1);
     let line_slice = &expanded_text[line_start..line_end];
     let mut bytes_into_line = line_slice.len();
     for (i, (b, _)) in line_slice.char_indices().enumerate() {

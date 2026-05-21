@@ -2292,7 +2292,7 @@ impl SCXMLParser {
                         let is_parallel = model
                             .states
                             .get(&parent_id)
-                            .map_or(false, |s| s.is_parallel);
+                            .is_some_and(|s| s.is_parallel);
                         if !is_parallel {
                             out.push((parent_id.clone(), current.clone()));
                         }
@@ -2982,9 +2982,7 @@ fn transform_kt_code_with_named_contexts(
                 let matched = &caps[1];
                 renames
                     .iter()
-                    .find(|(id, _)| id == matched)
-                    .map(|(_, camel)| camel.clone())
-                    .unwrap_or_else(|| matched.to_string())
+                    .find(|(id, _)| id == matched).map_or_else(|| matched.to_string(), |(_, camel)| camel.clone())
             })
             .to_string();
     }

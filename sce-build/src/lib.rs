@@ -242,9 +242,7 @@ pub fn resolve_source_path(model: &mut SCXMLModel, scxml_path: &str) {
 /// helper is the SCXML-only baseline.
 fn resolve_driver_refs(model: &mut SCXMLModel, scxml_path: &str) -> Result<(), CompileError> {
     let parent_default = std::path::Path::new(scxml_path)
-        .parent()
-        .map(std::path::Path::to_path_buf)
-        .unwrap_or_else(|| std::path::PathBuf::from("."));
+        .parent().map_or_else(|| std::path::PathBuf::from("."), std::path::Path::to_path_buf);
     resolve_driver_refs_with_root(model, scxml_path, &parent_default)
 }
 
@@ -272,8 +270,7 @@ pub fn resolve_driver_refs_with_root(
             let (line, col) = driver
                 .source_location
                 .as_ref()
-                .map(|loc| (loc.line, loc.col))
-                .unwrap_or((None, None));
+                .map_or((None, None), |loc| (loc.line, loc.col));
             return Err(Located::new(
                 ValidationError::McuDriverHeaderNotFound {
                     href: driver.href.clone(),
@@ -1320,8 +1317,7 @@ pub fn compile_forge_with_deploy(
                         let primary = output
                             .files
                             .first()
-                            .map(|(_, src)| src.as_str())
-                            .unwrap_or("");
+                            .map_or("", |(_, src)| src.as_str());
                         if !primary.contains("sce_dcache_invalidate_by_addr") {
                             return Err(Located::new(
                                 ValidationError::PoolCachePreArmInvalidateMissingOnSpeculativeCore {
@@ -2215,9 +2211,8 @@ pub fn compile_scxml_with_imports(
                         let matches = path
                             .file_name()
                             .and_then(|s| s.to_str())
-                            .map(|n| n == machine_source)
-                            .unwrap_or(false)
-                            || path.to_str().map(|p| p == machine_source).unwrap_or(false);
+                            .is_some_and(|n| n == machine_source)
+                            || path.to_str().is_some_and(|p| p == machine_source);
                         if matches {
                             Some(model)
                         } else {
@@ -2719,9 +2714,7 @@ fn validate_and_enrich_imports(
                 let mut visited: HashSet<PathBuf> = HashSet::new();
                 visited.insert(src_path.clone());
                 let inner_base = src_path
-                    .parent()
-                    .map(|p| p.to_path_buf())
-                    .unwrap_or_else(|| base_dir.to_path_buf());
+                    .parent().map_or_else(|| base_dir.to_path_buf(), |p| p.to_path_buf());
                 ctx.codec_max_bytes = Some(compute_codec_recursive_max_bytes(
                     cm,
                     &parsed.imports,
@@ -2764,8 +2757,7 @@ fn validate_and_enrich_imports(
                 let inner_has_default_arm = cm
                     .variant
                     .as_ref()
-                    .map(|v| v.arms.iter().any(|a| a.is_default))
-                    .unwrap_or(false);
+                    .is_some_and(|v| v.arms.iter().any(|a| a.is_default));
                 ctx.codec_emits_default_ctor = inner_has_flag_default || inner_has_default_arm;
                 // RFC B5-ν inversion enrichment: for ANY variant
                 // codec import (regardless of legacy tag_scope), surface
@@ -2804,9 +2796,7 @@ fn validate_and_enrich_imports(
                     if matches!(*language, generator::Language::Rust) && needs_variant_import {
                         let snake = std::path::Path::new(&imp.src)
                             .file_stem()
-                            .and_then(|s| s.to_str())
-                            .map(|s| filters::to_snake_case(s.to_string()))
-                            .unwrap_or_else(|| ctx.alias.clone());
+                            .and_then(|s| s.to_str()).map_or_else(|| ctx.alias.clone(), |s| filters::to_snake_case(s.to_string()));
                         ctx.include_stmt = format!(
                             "use super::{snake}::{{{pascal}, {pascal}Variant}};",
                             snake = snake,
@@ -3261,9 +3251,8 @@ pub fn resolve_listener_links(
             let model = scxml_models.iter().find(|(path, _)| {
                 path.file_name()
                     .and_then(|s| s.to_str())
-                    .map(|n| n == machine_source)
-                    .unwrap_or(false)
-                    || path.to_str().map(|p| p == machine_source).unwrap_or(false)
+                    .is_some_and(|n| n == machine_source)
+                    || path.to_str().is_some_and(|p| p == machine_source)
             });
             let Some((_, model)) = model else {
                 // Source not in the build's SCXML set — silent-skip
@@ -3378,9 +3367,8 @@ pub fn validate_cross_doc_listener_roles(
             let model = scxml_models.iter().find(|(path, _)| {
                 path.file_name()
                     .and_then(|s| s.to_str())
-                    .map(|n| n == machine_source)
-                    .unwrap_or(false)
-                    || path.to_str().map(|p| p == machine_source).unwrap_or(false)
+                    .is_some_and(|n| n == machine_source)
+                    || path.to_str().is_some_and(|p| p == machine_source)
             });
             let Some((_, model)) = model else {
                 continue;
@@ -3529,8 +3517,7 @@ fn validate_bounded_collection_cross_refs(
     // time per C4 atomic B's plugin loader contract.
     let build_has_atomic_import = externs.iter().any(|decl| {
         forge::intrinsic_registry::lookup_symbol(&decl.name)
-            .map(|sym| sym.purpose.starts_with("atomic-"))
-            .unwrap_or(false)
+            .is_some_and(|sym| sym.purpose.starts_with("atomic-"))
     });
 
     for (diag_label, bc) in bounded_collections {
@@ -5221,8 +5208,7 @@ pub fn compile_mesh_transport(
     let device = deploy_cfg.device_for_machine(&effective_machine_name);
     let machine_subscriptions: &[mesh::deploy::SubscriptionConfig] = device
         .and_then(|d| d.machines.get(&effective_machine_name))
-        .map(|m| m.subscriptions.as_slice())
-        .unwrap_or(&[]);
+        .map_or(&[], |m| m.subscriptions.as_slice());
 
     // Stage 2b: resolve static targets against deploy.yaml bindings,
     // attach per-event SOME/IP IDs, and validate per-event field presence
@@ -5338,9 +5324,7 @@ pub fn compile_mesh_transport(
     // pure-receiver machine that never enters this branch and a fully
     // configured one share the same constants.
     let machine_ordering = device
-        .and_then(|d| d.machines.get(&effective_machine_name))
-        .map(mesh::deploy::MachineConfig::resolved_ordering_timings)
-        .unwrap_or_else(mesh::deploy::OrderingTimings::default_const);
+        .and_then(|d| d.machines.get(&effective_machine_name)).map_or_else(mesh::deploy::OrderingTimings::default_const, mesh::deploy::MachineConfig::resolved_ordering_timings);
     // SCE Mesh §16.7 row 8 (PEER_PARTITIONED): opt-in Zenoh liveliness
     // tokens. Absent section on the machine ⇒ `None`, and the template
     // emits zero liveliness code for that machine. `LivelinessConfig`
@@ -8896,8 +8880,7 @@ topology:
                 .arg("--version")
                 .output()
                 .ok()
-                .map(|out| out.status.success())
-                .unwrap_or(false)
+                .is_some_and(|out| out.status.success())
             {
                 return Some((*name).to_string());
             }

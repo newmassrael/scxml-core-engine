@@ -107,13 +107,11 @@ fn compile_for(language: Language, scxml: &str, label_id: &'static str) -> Strin
         .find(|(name, _)| {
             // Rust emits `<snake>.rs`, C11 emits `<snake>.h`.
             name.starts_with(label_id) || name.starts_with("rx_reassembly_pool")
-        })
-        .map(|(_, body)| body.clone())
-        .unwrap_or_else(|| {
+        }).map_or_else(|| {
             // Fall back to the first emitted file (handles linker
             // sidecars trailing the .h header).
             out.files.first().unwrap().1.clone()
-        })
+        }, |(_, body)| body.clone())
 }
 
 // ────────────────────────────────────────────────────────────────────

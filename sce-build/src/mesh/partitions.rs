@@ -241,8 +241,7 @@ pub fn validate_parallel_root_designation(
         let declares_root = decl
             .hosts_parallel_roots
             .as_ref()
-            .map(|v| !v.is_empty())
-            .unwrap_or(false);
+            .is_some_and(|v| !v.is_empty());
 
         if let Some(value) = decl.barrier_timeout_ms {
             if !declares_root {

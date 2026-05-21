@@ -136,9 +136,7 @@ fn rust_get_by_slot_signature_and_boundary_checks() {
         .find("pub fn get_by_slot")
         .expect("get_by_slot present");
     let body_end = code[body_start..]
-        .find("\n    }\n")
-        .map(|e| body_start + e)
-        .unwrap_or_else(|| code.len());
+        .find("\n    }\n").map_or_else(|| code.len(), |e| body_start + e);
     let body = &code[body_start..body_end];
     assert!(
         !body.contains("self.generation[slot]"),
@@ -233,9 +231,7 @@ fn python_get_by_slot_signature_and_boundary_checks() {
     );
     let body_start = code.find("def get_by_slot").expect("get_by_slot present");
     let body_end = code[body_start..]
-        .find("\n    def ")
-        .map(|e| body_start + e)
-        .unwrap_or_else(|| code.len());
+        .find("\n    def ").map_or_else(|| code.len(), |e| body_start + e);
     let body = &code[body_start..body_end];
     // OOB check accepts both `slot < 0` (defensive) and `slot >= CAPACITY`.
     assert!(body.contains("if slot < 0 or slot >= CAPACITY:"));

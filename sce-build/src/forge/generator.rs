@@ -2540,8 +2540,7 @@ fn render_codec(
     let has_caller_tag = m
         .variant
         .as_ref()
-        .map(|v| v.tag_field.is_none())
-        .unwrap_or(false);
+        .is_some_and(|v| v.tag_field.is_none());
     let (dispatch_tag_param_decl, dispatch_tag_param_first) = if has_caller_tag {
         match lang {
             crate::generator::Language::Rust => (", tag: u8", "tag: u8"),
@@ -2812,8 +2811,7 @@ fn render_codec(
                     let inner_emits_ctor = imports
                         .iter()
                         .find(|i| i.alias == arm.body_alias)
-                        .map(|i| i.codec_emits_default_ctor)
-                        .unwrap_or(false);
+                        .is_some_and(|i| i.codec_emits_default_ctor);
                     obj.insert("go_inner_emits_ctor".into(), inner_emits_ctor.into());
                     // Bare element-type reference for the zero-value
                     // fallback (`&snake.Pascal{}`) when the inner has
@@ -3653,8 +3651,7 @@ fn validate_cross_codec_flag_bind(
             let input_width = leaf_inputs
                 .iter()
                 .find(|fi| fi.name == bind.input)
-                .map(|fi| fi.width)
-                .unwrap_or(1);
+                .map_or(1, |fi| fi.width);
             match &bind.source {
                 FlagBindSource::Carrier { carrier, flag } => {
                     let bind_source_text = format!("{carrier}.{flag}");
@@ -3709,9 +3706,7 @@ fn validate_cross_codec_flag_bind(
                             // for the diagnostic message.
                             let embedded_field = parent
                                 .fields
-                                .get(embed_idx)
-                                .map(|f| f.id.clone())
-                                .unwrap_or_else(|| imp.alias.clone());
+                                .get(embed_idx).map_or_else(|| imp.alias.clone(), |f| f.id.clone());
                             return Err(ForgeError::Validation(
                                 ValidationError::CodecFlagBindCarrierAfterEmbed {
                                     parent_codec: parent.name.clone(),
@@ -5167,9 +5162,7 @@ fn combine_arm_call_args(flag_bind_args: &EmbedThreadArgs) -> (String, String, S
     let encode_with_leading_comma = flag_bind_args.encode_arg.clone();
     let encode_first = flag_bind_args
         .encode_arg
-        .strip_prefix(", ")
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| flag_bind_args.encode_arg.clone());
+        .strip_prefix(", ").map_or_else(|| flag_bind_args.encode_arg.clone(), |s| s.to_string());
     (decode_after_cursor, encode_first, encode_with_leading_comma)
 }
 
@@ -11226,8 +11219,7 @@ fn render_link_rust(
     let is_listener_with_sibling = options
         .listener_links
         .as_ref()
-        .map(|s| s.contains(&m.name))
-        .unwrap_or(false);
+        .is_some_and(|s| s.contains(&m.name));
     let ctx = minijinja::context! {
         name => &m.name,
         pascal_name => filters::to_pascal_case(m.name.clone()),
@@ -11519,8 +11511,7 @@ fn render_buffer_pool_rust(
     let has_speculative_prefetch = options
         .cache_platform
         .as_ref()
-        .map(|p| p.has_speculative_prefetch)
-        .unwrap_or(false);
+        .is_some_and(|p| p.has_speculative_prefetch);
     // C9-γ reassembly variant context (RFC §5.M lines 2680-2698).
     // `BufferPoolVariant::Default` collapses to the pre-C9 template
     // shape; the reassembly arm fans the three required reassembly
@@ -12211,8 +12202,7 @@ fn render_link_c(
     let is_listener_with_sibling = options
         .listener_links
         .as_ref()
-        .map(|s| s.contains(&m.name))
-        .unwrap_or(false);
+        .is_some_and(|s| s.contains(&m.name));
     let ctx = minijinja::context! {
         name => &m.name,
         snake_name => snake_name.clone(),
@@ -12380,8 +12370,7 @@ fn render_buffer_pool_c(
     let has_speculative_prefetch = options
         .cache_platform
         .as_ref()
-        .map(|p| p.has_speculative_prefetch)
-        .unwrap_or(false);
+        .is_some_and(|p| p.has_speculative_prefetch);
     // C9-γ reassembly variant context — mirror of Rust render fn so
     // both backends emit the same per-slot bitmap + deadline + ZID
     // shape from the same input model (RFC §5.M lines 2680-2698 +
@@ -14844,8 +14833,7 @@ fn render_procedure_kotlin(
             let expected = crate::forge::types::InferredType::from_sce_type(&f.sce_type);
             let default_val = f
                 .expr
-                .as_ref()
-                .map(|e| {
+                .as_ref().map_or_else(|| kotlin_default(&f.sce_type).to_string(), |e| {
                     expr::transpile_typed(
                         e,
                         ExprTarget::Kotlin,
@@ -14854,8 +14842,7 @@ fn render_procedure_kotlin(
                         expected,
                     )
                     .unwrap_or_else(|_| e.clone())
-                })
-                .unwrap_or_else(|| kotlin_default(&f.sce_type).to_string());
+                });
             serde_json::json!({
                 "id": f.id,
                 "kt_type": kotlin_type(&f.sce_type),
@@ -15110,8 +15097,7 @@ fn render_procedure_rust(
             let expected = crate::forge::types::InferredType::from_sce_type(&f.sce_type);
             let default_val = f
                 .expr
-                .as_ref()
-                .map(|e| {
+                .as_ref().map_or_else(|| rust_default(&f.sce_type).to_string(), |e| {
                     expr::transpile_typed(
                         e,
                         ExprTarget::Rust,
@@ -15120,8 +15106,7 @@ fn render_procedure_rust(
                         expected,
                     )
                     .unwrap_or_else(|_| e.clone())
-                })
-                .unwrap_or_else(|| rust_default(&f.sce_type).to_string());
+                });
             serde_json::json!({
                 "id": snake_id,
                 "rs_type": rust_type(&f.sce_type),
@@ -15577,8 +15562,7 @@ fn render_procedure_python(
             let expected = crate::forge::types::InferredType::from_sce_type(&f.sce_type);
             let default_val = f
                 .expr
-                .as_ref()
-                .map(|e| {
+                .as_ref().map_or_else(|| python_default(&f.sce_type).to_string(), |e| {
                     expr::transpile_typed(
                         e,
                         ExprTarget::Python,
@@ -15587,8 +15571,7 @@ fn render_procedure_python(
                         expected,
                     )
                     .unwrap_or_else(|_| e.clone())
-                })
-                .unwrap_or_else(|| python_default(&f.sce_type).to_string());
+                });
             serde_json::json!({
                 "snake_id": snake_id,
                 "py_type": python_type(&f.sce_type),
@@ -18334,8 +18317,7 @@ fn render_algorithm(
         .signature
         .return_type
         .as_ref()
-        .map(InferredType::from_sce_type)
-        .unwrap_or(InferredType::Unknown);
+        .map_or(InferredType::Unknown, InferredType::from_sce_type);
     let body = lower_algorithm_body(
         &m.body,
         lang,

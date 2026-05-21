@@ -1412,8 +1412,7 @@ fn generate_cpp_mesh(
     let zenoh_session_json5 = zenoh_session.map(ZenohSessionJson5::from_config);
     let zenoh_session_json5_present = zenoh_session_json5
         .as_ref()
-        .map(|z| !z.is_empty())
-        .unwrap_or(false);
+        .is_some_and(|z| !z.is_empty());
 
     // Device-shared Zenoh endpoints (listen/connect) surfaced as generated
     // namespace constants. Tests that need the endpoint for raw-peer
