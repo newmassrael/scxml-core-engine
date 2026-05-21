@@ -1818,7 +1818,7 @@ pub fn render_harness(
                 enriched.push(v);
             }
             (
-                minijinja::Value::from_serialize(&serde_json::Value::Array(enriched)),
+                minijinja::Value::from_serialize(serde_json::Value::Array(enriched)),
                 tol,
             )
         } else {

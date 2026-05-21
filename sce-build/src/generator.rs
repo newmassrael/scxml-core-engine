@@ -282,7 +282,7 @@ fn render_rust(
     let ctx = minijinja::context! {
         model => minijinja::Value::from_serialize(model),
         machine_name => machine_name,
-        license_config => minijinja::Value::from_serialize(&license_config()),
+        license_config => minijinja::Value::from_serialize(license_config()),
         inline_kind_types => &inline_kind_types,
         inline_kind_fns => &inline_kind_fns,
         no_std => no_std,
@@ -352,7 +352,7 @@ fn render_cpp(
         .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
 
     let model_val = minijinja::Value::from_serialize(model);
-    let license_val = minijinja::Value::from_serialize(&license_config());
+    let license_val = minijinja::Value::from_serialize(license_config());
 
     let header_ctx = minijinja::context! {
         model => &model_val,
@@ -452,7 +452,7 @@ fn render_c11(
         .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
 
     let model_val = minijinja::Value::from_serialize(model);
-    let license_val = minijinja::Value::from_serialize(&license_config());
+    let license_val = minijinja::Value::from_serialize(license_config());
 
     let header_ctx = minijinja::context! {
         model => &model_val,
@@ -587,7 +587,7 @@ fn render_kotlin(env: &Environment, model: &SCXMLModel) -> Result<String, Genera
         event_tree => minijinja::Value::from_serialize(&event_tree),
         event_members => event_members,
         leaf_events => minijinja::Value::from_serialize(&leaf_events),
-        license_config => minijinja::Value::from_serialize(&license_config()),
+        license_config => minijinja::Value::from_serialize(license_config()),
         kotlin_default => minijinja::Value::from_object(KotlinDefaultFn),
         initial_entry_root => initial_entry_root,
         ancestor_chains => minijinja::Value::from_serialize(&ancestor_chains),
@@ -904,7 +904,7 @@ fn render_python(env: &Environment, model: &SCXMLModel) -> Result<String, Genera
     let ctx = minijinja::context! {
         model => minijinja::Value::from_serialize(model),
         machine_name => machine_name,
-        license_config => minijinja::Value::from_serialize(&license_config()),
+        license_config => minijinja::Value::from_serialize(license_config()),
     };
     tmpl.render(ctx).map_err(render_error)
 }
@@ -933,7 +933,7 @@ fn render_go(env: &Environment, model: &SCXMLModel) -> Result<String, GenerateEr
     let ctx = minijinja::context! {
         model => minijinja::Value::from_serialize(model),
         machine_name => machine_name,
-        license_config => minijinja::Value::from_serialize(&license_config()),
+        license_config => minijinja::Value::from_serialize(license_config()),
         inline_kind_types => &inline_kind_types,
         inline_kind_fns => &inline_kind_fns,
     };
