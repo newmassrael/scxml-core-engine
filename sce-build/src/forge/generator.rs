@@ -14708,9 +14708,9 @@ fn bytes_wrap_for(target: ExprTarget, transpiled: &str) -> String {
 }
 
 /// Build the type map (variable name → SceType) for assign type checking.
-fn build_procedure_type_map<'a>(
-    m: &'a ProcedureModel,
-) -> std::collections::HashMap<&'a str, &'a SceType> {
+fn build_procedure_type_map(
+    m: &ProcedureModel,
+) -> std::collections::HashMap<&str, &SceType> {
     m.inputs
         .iter()
         .chain(m.internals.iter())
