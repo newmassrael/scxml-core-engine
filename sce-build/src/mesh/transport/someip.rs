@@ -927,9 +927,9 @@ mod tests {
         assert_eq!(SCXML_MACHINE_LIVENESS_SERVICE_CEILING, 0x82FF);
         assert_eq!(SCXML_MACHINE_LIVENESS_SERVICE_RANGE_SIZE, 128);
         // Disjoint from F.X-1 invoke [0x8100, 0x817F].
-        assert!(SCXML_MACHINE_LIVENESS_SERVICE_BASE > SCXML_INVOKE_SERVICE_CEILING);
+        const { assert!(SCXML_MACHINE_LIVENESS_SERVICE_BASE > SCXML_INVOKE_SERVICE_CEILING) };
         // Disjoint from F.X-3 region-liveness [0x8180, 0x81FF].
-        assert!(SCXML_MACHINE_LIVENESS_SERVICE_BASE > SCXML_LIVENESS_SERVICE_CEILING);
+        const { assert!(SCXML_MACHINE_LIVENESS_SERVICE_BASE > SCXML_LIVENESS_SERVICE_CEILING) };
         // Documented gap [0x8200, 0x827F] for future fourth subsystem
         // (RFC F.X-4 D1) — not contiguous with F.X-3.
         assert_eq!(SCXML_LIVENESS_SERVICE_CEILING + 1, 0x8200);
