@@ -626,6 +626,14 @@ pub enum ValidationError {
     /// constraint at codegen time instead of through a cross-language
     /// compiler error.
     ///
+    /// `arm_value` is `Some(v)` for enumerated `<sce:arm value="v">`
+    /// arms and `None` for the catch-all `<sce:default>` arm (which
+    /// has no specific value but goes through the same codegen call
+    /// site and has the same arity requirement). The two are
+    /// indistinguishable downstream but must be distinguishable in the
+    /// diagnostic so authors with BOTH an enumerated arm at 0x00 AND a
+    /// default arm see two distinct messages.
+    ///
     /// Repair: either give the arm body its own `tag=` attribute on
     /// `<sce:variant>` so it reads the tag from its own wire bytes,
     /// or redesign so the dispatcher consumes the β-shape leaf through
@@ -633,16 +641,17 @@ pub enum ValidationError {
     /// path which threads the tag from a parent flag — already
     /// supported).
     #[error(
-        "codec '{parent_codec}': variant arm value={arm_value:#x} (alias '{embedded_alias}') \
-         resolves to codec '{embedded_codec}' whose <sce:variant> is in caller-tag β shape \
-         (no tag= attribute) — there is no natural source for the inner tag in a variant-arm \
-         context. Either add tag=\"<field>\" to '{embedded_codec}' so it reads its tag from its \
-         own wire bytes, or expose '{embedded_codec}' via <sce:embed> + <sce:variant-dispatch> \
-         on a parent flag instead of as a variant arm body."
+        "codec '{parent_codec}': variant arm {} (alias '{embedded_alias}') resolves to codec \
+         '{embedded_codec}' whose <sce:variant> is in caller-tag β shape (no tag= attribute) \
+         — there is no natural source for the inner tag in a variant-arm context. Either add \
+         tag=\"<field>\" to '{embedded_codec}' so it reads its tag from its own wire bytes, \
+         or expose '{embedded_codec}' via <sce:embed> + <sce:variant-dispatch> on a parent \
+         flag instead of as a variant arm body.",
+        arm_value.map(|v| format!("value={v:#x}")).unwrap_or_else(|| "<default>".to_string())
     )]
     CodecVariantArmBodyCallerTagUnsupported {
         parent_codec: String,
-        arm_value: u64,
+        arm_value: Option<u64>,
         embedded_alias: String,
         embedded_codec: String,
     },

@@ -3544,7 +3544,7 @@ fn validate_cross_codec_variant_arm_not_caller_tag(
         Some(v) => v,
         None => return Ok(()),
     };
-    let check_arm = |body_alias: &str, arm_value: u64| -> Result<(), ForgeError> {
+    let check_arm = |body_alias: &str, arm_value: Option<u64>| -> Result<(), ForgeError> {
         let imp = match imports.iter().find(|i| i.alias == body_alias) {
             Some(i) => i,
             None => return Ok(()),
@@ -3562,13 +3562,14 @@ fn validate_cross_codec_variant_arm_not_caller_tag(
         Ok(())
     };
     for arm in &variant.arms {
-        check_arm(&arm.body_alias, arm.value)?;
+        check_arm(&arm.body_alias, Some(arm.value))?;
     }
     if let Some(default_arm) = variant.default_arm.as_ref() {
-        // The `<sce:default>` catch-all has no specific arm value; use
-        // 0 as a sentinel for the diagnostic's expected= slot. The
-        // body_alias is the discriminating key fragment.
-        check_arm(&default_arm.body_alias, 0)?;
+        // The `<sce:default>` catch-all has no specific arm value;
+        // pass `None` so the diagnostic surfaces "<default>" rather
+        // than a sentinel 0x00 that would collide with a real
+        // enumerated arm value=0x00 in the message.
+        check_arm(&default_arm.body_alias, None)?;
     }
     Ok(())
 }

@@ -13241,12 +13241,390 @@ fn axis1_inversion_variant_arm_body_caller_tag_rejected() {
             embedded_codec,
         }) => {
             assert_eq!(parent_codec, "codec_axis1_nested_d1");
-            assert_eq!(arm_value, 0x00, "arm value of the β-shape import");
+            assert_eq!(
+                arm_value,
+                Some(0x00),
+                "enumerated arm value of the β-shape import"
+            );
             assert_eq!(embedded_alias, "codec_axis1_nested_d2");
             assert_eq!(embedded_codec, "codec_axis1_nested_d2");
         }
         other => panic!("expected CodecVariantArmBodyCallerTagUnsupported, got: {other:?}"),
     }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// RFC Axis-1 inversion — multi-flag-input order invariant. The
+/// dispatcher signature emits `params_after_first_arg` from
+/// `m.flag_inputs` (declaration order) and the caller's
+/// `embed_flag_bind_thread_args` emits args from
+/// `imp.codec_flag_inputs` (same source). Both intrinsically share
+/// the same `Vec` so the order is aligned today, but no test pins
+/// the invariant — a future refactor that sorts one source without
+/// the other would silently re-bind args across multiple positions
+/// at the call site. This fixture authors a 3-input dispatcher (N,
+/// M, P) at the embed site so the caller emits three positional
+/// args in declaration order; the round-trip sidecar verifies each
+/// input gates its own field correctly under runtime decode.
+///
+/// Coverage:
+///   - Substring: parent's embed-site call site emits `n, m, p,` then
+///     the variant-dispatch arg (or `n, m, p)` if no variant-dispatch
+///     is declared on the import).
+///   - Substring: dispatcher's own decode signature emits
+///     `(cursor, n, m, p, tag)` in that order.
+///   - Round-trip: encode with N=1,M=0,P=1 + decode → ArmA with
+///     optN=Some, optM=None, optP=Some (only N and P gates fire).
+#[test]
+fn axis1_inversion_multi_flag_input_order() {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let dir = std::env::temp_dir().join(format!("sce_axis1_multi_input_{pid}_{id}"));
+    std::fs::create_dir_all(&dir).expect("mkdir fixture");
+
+    // Parent: header carries three flags N (bit 5), M (bit 6), P (bit
+    // 7); embed of dispatcher binds each input to its same-named flag.
+    // No variant-dispatch on the parent import (Q-D-3 (a) — the
+    // dispatcher's default arm makes this legal). This isolates the
+    // multi-input ORDER invariant from the caller-tag arg-order
+    // invariant covered by axis1_inversion_embed_dispatcher_arg_order.
+    let parent = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_multi_parent" sce:default-endian="big">
+  <sce:import src="codec_multi_disp.scxml" kind="codec" as="codec_multi_disp">
+    <sce:flag-bind input="N" source="header.N"/>
+    <sce:flag-bind input="M" source="header.M"/>
+    <sce:flag-bind input="P" source="header.P"/>
+  </sce:import>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="N" bit="5"/>
+      <sce:flag name="M" bit="6"/>
+      <sce:flag name="P" bit="7"/>
+    </sce:flags>
+    <sce:embed id="payload" type="codec_multi_disp" sce:byte="1"/>
+  </datamodel>
+</scxml>"#;
+
+    // Dispatcher with own-field tag + three flag-inputs N/M/P (NOT
+    // caller-tag β shape; the inner tag is read from the dispatcher's
+    // own wire bytes). The arms forward all three inputs.
+    let dispatcher = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_multi_disp" sce:default-endian="big">
+  <sce:import src="codec_multi_arm_a.scxml" kind="codec" as="codec_multi_arm_a">
+    <sce:flag-bind input="N" source="N"/>
+    <sce:flag-bind input="M" source="M"/>
+    <sce:flag-bind input="P" source="P"/>
+  </sce:import>
+  <sce:import src="codec_multi_arm_b.scxml" kind="codec" as="codec_multi_arm_b"/>
+  <sce:flag-inputs>
+    <sce:flag-input name="N" width="1"/>
+    <sce:flag-input name="M" width="1"/>
+    <sce:flag-input name="P" width="1"/>
+  </sce:flag-inputs>
+  <datamodel>
+    <data id="disp_tag" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:variant tag="disp_tag">
+      <sce:arm value="0x00" type="codec_multi_arm_a" default="true"/>
+      <sce:arm value="0x01" type="codec_multi_arm_b"/>
+      <sce:default type="codec_multi_arm_b"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#;
+
+    // arm_a declares three flag-inputs and gates three separate
+    // suffix bytes — so a swap of any pair of input args at the call
+    // site would shift the present-if test of one byte to the gating
+    // flag intended for another byte, surfacing as wrong wire bytes
+    // in the round-trip.
+    let arm_a = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_multi_arm_a" sce:default-endian="big">
+  <sce:flag-inputs>
+    <sce:flag-input name="N" width="1"/>
+    <sce:flag-input name="M" width="1"/>
+    <sce:flag-input name="P" width="1"/>
+  </sce:flag-inputs>
+  <datamodel>
+    <sce:field id="x"     sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="opt_n" sce:type="uint8" sce:byte="1" sce:bit-size="8" sce:present-if="N"/>
+    <sce:field id="opt_m" sce:type="uint8" sce:byte="2" sce:bit-size="8" sce:present-if="M"/>
+    <sce:field id="opt_p" sce:type="uint8" sce:byte="3" sce:bit-size="8" sce:present-if="P"/>
+  </datamodel>
+</scxml>"#;
+
+    let arm_b = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_multi_arm_b" sce:default-endian="big">
+  <datamodel><sce:field id="r" sce:type="uint8" sce:byte="0" sce:bit-size="8"/></datamodel>
+</scxml>"#;
+
+    std::fs::write(dir.join("codec_multi_parent.scxml"), parent).expect("write parent");
+    std::fs::write(dir.join("codec_multi_disp.scxml"), dispatcher).expect("write disp");
+    std::fs::write(dir.join("codec_multi_arm_a.scxml"), arm_a).expect("write arm_a");
+    std::fs::write(dir.join("codec_multi_arm_b.scxml"), arm_b).expect("write arm_b");
+
+    // Substring assertions on Rust emit — pin caller AND callee order
+    // for THREE inputs. Single backend is enough for this invariant
+    // since the shared per-language `embed_flag_bind_thread_args` /
+    // `compute_flag_input_param_fragments` walk the same Vec for all
+    // 6 backends; the round-trip downstream proves the wire is correct.
+    let parent_out = sce_build::compile_forge_with_imports(
+        parent,
+        sce_build::DocumentLabel::symmetric("codec_multi_parent"),
+        sce_build::generator::Language::Rust,
+        &dir,
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .expect("parent multi-input codegen");
+    let parent_body = parent_out
+        .files
+        .iter()
+        .find(|(name, _)| name.contains("codec_multi_parent"))
+        .map(|(_, b)| b.clone())
+        .expect("parent emit");
+    assert!(
+        parent_body.contains(
+            "CodecMultiDisp::decode(cursor, \
+             ((header >> 5) & 0x1) as u8, \
+             ((header >> 6) & 0x1) as u8, \
+             ((header >> 7) & 0x1) as u8)?"
+        ),
+        "caller MUST emit (N, M, P) at the embed-site decode call in flag-input \
+         declaration order; got:\n{parent_body}"
+    );
+
+    let dispatcher_out = sce_build::compile_forge_with_imports(
+        dispatcher,
+        sce_build::DocumentLabel::symmetric("codec_multi_disp"),
+        sce_build::generator::Language::Rust,
+        &dir,
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .expect("dispatcher multi-input codegen");
+    let dispatcher_body = dispatcher_out
+        .files
+        .iter()
+        .find(|(name, _)| name.ends_with("codec_multi_disp.rs"))
+        .map(|(_, b)| b.clone())
+        .expect("dispatcher emit");
+    assert!(
+        dispatcher_body.contains("pub fn decode(cursor: &mut SceCursor<'_>, n: u8, m: u8, p: u8)"),
+        "dispatcher decode signature MUST emit (n, m, p) in flag-input declaration \
+         order; got:\n{dispatcher_body}"
+    );
+    assert!(
+        dispatcher_body
+            .contains("pub fn encode<S: SceSink>(&self, w: &mut S, n: u8, m: u8, p: u8)"),
+        "dispatcher encode signature MUST emit (n, m, p) in same declaration order \
+         as decode; got:\n{dispatcher_body}"
+    );
+
+    // Round-trip sidecar — encode with N=1, M=0, P=1 ⇒ wire layout
+    // [header=0xA0, disp_tag=0x00, x, optN, optP] (5 bytes; optM
+    // skipped because M=0). A swapped arg pair would either skip the
+    // wrong byte at encode or read the wrong byte at decode.
+    let sidecar = r#"
+use crate::codec_multi_disp::{CodecMultiDisp, CodecMultiDispVariant};
+use crate::codec_multi_arm_a::CodecMultiArmA;
+use crate::codec_multi_arm_b::CodecMultiArmB;
+
+#[test]
+fn multi_input_round_trip_n1_m0_p1() {
+    // Construct with N=1, P=1 (M=0 — bit 6 clear).
+    let p = CodecMultiParent {
+        header: 0xA0u8, // 0b1010_0000 — N at bit 5 + P at bit 7
+        payload: CodecMultiDisp {
+            disp_tag: 0x00u8,
+            body: CodecMultiDispVariant::CodecMultiArmA(CodecMultiArmA {
+                x:     0x11u8,
+                opt_n: Some(0x22u8),
+                opt_m: None,
+                opt_p: Some(0x44u8),
+            }),
+        },
+    };
+    let bytes = p.encode_to_vec();
+    // 5 bytes: header + disp_tag + x + optN + optP (optM gated off)
+    assert_eq!(
+        bytes,
+        vec![0xA0u8, 0x00u8, 0x11u8, 0x22u8, 0x44u8],
+        "wire bytes for N=1,M=0,P=1 (optM byte must NOT appear)"
+    );
+    let mut cursor = SceCursor::new(&bytes);
+    let decoded = CodecMultiParent::decode(&mut cursor)
+        .expect("round-trip decode of well-formed multi-input frame");
+    match decoded.payload.body {
+        CodecMultiDispVariant::CodecMultiArmA(arm) => {
+            assert_eq!(arm.x,     0x11,         "x");
+            assert_eq!(arm.opt_n, Some(0x22),   "opt_n gated by N=1");
+            assert_eq!(arm.opt_m, None,         "opt_m gated off by M=0");
+            assert_eq!(arm.opt_p, Some(0x44),   "opt_p gated by P=1");
+        }
+        _ => panic!("expected ArmA"),
+    }
+    // Unused-import suppress for the cross-arm symbol on the test
+    // case where only ArmA is exercised. Same pattern as the
+    // axis1_inversion_embed_dispatcher_arg_order sidecar.
+    let _ = std::mem::size_of::<CodecMultiArmB>();
+}
+"#;
+    rustc_test_codec_set_with_extra(
+        &dir,
+        &[
+            "codec_multi_parent.scxml",
+            "codec_multi_disp.scxml",
+            "codec_multi_arm_a.scxml",
+            "codec_multi_arm_b.scxml",
+        ],
+        &[("codec_multi_parent_test.rs", sidecar)],
+        "axis1_multi_input_order",
+    )
+    .expect(
+        "multi-flag-input order round-trip MUST decode correctly with N=1,M=0,P=1 — any \
+         swap of input args at the caller or callee site would either skip the wrong \
+         byte at encode or read the wrong byte at decode",
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// RFC Axis-1 inversion + B5-ν inversion β shape negative —
+/// `<sce:default>` arm body in caller-tag β shape is rejected with the
+/// SAME typed diagnostic as enumerated arms, but with `arm_value:
+/// None` so the message renders `<default>` instead of a sentinel
+/// 0x00 (which would collide with a hypothetical enumerated arm
+/// value=0x00 + default-arm β-shape pair). Pins the no-carve-out
+/// invariant: every arm-body codegen call site is covered by the
+/// validator, with disambiguated diagnostics.
+#[test]
+fn axis1_inversion_variant_default_arm_caller_tag_rejected() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let dir = std::env::temp_dir().join(format!("sce_axis1_nested_default_{pid}_{id}"));
+    std::fs::create_dir_all(&dir).expect("mkdir fixture");
+
+    // D1: parent dispatcher whose enumerated arms are simple leaves
+    // but whose `<sce:default>` catch-all is the β-shape D2. Q-V4 (a)
+    // requires a `default="true"` marker on an enumerated arm too, so
+    // arm 0x01 keeps the marker; the `<sce:default>` is the strict
+    // catch-all the validator must now reject.
+    let d1 = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_axis1_default_d1" sce:default-endian="big">
+  <sce:import src="codec_axis1_default_arm_b.scxml" kind="codec" as="codec_axis1_default_arm_b"/>
+  <sce:import src="codec_axis1_default_d2.scxml" kind="codec" as="codec_axis1_default_d2"/>
+  <datamodel>
+    <data id="tag" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:variant tag="tag">
+      <sce:arm value="0x01" type="codec_axis1_default_arm_b" default="true"/>
+      <sce:default type="codec_axis1_default_d2"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#;
+
+    // D2: caller-tag β shape — `<sce:variant>` with no `tag=` attr.
+    let d2 = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_axis1_default_d2" sce:default-endian="big">
+  <sce:import src="codec_axis1_default_d2_arm_a.scxml" kind="codec" as="codec_axis1_default_d2_arm_a"/>
+  <sce:import src="codec_axis1_default_d2_arm_b.scxml" kind="codec" as="codec_axis1_default_d2_arm_b"/>
+  <datamodel>
+    <sce:variant>
+      <sce:arm value="0x00" type="codec_axis1_default_d2_arm_a" default="true"/>
+      <sce:arm value="0x01" type="codec_axis1_default_d2_arm_b"/>
+    </sce:variant>
+  </datamodel>
+</scxml>"#;
+
+    let leaf = |id: &str, field: &str| -> String {
+        format!(
+            r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="{id}" sce:default-endian="big">
+  <datamodel><sce:field id="{field}" sce:type="uint8" sce:byte="0" sce:bit-size="8"/></datamodel>
+</scxml>"#
+        )
+    };
+
+    std::fs::write(dir.join("codec_axis1_default_d1.scxml"), d1).expect("write d1");
+    std::fs::write(dir.join("codec_axis1_default_d2.scxml"), d2).expect("write d2");
+    std::fs::write(
+        dir.join("codec_axis1_default_arm_b.scxml"),
+        leaf("codec_axis1_default_arm_b", "z"),
+    )
+    .expect("write arm_b");
+    std::fs::write(
+        dir.join("codec_axis1_default_d2_arm_a.scxml"),
+        leaf("codec_axis1_default_d2_arm_a", "x"),
+    )
+    .expect("write d2_arm_a");
+    std::fs::write(
+        dir.join("codec_axis1_default_d2_arm_b.scxml"),
+        leaf("codec_axis1_default_d2_arm_b", "y"),
+    )
+    .expect("write d2_arm_b");
+
+    let result = sce_build::compile_forge_with_imports(
+        d1,
+        sce_build::DocumentLabel::symmetric("codec_axis1_default_d1"),
+        sce_build::generator::Language::Rust,
+        &dir,
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let located_err = match result {
+        Ok(_) => panic!(
+            "default-arm β-shape body must surface the typed rejection \
+             (no carve-out for the catch-all arm)"
+        ),
+        Err(e) => e,
+    };
+    // Render BEFORE destructuring so the message-shape assertion can
+    // run too — Display borrows the whole error, then the struct match
+    // moves out the owned String fields for value assertions.
+    let rendered = format!("{}", located_err.error);
+    match located_err.error {
+        ForgeError::Validation(ValidationError::CodecVariantArmBodyCallerTagUnsupported {
+            parent_codec,
+            arm_value,
+            embedded_alias,
+            embedded_codec,
+        }) => {
+            assert_eq!(parent_codec, "codec_axis1_default_d1");
+            assert_eq!(
+                arm_value, None,
+                "default arm carries no enumerated value — `arm_value` MUST be \
+                 None so the diagnostic message renders `<default>` rather than \
+                 a sentinel 0x00 collision"
+            );
+            assert_eq!(embedded_alias, "codec_axis1_default_d2");
+            assert_eq!(embedded_codec, "codec_axis1_default_d2");
+        }
+        other => panic!("expected CodecVariantArmBodyCallerTagUnsupported, got: {other:?}"),
+    }
+    // Display message must render "<default>" not "0x0" so authors
+    // with BOTH a value=0x00 enumerated arm AND a default-arm β-shape
+    // see two distinct diagnostics rather than collision-confused ones.
+    assert!(
+        rendered.contains("variant arm <default>"),
+        "Display must render `<default>` for None arm_value; got:\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("variant arm value=0x0 "),
+        "Display must NOT render sentinel `value=0x0` for default arm; got:\n{rendered}"
+    );
 
     let _ = std::fs::remove_dir_all(&dir);
 }

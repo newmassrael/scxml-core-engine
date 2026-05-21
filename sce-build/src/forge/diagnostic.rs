@@ -4841,12 +4841,23 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             // codec or move the import from variant arm to <sce:embed>.
             // Both alternatives are deterministic for the author, so
             // `fix: None` per NeutralOrDeterministic class.
-            expected: Some(vec![format!("{arm_value:#x}")]),
+            //
+            // `arm_value` is `Some(v)` for enumerated arms and `None`
+            // for the catch-all `<sce:default>` arm. The expected[]
+            // slot renders `<default>` so authors with both a
+            // value=0x00 arm AND a default arm see two distinct
+            // diagnostics (key_fragments preserves the disambiguation
+            // for the FNV1a id too).
+            expected: Some(vec![arm_value
+                .map(|v| format!("{v:#x}"))
+                .unwrap_or_else(|| "<default>".to_string())]),
             actual: Some(embedded_codec.clone()),
             fix: None,
             key_fragments: vec![
                 parent_codec.clone(),
-                format!("{arm_value:#x}"),
+                arm_value
+                    .map(|v| format!("{v:#x}"))
+                    .unwrap_or_else(|| "<default>".to_string()),
                 embedded_alias.clone(),
                 embedded_codec.clone(),
             ],
@@ -8575,7 +8586,7 @@ mod tests {
                 "forge/codec-variant-arm-body-caller-tag-unsupported",
                 ValidationError::CodecVariantArmBodyCallerTagUnsupported {
                     parent_codec: "session_envelope".into(),
-                    arm_value: 0x03,
+                    arm_value: Some(0x03),
                     embedded_alias: "session_inner".into(),
                     embedded_codec: "session_inner".into(),
                 }
