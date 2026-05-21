@@ -6774,7 +6774,7 @@ fn scxml_semantic_fields(e: &crate::scxml_semantic::ScxmlSemanticError) -> Diagn
 /// vector of individual tokens. Several validation errors carry this
 /// as free text for the Display impl; agents need it structured.
 fn split_expected(s: &str) -> Vec<String> {
-    s.split(|c: char| c == ',' || c == '|')
+    s.split([',', '|'])
         .map(|part| part.trim().to_string())
         .filter(|part| !part.is_empty())
         .collect()
