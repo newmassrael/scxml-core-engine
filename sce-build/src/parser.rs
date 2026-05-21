@@ -1281,7 +1281,7 @@ impl SCXMLParser {
             is_kt_condition = true;
             cond_kt = if !model.context_object_ids.is_empty() {
                 transform_kt_code_with_named_contexts(
-                    &stripped.to_string(),
+                    stripped,
                     &model.context_object_ids,
                 )
             } else {
