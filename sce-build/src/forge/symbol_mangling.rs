@@ -175,7 +175,7 @@ pub struct Collision {
 pub fn build_symbol_table(
     model: &SCXMLModel,
     forge_docs: &[ForgeDocument],
-) -> Result<BTreeMap<String, SymbolEntry>, Collision> {
+) -> Result<BTreeMap<String, SymbolEntry>, Box<Collision>> {
     let mut table: BTreeMap<String, SymbolEntry> = BTreeMap::new();
     let machine_name = model.name.clone();
 
@@ -217,7 +217,7 @@ fn push_entry(
     state_path: &str,
     artifact: &str,
     location: &SourceLocation,
-) -> Result<(), Collision> {
+) -> Result<(), Box<Collision>> {
     let mangled = mangle(machine, state_path, artifact);
     let entry = SymbolEntry {
         mangled: mangled.clone(),
@@ -227,11 +227,11 @@ fn push_entry(
         location: location.clone(),
     };
     if let Some(prior) = table.get(&mangled) {
-        return Err(Collision {
+        return Err(Box::new(Collision {
             mangled,
             first: prior.clone(),
             second: entry,
-        });
+        }));
     }
     table.insert(mangled, entry);
     Ok(())
@@ -247,7 +247,7 @@ fn walk_state(
     machine: &str,
     state_id: &str,
     state: &State,
-) -> Result<(), Collision> {
+) -> Result<(), Box<Collision>> {
     if let Some(ref loc) = state.source_location {
         push_entry(table, machine, state_id, "_state_body", loc)?;
     }
@@ -279,7 +279,7 @@ fn walk_action_block(
     kind: &str,
     block_idx: usize,
     actions: &[Action],
-) -> Result<(), Collision> {
+) -> Result<(), Box<Collision>> {
     for (action_idx, action) in actions.iter().enumerate() {
         if let Some(ref loc) = action.source_location {
             let artifact = format!("{}_{}_{}", kind, block_idx, action_idx);
