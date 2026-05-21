@@ -15958,7 +15958,7 @@ fn render_inline_lookup_member(
             for v in &unique_values {
                 type_def.push_str(&format!("    {},\n", rust_variant(v)));
             }
-            type_def.push_str("}");
+            type_def.push('}');
 
             // Function (impl block)
             let input_snake = filters::to_snake_case(input_id.to_string());
