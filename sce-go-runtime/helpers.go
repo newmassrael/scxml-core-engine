@@ -271,6 +271,22 @@ type ParentEvent struct {
 	Data string
 }
 
+// SetCurrentEventArgs is the parameter object for the W3C SCXML 5.10
+// IScriptEngine.SetCurrentEvent boundary. Bundles the seven _event.*
+// metadata fields (name + 6 metadata) that every script engine impl
+// must surface before guard evaluation / action execution. Cross-language
+// siblings: SCE::SetCurrentEventArgs (C++) and SetCurrentEventArgs
+// (Rust / Kotlin / Python).
+type SetCurrentEventArgs struct {
+	Name       string
+	Data       string
+	Type       string
+	SendID     string
+	Origin     string
+	OriginType string
+	InvokeID   string
+}
+
 // ── Script engine global registry ──────────────────────────────────
 //
 // IScriptEngine is the interface for script engine implementations.
@@ -295,7 +311,7 @@ type IScriptEngine interface {
 
 	// SCXML-specific
 	SetupSystemVariables(sessionID string) error
-	SetCurrentEvent(sessionID, name, data, eventType, sendID, origin, originType, invokeID string) error
+	SetCurrentEvent(sessionID string, args SetCurrentEventArgs) error
 	SetStateQueryCallback(sessionID string, cb func(stateID string) bool)
 
 	// W3C SCXML B.2: Set a variable as an XML DOM object with getElementsByTagName/getAttribute methods.

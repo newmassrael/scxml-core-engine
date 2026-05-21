@@ -19,6 +19,7 @@ import (
 	"strings"
 	"sync"
 
+	sce "github.com/newmassrael/sce-go-runtime"
 	lua "github.com/Shopify/go-lua"
 )
 
@@ -206,7 +207,7 @@ func (e *LuaEngine) SetupSystemVariables(sessionID string) error {
 	return nil
 }
 
-func (e *LuaEngine) SetCurrentEvent(sessionID, name, data, eventType, sendID, origin, originType, invokeID string) error {
+func (e *LuaEngine) SetCurrentEvent(sessionID string, args sce.SetCurrentEventArgs) error {
 	sess, err := e.getSession(sessionID)
 	if err != nil {
 		return err
@@ -215,30 +216,30 @@ func (e *LuaEngine) SetCurrentEvent(sessionID, name, data, eventType, sendID, or
 	// W3C SCXML 5.10: Create _event table
 	sess.l.NewTable()
 
-	sess.l.PushString(name)
+	sess.l.PushString(args.Name)
 	sess.l.SetField(-2, "name")
 
-	if data != "" {
-		trimmed := strings.TrimSpace(data)
+	if args.Data != "" {
+		trimmed := strings.TrimSpace(args.Data)
 		if strings.HasPrefix(trimmed, "<") {
 			// W3C SCXML B.2: XML data -> DOM object (test 561)
-			e.pushDOMTable(sess, data)
+			e.pushDOMTable(sess, args.Data)
 			sess.l.SetField(-2, "data")
 		} else {
 			// Try to evaluate as Lua expression first
 			top := sess.l.Top()
-			if err := lua.DoString(sess.l, "return "+data); err == nil {
+			if err := lua.DoString(sess.l, "return "+args.Data); err == nil {
 				sess.l.SetField(-2, "data")
 			} else {
 				sess.l.SetTop(top)
 				// W3C SCXML B.2 test 562/578: Try JSON-to-Lua conversion
-				luaSyntax := jsonToLuaTable(data)
+				luaSyntax := jsonToLuaTable(args.Data)
 				if err := lua.DoString(sess.l, "return "+luaSyntax); err == nil {
 					sess.l.SetField(-2, "data")
 				} else {
 					sess.l.SetTop(top)
 					// W3C SCXML B.2: Fall back to whitespace-normalized string
-					normalized := strings.Join(strings.Fields(data), " ")
+					normalized := strings.Join(strings.Fields(args.Data), " ")
 					sess.l.PushString(normalized)
 					sess.l.SetField(-2, "data")
 				}
@@ -249,21 +250,21 @@ func (e *LuaEngine) SetCurrentEvent(sessionID, name, data, eventType, sendID, or
 		sess.l.SetField(-2, "data")
 	}
 
-	sess.l.PushString(eventType)
+	sess.l.PushString(args.Type)
 	sess.l.SetField(-2, "type")
 
-	sess.l.PushString(sendID)
+	sess.l.PushString(args.SendID)
 	sess.l.SetField(-2, "sendid")
 
 	// W3C SCXML 5.10.1: Always set origin/origintype so targetexpr="_event.origin"
 	// evaluates to empty string (not nil) when origin is unset (test 336).
-	sess.l.PushString(origin)
+	sess.l.PushString(args.Origin)
 	sess.l.SetField(-2, "origin")
 
-	sess.l.PushString(originType)
+	sess.l.PushString(args.OriginType)
 	sess.l.SetField(-2, "origintype")
 
-	sess.l.PushString(invokeID)
+	sess.l.PushString(args.InvokeID)
 	sess.l.SetField(-2, "invokeid")
 
 	sess.l.SetGlobal("_event")

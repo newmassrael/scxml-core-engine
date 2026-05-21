@@ -279,13 +279,15 @@ func (p *{{ machine_name }}Policy) ExecuteFinalizeForChildEvent(eventWithMeta *s
 			eventName := p.GetEventName(eventWithMeta.Event)
 			_ = se.SetCurrentEvent(
 				p.SessionID,
-				eventName,
-				eventWithMeta.Metadata.Data,
-				"external",
-				eventWithMeta.Metadata.SendID,
-				eventWithMeta.Metadata.Origin,
-				eventWithMeta.Metadata.OriginType,
-				eventWithMeta.Metadata.InvokeID,
+				sce.SetCurrentEventArgs{
+					Name:       eventName,
+					Data:       eventWithMeta.Metadata.Data,
+					Type:       "external",
+					SendID:     eventWithMeta.Metadata.SendID,
+					Origin:     eventWithMeta.Metadata.Origin,
+					OriginType: eventWithMeta.Metadata.OriginType,
+					InvokeID:   eventWithMeta.Metadata.InvokeID,
+				},
 			)
 			_ = se.ExecuteScript(p.SessionID, finalizeScript)
 		}

@@ -211,7 +211,7 @@ func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) setCurrentEvent(name s
 	origin := p.pendingEventOrigin
 	originType := p.pendingEventOrigintype
 	invokeID := p.pendingEventInvokeid
-	_ = engine.SetCurrentEvent(p.SessionID, name, data, eventType, sendID, origin, originType, invokeID)
+	_ = engine.SetCurrentEvent(p.SessionID, sce.SetCurrentEventArgs{Name: name, Data: data, Type: eventType, SendID: sendID, Origin: origin, OriginType: originType, InvokeID: invokeID})
 }
 
 // assignVariable assigns a value to a datamodel variable via script engine.
