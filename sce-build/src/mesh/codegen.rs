@@ -523,21 +523,23 @@ fn event_to_const_suffix(event: &str) -> String {
 /// and codegen path cannot drift.
 use crate::mesh::someip_format::hex_id as fmt_someip_id;
 
-/// Fan a [`SomeipEventIds`] variant into the per-event template fields.
-/// Returns `(field_kind, method_id, event_group_id, event_id, getter_id,
+/// Fan a [`SomeipEventIds`] variant into the per-event template fields:
+/// `(field_kind, method_id, event_group_id, event_id, getter_id,
 /// setter_id)` with only the fields matching the variant populated.
 /// Centralizes the single "variant → template fields" translation so
 /// the template never has to probe which option happened to be set.
-fn event_ids_to_template(
-    ids: &crate::mesh::topology::SomeipEventIds,
-) -> (
+type EventIdsTemplateFields = (
     Option<&'static str>,
     Option<String>,
     Option<String>,
     Option<String>,
     Option<String>,
     Option<String>,
-) {
+);
+
+fn event_ids_to_template(
+    ids: &crate::mesh::topology::SomeipEventIds,
+) -> EventIdsTemplateFields {
     use crate::mesh::topology::SomeipEventIds;
     match *ids {
         SomeipEventIds::Method { method_id } => (
