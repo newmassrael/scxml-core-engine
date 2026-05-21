@@ -208,20 +208,13 @@ public:
     /**
      * @brief Set current event object in JavaScript context (W3C SCXML 5.10)
      *
-     * Overload 2: For AOT engine with string literals
+     * Overload 2: For AOT engine with W3C 5.10 field bundle (string literals
+     * resolved at code generation time, packed into SetCurrentEventArgs).
      * @param sessionId Target session
-     * @param eventName Event name (compile-time constant)
-     * @param eventData Event data as JSON string (compile-time constant)
-     * @param eventType Event type (default: "internal")
-     * @param sendId Send ID for events triggered by <send> (W3C SCXML 5.10.1, test332)
-     * @param origin Origin URL for bidirectional communication (W3C SCXML 5.10.1, test336)
-     * @param invokeId Invoke ID for child-to-parent events (W3C SCXML 6.4.1, test338)
+     * @param args SetCurrentEventArgs bundling eventName + 6 metadata fields
      * @return Future indicating success/failure
      */
-    std::future<ScriptResult> setCurrentEvent(const std::string &sessionId, const std::string &eventName,
-                                          const std::string &eventData = "", const std::string &eventType = "internal",
-                                          const std::string &sendId = "", const std::string &origin = "",
-                                          const std::string &originType = "", const std::string &invokeId = "") override;
+    std::future<ScriptResult> setCurrentEvent(const std::string &sessionId, const SetCurrentEventArgs &args) override;
 
     /**
      * @brief Setup SCXML system variables for a session

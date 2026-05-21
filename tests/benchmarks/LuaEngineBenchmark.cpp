@@ -495,14 +495,14 @@ BENCHMARK_F(LuaEngineFixture, SetCurrentEvent8ArgEmpty)(benchmark::State &state)
     engine_->createSession(sessionId);
 
     for (auto _ : state) {
-        auto fut = engine_->setCurrentEvent(sessionId, "evt", "", "internal", "", "", "", "");
+        auto fut = engine_->setCurrentEvent(sessionId, SCE::SetCurrentEventArgs{"evt", "", "internal", "", "", "", ""});
         auto result = fut.get();
         benchmark::DoNotOptimize(result);
     }
 
     engine_->destroySession(sessionId);
     state.SetItemsProcessed(state.iterations());
-    state.SetLabel("Baseline: 8-arg overload, empty data (no parse path)");
+    state.SetLabel("Baseline: SetCurrentEventArgs overload, empty data (no parse path)");
 }
 
 BENCHMARK_F(LuaEngineFixture, SetCurrentEvent8ArgJsonShapeShort)(benchmark::State &state) {
@@ -513,14 +513,15 @@ BENCHMARK_F(LuaEngineFixture, SetCurrentEvent8ArgJsonShapeShort)(benchmark::Stat
     const std::string jsonData = R"({"a":1})";
 
     for (auto _ : state) {
-        auto fut = engine_->setCurrentEvent(sessionId, "evt", jsonData, "internal", "", "", "", "");
+        auto fut =
+            engine_->setCurrentEvent(sessionId, SCE::SetCurrentEventArgs{"evt", jsonData, "internal", "", "", "", ""});
         auto result = fut.get();
         benchmark::DoNotOptimize(result);
     }
 
     engine_->destroySession(sessionId);
     state.SetItemsProcessed(state.iterations());
-    state.SetLabel("8-arg overload, JSON {\"a\":1} (compile-fail + JSON-parse)");
+    state.SetLabel("SetCurrentEventArgs overload, JSON {\"a\":1} (compile-fail + JSON-parse)");
 }
 
 BENCHMARK_F(LuaEngineFixture, SetCurrentEvent8ArgJsonShapeRealistic)(benchmark::State &state) {
@@ -531,14 +532,15 @@ BENCHMARK_F(LuaEngineFixture, SetCurrentEvent8ArgJsonShapeRealistic)(benchmark::
     const std::string jsonData = R"({"counter":42,"name":"hello","flag":true})";
 
     for (auto _ : state) {
-        auto fut = engine_->setCurrentEvent(sessionId, "evt", jsonData, "internal", "", "", "", "");
+        auto fut =
+            engine_->setCurrentEvent(sessionId, SCE::SetCurrentEventArgs{"evt", jsonData, "internal", "", "", "", ""});
         auto result = fut.get();
         benchmark::DoNotOptimize(result);
     }
 
     engine_->destroySession(sessionId);
     state.SetItemsProcessed(state.iterations());
-    state.SetLabel("8-arg overload, JSON ~40 chars (compile-fail + JSON-parse)");
+    state.SetLabel("SetCurrentEventArgs overload, JSON ~40 chars (compile-fail + JSON-parse)");
 }
 
 BENCHMARK_F(LuaEngineFixture, SetCurrentEvent8ArgLuaTable)(benchmark::State &state) {
@@ -549,14 +551,15 @@ BENCHMARK_F(LuaEngineFixture, SetCurrentEvent8ArgLuaTable)(benchmark::State &sta
     const std::string luaData = "{a=1,b=2}";
 
     for (auto _ : state) {
-        auto fut = engine_->setCurrentEvent(sessionId, "evt", luaData, "internal", "", "", "", "");
+        auto fut =
+            engine_->setCurrentEvent(sessionId, SCE::SetCurrentEventArgs{"evt", luaData, "internal", "", "", "", ""});
         auto result = fut.get();
         benchmark::DoNotOptimize(result);
     }
 
     engine_->destroySession(sessionId);
     state.SetItemsProcessed(state.iterations());
-    state.SetLabel("8-arg overload, Lua {a=1,b=2} (compile-success path)");
+    state.SetLabel("SetCurrentEventArgs overload, Lua {a=1,b=2} (compile-success path)");
 }
 
 BENCHMARK_F(LuaEngineFixture, SetCurrentEvent8ArgPlainText)(benchmark::State &state) {
@@ -567,14 +570,15 @@ BENCHMARK_F(LuaEngineFixture, SetCurrentEvent8ArgPlainText)(benchmark::State &st
     const std::string plainData = "hello world";
 
     for (auto _ : state) {
-        auto fut = engine_->setCurrentEvent(sessionId, "evt", plainData, "internal", "", "", "", "");
+        auto fut =
+            engine_->setCurrentEvent(sessionId, SCE::SetCurrentEventArgs{"evt", plainData, "internal", "", "", "", ""});
         auto result = fut.get();
         benchmark::DoNotOptimize(result);
     }
 
     engine_->destroySession(sessionId);
     state.SetItemsProcessed(state.iterations());
-    state.SetLabel("8-arg overload, plain text (compile-fail + JSON-fail + normalize)");
+    state.SetLabel("SetCurrentEventArgs overload, plain text (compile-fail + JSON-fail + normalize)");
 }
 
 BENCHMARK_F(LuaEngineFixture, SetCurrentEventWithTypedData)(benchmark::State &state) {

@@ -17,6 +17,26 @@ namespace SCE {
 class Event;  // Forward declaration for Event-based setCurrentEvent overload
 
 /**
+ * @brief Parameter object for the W3C SCXML 5.10 `setCurrentEvent` boundary.
+ *
+ * Bundles the seven `_event.*` metadata fields (name + 6 metadata) that every
+ * script engine impl must surface before guard evaluation / action execution.
+ * The cross-language sibling in `sce-rust-runtime` is `SetCurrentEventArgs`;
+ * Kotlin / Python / Go ports mirror the same field set. The `eventType` default
+ * follows W3C SCXML 5.10.1 ("internal" for `<raise>`-style events; senders
+ * override to "external" / "platform" as needed).
+ */
+struct SetCurrentEventArgs {
+    std::string eventName;
+    std::string eventData;
+    std::string eventType = "internal";
+    std::string sendId;
+    std::string origin;
+    std::string originType;
+    std::string invokeId;
+};
+
+/**
  * @brief Script execution engine interface (language-agnostic)
  *
  * Extends ISessionLifecycle with script execution, variable management, and SCXML features.
@@ -125,21 +145,11 @@ public:
     /**
      * @brief Set current event from individual fields (W3C SCXML 5.10)
      * @param sessionId Target session context
-     * @param eventName Event name
-     * @param eventData Event data as JSON string
-     * @param eventType Event type ("internal" or "external")
-     * @param sendId Send ID (W3C SCXML 5.10.1)
-     * @param origin Origin URL (W3C SCXML 5.10.1)
-     * @param originType Origin type (W3C SCXML 5.10.1)
-     * @param invokeId Invoke ID (W3C SCXML 6.4.1)
+     * @param args SetCurrentEventArgs bundling eventName + 6 metadata fields
      * @return Future indicating success/failure
      */
-    virtual std::future<ScriptResult> setCurrentEvent(const std::string &sessionId, const std::string &eventName,
-                                                  const std::string &eventData = "",
-                                                  const std::string &eventType = "internal",
-                                                  const std::string &sendId = "", const std::string &origin = "",
-                                                  const std::string &originType = "",
-                                                  const std::string &invokeId = "") = 0;
+    virtual std::future<ScriptResult> setCurrentEvent(const std::string &sessionId,
+                                                      const SetCurrentEventArgs &args) = 0;
 
     // === Global Function Management ===
 

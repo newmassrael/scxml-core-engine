@@ -305,30 +305,28 @@ std::future<ScriptResult> JSEngine::setCurrentEvent(const std::string &sessionId
         [this, sessionId, event]() { return setCurrentEventInternal(sessionId, event); });
 }
 
-std::future<ScriptResult> JSEngine::setCurrentEvent(const std::string &sessionId, const std::string &eventName,
-                                                const std::string &eventData, const std::string &eventType,
-                                                const std::string &sendId, const std::string &origin,
-                                                const std::string &originType, const std::string &invokeId) {
+std::future<ScriptResult> JSEngine::setCurrentEvent(const std::string &sessionId,
+                                                    const SetCurrentEventArgs &args) {
     // For AOT engine: Create simple Event object from string parameters
-    auto event = std::make_shared<Event>(eventName, eventType);
-    if (!eventData.empty()) {
-        event->setRawJsonData(eventData);
+    auto event = std::make_shared<Event>(args.eventName, args.eventType);
+    if (!args.eventData.empty()) {
+        event->setRawJsonData(args.eventData);
     }
     // W3C SCXML 5.10.1: Set sendid if provided (test332)
-    if (!sendId.empty()) {
-        event->setSendId(sendId);
+    if (!args.sendId.empty()) {
+        event->setSendId(args.sendId);
     }
     // W3C SCXML 5.10.1: Set origin if provided (test336)
-    if (!origin.empty()) {
-        event->setOrigin(origin);
+    if (!args.origin.empty()) {
+        event->setOrigin(args.origin);
     }
     // W3C SCXML 5.10.1: Set originType if provided (test352)
-    if (!originType.empty()) {
-        event->setOriginType(originType);
+    if (!args.originType.empty()) {
+        event->setOriginType(args.originType);
     }
     // W3C SCXML 5.10.1: Set invokeid if provided (test338)
-    if (!invokeId.empty()) {
-        event->setInvokeId(invokeId);
+    if (!args.invokeId.empty()) {
+        event->setInvokeId(args.invokeId);
     }
 
     // Delegate to Event object version

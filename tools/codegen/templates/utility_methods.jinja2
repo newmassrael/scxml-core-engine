@@ -139,8 +139,11 @@ public:
             getScriptEngine().setCurrentEvent(sessionId_.value(), event).get();
         } else {
             // W3C SCXML 5.10: String-based path (standard)
-            getScriptEngine().setCurrentEvent(sessionId_.value(), eventName, eventData,
-                                                        actualType, sendId, origin, originType, invokeId).get();
+            getScriptEngine()
+                .setCurrentEvent(sessionId_.value(),
+                                 ::SCE::SetCurrentEventArgs{eventName, eventData, actualType, sendId, origin,
+                                                            originType, invokeId})
+                .get();
         }
 {% else %}
         // No-op: This state machine doesn't use JSEngine

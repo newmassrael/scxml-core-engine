@@ -1128,14 +1128,20 @@ std::future<ScriptResult> LuaEngine::setCurrentEvent(const std::string &sessionI
 
     // No typedData — delegate to string overload's full data parsing path
     // (XML DOM / Lua expression / JSON / plain text, W3C SCXML B.2).
-    return setCurrentEvent(sessionId, event->getName(), event->getDataAsString(), event->getType(),
-                           event->getSendId(), event->getOrigin(), event->getOriginType(), event->getInvokeId());
+    return setCurrentEvent(sessionId, SetCurrentEventArgs{event->getName(), event->getDataAsString(),
+                                                          event->getType(), event->getSendId(), event->getOrigin(),
+                                                          event->getOriginType(), event->getInvokeId()});
 }
 
-std::future<ScriptResult> LuaEngine::setCurrentEvent(const std::string &sessionId, const std::string &eventName,
-                                                       const std::string &eventData, const std::string &eventType,
-                                                       const std::string &sendId, const std::string &origin,
-                                                       const std::string &originType, const std::string &invokeId) {
+std::future<ScriptResult> LuaEngine::setCurrentEvent(const std::string &sessionId,
+                                                       const SetCurrentEventArgs &args) {
+    const std::string &eventName = args.eventName;
+    const std::string &eventData = args.eventData;
+    const std::string &eventType = args.eventType;
+    const std::string &sendId = args.sendId;
+    const std::string &origin = args.origin;
+    const std::string &originType = args.originType;
+    const std::string &invokeId = args.invokeId;
     std::lock_guard<std::mutex> lock(sessionMutex_);
     auto it = sessions_.find(sessionId);
     if (it == sessions_.end()) {

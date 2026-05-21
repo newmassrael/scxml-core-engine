@@ -63,10 +63,8 @@ public:
                                                     const std::vector<std::string> &ioProcessors) override;
     std::future<ScriptResult> setCurrentEvent(const std::string &sessionId,
                                                const std::shared_ptr<Event> &event) override;
-    std::future<ScriptResult> setCurrentEvent(const std::string &sessionId, const std::string &eventName,
-                                               const std::string &eventData, const std::string &eventType,
-                                               const std::string &sendId, const std::string &origin,
-                                               const std::string &originType, const std::string &invokeId) override;
+    std::future<ScriptResult> setCurrentEvent(const std::string &sessionId,
+                                               const SetCurrentEventArgs &args) override;
     bool registerGlobalFunction(const std::string &functionName,
                                 std::function<ScriptValue(const std::vector<ScriptValue> &)> callback) override;
     bool bindNativeObject(const std::string &sessionId, const std::string &objectName,
