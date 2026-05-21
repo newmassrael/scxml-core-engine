@@ -95,6 +95,80 @@ struct ForgeAstEnvelopeOwned {
     ast: ParsedForge,
 }
 
+impl<'a> ForgeAstEnvelope<'a> {
+    /// Production constructor — stamps the current SCE release into
+    /// `sce_producer_version`. Used by every `--emit-ast` call site.
+    pub fn new(ast: &'a ParsedForge) -> Self {
+        Self {
+            v: FORGE_AST_WIRE_VERSION,
+            sce_producer_version: Some(SCE_PRODUCER_VERSION),
+            ast,
+        }
+    }
+
+    /// Test-only / golden-fixture constructor — omits the producer
+    /// version so byte-equal goldens remain stable across SCE
+    /// releases. Production code MUST use [`new`] instead so issue
+    /// reports can name the exact SCE revision.
+    pub fn new_unversioned(ast: &'a ParsedForge) -> Self {
+        Self {
+            v: FORGE_AST_WIRE_VERSION,
+            sce_producer_version: None,
+            ast,
+        }
+    }
+}
+
+/// Serialise an envelope to any `std::io::Write` sink as
+/// pretty-printed JSON with a trailing newline.
+///
+/// Pretty-printed because the primary consumer is human inspection +
+/// `jq`-style tooling; the diff guard test in
+/// `sce-build/tests/forge_ast_export.rs` round-trips the same form.
+/// Trailing newline mirrors the conformance fixtures golden — keeps
+/// `git diff` from flagging "no newline at end of file" on every
+/// regeneration.
+pub fn write_envelope<W: std::io::Write>(
+    sink: &mut W,
+    parsed: &ParsedForge,
+) -> std::io::Result<()> {
+    let env = ForgeAstEnvelope::new(parsed);
+    serde_json::to_writer_pretty(&mut *sink, &env)
+        .map_err(std::io::Error::other)?;
+    sink.write_all(b"\n")?;
+    Ok(())
+}
+
+/// Serialise an envelope to a file path. Wraps `write_envelope` with
+/// `std::fs::File::create`; intended for direct CLI use. Atomically
+/// truncates the destination per `File::create` semantics.
+pub fn write_envelope_to_path(path: &std::path::Path, parsed: &ParsedForge) -> std::io::Result<()> {
+    let mut f = std::fs::File::create(path)?;
+    write_envelope(&mut f, parsed)
+}
+
+/// Wrap a parsed-and-analyzed `SCXMLModel` in the `ParsedForge`
+/// envelope shape so the v1 AST export pipeline (`write_envelope` /
+/// `write_envelope_to_path`) handles it identically to a forge
+/// document. W3C SCXML carries no `<sce:import>` cross-doc references
+/// and no `<sce:extern>` declarations of its own (those live on
+/// forge kinds), so `imports` and `externs` are always empty for
+/// statechart documents — the wire schema's `oneOf` discriminator on
+/// `ast.document.kind` is the single signal that distinguishes the
+/// statechart arm from the forge arms.
+///
+/// Takes the model by value (consuming) because `ForgeDocument::Statechart`
+/// owns a `Box<SCXMLModel>`. Callers retaining the model for downstream
+/// codegen must clone first — typically a one-off cost on the
+/// `--emit-ast` path that is not in the hot loop.
+pub fn statechart_parsed_forge(model: crate::model::SCXMLModel) -> ParsedForge {
+    ParsedForge {
+        document: crate::forge::model::ForgeDocument::Statechart(Box::new(model)),
+        imports: Vec::new(),
+        externs: Vec::new(),
+    }
+}
+
 #[cfg(test)]
 mod schema_drift {
     //! Drift guard between the Rust type tree under `sce-build/src/forge/`
@@ -256,79 +330,5 @@ mod schema_drift {
                 max_show
             );
         }
-    }
-}
-
-impl<'a> ForgeAstEnvelope<'a> {
-    /// Production constructor — stamps the current SCE release into
-    /// `sce_producer_version`. Used by every `--emit-ast` call site.
-    pub fn new(ast: &'a ParsedForge) -> Self {
-        Self {
-            v: FORGE_AST_WIRE_VERSION,
-            sce_producer_version: Some(SCE_PRODUCER_VERSION),
-            ast,
-        }
-    }
-
-    /// Test-only / golden-fixture constructor — omits the producer
-    /// version so byte-equal goldens remain stable across SCE
-    /// releases. Production code MUST use [`new`] instead so issue
-    /// reports can name the exact SCE revision.
-    pub fn new_unversioned(ast: &'a ParsedForge) -> Self {
-        Self {
-            v: FORGE_AST_WIRE_VERSION,
-            sce_producer_version: None,
-            ast,
-        }
-    }
-}
-
-/// Serialise an envelope to any `std::io::Write` sink as
-/// pretty-printed JSON with a trailing newline.
-///
-/// Pretty-printed because the primary consumer is human inspection +
-/// `jq`-style tooling; the diff guard test in
-/// `sce-build/tests/forge_ast_export.rs` round-trips the same form.
-/// Trailing newline mirrors the conformance fixtures golden — keeps
-/// `git diff` from flagging "no newline at end of file" on every
-/// regeneration.
-pub fn write_envelope<W: std::io::Write>(
-    sink: &mut W,
-    parsed: &ParsedForge,
-) -> std::io::Result<()> {
-    let env = ForgeAstEnvelope::new(parsed);
-    serde_json::to_writer_pretty(&mut *sink, &env)
-        .map_err(std::io::Error::other)?;
-    sink.write_all(b"\n")?;
-    Ok(())
-}
-
-/// Serialise an envelope to a file path. Wraps `write_envelope` with
-/// `std::fs::File::create`; intended for direct CLI use. Atomically
-/// truncates the destination per `File::create` semantics.
-pub fn write_envelope_to_path(path: &std::path::Path, parsed: &ParsedForge) -> std::io::Result<()> {
-    let mut f = std::fs::File::create(path)?;
-    write_envelope(&mut f, parsed)
-}
-
-/// Wrap a parsed-and-analyzed `SCXMLModel` in the `ParsedForge`
-/// envelope shape so the v1 AST export pipeline (`write_envelope` /
-/// `write_envelope_to_path`) handles it identically to a forge
-/// document. W3C SCXML carries no `<sce:import>` cross-doc references
-/// and no `<sce:extern>` declarations of its own (those live on
-/// forge kinds), so `imports` and `externs` are always empty for
-/// statechart documents — the wire schema's `oneOf` discriminator on
-/// `ast.document.kind` is the single signal that distinguishes the
-/// statechart arm from the forge arms.
-///
-/// Takes the model by value (consuming) because `ForgeDocument::Statechart`
-/// owns a `Box<SCXMLModel>`. Callers retaining the model for downstream
-/// codegen must clone first — typically a one-off cost on the
-/// `--emit-ast` path that is not in the hot loop.
-pub fn statechart_parsed_forge(model: crate::model::SCXMLModel) -> ParsedForge {
-    ParsedForge {
-        document: crate::forge::model::ForgeDocument::Statechart(Box::new(model)),
-        imports: Vec::new(),
-        externs: Vec::new(),
     }
 }
