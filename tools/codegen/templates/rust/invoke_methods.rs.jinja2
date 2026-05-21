@@ -424,13 +424,15 @@
             let event_name = Self::get_event_name(event_with_meta.event);
             let _ = se.set_current_event(
                 &sid,
-                event_name,
-                &event_with_meta.metadata.data,
-                "external",
-                &event_with_meta.metadata.send_id,
-                &event_with_meta.metadata.origin,
-                &event_with_meta.metadata.origin_type,
-                &event_with_meta.metadata.invoke_id,
+                sce_rust_runtime::SetCurrentEventArgs {
+                    event_name,
+                    event_data: &event_with_meta.metadata.data,
+                    event_type: "external",
+                    send_id: &event_with_meta.metadata.send_id,
+                    origin: &event_with_meta.metadata.origin,
+                    origin_type: &event_with_meta.metadata.origin_type,
+                    invoke_id: &event_with_meta.metadata.invoke_id,
+                },
             );
             // Execute the finalize script
             let _ = se.evaluate_expression(&sid, &finalize_script);

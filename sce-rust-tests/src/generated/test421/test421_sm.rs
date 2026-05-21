@@ -1,7 +1,8 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: 73644a8c52ee83b6af224889edefc07c66120d6db7d21a41c918be4815ed8509
-// generated-at: 1779022531
+// template-hash: ce261274019ce48077782e7ee06e70f44649cd64bd8924b568aaf0ee8f281e9d
+// generated-at: 1779371070
+
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -70,11 +71,13 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
+
 #![doc = "SCE-MAP: test421.scxml:7"]
 // SCE-MAP: test421.scxml:7
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
+
 
 // ======================================================================
 // State enum (W3C SCXML 3.3)
@@ -140,6 +143,10 @@ impl Test421Policy {
             child_session_id: String::new(),
         }
     }
+
+
+
+
 }
 
 impl Default for Test421Policy {
@@ -192,6 +199,7 @@ impl StatePolicy for Test421Policy {
             _ => false,
         }
     }
+
 
     fn is_descendant_of(desc: Self::State, anc: Self::State) -> bool {
         let mut current = desc;
@@ -262,13 +270,11 @@ impl StatePolicy for Test421Policy {
     // [`StateChain`] alias and the body uses `state_chain_from_slice` instead of
     // `vec![...]` so the emitted code compiles under `--no-std` (`vec!` is a
     // std-only macro; heapless has no equivalent).
-    fn get_initial_children(
-        state: Self::State,
-    ) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
+    fn get_initial_children(state: Self::State) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
         match state {
-            Test421State::S1 => {
-                ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([Test421State::S11])
-            }
+            Test421State::S1 => ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([
+                Test421State::S11,
+            ]),
             _ => ::sce_rust_runtime::helpers::hierarchy::new_chain(),
         }
     }
@@ -276,7 +282,9 @@ impl StatePolicy for Test421Policy {
     // W3C SCXML 3.11: Get initial or history-restored child
     fn get_initial_or_history_child(&self, state: Self::State) -> Self::State {
         match state {
-            Test421State::S1 => Test421State::S11,
+            Test421State::S1 => {
+                Test421State::S11
+            }
             _ => state,
         }
     }
@@ -309,74 +317,69 @@ impl StatePolicy for Test421Policy {
         self.last_transition_source_state = state;
     }
 
+
+
+
     // ======================================================================
     // Instance methods - generated executable content
     // ======================================================================
 
+
+
     // W3C SCXML 3.7: Execute <onentry> actions for a state
     #[doc = "SCE-MAP: test421.scxml:7"]
-    // SCE-MAP: test421.scxml:7
-    fn execute_entry_actions(
-        &mut self,
-        state: Self::State,
-        engine: &mut sce_rust_runtime::Engine<Self>,
-    ) {
+// SCE-MAP: test421.scxml:7
+    fn execute_entry_actions(&mut self, state: Self::State, engine: &mut sce_rust_runtime::Engine<Self>) {
         match state {
             Test421State::S1 => {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    {
-                        let send_id = "__send_0".to_string();
 
-                        let event_data: &str = "";
 
-                        // W3C SCXML 6.2: Default send (no target = external event)
-                        {
-                            let mut meta = sce_rust_runtime::EventWithMetadata::new(
-                                Test421Event::ExternalEvent,
-                            );
-                            // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
-                            meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                send_id.clone(),
-                                String::new(),
-                            );
-                            meta.metadata.data = event_data.to_string();
-                            engine.raise_external_with_meta(meta);
-                        }
+{
+    let send_id = "__send_0".to_string();
 
-                        let _ = send_id; // suppress unused warning when no send operation
-                        let _ = event_data; // suppress unused warning in branches that skip dispatch
-                    }
 
-                    // W3C SCXML 3.8.1: <raise event="internalEvent1">
-                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                        Test421Event::InternalEvent1,
-                    ));
+    let event_data: &str = "";
 
-                    // W3C SCXML 3.8.1: <raise event="internalEvent2">
-                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                        Test421Event::InternalEvent2,
-                    ));
 
-                    // W3C SCXML 3.8.1: <raise event="internalEvent3">
-                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                        Test421Event::InternalEvent3,
-                    ));
 
-                    // W3C SCXML 3.8.1: <raise event="internalEvent4">
-                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                        Test421Event::InternalEvent4,
-                    ));
+    // W3C SCXML 6.2: Default send (no target = external event)
+    {
+        let mut meta = sce_rust_runtime::EventWithMetadata::new(Test421Event::ExternalEvent);
+        // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
+        meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), String::new());
+        meta.metadata.data = event_data.to_string();
+        engine.raise_external_with_meta(meta);
+    }
+
+
+    let _ = send_id;  // suppress unused warning when no send operation
+    let _ = event_data;  // suppress unused warning in branches that skip dispatch
+}
+
+// W3C SCXML 3.8.1: <raise event="internalEvent1">
+engine.raise(sce_rust_runtime::EventWithMetadata::new(Test421Event::InternalEvent1));
+
+// W3C SCXML 3.8.1: <raise event="internalEvent2">
+engine.raise(sce_rust_runtime::EventWithMetadata::new(Test421Event::InternalEvent2));
+
+// W3C SCXML 3.8.1: <raise event="internalEvent3">
+engine.raise(sce_rust_runtime::EventWithMetadata::new(Test421Event::InternalEvent3));
+
+// W3C SCXML 3.8.1: <raise event="internalEvent4">
+engine.raise(sce_rust_runtime::EventWithMetadata::new(Test421Event::InternalEvent4));
                 }
             }
             _ => {}
         }
+
     }
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
     #[doc = "SCE-MAP: test421.scxml:7"]
-    // SCE-MAP: test421.scxml:7
+// SCE-MAP: test421.scxml:7
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -385,9 +388,11 @@ impl StatePolicy for Test421Policy {
     ) {
     }
 
+
+
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
     #[doc = "SCE-MAP: test421.scxml:7"]
-    // SCE-MAP: test421.scxml:7
+// SCE-MAP: test421.scxml:7
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -396,17 +401,12 @@ impl StatePolicy for Test421Policy {
     ) -> bool {
         let mut transition_taken = false;
 
+
         // W3C SCXML 3.12: Hierarchical event processing (innermost to outermost)
         let mut check_state = *current_state;
 
         loop {
-            let found = self.try_transition_in_state(
-                check_state,
-                event,
-                current_state,
-                &mut transition_taken,
-                engine,
-            );
+            let found = self.try_transition_in_state(check_state, event, current_state, &mut transition_taken, engine);
 
             if found {
                 break;
@@ -429,11 +429,12 @@ impl StatePolicy for Test421Policy {
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
     #[doc = "SCE-MAP: test421.scxml:7"]
-    // SCE-MAP: test421.scxml:7
+// SCE-MAP: test421.scxml:7
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         // W3C SCXML 3.13: No transition actions in this state machine
         let _ = engine;
     }
+
 }
 
 // ======================================================================
@@ -457,14 +458,14 @@ impl Test421Policy {
                 // W3C SCXML 3.12: Event-triggered transitions (document order)
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == Test421Event::ExternalEvent {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
+                        // W3C SCXML 3.4: Track transition metadata
+                        self.last_transition_source_state = check_state;
+                        self.last_transition_is_internal = false;
+                        self.last_transition_is_targetless = false;
 
-                    *current_state = Test421State::Fail;
-                    *transition_taken = true;
-                    return true;
+                            *current_state = Test421State::Fail;
+                            *transition_taken = true;
+                        return true;
                 }
                 false
             }
@@ -472,14 +473,14 @@ impl Test421Policy {
                 // W3C SCXML 3.12: Event-triggered transitions (document order)
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == Test421Event::InternalEvent3 {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
+                        // W3C SCXML 3.4: Track transition metadata
+                        self.last_transition_source_state = check_state;
+                        self.last_transition_is_internal = false;
+                        self.last_transition_is_targetless = false;
 
-                    *current_state = Test421State::S12;
-                    *transition_taken = true;
-                    return true;
+                            *current_state = Test421State::S12;
+                            *transition_taken = true;
+                        return true;
                 }
                 false
             }
@@ -487,18 +488,22 @@ impl Test421Policy {
                 // W3C SCXML 3.12: Event-triggered transitions (document order)
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == Test421Event::InternalEvent4 {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
+                        // W3C SCXML 3.4: Track transition metadata
+                        self.last_transition_source_state = check_state;
+                        self.last_transition_is_internal = false;
+                        self.last_transition_is_targetless = false;
 
-                    *current_state = Test421State::Pass;
-                    *transition_taken = true;
-                    return true;
+                            *current_state = Test421State::Pass;
+                            *transition_taken = true;
+                        return true;
                 }
                 false
             }
             _ => false,
         }
     }
+
+
+
+
 }

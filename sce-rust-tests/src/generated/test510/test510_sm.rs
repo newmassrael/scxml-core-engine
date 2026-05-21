@@ -1,7 +1,8 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: 73644a8c52ee83b6af224889edefc07c66120d6db7d21a41c918be4815ed8509
-// generated-at: 1779022531
+// template-hash: ce261274019ce48077782e7ee06e70f44649cd64bd8924b568aaf0ee8f281e9d
+// generated-at: 1779371070
+
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -70,11 +71,13 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
+
 #![doc = "SCE-MAP: test510.scxml:5"]
 // SCE-MAP: test510.scxml:5
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
+
 
 // ======================================================================
 // State enum (W3C SCXML 3.3)
@@ -137,6 +140,10 @@ impl Test510Policy {
             child_session_id: String::new(),
         }
     }
+
+
+
+
 }
 
 impl Default for Test510Policy {
@@ -186,6 +193,7 @@ impl StatePolicy for Test510Policy {
             _ => false,
         }
     }
+
 
     fn is_descendant_of(desc: Self::State, anc: Self::State) -> bool {
         let mut current = desc;
@@ -250,9 +258,7 @@ impl StatePolicy for Test510Policy {
     // [`StateChain`] alias and the body uses `state_chain_from_slice` instead of
     // `vec![...]` so the emitted code compiles under `--no-std` (`vec!` is a
     // std-only macro; heapless has no equivalent).
-    fn get_initial_children(
-        state: Self::State,
-    ) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
+    fn get_initial_children(state: Self::State) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
         match state {
             _ => ::sce_rust_runtime::helpers::hierarchy::new_chain(),
         }
@@ -293,75 +299,85 @@ impl StatePolicy for Test510Policy {
         self.last_transition_source_state = state;
     }
 
+
+
+
     // ======================================================================
     // Instance methods - generated executable content
     // ======================================================================
 
+
+
     // W3C SCXML 3.7: Execute <onentry> actions for a state
     #[doc = "SCE-MAP: test510.scxml:5"]
-    // SCE-MAP: test510.scxml:5
-    fn execute_entry_actions(
-        &mut self,
-        state: Self::State,
-        engine: &mut sce_rust_runtime::Engine<Self>,
-    ) {
+// SCE-MAP: test510.scxml:5
+    fn execute_entry_actions(&mut self, state: Self::State, engine: &mut sce_rust_runtime::Engine<Self>) {
         match state {
             Test510State::S0 => {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    {
-                        let send_id = "__send_0".to_string();
 
-                        let event_data: &str = "";
 
-                        // W3C SCXML 6.2: Delayed send (30000ms)
-                        engine.schedule_event(
-                            Test510Event::Timeout,
-                            core::time::Duration::from_millis(30000),
-                            &send_id,
-                            event_data,
-                        );
+{
+    let send_id = "__send_0".to_string();
 
-                        let _ = send_id; // suppress unused warning when no send operation
-                        let _ = event_data; // suppress unused warning in branches that skip dispatch
-                    }
 
-                    {
-                        let send_id = "__send_1".to_string();
+    let event_data: &str = "";
 
-                        let event_data: &str = "";
 
-                        // W3C SCXML C.2: BasicHTTP send to HTTP target
-                        {
-                            let mut http_params =
-                                std::collections::HashMap::<String, Vec<String>>::new();
-                            engine.perform_http_send(
-                                "http://localhost:8080/test".to_string(),
-                                "test".to_string(),
-                                "".to_string(),
-                                http_params,
-                                send_id.clone(),
-                            );
-                        }
 
-                        let _ = send_id; // suppress unused warning when no send operation
-                        let _ = event_data; // suppress unused warning in branches that skip dispatch
-                    }
+    // W3C SCXML 6.2: Delayed send (30000ms)
+    engine.schedule_event(
+        Test510Event::Timeout,
+        core::time::Duration::from_millis(30000),
+        &send_id,
+        event_data,
+    );
 
-                    // W3C SCXML 3.8.1: <raise event="internal">
-                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                        Test510Event::Internal,
-                    ));
+
+    let _ = send_id;  // suppress unused warning when no send operation
+    let _ = event_data;  // suppress unused warning in branches that skip dispatch
+}
+
+
+{
+    let send_id = "__send_1".to_string();
+
+
+    let event_data: &str = "";
+
+
+
+    // W3C SCXML C.2: BasicHTTP send to HTTP target
+    {
+        let mut http_params = std::collections::HashMap::<String, Vec<String>>::new();
+        engine.perform_http_send(
+            "http://localhost:8080/test".to_string(),
+            "test".to_string(),
+            "".to_string(),
+            http_params,
+            send_id.clone(),
+        );
+    }
+
+
+    let _ = send_id;  // suppress unused warning when no send operation
+    let _ = event_data;  // suppress unused warning in branches that skip dispatch
+}
+
+// W3C SCXML 3.8.1: <raise event="internal">
+engine.raise(sce_rust_runtime::EventWithMetadata::new(Test510Event::Internal));
                 }
             }
             _ => {}
         }
+
     }
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
     #[doc = "SCE-MAP: test510.scxml:5"]
-    // SCE-MAP: test510.scxml:5
+// SCE-MAP: test510.scxml:5
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -370,9 +386,11 @@ impl StatePolicy for Test510Policy {
     ) {
     }
 
+
+
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
     #[doc = "SCE-MAP: test510.scxml:5"]
-    // SCE-MAP: test510.scxml:5
+// SCE-MAP: test510.scxml:5
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -381,25 +399,21 @@ impl StatePolicy for Test510Policy {
     ) -> bool {
         let mut transition_taken = false;
 
+
         // Flat state machine: no hierarchy, direct transition check
-        self.try_transition_in_state(
-            *current_state,
-            event,
-            current_state,
-            &mut transition_taken,
-            engine,
-        );
+        self.try_transition_in_state(*current_state, event, current_state, &mut transition_taken, engine);
 
         transition_taken
     }
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
     #[doc = "SCE-MAP: test510.scxml:5"]
-    // SCE-MAP: test510.scxml:5
+// SCE-MAP: test510.scxml:5
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         // W3C SCXML 3.13: No transition actions in this state machine
         let _ = engine;
     }
+
 }
 
 // ======================================================================
@@ -423,30 +437,26 @@ impl Test510Policy {
                 // W3C SCXML 3.12: Event-triggered transitions (document order)
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == Test510Event::Internal {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
+                        // W3C SCXML 3.4: Track transition metadata
+                        self.last_transition_source_state = check_state;
+                        self.last_transition_is_internal = false;
+                        self.last_transition_is_targetless = false;
 
-                    *current_state = Test510State::S1;
-                    *transition_taken = true;
-                    return true;
+                            *current_state = Test510State::S1;
+                            *transition_taken = true;
+                        return true;
                 }
                 // W3C SCXML 5.9.3: Runtime event descriptor matching
-                if event != Test510Event::Null
-                    && sce_rust_runtime::helpers::event_matching::matches_event_descriptor(
-                        Self::get_event_name(event),
-                        "*",
-                    )
-                {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
+                if event != Test510Event::Null && sce_rust_runtime::helpers::event_matching::matches_event_descriptor(
+                    Self::get_event_name(event), "*") {
+                        // W3C SCXML 3.4: Track transition metadata
+                        self.last_transition_source_state = check_state;
+                        self.last_transition_is_internal = false;
+                        self.last_transition_is_targetless = false;
 
-                    *current_state = Test510State::Fail;
-                    *transition_taken = true;
-                    return true;
+                            *current_state = Test510State::Fail;
+                            *transition_taken = true;
+                        return true;
                 }
                 false
             }
@@ -454,34 +464,34 @@ impl Test510Policy {
                 // W3C SCXML 3.12: Event-triggered transitions (document order)
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == Test510Event::Test {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
+                        // W3C SCXML 3.4: Track transition metadata
+                        self.last_transition_source_state = check_state;
+                        self.last_transition_is_internal = false;
+                        self.last_transition_is_targetless = false;
 
-                    *current_state = Test510State::Pass;
-                    *transition_taken = true;
-                    return true;
+                            *current_state = Test510State::Pass;
+                            *transition_taken = true;
+                        return true;
                 }
                 // W3C SCXML 5.9.3: Runtime event descriptor matching
-                if event != Test510Event::Null
-                    && sce_rust_runtime::helpers::event_matching::matches_event_descriptor(
-                        Self::get_event_name(event),
-                        "*",
-                    )
-                {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
+                if event != Test510Event::Null && sce_rust_runtime::helpers::event_matching::matches_event_descriptor(
+                    Self::get_event_name(event), "*") {
+                        // W3C SCXML 3.4: Track transition metadata
+                        self.last_transition_source_state = check_state;
+                        self.last_transition_is_internal = false;
+                        self.last_transition_is_targetless = false;
 
-                    *current_state = Test510State::Fail;
-                    *transition_taken = true;
-                    return true;
+                            *current_state = Test510State::Fail;
+                            *transition_taken = true;
+                        return true;
                 }
                 false
             }
             _ => false,
         }
     }
+
+
+
+
 }

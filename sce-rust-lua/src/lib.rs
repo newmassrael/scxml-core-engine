@@ -746,14 +746,16 @@ impl IScriptEngine for LuaEngine {
     fn set_current_event(
         &self,
         session_id: &str,
-        event_name: &str,
-        event_data: &str,
-        event_type: &str,
-        send_id: &str,
-        origin: &str,
-        origin_type: &str,
-        invoke_id: &str,
+        args: sce_rust_runtime::SetCurrentEventArgs<'_>,
     ) -> ScriptResult<()> {
+        let event_name = args.event_name;
+        let event_data = args.event_data;
+        let event_type = args.event_type;
+        let send_id = args.send_id;
+        let origin = args.origin;
+        let origin_type = args.origin_type;
+        let invoke_id = args.invoke_id;
+
         let sessions = self.sessions.lock().unwrap();
         let session = sessions
             .get(session_id)

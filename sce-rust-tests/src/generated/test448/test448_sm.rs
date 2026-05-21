@@ -1,7 +1,8 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: 73644a8c52ee83b6af224889edefc07c66120d6db7d21a41c918be4815ed8509
-// generated-at: 1779022531
+// template-hash: ce261274019ce48077782e7ee06e70f44649cd64bd8924b568aaf0ee8f281e9d
+// generated-at: 1779371070
+
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -70,6 +71,7 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
+
 #![doc = "SCE-MAP: test448.scxml:5"]
 // SCE-MAP: test448.scxml:5
 
@@ -192,19 +194,18 @@ impl Test448Policy {
         }
     }
 
+
+
     // W3C SCXML 5.9.2: Check if state is active (for In() predicate)
     fn is_state_active(&self, state_id: &str) -> bool {
-        self.active_states
-            .iter()
-            .any(|&s| Self::get_state_name(s) == state_id)
+        self.active_states.iter().any(|&s| Self::get_state_name(s) == state_id)
     }
 
     // W3C SCXML 5.10: Ensure session ID is initialized
     // Uses atomic counter (1:1 with C++ UniqueIdGenerator::generateSessionId)
     fn ensure_session_id(&mut self) {
         if self.session_id.is_none() {
-            static SESSION_COUNTER: core::sync::atomic::AtomicU64 =
-                core::sync::atomic::AtomicU64::new(0);
+            static SESSION_COUNTER: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
             let id = SESSION_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             self.session_id = Some(format!("session_{}", id));
         }
@@ -232,18 +233,20 @@ impl Test448Policy {
         // W3C SCXML 5.3: Early binding - Initialize state s01 datamodel variables
         // W3C SCXML 5.2/5.3: Initialize 'var1' from expr (s01)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "var1", "1",
-        ) {
+            se, &sid, "var1", "1") {
             log::error!("s01: {}", e);
         }
+
 
         // W3C SCXML 5.3: Early binding - Initialize state s01p2 datamodel variables
         // W3C SCXML 5.2/5.3: Initialize 'var2' from expr (s01p2)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "var2", "1",
-        ) {
+            se, &sid, "var2", "1") {
             log::error!("s01p2: {}", e);
         }
+
+
+
 
         // W3C SCXML 5.9.2: Register In() state query callback
         {
@@ -287,24 +290,22 @@ impl Test448Policy {
         // W3C SCXML 5.3: Early binding - Initialize state s01 datamodel variables
         // W3C SCXML 5.2/5.3: Initialize 'var1' from expr (s01)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "var1", "1",
-        ) {
+            se, &sid, "var1", "1") {
             log::error!("s01: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                Test448Event::ErrorExecution,
-            ));
+            engine.raise(sce_rust_runtime::EventWithMetadata::new(Test448Event::ErrorExecution));
         }
+
 
         // W3C SCXML 5.3: Early binding - Initialize state s01p2 datamodel variables
         // W3C SCXML 5.2/5.3: Initialize 'var2' from expr (s01p2)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "var2", "1",
-        ) {
+            se, &sid, "var2", "1") {
             log::error!("s01p2: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                Test448Event::ErrorExecution,
-            ));
+            engine.raise(sce_rust_runtime::EventWithMetadata::new(Test448Event::ErrorExecution));
         }
+
+
+
 
         // W3C SCXML 5.9.2: Register In() state query callback
         {
@@ -335,30 +336,19 @@ impl Test448Policy {
             Ok(val) => val.to_bool(),
             Err(e) => {
                 log::error!("Guard evaluation failed for '{}': {}", cond, e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                    Test448Event::ErrorExecution,
-                ));
+                engine.raise(sce_rust_runtime::EventWithMetadata::new(Test448Event::ErrorExecution));
                 false
             }
         }
     }
 
     // W3C SCXML 5.10: Set _event system variable for current event
-    fn set_current_event_in_script_engine(
-        &self,
-        event_name: &str,
-        event_data: &str,
-        event_type: &str,
-        send_id: &str,
-        origin: &str,
-        origin_type: &str,
-        invoke_id: &str,
-    ) {
+    fn set_current_event_in_script_engine(&self, event_name: &str, event_data: &str,
+            event_type: &str, send_id: &str, origin: &str, origin_type: &str, invoke_id: &str) {
         if let Some(ref sid) = self.session_id {
             let se = self.script_engine.clone();
             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-            let _ = se.set_current_event(
-                sid,
+            let _ = se.set_current_event(sid, sce_rust_runtime::SetCurrentEventArgs {
                 event_name,
                 event_data,
                 event_type,
@@ -366,7 +356,7 @@ impl Test448Policy {
                 origin,
                 origin_type,
                 invoke_id,
-            );
+            });
         }
     }
 
@@ -383,20 +373,17 @@ impl Test448Policy {
         let se = self.script_engine.clone();
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         match se.evaluate_expression(&sid, expr) {
-            Ok(val) => {
-                let _ = se.set_variable(&sid, name, val);
-            }
+            Ok(val) => { let _ = se.set_variable(&sid, name, val); }
             Err(_) => {
                 // Fallback: set as string literal
-                let _ = se.set_variable(
-                    &sid,
-                    name,
-                    sce_rust_runtime::ScriptValue::String(expr.to_string()),
-                );
+                let _ = se.set_variable(&sid, name,
+                    sce_rust_runtime::ScriptValue::String(expr.to_string()));
             }
         }
     }
+
 }
+
 
 // ======================================================================
 // StatePolicy trait implementation
@@ -457,7 +444,10 @@ impl StatePolicy for Test448Policy {
 
     fn get_parallel_regions(state: Self::State) -> &'static [Self::State] {
         match state {
-            Test448State::S01p => &[Test448State::S01p1, Test448State::S01p2],
+            Test448State::S01p => &[
+                Test448State::S01p1,
+                Test448State::S01p2,
+            ],
             _ => &[],
         }
     }
@@ -527,16 +517,14 @@ impl StatePolicy for Test448Policy {
     // [`StateChain`] alias and the body uses `state_chain_from_slice` instead of
     // `vec![...]` so the emitted code compiles under `--no-std` (`vec!` is a
     // std-only macro; heapless has no equivalent).
-    fn get_initial_children(
-        state: Self::State,
-    ) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
+    fn get_initial_children(state: Self::State) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
         match state {
-            Test448State::S0 => {
-                ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([Test448State::S01])
-            }
-            Test448State::S1 => {
-                ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([Test448State::S01p])
-            }
+            Test448State::S0 => ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([
+                Test448State::S01,
+            ]),
+            Test448State::S1 => ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([
+                Test448State::S01p,
+            ]),
             _ => ::sce_rust_runtime::helpers::hierarchy::new_chain(),
         }
     }
@@ -544,8 +532,12 @@ impl StatePolicy for Test448Policy {
     // W3C SCXML 3.11: Get initial or history-restored child
     fn get_initial_or_history_child(&self, state: Self::State) -> Self::State {
         match state {
-            Test448State::S0 => Test448State::S01,
-            Test448State::S1 => Test448State::S01p,
+            Test448State::S0 => {
+                Test448State::S01
+            }
+            Test448State::S1 => {
+                Test448State::S01p
+            }
             _ => state,
         }
     }
@@ -617,14 +609,12 @@ impl StatePolicy for Test448Policy {
     // Instance methods - generated executable content
     // ======================================================================
 
+
+
     // W3C SCXML 3.7: Execute <onentry> actions for a state
     #[doc = "SCE-MAP: test448.scxml:5"]
-    // SCE-MAP: test448.scxml:5
-    fn execute_entry_actions(
-        &mut self,
-        state: Self::State,
-        engine: &mut sce_rust_runtime::Engine<Self>,
-    ) {
+// SCE-MAP: test448.scxml:5
+    fn execute_entry_actions(&mut self, state: Self::State, engine: &mut sce_rust_runtime::Engine<Self>) {
         // W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
         //
         // Watching-zenoh RFC §5.J.2: `push_chain` is the runtime crate's
@@ -634,7 +624,7 @@ impl StatePolicy for Test448Policy {
         if !self.active_states.contains(&state) {
             ::sce_rust_runtime::helpers::hierarchy::push_chain(&mut self.active_states, state);
         } else {
-            return; // W3C SCXML 3.8: Skip onentry actions for duplicate state entry
+            return;  // W3C SCXML 3.8: Skip onentry actions for duplicate state entry
         }
         match state {
             _ => {}
@@ -690,7 +680,7 @@ impl StatePolicy for Test448Policy {
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
     #[doc = "SCE-MAP: test448.scxml:5"]
-    // SCE-MAP: test448.scxml:5
+// SCE-MAP: test448.scxml:5
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -700,16 +690,13 @@ impl StatePolicy for Test448Policy {
         // W3C SCXML 3.4 + 3.13: Parallel state exit order
         if Self::is_parallel_state(state) {
             // W3C SCXML 3.4: Collect all active descendants of this parallel state
-            let mut descendants_to_exit: Vec<Self::State> = self
-                .active_states
-                .iter()
+            let mut descendants_to_exit: Vec<Self::State> = self.active_states.iter()
                 .filter(|&&s| s != state && Self::is_descendant_of(s, state))
                 .copied()
                 .collect();
 
             // W3C SCXML 3.13: Sort descendants by reverse document order (deepest first)
-            descendants_to_exit
-                .sort_by(|a, b| Self::get_document_order(*b).cmp(&Self::get_document_order(*a)));
+            descendants_to_exit.sort_by(|a, b| Self::get_document_order(*b).cmp(&Self::get_document_order(*a)));
 
             // Exit each active descendant (deepest first)
             for descendant in descendants_to_exit {
@@ -720,9 +707,11 @@ impl StatePolicy for Test448Policy {
         self.active_states.retain(|&s| s != state);
     }
 
+
+
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
     #[doc = "SCE-MAP: test448.scxml:5"]
-    // SCE-MAP: test448.scxml:5
+// SCE-MAP: test448.scxml:5
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -737,8 +726,7 @@ impl StatePolicy for Test448Policy {
             let event_name = Self::get_event_name(event);
             self.pending_event_name = event_name.to_string();
             // W3C SCXML 5.10.1: Classify event type (ports C++ EventTypeHelper::classifyEventType)
-            let event_type = if event_name.starts_with("error.") || event_name.starts_with("done.")
-            {
+            let event_type = if event_name.starts_with("error.") || event_name.starts_with("done.") {
                 "platform"
             } else if self.next_event_is_external {
                 self.next_event_is_external = false;
@@ -754,24 +742,14 @@ impl StatePolicy for Test448Policy {
             let ev_origintype: &str = &self.pending_event_origintype;
             let ev_invokeid: &str = &self.pending_event_invokeid;
             self.set_current_event_in_script_engine(
-                event_name,
-                ev_data,
-                event_type,
-                ev_sendid,
-                ev_origin,
-                ev_origintype,
-                ev_invokeid,
+                event_name, ev_data, event_type, ev_sendid, ev_origin, ev_origintype, ev_invokeid,
             );
         }
         // W3C SCXML 5.9.2: Update shared In() active state snapshot
         if let Some(ref shared) = self.in_predicate_states {
             let mut states = shared.lock().unwrap();
             states.clear();
-            states.extend(
-                self.active_states
-                    .iter()
-                    .map(|&s| Self::get_state_name(s).to_string()),
-            );
+            states.extend(self.active_states.iter().map(|&s| Self::get_state_name(s).to_string()));
         }
 
         // W3C SCXML 3.4 + 3.12 + Appendix D: Parallel state transition handling
@@ -785,14 +763,7 @@ impl StatePolicy for Test448Policy {
 
             for active_state in &states_to_check {
                 // W3C SCXML 3.13: Eventless transitions do NOT bubble to parent states
-                self.try_transition_in_state(
-                    *active_state,
-                    event,
-                    current_state,
-                    &mut transition_taken,
-                    engine,
-                    Some(&mut enabled_transitions),
-                );
+                self.try_transition_in_state(*active_state, event, current_state, &mut transition_taken, engine, Some(&mut enabled_transitions));
             }
 
             // W3C SCXML Appendix D.2: Remove conflicting transitions
@@ -802,25 +773,18 @@ impl StatePolicy for Test448Policy {
 
             // W3C SCXML Appendix D Steps 2-5: Execute as atomic microstep
             if !enabled_transitions.is_empty() {
-                self.execute_microstep(
-                    &enabled_transitions,
-                    current_state,
-                    &mut transition_taken,
-                    engine,
-                );
+                self.execute_microstep(&enabled_transitions, current_state, &mut transition_taken, engine);
             }
         } else {
             // W3C SCXML Appendix D: External events - collect then execute
             let mut enabled_transitions: Vec<TransitionInfo> = Vec::new();
 
             for &active_state in &self.active_states.clone() {
-                let is_non_atomic =
-                    Self::is_compound_state(active_state) || Self::is_parallel_state(active_state);
+                let is_non_atomic = Self::is_compound_state(active_state) || Self::is_parallel_state(active_state);
 
                 // W3C SCXML 3.13: Check if this is a done.state event
                 let event_name = Self::get_event_name(event);
-                let is_done_state_event =
-                    event != Self::null_event() && event_name.starts_with("done.state.");
+                let is_done_state_event = event != Self::null_event() && event_name.starts_with("done.state.");
 
                 // Skip non-atomic states UNLESS processing done.state event
                 if is_non_atomic && !is_done_state_event {
@@ -830,14 +794,7 @@ impl StatePolicy for Test448Policy {
                 // W3C SCXML 3.12: Hierarchical event bubbling
                 let mut check_state = active_state;
                 loop {
-                    let found = self.try_transition_in_state(
-                        check_state,
-                        event,
-                        current_state,
-                        &mut transition_taken,
-                        engine,
-                        Some(&mut enabled_transitions),
-                    );
+                    let found = self.try_transition_in_state(check_state, event, current_state, &mut transition_taken, engine, Some(&mut enabled_transitions));
                     if found {
                         break;
                     }
@@ -852,7 +809,9 @@ impl StatePolicy for Test448Policy {
             // of the same ancestor (e.g., both parallel regions bubble up to the same parent
             // transition; test 504). Preserves first-match document order.
             let mut seen = std::collections::HashSet::new();
-            enabled_transitions.retain(|t| seen.insert((t.source, t.transition_index)));
+            enabled_transitions.retain(|t| {
+                seen.insert((t.source, t.transition_index))
+            });
 
             // W3C SCXML Appendix D.2: Remove conflicting transitions
             if !enabled_transitions.is_empty() {
@@ -861,12 +820,7 @@ impl StatePolicy for Test448Policy {
 
             // W3C SCXML Appendix D Steps 2-5: Execute as atomic microstep
             if !enabled_transitions.is_empty() {
-                self.execute_microstep(
-                    &enabled_transitions,
-                    current_state,
-                    &mut transition_taken,
-                    engine,
-                );
+                self.execute_microstep(&enabled_transitions, current_state, &mut transition_taken, engine);
             }
         }
 
@@ -875,7 +829,7 @@ impl StatePolicy for Test448Policy {
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
     #[doc = "SCE-MAP: test448.scxml:5"]
-    // SCE-MAP: test448.scxml:5
+// SCE-MAP: test448.scxml:5
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         // W3C SCXML 3.13: No transition actions in this state machine
         let _ = engine;
@@ -885,6 +839,7 @@ impl StatePolicy for Test448Policy {
     fn initialize_data_model(&mut self, engine: &mut Engine<Self>) {
         self.do_initialize_data_model(engine);
     }
+
 }
 
 // ======================================================================
@@ -908,15 +863,14 @@ impl Test448Policy {
             Test448State::S0 => {
                 // W3C SCXML 3.13: Eventless transitions
                 if event == Test448Event::Null {
-                    if self.safe_evaluate_guard("var1==1", engine) {
+if self.safe_evaluate_guard("var1==1", engine) {
                         // W3C SCXML 3.4: Track transition metadata
                         self.last_transition_source_state = check_state;
                         self.last_transition_is_internal = false;
                         self.last_transition_is_targetless = false;
                         if let Some(ref mut collect) = collect_mode {
                             collect.push(TransitionInfo {
-                                source: check_state,
-                                target: Test448State::S1,
+                                source: check_state, target: Test448State::S1,
                                 transition_index: 0,
                                 has_actions: false,
                                 is_internal: false,
@@ -934,8 +888,7 @@ impl Test448Policy {
                         self.last_transition_is_targetless = false;
                         if let Some(ref mut collect) = collect_mode {
                             collect.push(TransitionInfo {
-                                source: check_state,
-                                target: Test448State::Fail,
+                                source: check_state, target: Test448State::Fail,
                                 transition_index: 1,
                                 has_actions: false,
                                 is_internal: false,
@@ -955,15 +908,14 @@ impl Test448Policy {
             Test448State::S01p1 => {
                 // W3C SCXML 3.13: Eventless transitions
                 if event == Test448Event::Null {
-                    if self.safe_evaluate_guard("var2==1", engine) {
+if self.safe_evaluate_guard("var2==1", engine) {
                         // W3C SCXML 3.4: Track transition metadata
                         self.last_transition_source_state = check_state;
                         self.last_transition_is_internal = false;
                         self.last_transition_is_targetless = false;
                         if let Some(ref mut collect) = collect_mode {
                             collect.push(TransitionInfo {
-                                source: check_state,
-                                target: Test448State::Pass,
+                                source: check_state, target: Test448State::Pass,
                                 transition_index: 0,
                                 has_actions: false,
                                 is_internal: false,
@@ -981,8 +933,7 @@ impl Test448Policy {
                         self.last_transition_is_targetless = false;
                         if let Some(ref mut collect) = collect_mode {
                             collect.push(TransitionInfo {
-                                source: check_state,
-                                target: Test448State::Fail,
+                                source: check_state, target: Test448State::Fail,
                                 transition_index: 1,
                                 has_actions: false,
                                 is_internal: false,
@@ -1003,6 +954,9 @@ impl Test448Policy {
         }
     }
 
+
+
+
     // W3C SCXML Appendix D.2: Remove conflicting transitions
     fn remove_conflicting_transitions(enabled: &[TransitionInfo]) -> Vec<TransitionInfo> {
         let mut filtered: Vec<TransitionInfo> = Vec::new();
@@ -1013,10 +967,8 @@ impl Test448Policy {
 
             for (idx, t2) in filtered.iter().enumerate() {
                 // W3C SCXML Appendix D.2: Check if exit sets intersect
-                let t1_exits =
-                    Self::compute_exit_set(t1.source, t1.target, t1.is_internal, t1.is_targetless);
-                let t2_exits =
-                    Self::compute_exit_set(t2.source, t2.target, t2.is_internal, t2.is_targetless);
+                let t1_exits = Self::compute_exit_set(t1.source, t1.target, t1.is_internal, t1.is_targetless);
+                let t2_exits = Self::compute_exit_set(t2.source, t2.target, t2.is_internal, t2.is_targetless);
 
                 let mut has_conflict = t1_exits.iter().any(|s1| t2_exits.contains(s1));
 
@@ -1080,12 +1032,7 @@ impl Test448Policy {
     // Matches C++ `ParallelTransitionHelper::computeExitSet` — returns all states
     // from `source` up to (but not including) LCA(source, target). For internal
     // transitions where the target is a descendant of the source, returns empty.
-    fn compute_exit_set(
-        source: Test448State,
-        target: Test448State,
-        is_internal: bool,
-        is_targetless: bool,
-    ) -> Vec<Test448State> {
+    fn compute_exit_set(source: Test448State, target: Test448State, is_internal: bool, is_targetless: bool) -> Vec<Test448State> {
         // W3C SCXML 5.9.2: Targetless transitions execute actions only — no exit/entry
         if is_targetless {
             return Vec::new();
@@ -1096,10 +1043,8 @@ impl Test448Policy {
         // target must be a proper descendant. If source is atomic or parallel, the internal
         // transition behaves as external (W3C SCXML 3.13).
         if is_internal
-            && Self::is_compound_state(source)
-            && !Self::is_parallel_state(source)
-            && Self::is_descendant_of(target, source)
-            && target != source
+            && Self::is_compound_state(source) && !Self::is_parallel_state(source)
+            && Self::is_descendant_of(target, source) && target != source
         {
             return Vec::new();
         }
@@ -1170,10 +1115,8 @@ impl Test448Policy {
             // Matches C++ `computeEffectiveLCA` — internal transition with compound
             // (non-parallel) source and proper descendant target uses source as domain.
             let is_internal_to_descendant = trans.is_internal
-                && Self::is_compound_state(trans.source)
-                && !Self::is_parallel_state(trans.source)
-                && Self::is_descendant_of(trans.target, trans.source)
-                && trans.target != trans.source;
+                && Self::is_compound_state(trans.source) && !Self::is_parallel_state(trans.source)
+                && Self::is_descendant_of(trans.target, trans.source) && trans.target != trans.source;
             let domain: Option<Test448State> = if is_internal_to_descendant {
                 Some(trans.source)
             } else {
@@ -1215,8 +1158,7 @@ impl Test448Policy {
         }
 
         // Sort by reverse document order (deepest first)
-        states_to_exit
-            .sort_by(|a, b| Self::get_document_order(*b).cmp(&Self::get_document_order(*a)));
+        states_to_exit.sort_by(|a, b| Self::get_document_order(*b).cmp(&Self::get_document_order(*a)));
 
         // Snapshot active states for history recording
         let active_snapshot = self.active_states.clone();
@@ -1248,8 +1190,7 @@ impl Test448Policy {
             let target = trans.target;
 
             // W3C SCXML 3.13: Build hierarchical entry chain from root to target
-            let entry_chain =
-                sce_rust_runtime::helpers::hierarchy::build_entry_chain::<Self>(target);
+            let entry_chain = sce_rust_runtime::helpers::hierarchy::build_entry_chain::<Self>(target);
 
             for state in &entry_chain {
                 if self.active_states.contains(state) {

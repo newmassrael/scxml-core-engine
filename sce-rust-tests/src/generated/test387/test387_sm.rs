@@ -1,7 +1,8 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: 73644a8c52ee83b6af224889edefc07c66120d6db7d21a41c918be4815ed8509
-// generated-at: 1779022531
+// template-hash: ce261274019ce48077782e7ee06e70f44649cd64bd8924b568aaf0ee8f281e9d
+// generated-at: 1779371070
+
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -70,11 +71,13 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
+
 #![doc = "SCE-MAP: test387.scxml:7"]
 // SCE-MAP: test387.scxml:7
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
+
 
 // ======================================================================
 // State enum (W3C SCXML 3.3)
@@ -169,6 +172,10 @@ impl Test387Policy {
             child_session_id: String::new(),
         }
     }
+
+
+
+
 }
 
 impl Default for Test387Policy {
@@ -236,6 +243,7 @@ impl StatePolicy for Test387Policy {
             _ => false,
         }
     }
+
 
     fn is_descendant_of(desc: Self::State, anc: Self::State) -> bool {
         let mut current = desc;
@@ -340,28 +348,26 @@ impl StatePolicy for Test387Policy {
     // [`StateChain`] alias and the body uses `state_chain_from_slice` instead of
     // `vec![...]` so the emitted code compiles under `--no-std` (`vec!` is a
     // std-only macro; heapless has no equivalent).
-    fn get_initial_children(
-        state: Self::State,
-    ) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
+    fn get_initial_children(state: Self::State) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
         match state {
-            Test387State::S0 => {
-                ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([Test387State::S01])
-            }
-            Test387State::S01 => {
-                ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([Test387State::S011])
-            }
-            Test387State::S02 => {
-                ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([Test387State::S021])
-            }
-            Test387State::S1 => {
-                ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([Test387State::S11])
-            }
-            Test387State::S11 => {
-                ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([Test387State::S111])
-            }
-            Test387State::S12 => {
-                ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([Test387State::S121])
-            }
+            Test387State::S0 => ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([
+                Test387State::S01,
+            ]),
+            Test387State::S01 => ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([
+                Test387State::S011,
+            ]),
+            Test387State::S02 => ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([
+                Test387State::S021,
+            ]),
+            Test387State::S1 => ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([
+                Test387State::S11,
+            ]),
+            Test387State::S11 => ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([
+                Test387State::S111,
+            ]),
+            Test387State::S12 => ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([
+                Test387State::S121,
+            ]),
             _ => ::sce_rust_runtime::helpers::hierarchy::new_chain(),
         }
     }
@@ -369,12 +375,24 @@ impl StatePolicy for Test387Policy {
     // W3C SCXML 3.11: Get initial or history-restored child
     fn get_initial_or_history_child(&self, state: Self::State) -> Self::State {
         match state {
-            Test387State::S0 => Test387State::S01,
-            Test387State::S01 => Test387State::S011,
-            Test387State::S02 => Test387State::S021,
-            Test387State::S1 => Test387State::S11,
-            Test387State::S11 => Test387State::S111,
-            Test387State::S12 => Test387State::S121,
+            Test387State::S0 => {
+                Test387State::S01
+            }
+            Test387State::S01 => {
+                Test387State::S011
+            }
+            Test387State::S02 => {
+                Test387State::S021
+            }
+            Test387State::S1 => {
+                Test387State::S11
+            }
+            Test387State::S11 => {
+                Test387State::S111
+            }
+            Test387State::S12 => {
+                Test387State::S121
+            }
             _ => state,
         }
     }
@@ -407,128 +425,128 @@ impl StatePolicy for Test387Policy {
         self.last_transition_source_state = state;
     }
 
+
+
+
     // ======================================================================
     // Instance methods - generated executable content
     // ======================================================================
 
+
+
     // W3C SCXML 3.7: Execute <onentry> actions for a state
     #[doc = "SCE-MAP: test387.scxml:7"]
-    // SCE-MAP: test387.scxml:7
-    fn execute_entry_actions(
-        &mut self,
-        state: Self::State,
-        engine: &mut sce_rust_runtime::Engine<Self>,
-    ) {
+// SCE-MAP: test387.scxml:7
+    fn execute_entry_actions(&mut self, state: Self::State, engine: &mut sce_rust_runtime::Engine<Self>) {
         match state {
             Test387State::S011 => {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="enteringS011">
-                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                        Test387Event::EnteringS011,
-                    ));
+
+// W3C SCXML 3.8.1: <raise event="enteringS011">
+engine.raise(sce_rust_runtime::EventWithMetadata::new(Test387Event::EnteringS011));
                 }
             }
             Test387State::S012 => {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="enteringS012">
-                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                        Test387Event::EnteringS012,
-                    ));
+
+// W3C SCXML 3.8.1: <raise event="enteringS012">
+engine.raise(sce_rust_runtime::EventWithMetadata::new(Test387Event::EnteringS012));
                 }
             }
             Test387State::S021 => {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="enteringS021">
-                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                        Test387Event::EnteringS021,
-                    ));
+
+// W3C SCXML 3.8.1: <raise event="enteringS021">
+engine.raise(sce_rust_runtime::EventWithMetadata::new(Test387Event::EnteringS021));
                 }
             }
             Test387State::S022 => {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="enteringS022">
-                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                        Test387Event::EnteringS022,
-                    ));
+
+// W3C SCXML 3.8.1: <raise event="enteringS022">
+engine.raise(sce_rust_runtime::EventWithMetadata::new(Test387Event::EnteringS022));
                 }
             }
             Test387State::S111 => {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="enteringS111">
-                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                        Test387Event::EnteringS111,
-                    ));
+
+// W3C SCXML 3.8.1: <raise event="enteringS111">
+engine.raise(sce_rust_runtime::EventWithMetadata::new(Test387Event::EnteringS111));
                 }
             }
             Test387State::S112 => {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="enteringS112">
-                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                        Test387Event::EnteringS112,
-                    ));
+
+// W3C SCXML 3.8.1: <raise event="enteringS112">
+engine.raise(sce_rust_runtime::EventWithMetadata::new(Test387Event::EnteringS112));
                 }
             }
             Test387State::S121 => {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="enteringS121">
-                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                        Test387Event::EnteringS121,
-                    ));
+
+// W3C SCXML 3.8.1: <raise event="enteringS121">
+engine.raise(sce_rust_runtime::EventWithMetadata::new(Test387Event::EnteringS121));
                 }
             }
             Test387State::S122 => {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.1: <raise event="enteringS122">
-                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                        Test387Event::EnteringS122,
-                    ));
+
+// W3C SCXML 3.8.1: <raise event="enteringS122">
+engine.raise(sce_rust_runtime::EventWithMetadata::new(Test387Event::EnteringS122));
                 }
             }
             Test387State::S3 => {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    {
-                        let send_id = "__send_0".to_string();
 
-                        let event_data: &str = "";
 
-                        // W3C SCXML 6.2: Delayed send (1000ms)
-                        engine.schedule_event(
-                            Test387Event::Timeout,
-                            core::time::Duration::from_millis(1000),
-                            &send_id,
-                            event_data,
-                        );
+{
+    let send_id = "__send_0".to_string();
 
-                        let _ = send_id; // suppress unused warning when no send operation
-                        let _ = event_data; // suppress unused warning in branches that skip dispatch
-                    }
+
+    let event_data: &str = "";
+
+
+
+    // W3C SCXML 6.2: Delayed send (1000ms)
+    engine.schedule_event(
+        Test387Event::Timeout,
+        core::time::Duration::from_millis(1000),
+        &send_id,
+        event_data,
+    );
+
+
+    let _ = send_id;  // suppress unused warning when no send operation
+    let _ = event_data;  // suppress unused warning in branches that skip dispatch
+}
                 }
             }
             _ => {}
         }
+
     }
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
     #[doc = "SCE-MAP: test387.scxml:7"]
-    // SCE-MAP: test387.scxml:7
+// SCE-MAP: test387.scxml:7
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -538,21 +556,16 @@ impl StatePolicy for Test387Policy {
         // W3C SCXML 3.11: Record history before exiting compound states
         if state == Test387State::S0 {
             // W3C SCXML 3.11: Deep history - record all active descendants
-            let filtered: Vec<Self::State> = pre_transition_active
-                .iter()
-                .filter(|&&s| {
-                    Self::is_descendant_of(s, Test387State::S0)
-                        && !Self::is_compound_state(s)
-                        && !Self::is_parallel_state(s)
-                })
+            let filtered: Vec<Self::State> = pre_transition_active.iter()
+                .filter(|&&s| Self::is_descendant_of(s, Test387State::S0)
+                    && !Self::is_compound_state(s) && !Self::is_parallel_state(s))
                 .copied()
                 .collect();
             self.history_s0HistDeep = Some(filtered);
         }
         if state == Test387State::S0 {
             // W3C SCXML 3.11: Shallow history - record direct children only
-            let filtered: Vec<Self::State> = pre_transition_active
-                .iter()
+            let filtered: Vec<Self::State> = pre_transition_active.iter()
                 .filter(|&&s| Self::get_parent(s) == Some(Test387State::S0))
                 .copied()
                 .collect();
@@ -560,21 +573,16 @@ impl StatePolicy for Test387Policy {
         }
         if state == Test387State::S1 {
             // W3C SCXML 3.11: Deep history - record all active descendants
-            let filtered: Vec<Self::State> = pre_transition_active
-                .iter()
-                .filter(|&&s| {
-                    Self::is_descendant_of(s, Test387State::S1)
-                        && !Self::is_compound_state(s)
-                        && !Self::is_parallel_state(s)
-                })
+            let filtered: Vec<Self::State> = pre_transition_active.iter()
+                .filter(|&&s| Self::is_descendant_of(s, Test387State::S1)
+                    && !Self::is_compound_state(s) && !Self::is_parallel_state(s))
                 .copied()
                 .collect();
             self.history_s1HistDeep = Some(filtered);
         }
         if state == Test387State::S1 {
             // W3C SCXML 3.11: Shallow history - record direct children only
-            let filtered: Vec<Self::State> = pre_transition_active
-                .iter()
+            let filtered: Vec<Self::State> = pre_transition_active.iter()
                 .filter(|&&s| Self::get_parent(s) == Some(Test387State::S1))
                 .copied()
                 .collect();
@@ -582,9 +590,11 @@ impl StatePolicy for Test387Policy {
         }
     }
 
+
+
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
     #[doc = "SCE-MAP: test387.scxml:7"]
-    // SCE-MAP: test387.scxml:7
+// SCE-MAP: test387.scxml:7
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -593,17 +603,12 @@ impl StatePolicy for Test387Policy {
     ) -> bool {
         let mut transition_taken = false;
 
+
         // W3C SCXML 3.12: Hierarchical event processing (innermost to outermost)
         let mut check_state = *current_state;
 
         loop {
-            let found = self.try_transition_in_state(
-                check_state,
-                event,
-                current_state,
-                &mut transition_taken,
-                engine,
-            );
+            let found = self.try_transition_in_state(check_state, event, current_state, &mut transition_taken, engine);
 
             if found {
                 break;
@@ -626,11 +631,12 @@ impl StatePolicy for Test387Policy {
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
     #[doc = "SCE-MAP: test387.scxml:7"]
-    // SCE-MAP: test387.scxml:7
+// SCE-MAP: test387.scxml:7
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         // W3C SCXML 3.13: No transition actions in this state machine
         let _ = engine;
     }
+
 }
 
 // ======================================================================
@@ -654,30 +660,26 @@ impl Test387Policy {
                 // W3C SCXML 3.12: Event-triggered transitions (document order)
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == Test387Event::EnteringS011 {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
+                        // W3C SCXML 3.4: Track transition metadata
+                        self.last_transition_source_state = check_state;
+                        self.last_transition_is_internal = false;
+                        self.last_transition_is_targetless = false;
 
-                    *current_state = Test387State::S4;
-                    *transition_taken = true;
-                    return true;
+                            *current_state = Test387State::S4;
+                            *transition_taken = true;
+                        return true;
                 }
                 // W3C SCXML 5.9.3: Runtime event descriptor matching
-                if event != Test387Event::Null
-                    && sce_rust_runtime::helpers::event_matching::matches_event_descriptor(
-                        Self::get_event_name(event),
-                        "*",
-                    )
-                {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
+                if event != Test387Event::Null && sce_rust_runtime::helpers::event_matching::matches_event_descriptor(
+                    Self::get_event_name(event), "*") {
+                        // W3C SCXML 3.4: Track transition metadata
+                        self.last_transition_source_state = check_state;
+                        self.last_transition_is_internal = false;
+                        self.last_transition_is_targetless = false;
 
-                    *current_state = Test387State::Fail;
-                    *transition_taken = true;
-                    return true;
+                            *current_state = Test387State::Fail;
+                            *transition_taken = true;
+                        return true;
                 }
                 false
             }
@@ -691,30 +693,26 @@ impl Test387Policy {
                 // W3C SCXML 3.12: Event-triggered transitions (document order)
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == Test387Event::EnteringS122 {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
+                        // W3C SCXML 3.4: Track transition metadata
+                        self.last_transition_source_state = check_state;
+                        self.last_transition_is_internal = false;
+                        self.last_transition_is_targetless = false;
 
-                    *current_state = Test387State::Pass;
-                    *transition_taken = true;
-                    return true;
+                            *current_state = Test387State::Pass;
+                            *transition_taken = true;
+                        return true;
                 }
                 // W3C SCXML 5.9.3: Runtime event descriptor matching
-                if event != Test387Event::Null
-                    && sce_rust_runtime::helpers::event_matching::matches_event_descriptor(
-                        Self::get_event_name(event),
-                        "*",
-                    )
-                {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
+                if event != Test387Event::Null && sce_rust_runtime::helpers::event_matching::matches_event_descriptor(
+                    Self::get_event_name(event), "*") {
+                        // W3C SCXML 3.4: Track transition metadata
+                        self.last_transition_source_state = check_state;
+                        self.last_transition_is_internal = false;
+                        self.last_transition_is_targetless = false;
 
-                    *current_state = Test387State::Fail;
-                    *transition_taken = true;
-                    return true;
+                            *current_state = Test387State::Fail;
+                            *transition_taken = true;
+                        return true;
                 }
                 false
             }
@@ -731,8 +729,8 @@ impl Test387Policy {
                     self.last_transition_source_state = check_state;
                     self.last_transition_is_internal = false;
                     self.last_transition_is_targetless = false;
-                    *current_state = self.resolve_history_target_s0HistShallow();
-                    *transition_taken = true;
+                        *current_state = self.resolve_history_target_s0HistShallow();
+                        *transition_taken = true;
                     return true;
                 }
                 false
@@ -744,8 +742,8 @@ impl Test387Policy {
                     self.last_transition_source_state = check_state;
                     self.last_transition_is_internal = false;
                     self.last_transition_is_targetless = false;
-                    *current_state = self.resolve_history_target_s1HistDeep();
-                    *transition_taken = true;
+                        *current_state = self.resolve_history_target_s1HistDeep();
+                        *transition_taken = true;
                     return true;
                 }
                 false
@@ -794,4 +792,7 @@ impl Test387Policy {
         // No history recorded - use default transition target
         Test387State::S111
     }
+
+
+
 }

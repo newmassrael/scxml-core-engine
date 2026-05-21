@@ -245,4 +245,4 @@ pub use hal::{Hal, NoOpHal, StdHal};
 pub use http::{HttpSendRequest, HttpSendResponse};
 pub use policy::StatePolicy;
 #[cfg(not(feature = "no_std"))]
-pub use scripting::{IScriptEngine, ScriptError, ScriptResult, ScriptValue};
+pub use scripting::{IScriptEngine, ScriptError, ScriptResult, ScriptValue, SetCurrentEventArgs};

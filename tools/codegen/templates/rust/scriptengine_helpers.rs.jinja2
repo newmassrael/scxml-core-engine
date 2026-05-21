@@ -158,8 +158,15 @@
         if let Some(ref sid) = self.session_id {
             let se = self.script_engine.clone();
             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-            let _ = se.set_current_event(sid, event_name, event_data, event_type,
-                send_id, origin, origin_type, invoke_id);
+            let _ = se.set_current_event(sid, sce_rust_runtime::SetCurrentEventArgs {
+                event_name,
+                event_data,
+                event_type,
+                send_id,
+                origin,
+                origin_type,
+                invoke_id,
+            });
         }
     }
 

@@ -152,6 +152,31 @@ pub type NativeMethod = Box<dyn Fn(&[ScriptValue]) -> ScriptValue + Send + Sync>
 pub type StateQueryCallback = Box<dyn Fn(&str) -> bool + Send + Sync>;
 
 /// The script engine trait — 1:1 port of C++ `SCE::IScriptEngine`.
+/// Parameter object for the W3C SCXML 5.10 `set_current_event` boundary.
+///
+/// Bundles the seven `_event.*` metadata fields (name + 6 metadata) that every
+/// script engine impl must surface before guard evaluation / action execution.
+/// Cross-language sibling: `SCE::SetCurrentEventArgs` in
+/// `sce/include/scripting/IScriptEngine.h`. Fields borrow from the caller for
+/// the call duration to avoid per-event `String` allocations.
+#[derive(Debug, Clone, Copy)]
+pub struct SetCurrentEventArgs<'a> {
+    /// `_event.name` — fully-qualified event name (W3C SCXML 5.10).
+    pub event_name: &'a str,
+    /// `_event.data` — event payload (JSON string or platform-specific serialization).
+    pub event_data: &'a str,
+    /// `_event.type` — classification ("internal" / "external" / "platform").
+    pub event_type: &'a str,
+    /// `_event.sendid` — send ID from originating `<send>` (W3C 5.10.1).
+    pub send_id: &'a str,
+    /// `_event.origin` — origin URI (W3C 5.10.1).
+    pub origin: &'a str,
+    /// `_event.origintype` — type of origin (W3C 5.10.1).
+    pub origin_type: &'a str,
+    /// `_event.invokeid` — invoke ID when event came from a child invoke (W3C 6.4.1).
+    pub invoke_id: &'a str,
+}
+
 ///
 /// Implementations (`sce-rust-lua`, future `sce-rust-quickjs`) provide ECMAScript
 /// evaluation for W3C SCXML B.1 datamodel support. Engine DI Parity RFC
@@ -227,23 +252,13 @@ pub trait IScriptEngine: Send + Sync {
 
     /// Set the `_event` system variable for the currently-processing event (W3C SCXML 5.10).
     ///
-    /// Called before guard evaluation and action execution for each event. The
-    /// individual-fields overload matches C++ `setCurrentEvent(sessionId, eventName, ...)`.
-    // Justification (clippy::too_many_arguments): 8 fields mirror the C++
-    // `IScriptEngine::setCurrentEvent` signature; bundling into a struct would
-    // break the documented 1:1 port and require every script engine
-    // implementation to redo the field plumbing.
-    #[allow(clippy::too_many_arguments)]
+    /// Called before guard evaluation and action execution for each event. Mirrors
+    /// the C++ `IScriptEngine::setCurrentEvent(sessionId, const SetCurrentEventArgs&)`
+    /// overload (the seven W3C 5.10 metadata fields bundled into one struct).
     fn set_current_event(
         &self,
         session_id: &str,
-        event_name: &str,
-        event_data: &str,
-        event_type: &str,
-        send_id: &str,
-        origin: &str,
-        origin_type: &str,
-        invoke_id: &str,
+        args: SetCurrentEventArgs<'_>,
     ) -> ScriptResult<()>;
 
     // ════════════════════════════════════════
