@@ -1533,7 +1533,7 @@ fn generate_cpp_mesh(
         })
         .collect();
     let mut wire21_outbound_unique_dests_map: BTreeMap<String, serde_json::Value> = BTreeMap::new();
-    for (_parallel_id, dst_partition) in partition_wire21_outbound {
+    for dst_partition in partition_wire21_outbound.values() {
         wire21_outbound_unique_dests_map
             .entry(dst_partition.clone())
             .or_insert_with(|| {

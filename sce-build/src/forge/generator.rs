@@ -10405,7 +10405,7 @@ fn generate_encode_exprs(
         }
     }
 
-    for (_, group) in &byte_groups {
+    for group in byte_groups.values() {
         if group.len() == 1 {
             encode_single_field_unified(group[0], default_endian, &mut exprs, lang);
         } else {

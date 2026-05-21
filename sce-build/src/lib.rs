@@ -4299,7 +4299,7 @@ pub fn inject_partition_context_for(
             let mut wire21_inbound: std::collections::BTreeSet<String> =
                 std::collections::BTreeSet::new();
 
-            for (parallel_id, _) in &model.parallel_regions {
+            for parallel_id in model.parallel_regions.keys() {
                 let hosting = parallel_partitions
                     .get(parallel_id)
                     .cloned()
