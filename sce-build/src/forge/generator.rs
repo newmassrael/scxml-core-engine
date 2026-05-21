@@ -5368,6 +5368,22 @@ fn caller_tag_arg_decode(
     String::new()
 }
 
+/// Codec-emit inputs grouped for [`repeat_streaming_decode_stmt_gated`]
+/// — bundles the gating predicate, count source, and body codec pair
+/// alongside the field/sibling context so the per-language match in
+/// the body still reads each input by name (via destructure at entry)
+/// without an 8-arg call signature.
+struct RepeatDecodeGated<'a> {
+    field: &'a CodecField,
+    fields: &'a [CodecField],
+    pred: &'a PresentIfPredicate,
+    count_ref: &'a CountRef,
+    body_type: &'a str,
+    body_decoder: &'a str,
+    max_count: u32,
+    lang: crate::generator::Language,
+}
+
 /// RFC §5.B B5-μ — gated repeat decode (Wire RFC Phase B X1). Wraps
 /// `repeat_streaming_decode_stmt` body with a per-language predicate
 /// test so a `parent.L`-style flag toggles the entire count + repeat
@@ -5385,22 +5401,6 @@ fn caller_tag_arg_decode(
 ///     but skip wire reads when `(out->carrier & mask) == 0`
 ///     (encode mirrors via `(self->carrier & mask) == 0` skip)
 ///   - Python:  `id = None`; populate inside `if test:` branch
-/// Codec-emit inputs grouped for [`repeat_streaming_decode_stmt_gated`]
-/// — bundles the gating predicate, count source, and body codec pair
-/// alongside the field/sibling context so the per-language match in
-/// the body still reads each input by name (via destructure at entry)
-/// without an 8-arg call signature.
-struct RepeatDecodeGated<'a> {
-    field: &'a CodecField,
-    fields: &'a [CodecField],
-    pred: &'a PresentIfPredicate,
-    count_ref: &'a CountRef,
-    body_type: &'a str,
-    body_decoder: &'a str,
-    max_count: u32,
-    lang: crate::generator::Language,
-}
-
 fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
     use crate::generator::Language;
     let RepeatDecodeGated {
@@ -6093,6 +6093,22 @@ fn tlv_chain_streaming_encode_block(
     }
 }
 
+/// Codec-emit inputs grouped for [`tlv_chain_streaming_decode_stmt_gated`]
+/// — sibling of [`RepeatDecodeGated`]; bundles the body codec pair, TLV
+/// chain parameters, and field/sibling context so the per-language
+/// branches in the body access each input via destructure rather than
+/// an 8-arg signature.
+struct TlvChainDecodeGated<'a> {
+    field: &'a CodecField,
+    fields: &'a [CodecField],
+    body_type: &'a str,
+    body_decoder: &'a str,
+    max_depth: u32,
+    on_overflow: crate::forge::model::TlvOverflowPolicy,
+    terminate_on: &'a crate::forge::model::TlvTerminateStrategy,
+    lang: crate::generator::Language,
+}
+
 /// RFC §5.B Y3 atomic 2a — gated tlv-chain decode. Wraps the body of
 /// `tlv_chain_streaming_decode_stmt` in a per-language presence test
 /// computed from the field's `present_if` predicate, mirroring B5-μ's
@@ -6111,22 +6127,6 @@ fn tlv_chain_streaming_encode_block(
 ///     but skip wire reads when `(out->carrier & mask) == 0`
 ///     (encode mirrors via `(self->carrier & mask) == 0` skip)
 ///   - Python:  `id = None`; populate inside `if test:` branch
-/// Codec-emit inputs grouped for [`tlv_chain_streaming_decode_stmt_gated`]
-/// — sibling of [`RepeatDecodeGated`]; bundles the body codec pair, TLV
-/// chain parameters, and field/sibling context so the per-language
-/// branches in the body access each input via destructure rather than
-/// an 8-arg signature.
-struct TlvChainDecodeGated<'a> {
-    field: &'a CodecField,
-    fields: &'a [CodecField],
-    body_type: &'a str,
-    body_decoder: &'a str,
-    max_depth: u32,
-    on_overflow: crate::forge::model::TlvOverflowPolicy,
-    terminate_on: &'a crate::forge::model::TlvTerminateStrategy,
-    lang: crate::generator::Language,
-}
-
 fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String {
     use crate::forge::model::TlvOverflowPolicy;
     use crate::forge::model::TlvTerminateStrategy;
