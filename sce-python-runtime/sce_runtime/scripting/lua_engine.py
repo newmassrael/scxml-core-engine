@@ -41,6 +41,7 @@ from .i_script_engine import (
     ScriptValue,
     ScriptValueKind,
     SessionNotFoundError,
+    SetCurrentEventArgs,
     StateQueryCallback,
     VariableNotDeclaredError,
 )
@@ -502,13 +503,7 @@ class LuaScriptEngine(IScriptEngine):
     def set_current_event(
         self,
         session_id: str,
-        event_name: str,
-        event_data: str,
-        event_type: str,
-        send_id: str,
-        origin: str,
-        origin_type: str,
-        invoke_id: str,
+        args: SetCurrentEventArgs,
     ) -> None:
         """W3C SCXML 5.10 — bind the `_event` table for the current
         microstep. Mirrors the C++ `setCurrentEvent` signature and the
@@ -520,23 +515,23 @@ class LuaScriptEngine(IScriptEngine):
         guards reading `_event.data` get Lua nil (== ES `undefined`)."""
         session = self._require_session(session_id)
         event_table = session.runtime.table()
-        event_table["name"] = event_name
-        if event_data:
+        event_table["name"] = args.event_name
+        if args.event_data:
             data_value: Any = _coerce_event_data_to_lua(
-                session.runtime, event_data
+                session.runtime, args.event_data
             )
             event_table["data"] = data_value
-        if event_type:
-            event_table["type"] = event_type
-        if send_id:
-            event_table["sendid"] = send_id
+        if args.event_type:
+            event_table["type"] = args.event_type
+        if args.send_id:
+            event_table["sendid"] = args.send_id
         # W3C SCXML 5.10.1 — always set origin/origintype so
         # `targetexpr="_event.origin"` evaluates to "" (not nil) when
         # origin is unset (test 336).
-        event_table["origin"] = origin
-        event_table["origintype"] = origin_type
-        if invoke_id:
-            event_table["invokeid"] = invoke_id
+        event_table["origin"] = args.origin
+        event_table["origintype"] = args.origin_type
+        if args.invoke_id:
+            event_table["invokeid"] = args.invoke_id
         session.runtime.globals()["_event"] = event_table
 
     # ── Native bindings ────────────────────────────────────────────

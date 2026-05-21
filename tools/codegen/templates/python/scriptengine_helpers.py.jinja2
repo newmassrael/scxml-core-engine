@@ -435,13 +435,15 @@
             return
         engine_ref._script_engine.set_current_event(
             self._session_id,
-            _EVENT_NAMES.get(event, ""),
-            _coerce_event_data_str(metadata.data),
-            metadata.event_type,
-            metadata.send_id,
-            metadata.origin,
-            metadata.origin_type,
-            metadata.invoke_id,
+            _SetCurrentEventArgs(
+                event_name=_EVENT_NAMES.get(event, ""),
+                event_data=_coerce_event_data_str(metadata.data),
+                event_type=metadata.event_type,
+                send_id=metadata.send_id,
+                origin=metadata.origin,
+                origin_type=metadata.origin_type,
+                invoke_id=metadata.invoke_id,
+            ),
         )
 
     def _resolve_send_id(self, engine, idlocation: str, explicit_id: str) -> str:

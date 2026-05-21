@@ -196,6 +196,24 @@ NativeMethod = Callable[[List[ScriptValue]], ScriptValue]
 StateQueryCallback = Callable[[str], bool]
 
 
+@dataclass
+class SetCurrentEventArgs:
+    """Parameter object for the W3C SCXML 5.10 `set_current_event` boundary.
+
+    Bundles the seven `_event.*` metadata fields (name + 6 metadata) that
+    every script engine impl must surface before guard evaluation / action
+    execution. Cross-language siblings: `SCE::SetCurrentEventArgs` in C++
+    and `sce_rust_runtime::SetCurrentEventArgs` in Rust."""
+
+    event_name: str
+    event_data: str = ""
+    event_type: str = "internal"
+    send_id: str = ""
+    origin: str = ""
+    origin_type: str = ""
+    invoke_id: str = ""
+
+
 class IScriptEngine(ABC):
     """Script engine contract — 1:1 port of C++ `IScriptEngine.h` and
     `sce_rust_runtime::IScriptEngine`. Implementations (`LuaScriptEngine`
@@ -279,17 +297,14 @@ class IScriptEngine(ABC):
     def set_current_event(
         self,
         session_id: str,
-        event_name: str,
-        event_data: str,
-        event_type: str,
-        send_id: str,
-        origin: str,
-        origin_type: str,
-        invoke_id: str,
+        args: "SetCurrentEventArgs",
     ) -> None:
         """W3C SCXML 5.10 — bind the `_event` system variable for the
         currently-processing event. Called by the runtime before guard
-        evaluation and action execution for each event."""
+        evaluation and action execution for each event. The 7 metadata
+        fields are bundled into a [SetCurrentEventArgs] mirroring the
+        C++ `SCE::SetCurrentEventArgs` struct and the Rust
+        `SetCurrentEventArgs<'a>` parameter object."""
 
     # ── Global functions / native bindings ─────────────────────────
 

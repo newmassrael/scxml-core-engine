@@ -18,6 +18,7 @@ from .i_script_engine import (
     ScriptValue,
     ScriptValueKind,
     SessionNotFoundError,
+    SetCurrentEventArgs,
     StateQueryCallback,
     VariableNotDeclaredError,
 )
@@ -34,6 +35,7 @@ __all__ = [
     "ScriptValue",
     "ScriptValueKind",
     "SessionNotFoundError",
+    "SetCurrentEventArgs",
     "StateQueryCallback",
     "VariableNotDeclaredError",
 ]
