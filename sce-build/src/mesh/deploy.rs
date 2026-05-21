@@ -798,8 +798,8 @@ pub struct PoolDefaults {
     /// Validated by [`validate_pool_defaults`] which fires
     /// `deploy/stage-copy-policy-unknown` on closed-set miss; typed
     /// access via [`MachineConfig::resolved_stage_copy_policy`] which
-    /// runs `StageCopyPolicy::from_str` (infallible after parse-time
-    /// validation per the contract).
+    /// runs `StageCopyPolicy::from_wire_str` (infallible after parse-
+    /// time validation per the contract).
     #[serde(default = "default_stage_copy_policy_str")]
     pub stage_copy_policy: String,
 }
@@ -814,7 +814,7 @@ impl StageCopyPolicy {
     /// callers downstream of [`validate_pool_defaults`] should never
     /// hit `None` since that validator parse-rejects unknown values
     /// before this conversion is ever invoked.
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn from_wire_str(s: &str) -> Option<Self> {
         match s {
             "warn" => Some(StageCopyPolicy::Warn),
             "error" => Some(StageCopyPolicy::Error),
@@ -2233,7 +2233,7 @@ impl MachineConfig {
     /// Resolved stage-copy policy. Absence of `pool_defaults` entirely
     /// keeps the pre-C13-γ behavior (Warn). When `pool_defaults` is
     /// declared, its `stage_copy_policy` String field maps to the
-    /// typed enum via [`StageCopyPolicy::from_str`]; unknown values
+    /// typed enum via [`StageCopyPolicy::from_wire_str`]; unknown values
     /// are unreachable here because [`validate_pool_defaults`]
     /// parse-rejects them. The `unwrap_or(Warn)` on the from_str
     /// result is defense-in-depth — a missed validator wiring would
@@ -2241,7 +2241,7 @@ impl MachineConfig {
     pub fn resolved_stage_copy_policy(&self) -> StageCopyPolicy {
         self.pool_defaults
             .as_ref()
-            .and_then(|pd| StageCopyPolicy::from_str(&pd.stage_copy_policy))
+            .and_then(|pd| StageCopyPolicy::from_wire_str(&pd.stage_copy_policy))
             .unwrap_or(StageCopyPolicy::Warn)
     }
 }
@@ -2767,7 +2767,7 @@ fn validate_pool_defaults(cfg: &DeployConfig) -> Result<(), DeployError> {
             let Some(pool_defaults) = machine.pool_defaults.as_ref() else {
                 continue;
             };
-            if StageCopyPolicy::from_str(&pool_defaults.stage_copy_policy).is_none() {
+            if StageCopyPolicy::from_wire_str(&pool_defaults.stage_copy_policy).is_none() {
                 let candidates: Vec<String> = StageCopyPolicy::ALL
                     .iter()
                     .map(|s| (*s).to_string())

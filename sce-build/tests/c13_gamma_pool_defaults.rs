@@ -435,8 +435,8 @@ fn stage_copy_policy_all_matches_enum_variants() {
     // (exhaustive match) and at runtime (count mismatch).
     let expected: Vec<&str> = StageCopyPolicy::ALL.iter().map(|s| *s).collect();
     assert_eq!(expected, vec!["warn", "error", "forbid"]);
-    assert!(StageCopyPolicy::from_str("warn").is_some());
-    assert!(StageCopyPolicy::from_str("error").is_some());
-    assert!(StageCopyPolicy::from_str("forbid").is_some());
-    assert!(StageCopyPolicy::from_str("unknown").is_none());
+    assert!(StageCopyPolicy::from_wire_str("warn").is_some());
+    assert!(StageCopyPolicy::from_wire_str("error").is_some());
+    assert!(StageCopyPolicy::from_wire_str("forbid").is_some());
+    assert!(StageCopyPolicy::from_wire_str("unknown").is_none());
 }
