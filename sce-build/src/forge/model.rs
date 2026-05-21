@@ -468,16 +468,16 @@ pub struct ForgeField {
     pub sce_type: SceType,
     pub direction: Direction,
     /// ECMAScript expression (for computed/output fields).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expr: Option<String>,
     /// Documentation-only unit (no codegen effect).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unit: Option<String>,
     /// Per-slot capacity for `bytes`-typed fields, declared via
     /// `sce:max-size="N"`. `None` ⇒ fall back to
     /// [`crate::forge::limits::BYTES_DEFAULT_MAX`]. Ignored for non-bytes
     /// types. See `claudedocs/rfc-forge-bytes-bounded.md` §3 B1.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_size: Option<u32>,
 }
 
@@ -672,19 +672,19 @@ pub struct ProcedureSendAction {
     /// Service name (sce:service attribute). Required.
     pub service: String,
     /// Sub-function code (sce:subfunc attribute). Optional.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subfunc: Option<String>,
     /// Address expression — typically a variable name (sce:addr attribute). Optional.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub addr: Option<String>,
     /// Payload expression (sce:payload attribute). Optional.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub payload: Option<String>,
     /// Cap on the bytes the service handler may return as `_event.data`,
     /// declared via `sce:response-max-size="N"`. `None` ⇒ fall back to
     /// [`crate::forge::limits::BYTES_DEFAULT_MAX`]. See
     /// `claudedocs/rfc-forge-bytes-bounded.md` §3 B1.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_max_size: Option<u32>,
 }
 
@@ -721,10 +721,10 @@ pub struct ProcedureTransition {
     /// Target state id.
     pub target: String,
     /// Optional ECMAScript guard expression. `None` = unconditional (else branch).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cond: Option<String>,
     /// Event trigger (Level 2). `None` = eventless transition (guard-only).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub event: Option<String>,
     /// Assign actions executed during transition (Level 2). Empty for Level 1.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -786,7 +786,7 @@ pub struct ProcedureHelper {
     /// back to [`crate::forge::limits::BYTES_DEFAULT_MAX`]. Ignored
     /// when `returns` is non-bytes. See
     /// `claudedocs/rfc-forge-bytes-bounded.md` §3 B1.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub returns_max_size: Option<u32>,
 }
 
@@ -1053,13 +1053,19 @@ pub struct FlagDef {
 /// distinguishes the local form (carrier in same codec) from the
 /// Axis-1 inversion input form (bare name resolves to a declared
 /// `<sce:flag-input>`, passed as a positional typed parameter).
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Serialize, PartialEq, Eq)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum PresentIfScope {
     /// `<field_id>.<flag_name>` — B1-δ form. Carrier is a
     /// flags-bearing sibling field declared earlier in the same
     /// codec; predicate reads `(self.<carrier> & mask) != 0`.
+    ///
+    /// `#[default]` (Local) matches the existing `is_local_scope`
+    /// skip predicate so the schema-vs-wire alignment holds: when
+    /// scope is Local, emit skips; when emit skips, deserialise
+    /// rehydrates to Local.
+    #[default]
     Local,
     /// `<name>` (bare, no dot) — Axis-1 inversion form. Resolves to a
     /// declared `<sce:flag-input name="X">` on the codec itself; the
@@ -1105,7 +1111,7 @@ pub struct PresentIfPredicate {
     /// Predicate scope. Defaults to `Local`; serialized only for
     /// non-Local scopes (`Input`) to keep pre-Axis-1 local-scope
     /// JSON shape byte-stable.
-    #[serde(skip_serializing_if = "is_local_scope")]
+    #[serde(default, skip_serializing_if = "is_local_scope")]
     pub scope: PresentIfScope,
     /// Carrier field id when `scope = Local`. Empty when `scope =
     /// Input` (the carrier is the codec's own `<sce:flag-input>`
@@ -1210,18 +1216,18 @@ pub struct CodecField {
     /// Byte offset within the frame.
     pub byte_offset: u32,
     /// Bit offset within the byte (for sub-byte fields).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bit_offset: Option<u32>,
     /// Bit size of this field.
     pub bit_size: BitSize,
     /// Per-field endianness override.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub endian: Option<Endian>,
     /// Maximum size for variable-length fields (tail, length-ref).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_size: Option<u32>,
     /// Referenced field ID for LengthRef bit size.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub length_field: Option<String>,
     /// Named bits — RFC §5.B B1-γ flags primitive. Empty for plain
     /// fields; populated when the field was authored as a `<sce:flags>`
@@ -1238,27 +1244,27 @@ pub struct CodecField {
     /// `Optional[T]` / `bool has_<id>; T <id>` paired in C11) and the
     /// streaming decode/encode skips the field's bytes when the
     /// predicate is false.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub present_if: Option<PresentIfPredicate>,
     /// RFC §5.B B2 repeat primitive — imported codec alias whose
     /// decode/encode handles each element. `Some(alias)` only when
     /// `bit_size = BitSize::Repeat`. Resolved against `<sce:import>`
     /// aliases at codegen time (mirrors variant arm body_alias
     /// resolution).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repeat_body_alias: Option<String>,
     /// RFC §5.B B2 maximum element count for `BitSize::Repeat` fields
     /// — used by encode-buffer sizing to bound `min_frame + count *
     /// element_max`. Defaults to [`crate::forge::limits::REPEAT_DEFAULT_MAX_COUNT`]
     /// when absent (mirrors `max_size`'s fallback for Tail/LengthRef
     /// bytes).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_count: Option<u32>,
     /// RFC §5.B B3 TLV chain primitive — imported codec alias whose
     /// decode/encode handles each entry. `Some(alias)` only when
     /// `bit_size = BitSize::TlvChain`. Resolved against `<sce:import>`
     /// aliases at codegen time (mirrors `repeat_body_alias`).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tlv_chain_body_alias: Option<String>,
     /// RFC §5.B B3 DMA alignment primitive — `sce:dma-burst-align="N"`
     /// declares this field's start offset within the encoded buffer is
@@ -1274,14 +1280,14 @@ pub struct CodecField {
     /// extension envelopes ship on server-class peers too); DMA align
     /// is the only remaining codec sub-feature gated to MCU backends.
     /// `None` when no alignment constraint.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dma_burst_align: Option<u32>,
     /// RFC §5.B Y0c — embedded imported-codec alias for
     /// `BitSize::Embed` fields. `Some(alias)` only when bit_size is
     /// Embed; mirrors `repeat_body_alias` / `tlv_chain_body_alias`
     /// for the single-codec inline case. Resolved against
     /// `<sce:import>` aliases at codegen time.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub embed_body_alias: Option<String>,
     /// RFC §5.B Y0b — `sce:length-from="<id>"` on a `BitSize::Embed`
     /// field bounds the embedded codec's decode-time cursor scope to
@@ -1299,7 +1305,7 @@ pub struct CodecField {
     /// outer envelope's VLE total-length prefix bounds the inner
     /// `wireexpr`-shaped body (inner_header + VLE id + suffix-Tail).
     /// `None` for the Y0c always-present always-cursor-direct shape.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub embed_length_from: Option<String>,
     /// RFC §5.B B5-δ Surface F — arithmetic offset on the
     /// `length-field` source value. Authored as `sce:length-arith="+1"`
@@ -1319,7 +1325,7 @@ pub struct CodecField {
     /// trust contract: payload length stays `len_sibling + arith` bytes
     /// across encode/decode round-trips (mirrors the variant tag/body
     /// trust contract from B1-β).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub length_arith: Option<i32>,
 }
 
@@ -1496,7 +1502,7 @@ pub struct CodecVariant {
     /// field; the dispatch value is supplied by the caller as the
     /// `tag: u8` decode parameter. Encode signature unchanged
     /// (active arm comes from the language-level enum discriminant).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag_field: Option<String>,
     /// RFC §5.B B5-β multi-bit-flag dispatch: when `Some(name)`, the
     /// `tag_field` MUST be a `<sce:flags>`-bearing carrier and `name`
@@ -1504,14 +1510,14 @@ pub struct CodecVariant {
     /// `(carrier >> bit) & ((1 << width) - 1)` — the bit-range's
     /// shifted-and-masked unsigned scalar. When `None`, the dispatch
     /// reads the field's whole value (B1-β whole-field form).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag_flag: Option<String>,
     /// Enumerated arms in document order.
     pub arms: Vec<VariantArm>,
     /// Catch-all arm for tag values outside the enumerated set.
     /// `None` ⇒ build-time `codec/variant-arm-unreachable` when the
     /// tag domain isn't fully covered by `arms`.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_arm: Option<VariantArm>,
     /// RFC §5.B Y3 atomic 2b-ii peek-byte — peek-byte mode dispatch
     /// (Zenoh response/request body MID). `Some` ⇒ variant tag reads
@@ -1520,7 +1526,7 @@ pub struct CodecVariant {
     /// own header. `None` ⇒ B1-β own-field mode (back-compat:
     /// existing variant goldens omit this field via
     /// skip_serializing_if).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub peek_byte: Option<PeekByteSpec>,
 }
 
@@ -1532,7 +1538,7 @@ pub struct CodecModel {
     /// Document-level default endianness.
     pub default_endian: Endian,
     /// Expected input frame length (from `sce:length` on input data).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_length: Option<u32>,
     /// Ordered list of fields in the codec.
     pub fields: Vec<CodecField>,
@@ -1540,7 +1546,7 @@ pub struct CodecModel {
     /// (B1-β). When present the codec emits a sum type per language
     /// (Rust enum, Kotlin sealed class, C11 tagged union, etc.) rather
     /// than a flat struct.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variant: Option<CodecVariant>,
     /// RFC Axis-1 inversion — declared flag-shaped inputs the codec
     /// receives from its caller. Empty when the codec needs no caller-
@@ -1824,10 +1830,10 @@ pub struct FilterModel {
     pub output: ForgeField,
     pub filter_type: FilterType,
     /// Window size for moving-average and debounce.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub window: Option<u32>,
     /// Smoothing factor (0..1) for low-pass filter.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub alpha: Option<f64>,
     /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
     /// position of the `<scxml sce:kind="filter">` root element.
@@ -1967,11 +1973,11 @@ pub struct TimerModel {
     pub period_us: u64,
     /// Event name that resets the timer's deadline when raised.
     /// `<sce:reset-on event="..."/>` (optional).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reset_on_event: Option<String>,
     /// State id whose exit cancels the timer.
     /// `<sce:cancel-on state-exit="..."/>` (optional).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cancel_on_state_exit: Option<String>,
     /// Event name raised when the timer fires.
     /// `<sce:fire-event>...</sce:fire-event>` (required).
@@ -1993,12 +1999,12 @@ pub struct ThresholdMonitor {
     /// ECMAScript expression for entering the active state.
     pub enter_expr: String,
     /// ECMAScript expression for leaving the active state. Optional.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub leave_expr: Option<String>,
     /// Event name emitted on entering active state.
     pub on_enter: String,
     /// Event name emitted on leaving active state. Optional.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_leave: Option<String>,
 }
 
@@ -2065,7 +2071,7 @@ pub struct ForgeImport {
     /// selects the arm explicitly without wire-level dispatch — see
     /// Q-D-3 in the inversion RFC). Cross-doc validator confirms the
     /// named carrier + flag exist in the parent's own model.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub embed_dispatch: Option<EmbedDispatch>,
     /// RFC Axis-1 inversion — parent-side bindings supplying values for
     /// the imported leaf codec's declared `<sce:flag-inputs>`. Each
@@ -2188,7 +2194,7 @@ pub struct AlgorithmParam {
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct AlgorithmSignature {
     pub params: Vec<AlgorithmParam>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub return_type: Option<SceType>,
 }
 
@@ -2315,16 +2321,16 @@ pub struct AlgorithmConst {
     /// time via the typed expression pipeline (`forge::expr`). `None`
     /// when the const carries a `<sce:fold>` body instead — the
     /// parser enforces "exactly one of `init` / `fold`".
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub init: Option<String>,
     /// `<sce:fold>` body for `sce:compute-at="build"` consts. `None`
     /// for scalar consts.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fold: Option<FoldBody>,
     /// `sce:compute-at="build"` flag (§5.F hook). Required to be
     /// `true` when [`AlgorithmConst::fold`] is `Some`, and required
     /// to be `false` otherwise. The parser enforces this invariant.
-    #[serde(skip_serializing_if = "is_false")]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub compute_at_build: bool,
 }
 
@@ -2354,7 +2360,7 @@ pub enum AlgorithmStmt {
     If {
         cond: String,
         then_body: Vec<AlgorithmStmt>,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         else_body: Option<Vec<AlgorithmStmt>>,
     },
     /// `<sce:while cond="..." max-iter="N">...</sce:while>` — counted
@@ -2365,7 +2371,7 @@ pub enum AlgorithmStmt {
     While {
         cond: String,
         body: Vec<AlgorithmStmt>,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         max_iter: Option<u32>,
     },
     /// `<sce:foreach item="b" in="data">...</sce:foreach>` — iterate
@@ -2380,7 +2386,7 @@ pub enum AlgorithmStmt {
     /// expression. Required at the body terminus when the signature
     /// declares a non-void `return_type`.
     Return {
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         expr: Option<String>,
     },
     /// `<sce:call target="other_algo" args="a, b"/>` — invoke another
@@ -2596,7 +2602,7 @@ pub struct LinkInboundEvent {
     pub event: String,
     /// Optional decode-side predicate (`when="decoded.msg_id == 0x02"`).
     /// `None` means inject every successful decode.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub when: Option<String>,
 }
 
@@ -2641,12 +2647,12 @@ pub struct LinkModel {
     /// resolution validator (`link/pool-slot-smaller-than-framer-max`)
     /// defers to a later atomic that wires pool ↔ framer at
     /// `compile_forge_with_imports`.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rx_pool: Option<String>,
     /// `<sce:tx-pool ref="...">` — TX buffer-pool counterpart. Same
     /// shape as `rx_pool`. Symmetric in B7-α; size validation defers
     /// alongside the rx-pool case.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tx_pool: Option<String>,
     /// `<sce:stage-pool ref="...">` — stage-copy destination pool.
     /// Single source of truth for `Sample::take()`'s copy target,
@@ -2664,7 +2670,7 @@ pub struct LinkModel {
     /// declared, not on-sample-coupled). The SCXML-side enforcement
     /// raises `pool/sample-take-without-stage-pool` only when an
     /// on-sample subscriber exists for a link without `stage_pool`.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stage_pool: Option<String>,
     /// `<sce:accept-stage-copy-rate/>` — watching-zenoh RFC §5.K
     /// lines 2356-2361 + 2509-2511 per-link opt-out for the §5.M /
@@ -2679,8 +2685,7 @@ pub struct LinkModel {
     ///
     /// Default `false` so existing fixtures without the opt-out
     /// preserve their C13-α-2 behavior verbatim.
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub accept_stage_copy_rate: bool,
     /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
     /// position of the `<scxml sce:kind="link">` root element.
@@ -2953,7 +2958,7 @@ pub struct BufferPoolModel {
     pub alignment: u32,
     /// `<sce:dma-channel>` — DMA channel name (optional). Empty when
     /// the pool is purely CPU-managed. Cross-resolution defers to B7-γ.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dma_channel: Option<String>,
     /// `<sce:cache-policy>` — `maintain` / `non-cacheable` / `none`.
     pub cache_policy: CachePolicy,
@@ -3155,7 +3160,7 @@ pub struct BoundedCollectionModel {
     /// `<sce:index-by field="...">` — optional index field for
     /// `find_by_index`. C6-α stores as opaque `Option<String>`; cross-doc
     /// element-struct field verification in C6-β.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub index_by: Option<String>,
     /// `<sce:on-overflow>` — default `DiagnosticEvent` per spec line 2556.
     pub on_overflow: OverflowPolicy,
@@ -3214,7 +3219,7 @@ pub struct WorkerModel {
     /// `<sce:outbox ref="...">` — optional recipient inbox. When
     /// absent, the worker only injects events into the parent state
     /// machine via `<sce:link-rx>`-driven event mapping.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outbox: Option<String>,
     /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
     /// position of the `<scxml sce:kind="worker">` root element.

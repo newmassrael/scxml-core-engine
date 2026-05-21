@@ -157,21 +157,16 @@
         }
       },
       "required": [
-        "actions",
         "array",
         "auto_send_id",
         "cond",
         "cond_cpp",
         "cond_kt",
         "content",
-        "content_kt",
-        "content_transformed",
         "contentexpr",
         "delay",
         "delay_ms",
         "delayexpr",
-        "else_actions",
-        "elseif_branches",
         "event",
         "eventexpr",
         "expr",
@@ -182,14 +177,12 @@
         "label",
         "location",
         "namelist",
-        "params",
         "send_type",
         "sendid",
         "sendidexpr",
         "static_value",
         "target",
         "targetexpr",
-        "then_actions",
         "type",
         "typeexpr"
       ],
@@ -228,7 +221,6 @@
         }
       },
       "required": [
-        "compute_at_build",
         "name",
         "type"
       ],
@@ -1085,10 +1077,7 @@
         }
       },
       "required": [
-        "cpp_include",
-        "cpp_type",
-        "id",
-        "kt_type"
+        "id"
       ],
       "type": "object"
     },
@@ -1303,8 +1292,7 @@
         }
       },
       "required": [
-        "content",
-        "params"
+        "content"
       ],
       "type": "object"
     },
@@ -1691,7 +1679,7 @@
       "type": "object"
     },
     "ForgeDocument": {
-      "description": "Top-level forge document — dispatched by `sce:kind` on `<scxml>` root.\n\n`Statechart(Box<SCXMLModel>)` is the W3C SCXML arm — added in the AST-export v1 second atomic to close the internal symmetry left open by the Forge-only first cut. The `Box` is required because `SCXMLModel` is substantially larger than every other variant (~500 bytes vs ~50-200 for the forge kinds); without it, `clippy::large_enum_variant` fires and every `Lookup` / `Condition` allocation pays the SCXMLModel size tax.",
+      "description": "Top-level forge document — dispatched by `sce:kind` on `<scxml>` root.\n\n`Statechart(Box<SCXMLModel>)` is the W3C SCXML arm — added in the AST-export v1 second atomic to close the internal symmetry left open by the Forge-only first cut. The `Box` keeps the enum size bounded by the largest forge variant: `size_of::<SCXMLModel>() == 816` bytes (measured at landing), while the largest forge model (CodecModel) is 312 bytes. Inlining SCXMLModel would inflate every `ForgeDocument` allocation by ~500 bytes regardless of which variant carries data — boxing pays one indirection on the statechart arm only.",
       "oneOf": [
         {
           "description": "W3C SCXML: Complete state machine model",
@@ -3937,9 +3925,7 @@
       "required": [
         "expr",
         "is_static_literal",
-        "location",
-        "name",
-        "static_value"
+        "name"
       ],
       "type": "object"
     },
@@ -4053,8 +4039,7 @@
       },
       "required": [
         "field_id",
-        "flag_name",
-        "scope"
+        "flag_name"
       ],
       "type": "object"
     },
@@ -4062,7 +4047,7 @@
       "description": "RFC §5.B B1-δ + Axis-1 inversion present-if predicate scope — distinguishes the local form (carrier in same codec) from the Axis-1 inversion input form (bare name resolves to a declared `<sce:flag-input>`, passed as a positional typed parameter).",
       "oneOf": [
         {
-          "description": "`<field_id>.<flag_name>` — B1-δ form. Carrier is a flags-bearing sibling field declared earlier in the same codec; predicate reads `(self.<carrier> & mask) != 0`.",
+          "description": "`<field_id>.<flag_name>` — B1-δ form. Carrier is a flags-bearing sibling field declared earlier in the same codec; predicate reads `(self.<carrier> & mask) != 0`.\n\n`#[default]` (Local) matches the existing `is_local_scope` skip predicate so the schema-vs-wire alignment holds: when scope is Local, emit skips; when emit skips, deserialise rehydrates to Local.",
           "enum": [
             "local"
           ],
@@ -4840,7 +4825,6 @@
         "is_pure_in_predicate",
         "matching_enum_values",
         "needs_string_matching",
-        "prefix_matching_events",
         "target",
         "transition_index",
         "type"

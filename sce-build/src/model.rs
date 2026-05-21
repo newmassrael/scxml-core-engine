@@ -64,18 +64,18 @@ pub struct Transition {
     /// Original index within parent state's transition list
     pub transition_index: usize,
     /// W3C SCXML 3.11: History target if transition targets a history state
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub history_target: Option<String>,
     /// W3C SCXML 3.11: Resolved leaf target for history default (Kotlin Phase 1)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub history_leaf_target: Option<String>,
     /// Prefix matching events for Kotlin templates
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub prefix_matching_events: Vec<String>,
     /// W3C SCXML 3.13: True internal transition (target is descendant of source)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub is_true_internal: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub internal_source: Option<String>,
     /// Watching-zenoh RFC §5.O Atomic 0: post-preprocessor source
     /// position of the `<transition>` element, populated by
@@ -84,7 +84,7 @@ pub struct Transition {
     /// per-backend SCE-MAP markers above the transition's emitted
     /// handler function (Rust `// SCE-MAP:` + `#[doc]`, C/C++
     /// `#line`, Go `//line`, Kotlin `// SCE-MAP:`).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
 }
 
@@ -137,11 +137,11 @@ pub struct Action {
     pub cond_kt: String,
     #[serde(default)]
     pub is_pure_in_predicate: bool,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub then_actions: Vec<Action>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub elseif_branches: Vec<ElseIfBranch>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub else_actions: Vec<Action>,
     // foreach
     pub array: String,
@@ -150,10 +150,10 @@ pub struct Action {
 
     pub index: String,
     /// foreach body / transition actions
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub actions: Vec<Action>,
     // send params
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub params: Vec<Param>,
     // cancel
     pub sendid: String,
@@ -165,9 +165,9 @@ pub struct Action {
 
     pub static_value: String,
     // Named Context: native code actions
-    #[serde(skip_serializing_if = "String::is_empty")]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub content_transformed: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub content_kt: String,
     #[serde(default)]
     pub is_cpp_function: bool,
@@ -187,7 +187,7 @@ pub struct Action {
     /// Used by §5.O Atomic 1 per-action attribution (Atomic 0 only
     /// emits function-level markers, so this field is read by the
     /// pre-emit `validate_emission_provenance` walker today).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
 }
 
@@ -208,10 +208,10 @@ pub struct ElseIfBranch {
 pub struct Param {
     pub name: String,
     pub expr: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub location: String,
     pub is_static_literal: bool,
-    #[serde(skip_serializing_if = "String::is_empty")]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub static_value: String,
 }
 
@@ -250,7 +250,7 @@ pub struct HistoryInfo {
 #[derive(Debug, Clone, Serialize, Default)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct DoneData {
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub params: Vec<DoneDataParam>,
     pub content: DoneDataContent,
 }
@@ -299,11 +299,11 @@ pub struct DoneDataParam {
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ContextObject {
     pub id: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub cpp_type: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub cpp_include: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub kt_type: String,
 }
 
@@ -377,7 +377,7 @@ pub struct InvokeSessionCommon {
     /// W3C SCXML 6.4: Use specific done.invoke.{id} event instead of generic done.invoke
     #[serde(default)]
     pub use_specific_event: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub child_datamodel_vars: Option<Vec<String>>,
     /// W3C SCXML 6.4 (test226/240/241/243/244/245/276): the child SCXML
     /// has at least one `<send target="#_parent" event="..."/>`. Codegen
@@ -670,7 +670,7 @@ pub struct DriverRef {
     /// resolver has confirmed the file exists. Codegen consumes this
     /// field — not `href` — when emitting `#include` lines so the
     /// emitted path matches what was actually resolved.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved_path: Option<String>,
     /// 0-based document order within the SCXML root's `<sce:driver>`
     /// declarations. Lets diagnostics quote a stable index when the
@@ -679,7 +679,7 @@ pub struct DriverRef {
     /// Source location of the `<sce:driver>` element (post-preprocessor
     /// row/col). `None` when the parser cannot reconstruct the position
     /// — diagnostics fall back to file-level anchoring in that case.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
 }
 
@@ -779,7 +779,7 @@ pub struct OnSampleNode {
     /// synthesizes a default dispatch shim — backwards-compat with
     /// the landed Atomic A/B `<sce:on-sample link/event>` shape
     /// (Q-Callback-5).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub callback: Option<String>,
     /// 0-based document order within this state's `<sce:on-sample>`
     /// blocks. Lets diagnostics quote a stable per-state index even
@@ -796,7 +796,7 @@ pub struct State {
     pub initial_children: Vec<String>,
     pub is_final: bool,
     pub is_parallel: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
     pub transitions: Vec<Transition>,
     pub on_entry_blocks: Vec<Vec<Action>>,
@@ -812,7 +812,7 @@ pub struct State {
     /// uniqueness validator on the `link` attribute.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub on_sample_blocks: Vec<OnSampleNode>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub donedata: Option<DoneData>,
     pub document_order: u32,
     pub initial_transition_actions: Vec<Action>,
@@ -825,7 +825,7 @@ pub struct State {
     /// Drives the per-state SCE-MAP marker that codegen templates
     /// emit above the on-entry / on-exit / transition-handler
     /// functions this state lowers to.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
 }
 
@@ -1057,25 +1057,25 @@ pub struct SCXMLModel {
     pub scxml_base_path: String,
 
     // Analysis helpers (set by analyzer)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub needs_transition_helper: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub needs_assign_helper: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub needs_foreach: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub needs_guard_helper: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub needs_send_helper: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub needs_event_data_helper: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub needs_donedata_helper: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub needs_namelist_helper: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub needs_event_type_helper: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub needs_event_scheduler: Option<bool>,
     /// W3C SCXML B.2: any reachable `<data>` content / `<data src=...>`
     /// loaded payload / `<send><content>` literal whose first non-WS
@@ -1084,7 +1084,7 @@ pub struct SCXMLModel {
     /// through their own pipelines). Gates `lua_dom_register_metatable`
     /// emission in scriptengine.jinja2 and the XML branches in the
     /// var.content / send.content / event-promotion sites.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub needs_dom_helper: Option<bool>,
 
     /// SCE_MESH.md §14 rule 12: set to `true` when this machine is
