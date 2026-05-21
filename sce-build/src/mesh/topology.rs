@@ -2030,9 +2030,9 @@ pub(crate) fn validate_someip_event_fields(
 /// Validate optional shm binding fields (partial stage — runs before
 /// external IDs are attached, so there is no `ResolvedTarget` yet):
 ///   - `shm_arena_bytes`   positive integer, must fit in u32 (offset/length
-///                         fields in the wire layout use uint32_t)
+///     fields in the wire layout use uint32_t)
 ///   - `shm_ring_capacity` positive power of two (EventQueueBridge
-///                         requires power-of-two capacity)
+///     requires power-of-two capacity)
 fn validate_shm_extras_partial(
     machine_name: &str,
     pt: &PartialTarget,

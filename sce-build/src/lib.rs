@@ -3314,7 +3314,7 @@ pub fn resolve_listener_links(
 /// - `(role, trust_class) = (Some(Listener), SessionArming)`
 /// - `role = Some(Initiator)` (forward-compat, v1 has no consumer)
 /// - `role = None` (legacy fixtures pre-migration; partial-claim
-///    discipline applies only when explicit declarations are present)
+///   discipline applies only when explicit declarations are present)
 ///
 /// Per RFC Q-A9 the Phase B atomic does NOT require `role: listener`
 /// on every `session_arming` link — that promotion happens after

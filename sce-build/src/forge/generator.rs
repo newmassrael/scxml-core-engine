@@ -5383,8 +5383,8 @@ fn caller_tag_arg_decode(
 ///   - Kotlin:  `val id: MutableList<T>? = if (test) { ... } else null`
 ///   - Go:      bare slice — pre-decl `var Id []T`; populate inside `if test {}`
 ///   - C11:     carrier-bit-as-truth — emit the same body unconditionally,
-///              but skip wire reads when `(out->carrier & mask) == 0`
-///              (encode mirrors via `(self->carrier & mask) == 0` skip)
+///     but skip wire reads when `(out->carrier & mask) == 0`
+///     (encode mirrors via `(self->carrier & mask) == 0` skip)
 ///   - Python:  `id = None`; populate inside `if test:` branch
 fn repeat_streaming_decode_stmt_gated(
     field: &CodecField,
@@ -5703,15 +5703,13 @@ fn repeat_streaming_encode_block_gated(
 /// the cursor up to `max_depth`; residual bytes after the cap are
 /// handled per [`TlvOverflowPolicy`]:
 ///   - [`TlvOverflowPolicy::Reject`]   → typed overflow signal per language
-///                                       (Rust `CodecError::TlvChainOverflow`,
-///                                        C11 `SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW`,
-///                                        Go `codec.ErrTlvChainOverflow`,
-///                                        Python `TlvChainOverflow` exception;
-///                                        Cpp / Kotlin collapse to the
-///                                        truncation sentinel `std::nullopt` /
-///                                        `null`, matching the existing
-///                                        VleWidthOverflow declaration-only
-///                                        convention)
+///     (Rust `CodecError::TlvChainOverflow`,
+///     C11 `SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW`,
+///     Go `codec.ErrTlvChainOverflow`,
+///     Python `TlvChainOverflow` exception;
+///     Cpp / Kotlin collapse to the truncation sentinel
+///     `std::nullopt` / `null`, matching the existing
+///     VleWidthOverflow declaration-only convention)
 ///   - [`TlvOverflowPolicy::Truncate`] → silently drop the post-cap bytes
 ///
 /// Loop bound is the literal `max_depth` (no max-iter helper needed —
@@ -6100,10 +6098,10 @@ fn tlv_chain_streaming_encode_block(
 ///   - Cpp:     `std::optional<vector> id; if (test) { ...build... }`
 ///   - Kotlin:  `val id: MutableList<T>? = if (test) { ... } else null`
 ///   - Go:      bare slice — pre-decl `var Id []T`; populate inside
-///              `if test {}` (slice nilness carries presence)
+///     `if test {}` (slice nilness carries presence)
 ///   - C11:     carrier-bit-as-truth — emit the same body unconditionally,
-///              but skip wire reads when `(out->carrier & mask) == 0`
-///              (encode mirrors via `(self->carrier & mask) == 0` skip)
+///     but skip wire reads when `(out->carrier & mask) == 0`
+///     (encode mirrors via `(self->carrier & mask) == 0` skip)
 ///   - Python:  `id = None`; populate inside `if test:` branch
 fn tlv_chain_streaming_decode_stmt_gated(
     field: &CodecField,
@@ -6603,8 +6601,8 @@ fn codec_field_local_name(id: &str, lang: crate::generator::Language) -> String 
 ///   - `BitSize::LengthRef` → `present_if_decode_length_ref`(B2-β)
 ///   - `BitSize::Vle`       → `present_if_decode_vle`       (B2-β)
 ///   - `BitSize::Repeat`    → unreachable (parser disallows present-if
-///                            on `<sce:repeat>`; routed to
-///                            [`repeat_streaming_decode_stmt`])
+///     on `<sce:repeat>`; routed to
+///     [`repeat_streaming_decode_stmt`])
 ///
 /// `predicate` is `None` for unconditionally-present fields and
 /// `Some(&PresentIfPredicate)` for gated ones; the carrier's `flags`
