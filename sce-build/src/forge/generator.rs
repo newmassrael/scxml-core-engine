@@ -3516,7 +3516,7 @@ fn validate_cross_codec_variant_dispatch(
 /// only as variant arm bodies (B5-β/γ dispatcher pattern) also surface
 /// — the dispatcher's local `header` carrier is exactly the kind of
 /// source the binds reach for.
-
+///
 /// RFC Axis-1 inversion + B5-ν inversion β shape — reject the
 /// variant-arm-body-is-caller-tag-dispatcher configuration. Walks
 /// `parent.variant.arms` (and the `<sce:default>` arm if present) and
