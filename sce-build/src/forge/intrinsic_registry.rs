@@ -964,7 +964,7 @@ pub const CACHE_MAINTENANCE_TRIO: &[&str] = &[
 /// trio. Drives the `pool/cache-maintenance-misplaced` parse-time
 /// rejection (spec line 1548).
 pub fn is_cache_maintenance_trio(name: &str) -> bool {
-    CACHE_MAINTENANCE_TRIO.iter().any(|&n| n == name)
+    CACHE_MAINTENANCE_TRIO.contains(&name)
 }
 
 /// Suffix-aware lookup hint for `extern/ordering-unspecified`. When
@@ -992,7 +992,7 @@ pub fn ordering_suffix_completions(base_name: &str) -> Option<Vec<&'static str>>
         "sce_atomic_fetch_and",
         "sce_atomic_fence",
     ];
-    if !ATOMIC_BASES.iter().any(|b| *b == base_name) {
+    if !ATOMIC_BASES.contains(&base_name) {
         return None;
     }
     let prefix = format!("{base_name}_");
