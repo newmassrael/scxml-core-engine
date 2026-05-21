@@ -2433,9 +2433,7 @@ impl ServerConfig {
     ///      Rejecting at parse time surfaces the mistake before it
     ///      reaches the generated router.
     fn query_timeout_validation_error(&self) -> Option<String> {
-        let Some(ms) = self.query_timeout_ms else {
-            return None;
-        };
+        let ms = self.query_timeout_ms?;
         if ms < MIN_SERVER_QUERY_TIMEOUT_MS {
             return Some(format!(
                 "query_timeout_ms ({}) must be >= {} ms — values below this \
