@@ -1792,13 +1792,12 @@ mod tests {
         // any error here other than UnsupportedFeature proves the
         // gate is not the blocker.
         let templates: &[(&str, &str)] = &[];
-        match generate_with_templates(&model, templates, false) {
-            Err(GenerateError::UnsupportedFeature(_)) => {
-                panic!("plain SCXML must not trip the mesh-rpc gate")
-            }
-            // Anything else (Ok / template error / etc.) means the
-            // gate let the model through, which is the contract.
-            _ => {}
+        // Anything other than UnsupportedFeature (Ok / template error / etc.)
+        // means the gate let the model through, which is the contract.
+        if let Err(GenerateError::UnsupportedFeature(_)) =
+            generate_with_templates(&model, templates, false)
+        {
+            panic!("plain SCXML must not trip the mesh-rpc gate")
         }
     }
 }

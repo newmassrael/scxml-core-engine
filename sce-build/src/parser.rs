@@ -679,13 +679,12 @@ impl SCXMLParser {
                 // SCE Forge: detect inline kind on <data sce:kind="..."> — classify
                 // as InlineKind instead of Variable (single XML parse, no re-parsing).
                 if let Some(kind_attr) = data.attribute((SCE_NAMESPACE, "kind")) {
-                    match Self::try_parse_inline_kind(&data, kind_attr, source_name)? {
-                        Some(inline) => {
-                            model.inline_kinds.push(inline);
-                            continue;
-                        }
-                        // Unknown/non-inline kind — fall through to variable.
-                        None => {}
+                    // Unknown/non-inline kind — fall through to variable.
+                    if let Some(inline) =
+                        Self::try_parse_inline_kind(&data, kind_attr, source_name)?
+                    {
+                        model.inline_kinds.push(inline);
+                        continue;
                     }
                 }
 

@@ -328,16 +328,13 @@ fn to_lua_script(script: String) -> String {
 fn filter_invokes_by_kind(value: Value, want_kind: &str) -> Result<Value, minijinja::Error> {
     let mut out: Vec<Value> = Vec::new();
     for item in value.try_iter()? {
-        match item.get_attr("kind") {
-            Ok(kind_val) => {
-                if let Some(k) = kind_val.as_str() {
-                    if k == want_kind {
-                        out.push(item.clone());
-                    }
+        // Non-Invoke items simply fall through — filter returns only matches.
+        if let Ok(kind_val) = item.get_attr("kind") {
+            if let Some(k) = kind_val.as_str() {
+                if k == want_kind {
+                    out.push(item.clone());
                 }
             }
-            // Non-Invoke items simply fall through — filter returns only matches.
-            Err(_) => {}
         }
     }
     Ok(Value::from(out))
