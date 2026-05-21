@@ -16,7 +16,7 @@ use std::collections::HashMap;
 
 use sce_build::forge::model::{BackpressurePolicy, LinkClass, LinkModel};
 use sce_build::mesh::deploy::{parse_deploy_str, validate_link_driver_class_consistency};
-use sce_build::mesh::error::DeployError;
+use sce_build::mesh::error::{DeployError, LinkDriverClassMismatchPayload};
 
 /// Standard MCU deploy.yaml prelude. Same shape as
 /// `c11_serial_link_driver.rs` + `c11_websocket_link_driver.rs`.
@@ -94,7 +94,10 @@ fn mismatched_class_websocket_with_lwip_tcp_driver_fires() {
 
     let err = validate_link_driver_class_consistency(&cfg, &forge_links)
         .expect_err("websocket class on lwip_tcp driver rejects");
-    let DeployError::LinkDriverClassMismatch {
+    let DeployError::LinkDriverClassMismatch(payload) = err else {
+        panic!("expected LinkDriverClassMismatch, got {err:?}");
+    };
+    let LinkDriverClassMismatchPayload {
         machine,
         link_name,
         driver,
@@ -102,10 +105,7 @@ fn mismatched_class_websocket_with_lwip_tcp_driver_fires() {
         expected_class,
         driver_candidates,
         ..
-    } = err
-    else {
-        panic!("expected LinkDriverClassMismatch, got {err:?}");
-    };
+    } = *payload;
     assert_eq!(machine, "mcu_node");
     assert_eq!(link_name, "ws_control");
     assert_eq!(driver, "lwip_tcp");
@@ -132,15 +132,15 @@ fn mismatched_class_udp_with_lwip_tcp_driver_fires() {
 
     let err = validate_link_driver_class_consistency(&cfg, &forge_links)
         .expect_err("udp class on lwip_tcp driver rejects");
-    let DeployError::LinkDriverClassMismatch {
+    let DeployError::LinkDriverClassMismatch(payload) = err else {
+        panic!("expected LinkDriverClassMismatch, got {err:?}");
+    };
+    let LinkDriverClassMismatchPayload {
         declared_class,
         expected_class,
         driver_candidates,
         ..
-    } = err
-    else {
-        panic!("expected LinkDriverClassMismatch, got {err:?}");
-    };
+    } = *payload;
     assert_eq!(declared_class, "udp");
     assert_eq!(expected_class, "tcp");
     assert_eq!(driver_candidates, vec!["lwip_udp".to_string()]);
@@ -164,15 +164,15 @@ fn mismatched_class_tcp_with_serial_uart_driver_fires() {
 
     let err = validate_link_driver_class_consistency(&cfg, &forge_links)
         .expect_err("tcp class on serial_uart driver rejects");
-    let DeployError::LinkDriverClassMismatch {
+    let DeployError::LinkDriverClassMismatch(payload) = err else {
+        panic!("expected LinkDriverClassMismatch, got {err:?}");
+    };
+    let LinkDriverClassMismatchPayload {
         declared_class,
         expected_class,
         driver_candidates,
         ..
-    } = err
-    else {
-        panic!("expected LinkDriverClassMismatch, got {err:?}");
-    };
+    } = *payload;
     assert_eq!(declared_class, "tcp");
     assert_eq!(expected_class, "serial");
     assert_eq!(driver_candidates, vec!["lwip_tcp".to_string()]);
@@ -197,15 +197,15 @@ fn mismatched_class_serial_with_websocket_tcp_driver_fires() {
 
     let err = validate_link_driver_class_consistency(&cfg, &forge_links)
         .expect_err("serial class on websocket_tcp driver rejects");
-    let DeployError::LinkDriverClassMismatch {
+    let DeployError::LinkDriverClassMismatch(payload) = err else {
+        panic!("expected LinkDriverClassMismatch, got {err:?}");
+    };
+    let LinkDriverClassMismatchPayload {
         declared_class,
         expected_class,
         driver_candidates,
         ..
-    } = err
-    else {
-        panic!("expected LinkDriverClassMismatch, got {err:?}");
-    };
+    } = *payload;
     assert_eq!(declared_class, "serial");
     assert_eq!(expected_class, "websocket");
     assert_eq!(driver_candidates, vec!["serial_uart".to_string()]);

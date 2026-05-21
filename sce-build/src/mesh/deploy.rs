@@ -3237,15 +3237,17 @@ pub fn validate_link_driver_class_consistency(
                     .map(|(name, _, _)| (*name).to_string())
                     .collect();
                 let driver_candidates_list = driver_candidates.join(", ");
-                return Err(DeployError::LinkDriverClassMismatch {
-                    machine: machine_name.clone(),
-                    link_name: link_name.clone(),
-                    driver: link.driver.clone(),
-                    declared_class: declared_class.to_string(),
-                    expected_class: expected_class.to_string(),
-                    driver_candidates,
-                    driver_candidates_list,
-                });
+                return Err(DeployError::LinkDriverClassMismatch(Box::new(
+                    crate::mesh::error::LinkDriverClassMismatchPayload {
+                        machine: machine_name.clone(),
+                        link_name: link_name.clone(),
+                        driver: link.driver.clone(),
+                        declared_class: declared_class.to_string(),
+                        expected_class: expected_class.to_string(),
+                        driver_candidates,
+                        driver_candidates_list,
+                    },
+                )));
             }
         }
     }

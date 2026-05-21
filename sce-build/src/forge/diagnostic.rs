@@ -9460,13 +9460,15 @@ mod tests {
             ),
             (
                 "mesh/deploy-scxml-invoke-cross-device-transport",
-                DeployError::ScxmlInvokeCrossDeviceTransport {
-                    parent: "parent_x".into(),
-                    peer: "worker_y".into(),
-                    parent_device: "ecu_a".into(),
-                    peer_device: "ecu_b".into(),
-                    failure: crate::mesh::error::ScxmlInvokeCrossDeviceFailure::MissingBinding,
-                }
+                DeployError::ScxmlInvokeCrossDeviceTransport(Box::new(
+                    crate::mesh::error::ScxmlInvokeCrossDeviceTransportPayload {
+                        parent: "parent_x".into(),
+                        peer: "worker_y".into(),
+                        parent_device: "ecu_a".into(),
+                        peer_device: "ecu_b".into(),
+                        failure: crate::mesh::error::ScxmlInvokeCrossDeviceFailure::MissingBinding,
+                    },
+                ))
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion
                 // on first run; shape + message are the contract.
@@ -9764,15 +9766,17 @@ mod tests {
                 // candidate driver list (single-element: the
                 // driver implementing `websocket` = `websocket_tcp`).
                 "deploy/link-driver-class-mismatch",
-                DeployError::LinkDriverClassMismatch {
-                    machine: "mcu_node".into(),
-                    link_name: "ws_control".into(),
-                    driver: "lwip_tcp".into(),
-                    declared_class: "websocket".into(),
-                    expected_class: "tcp".into(),
-                    driver_candidates: vec!["websocket_tcp".into()],
-                    driver_candidates_list: "websocket_tcp".into(),
-                }
+                DeployError::LinkDriverClassMismatch(Box::new(
+                    crate::mesh::error::LinkDriverClassMismatchPayload {
+                        machine: "mcu_node".into(),
+                        link_name: "ws_control".into(),
+                        driver: "lwip_tcp".into(),
+                        declared_class: "websocket".into(),
+                        expected_class: "tcp".into(),
+                        driver_candidates: vec!["websocket_tcp".into()],
+                        driver_candidates_list: "websocket_tcp".into(),
+                    },
+                ))
                 .into(),
                 r#"{"v":1,"id":"fnv1a:4ac5fbe980bb4938","code":"deploy/link-driver-class-mismatch","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'ws_control' declares forge `<sce:link-class>websocket</sce:link-class>` but deploy.yaml binds `driver: lwip_tcp` which implements class 'tcp'. watching-zenoh RFC §5.C lines 765-771 + §8 Q8 line 3747 (`deploy/link-driver-class-mismatch`) — each core driver implements exactly one protocol class. Repair: change `driver:` to the entry matching the declared class, or change `<sce:link-class>` to match the bound driver.","expected":["tcp"],"actual":"websocket","fix":{"kind":"replace_one_of","candidates":["websocket_tcp"]}}"#,
             ),

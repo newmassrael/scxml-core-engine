@@ -145,6 +145,46 @@ impl std::fmt::Display for ScxmlInvokeCrossDeviceFailure {
     }
 }
 
+/// Payload for [`DeployError::ScxmlInvokeCrossDeviceTransport`].
+/// Extracted into a standalone struct + `Box` so the parent enum
+/// stays under clippy's `result_large_err` 128 B threshold — the
+/// inline form was 144 B (4×String + ScxmlInvokeCrossDeviceFailure)
+/// which made `Result<_, DeployError>` flag everywhere it was
+/// returned.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScxmlInvokeCrossDeviceTransportPayload {
+    pub parent: String,
+    pub peer: String,
+    pub parent_device: String,
+    pub peer_device: String,
+    pub failure: ScxmlInvokeCrossDeviceFailure,
+}
+
+/// Payload for [`DeployError::LinkDriverClassMismatch`]. Extracted
+/// for the same reason as
+/// [`ScxmlInvokeCrossDeviceTransportPayload`]: the inline form was
+/// 168 B (6×String + Vec<String>) and dominated DeployError's enum
+/// size.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinkDriverClassMismatchPayload {
+    pub machine: String,
+    pub link_name: String,
+    pub driver: String,
+    /// `<sce:link-class>` value as authored on the forge side.
+    pub declared_class: String,
+    /// Driver-implied class per the KNOWN_DRIVERS allowlist.
+    pub expected_class: String,
+    /// 1-element vec carrying the driver name that matches the
+    /// declared class (the inverse map from class → driver).
+    /// `Fix::ReplaceOneOf` single-axis repair — the deploy-side
+    /// driver swap. The forge-side class swap is a parallel
+    /// valid path the prose names but the structured fix only
+    /// carries one axis per non-overlap-class invariant.
+    pub driver_candidates: Vec<String>,
+    /// Cached pretty-print of `driver_candidates`.
+    pub driver_candidates_list: String,
+}
+
 /// Errors from deploy.yaml deserialization.
 #[derive(Debug, thiserror::Error)]
 pub enum DeployError {
@@ -655,20 +695,16 @@ pub enum DeployError {
     /// `bindings` declaration — they take the implicit shm channel
     /// which is today's only wired path (§9.6.2 wire-14/20 over shm).
     #[error(
-        "machine '{parent}' (device '{parent_device}') → \
-             `<invoke type=\"scxml\" src=\"#{peer}\">` on device '{peer_device}': {failure}. \
+        "machine '{}' (device '{}') → \
+             `<invoke type=\"scxml\" src=\"#{}\">` on device '{}': {}. \
              SCE Mesh §9.6 L1393 requires each cross-device scxml-remote peer to declare \
-             its transport on `machines.{parent}.bindings[\"#{peer}\"].transport`, and that \
+             its transport on `machines.{}.bindings[\"#{}\"].transport`, and that \
              transport must be both capable of crossing devices AND wired by the Session F \
-             C++ dispatch."
+             C++ dispatch.",
+        .0.parent, .0.parent_device, .0.peer, .0.peer_device, .0.failure,
+        .0.parent, .0.peer
     )]
-    ScxmlInvokeCrossDeviceTransport {
-        parent: String,
-        peer: String,
-        parent_device: String,
-        peer_device: String,
-        failure: ScxmlInvokeCrossDeviceFailure,
-    },
+    ScxmlInvokeCrossDeviceTransport(Box<ScxmlInvokeCrossDeviceTransportPayload>),
 
     /// §9.6 SOMEIP scxml-invoke participant count exceeds the
     /// hybrid-allocator sub-range ceiling (RFC F.X-1). Subsystem range
@@ -1276,35 +1312,19 @@ pub enum DeployError {
     /// driver matrix reached 4×4; `60fba30c` (C11-WebSocket
     /// landing) satisfied the trigger.
     #[error(
-        "machine '{machine}': link '{link_name}' declares forge \
-             `<sce:link-class>{declared_class}</sce:link-class>` but \
-             deploy.yaml binds `driver: {driver}` which implements \
-             class '{expected_class}'. watching-zenoh RFC §5.C lines \
+        "machine '{}': link '{}' declares forge \
+             `<sce:link-class>{}</sce:link-class>` but \
+             deploy.yaml binds `driver: {}` which implements \
+             class '{}'. watching-zenoh RFC §5.C lines \
              765-771 + §8 Q8 line 3747 \
              (`deploy/link-driver-class-mismatch`) — each core \
              driver implements exactly one protocol class. Repair: \
              change `driver:` to the entry matching the declared \
              class, or change `<sce:link-class>` to match the bound \
-             driver."
+             driver.",
+        .0.machine, .0.link_name, .0.declared_class, .0.driver, .0.expected_class
     )]
-    LinkDriverClassMismatch {
-        machine: String,
-        link_name: String,
-        driver: String,
-        /// `<sce:link-class>` value as authored on the forge side.
-        declared_class: String,
-        /// Driver-implied class per the KNOWN_DRIVERS allowlist.
-        expected_class: String,
-        /// 1-element vec carrying the driver name that matches the
-        /// declared class (the inverse map from class → driver).
-        /// `Fix::ReplaceOneOf` single-axis repair — the deploy-side
-        /// driver swap. The forge-side class swap is a parallel
-        /// valid path the prose names but the structured fix only
-        /// carries one axis per non-overlap-class invariant.
-        driver_candidates: Vec<String>,
-        /// Cached pretty-print of `driver_candidates`.
-        driver_candidates_list: String,
-    },
+    LinkDriverClassMismatch(Box<LinkDriverClassMismatchPayload>),
 
     /// Watching-zenoh RFC §5.K line 2446-2448
     /// (`deploy/link-expected-p99-exceeds-mtu`).
@@ -2651,36 +2671,39 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             // `forge/diagnostic.rs::mesh_golden_entries`).
             key_fragments: vec![partition.clone(), transport.clone(), failure.to_string()],
         },
-        DeployError::ScxmlInvokeCrossDeviceTransport {
-            parent,
-            peer,
-            parent_device,
-            peer_device,
-            failure,
-        } => DiagnosticPayload {
-            code: DiagnosticCode::MeshDeployScxmlInvokeCrossDeviceTransport,
-            stage: Stage::MeshDeploy,
-            // `{parent}/{peer}` names the per-invoke pair that triggered
-            // the rejection — matches the shape `ScxmlInvokeTargetConflict`
-            // uses so downstream UIs can render both §9.6 diagnostics the
-            // same way.
-            actual: Some(format!("{parent}/{peer}")),
-            expected: None,
-            // Three equally-valid repairs depending on `failure`: add the
-            // binding, pick a different transport, or wait for the
-            // Session 2 C++ wire-14/20 dispatch to land. Author intent
-            // decides — no mechanical fix.
-            fix: None,
-            // All discriminating data flows through `key_fragments` so
-            // the fnv1a id is stable across the three failure shapes.
-            key_fragments: vec![
-                parent.clone(),
-                peer.clone(),
-                parent_device.clone(),
-                peer_device.clone(),
-                failure.to_string(),
-            ],
-        },
+        DeployError::ScxmlInvokeCrossDeviceTransport(payload) => {
+            let ScxmlInvokeCrossDeviceTransportPayload {
+                parent,
+                peer,
+                parent_device,
+                peer_device,
+                failure,
+            } = payload.as_ref();
+            DiagnosticPayload {
+                code: DiagnosticCode::MeshDeployScxmlInvokeCrossDeviceTransport,
+                stage: Stage::MeshDeploy,
+                // `{parent}/{peer}` names the per-invoke pair that triggered
+                // the rejection — matches the shape `ScxmlInvokeTargetConflict`
+                // uses so downstream UIs can render both §9.6 diagnostics the
+                // same way.
+                actual: Some(format!("{parent}/{peer}")),
+                expected: None,
+                // Three equally-valid repairs depending on `failure`: add the
+                // binding, pick a different transport, or wait for the
+                // Session 2 C++ wire-14/20 dispatch to land. Author intent
+                // decides — no mechanical fix.
+                fix: None,
+                // All discriminating data flows through `key_fragments` so
+                // the fnv1a id is stable across the three failure shapes.
+                key_fragments: vec![
+                    parent.clone(),
+                    peer.clone(),
+                    parent_device.clone(),
+                    peer_device.clone(),
+                    failure.to_string(),
+                ],
+            }
+        }
         DeployError::SomeipScxmlInvokeServiceIdOverflow {
             participant_count,
             ceiling,
@@ -3072,29 +3095,32 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 declared_mtu.to_string(),
             ],
         },
-        DeployError::LinkDriverClassMismatch {
-            machine,
-            link_name,
-            driver,
-            declared_class,
-            expected_class,
-            driver_candidates,
-            driver_candidates_list: _,
-        } => DiagnosticPayload {
-            code: DiagnosticCode::MeshDeployLinkDriverClassMismatch,
-            stage: Stage::MeshDeploy,
-            actual: Some(declared_class.clone()),
-            expected: Some(vec![expected_class.clone()]),
-            fix: Some(Fix::ReplaceOneOf {
-                candidates: driver_candidates.clone(),
-            }),
-            key_fragments: vec![
-                machine.clone(),
-                link_name.clone(),
-                driver.clone(),
-                declared_class.clone(),
-            ],
-        },
+        DeployError::LinkDriverClassMismatch(payload) => {
+            let LinkDriverClassMismatchPayload {
+                machine,
+                link_name,
+                driver,
+                declared_class,
+                expected_class,
+                driver_candidates,
+                driver_candidates_list: _,
+            } = payload.as_ref();
+            DiagnosticPayload {
+                code: DiagnosticCode::MeshDeployLinkDriverClassMismatch,
+                stage: Stage::MeshDeploy,
+                actual: Some(declared_class.clone()),
+                expected: Some(vec![expected_class.clone()]),
+                fix: Some(Fix::ReplaceOneOf {
+                    candidates: driver_candidates.clone(),
+                }),
+                key_fragments: vec![
+                    machine.clone(),
+                    link_name.clone(),
+                    driver.clone(),
+                    declared_class.clone(),
+                ],
+            }
+        }
         DeployError::LinkExpectedP99ExceedsMtu {
             machine,
             link_name,

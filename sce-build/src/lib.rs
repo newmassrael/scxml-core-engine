@@ -4514,13 +4514,15 @@ fn validate_scxml_invoke_transport(
             };
 
         if let Some(failure) = failure {
-            return Err(mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport {
-                parent: resolved_name.to_string(),
-                peer: peer_name.clone(),
-                parent_device,
-                peer_device,
-                failure,
-            });
+            return Err(mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport(
+                Box::new(mesh::error::ScxmlInvokeCrossDeviceTransportPayload {
+                    parent: resolved_name.to_string(),
+                    peer: peer_name.clone(),
+                    parent_device,
+                    peer_device,
+                    failure,
+                }),
+            ));
         }
     }
     Ok(())
@@ -7560,14 +7562,19 @@ topology:
             .expect_err("cross-device invoke without binding must reject");
         match err {
             mesh::error::MeshError::Deploy(
-                mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport {
+                mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport(payload),
+            ) => {
+                let mesh::error::ScxmlInvokeCrossDeviceTransportPayload {
                     parent,
                     peer,
                     parent_device,
                     peer_device,
-                    failure: mesh::error::ScxmlInvokeCrossDeviceFailure::MissingBinding,
-                },
-            ) => {
+                    failure,
+                } = *payload;
+                assert!(matches!(
+                    failure,
+                    mesh::error::ScxmlInvokeCrossDeviceFailure::MissingBinding
+                ));
                 assert_eq!(parent, "parent");
                 assert_eq!(peer, "worker");
                 assert_eq!(parent_device, "ecu_a");
@@ -7595,15 +7602,22 @@ topology:
             .expect_err("cross-device invoke over shm must reject");
         match err {
             mesh::error::MeshError::Deploy(
-                mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport {
-                    peer,
-                    failure:
-                        mesh::error::ScxmlInvokeCrossDeviceFailure::TransportIncapable { transport },
-                    ..
-                },
+                mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport(payload),
             ) => {
-                assert_eq!(peer, "worker");
-                assert_eq!(transport, "shm");
+                let mesh::error::ScxmlInvokeCrossDeviceTransportPayload {
+                    peer, failure, ..
+                } = *payload;
+                match failure {
+                    mesh::error::ScxmlInvokeCrossDeviceFailure::TransportIncapable {
+                        transport,
+                    } => {
+                        assert_eq!(peer, "worker");
+                        assert_eq!(transport, "shm");
+                    }
+                    other => panic!(
+                        "expected ScxmlInvokeCrossDeviceTransport/TransportIncapable, got {other:?}"
+                    ),
+                }
             }
             other => {
                 panic!("expected ScxmlInvokeCrossDeviceTransport/TransportIncapable, got {other:?}")
@@ -7636,15 +7650,20 @@ topology:
             .expect_err("cross-device invoke over dds must reject — wire-14/20 not wired for dds");
         match err {
             mesh::error::MeshError::Deploy(
-                mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport {
-                    peer,
-                    failure:
-                        mesh::error::ScxmlInvokeCrossDeviceFailure::TransportUnwired { transport },
-                    ..
-                },
+                mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport(payload),
             ) => {
-                assert_eq!(peer, "worker");
-                assert_eq!(transport, "dds");
+                let mesh::error::ScxmlInvokeCrossDeviceTransportPayload {
+                    peer, failure, ..
+                } = *payload;
+                match failure {
+                    mesh::error::ScxmlInvokeCrossDeviceFailure::TransportUnwired { transport } => {
+                        assert_eq!(peer, "worker");
+                        assert_eq!(transport, "dds");
+                    }
+                    other => panic!(
+                        "expected ScxmlInvokeCrossDeviceTransport/TransportUnwired, got {other:?}"
+                    ),
+                }
             }
             other => {
                 panic!("expected ScxmlInvokeCrossDeviceTransport/TransportUnwired, got {other:?}")
@@ -7799,17 +7818,21 @@ topology:
             .expect_err("custom_tcp without peer listen must reject");
         match err {
             mesh::error::MeshError::Deploy(
-                mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport {
-                    failure:
-                        mesh::error::ScxmlInvokeCrossDeviceFailure::TransportListenMissing {
-                            transport,
-                            device,
-                        },
-                    ..
-                },
+                mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport(payload),
             ) => {
-                assert_eq!(transport, "custom_tcp");
-                assert_eq!(device, "ecu_b");
+                let mesh::error::ScxmlInvokeCrossDeviceTransportPayload { failure, .. } = *payload;
+                match failure {
+                    mesh::error::ScxmlInvokeCrossDeviceFailure::TransportListenMissing {
+                        transport,
+                        device,
+                    } => {
+                        assert_eq!(transport, "custom_tcp");
+                        assert_eq!(device, "ecu_b");
+                    }
+                    other => panic!(
+                        "expected ScxmlInvokeCrossDeviceTransport/TransportListenMissing, got {other:?}"
+                    ),
+                }
             }
             other => panic!(
                 "expected ScxmlInvokeCrossDeviceTransport/TransportListenMissing, got {other:?}"
@@ -7837,17 +7860,21 @@ topology:
             .expect_err("custom_tcp without parent listen must reject");
         match err {
             mesh::error::MeshError::Deploy(
-                mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport {
-                    failure:
-                        mesh::error::ScxmlInvokeCrossDeviceFailure::TransportListenMissing {
-                            transport,
-                            device,
-                        },
-                    ..
-                },
+                mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport(payload),
             ) => {
-                assert_eq!(transport, "custom_tcp");
-                assert_eq!(device, "ecu_a");
+                let mesh::error::ScxmlInvokeCrossDeviceTransportPayload { failure, .. } = *payload;
+                match failure {
+                    mesh::error::ScxmlInvokeCrossDeviceFailure::TransportListenMissing {
+                        transport,
+                        device,
+                    } => {
+                        assert_eq!(transport, "custom_tcp");
+                        assert_eq!(device, "ecu_a");
+                    }
+                    other => panic!(
+                        "expected ScxmlInvokeCrossDeviceTransport/TransportListenMissing, got {other:?}"
+                    ),
+                }
             }
             other => panic!(
                 "expected ScxmlInvokeCrossDeviceTransport/TransportListenMissing, got {other:?}"
