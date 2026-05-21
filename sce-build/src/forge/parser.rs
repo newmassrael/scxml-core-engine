@@ -3532,7 +3532,7 @@ fn validate_codec_length_field_refs(
                     ))
                 })?;
                 match &sibling.bit_size {
-                    BitSize::Fixed { bits } if matches!(bits, 8 | 16 | 24 | 32) => {
+                    BitSize::Fixed { bits: 8 | 16 | 24 | 32 } => {
                         // OK — byte-aligned width that decode_multibyte_unified
                         // folds natively across all 6 backends.
                     }

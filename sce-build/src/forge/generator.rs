@@ -291,7 +291,7 @@ fn validate_options(
                 )
                 .into());
             }
-            Some(trimmed) if trimmed.is_empty() => {
+            Some("") => {
                 return Err(GenerateError::InvalidConfig(
                     "ForgeCompileOptions.go_module_prefix is empty; \
                      supply a non-empty Go module path such as \
