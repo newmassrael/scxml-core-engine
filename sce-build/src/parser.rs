@@ -230,6 +230,12 @@ fn source_location_of(
     })
 }
 
+impl Default for SCXMLParser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SCXMLParser {
     pub fn new() -> Self {
         Self {
