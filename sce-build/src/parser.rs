@@ -236,6 +236,19 @@ impl Default for SCXMLParser {
     }
 }
 
+/// Pre-extracted attribute bundle for [`SCXMLParser::parse_mesh_rpc_invoke`].
+/// Five fields the caller already pulled from distinct attribute paths
+/// (`id`, the parser-synthesised `_N` field suffix, `src`, `srcexpr`,
+/// `idlocation`) bundled so the parse signature stays under clippy's
+/// 7-arg ceiling without losing the per-field meaning.
+struct MeshRpcInvokeAttrs {
+    invoke_id: String,
+    field_suffix: String,
+    src: String,
+    srcexpr: String,
+    idlocation: String,
+}
+
 impl SCXMLParser {
     pub fn new() -> Self {
         Self {
@@ -1786,11 +1799,13 @@ impl SCXMLParser {
                 elem,
                 state_id,
                 source_name,
-                invoke_id,
-                field_suffix,
-                src.clone(),
-                srcexpr.clone(),
-                idlocation,
+                MeshRpcInvokeAttrs {
+                    invoke_id,
+                    field_suffix,
+                    src: src.clone(),
+                    srcexpr: srcexpr.clone(),
+                    idlocation,
+                },
             )?;
             return Ok(Some(Invoke::MeshRpc(info)));
         }
@@ -1997,6 +2012,15 @@ impl SCXMLParser {
         Ok(None)
     }
 
+    // ── parse_mesh_rpc_invoke attribute bundle ──
+    //
+    // Pre-parsed `<invoke type="sce:mesh-rpc">` attributes grouped into
+    // a single argument so the call doesn't trip clippy's 7-arg ceiling
+    // — these five fields are extracted together by the caller from
+    // distinct XML attribute paths (`id`, generated `_N` suffix,
+    // `src`, `srcexpr`, `idlocation`) and stay together as the
+    // identifying tuple for the invoke through validation.
+
     /// SCE Mesh §9.5: parse an `<invoke type="sce:mesh-rpc">` element.
     ///
     /// Enforces the reserved-`_mesh_*` `<param>` rules at parse time
@@ -2011,14 +2035,17 @@ impl SCXMLParser {
         elem: &roxmltree::Node,
         state_id: &str,
         source_name: &str,
-        invoke_id: String,
-        field_suffix: String,
-        src: String,
-        srcexpr: String,
-        idlocation: String,
+        attrs: MeshRpcInvokeAttrs,
     ) -> Result<MeshRpcInvokeInfo, crate::forge::error::Located<crate::forge::error::ForgeError>>
     {
         use crate::forge::error::{Located, ValidationError};
+        let MeshRpcInvokeAttrs {
+            invoke_id,
+            field_suffix,
+            src,
+            srcexpr,
+            idlocation,
+        } = attrs;
 
         let locate = |err: ValidationError| -> Located<crate::forge::error::ForgeError> {
             let pos = elem.document().text_pos_at(elem.range().start);
