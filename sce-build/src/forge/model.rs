@@ -3229,11 +3229,13 @@ pub struct WorkerModel {
 ///
 /// `Statechart(Box<SCXMLModel>)` is the W3C SCXML arm — added in the
 /// AST-export v1 second atomic to close the internal symmetry left
-/// open by the Forge-only first cut. The `Box` is required because
-/// `SCXMLModel` is substantially larger than every other variant
-/// (~500 bytes vs ~50-200 for the forge kinds); without it,
-/// `clippy::large_enum_variant` fires and every `Lookup` /
-/// `Condition` allocation pays the SCXMLModel size tax.
+/// open by the Forge-only first cut. The `Box` keeps the enum size
+/// bounded by the largest forge variant: `size_of::<SCXMLModel>() ==
+/// 816` bytes (measured at landing), while the largest forge model
+/// (CodecModel) is 312 bytes. Inlining SCXMLModel would inflate
+/// every `ForgeDocument` allocation by ~500 bytes regardless of
+/// which variant carries data — boxing pays one indirection on the
+/// statechart arm only.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "kind")]
