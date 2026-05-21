@@ -236,7 +236,7 @@ fn warn_policy_fires_expected_fragmentation_rate_high() {
         &std::collections::BTreeSet::new(),
     )
     .expect_err("rate > 25 fires");
-    match err {
+    match *err {
         ValidationError::ReassemblyExpectedFragmentationRateHigh { rate_percent, .. } => {
             assert_eq!(rate_percent, 31);
         }
@@ -283,7 +283,7 @@ fn error_policy_promotes_to_pool_stage_copy_policy_error() {
         &std::collections::BTreeSet::new(),
     )
     .expect_err("rate > 25 + error policy fires");
-    match err {
+    match *err {
         ValidationError::PoolStageCopyPolicyError {
             rate_percent,
             policy,
@@ -335,7 +335,7 @@ fn forbid_policy_promotes_to_pool_stage_copy_policy_error_without_opt_out() {
         &std::collections::BTreeSet::new(),
     )
     .expect_err("rate > 25 + forbid policy + no opt-out fires");
-    match err {
+    match *err {
         ValidationError::PoolStageCopyPolicyError { policy, .. } => {
             assert_eq!(policy, "forbid");
         }
@@ -365,7 +365,7 @@ fn forbid_policy_with_opt_out_rejects_outright() {
         &std::collections::BTreeSet::new(),
     )
     .expect_err("forbid rejects opt-out outright");
-    match err {
+    match *err {
         ValidationError::PoolStageCopyAcceptRejectedUnderForbid { machine, link_name } => {
             assert_eq!(machine, "mcu_node");
             assert_eq!(link_name, "udp_data");

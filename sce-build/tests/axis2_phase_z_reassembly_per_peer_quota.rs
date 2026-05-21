@@ -206,7 +206,7 @@ fn violation_capacity_times_quota_below_slot_count_fires() {
 
     let err = validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry, &listener_links)
         .expect_err("invariant violation must reject");
-    match err {
+    match *err {
         ValidationError::ReassemblyPerPeerQuotaBuildInvariantViolated {
             pool_name,
             slot_count,

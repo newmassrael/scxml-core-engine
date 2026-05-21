@@ -17,16 +17,25 @@ use std::path::PathBuf;
 /// Variants correspond to pipeline stages so callers can react
 /// programmatically (distinct CLI exit codes, IDE diagnostics, etc.)
 /// without parsing error message strings.
+// `Deploy` and `Topology` carry the two stage enums whose largest
+// variants land above clippy's `result_large_err` 128 B threshold
+// (DeployError 128 B, TopologyError 128 B); both are boxed so
+// `Result<_, MeshError>` returns no longer flag. `External` (104 B)
+// and `Codegen` (72 B) stay inline because they fit under the
+// budget without an extra allocation. The boxed variants drop
+// `#[from]` because thiserror's derive cannot bridge `T → Box<T>` —
+// hand-written `From` impls below cover both unboxed and boxed
+// argument shapes so `?` propagation still works either way.
 #[derive(Debug, thiserror::Error)]
 pub enum MeshError {
     #[error(transparent)]
-    Deploy(#[from] DeployError),
+    Deploy(Box<DeployError>),
 
     #[error(transparent)]
     External(#[from] ExternalConfigError),
 
     #[error(transparent)]
-    Topology(#[from] TopologyError),
+    Topology(Box<TopologyError>),
 
     #[error(transparent)]
     Codegen(#[from] CodegenError),
@@ -36,6 +45,30 @@ pub enum MeshError {
         path: PathBuf,
         source: std::io::Error,
     },
+}
+
+impl From<DeployError> for MeshError {
+    fn from(err: DeployError) -> Self {
+        Self::Deploy(Box::new(err))
+    }
+}
+
+impl From<Box<DeployError>> for MeshError {
+    fn from(err: Box<DeployError>) -> Self {
+        Self::Deploy(err)
+    }
+}
+
+impl From<TopologyError> for MeshError {
+    fn from(err: TopologyError) -> Self {
+        Self::Topology(Box::new(err))
+    }
+}
+
+impl From<Box<TopologyError>> for MeshError {
+    fn from(err: Box<TopologyError>) -> Self {
+        Self::Topology(err)
+    }
 }
 
 // ── Stage 1: deploy.yaml parsing ─────────────────────────────
@@ -3950,9 +3983,9 @@ impl ToDiagnostics for MeshError {
 impl SingleDiagnostic for MeshError {
     fn diagnostic_payload(&self) -> DiagnosticPayload {
         match self {
-            MeshError::Deploy(e) => deploy_fields(e),
+            MeshError::Deploy(e) => deploy_fields(e.as_ref()),
             MeshError::External(e) => external_fields(e),
-            MeshError::Topology(e) => topology_fields(e),
+            MeshError::Topology(e) => topology_fields(e.as_ref()),
             MeshError::Codegen(e) => codegen_fields(e),
             MeshError::Io { path, .. } => DiagnosticPayload {
                 code: DiagnosticCode::MeshIo,

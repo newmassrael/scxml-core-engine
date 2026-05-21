@@ -3447,7 +3447,7 @@ pub fn validate_reassembly_cross_doc(
     // mistake at the only check that can reach it. Untrusted +
     // EstablishedSession branches are unaffected by this parameter.
     listener_links: &std::collections::BTreeSet<String>,
-) -> Result<(), crate::forge::error::ValidationError> {
+) -> Result<(), Box<crate::forge::error::ValidationError>> {
     use crate::forge::error::ValidationError;
     use crate::forge::model::BufferPoolVariant;
 
@@ -3499,13 +3499,15 @@ pub fn validate_reassembly_cross_doc(
                 // parse time.
                 if let Some(mtu_bytes) = link.mtu_bytes {
                     if slot_size < mtu_bytes {
-                        return Err(ValidationError::MemReassemblySlotSizeBelowDeclaredMtu {
-                            pool_name: pool_name.to_string(),
-                            slot_size,
-                            mtu_bytes,
-                            machine: machine_name.clone(),
-                            link_name: link_name.clone(),
-                        });
+                        return Err(Box::new(
+                            ValidationError::MemReassemblySlotSizeBelowDeclaredMtu {
+                                pool_name: pool_name.to_string(),
+                                slot_size,
+                                mtu_bytes,
+                                machine: machine_name.clone(),
+                                link_name: link_name.clone(),
+                            },
+                        ));
                     }
                 }
 
@@ -3527,7 +3529,7 @@ pub fn validate_reassembly_cross_doc(
                             * mtu_bytes as u64)
                             .min(u32::MAX as u64) as u32;
                         if slot_size < required {
-                            return Err(
+                            return Err(Box::new(
                                 ValidationError::ReassemblyMaxFragmentsInsufficientForMtu {
                                     pool_name: pool_name.to_string(),
                                     slot_size,
@@ -3538,7 +3540,7 @@ pub fn validate_reassembly_cross_doc(
                                     machine: machine_name.clone(),
                                     link_name: link_name.clone(),
                                 },
-                            );
+                            ));
                         }
                     }
 
@@ -3581,13 +3583,13 @@ pub fn validate_reassembly_cross_doc(
                                     // so the binding has no valid
                                     // landing site. RFC §5.M lines
                                     // 2982-2994.
-                                    return Err(
+                                    return Err(Box::new(
                                         ValidationError::ReassemblyBindingOnUnpairedListener {
                                             pool_name: pool_name.to_string(),
                                             machine: machine_name.clone(),
                                             link_name: link_name.clone(),
                                         },
-                                    );
+                                    ));
                                 }
                                 // Listener — binding auto-rebinds to
                                 // the synthesized Sibling
@@ -3598,12 +3600,14 @@ pub fn validate_reassembly_cross_doc(
                                 // same field set.
                             }
                             TrustClass::Untrusted => {
-                                return Err(ValidationError::ReassemblyUntrustedLinkBinding {
-                                    pool_name: pool_name.to_string(),
-                                    trust_class: domain.trust_class.as_str().to_string(),
-                                    machine: machine_name.clone(),
-                                    link_name: link_name.clone(),
-                                });
+                                return Err(Box::new(
+                                    ValidationError::ReassemblyUntrustedLinkBinding {
+                                        pool_name: pool_name.to_string(),
+                                        trust_class: domain.trust_class.as_str().to_string(),
+                                        machine: machine_name.clone(),
+                                        link_name: link_name.clone(),
+                                    },
+                                ));
                             }
                         }
                     } else {
@@ -3615,13 +3619,13 @@ pub fn validate_reassembly_cross_doc(
                         // already parse-rejected by
                         // `LinkDomainAttrs.trust_class` required-when-
                         // block-declared shape (C13-α-1).
-                        return Err(
+                        return Err(Box::new(
                             ValidationError::ReassemblyTrustClassMissingOnFragmentingLink {
                                 pool_name: pool_name.to_string(),
                                 machine: machine_name.clone(),
                                 link_name: link_name.clone(),
                             },
-                        );
+                        ));
                     }
 
                     // ── Axis-2 declared-consumption — reassembly/
@@ -3660,7 +3664,7 @@ pub fn validate_reassembly_cross_doc(
                             let product =
                                 peer_table.capacity as u64 * reassembly_cfg.per_peer_quota as u64;
                             if product < pool_slot_count as u64 {
-                                return Err(
+                                return Err(Box::new(
                                     ValidationError::ReassemblyPerPeerQuotaBuildInvariantViolated {
                                         pool_name: pool_name.to_string(),
                                         slot_count: pool_slot_count,
@@ -3670,7 +3674,7 @@ pub fn validate_reassembly_cross_doc(
                                         per_peer_quota: reassembly_cfg.per_peer_quota,
                                         product,
                                     },
-                                );
+                                ));
                             }
                         }
                     }
@@ -3690,10 +3694,12 @@ pub fn validate_reassembly_cross_doc(
                     && forge_link
                         .is_some_and(|l| l.accept_stage_copy_rate)
                 {
-                    return Err(ValidationError::PoolStageCopyAcceptRejectedUnderForbid {
-                        machine: machine_name.clone(),
-                        link_name: link_name.clone(),
-                    });
+                    return Err(Box::new(
+                        ValidationError::PoolStageCopyAcceptRejectedUnderForbid {
+                            machine: machine_name.clone(),
+                            link_name: link_name.clone(),
+                        },
+                    ));
                 }
 
                 // ── #3 reassembly/expected-fragmentation-rate-high ──
@@ -3736,7 +3742,7 @@ pub fn validate_reassembly_cross_doc(
                                 // branch is unreachable with opt-out
                                 // = true on `forbid`.
                                 if !opt_out {
-                                    return Err(match policy {
+                                    return Err(Box::new(match policy {
                                         StageCopyPolicy::Warn => {
                                             ValidationError::ReassemblyExpectedFragmentationRateHigh {
                                                 pool_name: pool_name.to_string(),
@@ -3759,7 +3765,7 @@ pub fn validate_reassembly_cross_doc(
                                                 policy: policy.as_str().to_string(),
                                             }
                                         }
-                                    });
+                                    }));
                                 }
                             }
                         }
@@ -3794,15 +3800,17 @@ pub fn validate_reassembly_cross_doc(
                         .ceil()
                         .min(u32::MAX as f64) as u32;
                     if stage_copy_wcet_us > worker_slot_budget_us {
-                        return Err(ValidationError::ReassemblyStageCopyWcetExceedsSlotBudget {
-                            machine: machine_name.clone(),
-                            link_name: link_name.clone(),
-                            expected_p99_bytes,
-                            memcpy_cycles_per_byte,
-                            clock_freq_mhz,
-                            worker_slot_budget_us,
-                            stage_copy_wcet_us,
-                        });
+                        return Err(Box::new(
+                            ValidationError::ReassemblyStageCopyWcetExceedsSlotBudget {
+                                machine: machine_name.clone(),
+                                link_name: link_name.clone(),
+                                expected_p99_bytes,
+                                memcpy_cycles_per_byte,
+                                clock_freq_mhz,
+                                worker_slot_budget_us,
+                                stage_copy_wcet_us,
+                            },
+                        ));
                     }
                 }
             }

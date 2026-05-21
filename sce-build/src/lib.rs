@@ -737,7 +737,7 @@ pub fn compile_forge_with_deploy(
     if let Some(cfg) = deploy {
         mesh::deploy::validate_stateless_accept_externs(cfg, &plugin_symbols).map_err(|e| {
             Located::new(
-                forge::error::ForgeError::Mesh(Box::new(mesh::error::MeshError::Deploy(e))),
+                forge::error::ForgeError::Mesh(Box::new(mesh::error::MeshError::from(e))),
                 label.diagnostic_label,
                 None,
                 None,
@@ -2077,12 +2077,7 @@ pub fn compile_scxml_with_imports(
     // migration extends explicit declarations to every listener.
     if let Some(deploy_cfg) = deploy {
         validate_cross_doc_listener_roles(deploy_cfg, &scxml_models).map_err(|e| {
-            Located::new(
-                forge::error::ForgeError::Validation(Box::new(e)),
-                "deploy.yaml",
-                None,
-                None,
-            )
+            Located::new(forge::error::ForgeError::Validation(e), "deploy.yaml", None, None)
         })?;
     }
 
@@ -2128,7 +2123,7 @@ pub fn compile_scxml_with_imports(
         const DEPLOY_LABEL: &str = "deploy.yaml";
 
         mesh::deploy::validate_links_cross_doc(deploy_cfg, &forge_link_names)
-            .map_err(mesh::error::MeshError::Deploy)
+            .map_err(mesh::error::MeshError::from)
             .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
 
         mesh::deploy::validate_links_burst_invariants(
@@ -2136,11 +2131,11 @@ pub fn compile_scxml_with_imports(
             &forge_link_models_view,
             &pool_models_view,
         )
-        .map_err(mesh::error::MeshError::Deploy)
+        .map_err(mesh::error::MeshError::from)
         .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
 
         mesh::deploy::validate_link_driver_class_consistency(deploy_cfg, &forge_link_models_view)
-            .map_err(mesh::error::MeshError::Deploy)
+            .map_err(mesh::error::MeshError::from)
             .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
 
         mesh::deploy::validate_reassembly_cross_doc(
@@ -2164,7 +2159,7 @@ pub fn compile_scxml_with_imports(
         // the deploy.yaml label set above.
         let orchestrator_plugin_symbols = load_target_plugin_for_compile(deploy_cfg, DEPLOY_LABEL)?;
         mesh::deploy::validate_stateless_accept_externs(deploy_cfg, &orchestrator_plugin_symbols)
-            .map_err(mesh::error::MeshError::Deploy)
+            .map_err(mesh::error::MeshError::from)
             .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
 
         // ── C10-β link/inbound-event-queue-unsized ──
@@ -3312,7 +3307,7 @@ pub fn resolve_listener_links(
 pub fn validate_cross_doc_listener_roles(
     deploy_cfg: &mesh::deploy::DeployConfig,
     scxml_models: &[(std::path::PathBuf, SCXMLModel)],
-) -> Result<(), crate::forge::error::ValidationError> {
+) -> Result<(), Box<crate::forge::error::ValidationError>> {
     use crate::forge::error::ValidationError;
     use crate::model::SessionRoleKind;
     use mesh::deploy::{LinkRole, TrustClass};
@@ -3331,13 +3326,13 @@ pub fn validate_cross_doc_listener_roles(
                         // Happy path — role/trust pair matches.
                     }
                     Some(other) => {
-                        return Err(
+                        return Err(Box::new(
                             ValidationError::LinkRoleListenerWithNonSessionArmingTrustClass {
                                 machine: machine_name.clone(),
                                 link_name: link_name.clone(),
                                 trust_class: other.as_str().to_string(),
                             },
-                        );
+                        ));
                     }
                     None => {
                         // `role: listener` without any `domain_attrs`
@@ -3346,13 +3341,13 @@ pub fn validate_cross_doc_listener_roles(
                         // tier as `(absent)` so the failure shape is
                         // distinguishable from a present-but-wrong
                         // trust tier.
-                        return Err(
+                        return Err(Box::new(
                             ValidationError::LinkRoleListenerWithNonSessionArmingTrustClass {
                                 machine: machine_name.clone(),
                                 link_name: link_name.clone(),
                                 trust_class: "(absent)".to_string(),
                             },
-                        );
+                        ));
                     }
                 }
             }
@@ -3382,12 +3377,12 @@ pub fn validate_cross_doc_listener_roles(
             for (link_name, link) in machine.links.iter() {
                 let deploy_role_is_listener = matches!(link.role, Some(LinkRole::Listener));
                 if deploy_role_is_listener && !scxml_declares_accept_side {
-                    return Err(
+                    return Err(Box::new(
                         ValidationError::LinkDeployRoleListenerWithoutScxmlAcceptSideRole {
                             machine: machine_name.clone(),
                             link_name: link_name.clone(),
                         },
-                    );
+                    ));
                 }
             }
 
@@ -3398,10 +3393,12 @@ pub fn validate_cross_doc_listener_roles(
                     .values()
                     .any(|link| matches!(link.role, Some(LinkRole::Listener)));
                 if !any_listener_on_machine {
-                    return Err(ValidationError::ScxmlAcceptSideRoleWithoutListenerLink {
-                        machine: machine_name.clone(),
-                        scxml_source: machine_source.to_string(),
-                    });
+                    return Err(Box::new(
+                        ValidationError::ScxmlAcceptSideRoleWithoutListenerLink {
+                            machine: machine_name.clone(),
+                            scxml_source: machine_source.to_string(),
+                        },
+                    ));
                 }
             }
         }
@@ -4229,7 +4226,7 @@ pub fn inject_partition_context_for(
     if let Some(partition_name) = for_partition {
         if let Some(partitions) = resolved.partitions() {
             let Some(decl) = partitions.get(partition_name) else {
-                return Err(mesh::error::MeshError::Deploy(
+                return Err(mesh::error::MeshError::from(
                     mesh::error::DeployError::PartitionParallelRootNotInMachines {
                         partition: partition_name.to_string(),
                         claimed_machine: resolved_name.clone(),
@@ -4379,9 +4376,9 @@ pub fn inject_partition_context_for(
     classify_remote_scxml_invokes(model, &deploy_cfg, &resolved_name);
     collect_scxml_remote_peers(model, &deploy_cfg, &resolved_name, deploy_path);
     validate_scxml_invoke_target_exclusivity(model, &deploy_cfg, &resolved_name, deploy_path)
-        .map_err(mesh::error::MeshError::Deploy)?;
+        .map_err(mesh::error::MeshError::from)?;
     validate_scxml_invoke_transport(model, &deploy_cfg, &resolved_name)
-        .map_err(mesh::error::MeshError::Deploy)?;
+        .map_err(mesh::error::MeshError::from)?;
 
     Ok(present)
 }
@@ -7025,19 +7022,20 @@ topology:
         let err = inject_partition_context_for(&mut model, &tmp.join("deploy.yaml"), None)
             .expect_err("must reject when worker is both mesh peer and local invoke target");
         match err {
-            mesh::error::MeshError::Deploy(
+            mesh::error::MeshError::Deploy(boxed) => match *boxed {
                 mesh::error::DeployError::ScxmlInvokeTargetConflict {
                     machine,
                     inbound_peers,
                     local_invoker,
                     local_src,
-                },
-            ) => {
-                assert_eq!(machine, "worker");
-                assert_eq!(inbound_peers, vec!["parent_mesh".to_string()]);
-                assert_eq!(local_invoker, "parent_local");
-                assert_eq!(local_src, "worker.scxml");
-            }
+                } => {
+                    assert_eq!(machine, "worker");
+                    assert_eq!(inbound_peers, vec!["parent_mesh".to_string()]);
+                    assert_eq!(local_invoker, "parent_local");
+                    assert_eq!(local_src, "worker.scxml");
+                }
+                other => panic!("expected ScxmlInvokeTargetConflict, got {other:?}"),
+            },
             other => panic!("expected ScxmlInvokeTargetConflict, got {other:?}"),
         }
 
@@ -7561,25 +7559,28 @@ topology:
         let err = inject_partition_context_for(&mut model, &deploy_path, None)
             .expect_err("cross-device invoke without binding must reject");
         match err {
-            mesh::error::MeshError::Deploy(
-                mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport(payload),
-            ) => {
-                let mesh::error::ScxmlInvokeCrossDeviceTransportPayload {
-                    parent,
-                    peer,
-                    parent_device,
-                    peer_device,
-                    failure,
-                } = *payload;
-                assert!(matches!(
-                    failure,
-                    mesh::error::ScxmlInvokeCrossDeviceFailure::MissingBinding
-                ));
-                assert_eq!(parent, "parent");
-                assert_eq!(peer, "worker");
-                assert_eq!(parent_device, "ecu_a");
-                assert_eq!(peer_device, "ecu_b");
-            }
+            mesh::error::MeshError::Deploy(boxed) => match *boxed {
+                mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport(payload) => {
+                    let mesh::error::ScxmlInvokeCrossDeviceTransportPayload {
+                        parent,
+                        peer,
+                        parent_device,
+                        peer_device,
+                        failure,
+                    } = *payload;
+                    assert!(matches!(
+                        failure,
+                        mesh::error::ScxmlInvokeCrossDeviceFailure::MissingBinding
+                    ));
+                    assert_eq!(parent, "parent");
+                    assert_eq!(peer, "worker");
+                    assert_eq!(parent_device, "ecu_a");
+                    assert_eq!(peer_device, "ecu_b");
+                }
+                other => panic!(
+                    "expected ScxmlInvokeCrossDeviceTransport/MissingBinding, got {other:?}"
+                ),
+            },
             other => {
                 panic!("expected ScxmlInvokeCrossDeviceTransport/MissingBinding, got {other:?}")
             }
@@ -7601,24 +7602,27 @@ topology:
         let err = inject_partition_context_for(&mut model, &deploy_path, None)
             .expect_err("cross-device invoke over shm must reject");
         match err {
-            mesh::error::MeshError::Deploy(
-                mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport(payload),
-            ) => {
-                let mesh::error::ScxmlInvokeCrossDeviceTransportPayload {
-                    peer, failure, ..
-                } = *payload;
-                match failure {
-                    mesh::error::ScxmlInvokeCrossDeviceFailure::TransportIncapable {
-                        transport,
-                    } => {
-                        assert_eq!(peer, "worker");
-                        assert_eq!(transport, "shm");
+            mesh::error::MeshError::Deploy(boxed) => match *boxed {
+                mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport(payload) => {
+                    let mesh::error::ScxmlInvokeCrossDeviceTransportPayload {
+                        peer, failure, ..
+                    } = *payload;
+                    match failure {
+                        mesh::error::ScxmlInvokeCrossDeviceFailure::TransportIncapable {
+                            transport,
+                        } => {
+                            assert_eq!(peer, "worker");
+                            assert_eq!(transport, "shm");
+                        }
+                        other => panic!(
+                            "expected ScxmlInvokeCrossDeviceTransport/TransportIncapable, got {other:?}"
+                        ),
                     }
-                    other => panic!(
-                        "expected ScxmlInvokeCrossDeviceTransport/TransportIncapable, got {other:?}"
-                    ),
                 }
-            }
+                other => panic!(
+                    "expected ScxmlInvokeCrossDeviceTransport/TransportIncapable, got {other:?}"
+                ),
+            },
             other => {
                 panic!("expected ScxmlInvokeCrossDeviceTransport/TransportIncapable, got {other:?}")
             }
@@ -7649,22 +7653,27 @@ topology:
         let err = inject_partition_context_for(&mut model, &deploy_path, None)
             .expect_err("cross-device invoke over dds must reject — wire-14/20 not wired for dds");
         match err {
-            mesh::error::MeshError::Deploy(
-                mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport(payload),
-            ) => {
-                let mesh::error::ScxmlInvokeCrossDeviceTransportPayload {
-                    peer, failure, ..
-                } = *payload;
-                match failure {
-                    mesh::error::ScxmlInvokeCrossDeviceFailure::TransportUnwired { transport } => {
-                        assert_eq!(peer, "worker");
-                        assert_eq!(transport, "dds");
+            mesh::error::MeshError::Deploy(boxed) => match *boxed {
+                mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport(payload) => {
+                    let mesh::error::ScxmlInvokeCrossDeviceTransportPayload {
+                        peer, failure, ..
+                    } = *payload;
+                    match failure {
+                        mesh::error::ScxmlInvokeCrossDeviceFailure::TransportUnwired {
+                            transport,
+                        } => {
+                            assert_eq!(peer, "worker");
+                            assert_eq!(transport, "dds");
+                        }
+                        other => panic!(
+                            "expected ScxmlInvokeCrossDeviceTransport/TransportUnwired, got {other:?}"
+                        ),
                     }
-                    other => panic!(
-                        "expected ScxmlInvokeCrossDeviceTransport/TransportUnwired, got {other:?}"
-                    ),
                 }
-            }
+                other => panic!(
+                    "expected ScxmlInvokeCrossDeviceTransport/TransportUnwired, got {other:?}"
+                ),
+            },
             other => {
                 panic!("expected ScxmlInvokeCrossDeviceTransport/TransportUnwired, got {other:?}")
             }
@@ -7817,23 +7826,27 @@ topology:
         let err = inject_partition_context_for(&mut model, &deploy_path, None)
             .expect_err("custom_tcp without peer listen must reject");
         match err {
-            mesh::error::MeshError::Deploy(
-                mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport(payload),
-            ) => {
-                let mesh::error::ScxmlInvokeCrossDeviceTransportPayload { failure, .. } = *payload;
-                match failure {
-                    mesh::error::ScxmlInvokeCrossDeviceFailure::TransportListenMissing {
-                        transport,
-                        device,
-                    } => {
-                        assert_eq!(transport, "custom_tcp");
-                        assert_eq!(device, "ecu_b");
+            mesh::error::MeshError::Deploy(boxed) => match *boxed {
+                mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport(payload) => {
+                    let mesh::error::ScxmlInvokeCrossDeviceTransportPayload { failure, .. } =
+                        *payload;
+                    match failure {
+                        mesh::error::ScxmlInvokeCrossDeviceFailure::TransportListenMissing {
+                            transport,
+                            device,
+                        } => {
+                            assert_eq!(transport, "custom_tcp");
+                            assert_eq!(device, "ecu_b");
+                        }
+                        other => panic!(
+                            "expected ScxmlInvokeCrossDeviceTransport/TransportListenMissing, got {other:?}"
+                        ),
                     }
-                    other => panic!(
-                        "expected ScxmlInvokeCrossDeviceTransport/TransportListenMissing, got {other:?}"
-                    ),
                 }
-            }
+                other => panic!(
+                    "expected ScxmlInvokeCrossDeviceTransport/TransportListenMissing, got {other:?}"
+                ),
+            },
             other => panic!(
                 "expected ScxmlInvokeCrossDeviceTransport/TransportListenMissing, got {other:?}"
             ),
@@ -7859,23 +7872,27 @@ topology:
         let err = inject_partition_context_for(&mut model, &deploy_path, None)
             .expect_err("custom_tcp without parent listen must reject");
         match err {
-            mesh::error::MeshError::Deploy(
-                mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport(payload),
-            ) => {
-                let mesh::error::ScxmlInvokeCrossDeviceTransportPayload { failure, .. } = *payload;
-                match failure {
-                    mesh::error::ScxmlInvokeCrossDeviceFailure::TransportListenMissing {
-                        transport,
-                        device,
-                    } => {
-                        assert_eq!(transport, "custom_tcp");
-                        assert_eq!(device, "ecu_a");
+            mesh::error::MeshError::Deploy(boxed) => match *boxed {
+                mesh::error::DeployError::ScxmlInvokeCrossDeviceTransport(payload) => {
+                    let mesh::error::ScxmlInvokeCrossDeviceTransportPayload { failure, .. } =
+                        *payload;
+                    match failure {
+                        mesh::error::ScxmlInvokeCrossDeviceFailure::TransportListenMissing {
+                            transport,
+                            device,
+                        } => {
+                            assert_eq!(transport, "custom_tcp");
+                            assert_eq!(device, "ecu_a");
+                        }
+                        other => panic!(
+                            "expected ScxmlInvokeCrossDeviceTransport/TransportListenMissing, got {other:?}"
+                        ),
                     }
-                    other => panic!(
-                        "expected ScxmlInvokeCrossDeviceTransport/TransportListenMissing, got {other:?}"
-                    ),
                 }
-            }
+                other => panic!(
+                    "expected ScxmlInvokeCrossDeviceTransport/TransportListenMissing, got {other:?}"
+                ),
+            },
             other => panic!(
                 "expected ScxmlInvokeCrossDeviceTransport/TransportListenMissing, got {other:?}"
             ),

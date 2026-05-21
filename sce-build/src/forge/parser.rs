@@ -422,14 +422,16 @@ fn parse_externs(
 
 // ── Internal: kind detection from parsed node ──────────────────
 
-fn detect_kind_from_node(root: &roxmltree::Node) -> Result<Option<ForgeKind>, ValidationError> {
+fn detect_kind_from_node(
+    root: &roxmltree::Node,
+) -> Result<Option<ForgeKind>, Box<ValidationError>> {
     let kind_val = match sce_attr(root, "kind") {
         Some(v) => v,
         None => return Ok(None),
     };
     match ForgeKind::from_attr(&kind_val) {
         Some(kind) => Ok(Some(kind)),
-        None => Err(ValidationError::UnsupportedKind(kind_val)),
+        None => Err(Box::new(ValidationError::UnsupportedKind(kind_val))),
     }
 }
 
@@ -4880,34 +4882,33 @@ fn parse_procedure_donedata(
 }
 
 /// Parse time interval like "100ms" or "1s" into milliseconds.
-fn parse_time_interval(s: &str) -> Result<u32, ValidationError> {
+fn parse_time_interval(s: &str) -> Result<u32, Box<ValidationError>> {
     let s = s.trim();
     if let Some(ms_str) = s.strip_suffix("ms") {
-        ms_str
-            .parse::<u32>()
-            .map_err(|_| ValidationError::NumericParse {
+        ms_str.parse::<u32>().map_err(|_| {
+            Box::new(ValidationError::NumericParse {
                 element: "time interval".into(),
                 attr: "value".into(),
                 value: s.to_string(),
                 detail: "expected integer with 'ms' suffix".into(),
             })
+        })
     } else if let Some(s_str) = s.strip_suffix('s') {
-        s_str
-            .parse::<u32>()
-            .map(|secs| secs * 1000)
-            .map_err(|_| ValidationError::NumericParse {
+        s_str.parse::<u32>().map(|secs| secs * 1000).map_err(|_| {
+            Box::new(ValidationError::NumericParse {
                 element: "time interval".into(),
                 attr: "value".into(),
                 value: s.to_string(),
                 detail: "expected integer with 's' suffix".into(),
             })
+        })
     } else {
-        Err(ValidationError::NumericParse {
+        Err(Box::new(ValidationError::NumericParse {
             element: "time interval".into(),
             attr: "value".into(),
             value: s.to_string(),
             detail: "must end with 'ms' or 's'".into(),
-        })
+        }))
     }
 }
 

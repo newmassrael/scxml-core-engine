@@ -417,7 +417,7 @@ fn slot_size_below_declared_mtu_fires() {
         mtu_bytes,
         machine,
         link_name,
-    } = err
+    } = *err
     else {
         panic!("expected MemReassemblySlotSizeBelowDeclaredMtu, got {err:?}");
     };
@@ -465,7 +465,7 @@ fn max_fragments_insufficient_fires_on_reassembly_variant() {
         mtu_bytes,
         required,
         ..
-    } = err
+    } = *err
     else {
         panic!("expected ReassemblyMaxFragmentsInsufficientForMtu, got {err:?}");
     };
@@ -554,7 +554,7 @@ fn expected_fragmentation_rate_high_fires_on_default_pool() {
         &std::collections::BTreeSet::new(),
     )
     .expect_err("slot_size < mtu OR p99 fragmentation rate fires");
-    match err {
+    match *err {
         ValidationError::MemReassemblySlotSizeBelowDeclaredMtu { .. }
         | ValidationError::ReassemblyExpectedFragmentationRateHigh { .. } => {}
         other => panic!("expected #1 or #3, got {other:?}"),
@@ -640,7 +640,7 @@ fn untrusted_link_binding_fires_on_untrusted_trust_class() {
         trust_class,
         link_name,
         ..
-    } = err
+    } = *err
     else {
         panic!("expected ReassemblyUntrustedLinkBinding, got {err:?}");
     };
@@ -695,7 +695,7 @@ fn binding_on_unpaired_listener_fires_without_listener() {
         pool_name,
         machine,
         link_name,
-    } = err
+    } = *err
     else {
         panic!("expected ReassemblyBindingOnUnpairedListener, got {err:?}");
     };
@@ -772,7 +772,7 @@ fn trust_class_missing_on_fragmenting_link_fires() {
         pool_name,
         link_name,
         ..
-    } = err
+    } = *err
     else {
         panic!("expected ReassemblyTrustClassMissingOnFragmentingLink, got {err:?}");
     };
@@ -849,7 +849,7 @@ topology:
         worker_slot_budget_us,
         stage_copy_wcet_us,
         ..
-    } = err
+    } = *err
     else {
         panic!("expected ReassemblyStageCopyWcetExceedsSlotBudget, got {err:?}");
     };

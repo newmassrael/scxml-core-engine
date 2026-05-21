@@ -32,7 +32,9 @@ use crate::forge::model::{ProcedureModel, ProcedureState, SceType};
 /// validation error at a time. Multi-violation aggregation is
 /// out-of-scope for this pass (consistent with how `parse_procedure`
 /// itself short-circuits on the first failure).
-pub fn validate_bytes_max_size_consistency(model: &ProcedureModel) -> Result<(), ValidationError> {
+pub fn validate_bytes_max_size_consistency(
+    model: &ProcedureModel,
+) -> Result<(), Box<ValidationError>> {
     // Build a map: slot id -> resolved cap. Only bytes-typed slots
     // participate; everything else is irrelevant to this contract.
     let mut slot_caps: std::collections::HashMap<&str, u32> = std::collections::HashMap::new();
@@ -56,7 +58,7 @@ fn check_state_response_assigns(
     state: &ProcedureState,
     slot_caps: &std::collections::HashMap<&str, u32>,
     procedure_name: &str,
-) -> Result<(), ValidationError> {
+) -> Result<(), Box<ValidationError>> {
     // Resolve the response cap for this state: maximum across every
     // `<onentry><send>`, with a missing annotation falling through to
     // the default cap. Falling through is load-bearing — a state
@@ -86,14 +88,14 @@ fn check_state_response_assigns(
                 continue;
             };
             if response_cap > slot_cap {
-                return Err(ValidationError::BytesMaxSizeViolation {
+                return Err(Box::new(ValidationError::BytesMaxSizeViolation {
                     procedure: procedure_name.to_string(),
                     detail: format!(
                         "<send sce:service=\"{representative_service}\"> sce:response-max-size={response_cap} \
                          exceeds destination slot '{}' sce:max-size={slot_cap}",
                         assign.location
                     ),
-                });
+                }));
             }
         }
     }
@@ -187,7 +189,7 @@ mod tests {
     fn response_exceeds_slot_fails() {
         let model = build_model(Some(64), Some(128));
         let err = validate_bytes_max_size_consistency(&model).unwrap_err();
-        match err {
+        match *err {
             ValidationError::BytesMaxSizeViolation { procedure, detail } => {
                 assert_eq!(procedure, "security_access");
                 assert!(detail.contains("response-max-size=128"));

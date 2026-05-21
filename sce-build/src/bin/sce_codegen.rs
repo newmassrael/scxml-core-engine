@@ -1083,7 +1083,7 @@ fn cmd_orchestrate(
             match sce_build::mesh::deploy::parse_deploy_str(&content) {
                 Ok(cfg) => Some(cfg),
                 Err(e) => {
-                    let forge_err: ForgeError = sce_build::mesh::error::MeshError::Deploy(e).into();
+                    let forge_err: ForgeError = sce_build::mesh::error::MeshError::from(e).into();
                     let located = Located::new(forge_err, p, None, None);
                     error_format.emit_forge_and_exit(&located);
                 }

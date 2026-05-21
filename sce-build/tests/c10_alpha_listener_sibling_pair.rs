@@ -366,7 +366,7 @@ fn validate_reassembly_with_empty_listener_links_still_rejects_untrusted() {
     let err = validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry, &BTreeSet::new())
         .expect_err("Untrusted binding still rejected post-C10-α");
     assert!(
-        matches!(err, ValidationError::ReassemblyUntrustedLinkBinding { .. }),
+        matches!(*err, ValidationError::ReassemblyUntrustedLinkBinding { .. }),
         "C10-α retains `reassembly/untrusted-link-binding` for Untrusted: {err:?}"
     );
 }

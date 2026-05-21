@@ -115,7 +115,7 @@ pub fn resolve_deploy_config<'a>(
         // carries one error at a time); multi-error rendering is a
         // CLI concern handled upstream via the explicit
         // `to_diagnostics` path when it lands.
-        error::MeshError::Deploy(errs.into_iter().next().expect("non-empty strict-mode err"))
+        error::MeshError::from(errs.into_iter().next().expect("non-empty strict-mode err"))
     })?;
 
     Ok(ResolvedDeployConfig {

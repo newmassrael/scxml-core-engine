@@ -233,7 +233,7 @@ fn deploy_role_listener_without_scxml_accept_side_fires() {
 
     let err =
         validate_cross_doc_listener_roles(&cfg, &models).expect_err("partial-claim must reject");
-    match err {
+    match *err {
         ValidationError::LinkDeployRoleListenerWithoutScxmlAcceptSideRole {
             machine,
             link_name,
@@ -258,7 +258,7 @@ fn scxml_accept_side_without_deploy_listener_fires() {
 
     let err =
         validate_cross_doc_listener_roles(&cfg, &models).expect_err("partial-claim must reject");
-    match err {
+    match *err {
         ValidationError::ScxmlAcceptSideRoleWithoutListenerLink {
             machine,
             scxml_source,
@@ -285,7 +285,7 @@ fn role_listener_with_untrusted_trust_class_fires() {
 
     let err = validate_cross_doc_listener_roles(&cfg, &models)
         .expect_err("Q-A4 matrix violation must reject");
-    match err {
+    match *err {
         ValidationError::LinkRoleListenerWithNonSessionArmingTrustClass {
             machine,
             link_name,
@@ -314,7 +314,7 @@ fn role_listener_without_domain_attrs_fires_matrix_with_absent_payload() {
 
     let err = validate_cross_doc_listener_roles(&cfg, &models)
         .expect_err("absent domain_attrs with role: listener is still a matrix violation");
-    match err {
+    match *err {
         ValidationError::LinkRoleListenerWithNonSessionArmingTrustClass { trust_class, .. } => {
             assert_eq!(
                 trust_class, "(absent)",

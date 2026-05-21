@@ -582,12 +582,15 @@ fn c13_link_not_declared_in_deploy_fires_through_orchestrator() {
     // The orchestrator routes DeployError through ForgeError::Mesh.
     match err.error {
         ForgeError::Mesh(ref boxed) => match boxed.as_ref() {
-            sce_build::mesh::error::MeshError::Deploy(
-                sce_build::mesh::error::DeployError::LinkNotDeclaredInDeploy { link_name, .. },
-            ) => {
-                assert_eq!(link_name, "udp_data");
-            }
-            other => panic!("expected DeployError::LinkNotDeclaredInDeploy, got {other:?}"),
+            sce_build::mesh::error::MeshError::Deploy(deploy_err) => match deploy_err.as_ref() {
+                sce_build::mesh::error::DeployError::LinkNotDeclaredInDeploy {
+                    link_name, ..
+                } => {
+                    assert_eq!(link_name, "udp_data");
+                }
+                other => panic!("expected DeployError::LinkNotDeclaredInDeploy, got {other:?}"),
+            },
+            other => panic!("expected MeshError::Deploy, got {other:?}"),
         },
         other => panic!("expected ForgeError::Mesh, got: {other:?}"),
     }
@@ -707,19 +710,20 @@ fn c13_burst_absorption_fires_through_orchestrator() {
 
     match err.error {
         ForgeError::Mesh(ref boxed) => match boxed.as_ref() {
-            sce_build::mesh::error::MeshError::Deploy(
+            sce_build::mesh::error::MeshError::Deploy(deploy_err) => match deploy_err.as_ref() {
                 sce_build::mesh::error::DeployError::LinkBurstAbsorptionInsufficient {
                     link_name,
                     burst_pps,
                     slot_count,
                     ..
-                },
-            ) => {
-                assert_eq!(link_name, "udp_data");
-                assert_eq!(*burst_pps, 50_000);
-                assert_eq!(*slot_count, 16);
-            }
-            other => panic!("expected LinkBurstAbsorptionInsufficient, got {other:?}"),
+                } => {
+                    assert_eq!(link_name, "udp_data");
+                    assert_eq!(*burst_pps, 50_000);
+                    assert_eq!(*slot_count, 16);
+                }
+                other => panic!("expected LinkBurstAbsorptionInsufficient, got {other:?}"),
+            },
+            other => panic!("expected MeshError::Deploy, got {other:?}"),
         },
         other => panic!("expected ForgeError::Mesh, got: {other:?}"),
     }
