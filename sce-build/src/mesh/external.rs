@@ -806,8 +806,8 @@ topology:
         std::fs::create_dir_all(&dir).unwrap();
         let cfg_path = write_tmp(&dir, "vsomeip.json", SAMPLE_VSOMEIP);
 
-        let mut deploy = sample_deploy(&cfg_path);
-        let res = resolve_external_bindings(&mut deploy, &dir).expect("resolve");
+        let deploy = sample_deploy(&cfg_path);
+        let res = resolve_external_bindings(&deploy, &dir).expect("resolve");
 
         // Service identity goes onto the typed `service_ids` field —
         // resolution no longer mutates `binding.extra` for these.
@@ -874,8 +874,8 @@ topology:
 "##,
             config = cfg_path.display()
         );
-        let mut deploy = crate::mesh::deploy::parse_deploy_str(&yaml).expect("parse");
-        let res = resolve_external_bindings(&mut deploy, &dir).expect("resolve");
+        let deploy = crate::mesh::deploy::parse_deploy_str(&yaml).expect("parse");
+        let res = resolve_external_bindings(&deploy, &dir).expect("resolve");
 
         let key = ("brake".to_string(), TargetId::new("#motor").unwrap());
         let per_binding = res.bindings.get(&key).expect("resolution");
@@ -926,8 +926,8 @@ topology:
 "##,
             config = cfg_path.display()
         );
-        let mut deploy = crate::mesh::deploy::parse_deploy_str(&yaml).expect("parse");
-        match resolve_external_bindings(&mut deploy, &dir) {
+        let deploy = crate::mesh::deploy::parse_deploy_str(&yaml).expect("parse");
+        match resolve_external_bindings(&deploy, &dir) {
             Err(ExternalConfigError::ConflictingEventSchema { flat_fields, .. }) => {
                 assert!(flat_fields.contains(&"method"));
             }
@@ -959,7 +959,7 @@ topology:
             b.service = Some("ghost_service".into());
         }
 
-        match resolve_external_bindings(&mut deploy, &dir) {
+        match resolve_external_bindings(&deploy, &dir) {
             Err(ExternalConfigError::UnresolvedNames { missing, .. }) => {
                 // Service unresolved → downstream method/event_group also
                 // unresolved (they depend on a resolved service). Both are
@@ -993,7 +993,7 @@ topology:
             .unwrap()
             .event_group = Some("multi".into());
 
-        match resolve_external_bindings(&mut deploy, &dir) {
+        match resolve_external_bindings(&deploy, &dir) {
             Err(ExternalConfigError::AmbiguousEventGroup {
                 event_group, count, ..
             }) => {
@@ -1025,7 +1025,7 @@ topology:
             .unwrap()
             .event_group = Some("empty".into());
 
-        match resolve_external_bindings(&mut deploy, &dir) {
+        match resolve_external_bindings(&deploy, &dir) {
             Err(ExternalConfigError::EmptyEventGroup { event_group, .. }) => {
                 assert_eq!(event_group, "empty");
             }
@@ -1051,8 +1051,8 @@ topology:
             transport: someip
             service: motor_control
 "##;
-        let mut deploy = crate::mesh::deploy::parse_deploy_str(yaml).expect("parse");
-        match resolve_external_bindings(&mut deploy, Path::new(".")) {
+        let deploy = crate::mesh::deploy::parse_deploy_str(yaml).expect("parse");
+        match resolve_external_bindings(&deploy, Path::new(".")) {
             Err(ExternalConfigError::NamedReferenceWithoutConfig { device, target, .. }) => {
                 assert_eq!(device, "ecu1");
                 assert_eq!(target, "#motor");
@@ -1141,8 +1141,8 @@ topology:
             service: motor_control
             method: compute_force
 "##;
-        let mut deploy = crate::mesh::deploy::parse_deploy_str(yaml).expect("parse");
-        match resolve_external_bindings(&mut deploy, Path::new(".")) {
+        let deploy = crate::mesh::deploy::parse_deploy_str(yaml).expect("parse");
+        match resolve_external_bindings(&deploy, Path::new(".")) {
             Err(ExternalConfigError::SomeipFieldOnNonSomeipTransport {
                 transport, fields, ..
             }) => {
@@ -1161,12 +1161,12 @@ topology:
         let cfg_path = write_tmp(&dir, "vsomeip.json", SAMPLE_VSOMEIP);
         assert!(cfg_path.is_absolute());
 
-        let mut deploy = sample_deploy(&cfg_path);
+        let deploy = sample_deploy(&cfg_path);
         // deploy_dir is intentionally unrelated to cfg's parent — absolute
         // path must still resolve.
         let unrelated = std::env::temp_dir().join("sce_unrelated_dir");
         std::fs::create_dir_all(&unrelated).ok();
-        resolve_external_bindings(&mut deploy, &unrelated).expect("absolute path resolves");
+        resolve_external_bindings(&deploy, &unrelated).expect("absolute path resolves");
 
         std::fs::remove_dir_all(&dir).ok();
     }
