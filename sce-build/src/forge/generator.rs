@@ -13095,7 +13095,7 @@ fn render_procedure_cpp(
             let lambda_params: Vec<String> = h
                 .args
                 .iter()
-                .map(|a| cpp_param_type(a))
+                .map(cpp_param_type)
                 .collect();
             let default_impl = format!(
                 "[]({}) -> {} {{ throw std::runtime_error(\"helper '{}' not set — call set{}() before runToCompletion()\"); }}",
@@ -13664,7 +13664,7 @@ fn render_procedure_c_l2(
         .iter()
         .map(|h| {
             let ret = c_l2_type(&h.returns);
-            let params: Vec<String> = h.args.iter().map(|t| c_l2_type(t)).collect();
+            let params: Vec<String> = h.args.iter().map(c_l2_type).collect();
             serde_json::json!({
                 "id": filters::to_snake_case(h.name.clone()),
                 "return_type": ret,

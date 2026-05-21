@@ -1360,7 +1360,7 @@ fn transform_for_in_loops(input: &str) -> String {
                     let before_in = trim(&header_stripped[..in_pos]);
                     let after_in = trim(&header_stripped[in_pos + 2..]);
                     let is_single_ident =
-                        !before_in.is_empty() && before_in.bytes().all(|c| is_word_char(c));
+                        !before_in.is_empty() && before_in.bytes().all(is_word_char);
                     if is_single_ident && !after_in.is_empty() {
                         loop_var = before_in;
                         obj_expr = after_in;
