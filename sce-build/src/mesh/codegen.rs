@@ -894,28 +894,40 @@ fn build_server_context(binding: &super::topology::ServerBinding) -> ServerConte
 /// `server` is the resolved server-side binding for machines that act
 /// as RPC servers (SCE_MESH.md §13 Session E). `None` for pure-client
 /// machines.
+/// Public mesh codegen input bundle — aggregates the 20 deploy /
+/// topology / transport / partition / SOMEIP / source-location /
+/// template-base dimensions the resolver surfaces. Carries only
+/// borrows + Copy-by-value types so the struct itself is `Copy` and
+/// can be threaded through the per-language entry points without
+/// shape coupling. The `language` selector stays outside the bundle
+/// since it picks which entry point runs, not which inputs it sees.
+#[derive(Copy, Clone)]
+pub struct MeshCodegenInputs<'a> {
+    pub machine_name: &'a str,
+    pub targets: &'a [ResolvedTarget],
+    pub server: Option<&'a super::topology::ServerBinding>,
+    pub zenoh_session: Option<&'a ZenohTransportConfig>,
+    pub someip_config: Option<&'a SomeipTransportConfig>,
+    pub custom_tcp_config: Option<&'a CustomTcpTransportConfig>,
+    pub subscriptions: &'a [super::deploy::SubscriptionConfig],
+    pub machine_ordering: OrderingTimings,
+    pub machine_liveliness: Option<LivelinessConfig>,
+    pub machine_outbound_buffer: Option<super::deploy::OutboundBufferConfig>,
+    pub partition_self_name: Option<&'a str>,
+    pub partition_wire21_outbound: &'a BTreeMap<String, String>,
+    pub partition_wire21_inbound: &'a [String],
+    pub scxml_remote_outbound_peers: &'a [crate::model::ScxmlRemotePeerBinding],
+    pub scxml_remote_inbound_peers: &'a [crate::model::ScxmlRemotePeerBinding],
+    pub someip_invoke_service_ids: &'a BTreeMap<String, u16>,
+    pub someip_liveness_service_ids: &'a BTreeMap<String, u16>,
+    pub someip_machine_liveness_service_ids: &'a BTreeMap<String, u16>,
+    pub source_location: Option<&'a SourceLocation>,
+    pub template_base: &'a Path,
+}
+
 pub fn generate_mesh(
-    machine_name: &str,
-    targets: &[ResolvedTarget],
-    server: Option<&super::topology::ServerBinding>,
-    zenoh_session: Option<&ZenohTransportConfig>,
-    someip_config: Option<&SomeipTransportConfig>,
-    custom_tcp_config: Option<&CustomTcpTransportConfig>,
-    subscriptions: &[super::deploy::SubscriptionConfig],
-    machine_ordering: OrderingTimings,
-    machine_liveliness: Option<LivelinessConfig>,
-    machine_outbound_buffer: Option<super::deploy::OutboundBufferConfig>,
-    partition_self_name: Option<&str>,
-    partition_wire21_outbound: &BTreeMap<String, String>,
-    partition_wire21_inbound: &[String],
-    scxml_remote_outbound_peers: &[crate::model::ScxmlRemotePeerBinding],
-    scxml_remote_inbound_peers: &[crate::model::ScxmlRemotePeerBinding],
-    someip_invoke_service_ids: &BTreeMap<String, u16>,
-    someip_liveness_service_ids: &BTreeMap<String, u16>,
-    someip_machine_liveness_service_ids: &BTreeMap<String, u16>,
-    source_location: Option<&SourceLocation>,
+    inputs: MeshCodegenInputs<'_>,
     language: Language,
-    template_base: &Path,
 ) -> Result<GeneratedOutput, CodegenError> {
     // A custom_tcp `listen:` on the device requires the machine to host a
     // server even when it has no `bindings:`/`server:`/`subscriptions:` of
@@ -923,20 +935,21 @@ pub fn generate_mesh(
     // live on the per-machine TransportRouter. Skipping here would leave a
     // pure-receiver machine with no transport.h and no listening socket.
     // SSoT: `CustomTcpTransportConfig::hosts_server` (see deploy.rs).
-    let needs_custom_tcp_server =
-        custom_tcp_config.is_some_and(CustomTcpTransportConfig::hosts_server);
+    let needs_custom_tcp_server = inputs
+        .custom_tcp_config
+        .is_some_and(CustomTcpTransportConfig::hosts_server);
     // SCE_MESH.md §16.5 wire-21: a partition with non-empty wire-21
     // routes still needs `<machine>_transport.h` even when no
     // conventional `<send>`-driven targets, server, subscriptions, or
     // custom_tcp listen exist (rule 12 fixture). Mirrors the same
     // predicate threaded through `compile_mesh_transport`.
-    let has_wire21_routing =
-        !partition_wire21_outbound.is_empty() || !partition_wire21_inbound.is_empty();
-    let has_scxml_remote_wire =
-        !scxml_remote_outbound_peers.is_empty() || !scxml_remote_inbound_peers.is_empty();
-    if targets.is_empty()
-        && subscriptions.is_empty()
-        && server.is_none()
+    let has_wire21_routing = !inputs.partition_wire21_outbound.is_empty()
+        || !inputs.partition_wire21_inbound.is_empty();
+    let has_scxml_remote_wire = !inputs.scxml_remote_outbound_peers.is_empty()
+        || !inputs.scxml_remote_inbound_peers.is_empty();
+    if inputs.targets.is_empty()
+        && inputs.subscriptions.is_empty()
+        && inputs.server.is_none()
         && !needs_custom_tcp_server
         && !has_wire21_routing
         && !has_scxml_remote_wire
@@ -945,28 +958,7 @@ pub fn generate_mesh(
     }
 
     match language {
-        Language::Cpp => generate_cpp_mesh(
-            machine_name,
-            targets,
-            server,
-            zenoh_session,
-            someip_config,
-            custom_tcp_config,
-            subscriptions,
-            machine_ordering,
-            machine_liveliness,
-            machine_outbound_buffer,
-            partition_self_name,
-            partition_wire21_outbound,
-            partition_wire21_inbound,
-            scxml_remote_outbound_peers,
-            scxml_remote_inbound_peers,
-            someip_invoke_service_ids,
-            someip_liveness_service_ids,
-            someip_machine_liveness_service_ids,
-            source_location,
-            template_base,
-        ),
+        Language::Cpp => generate_cpp_mesh(inputs),
         _ => Err(CodegenError::UnsupportedLanguage(format!("{:?}", language))),
     }
 }
@@ -1081,28 +1073,29 @@ fn classify_pool_rpc_client_conflict(
     None
 }
 
-fn generate_cpp_mesh(
-    machine_name: &str,
-    targets: &[ResolvedTarget],
-    server: Option<&super::topology::ServerBinding>,
-    zenoh_session: Option<&ZenohTransportConfig>,
-    someip_config: Option<&SomeipTransportConfig>,
-    custom_tcp_config: Option<&CustomTcpTransportConfig>,
-    subscriptions: &[super::deploy::SubscriptionConfig],
-    machine_ordering: OrderingTimings,
-    machine_liveliness: Option<LivelinessConfig>,
-    machine_outbound_buffer: Option<super::deploy::OutboundBufferConfig>,
-    partition_self_name: Option<&str>,
-    partition_wire21_outbound: &BTreeMap<String, String>,
-    partition_wire21_inbound: &[String],
-    scxml_remote_outbound_peers: &[crate::model::ScxmlRemotePeerBinding],
-    scxml_remote_inbound_peers: &[crate::model::ScxmlRemotePeerBinding],
-    someip_invoke_service_ids: &BTreeMap<String, u16>,
-    someip_liveness_service_ids: &BTreeMap<String, u16>,
-    someip_machine_liveness_service_ids: &BTreeMap<String, u16>,
-    source_location: Option<&SourceLocation>,
-    template_base: &Path,
-) -> Result<GeneratedOutput, CodegenError> {
+fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, CodegenError> {
+    let MeshCodegenInputs {
+        machine_name,
+        targets,
+        server,
+        zenoh_session,
+        someip_config,
+        custom_tcp_config,
+        subscriptions,
+        machine_ordering,
+        machine_liveliness,
+        machine_outbound_buffer,
+        partition_self_name,
+        partition_wire21_outbound,
+        partition_wire21_inbound,
+        scxml_remote_outbound_peers,
+        scxml_remote_inbound_peers,
+        someip_invoke_service_ids,
+        someip_liveness_service_ids,
+        someip_machine_liveness_service_ids,
+        source_location,
+        template_base,
+    } = inputs;
     // Validate: every target's transport must be in the registry AND
     // have a template implementation. Two distinct failure modes:
     //   - Unknown transport (not in registry at all)
