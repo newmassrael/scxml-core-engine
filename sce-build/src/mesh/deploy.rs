@@ -1936,15 +1936,16 @@ impl RetryPolicyConfig {
                     .to_string(),
             );
         }
-        // NaN-safe: `!(x >= 1.0)` catches NaN and values below 1.0.
-        // Clippy's `partial_cmp` rewrite is more verbose (matches! over
-        // a 2-arm Option<Ordering>) without changing the truth table, so
-        // we keep the inverted-compare idiom — narrow allow + comment
-        // documents the deliberate choice per the textbook IEEE-754
-        // pattern.
-        #[allow(clippy::neg_cmp_op_on_partial_ord)]
-        let backoff_invalid = !(self.backoff_multiplier >= 1.0);
-        if backoff_invalid {
+        // NaN-safe: partial_cmp returns None on NaN; only
+        // Greater/Equal pass the >= 1.0 check. The explicit Ordering
+        // match makes the NaN handling visible at the call site
+        // instead of hiding it behind `!(x >= 1.0)` inverted-compare.
+        use std::cmp::Ordering;
+        let backoff_ok = matches!(
+            self.backoff_multiplier.partial_cmp(&1.0),
+            Some(Ordering::Greater | Ordering::Equal)
+        );
+        if !backoff_ok {
             return Some(format!(
                 "backoff_multiplier ({}) must be >= 1.0 — sub-unit \
                  multipliers shrink backoff toward zero across retries, \
