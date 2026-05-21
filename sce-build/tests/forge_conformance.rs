@@ -13629,31 +13629,30 @@ fn axis1_inversion_variant_default_arm_caller_tag_rejected() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// Pre-existing codegen bug discovered 2026-05-21 during the
-/// `axis1_inversion_multi_flag_input_order` fixture authoring.
-/// Camel-case `<sce:field id="optN">` with `sce:present-if` produces
-/// non-compiling Rust: the struct field is snake-cased to `opt_n`
-/// (Rust naming convention), but the present-if check is emitted as
-/// `if let Some(_v) = self.optN { ... }` (original case verbatim) →
-/// `rustc E0609: no field `optN` on type ... — available fields are:
-/// `x`, `opt_n`, ...`.
+/// Regression gate for the present-if camelCase field-id bug fixed in
+/// the same window as this test's `#[ignore]` removal. Author writes
+/// `<sce:field id="optN" sce:present-if="N"/>` (camelCase, since SCE's
+/// XML accepts any identifier shape). The Rust struct field is
+/// snake-cased to `opt_n` per `LangCtx::codec_field_id`, but pre-fix
+/// the streaming present-if helpers (`present_if_decode_fixed` and
+/// siblings) and `streaming_fixed_field_encode_rust` baked the raw
+/// `field.id` into the generated `let optN = ...` decode local and
+/// `self.optN` encode read — producing `rustc E0425` on the ctor and
+/// `E0609` on the encode site. Same family as
+/// `axis1_inversion_embed_dispatcher_arg_order` (`07afcc45`): one
+/// codegen site applied an identifier transform while a sibling
+/// didn't, and downstream compilation surfaced the divergence.
 ///
-/// Same family as the axis1 embed-dispatcher arg-order bug fixed in
-/// `07afcc45`: one codegen site applies an identifier transform while
-/// a sibling site doesn't, and downstream compilation surfaces the
-/// divergence. The fix likely lives in
-/// `present_if_test_literal_{encode,decode}` (generator.rs) or the
-/// per-language `codec.*.jinja2` templates that interpolate
-/// `self.{{ field.id }}` without a snake_case filter.
-///
-/// `#[ignore]`-gated so it runs in CI as "ignored" without breaking
-/// green; removing `#[ignore]` is the textbook closure signal when
-/// the next session lands the root-cause fix. See memory entry
-/// `feedback_present_if_camelcase_field_mismatch.md` for full
-/// analysis + reproducer + next-session action plan.
+/// Gate runs the 6-backend compile-smoke matrix. Rust catches the
+/// original bug directly; the other 5 backends gate against future
+/// template drift (e.g., someone snake-cases the Cpp struct field
+/// without updating the helper-rendered references). Cpp/Kotlin keep
+/// the camelCase identifier (their `codec_field_id` is identity);
+/// Go pascal-cases to `OptN`; C11/Python snake-case to `opt_n`. The
+/// shared invariant — across all 6 backends — is that the streaming
+/// present-if statements reference the SAME identifier the struct
+/// declaration emits.
 #[test]
-#[ignore = "pre-existing codegen bug; remove #[ignore] when the camelCase \
-            present-if mismatch is fixed (see feedback_present_if_camelcase_field_mismatch)"]
 fn axis1_present_if_camelcase_field_compiles() {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -13662,10 +13661,12 @@ fn axis1_present_if_camelcase_field_compiles() {
     let dir = std::env::temp_dir().join(format!("sce_camelcase_repro_{pid}_{id}"));
     std::fs::create_dir_all(&dir).expect("mkdir fixture");
 
-    // Minimal reproducer: a single leaf codec with a camelCase
-    // field id `optN` gated by flag-input `N`. The generated Rust
-    // struct will have `pub opt_n: Option<u8>` but the encode-side
-    // present-if check will reference `self.optN` (mismatched case).
+    // Two camelCase fields: one non-gated (`bigX`) and one gated
+    // (`optY`). The non-gated form exercises
+    // `streaming_fixed_field_encode_rust` — pre-fix that helper also
+    // baked raw `field.id` into `w.write_u8(self.bigX)`, surfacing the
+    // same E0609 once `has_present_if_fields` flipped the codec into
+    // streaming mode. Both shapes must compile cleanly post-fix.
     let leaf = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -13674,26 +13675,71 @@ fn axis1_present_if_camelcase_field_compiles() {
     <sce:flag-input name="N" width="1"/>
   </sce:flag-inputs>
   <datamodel>
-    <sce:field id="x"    sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
-    <sce:field id="optN" sce:type="uint8" sce:byte="1" sce:bit-size="8" sce:present-if="N"/>
+    <sce:field id="bigX" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="optY" sce:type="uint8" sce:byte="1" sce:bit-size="8" sce:present-if="N"/>
   </datamodel>
 </scxml>"#;
 
     std::fs::write(dir.join("codec_camelcase_repro.scxml"), leaf).expect("write leaf");
 
-    // rustc-compile gate: codegen produces Rust source that MUST
-    // compile cleanly. Today this fails with E0609 on the camelCase
-    // identifier; the fix removes the `#[ignore]` above and this
-    // assertion fires its happy path.
-    rustc_compile_codec_set(
+    // 6-backend compile-smoke matrix. Each backend compiles under its
+    // own warnings-as-errors flag; the helpers degrade to skip-with-
+    // warn when the toolchain is missing (CI may not carry every
+    // compiler). Collect-then-assert so a multi-backend regression
+    // lists every failing language at once rather than stopping at
+    // the first.
+    let mut failures: Vec<String> = Vec::new();
+
+    if let Err(e) = rustc_compile_codec_set(
         &dir,
         &["codec_camelcase_repro.scxml"],
-        "axis1_present_if_camelcase_repro",
-    )
-    .expect(
-        "camelCase field id with sce:present-if MUST produce compilable Rust — \
-         the encode-side present-if check should reference the snake-cased \
-         struct field, not the original camelCase id",
+        "axis1_present_if_camelcase_repro_rust",
+    ) {
+        failures.push(format!("Rust:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_cpp(
+        &dir,
+        &["codec_camelcase_repro.scxml"],
+        "axis1_present_if_camelcase_repro_cpp",
+    ) {
+        failures.push(format!("Cpp:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_kotlin(
+        &dir,
+        &["codec_camelcase_repro.scxml"],
+        "axis1_present_if_camelcase_repro_kotlin",
+    ) {
+        failures.push(format!("Kotlin:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_go(
+        &dir,
+        &["codec_camelcase_repro.scxml"],
+        "axis1_present_if_camelcase_repro_go",
+    ) {
+        failures.push(format!("Go:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_python(
+        &dir,
+        &["codec_camelcase_repro.scxml"],
+        "axis1_present_if_camelcase_repro_python",
+    ) {
+        failures.push(format!("Python:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_c11(
+        &dir,
+        &["codec_camelcase_repro.scxml"],
+        "axis1_present_if_camelcase_repro_c11",
+    ) {
+        failures.push(format!("C11:\n{e}"));
+    }
+
+    assert!(
+        failures.is_empty(),
+        "camelCase field id with sce:present-if must produce compilable code on \
+         every backend — pre-fix the Rust helper baked raw `field.id` into the \
+         streaming statements while the struct declaration applied snake_case. \
+         Failures:\n\n{}",
+        failures.join("\n\n"),
     );
 
     let _ = std::fs::remove_dir_all(&dir);

@@ -6615,7 +6615,19 @@ fn present_if_decode_fixed(
     // field's value as `_v` typed as the field's natural carrier.
     let body = streaming_fixed_field_body(field, default_endian, n, lang);
 
-    let id = field.id.as_str();
+    // Per-language struct-field casing must match `LangCtx::codec_field_id`
+    // so the helper-rendered `let <id> = ...` (decode) and `self.<id>`
+    // (encode) name the same identifier the template uses at struct
+    // declaration. Without this, a camelCase author-side `<sce:field id>`
+    // produces a snake_case Rust struct field but the streaming
+    // present-if statements reference the raw camelCase name — non-
+    // compilable Rust (E0425 on the decoder local, E0609 on the encoder
+    // `self.` access). Idempotent for Cpp/Kotlin (identity), Go
+    // (pascal-case re-derived inside the per-language arm — same
+    // pascal-case input passes through unchanged), C11/Python (re-
+    // snake_case'd inside their arms — same input passes through).
+    let id_owned = codec_field_local_name(&field.id, lang);
+    let id = id_owned.as_str();
     match (lang, &field.present_if) {
         (Language::Rust, None) => format!(
             "let {id} = {{\n            \
@@ -6818,7 +6830,8 @@ fn present_if_decode_tail(
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
-    let id = field.id.as_str();
+    let id_owned = codec_field_local_name(&field.id, lang);
+    let id = id_owned.as_str();
     match (lang, &field.present_if) {
         (Language::Rust, None) => format!(
             "let {id} = {{\n            \
@@ -7028,7 +7041,8 @@ fn present_if_decode_length_ref(
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
-    let id = field.id.as_str();
+    let id_owned = codec_field_local_name(&field.id, lang);
+    let id = id_owned.as_str();
     let len_field = field
         .length_field
         .as_deref()
@@ -7259,7 +7273,8 @@ fn present_if_decode_string_length_ref(
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
-    let id = field.id.as_str();
+    let id_owned = codec_field_local_name(&field.id, lang);
+    let id = id_owned.as_str();
     match (lang, &field.present_if) {
         (Language::Rust, None) => {
             let n_rust = compute_n_rust(len_field, fields, sibling_gated, arith);
@@ -7731,7 +7746,8 @@ fn present_if_decode_vle(
     width_bits: u32,
 ) -> String {
     use crate::generator::Language;
-    let id = field.id.as_str();
+    let id_owned = codec_field_local_name(&field.id, lang);
+    let id = id_owned.as_str();
     // Non-gated path: reuse the existing VLE decode helper that emits
     // the per-language streaming loop and binds the carrier-typed
     // local. The has_present_if_fields template branch needs every
@@ -7901,7 +7917,8 @@ fn present_if_encode_fixed(
     use crate::generator::Language;
     let n = bits.div_ceil(8);
 
-    let id = field.id.as_str();
+    let id_owned = codec_field_local_name(&field.id, lang);
+    let id = id_owned.as_str();
     match (lang, field.present_if.is_some()) {
         (Language::Rust, false) => streaming_fixed_field_encode_rust(field, default_endian, n),
         (Language::Rust, true) => {
@@ -8002,7 +8019,8 @@ fn present_if_encode_tail(
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
-    let id = field.id.as_str();
+    let id_owned = codec_field_local_name(&field.id, lang);
+    let id = id_owned.as_str();
     match (lang, field.present_if.is_some()) {
         (Language::Rust, false) => format!("        w.write_bytes(&self.{id})?;"),
         (Language::Rust, true) => format!(
@@ -8101,7 +8119,8 @@ fn present_if_encode_string_length_ref(
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
-    let id = field.id.as_str();
+    let id_owned = codec_field_local_name(&field.id, lang);
+    let id = id_owned.as_str();
     match (lang, &field.present_if) {
         (Language::Rust, None) => format!("        w.write_bytes(self.{id}.as_bytes())?;"),
         // Wire RFC Phase B Y0a — gated String encode on Rust:
@@ -8237,7 +8256,8 @@ fn present_if_encode_length_ref(
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
-    let id = field.id.as_str();
+    let id_owned = codec_field_local_name(&field.id, lang);
+    let id = id_owned.as_str();
     let len_field = field
         .length_field
         .as_deref()
@@ -8358,7 +8378,8 @@ fn present_if_encode_vle(
     width_bits: u32,
 ) -> String {
     use crate::generator::Language;
-    let id = field.id.as_str();
+    let id_owned = codec_field_local_name(&field.id, lang);
+    let id = id_owned.as_str();
     if field.present_if.is_none() {
         // Non-gated VLE in present-if context: reuse the existing
         // VLE encoder (same per-language byte-emit loop the
@@ -8665,7 +8686,12 @@ fn streaming_fixed_field_body(
 /// Encode block for a non-gated fixed field — Rust. Reads `self.<id>`
 /// and pushes `n` bytes in the field's effective endianness.
 fn streaming_fixed_field_encode_rust(field: &CodecField, default_endian: Endian, n: u32) -> String {
-    let id = field.id.as_str();
+    // Rust struct fields are snake_case (see `LangCtx::codec_field_id`),
+    // so `self.<id>` must read through the snake-cased name. A camelCase
+    // `<sce:field id>` declared by the author becomes `pub opt_n` at
+    // struct-decl time; the encode read here must use the same casing.
+    let id_owned = filters::to_snake_case(field.id.clone());
+    let id = id_owned.as_str();
     let endian = field.effective_endian(default_endian);
     let mut lines = String::new();
     for i in 0..n {
