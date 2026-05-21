@@ -3694,9 +3694,7 @@ fn is_pure_in_predicate(cond: &str) -> bool {
     let cleaned = cleaned
         .replace("&&", " ")
         .replace("||", " ")
-        .replace('!', " ")
-        .replace('(', " ")
-        .replace(')', " ");
+        .replace(['!', '(', ')'], " ");
     cleaned.split_whitespace().all(|w| w == "TRUE")
 }
 
