@@ -788,8 +788,7 @@ fn stage_copy_wcet_exceeds_slot_budget_fires() {
     // wcet = 16384 × 4 / 48 = 1365 µs > 200 µs budget ⇒ fires.
     // Fixture keeps p99 == mtu (both 16384) so C13-α-1 parse-time
     // `LinkExpectedP99ExceedsMtu` silent-passes.
-    let yaml = format!(
-        r#"
+    let yaml = r#"
 version: "1.0"
 topology:
   mcu_device:
@@ -813,7 +812,7 @@ topology:
           keepalive_jitter_budget_us: 5000
         memory:
           sram_regions:
-            sram1: {{ base: 0x08000000, size: 65536, attr: [dma_coherent, cacheable] }}
+            sram1: { base: 0x08000000, size: 65536, attr: [dma_coherent, cacheable] }
           dma_channels: [DW0_CH0]
         links:
           udp_data:
@@ -823,8 +822,7 @@ topology:
             expected_p99_bytes: 16384
             domain_attrs:
               trust_class: established_session
-"#,
-    );
+"#.to_string();
     let cfg = parse_deploy_str(&yaml).expect("deploy parses");
 
     // Use Default variant pool sized to p99=mtu=16384 so #1/#2/#3 all
@@ -871,8 +869,7 @@ topology:
 fn stage_copy_wcet_silent_skip_on_missing_platform_field() {
     // memcpy_cycles_per_byte absent ⇒ silent-skip per Q-η5 (a).
     // Fixture keeps p99 == mtu to silence C13-α-1 parse-time.
-    let yaml = format!(
-        r#"
+    let yaml = r#"
 version: "1.0"
 topology:
   mcu_device:
@@ -897,8 +894,7 @@ topology:
             expected_p99_bytes: 16384
             domain_attrs:
               trust_class: established_session
-"#,
-    );
+"#.to_string();
     let cfg = parse_deploy_str(&yaml).expect("deploy parses");
 
     // Same Default-pool fixture shape as #6 happy path — only the

@@ -220,8 +220,7 @@ fn key_machine_segment_mismatch_silent_skips() {
         "local_sub_table",
         "machines.mcu_node.limits.local_subscriptions",
     );
-    let deploy_yaml = format!(
-        r##"
+    let deploy_yaml = r##"
 version: "1.0"
 topology:
   ecu1:
@@ -232,8 +231,7 @@ topology:
           local_subscriptions: 32
       other_node:
         source: other_node.scxml
-"##
-    );
+"##.to_string();
     // target_machine="other_node" — the key references mcu_node, not
     // other_node, so the validator silent-skips even though
     // other_node has no `limits` declared.

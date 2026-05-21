@@ -1824,13 +1824,11 @@ fn parse_codec_variant(
                     element: "<sce:variant>".into(),
                     attr: "tag".into(),
                     value: raw_tag.clone().unwrap_or_default(),
-                    expected: format!(
-                        "peek-byte mode requires a dotted-path tag '<peek_id>.<flag>' — \
+                    expected: "peek-byte mode requires a dotted-path tag '<peek_id>.<flag>' — \
                          the carrier half names the <sce:peek-byte id='...'> slot, the \
                          flag half names one of its <sce:flag> children. Bare tag is \
                          reserved for own-field whole-field dispatch (when no \
-                         <sce:peek-byte> child is declared on this <sce:variant>)."
-                    ),
+                         <sce:peek-byte> child is declared on this <sce:variant>).".to_string(),
                 },
             ));
         }

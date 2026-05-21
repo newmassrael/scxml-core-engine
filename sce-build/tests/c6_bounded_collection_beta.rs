@@ -271,8 +271,7 @@ fn happy_multi_writer_with_atomic_extern() {
     // Codec doc carries the atomic extern declaration — `<sce:extern>`
     // is a doc-root sibling of `<datamodel>` per the §5.I parse-time
     // grammar.
-    let codec_with_extern = format!(
-        r##"<?xml version="1.0" encoding="UTF-8"?>
+    let codec_with_extern = r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="subscription_entry" version="1.0">
@@ -281,8 +280,7 @@ fn happy_multi_writer_with_atomic_extern() {
     <sce:field id="key_expr_id" sce:type="uint32" sce:byte="0" sce:bit-size="32"/>
     <sce:field id="callback_id" sce:type="uint32" sce:byte="4" sce:bit-size="32"/>
   </datamodel>
-</scxml>"##
-    );
+</scxml>"##.to_string();
     let codec = write_doc(dir.path(), "subscription_entry.scxml", &codec_with_extern);
     let bc = write_doc(
         dir.path(),

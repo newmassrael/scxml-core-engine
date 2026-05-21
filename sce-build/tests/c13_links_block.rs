@@ -386,8 +386,7 @@ fn link_cross_doc_happy_when_names_match() {
 /// WCET + C9-β stage-copy-WCET) attach in separate atomics.
 #[test]
 fn platform_wcet_extensions_parse() {
-    let yaml = format!(
-        r#"
+    let yaml = r#"
 version: "1.0"
 topology:
   ap_device:
@@ -401,8 +400,7 @@ topology:
           memcpy_cycles_per_byte: 2.0
           vle_decode_cycles_per_byte: 8.0
           tlv_chain_per_entry_overhead_us: 0.8
-"#,
-    );
+"#.to_string();
     let cfg = parse_deploy_str(&yaml).expect("WCET extensions parse");
     let platform = cfg
         .topology

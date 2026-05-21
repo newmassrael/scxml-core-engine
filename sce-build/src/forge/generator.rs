@@ -5770,11 +5770,9 @@ fn tlv_chain_streaming_decode_stmt(
             // decode failure when the next field reads bytes meant
             // for the chain).
             let overflow_check = match (on_overflow, &entry_flag_acc) {
-                (TlvOverflowPolicy::Reject, None) => format!(
-                    "\n            if cursor.remaining() > 0 {{\n                \
+                (TlvOverflowPolicy::Reject, None) => "\n            if cursor.remaining() > 0 {\n                \
                          return Err(CodecError::TlvChainOverflow);\n            \
-                     }}"
-                ),
+                     }".to_string(),
                 _ => String::new(),
             };
             let body = match &entry_flag_acc {
@@ -5813,10 +5811,8 @@ fn tlv_chain_streaming_decode_stmt(
             // Y3 atomic 2b: same exhaust-or-depth-only overflow check
             // as the Rust arm — see comment on the Rust branch above.
             let overflow_check = match (on_overflow, &entry_flag_acc) {
-                (TlvOverflowPolicy::Reject, None) => format!(
-                    "\n        if (sce_forge_cursor_remaining(cursor) > 0) \
-                       return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;"
-                ),
+                (TlvOverflowPolicy::Reject, None) => "\n        if (sce_forge_cursor_remaining(cursor) > 0) \
+                       return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;".to_string(),
                 _ => String::new(),
             };
             // body_decoder shape: `<entry_struct>_decode`. Strip the
@@ -5860,7 +5856,7 @@ fn tlv_chain_streaming_decode_stmt(
             // Y3 atomic 2b: exhaust-or-depth-only overflow check.
             let overflow_check = match (on_overflow, &entry_flag_acc) {
                 (TlvOverflowPolicy::Reject, None) => {
-                    format!("\n        if (cursor.remaining() > 0) return std::nullopt;")
+                    "\n        if (cursor.remaining() > 0) return std::nullopt;".to_string()
                 }
                 _ => String::new(),
             };
@@ -5900,7 +5896,7 @@ fn tlv_chain_streaming_decode_stmt(
             // Y3 atomic 2b: exhaust-or-depth-only overflow check.
             let overflow_check = match (on_overflow, &entry_flag_acc) {
                 (TlvOverflowPolicy::Reject, None) => {
-                    format!("\n            if (cursor.remaining() > 0) return null")
+                    "\n            if (cursor.remaining() > 0) return null".to_string()
                 }
                 _ => String::new(),
             };
@@ -5934,11 +5930,9 @@ fn tlv_chain_streaming_decode_stmt(
             let go_id = filters::to_pascal_case(id.to_string());
             // Y3 atomic 2b: exhaust-or-depth-only overflow check.
             let overflow_check = match (on_overflow, &entry_flag_acc) {
-                (TlvOverflowPolicy::Reject, None) => format!(
-                    "\n\tif cursor.Remaining() > 0 {{\n\t\t\
+                (TlvOverflowPolicy::Reject, None) => "\n\tif cursor.Remaining() > 0 {\n\t\t\
                          return nil, codec.ErrTlvChainOverflow\n\t\
-                     }}"
-                ),
+                     }".to_string(),
                 _ => String::new(),
             };
             let body = match &entry_flag_acc {
@@ -5986,10 +5980,8 @@ fn tlv_chain_streaming_decode_stmt(
             let py_id = filters::to_snake_case(id.to_string());
             // Y3 atomic 2b: exhaust-or-depth-only overflow check.
             let overflow_check = match (on_overflow, &entry_flag_acc) {
-                (TlvOverflowPolicy::Reject, None) => format!(
-                    "\n            if cursor.remaining() > 0:\n                \
-                         raise TlvChainOverflow()"
-                ),
+                (TlvOverflowPolicy::Reject, None) => "\n            if cursor.remaining() > 0:\n                \
+                         raise TlvChainOverflow()".to_string(),
                 _ => String::new(),
             };
             let body = match &entry_flag_acc {
@@ -6142,11 +6134,9 @@ fn tlv_chain_streaming_decode_stmt_gated(
             // Y3 atomic 2b: exhaust-or-depth-only overflow check (see
             // tlv_chain_streaming_decode_stmt for the rationale).
             let overflow_check = match (on_overflow, &entry_flag_acc) {
-                (TlvOverflowPolicy::Reject, None) => format!(
-                    "\n                if cursor.remaining() > 0 {{\n                    \
+                (TlvOverflowPolicy::Reject, None) => "\n                if cursor.remaining() > 0 {\n                    \
                          return Err(CodecError::TlvChainOverflow);\n                \
-                     }}"
-                ),
+                     }".to_string(),
                 _ => String::new(),
             };
             let body = match &entry_flag_acc {
@@ -6177,7 +6167,7 @@ fn tlv_chain_streaming_decode_stmt_gated(
             // Y3 atomic 2b: exhaust-or-depth-only overflow check.
             let overflow_check = match (on_overflow, &entry_flag_acc) {
                 (TlvOverflowPolicy::Reject, None) => {
-                    format!("\n            if (cursor.remaining() > 0) return std::nullopt;")
+                    "\n            if (cursor.remaining() > 0) return std::nullopt;".to_string()
                 }
                 _ => String::new(),
             };
@@ -6212,7 +6202,7 @@ fn tlv_chain_streaming_decode_stmt_gated(
             // Y3 atomic 2b: exhaust-or-depth-only overflow check.
             let overflow_check = match (on_overflow, &entry_flag_acc) {
                 (TlvOverflowPolicy::Reject, None) => {
-                    format!("\n                if (cursor.remaining() > 0) return null")
+                    "\n                if (cursor.remaining() > 0) return null".to_string()
                 }
                 _ => String::new(),
             };
@@ -6243,11 +6233,9 @@ fn tlv_chain_streaming_decode_stmt_gated(
             let go_id = filters::to_pascal_case(id.to_string());
             // Y3 atomic 2b: exhaust-or-depth-only overflow check.
             let overflow_check = match (on_overflow, &entry_flag_acc) {
-                (TlvOverflowPolicy::Reject, None) => format!(
-                    "\n\t\tif cursor.Remaining() > 0 {{\n\t\t\t\
+                (TlvOverflowPolicy::Reject, None) => "\n\t\tif cursor.Remaining() > 0 {\n\t\t\t\
                          return nil, codec.ErrTlvChainOverflow\n\t\t\
-                     }}"
-                ),
+                     }".to_string(),
                 _ => String::new(),
             };
             let body = match &entry_flag_acc {
@@ -6289,10 +6277,8 @@ fn tlv_chain_streaming_decode_stmt_gated(
             let id_snake = filters::to_snake_case(id.to_string());
             // Y3 atomic 2b: exhaust-or-depth-only overflow check.
             let overflow_check = match (on_overflow, &entry_flag_acc) {
-                (TlvOverflowPolicy::Reject, None) => format!(
-                    "\n            if (sce_forge_cursor_remaining(cursor) > 0) \
-                       return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;"
-                ),
+                (TlvOverflowPolicy::Reject, None) => "\n            if (sce_forge_cursor_remaining(cursor) > 0) \
+                       return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;".to_string(),
                 _ => String::new(),
             };
             let entry_struct_snake = body_decoder.strip_suffix("_decode").unwrap_or(body_decoder);
@@ -6324,10 +6310,8 @@ fn tlv_chain_streaming_decode_stmt_gated(
             let py_id = filters::to_snake_case(id.to_string());
             // Y3 atomic 2b: exhaust-or-depth-only overflow check.
             let overflow_check = match (on_overflow, &entry_flag_acc) {
-                (TlvOverflowPolicy::Reject, None) => format!(
-                    "\n                if cursor.remaining() > 0:\n                    \
-                         raise TlvChainOverflow()"
-                ),
+                (TlvOverflowPolicy::Reject, None) => "\n                if cursor.remaining() > 0:\n                    \
+                         raise TlvChainOverflow()".to_string(),
                 _ => String::new(),
             };
             let body = match &entry_flag_acc {
@@ -7823,7 +7807,7 @@ fn present_if_decode_vle(
     }
     let p = field.present_if.as_ref().expect("guarded by branch above");
     let test = present_if_test_literal(fields, p, lang);
-    let body_id = format!("_v");
+    let body_id = "_v".to_string();
     let inner = vle_decode_stmt(&body_id, width_bits, lang);
     match lang {
         // Rust: `_v` is bound by `vle_decode_stmt` as a `let _v: u<W>`
@@ -8451,7 +8435,7 @@ fn present_if_encode_vle(
         // unwrapped `_v` value. `vle_encode_block` reads `self.<id>`
         // by name; for gated path we substitute through a temporary.
         Language::Rust => {
-            let inner = vle_encode_block(&format!("_v"), width_bits, lang);
+            let inner = vle_encode_block("_v", width_bits, lang);
             // The vle_encode_block helper for non-self paths emits
             // `let _x = <name>;` style — but for gated we already
             // have `_v` in scope. Strip the prefix `self.` reads by
@@ -8464,7 +8448,7 @@ fn present_if_encode_vle(
             )
         }
         Language::Cpp => {
-            let inner = vle_encode_block(&format!("_v"), width_bits, lang);
+            let inner = vle_encode_block("_v", width_bits, lang);
             format!(
                 "        if ({id}.has_value()) {{\n            \
                      auto _v = *{id};\n\
@@ -8473,7 +8457,7 @@ fn present_if_encode_vle(
             )
         }
         Language::Kotlin => {
-            let inner = vle_encode_block(&format!("_v"), width_bits, lang);
+            let inner = vle_encode_block("_v", width_bits, lang);
             format!(
                 "        this.{id}?.let {{ _v ->\n\
                  {inner}\n        \
@@ -8482,7 +8466,7 @@ fn present_if_encode_vle(
         }
         Language::Go => {
             let go_id = filters::to_pascal_case(id.to_string());
-            let inner = vle_encode_block(&format!("_v"), width_bits, lang);
+            let inner = vle_encode_block("_v", width_bits, lang);
             format!(
                 "\tif s.{go_id} != nil {{\n\t\t\
                      _v := *s.{go_id}\n\
