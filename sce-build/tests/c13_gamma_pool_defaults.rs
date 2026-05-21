@@ -433,7 +433,7 @@ fn stage_copy_policy_all_matches_enum_variants() {
     // If anyone adds a new variant to StageCopyPolicy without
     // extending ALL or from_str, this test trips at compile time
     // (exhaustive match) and at runtime (count mismatch).
-    let expected: Vec<&str> = StageCopyPolicy::ALL.iter().copied().collect();
+    let expected: Vec<&str> = StageCopyPolicy::ALL.to_vec();
     assert_eq!(expected, vec!["warn", "error", "forbid"]);
     assert!(StageCopyPolicy::from_wire_str("warn").is_some());
     assert!(StageCopyPolicy::from_wire_str("error").is_some());
