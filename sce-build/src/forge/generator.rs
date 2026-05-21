@@ -5074,10 +5074,16 @@ fn embed_flag_bind_thread_args(
                 };
                 let mask: u64 = (1u64 << width) - 1;
                 let (decode_arg, encode_arg) = match lang {
-                    Language::Rust => (
-                        format!(", (({carrier} >> {bit}) & 0x{mask:X}) as u8"),
-                        format!(", ((self.{carrier} >> {bit}) & 0x{mask:X}) as u8"),
-                    ),
+                    Language::Rust => {
+                        // Rust struct field + decode local are both
+                        // snake_cased (see codec_field_id). Carrier
+                        // ref must match — idempotent for snake ids.
+                        let snake = filters::to_snake_case(carrier.clone());
+                        (
+                            format!(", (({snake} >> {bit}) & 0x{mask:X}) as u8"),
+                            format!(", ((self.{snake} >> {bit}) & 0x{mask:X}) as u8"),
+                        )
+                    }
                     Language::Cpp => (
                         format!(", static_cast<std::uint8_t>(({carrier} >> {bit}) & 0x{mask:X})"),
                         format!(
@@ -5315,7 +5321,10 @@ fn caller_tag_arg_decode(
                     let mask: u64 = (1u64 << width) - 1;
                     return match lang {
                         Language::Rust => {
-                            format!(", (({carrier_name} >> {bit}) & 0x{mask:X}) as u8")
+                            // Decode-site local is snake_cased per
+                            // codec_field_id; carrier ref must match.
+                            let snake = filters::to_snake_case(carrier_name.to_string());
+                            format!(", (({snake} >> {bit}) & 0x{mask:X}) as u8")
                         }
                         Language::Cpp => format!(
                             ", static_cast<std::uint8_t>(({carrier_name} >> {bit}) & 0x{mask:X})"
@@ -10286,8 +10295,13 @@ fn inject_b5_nu_carrier_suffix(
     match lang {
         Language::Rust => {
             // `        w.write_u8(self.<id>)?;` → `        w.write_u8(self.<id> | _derived_<id>)?;`
-            let needle = format!("w.write_u8(self.{field_id})?;");
-            let replacement = format!("w.write_u8(self.{field_id}{or_suffix})?;");
+            // The emit site (streaming_fixed_field_encode_rust)
+            // snake-cases the field id; the needle here must do the
+            // same so substitution finds the actual emit. Idempotent
+            // for already-snake ids.
+            let snake = filters::to_snake_case(field_id.to_string());
+            let needle = format!("w.write_u8(self.{snake})?;");
+            let replacement = format!("w.write_u8(self.{snake}{or_suffix})?;");
             block.replace(&needle, &replacement)
         }
         Language::Cpp => {

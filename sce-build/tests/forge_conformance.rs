@@ -13899,3 +13899,96 @@ fn axis1_camelcase_field_kinds_compile() {
         failures.join("\n\n"),
     );
 }
+
+/// Cross-codec sibling-reference companion to
+/// `axis1_camelcase_field_kinds_compile`. The previous two tests
+/// covered camelCase field ids declared inside ONE codec; this test
+/// pins the same root cause when an identifier crosses a codec
+/// boundary via `<sce:flag-bind source="X.Y"/>` and
+/// `<sce:variant-dispatch flag="X.Y"/>` on a parent's `<sce:import>`.
+/// Pre-fix the helpers `embed_flag_bind_thread_args` and
+/// `caller_tag_arg_decode` emitted raw `self.<camelCase>` /
+/// `<camelCase>` against snake-cased Rust struct fields, producing
+/// E0425/E0609 the moment the parent's flags carrier used a
+/// camelCase id (`myHeader`).
+#[test]
+fn axis1_camelcase_cross_codec_refs_compile() {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let dir = std::env::temp_dir().join(format!("sce_camelcase_xref_{pid}_{id}"));
+    std::fs::create_dir_all(&dir).expect("mkdir fixture");
+
+    // Inner codec declares a flag-input — parent threads a bit
+    // extracted from its camelCase flags carrier via flag-bind.
+    let inner = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="camelcase_xref_inner" sce:default-endian="big">
+  <sce:flag-inputs>
+    <sce:flag-input name="M" width="1"/>
+  </sce:flag-inputs>
+  <datamodel>
+    <sce:field id="b" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+  </datamodel>
+</scxml>"#;
+
+    // Parent uses camelCase `myHeader` flags carrier; flag-bind
+    // threads its M bit into the inner's M flag-input. The bit
+    // extract appears at both decode-site (bare local) and encode-
+    // site (`self.<carrier>`); both must resolve to snake-cased
+    // `my_header` in Rust.
+    let parent = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="camelcase_xref_parent" sce:default-endian="big">
+  <sce:import src="camelcase_xref_inner.scxml" kind="codec" as="camelcase_xref_inner">
+    <sce:flag-bind input="M" source="myHeader.M"/>
+  </sce:import>
+  <datamodel>
+    <sce:flags id="myHeader" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="M" bit="0"/>
+    </sce:flags>
+    <sce:embed id="payload" type="camelcase_xref_inner" sce:byte="1"/>
+  </datamodel>
+</scxml>"#;
+
+    std::fs::write(dir.join("camelcase_xref_inner.scxml"), inner).expect("write inner");
+    std::fs::write(dir.join("camelcase_xref_parent.scxml"), parent).expect("write parent");
+
+    let scxmls = &["camelcase_xref_inner.scxml", "camelcase_xref_parent.scxml"];
+    let mut failures: Vec<String> = Vec::new();
+
+    if let Err(e) = rustc_compile_codec_set(&dir, scxmls, "axis1_camelcase_xref_rust") {
+        failures.push(format!("Rust:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_cpp(&dir, scxmls, "axis1_camelcase_xref_cpp") {
+        failures.push(format!("Cpp:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_kotlin(&dir, scxmls, "axis1_camelcase_xref_kotlin") {
+        failures.push(format!("Kotlin:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_go(&dir, scxmls, "axis1_camelcase_xref_go") {
+        failures.push(format!("Go:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_python(&dir, scxmls, "axis1_camelcase_xref_python") {
+        failures.push(format!("Python:\n{e}"));
+    }
+    if let Err(e) = compile_codec_set_c11(&dir, scxmls, "axis1_camelcase_xref_c11") {
+        failures.push(format!("C11:\n{e}"));
+    }
+
+    assert!(
+        failures.is_empty(),
+        "camelCase flags-carrier id referenced by <sce:flag-bind source=\"X.Y\"/> \
+         (and the parallel <sce:variant-dispatch flag=\"X.Y\"/> path) must produce \
+         compilable code on every backend — pre-fix the Rust arms in \
+         embed_flag_bind_thread_args and caller_tag_arg_decode baked raw \
+         carrier names against snake-cased Rust struct fields. \
+         Failures:\n\n{}",
+        failures.join("\n\n"),
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
