@@ -17369,10 +17369,17 @@ fn lower_algorithm_body(
     // Python is dynamic.
     let mut assigned: std::collections::HashSet<String> = std::collections::HashSet::new();
     collect_algorithm_assigned_roots(stmts, &mut assigned);
+    let ctx = AlgorithmLowerCtx {
+        lang,
+        type_ctx,
+        l: &l,
+        renames,
+        assigned: &assigned,
+        return_ty,
+        imports,
+    };
     for s in stmts {
-        lower_algorithm_stmt(
-            s, lang, type_ctx, &l, renames, &pad, indent, &assigned, return_ty, imports, &mut out,
-        )?;
+        lower_algorithm_stmt(s, &ctx, &pad, indent, &mut out)?;
     }
     Ok(out.trim_end().to_string())
 }
@@ -17421,21 +17428,39 @@ fn collect_algorithm_assigned_roots(
     }
 }
 
+/// Per-algorithm-body lowering context — the seven fields that stay
+/// constant across the recursive walk of `AlgorithmStmt`s. The two
+/// position-tracking parameters (`pad`, `indent`) vary per recursion
+/// and stay as direct args; `out: &mut String` is the sink so it also
+/// stays an explicit arg.
+struct AlgorithmLowerCtx<'a> {
+    lang: crate::generator::Language,
+    type_ctx: &'a crate::forge::types::TypeCtx<'a>,
+    l: &'a LangCtx,
+    renames: &'a std::collections::HashMap<&'a str, &'a str>,
+    assigned: &'a std::collections::HashSet<String>,
+    return_ty: crate::forge::types::InferredType,
+    imports: &'a [ImportContext],
+}
+
 fn lower_algorithm_stmt(
     s: &AlgorithmStmt,
-    lang: crate::generator::Language,
-    type_ctx: &crate::forge::types::TypeCtx<'_>,
-    l: &LangCtx,
-    renames: &std::collections::HashMap<&str, &str>,
+    ctx: &AlgorithmLowerCtx<'_>,
     pad: &str,
     indent: usize,
-    assigned: &std::collections::HashSet<String>,
-    return_ty: crate::forge::types::InferredType,
-    imports: &[ImportContext],
     out: &mut String,
 ) -> Result<(), ForgeError> {
     use crate::forge::types::InferredType;
     use crate::generator::Language;
+    let &AlgorithmLowerCtx {
+        lang,
+        type_ctx,
+        l,
+        renames,
+        assigned,
+        return_ty,
+        imports,
+    } = ctx;
     match s {
         AlgorithmStmt::Var {
             name,
@@ -17523,36 +17548,12 @@ fn lower_algorithm_stmt(
                     out.push_str(&format!("{pad}if {cond_lowered}:\n"));
                     let inner_pad = "    ".repeat(indent + 1);
                     for st in then_body {
-                        lower_algorithm_stmt(
-                            st,
-                            lang,
-                            type_ctx,
-                            l,
-                            renames,
-                            &inner_pad,
-                            indent + 1,
-                            assigned,
-                            return_ty,
-                            imports,
-                            out,
-                        )?;
+                        lower_algorithm_stmt(st, ctx, &inner_pad, indent + 1, out)?;
                     }
                     if let Some(eb) = else_body {
                         out.push_str(&format!("{pad}else:\n"));
                         for st in eb {
-                            lower_algorithm_stmt(
-                                st,
-                                lang,
-                                type_ctx,
-                                l,
-                                renames,
-                                &inner_pad,
-                                indent + 1,
-                                assigned,
-                                return_ty,
-                                imports,
-                                out,
-                            )?;
+                            lower_algorithm_stmt(st, ctx, &inner_pad, indent + 1, out)?;
                         }
                     }
                 }
@@ -17564,36 +17565,12 @@ fn lower_algorithm_stmt(
                     out.push_str(&header_open);
                     let inner_pad = "    ".repeat(indent + 1);
                     for st in then_body {
-                        lower_algorithm_stmt(
-                            st,
-                            lang,
-                            type_ctx,
-                            l,
-                            renames,
-                            &inner_pad,
-                            indent + 1,
-                            assigned,
-                            return_ty,
-                            imports,
-                            out,
-                        )?;
+                        lower_algorithm_stmt(st, ctx, &inner_pad, indent + 1, out)?;
                     }
                     if let Some(eb) = else_body {
                         out.push_str(&format!("{pad}}} else {{\n"));
                         for st in eb {
-                            lower_algorithm_stmt(
-                                st,
-                                lang,
-                                type_ctx,
-                                l,
-                                renames,
-                                &inner_pad,
-                                indent + 1,
-                                assigned,
-                                return_ty,
-                                imports,
-                                out,
-                            )?;
+                            lower_algorithm_stmt(st, ctx, &inner_pad, indent + 1, out)?;
                         }
                     }
                     out.push_str(&format!("{pad}}}\n"));
@@ -17620,19 +17597,7 @@ fn lower_algorithm_stmt(
                     out.push_str(&format!("{pad}while {cond_lowered}:\n"));
                     let inner_pad = "    ".repeat(indent + 1);
                     for st in body {
-                        lower_algorithm_stmt(
-                            st,
-                            lang,
-                            type_ctx,
-                            l,
-                            renames,
-                            &inner_pad,
-                            indent + 1,
-                            assigned,
-                            return_ty,
-                            imports,
-                            out,
-                        )?;
+                        lower_algorithm_stmt(st, ctx, &inner_pad, indent + 1, out)?;
                     }
                 }
                 _ => {
@@ -17648,19 +17613,7 @@ fn lower_algorithm_stmt(
                     out.push_str(&header_open);
                     let inner_pad = "    ".repeat(indent + 1);
                     for st in body {
-                        lower_algorithm_stmt(
-                            st,
-                            lang,
-                            type_ctx,
-                            l,
-                            renames,
-                            &inner_pad,
-                            indent + 1,
-                            assigned,
-                            return_ty,
-                            imports,
-                            out,
-                        )?;
+                        lower_algorithm_stmt(st, ctx, &inner_pad, indent + 1, out)?;
                     }
                     out.push_str(&format!("{pad}}}\n"));
                 }
@@ -17839,19 +17792,7 @@ fn lower_algorithm_stmt(
                     }
                 }
                 for st in body {
-                    lower_algorithm_stmt(
-                        st,
-                        lang,
-                        type_ctx,
-                        l,
-                        renames,
-                        &inner_pad,
-                        body_inner_indent,
-                        assigned,
-                        return_ty,
-                        imports,
-                        out,
-                    )?;
+                    lower_algorithm_stmt(st, ctx, &inner_pad, body_inner_indent, out)?;
                 }
                 // Per-backend close braces. Rust/Cpp/C11 close two
                 // blocks (the Some/has_value branch + the for-loop);
@@ -17928,19 +17869,7 @@ fn lower_algorithm_stmt(
                 let inner_indent = indent + 1;
                 let inner_pad = "    ".repeat(inner_indent);
                 for st in body {
-                    lower_algorithm_stmt(
-                        st,
-                        lang,
-                        type_ctx,
-                        l,
-                        renames,
-                        &inner_pad,
-                        inner_indent,
-                        assigned,
-                        return_ty,
-                        imports,
-                        out,
-                    )?;
+                    lower_algorithm_stmt(st, ctx, &inner_pad, inner_indent, out)?;
                 }
                 if !matches!(lang, Language::Python) {
                     out.push_str(&format!("{pad}}}\n"));
