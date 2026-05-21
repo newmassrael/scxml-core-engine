@@ -298,7 +298,7 @@ pub fn write_envelope<W: std::io::Write>(
 ) -> std::io::Result<()> {
     let env = ForgeAstEnvelope::new(parsed);
     serde_json::to_writer_pretty(&mut *sink, &env)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        .map_err(std::io::Error::other)?;
     sink.write_all(b"\n")?;
     Ok(())
 }
