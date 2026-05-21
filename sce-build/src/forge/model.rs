@@ -1579,7 +1579,7 @@ impl CodecModel {
         let mut max_end = 0u32;
         for field in &self.fields {
             if let Some(bits) = field.fixed_bits() {
-                let end = field.byte_offset + (bits + 7) / 8;
+                let end = field.byte_offset + bits.div_ceil(8);
                 max_end = max_end.max(end);
             }
         }

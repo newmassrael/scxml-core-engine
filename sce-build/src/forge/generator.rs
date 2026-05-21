@@ -16199,7 +16199,7 @@ fn render_inline_codec_member(
     let mut min_bytes = 0u32;
     for f in codec_fields {
         if let Some(bits) = f.fixed_bits() {
-            let end = f.byte_offset + (bits + 7) / 8;
+            let end = f.byte_offset + bits.div_ceil(8);
             min_bytes = min_bytes.max(end);
         }
     }
