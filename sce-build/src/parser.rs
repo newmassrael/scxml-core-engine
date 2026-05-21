@@ -2429,28 +2429,26 @@ impl SCXMLParser {
 
     fn detect_entry_exit_actions(&self, model: &mut SCXMLModel) {
         for state in model.states.values() {
-            if !model.has_entry_actions {
-                if !state.on_entry_blocks.is_empty()
+            if !model.has_entry_actions
+                && (!state.on_entry_blocks.is_empty()
                     || state.has_scxml_invoke()
                     || state.has_hybrid_invoke()
                     || state.has_mesh_rpc_invoke()
                     || !state.datamodel.is_empty()
                     || !state.initial_transition_actions.is_empty()
                     || !state.initial_history_id.is_empty()
-                    || (state.is_final && (state.donedata.is_some() || state.parent.is_some()))
+                    || (state.is_final && (state.donedata.is_some() || state.parent.is_some())))
                 {
                     model.has_entry_actions = true;
                 }
-            }
-            if !model.has_exit_actions {
-                if !state.on_exit_blocks.is_empty()
+            if !model.has_exit_actions
+                && (!state.on_exit_blocks.is_empty()
                     || state.has_scxml_invoke()
                     || state.has_hybrid_invoke()
-                    || state.has_mesh_rpc_invoke()
+                    || state.has_mesh_rpc_invoke())
                 {
                     model.has_exit_actions = true;
                 }
-            }
             if model.has_entry_actions && model.has_exit_actions {
                 break;
             }
@@ -2931,11 +2929,10 @@ fn actions_contain_event_metadata(actions: &[Action]) -> bool {
             if actions_contain_event_metadata(&action.else_actions) {
                 return true;
             }
-        } else if action.action_type == "foreach" {
-            if actions_contain_event_metadata(&action.actions) {
+        } else if action.action_type == "foreach"
+            && actions_contain_event_metadata(&action.actions) {
                 return true;
             }
-        }
     }
     false
 }

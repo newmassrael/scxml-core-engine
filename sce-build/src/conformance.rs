@@ -1205,11 +1205,10 @@ pub(crate) fn read_procedure_is_l2(scxml_path: &Path) -> Result<bool, String> {
             if name == "helper" && ns == Some(sce_ns) {
                 return Ok(true);
             }
-            if name == "data" && ns == Some(scxml_ns) {
-                if child.attribute((sce_ns, "direction")) == Some("internal") {
+            if name == "data" && ns == Some(scxml_ns)
+                && child.attribute((sce_ns, "direction")) == Some("internal") {
                     return Ok(true);
                 }
-            }
         }
     }
 

@@ -1790,8 +1790,8 @@ fn parse_codec_variant(
     // lock); arm-domain exhaustiveness shifts to the parent-local
     // validator (`validate_cross_codec_variant_dispatch`) which sees
     // both the leaf arms and the parent's flag width.
-    if tag_field.is_none() {
-        if peek_byte.is_some() {
+    if tag_field.is_none()
+        && peek_byte.is_some() {
             return Err(located(
                 &variant_node,
                 label.diagnostic_label,
@@ -1809,7 +1809,6 @@ fn parse_codec_variant(
         }
         // Continue past tag_type/tag_flag_width — values are unused
         // for β shape (variant_obj's β branch reads neither).
-    }
     let (tag_type, tag_flag_width): (SceType, Option<u32>) = if tag_field.is_none() {
         (SceType::Uint8, None)
     } else if let Some(peek) = &peek_byte {
