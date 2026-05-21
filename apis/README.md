@@ -20,7 +20,7 @@ Schemas that live elsewhere:
 
 | File | Envelope | Producer | Consumer |
 |---|---|---|---|
-| [`forge-ast.v1.schema.json`](forge-ast.v1.schema.json) | `{v, ast}` | `sce-codegen generate --emit-ast=<path>` | Downstream tools that derive artefacts from the Forge IR (DB schema, event-store adapters, UI mirrors) without invoking SCE codegen. See [`docs/SCE_FORGE_AST.md`](../docs/SCE_FORGE_AST.md). |
+| [`forge-ast.v1.schema.json`](forge-ast.v1.schema.json) | `{v, ast}` | `sce-codegen generate --emit-ast=<path>` (single-doc) / `sce-codegen orchestrate --emit-ast-dir=<dir>` (multi-doc batch) | Downstream tools that derive artefacts from the parsed IR (DB schema, event-store adapters, UI mirrors) without invoking SCE codegen. Covers all 16 kinds (15 forge + statechart). See [`docs/SCE_FORGE_AST.md`](../docs/SCE_FORGE_AST.md). |
 
 ## Stability contract
 
