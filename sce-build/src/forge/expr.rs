@@ -2830,10 +2830,7 @@ fn python_emit_node(expr: &TypedExpr) -> String {
             // 0xFF` on a body whose authors already wrote a
             // bit-mask, keeping the Python emit close to the
             // hand-authored shape on existing fixtures.
-            let needs_mask = match op {
-                BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Shl => true,
-                _ => false,
-            };
+            let needs_mask = matches!(op, BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Shl);
             if needs_mask {
                 if let InferredType::Int {
                     signed: false,
