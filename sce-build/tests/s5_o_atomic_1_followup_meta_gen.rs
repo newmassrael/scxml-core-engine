@@ -199,7 +199,7 @@ fn walker_diagnostic_code_is_meta_generated_source_line_marker_missing() {
         code_str,
         "\"traceability/meta-generated-source-line-marker-missing\""
     );
-    assert_eq!(d.spec.as_deref(), Some("watching-zenoh RFC §5.O"));
+    assert_eq!(d.spec, Some("watching-zenoh RFC §5.O"));
     assert_eq!(
         d.actual.as_deref(),
         Some("out/test144/test144_sm.rs"),
