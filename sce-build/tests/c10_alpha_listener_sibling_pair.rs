@@ -153,8 +153,10 @@ fn resolve_listener_links_pairs_explicit_role_with_accept_side_declaration() {
     );
     let cfg = parse_deploy_str(&yaml).expect("deploy parses");
 
-    let mut session_fsm = SCXMLModel::default();
-    session_fsm.name = "session_fsm".into();
+    let mut session_fsm = SCXMLModel {
+        name: "session_fsm".into(),
+        ..SCXMLModel::default()
+    };
     session_fsm
         .declared_session_roles
         .insert(sce_build::model::SessionRoleKind::AcceptSide);
@@ -184,8 +186,10 @@ fn resolve_listener_links_silent_skips_non_listener_session_arming() {
 
     // No `Accepting.*` substate ⇒ no listener pairing despite
     // session_arming trust class.
-    let mut data_fsm = SCXMLModel::default();
-    data_fsm.name = "data_fsm".into();
+    let mut data_fsm = SCXMLModel {
+        name: "data_fsm".into(),
+        ..SCXMLModel::default()
+    };
     data_fsm.states.insert("Idle".to_string(), State::default());
     let scxml_models = vec![(PathBuf::from("data_fsm.scxml"), data_fsm)];
 
@@ -207,8 +211,10 @@ fn resolve_listener_links_silent_skips_established_session_link() {
     );
     let cfg = parse_deploy_str(&yaml).expect("deploy parses");
 
-    let mut session_fsm = SCXMLModel::default();
-    session_fsm.name = "session_fsm".into();
+    let mut session_fsm = SCXMLModel {
+        name: "session_fsm".into(),
+        ..SCXMLModel::default()
+    };
     session_fsm
         .states
         .insert("Accepting".to_string(), State::default());

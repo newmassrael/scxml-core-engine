@@ -4479,8 +4479,10 @@ fn forge_codec_default_marker_arm_b_emits_baked_default_go() {
     let scxml_path = resource_dir().join("codec_default_marker_arm_b.scxml");
     let content =
         std::fs::read_to_string(&scxml_path).expect("codec_default_marker_arm_b.scxml must exist");
-    let mut opts = sce_build::ForgeCompileOptions::default();
-    opts.go_module_prefix = Some("github.com/test/codec".to_string());
+    let opts = sce_build::ForgeCompileOptions {
+        go_module_prefix: Some("github.com/test/codec".to_string()),
+        ..sce_build::ForgeCompileOptions::default()
+    };
     let output = sce_build::compile_forge_with_imports(
         &content,
         sce_build::DocumentLabel::symmetric("codec_default_marker_arm_b"),
@@ -4512,8 +4514,10 @@ fn forge_codec_variant_default_marker_outer_emits_declared_arm_go() {
     let scxml_path = resource_dir().join("codec_variant_default_marker.scxml");
     let content = std::fs::read_to_string(&scxml_path)
         .expect("codec_variant_default_marker.scxml must exist");
-    let mut opts = sce_build::ForgeCompileOptions::default();
-    opts.go_module_prefix = Some("github.com/test/codec".to_string());
+    let opts = sce_build::ForgeCompileOptions {
+        go_module_prefix: Some("github.com/test/codec".to_string()),
+        ..sce_build::ForgeCompileOptions::default()
+    };
     let output = sce_build::compile_forge_with_imports(
         &content,
         sce_build::DocumentLabel::symmetric("codec_variant_default_marker"),

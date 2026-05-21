@@ -363,9 +363,11 @@ mod tests {
     /// future `parse_impl` edit forgot to populate the root field.
     #[test]
     fn missing_root_provenance_fires_diagnostic() {
-        let mut model = SCXMLModel::default();
-        model.name = "broken".into();
-        model.source_location = None;
+        let model = SCXMLModel {
+            name: "broken".into(),
+            source_location: None,
+            ..SCXMLModel::default()
+        };
         let err = validate_emission_provenance(&model, "broken.scxml")
             .expect_err("must fire when root.source_location is None");
         match &err.error {
@@ -385,15 +387,19 @@ mod tests {
     /// is locatable from the wire payload alone.
     #[test]
     fn missing_state_provenance_fires_diagnostic() {
-        let mut model = SCXMLModel::default();
-        model.source_location = Some(SourceLocation {
-            file: "x.scxml".into(),
-            line: Some(1),
-            col: Some(1),
-        });
-        let mut state = State::default();
-        state.id = "armed".into();
-        state.source_location = None;
+        let mut model = SCXMLModel {
+            source_location: Some(SourceLocation {
+                file: "x.scxml".into(),
+                line: Some(1),
+                col: Some(1),
+            }),
+            ..SCXMLModel::default()
+        };
+        let state = State {
+            id: "armed".into(),
+            source_location: None,
+            ..State::default()
+        };
         model.states.insert("armed".into(), state);
         let err = validate_emission_provenance(&model, "x.scxml")
             .expect_err("must fire when state.source_location is None");

@@ -382,20 +382,24 @@ mod tests {
         // Two states that mangle to the same key — possible when
         // XInclude composition imports a fragment whose state id
         // matches a top-level state. The walker reports both sites.
-        let mut model = SCXMLModel::default();
-        model.name = "m".into();
-        model.source_location = Some(SourceLocation {
-            file: "x.scxml".into(),
-            line: Some(1),
-            col: Some(1),
-        });
-        let mut s1 = State::default();
-        s1.id = "dup".into();
-        s1.source_location = Some(SourceLocation {
-            file: "x.scxml".into(),
-            line: Some(5),
-            col: Some(1),
-        });
+        let mut model = SCXMLModel {
+            name: "m".into(),
+            source_location: Some(SourceLocation {
+                file: "x.scxml".into(),
+                line: Some(1),
+                col: Some(1),
+            }),
+            ..SCXMLModel::default()
+        };
+        let s1 = State {
+            id: "dup".into(),
+            source_location: Some(SourceLocation {
+                file: "x.scxml".into(),
+                line: Some(5),
+                col: Some(1),
+            }),
+            ..State::default()
+        };
         model.states.insert("dup".into(), s1);
         // Second state with same id reuses the first slot in BTreeMap,
         // so simulate the collision through a forge-doc that happens

@@ -1063,10 +1063,12 @@ pub fn inject_server_response_sends(
             .get_mut(&c.state_id)
             .expect("state must exist — collected from the same model");
 
-        let mut send_action = crate::model::Action::default();
-        send_action.action_type = "send".to_string();
-        send_action.event = c.event.clone();
-        send_action.target = self_target.clone();
+        let send_action = crate::model::Action {
+            action_type: "send".to_string(),
+            event: c.event.clone(),
+            target: self_target.clone(),
+            ..crate::model::Action::default()
+        };
 
         let insert_pos = c.action_idx + 1;
         match c.block_kind {
@@ -3034,10 +3036,12 @@ pub fn inject_auto_subscriptions(
             .expect("state must exist — collected from the same model");
 
         // Build synthetic send action.
-        let mut unsub_action = crate::model::Action::default();
-        unsub_action.action_type = "send".to_string();
-        unsub_action.event = c.unsubscribe_event.clone();
-        unsub_action.target = c.target.as_str().to_string();
+        let unsub_action = crate::model::Action {
+            action_type: "send".to_string(),
+            event: c.unsubscribe_event.clone(),
+            target: c.target.as_str().to_string(),
+            ..crate::model::Action::default()
+        };
 
         // Append to the first onexit block; create one if absent.
         if state.on_exit_blocks.is_empty() {

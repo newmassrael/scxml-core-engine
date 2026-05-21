@@ -138,24 +138,29 @@ fn session_arming_link_no_role() -> String {
 }
 
 fn scxml_with_accept_side() -> SCXMLModel {
-    let mut m = SCXMLModel::default();
-    m.name = "session_fsm".into();
+    let mut m = SCXMLModel {
+        name: "session_fsm".into(),
+        ..SCXMLModel::default()
+    };
     m.declared_session_roles.insert(SessionRoleKind::AcceptSide);
     m
 }
 
 fn scxml_with_legacy_accepting_substate() -> SCXMLModel {
-    let mut m = SCXMLModel::default();
-    m.name = "session_fsm".into();
+    let mut m = SCXMLModel {
+        name: "session_fsm".into(),
+        ..SCXMLModel::default()
+    };
     m.states
         .insert("Accepting.AwaitingInitSyn".to_string(), State::default());
     m
 }
 
 fn scxml_plain() -> SCXMLModel {
-    let mut m = SCXMLModel::default();
-    m.name = "session_fsm".into();
-    m
+    SCXMLModel {
+        name: "session_fsm".into(),
+        ..SCXMLModel::default()
+    }
 }
 
 // ── Direction 1: explicit-role join lands in listener_links ────────
