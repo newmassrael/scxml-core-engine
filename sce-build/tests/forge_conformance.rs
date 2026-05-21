@@ -13628,3 +13628,73 @@ fn axis1_inversion_variant_default_arm_caller_tag_rejected() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Pre-existing codegen bug discovered 2026-05-21 during the
+/// `axis1_inversion_multi_flag_input_order` fixture authoring.
+/// Camel-case `<sce:field id="optN">` with `sce:present-if` produces
+/// non-compiling Rust: the struct field is snake-cased to `opt_n`
+/// (Rust naming convention), but the present-if check is emitted as
+/// `if let Some(_v) = self.optN { ... }` (original case verbatim) →
+/// `rustc E0609: no field `optN` on type ... — available fields are:
+/// `x`, `opt_n`, ...`.
+///
+/// Same family as the axis1 embed-dispatcher arg-order bug fixed in
+/// `07afcc45`: one codegen site applies an identifier transform while
+/// a sibling site doesn't, and downstream compilation surfaces the
+/// divergence. The fix likely lives in
+/// `present_if_test_literal_{encode,decode}` (generator.rs) or the
+/// per-language `codec.*.jinja2` templates that interpolate
+/// `self.{{ field.id }}` without a snake_case filter.
+///
+/// `#[ignore]`-gated so it runs in CI as "ignored" without breaking
+/// green; removing `#[ignore]` is the textbook closure signal when
+/// the next session lands the root-cause fix. See memory entry
+/// `feedback_present_if_camelcase_field_mismatch.md` for full
+/// analysis + reproducer + next-session action plan.
+#[test]
+#[ignore = "pre-existing codegen bug; remove #[ignore] when the camelCase \
+            present-if mismatch is fixed (see feedback_present_if_camelcase_field_mismatch)"]
+fn axis1_present_if_camelcase_field_compiles() {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let dir = std::env::temp_dir().join(format!("sce_camelcase_repro_{pid}_{id}"));
+    std::fs::create_dir_all(&dir).expect("mkdir fixture");
+
+    // Minimal reproducer: a single leaf codec with a camelCase
+    // field id `optN` gated by flag-input `N`. The generated Rust
+    // struct will have `pub opt_n: Option<u8>` but the encode-side
+    // present-if check will reference `self.optN` (mismatched case).
+    let leaf = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:codec-id="codec_camelcase_repro" sce:default-endian="big">
+  <sce:flag-inputs>
+    <sce:flag-input name="N" width="1"/>
+  </sce:flag-inputs>
+  <datamodel>
+    <sce:field id="x"    sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="optN" sce:type="uint8" sce:byte="1" sce:bit-size="8" sce:present-if="N"/>
+  </datamodel>
+</scxml>"#;
+
+    std::fs::write(dir.join("codec_camelcase_repro.scxml"), leaf).expect("write leaf");
+
+    // rustc-compile gate: codegen produces Rust source that MUST
+    // compile cleanly. Today this fails with E0609 on the camelCase
+    // identifier; the fix removes the `#[ignore]` above and this
+    // assertion fires its happy path.
+    rustc_compile_codec_set(
+        &dir,
+        &["codec_camelcase_repro.scxml"],
+        "axis1_present_if_camelcase_repro",
+    )
+    .expect(
+        "camelCase field id with sce:present-if MUST produce compilable Rust — \
+         the encode-side present-if check should reference the snake-cased \
+         struct field, not the original camelCase id",
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
