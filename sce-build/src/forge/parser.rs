@@ -1805,12 +1805,9 @@ fn parse_codec_variant(
         }
         // Continue past tag_type/tag_flag_width — values are unused
         // for β shape (variant_obj's β branch reads neither).
-    let (tag_type, tag_flag_width): (SceType, Option<u32>) = if tag_field.is_none() {
-        (SceType::Uint8, None)
-    } else if let Some(peek) = &peek_byte {
-        let tag_field_name = tag_field
-            .as_ref()
-            .expect("peek branch reachable only via tag attribute present");
+    let (tag_type, tag_flag_width): (SceType, Option<u32>) = match tag_field.as_ref() {
+        None => (SceType::Uint8, None),
+        Some(tag_field_name) => if let Some(peek) = &peek_byte {
         if tag_flag.is_none() {
             return Err(located(
                 &variant_node,
@@ -1876,9 +1873,6 @@ fn parse_codec_variant(
         // MUST be a `<sce:flags>`-bearing field (parser invariant: flags
         // carriers are always unsigned-int, so the unsigned check still
         // holds), and `flag` MUST name one of its `<sce:flag>` children.
-        let tag_field_name = tag_field
-            .as_ref()
-            .expect("Local own-field branch implies tag_field is Some");
         let tag_field_ref = match fields.iter().find(|f| f.id == *tag_field_name) {
             Some(f) if f.sce_type.is_unsigned() => f,
             Some(f) => {
@@ -1962,6 +1956,7 @@ fn parse_codec_variant(
             None => None,
         };
         (tag_type, tag_flag_width)
+    },
     };
 
     let mut arms: Vec<VariantArm> = Vec::new();
@@ -2152,7 +2147,7 @@ fn parse_codec_variant(
     // (`validate_cross_codec_variant_dispatch`) which sees both arm
     // count and the parent's `<sce:variant-dispatch>` flag width.
     // Skip the local check for β.
-    if default_arm.is_none() && tag_field.is_some() {
+    if let (None, Some(tag_field_name)) = (&default_arm, tag_field.as_ref()) {
         let domain_size: Option<u64> = match tag_flag_width {
             Some(width) => Some(1u64 << width),
             None => match tag_type {
@@ -2173,9 +2168,6 @@ fn parse_codec_variant(
             // exhaustiveness expectation when the actual domain is
             // 1<<width). The diagnostic's `tag_type` field stays the
             // carrier type for back-compat with the unreachable test.
-            let tag_field_name = tag_field
-                .as_ref()
-                .expect("tag_field.is_some() gates this branch");
             let display_tag = match &tag_flag {
                 Some(flag_name) => format!("{tag_field_name}.{flag_name}"),
                 None => tag_field_name.clone(),
