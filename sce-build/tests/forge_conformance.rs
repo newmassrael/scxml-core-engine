@@ -9169,6 +9169,7 @@ fn forge_variant_default_overlay_unknown_arm_rejects() {
 /// - `codec_b5nu_keyexpr.scxml`    — parent-tag-dispatched variant carrier
 /// - `codec_b5nu_local.scxml`      — Local arm body (1-byte payload)
 /// - `codec_b5nu_nonlocal.scxml`   — Nonlocal arm body (2-byte payload)
+///
 /// Each fixture is independently parseable; cross-doc validation runs
 /// when the parent resolves its imports through the temp directory.
 fn b5_nu_write_round_trip_fixture(

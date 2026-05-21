@@ -256,8 +256,8 @@ fn link_burst_pps_missing_on_isr_dispatch_fires() {
     assert_eq!(link_name, "udp_data");
 }
 
-/// Negative: `trust_class: established_session` (Fragment-carrying)
-/// + `mtu_bytes` absent. Under-approximation per
+/// Negative: `trust_class: established_session` (Fragment-carrying) +
+/// `mtu_bytes` absent. Under-approximation per
 /// `MeshDeployLinkMtuMissingOnFragmentingLink` doc-comment — uses
 /// trust-class as proxy for "Fragment-FSM-bound link" until C13-α-2's
 /// precise reassembly-pool cross-doc step lands.

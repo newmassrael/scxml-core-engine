@@ -1308,8 +1308,8 @@ pub enum DiagnosticCode {
     /// memcpy_cycles_per_byte / clock_freq_mhz >
     /// worker_slot_budget_us`. When triggered, the implicit memcpy in
     /// the stage-copy path alone blows the cooperative slot, starving
-    /// Keepalive and other parallel-region timers (ARCHITECTURE §9.3
-    /// + §3.4). Silent-skip when any of the four platform/scheduler
+    /// Keepalive and other parallel-region timers (ARCHITECTURE §9.3 +
+    /// §3.4). Silent-skip when any of the four platform/scheduler
     /// inputs are absent (per Q-η5 (a) precedent). Repair: raise
     /// `worker_slot_budget_us`, lower `expected_p99_bytes` so stage
     /// copy is never invoked at that size, or raise the bound pool's
@@ -1388,8 +1388,8 @@ pub enum DiagnosticCode {
     /// sibling` (which is the §5.C-side codegen self-check)."
     ///
     /// Wired into
-    /// [`crate::mesh::deploy::validate_reassembly_cross_doc`] (C13-α-2
-    /// + C13-γ landing site): when the bound link's resolved
+    /// [`crate::mesh::deploy::validate_reassembly_cross_doc`] (C13-α-2 +
+    /// C13-γ landing site): when the bound link's resolved
     /// `trust_class` is `session_arming` AND the orchestrator-resolved
     /// listener-link set does NOT contain the link name (i.e. no
     /// `Accepting.*` substate on the machine's source SCXML), the

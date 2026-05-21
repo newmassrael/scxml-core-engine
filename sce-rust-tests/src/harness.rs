@@ -201,8 +201,8 @@ pub fn setup_http_test<P: StatePolicy>(engine: &mut Engine<P>) {
 }
 
 /// W3C BasicHTTP test server endpoint baked into codegen for
-/// `conf:basicHTTPAccessURITarget=""` (see `tools/codegen/templates/rust/...`
-/// + every `tests/generated/test*/test*_sm.rs` BasicHTTP fixture). Kept here
+/// `conf:basicHTTPAccessURITarget=""` (see `tools/codegen/templates/rust/...` +
+/// every `tests/generated/test*/test*_sm.rs` BasicHTTP fixture). Kept here
 /// so the reachability assertion below uses the same string the SM emits.
 const HTTP_TEST_SERVER_URL: &str = "http://localhost:8080/test";
 

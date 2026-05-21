@@ -24,6 +24,7 @@
 //!   - Python: frozen `@dataclass(slots=True)` Handle + `Optional
 //!     [Handle]` overflow return.
 //!   - C11: `<snake>_foreach(self, fn, user)` callback iteration.
+//!
 //! All five lock-ins preserve ABI parity of the 16/16 packed
 //! `uint32_t` Handle across the full 6-backend matrix.
 

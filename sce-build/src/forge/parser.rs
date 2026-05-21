@@ -7285,9 +7285,9 @@ fn require_u32_body(
 /// watching-zenoh RFC §5.L lines 2540-2655.
 ///
 /// C6-α scope: schema + parse + 2 parse-time structure validators
-/// (`collection/ordering-sorted-requires-index-by` from spec line 2559
-/// + `collection/overflow-policy-oldest-wins-requires-ordering-
-/// insertion` from spec line 2655). The other four diagnostics listed in
+/// (`collection/ordering-sorted-requires-index-by` from spec line 2559 +
+/// `collection/overflow-policy-oldest-wins-requires-ordering-insertion`
+/// from spec line 2655). The other four diagnostics listed in
 /// the spec body (`collection/capacity-unresolved` deploy-time;
 /// `collection/element-type-not-a-kind` + `collection/index-by-field-
 /// missing` + `collection/multi-writer-without-atomics` cross-doc) defer

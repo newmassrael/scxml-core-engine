@@ -2246,8 +2246,8 @@ pub enum ValidationError {
     /// (which is the §5.C-side codegen self-check).
     ///
     /// C10-α wires this inside
-    /// [`crate::mesh::deploy::validate_reassembly_cross_doc`] (C13-α-2
-    /// + C13-γ landing site): when the bound link's trust_class is
+    /// [`crate::mesh::deploy::validate_reassembly_cross_doc`] (C13-α-2 +
+    /// C13-γ landing site): when the bound link's trust_class is
     /// `session_arming` AND the orchestrator-resolved listener-link
     /// set does NOT contain the link name (i.e. the deploy link has
     /// no `role: listener` AND/OR the machine's source SCXML has no
@@ -2282,8 +2282,8 @@ pub enum ValidationError {
     /// downstream queue depth.
     ///
     /// C10-β wires this inside
-    /// [`crate::compile_scxml_with_imports`] pass-2 after the C13-α-2
-    /// + C10-α validators (matching the orchestrator-level cross-doc
+    /// [`crate::compile_scxml_with_imports`] pass-2 after the C13-α-2 +
+    /// C10-α validators (matching the orchestrator-level cross-doc
     /// precedent). Silent-skip when the link has no inbound events
     /// declared or when no SCXML imports the link.
     /// NeutralOrDeterministic — two-axis repair (per-instance vs
@@ -2437,8 +2437,8 @@ pub enum ValidationError {
     /// No closed candidate set — the C4 baseline registry's atomic
     /// family is too large (≥101 spans load/store/cas/fetch ×
     /// 5 widths × multiple orderings) for a useful
-    /// `Fix::ReplaceOneOf`; author judgment chooses the right ordering
-    /// + width. NeutralOrDeterministic non_overlap_class with
+    /// `Fix::ReplaceOneOf`; author judgment chooses the right ordering +
+    /// width. NeutralOrDeterministic non_overlap_class with
     /// `fix: None`.
     #[error(
         "bounded-collection '{collection_name}': <sce:concurrency>multi-writer</sce:concurrency> requires at least one §5.I atomic intrinsic to be declared via <sce:extern> somewhere in this build. \
@@ -2527,8 +2527,8 @@ pub enum ValidationError {
     /// location payload pins both sites so the author can resolve the
     /// clash by renaming one.
     ///
-    /// `mangled` carries the colliding mangled id verbatim; `first_*`
-    /// + `second_*` describe the two offending sites by file:line. The
+    /// `mangled` carries the colliding mangled id verbatim; `first_*` +
+    /// `second_*` describe the two offending sites by file:line. The
     /// diagnostic carries no closed candidate set — the repair (rename
     /// one of the two states) is author-domain — so it rides
     /// `FixCarriesCandidates` with the empty-but-present second-site

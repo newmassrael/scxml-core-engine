@@ -329,8 +329,8 @@ pub enum FixtureSpec {
         /// All backends except C11 generate uniform `validator.validate(...)`
         /// regardless of state, so the flag is unused for them. C11 needs
         /// it because RFC §5.J.2 V2c uses a free function for stateless
-        /// validators (no instance to call a method on) and a state struct
-        /// + pointer pass for stateful ones; the harness fragment branches
+        /// validators (no instance to call a method on) and a state struct +
+        /// pointer pass for stateful ones; the harness fragment branches
         /// on this flag to emit the matching call shape.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         has_state: bool,

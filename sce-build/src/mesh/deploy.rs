@@ -2821,8 +2821,8 @@ fn validate_pool_defaults(cfg: &DeployConfig) -> Result<(), DeployError> {
 /// Known-driver baseline carrying protocol class + min-MTU floor.
 ///
 /// Single source of truth for the driver allowlist. Each core driver
-/// implements exactly one protocol class (per RFC §5.C lines 765-771
-/// + §8 Q8 line 3747); co-locating the class with the driver name
+/// implements exactly one protocol class (per RFC §5.C lines 765-771 +
+/// §8 Q8 line 3747); co-locating the class with the driver name
 /// keeps `KNOWN_DRIVERS` the authoritative source — no parallel map
 /// to drift against.
 ///
@@ -3890,8 +3890,8 @@ pub fn validate_stateless_accept_externs(
 /// only the general-purpose OS values (`linux`, `qnx`, `macos`,
 /// `freebsd`, `windows`).
 ///
-/// Enforced at parse time so a contradictory pairing (e.g. `class: mcu`
-/// + `os: linux`) cannot reach the codegen-matrix walker (RFC §5.J.4 /
+/// Enforced at parse time so a contradictory pairing (e.g. `class: mcu` +
+/// `os: linux`) cannot reach the codegen-matrix walker (RFC §5.J.4 /
 /// §5.J.5) that consumes `class` to gate MCU-only kinds.
 fn validate_platform_class_os_consistency(cfg: &DeployConfig) -> Result<(), DeployError> {
     for device in cfg.topology.values() {

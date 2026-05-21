@@ -16,8 +16,8 @@
 //! Watching-zenoh RFC §5.J.2 (lines 1989-1994): whole-module gated to `!no_std`.
 //! All public algorithms use `Vec` / `HashSet` / `HashMap<S, S>` accumulators;
 //! the Rust AOT codegen template re-implements region traversal inline on the
-//! generated `Self` impl (see `tools/codegen/templates/rust/process_transition.rs.jinja2`
-//! + `state_machine.rs.jinja2`), so this module has zero current no_std consumer.
+//! generated `Self` impl (see `tools/codegen/templates/rust/process_transition.rs.jinja2` +
+//! `state_machine.rs.jinja2`), so this module has zero current no_std consumer.
 //! Mirrors `event_data` / `invoke_processing` precedent.
 
 #![cfg(not(feature = "no_std"))]

@@ -11,6 +11,7 @@
 //!     opt-out still suppresses.
 //!   - forbid: same promotion AND opt-out itself rejected via
 //!     `pool/stage-copy-accept-rejected-under-forbid`.
+//!
 //! Parse-time typo guard: unknown policy value fires
 //! `deploy/stage-copy-policy-unknown` with FixCarriesCandidates over
 //! the closed set.

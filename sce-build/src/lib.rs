@@ -4124,25 +4124,32 @@ pub struct MeshResult {
 /// stage's precondition is established by an earlier stage, and so that
 /// architectural errors surface before implementation errors:
 ///
-///   1. Parse deploy.yaml (device-shared `transports:` and per-target
-///      `bindings:` both validated at this stage; invalid values like
-///      `mode: pier` are rejected here, before any topology work).
-///   1b. Resolve external infrastructure config (SCE_MESH.md §13):
-///       load each device's vsomeip.json and resolve name-based binding
-///       references into numeric IDs before topology runs. Reserved
-///       SOME/IP ID key names in deploy.yaml are hard errors here.
-///   2. Collect <send> targets from the model (single pass)
-///   2a. Emit targetexpr warnings (dynamic targets cannot be statically resolved)
-///   2b. Resolve targets against deploy.yaml bindings
-///   2c. Pattern capability validation — architectural: is the bound transport
-///       even capable of the requested communication pattern? (e.g. zenoh
-///       cannot do request/reply). Runs BEFORE event coverage because a
-///       transport mismatch is a deploy.yaml design error.
-///   2d. Event coverage validation — implementation: does the receiver have
-///       a matching <transition> for every sent event?
-///   3. Transport codegen (template rendering). Device-shared session config
-///      is read directly from `DeployConfig` (no extraction/merging step —
-///      the schema makes shared config explicit).
+/// Step 1. Parse deploy.yaml (device-shared `transports:` and per-target
+///         `bindings:` both validated at this stage; invalid values like
+///         `mode: pier` are rejected here, before any topology work).
+///
+/// Step 1b. Resolve external infrastructure config (SCE_MESH.md §13):
+///          load each device's vsomeip.json and resolve name-based binding
+///          references into numeric IDs before topology runs. Reserved
+///          SOME/IP ID key names in deploy.yaml are hard errors here.
+///
+/// Step 2. Collect <send> targets from the model (single pass).
+///
+/// Step 2a. Emit targetexpr warnings (dynamic targets cannot be statically resolved).
+///
+/// Step 2b. Resolve targets against deploy.yaml bindings.
+///
+/// Step 2c. Pattern capability validation — architectural: is the bound transport
+///          even capable of the requested communication pattern? (e.g. zenoh
+///          cannot do request/reply). Runs BEFORE event coverage because a
+///          transport mismatch is a deploy.yaml design error.
+///
+/// Step 2d. Event coverage validation — implementation: does the receiver have
+///          a matching <transition> for every sent event?
+///
+/// Step 3. Transport codegen (template rendering). Device-shared session config
+///         is read directly from `DeployConfig` (no extraction/merging step —
+///         the schema makes shared config explicit).
 ///
 /// Inject server-response synthetic sends into the model.
 ///
@@ -6233,8 +6240,8 @@ topology:
     /// Watching-zenoh RFC §5.C B6-β: link kind c11 happy path. Same
     /// fixture as the rust happy test → C11 generator emits a header
     /// composing a `sce_forge_link_t` driver via the canonical Linux-
-    /// kernel separate-vtable shape (`const sce_forge_link_ops_t *ops`
-    /// + `void *self`). Asserts presence of the load-bearing tokens
+    /// kernel separate-vtable shape (`const sce_forge_link_ops_t *ops` +
+    /// `void *self`). Asserts presence of the load-bearing tokens
     /// (contract include + wrapper struct + init/rx/tx static-inline
     /// helpers + LINK_CLASS / LINK_FRAMER_REF / LINK_BACKPRESSURE
     /// macros + ops-pointer dispatch) so codegen drift fails the
@@ -8031,8 +8038,8 @@ topology:
     /// `KindClass::McuClass` kind (after Link). Authoring against
     /// cpp/kotlin/go/python raises `codegen/mcu-class-kind-on-non-mcu-language`
     /// via the existing A6 gate. C11 succeeds since B7-β landed the
-    /// c11 template (`__attribute__((section, aligned))` storage table
-    /// + sidecar linker fragment); the c11 happy-path emission is
+    /// c11 template (`__attribute__((section, aligned))` storage table +
+    /// sidecar linker fragment); the c11 happy-path emission is
     /// pinned by `buffer_pool_c11_happy_path_emits_storage_struct_and_linker_fragment`.
     #[test]
     fn buffer_pool_on_non_mcu_languages_rejects_via_codegen_matrix() {
@@ -8817,8 +8824,8 @@ topology:
     /// `tools/codegen/templates/forge/c/buffer_pool.h.jinja2`. The
     /// runtime header is the producer of the Layer 1 typestate macro
     /// family (`SCE_CONSUMABLE` / `SCE_CALLABLE_WHEN` /
-    /// `SCE_SET_TYPESTATE` / `SCE_PARAM_TYPESTATE` / `SCE_WARN_UNUSED`)
-    /// + the `sce_sample_t` borrow type; consumer builds compiling
+    /// `SCE_SET_TYPESTATE` / `SCE_PARAM_TYPESTATE` / `SCE_WARN_UNUSED`) +
+    /// the `sce_sample_t` borrow type; consumer builds compiling
     /// against just the per-pool header inherit those decls only when
     /// the include is present. In normal use the template emits the
     /// include unconditionally — this fixture drives the

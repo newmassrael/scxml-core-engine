@@ -1,6 +1,6 @@
 //! C3 Atomic B-γ1 integration tests — `<sce:capacity>` SCXML
-//! attribute + `default_event_queue_capacity` deploy.yaml fallback
-//! + Rust codegen template `pub const EVENT_QUEUE_CAPACITY`
+//! attribute + `default_event_queue_capacity` deploy.yaml fallback +
+//! Rust codegen template `pub const EVENT_QUEUE_CAPACITY`
 //! emission + `.cargo/config.toml` thumbv7em target registration.
 //!
 //! Watching-zenoh RFC §5.J.2 + §5.L (Q-RustNoStd-7 (a)). The

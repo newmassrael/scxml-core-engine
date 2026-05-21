@@ -390,8 +390,8 @@ pub struct InvokeSessionCommon {
     #[serde(default)]
     pub child_has_send_to_parent: bool,
     /// W3C SCXML 6.2 (test207): the child SCXML carries a non-empty
-    /// `<send delay="...">` so its codegen emitted a scheduler queue
-    /// + a `_tick` entry point. Parents that drive active children
+    /// `<send delay="...">` so its codegen emitted a scheduler queue +
+    /// a `_tick` entry point. Parents that drive active children
     /// from `_drive_active_children` need to call the child's `_tick`
     /// (not just `_step`) so scheduled child events promote onto the
     /// child's internal queue and drive its macrostep on the same

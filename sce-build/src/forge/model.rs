@@ -1309,8 +1309,8 @@ pub struct CodecField {
     pub embed_length_from: Option<String>,
     /// RFC §5.B B5-δ Surface F — arithmetic offset on the
     /// `length-field` source value. Authored as `sce:length-arith="+1"`
-    /// or `sce:length-arith="-1"` paired with `sce:bit-size="length-ref"`
-    /// + `sce:length-field="..."`. Effective payload length is
+    /// or `sce:length-arith="-1"` paired with `sce:bit-size="length-ref"` +
+    /// `sce:length-field="..."`. Effective payload length is
     /// `sibling_value + length_arith` bytes.
     ///
     /// First reachable consumer: zenoh-pico Scout/Hello/Init `zid`,
@@ -2639,8 +2639,8 @@ pub struct LinkModel {
     /// `<sce:events><sce:outbound .../></sce:events>` rows.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub outbound: Vec<LinkOutboundEvent>,
-    /// `<sce:rx-pool ref="...">` — RX buffer-pool name (RFC §5.C body
-    /// + §5.E B7-α schema-only). Authors who want zero-copy RX path
+    /// `<sce:rx-pool ref="...">` — RX buffer-pool name (RFC §5.C body +
+    /// §5.E B7-α schema-only). Authors who want zero-copy RX path
     /// declare a `<scxml sce:kind="buffer-pool" name="...">` document
     /// and bind it here. B7-α schema-only: parser accepts the element,
     /// emits the ref as a `pub const` on the generated wrapper. Cross-
@@ -2697,8 +2697,8 @@ pub struct LinkModel {
 /// Watching-zenoh RFC §5.C lines 814-820 — listener-link sibling-pair
 /// role discriminator. A `<sce:link>` whose deploy-resolved
 /// `domain_attrs.trust_class` is `session_arming` and whose machine
-/// source SCXML carries any `Accepting.*` substate (RFC §5.C line 806
-/// + `docs/session-fsm.md` §2.6) is modeled by codegen as TWO logical
+/// source SCXML carries any `Accepting.*` substate (RFC §5.C line 806 +
+/// `docs/session-fsm.md` §2.6) is modeled by codegen as TWO logical
 /// link-instances sharing one physical socket: the `Listener` half
 /// receives bytes pre-handshake (`session_arming` trust), the
 /// `Sibling` half receives them post-handshake (`established_session`

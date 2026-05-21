@@ -11826,8 +11826,8 @@ fn render_bounded_collection_rust(
 }
 
 /// Render a `<sce:kind="bounded-collection">` document for the C++
-/// backend (watching-zenoh RFC §5.L, C6-γ3). Emits `std::array<T, N>`
-/// + `std::bitset<N>` + `std::array<std::uint32_t, N>` generation
+/// backend (watching-zenoh RFC §5.L, C6-γ3). Emits `std::array<T, N>` +
+/// `std::bitset<N>` + `std::array<std::uint32_t, N>` generation
 /// counter per spec line 2576-2577. Handle is a POD struct over
 /// `uint32_t` (Q-γ3-Handle-cpp-shape (a) lock — ABI-parity with C11
 /// `uint32_t` and the Rust tuple newtype). The `iter()` axis is
@@ -13569,8 +13569,8 @@ fn render_procedure_c(
 ///
 /// Mirrors `render_procedure_cpp` for the same SCXML model but emits
 /// procedural C with a state struct + flat helper functions instead of
-/// a class. Helpers + service handler are passed by function pointer
-/// + `void *user_data` pair (no captures), `_event.data` is a
+/// a class. Helpers + service handler are passed by function pointer +
+/// `void *user_data` pair (no captures), `_event.data` is a
 /// stack-bounded `sce_forge_bytes_t`, and bytes-typed assigns wrap in
 /// the cap-check guard from RFC `claudedocs/rfc-forge-bytes-bounded.md`
 /// §3 B4. See `tools/codegen/templates/forge/c/procedure.h.jinja2`
@@ -19088,8 +19088,8 @@ fn render_codec_test_vector_sidecar(
 }
 
 /// Lower a `DecodedFieldValue` to the per-language literal expression
-/// that constructs the value at the test call site. Returns the Rust
-/// + C11 literal pair (other backends defer to closures).
+/// that constructs the value at the test call site. Returns the Rust +
+/// C11 literal pair (other backends defer to closures).
 fn lower_decoded_field_value(
     value: &crate::forge::model::DecodedFieldValue,
     sce_type: &crate::forge::model::SceType,

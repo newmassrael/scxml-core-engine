@@ -299,8 +299,8 @@ pub struct Engine<P: StatePolicy> {
     /// W3C SCXML C.2: HTTP send dispatch callback.
     ///
     /// Watching-zenoh RFC §5.J.2: HTTP is rejected upstream under `--no-std`
-    /// via `codegen/no-std-http-not-supported`, so the callback field + setter
-    /// + dispatcher are all gated to `!no_std`. Generated no_std code never
+    /// via `codegen/no-std-http-not-supported`, so the callback field + setter +
+    /// dispatcher are all gated to `!no_std`. Generated no_std code never
     /// emits a `perform_http_send` call site.
     #[cfg(not(feature = "no_std"))]
     pub(crate) on_http_send: Option<Box<dyn FnMut(HttpSendRequest) -> Option<HttpSendResponse>>>,

@@ -1,11 +1,11 @@
 //! C1 integration tests — Timer kind shape migration to watching-zenoh
-//! RFC §5.D line 880-886 + 2 spec-named codes (timer/period-below-tick-rate
-//! + timer/slot-overflow).
+//! RFC §5.D line 880-886 + 2 spec-named codes (timer/period-below-tick-rate +
+//! timer/slot-overflow).
 //!
 //! Test matrix:
 //! - Duration unit parsing: us / ms / s / m
-//! - Happy compile (Rust + C11) with full lifecycle (period + reset-on
-//!   + cancel-on + fire-event)
+//! - Happy compile (Rust + C11) with full lifecycle (period + reset-on +
+//!   cancel-on + fire-event)
 //! - Negative: missing <sce:period> → validation/missing-element
 //! - Negative: missing <sce:fire-event> → validation/missing-element
 //! - Negative: unsupported duration unit → validation/numeric-parse

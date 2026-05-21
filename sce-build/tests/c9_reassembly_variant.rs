@@ -28,8 +28,8 @@
 //!
 //! Cross-doc validators referencing §5.K
 //! `links.<name>.{mtu_bytes, expected_p99_bytes, domain_attrs.trust_class}`
-//! (6-8 codes including `reassembly/max-fragments-insufficient-for-mtu`
-//! + `reassembly/untrusted-link-binding`) defer to **C9-β** co-landing
+//! (6-8 codes including `reassembly/max-fragments-insufficient-for-mtu` +
+//! `reassembly/untrusted-link-binding`) defer to **C9-β** co-landing
 //! with C13. Codegen-side per-slot bitmap/deadline/peer-id emission +
 //! `reassembly/peer-id-not-zid-on-established-session` template-
 //! regression guard defer to **C9-γ**. Listener-link sibling-split
@@ -101,8 +101,8 @@ fn buffer_pool_explicit_default_variant_parses() {
     assert!(matches!(p.variant, BufferPoolVariant::Default));
 }
 
-/// Happy path: full reassembly-variant schema — `<sce:variant>reassembly`
-/// + all three required siblings present and positive. Verifies the
+/// Happy path: full reassembly-variant schema — `<sce:variant>reassembly` +
+/// all three required siblings present and positive. Verifies the
 /// sum-type `Reassembly(ReassemblyConfig { ... })` arm carries the
 /// three field values verbatim from the parsed XML body text.
 ///

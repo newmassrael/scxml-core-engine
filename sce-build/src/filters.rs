@@ -253,8 +253,8 @@ fn normalize_ws(text: String) -> String {
 /// W3C SCXML 5.2.2: read external data file referenced by `<data src="...">`.
 ///
 /// C11 codegen-time read (RFC §5.J.1 R3 zero-deps lock-in: no runtime
-/// fopen in sce-c-runtime). Mirrors cpp `FileLoadingHelper::loadExternalScript`
-/// + `DataModelInitHelper::initializeVariableFromSrc` by inlining the file
+/// fopen in sce-c-runtime). Mirrors cpp `FileLoadingHelper::loadExternalScript` +
+/// `DataModelInitHelper::initializeVariableFromSrc` by inlining the file
 /// content into the generated C source as a string literal. The downstream
 /// emit threads this content through the same eval+whitespace-fallback
 /// dispatch as inline `<data>` content (cpp `DataModelInitHelper::initializeVariable`
