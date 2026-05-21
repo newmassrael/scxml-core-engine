@@ -1173,9 +1173,7 @@ fn postprocess_cpp_inl(code: &str) -> String {
         // If this line is at 0 indent but should be deeper (orphaned action code),
         // re-indent it to match the current brace depth.
         let output_line = if line_indent == 0 && effective_depth > 0 {
-            let indent_str: String = std::iter::repeat(' ')
-                .take(effective_depth as usize * 4)
-                .collect();
+            let indent_str: String = " ".repeat(effective_depth as usize * 4);
             format!("{indent_str}{trimmed}")
         } else {
             line
