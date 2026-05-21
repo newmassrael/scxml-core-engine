@@ -1340,12 +1340,12 @@ fn transform_for_in_loops(input: &str) -> String {
                 let header = trim(&input[paren_start + 1..paren_end]);
 
                 // Strip var/let/const
-                let header_stripped = if header.starts_with("var ") {
-                    &header[4..]
-                } else if header.starts_with("let ") {
-                    &header[4..]
-                } else if header.starts_with("const ") {
-                    &header[6..]
+                let header_stripped = if let Some(rest) = header.strip_prefix("var ") {
+                    rest
+                } else if let Some(rest) = header.strip_prefix("let ") {
+                    rest
+                } else if let Some(rest) = header.strip_prefix("const ") {
+                    rest
                 } else {
                     header
                 };
@@ -1457,14 +1457,14 @@ fn transform_for_loops(input: &str) -> String {
                     if incr.ends_with("++") {
                         var_name = trim(&incr[..incr.len() - 2]).to_string();
                         is_incr = true;
-                    } else if incr.starts_with("++") {
-                        var_name = trim(&incr[2..]).to_string();
+                    } else if let Some(rest) = incr.strip_prefix("++") {
+                        var_name = trim(rest).to_string();
                         is_incr = true;
                     } else if incr.ends_with("--") {
                         var_name = trim(&incr[..incr.len() - 2]).to_string();
                         is_decr = true;
-                    } else if incr.starts_with("--") {
-                        var_name = trim(&incr[2..]).to_string();
+                    } else if let Some(rest) = incr.strip_prefix("--") {
+                        var_name = trim(rest).to_string();
                         is_decr = true;
                     }
                     if is_incr {
@@ -1487,12 +1487,12 @@ fn transform_for_loops(input: &str) -> String {
 
                 // Detect common pattern: for (var i = 0; i < arr.length; i++)
                 let mut used_numeric_for = false;
-                let init_trimmed = if init.starts_with("let ") {
-                    &init[4..]
-                } else if init.starts_with("var ") {
-                    &init[4..]
-                } else if init.starts_with("const ") {
-                    &init[6..]
+                let init_trimmed = if let Some(rest) = init.strip_prefix("let ") {
+                    rest
+                } else if let Some(rest) = init.strip_prefix("var ") {
+                    rest
+                } else if let Some(rest) = init.strip_prefix("const ") {
+                    rest
                 } else {
                     init
                 };
