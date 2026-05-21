@@ -13855,7 +13855,11 @@ fn axis1_camelcase_field_kinds_compile() {
         let dir = std::env::temp_dir().join(format!("sce_camelcase_kind_{kind}_{pid}_{id}"));
         std::fs::create_dir_all(&dir).expect("mkdir fixture");
 
-        let inner_body = if *kind == "tlv_chain" { tlv_entry } else { inner };
+        let inner_body = if *kind == "tlv_chain" {
+            tlv_entry
+        } else {
+            inner
+        };
         let parent_body = match *kind {
             "repeat" => repeat_parent,
             "embed" => embed_parent,
