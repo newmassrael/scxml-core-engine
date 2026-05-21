@@ -517,6 +517,6 @@ mod tests {
             },
         );
         assert!(ctx.lookup_func("temp_xform").is_some());
-        assert_eq!(ctx.lookup_func("missing").is_none(), true);
+        assert!(ctx.lookup_func("missing").is_none());
     }
 }

@@ -72,8 +72,8 @@ mod smoke_tests {
     #[test]
     fn debounce_until_filled() {
         let mut db: Debounce<bool, 3> = Debounce::new();
-        assert_eq!(db.update(true), true);
-        assert_eq!(db.update(false), false);
+        assert!(db.update(true));
+        assert!(!db.update(false));
     }
 
     struct DummyTimer;
