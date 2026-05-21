@@ -618,8 +618,7 @@ fn transform_instanceof_patterns(input: &str) -> String {
                         expr_end -= 1;
                     }
 
-                    let expr_start;
-                    if expr_end > i && b[expr_end - 1] == b')' {
+                    let expr_start = if expr_end > i && b[expr_end - 1] == b')' {
                         let mut depth: i32 = 1;
                         let mut k = expr_end as i64 - 2;
                         while k > i as i64 && depth > 0 {
@@ -632,14 +631,14 @@ fn transform_instanceof_patterns(input: &str) -> String {
                                 k -= 1;
                             }
                         }
-                        expr_start = k as usize;
+                        k as usize
                     } else {
                         let mut es = expr_end;
                         while es > i && is_word_char(b[es - 1]) {
                             es -= 1;
                         }
-                        expr_start = es;
-                    }
+                        es
+                    };
 
                     let expr = &input[expr_start..expr_end];
                     result.push_str(&input[i..expr_start]);
