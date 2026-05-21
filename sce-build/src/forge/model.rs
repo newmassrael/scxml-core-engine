@@ -840,7 +840,9 @@ impl ProcedureModel {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum Endian {
+    #[default]
     Big,
     Little,
     Native,
@@ -857,11 +859,6 @@ impl Endian {
     }
 }
 
-impl Default for Endian {
-    fn default() -> Self {
-        Self::Big
-    }
-}
 
 /// RFC §5.B B2 repeat primitive — element count source for a
 /// `BitSize::Repeat` field.
@@ -1867,7 +1864,9 @@ impl InterpolationMethod {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum OutOfBounds {
+    #[default]
     Clamp,
     Extrapolate,
     Error,
@@ -1892,11 +1891,6 @@ impl OutOfBounds {
     }
 }
 
-impl Default for OutOfBounds {
-    fn default() -> Self {
-        Self::Clamp
-    }
-}
 
 /// Axis definition for interpolation (breakpoints for one dimension).
 #[derive(Debug, Clone, Serialize)]

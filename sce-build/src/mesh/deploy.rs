@@ -139,16 +139,13 @@ pub struct ExternSymbolsConfig {
 /// minimum-merge build rather than a hard failure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum DistributabilityMode {
     Strict,
+    #[default]
     Permissive,
 }
 
-impl Default for DistributabilityMode {
-    fn default() -> Self {
-        DistributabilityMode::Permissive
-    }
-}
 
 // SCE_MESH.md §14 rules 6-10 — partitions schema.
 //
