@@ -1260,13 +1260,16 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 // W3C SCXML 6.5: Set _event before finalize execution
                 val eventName = eventNameOf(event) ?: ""
                 engine.setCurrentEvent(
-                    sid, eventName,
-                    data = metadata.data,
-                    type = metadata.type,
-                    sendId = metadata.sendId,
-                    origin = metadata.origin,
-                    originType = metadata.originType,
-                    invokeId = metadata.invokeId
+                    sid,
+                    SetCurrentEventArgs(
+                        name = eventName,
+                        data = metadata.data,
+                        type = metadata.type,
+                        sendId = metadata.sendId,
+                        origin = metadata.origin,
+                        originType = metadata.originType,
+                        invokeId = metadata.invokeId
+                    )
                 )
                 // W3C SCXML 6.5: Execute finalize script
                 try {

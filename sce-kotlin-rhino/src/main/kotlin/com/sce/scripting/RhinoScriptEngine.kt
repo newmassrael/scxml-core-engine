@@ -7,6 +7,7 @@ package com.sce.scripting
 
 import com.sce.runtime.ScriptEngineException
 import com.sce.runtime.ScxmlScriptEngine
+import com.sce.runtime.SetCurrentEventArgs
 import org.mozilla.javascript.Context
 import org.mozilla.javascript.ScriptableObject
 import org.mozilla.javascript.Scriptable
@@ -220,31 +221,22 @@ class RhinoScriptEngine : ScxmlScriptEngine {
         return name.all { it.isLetterOrDigit() || it == '_' }
     }
 
-    override fun setCurrentEvent(
-        sessionId: String,
-        name: String,
-        data: String,
-        type: String,
-        sendId: String,
-        origin: String,
-        originType: String,
-        invokeId: String
-    ) {
+    override fun setCurrentEvent(sessionId: String, args: SetCurrentEventArgs) {
         val session = sessions[sessionId] ?: return
         val cx = Context.enter()
         try {
             val scope = session.scope
             val eventObj = cx.newObject(scope)
-            ScriptableObject.putProperty(eventObj, "name", name)
-            ScriptableObject.putProperty(eventObj, "type", type.ifEmpty { "external" })
-            ScriptableObject.putProperty(eventObj, "sendid", sendId)
-            ScriptableObject.putProperty(eventObj, "origin", origin)
-            ScriptableObject.putProperty(eventObj, "origintype", originType)
-            ScriptableObject.putProperty(eventObj, "invokeid", invokeId)
+            ScriptableObject.putProperty(eventObj, "name", args.name)
+            ScriptableObject.putProperty(eventObj, "type", args.type.ifEmpty { "external" })
+            ScriptableObject.putProperty(eventObj, "sendid", args.sendId)
+            ScriptableObject.putProperty(eventObj, "origin", args.origin)
+            ScriptableObject.putProperty(eventObj, "origintype", args.originType)
+            ScriptableObject.putProperty(eventObj, "invokeid", args.invokeId)
 
             // W3C SCXML B.2: Parse event data using C++ parseEventData pattern
-            if (data.isNotEmpty()) {
-                val parsed = parseDataValueInternal(cx, scope, data)
+            if (args.data.isNotEmpty()) {
+                val parsed = parseDataValueInternal(cx, scope, args.data)
                 ScriptableObject.putProperty(eventObj, "data", parsed ?: Undefined.instance)
             } else {
                 ScriptableObject.putProperty(eventObj, "data", Undefined.instance)

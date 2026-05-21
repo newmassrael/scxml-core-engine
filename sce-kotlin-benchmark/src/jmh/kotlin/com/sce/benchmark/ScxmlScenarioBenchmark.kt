@@ -12,6 +12,7 @@
 package com.sce.benchmark
 
 import com.sce.runtime.ScxmlScriptEngine
+import com.sce.runtime.SetCurrentEventArgs
 import org.openjdk.jmh.annotations.*
 import java.util.concurrent.TimeUnit
 
@@ -65,13 +66,15 @@ open class ScxmlScenarioBenchmark {
         // 1. Set event metadata (W3C SCXML 5.10)
         scriptEngine.setCurrentEvent(
             sessionId,
-            name = "user.click",
-            data = "",
-            type = "external",
-            sendId = "",
-            origin = "#_scxml_bench",
-            originType = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor",
-            invokeId = ""
+            SetCurrentEventArgs(
+                name = "user.click",
+                data = "",
+                type = "external",
+                sendId = "",
+                origin = "#_scxml_bench",
+                originType = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor",
+                invokeId = ""
+            )
         )
 
         // 2. Evaluate guard conditions (W3C SCXML 5.9)
@@ -133,9 +136,11 @@ open class ScxmlScenarioBenchmark {
         // Event arrives
         scriptEngine.setCurrentEvent(
             sessionId,
-            name = "timer.elapsed",
-            data = "{\"count\": 5}",
-            type = "external"
+            SetCurrentEventArgs(
+                name = "timer.elapsed",
+                data = "{\"count\": 5}",
+                type = "external"
+            )
         )
 
         // Try transition 1 (not matching)

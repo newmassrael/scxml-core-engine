@@ -135,24 +135,9 @@ interface ScxmlScriptEngine {
      * and actions can access _event.name, _event.data, etc.
      *
      * @param sessionId Active session
-     * @param name Event name
-     * @param data Event data (empty string if none)
-     * @param type Event type ("external", "internal", "platform")
-     * @param sendId Send identifier (empty string if none)
-     * @param origin Origin URI (empty string if none)
-     * @param originType Origin type (empty string if none)
-     * @param invokeId Invoke identifier (empty string if none)
+     * @param args [SetCurrentEventArgs] bundling event name + 6 metadata fields
      */
-    fun setCurrentEvent(
-        sessionId: String,
-        name: String,
-        data: String = "",
-        type: String = "",
-        sendId: String = "",
-        origin: String = "",
-        originType: String = "",
-        invokeId: String = ""
-    )
+    fun setCurrentEvent(sessionId: String, args: SetCurrentEventArgs)
 
     /**
      * Clear the _event system variable.
@@ -226,6 +211,24 @@ interface ScxmlScriptEngine {
      */
     fun parseDataValue(sessionId: String, data: String): Any? = data
 }
+
+/**
+ * Parameter object for the W3C SCXML 5.10 [ScxmlScriptEngine.setCurrentEvent] boundary.
+ *
+ * Bundles the seven `_event.*` metadata fields (name + 6 metadata) that every
+ * script engine impl must surface before guard evaluation / action execution.
+ * Cross-language sibling: `SCE::SetCurrentEventArgs` in C++ and
+ * `sce_rust_runtime::SetCurrentEventArgs` in Rust.
+ */
+data class SetCurrentEventArgs(
+    val name: String,
+    val data: String = "",
+    val type: String = "",
+    val sendId: String = "",
+    val origin: String = "",
+    val originType: String = "",
+    val invokeId: String = ""
+)
 
 /**
  * Exception thrown by [ScxmlScriptEngine] on evaluation or execution failure.

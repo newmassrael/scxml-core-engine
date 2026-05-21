@@ -180,13 +180,16 @@
         val effectiveOrigin = if (meta.type == "external") meta.origin.ifEmpty { scriptSessionId ?: "" } else meta.origin
         val effectiveOriginType = if (meta.type == "external") meta.originType.ifEmpty { "http://www.w3.org/TR/scxml/#SCXMLEventProcessor" } else meta.originType
         engine.setCurrentEvent(
-            sid, eventName,
-            data = meta.data,
-            type = effectiveType,
-            sendId = meta.sendId,
-            origin = effectiveOrigin,
-            originType = effectiveOriginType,
-            invokeId = meta.invokeId
+            sid,
+            com.sce.runtime.SetCurrentEventArgs(
+                name = eventName,
+                data = meta.data,
+                type = effectiveType,
+                sendId = meta.sendId,
+                origin = effectiveOrigin,
+                originType = effectiveOriginType,
+                invokeId = meta.invokeId
+            )
         )
     }
 {% endif %}

@@ -9,6 +9,7 @@
 package com.sce.android.benchmark
 
 import com.sce.runtime.ScxmlScriptEngine
+import com.sce.runtime.SetCurrentEventArgs
 
 data class BenchmarkScenario(
     val name: String,
@@ -299,13 +300,15 @@ object BenchmarkScenarios {
                 body = { engine, sid ->
                     engine.setCurrentEvent(
                         sid,
-                        name = "user.click",
-                        data = "",
-                        type = "external",
-                        sendId = "",
-                        origin = "#_scxml_bench",
-                        originType = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor",
-                        invokeId = ""
+                        SetCurrentEventArgs(
+                            name = "user.click",
+                            data = "",
+                            type = "external",
+                            sendId = "",
+                            origin = "#_scxml_bench",
+                            originType = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor",
+                            invokeId = ""
+                        )
                     )
                     val guard = engine.evaluateCondition(sid, "_event.name == 'user.click'")
                     if (guard) {
@@ -355,9 +358,11 @@ object BenchmarkScenarios {
                 body = { engine, sid ->
                     engine.setCurrentEvent(
                         sid,
-                        name = "timer.elapsed",
-                        data = """{"count": 5}""",
-                        type = "external"
+                        SetCurrentEventArgs(
+                            name = "timer.elapsed",
+                            data = """{"count": 5}""",
+                            type = "external"
+                        )
                     )
                     engine.evaluateCondition(sid, "_event.name == 'error'")
                     val matched = engine.evaluateCondition(

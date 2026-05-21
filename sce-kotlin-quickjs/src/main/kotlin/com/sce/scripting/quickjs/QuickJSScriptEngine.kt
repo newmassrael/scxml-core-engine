@@ -14,6 +14,7 @@ package com.sce.scripting.quickjs
 
 import com.sce.runtime.ScriptEngineException
 import com.sce.runtime.ScxmlScriptEngine
+import com.sce.runtime.SetCurrentEventArgs
 import javax.xml.parsers.DocumentBuilderFactory
 import org.w3c.dom.Element
 import org.xml.sax.InputSource
@@ -215,31 +216,27 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
         session.declaredVars.add(rootVar)
     }
 
-    override fun setCurrentEvent(
-        sessionId: String, name: String, data: String,
-        type: String, sendId: String, origin: String,
-        originType: String, invokeId: String
-    ) {
+    override fun setCurrentEvent(sessionId: String, args: SetCurrentEventArgs) {
         val session = sessions[sessionId] ?: return
         val handle = session.handle
-        val typeStr = type.ifEmpty { "external" }
+        val typeStr = args.type.ifEmpty { "external" }
 
         // Build _event object with basic properties
         QuickJSNative.eval(handle, """
             _event = {
-                name: ${jsStringLiteral(name)},
+                name: ${jsStringLiteral(args.name)},
                 type: ${jsStringLiteral(typeStr)},
-                sendid: ${jsStringLiteral(sendId)},
-                origin: ${jsStringLiteral(origin)},
-                origintype: ${jsStringLiteral(originType)},
-                invokeid: ${jsStringLiteral(invokeId)},
+                sendid: ${jsStringLiteral(args.sendId)},
+                origin: ${jsStringLiteral(args.origin)},
+                origintype: ${jsStringLiteral(args.originType)},
+                invokeid: ${jsStringLiteral(args.invokeId)},
                 data: undefined
             }
         """.trimIndent())
 
         // Parse and set data if present
-        if (data.isNotEmpty()) {
-            setEventData(handle, data)
+        if (args.data.isNotEmpty()) {
+            setEventData(handle, args.data)
         }
     }
 

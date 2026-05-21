@@ -13,6 +13,7 @@ package com.sce.scripting.lua
 
 import com.sce.runtime.ScriptEngineException
 import com.sce.runtime.ScxmlScriptEngine
+import com.sce.runtime.SetCurrentEventArgs
 import javax.xml.parsers.DocumentBuilderFactory
 import org.w3c.dom.Element
 import org.xml.sax.InputSource
@@ -200,24 +201,20 @@ class LuaScriptEngine : ScxmlScriptEngine {
         session.declaredVars.add(location.split('.')[0])
     }
 
-    override fun setCurrentEvent(
-        sessionId: String, name: String, data: String,
-        type: String, sendId: String, origin: String,
-        originType: String, invokeId: String
-    ) {
+    override fun setCurrentEvent(sessionId: String, args: SetCurrentEventArgs) {
         val session = sessions[sessionId] ?: return
         val L = session.handle
 
         LuaNative.createTable(L, 0, 8)
-        pushField(L, "name", name)
-        pushField(L, "type", type.ifEmpty { "external" })
-        pushField(L, "sendid", sendId)
-        pushField(L, "origin", origin)
-        pushField(L, "origintype", originType)
-        pushField(L, "invokeid", invokeId)
+        pushField(L, "name", args.name)
+        pushField(L, "type", args.type.ifEmpty { "external" })
+        pushField(L, "sendid", args.sendId)
+        pushField(L, "origin", args.origin)
+        pushField(L, "origintype", args.originType)
+        pushField(L, "invokeid", args.invokeId)
 
-        if (data.isNotEmpty()) {
-            val parsed = parseDataValueInternal(L, data)
+        if (args.data.isNotEmpty()) {
+            val parsed = parseDataValueInternal(L, args.data)
             if (parsed) {
                 LuaNative.setField(L, -2, "data")
             } else {
