@@ -90,16 +90,19 @@ fn fsm_with_inline_script_fires_no_std_script_diagnostic() {
         .expect_err("script-bearing SCXML must reject under --no-std");
 
     match err {
-        ForgeError::Generate(GenerateError::CodegenNoStdScriptNotSupported {
-            document,
-            locations,
-        }) => {
-            assert_eq!(document, "script_fsm");
-            assert!(
-                !locations.is_empty(),
-                "locations summary must be non-empty for downstream agent dispatch"
-            );
-        }
+        ForgeError::Generate(boxed) => match *boxed {
+            GenerateError::CodegenNoStdScriptNotSupported {
+                document,
+                locations,
+            } => {
+                assert_eq!(document, "script_fsm");
+                assert!(
+                    !locations.is_empty(),
+                    "locations summary must be non-empty for downstream agent dispatch"
+                );
+            }
+            other => panic!("expected CodegenNoStdScriptNotSupported, got: {other:?}"),
+        },
         other => panic!("expected CodegenNoStdScriptNotSupported, got: {other:?}"),
     }
 }
@@ -111,13 +114,16 @@ fn fsm_with_http_send_fires_no_std_http_diagnostic() {
         .expect_err("HTTP-send SCXML must reject under --no-std");
 
     match err {
-        ForgeError::Generate(GenerateError::CodegenNoStdHttpNotSupported {
-            document,
-            locations,
-        }) => {
-            assert_eq!(document, "http_fsm");
-            assert!(locations.contains("BasicHTTPEventProcessor"));
-        }
+        ForgeError::Generate(boxed) => match *boxed {
+            GenerateError::CodegenNoStdHttpNotSupported {
+                document,
+                locations,
+            } => {
+                assert_eq!(document, "http_fsm");
+                assert!(locations.contains("BasicHTTPEventProcessor"));
+            }
+            other => panic!("expected CodegenNoStdHttpNotSupported, got: {other:?}"),
+        },
         other => panic!("expected CodegenNoStdHttpNotSupported, got: {other:?}"),
     }
 }
@@ -149,7 +155,8 @@ fn script_axis_fires_before_http_when_both_present() {
     assert!(
         matches!(
             err,
-            ForgeError::Generate(GenerateError::CodegenNoStdScriptNotSupported { .. })
+            ForgeError::Generate(ref boxed)
+                if matches!(**boxed, GenerateError::CodegenNoStdScriptNotSupported { .. })
         ),
         "script axis must fire before http axis when both apply, got: {err:?}"
     );
@@ -189,16 +196,19 @@ fn fsm_with_data_src_fires_no_std_fs_load_diagnostic() {
         .expect_err("doc with <data src> must reject under --no-std");
 
     match err {
-        ForgeError::Generate(GenerateError::CodegenNoStdFsLoadNotSupported {
-            document,
-            locations,
-        }) => {
-            assert_eq!(document, "fs_fsm");
-            assert!(
-                locations.contains("cfg.json"),
-                "locations summary must name the offending src URL, got {locations:?}"
-            );
-        }
+        ForgeError::Generate(boxed) => match *boxed {
+            GenerateError::CodegenNoStdFsLoadNotSupported {
+                document,
+                locations,
+            } => {
+                assert_eq!(document, "fs_fsm");
+                assert!(
+                    locations.contains("cfg.json"),
+                    "locations summary must name the offending src URL, got {locations:?}"
+                );
+            }
+            other => panic!("expected CodegenNoStdFsLoadNotSupported, got: {other:?}"),
+        },
         other => panic!("expected CodegenNoStdFsLoadNotSupported, got: {other:?}"),
     }
 }
@@ -215,9 +225,10 @@ fn fsm_with_multiple_data_src_reports_all_sites() {
     let err = validate_no_std_compatibility(&model, Path::new("multi_fs.scxml"))
         .expect_err("multi-src doc must reject under --no-std");
     let locations = match err {
-        ForgeError::Generate(GenerateError::CodegenNoStdFsLoadNotSupported {
-            locations, ..
-        }) => locations,
+        ForgeError::Generate(boxed) => match *boxed {
+            GenerateError::CodegenNoStdFsLoadNotSupported { locations, .. } => locations,
+            other => panic!("expected CodegenNoStdFsLoadNotSupported, got: {other:?}"),
+        },
         other => panic!("expected CodegenNoStdFsLoadNotSupported, got: {other:?}"),
     };
     assert!(locations.contains("cfg.json"), "missing cfg.json site");
@@ -250,16 +261,19 @@ fn fsm_with_invoke_fires_no_std_invoke_diagnostic() {
         .expect_err("doc with <invoke> must reject under --no-std");
 
     match err {
-        ForgeError::Generate(GenerateError::CodegenNoStdInvokeNotSupported {
-            document,
-            locations,
-        }) => {
-            assert_eq!(document, "invoke_fsm");
-            assert!(
-                locations.contains("invoke"),
-                "locations summary must mention `<invoke>`, got {locations:?}"
-            );
-        }
+        ForgeError::Generate(boxed) => match *boxed {
+            GenerateError::CodegenNoStdInvokeNotSupported {
+                document,
+                locations,
+            } => {
+                assert_eq!(document, "invoke_fsm");
+                assert!(
+                    locations.contains("invoke"),
+                    "locations summary must mention `<invoke>`, got {locations:?}"
+                );
+            }
+            other => panic!("expected CodegenNoStdInvokeNotSupported, got: {other:?}"),
+        },
         other => panic!("expected CodegenNoStdInvokeNotSupported, got: {other:?}"),
     }
 }
@@ -297,7 +311,8 @@ fn axis_ordering_is_fs_then_invoke_then_script_then_http() {
     assert!(
         matches!(
             err,
-            ForgeError::Generate(GenerateError::CodegenNoStdFsLoadNotSupported { .. })
+            ForgeError::Generate(ref boxed)
+                if matches!(**boxed, GenerateError::CodegenNoStdFsLoadNotSupported { .. })
         ),
         "fs-load axis must fire before invoke axis when both apply, got: {err:?}"
     );
@@ -311,12 +326,11 @@ fn document_basename_is_extracted_from_path() {
     // the SCXML file independent of the calling CWD.
     let err = validate_no_std_compatibility(&model, Path::new("/abs/some/path/widget_fsm.scxml"))
         .expect_err("script-bearing SCXML must reject");
-    if let ForgeError::Generate(GenerateError::CodegenNoStdScriptNotSupported {
-        document, ..
-    }) = err
-    {
-        assert_eq!(document, "widget_fsm");
-    } else {
+    let ForgeError::Generate(boxed) = err else {
         panic!("unexpected error variant");
-    }
+    };
+    let GenerateError::CodegenNoStdScriptNotSupported { document, .. } = *boxed else {
+        panic!("unexpected error variant");
+    };
+    assert_eq!(document, "widget_fsm");
 }

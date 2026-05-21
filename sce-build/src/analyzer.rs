@@ -609,12 +609,12 @@ pub fn can_generate_static(model: &SCXMLModel) -> Result<(), crate::forge::error
         // without preserving the metadata). Both fields stay None;
         // C++ side captures detail at parser-throw time. The drift
         // test pins both surfaces emit the same wire code.
-        return Err(ForgeError::Scxml(
+        return Err(ForgeError::Scxml(Box::new(
             ScxmlSemanticError::TopLevelScriptUnloaded {
                 index: None,
                 src: None,
             },
-        ));
+        )));
     }
     if model.initial.is_empty() {
         // Genuine dynamic-feature: runtime default resolution per
@@ -622,10 +622,12 @@ pub fn can_generate_static(model: &SCXMLModel) -> Result<(), crate::forge::error
         // has no equivalent fallback. The Interpreter would NOT
         // reject this document — it's a codegen-pipeline limitation,
         // not a semantic violation.
-        return Err(ForgeError::Validation(ValidationError::DynamicFeatures {
-            name: model.name.clone(),
-            reason: "no initial state (runtime default resolution required)".to_string(),
-        }));
+        return Err(ForgeError::Validation(Box::new(
+            ValidationError::DynamicFeatures {
+                name: model.name.clone(),
+                reason: "no initial state (runtime default resolution required)".to_string(),
+            },
+        )));
     }
     let initial_states: Vec<&str> = model.initial.split_whitespace().collect();
     let all_known = if initial_states.len() > 1 {
@@ -638,11 +640,13 @@ pub fn can_generate_static(model: &SCXMLModel) -> Result<(), crate::forge::error
         // because §3.3 cannot resolve a non-existent state id. The
         // available list feeds the structured `ReplaceOneOf` fix.
         let available: Vec<String> = model.states.keys().cloned().collect();
-        return Err(ForgeError::Scxml(ScxmlSemanticError::InitialStateUnknown {
-            state_id: model.initial.clone(),
-            scope: InitialStateScope::DocumentRoot,
-            available,
-        }));
+        return Err(ForgeError::Scxml(Box::new(
+            ScxmlSemanticError::InitialStateUnknown {
+                state_id: model.initial.clone(),
+                scope: InitialStateScope::DocumentRoot,
+                available,
+            },
+        )));
     }
     Ok(())
 }
@@ -803,13 +807,18 @@ mod tests {
         let err = can_generate_static(&model)
             .expect_err("no initial attribute must surface a precondition failure");
         match err {
-            ForgeError::Validation(ValidationError::DynamicFeatures { name, reason }) => {
-                assert_eq!(name, "probe");
-                assert_eq!(
-                    reason,
-                    "no initial state (runtime default resolution required)"
-                );
-            }
+            ForgeError::Validation(boxed) => match *boxed {
+                ValidationError::DynamicFeatures { name, reason } => {
+                    assert_eq!(name, "probe");
+                    assert_eq!(
+                        reason,
+                        "no initial state (runtime default resolution required)"
+                    );
+                }
+                other => panic!(
+                    "expected ValidationError::DynamicFeatures for no-initial path, got: {other:?}"
+                ),
+            },
             other => panic!(
                 "expected ValidationError::DynamicFeatures for no-initial path, got: {other:?}"
             ),
@@ -829,15 +838,18 @@ mod tests {
 
         let err = can_generate_static(&model).expect_err("undeclared initial must reject");
         match err {
-            ForgeError::Scxml(ScxmlSemanticError::InitialStateUnknown {
-                state_id,
-                scope,
-                available,
-            }) => {
-                assert_eq!(state_id, "nope");
-                assert!(matches!(scope, InitialStateScope::DocumentRoot));
-                assert_eq!(available, vec!["s1".to_string()]);
-            }
+            ForgeError::Scxml(boxed) => match *boxed {
+                ScxmlSemanticError::InitialStateUnknown {
+                    state_id,
+                    scope,
+                    available,
+                } => {
+                    assert_eq!(state_id, "nope");
+                    assert!(matches!(scope, InitialStateScope::DocumentRoot));
+                    assert_eq!(available, vec!["s1".to_string()]);
+                }
+                other => panic!("expected ScxmlSemanticError::InitialStateUnknown, got: {other:?}"),
+            },
             other => panic!("expected ScxmlSemanticError::InitialStateUnknown, got: {other:?}"),
         }
     }
@@ -855,13 +867,18 @@ mod tests {
         let err =
             can_generate_static(&model).expect_err("document_rejected must surface a typed error");
         match err {
-            ForgeError::Scxml(ScxmlSemanticError::TopLevelScriptUnloaded { index, src }) => {
-                // Analyzer path doesn't have the failing script's
-                // metadata — both fields stay None per RFC §W5 D2
-                // payload-asymmetry note.
-                assert!(index.is_none());
-                assert!(src.is_none());
-            }
+            ForgeError::Scxml(boxed) => match *boxed {
+                ScxmlSemanticError::TopLevelScriptUnloaded { index, src } => {
+                    // Analyzer path doesn't have the failing script's
+                    // metadata — both fields stay None per RFC §W5 D2
+                    // payload-asymmetry note.
+                    assert!(index.is_none());
+                    assert!(src.is_none());
+                }
+                other => {
+                    panic!("expected ScxmlSemanticError::TopLevelScriptUnloaded, got: {other:?}")
+                }
+            },
             other => panic!("expected ScxmlSemanticError::TopLevelScriptUnloaded, got: {other:?}"),
         }
     }

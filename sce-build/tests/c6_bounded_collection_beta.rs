@@ -78,15 +78,19 @@ fn assert_validator_silent_passed(
     match result {
         Ok(_) => {} // C6-γ landed — validator pass + codegen succeeded.
         Err(located) => match &located.error {
-            ForgeError::Generate(GenerateError::CodegenGenericKindBackendEmitMissing {
-                kind,
-                ..
-            }) if kind == "bounded-collection" => {
-                // C6-γ not landed yet — codegen reached the BC emit
-                // site, which proves the C6-β validator passed (a
-                // validator failure would short-circuit before
-                // codegen).
-            }
+            ForgeError::Generate(boxed) => match boxed.as_ref() {
+                GenerateError::CodegenGenericKindBackendEmitMissing { kind, .. }
+                    if kind == "bounded-collection" =>
+                {
+                    // C6-γ not landed yet — codegen reached the BC emit
+                    // site, which proves the C6-β validator passed (a
+                    // validator failure would short-circuit before
+                    // codegen).
+                }
+                other => panic!(
+                    "C6-β validator must silent-pass; got an unrelated error: {other:?}"
+                ),
+            },
             other => panic!("C6-β validator must silent-pass; got an unrelated error: {other:?}"),
         },
     }
@@ -323,19 +327,22 @@ fn element_type_not_a_kind_unknown_fires() {
     };
 
     match &err.error {
-        ForgeError::Validation(ValidationError::CollectionElementTypeNotAKind {
-            collection_name,
-            element_type,
-            candidates,
-            ..
-        }) => {
-            assert_eq!(collection_name, "local_sub_table");
-            assert_eq!(element_type, "nonexistent_entry");
-            assert!(
-                candidates.is_empty(),
-                "no codec/procedure docs in the build → empty candidate list"
-            );
-        }
+        ForgeError::Validation(boxed) => match boxed.as_ref() {
+            ValidationError::CollectionElementTypeNotAKind {
+                collection_name,
+                element_type,
+                candidates,
+                ..
+            } => {
+                assert_eq!(collection_name, "local_sub_table");
+                assert_eq!(element_type, "nonexistent_entry");
+                assert!(
+                    candidates.is_empty(),
+                    "no codec/procedure docs in the build → empty candidate list"
+                );
+            }
+            other => panic!("expected CollectionElementTypeNotAKind, got {other:?}"),
+        },
         other => panic!("expected CollectionElementTypeNotAKind, got {other:?}"),
     }
 }
@@ -381,18 +388,21 @@ fn element_type_not_a_kind_resolves_to_link_fires() {
     };
 
     match &err.error {
-        ForgeError::Validation(ValidationError::CollectionElementTypeNotAKind {
-            element_type,
-            candidates,
-            ..
-        }) => {
-            assert_eq!(element_type, "wire_endpoint");
-            assert_eq!(
+        ForgeError::Validation(boxed) => match boxed.as_ref() {
+            ValidationError::CollectionElementTypeNotAKind {
+                element_type,
                 candidates,
-                &vec!["subscription_entry".to_string()],
-                "codec doc surfaces as the legal alternative"
-            );
-        }
+                ..
+            } => {
+                assert_eq!(element_type, "wire_endpoint");
+                assert_eq!(
+                    candidates,
+                    &vec!["subscription_entry".to_string()],
+                    "codec doc surfaces as the legal alternative"
+                );
+            }
+            other => panic!("expected CollectionElementTypeNotAKind, got {other:?}"),
+        },
         other => panic!("expected CollectionElementTypeNotAKind, got {other:?}"),
     }
 }
@@ -428,24 +438,27 @@ fn index_by_field_missing_fires() {
     };
 
     match &err.error {
-        ForgeError::Validation(ValidationError::CollectionIndexByFieldMissing {
-            collection_name,
-            field,
-            element_type,
-            element_kind,
-            candidates,
-            ..
-        }) => {
-            assert_eq!(collection_name, "local_sub_table");
-            assert_eq!(field, "key_id");
-            assert_eq!(element_type, "subscription_entry");
-            assert_eq!(element_kind, "codec");
-            assert_eq!(
+        ForgeError::Validation(boxed) => match boxed.as_ref() {
+            ValidationError::CollectionIndexByFieldMissing {
+                collection_name,
+                field,
+                element_type,
+                element_kind,
                 candidates,
-                &vec!["callback_id".to_string(), "key_expr_id".to_string(),],
-                "sorted declared codec fields"
-            );
-        }
+                ..
+            } => {
+                assert_eq!(collection_name, "local_sub_table");
+                assert_eq!(field, "key_id");
+                assert_eq!(element_type, "subscription_entry");
+                assert_eq!(element_kind, "codec");
+                assert_eq!(
+                    candidates,
+                    &vec!["callback_id".to_string(), "key_expr_id".to_string(),],
+                    "sorted declared codec fields"
+                );
+            }
+            other => panic!("expected CollectionIndexByFieldMissing, got {other:?}"),
+        },
         other => panic!("expected CollectionIndexByFieldMissing, got {other:?}"),
     }
 }
@@ -481,11 +494,12 @@ fn multi_writer_without_atomic_extern_fires() {
     };
 
     match &err.error {
-        ForgeError::Validation(ValidationError::CollectionMultiWriterWithoutAtomics {
-            collection_name,
-        }) => {
-            assert_eq!(collection_name, "local_sub_table");
-        }
+        ForgeError::Validation(boxed) => match boxed.as_ref() {
+            ValidationError::CollectionMultiWriterWithoutAtomics { collection_name } => {
+                assert_eq!(collection_name, "local_sub_table");
+            }
+            other => panic!("expected CollectionMultiWriterWithoutAtomics, got {other:?}"),
+        },
         other => panic!("expected CollectionMultiWriterWithoutAtomics, got {other:?}"),
     }
 }

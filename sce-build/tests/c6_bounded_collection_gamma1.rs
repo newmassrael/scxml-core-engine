@@ -96,28 +96,31 @@ fn assert_validator_passed(scxml: &str, deploy_yaml: &str, target_machine: Optio
     match result {
         Ok(_) => {}
         Err(located) => match &located.error {
-            ForgeError::Generate(
+            ForgeError::Generate(boxed) => match boxed.as_ref() {
                 sce_build::forge::error::GenerateError::CodegenGenericKindBackendEmitMissing {
                     kind,
                     ..
-                },
-            ) if kind == "bounded-collection" => {
-                // Pre-γ2 deferred-template fallback — kept for other
-                // backends still on the matrix's `false` arm.
-            }
-            ForgeError::Generate(sce_build::forge::error::GenerateError::InvalidConfig(msg))
-                if msg.contains("bounded-collection") && msg.contains("resolution missing") =>
-            {
-                // γ2 render-time gate: γ1 validator passed (silent-
-                // skipped per Q-η5 (a)) but the codegen layer has no
-                // resolution to consume. The BC was designed for a
-                // different target machine OR no deploy was supplied,
-                // so γ1 deliberately left the value unresolved. The
-                // assertion target is "γ1 silently passed"; γ2's
-                // resolution gap on these silent-skip paths is the
-                // expected downstream consequence, not a validator
-                // failure.
-            }
+                } if kind == "bounded-collection" => {
+                    // Pre-γ2 deferred-template fallback — kept for other
+                    // backends still on the matrix's `false` arm.
+                }
+                sce_build::forge::error::GenerateError::InvalidConfig(msg)
+                    if msg.contains("bounded-collection") && msg.contains("resolution missing") =>
+                {
+                    // γ2 render-time gate: γ1 validator passed (silent-
+                    // skipped per Q-η5 (a)) but the codegen layer has no
+                    // resolution to consume. The BC was designed for a
+                    // different target machine OR no deploy was supplied,
+                    // so γ1 deliberately left the value unresolved. The
+                    // assertion target is "γ1 silently passed"; γ2's
+                    // resolution gap on these silent-skip paths is the
+                    // expected downstream consequence, not a validator
+                    // failure.
+                }
+                other => {
+                    panic!("C6-γ1 validator must silent-pass; got unrelated error: {other:?}")
+                }
+            },
             other => panic!("C6-γ1 validator must silent-pass; got unrelated error: {other:?}"),
         },
     }
@@ -182,27 +185,30 @@ fn unresolved_limit_fires() {
     };
 
     match &err.error {
-        ForgeError::Validation(ValidationError::CollectionCapacityUnresolved {
-            collection_name,
-            key,
-            machine,
-            limit,
-            candidates,
-            ..
-        }) => {
-            assert_eq!(collection_name, "local_sub_table");
-            assert_eq!(key, "machines.mcu_node.limits.local_subscriptions");
-            assert_eq!(machine, "mcu_node");
-            assert_eq!(limit, "local_subscriptions");
-            assert_eq!(
+        ForgeError::Validation(boxed) => match boxed.as_ref() {
+            ValidationError::CollectionCapacityUnresolved {
+                collection_name,
+                key,
+                machine,
+                limit,
                 candidates,
-                &vec![
-                    "in_flight_reassembly".to_string(),
-                    "subscription_table".to_string(),
-                ],
-                "candidates must be sorted declared limit names"
-            );
-        }
+                ..
+            } => {
+                assert_eq!(collection_name, "local_sub_table");
+                assert_eq!(key, "machines.mcu_node.limits.local_subscriptions");
+                assert_eq!(machine, "mcu_node");
+                assert_eq!(limit, "local_subscriptions");
+                assert_eq!(
+                    candidates,
+                    &vec![
+                        "in_flight_reassembly".to_string(),
+                        "subscription_table".to_string(),
+                    ],
+                    "candidates must be sorted declared limit names"
+                );
+            }
+            other => panic!("expected CollectionCapacityUnresolved, got {other:?}"),
+        },
         other => panic!("expected CollectionCapacityUnresolved, got {other:?}"),
     }
 }
@@ -257,23 +263,26 @@ fn compile_const_silent_skips_without_deploy() {
     match result {
         Ok(_) => {}
         Err(located) => match &located.error {
-            ForgeError::Generate(
+            ForgeError::Generate(boxed) => match boxed.as_ref() {
                 sce_build::forge::error::GenerateError::CodegenGenericKindBackendEmitMissing {
                     kind,
                     ..
-                },
-            ) if kind == "bounded-collection" => {
-                // Pre-γ2 deferred-template fallback — kept for other
-                // backends still on the matrix's `false` arm.
-            }
-            ForgeError::Generate(sce_build::forge::error::GenerateError::InvalidConfig(msg))
-                if msg.contains("bounded-collection") && msg.contains("resolution missing") =>
-            {
-                // γ2 render-time gate: single-file deploy-aware path
-                // has no deploy.yaml, so the deploy-key cannot
-                // resolve. γ1 validator silent-skipped per Q-η5 (a);
-                // γ2 surfaces the resolution gap at codegen time.
-            }
+                } if kind == "bounded-collection" => {
+                    // Pre-γ2 deferred-template fallback — kept for other
+                    // backends still on the matrix's `false` arm.
+                }
+                sce_build::forge::error::GenerateError::InvalidConfig(msg)
+                    if msg.contains("bounded-collection") && msg.contains("resolution missing") =>
+                {
+                    // γ2 render-time gate: single-file deploy-aware path
+                    // has no deploy.yaml, so the deploy-key cannot
+                    // resolve. γ1 validator silent-skipped per Q-η5 (a);
+                    // γ2 surfaces the resolution gap at codegen time.
+                }
+                other => panic!(
+                    "single-file path must silent-skip validator; got unrelated error: {other:?}"
+                ),
+            },
             other => panic!(
                 "single-file path must silent-skip validator; got unrelated error: {other:?}"
             ),

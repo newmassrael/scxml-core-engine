@@ -85,10 +85,13 @@ fn worker_missing_link_rx_rejected() {
 </scxml>"##;
     let err = parse(xml, "rx_loop").expect_err("missing link-rx must reject");
     match err.error {
-        ForgeError::Validation(ValidationError::MissingElement {
-            kind: ForgeKind::Worker,
-            element,
-        }) => assert_eq!(element, "sce:link-rx"),
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::MissingElement {
+                kind: ForgeKind::Worker,
+                element,
+            } => assert_eq!(element, "sce:link-rx"),
+            other => panic!("expected MissingElement(sce:link-rx), got {other:?}"),
+        },
         other => panic!("expected MissingElement(sce:link-rx), got {other:?}"),
     }
 }
@@ -104,10 +107,13 @@ fn worker_missing_inbox_rejected() {
 </scxml>"##;
     let err = parse(xml, "rx_loop").expect_err("missing inbox must reject");
     match err.error {
-        ForgeError::Validation(ValidationError::MissingElement {
-            kind: ForgeKind::Worker,
-            element,
-        }) => assert_eq!(element, "sce:inbox"),
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::MissingElement {
+                kind: ForgeKind::Worker,
+                element,
+            } => assert_eq!(element, "sce:inbox"),
+            other => panic!("expected MissingElement(sce:inbox), got {other:?}"),
+        },
         other => panic!("expected MissingElement(sce:inbox), got {other:?}"),
     }
 }
@@ -133,10 +139,15 @@ fn worker_inbox_depth_zero_rejected() {
         // Layer 1 (XSD): xs:positiveInteger restriction rejects "0".
         ForgeError::Xml(_) => {}
         // Layer 2 (parser): the `depth == 0` guard inside `parse_worker`.
-        ForgeError::Validation(ValidationError::InvalidAttribute { element, attr, .. }) => {
-            assert_eq!(element, "<sce:inbox>");
-            assert_eq!(attr, "depth");
-        }
+        ForgeError::Validation(boxed) => match boxed.as_ref() {
+            ValidationError::InvalidAttribute { element, attr, .. } => {
+                assert_eq!(element, "<sce:inbox>");
+                assert_eq!(attr, "depth");
+            }
+            other => panic!(
+                "expected XSD positive-integer rejection or parser InvalidAttribute, got {other:?}"
+            ),
+        },
         other => panic!(
             "expected XSD positive-integer rejection or parser InvalidAttribute, got {other:?}"
         ),
@@ -158,22 +169,25 @@ fn worker_import_kind_worker_fires_layer1_guard() {
 </scxml>"##;
     let err = parse(xml, "rx_loop").expect_err("worker-kind import must reject");
     match &err.error {
-        ForgeError::Validation(ValidationError::WorkerSharedMutableState {
-            worker_name,
-            reason,
-        }) => {
-            assert_eq!(worker_name, "rx_loop");
-            match reason {
-                WorkerSharedStateReason::WorkerImportForbidden {
-                    imported_alias,
-                    imported_src,
-                } => {
-                    assert_eq!(imported_alias, "tx_loop");
-                    assert_eq!(imported_src, "tx_loop.scxml");
+        ForgeError::Validation(boxed) => match boxed.as_ref() {
+            ValidationError::WorkerSharedMutableState {
+                worker_name,
+                reason,
+            } => {
+                assert_eq!(worker_name, "rx_loop");
+                match reason {
+                    WorkerSharedStateReason::WorkerImportForbidden {
+                        imported_alias,
+                        imported_src,
+                    } => {
+                        assert_eq!(imported_alias, "tx_loop");
+                        assert_eq!(imported_src, "tx_loop.scxml");
+                    }
+                    other => panic!("expected WorkerImportForbidden, got {other:?}"),
                 }
-                other => panic!("expected WorkerImportForbidden, got {other:?}"),
             }
-        }
+            other => panic!("expected WorkerSharedMutableState, got {other:?}"),
+        },
         other => panic!("expected WorkerSharedMutableState, got {other:?}"),
     }
     // Diagnostic must surface as `worker/shared-mutable-state` per
@@ -209,17 +223,22 @@ fn worker_import_kind_worker_minimal_attrs_fires_layer1() {
         ForgeError::Xml(_) => {}
         // Parser-layer rejection (Rust guard runs ahead of import-spec
         // parser, surfaces WorkerSharedMutableState with empty attrs).
-        ForgeError::Validation(ValidationError::WorkerSharedMutableState {
-            reason:
-                WorkerSharedStateReason::WorkerImportForbidden {
-                    imported_alias,
-                    imported_src,
-                },
-            ..
-        }) => {
-            assert_eq!(imported_alias, "");
-            assert_eq!(imported_src, "");
-        }
+        ForgeError::Validation(boxed) => match boxed.as_ref() {
+            ValidationError::WorkerSharedMutableState {
+                reason:
+                    WorkerSharedStateReason::WorkerImportForbidden {
+                        imported_alias,
+                        imported_src,
+                    },
+                ..
+            } => {
+                assert_eq!(imported_alias, "");
+                assert_eq!(imported_src, "");
+            }
+            other => panic!(
+                "expected XSD missing-attr rejection or parser WorkerImportForbidden, got {other:?}"
+            ),
+        },
         other => panic!(
             "expected XSD missing-attr rejection or parser WorkerImportForbidden, got {other:?}"
         ),
@@ -262,21 +281,24 @@ fn worker_body_assign_to_foreign_namespace_fires_layer2() {
 </scxml>"##;
     let err = parse(xml, "rx_loop").expect_err("foreign-namespace assign must reject");
     match err.error {
-        ForgeError::Validation(ValidationError::WorkerSharedMutableState {
-            reason:
-                WorkerSharedStateReason::BodyForeignNamespace {
-                    element,
-                    attr,
-                    value,
-                    foreign_prefix,
-                },
-            ..
-        }) => {
-            assert_eq!(element, "assign");
-            assert_eq!(attr, "location");
-            assert_eq!(value, "other_worker.counter");
-            assert_eq!(foreign_prefix, "other_worker");
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::WorkerSharedMutableState {
+                reason:
+                    WorkerSharedStateReason::BodyForeignNamespace {
+                        element,
+                        attr,
+                        value,
+                        foreign_prefix,
+                    },
+                ..
+            } => {
+                assert_eq!(element, "assign");
+                assert_eq!(attr, "location");
+                assert_eq!(value, "other_worker.counter");
+                assert_eq!(foreign_prefix, "other_worker");
+            }
+            other => panic!("expected BodyForeignNamespace, got {other:?}"),
+        },
         other => panic!("expected BodyForeignNamespace, got {other:?}"),
     }
 }

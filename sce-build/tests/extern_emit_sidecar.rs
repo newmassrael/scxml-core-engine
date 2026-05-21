@@ -210,13 +210,13 @@ fn extern_on_kotlin_rejected_via_mcu_class_family() {
         Err(e) => e,
     };
     match err {
-        ForgeError::Generate(GenerateError::CodegenMcuClassKindOnNonMcuLanguage {
-            kind,
-            language,
-        }) => {
-            assert_eq!(kind, "<sce:extern>");
-            assert_eq!(language, "kotlin");
-        }
+        ForgeError::Generate(boxed) => match *boxed {
+            GenerateError::CodegenMcuClassKindOnNonMcuLanguage { kind, language } => {
+                assert_eq!(kind, "<sce:extern>");
+                assert_eq!(language, "kotlin");
+            }
+            other => panic!("expected CodegenMcuClassKindOnNonMcuLanguage, got {other:?}"),
+        },
         other => panic!("expected CodegenMcuClassKindOnNonMcuLanguage, got {other:?}"),
     }
 }
@@ -232,8 +232,12 @@ fn extern_on_go_rejected_via_mcu_class_family() {
     };
     assert!(matches!(
         err,
-        ForgeError::Generate(GenerateError::CodegenMcuClassKindOnNonMcuLanguage { language, .. })
-            if language == "go"
+        ForgeError::Generate(ref boxed)
+            if matches!(
+                **boxed,
+                GenerateError::CodegenMcuClassKindOnNonMcuLanguage { ref language, .. }
+                    if language == "go"
+            )
     ));
 }
 
@@ -248,8 +252,12 @@ fn extern_on_python_rejected_via_mcu_class_family() {
     };
     assert!(matches!(
         err,
-        ForgeError::Generate(GenerateError::CodegenMcuClassKindOnNonMcuLanguage { language, .. })
-            if language == "python"
+        ForgeError::Generate(ref boxed)
+            if matches!(
+                **boxed,
+                GenerateError::CodegenMcuClassKindOnNonMcuLanguage { ref language, .. }
+                    if language == "python"
+            )
     ));
 }
 

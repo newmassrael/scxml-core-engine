@@ -185,14 +185,17 @@ fn on_sample_link_not_declared_fires_in_production() {
     };
 
     match err.error {
-        ForgeError::Validation(ValidationError::OnSampleLinkNotDeclared {
-            link,
-            candidates,
-            ..
-        }) => {
-            assert_eq!(link, "unknown_link");
-            assert_eq!(candidates, vec!["scout_link".to_string()]);
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::OnSampleLinkNotDeclared {
+                link,
+                candidates,
+                ..
+            } => {
+                assert_eq!(link, "unknown_link");
+                assert_eq!(candidates, vec!["scout_link".to_string()]);
+            }
+            other => panic!("expected OnSampleLinkNotDeclared, got: {other:?}"),
+        },
         other => panic!("expected OnSampleLinkNotDeclared, got: {other:?}"),
     }
 }
@@ -229,11 +232,12 @@ fn on_sample_sample_take_without_stage_pool_fires() {
     };
 
     match err.error {
-        ForgeError::Validation(ValidationError::PoolSampleTakeWithoutStagePool {
-            link, ..
-        }) => {
-            assert_eq!(link, "scout_link");
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::PoolSampleTakeWithoutStagePool { link, .. } => {
+                assert_eq!(link, "scout_link");
+            }
+            other => panic!("expected PoolSampleTakeWithoutStagePool, got: {other:?}"),
+        },
         other => panic!("expected PoolSampleTakeWithoutStagePool, got: {other:?}"),
     }
 }
@@ -285,14 +289,17 @@ fn on_sample_link_wrong_kind_fires() {
     };
 
     match err.error {
-        ForgeError::Validation(ValidationError::OnSampleLinkWrongKind {
-            link,
-            actual_kind,
-            ..
-        }) => {
-            assert_eq!(link, "scout_helper");
-            assert_eq!(actual_kind, "statechart");
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::OnSampleLinkWrongKind {
+                link,
+                actual_kind,
+                ..
+            } => {
+                assert_eq!(link, "scout_helper");
+                assert_eq!(actual_kind, "statechart");
+            }
+            other => panic!("expected OnSampleLinkWrongKind, got: {other:?}"),
+        },
         other => panic!("expected OnSampleLinkWrongKind, got: {other:?}"),
     }
 }
@@ -363,18 +370,21 @@ fn worker_doc_records_into_cross_doc_registry() {
     };
 
     match err.error {
-        ForgeError::Validation(ValidationError::OnSampleLinkWrongKind {
-            link,
-            actual_kind,
-            ..
-        }) => {
-            assert_eq!(link, "rx_loop");
-            assert_eq!(
-                actual_kind, "worker",
-                "registry must classify rx_loop as worker — \
-                 Atomic A's record_document Worker arm landed"
-            );
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::OnSampleLinkWrongKind {
+                link,
+                actual_kind,
+                ..
+            } => {
+                assert_eq!(link, "rx_loop");
+                assert_eq!(
+                    actual_kind, "worker",
+                    "registry must classify rx_loop as worker — \
+                     Atomic A's record_document Worker arm landed"
+                );
+            }
+            other => panic!("expected OnSampleLinkWrongKind, got: {other:?}"),
+        },
         other => panic!("expected OnSampleLinkWrongKind, got: {other:?}"),
     }
 }
@@ -571,7 +581,7 @@ fn c13_link_not_declared_in_deploy_fires_through_orchestrator() {
 
     // The orchestrator routes DeployError through ForgeError::Mesh.
     match err.error {
-        ForgeError::Mesh(ref mesh_err) => match mesh_err {
+        ForgeError::Mesh(ref boxed) => match boxed.as_ref() {
             sce_build::mesh::error::MeshError::Deploy(
                 sce_build::mesh::error::DeployError::LinkNotDeclaredInDeploy { link_name, .. },
             ) => {
@@ -631,16 +641,19 @@ fn c13_reassembly_slot_size_fires_through_orchestrator() {
     };
 
     match err.error {
-        ForgeError::Validation(ValidationError::MemReassemblySlotSizeBelowDeclaredMtu {
-            pool_name,
-            slot_size,
-            mtu_bytes,
-            ..
-        }) => {
-            assert_eq!(pool_name, "rx_data_pool");
-            assert_eq!(slot_size, 256);
-            assert_eq!(mtu_bytes, 1500);
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::MemReassemblySlotSizeBelowDeclaredMtu {
+                pool_name,
+                slot_size,
+                mtu_bytes,
+                ..
+            } => {
+                assert_eq!(pool_name, "rx_data_pool");
+                assert_eq!(slot_size, 256);
+                assert_eq!(mtu_bytes, 1500);
+            }
+            other => panic!("expected MemReassemblySlotSizeBelowDeclaredMtu, got: {other:?}"),
+        },
         other => panic!("expected MemReassemblySlotSizeBelowDeclaredMtu, got: {other:?}"),
     }
 }
@@ -693,7 +706,7 @@ fn c13_burst_absorption_fires_through_orchestrator() {
     };
 
     match err.error {
-        ForgeError::Mesh(ref mesh_err) => match mesh_err {
+        ForgeError::Mesh(ref boxed) => match boxed.as_ref() {
             sce_build::mesh::error::MeshError::Deploy(
                 sce_build::mesh::error::DeployError::LinkBurstAbsorptionInsufficient {
                     link_name,

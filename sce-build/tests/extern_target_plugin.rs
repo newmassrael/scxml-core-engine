@@ -142,19 +142,22 @@ symbols:
     };
 
     match err.error {
-        ForgeError::Validation(ValidationError::ExternTargetPluginSymbolConflict {
-            name,
-            plugin_path: emitted_path,
-        }) => {
-            assert_eq!(name, "sce_atomic_load_acquire_u32");
-            // The diagnostic carries the plugin path so consumers can
-            // open the offending YAML file.
-            assert_eq!(
-                emitted_path,
-                plugin_path.display().to_string(),
-                "plugin path must surface in diagnostic",
-            );
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::ExternTargetPluginSymbolConflict {
+                name,
+                plugin_path: emitted_path,
+            } => {
+                assert_eq!(name, "sce_atomic_load_acquire_u32");
+                // The diagnostic carries the plugin path so consumers can
+                // open the offending YAML file.
+                assert_eq!(
+                    emitted_path,
+                    plugin_path.display().to_string(),
+                    "plugin path must surface in diagnostic",
+                );
+            }
+            other => panic!("expected ExternTargetPluginSymbolConflict, got {other:?}"),
+        },
         other => panic!("expected ExternTargetPluginSymbolConflict, got {other:?}"),
     }
 }
@@ -194,7 +197,8 @@ symbols:
 
     assert!(matches!(
         err.error,
-        ForgeError::Validation(ValidationError::ExternTargetPluginSymbolConflict { .. }),
+        ForgeError::Validation(ref boxed)
+            if matches!(**boxed, ValidationError::ExternTargetPluginSymbolConflict { .. }),
     ));
 }
 
@@ -313,6 +317,7 @@ fn deploy_without_plugin_preserves_baseline_only_semantics() {
 
     assert!(matches!(
         err.error,
-        ForgeError::Validation(ValidationError::ExternSymbolNotInWhitelist { .. }),
+        ForgeError::Validation(ref boxed)
+            if matches!(**boxed, ValidationError::ExternSymbolNotInWhitelist { .. }),
     ));
 }

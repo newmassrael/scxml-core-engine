@@ -109,13 +109,16 @@ fn scxml_with_unknown_session_role_kind_rejects() {
         .parse_string(SCXML_UNKNOWN_KIND, "unknown_kind")
         .expect_err("unknown kind must reject at parse time");
     match err.error {
-        ForgeError::Validation(ValidationError::ScxmlUnknownSessionRoleKind { kind, allowed }) => {
-            assert_eq!(kind, "listener", "kind value must be echoed verbatim");
-            assert!(
-                allowed.iter().any(|s| s == "accept-side"),
-                "v1 vocabulary list must contain 'accept-side', got {allowed:?}"
-            );
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::ScxmlUnknownSessionRoleKind { kind, allowed } => {
+                assert_eq!(kind, "listener", "kind value must be echoed verbatim");
+                assert!(
+                    allowed.iter().any(|s| s == "accept-side"),
+                    "v1 vocabulary list must contain 'accept-side', got {allowed:?}"
+                );
+            }
+            other => panic!("expected ScxmlUnknownSessionRoleKind, got: {:?}", other),
+        },
         other => panic!("expected ScxmlUnknownSessionRoleKind, got: {:?}", other),
     }
 }
@@ -127,9 +130,15 @@ fn scxml_with_duplicate_session_role_kind_rejects() {
         .parse_string(SCXML_DUPLICATE_ROLE, "duplicate")
         .expect_err("duplicate role kind must reject at parse time");
     match err.error {
-        ForgeError::Validation(ValidationError::ScxmlDuplicateSessionRoleDeclaration { kind }) => {
-            assert_eq!(kind, "accept-side", "duplicated kind must be echoed");
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::ScxmlDuplicateSessionRoleDeclaration { kind } => {
+                assert_eq!(kind, "accept-side", "duplicated kind must be echoed");
+            }
+            other => panic!(
+                "expected ScxmlDuplicateSessionRoleDeclaration, got: {:?}",
+                other
+            ),
+        },
         other => panic!(
             "expected ScxmlDuplicateSessionRoleDeclaration, got: {:?}",
             other
@@ -144,10 +153,16 @@ fn scxml_session_role_missing_kind_attr_rejects() {
         .parse_string(SCXML_MISSING_KIND, "missing_kind")
         .expect_err("missing kind attribute must reject");
     match err.error {
-        ForgeError::Validation(ValidationError::MissingAttribute { element, attr }) => {
-            assert_eq!(element, "<sce:session-role>");
-            assert_eq!(attr, "kind");
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::MissingAttribute { element, attr } => {
+                assert_eq!(element, "<sce:session-role>");
+                assert_eq!(attr, "kind");
+            }
+            other => panic!(
+                "expected MissingAttribute on <sce:session-role>, got: {:?}",
+                other
+            ),
+        },
         other => panic!(
             "expected MissingAttribute on <sce:session-role>, got: {:?}",
             other

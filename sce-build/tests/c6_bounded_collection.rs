@@ -127,10 +127,15 @@ fn missing_element_type_rejects() {
   <sce:capacity const="8"/>
 </scxml>"##;
     let err = parse(xml, "local_sub_table").expect_err("missing element-type rejects");
-    let ForgeError::Validation(ValidationError::MissingElement { element, .. }) = err.error else {
-        panic!("expected MissingElement, got {:?}", err.error);
-    };
-    assert!(element.contains("element-type"));
+    match err.error {
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::MissingElement { element, .. } => {
+                assert!(element.contains("element-type"));
+            }
+            other => panic!("expected MissingElement, got {other:?}"),
+        },
+        other => panic!("expected MissingElement, got {other:?}"),
+    }
 }
 
 /// Negative: missing `<sce:capacity>` — required element.
@@ -143,10 +148,15 @@ fn missing_capacity_rejects() {
   <sce:element-type>SubscriptionEntry</sce:element-type>
 </scxml>"##;
     let err = parse(xml, "local_sub_table").expect_err("missing capacity rejects");
-    let ForgeError::Validation(ValidationError::MissingElement { element, .. }) = err.error else {
-        panic!("expected MissingElement, got {:?}", err.error);
-    };
-    assert!(element.contains("capacity"));
+    match err.error {
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::MissingElement { element, .. } => {
+                assert!(element.contains("capacity"));
+            }
+            other => panic!("expected MissingElement, got {other:?}"),
+        },
+        other => panic!("expected MissingElement, got {other:?}"),
+    }
 }
 
 /// Negative: `<sce:capacity const="0"/>` — zero is parse-rejected
@@ -161,12 +171,13 @@ fn capacity_zero_rejects() {
   <sce:capacity const="0"/>
 </scxml>"##;
     let err = parse(xml, "local_sub_table").expect_err("zero capacity rejects");
-    let ForgeError::Validation(ValidationError::InvalidAttribute { .. }) = err.error else {
-        panic!(
-            "expected InvalidAttribute for capacity=0, got {:?}",
-            err.error
-        );
-    };
+    match err.error {
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::InvalidAttribute { .. } => {}
+            other => panic!("expected InvalidAttribute for capacity=0, got {other:?}"),
+        },
+        other => panic!("expected InvalidAttribute for capacity=0, got {other:?}"),
+    }
 }
 
 /// Negative: `<sce:capacity/>` with neither `source/key` nor `const` —
@@ -181,12 +192,13 @@ fn capacity_no_source_rejects() {
   <sce:capacity/>
 </scxml>"##;
     let err = parse(xml, "local_sub_table").expect_err("empty capacity rejects");
-    let ForgeError::Validation(ValidationError::InvalidAttribute { .. }) = err.error else {
-        panic!(
-            "expected InvalidAttribute for empty capacity, got {:?}",
-            err.error
-        );
-    };
+    match err.error {
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::InvalidAttribute { .. } => {}
+            other => panic!("expected InvalidAttribute for empty capacity, got {other:?}"),
+        },
+        other => panic!("expected InvalidAttribute for empty capacity, got {other:?}"),
+    }
 }
 
 /// Spec-named diagnostic #1 — `collection/ordering-sorted-requires-
@@ -204,14 +216,14 @@ fn ordering_sorted_without_index_by_fires_spec_code() {
 </scxml>"##;
     let err =
         parse(xml, "local_sub_table").expect_err("sorted-by without index-by fires structure code");
-    let ForgeError::Validation(ValidationError::CollectionOrderingSortedRequiresIndexBy {
-        collection_name,
-    }) = &err.error
-    else {
-        panic!(
-            "expected CollectionOrderingSortedRequiresIndexBy, got {:?}",
-            err.error
-        );
+    let collection_name = match &err.error {
+        ForgeError::Validation(boxed) => match boxed.as_ref() {
+            ValidationError::CollectionOrderingSortedRequiresIndexBy { collection_name } => {
+                collection_name.clone()
+            }
+            other => panic!("expected CollectionOrderingSortedRequiresIndexBy, got {other:?}"),
+        },
+        other => panic!("expected CollectionOrderingSortedRequiresIndexBy, got {other:?}"),
     };
     assert_eq!(collection_name, "local_sub_table");
 
@@ -242,16 +254,18 @@ fn oldest_wins_with_sorted_by_fires_spec_code() {
 </scxml>"##;
     let err =
         parse(xml, "local_sub_table").expect_err("oldest-wins+sorted-by fires structure code");
-    let ForgeError::Validation(
-        ValidationError::CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion {
-            collection_name,
+    let collection_name = match &err.error {
+        ForgeError::Validation(boxed) => match boxed.as_ref() {
+            ValidationError::CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion {
+                collection_name,
+            } => collection_name.clone(),
+            other => panic!(
+                "expected CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion, got {other:?}"
+            ),
         },
-    ) = &err.error
-    else {
-        panic!(
-            "expected CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion, got {:?}",
-            err.error
-        );
+        other => panic!(
+            "expected CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion, got {other:?}"
+        ),
     };
     assert_eq!(collection_name, "local_sub_table");
 
@@ -275,10 +289,15 @@ fn unknown_overflow_policy_rejects() {
   <sce:on-overflow>bogus</sce:on-overflow>
 </scxml>"##;
     let err = parse(xml, "local_sub_table").expect_err("unknown overflow rejects");
-    let ForgeError::Validation(ValidationError::InvalidAttribute { value, .. }) = err.error else {
-        panic!("expected InvalidAttribute, got {:?}", err.error);
-    };
-    assert_eq!(value, "bogus");
+    match err.error {
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::InvalidAttribute { value, .. } => {
+                assert_eq!(value, "bogus");
+            }
+            other => panic!("expected InvalidAttribute, got {other:?}"),
+        },
+        other => panic!("expected InvalidAttribute, got {other:?}"),
+    }
 }
 
 /// Closed-enum acceptance check — bounded-collection appears in the

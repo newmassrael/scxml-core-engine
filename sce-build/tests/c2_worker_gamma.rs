@@ -295,13 +295,16 @@ topology:
         Err(e) => e,
     };
     match err {
-        ForgeError::Validation(ValidationError::WorkerSchedulerUnsupported {
-            worker_name,
-            machine,
-        }) => {
-            assert_eq!(worker_name, "rx_loop");
-            assert_eq!(machine, "mcu_node");
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::WorkerSchedulerUnsupported {
+                worker_name,
+                machine,
+            } => {
+                assert_eq!(worker_name, "rx_loop");
+                assert_eq!(machine, "mcu_node");
+            }
+            other => panic!("expected WorkerSchedulerUnsupported, got {other:?}"),
+        },
         other => panic!("expected WorkerSchedulerUnsupported, got {other:?}"),
     }
 }
@@ -437,15 +440,18 @@ topology:
         Err(e) => e.error,
     };
     match err {
-        ForgeError::Validation(ValidationError::WorkerInboxOrderingRelaxedAcrossCores {
-            worker_name,
-            producer_core,
-            consumer_core,
-        }) => {
-            assert_eq!(worker_name, "rx_loop");
-            assert_eq!(producer_core, 0);
-            assert_eq!(consumer_core, 1);
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::WorkerInboxOrderingRelaxedAcrossCores {
+                worker_name,
+                producer_core,
+                consumer_core,
+            } => {
+                assert_eq!(worker_name, "rx_loop");
+                assert_eq!(producer_core, 0);
+                assert_eq!(consumer_core, 1);
+            }
+            other => panic!("expected WorkerInboxOrderingRelaxedAcrossCores, got {other:?}"),
+        },
         other => panic!("expected WorkerInboxOrderingRelaxedAcrossCores, got {other:?}"),
     }
 }

@@ -95,9 +95,12 @@ fn reject_symbol_not_in_whitelist() {
     );
     let err = parse_fixture(&scxml).expect_err("must reject unknown symbol");
     match err {
-        ForgeError::Validation(ValidationError::ExternSymbolNotInWhitelist { name, .. }) => {
-            assert_eq!(name, "sce_does_not_exist_in_registry");
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::ExternSymbolNotInWhitelist { name, .. } => {
+                assert_eq!(name, "sce_does_not_exist_in_registry");
+            }
+            other => panic!("expected ExternSymbolNotInWhitelist, got {other:?}"),
+        },
         other => panic!("expected ExternSymbolNotInWhitelist, got {other:?}"),
     }
 }
@@ -111,15 +114,18 @@ fn reject_abi_mismatch() {
     );
     let err = parse_fixture(&scxml).expect_err("must reject mismatched ABI");
     match err {
-        ForgeError::Validation(ValidationError::ExternAbiMismatch {
-            name,
-            expected,
-            actual,
-        }) => {
-            assert_eq!(name, "sce_atomic_load_acquire_u32");
-            assert_eq!(expected, "c");
-            assert_eq!(actual, "rust");
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::ExternAbiMismatch {
+                name,
+                expected,
+                actual,
+            } => {
+                assert_eq!(name, "sce_atomic_load_acquire_u32");
+                assert_eq!(expected, "c");
+                assert_eq!(actual, "rust");
+            }
+            other => panic!("expected ExternAbiMismatch, got {other:?}"),
+        },
         other => panic!("expected ExternAbiMismatch, got {other:?}"),
     }
 }
@@ -132,15 +138,18 @@ fn reject_signature_mismatch() {
     );
     let err = parse_fixture(&scxml).expect_err("must reject mismatched signature");
     match err {
-        ForgeError::Validation(ValidationError::ExternSignatureMismatch {
-            name,
-            expected,
-            actual,
-        }) => {
-            assert_eq!(name, "sce_atomic_load_acquire_u32");
-            assert_eq!(expected, "(*const u32) -> u32");
-            assert_eq!(actual, "(*const u32) -> u64");
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::ExternSignatureMismatch {
+                name,
+                expected,
+                actual,
+            } => {
+                assert_eq!(name, "sce_atomic_load_acquire_u32");
+                assert_eq!(expected, "(*const u32) -> u32");
+                assert_eq!(actual, "(*const u32) -> u64");
+            }
+            other => panic!("expected ExternSignatureMismatch, got {other:?}"),
+        },
         other => panic!("expected ExternSignatureMismatch, got {other:?}"),
     }
 }
@@ -156,16 +165,19 @@ fn reject_ordering_unspecified() {
     );
     let err = parse_fixture(&scxml).expect_err("must reject suffix-less atomic base");
     match err {
-        ForgeError::Validation(ValidationError::ExternOrderingUnspecified {
-            base,
-            candidates,
-            ..
-        }) => {
-            assert_eq!(base, "sce_atomic_load");
-            // 2 orderings (acquire, relaxed) × 5 widths = 10 completions.
-            assert_eq!(candidates.len(), 10);
-            assert!(candidates.contains(&"sce_atomic_load_acquire_u32".to_string()));
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::ExternOrderingUnspecified {
+                base,
+                candidates,
+                ..
+            } => {
+                assert_eq!(base, "sce_atomic_load");
+                // 2 orderings (acquire, relaxed) × 5 widths = 10 completions.
+                assert_eq!(candidates.len(), 10);
+                assert!(candidates.contains(&"sce_atomic_load_acquire_u32".to_string()));
+            }
+            other => panic!("expected ExternOrderingUnspecified, got {other:?}"),
+        },
         other => panic!("expected ExternOrderingUnspecified, got {other:?}"),
     }
 }

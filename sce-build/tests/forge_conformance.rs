@@ -1081,7 +1081,8 @@ fn forge_const_fold_budget_exceeded_rejects_oversized_fold() {
     assert!(
         matches!(
             err.error,
-            ForgeError::Generate(GenerateError::ConstFoldBudgetExceeded { budget: 2, .. })
+            ForgeError::Generate(ref boxed)
+                if matches!(**boxed, GenerateError::ConstFoldBudgetExceeded { budget: 2, .. })
         ),
         "budget-exceeded error must surface as the typed variant; got: {err:?}"
     );
@@ -1110,8 +1111,11 @@ fn forge_const_not_foldable_rejects_unscoped_ident() {
     assert!(
         matches!(
             err.error,
-            ForgeError::Generate(GenerateError::ConstNotFoldable { ref detail, .. })
-                if detail.contains("unbound_outer")
+            ForgeError::Generate(ref boxed)
+                if matches!(
+                    **boxed,
+                    GenerateError::ConstNotFoldable { ref detail, .. } if detail.contains("unbound_outer")
+                )
         ),
         "unscoped-ident failure must surface as ConstNotFoldable naming the offender; got: {err:?}"
     );
@@ -1141,11 +1145,13 @@ fn forge_const_yield_type_mismatch_rejects_float_into_uint() {
     assert!(
         matches!(
             err.error,
-            ForgeError::Generate(GenerateError::ConstYieldTypeMismatch {
-                expected: SceType::Uint16,
-                ref actual,
-                ..
-            }) if actual == "float"
+            ForgeError::Generate(ref boxed)
+                if matches!(
+                    **boxed,
+                    GenerateError::ConstYieldTypeMismatch {
+                        expected: SceType::Uint16, ref actual, ..
+                    } if actual == "float"
+                )
         ),
         "float-yield must surface as typed ConstYieldTypeMismatch with expected=Uint16; got: {err:?}"
     );
@@ -2672,8 +2678,8 @@ fn forge_codec_string_with_tail_bit_size_rejects() {
     assert!(
         matches!(
             &err.error,
-            ForgeError::Validation(ValidationError::InvalidAttribute { ref attr, .. })
-                if attr == "sce:bit-size"
+            ForgeError::Validation(boxed)
+                if matches!(boxed.as_ref(), ValidationError::InvalidAttribute { attr, .. } if attr == "sce:bit-size")
         ),
         "must surface ValidationError::InvalidAttribute on sce:bit-size; got: {:?}",
         err.error
@@ -2864,10 +2870,12 @@ fn forge_codec_tlv_chain_missing_depth_rejects() {
     assert!(
         matches!(
             &err.error,
-            ForgeError::Validation(ValidationError::CodecTlvChainDepthUnspecified {
-                ref codec,
-                ref field,
-            }) if codec == "missing_depth" && field == "extensions"
+            ForgeError::Validation(boxed)
+                if matches!(
+                    boxed.as_ref(),
+                    ValidationError::CodecTlvChainDepthUnspecified { codec, field }
+                        if codec == "missing_depth" && field == "extensions"
+                )
         ),
         "must surface CodecTlvChainDepthUnspecified naming the codec + field; got: {:?}",
         err.error
@@ -2910,8 +2918,12 @@ fn forge_codec_tlv_chain_diagnostic_event_overflow_rejects() {
     assert!(
         matches!(
             &err.error,
-            ForgeError::Validation(ValidationError::InvalidAttribute { ref attr, ref value, .. })
-                if attr == "on-overflow" && value == "diagnostic-event"
+            ForgeError::Validation(boxed)
+                if matches!(
+                    boxed.as_ref(),
+                    ValidationError::InvalidAttribute { attr, value, .. }
+                        if attr == "on-overflow" && value == "diagnostic-event"
+                )
         ),
         "must surface ValidationError::InvalidAttribute naming on-overflow + diagnostic-event; got: {:?}",
         err.error
@@ -2959,10 +2971,12 @@ fn forge_codec_dma_aligned_rejects_on_cpp() {
     assert!(
         matches!(
             &err.error,
-            ForgeError::Generate(GenerateError::CodegenMcuClassKindOnNonMcuLanguage {
-                ref language,
-                ..
-            }) if language == "cpp"
+            ForgeError::Generate(boxed)
+                if matches!(
+                    boxed.as_ref(),
+                    GenerateError::CodegenMcuClassKindOnNonMcuLanguage { language, .. }
+                        if language == "cpp"
+                )
         ),
         "must surface CodegenMcuClassKindOnNonMcuLanguage targeting cpp; got: {:?}",
         err.error
@@ -3005,9 +3019,13 @@ fn forge_codec_dma_misaligned_byte_rejects() {
     assert!(
         matches!(
             &err.error,
-            ForgeError::Validation(ValidationError::CodecDmaAlignmentUnsatisfiable {
-                ref codec, ref field, burst_align: 32, ..
-            }) if codec == "misaligned" && field == "aligned_payload"
+            ForgeError::Validation(boxed)
+                if matches!(
+                    boxed.as_ref(),
+                    ValidationError::CodecDmaAlignmentUnsatisfiable {
+                        codec, field, burst_align: 32, ..
+                    } if codec == "misaligned" && field == "aligned_payload"
+                )
         ),
         "must surface CodecDmaAlignmentUnsatisfiable naming codec + field + burst_align; got: {:?}",
         err.error
@@ -3051,12 +3069,16 @@ fn forge_codec_dma_after_vle_rejects() {
     assert!(
         matches!(
             &err.error,
-            ForgeError::Validation(ValidationError::CodecDmaAlignmentUnsatisfiable {
-                ref codec, ref field, burst_align: 32, ref reason,
-            }) if codec == "vle_then_dma"
-                && field == "aligned_payload"
-                && reason.contains("vle")
-                && reason.contains("'value'")
+            ForgeError::Validation(boxed)
+                if matches!(
+                    boxed.as_ref(),
+                    ValidationError::CodecDmaAlignmentUnsatisfiable {
+                        codec, field, burst_align: 32, reason,
+                    } if codec == "vle_then_dma"
+                        && field == "aligned_payload"
+                        && reason.contains("vle")
+                        && reason.contains("'value'")
+                )
         ),
         "reason must name the offending predecessor + its bit-size; got: {:?}",
         err.error
@@ -3099,8 +3121,12 @@ fn forge_codec_dma_non_power_of_two_rejects() {
     assert!(
         matches!(
             &err.error,
-            ForgeError::Validation(ValidationError::InvalidAttribute { ref attr, ref value, .. })
-                if attr == "sce:dma-burst-align" && value == "3"
+            ForgeError::Validation(boxed)
+                if matches!(
+                    boxed.as_ref(),
+                    ValidationError::InvalidAttribute { attr, value, .. }
+                        if attr == "sce:dma-burst-align" && value == "3"
+                )
         ),
         "must surface ValidationError::InvalidAttribute naming dma-burst-align + 3; got: {:?}",
         err.error
@@ -3146,11 +3172,13 @@ fn forge_codec_repeat_forward_count_rejects() {
     assert!(
         matches!(
             inner,
-            ForgeError::Validation(ValidationError::CodecRepeatCountRefsLaterField {
-                ref field,
-                ref refers_to,
-                ..
-            }) if field == "frags" && refers_to == "num_frags"
+            ForgeError::Validation(ref boxed)
+                if matches!(
+                    boxed.as_ref(),
+                    ValidationError::CodecRepeatCountRefsLaterField {
+                        field, refers_to, ..
+                    } if field == "frags" && refers_to == "num_frags"
+                )
         ),
         "must surface as ValidationError::CodecRepeatCountRefsLaterField with the offending repeat and count target; got: {inner:?}"
     );
@@ -3197,8 +3225,8 @@ fn forge_codec_repeat_present_if_count_missing_predicate_rejects() {
     assert!(
         matches!(
             err.error,
-            ForgeError::Validation(ValidationError::InvalidAttribute { ref attr, .. })
-                if attr == "sce:present-if"
+            ForgeError::Validation(ref boxed)
+                if matches!(**boxed, ValidationError::InvalidAttribute { ref attr, .. } if attr == "sce:present-if")
         ),
         "must surface as InvalidAttribute on sce:present-if; got: {:?}",
         err.error
@@ -3241,8 +3269,8 @@ fn forge_codec_repeat_present_if_count_predicate_mismatch_rejects() {
     assert!(
         matches!(
             err.error,
-            ForgeError::Validation(ValidationError::InvalidAttribute { ref attr, .. })
-                if attr == "sce:present-if"
+            ForgeError::Validation(ref boxed)
+                if matches!(**boxed, ValidationError::InvalidAttribute { ref attr, .. } if attr == "sce:present-if")
         ),
         "must surface as InvalidAttribute on sce:present-if; got: {:?}",
         err.error
@@ -3290,8 +3318,11 @@ fn forge_codec_length_field_dotted_forward_ref_rejects() {
     assert!(
         matches!(
             &err.error,
-            ForgeError::Validation(ValidationError::InvalidAttribute { attr, .. })
-                if attr == "sce:length-field"
+            ForgeError::Validation(boxed)
+                if matches!(
+                    boxed.as_ref(),
+                    ValidationError::InvalidAttribute { attr, .. } if attr == "sce:length-field"
+                )
         ),
         "must surface as InvalidAttribute on sce:length-field; got: {:?}",
         err.error
@@ -3333,8 +3364,12 @@ fn forge_codec_length_field_dotted_single_bit_rejects() {
     assert!(
         matches!(
             &err.error,
-            ForgeError::Validation(ValidationError::InvalidAttribute { attr, expected, .. })
-                if attr == "sce:length-field" && expected.contains("multi-bit")
+            ForgeError::Validation(boxed)
+                if matches!(
+                    boxed.as_ref(),
+                    ValidationError::InvalidAttribute { attr, expected, .. }
+                        if attr == "sce:length-field" && expected.contains("multi-bit")
+                )
         ),
         "must mention multi-bit requirement; got: {:?}",
         err.error
@@ -3370,8 +3405,12 @@ fn forge_codec_length_field_dotted_non_flags_carrier_rejects() {
     assert!(
         matches!(
             &err.error,
-            ForgeError::Validation(ValidationError::InvalidAttribute { attr, expected, .. })
-                if attr == "sce:length-field" && expected.contains("flags-bearing")
+            ForgeError::Validation(boxed)
+                if matches!(
+                    boxed.as_ref(),
+                    ValidationError::InvalidAttribute { attr, expected, .. }
+                        if attr == "sce:length-field" && expected.contains("flags-bearing")
+                )
         ),
         "must mention flags-bearing requirement; got: {:?}",
         err.error
@@ -3548,8 +3587,8 @@ fn forge_codec_test_vector_unknown_field_rejects() {
     assert!(
         matches!(
             err.error,
-            ForgeError::Validation(ValidationError::InvalidAttribute { ref attr, .. })
-                if attr == "field"
+            ForgeError::Validation(ref boxed)
+                if matches!(**boxed, ValidationError::InvalidAttribute { ref attr, .. } if attr == "field")
         ),
         "must surface as ValidationError::InvalidAttribute targeting `field`; got: {:?}",
         err.error
@@ -3599,10 +3638,13 @@ fn forge_test_vector_on_filter_rejects() {
     assert!(
         matches!(
             err.error,
-            ForgeError::Validation(ValidationError::TestVectorUnsupportedKind {
-                ref name,
-                kind: ForgeKind::Filter,
-            }) if name == "session_filter"
+            ForgeError::Validation(ref boxed)
+                if matches!(
+                    **boxed,
+                    ValidationError::TestVectorUnsupportedKind {
+                        ref name, kind: ForgeKind::Filter,
+                    } if name == "session_filter"
+                )
         ),
         "must surface as ValidationError::TestVectorUnsupportedKind naming the document and the rejected kind; got: {:?}",
         err.error
@@ -3638,10 +3680,8 @@ fn forge_test_vector_invalid_hex_rejects() {
     assert!(
         matches!(
             err.error,
-            ForgeError::Validation(ValidationError::InvalidAttribute {
-                ref attr,
-                ..
-            }) if attr == "hex"
+            ForgeError::Validation(ref boxed)
+                if matches!(**boxed, ValidationError::InvalidAttribute { ref attr, .. } if attr == "hex")
         ),
         "odd-length hex must surface as InvalidAttribute on attr='hex'; got: {:?}",
         err.error
@@ -3676,10 +3716,8 @@ fn forge_test_vector_invalid_value_rejects() {
     assert!(
         matches!(
             err.error,
-            ForgeError::Validation(ValidationError::InvalidAttribute {
-                ref attr,
-                ..
-            }) if attr == "value"
+            ForgeError::Validation(ref boxed)
+                if matches!(**boxed, ValidationError::InvalidAttribute { ref attr, .. } if attr == "value")
         ),
         "non-numeric value must surface as InvalidAttribute on attr='value'; got: {:?}",
         err.error
@@ -3812,12 +3850,13 @@ fn forge_codec_variant_missing_default_rejects() {
     assert!(
         matches!(
             inner,
-            ForgeError::Validation(ValidationError::CodecVariantArmUnreachable {
-                ref tag_field,
-                arm_count: 2,
-                domain_size: Some(256),
-                ..
-            }) if tag_field == "msg_id"
+            ForgeError::Validation(ref boxed)
+                if matches!(
+                    **boxed,
+                    ValidationError::CodecVariantArmUnreachable {
+                        ref tag_field, arm_count: 2, domain_size: Some(256), ..
+                    } if tag_field == "msg_id"
+                )
         ),
         "must surface as ValidationError::CodecVariantArmUnreachable with the offending tag and arm count; got: {inner:?}"
     );
@@ -3865,11 +3904,13 @@ fn forge_codec_variant_duplicate_default_arm_rejects() {
     assert!(
         matches!(
             inner,
-            ForgeError::Validation(ValidationError::CodecVariantDuplicateDefaultArm {
-                ref codec,
-                first_arm_value: 0x01,
-                second_arm_value: 0x02,
-            }) if codec == "dup_default_arm"
+            ForgeError::Validation(ref boxed)
+                if matches!(
+                    **boxed,
+                    ValidationError::CodecVariantDuplicateDefaultArm {
+                        ref codec, first_arm_value: 0x01, second_arm_value: 0x02,
+                    } if codec == "dup_default_arm"
+                )
         ),
         "must surface as ValidationError::CodecVariantDuplicateDefaultArm with both arm values; got: {inner:?}"
     );
@@ -3925,15 +3966,19 @@ fn forge_codec_variant_default_arm_mid_mismatch_rejects() {
     assert!(
         matches!(
             err.error,
-            ForgeError::Validation(ValidationError::CodecVariantArmMidMismatch {
-                ref codec,
-                arm_value: 0x03,
-                ref inner_codec,
-                ref inner_flag,
-                inner_flag_value: 0x01,
-            }) if codec == "mid_mismatch_outer"
-                && inner_codec == "codec_default_marker_arm_a"
-                && inner_flag == "kind"
+            ForgeError::Validation(ref boxed)
+                if matches!(
+                    **boxed,
+                    ValidationError::CodecVariantArmMidMismatch {
+                        ref codec,
+                        arm_value: 0x03,
+                        ref inner_codec,
+                        ref inner_flag,
+                        inner_flag_value: 0x01,
+                    } if codec == "mid_mismatch_outer"
+                        && inner_codec == "codec_default_marker_arm_a"
+                        && inner_flag == "kind"
+                )
         ),
         "must surface as ValidationError::CodecVariantArmMidMismatch \
          with the 4-tuple (codec, arm_value, inner_codec, inner_flag_value); \
@@ -3995,14 +4040,18 @@ fn forge_codec_variant_arm_inner_mid_undeclared_rejects() {
     assert!(
         matches!(
             err.error,
-            ForgeError::Validation(ValidationError::CodecVariantArmInnerMidUndeclared {
-                ref codec,
-                arm_value: 0x01,
-                ref inner_codec,
-                ref expected_flag,
-            }) if codec == "inner_mid_undeclared_outer"
-                && inner_codec == "codec_variant_session_open"
-                && expected_flag == "kind"
+            ForgeError::Validation(ref boxed)
+                if matches!(
+                    **boxed,
+                    ValidationError::CodecVariantArmInnerMidUndeclared {
+                        ref codec,
+                        arm_value: 0x01,
+                        ref inner_codec,
+                        ref expected_flag,
+                    } if codec == "inner_mid_undeclared_outer"
+                        && inner_codec == "codec_variant_session_open"
+                        && expected_flag == "kind"
+                )
         ),
         "must surface as ValidationError::CodecVariantArmInnerMidUndeclared \
          keyed on (codec, arm_value, inner_codec, expected_flag); got: {:?}",
@@ -4053,9 +4102,12 @@ fn forge_codec_variant_no_default_arm_rejects() {
     assert!(
         matches!(
             err.error,
-            ForgeError::Validation(ValidationError::CodecVariantNoDefaultArm {
-                ref codec,
-            }) if codec == "no_default_arm"
+            ForgeError::Validation(ref boxed)
+                if matches!(
+                    **boxed,
+                    ValidationError::CodecVariantNoDefaultArm { ref codec }
+                        if codec == "no_default_arm"
+                )
         ),
         "must surface as ValidationError::CodecVariantNoDefaultArm; got: {:?}",
         err.error
@@ -4139,8 +4191,11 @@ fn forge_codec_flag_value_out_of_range_rejects() {
     assert!(
         matches!(
             &inner,
-            ForgeError::Validation(ValidationError::InvalidAttribute { attr, .. })
-                if attr == "value"
+            ForgeError::Validation(boxed)
+                if matches!(
+                    boxed.as_ref(),
+                    ValidationError::InvalidAttribute { attr, .. } if attr == "value"
+                )
         ),
         "must surface as ValidationError::InvalidAttribute on the value attribute; got: {inner:?}"
     );
@@ -4180,8 +4235,11 @@ fn forge_codec_flag_value_malformed_rejects() {
     assert!(
         matches!(
             &inner,
-            ForgeError::Validation(ValidationError::NumericParse { attr, .. })
-                if attr == "value"
+            ForgeError::Validation(boxed)
+                if matches!(
+                    boxed.as_ref(),
+                    ValidationError::NumericParse { attr, .. } if attr == "value"
+                )
         ),
         "must surface as ValidationError::NumericParse on the value attribute; got: {inner:?}"
     );
@@ -4704,8 +4762,8 @@ fn forge_codec_variant_dotted_tag_carrier_not_flags_rejects() {
     assert!(
         matches!(
             err.error,
-            ForgeError::Validation(ValidationError::InvalidAttribute { ref attr, .. })
-                if attr == "tag"
+            ForgeError::Validation(ref boxed)
+                if matches!(**boxed, ValidationError::InvalidAttribute { ref attr, .. } if attr == "tag")
         ),
         "must surface as ValidationError::InvalidAttribute on the variant's tag attribute; got: {:?}",
         err.error
@@ -4752,8 +4810,12 @@ fn forge_codec_variant_dotted_tag_unknown_flag_rejects() {
     assert!(
         matches!(
             err.error,
-            ForgeError::Validation(ValidationError::InvalidAttribute { ref attr, ref expected, .. })
-                if attr == "tag" && expected.contains("mid") && expected.contains("z")
+            ForgeError::Validation(ref boxed)
+                if matches!(
+                    **boxed,
+                    ValidationError::InvalidAttribute { ref attr, ref expected, .. }
+                        if attr == "tag" && expected.contains("mid") && expected.contains("z")
+                )
         ),
         "must surface as ValidationError::InvalidAttribute naming the available flags; got: {:?}",
         err.error
@@ -4799,12 +4861,13 @@ fn forge_codec_variant_dotted_tag_arm_unreachable_uses_flag_width() {
     assert!(
         matches!(
             err.error,
-            ForgeError::Validation(ValidationError::CodecVariantArmUnreachable {
-                ref tag_field,
-                arm_count: 2,
-                domain_size: Some(4),
-                ..
-            }) if tag_field == "header.kind"
+            ForgeError::Validation(ref boxed)
+                if matches!(
+                    **boxed,
+                    ValidationError::CodecVariantArmUnreachable {
+                        ref tag_field, arm_count: 2, domain_size: Some(4), ..
+                    } if tag_field == "header.kind"
+                )
         ),
         "must surface as ValidationError::CodecVariantArmUnreachable with width-derived domain=4 \
          and dotted tag display; got: {:?}",
@@ -5328,8 +5391,12 @@ fn forge_test_vector_non_bytes_signature_rejects() {
     assert!(
         matches!(
             inner,
-            ForgeError::Generate(GenerateError::UnsupportedFeature(ref msg))
-                if msg.contains("non_bytes_tv") && msg.contains("bytes")
+            ForgeError::Generate(ref boxed)
+                if matches!(
+                    **boxed,
+                    GenerateError::UnsupportedFeature(ref msg)
+                        if msg.contains("non_bytes_tv") && msg.contains("bytes")
+                )
         ),
         "must surface as GenerateError::UnsupportedFeature explaining the signature constraint; got: {inner:?}"
     );
@@ -8875,8 +8942,8 @@ fn forge_codec_length_arith_without_length_field_rejects() {
     assert!(
         matches!(
             err.error,
-            ForgeError::Validation(ValidationError::InvalidAttribute { ref attr, .. })
-                if attr == "sce:length-arith"
+            ForgeError::Validation(ref boxed)
+                if matches!(**boxed, ValidationError::InvalidAttribute { ref attr, .. } if attr == "sce:length-arith")
         ),
         "must surface as InvalidAttribute on sce:length-arith; got: {:?}",
         err.error
@@ -8917,8 +8984,8 @@ fn forge_codec_length_arith_out_of_range_rejects() {
         assert!(
             matches!(
                 err.error,
-                ForgeError::Validation(ValidationError::InvalidAttribute { ref attr, .. })
-                    if attr == "sce:length-arith"
+                ForgeError::Validation(ref boxed)
+                    if matches!(**boxed, ValidationError::InvalidAttribute { ref attr, .. } if attr == "sce:length-arith")
             ),
             "length-arith={bad} must surface as InvalidAttribute; got: {:?}",
             err.error
@@ -9131,12 +9198,14 @@ fn forge_variant_default_overlay_unknown_arm_rejects() {
     assert!(
         matches!(
             err.error,
-            ForgeError::Validation(ValidationError::CodecVariantDefaultOverlayArmNotDeclared {
-                ref codec,
-                overlay_arm_value: 0xff,
-                ref declared_arms,
-            }) if codec == "codec_variant_default_marker"
-                && declared_arms == &[0x01u64, 0x02u64]
+            ForgeError::Validation(ref boxed)
+                if matches!(
+                    **boxed,
+                    ValidationError::CodecVariantDefaultOverlayArmNotDeclared {
+                        ref codec, overlay_arm_value: 0xff, ref declared_arms,
+                    } if codec == "codec_variant_default_marker"
+                        && declared_arms == &[0x01u64, 0x02u64]
+                )
         ),
         "must surface as ValidationError::CodecVariantDefaultOverlayArmNotDeclared \
          with declared_arms = [0x01, 0x02]; got: {:?}",
@@ -9530,16 +9599,19 @@ fn forge_b5_nu_inversion_flag_not_resolved_rejects() {
         Err(e) => e,
     };
     match err.error {
-        ForgeError::Validation(ValidationError::CodecVariantDispatchFlagNotResolved {
-            parent_codec,
-            embedded_alias,
-            flag_source,
-            ..
-        }) => {
-            assert_eq!(parent_codec, "codec_b5nu_parent");
-            assert_eq!(embedded_alias, "codec_b5nu_keyexpr");
-            assert_eq!(flag_source, "header.X");
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::CodecVariantDispatchFlagNotResolved {
+                parent_codec,
+                embedded_alias,
+                flag_source,
+                ..
+            } => {
+                assert_eq!(parent_codec, "codec_b5nu_parent");
+                assert_eq!(embedded_alias, "codec_b5nu_keyexpr");
+                assert_eq!(flag_source, "header.X");
+            }
+            other => panic!("expected CodecVariantDispatchFlagNotResolved, got: {other:?}"),
+        },
         other => panic!("expected CodecVariantDispatchFlagNotResolved, got: {other:?}"),
     }
 
@@ -9755,16 +9827,15 @@ fn forge_b5_nu_inversion_dispatch_flag_static_value_rejects() {
     assert!(
         matches!(
             err.error,
-            ForgeError::Validation(
-                ValidationError::CodecVariantDispatchFlagHasStaticValue {
-                    ref parent_codec,
-                    ref carrier,
-                    ref flag,
-                    ..
-                }
-            ) if parent_codec == "codec_b5nu_parent"
-                && carrier == "header"
-                && flag == "M"
+            ForgeError::Validation(ref boxed)
+                if matches!(
+                    **boxed,
+                    ValidationError::CodecVariantDispatchFlagHasStaticValue {
+                        ref parent_codec, ref carrier, ref flag, ..
+                    } if parent_codec == "codec_b5nu_parent"
+                        && carrier == "header"
+                        && flag == "M"
+                )
         ),
         "got: {:?}",
         err.error
@@ -9852,14 +9923,14 @@ fn forge_b5_nu_inversion_dispatch_carrier_after_embed_rejects() {
     assert!(
         matches!(
             err.error,
-            ForgeError::Validation(
-                ValidationError::CodecVariantDispatchCarrierAfterEmbed {
-                    ref parent_codec,
-                    ref carrier,
-                    ..
-                }
-            ) if parent_codec == "codec_b5nu_qD5_parent"
-                && carrier == "header"
+            ForgeError::Validation(ref boxed)
+                if matches!(
+                    **boxed,
+                    ValidationError::CodecVariantDispatchCarrierAfterEmbed {
+                        ref parent_codec, ref carrier, ..
+                    } if parent_codec == "codec_b5nu_qD5_parent"
+                        && carrier == "header"
+                )
         ),
         "got: {:?}",
         err.error
@@ -11896,14 +11967,19 @@ fn assert_length_field_rejects(scxml: &str, name: &str, substring: &str) {
         Err(e) => e,
     };
     match &err.error {
-        ForgeError::Validation(ValidationError::InvalidAttribute { attr, expected, .. })
-            if attr == "sce:length-field" =>
-        {
-            assert!(
-                expected.contains(substring),
-                "{name}: expected message to mention {substring:?}, got: {expected}"
-            );
-        }
+        ForgeError::Validation(boxed) => match boxed.as_ref() {
+            ValidationError::InvalidAttribute { attr, expected, .. }
+                if attr == "sce:length-field" =>
+            {
+                assert!(
+                    expected.contains(substring),
+                    "{name}: expected message to mention {substring:?}, got: {expected}"
+                );
+            }
+            other => panic!(
+                "{name}: must surface ValidationError::InvalidAttribute on sce:length-field; got: {other:?}"
+            ),
+        },
         other => panic!(
             "{name}: must surface ValidationError::InvalidAttribute on sce:length-field; got: {other:?}"
         ),
@@ -12104,16 +12180,19 @@ fn axis1_phase_a_flag_input_unbound_rejects() {
         Err(e) => e,
     };
     match err.error {
-        ForgeError::Validation(ValidationError::CodecFlagInputUnbound {
-            parent_codec,
-            embedded_alias,
-            input,
-            ..
-        }) => {
-            assert_eq!(parent_codec, "codec_axis1_unbound_parent");
-            assert_eq!(embedded_alias, "codec_axis1_unbound_leaf");
-            assert_eq!(input, "has_suffix");
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::CodecFlagInputUnbound {
+                parent_codec,
+                embedded_alias,
+                input,
+                ..
+            } => {
+                assert_eq!(parent_codec, "codec_axis1_unbound_parent");
+                assert_eq!(embedded_alias, "codec_axis1_unbound_leaf");
+                assert_eq!(input, "has_suffix");
+            }
+            other => panic!("expected CodecFlagInputUnbound, got: {other:?}"),
+        },
         other => panic!("expected CodecFlagInputUnbound, got: {other:?}"),
     }
 
@@ -12178,21 +12257,24 @@ fn axis1_phase_a_flag_bind_input_not_declared_rejects() {
         Err(e) => e,
     };
     match err.error {
-        ForgeError::Validation(ValidationError::CodecFlagBindInputNotDeclared {
-            parent_codec,
-            embedded_alias,
-            input,
-            available_inputs,
-            ..
-        }) => {
-            assert_eq!(parent_codec, "codec_axis1_undeclared_parent");
-            assert_eq!(embedded_alias, "codec_axis1_undeclared_leaf");
-            assert_eq!(input, "is_admin");
-            assert!(
-                available_inputs.contains("has_suffix"),
-                "available_inputs must list the leaf's declared 'has_suffix' input; got: {available_inputs}"
-            );
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::CodecFlagBindInputNotDeclared {
+                parent_codec,
+                embedded_alias,
+                input,
+                available_inputs,
+                ..
+            } => {
+                assert_eq!(parent_codec, "codec_axis1_undeclared_parent");
+                assert_eq!(embedded_alias, "codec_axis1_undeclared_leaf");
+                assert_eq!(input, "is_admin");
+                assert!(
+                    available_inputs.contains("has_suffix"),
+                    "available_inputs must list the leaf's declared 'has_suffix' input; got: {available_inputs}"
+                );
+            }
+            other => panic!("expected CodecFlagBindInputNotDeclared, got: {other:?}"),
+        },
         other => panic!("expected CodecFlagBindInputNotDeclared, got: {other:?}"),
     }
 
@@ -12257,18 +12339,21 @@ fn axis1_phase_a_flag_bind_source_not_resolved_rejects() {
         Err(e) => e,
     };
     match err.error {
-        ForgeError::Validation(ValidationError::CodecFlagBindSourceNotResolved {
-            parent_codec,
-            embedded_alias,
-            input,
-            bind_source,
-            ..
-        }) => {
-            assert_eq!(parent_codec, "codec_axis1_unresolved_parent");
-            assert_eq!(embedded_alias, "codec_axis1_unresolved_leaf");
-            assert_eq!(input, "has_suffix");
-            assert_eq!(bind_source, "header.K");
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::CodecFlagBindSourceNotResolved {
+                parent_codec,
+                embedded_alias,
+                input,
+                bind_source,
+                ..
+            } => {
+                assert_eq!(parent_codec, "codec_axis1_unresolved_parent");
+                assert_eq!(embedded_alias, "codec_axis1_unresolved_leaf");
+                assert_eq!(input, "has_suffix");
+                assert_eq!(bind_source, "header.K");
+            }
+            other => panic!("expected CodecFlagBindSourceNotResolved, got: {other:?}"),
+        },
         other => panic!("expected CodecFlagBindSourceNotResolved, got: {other:?}"),
     }
 
@@ -13228,21 +13313,24 @@ fn axis1_inversion_variant_arm_body_caller_tag_rejected() {
         Err(e) => e,
     };
     match located_err.error {
-        ForgeError::Validation(ValidationError::CodecVariantArmBodyCallerTagUnsupported {
-            parent_codec,
-            arm_value,
-            embedded_alias,
-            embedded_codec,
-        }) => {
-            assert_eq!(parent_codec, "codec_axis1_nested_d1");
-            assert_eq!(
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::CodecVariantArmBodyCallerTagUnsupported {
+                parent_codec,
                 arm_value,
-                Some(0x00),
-                "enumerated arm value of the β-shape import"
-            );
-            assert_eq!(embedded_alias, "codec_axis1_nested_d2");
-            assert_eq!(embedded_codec, "codec_axis1_nested_d2");
-        }
+                embedded_alias,
+                embedded_codec,
+            } => {
+                assert_eq!(parent_codec, "codec_axis1_nested_d1");
+                assert_eq!(
+                    arm_value,
+                    Some(0x00),
+                    "enumerated arm value of the β-shape import"
+                );
+                assert_eq!(embedded_alias, "codec_axis1_nested_d2");
+                assert_eq!(embedded_codec, "codec_axis1_nested_d2");
+            }
+            other => panic!("expected CodecVariantArmBodyCallerTagUnsupported, got: {other:?}"),
+        },
         other => panic!("expected CodecVariantArmBodyCallerTagUnsupported, got: {other:?}"),
     }
 
@@ -13590,22 +13678,25 @@ fn axis1_inversion_variant_default_arm_caller_tag_rejected() {
     // moves out the owned String fields for value assertions.
     let rendered = format!("{}", located_err.error);
     match located_err.error {
-        ForgeError::Validation(ValidationError::CodecVariantArmBodyCallerTagUnsupported {
-            parent_codec,
-            arm_value,
-            embedded_alias,
-            embedded_codec,
-        }) => {
-            assert_eq!(parent_codec, "codec_axis1_default_d1");
-            assert_eq!(
-                arm_value, None,
-                "default arm carries no enumerated value — `arm_value` MUST be \
-                 None so the diagnostic message renders `<default>` rather than \
-                 a sentinel 0x00 collision"
-            );
-            assert_eq!(embedded_alias, "codec_axis1_default_d2");
-            assert_eq!(embedded_codec, "codec_axis1_default_d2");
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::CodecVariantArmBodyCallerTagUnsupported {
+                parent_codec,
+                arm_value,
+                embedded_alias,
+                embedded_codec,
+            } => {
+                assert_eq!(parent_codec, "codec_axis1_default_d1");
+                assert_eq!(
+                    arm_value, None,
+                    "default arm carries no enumerated value — `arm_value` MUST be \
+                     None so the diagnostic message renders `<default>` rather than \
+                     a sentinel 0x00 collision"
+                );
+                assert_eq!(embedded_alias, "codec_axis1_default_d2");
+                assert_eq!(embedded_codec, "codec_axis1_default_d2");
+            }
+            other => panic!("expected CodecVariantArmBodyCallerTagUnsupported, got: {other:?}"),
+        },
         other => panic!("expected CodecVariantArmBodyCallerTagUnsupported, got: {other:?}"),
     }
     // Display message must render "<default>" not "0x0" so authors

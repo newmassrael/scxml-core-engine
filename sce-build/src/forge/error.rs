@@ -106,13 +106,21 @@ impl<E: std::error::Error + 'static> std::error::Error for Located<E> {
 /// Variants correspond to pipeline stages so callers can react
 /// programmatically (distinct CLI exit codes, IDE diagnostics, etc.)
 /// without parsing error message strings.
+// The four largest child enums (`Validation` 160 B, `Mesh` 168 B,
+// `Scxml` 80 B, `Generate` 80 B) are boxed so `Located<ForgeError>`
+// (the wrapped shape callers actually return) stays under clippy's
+// `result_large_err` threshold (128 B). `Located` adds 40 B for its
+// `SourceLocation` payload, so any inline child enum >= 88 B pushes
+// the wrapper over the lint. The smaller variants (`Xml`,
+// `Expression`, `Import`, `Manifest`) stay inline because they fit
+// comfortably under the budget without an extra allocation.
 #[derive(Debug, thiserror::Error)]
 pub enum ForgeError {
     #[error(transparent)]
     Xml(#[from] XmlError),
 
     #[error(transparent)]
-    Validation(#[from] ValidationError),
+    Validation(Box<ValidationError>),
 
     #[error(transparent)]
     Expression(#[from] ExprError),
@@ -124,7 +132,7 @@ pub enum ForgeError {
     Manifest(#[from] ManifestError),
 
     #[error(transparent)]
-    Generate(#[from] GenerateError),
+    Generate(Box<GenerateError>),
 
     /// SCXML semantic-validation failures — distinct from forge
     /// `ValidationError` because the rules come from W3C SCXML §3
@@ -136,7 +144,7 @@ pub enum ForgeError {
     /// per W4 D4 fold (concept identity); only `TopLevelScriptUnloaded`
     /// is W3C-SCXML-specific and gets its own `scxml/*` code.
     #[error(transparent)]
-    Scxml(#[from] crate::scxml_semantic::ScxmlSemanticError),
+    Scxml(Box<crate::scxml_semantic::ScxmlSemanticError>),
 
     /// Mesh-deploy / topology / external-config / codegen failures
     /// routed through the forge compile pipeline. Mirrors the
@@ -151,13 +159,69 @@ pub enum ForgeError {
     /// Topology / Codegen / Io) — `forge_error_fields` delegates to
     /// it via `e.diagnostic_payload()`.
     #[error(transparent)]
-    Mesh(#[from] crate::mesh::error::MeshError),
+    Mesh(Box<crate::mesh::error::MeshError>),
 
     #[error("I/O error on {path}: {source}")]
     Io {
         path: PathBuf,
         source: std::io::Error,
     },
+}
+
+// Hand-written `From` impls so `?` still propagates the unboxed leaf
+// types into `ForgeError` for the boxed variants — the `#[from]`
+// derive can't be used on a boxed variant because it would generate
+// `From<Box<E>>` and leave the unboxed form unsupported. Both arms
+// are provided per boxed variant so callers may pass either shape.
+// The inline variants (Xml/Expression/Import/Manifest) get their
+// `From` from thiserror's `#[from]` derive.
+
+impl From<ValidationError> for ForgeError {
+    fn from(err: ValidationError) -> Self {
+        Self::Validation(Box::new(err))
+    }
+}
+
+impl From<Box<ValidationError>> for ForgeError {
+    fn from(err: Box<ValidationError>) -> Self {
+        Self::Validation(err)
+    }
+}
+
+impl From<GenerateError> for ForgeError {
+    fn from(err: GenerateError) -> Self {
+        Self::Generate(Box::new(err))
+    }
+}
+
+impl From<Box<GenerateError>> for ForgeError {
+    fn from(err: Box<GenerateError>) -> Self {
+        Self::Generate(err)
+    }
+}
+
+impl From<crate::scxml_semantic::ScxmlSemanticError> for ForgeError {
+    fn from(err: crate::scxml_semantic::ScxmlSemanticError) -> Self {
+        Self::Scxml(Box::new(err))
+    }
+}
+
+impl From<Box<crate::scxml_semantic::ScxmlSemanticError>> for ForgeError {
+    fn from(err: Box<crate::scxml_semantic::ScxmlSemanticError>) -> Self {
+        Self::Scxml(err)
+    }
+}
+
+impl From<crate::mesh::error::MeshError> for ForgeError {
+    fn from(err: crate::mesh::error::MeshError) -> Self {
+        Self::Mesh(Box::new(err))
+    }
+}
+
+impl From<Box<crate::mesh::error::MeshError>> for ForgeError {
+    fn from(err: Box<crate::mesh::error::MeshError>) -> Self {
+        Self::Mesh(err)
+    }
 }
 
 // ── Stage 1-2: XML / XSD ───────────────────────────────────────

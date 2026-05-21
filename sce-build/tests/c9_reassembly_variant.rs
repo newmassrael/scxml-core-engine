@@ -159,14 +159,16 @@ fn reassembly_variant_missing_max_fragments_fires_spec_code() {
 </scxml>"##;
     let err = parse(xml, "rx_reassembly_pool")
         .expect_err("missing <sce:max-fragments-per-message> raises spec-named code");
-    let ForgeError::Validation(ValidationError::MemReassemblyPoolVariantMissingMaxFragments {
-        pool_name,
-    }) = err.error
-    else {
-        panic!(
-            "expected MemReassemblyPoolVariantMissingMaxFragments, got {:?}",
-            err.error
-        );
+    let pool_name = match err.error {
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::MemReassemblyPoolVariantMissingMaxFragments { pool_name } => pool_name,
+            other => panic!(
+                "expected MemReassemblyPoolVariantMissingMaxFragments, got {other:?}"
+            ),
+        },
+        other => panic!(
+            "expected MemReassemblyPoolVariantMissingMaxFragments, got {other:?}"
+        ),
     };
     assert_eq!(pool_name, "rx_reassembly_pool");
 }
@@ -192,14 +194,16 @@ fn reassembly_variant_missing_timeout_fires_spec_code() {
 </scxml>"##;
     let err = parse(xml, "rx_reassembly_pool")
         .expect_err("missing <sce:reassembly-timeout-ms> raises spec-named code");
-    let ForgeError::Validation(ValidationError::MemReassemblyPoolVariantMissingTimeout {
-        pool_name,
-    }) = err.error
-    else {
-        panic!(
-            "expected MemReassemblyPoolVariantMissingTimeout, got {:?}",
-            err.error
-        );
+    let pool_name = match err.error {
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::MemReassemblyPoolVariantMissingTimeout { pool_name } => pool_name,
+            other => panic!(
+                "expected MemReassemblyPoolVariantMissingTimeout, got {other:?}"
+            ),
+        },
+        other => panic!(
+            "expected MemReassemblyPoolVariantMissingTimeout, got {other:?}"
+        ),
     };
     assert_eq!(pool_name, "rx_reassembly_pool");
 }
@@ -226,8 +230,12 @@ fn reassembly_variant_missing_per_peer_quota_uses_generic_code() {
 </scxml>"##;
     let err = parse(xml, "rx_reassembly_pool")
         .expect_err("missing <sce:per-peer-quota> raises generic MissingElement");
-    let ForgeError::Validation(ValidationError::MissingElement { element, .. }) = err.error else {
-        panic!("expected MissingElement, got {:?}", err.error);
+    let element = match err.error {
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::MissingElement { element, .. } => element,
+            other => panic!("expected MissingElement, got {other:?}"),
+        },
+        other => panic!("expected MissingElement, got {other:?}"),
     };
     assert!(
         element.contains("per-peer-quota"),
@@ -255,12 +263,12 @@ fn default_variant_with_reassembly_sibling_rejects() {
 </scxml>"##;
     let err = parse(xml, "rx_pool_sram1")
         .expect_err("reassembly sibling without <sce:variant>reassembly</sce:variant> rejects");
-    let ForgeError::Validation(ValidationError::InvalidAttribute { element, .. }) = err.error
-    else {
-        panic!(
-            "expected InvalidAttribute for misapplied sibling, got {:?}",
-            err.error
-        );
+    let element = match err.error {
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::InvalidAttribute { element, .. } => element,
+            other => panic!("expected InvalidAttribute for misapplied sibling, got {other:?}"),
+        },
+        other => panic!("expected InvalidAttribute for misapplied sibling, got {other:?}"),
     };
     assert!(
         element.contains("max-fragments-per-message"),
@@ -287,14 +295,17 @@ fn variant_unknown_body_text_rejects() {
   <sce:variant>tx_only</sce:variant>
 </scxml>"##;
     let err = parse(xml, "rx_pool_sram1").expect_err("unknown <sce:variant> body text rejects");
-    let ForgeError::Validation(ValidationError::InvalidAttribute {
-        element,
-        value,
-        expected,
-        ..
-    }) = err.error
-    else {
-        panic!("expected InvalidAttribute, got {:?}", err.error);
+    let (element, value, expected) = match err.error {
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::InvalidAttribute {
+                element,
+                value,
+                expected,
+                ..
+            } => (element, value, expected),
+            other => panic!("expected InvalidAttribute, got {other:?}"),
+        },
+        other => panic!("expected InvalidAttribute, got {other:?}"),
     };
     assert_eq!(element, "<sce:variant>");
     assert_eq!(value, "tx_only");

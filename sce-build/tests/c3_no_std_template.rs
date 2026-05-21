@@ -96,16 +96,19 @@ fn malformed_sce_capacity_attribute_emits_invalid_attribute() {
         .parse_string(malformed, "bad_cap")
         .expect_err("non-numeric sce:capacity must reject");
     match err.error {
-        ForgeError::Validation(ValidationError::InvalidAttribute {
-            element,
-            attr,
-            value,
-            ..
-        }) => {
-            assert_eq!(element, "scxml");
-            assert_eq!(attr, "sce:capacity");
-            assert_eq!(value, "not-a-number");
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::InvalidAttribute {
+                element,
+                attr,
+                value,
+                ..
+            } => {
+                assert_eq!(element, "scxml");
+                assert_eq!(attr, "sce:capacity");
+                assert_eq!(value, "not-a-number");
+            }
+            other => panic!("expected InvalidAttribute, got: {other:?}"),
+        },
         other => panic!("expected InvalidAttribute, got: {other:?}"),
     }
 }
@@ -129,7 +132,7 @@ fn zero_sce_capacity_attribute_rejects() {
         .expect_err("zero sce:capacity must reject");
     assert!(matches!(
         err.error,
-        ForgeError::Validation(ValidationError::InvalidAttribute { .. })
+        ForgeError::Validation(ref boxed) if matches!(**boxed, ValidationError::InvalidAttribute { .. })
     ));
 }
 

@@ -1334,7 +1334,7 @@ fn render_codec(
             | crate::generator::Language::Kotlin
             | crate::generator::Language::Go
             | crate::generator::Language::Python => {
-                return Err(ForgeError::Generate(
+                return Err(ForgeError::from(
                     crate::forge::error::GenerateError::CodegenMcuClassKindOnNonMcuLanguage {
                         kind: format!("codec '{}' (MCU-only sub-features)", m.name),
                         language: match lang {
@@ -1386,11 +1386,11 @@ fn render_codec(
         // mismatch / undeclared checks so authors see the most
         // specific failure mode first.
         if !v.arms.iter().any(|a| a.is_default) {
-            return Err(ForgeError::Validation(
+            return Err(ForgeError::Validation(Box::new(
                 crate::forge::error::ValidationError::CodecVariantNoDefaultArm {
                     codec: m.name.clone(),
                 },
-            ));
+            )));
         }
     }
 
@@ -3231,7 +3231,7 @@ fn resolve_variant_arm_body_type(
     let imp = imports.iter().find(|i| i.alias == body_alias).ok_or_else(|| {
         let available: Vec<&str> =
             imports.iter().map(|i| i.alias.as_str()).collect();
-        ForgeError::Generate(crate::forge::error::GenerateError::UnsupportedFeature(
+        ForgeError::from(crate::forge::error::GenerateError::UnsupportedFeature(
             format!(
                 "codec '{codec_name}': <sce:variant> arm references unknown import alias '{body_alias}' \
                  (available aliases: [{}]) — add `<sce:import src=\"{body_alias}.scxml\" kind=\"codec\" as=\"{body_alias}\"/>`",
@@ -3240,7 +3240,7 @@ fn resolve_variant_arm_body_type(
         ))
     })?;
     if imp.kind != "codec" {
-        return Err(ForgeError::Generate(
+        return Err(ForgeError::from(
             crate::forge::error::GenerateError::UnsupportedFeature(format!(
                 "codec '{codec_name}': <sce:variant> arm '{body_alias}' resolves to import kind '{}', \
                  but variant arms require kind=\"codec\" (RFC §5.B B1-β v1)",
@@ -3360,13 +3360,13 @@ fn validate_cross_codec_variant_dispatch(
                 // without a default arm ⇒ decode cannot pick an arm.
                 if let Some(arm_count) = imported_variant_arm_count {
                     if arm_count > 0 && !imported_has_default_arm {
-                        return Err(ForgeError::Validation(
+                        return Err(ForgeError::Validation(Box::new(
                             ValidationError::CodecVariantDispatchArmsNotDistinguishableWithoutDefault {
                                 parent_codec: parent.name.clone(),
                                 embedded_alias: embed_alias.clone(),
                                 embedded_codec: embed_alias.clone(),
                             },
-                        ));
+                        )));
                     }
                 }
             }
@@ -3394,7 +3394,7 @@ fn validate_cross_codec_variant_dispatch(
                             .filter(|f| !f.flags.is_empty())
                             .map(|f| f.id.clone())
                             .collect();
-                        return Err(ForgeError::Validation(
+                        return Err(ForgeError::Validation(Box::new(
                             ValidationError::CodecVariantDispatchFlagNotResolved {
                                 parent_codec: parent.name.clone(),
                                 embedded_alias: embed_alias.clone(),
@@ -3404,7 +3404,7 @@ fn validate_cross_codec_variant_dispatch(
                                 ),
                                 candidates: available,
                             },
-                        ));
+                        )));
                     }
                 };
 
@@ -3417,7 +3417,7 @@ fn validate_cross_codec_variant_dispatch(
                             .iter()
                             .map(|f| format!("{}.{}", carrier_name, f.name))
                             .collect();
-                        return Err(ForgeError::Validation(
+                        return Err(ForgeError::Validation(Box::new(
                             ValidationError::CodecVariantDispatchFlagNotResolved {
                                 parent_codec: parent.name.clone(),
                                 embedded_alias: embed_alias.clone(),
@@ -3427,13 +3427,13 @@ fn validate_cross_codec_variant_dispatch(
                                 ),
                                 candidates: available,
                             },
-                        ));
+                        )));
                     }
                 };
 
                 // (3) Q-D-4a: flag must not carry a static value=.
                 if let Some(static_value) = flag_def.value {
-                    return Err(ForgeError::Validation(
+                    return Err(ForgeError::Validation(Box::new(
                         ValidationError::CodecVariantDispatchFlagHasStaticValue {
                             parent_codec: parent.name.clone(),
                             embedded_alias: embed_alias.clone(),
@@ -3441,7 +3441,7 @@ fn validate_cross_codec_variant_dispatch(
                             flag: flag_name.clone(),
                             static_value,
                         },
-                    ));
+                    )));
                 }
 
                 // (4) Q-D-5a: flag width must encode the arm count.
@@ -3453,7 +3453,7 @@ fn validate_cross_codec_variant_dispatch(
                         1u64 << flag_width
                     };
                     if (arm_count as u64) > max_values {
-                        return Err(ForgeError::Validation(
+                        return Err(ForgeError::Validation(Box::new(
                             ValidationError::CodecVariantDispatchBitWidthMismatch {
                                 parent_codec: parent.name.clone(),
                                 embedded_alias: embed_alias.clone(),
@@ -3464,13 +3464,13 @@ fn validate_cross_codec_variant_dispatch(
                                 max_values,
                                 arm_count,
                             },
-                        ));
+                        )));
                     }
                 }
 
                 // (5) Q-D-5a: carrier declared before embed.
                 if carrier_index > embedded_index {
-                    return Err(ForgeError::Validation(
+                    return Err(ForgeError::Validation(Box::new(
                         ValidationError::CodecVariantDispatchCarrierAfterEmbed {
                             parent_codec: parent.name.clone(),
                             embedded_alias: embed_alias.clone(),
@@ -3480,7 +3480,7 @@ fn validate_cross_codec_variant_dispatch(
                             carrier_index,
                             embedded_index,
                         },
-                    ));
+                    )));
                 }
             }
         }
@@ -3548,14 +3548,14 @@ fn validate_cross_codec_variant_arm_not_caller_tag(
             None => return Ok(()),
         };
         if imp.codec_variant_is_caller_tag {
-            return Err(ForgeError::Validation(
+            return Err(ForgeError::Validation(Box::new(
                 ValidationError::CodecVariantArmBodyCallerTagUnsupported {
                     parent_codec: parent.name.clone(),
                     arm_value,
                     embedded_alias: body_alias.to_string(),
                     embedded_codec: body_alias.to_string(),
                 },
-            ));
+            )));
         }
         Ok(())
     };
@@ -3617,7 +3617,7 @@ fn validate_cross_codec_flag_bind(
         for bind in binds {
             if !leaf_input_names.contains(bind.input.as_str()) {
                 let available: Vec<&str> = leaf_inputs.iter().map(|fi| fi.name.as_str()).collect();
-                return Err(ForgeError::Validation(
+                return Err(ForgeError::Validation(Box::new(
                     ValidationError::CodecFlagBindInputNotDeclared {
                         parent_codec: parent.name.clone(),
                         embedded_alias: imp.alias.clone(),
@@ -3625,7 +3625,7 @@ fn validate_cross_codec_flag_bind(
                         input: bind.input.clone(),
                         available_inputs: available.join(", "),
                     },
-                ));
+                )));
             }
         }
         // Check 1b: every leaf input has a matching bind.
@@ -3633,14 +3633,14 @@ fn validate_cross_codec_flag_bind(
             binds.iter().map(|b| b.input.as_str()).collect();
         for input in leaf_inputs {
             if !bound_inputs.contains(input.name.as_str()) {
-                return Err(ForgeError::Validation(
+                return Err(ForgeError::Validation(Box::new(
                     ValidationError::CodecFlagInputUnbound {
                         parent_codec: parent.name.clone(),
                         embedded_alias: imp.alias.clone(),
                         embedded_codec: imp.alias.clone(),
                         input: input.name.clone(),
                     },
-                ));
+                )));
             }
         }
         // Check 2-4: per-bind source resolution + width + ordering.
@@ -3658,7 +3658,7 @@ fn validate_cross_codec_flag_bind(
                     let (carrier_index, carrier_field) = match parent_carrier_lookup(carrier) {
                         Some(t) => t,
                         None => {
-                            return Err(ForgeError::Validation(
+                            return Err(ForgeError::Validation(Box::new(
                                 ValidationError::CodecFlagBindSourceNotResolved {
                                     parent_codec: parent.name.clone(),
                                     embedded_alias: imp.alias.clone(),
@@ -3669,13 +3669,13 @@ fn validate_cross_codec_flag_bind(
                                          declared as a plain field rather than a <sce:flags> container"
                                     ),
                                 },
-                            ));
+                            )));
                         }
                     };
                     let flag_def = match carrier_field.flags.iter().find(|f| f.name == *flag) {
                         Some(f) => f,
                         None => {
-                            return Err(ForgeError::Validation(
+                            return Err(ForgeError::Validation(Box::new(
                                 ValidationError::CodecFlagBindSourceNotResolved {
                                     parent_codec: parent.name.clone(),
                                     embedded_alias: imp.alias.clone(),
@@ -3685,11 +3685,11 @@ fn validate_cross_codec_flag_bind(
                                         "flag '{flag}' is not declared on local carrier '{carrier}'"
                                     ),
                                 },
-                            ));
+                            )));
                         }
                     };
                     if flag_def.width != input_width {
-                        return Err(ForgeError::Validation(
+                        return Err(ForgeError::Validation(Box::new(
                             ValidationError::CodecFlagBindWidthMismatch {
                                 parent_codec: parent.name.clone(),
                                 embedded_alias: imp.alias.clone(),
@@ -3698,7 +3698,7 @@ fn validate_cross_codec_flag_bind(
                                 source_width: flag_def.width,
                                 input_width,
                             },
-                        ));
+                        )));
                     }
                     if let Some(embed_idx) = embed_index {
                         if carrier_index >= embed_idx {
@@ -3707,7 +3707,7 @@ fn validate_cross_codec_flag_bind(
                             let embedded_field = parent
                                 .fields
                                 .get(embed_idx).map_or_else(|| imp.alias.clone(), |f| f.id.clone());
-                            return Err(ForgeError::Validation(
+                            return Err(ForgeError::Validation(Box::new(
                                 ValidationError::CodecFlagBindCarrierAfterEmbed {
                                     parent_codec: parent.name.clone(),
                                     embedded_alias: imp.alias.clone(),
@@ -3718,7 +3718,7 @@ fn validate_cross_codec_flag_bind(
                                     carrier_index,
                                     embedded_index: embed_idx,
                                 },
-                            ));
+                            )));
                         }
                     }
                 }
@@ -3727,7 +3727,7 @@ fn validate_cross_codec_flag_bind(
                     let parent_width = match parent_input_widths.get(name.as_str()) {
                         Some(w) => *w,
                         None => {
-                            return Err(ForgeError::Validation(
+                            return Err(ForgeError::Validation(Box::new(
                                 ValidationError::CodecFlagBindSourceNotResolved {
                                     parent_codec: parent.name.clone(),
                                     embedded_alias: imp.alias.clone(),
@@ -3739,11 +3739,11 @@ fn validate_cross_codec_flag_bind(
                                          flag-inputs"
                                     ),
                                 },
-                            ));
+                            )));
                         }
                     };
                     if parent_width != input_width {
-                        return Err(ForgeError::Validation(
+                        return Err(ForgeError::Validation(Box::new(
                             ValidationError::CodecFlagBindWidthMismatch {
                                 parent_codec: parent.name.clone(),
                                 embedded_alias: imp.alias.clone(),
@@ -3752,7 +3752,7 @@ fn validate_cross_codec_flag_bind(
                                 source_width: parent_width,
                                 input_width,
                             },
-                        ));
+                        )));
                     }
                     // Bare-name forwarding has no carrier-ordering
                     // constraint — flag-inputs are positional decode/
@@ -3830,7 +3830,7 @@ fn validate_cross_codec_peek_byte(
                 None => continue,
             };
             if body_flag.bit != peek_flag.bit || body_flag.width != peek_flag.width {
-                return Err(ForgeError::Validation(
+                return Err(ForgeError::Validation(Box::new(
                     ValidationError::CodecPeekByteFlagLayoutMismatch {
                         body_codec: alias.to_string(),
                         parent_codec: parent.name.clone(),
@@ -3852,7 +3852,7 @@ fn validate_cross_codec_peek_byte(
                             body_flag.width
                         ),
                     },
-                ));
+                )));
             }
         }
     }
@@ -3943,7 +3943,7 @@ fn validate_one_arm_inner_mid(
     let body_flags = match &imp.codec_first_flags {
         Some((_id, flags)) => flags.as_slice(),
         None => {
-            return Err(ForgeError::Validation(
+            return Err(ForgeError::Validation(Box::new(
                 ValidationError::CodecVariantArmInnerMidUndeclared {
                     codec: parent.name.clone(),
                     arm_value: arm.value,
@@ -3954,7 +3954,7 @@ fn validate_one_arm_inner_mid(
                         .map(|f| f.name.clone())
                         .unwrap_or_default(),
                 },
-            ));
+            )));
         }
     };
 
@@ -3968,26 +3968,26 @@ fn validate_one_arm_inner_mid(
         let body_flag = match body_flags.iter().find(|f| f.name == peek_flag.name) {
             Some(f) => f,
             None => {
-                return Err(ForgeError::Validation(
+                return Err(ForgeError::Validation(Box::new(
                     ValidationError::CodecVariantArmInnerMidUndeclared {
                         codec: parent.name.clone(),
                         arm_value: arm.value,
                         inner_codec: arm.body_alias.clone(),
                         expected_flag: peek_flag.name.clone(),
                     },
-                ));
+                )));
             }
         };
         let inner_value = match body_flag.value {
             None => {
-                return Err(ForgeError::Validation(
+                return Err(ForgeError::Validation(Box::new(
                     ValidationError::CodecVariantArmInnerMidUndeclared {
                         codec: parent.name.clone(),
                         arm_value: arm.value,
                         inner_codec: arm.body_alias.clone(),
                         expected_flag: peek_flag.name.clone(),
                     },
-                ));
+                )));
             }
             Some(v) => v,
         };
@@ -4000,7 +4000,7 @@ fn validate_one_arm_inner_mid(
         };
         let expected_slice = (arm.value >> peek_flag.bit) & mask;
         if inner_value != expected_slice {
-            return Err(ForgeError::Validation(
+            return Err(ForgeError::Validation(Box::new(
                 ValidationError::CodecVariantArmMidMismatch {
                     codec: parent.name.clone(),
                     arm_value: arm.value,
@@ -4008,7 +4008,7 @@ fn validate_one_arm_inner_mid(
                     inner_flag: peek_flag.name.clone(),
                     inner_flag_value: inner_value,
                 },
-            ));
+            )));
         }
     }
     Ok(())
@@ -4070,7 +4070,7 @@ fn resolve_repeat_body_type(
         .find(|i| i.alias == body_alias)
         .ok_or_else(|| {
             let available: Vec<&str> = imports.iter().map(|i| i.alias.as_str()).collect();
-            ForgeError::Generate(crate::forge::error::GenerateError::UnsupportedFeature(
+            ForgeError::from(crate::forge::error::GenerateError::UnsupportedFeature(
                 format!(
                     "codec '{codec_name}': <sce:repeat> body references unknown import alias \
                  '{body_alias}' (available aliases: [{}]) — add `<sce:import \
@@ -4080,7 +4080,7 @@ fn resolve_repeat_body_type(
             ))
         })?;
     if imp.kind != "codec" {
-        return Err(ForgeError::Generate(
+        return Err(ForgeError::from(
             crate::forge::error::GenerateError::UnsupportedFeature(format!(
                 "codec '{codec_name}': <sce:repeat> body '{body_alias}' resolves to import kind \
                  '{}', but repeat bodies require kind=\"codec\" (RFC §5.B B2)",
@@ -10586,12 +10586,14 @@ fn resolve_validator(m: &ValidatorModel) -> Result<ResolvedValidator, ForgeError
     let mut ranges = Vec::new();
     for r in &m.rules.ranges {
         let field = m.inputs.iter().find(|f| f.id == r.id).ok_or_else(|| {
-            ForgeError::Validation(crate::forge::error::ValidationError::InvalidReference {
-                kind: crate::forge::model::ForgeKind::Validator,
-                name: r.id.clone(),
-                what: "input field for range rule".into(),
-                available: available_ids.join(", "),
-            })
+            ForgeError::Validation(Box::new(
+                crate::forge::error::ValidationError::InvalidReference {
+                    kind: crate::forge::model::ForgeKind::Validator,
+                    name: r.id.clone(),
+                    what: "input field for range rule".into(),
+                    available: available_ids.join(", "),
+                },
+            ))
         })?;
         ranges.push(ResolvedRange {
             id: r.id.clone(),
@@ -10604,12 +10606,14 @@ fn resolve_validator(m: &ValidatorModel) -> Result<ResolvedValidator, ForgeError
     let mut rocs = Vec::new();
     for roc in &m.rules.rate_of_changes {
         let field = m.inputs.iter().find(|f| f.id == roc.id).ok_or_else(|| {
-            ForgeError::Validation(crate::forge::error::ValidationError::InvalidReference {
-                kind: crate::forge::model::ForgeKind::Validator,
-                name: roc.id.clone(),
-                what: "input field for rate-of-change rule".into(),
-                available: available_ids.join(", "),
-            })
+            ForgeError::Validation(Box::new(
+                crate::forge::error::ValidationError::InvalidReference {
+                    kind: crate::forge::model::ForgeKind::Validator,
+                    name: roc.id.clone(),
+                    what: "input field for rate-of-change rule".into(),
+                    available: available_ids.join(", "),
+                },
+            ))
         })?;
         rocs.push(ResolvedRoc {
             id: roc.id.clone(),
@@ -11208,7 +11212,7 @@ fn render_link_rust(
     options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
     let tmpl = env.get_template("link.rs.jinja2").map_err(|e| {
-        ForgeError::Generate(GenerateError::TemplateLoad(format!(
+        ForgeError::from(GenerateError::TemplateLoad(format!(
             "link.rs.jinja2 (rust): {e}"
         )))
     })?;
@@ -11247,7 +11251,7 @@ fn render_link_rust(
         is_listener_with_sibling => is_listener_with_sibling,
     };
     let rendered = tmpl.render(ctx).map_err(|e| {
-        ForgeError::Generate(GenerateError::TemplateRender(format!(
+        ForgeError::from(GenerateError::TemplateRender(format!(
             "link.rs.jinja2 (rust): {e}"
         )))
     })?;
@@ -11279,12 +11283,12 @@ fn check_listener_sibling_emitted_rust(link_name: &str, rendered: &str) -> Resul
         let _ = link_name; // marker presence is the contract
         Ok(())
     } else {
-        Err(ForgeError::Validation(
+        Err(ForgeError::Validation(Box::new(
             crate::forge::error::ValidationError::LinkListenerLinkNotPairedWithEstablishedSibling {
                 link_name: link_name.to_string(),
                 language: "rust".to_string(),
             },
-        ))
+        )))
     }
 }
 
@@ -11304,7 +11308,7 @@ pub fn render_machine_link_bus_rust(
     link_names: &[String],
 ) -> Result<String, ForgeError> {
     let tmpl = env.get_template("link_bus.rs.jinja2").map_err(|e| {
-        ForgeError::Generate(GenerateError::TemplateLoad(format!(
+        ForgeError::from(GenerateError::TemplateLoad(format!(
             "link_bus.rs.jinja2 (rust): {e}"
         )))
     })?;
@@ -11325,7 +11329,7 @@ pub fn render_machine_link_bus_rust(
         links => links,
     };
     tmpl.render(ctx).map_err(|e| {
-        ForgeError::Generate(GenerateError::TemplateRender(format!(
+        ForgeError::from(GenerateError::TemplateRender(format!(
             "link_bus.rs.jinja2 (rust): {e}"
         )))
     })
@@ -11344,7 +11348,7 @@ pub fn render_machine_scheduler_rust(
     per_link_budget_us: u32,
 ) -> Result<String, ForgeError> {
     let tmpl = env.get_template("scheduler.rs.jinja2").map_err(|e| {
-        ForgeError::Generate(GenerateError::TemplateLoad(format!(
+        ForgeError::from(GenerateError::TemplateLoad(format!(
             "scheduler.rs.jinja2 (rust): {e}"
         )))
     })?;
@@ -11365,7 +11369,7 @@ pub fn render_machine_scheduler_rust(
         links => links,
     };
     tmpl.render(ctx).map_err(|e| {
-        ForgeError::Generate(GenerateError::TemplateRender(format!(
+        ForgeError::from(GenerateError::TemplateRender(format!(
             "scheduler.rs.jinja2 (rust): {e}"
         )))
     })
@@ -11449,7 +11453,7 @@ pub fn render_machine_scheduler_c(
     per_link_budget_us: u32,
 ) -> Result<String, ForgeError> {
     let tmpl = env.get_template("scheduler.h.jinja2").map_err(|e| {
-        ForgeError::Generate(GenerateError::TemplateLoad(format!(
+        ForgeError::from(GenerateError::TemplateLoad(format!(
             "scheduler.h.jinja2 (c11): {e}"
         )))
     })?;
@@ -11476,7 +11480,7 @@ pub fn render_machine_scheduler_c(
         links => links,
     };
     tmpl.render(ctx).map_err(|e| {
-        ForgeError::Generate(GenerateError::TemplateRender(format!(
+        ForgeError::from(GenerateError::TemplateRender(format!(
             "scheduler.h.jinja2 (c11): {e}"
         )))
     })
@@ -11497,7 +11501,7 @@ fn render_buffer_pool_rust(
     options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
     let tmpl = env.get_template("buffer_pool.rs.jinja2").map_err(|e| {
-        ForgeError::Generate(GenerateError::TemplateLoad(format!(
+        ForgeError::from(GenerateError::TemplateLoad(format!(
             "buffer_pool.rs.jinja2 (rust): {e}"
         )))
     })?;
@@ -11555,7 +11559,7 @@ fn render_buffer_pool_rust(
         per_peer_quota => per_peer_quota,
     };
     let rendered = tmpl.render(ctx).map_err(|e| {
-        ForgeError::Generate(GenerateError::TemplateRender(format!(
+        ForgeError::from(GenerateError::TemplateRender(format!(
             "buffer_pool.rs.jinja2 (rust): {e}"
         )))
     })?;
@@ -11586,12 +11590,12 @@ fn check_reassembly_peer_id_zid_invariant_rust(
     if crate::forge::codegen_markers::contains_emit_marker(rendered_rs, "reassembly.peer-id-zid") {
         Ok(())
     } else {
-        Err(ForgeError::Validation(
+        Err(ForgeError::Validation(Box::new(
             crate::forge::error::ValidationError::ReassemblyPeerIdNotZidOnEstablishedSession {
                 pool_name: pool_name.to_string(),
                 language: "rust".to_string(),
             },
-        ))
+        )))
     }
 }
 
@@ -11610,7 +11614,7 @@ fn render_worker_rust(
     _imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
     let tmpl = env.get_template("worker.rs.jinja2").map_err(|e| {
-        ForgeError::Generate(GenerateError::TemplateLoad(format!(
+        ForgeError::from(GenerateError::TemplateLoad(format!(
             "worker.rs.jinja2 (rust): {e}"
         )))
     })?;
@@ -11630,7 +11634,7 @@ fn render_worker_rust(
         has_outbox => m.outbox.is_some(),
     };
     tmpl.render(ctx).map_err(|e| {
-        ForgeError::Generate(GenerateError::TemplateRender(format!(
+        ForgeError::from(GenerateError::TemplateRender(format!(
             "worker.rs.jinja2 (rust): {e}"
         )))
     })
@@ -11673,7 +11677,7 @@ fn resolve_bounded_collection_inputs(
         (CapacitySource::CompileConst { value }, _) => *value,
         (CapacitySource::DeployKey { .. }, Some(r)) => r.capacity,
         (CapacitySource::DeployKey { key }, None) => {
-            return Err(ForgeError::Generate(GenerateError::InvalidConfig(format!(
+            return Err(ForgeError::from(GenerateError::InvalidConfig(format!(
                 "bounded-collection '{name}': <sce:capacity source=\"deploy\" \
                      key=\"{key}\"/> resolution missing — single-file \
                      compile_forge_with_imports has no deploy.yaml context. \
@@ -11699,7 +11703,7 @@ fn resolve_bounded_collection_inputs(
             r.index_by_field_sce_type.clone()
         }
         (Some(field), _) => {
-            return Err(ForgeError::Generate(GenerateError::InvalidConfig(format!(
+            return Err(ForgeError::from(GenerateError::InvalidConfig(format!(
                 "bounded-collection '{name}': <sce:index-by \
                          field=\"{field}\"/> resolution missing — find_by_index \
                          emit requires the orchestrator (compile_scxml_with_imports) \
@@ -11760,7 +11764,7 @@ fn render_bounded_collection_rust(
     let tmpl = env
         .get_template("bounded_collection.rs.jinja2")
         .map_err(|e| {
-            ForgeError::Generate(GenerateError::TemplateLoad(format!(
+            ForgeError::from(GenerateError::TemplateLoad(format!(
                 "bounded_collection.rs.jinja2 (rust): {e}"
             )))
         })?;
@@ -11792,7 +11796,7 @@ fn render_bounded_collection_rust(
         runtime_dep => "self-contained on (rust, std) and (rust, no_std)",
     };
     tmpl.render(ctx).map_err(|e| {
-        ForgeError::Generate(GenerateError::TemplateRender(format!(
+        ForgeError::from(GenerateError::TemplateRender(format!(
             "bounded_collection.rs.jinja2 (rust): {e}"
         )))
     })
@@ -11816,7 +11820,7 @@ fn render_bounded_collection_cpp(
     let tmpl = env
         .get_template("bounded_collection.h.jinja2")
         .map_err(|e| {
-            ForgeError::Generate(GenerateError::TemplateLoad(format!(
+            ForgeError::from(GenerateError::TemplateLoad(format!(
                 "bounded_collection.h.jinja2 (cpp): {e}"
             )))
         })?;
@@ -11852,7 +11856,7 @@ fn render_bounded_collection_cpp(
         runtime_dep => "self-contained — std::array + std::bitset only",
     };
     tmpl.render(ctx).map_err(|e| {
-        ForgeError::Generate(GenerateError::TemplateRender(format!(
+        ForgeError::from(GenerateError::TemplateRender(format!(
             "bounded_collection.h.jinja2 (cpp): {e}"
         )))
     })
@@ -11877,7 +11881,7 @@ fn render_bounded_collection_kotlin(
     let tmpl = env
         .get_template("bounded_collection.kt.jinja2")
         .map_err(|e| {
-            ForgeError::Generate(GenerateError::TemplateLoad(format!(
+            ForgeError::from(GenerateError::TemplateLoad(format!(
                 "bounded_collection.kt.jinja2 (kotlin): {e}"
             )))
         })?;
@@ -11909,7 +11913,7 @@ fn render_bounded_collection_kotlin(
         runtime_dep => "self-contained — Kotlin stdlib only",
     };
     tmpl.render(ctx).map_err(|e| {
-        ForgeError::Generate(GenerateError::TemplateRender(format!(
+        ForgeError::from(GenerateError::TemplateRender(format!(
             "bounded_collection.kt.jinja2 (kotlin): {e}"
         )))
     })
@@ -11936,7 +11940,7 @@ fn render_bounded_collection_c(
     let tmpl = env
         .get_template("bounded_collection.h.jinja2")
         .map_err(|e| {
-            ForgeError::Generate(GenerateError::TemplateLoad(format!(
+            ForgeError::from(GenerateError::TemplateLoad(format!(
                 "bounded_collection.h.jinja2 (c11): {e}"
             )))
         })?;
@@ -11981,7 +11985,7 @@ fn render_bounded_collection_c(
         runtime_dep => "self-contained — <stdint.h> + <stdbool.h> + <stddef.h> only",
     };
     tmpl.render(ctx).map_err(|e| {
-        ForgeError::Generate(GenerateError::TemplateRender(format!(
+        ForgeError::from(GenerateError::TemplateRender(format!(
             "bounded_collection.h.jinja2 (c11): {e}"
         )))
     })
@@ -12012,7 +12016,7 @@ fn render_bounded_collection_go(
     let tmpl = env
         .get_template("bounded_collection.go.jinja2")
         .map_err(|e| {
-            ForgeError::Generate(GenerateError::TemplateLoad(format!(
+            ForgeError::from(GenerateError::TemplateLoad(format!(
                 "bounded_collection.go.jinja2 (go): {e}"
             )))
         })?;
@@ -12032,7 +12036,7 @@ fn render_bounded_collection_go(
             format!("\t\"{prefix}/{element_snake}\"")
         }
         _ => {
-            return Err(ForgeError::Generate(GenerateError::InvalidConfig(
+            return Err(ForgeError::from(GenerateError::InvalidConfig(
                 format!(
                     "bounded-collection '{name}': <sce:element-type \
                      name=\"{element}\"/> on the Go backend requires \
@@ -12087,7 +12091,7 @@ fn render_bounded_collection_go(
         runtime_dep => "self-contained — Go stdlib `errors` only",
     };
     tmpl.render(ctx).map_err(|e| {
-        ForgeError::Generate(GenerateError::TemplateRender(format!(
+        ForgeError::from(GenerateError::TemplateRender(format!(
             "bounded_collection.go.jinja2 (go): {e}"
         )))
     })
@@ -12121,7 +12125,7 @@ fn render_bounded_collection_python(
     let tmpl = env
         .get_template("bounded_collection.py.jinja2")
         .map_err(|e| {
-            ForgeError::Generate(GenerateError::TemplateLoad(format!(
+            ForgeError::from(GenerateError::TemplateLoad(format!(
                 "bounded_collection.py.jinja2 (python): {e}"
             )))
         })?;
@@ -12170,7 +12174,7 @@ fn render_bounded_collection_python(
         runtime_dep => "self-contained — Python stdlib `dataclasses` + `typing` only",
     };
     tmpl.render(ctx).map_err(|e| {
-        ForgeError::Generate(GenerateError::TemplateRender(format!(
+        ForgeError::from(GenerateError::TemplateRender(format!(
             "bounded_collection.py.jinja2 (python): {e}"
         )))
     })
@@ -12190,7 +12194,7 @@ fn render_link_c(
     options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
     let tmpl = env.get_template("link.h.jinja2").map_err(|e| {
-        ForgeError::Generate(GenerateError::TemplateLoad(format!(
+        ForgeError::from(GenerateError::TemplateLoad(format!(
             "link.h.jinja2 (c11): {e}"
         )))
     })?;
@@ -12226,7 +12230,7 @@ fn render_link_c(
         is_listener_with_sibling => is_listener_with_sibling,
     };
     let rendered = tmpl.render(ctx).map_err(|e| {
-        ForgeError::Generate(GenerateError::TemplateRender(format!(
+        ForgeError::from(GenerateError::TemplateRender(format!(
             "link.h.jinja2 (c11): {e}"
         )))
     })?;
@@ -12257,12 +12261,12 @@ fn check_listener_sibling_emitted_c(
     ) {
         Ok(())
     } else {
-        Err(ForgeError::Validation(
+        Err(ForgeError::Validation(Box::new(
             crate::forge::error::ValidationError::LinkListenerLinkNotPairedWithEstablishedSibling {
                 link_name: link_name.to_string(),
                 language: "c11".to_string(),
             },
-        ))
+        )))
     }
 }
 
@@ -12278,7 +12282,7 @@ fn render_worker_c_header(
     _imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
     let tmpl = env.get_template("worker.h.jinja2").map_err(|e| {
-        ForgeError::Generate(GenerateError::TemplateLoad(format!(
+        ForgeError::from(GenerateError::TemplateLoad(format!(
             "worker.h.jinja2 (c11): {e}"
         )))
     })?;
@@ -12297,7 +12301,7 @@ fn render_worker_c_header(
         has_outbox => m.outbox.is_some(),
     };
     tmpl.render(ctx).map_err(|e| {
-        ForgeError::Generate(GenerateError::TemplateRender(format!(
+        ForgeError::from(GenerateError::TemplateRender(format!(
             "worker.h.jinja2 (c11): {e}"
         )))
     })
@@ -12317,7 +12321,7 @@ fn render_worker_c_impl(
     _imports: &[ImportContext],
 ) -> Result<(String, String), ForgeError> {
     let tmpl = env.get_template("worker.c.jinja2").map_err(|e| {
-        ForgeError::Generate(GenerateError::TemplateLoad(format!(
+        ForgeError::from(GenerateError::TemplateLoad(format!(
             "worker.c.jinja2 (c11): {e}"
         )))
     })?;
@@ -12334,7 +12338,7 @@ fn render_worker_c_impl(
         link_rx => &m.link_rx,
     };
     let content = tmpl.render(ctx).map_err(|e| {
-        ForgeError::Generate(GenerateError::TemplateRender(format!(
+        ForgeError::from(GenerateError::TemplateRender(format!(
             "worker.c.jinja2 (c11): {e}"
         )))
     })?;
@@ -12358,7 +12362,7 @@ fn render_buffer_pool_c(
     options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
     let tmpl = env.get_template("buffer_pool.h.jinja2").map_err(|e| {
-        ForgeError::Generate(GenerateError::TemplateLoad(format!(
+        ForgeError::from(GenerateError::TemplateLoad(format!(
             "buffer_pool.h.jinja2 (c11): {e}"
         )))
     })?;
@@ -12410,7 +12414,7 @@ fn render_buffer_pool_c(
         per_peer_quota => per_peer_quota,
     };
     let rendered = tmpl.render(ctx).map_err(|e| {
-        ForgeError::Generate(GenerateError::TemplateRender(format!(
+        ForgeError::from(GenerateError::TemplateRender(format!(
             "buffer_pool.h.jinja2 (c11): {e}"
         )))
     })?;
@@ -12435,12 +12439,12 @@ fn check_reassembly_peer_id_zid_invariant_c11(
     if crate::forge::codegen_markers::contains_emit_marker(rendered_h, "reassembly.peer-id-zid") {
         Ok(())
     } else {
-        Err(ForgeError::Validation(
+        Err(ForgeError::Validation(Box::new(
             crate::forge::error::ValidationError::ReassemblyPeerIdNotZidOnEstablishedSession {
                 pool_name: pool_name.to_string(),
                 language: "c11".to_string(),
             },
-        ))
+        )))
     }
 }
 
@@ -12458,7 +12462,7 @@ fn render_buffer_pool_linker_fragment(
     m: &BufferPoolModel,
 ) -> Result<(String, String), ForgeError> {
     let tmpl = env.get_template("buffer_pool.ld.jinja2").map_err(|e| {
-        ForgeError::Generate(GenerateError::TemplateLoad(format!(
+        ForgeError::from(GenerateError::TemplateLoad(format!(
             "buffer_pool.ld.jinja2 (c11): {e}"
         )))
     })?;
@@ -12471,7 +12475,7 @@ fn render_buffer_pool_linker_fragment(
         alignment => m.alignment,
     };
     let body = tmpl.render(ctx).map_err(|e| {
-        ForgeError::Generate(GenerateError::TemplateRender(format!(
+        ForgeError::from(GenerateError::TemplateRender(format!(
             "buffer_pool.ld.jinja2 (c11): {e}"
         )))
     })?;
@@ -12496,11 +12500,11 @@ fn check_inter_pool_padding_invariant(
     if crate::forge::codegen_markers::contains_emit_marker(rendered_ld, "mem.inter-pool-padding") {
         Ok(())
     } else {
-        Err(ForgeError::Validation(
+        Err(ForgeError::Validation(Box::new(
             crate::forge::error::ValidationError::BufferPoolInterPoolPaddingNotEmitted {
                 name: pool_name.to_string(),
             },
-        ))
+        )))
     }
 }
 
@@ -18445,7 +18449,7 @@ fn render_externs_sidecar(
     }
 
     let emits = build_extern_emit_list(extern_decls)
-        .map_err(|e| ForgeError::Generate(GenerateError::UnsupportedFeature(e.to_string())))?;
+        .map_err(|e| ForgeError::from(GenerateError::UnsupportedFeature(e.to_string())))?;
 
     let parent_snake = filters::to_snake_case(parent_module.to_string());
     let (template_name, filename, guard) = match lang {
@@ -18470,7 +18474,7 @@ fn render_externs_sidecar(
 
     let template = env
         .get_template(template_name)
-        .map_err(|e| ForgeError::Generate(GenerateError::TemplateRender(e.to_string())))?;
+        .map_err(|e| ForgeError::from(GenerateError::TemplateRender(e.to_string())))?;
     let context = minijinja::context! {
         parent_module => parent_snake,
         guard => guard,
@@ -18478,7 +18482,7 @@ fn render_externs_sidecar(
     };
     let code = template
         .render(context)
-        .map_err(|e| ForgeError::Generate(GenerateError::TemplateRender(e.to_string())))?;
+        .map_err(|e| ForgeError::from(GenerateError::TemplateRender(e.to_string())))?;
     Ok(Some((filename, code)))
 }
 
@@ -18503,7 +18507,7 @@ fn render_algorithm_test_vector_sidecar(
     // matches a bool/integer scalar. The signature shape is enforced
     // here so the emitter can lower the hex bytes unambiguously.
     if m.signature.params.len() != 1 || !matches!(m.signature.params[0].sce_type, SceType::Bytes) {
-        return Err(ForgeError::Generate(
+        return Err(ForgeError::from(
             crate::forge::error::GenerateError::UnsupportedFeature(format!(
                 "algorithm '{name}': <sce:test-vector> v1 only supports algorithms with a single \
                  `bytes` parameter; the canonical RFC §5.B example is `(data: bytes) -> scalar`. \
@@ -18514,7 +18518,7 @@ fn render_algorithm_test_vector_sidecar(
     }
 
     let return_type = m.signature.return_type.as_ref().ok_or_else(|| {
-        ForgeError::Generate(crate::forge::error::GenerateError::UnsupportedFeature(
+        ForgeError::from(crate::forge::error::GenerateError::UnsupportedFeature(
             format!(
                 "algorithm '{name}': <sce:test-vector> requires a non-void return type",
                 name = m.name,
@@ -18616,7 +18620,7 @@ fn render_algorithm_test_vector_sidecar(
                     SceType::Uint32 => "u32",
                     SceType::Uint64 => "u64",
                     other => {
-                        return Err(ForgeError::Generate(
+                        return Err(ForgeError::from(
                             crate::forge::error::GenerateError::UnsupportedFeature(format!(
                                 "algorithm '{name}': <sce:test-vector> value is unsigned but \
                                  return type '{other:?}' is not — internal parser invariant violated",
@@ -18681,7 +18685,7 @@ fn render_algorithm_test_vector_sidecar(
                     SceType::Int32 => "i32",
                     SceType::Int64 => "i64",
                     other => {
-                        return Err(ForgeError::Generate(
+                        return Err(ForgeError::from(
                             crate::forge::error::GenerateError::UnsupportedFeature(format!(
                                 "algorithm '{name}': <sce:test-vector> value is signed but \
                                  return type '{other:?}' is not — internal parser invariant violated",
@@ -18807,13 +18811,13 @@ fn render_algorithm_test_vector_sidecar(
     // (Go), `.py.jinja2` (Python), `.kt.jinja2` (Kotlin).
     let template_name = format!("algorithm_test.{}.jinja2", l.template_ext());
     let template = env.get_template(&template_name).map_err(|e| {
-        ForgeError::Generate(crate::forge::error::GenerateError::TemplateLoad(format!(
+        ForgeError::from(crate::forge::error::GenerateError::TemplateLoad(format!(
             "{template_name}: {e}"
         )))
     })?;
     let value = minijinja::Value::from_serialize(&ctx);
     let code = template.render(value).map_err(|e| {
-        ForgeError::Generate(crate::forge::error::GenerateError::TemplateRender(format!(
+        ForgeError::from(crate::forge::error::GenerateError::TemplateRender(format!(
             "{template_name}: {e}"
         )))
     })?;
@@ -18882,7 +18886,7 @@ fn render_codec_test_vector_sidecar(
     // parent-flags closures land alongside their first sidecar
     // consumer following the trunk-then-closures cadence.
     if m.variant.is_some() {
-        return Err(ForgeError::Generate(GenerateError::UnsupportedFeature(
+        return Err(ForgeError::from(GenerateError::UnsupportedFeature(
             format!(
                 "codec '{name}': <sce:test-vector> on variant codec deferred to B5-θ-variant \
              closure (decoded shape requires <sce:decoded-variant kind tag><body/></...> \
@@ -18892,7 +18896,7 @@ fn render_codec_test_vector_sidecar(
         )));
     }
     if m.has_tlv_chain_fields() {
-        return Err(ForgeError::Generate(GenerateError::UnsupportedFeature(
+        return Err(ForgeError::from(GenerateError::UnsupportedFeature(
             format!(
                 "codec '{name}': <sce:test-vector> on TLV-chain codec deferred to B5-θ-tlv \
              closure (decoded shape requires <sce:decoded-chain field><sce:decoded-entry/></...> \
@@ -18902,7 +18906,7 @@ fn render_codec_test_vector_sidecar(
         )));
     }
     if !m.flag_inputs.is_empty() {
-        return Err(ForgeError::Generate(GenerateError::UnsupportedFeature(
+        return Err(ForgeError::from(GenerateError::UnsupportedFeature(
             format!(
                 "codec '{name}': <sce:test-vector> on flag-input-bearing codec deferred to \
              B5-θ-parent closure (round-trip oracle requires the codec be invoked as a \
@@ -18912,7 +18916,7 @@ fn render_codec_test_vector_sidecar(
         )));
     }
     if m.has_repeat_fields() {
-        return Err(ForgeError::Generate(GenerateError::UnsupportedFeature(
+        return Err(ForgeError::from(GenerateError::UnsupportedFeature(
             format!(
             "codec '{name}': <sce:test-vector> on repeat-bearing codec deferred to B5-θ-repeat \
              closure (decoded shape requires nested <sce:decoded-repeat field><sce:decoded-entry/> \
@@ -18922,7 +18926,7 @@ fn render_codec_test_vector_sidecar(
         )));
     }
     if m.has_present_if_fields() {
-        return Err(ForgeError::Generate(GenerateError::UnsupportedFeature(
+        return Err(ForgeError::from(GenerateError::UnsupportedFeature(
             format!(
                 "codec '{name}': <sce:test-vector> on present-if codec deferred to B5-θ-optional \
              closure (decoded shape needs absent-vs-present marker; trunk only lands on \
@@ -18968,7 +18972,7 @@ fn render_codec_test_vector_sidecar(
         let mut field_rows: Vec<serde_json::Value> = Vec::with_capacity(decoded_fields.len());
         for df in decoded_fields {
             let codec_field = m.fields.iter().find(|f| f.id == df.name).ok_or_else(|| {
-                ForgeError::Generate(GenerateError::UnsupportedFeature(format!(
+                ForgeError::from(GenerateError::UnsupportedFeature(format!(
                     "codec '{name}': <sce:test-vector> at L{line}: field '{f}' missing from \
                      codec model — parser invariant violated",
                     name = m.name,
@@ -19028,11 +19032,11 @@ fn render_codec_test_vector_sidecar(
     let l = LangCtx::new(lang);
     let template_name = format!("codec_test.{}.jinja2", l.template_ext());
     let template = env.get_template(&template_name).map_err(|e| {
-        ForgeError::Generate(GenerateError::TemplateLoad(format!("{template_name}: {e}")))
+        ForgeError::from(GenerateError::TemplateLoad(format!("{template_name}: {e}")))
     })?;
     let value = minijinja::Value::from_serialize(&ctx);
     let code = template.render(value).map_err(|e| {
-        ForgeError::Generate(GenerateError::TemplateRender(format!(
+        ForgeError::from(GenerateError::TemplateRender(format!(
             "{template_name}: {e}"
         )))
     })?;
@@ -19155,7 +19159,7 @@ fn lower_decoded_field_value(
                 format!("\"{escaped}\""),
             ))
         }
-        (val, ty) => Err(ForgeError::Generate(GenerateError::UnsupportedFeature(
+        (val, ty) => Err(ForgeError::from(GenerateError::UnsupportedFeature(
             format!(
                 "codec '{codec_name}': <sce:test-vector> field value {val:?} does not match codec \
              field SceType {ty:?} — parser invariant violated"

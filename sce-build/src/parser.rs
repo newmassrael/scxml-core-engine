@@ -4994,16 +4994,21 @@ mod tests {
         let mut parser = SCXMLParser::new();
         let err = parser.parse_string(scxml, "test").unwrap_err();
         match err.error {
-            ForgeError::Validation(ValidationError::RequireEither {
-                element,
-                alternatives,
-            }) => {
-                assert_eq!(element, "<cancel>");
-                assert_eq!(
+            ForgeError::Validation(boxed) => match *boxed {
+                ValidationError::RequireEither {
+                    element,
                     alternatives,
-                    vec!["sendid".to_string(), "sendidexpr".to_string()]
-                );
-            }
+                } => {
+                    assert_eq!(element, "<cancel>");
+                    assert_eq!(
+                        alternatives,
+                        vec!["sendid".to_string(), "sendidexpr".to_string()]
+                    );
+                }
+                other => {
+                    panic!("expected ValidationError::RequireEither for <cancel/>, got: {other:?}")
+                }
+            },
             other => {
                 panic!("expected ValidationError::RequireEither for <cancel/>, got: {other:?}")
             }
@@ -5079,9 +5084,8 @@ mod tests {
         assert!(
             matches!(
                 err.error,
-                ForgeError::Validation(
-                    ValidationError::DuplicateContextObject { ref id },
-                ) if id == "hw",
+                ForgeError::Validation(ref boxed)
+                    if matches!(**boxed, ValidationError::DuplicateContextObject { ref id } if id == "hw"),
             ),
             "expected ValidationError::DuplicateContextObject(id=\"hw\"), got: {:?}",
             err.error,
@@ -5104,9 +5108,8 @@ mod tests {
         assert!(
             matches!(
                 err.error,
-                ForgeError::Validation(
-                    ValidationError::ReservedContextId { ref id, .. },
-                ) if id == "policy",
+                ForgeError::Validation(ref boxed)
+                    if matches!(**boxed, ValidationError::ReservedContextId { ref id, .. } if id == "policy"),
             ),
             "expected ValidationError::ReservedContextId(id=\"policy\"), got: {:?}",
             err.error,
@@ -5132,9 +5135,8 @@ mod tests {
         assert!(
             matches!(
                 err.error,
-                ForgeError::Validation(
-                    ValidationError::ReservedContextId { ref id, .. },
-                ) if id == "POLICY",
+                ForgeError::Validation(ref boxed)
+                    if matches!(**boxed, ValidationError::ReservedContextId { ref id, .. } if id == "POLICY"),
             ),
             "expected ValidationError::ReservedContextId(id=\"POLICY\"), got: {:?}",
             err.error,
@@ -5166,8 +5168,8 @@ mod tests {
         assert!(
             matches!(
                 err.error,
-                ForgeError::Validation(ValidationError::MissingAttribute { ref attr, .. })
-                    if attr == "id",
+                ForgeError::Validation(ref boxed)
+                    if matches!(**boxed, ValidationError::MissingAttribute { ref attr, .. } if attr == "id"),
             ),
             "expected ValidationError::MissingAttribute(attr=\"id\"), got: {:?}",
             err.error,
@@ -5204,8 +5206,8 @@ mod tests {
         assert!(
             matches!(
                 err.error,
-                ForgeError::Validation(ValidationError::MissingContext { ref site, .. })
-                    if site == "cpp: condition"
+                ForgeError::Validation(ref boxed)
+                    if matches!(**boxed, ValidationError::MissingContext { ref site, .. } if site == "cpp: condition"),
             ),
             "expected ValidationError::MissingContext(site=\"cpp: condition\"), got: {:?}",
             err.error,
@@ -5306,10 +5308,13 @@ mod tests {
             .expect_err("duplicate <invoke id> must reject");
         use crate::forge::error::{ForgeError, ValidationError};
         match err.error {
-            ForgeError::Validation(ValidationError::DuplicateId { what, id, .. }) => {
-                assert_eq!(what, "<invoke id>");
-                assert_eq!(id, "motor_call");
-            }
+            ForgeError::Validation(boxed) => match *boxed {
+                ValidationError::DuplicateId { what, id, .. } => {
+                    assert_eq!(what, "<invoke id>");
+                    assert_eq!(id, "motor_call");
+                }
+                other => panic!("expected DuplicateId for <invoke id>, got: {other:?}"),
+            },
             other => panic!("expected DuplicateId for <invoke id>, got: {other:?}"),
         }
     }
@@ -5365,10 +5370,13 @@ mod tests {
             .expect_err("author-shadows-auto-counter must reject");
         use crate::forge::error::{ForgeError, ValidationError};
         match err.error {
-            ForgeError::Validation(ValidationError::DuplicateId { what, id, .. }) => {
-                assert_eq!(what, "<invoke id>");
-                assert_eq!(id, "_invoke_0");
-            }
+            ForgeError::Validation(boxed) => match *boxed {
+                ValidationError::DuplicateId { what, id, .. } => {
+                    assert_eq!(what, "<invoke id>");
+                    assert_eq!(id, "_invoke_0");
+                }
+                other => panic!("expected DuplicateId for <invoke id>, got: {other:?}"),
+            },
             other => panic!("expected DuplicateId for <invoke id>, got: {other:?}"),
         }
     }
@@ -5397,9 +5405,10 @@ mod tests {
         let mut parser = SCXMLParser::new();
         let err = parser.parse_string(scxml, "test").unwrap_err();
         match err.error {
-            ForgeError::Validation(ValidationError::MeshRpcReservedParam { param, detail }) => {
-                (param, detail)
-            }
+            ForgeError::Validation(boxed) => match *boxed {
+                ValidationError::MeshRpcReservedParam { param, detail } => (param, detail),
+                other => panic!("expected MeshRpcReservedParam, got {other:?}"),
+            },
             other => panic!("expected MeshRpcReservedParam, got {other:?}"),
         }
     }
@@ -5597,7 +5606,10 @@ mod tests {
         let mut parser = SCXMLParser::new();
         let err = parser.parse_string(scxml, "test").unwrap_err();
         match err.error {
-            ForgeError::Validation(ValidationError::MeshRpcMissingTarget) => {}
+            ForgeError::Validation(boxed) => match *boxed {
+                ValidationError::MeshRpcMissingTarget => {}
+                other => panic!("expected MeshRpcMissingTarget, got {other:?}"),
+            },
             other => panic!("expected MeshRpcMissingTarget, got {other:?}"),
         }
     }
@@ -5615,7 +5627,10 @@ mod tests {
         let mut parser = SCXMLParser::new();
         let err = parser.parse_string(scxml, "test").unwrap_err();
         match err.error {
-            ForgeError::Validation(ValidationError::MeshRpcDuplicateTarget) => {}
+            ForgeError::Validation(boxed) => match *boxed {
+                ValidationError::MeshRpcDuplicateTarget => {}
+                other => panic!("expected MeshRpcDuplicateTarget, got {other:?}"),
+            },
             other => panic!("expected MeshRpcDuplicateTarget, got {other:?}"),
         }
     }
@@ -5637,9 +5652,10 @@ mod tests {
             Err(e) => e,
         };
         match err.error {
-            ForgeError::Validation(ValidationError::RemovedAttribute { attribute, event }) => {
-                (attribute, event)
-            }
+            ForgeError::Validation(boxed) => match *boxed {
+                ValidationError::RemovedAttribute { attribute, event } => (attribute, event),
+                other => panic!("expected RemovedAttribute, got: {other:?}"),
+            },
             other => panic!("expected RemovedAttribute, got: {other:?}"),
         }
     }
@@ -5821,10 +5837,13 @@ mod tests {
 
         // Error kind: DuplicateId for <invoke id>.
         match &err.error {
-            ForgeError::Validation(ValidationError::DuplicateId { what, id, .. }) => {
-                assert_eq!(what, "<invoke id>");
-                assert_eq!(id, "dup");
-            }
+            ForgeError::Validation(boxed) => match boxed.as_ref() {
+                ValidationError::DuplicateId { what, id, .. } => {
+                    assert_eq!(what, "<invoke id>");
+                    assert_eq!(id, "dup");
+                }
+                other => panic!("expected DuplicateId, got: {other:?}"),
+            },
             other => panic!("expected DuplicateId, got: {other:?}"),
         }
 
@@ -5917,10 +5936,13 @@ mod tests {
             .expect_err("duplicate <invoke id> must fail");
 
         match &err.error {
-            ForgeError::Validation(ValidationError::DuplicateId { what, id, .. }) => {
-                assert_eq!(what, "<invoke id>");
-                assert_eq!(id, "dup");
-            }
+            ForgeError::Validation(boxed) => match boxed.as_ref() {
+                ValidationError::DuplicateId { what, id, .. } => {
+                    assert_eq!(what, "<invoke id>");
+                    assert_eq!(id, "dup");
+                }
+                other => panic!("expected DuplicateId, got: {other:?}"),
+            },
             other => panic!("expected DuplicateId, got: {other:?}"),
         }
 

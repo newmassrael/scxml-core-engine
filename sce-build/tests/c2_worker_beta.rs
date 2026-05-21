@@ -324,17 +324,20 @@ fn negative_link_rx_ref_not_imported_fires_diagnostic() {
         Err(e) => e,
     };
     match err {
-        ForgeError::Validation(ValidationError::WorkerLinkRxRefUnknown {
-            worker_name,
-            ref_name,
-            candidates,
-            ..
-        }) => {
-            assert_eq!(worker_name, "rx_loop");
-            assert_eq!(ref_name, "wrong_link");
-            // Candidate set carries the legal kind=link import alias.
-            assert_eq!(candidates, vec!["udp_scout".to_string()]);
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::WorkerLinkRxRefUnknown {
+                worker_name,
+                ref_name,
+                candidates,
+                ..
+            } => {
+                assert_eq!(worker_name, "rx_loop");
+                assert_eq!(ref_name, "wrong_link");
+                // Candidate set carries the legal kind=link import alias.
+                assert_eq!(candidates, vec!["udp_scout".to_string()]);
+            }
+            other => panic!("expected WorkerLinkRxRefUnknown, got {other:?}"),
+        },
         other => panic!("expected WorkerLinkRxRefUnknown, got {other:?}"),
     }
 }
@@ -368,9 +371,12 @@ fn negative_inbox_missing_ordering_fires_diagnostic() {
         Err(e) => e,
     };
     match err {
-        ForgeError::Validation(ValidationError::WorkerInboxOrderingUnspecified { worker_name }) => {
-            assert_eq!(worker_name, "rx_loop");
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::WorkerInboxOrderingUnspecified { worker_name } => {
+                assert_eq!(worker_name, "rx_loop");
+            }
+            other => panic!("expected WorkerInboxOrderingUnspecified, got {other:?}"),
+        },
         other => panic!("expected WorkerInboxOrderingUnspecified, got {other:?}"),
     }
 }
@@ -396,15 +402,18 @@ fn negative_relaxed_ordering_with_cross_core_placement_fires_diagnostic() {
         Err(e) => e,
     };
     match err {
-        ForgeError::Validation(ValidationError::WorkerInboxOrderingRelaxedAcrossCores {
-            worker_name,
-            producer_core,
-            consumer_core,
-        }) => {
-            assert_eq!(worker_name, "rx_loop");
-            assert_eq!(producer_core, 0);
-            assert_eq!(consumer_core, 1);
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::WorkerInboxOrderingRelaxedAcrossCores {
+                worker_name,
+                producer_core,
+                consumer_core,
+            } => {
+                assert_eq!(worker_name, "rx_loop");
+                assert_eq!(producer_core, 0);
+                assert_eq!(consumer_core, 1);
+            }
+            other => panic!("expected WorkerInboxOrderingRelaxedAcrossCores, got {other:?}"),
+        },
         other => panic!("expected WorkerInboxOrderingRelaxedAcrossCores, got {other:?}"),
     }
 }

@@ -737,7 +737,7 @@ pub fn compile_forge_with_deploy(
     if let Some(cfg) = deploy {
         mesh::deploy::validate_stateless_accept_externs(cfg, &plugin_symbols).map_err(|e| {
             Located::new(
-                forge::error::ForgeError::Mesh(mesh::error::MeshError::Deploy(e)),
+                forge::error::ForgeError::Mesh(Box::new(mesh::error::MeshError::Deploy(e))),
                 label.diagnostic_label,
                 None,
                 None,
@@ -2078,7 +2078,7 @@ pub fn compile_scxml_with_imports(
     if let Some(deploy_cfg) = deploy {
         validate_cross_doc_listener_roles(deploy_cfg, &scxml_models).map_err(|e| {
             Located::new(
-                forge::error::ForgeError::Validation(e),
+                forge::error::ForgeError::Validation(Box::new(e)),
                 "deploy.yaml",
                 None,
                 None,
@@ -5629,7 +5629,13 @@ pub fn classify_document(content: &str) -> Pipeline {
         // `sce:kind` attribute is present but the value is outside the
         // XSD enumeration. Route to forge so the schema / validator
         // emits the authoritative stage — see `Pipeline` doc comment.
-        Err(ForgeError::Validation(ValidationError::UnsupportedKind(_))) => Pipeline::Forge,
+        // `Validation` carries a `Box<ValidationError>` (see [`ForgeError`]
+        // docs); the guard dereferences once before the inner match.
+        Err(ForgeError::Validation(boxed))
+            if matches!(*boxed, ValidationError::UnsupportedKind(_)) =>
+        {
+            Pipeline::Forge
+        }
         // XML was not parseable; intent unknowable — defer to SCXML.
         Err(_) => Pipeline::Scxml,
     }
@@ -5705,11 +5711,15 @@ mod tests {
         assert!(
             matches!(
                 err.error,
-                ForgeError::Scxml(ScxmlSemanticError::InitialStateUnknown {
-                    ref state_id,
-                    scope: InitialStateScope::DocumentRoot,
-                    ..
-                }) if state_id == "nope",
+                ForgeError::Scxml(ref boxed)
+                    if matches!(
+                        **boxed,
+                        ScxmlSemanticError::InitialStateUnknown {
+                            ref state_id,
+                            scope: InitialStateScope::DocumentRoot,
+                            ..
+                        } if state_id == "nope"
+                    ),
             ),
             "expected ScxmlSemanticError::InitialStateUnknown(state_id=\"nope\", scope=DocumentRoot), \
              got: {:?}",
@@ -9392,21 +9402,24 @@ int main(void) { (void)0; return 0; }
             Err(e) => e,
         };
         match &err.error {
-            ForgeError::Validation(ValidationError::LinkPoolSlotSmallerThanFramerMax {
-                link_name,
-                pool_side,
-                pool_alias,
-                pool_slot_size,
-                framer_alias,
-                framer_max_bytes,
-            }) => {
-                assert_eq!(link_name, "udp_scout");
-                assert_eq!(*pool_side, "rx");
-                assert_eq!(pool_alias, "rx_pool_sram1");
-                assert_eq!(*pool_slot_size, 16);
-                assert_eq!(framer_alias, "scout_frame_codec");
-                assert_eq!(*framer_max_bytes, 32);
-            }
+            ForgeError::Validation(boxed) => match boxed.as_ref() {
+                ValidationError::LinkPoolSlotSmallerThanFramerMax {
+                    link_name,
+                    pool_side,
+                    pool_alias,
+                    pool_slot_size,
+                    framer_alias,
+                    framer_max_bytes,
+                } => {
+                    assert_eq!(link_name, "udp_scout");
+                    assert_eq!(*pool_side, "rx");
+                    assert_eq!(pool_alias, "rx_pool_sram1");
+                    assert_eq!(*pool_slot_size, 16);
+                    assert_eq!(framer_alias, "scout_frame_codec");
+                    assert_eq!(*framer_max_bytes, 32);
+                }
+                other => panic!("expected LinkPoolSlotSmallerThanFramerMax, got: {other:?}"),
+            },
             other => panic!("expected LinkPoolSlotSmallerThanFramerMax, got: {other:?}"),
         }
     }
@@ -9438,18 +9451,21 @@ int main(void) { (void)0; return 0; }
             Err(e) => e,
         };
         match &err.error {
-            ForgeError::Validation(ValidationError::LinkPoolSlotSmallerThanFramerMax {
-                pool_side,
-                pool_alias,
-                pool_slot_size,
-                framer_max_bytes,
-                ..
-            }) => {
-                assert_eq!(*pool_side, "tx");
-                assert_eq!(pool_alias, "tx_pool_sram1");
-                assert_eq!(*pool_slot_size, 8);
-                assert_eq!(*framer_max_bytes, 32);
-            }
+            ForgeError::Validation(boxed) => match boxed.as_ref() {
+                ValidationError::LinkPoolSlotSmallerThanFramerMax {
+                    pool_side,
+                    pool_alias,
+                    pool_slot_size,
+                    framer_max_bytes,
+                    ..
+                } => {
+                    assert_eq!(*pool_side, "tx");
+                    assert_eq!(pool_alias, "tx_pool_sram1");
+                    assert_eq!(*pool_slot_size, 8);
+                    assert_eq!(*framer_max_bytes, 32);
+                }
+                other => panic!("expected LinkPoolSlotSmallerThanFramerMax, got: {other:?}"),
+            },
             other => panic!("expected LinkPoolSlotSmallerThanFramerMax, got: {other:?}"),
         }
     }

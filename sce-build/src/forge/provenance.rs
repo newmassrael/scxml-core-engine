@@ -371,13 +371,13 @@ mod tests {
         let err = validate_emission_provenance(&model, "broken.scxml")
             .expect_err("must fire when root.source_location is None");
         match &err.error {
-            ForgeError::Validation(ValidationError::TraceabilityScxmlLineRangeMissing {
-                node_kind,
-                node_id,
-            }) => {
-                assert_eq!(*node_kind, "<scxml>");
-                assert_eq!(node_id, "broken");
-            }
+            ForgeError::Validation(boxed) => match boxed.as_ref() {
+                ValidationError::TraceabilityScxmlLineRangeMissing { node_kind, node_id } => {
+                    assert_eq!(*node_kind, "<scxml>");
+                    assert_eq!(node_id, "broken");
+                }
+                other => panic!("expected TraceabilityScxmlLineRangeMissing, got {other:?}"),
+            },
             other => panic!("expected TraceabilityScxmlLineRangeMissing, got {other:?}"),
         }
     }
@@ -404,13 +404,13 @@ mod tests {
         let err = validate_emission_provenance(&model, "x.scxml")
             .expect_err("must fire when state.source_location is None");
         match &err.error {
-            ForgeError::Validation(ValidationError::TraceabilityScxmlLineRangeMissing {
-                node_kind,
-                node_id,
-            }) => {
-                assert_eq!(*node_kind, "<state>");
-                assert_eq!(node_id, "armed");
-            }
+            ForgeError::Validation(boxed) => match boxed.as_ref() {
+                ValidationError::TraceabilityScxmlLineRangeMissing { node_kind, node_id } => {
+                    assert_eq!(*node_kind, "<state>");
+                    assert_eq!(node_id, "armed");
+                }
+                other => panic!("expected TraceabilityScxmlLineRangeMissing, got {other:?}"),
+            },
             other => panic!("expected TraceabilityScxmlLineRangeMissing, got {other:?}"),
         }
     }
@@ -618,15 +618,15 @@ mod tests {
             let err = validate_forge_emission_provenance(doc, "x.scxml")
                 .expect_err("every variant with source_location: None must fire the walker");
             match &err.error {
-                ForgeError::Validation(ValidationError::TraceabilityScxmlLineRangeMissing {
-                    node_kind,
-                    ..
-                }) => {
-                    assert!(
-                        node_kind.starts_with("<scxml sce:kind=\""),
-                        "expected kind label, got {node_kind:?}"
-                    );
-                }
+                ForgeError::Validation(boxed) => match boxed.as_ref() {
+                    ValidationError::TraceabilityScxmlLineRangeMissing { node_kind, .. } => {
+                        assert!(
+                            node_kind.starts_with("<scxml sce:kind=\""),
+                            "expected kind label, got {node_kind:?}"
+                        );
+                    }
+                    other => panic!("expected TraceabilityScxmlLineRangeMissing, got {other:?}"),
+                },
                 other => panic!("expected TraceabilityScxmlLineRangeMissing, got {other:?}"),
             }
         }

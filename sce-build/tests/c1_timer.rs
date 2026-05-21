@@ -90,12 +90,15 @@ fn duration_unknown_unit_rejected() {
     let err = compile_via_imports(&scxml, Language::Rust, dir.path())
         .expect_err("unknown unit must reject");
     match err {
-        ForgeError::Validation(ValidationError::NumericParse { detail, .. }) => {
-            assert!(
-                detail.contains("unsupported duration unit"),
-                "expected unit-error detail, got: {detail}"
-            );
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::NumericParse { detail, .. } => {
+                assert!(
+                    detail.contains("unsupported duration unit"),
+                    "expected unit-error detail, got: {detail}"
+                );
+            }
+            other => panic!("expected NumericParse, got {other:?}"),
+        },
         other => panic!("expected NumericParse, got {other:?}"),
     }
 }
@@ -107,12 +110,15 @@ fn duration_missing_unit_rejected() {
     let err = compile_via_imports(&scxml, Language::Rust, dir.path())
         .expect_err("missing unit must reject");
     match err {
-        ForgeError::Validation(ValidationError::NumericParse { detail, .. }) => {
-            assert!(
-                detail.contains("missing unit suffix"),
-                "expected missing-unit detail, got: {detail}"
-            );
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::NumericParse { detail, .. } => {
+                assert!(
+                    detail.contains("missing unit suffix"),
+                    "expected missing-unit detail, got: {detail}"
+                );
+            }
+            other => panic!("expected NumericParse, got {other:?}"),
+        },
         other => panic!("expected NumericParse, got {other:?}"),
     }
 }
@@ -242,9 +248,12 @@ fn missing_period_element_rejected() {
     let err = compile_via_imports(scxml, Language::Rust, dir.path())
         .expect_err("missing period must reject");
     match err {
-        ForgeError::Validation(ValidationError::MissingElement { element, .. }) => {
-            assert_eq!(element, "sce:period");
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::MissingElement { element, .. } => {
+                assert_eq!(element, "sce:period");
+            }
+            other => panic!("expected MissingElement(sce:period), got {other:?}"),
+        },
         other => panic!("expected MissingElement(sce:period), got {other:?}"),
     }
 }
@@ -261,9 +270,12 @@ fn missing_fire_event_rejected() {
     let err = compile_via_imports(scxml, Language::Rust, dir.path())
         .expect_err("missing fire-event must reject");
     match err {
-        ForgeError::Validation(ValidationError::MissingElement { element, .. }) => {
-            assert_eq!(element, "sce:fire-event");
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::MissingElement { element, .. } => {
+                assert_eq!(element, "sce:fire-event");
+            }
+            other => panic!("expected MissingElement(sce:fire-event), got {other:?}"),
+        },
         other => panic!("expected MissingElement(sce:fire-event), got {other:?}"),
     }
 }
@@ -301,17 +313,20 @@ topology:
     .map_err(|e| e.error)
     .expect_err("period-below-tick-rate must fire");
     match err {
-        ForgeError::Validation(ValidationError::TimerPeriodBelowTickRate {
-            timer_name,
-            machine,
-            period_us,
-            tick_period_us,
-        }) => {
-            assert_eq!(timer_name, "keepalive");
-            assert_eq!(machine, "mcu_node");
-            assert_eq!(period_us, 500);
-            assert_eq!(tick_period_us, 1000);
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::TimerPeriodBelowTickRate {
+                timer_name,
+                machine,
+                period_us,
+                tick_period_us,
+            } => {
+                assert_eq!(timer_name, "keepalive");
+                assert_eq!(machine, "mcu_node");
+                assert_eq!(period_us, 500);
+                assert_eq!(tick_period_us, 1000);
+            }
+            other => panic!("expected TimerPeriodBelowTickRate, got {other:?}"),
+        },
         other => panic!("expected TimerPeriodBelowTickRate, got {other:?}"),
     }
     let _ = dir;

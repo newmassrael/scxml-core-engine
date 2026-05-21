@@ -288,20 +288,23 @@ fn unknown_outbox_owner_fires() {
     };
 
     match err.error {
-        ForgeError::Validation(ValidationError::WorkerOutboxRefUnknown {
-            worker_name,
-            outbox_value,
-            owner,
-            candidates,
-            ..
-        }) => {
-            assert_eq!(worker_name, "rx_loop");
-            assert_eq!(outbox_value, "sesion_fsm.inbox");
-            assert_eq!(owner, "sesion_fsm");
-            // No statecharts in the build; only the worker itself is
-            // a registered recipient.
-            assert_eq!(candidates, vec!["rx_loop.inbox".to_string()]);
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::WorkerOutboxRefUnknown {
+                worker_name,
+                outbox_value,
+                owner,
+                candidates,
+                ..
+            } => {
+                assert_eq!(worker_name, "rx_loop");
+                assert_eq!(outbox_value, "sesion_fsm.inbox");
+                assert_eq!(owner, "sesion_fsm");
+                // No statecharts in the build; only the worker itself is
+                // a registered recipient.
+                assert_eq!(candidates, vec!["rx_loop.inbox".to_string()]);
+            }
+            other => panic!("expected WorkerOutboxRefUnknown, got: {other:?}"),
+        },
         other => panic!("expected WorkerOutboxRefUnknown, got: {other:?}"),
     }
 }
@@ -342,23 +345,26 @@ fn unknown_outbox_owner_with_busy_registry() {
     };
 
     match err.error {
-        ForgeError::Validation(ValidationError::WorkerOutboxRefUnknown {
-            owner,
-            candidates,
-            ..
-        }) => {
-            assert_eq!(owner, "totally_unknown");
-            // Sorted union: observer + rx_loop + session_fsm, each
-            // suffixed with `.inbox`.
-            assert_eq!(
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::WorkerOutboxRefUnknown {
+                owner,
                 candidates,
-                vec![
-                    "observer.inbox".to_string(),
-                    "rx_loop.inbox".to_string(),
-                    "session_fsm.inbox".to_string(),
-                ]
-            );
-        }
+                ..
+            } => {
+                assert_eq!(owner, "totally_unknown");
+                // Sorted union: observer + rx_loop + session_fsm, each
+                // suffixed with `.inbox`.
+                assert_eq!(
+                    candidates,
+                    vec![
+                        "observer.inbox".to_string(),
+                        "rx_loop.inbox".to_string(),
+                        "session_fsm.inbox".to_string(),
+                    ]
+                );
+            }
+            other => panic!("expected WorkerOutboxRefUnknown, got: {other:?}"),
+        },
         other => panic!("expected WorkerOutboxRefUnknown, got: {other:?}"),
     }
 }
@@ -391,16 +397,19 @@ fn wrong_kind_outbox_to_link_fires() {
     };
 
     match err.error {
-        ForgeError::Validation(ValidationError::WorkerOutboxTargetWrongKind {
-            worker_name,
-            owner,
-            actual_kind,
-            ..
-        }) => {
-            assert_eq!(worker_name, "rx_loop");
-            assert_eq!(owner, "scout_link");
-            assert_eq!(actual_kind, "link");
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::WorkerOutboxTargetWrongKind {
+                worker_name,
+                owner,
+                actual_kind,
+                ..
+            } => {
+                assert_eq!(worker_name, "rx_loop");
+                assert_eq!(owner, "scout_link");
+                assert_eq!(actual_kind, "link");
+            }
+            other => panic!("expected WorkerOutboxTargetWrongKind, got: {other:?}"),
+        },
         other => panic!("expected WorkerOutboxTargetWrongKind, got: {other:?}"),
     }
 }
@@ -436,17 +445,20 @@ fn wrong_kind_outbox_to_link_with_valid_alts() {
     };
 
     match err.error {
-        ForgeError::Validation(ValidationError::WorkerOutboxTargetWrongKind {
-            actual_kind,
-            candidates,
-            ..
-        }) => {
-            assert_eq!(actual_kind, "link");
-            assert_eq!(
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::WorkerOutboxTargetWrongKind {
+                actual_kind,
                 candidates,
-                vec!["rx_loop.inbox".to_string(), "session_fsm.inbox".to_string(),]
-            );
-        }
+                ..
+            } => {
+                assert_eq!(actual_kind, "link");
+                assert_eq!(
+                    candidates,
+                    vec!["rx_loop.inbox".to_string(), "session_fsm.inbox".to_string(),]
+                );
+            }
+            other => panic!("expected WorkerOutboxTargetWrongKind, got: {other:?}"),
+        },
         other => panic!("expected WorkerOutboxTargetWrongKind, got: {other:?}"),
     }
 }
@@ -482,16 +494,19 @@ fn invalid_suffix_typo_inbx_fires() {
     };
 
     match err.error {
-        ForgeError::Validation(ValidationError::WorkerOutboxTargetSuffixInvalid {
-            owner,
-            suffix,
-            outbox_value,
-            ..
-        }) => {
-            assert_eq!(owner, "session_fsm");
-            assert_eq!(suffix, "inbx");
-            assert_eq!(outbox_value, "session_fsm.inbx");
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::WorkerOutboxTargetSuffixInvalid {
+                owner,
+                suffix,
+                outbox_value,
+                ..
+            } => {
+                assert_eq!(owner, "session_fsm");
+                assert_eq!(suffix, "inbx");
+                assert_eq!(outbox_value, "session_fsm.inbx");
+            }
+            other => panic!("expected WorkerOutboxTargetSuffixInvalid, got: {other:?}"),
+        },
         other => panic!("expected WorkerOutboxTargetSuffixInvalid, got: {other:?}"),
     }
 }
@@ -522,16 +537,19 @@ fn invalid_suffix_bare_owner_no_dot_fires() {
     };
 
     match err.error {
-        ForgeError::Validation(ValidationError::WorkerOutboxTargetSuffixInvalid {
-            owner,
-            suffix,
-            outbox_value,
-            ..
-        }) => {
-            assert_eq!(owner, "session_fsm");
-            assert_eq!(suffix, "", "no-dot case yields empty suffix");
-            assert_eq!(outbox_value, "session_fsm");
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::WorkerOutboxTargetSuffixInvalid {
+                owner,
+                suffix,
+                outbox_value,
+                ..
+            } => {
+                assert_eq!(owner, "session_fsm");
+                assert_eq!(suffix, "", "no-dot case yields empty suffix");
+                assert_eq!(outbox_value, "session_fsm");
+            }
+            other => panic!("expected WorkerOutboxTargetSuffixInvalid, got: {other:?}"),
+        },
         other => panic!("expected WorkerOutboxTargetSuffixInvalid, got: {other:?}"),
     }
 }
@@ -566,16 +584,19 @@ fn empty_registry_with_outbox_fires_unknown() {
     };
 
     match err.error {
-        ForgeError::Validation(ValidationError::WorkerOutboxRefUnknown {
-            owner,
-            candidates,
-            ..
-        }) => {
-            assert_eq!(owner, "session_fsm");
-            // Only the worker itself appears as a registered
-            // recipient — no statechart docs in the build.
-            assert_eq!(candidates, vec!["rx_loop.inbox".to_string()]);
-        }
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::WorkerOutboxRefUnknown {
+                owner,
+                candidates,
+                ..
+            } => {
+                assert_eq!(owner, "session_fsm");
+                // Only the worker itself appears as a registered
+                // recipient — no statechart docs in the build.
+                assert_eq!(candidates, vec!["rx_loop.inbox".to_string()]);
+            }
+            other => panic!("expected WorkerOutboxRefUnknown, got: {other:?}"),
+        },
         other => panic!("expected WorkerOutboxRefUnknown, got: {other:?}"),
     }
 }
