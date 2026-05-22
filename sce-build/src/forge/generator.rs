@@ -2543,10 +2543,7 @@ fn render_codec(
     // active arm is the enum discriminant. Per-language fragments
     // factor the syntax out of the templates; templates inject
     // `{{ dispatch_tag_param_decl }}` into decode signatures.
-    let has_caller_tag = m
-        .variant
-        .as_ref()
-        .is_some_and(|v| v.tag_field.is_none());
+    let has_caller_tag = m.variant.as_ref().is_some_and(|v| v.tag_field.is_none());
     let (dispatch_tag_param_decl, dispatch_tag_param_first) = if has_caller_tag {
         match lang {
             crate::generator::Language::Rust => (", tag: u8", "tag: u8"),
@@ -3712,7 +3709,8 @@ fn validate_cross_codec_flag_bind(
                             // for the diagnostic message.
                             let embedded_field = parent
                                 .fields
-                                .get(embed_idx).map_or_else(|| imp.alias.clone(), |f| f.id.clone());
+                                .get(embed_idx)
+                                .map_or_else(|| imp.alias.clone(), |f| f.id.clone());
                             return Err(ForgeError::Validation(Box::new(
                                 ValidationError::CodecFlagBindCarrierAfterEmbed {
                                     parent_codec: parent.name.clone(),
@@ -5168,7 +5166,8 @@ fn combine_arm_call_args(flag_bind_args: &EmbedThreadArgs) -> (String, String, S
     let encode_with_leading_comma = flag_bind_args.encode_arg.clone();
     let encode_first = flag_bind_args
         .encode_arg
-        .strip_prefix(", ").map_or_else(|| flag_bind_args.encode_arg.clone(), |s| s.to_string());
+        .strip_prefix(", ")
+        .map_or_else(|| flag_bind_args.encode_arg.clone(), |s| s.to_string());
     (decode_after_cursor, encode_first, encode_with_leading_comma)
 }
 
@@ -5786,9 +5785,12 @@ fn tlv_chain_streaming_decode_stmt(
             // decode failure when the next field reads bytes meant
             // for the chain).
             let overflow_check = match (on_overflow, &entry_flag_acc) {
-                (TlvOverflowPolicy::Reject, None) => "\n            if cursor.remaining() > 0 {\n                \
+                (TlvOverflowPolicy::Reject, None) => {
+                    "\n            if cursor.remaining() > 0 {\n                \
                          return Err(CodecError::TlvChainOverflow);\n            \
-                     }".to_string(),
+                     }"
+                    .to_string()
+                }
                 _ => String::new(),
             };
             let body = match &entry_flag_acc {
@@ -5827,8 +5829,11 @@ fn tlv_chain_streaming_decode_stmt(
             // Y3 atomic 2b: same exhaust-or-depth-only overflow check
             // as the Rust arm — see comment on the Rust branch above.
             let overflow_check = match (on_overflow, &entry_flag_acc) {
-                (TlvOverflowPolicy::Reject, None) => "\n        if (sce_forge_cursor_remaining(cursor) > 0) \
-                       return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;".to_string(),
+                (TlvOverflowPolicy::Reject, None) => {
+                    "\n        if (sce_forge_cursor_remaining(cursor) > 0) \
+                       return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;"
+                        .to_string()
+                }
                 _ => String::new(),
             };
             // body_decoder shape: `<entry_struct>_decode`. Strip the
@@ -5948,7 +5953,8 @@ fn tlv_chain_streaming_decode_stmt(
             let overflow_check = match (on_overflow, &entry_flag_acc) {
                 (TlvOverflowPolicy::Reject, None) => "\n\tif cursor.Remaining() > 0 {\n\t\t\
                          return nil, codec.ErrTlvChainOverflow\n\t\
-                     }".to_string(),
+                     }"
+                .to_string(),
                 _ => String::new(),
             };
             let body = match &entry_flag_acc {
@@ -5996,8 +6002,11 @@ fn tlv_chain_streaming_decode_stmt(
             let py_id = filters::to_snake_case(id.to_string());
             // Y3 atomic 2b: exhaust-or-depth-only overflow check.
             let overflow_check = match (on_overflow, &entry_flag_acc) {
-                (TlvOverflowPolicy::Reject, None) => "\n            if cursor.remaining() > 0:\n                \
-                         raise TlvChainOverflow()".to_string(),
+                (TlvOverflowPolicy::Reject, None) => {
+                    "\n            if cursor.remaining() > 0:\n                \
+                         raise TlvChainOverflow()"
+                        .to_string()
+                }
                 _ => String::new(),
             };
             let body = match &entry_flag_acc {
@@ -6167,9 +6176,12 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
             // Y3 atomic 2b: exhaust-or-depth-only overflow check (see
             // tlv_chain_streaming_decode_stmt for the rationale).
             let overflow_check = match (on_overflow, &entry_flag_acc) {
-                (TlvOverflowPolicy::Reject, None) => "\n                if cursor.remaining() > 0 {\n                    \
+                (TlvOverflowPolicy::Reject, None) => {
+                    "\n                if cursor.remaining() > 0 {\n                    \
                          return Err(CodecError::TlvChainOverflow);\n                \
-                     }".to_string(),
+                     }"
+                    .to_string()
+                }
                 _ => String::new(),
             };
             let body = match &entry_flag_acc {
@@ -6268,7 +6280,8 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
             let overflow_check = match (on_overflow, &entry_flag_acc) {
                 (TlvOverflowPolicy::Reject, None) => "\n\t\tif cursor.Remaining() > 0 {\n\t\t\t\
                          return nil, codec.ErrTlvChainOverflow\n\t\t\
-                     }".to_string(),
+                     }"
+                .to_string(),
                 _ => String::new(),
             };
             let body = match &entry_flag_acc {
@@ -6310,8 +6323,11 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
             let id_snake = filters::to_snake_case(id.to_string());
             // Y3 atomic 2b: exhaust-or-depth-only overflow check.
             let overflow_check = match (on_overflow, &entry_flag_acc) {
-                (TlvOverflowPolicy::Reject, None) => "\n            if (sce_forge_cursor_remaining(cursor) > 0) \
-                       return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;".to_string(),
+                (TlvOverflowPolicy::Reject, None) => {
+                    "\n            if (sce_forge_cursor_remaining(cursor) > 0) \
+                       return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;"
+                        .to_string()
+                }
                 _ => String::new(),
             };
             let entry_struct_snake = body_decoder.strip_suffix("_decode").unwrap_or(body_decoder);
@@ -6343,8 +6359,11 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
             let py_id = filters::to_snake_case(id.to_string());
             // Y3 atomic 2b: exhaust-or-depth-only overflow check.
             let overflow_check = match (on_overflow, &entry_flag_acc) {
-                (TlvOverflowPolicy::Reject, None) => "\n                if cursor.remaining() > 0:\n                    \
-                         raise TlvChainOverflow()".to_string(),
+                (TlvOverflowPolicy::Reject, None) => {
+                    "\n                if cursor.remaining() > 0:\n                    \
+                         raise TlvChainOverflow()"
+                        .to_string()
+                }
                 _ => String::new(),
             };
             let body = match &entry_flag_acc {
@@ -14748,9 +14767,7 @@ fn bytes_wrap_for(target: ExprTarget, transpiled: &str) -> String {
 }
 
 /// Build the type map (variable name → SceType) for assign type checking.
-fn build_procedure_type_map(
-    m: &ProcedureModel,
-) -> std::collections::HashMap<&str, &SceType> {
+fn build_procedure_type_map(m: &ProcedureModel) -> std::collections::HashMap<&str, &SceType> {
     m.inputs
         .iter()
         .chain(m.internals.iter())
@@ -14875,9 +14892,9 @@ fn render_procedure_kotlin(
         .iter()
         .map(|f| {
             let expected = crate::forge::types::InferredType::from_sce_type(&f.sce_type);
-            let default_val = f
-                .expr
-                .as_ref().map_or_else(|| kotlin_default(&f.sce_type).to_string(), |e| {
+            let default_val = f.expr.as_ref().map_or_else(
+                || kotlin_default(&f.sce_type).to_string(),
+                |e| {
                     expr::transpile_typed(
                         e,
                         ExprTarget::Kotlin,
@@ -14886,7 +14903,8 @@ fn render_procedure_kotlin(
                         expected,
                     )
                     .unwrap_or_else(|_| e.clone())
-                });
+                },
+            );
             serde_json::json!({
                 "id": f.id,
                 "kt_type": kotlin_type(&f.sce_type),
@@ -15139,9 +15157,9 @@ fn render_procedure_rust(
         .map(|f| {
             let snake_id = filters::to_snake_case(f.id.clone());
             let expected = crate::forge::types::InferredType::from_sce_type(&f.sce_type);
-            let default_val = f
-                .expr
-                .as_ref().map_or_else(|| rust_default(&f.sce_type).to_string(), |e| {
+            let default_val = f.expr.as_ref().map_or_else(
+                || rust_default(&f.sce_type).to_string(),
+                |e| {
                     expr::transpile_typed(
                         e,
                         ExprTarget::Rust,
@@ -15150,7 +15168,8 @@ fn render_procedure_rust(
                         expected,
                     )
                     .unwrap_or_else(|_| e.clone())
-                });
+                },
+            );
             serde_json::json!({
                 "id": snake_id,
                 "rs_type": rust_type(&f.sce_type),
@@ -15604,9 +15623,9 @@ fn render_procedure_python(
         .map(|f| {
             let snake_id = filters::to_snake_case(f.id.clone());
             let expected = crate::forge::types::InferredType::from_sce_type(&f.sce_type);
-            let default_val = f
-                .expr
-                .as_ref().map_or_else(|| python_default(&f.sce_type).to_string(), |e| {
+            let default_val = f.expr.as_ref().map_or_else(
+                || python_default(&f.sce_type).to_string(),
+                |e| {
                     expr::transpile_typed(
                         e,
                         ExprTarget::Python,
@@ -15615,7 +15634,8 @@ fn render_procedure_python(
                         expected,
                     )
                     .unwrap_or_else(|_| e.clone())
-                });
+                },
+            );
             serde_json::json!({
                 "snake_id": snake_id,
                 "py_type": python_type(&f.sce_type),

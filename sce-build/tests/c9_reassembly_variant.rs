@@ -162,13 +162,9 @@ fn reassembly_variant_missing_max_fragments_fires_spec_code() {
     let pool_name = match err.error {
         ForgeError::Validation(boxed) => match *boxed {
             ValidationError::MemReassemblyPoolVariantMissingMaxFragments { pool_name } => pool_name,
-            other => panic!(
-                "expected MemReassemblyPoolVariantMissingMaxFragments, got {other:?}"
-            ),
+            other => panic!("expected MemReassemblyPoolVariantMissingMaxFragments, got {other:?}"),
         },
-        other => panic!(
-            "expected MemReassemblyPoolVariantMissingMaxFragments, got {other:?}"
-        ),
+        other => panic!("expected MemReassemblyPoolVariantMissingMaxFragments, got {other:?}"),
     };
     assert_eq!(pool_name, "rx_reassembly_pool");
 }
@@ -197,13 +193,9 @@ fn reassembly_variant_missing_timeout_fires_spec_code() {
     let pool_name = match err.error {
         ForgeError::Validation(boxed) => match *boxed {
             ValidationError::MemReassemblyPoolVariantMissingTimeout { pool_name } => pool_name,
-            other => panic!(
-                "expected MemReassemblyPoolVariantMissingTimeout, got {other:?}"
-            ),
+            other => panic!("expected MemReassemblyPoolVariantMissingTimeout, got {other:?}"),
         },
-        other => panic!(
-            "expected MemReassemblyPoolVariantMissingTimeout, got {other:?}"
-        ),
+        other => panic!("expected MemReassemblyPoolVariantMissingTimeout, got {other:?}"),
     };
     assert_eq!(pool_name, "rx_reassembly_pool");
 }

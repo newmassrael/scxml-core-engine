@@ -8,14 +8,12 @@ use std::time::Duration;
 
 #[test]
 fn test_243() {
-    let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> = std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
+    let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> =
+        std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
     let policy = sce_rust_tests::generated::test243::Test243Policy::new(script_engine);
     let mut engine = sce_rust_runtime::Engine::new(policy);
     engine.initialize();
-    let completed = engine.run_until_completion(
-        Duration::from_secs(5),
-        Duration::from_millis(10),
-    );
+    let completed = engine.run_until_completion(Duration::from_secs(5), Duration::from_millis(10));
     assert!(completed, "Test 243 timed out");
     assert_eq!(
         engine.get_current_state(),

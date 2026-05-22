@@ -10466,10 +10466,14 @@ fn b5_nu_dsg_compile_disp(
     output
         .files
         .iter()
-        .find(|(name, _)| name.contains(disp_id) || name.contains(&pascal)).map_or_else(|| {
-            let names: Vec<&str> = output.files.iter().map(|(n, _)| n.as_str()).collect();
-            panic!("dispatcher codec emit not found; available files: {names:?}");
-        }, |(_, body)| body.clone())
+        .find(|(name, _)| name.contains(disp_id) || name.contains(&pascal))
+        .map_or_else(
+            || {
+                let names: Vec<&str> = output.files.iter().map(|(n, _)| n.as_str()).collect();
+                panic!("dispatcher codec emit not found; available files: {names:?}");
+            },
+            |(_, body)| body.clone(),
+        )
 }
 
 fn b5_nu_id_to_pascal(id: &str) -> String {
@@ -11558,9 +11562,9 @@ fn compile_codec_set_kotlin(
         .ok()
         .and_then(|entries| {
             entries.filter_map(|e| e.ok()).map(|e| e.path()).find(|p| {
-                p.file_name()
-                    .and_then(|n| n.to_str())
-                    .is_some_and(|n| n.starts_with("sce-forge-runtime-kotlin-jvm") && n.ends_with(".jar"))
+                p.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+                    n.starts_with("sce-forge-runtime-kotlin-jvm") && n.ends_with(".jar")
+                })
             })
         });
     let Some(jar_path) = runtime_jar else {
@@ -13026,21 +13030,29 @@ fn axis1_inversion_embed_dispatcher_arg_order() {
         let parent_body = parent_out
             .files
             .iter()
-            .find(|(name, _)| name.contains(check.parent_stem)).map_or_else(|| {
-                panic!(
-                    "{:?}: no emit file matched parent stem `{}`",
-                    check.lang, check.parent_stem
-                )
-            }, |(_, b)| b.clone());
+            .find(|(name, _)| name.contains(check.parent_stem))
+            .map_or_else(
+                || {
+                    panic!(
+                        "{:?}: no emit file matched parent stem `{}`",
+                        check.lang, check.parent_stem
+                    )
+                },
+                |(_, b)| b.clone(),
+            );
         let dispatcher_body = dispatcher_out
             .files
             .iter()
-            .find(|(name, _)| name.ends_with(check.dispatcher_stem)).map_or_else(|| {
-                panic!(
-                    "{:?}: no emit file matched dispatcher stem `{}`",
-                    check.lang, check.dispatcher_stem
-                )
-            }, |(_, b)| b.clone());
+            .find(|(name, _)| name.ends_with(check.dispatcher_stem))
+            .map_or_else(
+                || {
+                    panic!(
+                        "{:?}: no emit file matched dispatcher stem `{}`",
+                        check.lang, check.dispatcher_stem
+                    )
+                },
+                |(_, b)| b.clone(),
+            );
         if !parent_body.contains(check.caller_positive) {
             failures.push(format!(
                 "{:?} caller: missing expected substring `{}` — flag-bind arg must \

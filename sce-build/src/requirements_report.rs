@@ -73,10 +73,7 @@ pub fn emit_requirements_ndjson<W: Write>(model: &SCXMLModel, writer: &mut W) ->
             for (j, action) in block.iter().enumerate() {
                 if !action.req.is_empty() {
                     let record = RequirementRecord {
-                        node_path: format!(
-                            "states.{}.on_entry_blocks[{i}][{j}]",
-                            state.id
-                        ),
+                        node_path: format!("states.{}.on_entry_blocks[{i}][{j}]", state.id),
                         node_type: "action",
                         action_type: Some(action.action_type.as_str()),
                         requirement_ids: refs_of(&action.req),
@@ -90,10 +87,7 @@ pub fn emit_requirements_ndjson<W: Write>(model: &SCXMLModel, writer: &mut W) ->
             for (j, action) in block.iter().enumerate() {
                 if !action.req.is_empty() {
                     let record = RequirementRecord {
-                        node_path: format!(
-                            "states.{}.on_exit_blocks[{i}][{j}]",
-                            state.id
-                        ),
+                        node_path: format!("states.{}.on_exit_blocks[{i}][{j}]", state.id),
                         node_type: "action",
                         action_type: Some(action.action_type.as_str()),
                         requirement_ids: refs_of(&action.req),

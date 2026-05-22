@@ -616,8 +616,9 @@ pub fn c_literal_for(value: &serde_json::Value, ty: &str) -> String {
                 let inner: Vec<String> = elems
                     .iter()
                     .map(|e| match e {
-                        serde_json::Value::Number(n) => n
-                            .as_u64().map_or_else(|| n.to_string(), |u| u.to_string()),
+                        serde_json::Value::Number(n) => {
+                            n.as_u64().map_or_else(|| n.to_string(), |u| u.to_string())
+                        }
                         _ => "/* non-int bytes element */".into(),
                     })
                     .collect();
@@ -1203,10 +1204,12 @@ pub(crate) fn read_procedure_is_l2(scxml_path: &Path) -> Result<bool, String> {
             if name == "helper" && ns == Some(sce_ns) {
                 return Ok(true);
             }
-            if name == "data" && ns == Some(scxml_ns)
-                && child.attribute((sce_ns, "direction")) == Some("internal") {
-                    return Ok(true);
-                }
+            if name == "data"
+                && ns == Some(scxml_ns)
+                && child.attribute((sce_ns, "direction")) == Some("internal")
+            {
+                return Ok(true);
+            }
         }
     }
 

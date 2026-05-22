@@ -45,10 +45,6 @@ pub mod provenance;
 /// Drives the `sce-codegen requirements` CLI subcommand for
 /// downstream req-coverage tooling.
 pub mod requirements_report;
-/// NL→IR Mapping Roadmap Item 5: `<sce:unresolved>` placeholder
-/// detection — strict-mode build gate + NDJSON report. Drives
-/// `--strict-unresolved` on `generate` and `sce-codegen unresolved`.
-pub mod unresolved_check;
 pub mod script_engine_analyzer;
 pub mod scxml_semantic;
 /// `sce:template` / `sce:use` / `sce:param` preprocessing —
@@ -57,6 +53,10 @@ pub mod scxml_semantic;
 /// so templates see a post-XInclude document. See [`template`]
 /// for the expansion semantics and error model.
 pub mod template;
+/// NL→IR Mapping Roadmap Item 5: `<sce:unresolved>` placeholder
+/// detection — strict-mode build gate + NDJSON report. Drives
+/// `--strict-unresolved` on `generate` and `sce-codegen unresolved`.
+pub mod unresolved_check;
 pub mod w3c_dist_manifest;
 #[cfg(feature = "wasm")]
 mod wasm;
@@ -255,8 +255,10 @@ pub fn resolve_source_path(model: &mut SCXMLModel, scxml_path: &str) {
 /// [`resolve_driver_refs_with_root`] (deploy-aware entry); this
 /// helper is the SCXML-only baseline.
 fn resolve_driver_refs(model: &mut SCXMLModel, scxml_path: &str) -> Result<(), CompileError> {
-    let parent_default = std::path::Path::new(scxml_path)
-        .parent().map_or_else(|| std::path::PathBuf::from("."), std::path::Path::to_path_buf);
+    let parent_default = std::path::Path::new(scxml_path).parent().map_or_else(
+        || std::path::PathBuf::from("."),
+        std::path::Path::to_path_buf,
+    );
     resolve_driver_refs_with_root(model, scxml_path, &parent_default)
 }
 
@@ -1328,10 +1330,7 @@ pub fn compile_forge_with_deploy(
                             generator::Language::C11 => "c11",
                             _ => unreachable!(),
                         };
-                        let primary = output
-                            .files
-                            .first()
-                            .map_or("", |(_, src)| src.as_str());
+                        let primary = output.files.first().map_or("", |(_, src)| src.as_str());
                         if !primary.contains("sce_dcache_invalidate_by_addr") {
                             return Err(Located::new(
                                 ValidationError::PoolCachePreArmInvalidateMissingOnSpeculativeCore {
@@ -2091,7 +2090,12 @@ pub fn compile_scxml_with_imports(
     // migration extends explicit declarations to every listener.
     if let Some(deploy_cfg) = deploy {
         validate_cross_doc_listener_roles(deploy_cfg, &scxml_models).map_err(|e| {
-            Located::new(forge::error::ForgeError::Validation(e), "deploy.yaml", None, None)
+            Located::new(
+                forge::error::ForgeError::Validation(e),
+                "deploy.yaml",
+                None,
+                None,
+            )
         })?;
     }
 
@@ -2723,7 +2727,8 @@ fn validate_and_enrich_imports(
                 let mut visited: HashSet<PathBuf> = HashSet::new();
                 visited.insert(src_path.clone());
                 let inner_base = src_path
-                    .parent().map_or_else(|| base_dir.to_path_buf(), |p| p.to_path_buf());
+                    .parent()
+                    .map_or_else(|| base_dir.to_path_buf(), |p| p.to_path_buf());
                 ctx.codec_max_bytes = Some(compute_codec_recursive_max_bytes(
                     cm,
                     &parsed.imports,
@@ -2805,7 +2810,11 @@ fn validate_and_enrich_imports(
                     if matches!(*language, generator::Language::Rust) && needs_variant_import {
                         let snake = std::path::Path::new(&imp.src)
                             .file_stem()
-                            .and_then(|s| s.to_str()).map_or_else(|| ctx.alias.clone(), |s| filters::to_snake_case(s.to_string()));
+                            .and_then(|s| s.to_str())
+                            .map_or_else(
+                                || ctx.alias.clone(),
+                                |s| filters::to_snake_case(s.to_string()),
+                            );
                         ctx.include_stmt = format!(
                             "use super::{snake}::{{{pascal}, {pascal}Variant}};",
                             snake = snake,
@@ -5337,7 +5346,11 @@ pub fn compile_mesh_transport(
     // pure-receiver machine that never enters this branch and a fully
     // configured one share the same constants.
     let machine_ordering = device
-        .and_then(|d| d.machines.get(&effective_machine_name)).map_or_else(mesh::deploy::OrderingTimings::default_const, mesh::deploy::MachineConfig::resolved_ordering_timings);
+        .and_then(|d| d.machines.get(&effective_machine_name))
+        .map_or_else(
+            mesh::deploy::OrderingTimings::default_const,
+            mesh::deploy::MachineConfig::resolved_ordering_timings,
+        );
     // SCE Mesh §16.7 row 8 (PEER_PARTITIONED): opt-in Zenoh liveliness
     // tokens. Absent section on the machine ⇒ `None`, and the template
     // emits zero liveliness code for that machine. `LivelinessConfig`
@@ -7593,9 +7606,9 @@ topology:
                     assert_eq!(parent_device, "ecu_a");
                     assert_eq!(peer_device, "ecu_b");
                 }
-                other => panic!(
-                    "expected ScxmlInvokeCrossDeviceTransport/MissingBinding, got {other:?}"
-                ),
+                other => {
+                    panic!("expected ScxmlInvokeCrossDeviceTransport/MissingBinding, got {other:?}")
+                }
             },
             other => {
                 panic!("expected ScxmlInvokeCrossDeviceTransport/MissingBinding, got {other:?}")

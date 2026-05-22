@@ -87,9 +87,9 @@ fn assert_validator_silent_passed(
                     // validator failure would short-circuit before
                     // codegen).
                 }
-                other => panic!(
-                    "C6-β validator must silent-pass; got an unrelated error: {other:?}"
-                ),
+                other => {
+                    panic!("C6-β validator must silent-pass; got an unrelated error: {other:?}")
+                }
             },
             other => panic!("C6-β validator must silent-pass; got an unrelated error: {other:?}"),
         },
@@ -284,7 +284,8 @@ fn happy_multi_writer_with_atomic_extern() {
     <sce:field id="key_expr_id" sce:type="uint32" sce:byte="0" sce:bit-size="32"/>
     <sce:field id="callback_id" sce:type="uint32" sce:byte="4" sce:bit-size="32"/>
   </datamodel>
-</scxml>"##.to_string();
+</scxml>"##
+        .to_string();
     let codec = write_doc(dir.path(), "subscription_entry.scxml", &codec_with_extern);
     let bc = write_doc(
         dir.path(),

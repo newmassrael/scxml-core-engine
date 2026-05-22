@@ -400,7 +400,8 @@ topology:
           memcpy_cycles_per_byte: 2.0
           vle_decode_cycles_per_byte: 8.0
           tlv_chain_per_entry_overhead_us: 0.8
-"#.to_string();
+"#
+    .to_string();
     let cfg = parse_deploy_str(&yaml).expect("WCET extensions parse");
     let platform = cfg
         .topology

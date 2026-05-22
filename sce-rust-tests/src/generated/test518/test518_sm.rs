@@ -3,7 +3,6 @@
 // template-hash: d588114b3294b4cb4d7e02d63e6d31a3c0326d3afa0a691deb12b545b5ff5045
 // generated-at: 1779460271
 
-
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
 //
@@ -71,13 +70,11 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-
 #![doc = "SCE-MAP: test518.scxml:5"]
 // SCE-MAP: test518.scxml:5
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
-
 
 // ======================================================================
 // State enum (W3C SCXML 3.3)
@@ -173,13 +170,12 @@ impl Test518Policy {
         }
     }
 
-
-
     // W3C SCXML 5.10: Ensure session ID is initialized
     // Uses atomic counter (1:1 with C++ UniqueIdGenerator::generateSessionId)
     fn ensure_session_id(&mut self) {
         if self.session_id.is_none() {
-            static SESSION_COUNTER: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+            static SESSION_COUNTER: core::sync::atomic::AtomicU64 =
+                core::sync::atomic::AtomicU64::new(0);
             let id = SESSION_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             self.session_id = Some(format!("session_{}", id));
         }
@@ -205,13 +201,10 @@ impl Test518Policy {
         // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
         // W3C SCXML 5.2/5.3: Initialize 'Var1' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "Var1", "2") {
+            se, &sid, "Var1", "2",
+        ) {
             log::error!("global: {}", e);
         }
-
-
-
-
 
         self.script_engine_initialized = true;
     }
@@ -237,14 +230,13 @@ impl Test518Policy {
         // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
         // W3C SCXML 5.2/5.3: Initialize 'Var1' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "Var1", "2") {
+            se, &sid, "Var1", "2",
+        ) {
             log::error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(Test518Event::ErrorExecution));
+            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                Test518Event::ErrorExecution,
+            ));
         }
-
-
-
-
 
         self.script_engine_initialized = true;
     }
@@ -259,30 +251,42 @@ impl Test518Policy {
             Ok(val) => val.to_bool(),
             Err(e) => {
                 log::error!("Guard evaluation failed for '{}': {}", cond, e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(Test518Event::ErrorExecution));
+                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                    Test518Event::ErrorExecution,
+                ));
                 false
             }
         }
     }
 
     // W3C SCXML 5.10: Set _event system variable for current event
-    fn set_current_event_in_script_engine(&self, event_name: &str, event_data: &str,
-            event_type: &str, send_id: &str, origin: &str, origin_type: &str, invoke_id: &str) {
+    fn set_current_event_in_script_engine(
+        &self,
+        event_name: &str,
+        event_data: &str,
+        event_type: &str,
+        send_id: &str,
+        origin: &str,
+        origin_type: &str,
+        invoke_id: &str,
+    ) {
         if let Some(ref sid) = self.session_id {
             let se = self.script_engine.clone();
             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-            let _ = se.set_current_event(sid, sce_rust_runtime::SetCurrentEventArgs {
-                event_name,
-                event_data,
-                event_type,
-                send_id,
-                origin,
-                origin_type,
-                invoke_id,
-            });
+            let _ = se.set_current_event(
+                sid,
+                sce_rust_runtime::SetCurrentEventArgs {
+                    event_name,
+                    event_data,
+                    event_type,
+                    send_id,
+                    origin,
+                    origin_type,
+                    invoke_id,
+                },
+            );
         }
     }
-
 
     // W3C SCXML 6.4.1: Set parameter in child's script engine before invoke initialization
     // Matches C++ child->setParamInScriptEngine(name, expr)
@@ -292,17 +296,20 @@ impl Test518Policy {
         let se = self.script_engine.clone();
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         match se.evaluate_expression(&sid, expr) {
-            Ok(val) => { let _ = se.set_variable(&sid, name, val); }
+            Ok(val) => {
+                let _ = se.set_variable(&sid, name, val);
+            }
             Err(_) => {
                 // Fallback: set as string literal
-                let _ = se.set_variable(&sid, name,
-                    sce_rust_runtime::ScriptValue::String(expr.to_string()));
+                let _ = se.set_variable(
+                    &sid,
+                    name,
+                    sce_rust_runtime::ScriptValue::String(expr.to_string()),
+                );
             }
         }
     }
-
 }
-
 
 // ======================================================================
 // StatePolicy trait implementation
@@ -346,7 +353,6 @@ impl StatePolicy for Test518Policy {
             _ => false,
         }
     }
-
 
     fn is_descendant_of(desc: Self::State, anc: Self::State) -> bool {
         let mut current = desc;
@@ -407,7 +413,9 @@ impl StatePolicy for Test518Policy {
     // [`StateChain`] alias and the body uses `state_chain_from_slice` instead of
     // `vec![...]` so the emitted code compiles under `--no-std` (`vec!` is a
     // std-only macro; heapless has no equivalent).
-    fn get_initial_children(state: Self::State) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
+    fn get_initial_children(
+        state: Self::State,
+    ) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
         match state {
             _ => ::sce_rust_runtime::helpers::hierarchy::new_chain(),
         }
@@ -448,7 +456,6 @@ impl StatePolicy for Test518Policy {
         self.last_transition_source_state = state;
     }
 
-
     fn set_next_event_is_external(&mut self, value: bool) {
         self.next_event_is_external = value;
     }
@@ -480,106 +487,112 @@ impl StatePolicy for Test518Policy {
     // Instance methods - generated executable content
     // ======================================================================
 
-
-
     // W3C SCXML 3.7: Execute <onentry> actions for a state
     #[doc = "SCE-MAP: test518.scxml:5"]
-// SCE-MAP: test518.scxml:5
-    fn execute_entry_actions(&mut self, state: Self::State, engine: &mut sce_rust_runtime::Engine<Self>) {
+    // SCE-MAP: test518.scxml:5
+    fn execute_entry_actions(
+        &mut self,
+        state: Self::State,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
         match state {
             Test518State::S0 => {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
+                    {
+                        let send_id = "__send_0".to_string();
 
+                        let event_data: &str = "";
 
-{
-    let send_id = "__send_0".to_string();
+                        // W3C SCXML 6.2: Delayed send (30000ms)
+                        engine.schedule_event(
+                            Test518Event::Timeout,
+                            core::time::Duration::from_millis(30000),
+                            &send_id,
+                            event_data,
+                        );
 
+                        let _ = send_id; // suppress unused warning when no send operation
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                    }
 
-    let event_data: &str = "";
+                    {
+                        let send_id = "__send_1".to_string();
 
+                        let mut _send_aborted = false;
+                        // W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+                        let event_data_string: String = {
+                            self.ensure_script_engine();
+                            let sid = self.session_id.as_ref().unwrap().clone();
+                            let se = self.script_engine.clone();
+                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                            let mut parts: Vec<String> = Vec::new();
+                            // W3C SCXML C.1: namelist variables become top-level keys in the data table
+                            // W3C SCXML B.2 (test 553): Check variable existence before evaluation
+                            if !se.has_variable(&sid, "Var1") {
+                                log::error!("send namelist 'Var1': variable not declared");
+                                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                    Test518Event::ErrorExecution,
+                                ));
+                                _send_aborted = true;
+                            } else {
+                                match se.evaluate_expression(&sid, "Var1") {
+                                    Ok(val) => {
+                                        parts.push(format!(
+                                            "[{:?}]={}",
+                                            "Var1",
+                                            val.to_lua_literal()
+                                        ));
+                                    }
+                                    Err(e) => {
+                                        log::error!("send namelist 'Var1' eval failed: {}", e);
+                                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                            Test518Event::ErrorExecution,
+                                        ));
+                                        _send_aborted = true;
+                                    }
+                                }
+                            }
+                            if _send_aborted {
+                                String::new()
+                            } else {
+                                format!("{{{}}}", parts.join(","))
+                            }
+                        };
+                        // W3C SCXML 6.2: event_data defaults to empty if namelist failed
+                        let event_data: &str = if _send_aborted {
+                            ""
+                        } else {
+                            &event_data_string
+                        };
 
-
-    // W3C SCXML 6.2: Delayed send (30000ms)
-    engine.schedule_event(
-        Test518Event::Timeout,
-        core::time::Duration::from_millis(30000),
-        &send_id,
-        event_data,
-    );
-
-
-    let _ = send_id;  // suppress unused warning when no send operation
-    let _ = event_data;  // suppress unused warning in branches that skip dispatch
-}
-
-
-{
-    let send_id = "__send_1".to_string();
-
-
-    let mut _send_aborted = false;
-    // W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
-    let event_data_string: String = {
-        self.ensure_script_engine();
-        let sid = self.session_id.as_ref().unwrap().clone();
-        let se = self.script_engine.clone();
-        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-        let mut parts: Vec<String> = Vec::new();
-        // W3C SCXML C.1: namelist variables become top-level keys in the data table
-        // W3C SCXML B.2 (test 553): Check variable existence before evaluation
-        if !se.has_variable(&sid, "Var1") {
-            log::error!("send namelist 'Var1': variable not declared");
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(Test518Event::ErrorExecution));
-            _send_aborted = true;
-        } else {
-            match se.evaluate_expression(&sid, "Var1") {
-                Ok(val) => {
-                    parts.push(format!("[{:?}]={}", "Var1", val.to_lua_literal()));
-                }
-                Err(e) => {
-                    log::error!("send namelist 'Var1' eval failed: {}", e);
-                    engine.raise(sce_rust_runtime::EventWithMetadata::new(Test518Event::ErrorExecution));
-                    _send_aborted = true;
-                }
-            }
-        }
-        if _send_aborted { String::new() } else { format!("{{{}}}", parts.join(",")) }
-    };
-    // W3C SCXML 6.2: event_data defaults to empty if namelist failed
-    let event_data: &str = if _send_aborted { "" } else { &event_data_string };
-
-
-    if !_send_aborted {
-
-    // W3C SCXML C.2: BasicHTTP send to HTTP target
-    {
-        let mut http_params = std::collections::HashMap::<String, Vec<String>>::new();
-        engine.perform_http_send(
-            "http://localhost:8080/test".to_string(),
-            "test".to_string(),
-            "".to_string(),
-            http_params,
-            send_id.clone(),
-        );
-    }
-
-
-    } // end of !_send_aborted guard (W3C SCXML 6.2: abort send on namelist error)
-    let _ = send_id;  // suppress unused warning when no send operation
-    let _ = event_data;  // suppress unused warning in branches that skip dispatch
-}
+                        if !_send_aborted {
+                            // W3C SCXML C.2: BasicHTTP send to HTTP target
+                            {
+                                let mut http_params =
+                                    std::collections::HashMap::<String, Vec<String>>::new();
+                                engine.perform_http_send(
+                                    "http://localhost:8080/test".to_string(),
+                                    "test".to_string(),
+                                    "".to_string(),
+                                    http_params,
+                                    send_id.clone(),
+                                );
+                            }
+                        } // end of !_send_aborted guard (W3C SCXML 6.2: abort send on namelist error)
+                        let _ = send_id; // suppress unused warning when no send operation
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                    }
                 }
             }
             _ => {}
         }
-
     }
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
     #[doc = "SCE-MAP: test518.scxml:5"]
-// SCE-MAP: test518.scxml:5
+    // SCE-MAP: test518.scxml:5
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -588,11 +601,9 @@ impl StatePolicy for Test518Policy {
     ) {
     }
 
-
-
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
     #[doc = "SCE-MAP: test518.scxml:5"]
-// SCE-MAP: test518.scxml:5
+    // SCE-MAP: test518.scxml:5
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -607,7 +618,8 @@ impl StatePolicy for Test518Policy {
             let event_name = Self::get_event_name(event);
             self.pending_event_name = event_name.to_string();
             // W3C SCXML 5.10.1: Classify event type (ports C++ EventTypeHelper::classifyEventType)
-            let event_type = if event_name.starts_with("error.") || event_name.starts_with("done.") {
+            let event_type = if event_name.starts_with("error.") || event_name.starts_with("done.")
+            {
                 "platform"
             } else if self.next_event_is_external {
                 self.next_event_is_external = false;
@@ -623,19 +635,31 @@ impl StatePolicy for Test518Policy {
             let ev_origintype: &str = &self.pending_event_origintype;
             let ev_invokeid: &str = &self.pending_event_invokeid;
             self.set_current_event_in_script_engine(
-                event_name, ev_data, event_type, ev_sendid, ev_origin, ev_origintype, ev_invokeid,
+                event_name,
+                ev_data,
+                event_type,
+                ev_sendid,
+                ev_origin,
+                ev_origintype,
+                ev_invokeid,
             );
         }
 
         // Flat state machine: no hierarchy, direct transition check
-        self.try_transition_in_state(*current_state, event, current_state, &mut transition_taken, engine);
+        self.try_transition_in_state(
+            *current_state,
+            event,
+            current_state,
+            &mut transition_taken,
+            engine,
+        );
 
         transition_taken
     }
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
     #[doc = "SCE-MAP: test518.scxml:5"]
-// SCE-MAP: test518.scxml:5
+    // SCE-MAP: test518.scxml:5
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         // W3C SCXML 3.13: No transition actions in this state machine
         let _ = engine;
@@ -645,7 +669,6 @@ impl StatePolicy for Test518Policy {
     fn initialize_data_model(&mut self, engine: &mut Engine<Self>) {
         self.do_initialize_data_model(engine);
     }
-
 }
 
 // ======================================================================
@@ -669,34 +692,34 @@ impl Test518Policy {
                 // W3C SCXML 3.12: Event-triggered transitions (document order)
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == Test518Event::Test {
-                        // W3C SCXML 3.4: Track transition metadata
-                        self.last_transition_source_state = check_state;
-                        self.last_transition_is_internal = false;
-                        self.last_transition_is_targetless = false;
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
 
-                            *current_state = Test518State::Pass;
-                            *transition_taken = true;
-                        return true;
+                    *current_state = Test518State::Pass;
+                    *transition_taken = true;
+                    return true;
                 }
                 // W3C SCXML 5.9.3: Runtime event descriptor matching
-                if event != Test518Event::Null && sce_rust_runtime::helpers::event_matching::matches_event_descriptor(
-                    Self::get_event_name(event), "*") {
-                        // W3C SCXML 3.4: Track transition metadata
-                        self.last_transition_source_state = check_state;
-                        self.last_transition_is_internal = false;
-                        self.last_transition_is_targetless = false;
+                if event != Test518Event::Null
+                    && sce_rust_runtime::helpers::event_matching::matches_event_descriptor(
+                        Self::get_event_name(event),
+                        "*",
+                    )
+                {
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
 
-                            *current_state = Test518State::Fail;
-                            *transition_taken = true;
-                        return true;
+                    *current_state = Test518State::Fail;
+                    *transition_taken = true;
+                    return true;
                 }
                 false
             }
             _ => false,
         }
     }
-
-
-
-
 }

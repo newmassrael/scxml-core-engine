@@ -35,10 +35,7 @@ pub fn first_unresolved(model: &SCXMLModel) -> Option<(String, &UnresolvedMarker
         for (i, transition) in state.transitions.iter().enumerate() {
             if let Some(m) = transition.unresolved.first() {
                 return Some((
-                    format!(
-                        "<transition #{i} in <state id=\"{}\">>",
-                        state.id
-                    ),
+                    format!("<transition #{i} in <state id=\"{}\">>", state.id),
                     m,
                 ));
             }
@@ -149,8 +146,7 @@ pub fn emit_unresolved_ndjson<W: Write>(model: &SCXMLModel, writer: &mut W) -> i
         }
         for (i, block) in state.on_entry_blocks.iter().enumerate() {
             for (j, action) in block.iter().enumerate() {
-                let path =
-                    format!("states.{}.on_entry_blocks[{i}][{j}]", state.id);
+                let path = format!("states.{}.on_entry_blocks[{i}][{j}]", state.id);
                 for marker in &action.unresolved {
                     write_marker(
                         writer,
@@ -164,8 +160,7 @@ pub fn emit_unresolved_ndjson<W: Write>(model: &SCXMLModel, writer: &mut W) -> i
         }
         for (i, block) in state.on_exit_blocks.iter().enumerate() {
             for (j, action) in block.iter().enumerate() {
-                let path =
-                    format!("states.{}.on_exit_blocks[{i}][{j}]", state.id);
+                let path = format!("states.{}.on_exit_blocks[{i}][{j}]", state.id);
                 for marker in &action.unresolved {
                     write_marker(
                         writer,

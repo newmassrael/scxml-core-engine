@@ -859,7 +859,6 @@ impl Endian {
     }
 }
 
-
 /// RFC §5.B B2 repeat primitive — element count source for a
 /// `BitSize::Repeat` field.
 ///
@@ -1890,7 +1889,6 @@ impl OutOfBounds {
         }
     }
 }
-
 
 /// Axis definition for interpolation (breakpoints for one dimension).
 #[derive(Debug, Clone, Serialize)]

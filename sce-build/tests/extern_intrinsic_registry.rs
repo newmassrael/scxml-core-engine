@@ -167,9 +167,7 @@ fn reject_ordering_unspecified() {
     match err {
         ForgeError::Validation(boxed) => match *boxed {
             ValidationError::ExternOrderingUnspecified {
-                base,
-                candidates,
-                ..
+                base, candidates, ..
             } => {
                 assert_eq!(base, "sce_atomic_load");
                 // 2 orderings (acquire, relaxed) × 5 widths = 10 completions.

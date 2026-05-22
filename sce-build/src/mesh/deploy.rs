@@ -146,7 +146,6 @@ pub enum DistributabilityMode {
     Permissive,
 }
 
-
 // SCE_MESH.md §14 rules 6-10 — partitions schema.
 //
 // The typed parse of a YAML mapping into `BTreeMap<String, T>` silently
@@ -3015,7 +3014,8 @@ fn validate_links(cfg: &DeployConfig) -> Result<(), DeployError> {
                         // value (or "<absent>" when domain_attrs is
                         // entirely missing) so the wire payload names
                         // the axis the author got wrong.
-                        let trust_class_str = trust_class.map_or_else(|| "<absent>".to_string(), |tc| tc.as_str().to_string());
+                        let trust_class_str = trust_class
+                            .map_or_else(|| "<absent>".to_string(), |tc| tc.as_str().to_string());
                         return Err(DeployError::SessionArmingFieldsOnNonArmingLink {
                             machine: machine_name.clone(),
                             link_name: link_name.clone(),
@@ -3465,10 +3465,10 @@ pub fn validate_reassembly_cross_doc(
                 .scheduler
                 .as_ref()
                 .and_then(|s| s.worker_slot_budget_us);
-            let (clock_freq_mhz, memcpy_cycles_per_byte) = machine
-                .platform
-                .as_ref()
-                .map_or((None, None), |p| (p.clock_freq_mhz, p.memcpy_cycles_per_byte));
+            let (clock_freq_mhz, memcpy_cycles_per_byte) =
+                machine.platform.as_ref().map_or((None, None), |p| {
+                    (p.clock_freq_mhz, p.memcpy_cycles_per_byte)
+                });
 
             for (link_name, link) in machine.links.iter() {
                 let Some((pool_name, _slot_count, variant)) = resolve_link_rx_pool_slot_count(
@@ -3697,8 +3697,7 @@ pub fn validate_reassembly_cross_doc(
                 // codes when both would apply.
                 let policy = machine.resolved_stage_copy_policy();
                 if matches!(policy, StageCopyPolicy::Forbid)
-                    && forge_link
-                        .is_some_and(|l| l.accept_stage_copy_rate)
+                    && forge_link.is_some_and(|l| l.accept_stage_copy_rate)
                 {
                     return Err(Box::new(
                         ValidationError::PoolStageCopyAcceptRejectedUnderForbid {
@@ -3739,8 +3738,7 @@ pub fn validate_reassembly_cross_doc(
                             let rate_percent =
                                 (excess as u64 * 100 / expected_p99_bytes as u64) as u32;
                             if rate_percent > 25 {
-                                let opt_out = forge_link
-                                    .is_some_and(|l| l.accept_stage_copy_rate);
+                                let opt_out = forge_link.is_some_and(|l| l.accept_stage_copy_rate);
                                 // Opt-out suppresses the diagnostic
                                 // under `warn` and `error` per spec
                                 // line 2356-2361. Under `forbid` the
@@ -5371,14 +5369,11 @@ pub(crate) fn assign_someip_liveness_service_ids(
             }
             // ≥2 partition gate (row-13-specific; row 8 has no such
             // requirement under RFC F.X-4).
-            let sibling_partition_count = cfg
-                .partitions
-                .as_ref()
-                .map_or(0, |m| {
-                    m.iter()
-                        .filter(|(_, p)| p.machines.iter().any(|n| n == machine_name))
-                        .count()
-                });
+            let sibling_partition_count = cfg.partitions.as_ref().map_or(0, |m| {
+                m.iter()
+                    .filter(|(_, p)| p.machines.iter().any(|n| n == machine_name))
+                    .count()
+            });
             if sibling_partition_count < 2 {
                 continue;
             }

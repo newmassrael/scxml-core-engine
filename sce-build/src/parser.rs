@@ -1172,11 +1172,8 @@ impl SCXMLParser {
                 ..Default::default()
             };
             self.document_order_counter += 1;
-            state.req = collect_sce_req(
-                &child,
-                || format!("<state id=\"{state_id}\">"),
-                source_name,
-            )?;
+            state.req =
+                collect_sce_req(&child, || format!("<state id=\"{state_id}\">"), source_name)?;
             state.unresolved = collect_sce_unresolved(&child, source_name);
 
             // Parse transitions
@@ -1203,8 +1200,7 @@ impl SCXMLParser {
                     || format!("<onentry> in <state id=\"{state_id}\">"),
                     source_name,
                 )?;
-                let mut block =
-                    self.parse_executable_content(&entry_elem, model, source_name)?;
+                let mut block = self.parse_executable_content(&entry_elem, model, source_name)?;
                 inherit_req(&req, &mut block);
                 if !block.is_empty() {
                     state.on_entry_blocks.push(block);
@@ -1218,8 +1214,7 @@ impl SCXMLParser {
                     || format!("<onexit> in <state id=\"{state_id}\">"),
                     source_name,
                 )?;
-                let mut block =
-                    self.parse_executable_content(&exit_elem, model, source_name)?;
+                let mut block = self.parse_executable_content(&exit_elem, model, source_name)?;
                 inherit_req(&req, &mut block);
                 if !block.is_empty() {
                     state.on_exit_blocks.push(block);
@@ -1309,11 +1304,8 @@ impl SCXMLParser {
                 ..Default::default()
             };
             self.document_order_counter += 1;
-            state.req = collect_sce_req(
-                &child,
-                || format!("<final id=\"{final_id}\">"),
-                source_name,
-            )?;
+            state.req =
+                collect_sce_req(&child, || format!("<final id=\"{final_id}\">"), source_name)?;
             state.unresolved = collect_sce_unresolved(&child, source_name);
 
             for entry_elem in scxml_children(&child, "onentry") {
@@ -1322,8 +1314,7 @@ impl SCXMLParser {
                     || format!("<onentry> in <final id=\"{final_id}\">"),
                     source_name,
                 )?;
-                let mut block =
-                    self.parse_executable_content(&entry_elem, model, source_name)?;
+                let mut block = self.parse_executable_content(&entry_elem, model, source_name)?;
                 inherit_req(&req, &mut block);
                 if !block.is_empty() {
                     state.on_entry_blocks.push(block);
@@ -1335,8 +1326,7 @@ impl SCXMLParser {
                     || format!("<onexit> in <final id=\"{final_id}\">"),
                     source_name,
                 )?;
-                let mut block =
-                    self.parse_executable_content(&exit_elem, model, source_name)?;
+                let mut block = self.parse_executable_content(&exit_elem, model, source_name)?;
                 inherit_req(&req, &mut block);
                 if !block.is_empty() {
                     state.on_exit_blocks.push(block);
@@ -1395,8 +1385,7 @@ impl SCXMLParser {
                     || format!("<onentry> in <parallel id=\"{parallel_id}\">"),
                     source_name,
                 )?;
-                let mut block =
-                    self.parse_executable_content(&entry_elem, model, source_name)?;
+                let mut block = self.parse_executable_content(&entry_elem, model, source_name)?;
                 inherit_req(&req, &mut block);
                 if !block.is_empty() {
                     state.on_entry_blocks.push(block);
@@ -1408,8 +1397,7 @@ impl SCXMLParser {
                     || format!("<onexit> in <parallel id=\"{parallel_id}\">"),
                     source_name,
                 )?;
-                let mut block =
-                    self.parse_executable_content(&exit_elem, model, source_name)?;
+                let mut block = self.parse_executable_content(&exit_elem, model, source_name)?;
                 inherit_req(&req, &mut block);
                 if !block.is_empty() {
                     state.on_exit_blocks.push(block);
@@ -1497,10 +1485,7 @@ impl SCXMLParser {
         } else if let Some(stripped) = cond.strip_prefix("kt:") {
             is_kt_condition = true;
             cond_kt = if !model.context_object_ids.is_empty() {
-                transform_kt_code_with_named_contexts(
-                    stripped,
-                    &model.context_object_ids,
-                )
+                transform_kt_code_with_named_contexts(stripped, &model.context_object_ids)
             } else {
                 stripped.to_string()
             };
@@ -2108,11 +2093,8 @@ impl SCXMLParser {
             // lifecycle resolves `srcexpr`/`contentexpr` at runtime.
             let idx = self.hybrid_invoke_counter;
             self.hybrid_invoke_counter += 1;
-            let invoke_req = collect_sce_req(
-                elem,
-                || format!("<invoke id=\"{invoke_id}\">"),
-                source_name,
-            )?;
+            let invoke_req =
+                collect_sce_req(elem, || format!("<invoke id=\"{invoke_id}\">"), source_name)?;
             let invoke_unresolved = collect_sce_unresolved(elem, source_name);
             return Ok(Some(Invoke::Hybrid(HybridInvokeInfo {
                 common: InvokeSessionCommon {
@@ -2208,11 +2190,8 @@ impl SCXMLParser {
                     (src.clone(), String::new())
                 };
 
-            let invoke_req = collect_sce_req(
-                elem,
-                || format!("<invoke id=\"{invoke_id}\">"),
-                source_name,
-            )?;
+            let invoke_req =
+                collect_sce_req(elem, || format!("<invoke id=\"{invoke_id}\">"), source_name)?;
             let invoke_unresolved = collect_sce_unresolved(elem, source_name);
             let mut scxml_info = ScxmlInvokeInfo {
                 common: InvokeSessionCommon {
@@ -2409,11 +2388,8 @@ impl SCXMLParser {
             })
         })?;
 
-        let invoke_req = collect_sce_req(
-            elem,
-            || format!("<invoke id=\"{invoke_id}\">"),
-            source_name,
-        )?;
+        let invoke_req =
+            collect_sce_req(elem, || format!("<invoke id=\"{invoke_id}\">"), source_name)?;
         let invoke_unresolved = collect_sce_unresolved(elem, source_name);
         Ok(MeshRpcInvokeInfo {
             base: InvokeBase {
@@ -2560,33 +2536,31 @@ impl SCXMLParser {
         //     `initial` overrides so the existing chain walk-up reaches
         //     every leaf without a multi-target dispatch helper.
         let mut overrides: Vec<(String, String)> = Vec::new();
-        let collect =
-            |targets: &[String], stop_at: Option<&str>, out: &mut Vec<(String, String)>| {
-                for state_id in targets {
-                    if !model.states.contains_key(state_id) {
-                        continue;
-                    }
-                    let mut current = state_id.clone();
-                    loop {
-                        let parent_id =
-                            match model.states.get(&current).and_then(|s| s.parent.clone()) {
-                                Some(p) if model.states.contains_key(&p) => p,
-                                _ => break,
-                            };
-                        if Some(parent_id.as_str()) == stop_at {
-                            break;
-                        }
-                        let is_parallel = model
-                            .states
-                            .get(&parent_id)
-                            .is_some_and(|s| s.is_parallel);
-                        if !is_parallel {
-                            out.push((parent_id.clone(), current.clone()));
-                        }
-                        current = parent_id;
-                    }
+        let collect = |targets: &[String],
+                       stop_at: Option<&str>,
+                       out: &mut Vec<(String, String)>| {
+            for state_id in targets {
+                if !model.states.contains_key(state_id) {
+                    continue;
                 }
-            };
+                let mut current = state_id.clone();
+                loop {
+                    let parent_id = match model.states.get(&current).and_then(|s| s.parent.clone())
+                    {
+                        Some(p) if model.states.contains_key(&p) => p,
+                        _ => break,
+                    };
+                    if Some(parent_id.as_str()) == stop_at {
+                        break;
+                    }
+                    let is_parallel = model.states.get(&parent_id).is_some_and(|s| s.is_parallel);
+                    if !is_parallel {
+                        out.push((parent_id.clone(), current.clone()));
+                    }
+                    current = parent_id;
+                }
+            }
+        };
 
         // Root-scope multi-target.
         let root_targets: Vec<String> = if model.initial.is_empty() {
@@ -2725,17 +2699,17 @@ impl SCXMLParser {
                     || !state.initial_transition_actions.is_empty()
                     || !state.initial_history_id.is_empty()
                     || (state.is_final && (state.donedata.is_some() || state.parent.is_some())))
-                {
-                    model.has_entry_actions = true;
-                }
+            {
+                model.has_entry_actions = true;
+            }
             if !model.has_exit_actions
                 && (!state.on_exit_blocks.is_empty()
                     || state.has_scxml_invoke()
                     || state.has_hybrid_invoke()
                     || state.has_mesh_rpc_invoke())
-                {
-                    model.has_exit_actions = true;
-                }
+            {
+                model.has_exit_actions = true;
+            }
             if model.has_entry_actions && model.has_exit_actions {
                 break;
             }
@@ -3216,10 +3190,10 @@ fn actions_contain_event_metadata(actions: &[Action]) -> bool {
             if actions_contain_event_metadata(&action.else_actions) {
                 return true;
             }
-        } else if action.action_type == "foreach"
-            && actions_contain_event_metadata(&action.actions) {
-                return true;
-            }
+        } else if action.action_type == "foreach" && actions_contain_event_metadata(&action.actions)
+        {
+            return true;
+        }
     }
     false
 }
@@ -3269,7 +3243,8 @@ fn transform_kt_code_with_named_contexts(
                 let matched = &caps[1];
                 renames
                     .iter()
-                    .find(|(id, _)| id == matched).map_or_else(|| matched.to_string(), |(_, camel)| camel.clone())
+                    .find(|(id, _)| id == matched)
+                    .map_or_else(|| matched.to_string(), |(_, camel)| camel.clone())
             })
             .to_string();
     }

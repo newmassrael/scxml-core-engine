@@ -3,7 +3,6 @@
 // template-hash: d588114b3294b4cb4d7e02d63e6d31a3c0326d3afa0a691deb12b545b5ff5045
 // generated-at: 1779460271
 
-
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
 //
@@ -71,13 +70,11 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-
 #![doc = "SCE-MAP: test415.scxml:8"]
 // SCE-MAP: test415.scxml:8
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
-
 
 // ======================================================================
 // State enum (W3C SCXML 3.3)
@@ -134,10 +131,6 @@ impl Test415Policy {
             child_session_id: String::new(),
         }
     }
-
-
-
-
 }
 
 impl Default for Test415Policy {
@@ -186,7 +179,6 @@ impl StatePolicy for Test415Policy {
             _ => false,
         }
     }
-
 
     fn is_descendant_of(desc: Self::State, anc: Self::State) -> bool {
         let mut current = desc;
@@ -239,7 +231,9 @@ impl StatePolicy for Test415Policy {
     // [`StateChain`] alias and the body uses `state_chain_from_slice` instead of
     // `vec![...]` so the emitted code compiles under `--no-std` (`vec!` is a
     // std-only macro; heapless has no equivalent).
-    fn get_initial_children(state: Self::State) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
+    fn get_initial_children(
+        state: Self::State,
+    ) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
         match state {
             _ => ::sce_rust_runtime::helpers::hierarchy::new_chain(),
         }
@@ -280,37 +274,36 @@ impl StatePolicy for Test415Policy {
         self.last_transition_source_state = state;
     }
 
-
-
-
     // ======================================================================
     // Instance methods - generated executable content
     // ======================================================================
 
-
-
     // W3C SCXML 3.7: Execute <onentry> actions for a state
     #[doc = "SCE-MAP: test415.scxml:8"]
-// SCE-MAP: test415.scxml:8
-    fn execute_entry_actions(&mut self, state: Self::State, engine: &mut sce_rust_runtime::Engine<Self>) {
+    // SCE-MAP: test415.scxml:8
+    fn execute_entry_actions(
+        &mut self,
+        state: Self::State,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
         match state {
             Test415State::Final => {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-
-// W3C SCXML 3.8.1: <raise event="event1">
-engine.raise(sce_rust_runtime::EventWithMetadata::new(Test415Event::Event1));
+                    // W3C SCXML 3.8.1: <raise event="event1">
+                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                        Test415Event::Event1,
+                    ));
                 }
             }
             _ => {}
         }
-
     }
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
     #[doc = "SCE-MAP: test415.scxml:8"]
-// SCE-MAP: test415.scxml:8
+    // SCE-MAP: test415.scxml:8
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -319,11 +312,9 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test415Event::Event1));
     ) {
     }
 
-
-
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
     #[doc = "SCE-MAP: test415.scxml:8"]
-// SCE-MAP: test415.scxml:8
+    // SCE-MAP: test415.scxml:8
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -332,21 +323,25 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test415Event::Event1));
     ) -> bool {
         let mut transition_taken = false;
 
-
         // Flat state machine: no hierarchy, direct transition check
-        self.try_transition_in_state(*current_state, event, current_state, &mut transition_taken, engine);
+        self.try_transition_in_state(
+            *current_state,
+            event,
+            current_state,
+            &mut transition_taken,
+            engine,
+        );
 
         transition_taken
     }
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
     #[doc = "SCE-MAP: test415.scxml:8"]
-// SCE-MAP: test415.scxml:8
+    // SCE-MAP: test415.scxml:8
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         // W3C SCXML 3.13: No transition actions in this state machine
         let _ = engine;
     }
-
 }
 
 // ======================================================================
@@ -368,8 +363,4 @@ impl Test415Policy {
             _ => false,
         }
     }
-
-
-
-
 }

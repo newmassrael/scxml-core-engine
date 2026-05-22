@@ -237,7 +237,8 @@ topology:
           local_subscriptions: 32
       other_node:
         source: other_node.scxml
-"##.to_string();
+"##
+    .to_string();
     // target_machine="other_node" — the key references mcu_node, not
     // other_node, so the validator silent-skips even though
     // other_node has no `limits` declared.

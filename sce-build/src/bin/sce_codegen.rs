@@ -3970,13 +3970,14 @@ fn cmd_requirements(scxml: &str, error_format: ErrorFormat) {
         .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
     let stdout = std::io::stdout();
     let mut handle = stdout.lock();
-    sce_build::requirements_report::emit_requirements_ndjson(&model, &mut handle)
-        .unwrap_or_else(|source| {
+    sce_build::requirements_report::emit_requirements_ndjson(&model, &mut handle).unwrap_or_else(
+        |source| {
             cli_exit(CliError::WriteOutput {
                 path: "stdout".to_string(),
                 source,
             })
-        });
+        },
+    );
 }
 
 // ── Subcommand: unresolved ─────────────────────────────────────
@@ -3993,13 +3994,14 @@ fn cmd_unresolved(scxml: &str, error_format: ErrorFormat) {
         .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
     let stdout = std::io::stdout();
     let mut handle = stdout.lock();
-    sce_build::unresolved_check::emit_unresolved_ndjson(&model, &mut handle)
-        .unwrap_or_else(|source| {
+    sce_build::unresolved_check::emit_unresolved_ndjson(&model, &mut handle).unwrap_or_else(
+        |source| {
             cli_exit(CliError::WriteOutput {
                 path: "stdout".to_string(),
                 source,
             })
-        });
+        },
+    );
 }
 
 // ── Subcommand: generate-integration ───────────────────────────

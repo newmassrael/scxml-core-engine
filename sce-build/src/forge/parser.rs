@@ -1085,7 +1085,8 @@ fn parse_flag_inputs(
             ));
         }
         let width_str = child
-            .attribute("width").map_or_else(|| "1".to_string(), |s| s.trim().to_string());
+            .attribute("width")
+            .map_or_else(|| "1".to_string(), |s| s.trim().to_string());
         let width: u32 = parse_int(&width_str).ok_or_else(|| {
             located(
                 &child,
@@ -1786,97 +1787,100 @@ fn parse_codec_variant(
     // lock); arm-domain exhaustiveness shifts to the parent-local
     // validator (`validate_cross_codec_variant_dispatch`) which sees
     // both the leaf arms and the parent's flag width.
-    if tag_field.is_none()
-        && peek_byte.is_some() {
-            return Err(located(
-                &variant_node,
-                label.diagnostic_label,
-                ValidationError::InvalidAttribute {
-                    element: "<sce:variant>".into(),
-                    attr: "tag".into(),
-                    value: "<absent>".into(),
-                    expected: "β caller-tag form (no `tag=` attribute) is mutually \
+    if tag_field.is_none() && peek_byte.is_some() {
+        return Err(located(
+            &variant_node,
+            label.diagnostic_label,
+            ValidationError::InvalidAttribute {
+                element: "<sce:variant>".into(),
+                attr: "tag".into(),
+                value: "<absent>".into(),
+                expected: "β caller-tag form (no `tag=` attribute) is mutually \
                                exclusive with <sce:peek-byte> mode — either drop the \
                                peek-byte child or add a `tag=\"<peek_id>.<flag>\"` \
                                attribute"
-                        .into(),
-                },
-            ));
-        }
-        // Continue past tag_type/tag_flag_width — values are unused
-        // for β shape (variant_obj's β branch reads neither).
+                    .into(),
+            },
+        ));
+    }
+    // Continue past tag_type/tag_flag_width — values are unused
+    // for β shape (variant_obj's β branch reads neither).
     let (tag_type, tag_flag_width): (SceType, Option<u32>) = match tag_field.as_ref() {
         None => (SceType::Uint8, None),
-        Some(tag_field_name) => if let Some(peek) = &peek_byte {
-        if tag_flag.is_none() {
-            return Err(located(
-                &variant_node,
-                label.diagnostic_label,
-                ValidationError::InvalidAttribute {
-                    element: "<sce:variant>".into(),
-                    attr: "tag".into(),
-                    value: raw_tag.clone().unwrap_or_default(),
-                    expected: "peek-byte mode requires a dotted-path tag '<peek_id>.<flag>' — \
+        Some(tag_field_name) => {
+            if let Some(peek) = &peek_byte {
+                if tag_flag.is_none() {
+                    return Err(located(
+                        &variant_node,
+                        label.diagnostic_label,
+                        ValidationError::InvalidAttribute {
+                            element: "<sce:variant>".into(),
+                            attr: "tag".into(),
+                            value: raw_tag.clone().unwrap_or_default(),
+                            expected:
+                                "peek-byte mode requires a dotted-path tag '<peek_id>.<flag>' — \
                          the carrier half names the <sce:peek-byte id='...'> slot, the \
                          flag half names one of its <sce:flag> children. Bare tag is \
                          reserved for own-field whole-field dispatch (when no \
-                         <sce:peek-byte> child is declared on this <sce:variant>).".to_string(),
-                },
-            ));
-        }
-        if tag_field_name != &peek.id {
-            return Err(located(
-                &variant_node,
-                label.diagnostic_label,
-                ValidationError::InvalidAttribute {
-                    element: "<sce:variant>".into(),
-                    attr: "tag".into(),
-                    value: raw_tag.clone().unwrap_or_default(),
-                    expected: format!(
+                         <sce:peek-byte> child is declared on this <sce:variant>)."
+                                    .to_string(),
+                        },
+                    ));
+                }
+                if tag_field_name != &peek.id {
+                    return Err(located(
+                        &variant_node,
+                        label.diagnostic_label,
+                        ValidationError::InvalidAttribute {
+                            element: "<sce:variant>".into(),
+                            attr: "tag".into(),
+                            value: raw_tag.clone().unwrap_or_default(),
+                            expected: format!(
                         "peek-byte mode tag carrier must equal the <sce:peek-byte id='{}'> \
                          slot's id; got '{}'",
                         peek.id, tag_field_name
                     ),
-                },
-            ));
-        }
-        let flag_name = tag_flag.as_ref().expect("peek mode requires dotted tag");
-        match peek.flags.iter().find(|f| f.name == *flag_name) {
-            Some(flag_def) => (SceType::Uint8, Some(flag_def.width.max(1))),
-            None => {
-                let available: Vec<String> = peek.flags.iter().map(|f| f.name.clone()).collect();
-                return Err(located(
-                    &variant_node,
-                    label.diagnostic_label,
-                    ValidationError::InvalidAttribute {
-                        element: "<sce:variant>".into(),
-                        attr: "tag".into(),
-                        value: raw_tag.clone().unwrap_or_default(),
-                        expected: format!(
+                        },
+                    ));
+                }
+                let flag_name = tag_flag.as_ref().expect("peek mode requires dotted tag");
+                match peek.flags.iter().find(|f| f.name == *flag_name) {
+                    Some(flag_def) => (SceType::Uint8, Some(flag_def.width.max(1))),
+                    None => {
+                        let available: Vec<String> =
+                            peek.flags.iter().map(|f| f.name.clone()).collect();
+                        return Err(located(
+                            &variant_node,
+                            label.diagnostic_label,
+                            ValidationError::InvalidAttribute {
+                                element: "<sce:variant>".into(),
+                                attr: "tag".into(),
+                                value: raw_tag.clone().unwrap_or_default(),
+                                expected: format!(
                             "flag '{flag_name}' is not declared on <sce:peek-byte id='{}'> — \
                              available flags: {}",
                             peek.id,
                             available.join(", ")
                         ),
-                    },
-                ));
-            }
-        }
-    } else {
-        // Resolve tag against the codec's own fields and capture its type
-        // for arm-domain reasoning. The tag field MUST be unsigned-int
-        // (uint8/uint16/uint32/uint64) because the arm `value=` matches a
-        // wire-decoded unsigned scalar; signed / bytes / float tags have
-        // no valid discriminator semantics.
-        //
-        // For the B5-β `<carrier>.<flag>` form, the carrier additionally
-        // MUST be a `<sce:flags>`-bearing field (parser invariant: flags
-        // carriers are always unsigned-int, so the unsigned check still
-        // holds), and `flag` MUST name one of its `<sce:flag>` children.
-        let tag_field_ref = match fields.iter().find(|f| f.id == *tag_field_name) {
-            Some(f) if f.sce_type.is_unsigned() => f,
-            Some(f) => {
-                return Err(located(
+                            },
+                        ));
+                    }
+                }
+            } else {
+                // Resolve tag against the codec's own fields and capture its type
+                // for arm-domain reasoning. The tag field MUST be unsigned-int
+                // (uint8/uint16/uint32/uint64) because the arm `value=` matches a
+                // wire-decoded unsigned scalar; signed / bytes / float tags have
+                // no valid discriminator semantics.
+                //
+                // For the B5-β `<carrier>.<flag>` form, the carrier additionally
+                // MUST be a `<sce:flags>`-bearing field (parser invariant: flags
+                // carriers are always unsigned-int, so the unsigned check still
+                // holds), and `flag` MUST name one of its `<sce:flag>` children.
+                let tag_field_ref = match fields.iter().find(|f| f.id == *tag_field_name) {
+                    Some(f) if f.sce_type.is_unsigned() => f,
+                    Some(f) => {
+                        return Err(located(
                     &variant_node,
                     label.diagnostic_label,
                     ValidationError::InvalidAttribute {
@@ -1889,74 +1893,75 @@ fn parse_codec_variant(
                         ),
                     },
                 ));
-            }
-            None => {
-                let available: Vec<String> = fields.iter().map(|f| f.id.clone()).collect();
-                return Err(located(
-                    &variant_node,
-                    label.diagnostic_label,
-                    ValidationError::InvalidReference {
-                        kind: ForgeKind::Codec,
-                        name: tag_field_name.clone(),
-                        what: "field".into(),
-                        available: available.join(", "),
-                    },
-                ));
-            }
-        };
-        let tag_type = tag_field_ref.sce_type.clone();
+                    }
+                    None => {
+                        let available: Vec<String> = fields.iter().map(|f| f.id.clone()).collect();
+                        return Err(located(
+                            &variant_node,
+                            label.diagnostic_label,
+                            ValidationError::InvalidReference {
+                                kind: ForgeKind::Codec,
+                                name: tag_field_name.clone(),
+                                what: "field".into(),
+                                available: available.join(", "),
+                            },
+                        ));
+                    }
+                };
+                let tag_type = tag_field_ref.sce_type.clone();
 
-        // B5-β: if the tag uses dotted form, the carrier must carry flags
-        // and the named flag must exist. Width of the named flag determines
-        // both the dispatch domain (1<<width) and the result-type used by
-        // arm value literals downstream. Failures stay on
-        // `validation/invalid-attribute` because the repair is still
-        // attribute-text-level (mirrors B1-δ present-if's choice).
-        let tag_flag_width: Option<u32> = match &tag_flag {
-            Some(flag_name) => {
-                if tag_field_ref.flags.is_empty() {
-                    return Err(located(
-                        &variant_node,
-                        label.diagnostic_label,
-                        ValidationError::InvalidAttribute {
-                            element: "<sce:variant>".into(),
-                            attr: "tag".into(),
-                            value: format!("{tag_field_name}.{flag_name}"),
-                            expected: format!(
+                // B5-β: if the tag uses dotted form, the carrier must carry flags
+                // and the named flag must exist. Width of the named flag determines
+                // both the dispatch domain (1<<width) and the result-type used by
+                // arm value literals downstream. Failures stay on
+                // `validation/invalid-attribute` because the repair is still
+                // attribute-text-level (mirrors B1-δ present-if's choice).
+                let tag_flag_width: Option<u32> = match &tag_flag {
+                    Some(flag_name) => {
+                        if tag_field_ref.flags.is_empty() {
+                            return Err(located(
+                                &variant_node,
+                                label.diagnostic_label,
+                                ValidationError::InvalidAttribute {
+                                    element: "<sce:variant>".into(),
+                                    attr: "tag".into(),
+                                    value: format!("{tag_field_name}.{flag_name}"),
+                                    expected: format!(
                                 "carrier '{tag_field_name}' must be authored as <sce:flags> with \
                                  <sce:flag> children for the dotted-path form; '{tag_field_name}' \
                                  is a plain field — either author it as <sce:flags> or use \
                                  bare tag=\"{tag_field_name}\" for whole-field dispatch"
                             ),
-                        },
-                    ));
-                }
-                match tag_field_ref.flags.iter().find(|f| f.name == *flag_name) {
-                    Some(flag_def) => Some(flag_def.width.max(1)),
-                    None => {
-                        let available: Vec<String> =
-                            tag_field_ref.flags.iter().map(|f| f.name.clone()).collect();
-                        return Err(located(
-                            &variant_node,
-                            label.diagnostic_label,
-                            ValidationError::InvalidAttribute {
-                                element: "<sce:variant>".into(),
-                                attr: "tag".into(),
-                                value: format!("{tag_field_name}.{flag_name}"),
-                                expected: format!(
-                                    "flag '{flag_name}' is not declared on carrier \
+                                },
+                            ));
+                        }
+                        match tag_field_ref.flags.iter().find(|f| f.name == *flag_name) {
+                            Some(flag_def) => Some(flag_def.width.max(1)),
+                            None => {
+                                let available: Vec<String> =
+                                    tag_field_ref.flags.iter().map(|f| f.name.clone()).collect();
+                                return Err(located(
+                                    &variant_node,
+                                    label.diagnostic_label,
+                                    ValidationError::InvalidAttribute {
+                                        element: "<sce:variant>".into(),
+                                        attr: "tag".into(),
+                                        value: format!("{tag_field_name}.{flag_name}"),
+                                        expected: format!(
+                                            "flag '{flag_name}' is not declared on carrier \
                                      '{tag_field_name}' — available flags: {}",
-                                    available.join(", ")
-                                ),
-                            },
-                        ));
+                                            available.join(", ")
+                                        ),
+                                    },
+                                ));
+                            }
+                        }
                     }
-                }
+                    None => None,
+                };
+                (tag_type, tag_flag_width)
             }
-            None => None,
-        };
-        (tag_type, tag_flag_width)
-    },
+        }
     };
 
     let mut arms: Vec<VariantArm> = Vec::new();
@@ -3532,7 +3537,9 @@ fn validate_codec_length_field_refs(
                     ))
                 })?;
                 match &sibling.bit_size {
-                    BitSize::Fixed { bits: 8 | 16 | 24 | 32 } => {
+                    BitSize::Fixed {
+                        bits: 8 | 16 | 24 | 32,
+                    } => {
                         // OK — byte-aligned width that decode_multibyte_unified
                         // folds natively across all 6 backends.
                     }
@@ -5646,7 +5653,8 @@ fn parse_algorithm(
     // substitutes `alias` with `<namespace>::<algorithm_name>` and
     // the consumed symbol must match).
     let name = root
-        .attribute("name").map_or_else(|| label.identifier.to_string(), |s| s.to_string());
+        .attribute("name")
+        .map_or_else(|| label.identifier.to_string(), |s| s.to_string());
 
     Ok(AlgorithmModel {
         name,

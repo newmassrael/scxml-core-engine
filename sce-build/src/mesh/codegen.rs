@@ -537,9 +537,7 @@ type EventIdsTemplateFields = (
     Option<String>,
 );
 
-fn event_ids_to_template(
-    ids: &crate::mesh::topology::SomeipEventIds,
-) -> EventIdsTemplateFields {
+fn event_ids_to_template(ids: &crate::mesh::topology::SomeipEventIds) -> EventIdsTemplateFields {
     use crate::mesh::topology::SomeipEventIds;
     match *ids {
         SomeipEventIds::Method { method_id } => (
@@ -943,8 +941,8 @@ pub fn generate_mesh(
     // conventional `<send>`-driven targets, server, subscriptions, or
     // custom_tcp listen exist (rule 12 fixture). Mirrors the same
     // predicate threaded through `compile_mesh_transport`.
-    let has_wire21_routing = !inputs.partition_wire21_outbound.is_empty()
-        || !inputs.partition_wire21_inbound.is_empty();
+    let has_wire21_routing =
+        !inputs.partition_wire21_outbound.is_empty() || !inputs.partition_wire21_inbound.is_empty();
     let has_scxml_remote_wire = !inputs.scxml_remote_outbound_peers.is_empty()
         || !inputs.scxml_remote_inbound_peers.is_empty();
     if inputs.targets.is_empty()
@@ -1405,9 +1403,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
     // Pre-escape Zenoh session config into C++ string literals so the template
     // never constructs literals by string concatenation.
     let zenoh_session_json5 = zenoh_session.map(ZenohSessionJson5::from_config);
-    let zenoh_session_json5_present = zenoh_session_json5
-        .as_ref()
-        .is_some_and(|z| !z.is_empty());
+    let zenoh_session_json5_present = zenoh_session_json5.as_ref().is_some_and(|z| !z.is_empty());
 
     // Device-shared Zenoh endpoints (listen/connect) surfaced as generated
     // namespace constants. Tests that need the endpoint for raw-peer
