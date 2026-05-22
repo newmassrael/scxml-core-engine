@@ -12,6 +12,7 @@
 {% include 'license_header.jinja2' %}
 {%- import 'c/scriptengine.jinja2' as se %}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{%- import '_macros/sce_annotation_marker.jinja2' as annot %}
 {# Watching-zenoh RFC §5.O Atomic 0b: SCE-MAP marker anchoring the
    generated C11 implementation. Module-level form is a comment per
    the same rationale as the header — Atomic 0c switches to `#line`
@@ -1931,9 +1932,12 @@ static void SCE_SM_FN enter_state_recursive({{ model.name }}_t *sm, {{ model.nam
 {% if state.on_entry_blocks %}
 {% for block in state.on_entry_blocks %}
 {{ sce_map.source_marker(state.source_location, "c") }}
-static void SCE_SM_FN {{ model.name }}_on_entry_{{ state_id | lower | replace('-', '_') | replace('.', '_') }}_block_{{ loop.index }}({{ model.name }}_t *sm) {
+static void SCE_SM_FN {{ model.name }}_on_entry_{{ state_id | lower | replace('-', '_') | replace('.', '_') }}_block_{{ loop.index }}({{ model.name }}_t *sm) {  {{- annot.annotation_comment(state, "c", "    ") }}
     (void)sm;
     {% for action in block %}
+{%- if action.req or action.unresolved %}
+{{ annot.annotation_block(action, "c", "    ") -}}
+{%- endif %}
     {{ emit_action(action) }}
     {% endfor %}
 }
@@ -1944,9 +1948,12 @@ static void SCE_SM_FN {{ model.name }}_on_entry_{{ state_id | lower | replace('-
 {% if state.on_exit_blocks %}
 {% for block in state.on_exit_blocks %}
 {{ sce_map.source_marker(state.source_location, "c") }}
-static void SCE_SM_FN {{ model.name }}_on_exit_{{ state_id | lower | replace('-', '_') | replace('.', '_') }}_block_{{ loop.index }}({{ model.name }}_t *sm) {
+static void SCE_SM_FN {{ model.name }}_on_exit_{{ state_id | lower | replace('-', '_') | replace('.', '_') }}_block_{{ loop.index }}({{ model.name }}_t *sm) {  {{- annot.annotation_comment(state, "c", "    ") }}
     (void)sm;
     {% for action in block %}
+{%- if action.req or action.unresolved %}
+{{ annot.annotation_block(action, "c", "    ") -}}
+{%- endif %}
     {{ emit_action(action) }}
     {% endfor %}
 }
@@ -2308,9 +2315,12 @@ static void SCE_SM_FN execute_transition_actions({{ model.name }}_t *sm) {
         switch (sm->policy.last_transition_index) {
         {% for trans in state.transitions %}
         {% if trans.actions %}
-        case {{ trans.transition_index }}: {
+        case {{ trans.transition_index }}: {  {{- annot.annotation_comment(trans, "c", "            ") }}
             /* W3C SCXML 3.13: transition body for `<transition{% if trans.event %} event="{{ trans.event }}"{% endif %}{% if trans.target %} target="{{ trans.target }}"{% endif %}>` */
             {% for action in trans.actions %}
+{%- if action.req or action.unresolved %}
+{{ annot.annotation_block(action, "c", "            ") -}}
+{%- endif %}
             {{ emit_action(action) }}
             {% endfor %}
             break;

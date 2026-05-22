@@ -40,6 +40,7 @@ const FIXTURES: &[&str] = &[
     "history_deep_shallow",
     "invoke_inline_content",
     "parallel_final",
+    "sce_annotations",
 ];
 
 /// Path to the `sce-codegen` binary built for this integration test.

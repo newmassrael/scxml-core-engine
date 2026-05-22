@@ -11,6 +11,7 @@
     degradation never occurs ([[feedback-silently-broken-hooks]]).
 #}
 {%- import '_actions.py.jinja2' as actions %}
+{%- import '_macros/sce_annotation_marker.jinja2' as annot %}
 
     # ── Entry actions (W3C SCXML 3.8) ─────────────────────────────
 
@@ -35,11 +36,11 @@
 {% set _has_donedata = state.is_final and state.donedata and (state.donedata.params or state.donedata.content.kind != 'none') %}
 {% set _final_with_parent = state.is_final and state.parent and (('done.state.' ~ state.parent) in model.events) %}
 {% if state.on_entry_blocks or state.initial_transition_actions or state.initial_history_default_actions or _has_donedata or _final_with_parent %}
-        if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
+        if state == {{ machine_name }}State.{{ state_id | to_python_const }}:{{ annot.annotation_comment(state, "python", "            ") }}
 {% for block in state.on_entry_blocks %}
             try:
 {% for action in block %}
-{{ actions.emit(action, '                ', machine_name, model) }}
+{{ annot.annotation_block(action, "python", "                ") }}{{ actions.emit(action, '                ', machine_name, model) }}
 {% endfor %}
             except _ActionAbort:
                 pass
@@ -171,11 +172,11 @@
 {# W3C SCXML 3.9 — `<onexit>` block-abort symmetric to entry above. #}
 {% for state_id, state in model.states | dictsort %}
 {% if state.on_exit_blocks %}
-        if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
+        if state == {{ machine_name }}State.{{ state_id | to_python_const }}:{{ annot.annotation_comment(state, "python", "            ") }}
 {% for block in state.on_exit_blocks %}
             try:
 {% for action in block %}
-{{ actions.emit(action, '                ', machine_name, model) }}
+{{ annot.annotation_block(action, "python", "                ") }}{{ actions.emit(action, '                ', machine_name, model) }}
 {% endfor %}
             except _ActionAbort:
                 pass

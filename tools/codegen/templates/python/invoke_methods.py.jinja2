@@ -30,6 +30,8 @@
     Port-of-Go template: tools/codegen/templates/go/invoke_methods.go.jinja2.
 #}
 
+{%- import '_macros/sce_annotation_marker.jinja2' as annot %}
+
     # ── Invokes (W3C SCXML 6.4) ───────────────────────────────────
 
     def defer_invokes_on_entry(self, state, engine) -> None:
@@ -38,7 +40,7 @@
 {% if scxml_list %}
         if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
 {% for inv in scxml_list %}
-            # W3C SCXML 6.4.1: Generate the runtime invoke id with the
+{{ annot.annotation_block(inv, "python", "            ") }}            # W3C SCXML 6.4.1: Generate the runtime invoke id with the
             # `<state_id>.<instance>.<element_id>` shape (test224 checks
             # the `stateid.` prefix; test338 compares an `idlocation`
             # binding against `_event.invokeid` on a child-raised event,

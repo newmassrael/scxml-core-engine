@@ -47,6 +47,7 @@
       Verification: Test 527 (donedata content expr) passes with _event.data == 'foo' guard evaluation
 #}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{%- import '_macros/sce_annotation_marker.jinja2' as annot %}
 
 {# Watching-zenoh RFC §5.O Atomic 0c — function-scope SCE-MAP marker
    above `executeEntryActions`. `#line N "file"` inside a function
@@ -80,7 +81,7 @@
 {% if model.has_entry_actions %}
         switch (state) {
 {% for state_id, state in model.states | dictsort %}
-        case State::{{ state_id | capitalize }}:
+        case State::{{ state_id | capitalize }}:{{ annot.annotation_comment(state, "cpp", "                ") }}
 {% if state.datamodel or state.on_entry_blocks or state.invokes | scxml or state.invokes | scxml_remote or state.invokes | hybrid or state.invokes | mesh_rpc or (state.is_final and state.donedata) or (state.is_final and state.parent) %}
                 {
 {% if state.datamodel and model.binding == 'late' %}
@@ -361,6 +362,9 @@
                     entryBlocks.push_back([{% if model.needs_nonstatic_method %}this, {% endif %}&engine]() {
                         // Onentry block {{ loop.index }}/{{ state.on_entry_blocks|length }}
 {% for action in block %}
+{%- if action.req or action.unresolved %}
+{{ annot.annotation_block(action, "cpp", "                        ") -}}
+{%- endif %}
                         {% set in_entry_exit = true %}
                         {% include 'actions/' + action.type + '.jinja2' %}
 
@@ -670,7 +674,7 @@
         switch (state) {
 {% for state_id, state in model.states | dictsort %}
 {% if state.on_exit_blocks or state.invokes | scxml or state.invokes | hybrid or state.invokes | mesh_rpc or state.invokes | scxml_remote %}
-        case State::{{ state_id | capitalize }}:
+        case State::{{ state_id | capitalize }}:{{ annot.annotation_comment(state, "cpp", "                ") }}
                 AOT_DEBUG("AOT executeExitActions: Processing exit actions for state {} ({{ state_id }})", static_cast<int>(state));
 {% if state.on_exit_blocks or state.invokes | scxml or state.invokes | hybrid or state.invokes | mesh_rpc or state.invokes | scxml_remote %}
                 {
@@ -782,6 +786,9 @@
                     exitBlocks.push_back([{% if model.needs_nonstatic_method %}this, {% endif %}&engine]() {
                         // Onexit block {{ loop.index }}/{{ state.on_exit_blocks|length }}
 {% for action in block %}
+{%- if action.req or action.unresolved %}
+{{ annot.annotation_block(action, "cpp", "                        ") -}}
+{%- endif %}
                         {% set in_entry_exit = true %}
                         {% include 'actions/' + action.type + '.jinja2' %}
 

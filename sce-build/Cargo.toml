@@ -129,6 +129,15 @@ name = "codegen_smoke"
 path = "tests/codegen_smoke.rs"
 required-features = ["cli"]
 
+# NL→IR Mapping Roadmap Items 1+5 — `sce:req` / `sce:unresolved`
+# annotation comment emission across all six codegen backends. Pair
+# with `codegen_smoke` (compile gate on annotated output) so both
+# emission shape and toolchain acceptance stay covered.
+[[test]]
+name = "sce_annotation_emission"
+path = "tests/sce_annotation_emission.rs"
+required-features = ["cli"]
+
 # Integration test for spec §6.2.6 generated-source drift detection
 # (B9 atomic 2026-05-14). Depends on `sce-codegen verify` subcommand,
 # hence the shared `cli` feature gate. Round-trips header inject +
