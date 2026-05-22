@@ -427,6 +427,7 @@ add_executable(integration_tests
     integration/StateMachineIntegrationTest.cpp
     integration/ActionIntegrationTest.cpp
     integration/DonedataLocalInvokeTest.cpp
+    integration/DonedataLocalInvokeAotTest.cpp
     integration/SCXMLEventTest.cpp
     integration/ParallelStateIntegrationTest.cpp
     integration/SCXMLParallelParsingTest.cpp
@@ -677,14 +678,41 @@ if(NOT EMSCRIPTEN)
 # Output directory for generated static W3C test code (used by both w3c_test_cli and w3c_static_test_cli)
 set(STATIC_W3C_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/w3c_static_generated")
 
+# Output directory for generated static integration-fixture code. Distinct
+# from STATIC_W3C_OUTPUT_DIR so the build system treats W3C and integration
+# trees as separate §6.2.6 drift contexts (RFC `claudedocs/rfc-donedata-5-backend-layout.md` Q-2).
+set(STATIC_INTEGRATION_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/integration_static_generated")
+
 # Generate C++ code for W3C tests BEFORE defining executables
 include(${CMAKE_SOURCE_DIR}/cmake/SCEStaticW3CTest.cmake)
+# Parallel CMake function for integration fixtures
+# (`integration_resources/<stem>/<stem>.scxml` → `<output>/<stem>_sm.{h,inl}`).
+include(${CMAKE_SOURCE_DIR}/cmake/SCEStaticIntegrationFixture.cmake)
 
 # Initialize GENERATED_W3C_HEADERS and W3C_AOT_TESTS before any sce_generate_static_w3c_test calls
 # W3C Test Registration Automation: W3C_AOT_TESTS is auto-accumulated by sce_generate_static_w3c_test()
 # Adding a new test = adding ONE sce_generate_static_w3c_test() call (TestXXX.h + registry auto-generated)
 set(GENERATED_W3C_HEADERS "")
 set(W3C_AOT_TESTS "")
+# Initialize integration-fixture header accumulator. sce_generate_static_integration_test
+# appends to this in parent scope; the integration_tests target then DEPENDS on it.
+set(GENERATED_INTEGRATION_HEADERS "")
+
+# Integration fixtures (RFC `claudedocs/rfc-donedata-5-backend-layout.md` Phase C).
+# Build-time generation only (no committed tree); the build itself is the
+# §6.2.6 freshness invariant.
+sce_generate_static_integration_test(donedata_local_invoke ${STATIC_INTEGRATION_OUTPUT_DIR}
+    SYNTH_INVOKE_CHILDREN inv_param inv_content
+)
+
+# Wire the integration headers + include path into the integration_tests
+# target now that `sce_generate_static_integration_test` has populated
+# GENERATED_INTEGRATION_HEADERS in this scope. The target itself was
+# defined earlier (around the "Integration Tests" section), but its
+# generated-source dependencies must be appended after the build-time
+# headers are known so Ninja schedules codegen before compilation.
+target_sources(integration_tests PRIVATE ${GENERATED_INTEGRATION_HEADERS})
+target_include_directories(integration_tests PRIVATE ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 sce_generate_static_w3c_test(144 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 4.2: raise element inserts events at rear of internal queue (FIFO ordering) (Pure Static)
 sce_generate_static_w3c_test(147 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 4.3: if/elseif/else conditional execution (first true clause only) (Static Hybrid)

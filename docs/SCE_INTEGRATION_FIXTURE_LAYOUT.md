@@ -58,7 +58,7 @@ build, so the build process itself is the §6.2.6 freshness invariant.
 | Rust | n/a (AOT-only backend) | committed integration tree |
 | Kotlin | n/a (AOT-only backend) | committed integration tree |
 | Go | n/a (AOT-only backend) | committed integration tree |
-| C++ | `tests/integration/DonedataLocalInvokeTest.cpp` (gtest against `runtime/StateMachine.h`) | pending (Phase C of layout RFC) |
+| C++ | `tests/integration/DonedataLocalInvokeTest.cpp` (gtest against `runtime/StateMachine.h`) | `tests/integration/DonedataLocalInvokeAotTest.cpp` against build-time `${CMAKE_CURRENT_BINARY_DIR}/integration_static_generated/donedata_local_invoke_sm.{h,inl}` (CMake `sce_generate_static_integration_test`) |
 | Python | `sce-python/tests/test_donedata_local_invoke.py` (pybind11 wrapping `ReadySCXMLEngine` over C++ Interpreter, commit `0589bb35`) | pending (Phase D of layout RFC) |
 | C11 | n/a (AOT-only backend) | pending (Phase E of layout RFC) |
 
@@ -79,7 +79,7 @@ have no Interpreter and the AOT channel is the canonical contract test.
 | Rust | AOT-generated tree | `sce-rust-tests/src/integration/donedata_local_invoke/` | yes |
 | Kotlin | AOT-generated tree | `sce-kotlin-tests/src/main/kotlin/com/sce/generated/donedata_local_invoke/` | yes |
 | Go | AOT-generated tree | `sce-go-tests/donedata_local_invoke/` | yes |
-| C++ | Interpreter gtest | `tests/integration/DonedataLocalInvokeTest.cpp` | n/a (no committed generated tree) |
+| C++ | Interpreter gtest + AOT build-time | Interpreter: `tests/integration/DonedataLocalInvokeTest.cpp`; AOT: `tests/integration/DonedataLocalInvokeAotTest.cpp` against `${CMAKE_CURRENT_BINARY_DIR}/integration_static_generated/` | n/a (build-time generation, freshness invariant = CMake build) |
 | Python | Interpreter via pybind11 | `sce-python/tests/test_donedata_local_invoke.py` + `sce-python/tests/fixtures/donedata_local_invoke.scxml` | n/a (pybind11 channel inherits contract from C++ Interpreter) |
 | C11 | codegen donedata literal-shape support only | `tools/codegen/templates/c/state_machine.c.jinja2` (`6eec3a95`); W3C IRP donedata tests 294/527/528/529/176/179/186/578/298 verify literal contract at build time | n/a (build-time generation; W3C IRP only — local-invoke contract not yet covered) |
 
