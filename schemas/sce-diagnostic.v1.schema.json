@@ -65,6 +65,8 @@
         "validation/mesh-rpc-duplicate-target",
         "validation/removed-attribute",
         "validation/bytes-max-size-violation",
+        "validation/duplicate-requirement-id",
+        "validation/unresolved-placeholder",
         "algorithm/local-shadows-param",
         "algorithm/lvalue-unsupported",
         "algorithm/return-missing",
@@ -442,6 +444,33 @@
             }
           }
         }
+      ]
+    },
+    "spec_provenance": {
+      "description": "NL→IR Mapping Roadmap Item 6 — spec-document anchors that justify the rejected node. Populated by upstream IR generators (NL→IR pipelines, ARXML transcoders) and passed through verbatim by SCE. Omitted when the upstream did not record provenance.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["doc_id"],
+        "additionalProperties": false,
+        "properties": {
+          "doc_id": { "type": "string" },
+          "rev": { "type": "string" },
+          "section": { "type": "string" },
+          "page": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "question_kind": {
+      "description": "NL→IR Mapping Roadmap Item 6 — coarse routing label so IDE / triage tooling can dispatch on the kind of question the diagnostic raises (structural vs ambiguous-mapping vs unit-missing …). Closed enum; consumers must treat unknown values as `structural` per the schema's ignore-unknown rule.",
+      "type": "string",
+      "enum": [
+        "implicit_default",
+        "ambiguous_mapping",
+        "cross_doc_conflict",
+        "unit_unspecified",
+        "unknown_vocabulary",
+        "structural"
       ]
     }
   }

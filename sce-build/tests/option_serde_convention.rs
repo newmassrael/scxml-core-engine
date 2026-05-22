@@ -50,6 +50,13 @@ const WIRE_FORMAT_EXEMPT: &[&str] = &[
     "forge/diagnostic.rs",
     "forge/model.rs",
     "mesh/deploy.rs",
+    // NL→IR Mapping Roadmap Items 1/5/6 metadata family. These
+    // structs flow through wire formats (the `sce-codegen
+    // requirements` / `sce-codegen unresolved` NDJSON reports and
+    // the diagnostic `spec_provenance` field) but are never fed
+    // into a minijinja codegen template — the codegen never reads
+    // them, so the template convention does not apply.
+    "provenance.rs",
 ];
 
 fn is_wire_format_exempt(rs_file: &Path, repo_root: &Path) -> bool {

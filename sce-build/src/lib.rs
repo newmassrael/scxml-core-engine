@@ -35,6 +35,20 @@ pub mod parser;
 /// roxmltree row/col, semantic validation) to author file/row/col.
 /// See [`position_map`] for the shape and lookup semantics.
 pub mod position_map;
+/// Spec-provenance + requirement-traceability + unresolved-placeholder
+/// types — shared by [`model`], [`forge::model`], and
+/// [`forge::diagnostic`]. See `nl_to_ir_mapping_roadmap.md` for the
+/// shared-type rationale (Items 1, 5, 6 fragment into incompatible
+/// representations if each grows its own).
+pub mod provenance;
+/// NL→IR Mapping Roadmap Item 1: emit per-node `sce:req` NDJSON.
+/// Drives the `sce-codegen requirements` CLI subcommand for
+/// downstream req-coverage tooling.
+pub mod requirements_report;
+/// NL→IR Mapping Roadmap Item 5: `<sce:unresolved>` placeholder
+/// detection — strict-mode build gate + NDJSON report. Drives
+/// `--strict-unresolved` on `generate` and `sce-codegen unresolved`.
+pub mod unresolved_check;
 pub mod script_engine_analyzer;
 pub mod scxml_semantic;
 /// `sce:template` / `sce:use` / `sce:param` preprocessing —

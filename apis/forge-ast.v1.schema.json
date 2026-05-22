@@ -114,6 +114,20 @@
           },
           "type": "array"
         },
+        "provenance": {
+          "description": "`sce:provenance` spec-document anchors attached to this executable-content element.",
+          "items": {
+            "$ref": "#/definitions/SpecProvenance"
+          },
+          "type": "array"
+        },
+        "req": {
+          "description": "`sce:req` requirement IDs attached to this executable-content element. See [`Transition::req`] for the wire-format contract.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "send_type": {
           "type": "string"
         },
@@ -154,6 +168,13 @@
         },
         "typeexpr": {
           "type": "string"
+        },
+        "unresolved": {
+          "description": "`sce:unresolved` placeholder markers attached to this executable-content element.",
+          "items": {
+            "$ref": "#/definitions/UnresolvedMarker"
+          },
+          "type": "array"
         }
       },
       "required": [
@@ -3497,6 +3518,13 @@
               },
               "type": "array"
             },
+            "provenance": {
+              "description": "`sce:provenance` spec-document anchors attached to this `<invoke>`.",
+              "items": {
+                "$ref": "#/definitions/SpecProvenance"
+              },
+              "type": "array"
+            },
             "remote_mesh_target": {
               "description": "SCE_MESH.md §9.6 remote `<invoke type=\"scxml\">`. When `src` is of the form `#<name>` and `<name>` matches a distinct mesh machine declared in `deploy.yaml`, this carries that machine name (without the leading `#`). C++ codegen branches on this field to emit the §10.7.1 `SESSION_F_NOT_IMPLEMENTED` scaffold until Session F lands the wire patterns 14-20 runtime. `None` for local W3C invokes (inline `<content>` or file-relative `src`) and for non-mesh builds — those flow through the existing local-invoke path unchanged. Populated by [`crate::inject_partition_context_for`] from the deploy topology.",
               "type": [
@@ -3511,11 +3539,25 @@
                 "null"
               ]
             },
+            "req": {
+              "description": "`sce:req` requirement IDs attached to this `<invoke>`. See [`Transition::req`] for the wire-format contract.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
             "src": {
               "type": "string"
             },
             "state_name": {
               "type": "string"
+            },
+            "unresolved": {
+              "description": "`sce:unresolved` placeholder markers attached to this `<invoke>`.",
+              "items": {
+                "$ref": "#/definitions/UnresolvedMarker"
+              },
+              "type": "array"
             },
             "use_specific_event": {
               "default": false,
@@ -3596,12 +3638,33 @@
               },
               "type": "array"
             },
+            "provenance": {
+              "description": "`sce:provenance` spec-document anchors attached to this `<invoke>`.",
+              "items": {
+                "$ref": "#/definitions/SpecProvenance"
+              },
+              "type": "array"
+            },
+            "req": {
+              "description": "`sce:req` requirement IDs attached to this `<invoke>`. See [`Transition::req`] for the wire-format contract.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
             "srcexpr": {
               "description": "Runtime expression that resolves to a child SCXML path. Empty if `contentexpr` is used instead.",
               "type": "string"
             },
             "state_name": {
               "type": "string"
+            },
+            "unresolved": {
+              "description": "`sce:unresolved` placeholder markers attached to this `<invoke>`.",
+              "items": {
+                "$ref": "#/definitions/UnresolvedMarker"
+              },
+              "type": "array"
             },
             "use_specific_event": {
               "default": false,
@@ -3688,8 +3751,29 @@
               },
               "type": "array"
             },
+            "provenance": {
+              "description": "`sce:provenance` spec-document anchors attached to this `<invoke>`.",
+              "items": {
+                "$ref": "#/definitions/SpecProvenance"
+              },
+              "type": "array"
+            },
+            "req": {
+              "description": "`sce:req` requirement IDs attached to this `<invoke>`. See [`Transition::req`] for the wire-format contract.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
             "state_name": {
               "type": "string"
+            },
+            "unresolved": {
+              "description": "`sce:unresolved` placeholder markers attached to this `<invoke>`.",
+              "items": {
+                "$ref": "#/definitions/UnresolvedMarker"
+              },
+              "type": "array"
             }
           },
           "required": [
@@ -4385,6 +4469,38 @@
       ],
       "type": "object"
     },
+    "SpecProvenance": {
+      "description": "Pointer to the source-of-truth specification document anchoring an IR node, requirement ID, or diagnostic.\n\nSCE never *infers* this — IR generators (hand-authored DSL, NL→IR pipeline, ARXML transcoder) populate it; SCE merely propagates it through model nodes and onto diagnostics. Absent `doc_id` means the producer did not record provenance.\n\nSCXML serialisation accepts two forms:\n\n- compact URI: `sce:provenance=\"ES95486-02@23#4.4.2\"` (`doc_id @ rev # section`; trailing `:page` optional after the section to carry a page number, e.g. `ES95486-02#4.4.2:118`) - child element: `<sce:provenance doc=\"...\" rev=\"...\" section=\"...\" page=\"...\"/>` (one or more allowed; element form lets one node anchor at multiple documents)",
+      "properties": {
+        "doc_id": {
+          "type": "string"
+        },
+        "page": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "rev": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "section": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "doc_id"
+      ],
+      "type": "object"
+    },
     "State": {
       "description": "W3C SCXML 3.3: State element",
       "properties": {
@@ -4483,6 +4599,20 @@
             "null"
           ]
         },
+        "provenance": {
+          "description": "`sce:provenance` spec-document anchors attached to this state.",
+          "items": {
+            "$ref": "#/definitions/SpecProvenance"
+          },
+          "type": "array"
+        },
+        "req": {
+          "description": "`sce:req` requirement IDs attached to this state. See [`Transition::req`] for the wire-format contract.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "source_location": {
           "anyOf": [
             {
@@ -4497,6 +4627,13 @@
         "transitions": {
           "items": {
             "$ref": "#/definitions/Transition"
+          },
+          "type": "array"
+        },
+        "unresolved": {
+          "description": "`sce:unresolved` placeholder markers attached to this state.",
+          "items": {
+            "$ref": "#/definitions/UnresolvedMarker"
           },
           "type": "array"
         }
@@ -4789,6 +4926,20 @@
           },
           "type": "array"
         },
+        "provenance": {
+          "description": "`sce:provenance` spec-document anchors attached to this transition. Multiple allowed; element form lets one node anchor at multiple documents.",
+          "items": {
+            "$ref": "#/definitions/SpecProvenance"
+          },
+          "type": "array"
+        },
+        "req": {
+          "description": "`sce:req` requirement IDs attached to this transition. Sorted in document order (whitespace-tokenised from the attribute). Empty when the attribute is absent — preserves byte-identical output for inputs without traceability metadata.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "source_location": {
           "anyOf": [
             {
@@ -4811,6 +4962,13 @@
         },
         "type": {
           "type": "string"
+        },
+        "unresolved": {
+          "description": "`sce:unresolved` placeholder markers attached to this transition. Detected by the parser, propagated as a comment by codegen, rejected by `--strict`.",
+          "items": {
+            "$ref": "#/definitions/UnresolvedMarker"
+          },
+          "type": "array"
         }
       },
       "required": [
@@ -4828,6 +4986,42 @@
         "target",
         "transition_index",
         "type"
+      ],
+      "type": "object"
+    },
+    "UnresolvedMarker": {
+      "description": "`<sce:unresolved>` marker — an explicit \"this value is a guess, revisit later\" placeholder that the parser can detect, the codegen propagates as a comment, and `--strict` builds reject.\n\nSCE stores the marker; any consumer (linter, IDE, NL→IR pipeline) interprets it. SCE never resolves it.",
+      "properties": {
+        "candidates": {
+          "description": "Suggested values the author was choosing between. Whitespace is the separator on the attribute form (`sce:unresolved-candidates=\"a b c\"`).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "id": {
+          "description": "Author-chosen identifier — opaque to SCE, but unique within the enclosing document is the convention.",
+          "type": "string"
+        },
+        "location": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SourceLocation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id"
       ],
       "type": "object"
     },

@@ -230,6 +230,150 @@ fn source_location_of(
     })
 }
 
+/// Collect `<sce:unresolved>` markers attached to `node` — both
+/// the attribute form (`sce:unresolved="id"`,
+/// `sce:unresolved-reason="..."`, `sce:unresolved-candidates="a b c"`)
+/// and the child-element form
+/// (`<sce:unresolved id reason candidates/>`). Multiple element-form
+/// children produce multiple markers; the attribute form contributes
+/// at most one. NL→IR Mapping Roadmap Item 5: the parser silently
+/// collects; `--strict-unresolved` lifts to a build-failing error
+/// via [`crate::provenance::check_strict_unresolved`].
+fn collect_sce_unresolved(
+    node: &roxmltree::Node,
+    source_name: &str,
+) -> Vec<crate::provenance::UnresolvedMarker> {
+    use crate::forge::error::SourceLocation;
+    use crate::forge::model::SCE_NAMESPACE;
+    use crate::provenance::UnresolvedMarker;
+    let mut markers: Vec<UnresolvedMarker> = Vec::new();
+    if let Some(id) = node.attribute((SCE_NAMESPACE, "unresolved")) {
+        if !id.is_empty() {
+            let reason = node
+                .attribute((SCE_NAMESPACE, "unresolved-reason"))
+                .map(|s| s.to_string());
+            let candidates = node
+                .attribute((SCE_NAMESPACE, "unresolved-candidates"))
+                .map(|raw| {
+                    raw.split_whitespace()
+                        .map(|s| s.to_string())
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            let pos = node.document().text_pos_at(node.range().start);
+            markers.push(UnresolvedMarker {
+                id: id.to_string(),
+                reason,
+                candidates,
+                location: Some(SourceLocation {
+                    file: source_name.to_string(),
+                    line: Some(pos.row),
+                    col: Some(pos.col),
+                }),
+            });
+        }
+    }
+    for child in node.children().filter(|c| c.is_element()) {
+        if child.tag_name().namespace() != Some(SCE_NAMESPACE)
+            || child.tag_name().name() != "unresolved"
+        {
+            continue;
+        }
+        let id = match child.attribute("id") {
+            Some(s) if !s.is_empty() => s.to_string(),
+            _ => continue,
+        };
+        let reason = child.attribute("reason").map(|s| s.to_string());
+        let candidates = child
+            .attribute("candidates")
+            .map(|raw| {
+                raw.split_whitespace()
+                    .map(|s| s.to_string())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let pos = child.document().text_pos_at(child.range().start);
+        markers.push(UnresolvedMarker {
+            id,
+            reason,
+            candidates,
+            location: Some(SourceLocation {
+                file: source_name.to_string(),
+                line: Some(pos.row),
+                col: Some(pos.col),
+            }),
+        });
+    }
+    markers
+}
+
+/// Propagate block-level `sce:req` IDs (from `<onentry>` or
+/// `<onexit>`) onto every action in that block, skipping ids the
+/// action already carries (an inner action may have its own
+/// `sce:req` that overlaps with the block's). Order is preserved:
+/// inner ids stay first, inherited block-level ids appended.
+fn inherit_req(block_req: &[crate::provenance::RequirementId], block: &mut [crate::model::Action]) {
+    if block_req.is_empty() {
+        return;
+    }
+    for action in block.iter_mut() {
+        for r in block_req {
+            if !action.req.contains(r) {
+                action.req.push(r.clone());
+            }
+        }
+    }
+}
+
+/// Read the optional `sce:req="ID1 ID2 ..."` attribute and return
+/// the whitespace-separated requirement IDs. Returns `Ok(vec![])`
+/// when the attribute is absent. Rejects the first duplicate token
+/// on a single node with `ValidationError::DuplicateRequirementId`
+/// — opaque token by design (NL→IR Mapping Roadmap Item 1), but
+/// duplicates mask a missing annotation in downstream req-coverage
+/// NDJSON so they are caught here.
+///
+/// `element_label_fn` is invoked only on the duplicate error path
+/// so callers can build the author-facing description (e.g.
+/// `<state id="armed">`) without paying for the format on the
+/// happy path.
+fn collect_sce_req(
+    node: &roxmltree::Node,
+    element_label_fn: impl FnOnce() -> String,
+    source_name: &str,
+) -> Result<
+    Vec<crate::provenance::RequirementId>,
+    crate::forge::error::Located<crate::forge::error::ForgeError>,
+> {
+    use crate::forge::error::{Located, ValidationError};
+    use crate::forge::model::SCE_NAMESPACE;
+    use crate::provenance::RequirementId;
+    use std::collections::HashSet;
+    let raw = match node.attribute((SCE_NAMESPACE, "req")) {
+        Some(s) => s,
+        None => return Ok(Vec::new()),
+    };
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut out: Vec<RequirementId> = Vec::new();
+    for tok in RequirementId::split(raw) {
+        if !seen.insert(tok.to_string()) {
+            let pos = node.document().text_pos_at(node.range().start);
+            return Err(Located::new(
+                ValidationError::DuplicateRequirementId {
+                    element: element_label_fn(),
+                    id: tok.to_string(),
+                }
+                .into(),
+                source_name,
+                Some(pos.row),
+                Some(pos.col),
+            ));
+        }
+        out.push(RequirementId(tok.to_string()));
+    }
+    Ok(out)
+}
+
 impl Default for SCXMLParser {
     fn default() -> Self {
         Self::new()
@@ -1028,6 +1172,12 @@ impl SCXMLParser {
                 ..Default::default()
             };
             self.document_order_counter += 1;
+            state.req = collect_sce_req(
+                &child,
+                || format!("<state id=\"{state_id}\">"),
+                source_name,
+            )?;
+            state.unresolved = collect_sce_unresolved(&child, source_name);
 
             // Parse transitions
             for trans_elem in scxml_children(&child, "transition") {
@@ -1048,7 +1198,14 @@ impl SCXMLParser {
 
             // Parse onentry blocks
             for entry_elem in scxml_children(&child, "onentry") {
-                let block = self.parse_executable_content(&entry_elem, model, source_name)?;
+                let req = collect_sce_req(
+                    &entry_elem,
+                    || format!("<onentry> in <state id=\"{state_id}\">"),
+                    source_name,
+                )?;
+                let mut block =
+                    self.parse_executable_content(&entry_elem, model, source_name)?;
+                inherit_req(&req, &mut block);
                 if !block.is_empty() {
                     state.on_entry_blocks.push(block);
                 }
@@ -1056,7 +1213,14 @@ impl SCXMLParser {
 
             // Parse onexit blocks
             for exit_elem in scxml_children(&child, "onexit") {
-                let block = self.parse_executable_content(&exit_elem, model, source_name)?;
+                let req = collect_sce_req(
+                    &exit_elem,
+                    || format!("<onexit> in <state id=\"{state_id}\">"),
+                    source_name,
+                )?;
+                let mut block =
+                    self.parse_executable_content(&exit_elem, model, source_name)?;
+                inherit_req(&req, &mut block);
                 if !block.is_empty() {
                     state.on_exit_blocks.push(block);
                 }
@@ -1145,15 +1309,35 @@ impl SCXMLParser {
                 ..Default::default()
             };
             self.document_order_counter += 1;
+            state.req = collect_sce_req(
+                &child,
+                || format!("<final id=\"{final_id}\">"),
+                source_name,
+            )?;
+            state.unresolved = collect_sce_unresolved(&child, source_name);
 
             for entry_elem in scxml_children(&child, "onentry") {
-                let block = self.parse_executable_content(&entry_elem, model, source_name)?;
+                let req = collect_sce_req(
+                    &entry_elem,
+                    || format!("<onentry> in <final id=\"{final_id}\">"),
+                    source_name,
+                )?;
+                let mut block =
+                    self.parse_executable_content(&entry_elem, model, source_name)?;
+                inherit_req(&req, &mut block);
                 if !block.is_empty() {
                     state.on_entry_blocks.push(block);
                 }
             }
             for exit_elem in scxml_children(&child, "onexit") {
-                let block = self.parse_executable_content(&exit_elem, model, source_name)?;
+                let req = collect_sce_req(
+                    &exit_elem,
+                    || format!("<onexit> in <final id=\"{final_id}\">"),
+                    source_name,
+                )?;
+                let mut block =
+                    self.parse_executable_content(&exit_elem, model, source_name)?;
+                inherit_req(&req, &mut block);
                 if !block.is_empty() {
                     state.on_exit_blocks.push(block);
                 }
@@ -1183,6 +1367,12 @@ impl SCXMLParser {
                 ..Default::default()
             };
             self.document_order_counter += 1;
+            state.req = collect_sce_req(
+                &child,
+                || format!("<parallel id=\"{parallel_id}\">"),
+                source_name,
+            )?;
+            state.unresolved = collect_sce_unresolved(&child, source_name);
 
             for trans_elem in scxml_children(&child, "transition") {
                 let transition = self.parse_transition(&trans_elem, model, source_name)?;
@@ -1200,13 +1390,27 @@ impl SCXMLParser {
             }
 
             for entry_elem in scxml_children(&child, "onentry") {
-                let block = self.parse_executable_content(&entry_elem, model, source_name)?;
+                let req = collect_sce_req(
+                    &entry_elem,
+                    || format!("<onentry> in <parallel id=\"{parallel_id}\">"),
+                    source_name,
+                )?;
+                let mut block =
+                    self.parse_executable_content(&entry_elem, model, source_name)?;
+                inherit_req(&req, &mut block);
                 if !block.is_empty() {
                     state.on_entry_blocks.push(block);
                 }
             }
             for exit_elem in scxml_children(&child, "onexit") {
-                let block = self.parse_executable_content(&exit_elem, model, source_name)?;
+                let req = collect_sce_req(
+                    &exit_elem,
+                    || format!("<onexit> in <parallel id=\"{parallel_id}\">"),
+                    source_name,
+                )?;
+                let mut block =
+                    self.parse_executable_content(&exit_elem, model, source_name)?;
+                inherit_req(&req, &mut block);
                 if !block.is_empty() {
                     state.on_exit_blocks.push(block);
                 }
@@ -1320,6 +1524,28 @@ impl SCXMLParser {
             source_location: source_location_of(elem, source_name),
             ..Default::default()
         };
+        transition.req = collect_sce_req(
+            elem,
+            || {
+                let event_attr = elem.attribute("event").unwrap_or("");
+                let target_attr = elem.attribute("target").unwrap_or("");
+                format!(
+                    "<transition{}{}>",
+                    if event_attr.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" event=\"{event_attr}\"")
+                    },
+                    if target_attr.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" target=\"{target_attr}\"")
+                    },
+                )
+            },
+            source_name,
+        )?;
+        transition.unresolved = collect_sce_unresolved(elem, source_name);
 
         transition.actions = self.parse_executable_content(elem, model, source_name)?;
 
@@ -1602,6 +1828,8 @@ impl SCXMLParser {
             source_location: source_location_of(child, source_name),
             ..Default::default()
         };
+        action.req = collect_sce_req(child, || format!("<{tag}>"), source_name)?;
+        action.unresolved = collect_sce_unresolved(child, source_name);
         match tag.as_str() {
             "raise" => {
                 action.event = child.attribute("event").unwrap_or("").to_string();
@@ -1880,6 +2108,12 @@ impl SCXMLParser {
             // lifecycle resolves `srcexpr`/`contentexpr` at runtime.
             let idx = self.hybrid_invoke_counter;
             self.hybrid_invoke_counter += 1;
+            let invoke_req = collect_sce_req(
+                elem,
+                || format!("<invoke id=\"{invoke_id}\">"),
+                source_name,
+            )?;
+            let invoke_unresolved = collect_sce_unresolved(elem, source_name);
             return Ok(Some(Invoke::Hybrid(HybridInvokeInfo {
                 common: InvokeSessionCommon {
                     base: InvokeBase {
@@ -1888,6 +2122,9 @@ impl SCXMLParser {
                         state_name: state_id.to_string(),
                         params: hybrid_params,
                         idlocation,
+                        req: invoke_req,
+                        provenance: Vec::new(),
+                        unresolved: invoke_unresolved,
                     },
                     child_name: format!("{}_hybrid{idx}", model.name),
                     autoforward,
@@ -1971,6 +2208,12 @@ impl SCXMLParser {
                     (src.clone(), String::new())
                 };
 
+            let invoke_req = collect_sce_req(
+                elem,
+                || format!("<invoke id=\"{invoke_id}\">"),
+                source_name,
+            )?;
+            let invoke_unresolved = collect_sce_unresolved(elem, source_name);
             let mut scxml_info = ScxmlInvokeInfo {
                 common: InvokeSessionCommon {
                     base: InvokeBase {
@@ -1979,6 +2222,9 @@ impl SCXMLParser {
                         state_name: state_id.to_string(),
                         params: static_params,
                         idlocation,
+                        req: invoke_req,
+                        provenance: Vec::new(),
+                        unresolved: invoke_unresolved,
                     },
                     child_name: resolved_child_name,
                     autoforward,
@@ -2163,6 +2409,12 @@ impl SCXMLParser {
             })
         })?;
 
+        let invoke_req = collect_sce_req(
+            elem,
+            || format!("<invoke id=\"{invoke_id}\">"),
+            source_name,
+        )?;
+        let invoke_unresolved = collect_sce_unresolved(elem, source_name);
         Ok(MeshRpcInvokeInfo {
             base: InvokeBase {
                 invoke_id,
@@ -2170,6 +2422,9 @@ impl SCXMLParser {
                 state_name: state_id.to_string(),
                 params: payload_params,
                 idlocation,
+                req: invoke_req,
+                provenance: Vec::new(),
+                unresolved: invoke_unresolved,
             },
             target,
             mesh_event,
@@ -6956,5 +7211,120 @@ mod tests {
                     panic!("path keyword `{callback}` should parse cleanly; got: {e:?}")
                 });
         }
+    }
+
+    // ── NL→IR Mapping Roadmap Item 1: sce:req attribute ──────
+
+    #[test]
+    fn sce_req_collected_on_state_transition_and_invoke() {
+        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                              xmlns:sce="http://sce.dev/ext"
+                              version="1.0" initial="armed" datamodel="null">
+            <state id="armed" sce:req="UPD_TAR_02011 RS_CLT_00001">
+                <transition event="go" target="firing" sce:req="UPD_TAR_02012"/>
+                <invoke type="scxml" src="child.scxml" sce:req="UPD_TAR_02013"/>
+            </state>
+            <state id="firing"/>
+        </scxml>"#;
+        let model = SCXMLParser::new()
+            .parse_string(scxml, "sce_req_basic")
+            .expect("parse");
+        let armed = &model.states["armed"];
+        let req_strings: Vec<&str> = armed.req.iter().map(|r| r.0.as_str()).collect();
+        assert_eq!(req_strings, vec!["UPD_TAR_02011", "RS_CLT_00001"]);
+        let transition = &armed.transitions[0];
+        let trans_req: Vec<&str> = transition.req.iter().map(|r| r.0.as_str()).collect();
+        assert_eq!(trans_req, vec!["UPD_TAR_02012"]);
+        let invoke = &armed.invokes[0];
+        let base = match invoke {
+            crate::model::Invoke::Scxml(info) => &info.common.base,
+            _ => panic!("expected Scxml invoke variant"),
+        };
+        let invoke_req: Vec<&str> = base.req.iter().map(|r| r.0.as_str()).collect();
+        assert_eq!(invoke_req, vec!["UPD_TAR_02013"]);
+    }
+
+    #[test]
+    fn sce_req_on_onentry_inherits_to_block_actions() {
+        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                              xmlns:sce="http://sce.dev/ext"
+                              version="1.0" initial="armed" datamodel="null">
+            <state id="armed">
+                <onentry sce:req="UPD_TAR_02020">
+                    <raise event="ev1"/>
+                    <raise event="ev2"/>
+                </onentry>
+            </state>
+        </scxml>"#;
+        let model = SCXMLParser::new()
+            .parse_string(scxml, "sce_req_inherit")
+            .expect("parse");
+        let armed = &model.states["armed"];
+        let block = &armed.on_entry_blocks[0];
+        assert_eq!(block.len(), 2);
+        for action in block {
+            let action_req: Vec<&str> = action.req.iter().map(|r| r.0.as_str()).collect();
+            assert_eq!(action_req, vec!["UPD_TAR_02020"]);
+        }
+    }
+
+    #[test]
+    fn sce_req_on_action_overrides_inherits_union() {
+        // Block-level req inherits onto every action; inner req
+        // appears first, then any non-overlapping inherited token.
+        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                              xmlns:sce="http://sce.dev/ext"
+                              version="1.0" initial="armed" datamodel="null">
+            <state id="armed">
+                <onentry sce:req="BLOCK_REQ">
+                    <raise event="ev1" sce:req="INNER_REQ"/>
+                </onentry>
+            </state>
+        </scxml>"#;
+        let model = SCXMLParser::new()
+            .parse_string(scxml, "sce_req_union")
+            .expect("parse");
+        let action = &model.states["armed"].on_entry_blocks[0][0];
+        let action_req: Vec<&str> = action.req.iter().map(|r| r.0.as_str()).collect();
+        assert_eq!(action_req, vec!["INNER_REQ", "BLOCK_REQ"]);
+    }
+
+    #[test]
+    fn sce_req_duplicate_token_rejected() {
+        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                              xmlns:sce="http://sce.dev/ext"
+                              version="1.0" initial="armed" datamodel="null">
+            <state id="armed" sce:req="REQ_001 REQ_001"/>
+        </scxml>"#;
+        let err = SCXMLParser::new()
+            .parse_string(scxml, "sce_req_dup")
+            .expect_err("duplicate sce:req should reject");
+        let rendered = format!("{err:?}");
+        assert!(
+            rendered.contains("DuplicateRequirementId"),
+            "expected ValidationError::DuplicateRequirementId in: {rendered}"
+        );
+        assert!(
+            rendered.contains("REQ_001"),
+            "expected duplicate id 'REQ_001' in: {rendered}"
+        );
+    }
+
+    #[test]
+    fn sce_req_absent_attribute_leaves_vec_empty() {
+        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+                              version="1.0" initial="armed" datamodel="null">
+            <state id="armed">
+                <transition event="go" target="armed"/>
+                <onentry><raise event="ev"/></onentry>
+            </state>
+        </scxml>"#;
+        let model = SCXMLParser::new()
+            .parse_string(scxml, "sce_req_absent")
+            .expect("parse");
+        let armed = &model.states["armed"];
+        assert!(armed.req.is_empty());
+        assert!(armed.transitions[0].req.is_empty());
+        assert!(armed.on_entry_blocks[0][0].req.is_empty());
     }
 }

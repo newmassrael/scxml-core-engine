@@ -486,9 +486,80 @@ no typed interpretation or are explicitly excluded:
   `expression/empty`, `expression/numeric-parse` (on integer literal
   overflow, dispatched as `validation/numeric-parse`).
 
+### §2.10 Metadata annotations — `sce:req` / `sce:provenance` / `sce:unresolved`
+
+NL→IR Mapping Roadmap Items 1, 5, and 6 add three metadata
+attribute families that any IR generator (NL→IR pipeline,
+hand-authored DSL, ARXML transcoder) may attach to `<state>`,
+`<parallel>`, `<final>`, `<transition>`, `<onentry>`, `<onexit>`,
+the executable-content actions inside those blocks, and
+`<invoke>`. The annotations are pure metadata — emitted code is
+byte-identical to the unannotated form, byte-stable goldens stay
+unchanged.
+
+**`sce:req`** — whitespace-separated requirement IDs.
+
+```xml
+<state id="armed" sce:req="UPD_TAR_02011 RS_CLT_00001">
+  <transition event="go" target="firing" sce:req="UPD_TAR_02012"/>
+</state>
+```
+
+Tokens are opaque to SCE (no shape enforcement — IR generators
+own the semantic layer). Duplicates on a single node fail at
+parse time with `validation/duplicate-requirement-id`. Block
+annotations on `<onentry>` / `<onexit>` inherit onto every
+action inside the block, appended after any per-action ids.
+`sce-codegen requirements <file>` emits one NDJSON record per
+annotated node for downstream req-coverage tooling.
+
+**`sce:provenance`** — spec-document anchors.
+
+Two equivalent forms:
+
+```xml
+<state id="armed" sce:provenance="ES95486-02@23#4.4.2"/>
+
+<state id="armed">
+  <sce:provenance doc="ES95486-02" rev="23" section="4.4.2"/>
+  <sce:provenance doc="ISO-14229-1" section="11.2.1"/>
+</state>
+```
+
+The compact URI form is `doc_id[@rev][#section[:page]]`. The
+element form allows multi-document anchoring on a single node.
+Pass-through to the diagnostic `spec_provenance` field — SCE
+never infers it.
+
+**`sce:unresolved`** — explicit "revisit later" markers.
+
+Two equivalent forms (attribute carries one marker; element
+form allows multiple per node):
+
+```xml
+<state id="armed"
+       sce:unresolved="tbd_threshold"
+       sce:unresolved-reason="awaiting calibration"
+       sce:unresolved-candidates="42 50 65"/>
+
+<state id="armed">
+  <sce:unresolved id="tbd_target" reason="route TBD" candidates="left right"/>
+</state>
+```
+
+Default builds carry the marker silently in the model — the
+`sce-codegen unresolved <file>` NDJSON report surfaces it for IDE
+/ linter / dashboard consumers. `--strict-unresolved` on
+`generate` lifts the marker to a build-failing
+`validation/unresolved-placeholder` so production CI gates
+cannot merge unresolved IR.
+
+The three families compose freely on a single node — `sce:req`,
+`sce:provenance`, and `sce:unresolved` are orthogonal axes.
+
 ---
 
-## Appendix — `DiagnosticCode` index (300 codes)
+## Appendix — `DiagnosticCode` index (302 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -551,6 +622,8 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/mesh-rpc-duplicate-target` | Validation |
 | `validation/removed-attribute` | Validation |
 | `validation/bytes-max-size-violation` | Validation |
+| `validation/duplicate-requirement-id` | Validation |
+| `validation/unresolved-placeholder` | Validation |
 | `algorithm/local-shadows-param` | Validation |
 | `algorithm/lvalue-unsupported` | Validation |
 | `algorithm/return-missing` | Validation |

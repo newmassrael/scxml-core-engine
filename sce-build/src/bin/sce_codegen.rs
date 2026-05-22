@@ -644,6 +644,15 @@ enum Commands {
         /// language targets.
         #[arg(long)]
         kotlin_package_prefix: Option<String>,
+        /// NL→IR Mapping Roadmap Item 5: reject the build when the
+        /// document carries any `<sce:unresolved>` placeholder
+        /// (attribute or element form). Default builds let the
+        /// marker survive in the model + the `sce-codegen
+        /// unresolved` NDJSON report; this flag lifts the marker to
+        /// `validation/unresolved-placeholder` so production CI
+        /// gates cannot merge IR with open decisions.
+        #[arg(long)]
+        strict_unresolved: bool,
     },
     /// Multi-doc generate with cross-doc registry — wires
     /// `validate_on_sample_link_references` into production
@@ -771,6 +780,22 @@ enum Commands {
     Manifest {
         /// Directory containing forge SCXML files
         dir: String,
+    },
+    /// Emit `sce:req` requirement-coverage NDJSON for a single SCXML
+    /// file (NL→IR Mapping Roadmap Item 1). One JSON record per IR
+    /// node carrying a non-empty `sce:req` attribute; empty output
+    /// when the document has no `sce:req` annotations.
+    Requirements {
+        /// SCXML file path
+        scxml: String,
+    },
+    /// Emit `<sce:unresolved>` placeholder NDJSON for a single SCXML
+    /// file (NL→IR Mapping Roadmap Item 5). One JSON record per
+    /// marker (attribute form and element form both detected);
+    /// empty output when the document has no unresolved markers.
+    Unresolved {
+        /// SCXML file path
+        scxml: String,
     },
     /// Generate a cross-language numerical conformance test harness from a
     /// fixture catalog (single source of truth for all 5 languages).
@@ -949,6 +974,7 @@ fn main() {
             input_root,
             emit_ast,
             kotlin_package_prefix,
+            strict_unresolved,
         } => cmd_generate(
             &scxml,
             &language,
@@ -967,6 +993,7 @@ fn main() {
             input_root.as_deref(),
             emit_ast.as_deref(),
             kotlin_package_prefix.as_deref(),
+            strict_unresolved,
             error_format,
         ),
         Commands::Orchestrate {
@@ -1010,6 +1037,8 @@ fn main() {
         Commands::FixScxmlName { scxml, name } => cmd_fix_scxml_name(&scxml, &name),
         Commands::ReadMetadata { metadata_file } => cmd_read_metadata(&metadata_file),
         Commands::Manifest { dir } => cmd_manifest(&dir),
+        Commands::Requirements { scxml } => cmd_requirements(&scxml, error_format),
+        Commands::Unresolved { scxml } => cmd_unresolved(&scxml, error_format),
         Commands::GenerateConformance {
             language,
             manifest,
@@ -1300,6 +1329,7 @@ fn emit_orchestrate_asts(
 
 // ── Subcommand: generate ────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 fn cmd_generate(
     scxml_path: &str,
     language: &str,
@@ -1318,6 +1348,7 @@ fn cmd_generate(
     input_root_override: Option<&str>,
     emit_ast_path: Option<&str>,
     kotlin_package_prefix: Option<&str>,
+    strict_unresolved: bool,
     error_format: ErrorFormat,
 ) {
     let lang: Language = language.parse().unwrap_or_else(|_| {
@@ -1491,6 +1522,18 @@ fn cmd_generate(
         Ok(m) => m,
         Err(e) => error_format.emit_and_exit(&e, ""),
     };
+
+    // NL→IR Mapping Roadmap Item 5: `--strict-unresolved` lifts the
+    // model's `<sce:unresolved>` markers from silent metadata to a
+    // build-failing rejection. Runs before any codegen so CI gates
+    // see the `validation/unresolved-placeholder` diagnostic on the
+    // wire instead of a downstream "why is my generated code blank
+    // at this assign expression" surprise.
+    if strict_unresolved {
+        if let Err(e) = sce_build::unresolved_check::check_strict_unresolved(&model) {
+            error_format.emit_and_exit(&e, "");
+        }
+    }
 
     // `has_parent_communication` carries two distinct meanings across
     // backends:
@@ -3910,6 +3953,53 @@ fn cmd_manifest(dir: &str) {
     });
 
     println!("{json}");
+}
+
+// ── Subcommand: requirements ──────────────────────────────────
+//
+// NL→IR Mapping Roadmap Item 1: emit per-IR-node `sce:req`
+// NDJSON. Routes through the same parser SCE uses for codegen so
+// the report sees exactly the same node walk the build does —
+// drift between "what compiles" and "what the report claims is
+// annotated" is structurally impossible.
+
+fn cmd_requirements(scxml: &str, error_format: ErrorFormat) {
+    let mut parser = sce_build::parser::SCXMLParser::new();
+    let model = parser
+        .parse_file(scxml)
+        .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
+    let stdout = std::io::stdout();
+    let mut handle = stdout.lock();
+    sce_build::requirements_report::emit_requirements_ndjson(&model, &mut handle)
+        .unwrap_or_else(|source| {
+            cli_exit(CliError::WriteOutput {
+                path: "stdout".to_string(),
+                source,
+            })
+        });
+}
+
+// ── Subcommand: unresolved ─────────────────────────────────────
+//
+// NL→IR Mapping Roadmap Item 5: emit per-marker `<sce:unresolved>`
+// NDJSON. Same architecture as the `requirements` subcommand — parse
+// through the production parser, walk the model, emit one record per
+// detected marker.
+
+fn cmd_unresolved(scxml: &str, error_format: ErrorFormat) {
+    let mut parser = sce_build::parser::SCXMLParser::new();
+    let model = parser
+        .parse_file(scxml)
+        .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
+    let stdout = std::io::stdout();
+    let mut handle = stdout.lock();
+    sce_build::unresolved_check::emit_unresolved_ndjson(&model, &mut handle)
+        .unwrap_or_else(|source| {
+            cli_exit(CliError::WriteOutput {
+                path: "stdout".to_string(),
+                source,
+            })
+        });
 }
 
 // ── Subcommand: generate-integration ───────────────────────────
