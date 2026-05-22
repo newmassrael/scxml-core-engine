@@ -83,6 +83,8 @@
         "scxml/unreachable-state",
         "scxml/dead-transition",
         "scxml/non-exhaustive-event-handling",
+        "scxml/always-false-guard",
+        "scxml/shadowed-transition",
         "scxml/on-sample-invalid-parent",
         "scxml/on-sample-link-duplicate-in-state",
         "scxml/on-sample-event-name-conflict",

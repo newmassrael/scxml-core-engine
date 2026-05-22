@@ -53,6 +53,13 @@ pub mod script_engine_analyzer;
 /// a shared event vocabulary across siblings) keeps W3C IRP at zero
 /// false positives.
 pub mod scxml_exhaustiveness;
+/// NL→IR Mapping Roadmap Item 3 Phase C: guard analysis. Recognises
+/// trivially-false `<transition cond>` expressions and shadowed
+/// transitions (unconditional siblings making later same-event
+/// siblings dead per W3C SCXML §5.10). Stays narrow: language-prefixed
+/// conds (`cpp:`, `kotlin:`, `rust:`) are opaque, token-prefix
+/// superset shadowing is not flagged.
+pub mod scxml_guard_analysis;
 /// NL→IR Mapping Roadmap Item 3 Phase A: Statechart graph reachability
 /// validator. BFS from the document `initial` configuration computes
 /// the design-time reach set and rejects orphan states / dead
@@ -173,6 +180,10 @@ fn compile_model(scxml_path: &str) -> Result<ParsedSCXML, CompileError> {
     // walker presumes the graph topology is sound and surfaces only
     // the design-time intent-gap pattern.
     scxml_exhaustiveness::validate(&model, scxml_path)?;
+    // NL→IR Mapping Roadmap Item 3 Phase C — guard analysis. Runs
+    // after Phase B so structural intent-gap diagnostics fire ahead
+    // of the per-transition guard heuristic.
+    scxml_guard_analysis::validate(&model, scxml_path)?;
     // Watching-zenoh RFC §5.O Atomic 0a — IR provenance pre-emit
     // guard. Runs *after* the analyzer (so synthesised IR additions
     // are visible) and *before* `resolve_source_path` populates the
@@ -210,6 +221,8 @@ fn compile_model_from_string(
     // for the placement rationale (after Phase A so the structural
     // root-cause fires ahead of the heuristic).
     scxml_exhaustiveness::validate(&model, scxml_name)?;
+    // NL→IR Mapping Roadmap Item 3 Phase C — guard analysis.
+    scxml_guard_analysis::validate(&model, scxml_name)?;
     // Watching-zenoh RFC §5.O Atomic 0a — IR provenance pre-emit
     // guard. WASM / parse_string callers share the same invariant
     // as the file-based entry point above; both routes converge on
