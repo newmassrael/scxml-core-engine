@@ -63,6 +63,8 @@ Omitted fields are absent from the JSON entirely (not `null`). Consumers
 | `expected` | array of strings | Non-repair expectation metadata (parser expectations like `"identifier"`, cardinality constraints like `"1"`). **Never** carries a candidate list for substitution — that role belongs to `fix`. The two fields are disjoint by contract (see [§3.2](#32-no-overlap-between-fix-and-expected)). |
 | `actual` | string | The observed value that triggered rejection. |
 | `fix` | object | Structured repair proposal. The sole channel for repair signals. See [§3 Fixes](#3-fixes). |
+| `spec_provenance` | array of objects | NL→IR Mapping Roadmap Item 6 — spec-document anchors that justify the rejected node (`doc_id` + optional `rev`/`section`/`page`). SCE never infers this; IR generators (NL→IR pipelines, ARXML transcoders) populate it when they know the spec origin. Pass-through field on the wire — absent when the upstream did not record provenance. |
+| `question_kind` | string (enum) | NL→IR Mapping Roadmap Item 6 — coarse routing label so IDE / triage tooling can dispatch on the *kind* of question the diagnostic raises (`implicit_default` / `ambiguous_mapping` / `cross_doc_conflict` / `unit_unspecified` / `unknown_vocabulary` / `structural`). Extensible — consumers must treat unknown values as `structural`. Absent on purely structural rejections that map cleanly onto `code` alone. |
 
 ### 2.2 Location object
 
@@ -218,6 +220,8 @@ references against a real document and drift silently.
 | `validation/missing-context` | `validation` | no | |
 | `validation/invalid-reference` | `validation` | `replace_one_of` | |
 | `validation/invalid-direction` | `validation` | `replace_one_of` | SCE Forge §3.3 |
+| `validation/duplicate-requirement-id` | `validation` | no | |
+| `validation/unresolved-placeholder` | `validation` | no | |
 | `validation/numeric-parse` | `validation` | no | |
 | `validation/empty-value` | `validation` | `add_attribute` | |
 | `validation/singleton-violation` | `validation` | no | |

@@ -108,6 +108,8 @@ impl crate::forge::diagnostic::ToDiagnostics for XsdErrors {
                     expected: None,
                     actual: None,
                     fix: None,
+                    spec_provenance: Vec::new(),
+                    question_kind: None,
                 }
             })
             .collect()

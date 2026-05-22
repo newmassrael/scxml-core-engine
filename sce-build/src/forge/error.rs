@@ -28,7 +28,7 @@ use std::path::PathBuf;
 /// SCE-MAP markers (`#line` / `//line` / `// SCE-MAP:` / `#[doc]`)
 /// above the function header that node lowers to. Serialised so
 /// minijinja templates can `{% if state.source_location %}{{ ... }}{% endif %}`.
-#[derive(Debug, Clone, serde::Serialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, Default)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct SourceLocation {
     /// Producer-defined identifier for the source document — typically
@@ -2955,6 +2955,50 @@ pub enum ValidationError {
         /// `u64` to absorb the multiplication without overflow on the
         /// extreme corner (`u32::MAX × 1` is the realistic ceiling).
         product: u64,
+    },
+
+    /// `sce:req="ID1 ID2 ID2"` repeats the same requirement ID on a
+    /// single node. NL→IR Mapping Roadmap Item 1: opaque token, but
+    /// duplicates would survive into req-coverage NDJSON as a phantom
+    /// double-count and mask the actually-missing second annotation.
+    /// Rejected so the author either drops the duplicate or splits
+    /// the annotation across siblings deliberately.
+    #[error("{element}: duplicate sce:req id '{id}'")]
+    DuplicateRequirementId {
+        /// Author-facing element label, e.g. `<state id="armed">`,
+        /// `<transition>`, `<onentry>`.
+        element: String,
+        /// The repeated requirement id verbatim — opaque, no shape
+        /// constraint enforced (SCE keeps `sce:req` tokens opaque per
+        /// the Roadmap design).
+        id: String,
+    },
+
+    /// `sce:unresolved` placeholder found while `--strict-unresolved`
+    /// is in effect. NL→IR Mapping Roadmap Item 5: the marker is a
+    /// deliberate "revisit later" signal; strict mode lifts it from
+    /// silent metadata to a build-failing rejection so CI gates
+    /// cannot merge unresolved IR. Default (non-strict) builds pass
+    /// — the marker survives only in the model and the
+    /// `sce-codegen unresolved` NDJSON report.
+    #[error(
+        "{element}: unresolved placeholder id='{id}'{}",
+        if let Some(r) = reason.as_ref() {
+            format!(" reason='{r}'")
+        } else {
+            String::new()
+        }
+    )]
+    UnresolvedPlaceholder {
+        /// Author-facing element label, e.g. `<state id="armed">`.
+        element: String,
+        /// Opaque marker id from `sce:unresolved="..."` or the
+        /// `<sce:unresolved id="..."/>` element.
+        id: String,
+        /// Optional human-readable reason carried verbatim from
+        /// `sce:unresolved-reason="..."` or the element's
+        /// `reason="..."` attribute.
+        reason: Option<String>,
     },
 }
 

@@ -110,6 +110,8 @@ pub trait SingleDiagnostic: ToDiagnostics {
             expected: payload.expected,
             actual: payload.actual,
             fix: payload.fix,
+            spec_provenance: Vec::new(),
+            question_kind: None,
         }
     }
 }
@@ -211,7 +213,83 @@ pub struct Diagnostic {
     /// there is no fallback to `expected`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fix: Option<Fix>,
+
+    /// NL→IR Mapping Roadmap Item 6 — spec-document anchors that
+    /// justify the rejected node. SCE never infers this; IR
+    /// generators (NL→IR pipelines, ARXML transcoders) populate it
+    /// when they know the spec origin. Pass-through field on the
+    /// diagnostic wire — `Vec::is_empty()` skips serialisation so
+    /// the existing byte-stable goldens stay byte-stable for any
+    /// diagnostic the upstream did not populate.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub spec_provenance: Vec<crate::provenance::SpecProvenance>,
+
+    /// NL→IR Mapping Roadmap Item 6 — coarse routing label so IDE
+    /// integrations and triage tooling can dispatch errors by
+    /// *kind* (structural / unit-missing / ambiguous-mapping / …)
+    /// rather than memorising the full code catalogue. Absent on
+    /// purely structural rejections that map cleanly onto
+    /// [`Self::code`] alone.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub question_kind: Option<QuestionKind>,
 }
+
+/// NL→IR Mapping Roadmap Item 6 — diagnostic routing label.
+///
+/// Extensible: consumers must treat unknown values as
+/// `Structural` (the fallback bucket) per the schema's
+/// "ignore unknown" rule. New variants are additive within v1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QuestionKind {
+    /// The author left a value at SCE's implicit default and the
+    /// rejection rule asks them to make the choice explicit.
+    ImplicitDefault,
+    /// Multiple NL→IR mapping candidates were equally plausible —
+    /// the IR generator could not pick a single answer.
+    AmbiguousMapping,
+    /// Two spec documents disagree at the spec source — neither
+    /// the author nor SCE can pick without a domain decision.
+    CrossDocConflict,
+    /// A numeric or measurement value was left dimensionless
+    /// where a unit is required (Roadmap Item 4 territory).
+    UnitUnspecified,
+    /// The author used a vocabulary term SCE does not recognise
+    /// and no closed candidate set narrows the choice.
+    UnknownVocabulary,
+    /// Pure structural well-formedness — fallback for any
+    /// rejection that does not fit the more specific buckets.
+    Structural,
+}
+
+impl QuestionKind {
+    /// Stable snake_case string used by drift guards and hash
+    /// inputs. Matches the serde rename produced by
+    /// `#[serde(rename_all = "snake_case")]`.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            QuestionKind::ImplicitDefault => "implicit_default",
+            QuestionKind::AmbiguousMapping => "ambiguous_mapping",
+            QuestionKind::CrossDocConflict => "cross_doc_conflict",
+            QuestionKind::UnitUnspecified => "unit_unspecified",
+            QuestionKind::UnknownVocabulary => "unknown_vocabulary",
+            QuestionKind::Structural => "structural",
+        }
+    }
+}
+
+/// Exhaustive list of [`QuestionKind`] variants in declaration
+/// order. The drift guard
+/// [`tests::json_schema_enums_match_rust_source_of_truth`] reads
+/// the JSON schema and asserts byte equality against this slice.
+pub const ALL_QUESTION_KINDS: &[QuestionKind] = &[
+    QuestionKind::ImplicitDefault,
+    QuestionKind::AmbiguousMapping,
+    QuestionKind::CrossDocConflict,
+    QuestionKind::UnitUnspecified,
+    QuestionKind::UnknownVocabulary,
+    QuestionKind::Structural,
+];
 
 /// Pipeline stage taxonomy. Variant names mirror the stage comments
 /// in `forge::error` and `mesh::error` so those modules stay in
@@ -382,6 +460,23 @@ pub enum DiagnosticCode {
     //    at parse time before any backend codegen. ────────────
     #[serde(rename = "validation/bytes-max-size-violation")]
     ValidationBytesMaxSizeViolation,
+    // ── NL→IR Mapping Roadmap Item 1: sce:req traceability attribute.
+    //    Opaque token by design (SCE assigns no semantics to the id
+    //    shape), but a duplicate token on a single node masks a
+    //    missing-second-annotation as a phantom double-count in
+    //    req-coverage NDJSON. Rejected at parse time so authors fix
+    //    it locally. ─────────────────────────────────────────────
+    #[serde(rename = "validation/duplicate-requirement-id")]
+    ValidationDuplicateRequirementId,
+
+    // ── NL→IR Mapping Roadmap Item 5: sce:unresolved placeholder.
+    //    Default builds carry the marker silently (the model + the
+    //    `sce-codegen unresolved` NDJSON report expose it for IDE
+    //    / linter / CI consumers). `--strict-unresolved` lifts the
+    //    marker to this build-failing rejection so production CI
+    //    cannot merge unresolved IR. ─────────────────────────────
+    #[serde(rename = "validation/unresolved-placeholder")]
+    ValidationUnresolvedPlaceholder,
 
     // ── Algorithm kind (watching-zenoh RFC §5.A, Phase A3).
     //    Parser-stage sema for the new pure-function kind. Three
@@ -2307,6 +2402,10 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationMeshRpcDuplicateTarget,
         ValidationRemovedAttribute,
         ValidationBytesMaxSizeViolation,
+        // NL→IR Mapping Roadmap Item 1: sce:req traceability
+        ValidationDuplicateRequirementId,
+        // NL→IR Mapping Roadmap Item 5: sce:unresolved placeholder
+        ValidationUnresolvedPlaceholder,
         // Algorithm (watching-zenoh RFC §5.A, Phase A3)
         AlgorithmLocalShadowsParam,
         AlgorithmLvalueUnsupported,
@@ -2671,6 +2770,8 @@ impl Diagnostic {
             expected: None,
             actual: None,
             fix: None,
+            spec_provenance: Vec::new(),
+            question_kind: None,
         }
     }
 }
@@ -3197,7 +3298,14 @@ impl DiagnosticCode {
             | LinkDeployRoleListenerWithoutScxmlAcceptSideRole
             | ScxmlAcceptSideRoleWithoutListenerLink
             | LinkRoleListenerWithNonSessionArmingTrustClass
-            | ScxmlAcceptSideStatesWithoutRoleDeclaration => None,
+            | ScxmlAcceptSideStatesWithoutRoleDeclaration
+            // NL→IR Mapping Roadmap Items 1 + 5 — sce:req and
+            // sce:unresolved are SCE-internal extensions
+            // (`nl_to_ir_mapping_roadmap.md` §"Item 1" / §"Item 5").
+            // No external spec defines the rejection rules, so
+            // spec_anchor stays None.
+            | ValidationDuplicateRequirementId
+            | ValidationUnresolvedPlaceholder => None,
             // Axis-2 Phase Z carries the spec anchor that lived in the
             // diagnostic.rs:1170 placeholder comment.
             ReassemblyPerPeerQuotaBuildInvariantViolated => {
@@ -3254,6 +3362,8 @@ impl DiagnosticCode {
             ValidationMeshRpcDuplicateTarget => "validation/mesh-rpc-duplicate-target",
             ValidationRemovedAttribute => "validation/removed-attribute",
             ValidationBytesMaxSizeViolation => "validation/bytes-max-size-violation",
+            ValidationDuplicateRequirementId => "validation/duplicate-requirement-id",
+            ValidationUnresolvedPlaceholder => "validation/unresolved-placeholder",
             AlgorithmLocalShadowsParam => "algorithm/local-shadows-param",
             AlgorithmLvalueUnsupported => "algorithm/lvalue-unsupported",
             AlgorithmReturnMissing => "algorithm/return-missing",
@@ -4058,6 +4168,31 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 id: id.clone(),
             }),
             key_fragments: vec![kind.to_string(), what.clone(), id.clone()],
+        },
+        ValidationError::DuplicateRequirementId { element, id } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationDuplicateRequirementId,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(id.clone()),
+            // No closed candidate set — the repair is "drop the
+            // duplicate token". `Fix::None` carries that via the
+            // `NeutralOrDeterministic` non-overlap class.
+            fix: None,
+            key_fragments: vec![element.clone(), id.clone()],
+        },
+        ValidationError::UnresolvedPlaceholder { element, id, reason } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationUnresolvedPlaceholder,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(id.clone()),
+            fix: None,
+            key_fragments: {
+                let mut k = vec![element.clone(), id.clone()];
+                if let Some(r) = reason {
+                    k.push(r.clone());
+                }
+                k
+            },
         },
         ValidationError::DuplicateContextObject { id } => DiagnosticPayload {
             code: DiagnosticCode::ValidationDuplicateContextObject,
@@ -7176,6 +7311,25 @@ mod tests {
                 "forge/duplicate-context-object",
                 ValidationError::DuplicateContextObject { id: "ctx1".into() }.into(),
                 r#"{"v":1,"id":"fnv1a:5915eba3f66f34b0","code":"validation/duplicate-context-object","stage":"validation","message":"duplicate <sce:context id=\"ctx1\"> declaration","actual":"ctx1","fix":{"kind":"rename_duplicate","what":"sce:context id","id":"ctx1"}}"#,
+            ),
+            (
+                "forge/duplicate-requirement-id",
+                ValidationError::DuplicateRequirementId {
+                    element: "<state id=\"armed\">".into(),
+                    id: "REQ_001".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:cb11c8b9b1171851","code":"validation/duplicate-requirement-id","stage":"validation","message":"<state id=\"armed\">: duplicate sce:req id 'REQ_001'","actual":"REQ_001"}"#,
+            ),
+            (
+                "forge/unresolved-placeholder",
+                ValidationError::UnresolvedPlaceholder {
+                    element: "<state id=\"armed\">".into(),
+                    id: "tbd_threshold".into(),
+                    reason: Some("waiting on calibration data".into()),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:bb99ccd9698c8f58","code":"validation/unresolved-placeholder","stage":"validation","message":"<state id=\"armed\">: unresolved placeholder id='tbd_threshold' reason='waiting on calibration data'","actual":"tbd_threshold"}"#,
             ),
             (
                 "forge/reserved-context-id",
@@ -11295,7 +11449,20 @@ mod tests {
             | CodecFlagBindWidthMismatch
             | CodecFlagInputUnbound
             | CodecFlagBindDuplicateInput
-            | CodecFlagBindCarrierAfterEmbed => NeutralOrDeterministic,
+            | CodecFlagBindCarrierAfterEmbed
+            // NL→IR Mapping Roadmap Item 1 — duplicate sce:req id.
+            // Deterministic repair (drop the second occurrence); no
+            // closed candidate set, opaque token by design.
+            | ValidationDuplicateRequirementId
+            // NL→IR Mapping Roadmap Item 5 — unresolved placeholder
+            // under `--strict-unresolved`. Deterministic repair
+            // (resolve the marker and replace the value); no closed
+            // candidate set unless the author populated
+            // `sce:unresolved-candidates`, which lives in the model
+            // for IDE / linter consumers rather than the diagnostic
+            // wire (`Fix::ReplaceOneOf` would inflate every record
+            // even when no candidates were declared).
+            | ValidationUnresolvedPlaceholder => NeutralOrDeterministic,
         }
     }
 
@@ -11526,6 +11693,8 @@ mod tests {
                 | ValidationMeshRpcDuplicateTarget
                 | ValidationRemovedAttribute
                 | ValidationBytesMaxSizeViolation
+                | ValidationDuplicateRequirementId
+                | ValidationUnresolvedPlaceholder
                 | AlgorithmLocalShadowsParam
                 | AlgorithmLvalueUnsupported
                 | AlgorithmReturnMissing
@@ -11775,7 +11944,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            300,
+            302,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries —\
              expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
@@ -12697,6 +12866,31 @@ mod tests {
         assert_eq!(
             schema_version as u32, SCHEMA_VERSION,
             "schemas/sce-diagnostic.v1.schema.json v.const disagrees with SCHEMA_VERSION",
+        );
+
+        // NL→IR Mapping Roadmap Item 6 — question_kind enum drift.
+        // The schema is the wire contract; the Rust constant
+        // `ALL_QUESTION_KINDS` is the source of truth for the
+        // `as_str` mapping. They must agree byte-for-byte.
+        let question_kind_enum: Vec<String> = schema["properties"]["question_kind"]["enum"]
+            .as_array()
+            .expect("question_kind.enum is an array")
+            .iter()
+            .map(|v| {
+                v.as_str()
+                    .expect("question_kind enum member is a string")
+                    .to_string()
+            })
+            .collect();
+        let rust_question_kinds: Vec<String> = ALL_QUESTION_KINDS
+            .iter()
+            .map(|qk| qk.as_str().to_string())
+            .collect();
+        assert_eq!(
+            question_kind_enum, rust_question_kinds,
+            "schemas/sce-diagnostic.v1.schema.json question_kind.enum drifted \
+             from ALL_QUESTION_KINDS. Update the schema (or the constant) \
+             together so the wire contract matches the Rust source of truth.",
         );
     }
 }

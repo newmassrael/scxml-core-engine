@@ -35,6 +35,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::forge::error::SourceLocation;
 use crate::forge::model::InlineKind;
+use crate::provenance::{RequirementId, SpecProvenance, UnresolvedMarker};
 
 /// W3C SCXML default namespace URI (W3C SCXML §3.5). Mirrors
 /// [`crate::forge::model::SCE_NAMESPACE`] for the sce: extension axis —
@@ -86,6 +87,22 @@ pub struct Transition {
     /// `#line`, Go `//line`, Kotlin `// SCE-MAP:`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
+    /// `sce:req` requirement IDs attached to this transition. Sorted
+    /// in document order (whitespace-tokenised from the attribute).
+    /// Empty when the attribute is absent — preserves byte-identical
+    /// output for inputs without traceability metadata.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub req: Vec<RequirementId>,
+    /// `sce:provenance` spec-document anchors attached to this
+    /// transition. Multiple allowed; element form lets one node
+    /// anchor at multiple documents.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub provenance: Vec<SpecProvenance>,
+    /// `sce:unresolved` placeholder markers attached to this
+    /// transition. Detected by the parser, propagated as a comment
+    /// by codegen, rejected by `--strict`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unresolved: Vec<UnresolvedMarker>,
 }
 
 /// W3C SCXML executable content action
@@ -189,6 +206,18 @@ pub struct Action {
     /// pre-emit `validate_emission_provenance` walker today).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
+    /// `sce:req` requirement IDs attached to this executable-content
+    /// element. See [`Transition::req`] for the wire-format contract.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub req: Vec<RequirementId>,
+    /// `sce:provenance` spec-document anchors attached to this
+    /// executable-content element.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub provenance: Vec<SpecProvenance>,
+    /// `sce:unresolved` placeholder markers attached to this
+    /// executable-content element.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unresolved: Vec<UnresolvedMarker>,
 }
 
 /// W3C SCXML if/elseif branch
@@ -361,6 +390,18 @@ pub struct InvokeBase {
     pub state_name: String,
     pub params: Vec<Param>,
     pub idlocation: String,
+    /// `sce:req` requirement IDs attached to this `<invoke>`. See
+    /// [`Transition::req`] for the wire-format contract.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub req: Vec<RequirementId>,
+    /// `sce:provenance` spec-document anchors attached to this
+    /// `<invoke>`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub provenance: Vec<SpecProvenance>,
+    /// `sce:unresolved` placeholder markers attached to this
+    /// `<invoke>`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unresolved: Vec<UnresolvedMarker>,
 }
 
 /// Fields shared by W3C SCXML-session invokes (Scxml + Hybrid): child
@@ -827,6 +868,16 @@ pub struct State {
     /// functions this state lowers to.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
+    /// `sce:req` requirement IDs attached to this state. See
+    /// [`Transition::req`] for the wire-format contract.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub req: Vec<RequirementId>,
+    /// `sce:provenance` spec-document anchors attached to this state.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub provenance: Vec<SpecProvenance>,
+    /// `sce:unresolved` placeholder markers attached to this state.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unresolved: Vec<UnresolvedMarker>,
 }
 
 /// W3C SCXML: Complete state machine model
