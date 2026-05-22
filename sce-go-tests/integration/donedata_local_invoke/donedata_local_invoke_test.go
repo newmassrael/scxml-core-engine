@@ -14,25 +14,10 @@
 // b44f02fe..f9e236f6) for the Go AOT code path through
 // `sce.RaiseDoneInvoke`.
 //
-// Fixture: sce-go-tests/fixtures/donedata_local_invoke.scxml
+// Fixture: integration_resources/donedata_local_invoke/donedata_local_invoke.scxml
 //
 // Regeneration (after fixture or template edit):
-//   cargo build --bin sce-codegen --features cli --release -p sce-build
-//   TMP=$(mktemp -d)
-//   cp sce-go-tests/fixtures/donedata_local_invoke.scxml "$TMP/"
-//   target/release/sce-codegen generate \
-//       "$TMP/donedata_local_invoke.scxml" -l go -o "$TMP/"
-//   for child in "$TMP"/donedata_local_invoke__sce_synth_invoke__*.scxml; do
-//       target/release/sce-codegen generate "$child" \
-//           --as-child --parent-stem donedata_local_invoke \
-//           -l go -o "$TMP/"
-//   done
-//   cp "$TMP"/*.go sce-go-tests/donedata_local_invoke/
-//   rm -rf "$TMP"
-// (Copying the fixture into `$TMP` first is what keeps the transient
-//  split-out `donedata_local_invoke_child{0,1}.scxml` artifacts out of
-//  the tracked `sce-go-tests/fixtures/` directory — sce-codegen writes
-//  those adjacent to the input, not into `-o`.)
+//   scripts/regen_donedata_local_invoke_go.sh
 
 package donedata_local_invoke
 

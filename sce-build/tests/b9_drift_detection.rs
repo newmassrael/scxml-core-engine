@@ -637,6 +637,7 @@ fn verify_passes_on_real_committed_go_donedata_tree() {
     let workspace = workspace_root();
     let target = workspace
         .join("sce-go-tests")
+        .join("integration")
         .join("donedata_local_invoke");
     let input_root = workspace
         .join("integration_resources")
