@@ -626,46 +626,162 @@ fi
 PROJECT_SLUG="$(printf '%s' "${CWD:-$PWD}" | sed 's|/|-|g')"
 MEMORY_DIR="$HOME/.claude/projects/${PROJECT_SLUG}/memory"
 NEXT_MEMOS=""
-MEMO_ERRORS=""
+MEMO_VALIDATION=""
 if [ -d "$MEMORY_DIR" ]; then
-  # Validate every plan memo declares lifecycle status from the valid
-  # set; surface only `status: open` in the audit list. Missing or
-  # invalid status aborts the commit so silently-broken hooks are
-  # impossible (the auditor itself is auditable).
-  for f in "$MEMORY_DIR"/next_*.md; do
-    [ -f "$f" ] || continue
-    status="$(awk '/^---$/{c++; if(c==2)exit} c==1' "$f" \
-              | { grep -m1 "^status:" || true; } \
-              | sed 's/^status: *//' | tr -d ' "')"
-    if [ -z "$status" ]; then
+  # Full memory tree lifecycle validation. Every .md file (except
+  # MEMORY.md) must declare frontmatter `status:` from the 9-value
+  # enum, and must satisfy the prefix/suffix/path contract from
+  # claudedocs/rfc-memory-sixth-wave.md. Surface only open next_*.md
+  # in the audit list. Missing/invalid/contract-violating status aborts
+  # the commit (silently-broken hooks impossible).
+  MEMO_VALIDATION="$(MEMORY_DIR="$MEMORY_DIR" python3 -c '
+import os, re, sys
+from pathlib import Path
+
+MEMORY_DIR = Path(os.environ["MEMORY_DIR"])
+VALID = {"open", "active", "reference", "feedback",
+         "landed", "superseded", "refuted", "retired", "retrospective"}
+CLOSED = {"landed", "superseded", "refuted", "retired", "retrospective"}
+
+# Filename suffix → required status. Each suffix encodes its own lifecycle.
+SUFFIX_RULES = [
+    ("_landed", "landed"),
+    ("_done", "landed"),
+    ("_complete", "landed"),
+    ("_closed", "landed"),
+    ("_resolved", "landed"),
+    ("_fixed", "landed"),
+    ("_removed", "landed"),
+    ("_repointed", "landed"),
+    ("_superseded", "superseded"),
+    ("_absorbed", "superseded"),
+    ("_refuted", "refuted"),
+    ("_retired", "retired"),
+    ("_retrospective", "retrospective"),
+]
+
+errors = []
+open_memos = []
+
+def read_status(path):
+    try:
+        content = path.read_text()
+    except Exception:
+        return None, "read failed"
+    lines = content.splitlines()
+    if not lines or lines[0] != "---":
+        return None, "no frontmatter"
+    for i in range(1, len(lines)):
+        if lines[i] == "---":
+            break
+        m = re.match(r"^status:\s*(\S+)", lines[i])
+        if m:
+            return m.group(1).strip("\x27\x22"), None
+    return None, "no status field"
+
+for f in sorted(MEMORY_DIR.rglob("*.md")):
+    if f.name == "MEMORY.md":
+        continue
+    rel = f.relative_to(MEMORY_DIR).as_posix()
+    status, err = read_status(f)
+    if err:
+        errors.append(f"{rel}: {err}")
+        continue
+    if status not in VALID:
+        errors.append(f"{rel}: invalid status {status!r}")
+        continue
+
+    # Path-based contract: archive bucket invariants.
+    parts = f.relative_to(MEMORY_DIR).parts
+    if parts[0] == "archive":
+        if len(parts) == 2:
+            # archive/<aggregator>.md → must be active
+            if status != "active":
+                errors.append(f"{rel}: archive top-level aggregator must be active (got {status!r})")
+                continue
+        else:
+            # archive/closed/**/*.md → must be closed status
+            if status not in CLOSED:
+                errors.append(f"{rel}: archive/closed/** must be a closed status (got {status!r})")
+                continue
+
+    # Prefix contract.
+    if f.name.startswith("next_"):
+        if status != "open":
+            errors.append(f"{rel}: next_*.md must be status:open (got {status!r})")
+            continue
+        open_memos.append(f.name)
+        continue
+    if f.name.startswith("feedback_"):
+        if status != "feedback":
+            errors.append(f"{rel}: feedback_*.md must be status:feedback (got {status!r})")
+        continue
+
+    # Suffix contract.
+    stem = f.stem
+    matched_suffix = None
+    for suffix, required in SUFFIX_RULES:
+        if stem.endswith(suffix):
+            matched_suffix = (suffix, required)
+            break
+    if matched_suffix is not None:
+        suffix, required = matched_suffix
+        if status != required:
+            errors.append(f"{rel}: filename suffix {suffix!r} requires status:{required} (got {status!r})")
+
+# Output: errors first, then open-memos list (one per line, prefixed).
+print("--ERRORS--")
+for e in errors:
+    print(e)
+print("--OPEN-MEMOS--")
+for n in sorted(open_memos):
+    print(n)
+')"
+
+  # Parse python output into MEMO_ERRORS + NEXT_MEMOS.
+  in_errors=1
+  in_open=0
+  MEMO_ERRORS=""
+  while IFS= read -r line; do
+    case "$line" in
+      "--ERRORS--") in_errors=1; in_open=0; continue ;;
+      "--OPEN-MEMOS--") in_errors=0; in_open=1; continue ;;
+    esac
+    if [ "$in_errors" -eq 1 ] && [ -n "$line" ]; then
       MEMO_ERRORS="${MEMO_ERRORS}
-       - $(basename "$f"): missing 'status:' field"
-    elif ! echo "$status" | grep -qE "^(open|superseded|landed|retired|retrospective|refuted)$"; then
-      MEMO_ERRORS="${MEMO_ERRORS}
-       - $(basename "$f"): invalid status '$status'"
-    elif [ "$status" = "open" ]; then
-      NEXT_MEMOS="${NEXT_MEMOS}
-       - $(basename "$f")"
+       - $line"
     fi
-  done
-  NEXT_MEMOS="$(printf '%s' "$NEXT_MEMOS" | sed '/^$/d' | sort)"
+    if [ "$in_open" -eq 1 ] && [ -n "$line" ]; then
+      NEXT_MEMOS="${NEXT_MEMOS}
+       - $line"
+    fi
+  done <<< "$MEMO_VALIDATION"
 fi
 
-# Fail loud on schema violations — re-validate every retry until fixed.
-# No marker write happens here so retries cannot pass silently.
+# Fail loud on schema or contract violations — re-validate every retry
+# until fixed. No marker write happens here so retries cannot pass silently.
 if [ -n "$MEMO_ERRORS" ]; then
   {
-    echo "=== COMMIT BLOCKED: plan-memo status schema violations ==="
+    echo "=== COMMIT BLOCKED: memory lifecycle contract violations ==="
     echo ""
     echo "Files in $MEMORY_DIR"
-    echo "must declare frontmatter 'status:' from this set:"
-    echo "  open | superseded | landed | retired | retrospective | refuted"
+    echo "must comply with claudedocs/rfc-memory-sixth-wave.md:"
+    echo "  - status: from {open, active, reference, feedback,"
+    echo "    landed, superseded, refuted, retired, retrospective}"
+    echo "  - next_*.md → status:open"
+    echo "  - feedback_*.md → status:feedback"
+    echo "  - *_landed.md / _done.md / _complete.md / _closed.md /"
+    echo "    _resolved.md / _fixed.md / _removed.md / _repointed.md → status:landed"
+    echo "  - *_superseded.md / _absorbed.md → status:superseded"
+    echo "  - *_refuted.md → status:refuted"
+    echo "  - *_retired.md → status:retired"
+    echo "  - *_retrospective.md → status:retrospective"
+    echo "  - archive/<aggregator>.md → status:active"
+    echo "  - archive/closed/**/*.md → closed status"
     echo ""
     echo "Violations:${MEMO_ERRORS}"
     echo ""
-    echo "Add or correct the 'status:' line in each affected memo's"
-    echo "frontmatter (between description: and metadata:), then re-run"
-    echo "the commit."
+    echo "Fix each file's frontmatter status, then re-run the commit."
   } >&2
   exit 2
 fi
