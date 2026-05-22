@@ -455,3 +455,112 @@ fn fixture_helper_invariants() {
     assert!(fix.cargo_lock.is_file());
     let _: &Path = fix.out_dir.as_path();
 }
+
+// Resolves the SCE workspace root from this crate's compile-time
+// `CARGO_MANIFEST_DIR` (= `<workspace>/sce-build`). The real-tree
+// invariants below use it to point `sce-codegen verify` at the
+// canonical committed generated trees and the W3C `resources/` input
+// set the original `generate-w3c` invocation hashed against.
+fn workspace_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("sce-build crate dir must have a parent (the workspace root)")
+        .to_path_buf()
+}
+
+// Q-§6.2.6-3 lock-in: `template-hash` covers the entire
+// `tools/codegen/templates/**` tree plus `Cargo.lock`. That means a
+// template edit in any backend invalidates *every* committed
+// generated tree's embedded hash — even backends whose own emit is
+// byte-identical. The synthetic fixtures above (`verify_passes_…`,
+// `verify_fails_when_…`) exercise the verify contract on hand-built
+// inputs; they cannot catch the cross-backend invalidation that
+// actually bit the donedata + clippy_two_allow chains
+// (a3aae599 / df2fb95d / acd10fe6 / ae139888,
+//  c2dfe502 / 1a5efb07 / dc228ab4 / 64f93cf4), because every CI lane
+// (W3C `generate-w3c -l <lang>` fresh regen, Kotlin gradle's
+// in-place `generateScxml`) bypasses the committed tree entirely.
+//
+// The W3C invariants below run the same `sce-codegen verify` the
+// synthetic tests exercise, but against the actual repo state. They
+// are the textbook enforcement of "any commit touching
+// `tools/codegen/templates/**` or `Cargo.lock` must refresh both
+// committed trees" — once they pass, the chain of per-backend
+// template atomics cannot land while leaving any other backend's
+// tree stale.
+//
+// Scope is W3C-only on purpose. The hand-authored
+// `donedata_local_invoke` fixture (`sce-{rust,kotlin}-tests/.../fixtures/`)
+// has a *distinct* drift context — its `source-hash` is computed
+// against the fixture dir, not `resources/`. Mixing the two under
+// one verify call would mis-attribute the donedata source-hash
+// (95d74…) as a W3C drift; the regen-scripts that emit donedata
+// (`scripts/regen_donedata_local_invoke{,_kotlin,_go}.sh`) are the
+// existing gate for that context. Layout per backend:
+//
+//   Rust:   W3C SM under `sce-rust-tests/src/generated/`
+//           donedata SM under `sce-rust-tests/src/integration/donedata_local_invoke/`
+//           ⇒ verify `src/generated/` is donedata-free.
+//
+//   Kotlin: W3C SM and donedata SM are siblings under
+//           `sce-kotlin-tests/src/main/kotlin/com/sce/generated/`
+//           ⇒ verify the W3C *harness* tree
+//           (`sce-kotlin-tests/src/test/kotlin/com/sce/w3c/`) which is
+//           donedata-free and shares the W3C drift context with the
+//           SM tree (one `generate-w3c -l kotlin` invocation emits
+//           both atomically, so harness-fresh ⇒ SM-fresh).
+
+fn run_verify_real_tree(target: &Path, input_root: &Path) -> (i32, String) {
+    let bin = env_bin();
+    let result = Command::new(bin)
+        .arg("verify")
+        .arg(target.to_str().unwrap())
+        .arg("--input-root")
+        .arg(input_root.to_str().unwrap())
+        .output()
+        .expect("spawn sce-codegen");
+    let code = result.status.code().unwrap_or(-1);
+    let stderr = String::from_utf8_lossy(&result.stderr).into_owned();
+    (code, stderr)
+}
+
+#[test]
+fn verify_passes_on_real_committed_rust_w3c_tree() {
+    let workspace = workspace_root();
+    let target = workspace.join("sce-rust-tests").join("src").join("generated");
+    let input_root = workspace.join("resources");
+    let (code, stderr) = run_verify_real_tree(&target, &input_root);
+    assert_eq!(
+        code, 0,
+        "verify must pass on the committed Rust W3C generated tree. \
+         A failure here means tools/codegen/templates/** or Cargo.lock \
+         changed without refreshing sce-rust-tests/src/generated/. \
+         Run `cargo build --bin sce-codegen --features cli --release \
+         -p sce-build` then `target/release/sce-codegen generate-w3c \
+         -l rust` and commit the result. stderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn verify_passes_on_real_committed_kotlin_w3c_tree() {
+    let workspace = workspace_root();
+    let target = workspace
+        .join("sce-kotlin-tests")
+        .join("src")
+        .join("test")
+        .join("kotlin")
+        .join("com")
+        .join("sce")
+        .join("w3c");
+    let input_root = workspace.join("resources");
+    let (code, stderr) = run_verify_real_tree(&target, &input_root);
+    assert_eq!(
+        code, 0,
+        "verify must pass on the committed Kotlin W3C generated tree. \
+         A failure here means tools/codegen/templates/** or Cargo.lock \
+         changed without refreshing the committed Kotlin generated \
+         tree. Run `cargo build --bin sce-codegen --features cli \
+         --release -p sce-build` then `target/release/sce-codegen \
+         generate-w3c -l kotlin` and commit the result. stderr:\n{stderr}"
+    );
+}
