@@ -629,17 +629,18 @@ NEXT_MEMOS=""
 MEMO_VALIDATION=""
 if [ -d "$MEMORY_DIR" ]; then
   # Full memory tree lifecycle validation. Every .md file (except
-  # MEMORY.md) must declare frontmatter `status:` from the 9-value
-  # enum, and must satisfy the prefix/suffix/path contract from
-  # claudedocs/rfc-memory-sixth-wave.md. Surface only open next_*.md
-  # in the audit list. Missing/invalid/contract-violating status aborts
+  # MEMORY.md) must declare frontmatter `status:` from the 8-value
+  # enum, satisfy the prefix/suffix/path contract from
+  # claudedocs/rfc-memory-sixth-wave.md (refined by seventh-wave RFC),
+  # and emit no dangling [[wikilink]] or broken MEMORY.md path link.
+  # Surface only open next_*.md in the audit list. Any violation aborts
   # the commit (silently-broken hooks impossible).
   MEMO_VALIDATION="$(MEMORY_DIR="$MEMORY_DIR" python3 -c '
 import os, re, sys
 from pathlib import Path
 
 MEMORY_DIR = Path(os.environ["MEMORY_DIR"])
-VALID = {"open", "active", "reference", "feedback",
+VALID = {"open", "active", "feedback",
          "landed", "superseded", "refuted", "retired", "retrospective"}
 CLOSED = {"landed", "superseded", "refuted", "retired", "retrospective"}
 
@@ -729,6 +730,43 @@ for f in sorted(MEMORY_DIR.rglob("*.md")):
         if status != required:
             errors.append(f"{rel}: filename suffix {suffix!r} requires status:{required} (got {status!r})")
 
+# Build slug set for dangling [[wikilink]] gate.
+slugs = set()
+for f in MEMORY_DIR.rglob("*.md"):
+    slugs.add(f.stem.replace("_", "-").lower())
+
+def strip_code(content):
+    content = re.sub(r"```.*?```", "", content, flags=re.DOTALL)
+    content = re.sub(r"`[^`\n]*`", "", content)
+    return content
+
+# Dangling [[wikilink]] gate.
+for f in MEMORY_DIR.rglob("*.md"):
+    try:
+        cleaned = strip_code(f.read_text())
+    except Exception:
+        continue
+    rel = f.relative_to(MEMORY_DIR).as_posix()
+    for m in re.finditer(r"\[\[([a-zA-Z0-9-]+)\]\]", cleaned):
+        slug = m.group(1).lower()
+        if slug not in slugs:
+            errors.append(f"{rel}: dangling wikilink [[{m.group(1)}]]")
+
+# MEMORY.md path-link existence gate.
+memory_md = MEMORY_DIR / "MEMORY.md"
+if memory_md.exists():
+    try:
+        content = memory_md.read_text()
+    except Exception:
+        content = ""
+    for m in re.finditer(r"\]\(([^)]+\.md)\)", content):
+        path = m.group(1).strip()
+        if path.startswith("http"):
+            continue
+        target = (memory_md.parent / path).resolve()
+        if not target.exists():
+            errors.append(f"MEMORY.md: broken link to {path}")
+
 # Output: errors first, then open-memos list (one per line, prefixed).
 print("--ERRORS--")
 for e in errors:
@@ -765,8 +803,9 @@ if [ -n "$MEMO_ERRORS" ]; then
     echo "=== COMMIT BLOCKED: memory lifecycle contract violations ==="
     echo ""
     echo "Files in $MEMORY_DIR"
-    echo "must comply with claudedocs/rfc-memory-sixth-wave.md:"
-    echo "  - status: from {open, active, reference, feedback,"
+    echo "must comply with claudedocs/rfc-memory-sixth-wave.md +"
+    echo "claudedocs/rfc-memory-seventh-wave.md:"
+    echo "  - status: from {open, active, feedback,"
     echo "    landed, superseded, refuted, retired, retrospective}"
     echo "  - next_*.md → status:open"
     echo "  - feedback_*.md → status:feedback"
@@ -778,10 +817,14 @@ if [ -n "$MEMO_ERRORS" ]; then
     echo "  - *_retrospective.md → status:retrospective"
     echo "  - archive/<aggregator>.md → status:active"
     echo "  - archive/closed/**/*.md → closed status"
+    echo "  - every [[wikilink]] outside backticks resolves to an"
+    echo "    existing file's slug"
+    echo "  - every MEMORY.md markdown link path resolves to an"
+    echo "    existing file"
     echo ""
     echo "Violations:${MEMO_ERRORS}"
     echo ""
-    echo "Fix each file's frontmatter status, then re-run the commit."
+    echo "Fix each file's frontmatter status, link, or path, then re-run."
   } >&2
   exit 2
 fi

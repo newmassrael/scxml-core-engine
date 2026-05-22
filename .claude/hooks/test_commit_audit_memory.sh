@@ -202,7 +202,6 @@ write_memo "$md" "topic_refuted.md" "refuted"
 write_memo "$md" "topic_retired.md" "retired"
 write_memo "$md" "topic_retrospective.md" "retrospective"
 write_memo "$md" "foundational_doc.md" "active"
-write_memo "$md" "external_pointer.md" "reference"
 mkdir -p "$md/archive/closed/topic"
 write_memo "$md/archive" "aggregator.md" "active"
 write_memo "$md/archive/closed/topic" "moved_landed.md" "landed"
@@ -223,10 +222,89 @@ write_memo "$md" "session_foo_absorbed.md" "superseded"
 err="$(invoke_hook "$proj")"
 assert_no_memory_block "absorbed-alias-superseded-ok" "$err" || failures=$((failures + 1))
 
+# ── Case 12: status:reference is removed from enum ─────────────
+proj="$(make_project case-reference-removed)"
+md="$(memdir_for "$proj")"
+write_memo "$md" "external_pointer.md" "reference"
+err="$(invoke_hook "$proj")"
+assert_blocks_with "reference-removed" "invalid status 'reference'" "$err" || failures=$((failures + 1))
+
+# ── Case 13: dangling wikilink outside backticks blocks ────────
+proj="$(make_project case-dangling-wikilink)"
+md="$(memdir_for "$proj")"
+cat > "$md/topic_landed.md" <<'MEMO'
+---
+name: test
+description: refers to a missing slug
+status: landed
+type: project
+---
+
+See [[nonexistent-slug]] for details.
+MEMO
+err="$(invoke_hook "$proj")"
+assert_blocks_with "dangling-wikilink" "dangling wikilink [[nonexistent-slug]]" "$err" || failures=$((failures + 1))
+
+# ── Case 14: wikilink inside backticks does not block ──────────
+proj="$(make_project case-wikilink-backticked)"
+md="$(memdir_for "$proj")"
+cat > "$md/topic_landed.md" <<'MEMO'
+---
+name: test
+description: documents the wikilink syntax
+status: landed
+type: project
+---
+
+The syntax is `[[slug-name]]` and refers to memory anchors.
+MEMO
+err="$(invoke_hook "$proj")"
+assert_no_memory_block "wikilink-backticked-ok" "$err" || failures=$((failures + 1))
+
+# ── Case 15: real wikilink resolves and does not block ─────────
+proj="$(make_project case-wikilink-real)"
+md="$(memdir_for "$proj")"
+write_memo "$md" "target_landed.md" "landed"
+cat > "$md/source_landed.md" <<'MEMO'
+---
+name: source
+description: refers to a real target
+status: landed
+type: project
+---
+
+See [[target-landed]] for context.
+MEMO
+err="$(invoke_hook "$proj")"
+assert_no_memory_block "wikilink-real-ok" "$err" || failures=$((failures + 1))
+
+# ── Case 16: MEMORY.md path to missing file blocks ─────────────
+proj="$(make_project case-memory-md-broken)"
+md="$(memdir_for "$proj")"
+cat > "$md/MEMORY.md" <<'INDEX'
+## Index
+
+- [Missing](does_not_exist.md) — broken link
+INDEX
+err="$(invoke_hook "$proj")"
+assert_blocks_with "memory-md-broken" "MEMORY.md: broken link to does_not_exist.md" "$err" || failures=$((failures + 1))
+
+# ── Case 17: MEMORY.md path to existing file passes ────────────
+proj="$(make_project case-memory-md-good)"
+md="$(memdir_for "$proj")"
+write_memo "$md" "real_landed.md" "landed"
+cat > "$md/MEMORY.md" <<'INDEX'
+## Index
+
+- [Real](real_landed.md) — valid link
+INDEX
+err="$(invoke_hook "$proj")"
+assert_no_memory_block "memory-md-good" "$err" || failures=$((failures + 1))
+
 if [ "$failures" -gt 0 ]; then
     echo "" >&2
     echo "$failures memory-lifecycle test case(s) failed." >&2
     exit 1
 fi
 
-echo "OK: 11 memory lifecycle contract cases verified against live hook."
+echo "OK: 17 memory lifecycle contract cases verified against live hook."
