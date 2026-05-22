@@ -228,6 +228,80 @@ pub enum ScxmlSemanticError {
         /// parent as deliberately non-exhaustive).
         non_handlers: Vec<String>,
     },
+
+    /// A `<transition cond="...">` carries a guard expression whose
+    /// value is statically determinable as `false`, so the
+    /// transition can never fire. The validator stops short of full
+    /// SMT — only trivial cases are recognised:
+    ///
+    ///   * The literal `false` (ECMAScript convention; lowercase
+    ///     per W3C SCXML §B).
+    ///   * The numeric literal `0`.
+    ///   * A binary equality `N == M` where both sides parse as
+    ///     numeric literals with differing values (`1==2`, `0==1`).
+    ///   * A binary inequality `N != M` where both sides parse as
+    ///     numeric literals with equal values (`1!=1`, `0!=0`).
+    ///
+    /// Language-prefixed conditions (`cpp:`, `kotlin:`, `rust:`)
+    /// remain opaque to the validator — their semantics depend on
+    /// the host language's expression evaluator, which the parser
+    /// cannot statically inspect. See `docs/SCE_ACCEPTED_SUBSET.md`
+    /// for the full opacity contract.
+    ///
+    /// NL→IR Mapping Roadmap Item 3 Phase C.
+    #[error(
+        "Transition in state '{state}' carries guard '{cond}' that \
+         is statically false — the transition can never fire. \
+         Remove the transition or change the guard expression."
+    )]
+    AlwaysFalseGuard {
+        /// Owning state id.
+        state: String,
+        /// The raw `cond` attribute text the validator classified as
+        /// statically false.
+        cond: String,
+    },
+
+    /// A `<transition>` is shadowed by an earlier unconditional
+    /// sibling: per W3C SCXML §5.10 transition selection, the first
+    /// matching transition in document order fires, and an
+    /// unconditional transition matching the same event family
+    /// (cond empty / cond literal `true` / cond literal `1`) makes
+    /// every later same-event transition unreachable.
+    ///
+    /// The validator only flags the strict prefix-superset case:
+    /// the shadowing transition's event descriptor must literally
+    /// equal the shadowed transition's event descriptor (including
+    /// the empty / `*` cases), and the shadowing transition must
+    /// carry no guard. Token-prefix superset cases (`event="foo"`
+    /// shadowing `event="foo.bar"`) are deliberately not flagged —
+    /// the relative priority depends on ancestor-priority rules
+    /// that the parser-stage walker cannot disambiguate without
+    /// running the full runtime selection algorithm.
+    ///
+    /// NL→IR Mapping Roadmap Item 3 Phase C.
+    #[error(
+        "Transition #{shadowed_index} in state '{state}' (event \
+         '{event}') is shadowed by an earlier unconditional \
+         transition #{shadowing_index} with the same event \
+         descriptor. The shadowed transition can never fire. \
+         Reorder the transitions, add a guard to the shadowing \
+         transition, or remove the shadowed transition."
+    )]
+    ShadowedTransition {
+        /// Owning state id.
+        state: String,
+        /// Event descriptor verbatim (the literal `event` attribute
+        /// value of the shadowed transition; same as the shadowing
+        /// one by construction).
+        event: String,
+        /// 0-based document-order index of the unconditional
+        /// shadowing transition within the state's transition list.
+        shadowing_index: usize,
+        /// 0-based document-order index of the shadowed transition
+        /// (the later one in the list).
+        shadowed_index: usize,
+    },
 }
 
 #[cfg(test)]
@@ -358,6 +432,16 @@ mod tests {
                 event: "cmd.stop".into(),
                 handlers: vec!["idle".into(), "stopped".into()],
                 non_handlers: vec!["active".into()],
+            },
+            ScxmlSemanticError::AlwaysFalseGuard {
+                state: "armed".into(),
+                cond: "false".into(),
+            },
+            ScxmlSemanticError::ShadowedTransition {
+                state: "armed".into(),
+                event: "fire".into(),
+                shadowing_index: 0,
+                shadowed_index: 1,
             },
         ];
         for v in variants {

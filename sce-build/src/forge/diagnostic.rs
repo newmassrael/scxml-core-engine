@@ -563,6 +563,23 @@ pub enum DiagnosticCode {
     //    annotate the opt-out). ──────────────────────────────────────
     #[serde(rename = "scxml/non-exhaustive-event-handling")]
     ScxmlNonExhaustiveEventHandling,
+    // ── NL→IR Mapping Roadmap Item 3 Phase C — guard analysis.
+    //    `scxml/always-false-guard` fires when a transition's
+    //    `cond` expression is statically determinable as false
+    //    (literal `false`, numeric `0`, `N==M` with differing
+    //    numeric literals, `N!=N`). `scxml/shadowed-transition`
+    //    fires when an unconditional transition precedes a guarded
+    //    sibling with the same event descriptor — per W3C SCXML
+    //    §5.10 the first matches and the later is dead. Both
+    //    NeutralOrDeterministic: repair is author-domain (remove,
+    //    rewrite, or reorder the transition). Language-prefixed
+    //    conditions (`cpp:`, `kotlin:`, `rust:`) stay opaque to
+    //    keep the false-positive surface at zero across the W3C
+    //    IRP / conformance / hda4-diag corpora. ───────────────────
+    #[serde(rename = "scxml/always-false-guard")]
+    ScxmlAlwaysFalseGuard,
+    #[serde(rename = "scxml/shadowed-transition")]
+    ScxmlShadowedTransition,
     // ── watching-zenoh RFC §5.E B7-η' SCXML on-sample family ──
     // Author-facing rules for `<sce:on-sample>` SCE extension. Atomic A
     // ships the structural diagnostics (placement, uniqueness,
@@ -2470,6 +2487,9 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ScxmlDeadTransition,
         // NL→IR Mapping Roadmap Item 3 Phase B — event-set exhaustiveness
         ScxmlNonExhaustiveEventHandling,
+        // NL→IR Mapping Roadmap Item 3 Phase C — guard analysis
+        ScxmlAlwaysFalseGuard,
+        ScxmlShadowedTransition,
         ScxmlOnSampleInvalidParent,
         ScxmlOnSampleLinkDuplicateInState,
         ScxmlOnSampleEventNameConflict,
@@ -3375,7 +3395,15 @@ impl DiagnosticCode {
             // exhaustiveness. Heuristic over W3C SCXML §5.10 event
             // matching, but no spec section names "non-exhaustive
             // event handling" as a rejection. SCE-internal hygiene.
-            | ScxmlNonExhaustiveEventHandling => None,
+            | ScxmlNonExhaustiveEventHandling
+            // NL→IR Mapping Roadmap Item 3 Phase C — guard analysis.
+            // W3C SCXML §5.10 transition selection implies that an
+            // always-false guard makes the transition unreachable
+            // and a shadowed transition cannot fire, but the spec
+            // does not name these as rejections. SCE-internal
+            // hygiene.
+            | ScxmlAlwaysFalseGuard
+            | ScxmlShadowedTransition => None,
             // Axis-2 Phase Z carries the spec anchor that lived in the
             // diagnostic.rs:1170 placeholder comment.
             ReassemblyPerPeerQuotaBuildInvariantViolated => {
@@ -3452,6 +3480,8 @@ impl DiagnosticCode {
             ScxmlUnreachableState => "scxml/unreachable-state",
             ScxmlDeadTransition => "scxml/dead-transition",
             ScxmlNonExhaustiveEventHandling => "scxml/non-exhaustive-event-handling",
+            ScxmlAlwaysFalseGuard => "scxml/always-false-guard",
+            ScxmlShadowedTransition => "scxml/shadowed-transition",
             ScxmlOnSampleInvalidParent => "scxml/on-sample-invalid-parent",
             ScxmlOnSampleLinkDuplicateInState => "scxml/on-sample-link-duplicate-in-state",
             ScxmlOnSampleEventNameConflict => "scxml/on-sample-event-name-conflict",
@@ -7079,6 +7109,46 @@ fn scxml_semantic_fields(e: &crate::scxml_semantic::ScxmlSemanticError) -> Diagn
                 target.clone(),
             ],
         },
+        ScxmlSemanticError::AlwaysFalseGuard { state, cond } => DiagnosticPayload {
+            // NEW — NL→IR Mapping Roadmap Item 3 Phase C. The
+            // `actual` slot carries the raw guard text so consumers
+            // can quote it back to the author; `key_fragments`
+            // distinguish two always-false guards in the same state.
+            code: DiagnosticCode::ScxmlAlwaysFalseGuard,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(cond.clone()),
+            fix: None,
+            key_fragments: vec![
+                format!("scxml-state:{state}"),
+                "always-false-guard".to_string(),
+                cond.clone(),
+            ],
+        },
+        ScxmlSemanticError::ShadowedTransition {
+            state,
+            event,
+            shadowing_index,
+            shadowed_index,
+        } => DiagnosticPayload {
+            // NEW — paired with `AlwaysFalseGuard` above. The
+            // `actual` slot carries the event descriptor verbatim;
+            // both transition indices ride in `key_fragments` so two
+            // shadowed-transition diagnostics in the same state on
+            // the same event remain distinguishable.
+            code: DiagnosticCode::ScxmlShadowedTransition,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(event.clone()),
+            fix: None,
+            key_fragments: vec![
+                format!("scxml-state:{state}"),
+                "shadowed-transition".to_string(),
+                event.clone(),
+                format!("shadow-by:{shadowing_index}"),
+                format!("shadowed:{shadowed_index}"),
+            ],
+        },
         ScxmlSemanticError::NonExhaustiveEventHandling {
             parent,
             event,
@@ -7767,6 +7837,35 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:7072cc6c1038cfb6","code":"scxml/non-exhaustive-event-handling","stage":"validation","message":"Compound state 'dispatch' has children handling event 'cmd.start' inconsistently — handlers: [\"idle\", \"stopped\"], non-handlers: [\"active\"]. Add the missing transition, add a parent-level fallthrough, or annotate the parent with sce:exhaustive=\"false\" if the gap is intentional.","actual":"cmd.start"}"#,
+            ),
+            (
+                // NL→IR Mapping Roadmap Item 3 Phase C — trivially
+                // false guard. The validator stops at structural
+                // false literals (`false`, `0`, differing numeric
+                // equality, equal numeric inequality) and leaves
+                // language-prefixed conds (`cpp:`, `kotlin:`,
+                // `rust:`) opaque.
+                "forge/scxml-always-false-guard",
+                crate::scxml_semantic::ScxmlSemanticError::AlwaysFalseGuard {
+                    state: "armed".into(),
+                    cond: "false".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:9e9dbc120c0f1890","code":"scxml/always-false-guard","stage":"validation","message":"Transition in state 'armed' carries guard 'false' that is statically false — the transition can never fire. Remove the transition or change the guard expression.","actual":"false"}"#,
+            ),
+            (
+                // NL→IR Mapping Roadmap Item 3 Phase C — shadowed
+                // transition. Document-order #0 (unconditional)
+                // shadows #1 (guarded) on the same event descriptor.
+                "forge/scxml-shadowed-transition",
+                crate::scxml_semantic::ScxmlSemanticError::ShadowedTransition {
+                    state: "armed".into(),
+                    event: "fire".into(),
+                    shadowing_index: 0,
+                    shadowed_index: 1,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:d4a8c789490ede2b","code":"scxml/shadowed-transition","stage":"validation","message":"Transition #1 in state 'armed' (event 'fire') is shadowed by an earlier unconditional transition #0 with the same event descriptor. The shadowed transition can never fire. Reorder the transitions, add a guard to the shadowing transition, or remove the shadowed transition.","actual":"fire"}"#,
             ),
             (
                 // watching-zenoh RFC §5.E B7-η' Q-OnSample-2 (a)
@@ -11782,7 +11881,14 @@ mod tests {
             // pick a fixed candidate set; `ReplaceOneOf` would imply
             // a rename when the author almost always meant to add a
             // missing handler or accept the gap deliberately.
-            | ScxmlNonExhaustiveEventHandling => NeutralOrDeterministic,
+            | ScxmlNonExhaustiveEventHandling
+            // NL→IR Mapping Roadmap Item 3 Phase C — always-false
+            // guards and shadowed transitions. Repair is deterministic
+            // per use-site (remove the dead transition, rewrite the
+            // guard, or reorder) with no closed candidate set the
+            // validator can predict.
+            | ScxmlAlwaysFalseGuard
+            | ScxmlShadowedTransition => NeutralOrDeterministic,
         }
     }
 
@@ -12031,6 +12137,8 @@ mod tests {
                 | ScxmlUnreachableState
                 | ScxmlDeadTransition
                 | ScxmlNonExhaustiveEventHandling
+                | ScxmlAlwaysFalseGuard
+                | ScxmlShadowedTransition
                 | ScxmlOnSampleInvalidParent
                 | ScxmlOnSampleLinkDuplicateInState
                 | ScxmlOnSampleEventNameConflict
@@ -12270,7 +12378,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            308,
+            310,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries —\
              expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
@@ -13002,7 +13110,18 @@ mod tests {
              is unlikely to be a deliberate protocol-stage \
              dispatching pattern). Author opt-out via \
              `sce:exhaustive=\"false\"` on the parent escapes \
-             intentional gaps. NeutralOrDeterministic. 307 → 308.",
+             intentional gaps. NeutralOrDeterministic. 307 → 308. \
+             Then Phase C adds two codes — \
+             `scxml/always-false-guard` (transition `cond` is \
+             statically determinable as `false` so the transition \
+             can never fire — literal `false`, numeric `0`, `N==M` \
+             with differing numeric literals, `N!=N`) and \
+             `scxml/shadowed-transition` (an unconditional \
+             transition shadows a later same-event sibling per W3C \
+             SCXML §5.10 selection order, making the later one \
+             dead). Both NeutralOrDeterministic. Language-prefixed \
+             `cond` values (`cpp:`, `kotlin:`, `rust:`) stay opaque \
+             to keep the false-positive surface at zero. 308 → 310.",
         );
     }
 
