@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# Git pre-commit hook — fast-fail on Rust files that are not canonically
-# fmt'd. Mirrors the CI gate `.github/workflows/fmt-check.yml` so a local
-# commit surfaces the same failure shape before push.
+# Git pre-commit hook — fast-fail on
+#   1. Rust files that are not canonically fmt'd (mirrors
+#      `.github/workflows/fmt-check.yml`).
+#   2. §6.2.6 drift between committed Rust + Kotlin generated trees and
+#      the template tree + Cargo.lock (mirrors
+#      `.github/workflows/drift-verify.yml` real-tree invariants).
 #
 # Install via `scripts/install-hooks.sh` (symlinks this file into
 # .git/hooks/pre-commit). Hooks are intentionally tracked in
@@ -12,29 +15,87 @@
 
 set -euo pipefail
 
+staged=$(git diff --cached --name-only --diff-filter=ACMR || true)
+
+# -----------------------------------------------------------------------
+# 1. Rust formatting (existing gate).
+# -----------------------------------------------------------------------
 # Only run if there are staged Rust files. A no-op for doc-only / non-Rust
 # commits keeps the hook fast and avoids spurious failures when rustfmt
 # isn't installed (e.g. a contributor on a fresh checkout fixing a typo
 # in README).
-staged_rs=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.rs$' || true)
-if [ -z "${staged_rs}" ]; then
+staged_rs=$(printf '%s\n' "${staged}" | grep -E '\.rs$' || true)
+if [ -n "${staged_rs}" ]; then
+    if ! command -v cargo >/dev/null 2>&1; then
+        echo "pre-commit: cargo not on PATH; skipping fmt check." >&2
+        echo "pre-commit:   install Rust toolchain or use --no-verify to bypass." >&2
+    else
+        # Workspace-wide check matches CI exactly.
+        if ! cargo fmt --all -- --check; then
+            echo "" >&2
+            echo "pre-commit: cargo fmt --check failed." >&2
+            echo "pre-commit:   run 'cargo fmt --all' to apply, then re-stage." >&2
+            echo "pre-commit:   bypass with 'git commit --no-verify' (CI gate still runs)." >&2
+            exit 1
+        fi
+    fi
+fi
+
+# -----------------------------------------------------------------------
+# 2. §6.2.6 real-tree drift (new gate).
+# -----------------------------------------------------------------------
+# Per Q-§6.2.6-3 the `template-hash` covers the whole template tree plus
+# Cargo.lock; an edit to any backend's templates can invalidate every
+# other backend's stored hash. Fire `sce-codegen verify` against both
+# tracked committed trees whenever staged content can affect the
+# §6.2.6 inputs — templates, Cargo.lock, sce-build sources, or the
+# committed trees themselves. Mirrors the path filter in
+# .github/workflows/drift-verify.yml so local and CI gating agree.
+drift_trigger=$(printf '%s\n' "${staged}" | grep -E '^(tools/codegen/templates/|Cargo\.lock$|sce-build/|sce-rust-tests/src/generated/|sce-kotlin-tests/src/main/kotlin/com/sce/generated/|sce-kotlin-tests/src/test/kotlin/com/sce/w3c/|resources/)' || true)
+
+if [ -z "${drift_trigger}" ]; then
     exit 0
 fi
 
-if ! command -v cargo >/dev/null 2>&1; then
-    echo "pre-commit: cargo not on PATH; skipping fmt check." >&2
-    echo "pre-commit:   install Rust toolchain or use --no-verify to bypass." >&2
+repo_root="$(git rev-parse --show-toplevel)"
+codegen="${repo_root}/target/release/sce-codegen"
+
+if [ ! -x "${codegen}" ]; then
+    echo "pre-commit: §6.2.6 drift gate skipped — target/release/sce-codegen not built." >&2
+    echo "pre-commit:   build once with:" >&2
+    echo "pre-commit:     cargo build --bin sce-codegen --features cli --release -p sce-build" >&2
+    echo "pre-commit:   CI's drift-verify job will still gate this on merge." >&2
     exit 0
 fi
 
-# Workspace-wide check matches CI exactly. The check covers only staged
-# files' workspace because cargo fmt operates on the discovered package
-# tree, not on a per-file filter — staged_rs above just gated whether
-# to run the check at all.
-if ! cargo fmt --all -- --check; then
-    echo "" >&2
-    echo "pre-commit: cargo fmt --check failed." >&2
-    echo "pre-commit:   run 'cargo fmt --all' to apply, then re-stage." >&2
-    echo "pre-commit:   bypass with 'git commit --no-verify' (CI gate still runs)." >&2
+# Each verify call is scoped to one drift context's clean subtree.
+# Rust src/generated/ is donedata-free (donedata lives at
+# sce-rust-tests/src/integration/donedata_local_invoke/). Kotlin verifies
+# the W3C harness dir which is donedata-free and shares the W3C drift
+# context with the SM tree (one `generate-w3c -l kotlin` invocation
+# emits both atomically, so harness-fresh ⇒ SM-fresh).
+run_verify() {
+    local label="$1" target="$2" input_root="$3" regen_arg="$4"
+    if [ ! -d "${repo_root}/${target}" ]; then
+        return 0
+    fi
+    if ! "${codegen}" verify "${repo_root}/${target}" --input-root "${repo_root}/${input_root}" >/dev/null 2>&1; then
+        echo "" >&2
+        echo "pre-commit: §6.2.6 drift detected in ${label}." >&2
+        echo "pre-commit:   ${target} no longer matches the current template tree + Cargo.lock." >&2
+        echo "pre-commit:   refresh with:" >&2
+        echo "pre-commit:     target/release/sce-codegen generate-w3c -l ${regen_arg}" >&2
+        echo "pre-commit:   then stage the refreshed tree before retrying the commit." >&2
+        echo "pre-commit:   bypass with 'git commit --no-verify' (CI gate still runs)." >&2
+        return 1
+    fi
+    return 0
+}
+
+drift_failed=0
+run_verify "Rust W3C" "sce-rust-tests/src/generated" "resources" "rust" || drift_failed=1
+run_verify "Kotlin W3C" "sce-kotlin-tests/src/test/kotlin/com/sce/w3c" "resources" "kotlin" || drift_failed=1
+
+if [ "${drift_failed}" -ne 0 ]; then
     exit 1
 fi
