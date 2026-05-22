@@ -9,9 +9,8 @@
 # Mirrors scripts/regen_donedata_local_invoke.sh (Rust). The TMP-staging
 # pattern keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke children
 # (sce-build/src/parser.rs:1804-1805) out of the tracked fixtures/ tree
-# during the codegen run. Synth-invoke children that pre-exist in
-# fixtures/ remain committed and are untouched by this script — its
-# contract covers only the Kotlin output tree.
+# during the codegen run. fixtures/ stays a parent-only hand-authored
+# surface; synth-invoke children are derived and live only in $TMP.
 #
 # Usage (from repo root):
 #   scripts/regen_donedata_local_invoke_kotlin.sh
