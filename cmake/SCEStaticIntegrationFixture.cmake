@@ -152,3 +152,95 @@ function(sce_generate_static_integration_test STEM OUTPUT_DIR)
     list(APPEND GENERATED_INTEGRATION_HEADERS ${_ALL_HEADERS})
     set(GENERATED_INTEGRATION_HEADERS ${GENERATED_INTEGRATION_HEADERS} PARENT_SCOPE)
 endfunction()
+
+# sce_generate_static_integration_c_test:
+#   C11 sibling of `sce_generate_static_integration_test`. Emits
+#   `<stem>_sm.{h,c}` (rather than `.h/.inl` for cpp) plus the
+#   synth-invoke `_sm.c` children that the parent's translation unit
+#   #includes. Caller wires the resulting source list into an
+#   `add_executable` target via the conventional integration runner
+#   under `sce-c-tests/integration/test_<stem>.c`.
+#
+# Args:
+#   STEM        Fixture stem (`donedata_local_invoke` etc.). Canonical
+#               source: `${CMAKE_SOURCE_DIR}/integration_resources/${STEM}/${STEM}.scxml`.
+#   OUTPUT_DIR  Destination dir for `_sm.{h,c}` (e.g.
+#               `${SCE_C_INTEGRATION_GENERATED_DIR}`).
+#
+# Keyword args:
+#   SYNTH_INVOKE_CHILDREN <id>...  Mirror of the cpp variant.
+#
+# Side effects:
+#   - Sets `INTEGRATION_C_TEST_${STEM}_SOURCES` (PARENT_SCOPE) to the
+#     parent _sm.c plus every child _sm.c — caller links these into
+#     the per-fixture executable target.
+function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
+    cmake_parse_arguments(_INT "" "" "SYNTH_INVOKE_CHILDREN" ${ARGN})
+
+    set(FIXTURE_ROOT "${CMAKE_SOURCE_DIR}/integration_resources/${STEM}")
+    set(FIXTURE "${FIXTURE_ROOT}/${STEM}.scxml")
+
+    if(NOT EXISTS "${FIXTURE}")
+        message(WARNING
+            "sce_generate_static_integration_c_test: fixture not found, "
+            "skipping ${STEM}: ${FIXTURE}")
+        return()
+    endif()
+
+    file(MAKE_DIRECTORY "${OUTPUT_DIR}")
+
+    set(STAGED_SCXML "${OUTPUT_DIR}/${STEM}.scxml")
+    set(PARENT_HEADER "${OUTPUT_DIR}/${STEM}_sm.h")
+    set(PARENT_SOURCE "${OUTPUT_DIR}/${STEM}_sm.c")
+
+    add_custom_command(
+        OUTPUT "${STAGED_SCXML}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FIXTURE}" "${STAGED_SCXML}"
+        DEPENDS "${FIXTURE}"
+        COMMENT "Staging integration fixture (c11): ${STEM}.scxml"
+        VERBATIM
+    )
+
+    set(_CHILD_SCXMLS "")
+    foreach(_CHILD ${_INT_SYNTH_INVOKE_CHILDREN})
+        list(APPEND _CHILD_SCXMLS "${OUTPUT_DIR}/${STEM}__sce_synth_invoke__${_CHILD}.scxml")
+    endforeach()
+
+    add_custom_command(
+        OUTPUT "${PARENT_SOURCE}"
+        COMMAND "${SCE_CODEGEN}" generate "${STAGED_SCXML}"
+                -l c11 -o "${OUTPUT_DIR}"
+                --input-root "${FIXTURE_ROOT}"
+        DEPENDS "${STAGED_SCXML}" "${SCE_CODEGEN}"
+        BYPRODUCTS "${PARENT_HEADER}" ${_CHILD_SCXMLS}
+        COMMENT "Generating C11 integration parent: ${STEM}_sm.c"
+        VERBATIM
+    )
+
+    set(_ALL_SOURCES "${PARENT_SOURCE}")
+    set(_ALL_HEADERS "${PARENT_HEADER}")
+    foreach(_CHILD ${_INT_SYNTH_INVOKE_CHILDREN})
+        set(_CHILD_SCXML "${OUTPUT_DIR}/${STEM}__sce_synth_invoke__${_CHILD}.scxml")
+        set(_CHILD_HEADER "${OUTPUT_DIR}/${STEM}__sce_synth_invoke__${_CHILD}_sm.h")
+        set(_CHILD_SOURCE "${OUTPUT_DIR}/${STEM}__sce_synth_invoke__${_CHILD}_sm.c")
+
+        add_custom_command(
+            OUTPUT "${_CHILD_SOURCE}" "${_CHILD_HEADER}"
+            COMMAND "${SCE_CODEGEN}" generate "${_CHILD_SCXML}"
+                    --as-child --parent-stem "${STEM}"
+                    -l c11 -o "${OUTPUT_DIR}"
+                    --input-root "${FIXTURE_ROOT}"
+            DEPENDS "${PARENT_SOURCE}" "${SCE_CODEGEN}"
+            COMMENT "Generating C11 integration child: ${STEM}__sce_synth_invoke__${_CHILD}_sm.{h,c}"
+            VERBATIM
+        )
+        list(APPEND _ALL_SOURCES "${_CHILD_SOURCE}")
+        list(APPEND _ALL_HEADERS "${_CHILD_HEADER}")
+    endforeach()
+
+    # Sources include both .c (compilation units) and .h (generated header
+    # dependencies). Listing the headers makes them part of the target's
+    # input set so Ninja schedules every child codegen before compiling
+    # the parent _sm.c that #includes them.
+    set("INTEGRATION_C_TEST_${STEM}_SOURCES" ${_ALL_SOURCES} ${_ALL_HEADERS} PARENT_SCOPE)
+endfunction()

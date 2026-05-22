@@ -16,9 +16,18 @@
 # conformance (no in-test fixtures, no parametrised cases).
 
 include(${CMAKE_SOURCE_DIR}/cmake/SCEStaticW3CTest.cmake)
+# Phase E: parallel CMake function for integration fixtures
+# (`integration_resources/<stem>/<stem>.scxml` → `<output>/<stem>_sm.{h,c}`).
+include(${CMAKE_SOURCE_DIR}/cmake/SCEStaticIntegrationFixture.cmake)
 
 set(SCE_C_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${SCE_C_GENERATED_DIR}")
+
+# Output dir for c11 integration-fixture codegen. Distinct from the
+# W3C dir so build-system stale-tree detection treats W3C and integration
+# trees as separate §6.2.6 drift contexts (RFC Q-2 parallel).
+set(SCE_C_INTEGRATION_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/integration_generated")
+file(MAKE_DIRECTORY "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
 # Test-binary support helpers now live in sce-c-runtime as 4-tier-aligned
 # libraries (see sce-c-runtime/CMakeLists.txt + ARCHITECTURE.md §"C11
@@ -344,6 +353,40 @@ foreach(TEST_NUM ${W3C_C_AOT_TESTS})
         )
     endif()
 endforeach()
+
+# ─── Integration fixtures (RFC Phase E) ─────────────────────────────
+#
+# Build-time generation under SCE_C_INTEGRATION_GENERATED_DIR (no
+# committed tree — the build is the §6.2.6 freshness invariant,
+# mirroring the cpp/c11 W3C IRP pattern). The fixture closes the W3C
+# IRP gap on `<donedata>` + `<invoke>` + `done.invoke.<id>._event.data`
+# (Phase 0 grep against `resources/*/test*.txml` returned zero hits).
+sce_generate_static_integration_c_test(donedata_local_invoke "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    SYNTH_INVOKE_CHILDREN inv_param inv_content
+)
+
+add_executable(sce_c_integration_donedata_local_invoke
+    integration/test_donedata_local_invoke.c
+    ${INTEGRATION_C_TEST_donedata_local_invoke_SOURCES}
+)
+target_link_libraries(sce_c_integration_donedata_local_invoke PRIVATE
+    sce_c_runtime sce_c_runtime_posix lua54
+)
+target_include_directories(sce_c_integration_donedata_local_invoke PRIVATE
+    "${SCE_C_INTEGRATION_GENERATED_DIR}"
+)
+set_target_properties(sce_c_integration_donedata_local_invoke PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_integration_donedata_local_invoke
+    COMMAND sce_c_integration_donedata_local_invoke
+)
+set_tests_properties(c11_integration_donedata_local_invoke PROPERTIES
+    TIMEOUT 30
+    LABELS "integration;c11;aot"
+)
 
 # ─── BasicHTTP fixture: standalone Node server lifecycle ────────────
 #

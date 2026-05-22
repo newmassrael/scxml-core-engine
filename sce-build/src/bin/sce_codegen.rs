@@ -1492,7 +1492,28 @@ fn cmd_generate(
         Err(e) => error_format.emit_and_exit(&e, ""),
     };
 
-    if as_child {
+    // `has_parent_communication` carries two distinct meanings across
+    // backends:
+    //   - cpp/rust/kotlin/go/python: enables the `ParentStateMachine`
+    //     class-template parameter (analyzer derives `needs_parent_template
+    //     = has_parent_communication && !is_remote_invoke_target`). Every
+    //     `--as-child` invocation must template against the parent type
+    //     because the parent's invoke spawn site passes `self_` (parent
+    //     pointer) into the child constructor — even when the child has
+    //     no `<send target="#_parent">` of its own.
+    //   - c11: gates which init entrypoint the child emits — `_init`
+    //     when false, `_init_with_parent` when true. The c11 parent's
+    //     `invoke_methods.jinja2` switches on the parser-derived
+    //     `invoke_info.child_has_send_to_parent`, so forcing the child
+    //     side to `true` while the parent calls `_init` produces a
+    //     declaration/call mismatch (child header declares only
+    //     `_init_with_parent`, parent's `.c` references `_init` →
+    //     linker error). For c11 the parser-derived value is the
+    //     correct gate — children that genuinely route to `#_parent`
+    //     (test191/338) flip `has_parent_communication=true` on their
+    //     own, and `<donedata>`-only children (donedata_local_invoke)
+    //     compile cleanly under the parser-derived `false`.
+    if as_child && lang != Language::C11 {
         model.has_parent_communication = true;
     }
 

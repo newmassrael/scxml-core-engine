@@ -180,6 +180,57 @@
            swaps the per-event payload for a lua-side stash to avoid widening
            every event_with_meta_t entry with a typed-value union. */
         (void)luaL_dostring(sm->L, "_pending_donedata = nil");
+        /* W3C SCXML 5.5 + 6.3.1 cross-SM donedata carry: serialise a
+           Lua value (the `_pending_donedata` stash populated by the
+           child's `<final><donedata>` entry emit) into a Lua-source
+           expression string that the parent's `process_event_queues`
+           external dequeue (state_machine.c.jinja2:3493-3498) re-loads
+           via `_event.data = (<literal>)`. Cpp ships JSON on
+           `EventWithMetadata::data` because its event type is
+           engine-agnostic across LuaEngine / JSEngine / mock; C11 is
+           AOT-only with Lua 5.4 (P1 lock-in), so a Lua-source literal
+           is the round-trip-free equivalent and produces a typed value
+           on the parent side rather than forcing a re-parse.
+
+           Encoding contract:
+             - nil           → '' (empty; receiver skips the override)
+             - string        → string.format('%q', v) (Lua-source escaped)
+             - number/bool   → tostring(v) (Lua-source compatible)
+             - table         → '{k1 = lit1, k2 = lit2, ...}' (identifier
+                               keys plain, non-ident keys bracketed).
+                               Keys sorted to keep the wire form
+                               deterministic so byte-equal output across
+                               equal-content donedata payloads
+                               (committed-tree-sweep §6.2.6 contract).
+           Both parent and child SMs initialise this helper because
+           `lua_init_engine` runs in every SM with `needs_script_engine`;
+           the cross-SM bridge `lua_marshal_child_donedata` calls it on
+           the child's L and the resulting string lands on the
+           `done.invoke.<id>` event's `data[]` field. */
+        (void)luaL_dostring(sm->L,
+            "function _sce_donedata_to_lua_literal(v)\n"
+            "  if v == nil then return '' end\n"
+            "  local t = type(v)\n"
+            "  if t == 'string' then return string.format('%q', v) end\n"
+            "  if t == 'number' or t == 'boolean' then return tostring(v) end\n"
+            "  if t == 'table' then\n"
+            "    local parts = {}\n"
+            "    local keys = {}\n"
+            "    for k in pairs(v) do keys[#keys+1] = k end\n"
+            "    table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)\n"
+            "    for _, k in ipairs(keys) do\n"
+            "      local key_str\n"
+            "      if type(k) == 'string' and k:match('^[%a_][%w_]*$') then\n"
+            "        key_str = k\n"
+            "      else\n"
+            "        key_str = '[' .. _sce_donedata_to_lua_literal(k) .. ']'\n"
+            "      end\n"
+            "      parts[#parts+1] = key_str .. ' = ' .. _sce_donedata_to_lua_literal(v[k])\n"
+            "    end\n"
+            "    return '{' .. table.concat(parts, ', ') .. '}'\n"
+            "  end\n"
+            "  return ''\n"
+            "end");
         /* W3C SCXML 6.2 + 5.10.1 (.raw): ordered (name, value) capture for
            `<send>`'s `<param>` / `namelist` evaluation. cpp builds
            `std::map<string, vector<string>>` to preserve duplicate keys
@@ -995,5 +1046,57 @@
         }
         ({{ send_evt_var }}).data[_raw_n] = '\0';
         lua_pop(sm->L, 1);
+    }
+{% endmacro %}
+
+{# W3C SCXML 5.5 + 6.3.1 cross-SM donedata carry (parent ← child).
+
+   Called from `invoke_methods.jinja2` immediately before
+   `_raise_external(sm, &_done_evt)` at every site that synthesises a
+   `done.invoke.<id>` event for a finished invoked child. The macro
+   reads the child SM's `_pending_donedata` lua global (the stash
+   populated by the child's `<final><donedata>` entry emit in
+   `state_machine.c.jinja2::execute_entry_actions`), serialises it to a
+   Lua-source expression via `_sce_donedata_to_lua_literal`, and copies
+   the resulting bounded string onto `_done_evt.data[]`.
+
+   The parent's `process_event_queues` external dequeue
+   (state_machine.c.jinja2:3493-3498) sees a non-empty `evt.data` and
+   evaluates `_event.data = (<literal>)` on its own `sm->L`, producing
+   a typed lua value the parent's `done.invoke.<id>` transition cond
+   can dereference (`_event.data.result === 42`, `_event.data ===
+   'hello_content'`, etc.). Empty `_pending_donedata` (child final
+   without `<donedata>`) serialises to '' → `_done_evt.data` zero-init
+   stays → receiver skips the override (`_event.data` remains nil),
+   matching W3C 5.10 "no donedata → undefined" contract for non-
+   donedata invokes (test247-shape children).
+
+   This bridge mirrors cpp `donedataAtFinal()` + `typedDonedataAtFinal()`
+   carried on `EventMetadataHelper::createDoneInvokeEvent`
+   (invoke_methods.jinja2:189-195) — cpp ships JSON because
+   `EventWithMetadata` crosses engine-agnostic boundaries; C11's Lua-
+   source carry is the round-trip-free equivalent under the AOT-only +
+   Lua 5.4 P1 lock-in.
+
+   Caller must gate on `invoke_info.child_needs_script_engine` so the
+   child has a valid `L` to query — children without a script engine
+   never run donedata-expression evaluation, so their carry would be
+   empty anyway. #}
+{% macro lua_marshal_child_donedata(child_L_var, evt_var) %}
+    {
+        (void)luaL_dostring({{ child_L_var }},
+            "_sce_donedata_literal = _sce_donedata_to_lua_literal(_pending_donedata)");
+        lua_getglobal({{ child_L_var }}, "_sce_donedata_literal");
+        if (lua_isstring({{ child_L_var }}, -1)) {
+            const char *_lit = lua_tostring({{ child_L_var }}, -1);
+            size_t _lit_n = strlen(_lit);
+            if (_lit_n >= sizeof(({{ evt_var }}).data)) {
+                _lit_n = sizeof(({{ evt_var }}).data) - 1;
+            }
+            memcpy(({{ evt_var }}).data, _lit, _lit_n);
+            ({{ evt_var }}).data[_lit_n] = '\0';
+        }
+        lua_pop({{ child_L_var }}, 1);
+        (void)luaL_dostring({{ child_L_var }}, "_sce_donedata_literal = nil");
     }
 {% endmacro %}
