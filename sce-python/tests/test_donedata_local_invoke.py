@@ -37,12 +37,18 @@ import sys
 import time
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT = os.path.abspath(os.path.join(_SCRIPT_DIR, "..", ".."))
 
 sys.path.insert(0, os.path.join(_SCRIPT_DIR, "..", "python"))
 
 import _sce as sce
 
-FIXTURE_PATH = os.path.join(_SCRIPT_DIR, "fixtures", "donedata_local_invoke.scxml")
+FIXTURE_PATH = os.path.join(
+    _REPO_ROOT,
+    "integration_resources",
+    "donedata_local_invoke",
+    "donedata_local_invoke.scxml",
+)
 
 TIMEOUT_SEC = 5.0
 POLL_INTERVAL_SEC = 0.01

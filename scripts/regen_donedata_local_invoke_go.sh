@@ -4,12 +4,12 @@
 #
 # Regenerate sce-go-tests/donedata_local_invoke/{donedata_local_invoke,
 # donedata_local_invoke__sce_synth_invoke__inv_*}_sm.go from the
-# hand-authored fixture at
-# sce-go-tests/fixtures/donedata_local_invoke.scxml.
+# canonical fixture at
+# integration_resources/donedata_local_invoke/donedata_local_invoke.scxml.
 #
 # Mirrors scripts/regen_donedata_local_invoke.sh (Rust). The TMP-staging
 # pattern keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke children
-# (sce-build/src/parser.rs:1804-1805) out of the tracked fixtures/ tree
+# (sce-build/src/parser.rs:1804-1805) out of the canonical fixture root
 # during the codegen run. Only `*_sm.go` is copied back, so the
 # hand-authored `donedata_local_invoke_test.go` next to the generated
 # files is never touched.
@@ -31,10 +31,10 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 CODEGEN="target/release/sce-codegen"
-FIXTURE="sce-go-tests/fixtures/donedata_local_invoke.scxml"
+FIXTURE="integration_resources/donedata_local_invoke/donedata_local_invoke.scxml"
 GENERATED_DIR="sce-go-tests/donedata_local_invoke"
 STEM="donedata_local_invoke"
-INPUT_ROOT="sce-go-tests/fixtures"
+INPUT_ROOT="integration_resources/donedata_local_invoke"
 
 # Step 1: build sce-codegen in release mode if absent.
 if [[ ! -x "$CODEGEN" ]]; then

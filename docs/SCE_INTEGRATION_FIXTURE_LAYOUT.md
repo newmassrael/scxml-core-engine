@@ -129,9 +129,13 @@ this procedure to a 6-backend uniform workflow once its phases land.
 Current procedure:
 
 1. Author the source `.scxml` under the canonical fixture root that
-   the layout RFC's Q-8 establishes (target:
-   `resources/integration/<stem>.scxml`). Until Phase B lands,
-   per-backend `fixtures/` directories hold copies.
+   the layout RFC's Q-8 establishes:
+   `integration_resources/<stem>/<stem>.scxml` (per-fixture dir,
+   mirroring the W3C IRP `resources/<N>/test<N>.txml` convention).
+   The new top-level dir sits outside `resources/` because
+   `compute_source_hash` recurses through the input root — nesting
+   integration under `resources/` would fold the integration fixture
+   into the W3C source-hash domain.
 2. Author per-backend regen scripts following the
    `scripts/regen_donedata_local_invoke{,_kotlin,_go}.sh` pattern.
 3. Register the new sub-module in each backend's integration entry
@@ -151,8 +155,9 @@ The full long-term-correct end state is defined in
 `claudedocs/rfc-donedata-5-backend-layout.md` (locked 2026-05-22, 9
 Q-locks decided). Key end-state guarantees once all phases land:
 
-- Single canonical fixture source `resources/integration/<stem>.scxml`
-  for all 6 backends (Q-8).
+- Single canonical fixture source `integration_resources/<stem>/<stem>.scxml`
+  for all 6 backends (Q-8 + Q-8a per-fixture dir, separate top-level
+  from W3C `resources/` to keep drift contexts disjoint).
 - Committed-tree backends (Rust / Kotlin / Go) share canonical
   `integration/` layout sibling to W3C `generated/` (Q-1).
 - Per-language anchor file convention: Rust `mod.rs` /

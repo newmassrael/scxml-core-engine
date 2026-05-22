@@ -3,14 +3,15 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
 # Regenerate sce-kotlin-tests/src/main/kotlin/com/sce/generated/donedata_local_invoke/
-# from the hand-authored fixture at
-# sce-kotlin-tests/src/test/resources/fixtures/donedata_local_invoke.scxml.
+# from the canonical fixture at
+# integration_resources/donedata_local_invoke/donedata_local_invoke.scxml.
 #
 # Mirrors scripts/regen_donedata_local_invoke.sh (Rust). The TMP-staging
 # pattern keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke children
-# (sce-build/src/parser.rs:1804-1805) out of the tracked fixtures/ tree
-# during the codegen run. fixtures/ stays a parent-only hand-authored
-# surface; synth-invoke children are derived and live only in $TMP.
+# (sce-build/src/parser.rs:1804-1805) out of the canonical fixture root
+# during the codegen run. integration_resources/donedata_local_invoke/
+# stays a parent-only canonical surface; synth-invoke children are
+# derived and live only in $TMP.
 #
 # Usage (from repo root):
 #   scripts/regen_donedata_local_invoke_kotlin.sh
@@ -29,10 +30,10 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 CODEGEN="target/release/sce-codegen"
-FIXTURE="sce-kotlin-tests/src/test/resources/fixtures/donedata_local_invoke.scxml"
+FIXTURE="integration_resources/donedata_local_invoke/donedata_local_invoke.scxml"
 GENERATED_DIR="sce-kotlin-tests/src/main/kotlin/com/sce/generated/donedata_local_invoke"
 STEM="donedata_local_invoke"
-INPUT_ROOT="sce-kotlin-tests/src/test/resources/fixtures"
+INPUT_ROOT="integration_resources/donedata_local_invoke"
 
 # Step 1: build sce-codegen in release mode if absent.
 if [[ ! -x "$CODEGEN" ]]; then

@@ -23,9 +23,15 @@ name: Drift Verify (B9 §6.2.6)
 # invalidate every other backend's stored hash even if its emit is
 # byte-identical (the chain pattern c2dfe502/1a5efb07/dc228ab4/64f93cf4
 # left stale and 3b8941c3/7a4ee07f/d6b2cb03/47fb7767/cb53dd3c swept).
-# The donedata + forge-round-trip trees have distinct drift contexts —
-# their source-hash is computed against fixture/resource dirs that are
-# not `resources/` — so those dirs are also listed below.
+# Drift contexts and their input roots:
+#   - W3C trees           → resources/<N>/
+#   - donedata trees      → integration_resources/donedata_local_invoke/
+#   - forge round-trip    → tests/forge/resources/
+# The new top-level integration_resources/ dir sits outside resources/
+# because compute_source_hash recurses through its input_root — nesting
+# integration under resources/ would fold the integration fixture into
+# the W3C source-hash domain. Distinct drift contexts = distinct
+# top-level dirs.
 
 on:
   push:
@@ -35,15 +41,13 @@ on:
       - 'tools/codegen/templates/**'
       - 'sce-rust-tests/src/generated/**'
       - 'sce-rust-tests/src/integration/donedata_local_invoke/**'
-      - 'sce-rust-tests/fixtures/**'
       - 'sce-kotlin-tests/src/main/kotlin/com/sce/generated/**'
       - 'sce-kotlin-tests/src/test/kotlin/com/sce/w3c/**'
-      - 'sce-kotlin-tests/src/test/resources/fixtures/**'
       - 'sce-go-tests/donedata_local_invoke/**'
-      - 'sce-go-tests/fixtures/**'
       - 'sce-forge-runtime/go/round_trip/generated/**'
       - 'tests/forge/resources/**'
       - 'resources/**'
+      - 'integration_resources/**'
       - 'Cargo.lock'
       - 'Cargo.toml'
       - '.github/workflows/drift-verify.yml'
@@ -54,15 +58,13 @@ on:
       - 'tools/codegen/templates/**'
       - 'sce-rust-tests/src/generated/**'
       - 'sce-rust-tests/src/integration/donedata_local_invoke/**'
-      - 'sce-rust-tests/fixtures/**'
       - 'sce-kotlin-tests/src/main/kotlin/com/sce/generated/**'
       - 'sce-kotlin-tests/src/test/kotlin/com/sce/w3c/**'
-      - 'sce-kotlin-tests/src/test/resources/fixtures/**'
       - 'sce-go-tests/donedata_local_invoke/**'
-      - 'sce-go-tests/fixtures/**'
       - 'sce-forge-runtime/go/round_trip/generated/**'
       - 'tests/forge/resources/**'
       - 'resources/**'
+      - 'integration_resources/**'
       - 'Cargo.lock'
       - 'Cargo.toml'
       - '.github/workflows/drift-verify.yml'

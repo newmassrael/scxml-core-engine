@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9bcad9b84fa14940847d6da71ccac3403a2ce758eeda81fe98efd2b6d7c6b4b9
+// source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
 // template-hash: f5e6315f2ec211d36d839290b90cbd833e902936cc9328b605b51a480ada76bd
-// generated-at: 1779412617
+// generated-at: 1779443332
 
 // GENERATED CODE — DO NOT EDIT
-// Source: sce-kotlin-tests/src/test/resources/fixtures/donedata_local_invoke.scxml
+// Source: integration_resources/donedata_local_invoke/donedata_local_invoke.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: donedata_local_invoke.scxml:30
+// SCE-MAP: donedata_local_invoke.scxml:28
 
 package com.sce.generated.donedata_local_invoke
 
@@ -258,7 +258,7 @@ class DonedataLocalInvokeStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: donedata_local_invoke.scxml:30
+    // SCE-MAP: donedata_local_invoke.scxml:28
     override fun onEntry(state: DonedataLocalInvokeState) {
         when (state) {
             is DonedataLocalInvokeState.Fail -> {
@@ -305,7 +305,7 @@ class DonedataLocalInvokeStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: donedata_local_invoke.scxml:30
+    // SCE-MAP: donedata_local_invoke.scxml:28
     override fun onExit(state: DonedataLocalInvokeState) {
         when (state) {
             is DonedataLocalInvokeState.Fail -> {
@@ -333,7 +333,7 @@ class DonedataLocalInvokeStateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: donedata_local_invoke.scxml:30
+    // SCE-MAP: donedata_local_invoke.scxml:28
     override fun executeTransitionActions(
         source: DonedataLocalInvokeState,
         event: DonedataLocalInvokeEvent?

@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9bcad9b84fa14940847d6da71ccac3403a2ce758eeda81fe98efd2b6d7c6b4b9
+// source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
 // template-hash: f5e6315f2ec211d36d839290b90cbd833e902936cc9328b605b51a480ada76bd
-// generated-at: 1779412617
+// generated-at: 1779443332
 
 // GENERATED CODE — DO NOT EDIT
-// Source: sce-kotlin-tests/src/test/resources/fixtures/donedata_local_invoke__sce_synth_invoke__inv_content.scxml
+// Source: integration_resources/donedata_local_invoke/donedata_local_invoke__sce_synth_invoke__inv_content.scxml
 // Generator: SCE Kotlin Code Generator v1.0
 // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:3
 

@@ -1,31 +1,29 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- W3C SCXML 5.5 + 6.3.1 donedata surfacing on Kotlin AOT local-invoke path.
+<!-- W3C SCXML 5.5 + 6.3.1 donedata surfacing on local-invoke path.
 
      Closes the W3C IRP coverage gap: no public IRP test exercises
-     donedata on an invoked child's top-level final combined with
-     done.invoke.id event data readback on the parent. This fixture
-     mirrors tests/integration/DonedataLocalInvokeTest.cpp (C++
-     Interpreter path) for the Kotlin AOT code path through
-     StateMachineEngine.startInvoke's completion callback.
+     donedata on an invoked child's top-level <final> combined with
+     done.invoke.<id> event data readback on the parent. The parent
+     sequentially invokes two inline children whose top-level <final>
+     carries <donedata>.
 
-     The parent sequentially invokes two inline children.
-
-       inv_param   carries donedata with <param name="result" expr="42"/>.
+       inv_param   carries <donedata> with <param name="result" expr="42"/>.
                    Cond _event.data.result === 42 proves the param
                    envelope survived the done.invoke emission and
-                   re-hydrated on the parent side via Rhino JSON.parse.
+                   re-hydrated on the parent side.
 
-       inv_content carries donedata with <content expr="'hello_content'"/>.
+       inv_content carries <donedata> with <content expr="'hello_content'"/>.
                    Cond _event.data === 'hello_content' proves the
                    content-expression branch serialises through the
                    same stash/lift path.
 
-     Any fall-through done.invoke.id takes the deterministic fail
+     Any fall-through done.invoke.<id> takes the deterministic fail
      transition so a regression surfaces as an explicit state mismatch
      rather than a timeout.
 
-     Regeneration (after fixture edit): see
-     DonedataLocalInvokeTest.kt header for the two sce-codegen commands.
+     This fixture is the canonical source for all 6 backends — see
+     docs/SCE_INTEGRATION_FIXTURE_LAYOUT.md for the per-backend test
+     locations and engine-channel coverage (Interpreter / AOT).
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        version="1.0" datamodel="ecmascript" initial="phase_param"

@@ -565,14 +565,17 @@ fn verify_passes_on_real_committed_kotlin_w3c_tree() {
     );
 }
 
-// Donedata drift context. The hand-authored
-// `donedata_local_invoke.scxml` fixture under each backend's
-// `fixtures/` (or `src/test/resources/fixtures/` for Kotlin) is a
-// *separate* §6.2.6 input root from the W3C `resources/` tree — its
-// `source-hash` is computed against the fixture dir, not the W3C
-// fixtures. The W3C invariants above intentionally exclude donedata
-// scope (different drift context); the donedata invariants below
-// cover it directly. Regen via
+// Donedata drift context. The canonical
+// `donedata_local_invoke.scxml` fixture lives at
+// `integration_resources/donedata_local_invoke/` (RFC
+// `claudedocs/rfc-donedata-5-backend-layout.md` Q-8 SSoT migration);
+// all three committed-tree backends share that input root. The new
+// top-level dir is intentionally outside `resources/` — the W3C
+// `resources/<N>/` tree is a *separate* §6.2.6 input root, and
+// `compute_source_hash` recurses through the input root, so nesting
+// integration under `resources/` would fold the integration fixture
+// into the W3C source-hash domain. Distinct drift contexts demand
+// distinct top-level dirs. Regen via
 // `scripts/regen_donedata_local_invoke{,_kotlin,_go}.sh`.
 //
 // Python is intentionally skipped: `sce-python/tests/` runs the
@@ -587,14 +590,16 @@ fn verify_passes_on_real_committed_rust_donedata_tree() {
         .join("src")
         .join("integration")
         .join("donedata_local_invoke");
-    let input_root = workspace.join("sce-rust-tests").join("fixtures");
+    let input_root = workspace
+        .join("integration_resources")
+        .join("donedata_local_invoke");
     let (code, stderr) = run_verify_real_tree(&target, &input_root);
     assert_eq!(
         code, 0,
         "verify must pass on the committed Rust donedata tree. A \
          failure here means tools/codegen/templates/**, Cargo.lock, or \
-         sce-rust-tests/fixtures/donedata_local_invoke.scxml changed \
-         without refreshing sce-rust-tests/src/integration/donedata_local_invoke/. \
+         integration_resources/donedata_local_invoke/donedata_local_invoke.scxml \
+         changed without refreshing sce-rust-tests/src/integration/donedata_local_invoke/. \
          Run `scripts/regen_donedata_local_invoke.sh` and commit the \
          result. stderr:\n{stderr}"
     );
@@ -613,17 +618,14 @@ fn verify_passes_on_real_committed_kotlin_donedata_tree() {
         .join("generated")
         .join("donedata_local_invoke");
     let input_root = workspace
-        .join("sce-kotlin-tests")
-        .join("src")
-        .join("test")
-        .join("resources")
-        .join("fixtures");
+        .join("integration_resources")
+        .join("donedata_local_invoke");
     let (code, stderr) = run_verify_real_tree(&target, &input_root);
     assert_eq!(
         code, 0,
         "verify must pass on the committed Kotlin donedata tree. A \
          failure here means tools/codegen/templates/**, Cargo.lock, or \
-         sce-kotlin-tests/src/test/resources/fixtures/donedata_local_invoke.scxml \
+         integration_resources/donedata_local_invoke/donedata_local_invoke.scxml \
          changed without refreshing the donedata generated dir. Run \
          `scripts/regen_donedata_local_invoke_kotlin.sh` and commit the \
          result. stderr:\n{stderr}"
@@ -636,15 +638,17 @@ fn verify_passes_on_real_committed_go_donedata_tree() {
     let target = workspace
         .join("sce-go-tests")
         .join("donedata_local_invoke");
-    let input_root = workspace.join("sce-go-tests").join("fixtures");
+    let input_root = workspace
+        .join("integration_resources")
+        .join("donedata_local_invoke");
     let (code, stderr) = run_verify_real_tree(&target, &input_root);
     assert_eq!(
         code, 0,
         "verify must pass on the committed Go donedata tree. A \
          failure here means tools/codegen/templates/**, Cargo.lock, or \
-         sce-go-tests/fixtures/donedata_local_invoke.scxml changed \
-         without refreshing sce-go-tests/donedata_local_invoke/. Run \
-         `scripts/regen_donedata_local_invoke_go.sh` and commit the \
+         integration_resources/donedata_local_invoke/donedata_local_invoke.scxml \
+         changed without refreshing sce-go-tests/donedata_local_invoke/. \
+         Run `scripts/regen_donedata_local_invoke_go.sh` and commit the \
          result. stderr:\n{stderr}"
     );
 }

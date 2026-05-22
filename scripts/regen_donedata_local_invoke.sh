@@ -3,15 +3,15 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
 # Regenerate sce-rust-tests/src/integration/donedata_local_invoke/ from the
-# hand-authored fixture at sce-rust-tests/fixtures/donedata_local_invoke.scxml.
+# canonical fixture at integration_resources/donedata_local_invoke/donedata_local_invoke.scxml.
 #
 # Why a script (vs the per-test ad-hoc workflow): SCE Mesh §9.6.6 rule 1
 # pins synth-invoke child SCXMLs to the same directory as their parent
 # (sce-build/src/parser.rs:1804-1805 — `scxml_dir.join(...)`). Running
-# `sce-codegen generate sce-rust-tests/fixtures/donedata_local_invoke.scxml`
+# `sce-codegen generate integration_resources/donedata_local_invoke/donedata_local_invoke.scxml`
 # therefore writes two transient children adjacent to the fixture itself —
-# polluting the tracked `sce-rust-tests/fixtures/` directory with codegen
-# side effects on every regen.
+# polluting the tracked canonical fixture directory with codegen side
+# effects on every regen.
 #
 # This script wraps the documented per-test workflow (`tests/donedata_local_invoke.rs`
 # header comment) so regen-ability isn't lost: copy the fixture into a tmp
@@ -36,7 +36,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 CODEGEN="target/release/sce-codegen"
-FIXTURE="sce-rust-tests/fixtures/donedata_local_invoke.scxml"
+FIXTURE="integration_resources/donedata_local_invoke/donedata_local_invoke.scxml"
 GENERATED_DIR="sce-rust-tests/src/integration/donedata_local_invoke"
 STEM="donedata_local_invoke"
 
@@ -58,10 +58,11 @@ cp "$FIXTURE" "$TMP/$STEM.scxml"
 #
 # `--input-root` overrides the default §6.2.6 source-hash root (the
 # SCXML file's parent) so the embedded hash reflects the tracked
-# fixture location instead of the transient $TMP path — a stranger
-# running `sce-codegen verify sce-rust-tests/src/integration/donedata_local_invoke
-# --input-root sce-rust-tests/fixtures` then reproduces the same hash.
-INPUT_ROOT="sce-rust-tests/fixtures"
+# canonical fixture location instead of the transient $TMP path — a
+# stranger running `sce-codegen verify sce-rust-tests/src/integration/donedata_local_invoke
+# --input-root integration_resources/donedata_local_invoke` then
+# reproduces the same hash.
+INPUT_ROOT="integration_resources/donedata_local_invoke"
 "$CODEGEN" generate "$TMP/$STEM.scxml" -l rust -o "$TMP/" \
     --input-root "$INPUT_ROOT"
 
@@ -87,9 +88,10 @@ find "$GENERATED_DIR" -maxdepth 1 -name '*_sm.rs' -delete
 
 # Step 6: copy only the Rust artefacts back into the tracked integration/
 # tree. The SCXML side files in $TMP are intentionally left behind; this
-# script's contract is that fixtures/ stays a one-file hand-authored
-# surface (parent only) and integration/ stays the codegen output tree
-# (Rust files only).
+# script's contract is that integration_resources/donedata_local_invoke/
+# stays the canonical fixture root (parent only — synth-invoke children
+# are derived) and sce-rust-tests/src/integration/donedata_local_invoke/
+# stays the codegen output tree (Rust files only).
 #
 # The Rust backend's template embeds the absolute path of the input
 # SCXML in a `// From:` comment block. Because we staged into $TMP,

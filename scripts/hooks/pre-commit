@@ -53,7 +53,7 @@ fi
 # forge round-trip generated tree / its codec fixtures. Mirrors the
 # path filter in .github/workflows/drift-verify.yml so local and CI
 # gating agree.
-drift_trigger=$(printf '%s\n' "${staged}" | grep -E '^(tools/codegen/templates/|Cargo\.lock$|sce-build/|sce-rust-tests/src/generated/|sce-rust-tests/src/integration/donedata_local_invoke/|sce-rust-tests/fixtures/|sce-kotlin-tests/src/main/kotlin/com/sce/generated/|sce-kotlin-tests/src/test/kotlin/com/sce/w3c/|sce-kotlin-tests/src/test/resources/fixtures/|sce-go-tests/donedata_local_invoke/|sce-go-tests/fixtures/|sce-forge-runtime/go/round_trip/generated/|tests/forge/resources/|resources/)' || true)
+drift_trigger=$(printf '%s\n' "${staged}" | grep -E '^(tools/codegen/templates/|Cargo\.lock$|sce-build/|sce-rust-tests/src/generated/|sce-rust-tests/src/integration/donedata_local_invoke/|sce-kotlin-tests/src/main/kotlin/com/sce/generated/|sce-kotlin-tests/src/test/kotlin/com/sce/w3c/|sce-go-tests/donedata_local_invoke/|sce-forge-runtime/go/round_trip/generated/|tests/forge/resources/|resources/|integration_resources/)' || true)
 
 if [ -z "${drift_trigger}" ]; then
     exit 0
@@ -77,8 +77,9 @@ fi
 # shares the W3C drift context with the SM tree (one
 # `generate-w3c -l kotlin` invocation emits both atomically, so
 # harness-fresh ⇒ SM-fresh). Donedata invariants — each backend's
-# donedata generated dir against the hand-authored fixture input
-# root (a distinct §6.2.6 drift context from W3C resources/).
+# donedata generated dir against the canonical fixture input root
+# integration_resources/donedata_local_invoke (a distinct §6.2.6
+# drift context from W3C resources/<N>/).
 # Python is intentionally absent: pybind11 → C++ Interpreter
 # channel, no codegen SM emitted, no §6.2.6 header to verify.
 run_verify() {
@@ -109,18 +110,21 @@ run_verify "Kotlin W3C" \
     "sce-kotlin-tests/src/test/kotlin/com/sce/w3c" \
     "resources" \
     "target/release/sce-codegen generate-w3c -l kotlin" || drift_failed=1
-# Donedata drift contexts (per-backend fixture-input roots).
+# Donedata drift contexts — three committed-tree backends share the
+# canonical fixture input root integration_resources/donedata_local_invoke
+# (RFC `claudedocs/rfc-donedata-5-backend-layout.md` Q-8 SSoT migration).
+# Per-backend generated dirs remain distinct §6.2.6 drift contexts.
 run_verify "Rust donedata" \
     "sce-rust-tests/src/integration/donedata_local_invoke" \
-    "sce-rust-tests/fixtures" \
+    "integration_resources/donedata_local_invoke" \
     "scripts/regen_donedata_local_invoke.sh" || drift_failed=1
 run_verify "Kotlin donedata" \
     "sce-kotlin-tests/src/main/kotlin/com/sce/generated/donedata_local_invoke" \
-    "sce-kotlin-tests/src/test/resources/fixtures" \
+    "integration_resources/donedata_local_invoke" \
     "scripts/regen_donedata_local_invoke_kotlin.sh" || drift_failed=1
 run_verify "Go donedata" \
     "sce-go-tests/donedata_local_invoke" \
-    "sce-go-tests/fixtures" \
+    "integration_resources/donedata_local_invoke" \
     "scripts/regen_donedata_local_invoke_go.sh" || drift_failed=1
 # Forge round-trip drift context (tests/forge/resources/ as input root).
 run_verify "Forge round-trip (Go)" \
