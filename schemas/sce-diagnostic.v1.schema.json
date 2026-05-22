@@ -80,6 +80,8 @@
         "algorithm/foreach-source-bc-with-bytes-item-type",
         "algorithm/call-arg-count-mismatch",
         "scxml/top-level-script-unloaded",
+        "scxml/unreachable-state",
+        "scxml/dead-transition",
         "scxml/on-sample-invalid-parent",
         "scxml/on-sample-link-duplicate-in-state",
         "scxml/on-sample-event-name-conflict",

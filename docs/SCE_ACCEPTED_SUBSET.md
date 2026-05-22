@@ -590,7 +590,45 @@ without renaming codes or extending payload shape.
 
 ---
 
-## Appendix — `DiagnosticCode` index (305 codes)
+### Statechart graph reachability (NL→IR Mapping Roadmap Item 3 Phase A)
+
+Every `<state>`, `<parallel>`, and `<final>` declared in an SCXML
+document must be reachable from the document's initial configuration
+through the W3C SCXML §3 entry semantics:
+
+- the document `initial` attribute (or the default-first-child fallback
+  when omitted)
+- compound-state initial-cascade — entering `<state initial="X">`
+  enters X (and recurses)
+- parallel-all-children — entering `<parallel>` enters every
+  non-history child region
+- transition `target` edges
+- history pseudostate default-target redirection (W3C SCXML §3.10)
+
+After the parse completes, a BFS over those edges computes the
+design-time reach set. A state outside the closure is dead code —
+codegen would still emit per-state surface for it, but no execution
+path ever enters it. Two rejection codes:
+
+- `scxml/unreachable-state` — the orphan-state form, emitted when an
+  unreachable `<state>` / `<parallel>` / `<final>` declares no
+  `<transition>` children. The diagnostic carries only the state id;
+  closest-match candidate lists are not surfaced because the orphan's
+  id is typically correct — the topology is the bug.
+- `scxml/dead-transition` — the per-transition form, emitted when an
+  unreachable state contains at least one `<transition>`. The
+  per-(source, target) granularity points the author at a concrete
+  edge to delete or re-wire. Outranks the state-level form so each
+  orphan subgraph reports its first transition rather than just the
+  containing state.
+
+Both rejection paths sit in the `scxml/*` family because reachability
+is a Statechart-graph rule with no analog on the Forge-kind side
+(Forge kinds carry no control-flow surface).
+
+---
+
+## Appendix — `DiagnosticCode` index (307 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -747,6 +785,8 @@ Codes that the author can avoid by writing a better SCXML /
 | `extern/ordering-unspecified` | Validation |
 | `extern/target-plugin-symbol-conflict` | Validation |
 | `scxml/top-level-script-unloaded` | Validation |
+| `scxml/unreachable-state` | Validation |
+| `scxml/dead-transition` | Validation |
 | `scxml/on-sample-invalid-parent` | Validation |
 | `scxml/on-sample-link-duplicate-in-state` | Validation |
 | `scxml/on-sample-event-name-conflict` | Validation |

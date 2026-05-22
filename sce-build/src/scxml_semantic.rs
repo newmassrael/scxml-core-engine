@@ -123,6 +123,64 @@ pub enum ScxmlSemanticError {
         /// rejection or analyzer.rs path).
         src: Option<String>,
     },
+
+    /// A `<state>` / `<parallel>` / `<final>` declared in the
+    /// document graph cannot be entered from any execution path that
+    /// the parser-stage BFS can derive. The walk seeds at the
+    /// document `initial` (or default-first-child when omitted),
+    /// follows compound-state initial cascade (W3C SCXML §3.3),
+    /// enters every non-history child of a `<parallel>` (W3C SCXML
+    /// §3.4), and follows every transition `target` edge plus every
+    /// history pseudostate `default_target` (W3C SCXML §3.10). A
+    /// state outside the closure is dead code — keeping it through
+    /// codegen wastes generated-state surface and masks authoring
+    /// mistakes that produce orphan subgraphs (a recurring AI-
+    /// generated-SCXML failure mode, see `nl_to_ir_mapping_roadmap.md`
+    /// Item 3).
+    ///
+    /// Emitted in preference to `DeadTransition` only when the
+    /// orphan state has zero `<transition>` children — when at least
+    /// one transition is present, the per-transition variant fires
+    /// first because it points the author at a concrete element to
+    /// repair (delete the transition / re-attach the source state).
+    ///
+    /// NL→IR Mapping Roadmap Item 3 Phase A.
+    #[error("State '{state_id}' is unreachable from the document initial configuration")]
+    UnreachableState {
+        /// The unreachable state's id.
+        state_id: String,
+    },
+
+    /// A `<transition>` element lives in a state that is itself
+    /// unreachable per the BFS described on [`Self::UnreachableState`].
+    /// The transition's `target` may name a perfectly valid state
+    /// (and that state may even be reachable through a different
+    /// path); the transition still cannot fire because its source
+    /// state is never entered.
+    ///
+    /// Carried in preference to the bare-`UnreachableState` form
+    /// when an unreachable state contains transitions — `source` +
+    /// `target` together name the specific orphan edge so author
+    /// repair lands at one element instead of inferring it from the
+    /// state-level diagnostic.
+    ///
+    /// NL→IR Mapping Roadmap Item 3 Phase A.
+    #[error(
+        "Transition in unreachable state '{state}' targets '{target}' — \
+         source state is never entered"
+    )]
+    DeadTransition {
+        /// Owning state id (the unreachable `<state>` / `<parallel>`
+        /// containing the `<transition>`). Named `state` rather than
+        /// `source` so it does not collide with thiserror's reserved
+        /// `source` field (which routes to the error-chain accessor).
+        state: String,
+        /// The transition `target` attribute verbatim (multi-target
+        /// space-separated declarations carry the full string —
+        /// every target shares the same orphan source so collapsing
+        /// to a single diagnostic is correct).
+        target: String,
+    },
 }
 
 #[cfg(test)]
@@ -240,6 +298,13 @@ mod tests {
             ScxmlSemanticError::TopLevelScriptUnloaded {
                 index: None,
                 src: None,
+            },
+            ScxmlSemanticError::UnreachableState {
+                state_id: "ghost".into(),
+            },
+            ScxmlSemanticError::DeadTransition {
+                state: "ghost".into(),
+                target: "armed".into(),
             },
         ];
         for v in variants {

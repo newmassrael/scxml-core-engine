@@ -46,6 +46,11 @@ pub mod provenance;
 /// downstream req-coverage tooling.
 pub mod requirements_report;
 pub mod script_engine_analyzer;
+/// NL→IR Mapping Roadmap Item 3 Phase A: Statechart graph reachability
+/// validator. BFS from the document `initial` configuration computes
+/// the design-time reach set and rejects orphan states / dead
+/// transitions before codegen.
+pub mod scxml_reachability;
 pub mod scxml_semantic;
 /// `sce:template` / `sce:use` / `sce:param` preprocessing —
 /// parameterised composition adjacent to XInclude. AOT-only per
@@ -144,6 +149,17 @@ fn compile_model(scxml_path: &str) -> Result<ParsedSCXML, CompileError> {
     let mut model = parser.parse_file(scxml_path)?;
     analyzer::analyze(&mut model, scxml_path);
     guard_static_generatable(&model, scxml_path)?;
+    // NL→IR Mapping Roadmap Item 3 Phase A — Statechart graph
+    // reachability. Runs after the analyzer finalises the state graph
+    // (parallel-region computation, initial-cascade resolution) and
+    // after `guard_static_generatable` so the more-fundamental
+    // diagnostics — `ScxmlSemanticError::InitialStateUnknown`,
+    // `TopLevelScriptUnloaded`, the missing-initial `DynamicFeatures`
+    // gate — fire ahead of the per-state orphan walk. Reachability
+    // is the structural-quality check that runs only once the basic
+    // entry contract is sound; running it earlier would shadow the
+    // root-cause diagnostic with a downstream consequence.
+    scxml_reachability::validate(&model, scxml_path)?;
     // Watching-zenoh RFC §5.O Atomic 0a — IR provenance pre-emit
     // guard. Runs *after* the analyzer (so synthesised IR additions
     // are visible) and *before* `resolve_source_path` populates the
@@ -172,6 +188,11 @@ fn compile_model_from_string(
     let mut model = parser.parse_string(scxml_content, scxml_name)?;
     analyzer::analyze(&mut model, "");
     guard_static_generatable(&model, scxml_name)?;
+    // NL→IR Mapping Roadmap Item 3 Phase A — see `compile_model` for
+    // the placement rationale (after the basic static-generation guard
+    // so root-cause `ScxmlSemanticError` diagnostics fire ahead of the
+    // orphan walk).
+    scxml_reachability::validate(&model, scxml_name)?;
     // Watching-zenoh RFC §5.O Atomic 0a — IR provenance pre-emit
     // guard. WASM / parse_string callers share the same invariant
     // as the file-based entry point above; both routes converge on
