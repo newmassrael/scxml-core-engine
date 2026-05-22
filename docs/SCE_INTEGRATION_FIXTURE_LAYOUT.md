@@ -123,31 +123,40 @@ code independently.
 
 ## Adding a new custom integration fixture
 
-When a future SCXML contract requires this layer, follow the
-per-backend convention as it exists at HEAD; the layout RFC will revise
-this procedure to a 6-backend uniform workflow once its phases land.
-Current procedure:
+When a future SCXML contract requires this layer:
 
-1. Author the source `.scxml` under the canonical fixture root that
-   the layout RFC's Q-8 establishes:
+1. Author the source `.scxml` at the canonical fixture root:
    `integration_resources/<stem>/<stem>.scxml` (per-fixture dir,
    mirroring the W3C IRP `resources/<N>/test<N>.txml` convention).
-   The new top-level dir sits outside `resources/` because
-   `compute_source_hash` recurses through the input root — nesting
-   integration under `resources/` would fold the integration fixture
-   into the W3C source-hash domain.
+   The top-level `integration_resources/` dir sits outside
+   `resources/` because `compute_source_hash` recurses through the
+   input root — nesting integration under `resources/` would fold
+   the integration fixture into the W3C source-hash domain.
 2. Author per-backend regen scripts following the
    `scripts/regen_donedata_local_invoke{,_kotlin,_go}.sh` pattern.
-3. Register the new sub-module in each backend's integration entry
-   point (Rust `sce-rust-tests/src/integration/mod.rs`, Kotlin via
-   `generated/` for now, Go top-level for now — the layout RFC
-   uniformises these).
-4. Wire the §6.2.6 drift-verify CI gate to each backend's new
-   generated directory in `.github/workflows/drift-verify.yml` and the
-   `scripts/hooks/pre-commit` drift-verify trigger.
-5. For cpp/Python/C11 (no committed tree), wire the fixture into the
-   per-backend build/CI entry point (`tests/CMakeLists.txt` for cpp;
-   Python CI workflow; `sce-c-tests/CMakeLists.txt` for C11).
+   These are now thin wrappers around the canonical CLI surface
+   (see step 3); each script encodes the per-language TMP staging,
+   `--input-root` override, and post-processing (Rust `mod.rs`
+   synthesis, Kotlin `// Source:` rewrite, Kotlin
+   `--kotlin-package-prefix com.sce.integration`).
+3. Bulk regenerate via the uniform CLI:
+   `sce-codegen generate-integration -l <rust|kotlin|go> --stem <stem>`
+   (single fixture) or omit `--stem` to walk every
+   `integration_resources/<stem>/` dir. The
+   `scripts/regen_all_committed_trees.sh` master script bundles W3C
+   + integration + forge round-trip so a template touch lands one
+   coherent commit across every drift context.
+4. Register the new sub-module in each backend's integration entry
+   point: Rust `sce-rust-tests/src/integration/mod.rs`, Kotlin
+   `sce-kotlin-tests/src/main/kotlin/com/sce/integration/package-info.kt`,
+   Go `sce-go-tests/integration/doc.go`.
+5. Wire the §6.2.6 drift-verify CI gate to each backend's new
+   generated directory in `.github/workflows/drift-verify.yml` and
+   the `scripts/hooks/pre-commit` drift-verify trigger.
+6. For cpp / C11 / Python pybind11 channels (no committed tree),
+   wire the fixture into the per-backend build/CI entry point
+   (`tests/CMakeLists.txt` for cpp; Python CI workflow;
+   `sce-c-tests/CMakeLists.txt` for C11).
 
 ## RFC reference
 
@@ -165,8 +174,9 @@ Q-locks decided). Key end-state guarantees once all phases land:
 - Build-time backends (C++ / C11) share canonical
   `sce_generate_static_integration_test` CMake function (Q-2).
 - C++ / Python retain both Interpreter and AOT channels (Q-3, Q-4).
-- `sce-codegen generate-integration -l <lang>` subcommand parallel to
-  `generate-w3c` (Q-6).
-- `scripts/regen_all_committed_trees.sh` master regen script (Q-7).
+- `sce-codegen generate-integration -l <lang> [--stem <stem>]`
+  subcommand parallel to `generate-w3c` (Q-6, LANDED).
+- `scripts/regen_all_committed_trees.sh` master regen script
+  bundling W3C + integration + forge round-trip (Q-7, LANDED).
 - Every backend has ≥1 channel for the `donedata_local_invoke`
   contract — "uncovered" eliminated.

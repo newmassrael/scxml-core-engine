@@ -724,6 +724,32 @@ enum Commands {
         #[arg(long)]
         no_format: bool,
     },
+    /// Batch generate integration-fixture state machines for the three
+    /// committed-tree backends (Rust / Kotlin / Go) from canonical
+    /// fixtures under `integration_resources/<stem>/<stem>.scxml`.
+    ///
+    /// Parallel to `generate-w3c` but reads from
+    /// `integration_resources/` (separate §6.2.6 input-root from W3C
+    /// `resources/`) and emits into each backend's `integration/` tree:
+    ///   - Rust:    `sce-rust-tests/src/integration/<stem>/`
+    ///   - Kotlin:  `sce-kotlin-tests/src/main/kotlin/com/sce/integration/<stem>/`
+    ///   - Go:      `sce-go-tests/integration/<stem>/`
+    ///
+    /// Build-time backends (cpp / c11) and the pybind11 Python channel
+    /// have no committed integration tree, so they are intentionally
+    /// not supported here — fixture generation for those backends runs
+    /// through CMake / CI on every build.
+    ///
+    /// RFC `claudedocs/rfc-donedata-5-backend-layout.md` Q-6.
+    GenerateIntegration {
+        /// Target language (rust, kotlin, go).
+        #[arg(short, long)]
+        language: String,
+        /// Single fixture stem to regenerate. When omitted, every
+        /// `integration_resources/<stem>/` directory is processed.
+        #[arg(long)]
+        stem: Option<String>,
+    },
     /// Fix SCXML name attribute (ensure <scxml name="testXXX">)
     FixScxmlName {
         /// SCXML file path
@@ -973,6 +999,9 @@ fn main() {
             format_style.as_deref(),
             no_format,
         ),
+        Commands::GenerateIntegration { language, stem } => {
+            cmd_generate_integration(&language, stem.as_deref(), error_format)
+        }
         Commands::FixScxmlName { scxml, name } => cmd_fix_scxml_name(&scxml, &name),
         Commands::ReadMetadata { metadata_file } => cmd_read_metadata(&metadata_file),
         Commands::Manifest { dir } => cmd_manifest(&dir),
@@ -3855,6 +3884,105 @@ fn cmd_manifest(dir: &str) {
     });
 
     println!("{json}");
+}
+
+// ── Subcommand: generate-integration ───────────────────────────
+
+/// Batch integration-fixture regeneration for the three committed-tree
+/// backends (Rust / Kotlin / Go). Parallel to `generate-w3c` but
+/// scoped to `integration_resources/<stem>/<stem>.scxml` fixtures
+/// (RFC `claudedocs/rfc-donedata-5-backend-layout.md` Q-6).
+///
+/// Each `<stem>` is dispatched to the matching backend's regen script
+/// (`scripts/regen_<stem>{,_kotlin,_go}.sh`); those scripts already
+/// encode the per-language TMP staging + `--input-root` override +
+/// post-processing (Rust `mod.rs` synthesis, Kotlin `// Source:`
+/// rewrite, Kotlin `--kotlin-package-prefix com.sce.integration`).
+/// Routing through a single CLI entry point keeps
+/// `scripts/regen_all_committed_trees.sh` (Q-7) backend-agnostic.
+///
+/// Build-time backends (cpp / c11 / pybind11 Python) are intentionally
+/// not supported here — they emit at CMake / CI time without a
+/// committed tree, so there is nothing for `generate-integration` to
+/// drive.
+fn cmd_generate_integration(language: &str, stem: Option<&str>, error_format: ErrorFormat) {
+    let lang: Language = language.parse().unwrap_or_else(|_| {
+        error_format.emit_and_exit(
+            &CliError::UnknownLanguage {
+                lang: language.to_string(),
+            },
+            "",
+        )
+    });
+
+    let script_suffix = match lang {
+        Language::Rust => "",
+        Language::Kotlin => "_kotlin",
+        Language::Go => "_go",
+        _ => {
+            eprintln!(
+                "generate-integration: only rust/kotlin/go are supported (build-time backends \
+                 emit at CMake / CI time without a committed tree)"
+            );
+            std::process::exit(2);
+        }
+    };
+
+    let project_root = find_project_root();
+    let integration_root = project_root.join("integration_resources");
+
+    let stems: Vec<String> = match stem {
+        Some(s) => vec![s.to_string()],
+        None => {
+            let mut v = Vec::new();
+            let entries = std::fs::read_dir(&integration_root).unwrap_or_else(|e| {
+                eprintln!(
+                    "generate-integration: cannot read {}: {e}",
+                    integration_root.display()
+                );
+                std::process::exit(1);
+            });
+            for entry in entries.flatten() {
+                if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                    if let Some(name) = entry.file_name().to_str() {
+                        v.push(name.to_string());
+                    }
+                }
+            }
+            v.sort();
+            v
+        }
+    };
+
+    for stem in &stems {
+        let script = project_root.join(format!("scripts/regen_{stem}{script_suffix}.sh"));
+        if !script.exists() {
+            eprintln!(
+                "generate-integration: missing regen script {}",
+                script.display()
+            );
+            std::process::exit(1);
+        }
+        let status = std::process::Command::new("bash")
+            .arg(&script)
+            .current_dir(&project_root)
+            .status()
+            .unwrap_or_else(|e| {
+                eprintln!(
+                    "generate-integration: cannot spawn {}: {e}",
+                    script.display()
+                );
+                std::process::exit(1);
+            });
+        if !status.success() {
+            eprintln!(
+                "generate-integration: {} failed (exit {})",
+                script.display(),
+                status.code().unwrap_or(-1)
+            );
+            std::process::exit(1);
+        }
+    }
 }
 
 // ── Subcommand: generate-conformance ───────────────────────────
