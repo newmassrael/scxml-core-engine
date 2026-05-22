@@ -116,6 +116,7 @@
 {% endif %}
 {% endmacro %}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{%- import '_macros/sce_annotation_marker.jinja2' as annot %}
 
 {# Watching-zenoh RFC §5.O Atomic 0c — function-scope SCE-MAP markers
    above the per-function `processTransition`, `executeMicrostep`,
@@ -747,7 +748,7 @@ public:
             {
                 switch (lastTransitionIndex_) {
 {% for trans in state.transitions %}
-                case {{ loop.index0 }}:  // Transition {{ loop.index0 }}
+                case {{ loop.index0 }}:  // Transition {{ loop.index0 }}{{ annot.annotation_comment(trans, "cpp", "                    ") }}
                     {
                         AOT_DEBUG("AOT executeTransitionActions: Executing transition {{ loop.index0 }} actions");
 {% if model.needs_script_engine %}
@@ -755,6 +756,9 @@ public:
                         [[maybe_unused]] auto& scriptEngine = getScriptEngine();
 {% endif %}
 {% for action in trans.actions %}
+{%- if action.req or action.unresolved %}
+{{ annot.annotation_block(action, "cpp", "                        ") -}}
+{%- endif %}
 {% include 'actions/' + action.type + '.jinja2' %}
 {% endfor %}
                     }

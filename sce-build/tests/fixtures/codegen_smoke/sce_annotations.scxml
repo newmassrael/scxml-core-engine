@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<!--
+  NL→IR Mapping Roadmap Items 1+5 — codegen smoke for sce:req +
+  sce:unresolved annotation comments.
+
+  Exercises every annotation site the parser surfaces on the
+  4 emit-attachment kinds (state / transition / onentry action /
+  invoke), via attribute and element forms of both
+  `sce:req` and `sce:unresolved`. Companion to the entry/exit /
+  transition / invoke wiring in
+  `tools/codegen/templates/{cpp,rust,c,go,kotlin,python}/...`.
+  The fixture's job here is structural: every generated backend
+  must still compile after the macro injects the comment lines.
+  Byte-identical preservation for annotation-absent fixtures is
+  proved by the other fixtures in this directory.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" name="sce_annotations" initial="s0">
+  <state id="s0" sce:req="REQ_STATE_S0">
+    <onentry sce:req="REQ_ONENTRY">
+      <log sce:req="REQ_LOG_LEAF" expr="'entered s0'"/>
+    </onentry>
+    <onexit sce:req="REQ_ONEXIT">
+      <log expr="'exited s0'"/>
+    </onexit>
+    <transition event="go" target="armed" sce:req="REQ_TRANS_GO">
+      <log sce:req="REQ_TRANS_LOG"
+           sce:unresolved="TBD_LOG_LABEL"
+           sce:unresolved-reason="awaiting trace catalogue"
+           expr="'on go'"/>
+    </transition>
+  </state>
+  <state id="armed" sce:unresolved="TBD_STATE_NAME"
+         sce:unresolved-candidates="armed primed ready">
+    <transition event="fire" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

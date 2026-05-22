@@ -12,6 +12,7 @@
     (serde rename from `action_type`).
 #}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{%- import '_macros/sce_annotation_marker.jinja2' as annot %}
 
 // ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
 {# Watching-zenoh RFC §5.O Atomic 0c — function-scope SCE-MAP marker
@@ -35,12 +36,15 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 	switch state {
 {% for state_id, state in model.states | dictsort %}
 {% if state.on_entry_blocks or state.initial_transition_actions or state.initial_history_id or (state.is_final and state.parent) or (state.is_final and state.donedata) or state.invokes | scxml or state.invokes | hybrid %}
-	case {{ machine_name }}State{{ state_id | to_state_variant }}:
+	case {{ machine_name }}State{{ state_id | to_state_variant }}:{{ annot.annotation_comment(state, "go", "		") }}
 {% for block in state.on_entry_blocks %}
 		// W3C SCXML 3.8: onentry block {{ loop.index0 }} (break on error stops subsequent actions)
 		for actionBlock{{ loop.index0 }} := 0; actionBlock{{ loop.index0 }} < 1; actionBlock{{ loop.index0 }}++ {
 			_ = actionBlock{{ loop.index0 }}
 {% for action in block %}
+{%- if action.req or action.unresolved %}
+{{ annot.annotation_block(action, "go", "			") -}}
+{%- endif %}
 			{% with in_entry_exit=true %}{% include 'actions/' ~ action.type ~ '.go.jinja2' %}{% endwith %}
 
 {% endfor %}
@@ -181,7 +185,7 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 {% if state.invokes | scxml or state.invokes | hybrid %}
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 {% for invoke_info in state.invokes | scxml %}
-		{
+		{  {{- annot.annotation_comment(invoke_info, "go", "			") }}
 			generatedInvokeID := fmt.Sprintf("%s.%d.{{ invoke_info.invoke_id }}", "{{ state_id }}", sce.NextInvokeCounter())
 {% if invoke_info.idlocation %}
 			// W3C SCXML 6.4.1: Store generated invokeId in datamodel via idlocation
@@ -198,7 +202,7 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 		}
 {% endfor %}
 {% for invoke_info in state.invokes | hybrid %}
-		{
+		{  {{- annot.annotation_comment(invoke_info, "go", "			") }}
 			generatedInvokeID := fmt.Sprintf("%s.%d.{{ invoke_info.invoke_id }}", "{{ state_id }}", sce.NextInvokeCounter())
 {% if invoke_info.idlocation %}
 			p.ensureScriptEngine()
@@ -332,12 +336,15 @@ func (p *{{ machine_name }}Policy) ExecuteExitActions(state {{ machine_name }}St
 	switch state {
 {% for state_id, state in model.states | dictsort %}
 {% if state.on_exit_blocks %}
-	case {{ machine_name }}State{{ state_id | to_state_variant }}:
+	case {{ machine_name }}State{{ state_id | to_state_variant }}:{{ annot.annotation_comment(state, "go", "		") }}
 {% for block in state.on_exit_blocks %}
 		// W3C SCXML 3.9: onexit block {{ loop.index0 }}
 		for exitBlock{{ loop.index0 }} := 0; exitBlock{{ loop.index0 }} < 1; exitBlock{{ loop.index0 }}++ {
 			_ = exitBlock{{ loop.index0 }}
 {% for action in block %}
+{%- if action.req or action.unresolved %}
+{{ annot.annotation_block(action, "go", "			") -}}
+{%- endif %}
 			{% with in_entry_exit=true %}{% include 'actions/' ~ action.type ~ '.go.jinja2' %}{% endwith %}
 
 {% endfor %}

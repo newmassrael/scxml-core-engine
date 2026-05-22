@@ -16,6 +16,7 @@
     Uses actions/_render.kt.jinja2 for action dispatch (shared with transition_actions).
 #}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{%- import '_macros/sce_annotation_marker.jinja2' as annot %}
 
     // Entry Actions (W3C SCXML 3.8)
     {# Watching-zenoh RFC §5.O Atomic 0c — function-scope SCE-MAP marker
@@ -43,7 +44,7 @@
 {% set parallel_grandparent_id = parent_state.parent %}
 {% endif %}
 {% endif %}
-            is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {
+            is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {  {{- annot.annotation_comment(state, "kotlin", "                ") }}
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("{{ state_id }}")) return
 {% if has_late_datamodel %}
@@ -81,6 +82,9 @@
                 run {
 {% set in_run_block = true %}
 {% for action in block %}
+{%- if action.req or action.unresolved %}
+{{ annot.annotation_block(action, "kotlin", "                    ") -}}
+{%- endif %}
     {% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
                 }
@@ -88,6 +92,9 @@
 {% elif state.on_entry_blocks %}
 {% set in_run_block = false %}
 {% for action in state.on_entry_blocks[0] %}
+{%- if action.req or action.unresolved %}
+{{ annot.annotation_block(action, "kotlin", "                ") -}}
+{%- endif %}
     {% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
 {% endif %}
@@ -355,7 +362,7 @@
 {% set is_parallel = state.is_parallel and state_id in model.parallel_regions %}
 {% set exit_has_invokes = state_id in invoke_entries %}
 {% set has_history_children = model.history_states.values() | selectattr('parent', 'equalto', state_id) | list %}
-            is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {
+            is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {  {{- annot.annotation_comment(state, "kotlin", "                ") }}
 {% if exit_has_invokes %}
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
@@ -408,6 +415,9 @@
                 run {
 {% set in_run_block = true %}
 {% for action in block %}
+{%- if action.req or action.unresolved %}
+{{ annot.annotation_block(action, "kotlin", "                    ") -}}
+{%- endif %}
     {% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
                 }
@@ -415,6 +425,9 @@
 {% elif state.on_exit_blocks %}
 {% set in_run_block = false %}
 {% for action in state.on_exit_blocks[0] %}
+{%- if action.req or action.unresolved %}
+{{ annot.annotation_block(action, "kotlin", "                ") -}}
+{%- endif %}
     {% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
 {% endif %}

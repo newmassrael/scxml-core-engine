@@ -27,6 +27,7 @@ safeEvaluateGuard("{{ trans.cond | escape_kotlin }}")
 {%- endif -%}
 {%- endmacro %}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{%- import '_macros/sce_annotation_marker.jinja2' as annot %}
 
     // Transition Actions (W3C SCXML 3.13)
     {# Watching-zenoh RFC §5.O Atomic 0c — function-scope SCE-MAP marker
@@ -52,10 +53,10 @@ safeEvaluateGuard("{{ trans.cond | escape_kotlin }}")
 {% for trans in eff_transitions %}
 {% if trans.actions and trans.event %}
 {% if trans.event == '*' %}
-            event != null -> {
+            event != null -> {  {{- annot.annotation_comment(trans, "kotlin", "                ") }}
 {% elif trans.prefix_matching_events is defined and trans.prefix_matching_events | length > 1 %}
             ({% for matched_event in trans.prefix_matching_events | sort %}event is {{ machine_name }}Event.{{ matched_event | to_event_class_name }}{% if not loop.last %} || {% endif %}{% endfor %})
-{%- if trans.cond %} && {{ render_cond(trans) }}{% endif %} -> {
+{%- if trans.cond %} && {{ render_cond(trans) }}{% endif %} -> {  {{- annot.annotation_comment(trans, "kotlin", "                ") }}
 {% else %}
 {% if trans.prefix_matching_events is defined and trans.prefix_matching_events | length == 1 %}
 {% set resolved_event = trans.prefix_matching_events[0] %}
@@ -63,12 +64,15 @@ safeEvaluateGuard("{{ trans.cond | escape_kotlin }}")
 {% set resolved_event = trans.event %}
 {% endif %}
 {% if trans.cond %}
-            event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} && {{ render_cond(trans) }} -> {
+            event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} && {{ render_cond(trans) }} -> {  {{- annot.annotation_comment(trans, "kotlin", "                ") }}
 {% else %}
-            event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} -> {
+            event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} -> {  {{- annot.annotation_comment(trans, "kotlin", "                ") }}
 {% endif %}
 {% endif %}
 {% for action in trans.actions %}
+{%- if action.req or action.unresolved %}
+{{ annot.annotation_block(action, "kotlin", "                ") -}}
+{%- endif %}
 {% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
             }
@@ -78,11 +82,14 @@ safeEvaluateGuard("{{ trans.cond | escape_kotlin }}")
 {% for trans in eff_transitions %}
 {% if trans.actions and not trans.event %}
 {% if trans.cond %}
-            event == null && {{ render_cond(trans) }} -> {
+            event == null && {{ render_cond(trans) }} -> {  {{- annot.annotation_comment(trans, "kotlin", "                ") }}
 {% else %}
-            event == null -> {
+            event == null -> {  {{- annot.annotation_comment(trans, "kotlin", "                ") }}
 {% endif %}
 {% for action in trans.actions %}
+{%- if action.req or action.unresolved %}
+{{ annot.annotation_block(action, "kotlin", "                ") -}}
+{%- endif %}
 {% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
             }

@@ -14,6 +14,7 @@
     - Eventless transitions do NOT bubble to parent states
 #}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{%- import '_macros/sce_annotation_marker.jinja2' as annot %}
 
 // ProcessTransition evaluates guards and takes a matching transition (W3C SCXML 3.13).
 // Returns true if a transition was taken.
@@ -333,8 +334,11 @@ func (p *{{ machine_name }}Policy) ExecuteTransitionActions(engine *sce.Engine[{
 {% for state_id, state in model.states | dictsort %}
 {% for trans in state.transitions %}
 {% if trans.actions %}
-	if source == {{ machine_name }}State{{ state_id | to_state_variant }} && idx == {{ trans.transition_index | default(loop.index0) }} {
+	if source == {{ machine_name }}State{{ state_id | to_state_variant }} && idx == {{ trans.transition_index | default(loop.index0) }} {  {{- annot.annotation_comment(trans, "go", "		") }}
 {% for action in trans.actions %}
+{%- if action.req or action.unresolved %}
+{{ annot.annotation_block(action, "go", "		") -}}
+{%- endif %}
 		{% include 'actions/' ~ action.type ~ '.go.jinja2' %}
 
 {% endfor %}

@@ -1,0 +1,119 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+{#
+   NL→IR Roadmap Items 1+5 — `sce:req` traceability and
+   `sce:unresolved` placeholder annotation comments.
+
+   The parser collects `<… sce:req="ID1 ID2" …>` whitespace tokens
+   and any `<sce:unresolved id="…" reason="…" candidates="…"/>` (or
+   attribute-form equivalents) on `<state>`, `<transition>`,
+   `<onentry>`, `<onexit>`, `<send>`, `<script>`, `<invoke>`.
+   `<onentry>`/`<onexit>` block-level `sce:req` is inherited to each
+   child action by `parser::inherit_req`, so emission at the action
+   level captures the block annotation without a separate hook.
+
+   This macro family emits the annotation as a backend-appropriate
+   trailing comment so the generated source preserves the
+   traceability link without any behaviour change. When both `req`
+   and `unresolved` are empty (Vec::is_empty serde skip), the macros
+   emit nothing — byte-identical output for inputs without
+   annotations is preserved.
+
+   Per-backend comment syntax:
+     - cpp / rust / go / kotlin : `// sce:req: …` / `// sce:unresolved: …`
+     - c (C11)                  : `/* sce:req: … */` (block form)
+     - python                   : `# sce:req: …` / `# sce:unresolved: …`
+
+   Ordering is the document order surfaced by the parser
+   (`RequirementId::split` preserves token order; the `unresolved`
+   vector is push-order from the parse walker). The macros do not
+   re-sort — call-site authors get deterministic output anchored on
+   the SCXML source order.
+
+   Unresolved-marker shape (kept compact, opaque to SCE):
+     `sce:unresolved: id=<ID>[ reason=<R>][ candidates=<A,B,C>]`
+
+   The author is responsible for keeping `reason` / `candidates`
+   free of newlines — the parser does not sanitise. A newline in
+   `reason` would visibly break a `//` single-line comment; this is
+   author-side hygiene, not a SCE invariant.
+
+   Two call patterns are supported. Pick the one that fits the
+   emission site without disturbing the surrounding indentation.
+
+   ──── Pattern A — `annotation_comment` (leading newline) ───────
+
+       <existing line content>:{{ annot.annotation_comment(node, backend, "<indent>") }}
+       <next line content>
+
+   The macro returns either the empty string (byte-identical
+   preservation when no annotations) or a sequence of complete
+   lines, each prefixed with an explicit `\n` + the caller-supplied
+   `<indent>` and NO trailing newline. Slotting at the end of an
+   existing line keeps the post-`}}` newline as the separator to
+   the next line. Good for case-label sites where the annotation
+   should *attach* visually to a label or condition.
+
+   ──── Pattern B — `annotation_block` (trailing newline) ────────
+
+       {% for action in block %}
+       {{ annot.annotation_block(action, backend, "<indent>") }}<next line content>
+       {% endfor %}
+
+   The macro returns either the empty string or a sequence of
+   complete lines, each prefixed with the caller-supplied
+   `<indent>` and ending with `\n`. Concatenating with the next
+   expression keeps byte-identity when empty (no characters added)
+   and slots the comment lines AS A BLOCK directly before the next
+   content when populated. Good for emit-loop sites where the
+   annotation logically *introduces* the code that follows.
+
+   Both macros emit nothing when `node.req` is empty and
+   `node.unresolved` is empty, and the generator runs minijinja
+   with `trim_blocks=True` + `lstrip_blocks=True` so every newline
+   inside the macro body is explicit (`{{ "\n" }}` or the
+   inside-tag form `{% endif -%}…\n{% if …%}`) — implicit
+   whitespace is unreliable under those flags.
+#}
+
+{%- macro annotation_comment(node, backend, indent="") -%}
+{%- if node and (node.req or node.unresolved) -%}
+{%- if backend == "c" -%}
+{%- set open = "/* " -%}
+{%- set close = " */" -%}
+{%- elif backend == "python" -%}
+{%- set open = "# " -%}
+{%- set close = "" -%}
+{%- else -%}
+{%- set open = "// " -%}
+{%- set close = "" -%}
+{%- endif -%}
+{%- if node.req -%}
+{{ "\n" }}{{ indent }}{{ open }}sce:req: {{ node.req | join(" ") }}{{ close }}
+{%- endif -%}
+{%- for marker in node.unresolved -%}
+{{ "\n" }}{{ indent }}{{ open }}sce:unresolved: id={{ marker.id }}{% if marker.reason %} reason={{ marker.reason }}{% endif %}{% if marker.candidates %} candidates={{ marker.candidates | join(",") }}{% endif %}{{ close }}
+{%- endfor -%}
+{%- endif -%}
+{%- endmacro -%}
+
+{%- macro annotation_block(node, backend, indent="") -%}
+{%- if node and (node.req or node.unresolved) -%}
+{%- if backend == "c" -%}
+{%- set open = "/* " -%}
+{%- set close = " */" -%}
+{%- elif backend == "python" -%}
+{%- set open = "# " -%}
+{%- set close = "" -%}
+{%- else -%}
+{%- set open = "// " -%}
+{%- set close = "" -%}
+{%- endif -%}
+{%- if node.req -%}
+{{ indent }}{{ open }}sce:req: {{ node.req | join(" ") }}{{ close }}{{ "\n" }}
+{%- endif -%}
+{%- for marker in node.unresolved -%}
+{{ indent }}{{ open }}sce:unresolved: id={{ marker.id }}{% if marker.reason %} reason={{ marker.reason }}{% endif %}{% if marker.candidates %} candidates={{ marker.candidates | join(",") }}{% endif %}{{ close }}{{ "\n" }}
+{%- endfor -%}
+{%- endif -%}
+{%- endmacro -%}
