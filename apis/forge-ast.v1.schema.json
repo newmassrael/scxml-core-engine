@@ -4525,6 +4525,10 @@
             }
           ]
         },
+        "exhaustive_optout": {
+          "description": "`sce:exhaustive=\"false\"` author opt-out for the NonExhaustiveEventHandling validator (NL→IR Mapping Roadmap Item 3 Phase B). Default `false` — validator is active. Set to `true` when the author has deliberately written partial event coverage across sibling children and wants the build to accept the document as-is.\n\nOnly `=\"false\"` is parsed as opt-out; `=\"true\"` and absence both leave the validator active. Any other value rejects the document via `validation/invalid-attribute`.",
+          "type": "boolean"
+        },
         "id": {
           "type": "string"
         },

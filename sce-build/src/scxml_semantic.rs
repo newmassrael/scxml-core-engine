@@ -181,6 +181,53 @@ pub enum ScxmlSemanticError {
         /// to a single diagnostic is correct).
         target: String,
     },
+
+    /// A compound `<state>` has sibling children that disagree on
+    /// whether a given event is handled, with no parent-level
+    /// fallthrough to absorb the gap. AI-generated SCXML produces
+    /// this constantly — the model emits handler sets for some
+    /// siblings and forgets the others — but the parser cannot tell
+    /// whether the gap is the author's intent or a typo.
+    ///
+    /// The validator is intentionally narrow to keep false positives
+    /// at zero across the W3C IRP, conformance, and hda4-diag
+    /// corpora: it fires only when the sibling children form a
+    /// shared event vocabulary (there exists at least one event
+    /// matched by every transition-carrying sibling — the "common
+    /// ground" precondition) AND a specific event is matched by some
+    /// siblings but not others AND the parent itself has no
+    /// fallthrough. This excludes the test207-style "sequential
+    /// protocol stages with disjoint event vocabularies" pattern
+    /// that prevails in the W3C IRP suite.
+    ///
+    /// Author escape hatch when the intent gap is genuine:
+    /// `sce:exhaustive="false"` on the compound parent silences this
+    /// diagnostic for that parent only.
+    ///
+    /// NL→IR Mapping Roadmap Item 3 Phase B.
+    #[error(
+        "Compound state '{parent}' has children handling event \
+         '{event}' inconsistently — handlers: {handlers:?}, \
+         non-handlers: {non_handlers:?}. Add the missing transition, \
+         add a parent-level fallthrough, or annotate the parent with \
+         sce:exhaustive=\"false\" if the gap is intentional."
+    )]
+    NonExhaustiveEventHandling {
+        /// Compound state id whose children disagree on event
+        /// coverage.
+        parent: String,
+        /// Event name (literal token form, no wildcard) that some
+        /// siblings handle and others do not.
+        event: String,
+        /// Sibling ids that match `event` via direct/prefix/wildcard
+        /// matching, in document order.
+        handlers: Vec<String>,
+        /// Sibling ids that do not match `event` and lack a
+        /// catch-all, in document order. Author repair lands on one
+        /// of these (add the missing transition, or annotate the
+        /// parent as deliberately non-exhaustive).
+        non_handlers: Vec<String>,
+    },
 }
 
 #[cfg(test)]
@@ -305,6 +352,12 @@ mod tests {
             ScxmlSemanticError::DeadTransition {
                 state: "ghost".into(),
                 target: "armed".into(),
+            },
+            ScxmlSemanticError::NonExhaustiveEventHandling {
+                parent: "dispatch".into(),
+                event: "cmd.stop".into(),
+                handlers: vec!["idle".into(), "stopped".into()],
+                non_handlers: vec!["active".into()],
             },
         ];
         for v in variants {
