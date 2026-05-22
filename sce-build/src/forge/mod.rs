@@ -12,6 +12,7 @@ pub mod codegen_markers;
 pub mod codegen_matrix;
 pub mod const_fold;
 pub mod cross_doc_registry;
+pub mod cross_kind_check;
 pub mod diagnostic;
 pub mod drift;
 pub mod error;

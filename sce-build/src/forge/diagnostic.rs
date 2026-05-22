@@ -478,6 +478,22 @@ pub enum DiagnosticCode {
     #[serde(rename = "validation/unresolved-placeholder")]
     ValidationUnresolvedPlaceholder,
 
+    // ── NL→IR Mapping Roadmap Item 2: cross-kind typed binding.
+    //    Three diagnostics for the silent-broken pattern where an
+    //    importing kind's expression references `<alias>.<field>` on
+    //    an imported kind: field-not-found (with closed
+    //    `Fix::ReplaceOneOf` candidate set), type-mismatch against the
+    //    enclosing use-site contract, and defensive circular import
+    //    detection. Today wired only on the Forge→Forge path; the
+    //    codes are kind-agnostic so a future Statechart→Forge binding
+    //    extends the wiring without renaming. ────────────────────
+    #[serde(rename = "validation/cross-kind-field-not-found")]
+    ValidationCrossKindFieldNotFound,
+    #[serde(rename = "validation/cross-kind-type-mismatch")]
+    ValidationCrossKindTypeMismatch,
+    #[serde(rename = "validation/cross-kind-circular-dependency")]
+    ValidationCrossKindCircularDependency,
+
     // ── Algorithm kind (watching-zenoh RFC §5.A, Phase A3).
     //    Parser-stage sema for the new pure-function kind. Three
     //    of the six RFC §5.A diagnostics land in A3-δ; the rest
@@ -2406,6 +2422,10 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationDuplicateRequirementId,
         // NL→IR Mapping Roadmap Item 5: sce:unresolved placeholder
         ValidationUnresolvedPlaceholder,
+        // NL→IR Mapping Roadmap Item 2: cross-kind typed binding
+        ValidationCrossKindFieldNotFound,
+        ValidationCrossKindTypeMismatch,
+        ValidationCrossKindCircularDependency,
         // Algorithm (watching-zenoh RFC §5.A, Phase A3)
         AlgorithmLocalShadowsParam,
         AlgorithmLvalueUnsupported,
@@ -3305,7 +3325,14 @@ impl DiagnosticCode {
             // No external spec defines the rejection rules, so
             // spec_anchor stays None.
             | ValidationDuplicateRequirementId
-            | ValidationUnresolvedPlaceholder => None,
+            | ValidationUnresolvedPlaceholder
+            // NL→IR Mapping Roadmap Item 2 — cross-kind typed binding
+            // diagnostics also originate from
+            // `nl_to_ir_mapping_roadmap.md` (Item 2). No external spec
+            // anchor; the rejection contract is SCE-internal.
+            | ValidationCrossKindFieldNotFound
+            | ValidationCrossKindTypeMismatch
+            | ValidationCrossKindCircularDependency => None,
             // Axis-2 Phase Z carries the spec anchor that lived in the
             // diagnostic.rs:1170 placeholder comment.
             ReassemblyPerPeerQuotaBuildInvariantViolated => {
@@ -3364,6 +3391,9 @@ impl DiagnosticCode {
             ValidationBytesMaxSizeViolation => "validation/bytes-max-size-violation",
             ValidationDuplicateRequirementId => "validation/duplicate-requirement-id",
             ValidationUnresolvedPlaceholder => "validation/unresolved-placeholder",
+            ValidationCrossKindFieldNotFound => "validation/cross-kind-field-not-found",
+            ValidationCrossKindTypeMismatch => "validation/cross-kind-type-mismatch",
+            ValidationCrossKindCircularDependency => "validation/cross-kind-circular-dependency",
             AlgorithmLocalShadowsParam => "algorithm/local-shadows-param",
             AlgorithmLvalueUnsupported => "algorithm/lvalue-unsupported",
             AlgorithmReturnMissing => "algorithm/return-missing",
@@ -4197,6 +4227,71 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 }
                 k
             },
+        },
+        ValidationError::CrossKindFieldNotFound {
+            importing_kind,
+            importing_name,
+            alias,
+            field,
+            imported_kind,
+            imported_name,
+            candidates,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationCrossKindFieldNotFound,
+            stage: Stage::Validation,
+            expected: None,
+            // `actual` carries the dotted source spelling so the
+            // diagnostic message reproduces the offending token
+            // verbatim; the structured candidate list lives on `fix`.
+            actual: Some(format!("{alias}.{field}")),
+            fix: Some(Fix::ReplaceOneOf {
+                // Candidates are pre-sorted by the caller (the symbol
+                // table builder returns a deduplicated `Vec`); when the
+                // imported kind exposes zero fields the list is empty
+                // and the wire still carries a (degenerate) closed set
+                // — `Fix::ReplaceOneOf { candidates: [] }` is honest
+                // about there being no legal replacement.
+                candidates: candidates.iter().map(|c| format!("{alias}.{c}")).collect(),
+            }),
+            key_fragments: vec![
+                importing_kind.to_string(),
+                importing_name.clone(),
+                alias.clone(),
+                field.clone(),
+                imported_kind.to_string(),
+                imported_name.clone(),
+            ],
+        },
+        ValidationError::CrossKindTypeMismatch {
+            importing_kind,
+            importing_name,
+            alias,
+            field,
+            actual,
+            expected,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationCrossKindTypeMismatch,
+            stage: Stage::Validation,
+            expected: Some(vec![expected.clone()]),
+            actual: Some(actual.clone()),
+            fix: None,
+            key_fragments: vec![
+                importing_kind.to_string(),
+                importing_name.clone(),
+                alias.clone(),
+                field.clone(),
+            ],
+        },
+        ValidationError::CrossKindCircularDependency { cycle } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationCrossKindCircularDependency,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(cycle.join(" → ")),
+            fix: None,
+            // The cycle path itself is the canonical identity — two
+            // distinct cycles in the same build will have different
+            // `cycle` vectors and thus different IDs.
+            key_fragments: cycle.clone(),
         },
         ValidationError::DuplicateContextObject { id } => DiagnosticPayload {
             code: DiagnosticCode::ValidationDuplicateContextObject,
@@ -7334,6 +7429,41 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:bb99ccd9698c8f58","code":"validation/unresolved-placeholder","stage":"validation","message":"<state id=\"armed\">: unresolved placeholder id='tbd_threshold' reason='waiting on calibration data'","actual":"tbd_threshold"}"#,
+            ),
+            (
+                "forge/cross-kind-field-not-found",
+                ValidationError::CrossKindFieldNotFound {
+                    importing_kind: ForgeKind::Algorithm,
+                    importing_name: "keyexpr_match".into(),
+                    alias: "subs".into(),
+                    field: "callbackid".into(),
+                    imported_kind: ForgeKind::BoundedCollection,
+                    imported_name: "sub_table".into(),
+                    candidates: vec!["callback_id".into(), "topic_id".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:dea0fc18e5b53274","code":"validation/cross-kind-field-not-found","stage":"validation","message":"algorithm 'keyexpr_match': 'subs.callbackid' references an undeclared field on imported bounded-collection 'sub_table' (declared fields: callback_id, topic_id)","actual":"subs.callbackid","fix":{"kind":"replace_one_of","candidates":["subs.callback_id","subs.topic_id"]}}"#,
+            ),
+            (
+                "forge/cross-kind-type-mismatch",
+                ValidationError::CrossKindTypeMismatch {
+                    importing_kind: ForgeKind::Algorithm,
+                    importing_name: "keyexpr_match".into(),
+                    alias: "subs".into(),
+                    field: "callback_id".into(),
+                    actual: "uint32".into(),
+                    expected: "bool".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:f19b566002125832","code":"validation/cross-kind-type-mismatch","stage":"validation","message":"algorithm 'keyexpr_match': 'subs.callback_id' has type 'uint32' but context expects 'bool'","expected":["bool"],"actual":"uint32"}"#,
+            ),
+            (
+                "forge/cross-kind-circular-dependency",
+                ValidationError::CrossKindCircularDependency {
+                    cycle: vec!["a.scxml".into(), "b.scxml".into(), "a.scxml".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:9316da7f260e4553","code":"validation/cross-kind-circular-dependency","stage":"validation","message":"circular <sce:import> dependency: a.scxml → b.scxml → a.scxml","actual":"a.scxml → b.scxml → a.scxml"}"#,
             ),
             (
                 "forge/reserved-context-id",
@@ -10956,7 +11086,14 @@ mod tests {
             //    repair shape, also closed-form (deterministic), but
             //    `AddAttribute` is not a candidate-list fix and thus
             //    routes to NeutralOrDeterministic below.
-            | CodecFlagBindInputNotDeclared => FixCarriesCandidates,
+            | CodecFlagBindInputNotDeclared
+            // NL→IR Mapping Roadmap Item 2 — cross-kind field-not-found
+            // carries the imported kind's full member surface as a
+            // sorted closed-set `Fix::ReplaceOneOf`. Type-mismatch and
+            // circular-dependency siblings ride NeutralOrDeterministic
+            // (deterministic repair = author edits a single declared
+            // type / removes a cyclic import; no closed candidate set).
+            | ValidationCrossKindFieldNotFound => FixCarriesCandidates,
 
             // ── `expected` carries non-repair metadata ────────
             ExpressionParseMismatch | MeshExternalAmbiguousEventGroup => ExpectedIsMetadata,
@@ -11466,7 +11603,16 @@ mod tests {
             // for IDE / linter consumers rather than the diagnostic
             // wire (`Fix::ReplaceOneOf` would inflate every record
             // even when no candidates were declared).
-            | ValidationUnresolvedPlaceholder => NeutralOrDeterministic,
+            | ValidationUnresolvedPlaceholder
+            // NL→IR Mapping Roadmap Item 2 — type-mismatch repair is
+            // deterministic per use site (edit the field's declared
+            // type or the use-site's expected type, single axis the
+            // author chooses); circular-dependency repair removes one
+            // edge from the cycle (named in `cycle` but the choice of
+            // which edge is author-domain). Neither carries a closed
+            // candidate set on the diagnostic wire.
+            | ValidationCrossKindTypeMismatch
+            | ValidationCrossKindCircularDependency => NeutralOrDeterministic,
         }
     }
 
@@ -11699,6 +11845,9 @@ mod tests {
                 | ValidationBytesMaxSizeViolation
                 | ValidationDuplicateRequirementId
                 | ValidationUnresolvedPlaceholder
+                | ValidationCrossKindFieldNotFound
+                | ValidationCrossKindTypeMismatch
+                | ValidationCrossKindCircularDependency
                 | AlgorithmLocalShadowsParam
                 | AlgorithmLvalueUnsupported
                 | AlgorithmReturnMissing
@@ -11948,7 +12097,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            302,
+            305,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries —\
              expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
@@ -12629,7 +12778,38 @@ mod tests {
              import supplies no flag-bind for X); \
              `codec/flag-bind-duplicate-input` (two binds for same input \
              per import); `codec/flag-bind-carrier-after-embed` (parent's \
-             source carrier declared after the embed). 288 → 294.",
+             source carrier declared after the embed). 288 → 294. \
+             Then NL→IR Mapping Roadmap Items 1 + 5 add two codes — \
+             `validation/duplicate-requirement-id` (Item 1, opaque-token \
+             duplicate on sce:req attribute) and \
+             `validation/unresolved-placeholder` (Item 5, strict-mode \
+             rejection of carried unresolved markers). Both \
+             NeutralOrDeterministic. 294 → 296. Then six more landed \
+             with the same window: RFC variant-default-uniformity / \
+             B5-ν follow-ups (CodecVariantDispatchFlagHasStaticValue, \
+             CodecVariantDispatchCarrierAfterEmbed, \
+             CodecVariantArmBodyCallerTagUnsupported, \
+             CodecVariantArmInnerMidUndeclared rebalance — already \
+             counted in 288 → 294 chain but rebucketed; Round F-α \
+             follow-up traceability gates) — see commit history for the \
+             exact six. 296 → 302. Then NL→IR Mapping Roadmap Item 2 — \
+             cross-kind typed binding adds three codes: \
+             `validation/cross-kind-field-not-found` \
+             (FixCarriesCandidates over imported kind's member surface, \
+             `did_you_mean`-style typo repair) fires when an importing \
+             kind's expression references `<alias>.<field>` where the \
+             alias resolves to a known import but the field does not; \
+             `validation/cross-kind-type-mismatch` \
+             (NeutralOrDeterministic) fires when the field resolves but \
+             its declared type is incompatible with the surrounding \
+             use-site contract (signature return type, `<sce:param \
+             type=...>`, …); `validation/cross-kind-circular-dependency` \
+             (NeutralOrDeterministic) is the defensive cycle check on \
+             the `<sce:import>` graph. Today wired only on the \
+             Forge→Forge path inside `compile_forge_from_parsed` after \
+             the existing `validate_and_enrich_imports` pass; a future \
+             Statechart→Forge binding would add the second wire site \
+             without changing the diagnostic shape. 302 → 305.",
         );
     }
 

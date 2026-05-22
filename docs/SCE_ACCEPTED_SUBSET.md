@@ -557,9 +557,40 @@ cannot merge unresolved IR.
 The three families compose freely on a single node — `sce:req`,
 `sce:provenance`, and `sce:unresolved` are orthogonal axes.
 
+### Cross-kind typed binding (NL→IR Mapping Roadmap Item 2)
+
+When an importing kind references an imported kind's field via
+`<sce:import as="alias"/>` + `alias.field` syntax in an expression,
+the parser walks every expression site after import enrichment and
+validates the reference against the imported kind's declared member
+surface. Three rejection codes:
+
+- `validation/cross-kind-field-not-found` — alias resolves but field
+  does not. Diagnostic carries a closed `Fix::ReplaceOneOf` set =
+  the imported kind's full member surface (sorted, deduplicated) so
+  consumers see the legal alternatives for `did_you_mean`-style
+  typo repair.
+- `validation/cross-kind-type-mismatch` — field resolves but its
+  declared type is incompatible with the surrounding use-site
+  contract (signature return type, `<sce:param type=...>`, …).
+  Silent when the use site does not constrain the expected type
+  (`Unknown` context).
+- `validation/cross-kind-circular-dependency` — the `<sce:import>`
+  graph contains a cycle. Defensive check; without it, the enrichment
+  pass recurses into infinite open-file work or surfaces as an opaque
+  stack-overflow at codegen.
+
+Today the validator is wired only on the Forge→Forge path (a Forge
+document's expressions reference another Forge document imported via
+`<sce:import>`) — the silent-broken pattern the
+`infer_types`-returns-`Unknown` fall-through historically allowed.
+The diagnostic codes themselves are kind-agnostic: a future
+Statechart→Forge binding would wire through the same validator
+without renaming codes or extending payload shape.
+
 ---
 
-## Appendix — `DiagnosticCode` index (302 codes)
+## Appendix — `DiagnosticCode` index (305 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -624,6 +655,9 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/bytes-max-size-violation` | Validation |
 | `validation/duplicate-requirement-id` | Validation |
 | `validation/unresolved-placeholder` | Validation |
+| `validation/cross-kind-field-not-found` | Validation |
+| `validation/cross-kind-type-mismatch` | Validation |
+| `validation/cross-kind-circular-dependency` | Validation |
 | `algorithm/local-shadows-param` | Validation |
 | `algorithm/lvalue-unsupported` | Validation |
 | `algorithm/return-missing` | Validation |
