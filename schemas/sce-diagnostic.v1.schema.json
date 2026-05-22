@@ -82,6 +82,7 @@
         "scxml/top-level-script-unloaded",
         "scxml/unreachable-state",
         "scxml/dead-transition",
+        "scxml/non-exhaustive-event-handling",
         "scxml/on-sample-invalid-parent",
         "scxml/on-sample-link-duplicate-in-state",
         "scxml/on-sample-event-name-conflict",

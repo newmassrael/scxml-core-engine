@@ -878,6 +878,18 @@ pub struct State {
     /// `sce:unresolved` placeholder markers attached to this state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unresolved: Vec<UnresolvedMarker>,
+    /// `sce:exhaustive="false"` author opt-out for the
+    /// NonExhaustiveEventHandling validator (NL→IR Mapping Roadmap
+    /// Item 3 Phase B). Default `false` — validator is active. Set to
+    /// `true` when the author has deliberately written partial event
+    /// coverage across sibling children and wants the build to accept
+    /// the document as-is.
+    ///
+    /// Only `="false"` is parsed as opt-out; `="true"` and absence both
+    /// leave the validator active. Any other value rejects the
+    /// document via `validation/invalid-attribute`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub exhaustive_optout: bool,
 }
 
 /// W3C SCXML: Complete state machine model

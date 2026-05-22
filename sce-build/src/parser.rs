@@ -374,6 +374,48 @@ fn collect_sce_req(
     Ok(out)
 }
 
+/// Read the optional `sce:exhaustive` attribute. Only `="false"`
+/// triggers the opt-out; `="true"` and absence both leave the
+/// NonExhaustiveEventHandling validator active (the attribute exists
+/// purely to escape genuine intent-gap cases, not to gate the
+/// validator on/off generally). Any other literal — `"FALSE"`, `"0"`,
+/// `"no"` — rejects the document via `validation/invalid-attribute`
+/// so authors do not silently mis-spell the opt-out and learn from
+/// the build instead of the runtime.
+///
+/// NL→IR Mapping Roadmap Item 3 Phase B.
+fn parse_sce_exhaustive_optout(
+    node: &roxmltree::Node,
+    element_label_fn: impl FnOnce() -> String,
+    source_name: &str,
+) -> Result<bool, crate::forge::error::Located<crate::forge::error::ForgeError>> {
+    use crate::forge::error::{Located, ValidationError};
+    use crate::forge::model::SCE_NAMESPACE;
+    let raw = match node.attribute((SCE_NAMESPACE, "exhaustive")) {
+        Some(s) => s,
+        None => return Ok(false),
+    };
+    match raw {
+        "true" => Ok(false),
+        "false" => Ok(true),
+        other => {
+            let pos = node.document().text_pos_at(node.range().start);
+            Err(Located::new(
+                ValidationError::InvalidAttribute {
+                    element: element_label_fn(),
+                    attr: "sce:exhaustive".to_string(),
+                    value: other.to_string(),
+                    expected: "true | false".to_string(),
+                }
+                .into(),
+                source_name,
+                Some(pos.row),
+                Some(pos.col),
+            ))
+        }
+    }
+}
+
 impl Default for SCXMLParser {
     fn default() -> Self {
         Self::new()
@@ -1175,6 +1217,11 @@ impl SCXMLParser {
             state.req =
                 collect_sce_req(&child, || format!("<state id=\"{state_id}\">"), source_name)?;
             state.unresolved = collect_sce_unresolved(&child, source_name);
+            state.exhaustive_optout = parse_sce_exhaustive_optout(
+                &child,
+                || format!("<state id=\"{state_id}\">"),
+                source_name,
+            )?;
 
             // Parse transitions
             for trans_elem in scxml_children(&child, "transition") {
