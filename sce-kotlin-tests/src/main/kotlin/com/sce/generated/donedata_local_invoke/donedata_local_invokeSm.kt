@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 95d74c10cc6e55dce2bd53005b00912ca50a8c1a0e12ee0808970e366eaee4e0
+// source-hash: 9bcad9b84fa14940847d6da71ccac3403a2ce758eeda81fe98efd2b6d7c6b4b9
 // template-hash: f5e6315f2ec211d36d839290b90cbd833e902936cc9328b605b51a480ada76bd
-// generated-at: 1779408030
+// generated-at: 1779412617
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-kotlin-tests/src/test/resources/fixtures/donedata_local_invoke.scxml
