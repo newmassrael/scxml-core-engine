@@ -15,15 +15,17 @@ name: Drift Verify (B9 §6.2.6)
 # Real-tree invariants exercised by this gate:
 #   - verify_passes_on_real_committed_{rust,kotlin}_w3c_tree (efdd2591)
 #   - verify_passes_on_real_committed_{rust,kotlin,go}_donedata_tree (1a8c7b3f)
+#   - verify_passes_on_real_committed_forge_default_round_trip_go_tree
+#     (52e6d6f5)
 #
 # Per Q-§6.2.6-3 the template-hash is computed over the whole template
 # tree plus Cargo.lock, so an edit to any backend's templates can
 # invalidate every other backend's stored hash even if its emit is
 # byte-identical (the chain pattern c2dfe502/1a5efb07/dc228ab4/64f93cf4
-# left stale and 3b8941c3/7a4ee07f/d6b2cb03/47fb7767 swept). The
-# donedata trees have a distinct drift context — their source-hash is
-# computed against each backend's `fixtures/` dir, not `resources/` —
-# so the fixture paths are also listed below.
+# left stale and 3b8941c3/7a4ee07f/d6b2cb03/47fb7767/cb53dd3c swept).
+# The donedata + forge-round-trip trees have distinct drift contexts —
+# their source-hash is computed against fixture/resource dirs that are
+# not `resources/` — so those dirs are also listed below.
 
 on:
   push:
@@ -39,6 +41,8 @@ on:
       - 'sce-kotlin-tests/src/test/resources/fixtures/**'
       - 'sce-go-tests/donedata_local_invoke/**'
       - 'sce-go-tests/fixtures/**'
+      - 'sce-forge-runtime/go/round_trip/generated/**'
+      - 'tests/forge/resources/**'
       - 'resources/**'
       - 'Cargo.lock'
       - 'Cargo.toml'
@@ -56,6 +60,8 @@ on:
       - 'sce-kotlin-tests/src/test/resources/fixtures/**'
       - 'sce-go-tests/donedata_local_invoke/**'
       - 'sce-go-tests/fixtures/**'
+      - 'sce-forge-runtime/go/round_trip/generated/**'
+      - 'tests/forge/resources/**'
       - 'resources/**'
       - 'Cargo.lock'
       - 'Cargo.toml'
@@ -96,6 +102,8 @@ jobs:
     #   - verify_passes_on_real_committed_{rust,kotlin}_w3c_tree (efdd2591)
     #   - verify_passes_on_real_committed_{rust,kotlin,go}_donedata_tree
     #     (1a8c7b3f)
+    #   - verify_passes_on_real_committed_forge_default_round_trip_go_tree
+    #     (52e6d6f5)
     # which catch the cross-backend template-hash invalidation pattern
     # committed-tree fresh-regen on CI otherwise hides. A regression in
     # apply_drift_headers_to_output, compute_source_hash, or the
