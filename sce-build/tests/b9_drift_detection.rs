@@ -648,3 +648,35 @@ fn verify_passes_on_real_committed_go_donedata_tree() {
          result. stderr:\n{stderr}"
     );
 }
+
+// Forge variant-default round-trip Go drift context. The 3 codec
+// fixtures under `tests/forge/resources/codec_{default,variant_default}_marker*`
+// are emitted via `sce-forge-runtime/go/round_trip/generate.sh` to
+// `sce-forge-runtime/go/round_trip/generated/`. The Go runtime test
+// `default_round_trip_test.go` includes them at build time. This
+// context was discovered after the §6.2.6 sweep audit found the
+// previous run of generate.sh had been on the pre-B1-α template
+// tree — committed Encode() returned `[]byte` while the current
+// template emits `Encode(SceSink) error` + a `EncodeToBytes() []byte`
+// legacy facade. No CI lane was running `go test ./round_trip/`, so
+// the API mismatch surfaced only via `verify`.
+#[test]
+fn verify_passes_on_real_committed_forge_default_round_trip_go_tree() {
+    let workspace = workspace_root();
+    let target = workspace
+        .join("sce-forge-runtime")
+        .join("go")
+        .join("round_trip")
+        .join("generated");
+    let input_root = workspace.join("tests").join("forge").join("resources");
+    let (code, stderr) = run_verify_real_tree(&target, &input_root);
+    assert_eq!(
+        code, 0,
+        "verify must pass on the committed Go forge round-trip tree. \
+         A failure here means tools/codegen/templates/**, Cargo.lock, \
+         or any tests/forge/resources/*.scxml changed without \
+         refreshing sce-forge-runtime/go/round_trip/generated/. Run \
+         `sce-forge-runtime/go/round_trip/generate.sh` and commit the \
+         result. stderr:\n{stderr}"
+    );
+}
