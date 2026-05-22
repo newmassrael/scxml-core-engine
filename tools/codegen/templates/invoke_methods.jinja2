@@ -223,7 +223,14 @@
                                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "srcexpr evaluation failed"));
                                 return;
                             }
-                            AOT_DEBUG("Hybrid invoke: srcexpr evaluated to {}", pathResult.getValue<std::string>());
+                            // `.template getValue<T>()`: `pathResult` is `auto`-deduced
+                            // inside this class-template member, so gcc 13.3 with
+                            // `-Werror=missing-template-keyword` treats `getValue` as a
+                            // dependent member template and requires the disambiguator —
+                            // even though `ScriptResult` is a non-template type
+                            // (`sce/include/scripting/ScriptResult.h:61` `template <typename T>
+                            // T getValue() const`). Older gcc accepted the bare form silently.
+                            AOT_DEBUG("Hybrid invoke: srcexpr evaluated to {}", pathResult.template getValue<std::string>());
                         }
                         {% elif invoke_info.contentexpr %}
                         // W3C SCXML 6.4.4: Evaluate contentexpr at runtime (validation only — child is pre-generated AOT)
