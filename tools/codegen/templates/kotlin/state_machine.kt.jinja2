@@ -19,7 +19,7 @@
    generated Kotlin file to the `<scxml>` root element's source. #}
 {{ sce_map.source_marker(model.source_location, "kotlin", module_level=true) }}
 
-package com.sce.generated.{{ model.name | lower }}
+package {{ kotlin_package_prefix | default("com.sce.generated") }}.{{ model.name | lower }}
 
 import com.sce.runtime.*
 {% if model.invokes | hybrid %}

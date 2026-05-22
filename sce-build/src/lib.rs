@@ -441,7 +441,7 @@ pub fn compile_from_string_lang_typed(
                 .map_err(|e| locate_codegen_error(e, scxml_name))
         }
         generator::Language::Kotlin => {
-            let code = generator::generate_kotlin_with_templates(&model, templates)
+            let code = generator::generate_kotlin_with_templates(&model, templates, None)
                 .map_err(|e| locate_codegen_error(e, scxml_name))?;
             Ok(generator::GeneratedOutput {
                 files: vec![(format!("{scxml_name}Sm.kt"), code)],
@@ -571,7 +571,7 @@ pub fn compile_scxml_lang_typed_with_section(
         generator::Language::Cpp => generator::generate_cpp(&model, template_dir, input_stem)
             .map_err(|e| locate_codegen_error(e, scxml_path))?,
         generator::Language::Kotlin => {
-            let code = generator::generate_kotlin(&model, template_dir)
+            let code = generator::generate_kotlin(&model, template_dir, None)
                 .map_err(|e| locate_codegen_error(e, scxml_path))?;
             generator::GeneratedOutput {
                 files: vec![(format!("{input_stem}Sm.kt"), code)],

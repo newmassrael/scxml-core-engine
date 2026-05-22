@@ -481,26 +481,38 @@ fn render_c11(
 // ── Kotlin generator ─────────────────────────────────────────────
 
 /// Generate Kotlin code from an analyzed SCXMLModel (filesystem-based).
-pub fn generate_kotlin(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
+///
+/// `package_prefix` overrides the emitted `package` header's prefix. `None`
+/// keeps the default `com.sce.generated` used by every W3C IRP fixture;
+/// callers that emit into a non-W3C namespace (e.g. integration fixtures
+/// under `com.sce.integration`) pass `Some(prefix)`.
+pub fn generate_kotlin(
+    model: &SCXMLModel,
+    template_dir: &Path,
+    package_prefix: Option<&str>,
+) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Kotlin")?;
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
     filters::register_kotlin_filters(&mut env);
     register_kotlin_dynamic_filters(&mut env, model);
-    render_kotlin(&env, model)
+    render_kotlin(&env, model, package_prefix)
 }
 
 /// Generate Kotlin code using pre-loaded template strings (WASM-compatible).
+///
+/// `package_prefix` matches [`generate_kotlin`]'s semantics.
 pub fn generate_kotlin_with_templates(
     model: &SCXMLModel,
     templates: &[(&str, &str)],
+    package_prefix: Option<&str>,
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Kotlin")?;
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
     filters::register_kotlin_filters(&mut env);
     register_kotlin_dynamic_filters(&mut env, model);
-    render_kotlin(&env, model)
+    render_kotlin(&env, model, package_prefix)
 }
 
 /// Register model-dependent Kotlin filters (event refs, parallel checks).
@@ -531,7 +543,11 @@ fn register_kotlin_dynamic_filters(env: &mut Environment, model: &SCXMLModel) {
     );
 }
 
-fn render_kotlin(env: &Environment, model: &SCXMLModel) -> Result<String, GenerateError> {
+fn render_kotlin(
+    env: &Environment,
+    model: &SCXMLModel,
+    package_prefix: Option<&str>,
+) -> Result<String, GenerateError> {
     use crate::{analyzer, kotlin};
 
     let machine_name = filters::to_pascal_case(model.name.clone());
@@ -589,6 +605,7 @@ fn render_kotlin(env: &Environment, model: &SCXMLModel) -> Result<String, Genera
         leaf_events => minijinja::Value::from_serialize(&leaf_events),
         license_config => minijinja::Value::from_serialize(license_config()),
         kotlin_default => minijinja::Value::from_object(KotlinDefaultFn),
+        kotlin_package_prefix => package_prefix.unwrap_or("com.sce.generated"),
         initial_entry_root => initial_entry_root,
         ancestor_chains => minijinja::Value::from_serialize(&ancestor_chains),
         effective_transitions => minijinja::Value::from_serialize(&effective_transitions),
@@ -1310,7 +1327,7 @@ mod tests {
     fn kotlin_generate_rejects_mesh_rpc_invoke() {
         let model = parse(MESH_RPC_SCXML);
         let templates: &[(&str, &str)] = &[];
-        let err = generate_kotlin_with_templates(&model, templates).unwrap_err();
+        let err = generate_kotlin_with_templates(&model, templates, None).unwrap_err();
         assert!(matches!(err, GenerateError::UnsupportedFeature(_)));
     }
 

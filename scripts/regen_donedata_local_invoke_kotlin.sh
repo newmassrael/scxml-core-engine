@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
-# Regenerate sce-kotlin-tests/src/main/kotlin/com/sce/generated/donedata_local_invoke/
+# Regenerate sce-kotlin-tests/src/main/kotlin/com/sce/integration/donedata_local_invoke/
 # from the canonical fixture at
 # integration_resources/donedata_local_invoke/donedata_local_invoke.scxml.
 #
@@ -12,6 +12,12 @@
 # during the codegen run. integration_resources/donedata_local_invoke/
 # stays a parent-only canonical surface; synth-invoke children are
 # derived and live only in $TMP.
+#
+# The generated tree lives under `com/sce/integration/` instead of
+# `com/sce/generated/` so the W3C IRP and integration package roots
+# stay disjoint (RFC `claudedocs/rfc-donedata-5-backend-layout.md`
+# Q-1 + Q-1a). `--kotlin-package-prefix com.sce.integration` flips
+# the `package` header on every emitted file to match.
 #
 # Usage (from repo root):
 #   scripts/regen_donedata_local_invoke_kotlin.sh
@@ -31,9 +37,10 @@ cd "$REPO_ROOT"
 
 CODEGEN="target/release/sce-codegen"
 FIXTURE="integration_resources/donedata_local_invoke/donedata_local_invoke.scxml"
-GENERATED_DIR="sce-kotlin-tests/src/main/kotlin/com/sce/generated/donedata_local_invoke"
+GENERATED_DIR="sce-kotlin-tests/src/main/kotlin/com/sce/integration/donedata_local_invoke"
 STEM="donedata_local_invoke"
 INPUT_ROOT="integration_resources/donedata_local_invoke"
+PACKAGE_PREFIX="com.sce.integration"
 
 # Step 1: build sce-codegen in release mode if absent.
 if [[ ! -x "$CODEGEN" ]]; then
@@ -54,19 +61,23 @@ cp "$FIXTURE" "$TMP/$STEM.scxml"
 # `--input-root` overrides the default §6.2.6 source-hash root (the
 # SCXML file's parent) so the embedded hash reflects the tracked
 # fixture location instead of the transient $TMP path.
+# `--kotlin-package-prefix` flips the emitted `package` header from
+# the default `com.sce.generated.<stem>` to `<prefix>.<stem>`.
 "$CODEGEN" generate "$TMP/$STEM.scxml" -l kotlin -o "$TMP/" \
-    --input-root "$INPUT_ROOT"
+    --input-root "$INPUT_ROOT" \
+    --kotlin-package-prefix "$PACKAGE_PREFIX"
 
 # Step 4: per-child generate. `--parent-stem` rewrites each child's
-# `package com.sce.generated.<child>` header to the parent's package
-# `com.sce.generated.<STEM>` so the parent's unqualified references to
-# the child StateMachine class resolve in the shared package.
+# `package <prefix>.<child>` header to the parent's package
+# `<prefix>.<STEM>` so the parent's unqualified references to the
+# child StateMachine class resolve in the shared package.
 for child in "$TMP"/"${STEM}"__sce_synth_invoke__*.scxml; do
     [[ -f "$child" ]] || continue
     "$CODEGEN" generate "$child" \
         --as-child --parent-stem "$STEM" \
         -l kotlin -o "$TMP/" \
-        --input-root "$INPUT_ROOT"
+        --input-root "$INPUT_ROOT" \
+        --kotlin-package-prefix "$PACKAGE_PREFIX"
 done
 
 # Step 5: clear stale Sm.kt files in the tracked generated tree so a

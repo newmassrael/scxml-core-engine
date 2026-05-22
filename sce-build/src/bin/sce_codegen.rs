@@ -629,6 +629,21 @@ enum Commands {
         /// path; the absence of `<path>` is the consumer signal.
         #[arg(long)]
         emit_ast: Option<String>,
+        /// Override the Kotlin `package` header prefix on emitted
+        /// `*Sm.kt` files. Defaults to `com.sce.generated` (every W3C
+        /// IRP fixture emits there). Non-W3C consumers — integration
+        /// fixtures under `integration_resources/<stem>/`, custom test
+        /// fixtures — pass a different prefix (e.g. `com.sce.integration`)
+        /// so the emitted tree lives under
+        /// `src/main/kotlin/com/sce/integration/<stem>/` rather than
+        /// `src/main/kotlin/com/sce/generated/<stem>/`, keeping the W3C
+        /// and integration directory trees disjoint at the package
+        /// level.
+        ///
+        /// Only meaningful with `-l kotlin`; ignored for other
+        /// language targets.
+        #[arg(long)]
+        kotlin_package_prefix: Option<String>,
     },
     /// Multi-doc generate with cross-doc registry — wires
     /// `validate_on_sample_link_references` into production
@@ -902,6 +917,7 @@ fn main() {
             no_std,
             input_root,
             emit_ast,
+            kotlin_package_prefix,
         } => cmd_generate(
             &scxml,
             &language,
@@ -919,6 +935,7 @@ fn main() {
             no_std,
             input_root.as_deref(),
             emit_ast.as_deref(),
+            kotlin_package_prefix.as_deref(),
             error_format,
         ),
         Commands::Orchestrate {
@@ -1266,6 +1283,7 @@ fn cmd_generate(
     no_std: bool,
     input_root_override: Option<&str>,
     emit_ast_path: Option<&str>,
+    kotlin_package_prefix: Option<&str>,
     error_format: ErrorFormat,
 ) {
     let lang: Language = language.parse().unwrap_or_else(|_| {
@@ -1763,19 +1781,27 @@ fn cmd_generate(
             Language::Cpp => sce_build::generator::generate_cpp(&model, &template_dir, input_stem)
                 .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e))),
             Language::Kotlin => {
-                let mut code = sce_build::generator::generate_kotlin(&model, &template_dir)
-                    .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
+                let mut code = sce_build::generator::generate_kotlin(
+                    &model,
+                    &template_dir,
+                    kotlin_package_prefix,
+                )
+                .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
                 // Mirror `generate-w3c`'s KotlinBackend::process_child: the
-                // child's self-derived package (`com.sce.generated.{child}`)
-                // is rewritten to the parent's package so the parent's
+                // child's self-derived package (`<prefix>.{child}`) is
+                // rewritten to the parent's package so the parent's
                 // unqualified reference to the child `StateMachine` class
-                // resolves within one compilation unit.
+                // resolves within one compilation unit. The `<prefix>` mirrors
+                // whatever `--kotlin-package-prefix` selected (defaults to
+                // `com.sce.generated` for W3C, `com.sce.integration` for the
+                // integration tree).
                 if as_child {
                     if let Some(parent) = parent_stem {
+                        let prefix = kotlin_package_prefix.unwrap_or("com.sce.generated");
                         let child_pkg = sce_build::filters::to_snake_case(input_stem.to_string());
                         code = code.replace(
-                            &format!("package com.sce.generated.{child_pkg}"),
-                            &format!("package com.sce.generated.{parent}"),
+                            &format!("package {prefix}.{child_pkg}"),
+                            &format!("package {prefix}.{parent}"),
                         );
                     }
                 }
@@ -3307,7 +3333,7 @@ impl W3cBackend for KotlinBackend {
         model: &SCXMLModel,
         input_stem: &str,
     ) -> Result<Vec<(String, String)>, ForgeError> {
-        let code = sce_build::generator::generate_kotlin(model, &self.tmpl_dir)?;
+        let code = sce_build::generator::generate_kotlin(model, &self.tmpl_dir, None)?;
         Ok(vec![(format!("{input_stem}Sm.kt"), code)])
     }
 

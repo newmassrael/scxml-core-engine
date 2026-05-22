@@ -615,7 +615,7 @@ fn verify_passes_on_real_committed_kotlin_donedata_tree() {
         .join("kotlin")
         .join("com")
         .join("sce")
-        .join("generated")
+        .join("integration")
         .join("donedata_local_invoke");
     let input_root = workspace
         .join("integration_resources")

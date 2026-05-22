@@ -10,28 +10,15 @@
 // path, commits fb8e3c79 + 00f347cb) for the Kotlin AOT code path
 // through `StateMachineEngine.startInvoke`'s completion callback.
 //
-// Fixture: sce-kotlin-tests/src/test/resources/fixtures/donedata_local_invoke.scxml
+// Fixture: integration_resources/donedata_local_invoke/donedata_local_invoke.scxml
 //
 // Regeneration (after fixture or template edit):
-//   TMP=$(mktemp -d)
-//   target/release/sce-codegen generate \
-//       sce-kotlin-tests/src/test/resources/fixtures/donedata_local_invoke.scxml \
-//       -l kotlin -o "$TMP/"
-//   # SCE_MESH.md §9.6.6 rule 1: parser emits synth siblings as
-//   # `<parent>__sce_synth_invoke__<id>.scxml` (previously `_child<N>.scxml`).
-//   for child in "$TMP"/donedata_local_invoke__sce_synth_invoke__*.scxml; do
-//       target/release/sce-codegen generate "$child" \
-//           --as-child --parent-stem donedata_local_invoke \
-//           -l kotlin -o "$TMP/"
-//   done
-//   cp "$TMP"/*.kt \
-//       sce-kotlin-tests/src/main/kotlin/com/sce/generated/donedata_local_invoke/
-//   rm -rf "$TMP"
+//   scripts/regen_donedata_local_invoke_kotlin.sh
 
 package com.sce.integration
 
-import com.sce.generated.donedata_local_invoke.DonedataLocalInvokeState
-import com.sce.generated.donedata_local_invoke.DonedataLocalInvokeStateMachine
+import com.sce.integration.donedata_local_invoke.DonedataLocalInvokeState
+import com.sce.integration.donedata_local_invoke.DonedataLocalInvokeStateMachine
 import com.sce.w3c.W3CTestBase
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.DisplayName
