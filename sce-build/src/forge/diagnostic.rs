@@ -551,6 +551,18 @@ pub enum DiagnosticCode {
     ScxmlUnreachableState,
     #[serde(rename = "scxml/dead-transition")]
     ScxmlDeadTransition,
+    // ── NL→IR Mapping Roadmap Item 3 Phase B — event-set
+    //    exhaustiveness. Fires when a compound `<state>` has sibling
+    //    children that disagree on whether a given event is handled,
+    //    with no parent-level fallthrough. Narrow heuristic (requires
+    //    a shared event-vocabulary `common ground` across siblings)
+    //    keeps W3C IRP / conformance / hda4-diag at zero false
+    //    positives; `sce:exhaustive="false"` on the parent escapes
+    //    genuine intent-gap cases. NeutralOrDeterministic: repair is
+    //    author-domain (add the transition, add a fallthrough, or
+    //    annotate the opt-out). ──────────────────────────────────────
+    #[serde(rename = "scxml/non-exhaustive-event-handling")]
+    ScxmlNonExhaustiveEventHandling,
     // ── watching-zenoh RFC §5.E B7-η' SCXML on-sample family ──
     // Author-facing rules for `<sce:on-sample>` SCE extension. Atomic A
     // ships the structural diagnostics (placement, uniqueness,
@@ -2456,6 +2468,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // NL→IR Mapping Roadmap Item 3 Phase A — Statechart graph reachability
         ScxmlUnreachableState,
         ScxmlDeadTransition,
+        // NL→IR Mapping Roadmap Item 3 Phase B — event-set exhaustiveness
+        ScxmlNonExhaustiveEventHandling,
         ScxmlOnSampleInvalidParent,
         ScxmlOnSampleLinkDuplicateInState,
         ScxmlOnSampleEventNameConflict,
@@ -3356,7 +3370,12 @@ impl DiagnosticCode {
             // section names "unreachable state" as a rejection. Treat
             // as SCE-internal hygiene; spec_anchor stays None.
             | ScxmlUnreachableState
-            | ScxmlDeadTransition => None,
+            | ScxmlDeadTransition
+            // NL→IR Mapping Roadmap Item 3 Phase B — event-set
+            // exhaustiveness. Heuristic over W3C SCXML §5.10 event
+            // matching, but no spec section names "non-exhaustive
+            // event handling" as a rejection. SCE-internal hygiene.
+            | ScxmlNonExhaustiveEventHandling => None,
             // Axis-2 Phase Z carries the spec anchor that lived in the
             // diagnostic.rs:1170 placeholder comment.
             ReassemblyPerPeerQuotaBuildInvariantViolated => {
@@ -3432,6 +3451,7 @@ impl DiagnosticCode {
             ScxmlTopLevelScriptUnloaded => "scxml/top-level-script-unloaded",
             ScxmlUnreachableState => "scxml/unreachable-state",
             ScxmlDeadTransition => "scxml/dead-transition",
+            ScxmlNonExhaustiveEventHandling => "scxml/non-exhaustive-event-handling",
             ScxmlOnSampleInvalidParent => "scxml/on-sample-invalid-parent",
             ScxmlOnSampleLinkDuplicateInState => "scxml/on-sample-link-duplicate-in-state",
             ScxmlOnSampleEventNameConflict => "scxml/on-sample-event-name-conflict",
@@ -7059,6 +7079,36 @@ fn scxml_semantic_fields(e: &crate::scxml_semantic::ScxmlSemanticError) -> Diagn
                 target.clone(),
             ],
         },
+        ScxmlSemanticError::NonExhaustiveEventHandling {
+            parent,
+            event,
+            handlers: _,
+            non_handlers,
+        } => DiagnosticPayload {
+            // NEW — NL→IR Mapping Roadmap Item 3 Phase B. The
+            // `actual` slot carries the unhandled event so consumers
+            // dispatching on (code, actual) can route the diagnostic
+            // even when the parent id is verbose. handlers /
+            // non_handlers ids ride in `key_fragments` to keep the
+            // FNV1a content-hash id distinct across multiple
+            // non-exhaustive gaps in the same document.
+            code: DiagnosticCode::ScxmlNonExhaustiveEventHandling,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(event.clone()),
+            fix: None,
+            key_fragments: {
+                let mut k = vec![
+                    format!("scxml-parent:{parent}"),
+                    "non-exhaustive-event".to_string(),
+                    event.clone(),
+                ];
+                for nh in non_handlers {
+                    k.push(format!("non-handler:{nh}"));
+                }
+                k
+            },
+        },
     }
 }
 
@@ -7701,6 +7751,22 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:c6afb255ec2689b7","code":"scxml/dead-transition","stage":"validation","message":"Transition in unreachable state 'ghost_branch' targets 'armed' — source state is never entered","actual":"armed"}"#,
+            ),
+            (
+                // NL→IR Mapping Roadmap Item 3 Phase B — non-exhaustive
+                // event handling. The parent compound state has three
+                // children that share `cmd.stop` as common ground;
+                // `cmd.start` is handled by `idle` + `stopped` but
+                // not by `active`, so the validator flags the gap.
+                "forge/scxml-non-exhaustive-event-handling",
+                crate::scxml_semantic::ScxmlSemanticError::NonExhaustiveEventHandling {
+                    parent: "dispatch".into(),
+                    event: "cmd.start".into(),
+                    handlers: vec!["idle".into(), "stopped".into()],
+                    non_handlers: vec!["active".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:7072cc6c1038cfb6","code":"scxml/non-exhaustive-event-handling","stage":"validation","message":"Compound state 'dispatch' has children handling event 'cmd.start' inconsistently — handlers: [\"idle\", \"stopped\"], non-handlers: [\"active\"]. Add the missing transition, add a parent-level fallthrough, or annotate the parent with sce:exhaustive=\"false\" if the gap is intentional.","actual":"cmd.start"}"#,
             ),
             (
                 // watching-zenoh RFC §5.E B7-η' Q-OnSample-2 (a)
@@ -11708,7 +11774,15 @@ mod tests {
             // the source state's id is correct, the graph topology is
             // not.
             | ScxmlUnreachableState
-            | ScxmlDeadTransition => NeutralOrDeterministic,
+            | ScxmlDeadTransition
+            // NL→IR Mapping Roadmap Item 3 Phase B — non-exhaustive
+            // event handling. Repair has three axes (add the
+            // transition, add a parent-level fallthrough, or annotate
+            // the parent with `sce:exhaustive="false"`) none of which
+            // pick a fixed candidate set; `ReplaceOneOf` would imply
+            // a rename when the author almost always meant to add a
+            // missing handler or accept the gap deliberately.
+            | ScxmlNonExhaustiveEventHandling => NeutralOrDeterministic,
         }
     }
 
@@ -11956,6 +12030,7 @@ mod tests {
                 | ScxmlTopLevelScriptUnloaded
                 | ScxmlUnreachableState
                 | ScxmlDeadTransition
+                | ScxmlNonExhaustiveEventHandling
                 | ScxmlOnSampleInvalidParent
                 | ScxmlOnSampleLinkDuplicateInState
                 | ScxmlOnSampleEventNameConflict
@@ -12195,7 +12270,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            307,
+            308,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries —\
              expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
@@ -12919,7 +12994,15 @@ mod tests {
              unreachable state carries one or more `<transition>` \
              children, so the diagnostic surfaces the concrete element \
              the author can delete or re-wire). Both \
-             NeutralOrDeterministic. 305 → 307.",
+             NeutralOrDeterministic. 305 → 307. Then Phase B adds one \
+             code — `scxml/non-exhaustive-event-handling` (compound \
+             state's sibling children disagree on whether a given \
+             event is handled, with no parent-level fallthrough, AND \
+             the siblings share a common event vocabulary so the gap \
+             is unlikely to be a deliberate protocol-stage \
+             dispatching pattern). Author opt-out via \
+             `sce:exhaustive=\"false\"` on the parent escapes \
+             intentional gaps. NeutralOrDeterministic. 307 → 308.",
         );
     }
 

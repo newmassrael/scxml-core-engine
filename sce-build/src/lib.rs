@@ -46,6 +46,13 @@ pub mod provenance;
 /// downstream req-coverage tooling.
 pub mod requirements_report;
 pub mod script_engine_analyzer;
+/// NL→IR Mapping Roadmap Item 3 Phase B: event-set exhaustiveness
+/// validator. Flags compound `<state>` parents whose sibling children
+/// disagree on event coverage with no parent fallthrough — the
+/// AI-generated SCXML intent-gap pattern. Narrow heuristic (requires
+/// a shared event vocabulary across siblings) keeps W3C IRP at zero
+/// false positives.
+pub mod scxml_exhaustiveness;
 /// NL→IR Mapping Roadmap Item 3 Phase A: Statechart graph reachability
 /// validator. BFS from the document `initial` configuration computes
 /// the design-time reach set and rejects orphan states / dead
@@ -160,6 +167,12 @@ fn compile_model(scxml_path: &str) -> Result<ParsedSCXML, CompileError> {
     // entry contract is sound; running it earlier would shadow the
     // root-cause diagnostic with a downstream consequence.
     scxml_reachability::validate(&model, scxml_path)?;
+    // NL→IR Mapping Roadmap Item 3 Phase B — event-set
+    // exhaustiveness. Runs after Phase A so an unreachable state is
+    // reported via the structural code first; the exhaustiveness
+    // walker presumes the graph topology is sound and surfaces only
+    // the design-time intent-gap pattern.
+    scxml_exhaustiveness::validate(&model, scxml_path)?;
     // Watching-zenoh RFC §5.O Atomic 0a — IR provenance pre-emit
     // guard. Runs *after* the analyzer (so synthesised IR additions
     // are visible) and *before* `resolve_source_path` populates the
@@ -193,6 +206,10 @@ fn compile_model_from_string(
     // so root-cause `ScxmlSemanticError` diagnostics fire ahead of the
     // orphan walk).
     scxml_reachability::validate(&model, scxml_name)?;
+    // NL→IR Mapping Roadmap Item 3 Phase B — see `compile_model`
+    // for the placement rationale (after Phase A so the structural
+    // root-cause fires ahead of the heuristic).
+    scxml_exhaustiveness::validate(&model, scxml_name)?;
     // Watching-zenoh RFC §5.O Atomic 0a — IR provenance pre-emit
     // guard. WASM / parse_string callers share the same invariant
     // as the file-based entry point above; both routes converge on

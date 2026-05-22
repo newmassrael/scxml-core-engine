@@ -628,7 +628,60 @@ is a Statechart-graph rule with no analog on the Forge-kind side
 
 ---
 
-## Appendix — `DiagnosticCode` index (307 codes)
+### Statechart event-set exhaustiveness (NL→IR Mapping Roadmap Item 3 Phase B)
+
+A compound `<state>`'s sibling children are expected to agree on
+event coverage when they share a vocabulary: if children A, B, and C
+all handle the `cmd.*` event family, but only A and B declare a
+transition for `cmd.stop` while C does not (and the parent has no
+fallthrough), the gap in C is almost always an authoring mistake.
+AI-generated SCXML produces this pattern frequently — the model
+emits a coherent handler set for some siblings and forgets the
+others.
+
+The validator uses a narrow heuristic to keep false positives at
+zero across the W3C IRP, conformance, and hda4-diag corpora:
+
+- The compound parent must be a non-`<parallel>`, non-`<final>`
+  `<state>` (parallel regions are orthogonal by design and do not
+  participate in this check).
+- The siblings under consideration are direct child `<state>` /
+  `<parallel>` nodes that have at least one `<transition>`
+  (`<final>` and history pseudostates excluded — they have no
+  transition surface to compare). At least two such siblings must
+  exist for the check to fire.
+- The siblings must share **common ground**: there must exist at
+  least one event matched by every transition-carrying sibling
+  (W3C SCXML §5.10 prefix-match semantics apply). The "sequential
+  protocol stages with disjoint event vocabularies" pattern that
+  prevails in the W3C IRP suite (e.g., one stage handles
+  `childToParent` only, the next stage handles `pass`/`fail`/
+  `timeout` only) has no common ground and is silently accepted.
+- For each event `E` in the union of literal event tokens (no
+  wildcards), if at least one sibling handles `E` and at least one
+  does not, and the parent itself has no transition matching `E`,
+  the validator emits `scxml/non-exhaustive-event-handling`.
+
+Author escape hatch: `sce:exhaustive="false"` on the compound
+parent silences the check for that parent. Only the literal
+`"false"` value triggers the opt-out; `"true"` and absence both
+leave the validator active, and any other literal rejects the
+document via `validation/invalid-attribute` so the opt-out cannot
+be silently mis-spelled.
+
+Repair guidance, in author preference order:
+
+1. Add the missing `<transition event="E" ...>` to the non-handling
+   sibling.
+2. Add a parent-level `<transition event="E" ...>` so the event is
+   absorbed by the compound state regardless of which child is
+   active.
+3. Annotate the parent with `sce:exhaustive="false"` if the gap is
+   genuinely intentional.
+
+---
+
+## Appendix — `DiagnosticCode` index (308 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -787,6 +840,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `scxml/top-level-script-unloaded` | Validation |
 | `scxml/unreachable-state` | Validation |
 | `scxml/dead-transition` | Validation |
+| `scxml/non-exhaustive-event-handling` | Validation |
 | `scxml/on-sample-invalid-parent` | Validation |
 | `scxml/on-sample-link-duplicate-in-state` | Validation |
 | `scxml/on-sample-event-name-conflict` | Validation |

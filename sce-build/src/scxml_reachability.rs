@@ -167,6 +167,22 @@ fn compute_reach_set(model: &SCXMLModel) -> HashSet<String> {
         if !reach.insert(id.clone()) {
             continue;
         }
+        // W3C SCXML §3.6 — entering a state implicitly enters every
+        // compound ancestor up to the document root. Walk the parent
+        // chain so the validator sees those ancestors as reached
+        // even when the BFS seed (`model.initial`) is the deep-
+        // resolved leaf and never goes through the compound parent
+        // directly. Without this, a top-level
+        // `<state id="P" initial="C"><state id="C"/></state>` shape
+        // surfaces `P` as orphan after the parser's
+        // `resolve_deep_initial` collapses `model.initial` to `C`.
+        let mut anc = state.parent.clone();
+        while let Some(parent_id) = anc {
+            if !reach.insert(parent_id.clone()) {
+                break;
+            }
+            anc = model.states.get(&parent_id).and_then(|s| s.parent.clone());
+        }
 
         // Entry cascade.
         if state.is_final {
