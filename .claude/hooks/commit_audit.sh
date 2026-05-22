@@ -630,7 +630,17 @@ PROJECT_SLUG="$(printf '%s' "${CWD:-$PWD}" | sed 's|/|-|g')"
 MEMORY_DIR="$HOME/.claude/projects/${PROJECT_SLUG}/memory"
 NEXT_MEMOS=""
 if [ -d "$MEMORY_DIR" ]; then
-  NEXT_MEMOS="$(find "$MEMORY_DIR" -maxdepth 1 -name 'next_*.md' -printf '       - %f\n' 2>/dev/null | sort)"
+  # Only surface plan memos whose frontmatter declares `status: open`.
+  # Closed lifecycle states (superseded/landed/retired/retrospective)
+  # are filtered so the audit list reflects active work, not history.
+  NEXT_MEMOS="$(
+    for f in "$MEMORY_DIR"/next_*.md; do
+      [ -f "$f" ] || continue
+      if awk '/^---$/{c++; if(c==2)exit} c==1' "$f" | grep -q "^status: open$"; then
+        printf '       - %s\n' "$(basename "$f")"
+      fi
+    done | sort
+  )"
 fi
 
 {
