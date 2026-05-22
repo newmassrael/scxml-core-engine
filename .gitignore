@@ -153,6 +153,16 @@ sce-go-tests/generated/
 # generated, so it stays under this ignore rule).
 sce-python-tests/generated/
 
+# Python AOT integration trees: emitted by
+# `scripts/regen_donedata_local_invoke_python.sh` (and
+# `sce-codegen generate-integration -l python` in CI). Mirrors the W3C
+# IRP Python pattern above — only `*_sm.py` is gitignored; the
+# hand-authored test wrappers (`test_*.py`) and `__init__.py` markers
+# under `sce-python-tests/integration/<stem>/` stay committed.
+sce-python-tests/integration/*/*_sm.py
+sce-python-tests/integration/*/sce_sourcemap.json
+sce-python-tests/integration/*/__pycache__/
+
 build_debug_qjs/
 
 # Bazel

@@ -724,25 +724,30 @@ enum Commands {
         #[arg(long)]
         no_format: bool,
     },
-    /// Batch generate integration-fixture state machines for the three
-    /// committed-tree backends (Rust / Kotlin / Go) from canonical
-    /// fixtures under `integration_resources/<stem>/<stem>.scxml`.
+    /// Batch generate integration-fixture state machines for the four
+    /// sce-codegen-driven backends (Rust / Kotlin / Go / Python) from
+    /// canonical fixtures under `integration_resources/<stem>/<stem>.scxml`.
     ///
     /// Parallel to `generate-w3c` but reads from
     /// `integration_resources/` (separate §6.2.6 input-root from W3C
-    /// `resources/`) and emits into each backend's `integration/` tree:
-    ///   - Rust:    `sce-rust-tests/src/integration/<stem>/`
-    ///   - Kotlin:  `sce-kotlin-tests/src/main/kotlin/com/sce/integration/<stem>/`
-    ///   - Go:      `sce-go-tests/integration/<stem>/`
+    /// `resources/`) and emits into each backend's integration tree:
+    ///   - Rust:    `sce-rust-tests/src/integration/<stem>/`            (committed)
+    ///   - Kotlin:  `sce-kotlin-tests/src/main/kotlin/com/sce/integration/<stem>/` (committed)
+    ///   - Go:      `sce-go-tests/integration/<stem>/`                  (committed)
+    ///   - Python:  `sce-python-tests/integration/<stem>/`              (.gitignored, CI regen)
     ///
-    /// Build-time backends (cpp / c11) and the pybind11 Python channel
-    /// have no committed integration tree, so they are intentionally
-    /// not supported here — fixture generation for those backends runs
-    /// through CMake / CI on every build.
+    /// Python mirrors the W3C IRP pattern: `generate-w3c -l python`
+    /// is already `.gitignored` + CI-regenerated, and the integration
+    /// counterpart follows the same model.
+    ///
+    /// cpp and C11 are intentionally not supported — they emit at
+    /// CMake build time through `sce_generate_static_integration_test`
+    /// (see `cmake/SCEStaticIntegrationFixture.cmake`) without an
+    /// sce-codegen-driven regen pipeline.
     ///
     /// RFC `claudedocs/rfc-donedata-5-backend-layout.md` Q-6.
     GenerateIntegration {
-        /// Target language (rust, kotlin, go).
+        /// Target language (rust, kotlin, go, python).
         #[arg(short, long)]
         language: String,
         /// Single fixture stem to regenerate. When omitted, every
@@ -3919,10 +3924,11 @@ fn cmd_generate_integration(language: &str, stem: Option<&str>, error_format: Er
         Language::Rust => "",
         Language::Kotlin => "_kotlin",
         Language::Go => "_go",
+        Language::Python => "_python",
         _ => {
             eprintln!(
-                "generate-integration: only rust/kotlin/go are supported (build-time backends \
-                 emit at CMake / CI time without a committed tree)"
+                "generate-integration: only rust/kotlin/go/python are supported (cpp / c11 \
+                 emit at CMake time without an sce-codegen-driven pipeline)"
             );
             std::process::exit(2);
         }

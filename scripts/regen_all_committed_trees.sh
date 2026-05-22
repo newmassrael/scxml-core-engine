@@ -39,10 +39,11 @@ echo "==> W3C committed trees"
 "$CODEGEN" generate-w3c -l rust
 "$CODEGEN" generate-w3c -l kotlin
 
-echo "==> Integration committed trees"
+echo "==> Integration trees (Rust / Kotlin / Go committed; Python gitignored)"
 "$CODEGEN" generate-integration -l rust
 "$CODEGEN" generate-integration -l kotlin
 "$CODEGEN" generate-integration -l go
+"$CODEGEN" generate-integration -l python
 
 echo "==> Forge round-trip Go codec tree"
 sce-forge-runtime/go/round_trip/generate.sh

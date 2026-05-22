@@ -692,6 +692,12 @@ jobs:
     - name: Generate Python W3C Tests
       run: ./target/release/sce-codegen generate-w3c -l python
 
+    - name: Generate Python Integration Tests
+      # RFC `claudedocs/rfc-donedata-5-backend-layout.md` Phase D —
+      # Python AOT integration fixtures share the W3C IRP regen
+      # pattern (gitignored output, CI-regenerated before pytest).
+      run: ./target/release/sce-codegen generate-integration -l python
+
     - name: Setup Python
       uses: actions/setup-python@v5
       with:
@@ -711,7 +717,7 @@ jobs:
         echo "=== Python W3C SCXML Conformance Tests ==="
         # conftest.py spawns its own HTTP echo server on port 8080 for
         # BasicHTTP fixtures — no Node.js standalone_http_server.js needed.
-        python3 -m pytest sce-python-tests/generated/ --no-header -v 2>&1 | tee python_test_output.log
+        python3 -m pytest sce-python-tests/generated/ sce-python-tests/integration/ --no-header -v 2>&1 | tee python_test_output.log
         echo "Exit code: $?"
 
     - name: Upload Test Log
