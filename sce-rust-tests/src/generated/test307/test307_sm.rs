@@ -3,7 +3,6 @@
 // template-hash: d588114b3294b4cb4d7e02d63e6d31a3c0326d3afa0a691deb12b545b5ff5045
 // generated-at: 1779460271
 
-
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
 //
@@ -71,13 +70,11 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-
 #![doc = "SCE-MAP: test307.scxml:1"]
 // SCE-MAP: test307.scxml:1
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
-
 
 // ======================================================================
 // State enum (W3C SCXML 3.3)
@@ -176,13 +173,12 @@ impl Test307Policy {
         }
     }
 
-
-
     // W3C SCXML 5.10: Ensure session ID is initialized
     // Uses atomic counter (1:1 with C++ UniqueIdGenerator::generateSessionId)
     fn ensure_session_id(&mut self) {
         if self.session_id.is_none() {
-            static SESSION_COUNTER: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+            static SESSION_COUNTER: core::sync::atomic::AtomicU64 =
+                core::sync::atomic::AtomicU64::new(0);
             let id = SESSION_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             self.session_id = Some(format!("session_{}", id));
         }
@@ -207,9 +203,6 @@ impl Test307Policy {
 
         // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
 
-
-
-
         self.script_engine_initialized = true;
     }
 
@@ -233,9 +226,6 @@ impl Test307Policy {
 
         // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
 
-
-
-
         self.script_engine_initialized = true;
     }
 
@@ -249,30 +239,42 @@ impl Test307Policy {
             Ok(val) => val.to_bool(),
             Err(e) => {
                 log::error!("Guard evaluation failed for '{}': {}", cond, e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(Test307Event::ErrorExecution));
+                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                    Test307Event::ErrorExecution,
+                ));
                 false
             }
         }
     }
 
     // W3C SCXML 5.10: Set _event system variable for current event
-    fn set_current_event_in_script_engine(&self, event_name: &str, event_data: &str,
-            event_type: &str, send_id: &str, origin: &str, origin_type: &str, invoke_id: &str) {
+    fn set_current_event_in_script_engine(
+        &self,
+        event_name: &str,
+        event_data: &str,
+        event_type: &str,
+        send_id: &str,
+        origin: &str,
+        origin_type: &str,
+        invoke_id: &str,
+    ) {
         if let Some(ref sid) = self.session_id {
             let se = self.script_engine.clone();
             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-            let _ = se.set_current_event(sid, sce_rust_runtime::SetCurrentEventArgs {
-                event_name,
-                event_data,
-                event_type,
-                send_id,
-                origin,
-                origin_type,
-                invoke_id,
-            });
+            let _ = se.set_current_event(
+                sid,
+                sce_rust_runtime::SetCurrentEventArgs {
+                    event_name,
+                    event_data,
+                    event_type,
+                    send_id,
+                    origin,
+                    origin_type,
+                    invoke_id,
+                },
+            );
         }
     }
-
 
     // W3C SCXML 6.4.1: Set parameter in child's script engine before invoke initialization
     // Matches C++ child->setParamInScriptEngine(name, expr)
@@ -282,17 +284,20 @@ impl Test307Policy {
         let se = self.script_engine.clone();
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         match se.evaluate_expression(&sid, expr) {
-            Ok(val) => { let _ = se.set_variable(&sid, name, val); }
+            Ok(val) => {
+                let _ = se.set_variable(&sid, name, val);
+            }
             Err(_) => {
                 // Fallback: set as string literal
-                let _ = se.set_variable(&sid, name,
-                    sce_rust_runtime::ScriptValue::String(expr.to_string()));
+                let _ = se.set_variable(
+                    &sid,
+                    name,
+                    sce_rust_runtime::ScriptValue::String(expr.to_string()),
+                );
             }
         }
     }
-
 }
-
 
 // ======================================================================
 // StatePolicy trait implementation
@@ -335,7 +340,6 @@ impl StatePolicy for Test307Policy {
             _ => false,
         }
     }
-
 
     fn is_descendant_of(desc: Self::State, anc: Self::State) -> bool {
         let mut current = desc;
@@ -398,7 +402,9 @@ impl StatePolicy for Test307Policy {
     // [`StateChain`] alias and the body uses `state_chain_from_slice` instead of
     // `vec![...]` so the emitted code compiles under `--no-std` (`vec!` is a
     // std-only macro; heapless has no equivalent).
-    fn get_initial_children(state: Self::State) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
+    fn get_initial_children(
+        state: Self::State,
+    ) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
         match state {
             _ => ::sce_rust_runtime::helpers::hierarchy::new_chain(),
         }
@@ -439,7 +445,6 @@ impl StatePolicy for Test307Policy {
         self.last_transition_source_state = state;
     }
 
-
     fn set_next_event_is_external(&mut self, value: bool) {
         self.next_event_is_external = value;
     }
@@ -471,33 +476,33 @@ impl StatePolicy for Test307Policy {
     // Instance methods - generated executable content
     // ======================================================================
 
-
-
     // W3C SCXML 3.7: Execute <onentry> actions for a state
     #[doc = "SCE-MAP: test307.scxml:1"]
-// SCE-MAP: test307.scxml:1
-    fn execute_entry_actions(&mut self, state: Self::State, engine: &mut sce_rust_runtime::Engine<Self>) {
+    // SCE-MAP: test307.scxml:1
+    fn execute_entry_actions(
+        &mut self,
+        state: Self::State,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
         match state {
             Test307State::S0 => {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
+                    // W3C SCXML 3.8.8: <log> with script engine expression
+                    {
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        match se.evaluate_expression(&sid, "Var1") {
+                            Ok(val) => log::info!("entering s0 value of Var 1 is: : {:?}", val),
+                            Err(e) => log::error!("Log expression eval failed: {}", e),
+                        }
+                    }
 
-// W3C SCXML 3.8.8: <log> with script engine expression
-{
-    self.ensure_script_engine();
-    let sid = self.session_id.as_ref().unwrap().clone();
-    let se = self.script_engine.clone();
-    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-    match se.evaluate_expression(&sid, "Var1") {
-        Ok(val) => log::info!("entering s0 value of Var 1 is: : {:?}", val),
-        Err(e) => log::error!("Log expression eval failed: {}", e),
-    }
-}
-
-
-// W3C SCXML 3.8.1: <raise event="foo">
-engine.raise(sce_rust_runtime::EventWithMetadata::new(Test307Event::Foo));
+                    // W3C SCXML 3.8.1: <raise event="foo">
+                    engine.raise(sce_rust_runtime::EventWithMetadata::new(Test307Event::Foo));
                 }
             }
             Test307State::S1 => {
@@ -507,44 +512,44 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test307Event::Foo));
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-        // W3C SCXML 5.2/5.3: Initialize 'Var1' from expr (s1)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "Var1", "1") {
-            log::error!("s1: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(Test307Event::ErrorExecution));
-        }
-
-
+                    // W3C SCXML 5.2/5.3: Initialize 'Var1' from expr (s1)
+                    if let Err(e) =
+                        sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                            se, &sid, "Var1", "1",
+                        )
+                    {
+                        log::error!("s1: {}", e);
+                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                            Test307Event::ErrorExecution,
+                        ));
+                    }
                 }
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-
-// W3C SCXML 3.8.8: <log> with script engine expression
-{
-    self.ensure_script_engine();
-    let sid = self.session_id.as_ref().unwrap().clone();
-    let se = self.script_engine.clone();
-    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-    match se.evaluate_expression(&sid, "Var1.foo") {
+                    // W3C SCXML 3.8.8: <log> with script engine expression
+                    {
+                        self.ensure_script_engine();
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        match se.evaluate_expression(&sid, "Var1.foo") {
         Ok(val) => log::info!("entering s1, value of non-existent substructure of Var 1 is: : {:?}", val),
         Err(e) => log::error!("Log expression eval failed: {}", e),
     }
-}
+                    }
 
-
-// W3C SCXML 3.8.1: <raise event="bar">
-engine.raise(sce_rust_runtime::EventWithMetadata::new(Test307Event::Bar));
+                    // W3C SCXML 3.8.1: <raise event="bar">
+                    engine.raise(sce_rust_runtime::EventWithMetadata::new(Test307Event::Bar));
                 }
             }
             _ => {}
         }
-
     }
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
     #[doc = "SCE-MAP: test307.scxml:1"]
-// SCE-MAP: test307.scxml:1
+    // SCE-MAP: test307.scxml:1
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -553,11 +558,9 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test307Event::Bar));
     ) {
     }
 
-
-
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
     #[doc = "SCE-MAP: test307.scxml:1"]
-// SCE-MAP: test307.scxml:1
+    // SCE-MAP: test307.scxml:1
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -572,7 +575,8 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test307Event::Bar));
             let event_name = Self::get_event_name(event);
             self.pending_event_name = event_name.to_string();
             // W3C SCXML 5.10.1: Classify event type (ports C++ EventTypeHelper::classifyEventType)
-            let event_type = if event_name.starts_with("error.") || event_name.starts_with("done.") {
+            let event_type = if event_name.starts_with("error.") || event_name.starts_with("done.")
+            {
                 "platform"
             } else if self.next_event_is_external {
                 self.next_event_is_external = false;
@@ -588,19 +592,31 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test307Event::Bar));
             let ev_origintype: &str = &self.pending_event_origintype;
             let ev_invokeid: &str = &self.pending_event_invokeid;
             self.set_current_event_in_script_engine(
-                event_name, ev_data, event_type, ev_sendid, ev_origin, ev_origintype, ev_invokeid,
+                event_name,
+                ev_data,
+                event_type,
+                ev_sendid,
+                ev_origin,
+                ev_origintype,
+                ev_invokeid,
             );
         }
 
         // Flat state machine: no hierarchy, direct transition check
-        self.try_transition_in_state(*current_state, event, current_state, &mut transition_taken, engine);
+        self.try_transition_in_state(
+            *current_state,
+            event,
+            current_state,
+            &mut transition_taken,
+            engine,
+        );
 
         transition_taken
     }
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
     #[doc = "SCE-MAP: test307.scxml:1"]
-// SCE-MAP: test307.scxml:1
+    // SCE-MAP: test307.scxml:1
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         if !self.has_transition_actions {
             return;
@@ -613,25 +629,23 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test307Event::Bar));
                     0 => {
                         // W3C SCXML 3.13: Transition 0 actions
 
-// W3C SCXML 3.8.8: <log> with script engine expression
-{
-    self.ensure_script_engine();
-    let sid = self.session_id.as_ref().unwrap().clone();
-    let se = self.script_engine.clone();
-    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-    match se.evaluate_expression(&sid, "_event") {
-        Ok(val) => log::info!("error in state s0: {:?}", val),
-        Err(e) => log::error!("Log expression eval failed: {}", e),
-    }
-}
-
+                        // W3C SCXML 3.8.8: <log> with script engine expression
+                        {
+                            self.ensure_script_engine();
+                            let sid = self.session_id.as_ref().unwrap().clone();
+                            let se = self.script_engine.clone();
+                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                            match se.evaluate_expression(&sid, "_event") {
+                                Ok(val) => log::info!("error in state s0: {:?}", val),
+                                Err(e) => log::error!("Log expression eval failed: {}", e),
+                            }
+                        }
                     }
                     1 => {
                         // W3C SCXML 3.13: Transition 1 actions
 
-// W3C SCXML 3.8.8: <log label="no error in s0">
-log::info!("no error in s0");
-
+                        // W3C SCXML 3.8.8: <log label="no error in s0">
+                        log::info!("no error in s0");
                     }
                     _ => {}
                 }
@@ -641,25 +655,23 @@ log::info!("no error in s0");
                     0 => {
                         // W3C SCXML 3.13: Transition 0 actions
 
-// W3C SCXML 3.8.8: <log> with script engine expression
-{
-    self.ensure_script_engine();
-    let sid = self.session_id.as_ref().unwrap().clone();
-    let se = self.script_engine.clone();
-    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-    match se.evaluate_expression(&sid, "_event") {
-        Ok(val) => log::info!("error in state s1: {:?}", val),
-        Err(e) => log::error!("Log expression eval failed: {}", e),
-    }
-}
-
+                        // W3C SCXML 3.8.8: <log> with script engine expression
+                        {
+                            self.ensure_script_engine();
+                            let sid = self.session_id.as_ref().unwrap().clone();
+                            let se = self.script_engine.clone();
+                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                            match se.evaluate_expression(&sid, "_event") {
+                                Ok(val) => log::info!("error in state s1: {:?}", val),
+                                Err(e) => log::error!("Log expression eval failed: {}", e),
+                            }
+                        }
                     }
                     1 => {
                         // W3C SCXML 3.13: Transition 1 actions
 
-// W3C SCXML 3.8.8: <log label="No error in s1">
-log::info!("No error in s1");
-
+                        // W3C SCXML 3.8.8: <log label="No error in s1">
+                        log::info!("No error in s1");
                     }
                     _ => {}
                 }
@@ -675,7 +687,6 @@ log::info!("No error in s1");
     fn initialize_data_model(&mut self, engine: &mut Engine<Self>) {
         self.do_initialize_data_model(engine);
     }
-
 }
 
 // ======================================================================
@@ -698,29 +709,29 @@ impl Test307Policy {
                 // W3C SCXML 3.12: Event-triggered transitions (document order)
                 // W3C SCXML 5.9.3: Precomputed prefix match for "error"
                 if event == Test307Event::Error || event == Test307Event::ErrorExecution {
-                        // W3C SCXML 3.4: Track transition metadata
-                        self.last_transition_source_state = check_state;
-                        self.last_transition_index = 0;
-                        self.has_transition_actions = true;
-                        self.last_transition_is_internal = false;
-                        self.last_transition_is_targetless = false;
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_index = 0;
+                    self.has_transition_actions = true;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
 
-                            *current_state = Test307State::S1;
-                            *transition_taken = true;
-                        return true;
+                    *current_state = Test307State::S1;
+                    *transition_taken = true;
+                    return true;
                 }
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == Test307Event::Foo {
-                        // W3C SCXML 3.4: Track transition metadata
-                        self.last_transition_source_state = check_state;
-                        self.last_transition_index = 1;
-                        self.has_transition_actions = true;
-                        self.last_transition_is_internal = false;
-                        self.last_transition_is_targetless = false;
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_index = 1;
+                    self.has_transition_actions = true;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
 
-                            *current_state = Test307State::S1;
-                            *transition_taken = true;
-                        return true;
+                    *current_state = Test307State::S1;
+                    *transition_taken = true;
+                    return true;
                 }
                 false
             }
@@ -728,37 +739,33 @@ impl Test307Policy {
                 // W3C SCXML 3.12: Event-triggered transitions (document order)
                 // W3C SCXML 5.9.3: Precomputed prefix match for "error"
                 if event == Test307Event::Error || event == Test307Event::ErrorExecution {
-                        // W3C SCXML 3.4: Track transition metadata
-                        self.last_transition_source_state = check_state;
-                        self.last_transition_index = 0;
-                        self.has_transition_actions = true;
-                        self.last_transition_is_internal = false;
-                        self.last_transition_is_targetless = false;
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_index = 0;
+                    self.has_transition_actions = true;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
 
-                            *current_state = Test307State::Final;
-                            *transition_taken = true;
-                        return true;
+                    *current_state = Test307State::Final;
+                    *transition_taken = true;
+                    return true;
                 }
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == Test307Event::Bar {
-                        // W3C SCXML 3.4: Track transition metadata
-                        self.last_transition_source_state = check_state;
-                        self.last_transition_index = 1;
-                        self.has_transition_actions = true;
-                        self.last_transition_is_internal = false;
-                        self.last_transition_is_targetless = false;
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_index = 1;
+                    self.has_transition_actions = true;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
 
-                            *current_state = Test307State::Final;
-                            *transition_taken = true;
-                        return true;
+                    *current_state = Test307State::Final;
+                    *transition_taken = true;
+                    return true;
                 }
                 false
             }
             _ => false,
         }
     }
-
-
-
-
 }

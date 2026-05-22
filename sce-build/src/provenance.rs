@@ -87,16 +87,7 @@ impl SpecProvenance {
 /// Wrapped in a newtype so it survives serde round-trip distinct
 /// from a free `String` (e.g. accidental concatenation with a state
 /// id fails to compile).
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    Hash,
-    PartialOrd,
-    Ord,
-    serde::Serialize,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(transparent)]
 pub struct RequirementId(pub String);

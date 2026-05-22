@@ -11,10 +11,7 @@ fn test_406() {
     let policy = sce_rust_tests::generated::test406::Test406Policy::new();
     let mut engine = sce_rust_runtime::Engine::new(policy);
     engine.initialize();
-    let completed = engine.run_until_completion(
-        Duration::from_secs(3),
-        Duration::from_millis(10),
-    );
+    let completed = engine.run_until_completion(Duration::from_secs(3), Duration::from_millis(10));
     assert!(completed, "Test 406 timed out");
     assert_eq!(
         engine.get_current_state(),

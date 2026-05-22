@@ -3,7 +3,6 @@
 // template-hash: d588114b3294b4cb4d7e02d63e6d31a3c0326d3afa0a691deb12b545b5ff5045
 // generated-at: 1779460271
 
-
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
 //
@@ -71,13 +70,11 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-
 #![doc = "SCE-MAP: test337.scxml:5"]
 // SCE-MAP: test337.scxml:5
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
-
 
 // ======================================================================
 // State enum (W3C SCXML 3.3)
@@ -136,10 +133,6 @@ impl Test337Policy {
             child_session_id: String::new(),
         }
     }
-
-
-
-
 }
 
 impl Default for Test337Policy {
@@ -189,7 +182,6 @@ impl StatePolicy for Test337Policy {
             _ => false,
         }
     }
-
 
     fn is_descendant_of(desc: Self::State, anc: Self::State) -> bool {
         let mut current = desc;
@@ -246,7 +238,9 @@ impl StatePolicy for Test337Policy {
     // [`StateChain`] alias and the body uses `state_chain_from_slice` instead of
     // `vec![...]` so the emitted code compiles under `--no-std` (`vec!` is a
     // std-only macro; heapless has no equivalent).
-    fn get_initial_children(state: Self::State) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
+    fn get_initial_children(
+        state: Self::State,
+    ) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
         match state {
             _ => ::sce_rust_runtime::helpers::hierarchy::new_chain(),
         }
@@ -287,37 +281,34 @@ impl StatePolicy for Test337Policy {
         self.last_transition_source_state = state;
     }
 
-
-
-
     // ======================================================================
     // Instance methods - generated executable content
     // ======================================================================
 
-
-
     // W3C SCXML 3.7: Execute <onentry> actions for a state
     #[doc = "SCE-MAP: test337.scxml:5"]
-// SCE-MAP: test337.scxml:5
-    fn execute_entry_actions(&mut self, state: Self::State, engine: &mut sce_rust_runtime::Engine<Self>) {
+    // SCE-MAP: test337.scxml:5
+    fn execute_entry_actions(
+        &mut self,
+        state: Self::State,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
         match state {
             Test337State::S0 => {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-
-// W3C SCXML 3.8.1: <raise event="foo">
-engine.raise(sce_rust_runtime::EventWithMetadata::new(Test337Event::Foo));
+                    // W3C SCXML 3.8.1: <raise event="foo">
+                    engine.raise(sce_rust_runtime::EventWithMetadata::new(Test337Event::Foo));
                 }
             }
             _ => {}
         }
-
     }
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
     #[doc = "SCE-MAP: test337.scxml:5"]
-// SCE-MAP: test337.scxml:5
+    // SCE-MAP: test337.scxml:5
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -326,11 +317,9 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test337Event::Foo));
     ) {
     }
 
-
-
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
     #[doc = "SCE-MAP: test337.scxml:5"]
-// SCE-MAP: test337.scxml:5
+    // SCE-MAP: test337.scxml:5
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -339,21 +328,25 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test337Event::Foo));
     ) -> bool {
         let mut transition_taken = false;
 
-
         // Flat state machine: no hierarchy, direct transition check
-        self.try_transition_in_state(*current_state, event, current_state, &mut transition_taken, engine);
+        self.try_transition_in_state(
+            *current_state,
+            event,
+            current_state,
+            &mut transition_taken,
+            engine,
+        );
 
         transition_taken
     }
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
     #[doc = "SCE-MAP: test337.scxml:5"]
-// SCE-MAP: test337.scxml:5
+    // SCE-MAP: test337.scxml:5
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         // W3C SCXML 3.13: No transition actions in this state machine
         let _ = engine;
     }
-
 }
 
 // ======================================================================
@@ -377,34 +370,34 @@ impl Test337Policy {
                 // W3C SCXML 3.12: Event-triggered transitions (document order)
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == Test337Event::Foo {
-                        // W3C SCXML 3.4: Track transition metadata
-                        self.last_transition_source_state = check_state;
-                        self.last_transition_is_internal = false;
-                        self.last_transition_is_targetless = false;
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
 
-                            *current_state = Test337State::Pass;
-                            *transition_taken = true;
-                        return true;
+                    *current_state = Test337State::Pass;
+                    *transition_taken = true;
+                    return true;
                 }
                 // W3C SCXML 5.9.3: Runtime event descriptor matching
-                if event != Test337Event::Null && sce_rust_runtime::helpers::event_matching::matches_event_descriptor(
-                    Self::get_event_name(event), "*") {
-                        // W3C SCXML 3.4: Track transition metadata
-                        self.last_transition_source_state = check_state;
-                        self.last_transition_is_internal = false;
-                        self.last_transition_is_targetless = false;
+                if event != Test337Event::Null
+                    && sce_rust_runtime::helpers::event_matching::matches_event_descriptor(
+                        Self::get_event_name(event),
+                        "*",
+                    )
+                {
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
 
-                            *current_state = Test337State::Fail;
-                            *transition_taken = true;
-                        return true;
+                    *current_state = Test337State::Fail;
+                    *transition_taken = true;
+                    return true;
                 }
                 false
             }
             _ => false,
         }
     }
-
-
-
-
 }

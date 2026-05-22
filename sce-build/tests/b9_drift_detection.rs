@@ -527,7 +527,10 @@ fn run_verify_real_tree(target: &Path, input_root: &Path) -> (i32, String) {
 #[test]
 fn verify_passes_on_real_committed_rust_w3c_tree() {
     let workspace = workspace_root();
-    let target = workspace.join("sce-rust-tests").join("src").join("generated");
+    let target = workspace
+        .join("sce-rust-tests")
+        .join("src")
+        .join("generated");
     let input_root = workspace.join("resources");
     let (code, stderr) = run_verify_real_tree(&target, &input_root);
     assert_eq!(

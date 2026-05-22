@@ -187,9 +187,7 @@ fn on_sample_link_not_declared_fires_in_production() {
     match err.error {
         ForgeError::Validation(boxed) => match *boxed {
             ValidationError::OnSampleLinkNotDeclared {
-                link,
-                candidates,
-                ..
+                link, candidates, ..
             } => {
                 assert_eq!(link, "unknown_link");
                 assert_eq!(candidates, vec!["scout_link".to_string()]);
@@ -291,9 +289,7 @@ fn on_sample_link_wrong_kind_fires() {
     match err.error {
         ForgeError::Validation(boxed) => match *boxed {
             ValidationError::OnSampleLinkWrongKind {
-                link,
-                actual_kind,
-                ..
+                link, actual_kind, ..
             } => {
                 assert_eq!(link, "scout_helper");
                 assert_eq!(actual_kind, "statechart");
@@ -372,9 +368,7 @@ fn worker_doc_records_into_cross_doc_registry() {
     match err.error {
         ForgeError::Validation(boxed) => match *boxed {
             ValidationError::OnSampleLinkWrongKind {
-                link,
-                actual_kind,
-                ..
+                link, actual_kind, ..
             } => {
                 assert_eq!(link, "rx_loop");
                 assert_eq!(

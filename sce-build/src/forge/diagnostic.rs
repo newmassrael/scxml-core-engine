@@ -4180,7 +4180,11 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![element.clone(), id.clone()],
         },
-        ValidationError::UnresolvedPlaceholder { element, id, reason } => DiagnosticPayload {
+        ValidationError::UnresolvedPlaceholder {
+            element,
+            id,
+            reason,
+        } => DiagnosticPayload {
             code: DiagnosticCode::ValidationUnresolvedPlaceholder,
             stage: Stage::Validation,
             expected: None,

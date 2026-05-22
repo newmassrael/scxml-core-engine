@@ -347,9 +347,7 @@ fn unknown_outbox_owner_with_busy_registry() {
     match err.error {
         ForgeError::Validation(boxed) => match *boxed {
             ValidationError::WorkerOutboxRefUnknown {
-                owner,
-                candidates,
-                ..
+                owner, candidates, ..
             } => {
                 assert_eq!(owner, "totally_unknown");
                 // Sorted union: observer + rx_loop + session_fsm, each
@@ -586,9 +584,7 @@ fn empty_registry_with_outbox_fires_unknown() {
     match err.error {
         ForgeError::Validation(boxed) => match *boxed {
             ValidationError::WorkerOutboxRefUnknown {
-                owner,
-                candidates,
-                ..
+                owner, candidates, ..
             } => {
                 assert_eq!(owner, "session_fsm");
                 // Only the worker itself appears as a registered

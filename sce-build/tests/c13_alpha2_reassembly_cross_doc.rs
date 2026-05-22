@@ -822,7 +822,8 @@ topology:
             expected_p99_bytes: 16384
             domain_attrs:
               trust_class: established_session
-"#.to_string();
+"#
+    .to_string();
     let cfg = parse_deploy_str(&yaml).expect("deploy parses");
 
     // Use Default variant pool sized to p99=mtu=16384 so #1/#2/#3 all
@@ -894,7 +895,8 @@ topology:
             expected_p99_bytes: 16384
             domain_attrs:
               trust_class: established_session
-"#.to_string();
+"#
+    .to_string();
     let cfg = parse_deploy_str(&yaml).expect("deploy parses");
 
     // Same Default-pool fixture shape as #6 happy path — only the

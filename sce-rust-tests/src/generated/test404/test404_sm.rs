@@ -3,7 +3,6 @@
 // template-hash: d588114b3294b4cb4d7e02d63e6d31a3c0326d3afa0a691deb12b545b5ff5045
 // generated-at: 1779460271
 
-
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
 //
@@ -71,7 +70,6 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-
 #![doc = "SCE-MAP: test404.scxml:7"]
 // SCE-MAP: test404.scxml:7
 
@@ -170,14 +168,12 @@ impl Test404Policy {
         }
     }
 
-
-
     // W3C SCXML 5.9.2: Check if state is active (for In() predicate)
     fn is_state_active(&self, state_id: &str) -> bool {
-        self.active_states.iter().any(|&s| Self::get_state_name(s) == state_id)
+        self.active_states
+            .iter()
+            .any(|&s| Self::get_state_name(s) == state_id)
     }
-
-
 }
 
 impl Default for Test404Policy {
@@ -246,10 +242,7 @@ impl StatePolicy for Test404Policy {
 
     fn get_parallel_regions(state: Self::State) -> &'static [Self::State] {
         match state {
-            Test404State::S01p => &[
-                Test404State::S01p1,
-                Test404State::S01p2,
-            ],
+            Test404State::S01p => &[Test404State::S01p1, Test404State::S01p2],
             _ => &[],
         }
     }
@@ -329,11 +322,13 @@ impl StatePolicy for Test404Policy {
     // [`StateChain`] alias and the body uses `state_chain_from_slice` instead of
     // `vec![...]` so the emitted code compiles under `--no-std` (`vec!` is a
     // std-only macro; heapless has no equivalent).
-    fn get_initial_children(state: Self::State) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
+    fn get_initial_children(
+        state: Self::State,
+    ) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
         match state {
-            Test404State::S0 => ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([
-                Test404State::S01p,
-            ]),
+            Test404State::S0 => {
+                ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([Test404State::S01p])
+            }
             _ => ::sce_rust_runtime::helpers::hierarchy::new_chain(),
         }
     }
@@ -341,9 +336,7 @@ impl StatePolicy for Test404Policy {
     // W3C SCXML 3.11: Get initial or history-restored child
     fn get_initial_or_history_child(&self, state: Self::State) -> Self::State {
         match state {
-            Test404State::S0 => {
-                Test404State::S01p
-            }
+            Test404State::S0 => Test404State::S01p,
             _ => state,
         }
     }
@@ -384,18 +377,18 @@ impl StatePolicy for Test404Policy {
         self.active_states.clone()
     }
 
-
-
     // ======================================================================
     // Instance methods - generated executable content
     // ======================================================================
 
-
-
     // W3C SCXML 3.7: Execute <onentry> actions for a state
     #[doc = "SCE-MAP: test404.scxml:7"]
-// SCE-MAP: test404.scxml:7
-    fn execute_entry_actions(&mut self, state: Self::State, engine: &mut sce_rust_runtime::Engine<Self>) {
+    // SCE-MAP: test404.scxml:7
+    fn execute_entry_actions(
+        &mut self,
+        state: Self::State,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
         // W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
         //
         // Watching-zenoh RFC §5.J.2: `push_chain` is the runtime crate's
@@ -405,7 +398,7 @@ impl StatePolicy for Test404Policy {
         if !self.active_states.contains(&state) {
             ::sce_rust_runtime::helpers::hierarchy::push_chain(&mut self.active_states, state);
         } else {
-            return;  // W3C SCXML 3.8: Skip onentry actions for duplicate state entry
+            return; // W3C SCXML 3.8: Skip onentry actions for duplicate state entry
         }
 
         // W3C SCXML 3.4: If entering parallel state, enter all child regions
@@ -458,7 +451,7 @@ impl StatePolicy for Test404Policy {
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
     #[doc = "SCE-MAP: test404.scxml:7"]
-// SCE-MAP: test404.scxml:7
+    // SCE-MAP: test404.scxml:7
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -468,13 +461,16 @@ impl StatePolicy for Test404Policy {
         // W3C SCXML 3.4 + 3.13: Parallel state exit order
         if Self::is_parallel_state(state) {
             // W3C SCXML 3.4: Collect all active descendants of this parallel state
-            let mut descendants_to_exit: Vec<Self::State> = self.active_states.iter()
+            let mut descendants_to_exit: Vec<Self::State> = self
+                .active_states
+                .iter()
                 .filter(|&&s| s != state && Self::is_descendant_of(s, state))
                 .copied()
                 .collect();
 
             // W3C SCXML 3.13: Sort descendants by reverse document order (deepest first)
-            descendants_to_exit.sort_by(|a, b| Self::get_document_order(*b).cmp(&Self::get_document_order(*a)));
+            descendants_to_exit
+                .sort_by(|a, b| Self::get_document_order(*b).cmp(&Self::get_document_order(*a)));
 
             // Exit each active descendant (deepest first)
             for descendant in descendants_to_exit {
@@ -488,38 +484,39 @@ impl StatePolicy for Test404Policy {
                 // W3C SCXML 3.9: onexit block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.9: error stops block)
                 'action_block: {
-
-// W3C SCXML 3.8.1: <raise event="event3">
-engine.raise(sce_rust_runtime::EventWithMetadata::new(Test404Event::Event3));
+                    // W3C SCXML 3.8.1: <raise event="event3">
+                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                        Test404Event::Event3,
+                    ));
                 }
             }
             Test404State::S01p1 => {
                 // W3C SCXML 3.9: onexit block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.9: error stops block)
                 'action_block: {
-
-// W3C SCXML 3.8.1: <raise event="event2">
-engine.raise(sce_rust_runtime::EventWithMetadata::new(Test404Event::Event2));
+                    // W3C SCXML 3.8.1: <raise event="event2">
+                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                        Test404Event::Event2,
+                    ));
                 }
             }
             Test404State::S01p2 => {
                 // W3C SCXML 3.9: onexit block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.9: error stops block)
                 'action_block: {
-
-// W3C SCXML 3.8.1: <raise event="event1">
-engine.raise(sce_rust_runtime::EventWithMetadata::new(Test404Event::Event1));
+                    // W3C SCXML 3.8.1: <raise event="event1">
+                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                        Test404Event::Event1,
+                    ));
                 }
             }
             _ => {}
         }
     }
 
-
-
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
     #[doc = "SCE-MAP: test404.scxml:7"]
-// SCE-MAP: test404.scxml:7
+    // SCE-MAP: test404.scxml:7
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -527,7 +524,6 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test404Event::Event1));
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) -> bool {
         let mut transition_taken = false;
-
 
         // W3C SCXML 3.4 + 3.12 + Appendix D: Parallel state transition handling
         if event == Self::null_event() {
@@ -540,7 +536,14 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test404Event::Event1));
 
             for active_state in &states_to_check {
                 // W3C SCXML 3.13: Eventless transitions do NOT bubble to parent states
-                self.try_transition_in_state(*active_state, event, current_state, &mut transition_taken, engine, Some(&mut enabled_transitions));
+                self.try_transition_in_state(
+                    *active_state,
+                    event,
+                    current_state,
+                    &mut transition_taken,
+                    engine,
+                    Some(&mut enabled_transitions),
+                );
             }
 
             // W3C SCXML Appendix D.2: Remove conflicting transitions
@@ -550,18 +553,25 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test404Event::Event1));
 
             // W3C SCXML Appendix D Steps 2-5: Execute as atomic microstep
             if !enabled_transitions.is_empty() {
-                self.execute_microstep(&enabled_transitions, current_state, &mut transition_taken, engine);
+                self.execute_microstep(
+                    &enabled_transitions,
+                    current_state,
+                    &mut transition_taken,
+                    engine,
+                );
             }
         } else {
             // W3C SCXML Appendix D: External events - collect then execute
             let mut enabled_transitions: Vec<TransitionInfo> = Vec::new();
 
             for &active_state in &self.active_states.clone() {
-                let is_non_atomic = Self::is_compound_state(active_state) || Self::is_parallel_state(active_state);
+                let is_non_atomic =
+                    Self::is_compound_state(active_state) || Self::is_parallel_state(active_state);
 
                 // W3C SCXML 3.13: Check if this is a done.state event
                 let event_name = Self::get_event_name(event);
-                let is_done_state_event = event != Self::null_event() && event_name.starts_with("done.state.");
+                let is_done_state_event =
+                    event != Self::null_event() && event_name.starts_with("done.state.");
 
                 // Skip non-atomic states UNLESS processing done.state event
                 if is_non_atomic && !is_done_state_event {
@@ -571,7 +581,14 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test404Event::Event1));
                 // W3C SCXML 3.12: Hierarchical event bubbling
                 let mut check_state = active_state;
                 loop {
-                    let found = self.try_transition_in_state(check_state, event, current_state, &mut transition_taken, engine, Some(&mut enabled_transitions));
+                    let found = self.try_transition_in_state(
+                        check_state,
+                        event,
+                        current_state,
+                        &mut transition_taken,
+                        engine,
+                        Some(&mut enabled_transitions),
+                    );
                     if found {
                         break;
                     }
@@ -586,9 +603,7 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test404Event::Event1));
             // of the same ancestor (e.g., both parallel regions bubble up to the same parent
             // transition; test 504). Preserves first-match document order.
             let mut seen = std::collections::HashSet::new();
-            enabled_transitions.retain(|t| {
-                seen.insert((t.source, t.transition_index))
-            });
+            enabled_transitions.retain(|t| seen.insert((t.source, t.transition_index)));
 
             // W3C SCXML Appendix D.2: Remove conflicting transitions
             if !enabled_transitions.is_empty() {
@@ -597,7 +612,12 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test404Event::Event1));
 
             // W3C SCXML Appendix D Steps 2-5: Execute as atomic microstep
             if !enabled_transitions.is_empty() {
-                self.execute_microstep(&enabled_transitions, current_state, &mut transition_taken, engine);
+                self.execute_microstep(
+                    &enabled_transitions,
+                    current_state,
+                    &mut transition_taken,
+                    engine,
+                );
             }
         }
 
@@ -606,7 +626,7 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test404Event::Event1));
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
     #[doc = "SCE-MAP: test404.scxml:7"]
-// SCE-MAP: test404.scxml:7
+    // SCE-MAP: test404.scxml:7
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         if !self.has_transition_actions {
             return;
@@ -619,8 +639,10 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test404Event::Event1));
                     0 => {
                         // W3C SCXML 3.13: Transition 0 actions
 
-// W3C SCXML 3.8.1: <raise event="event4">
-engine.raise(sce_rust_runtime::EventWithMetadata::new(Test404Event::Event4));
+                        // W3C SCXML 3.8.1: <raise event="event4">
+                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                            Test404Event::Event4,
+                        ));
                     }
                     _ => {}
                 }
@@ -631,7 +653,6 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test404Event::Event4));
         // Reset flags after execution
         self.has_transition_actions = false;
     }
-
 }
 
 // ======================================================================
@@ -664,7 +685,8 @@ impl Test404Policy {
                     self.last_transition_is_targetless = false;
                     if let Some(ref mut collect) = collect_mode {
                         collect.push(TransitionInfo {
-                            source: check_state, target: Test404State::S02,
+                            source: check_state,
+                            target: Test404State::S02,
                             transition_index: 0,
                             has_actions: true,
                             is_internal: false,
@@ -684,50 +706,56 @@ impl Test404Policy {
                 // W3C SCXML 3.12: Event-triggered transitions (document order)
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == Test404Event::Event1 {
-                        // W3C SCXML 3.4: Track transition metadata
-                        self.last_transition_source_state = check_state;
-                        self.last_transition_index = 0;
-                        self.has_transition_actions = false;
-                        self.last_transition_is_internal = false;
-                        self.last_transition_is_targetless = false;
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_index = 0;
+                    self.has_transition_actions = false;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
 
-                        if let Some(ref mut collect) = collect_mode {
-                            collect.push(TransitionInfo {
-                                source: check_state, target: Test404State::S03,
-                                transition_index: 0,
-                                has_actions: false,
-                                is_internal: false,
-                                is_targetless: false,
-                            });
-                        } else {
-                            *current_state = Test404State::S03;
-                            *transition_taken = true;
-                        }
-                        return true;
+                    if let Some(ref mut collect) = collect_mode {
+                        collect.push(TransitionInfo {
+                            source: check_state,
+                            target: Test404State::S03,
+                            transition_index: 0,
+                            has_actions: false,
+                            is_internal: false,
+                            is_targetless: false,
+                        });
+                    } else {
+                        *current_state = Test404State::S03;
+                        *transition_taken = true;
+                    }
+                    return true;
                 }
                 // W3C SCXML 5.9.3: Runtime event descriptor matching
-                if event != Test404Event::Null && sce_rust_runtime::helpers::event_matching::matches_event_descriptor(
-                    Self::get_event_name(event), "*") {
-                        // W3C SCXML 3.4: Track transition metadata
-                        self.last_transition_source_state = check_state;
-                        self.last_transition_index = 1;
-                        self.has_transition_actions = false;
-                        self.last_transition_is_internal = false;
-                        self.last_transition_is_targetless = false;
+                if event != Test404Event::Null
+                    && sce_rust_runtime::helpers::event_matching::matches_event_descriptor(
+                        Self::get_event_name(event),
+                        "*",
+                    )
+                {
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_index = 1;
+                    self.has_transition_actions = false;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
 
-                        if let Some(ref mut collect) = collect_mode {
-                            collect.push(TransitionInfo {
-                                source: check_state, target: Test404State::Fail,
-                                transition_index: 1,
-                                has_actions: false,
-                                is_internal: false,
-                                is_targetless: false,
-                            });
-                        } else {
-                            *current_state = Test404State::Fail;
-                            *transition_taken = true;
-                        }
-                        return true;
+                    if let Some(ref mut collect) = collect_mode {
+                        collect.push(TransitionInfo {
+                            source: check_state,
+                            target: Test404State::Fail,
+                            transition_index: 1,
+                            has_actions: false,
+                            is_internal: false,
+                            is_targetless: false,
+                        });
+                    } else {
+                        *current_state = Test404State::Fail;
+                        *transition_taken = true;
+                    }
+                    return true;
                 }
                 false
             }
@@ -735,50 +763,56 @@ impl Test404Policy {
                 // W3C SCXML 3.12: Event-triggered transitions (document order)
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == Test404Event::Event2 {
-                        // W3C SCXML 3.4: Track transition metadata
-                        self.last_transition_source_state = check_state;
-                        self.last_transition_index = 0;
-                        self.has_transition_actions = false;
-                        self.last_transition_is_internal = false;
-                        self.last_transition_is_targetless = false;
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_index = 0;
+                    self.has_transition_actions = false;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
 
-                        if let Some(ref mut collect) = collect_mode {
-                            collect.push(TransitionInfo {
-                                source: check_state, target: Test404State::S04,
-                                transition_index: 0,
-                                has_actions: false,
-                                is_internal: false,
-                                is_targetless: false,
-                            });
-                        } else {
-                            *current_state = Test404State::S04;
-                            *transition_taken = true;
-                        }
-                        return true;
+                    if let Some(ref mut collect) = collect_mode {
+                        collect.push(TransitionInfo {
+                            source: check_state,
+                            target: Test404State::S04,
+                            transition_index: 0,
+                            has_actions: false,
+                            is_internal: false,
+                            is_targetless: false,
+                        });
+                    } else {
+                        *current_state = Test404State::S04;
+                        *transition_taken = true;
+                    }
+                    return true;
                 }
                 // W3C SCXML 5.9.3: Runtime event descriptor matching
-                if event != Test404Event::Null && sce_rust_runtime::helpers::event_matching::matches_event_descriptor(
-                    Self::get_event_name(event), "*") {
-                        // W3C SCXML 3.4: Track transition metadata
-                        self.last_transition_source_state = check_state;
-                        self.last_transition_index = 1;
-                        self.has_transition_actions = false;
-                        self.last_transition_is_internal = false;
-                        self.last_transition_is_targetless = false;
+                if event != Test404Event::Null
+                    && sce_rust_runtime::helpers::event_matching::matches_event_descriptor(
+                        Self::get_event_name(event),
+                        "*",
+                    )
+                {
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_index = 1;
+                    self.has_transition_actions = false;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
 
-                        if let Some(ref mut collect) = collect_mode {
-                            collect.push(TransitionInfo {
-                                source: check_state, target: Test404State::Fail,
-                                transition_index: 1,
-                                has_actions: false,
-                                is_internal: false,
-                                is_targetless: false,
-                            });
-                        } else {
-                            *current_state = Test404State::Fail;
-                            *transition_taken = true;
-                        }
-                        return true;
+                    if let Some(ref mut collect) = collect_mode {
+                        collect.push(TransitionInfo {
+                            source: check_state,
+                            target: Test404State::Fail,
+                            transition_index: 1,
+                            has_actions: false,
+                            is_internal: false,
+                            is_targetless: false,
+                        });
+                    } else {
+                        *current_state = Test404State::Fail;
+                        *transition_taken = true;
+                    }
+                    return true;
                 }
                 false
             }
@@ -786,50 +820,56 @@ impl Test404Policy {
                 // W3C SCXML 3.12: Event-triggered transitions (document order)
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == Test404Event::Event3 {
-                        // W3C SCXML 3.4: Track transition metadata
-                        self.last_transition_source_state = check_state;
-                        self.last_transition_index = 0;
-                        self.has_transition_actions = false;
-                        self.last_transition_is_internal = false;
-                        self.last_transition_is_targetless = false;
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_index = 0;
+                    self.has_transition_actions = false;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
 
-                        if let Some(ref mut collect) = collect_mode {
-                            collect.push(TransitionInfo {
-                                source: check_state, target: Test404State::S05,
-                                transition_index: 0,
-                                has_actions: false,
-                                is_internal: false,
-                                is_targetless: false,
-                            });
-                        } else {
-                            *current_state = Test404State::S05;
-                            *transition_taken = true;
-                        }
-                        return true;
+                    if let Some(ref mut collect) = collect_mode {
+                        collect.push(TransitionInfo {
+                            source: check_state,
+                            target: Test404State::S05,
+                            transition_index: 0,
+                            has_actions: false,
+                            is_internal: false,
+                            is_targetless: false,
+                        });
+                    } else {
+                        *current_state = Test404State::S05;
+                        *transition_taken = true;
+                    }
+                    return true;
                 }
                 // W3C SCXML 5.9.3: Runtime event descriptor matching
-                if event != Test404Event::Null && sce_rust_runtime::helpers::event_matching::matches_event_descriptor(
-                    Self::get_event_name(event), "*") {
-                        // W3C SCXML 3.4: Track transition metadata
-                        self.last_transition_source_state = check_state;
-                        self.last_transition_index = 1;
-                        self.has_transition_actions = false;
-                        self.last_transition_is_internal = false;
-                        self.last_transition_is_targetless = false;
+                if event != Test404Event::Null
+                    && sce_rust_runtime::helpers::event_matching::matches_event_descriptor(
+                        Self::get_event_name(event),
+                        "*",
+                    )
+                {
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_index = 1;
+                    self.has_transition_actions = false;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
 
-                        if let Some(ref mut collect) = collect_mode {
-                            collect.push(TransitionInfo {
-                                source: check_state, target: Test404State::Fail,
-                                transition_index: 1,
-                                has_actions: false,
-                                is_internal: false,
-                                is_targetless: false,
-                            });
-                        } else {
-                            *current_state = Test404State::Fail;
-                            *transition_taken = true;
-                        }
-                        return true;
+                    if let Some(ref mut collect) = collect_mode {
+                        collect.push(TransitionInfo {
+                            source: check_state,
+                            target: Test404State::Fail,
+                            transition_index: 1,
+                            has_actions: false,
+                            is_internal: false,
+                            is_targetless: false,
+                        });
+                    } else {
+                        *current_state = Test404State::Fail;
+                        *transition_taken = true;
+                    }
+                    return true;
                 }
                 false
             }
@@ -837,59 +877,62 @@ impl Test404Policy {
                 // W3C SCXML 3.12: Event-triggered transitions (document order)
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == Test404Event::Event4 {
-                        // W3C SCXML 3.4: Track transition metadata
-                        self.last_transition_source_state = check_state;
-                        self.last_transition_index = 0;
-                        self.has_transition_actions = false;
-                        self.last_transition_is_internal = false;
-                        self.last_transition_is_targetless = false;
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_index = 0;
+                    self.has_transition_actions = false;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
 
-                        if let Some(ref mut collect) = collect_mode {
-                            collect.push(TransitionInfo {
-                                source: check_state, target: Test404State::Pass,
-                                transition_index: 0,
-                                has_actions: false,
-                                is_internal: false,
-                                is_targetless: false,
-                            });
-                        } else {
-                            *current_state = Test404State::Pass;
-                            *transition_taken = true;
-                        }
-                        return true;
+                    if let Some(ref mut collect) = collect_mode {
+                        collect.push(TransitionInfo {
+                            source: check_state,
+                            target: Test404State::Pass,
+                            transition_index: 0,
+                            has_actions: false,
+                            is_internal: false,
+                            is_targetless: false,
+                        });
+                    } else {
+                        *current_state = Test404State::Pass;
+                        *transition_taken = true;
+                    }
+                    return true;
                 }
                 // W3C SCXML 5.9.3: Runtime event descriptor matching
-                if event != Test404Event::Null && sce_rust_runtime::helpers::event_matching::matches_event_descriptor(
-                    Self::get_event_name(event), "*") {
-                        // W3C SCXML 3.4: Track transition metadata
-                        self.last_transition_source_state = check_state;
-                        self.last_transition_index = 1;
-                        self.has_transition_actions = false;
-                        self.last_transition_is_internal = false;
-                        self.last_transition_is_targetless = false;
+                if event != Test404Event::Null
+                    && sce_rust_runtime::helpers::event_matching::matches_event_descriptor(
+                        Self::get_event_name(event),
+                        "*",
+                    )
+                {
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_index = 1;
+                    self.has_transition_actions = false;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
 
-                        if let Some(ref mut collect) = collect_mode {
-                            collect.push(TransitionInfo {
-                                source: check_state, target: Test404State::Fail,
-                                transition_index: 1,
-                                has_actions: false,
-                                is_internal: false,
-                                is_targetless: false,
-                            });
-                        } else {
-                            *current_state = Test404State::Fail;
-                            *transition_taken = true;
-                        }
-                        return true;
+                    if let Some(ref mut collect) = collect_mode {
+                        collect.push(TransitionInfo {
+                            source: check_state,
+                            target: Test404State::Fail,
+                            transition_index: 1,
+                            has_actions: false,
+                            is_internal: false,
+                            is_targetless: false,
+                        });
+                    } else {
+                        *current_state = Test404State::Fail;
+                        *transition_taken = true;
+                    }
+                    return true;
                 }
                 false
             }
             _ => false,
         }
     }
-
-
-
 
     // W3C SCXML Appendix D.2: Remove conflicting transitions
     fn remove_conflicting_transitions(enabled: &[TransitionInfo]) -> Vec<TransitionInfo> {
@@ -901,8 +944,10 @@ impl Test404Policy {
 
             for (idx, t2) in filtered.iter().enumerate() {
                 // W3C SCXML Appendix D.2: Check if exit sets intersect
-                let t1_exits = Self::compute_exit_set(t1.source, t1.target, t1.is_internal, t1.is_targetless);
-                let t2_exits = Self::compute_exit_set(t2.source, t2.target, t2.is_internal, t2.is_targetless);
+                let t1_exits =
+                    Self::compute_exit_set(t1.source, t1.target, t1.is_internal, t1.is_targetless);
+                let t2_exits =
+                    Self::compute_exit_set(t2.source, t2.target, t2.is_internal, t2.is_targetless);
 
                 let mut has_conflict = t1_exits.iter().any(|s1| t2_exits.contains(s1));
 
@@ -966,7 +1011,12 @@ impl Test404Policy {
     // Matches C++ `ParallelTransitionHelper::computeExitSet` — returns all states
     // from `source` up to (but not including) LCA(source, target). For internal
     // transitions where the target is a descendant of the source, returns empty.
-    fn compute_exit_set(source: Test404State, target: Test404State, is_internal: bool, is_targetless: bool) -> Vec<Test404State> {
+    fn compute_exit_set(
+        source: Test404State,
+        target: Test404State,
+        is_internal: bool,
+        is_targetless: bool,
+    ) -> Vec<Test404State> {
         // W3C SCXML 5.9.2: Targetless transitions execute actions only — no exit/entry
         if is_targetless {
             return Vec::new();
@@ -977,8 +1027,10 @@ impl Test404Policy {
         // target must be a proper descendant. If source is atomic or parallel, the internal
         // transition behaves as external (W3C SCXML 3.13).
         if is_internal
-            && Self::is_compound_state(source) && !Self::is_parallel_state(source)
-            && Self::is_descendant_of(target, source) && target != source
+            && Self::is_compound_state(source)
+            && !Self::is_parallel_state(source)
+            && Self::is_descendant_of(target, source)
+            && target != source
         {
             return Vec::new();
         }
@@ -1049,8 +1101,10 @@ impl Test404Policy {
             // Matches C++ `computeEffectiveLCA` — internal transition with compound
             // (non-parallel) source and proper descendant target uses source as domain.
             let is_internal_to_descendant = trans.is_internal
-                && Self::is_compound_state(trans.source) && !Self::is_parallel_state(trans.source)
-                && Self::is_descendant_of(trans.target, trans.source) && trans.target != trans.source;
+                && Self::is_compound_state(trans.source)
+                && !Self::is_parallel_state(trans.source)
+                && Self::is_descendant_of(trans.target, trans.source)
+                && trans.target != trans.source;
             let domain: Option<Test404State> = if is_internal_to_descendant {
                 Some(trans.source)
             } else {
@@ -1092,7 +1146,8 @@ impl Test404Policy {
         }
 
         // Sort by reverse document order (deepest first)
-        states_to_exit.sort_by(|a, b| Self::get_document_order(*b).cmp(&Self::get_document_order(*a)));
+        states_to_exit
+            .sort_by(|a, b| Self::get_document_order(*b).cmp(&Self::get_document_order(*a)));
 
         // Snapshot active states for history recording
         let active_snapshot = self.active_states.clone();
@@ -1127,7 +1182,8 @@ impl Test404Policy {
             let target = trans.target;
 
             // W3C SCXML 3.13: Build hierarchical entry chain from root to target
-            let entry_chain = sce_rust_runtime::helpers::hierarchy::build_entry_chain::<Self>(target);
+            let entry_chain =
+                sce_rust_runtime::helpers::hierarchy::build_entry_chain::<Self>(target);
 
             for state in &entry_chain {
                 if self.active_states.contains(state) {

@@ -1647,11 +1647,15 @@ fn transform_bare_expressions(input: &str) -> String {
         for (k, &c) in tb.iter().enumerate() {
             if c == b'=' && k > 0 {
                 let prev = tb[k - 1];
-                if prev != b'~' && prev != b'<' && prev != b'>' && prev != b'!'
-                    && (k + 1 >= tb.len() || tb[k + 1] != b'=') {
-                        is_statement = true;
-                        break;
-                    }
+                if prev != b'~'
+                    && prev != b'<'
+                    && prev != b'>'
+                    && prev != b'!'
+                    && (k + 1 >= tb.len() || tb[k + 1] != b'=')
+                {
+                    is_statement = true;
+                    break;
+                }
             }
         }
 

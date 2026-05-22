@@ -133,8 +133,7 @@ pub fn write_envelope<W: std::io::Write>(
     parsed: &ParsedForge,
 ) -> std::io::Result<()> {
     let env = ForgeAstEnvelope::new(parsed);
-    serde_json::to_writer_pretty(&mut *sink, &env)
-        .map_err(std::io::Error::other)?;
+    serde_json::to_writer_pretty(&mut *sink, &env).map_err(std::io::Error::other)?;
     sink.write_all(b"\n")?;
     Ok(())
 }
@@ -292,13 +291,15 @@ mod schema_drift {
                     break;
                 }
             }
-            let context = first_diff.map_or_else(|| {
+            let context = first_diff.map_or_else(
+                || {
                     format!(
                         "\nLength differs: checked-in {} bytes, generated {} bytes.",
                         checked_in.len(),
                         generated.len()
                     )
-                }, |i| {
+                },
+                |i| {
                     let lo = i.saturating_sub(2);
                     let hi = (i + 3).min(generated.lines().count());
                     let lines: Vec<&str> = generated.lines().collect();
@@ -313,7 +314,8 @@ mod schema_drift {
                         i + 1,
                         snippet.join("\n")
                     )
-                });
+                },
+            );
             panic!(
                 "\napis/forge-ast.v1.schema.json is out of sync with the Rust \
                  IR types in sce-build/src/forge/. Run:\n  \
