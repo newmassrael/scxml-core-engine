@@ -249,6 +249,20 @@ jobs:
         go generate ./conformance/...
         go test ./conformance/ -count=1 -v 2>&1 | tee ../../go_conformance.log
 
+    - name: Run Go Forge Round-Trip Test (committed tree)
+      # Unlike ./conformance/ (gitignored, regenerated each CI run), the
+      # ./round_trip/generated/ tree is committed and guarded by §6.2.6
+      # drift detection (`b9_drift_detection::
+      # verify_passes_on_real_committed_forge_default_round_trip_go_tree`
+      # at sce-build/tests/b9_drift_detection.rs:664). The drift gate
+      # checks header-hash parity; this step checks functional pass —
+      # the two are orthogonal per `[[committed-generated-tree-sweep-
+      # landed]]`. Refresh of the committed tree is `52e6d6f5` + the
+      # test API migration is `cb53dd3c`.
+      run: |
+        cd sce-forge-runtime/go
+        go test ./round_trip/ -count=1 -v 2>&1 | tee -a ../../go_conformance.log
+
     - name: Summarize
       if: always()
       run: |
