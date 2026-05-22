@@ -564,3 +564,87 @@ fn verify_passes_on_real_committed_kotlin_w3c_tree() {
          generate-w3c -l kotlin` and commit the result. stderr:\n{stderr}"
     );
 }
+
+// Donedata drift context. The hand-authored
+// `donedata_local_invoke.scxml` fixture under each backend's
+// `fixtures/` (or `src/test/resources/fixtures/` for Kotlin) is a
+// *separate* §6.2.6 input root from the W3C `resources/` tree — its
+// `source-hash` is computed against the fixture dir, not the W3C
+// fixtures. The W3C invariants above intentionally exclude donedata
+// scope (different drift context); the donedata invariants below
+// cover it directly. Regen via
+// `scripts/regen_donedata_local_invoke{,_kotlin,_go}.sh`.
+//
+// Python is intentionally skipped: `sce-python/tests/` runs the
+// pybind11 → C++ Interpreter channel, so no donedata SM is codegen'd
+// for Python — there is no committed §6.2.6 header to verify.
+
+#[test]
+fn verify_passes_on_real_committed_rust_donedata_tree() {
+    let workspace = workspace_root();
+    let target = workspace
+        .join("sce-rust-tests")
+        .join("src")
+        .join("integration")
+        .join("donedata_local_invoke");
+    let input_root = workspace.join("sce-rust-tests").join("fixtures");
+    let (code, stderr) = run_verify_real_tree(&target, &input_root);
+    assert_eq!(
+        code, 0,
+        "verify must pass on the committed Rust donedata tree. A \
+         failure here means tools/codegen/templates/**, Cargo.lock, or \
+         sce-rust-tests/fixtures/donedata_local_invoke.scxml changed \
+         without refreshing sce-rust-tests/src/integration/donedata_local_invoke/. \
+         Run `scripts/regen_donedata_local_invoke.sh` and commit the \
+         result. stderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn verify_passes_on_real_committed_kotlin_donedata_tree() {
+    let workspace = workspace_root();
+    let target = workspace
+        .join("sce-kotlin-tests")
+        .join("src")
+        .join("main")
+        .join("kotlin")
+        .join("com")
+        .join("sce")
+        .join("generated")
+        .join("donedata_local_invoke");
+    let input_root = workspace
+        .join("sce-kotlin-tests")
+        .join("src")
+        .join("test")
+        .join("resources")
+        .join("fixtures");
+    let (code, stderr) = run_verify_real_tree(&target, &input_root);
+    assert_eq!(
+        code, 0,
+        "verify must pass on the committed Kotlin donedata tree. A \
+         failure here means tools/codegen/templates/**, Cargo.lock, or \
+         sce-kotlin-tests/src/test/resources/fixtures/donedata_local_invoke.scxml \
+         changed without refreshing the donedata generated dir. Run \
+         `scripts/regen_donedata_local_invoke_kotlin.sh` and commit the \
+         result. stderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn verify_passes_on_real_committed_go_donedata_tree() {
+    let workspace = workspace_root();
+    let target = workspace
+        .join("sce-go-tests")
+        .join("donedata_local_invoke");
+    let input_root = workspace.join("sce-go-tests").join("fixtures");
+    let (code, stderr) = run_verify_real_tree(&target, &input_root);
+    assert_eq!(
+        code, 0,
+        "verify must pass on the committed Go donedata tree. A \
+         failure here means tools/codegen/templates/**, Cargo.lock, or \
+         sce-go-tests/fixtures/donedata_local_invoke.scxml changed \
+         without refreshing sce-go-tests/donedata_local_invoke/. Run \
+         `scripts/regen_donedata_local_invoke_go.sh` and commit the \
+         result. stderr:\n{stderr}"
+    );
+}
