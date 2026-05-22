@@ -3000,6 +3000,93 @@ pub enum ValidationError {
         /// `reason="..."` attribute.
         reason: Option<String>,
     },
+
+    /// An expression in an importing kind references `<alias>.<field>`
+    /// where `<alias>` resolves to a known `<sce:import>` declaration
+    /// but `<field>` is not a member exposed by the imported kind. The
+    /// `candidates` list is the imported kind's full member surface
+    /// (sorted, deduplicated) so the diagnostic carries a closed
+    /// `Fix::ReplaceOneOf` for `did_you_mean`-style repair. Sibling of
+    /// `<sce:on-sample link>` cross-resolution but on the field-binding
+    /// axis: that one resolves doc names, this one resolves
+    /// post-resolution member fields.
+    ///
+    /// NL→IR Mapping Roadmap Item 2 (cross-kind typed binding). Today
+    /// emitted only from the Forge→Forge path (a Forge document's
+    /// expressions reference another Forge document imported via
+    /// `<sce:import>`); the diagnostic itself is kind-agnostic so a
+    /// future Statechart→Forge binding wires through the same code
+    /// without renaming.
+    #[error(
+        "{importing_kind} '{importing_name}': '{alias}.{field}' references an undeclared field on imported {imported_kind} '{imported_name}'{}",
+        if candidates.is_empty() {
+            String::new()
+        } else {
+            format!(" (declared fields: {})", candidates.join(", "))
+        }
+    )]
+    CrossKindFieldNotFound {
+        /// Importing kind, e.g. `algorithm`, `procedure`.
+        importing_kind: ForgeKind,
+        /// Importing document's `name` attribute.
+        importing_name: String,
+        /// The `<sce:import as="..."/>` alias used in the expression.
+        alias: String,
+        /// The field name that did not resolve, verbatim from the
+        /// expression source.
+        field: String,
+        /// Imported kind, e.g. `codec`, `bounded-collection`.
+        imported_kind: ForgeKind,
+        /// Imported document's `name` attribute.
+        imported_name: String,
+        /// Sorted, deduplicated list of legal field names exposed by
+        /// the imported kind. Drives `Fix::ReplaceOneOf` so consumers
+        /// see the closed candidate set.
+        candidates: Vec<String>,
+    },
+
+    /// An expression in an importing kind references `<alias>.<field>`
+    /// where the field resolves but the inferred type at the use site
+    /// is incompatible with the field's declared type. Emitted only
+    /// when the surrounding context constrains the expected type (e.g.
+    /// `<sce:return expr="alias.field"/>` whose return type is declared
+    /// on the kind signature) — opportunistic checks where the expected
+    /// type is `Unknown` stay silent, since there is no contract to
+    /// violate.
+    ///
+    /// NL→IR Mapping Roadmap Item 2 (cross-kind typed binding).
+    #[error(
+        "{importing_kind} '{importing_name}': '{alias}.{field}' has type '{actual}' but context expects '{expected}'"
+    )]
+    CrossKindTypeMismatch {
+        importing_kind: ForgeKind,
+        importing_name: String,
+        alias: String,
+        field: String,
+        /// Declared type of the imported field, rendered through
+        /// [`SceType::canonical`] for stable wire form.
+        actual: String,
+        /// Expected type imposed by the use site (signature return
+        /// type, `<sce:param type=...>`, …), rendered the same way.
+        expected: String,
+    },
+
+    /// The `<sce:import>` graph contains a cycle:
+    /// `A.scxml` imports `B.scxml`, `B.scxml` imports `A.scxml`. This
+    /// is a defensive check; the import enrichment pass would otherwise
+    /// recurse into infinite open-file work or surface as an opaque
+    /// stack-overflow at codegen time.
+    ///
+    /// NL→IR Mapping Roadmap Item 2 (cross-kind typed binding).
+    #[error(
+        "circular <sce:import> dependency: {}",
+        cycle.join(" → ")
+    )]
+    CrossKindCircularDependency {
+        /// Cycle path in traversal order, starting and ending with the
+        /// same document name. Length >= 2 by construction.
+        cycle: Vec<String>,
+    },
 }
 
 /// watching-zenoh RFC §5.E B7-η' Atomic A2 callback-path failure

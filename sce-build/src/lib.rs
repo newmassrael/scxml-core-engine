@@ -1676,6 +1676,17 @@ pub fn compile_forge_from_parsed(
         label.diagnostic_label,
     )?;
 
+    // NL→IR Mapping Roadmap Item 2 — cross-kind typed binding
+    // verification. Runs after import enrichment populates the
+    // per-import slice (the validator reads its own member surface off
+    // the import file contents rather than depending on enrichment
+    // data, but the order matters because the cycle detector inside
+    // `cross_kind_check::check` is what guarantees the surface
+    // re-walk terminates). Today wired only on the Forge→Forge path —
+    // see `nl_to_ir_mapping_roadmap.md` Item 2 + the module-level
+    // scope comment for why Statechart→Forge stays out of v1.
+    forge::cross_kind_check::check(parsed, base_dir, label.diagnostic_label)?;
+
     // RFC §5.C B6-α' link-side cross-resolution. Runs after enrichment
     // populates `ImportContext::codec_max_bytes` (framer side) and
     // `ImportContext::buffer_pool_slot_size` (pool side); both axes
