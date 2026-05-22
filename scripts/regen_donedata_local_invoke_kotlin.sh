@@ -18,6 +18,11 @@
 #
 # Requires:
 #   target/release/sce-codegen (build first if missing: see step 1).
+#
+# Idempotency: re-runs are byte-stable except for the embedded
+# `generated-at: <unix-seconds>` header line that the codegen emits
+# on every invocation. `source-hash` and `template-hash` stay
+# deterministic for unchanged fixture + template inputs.
 
 set -euo pipefail
 
@@ -56,7 +61,7 @@ cp "$FIXTURE" "$TMP/$STEM.scxml"
 # `package com.sce.generated.<child>` header to the parent's package
 # `com.sce.generated.<STEM>` so the parent's unqualified references to
 # the child StateMachine class resolve in the shared package.
-for child in "$TMP"/${STEM}__sce_synth_invoke__*.scxml; do
+for child in "$TMP"/"${STEM}"__sce_synth_invoke__*.scxml; do
     [[ -f "$child" ]] || continue
     "$CODEGEN" generate "$child" \
         --as-child --parent-stem "$STEM" \

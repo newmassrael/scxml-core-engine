@@ -24,6 +24,11 @@
 #
 # Requires:
 #   target/release/sce-codegen (build first if missing: see step 1).
+#
+# Idempotency: re-runs are byte-stable except for the embedded
+# `generated-at: <unix-seconds>` header line that the codegen emits
+# on every invocation. `source-hash` and `template-hash` stay
+# deterministic for unchanged fixture + template inputs.
 
 set -euo pipefail
 
@@ -65,7 +70,7 @@ INPUT_ROOT="sce-rust-tests/fixtures"
 # (and the package layout for Kotlin/Go consumers) match the parent's
 # crate context. The same `--input-root` override keeps every emitted
 # header pointing at the tracked fixture directory.
-for child in "$TMP"/${STEM}__sce_synth_invoke__*.scxml; do
+for child in "$TMP"/"${STEM}"__sce_synth_invoke__*.scxml; do
     [[ -f "$child" ]] || continue
     "$CODEGEN" generate "$child" \
         --as-child --parent-stem "$STEM" \
