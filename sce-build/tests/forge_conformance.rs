@@ -226,7 +226,16 @@ fn normalize_for_comparison(code: &str) -> String {
 }
 
 /// Generate C++ from a statechart with inline kinds and verify against full-file golden.
-/// C++ uses the pre-existing full-file golden comparison.
+///
+/// Inline-kind C++ codegen emits a `.h` + `.inl` pair (header + inline
+/// definitions split for the include-once linking pattern used by the
+/// state_machine.h.jinja2 template). Both members of the pair are
+/// byte-compared against committed goldens — earlier behaviour only
+/// verified `output.files[0]` (the `.h`), which left the `.inl`
+/// silently stale and let a missing committed `.inl` persist even
+/// though the `.h` `#include "<stem>_sm.inl"` line referenced it
+/// (broken include observable only at C++ compile time, never from
+/// inside this test suite).
 fn assert_inline_kinds_cpp(scxml_name: &str) {
     let scxml_path = resource_dir().join(format!("{scxml_name}.scxml"));
     let tdir = sce_build::find_template_dir_for(sce_build::generator::Language::Cpp);
@@ -244,21 +253,29 @@ fn assert_inline_kinds_cpp(scxml_name: &str) {
         "Inline kind code missing in {scxml_name} (Cpp) output"
     );
 
-    let expected_path = expected_dir().join(format!("{scxml_name}_sm.h"));
-    if std::env::var("UPDATE_GOLDEN").is_ok() {
-        let absolute = scxml_path.to_string_lossy().into_owned();
-        let relative = format!("tests/forge/resources/{scxml_name}.scxml");
-        let normalized = header.replace(&absolute, &relative);
-        std::fs::write(&expected_path, normalized)
-            .unwrap_or_else(|e| panic!("Cannot write {}: {e}", expected_path.display()));
-        return;
-    }
-    if expected_path.exists() {
-        let expected = std::fs::read_to_string(&expected_path).unwrap();
+    let absolute = scxml_path.to_string_lossy().into_owned();
+    let relative = format!("tests/forge/resources/{scxml_name}.scxml");
+    let update_golden = std::env::var("UPDATE_GOLDEN").is_ok();
+
+    for (filename, content) in &output.files {
+        let normalized = content.replace(&absolute, &relative);
+        let expected_path = expected_dir().join(filename);
+        if update_golden {
+            std::fs::write(&expected_path, &normalized)
+                .unwrap_or_else(|e| panic!("Cannot write {}: {e}", expected_path.display()));
+            continue;
+        }
+        let expected = std::fs::read_to_string(&expected_path).unwrap_or_else(|e| {
+            panic!(
+                "Expected golden missing: {} — run forge_conformance with UPDATE_GOLDEN=1 to create. {e}",
+                expected_path.display()
+            )
+        });
         assert_eq!(
-            normalize_for_comparison(header).trim(),
+            normalize_for_comparison(&normalized).trim(),
             normalize_for_comparison(&expected).trim(),
-            "Output mismatch for {scxml_name} (Cpp)\n--- expected: {}\n+++ generated",
+            "Output mismatch for {scxml_name} {} (Cpp)\n--- expected: {}\n+++ generated",
+            filename,
             expected_path.display()
         );
     }

@@ -35,24 +35,21 @@ State getInitialOrHistoryChild(State state) const {
 // W3C SCXML 3.6: Enter deep initial targets (delegate to StateEntryHelper)
 
 #line 3 "inline_mixed.scxml"
-
 template <typename Engine>
-[[gnu::hot]] void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine &engine) {}
+[[gnu::hot]] void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine) {
+}
 
 #line 3 "inline_mixed.scxml"
-
 template <typename Engine>
-[[gnu::hot]] void executeExitActions([[maybe_unused]] State state, [[maybe_unused]] Engine &engine,
-                                     [[maybe_unused]] const std::vector<State> &activeStatesBeforeTransition) {}
+[[gnu::hot]] void executeExitActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
+
+}
 
 #line 3 "inline_mixed.scxml"
-
 template <typename Engine>
 // W3C SCXML 3.13: Always non-static (uses lastTransitionSourceState_ via tryTransitionInState)
 [[gnu::hot]]
-bool processTransition(
-    State &currentState, [[maybe_unused]] Event event,
-    [[maybe_unused]] Engine &engine) {  // W3C SCXML 5.3: Ensure JSEngine initialized (lazy init for runtime operations)
+bool processTransition(State& currentState, [[maybe_unused]] Event event, [[maybe_unused]] Engine& engine) {        // W3C SCXML 5.3: Ensure JSEngine initialized (lazy init for runtime operations)
     // Note: Datamodel initialization happens in StaticExecutionEngine::initialize()
     this->ensureScriptEngine();
 
@@ -60,24 +57,17 @@ bool processTransition(
     if (event != Event()) {  // Skip for eventless transitions
         pendingEventName_ = inline_mixedPolicy::getEventName(event);
         pendingEventType_ = this->getEventType(pendingEventName_);
-        AOT_DEBUG("AOT processTransition: Set pendingEventName='{}', pendingEventType='{}'", pendingEventName_,
-                  pendingEventType_);
+        AOT_DEBUG("AOT processTransition: Set pendingEventName='{}', pendingEventType='{}'", pendingEventName_, pendingEventType_);
     }
 
     // W3C SCXML 5.10: Set _event variable in JSEngine
     // Only set _event when processing actual events, not during eventless transition checks
-    if (event != Event() &&
-        (!pendingEventName_.empty() || !pendingEventData_.empty() || !pendingEventOrigin_.empty())) {
-        AOT_DEBUG("AOT processTransition: Setting _event (name='{}', data='{}', type='{}', sendId='{}', origin='{}', "
-                  "invokeId='{}')",
-                  pendingEventName_, pendingEventData_, pendingEventType_, pendingEventSendId_, pendingEventOrigin_,
-                  pendingEventInvokeId_);
-        setCurrentEventInScriptEngine(pendingEventName_, pendingEventData_, pendingEventType_, pendingEventSendId_,
-                                      pendingEventOrigin_, pendingEventOriginType_, pendingEventInvokeId_,
-                                      pendingEventTypedData_);
+    if (event != Event() && (!pendingEventName_.empty() || !pendingEventData_.empty() || !pendingEventOrigin_.empty())) {
+        AOT_DEBUG("AOT processTransition: Setting _event (name='{}', data='{}', type='{}', sendId='{}', origin='{}', invokeId='{}')",
+                  pendingEventName_, pendingEventData_, pendingEventType_, pendingEventSendId_, pendingEventOrigin_, pendingEventInvokeId_);
+        setCurrentEventInScriptEngine(pendingEventName_, pendingEventData_, pendingEventType_, pendingEventSendId_, pendingEventOrigin_, pendingEventOriginType_, pendingEventInvokeId_, pendingEventTypedData_);
     }
-    AOT_DEBUG("AOT processTransition: Called with event={}, currentState={}", static_cast<int>(event),
-              static_cast<int>(currentState));
+    AOT_DEBUG("AOT processTransition: Called with event={}, currentState={}", static_cast<int>(event), static_cast<int>(currentState));
     bool transitionTaken = false;
 
     // Flat state machine: no hierarchy, direct transition check
@@ -87,28 +77,25 @@ bool processTransition(
 }
 
 private:
+
 // W3C SCXML 3.12: Helper method for hierarchical transition checking
 #line 3 "inline_mixed.scxml"
-
 template <typename Engine>
 [[gnu::hot]]
 bool tryTransitionInState([[maybe_unused]] State checkState, [[maybe_unused]] Event event,
-                          [[maybe_unused]] State &currentState, [[maybe_unused]] bool &transitionTaken,
-                          [[maybe_unused]] Engine &engine) {
+                          [[maybe_unused]] State& currentState, [[maybe_unused]] bool& transitionTaken,
+                          [[maybe_unused]] Engine& engine) {
     switch (checkState) {
     case State::Active:
         // W3C SCXML 5.9.3: Direct enum comparison (exact match, no prefix matching needed)
         if (event == Event::Stop) {
             this->ensureScriptEngine();
-            [[maybe_unused]] auto &scriptEngine = getScriptEngine();
+            [[maybe_unused]] auto& scriptEngine = getScriptEngine();
             {  // Unconditional transition
-                AOT_DEBUG("AOT processTransition: Event matched descriptor 'stop' in state {}",
-                          static_cast<int>(checkState));
-                // W3C SCXML 3.4: Track transition source for hierarchical exit/entry (ALWAYS needed by
-                // checkEventlessTransitions)
+                AOT_DEBUG("AOT processTransition: Event matched descriptor 'stop' in state {}", static_cast<int>(checkState));
+                // W3C SCXML 3.4: Track transition source for hierarchical exit/entry (ALWAYS needed by checkEventlessTransitions)
                 lastTransitionSourceState_ = checkState;
-                // W3C SCXML 3.13: Track internal transition type (ALWAYS needed by
-                // StaticExecutionEngine::handleHierarchicalTransition)
+                // W3C SCXML 3.13: Track internal transition type (ALWAYS needed by StaticExecutionEngine::handleHierarchicalTransition)
                 lastTransitionIsInternal_ = false;
                 // W3C SCXML 5.9.2: Track targetless transition (consumes event only, no exit/enter)
                 lastTransitionIsTargetless_ = false;
@@ -122,15 +109,12 @@ bool tryTransitionInState([[maybe_unused]] State checkState, [[maybe_unused]] Ev
         // W3C SCXML 5.9.3: Direct enum comparison (exact match, no prefix matching needed)
         if (event == Event::Go) {
             this->ensureScriptEngine();
-            [[maybe_unused]] auto &scriptEngine = getScriptEngine();
+            [[maybe_unused]] auto& scriptEngine = getScriptEngine();
             {  // Unconditional transition
-                AOT_DEBUG("AOT processTransition: Event matched descriptor 'go' in state {}",
-                          static_cast<int>(checkState));
-                // W3C SCXML 3.4: Track transition source for hierarchical exit/entry (ALWAYS needed by
-                // checkEventlessTransitions)
+                AOT_DEBUG("AOT processTransition: Event matched descriptor 'go' in state {}", static_cast<int>(checkState));
+                // W3C SCXML 3.4: Track transition source for hierarchical exit/entry (ALWAYS needed by checkEventlessTransitions)
                 lastTransitionSourceState_ = checkState;
-                // W3C SCXML 3.13: Track internal transition type (ALWAYS needed by
-                // StaticExecutionEngine::handleHierarchicalTransition)
+                // W3C SCXML 3.13: Track internal transition type (ALWAYS needed by StaticExecutionEngine::handleHierarchicalTransition)
                 lastTransitionIsInternal_ = false;
                 // W3C SCXML 5.9.2: Track targetless transition (consumes event only, no exit/enter)
                 lastTransitionIsTargetless_ = false;
@@ -148,13 +132,14 @@ bool tryTransitionInState([[maybe_unused]] State checkState, [[maybe_unused]] Ev
 public:
 // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
 #line 3 "inline_mixed.scxml"
-
-template <typename Engine> void executeTransitionActions([[maybe_unused]] Engine &engine) {
+template <typename Engine>
+void executeTransitionActions([[maybe_unused]] Engine& engine) {
     // W3C SCXML 3.13: No transition actions (Zero Overhead - empty method)
     AOT_DEBUG("AOT executeTransitionActions: No transition actions in this state machine");
 }
 
 public:
+
 // Helper: Ensure session ID is initialized
 void ensureSessionId() const {
     if (!sessionId_.has_value()) {
@@ -172,24 +157,21 @@ void setScriptEngine(::std::shared_ptr<::SCE::IScriptEngine> engine) const {
     scriptEngine_ = ::std::move(engine);
 }
 
-::SCE::IScriptEngine &getScriptEngine() const {
+::SCE::IScriptEngine& getScriptEngine() const {
     if (!scriptEngine_) {
-        throw ::std::runtime_error("inline_mixedPolicy::getScriptEngine: "
-                                   "setScriptEngine() must be called before initialize()");
+        throw ::std::runtime_error(
+            "inline_mixedPolicy::getScriptEngine: "
+            "setScriptEngine() must be called before initialize()");
     }
     return *scriptEngine_;
 }
 
 // Helper: Ensure JSEngine is initialized (lazy initialization)
 void ensureScriptEngine() const {
-    if (scriptEngineInitialized_) {
-        return;
-    }
+    if (scriptEngineInitialized_) return;
     ensureSessionId();
-    if (!sessionId_.has_value()) {
-        return;
-    }
-    auto &scriptEngine = getScriptEngine();
+    if (!sessionId_.has_value()) return;
+    auto& scriptEngine = getScriptEngine();
     scriptEngine.createSession(sessionId_.value());
 
     // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
@@ -212,15 +194,12 @@ void ensureScriptEngine() const {
 // ARCHITECTURE.MD: Zero Duplication - Use DataModelInitHelper (shared with Interpreter)
 // W3C SCXML 5.2/5.3: Initialize datamodel and raise error.execution if failed
 // Called during StaticExecutionEngine::initialize() to ensure proper error event timing
-template <typename Engine> void initializeDataModel([[maybe_unused]] Engine &engine) {
-    if (scriptEngineInitialized_) {
-        return;
-    }
+template <typename Engine>
+void initializeDataModel([[maybe_unused]] Engine& engine) {
+    if (scriptEngineInitialized_) return;
     ensureSessionId();
-    if (!sessionId_.has_value()) {
-        return;
-    }
-    auto &scriptEngine = getScriptEngine();
+    if (!sessionId_.has_value()) return;
+    auto& scriptEngine = getScriptEngine();
     scriptEngine.createSession(sessionId_.value());
 
     // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
@@ -233,7 +212,8 @@ template <typename Engine> void initializeDataModel([[maybe_unused]] Engine &eng
     // W3C SCXML 5.2/5.3: Use initializeVariableFromExpr for expr attribute
     // Test 277: expr evaluation failure must raise error.execution (no fallback)
     ::SCE::DataModelInitHelper::initializeVariableFromExpr(
-        scriptEngine, sessionId_.value(), "rpm", "0", [&engine](const ::std::string &msg) {
+        scriptEngine, sessionId_.value(), "rpm", "0",
+        [&engine](const ::std::string& msg) {
             engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
         });
 
@@ -243,8 +223,8 @@ template <typename Engine> void initializeDataModel([[maybe_unused]] Engine &eng
 // W3C SCXML 5.9: Safe guard evaluation with error.execution on failure
 // ARCHITECTURE.md: Zero Duplication - Wraps shared GuardHelper with AOT-specific error handling
 template <typename Engine>
-bool safeEvaluateGuard(::SCE::IScriptEngine &jsEngine, const std::string &sessionId, const std::string &guardExpr,
-                       Engine &engine) const {
+bool safeEvaluateGuard(::SCE::IScriptEngine& jsEngine, const std::string& sessionId,
+                       const std::string& guardExpr, Engine& engine) const {
     AOT_DEBUG("AOT safeEvaluateGuard: Evaluating guard: '{}'", guardExpr);
     auto result = ::SCE::GuardHelper::evaluateGuard(jsEngine, sessionId, guardExpr);
 
@@ -260,9 +240,9 @@ bool safeEvaluateGuard(::SCE::IScriptEngine &jsEngine, const std::string &sessio
 }
 
 // Helper: Set param in JSEngine for static invoke (W3C SCXML 6.4)
-void setParamInScriptEngine(const std::string &paramName, const std::string &paramExpr) {
+void setParamInScriptEngine(const std::string& paramName, const std::string& paramExpr) {
     ensureScriptEngine();
-    auto &scriptEngine = getScriptEngine();
+    auto& scriptEngine = getScriptEngine();
     auto valueResult = scriptEngine.evaluateExpression(sessionId_.value(), paramExpr).get();
     if (::SCE::ScriptResultUtils::isSuccess(valueResult)) {
         scriptEngine.setVariable(sessionId_.value(), paramName, valueResult.getInternalValue());
@@ -272,54 +252,33 @@ void setParamInScriptEngine(const std::string &paramName, const std::string &par
 }
 
 // Helper: Convert Event enum to string for _event.name (W3C SCXML 5.10)
-[[nodiscard]] static constexpr const char *getEventName(Event event) noexcept {
+[[nodiscard]] static constexpr const char* getEventName(Event event) noexcept {
     switch (event) {
-    case Event::NONE:
-        return "";
-    case Event::Error_execution:
-        return "error.execution";
-    case Event::Go:
-        return "go";
-    case Event::Stop:
-        return "stop";
-    default:
-        return "";
+        case Event::NONE: return "";
+        case Event::Error_execution: return "error.execution";
+        case Event::Go: return "go";
+        case Event::Stop: return "stop";
+        default: return "";
     }
 }
 
 // Helper: Convert event name string to Event enum (W3C SCXML 6.4.6 autoforward)
 // Used for forwarding events by name to child state machines
-[[nodiscard]] static std::optional<Event> getEventFromName(const std::string &eventName) noexcept {
-    if (eventName.empty()) {
-        return std::nullopt;
-    }
-    if (eventName == "error.execution") {
-        return Event::Error_execution;
-    }
-    if (eventName == "go") {
-        return Event::Go;
-    }
-    if (eventName == "stop") {
-        return Event::Stop;
-    }
+[[nodiscard]] static std::optional<Event> getEventFromName(const std::string& eventName) noexcept {
+    if (eventName.empty()) return std::nullopt;
+    if (eventName == "error.execution") return Event::Error_execution;
+    if (eventName == "go") return Event::Go;
+    if (eventName == "stop") return Event::Stop;
     return std::nullopt;
 }
 
 // Zero-allocation overload for SCE Mesh shared memory transport.
 // Avoids std::string construction in the lock-free drain path.
-[[nodiscard]] static std::optional<Event> getEventFromName(const char *eventName) noexcept {
-    if (!eventName || eventName[0] == '\0') {
-        return std::nullopt;
-    }
-    if (std::strcmp(eventName, "error.execution") == 0) {
-        return Event::Error_execution;
-    }
-    if (std::strcmp(eventName, "go") == 0) {
-        return Event::Go;
-    }
-    if (std::strcmp(eventName, "stop") == 0) {
-        return Event::Stop;
-    }
+[[nodiscard]] static std::optional<Event> getEventFromName(const char* eventName) noexcept {
+    if (!eventName || eventName[0] == '\0') return std::nullopt;
+    if (std::strcmp(eventName, "error.execution") == 0) return Event::Error_execution;
+    if (std::strcmp(eventName, "go") == 0) return Event::Go;
+    if (std::strcmp(eventName, "stop") == 0) return Event::Stop;
     return std::nullopt;
 }
 
@@ -330,20 +289,17 @@ void setParamInScriptEngine(const std::string &paramName, const std::string &par
 // hierarchical visualisers) need it whether or not the SM uses
 // parallel states or the In() predicate. Required by StateNamingPolicy
 // concept (StatePolicyConcepts.h). W3C SCXML 5.9.2 / 3.3.
-[[nodiscard]] static constexpr const char *getStateName(State state) noexcept {
+[[nodiscard]] static constexpr const char* getStateName(State state) noexcept {
     switch (state) {
-    case State::Active:
-        return "active";
-    case State::Idle:
-        return "idle";
-    default:
-        return "";
+        case State::Active: return "active";
+        case State::Idle: return "idle";
+        default: return "";
     }
 }
 
 private:
 // Helper: Determine event type using shared EventTypeHelper (W3C SCXML 5.10.1)
-std::string getEventType(const std::string &eventName) {
+std::string getEventType(const std::string& eventName) {
     bool isExternal = nextEventIsExternal_;
     if (nextEventIsExternal_) {
         nextEventIsExternal_ = false;
@@ -354,21 +310,15 @@ std::string getEventType(const std::string &eventName) {
 public:
 // Helper: Set _event variable in script engine (W3C SCXML 5.10)
 // Always generated for compile-time compatibility, but no-op if JSEngine not needed
-void setCurrentEventInScriptEngine([[maybe_unused]] const std::string &eventName,
-                                   [[maybe_unused]] const std::string &eventData = "",
-                                   [[maybe_unused]] const std::string &eventType = "",
-                                   [[maybe_unused]] const std::string &sendId = "",
-                                   [[maybe_unused]] const std::string &origin = "",
-                                   [[maybe_unused]] const std::string &originType = "",
-                                   [[maybe_unused]] const std::string &invokeId = "",
-                                   [[maybe_unused]] const std::optional<ScriptValue> &typedData = std::nullopt) {
-    if (eventName.empty()) {
-        return;
-    }
+void setCurrentEventInScriptEngine([[maybe_unused]] const std::string& eventName, [[maybe_unused]] const std::string& eventData = "",
+                            [[maybe_unused]] const std::string& eventType = "", [[maybe_unused]] const std::string& sendId = "",
+                            [[maybe_unused]] const std::string& origin = "", [[maybe_unused]] const std::string& originType = "",
+                            [[maybe_unused]] const std::string& invokeId = "",
+                            [[maybe_unused]] const std::optional<ScriptValue>& typedData = std::nullopt) {
+    if (eventName.empty()) return;
     ensureScriptEngine();
     std::string actualType = eventType.empty() ? this->getEventType(eventName) : eventType;
-    AOT_DEBUG("AOT setCurrentEventInScriptEngine: name='{}', data='{}', type='{}', sendId='{}', origin='{}', "
-              "originType='{}', invokeId='{}'",
+    AOT_DEBUG("AOT setCurrentEventInScriptEngine: name='{}', data='{}', type='{}', sendId='{}', origin='{}', originType='{}', invokeId='{}'",
               eventName, eventData, actualType, sendId, origin, originType, invokeId);
     // W3C SCXML 5.5: Use Event object when typed data available (engine-agnostic ScriptValue pipeline)
     if (typedData.has_value()) {
@@ -383,7 +333,9 @@ void setCurrentEventInScriptEngine([[maybe_unused]] const std::string &eventName
     } else {
         // W3C SCXML 5.10: String-based path (standard)
         getScriptEngine()
-            .setCurrentEvent(sessionId_.value(), eventName, eventData, actualType, sendId, origin, originType, invokeId)
+            .setCurrentEvent(sessionId_.value(),
+                             ::SCE::SetCurrentEventArgs{eventName, eventData, actualType, sendId, origin,
+                                                        originType, invokeId})
             .get();
     }
 }
@@ -392,15 +344,10 @@ void setCurrentEventInScriptEngine([[maybe_unused]] const std::string &eventName
 // This prevents stack-use-after-return when JSEngine background thread
 // tries to call In() predicate callbacks after the state machine is destroyed
 void ensureScriptEngineSessionDestroyed() const {
-    if (!scriptEngineInitialized_) {
-        return;
-    }
-    if (!sessionId_.has_value()) {
-        return;
-    }
-    auto &scriptEngine = getScriptEngine();
+    if (!scriptEngineInitialized_) return;
+    if (!sessionId_.has_value()) return;
+    auto& scriptEngine = getScriptEngine();
     scriptEngine.destroySession(sessionId_.value());
     scriptEngineInitialized_ = false;
 }
-
 private:
