@@ -1,7 +1,12 @@
+// SCE-GENERATED — DO NOT EDIT
+// source-hash: 95d74c10cc6e55dce2bd53005b00912ca50a8c1a0e12ee0808970e366eaee4e0
+// template-hash: f5e6315f2ec211d36d839290b90cbd833e902936cc9328b605b51a480ada76bd
+// generated-at: 1779408030
 
 // GENERATED CODE — DO NOT EDIT
-// Source: /tmp/tmp.nVW79FxeGS/donedata_local_invoke__sce_synth_invoke__inv_param.scxml
+// Source: sce-kotlin-tests/src/test/resources/fixtures/donedata_local_invoke__sce_synth_invoke__inv_param.scxml
 // Generator: SCE Kotlin Code Generator v1.0
+// SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_param.scxml:3
 
 package com.sce.generated.donedata_local_invoke
 
@@ -24,7 +29,7 @@ sealed interface DonedataLocalInvokeSceSynthInvokeInvParamEvent : Event {
 // --- State Machine (W3C SCXML) ---
 
 class DonedataLocalInvokeSceSynthInvokeInvParamStateMachine(
-    scriptEngine: ScxmlScriptEngine? = null
+    scriptEngine: ScxmlScriptEngine,
 ) : StateMachineEngine<DonedataLocalInvokeSceSynthInvokeInvParamState, DonedataLocalInvokeSceSynthInvokeInvParamEvent>(scriptEngine) {
 
     override val initialState: DonedataLocalInvokeSceSynthInvokeInvParamState = DonedataLocalInvokeSceSynthInvokeInvParamState.Done
@@ -77,7 +82,7 @@ class DonedataLocalInvokeSceSynthInvokeInvParamStateMachine(
     // W3C SCXML B.1: Lazy script engine initialization
     private fun ensureScriptEngine() {
         if (scriptEngineInitialized) return
-        val engine = scriptEngine ?: return
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = allocateScriptSession()
         engine.createSession(sid)
 
@@ -105,8 +110,8 @@ class DonedataLocalInvokeSceSynthInvokeInvParamStateMachine(
     // W3C SCXML 5.9: Guard evaluation with error.execution on failure
     private fun safeEvaluateGuard(guardExpr: String): Boolean {
         ensureScriptEngine()
-        val engine = scriptEngine ?: return false
-        val sid = scriptSessionId ?: return false
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
@@ -118,8 +123,8 @@ class DonedataLocalInvokeSceSynthInvokeInvParamStateMachine(
     // W3C SCXML 5.3: Assignment via script engine
     private fun executeAssign(location: String, expr: String) {
         ensureScriptEngine()
-        val engine = scriptEngine ?: return
-        val sid = scriptSessionId ?: return
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
         try {
             engine.assign(sid, location, expr)
         } catch (e: Exception) {
@@ -130,8 +135,8 @@ class DonedataLocalInvokeSceSynthInvokeInvParamStateMachine(
     // W3C SCXML 3.8.6: Script block execution
     private fun executeScriptBlock(script: String) {
         ensureScriptEngine()
-        val engine = scriptEngine ?: return
-        val sid = scriptSessionId ?: return
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
         try {
             engine.executeScript(sid, script)
         } catch (e: Exception) {
@@ -142,8 +147,8 @@ class DonedataLocalInvokeSceSynthInvokeInvParamStateMachine(
     // W3C SCXML 5.10: Set _event before event processing
     private fun setCurrentEventInScriptEngine(event: DonedataLocalInvokeSceSynthInvokeInvParamEvent) {
         ensureScriptEngine()
-        val engine = scriptEngine ?: return
-        val sid = scriptSessionId ?: return
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
         val eventName = eventNameOf(event) ?: return
         val meta = currentEventMetadata
         // W3C SCXML 5.10.1: C++ classifyEventType — platform events override type
@@ -186,7 +191,9 @@ class DonedataLocalInvokeSceSynthInvokeInvParamStateMachine(
     // --- Per-State Event Handlers ---
 
 
+
     // Entry Actions (W3C SCXML 3.8)
+    // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_param.scxml:3
     override fun onEntry(state: DonedataLocalInvokeSceSynthInvokeInvParamState) {
         when (state) {
             is DonedataLocalInvokeSceSynthInvokeInvParamState.Done -> {
@@ -195,8 +202,8 @@ class DonedataLocalInvokeSceSynthInvokeInvParamStateMachine(
                 // W3C SCXML 5.5: Evaluate donedata for final state
                 run {
                     ensureScriptEngine()
-                    val engineDD = scriptEngine ?: return@run
-                    val sidDD = scriptSessionId ?: return@run
+                    val engineDD = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                    val sidDD = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                     var doneEventData = ""
                     // W3C SCXML 5.5: Evaluate <param> elements (C++ DoneDataHelper::evaluateParams pattern)
                     val doneParams = mutableMapOf<String, Any?>()
@@ -224,6 +231,7 @@ class DonedataLocalInvokeSceSynthInvokeInvParamStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
+    // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_param.scxml:3
     override fun onExit(state: DonedataLocalInvokeSceSynthInvokeInvParamState) {
         when (state) {
             is DonedataLocalInvokeSceSynthInvokeInvParamState.Done -> {
@@ -232,7 +240,9 @@ class DonedataLocalInvokeSceSynthInvokeInvParamStateMachine(
         }
     }
 
+
     // Transition Actions (W3C SCXML 3.13)
+    // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_param.scxml:3
     override fun executeTransitionActions(
         source: DonedataLocalInvokeSceSynthInvokeInvParamState,
         event: DonedataLocalInvokeSceSynthInvokeInvParamEvent?
