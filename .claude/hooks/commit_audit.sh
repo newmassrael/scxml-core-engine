@@ -619,9 +619,6 @@ if [ -f "$MARKER" ] && [ "$(cat "$MARKER")" = "$MARKER_KEY" ]; then
   exit 0
 fi
 
-# Record the marker *before* blocking so that the retry picks it up.
-printf '%s' "$MARKER_KEY" > "$MARKER"
-
 # Discover plan memos that might name YAGNI-adjacent work for this
 # project. Memory dirs follow the slug `<leading-slash>path-with-
 # dashes`, e.g. /home/coin/scxml-core-engine → -home-coin-scxml-core-
@@ -629,19 +626,52 @@ printf '%s' "$MARKER_KEY" > "$MARKER"
 PROJECT_SLUG="$(printf '%s' "${CWD:-$PWD}" | sed 's|/|-|g')"
 MEMORY_DIR="$HOME/.claude/projects/${PROJECT_SLUG}/memory"
 NEXT_MEMOS=""
+MEMO_ERRORS=""
 if [ -d "$MEMORY_DIR" ]; then
-  # Only surface plan memos whose frontmatter declares `status: open`.
-  # Closed lifecycle states (superseded/landed/retired/retrospective)
-  # are filtered so the audit list reflects active work, not history.
-  NEXT_MEMOS="$(
-    for f in "$MEMORY_DIR"/next_*.md; do
-      [ -f "$f" ] || continue
-      if awk '/^---$/{c++; if(c==2)exit} c==1' "$f" | grep -q "^status: open$"; then
-        printf '       - %s\n' "$(basename "$f")"
-      fi
-    done | sort
-  )"
+  # Validate every plan memo declares lifecycle status from the valid
+  # set; surface only `status: open` in the audit list. Missing or
+  # invalid status aborts the commit so silently-broken hooks are
+  # impossible (the auditor itself is auditable).
+  for f in "$MEMORY_DIR"/next_*.md; do
+    [ -f "$f" ] || continue
+    status="$(awk '/^---$/{c++; if(c==2)exit} c==1' "$f" \
+              | { grep -m1 "^status:" || true; } \
+              | sed 's/^status: *//' | tr -d ' "')"
+    if [ -z "$status" ]; then
+      MEMO_ERRORS="${MEMO_ERRORS}
+       - $(basename "$f"): missing 'status:' field"
+    elif ! echo "$status" | grep -qE "^(open|superseded|landed|retired|retrospective|refuted)$"; then
+      MEMO_ERRORS="${MEMO_ERRORS}
+       - $(basename "$f"): invalid status '$status'"
+    elif [ "$status" = "open" ]; then
+      NEXT_MEMOS="${NEXT_MEMOS}
+       - $(basename "$f")"
+    fi
+  done
+  NEXT_MEMOS="$(printf '%s' "$NEXT_MEMOS" | sed '/^$/d' | sort)"
 fi
+
+# Fail loud on schema violations — re-validate every retry until fixed.
+# No marker write happens here so retries cannot pass silently.
+if [ -n "$MEMO_ERRORS" ]; then
+  {
+    echo "=== COMMIT BLOCKED: plan-memo status schema violations ==="
+    echo ""
+    echo "Files in $MEMORY_DIR"
+    echo "must declare frontmatter 'status:' from this set:"
+    echo "  open | superseded | landed | retired | retrospective | refuted"
+    echo ""
+    echo "Violations:${MEMO_ERRORS}"
+    echo ""
+    echo "Add or correct the 'status:' line in each affected memo's"
+    echo "frontmatter (between description: and metadata:), then re-run"
+    echo "the commit."
+  } >&2
+  exit 2
+fi
+
+# Record the marker *before* blocking so that the retry picks it up.
+printf '%s' "$MARKER_KEY" > "$MARKER"
 
 {
   echo "=== COMMIT SELF-AUDIT (hook-mandated, answer then retry) ==="
