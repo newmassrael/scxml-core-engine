@@ -538,6 +538,19 @@ pub enum DiagnosticCode {
     //    `<script>` rejection per §5.8 has no forge analog). ──
     #[serde(rename = "scxml/top-level-script-unloaded")]
     ScxmlTopLevelScriptUnloaded,
+    // ── NL→IR Mapping Roadmap Item 3 Phase A — Statechart graph
+    //    reachability. BFS from the document `initial` (plus the
+    //    parallel-all-children, compound-initial-cascade, and history
+    //    default-target entry rules) computes the design-time reach
+    //    set; a state outside the set is reported as
+    //    `scxml/unreachable-state`. For an unreachable state that
+    //    carries `<transition>` elements, the per-transition variant
+    //    `scxml/dead-transition` is emitted in preference so the author
+    //    sees the concrete element to repair. ───────────────────────
+    #[serde(rename = "scxml/unreachable-state")]
+    ScxmlUnreachableState,
+    #[serde(rename = "scxml/dead-transition")]
+    ScxmlDeadTransition,
     // ── watching-zenoh RFC §5.E B7-η' SCXML on-sample family ──
     // Author-facing rules for `<sce:on-sample>` SCE extension. Atomic A
     // ships the structural diagnostics (placement, uniqueness,
@@ -2440,6 +2453,9 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         AlgorithmCallArgCountMismatch,
         // SCXML semantic (RFC §W5)
         ScxmlTopLevelScriptUnloaded,
+        // NL→IR Mapping Roadmap Item 3 Phase A — Statechart graph reachability
+        ScxmlUnreachableState,
+        ScxmlDeadTransition,
         ScxmlOnSampleInvalidParent,
         ScxmlOnSampleLinkDuplicateInState,
         ScxmlOnSampleEventNameConflict,
@@ -3332,7 +3348,15 @@ impl DiagnosticCode {
             // anchor; the rejection contract is SCE-internal.
             | ValidationCrossKindFieldNotFound
             | ValidationCrossKindTypeMismatch
-            | ValidationCrossKindCircularDependency => None,
+            | ValidationCrossKindCircularDependency
+            // NL→IR Mapping Roadmap Item 3 Phase A — reachability is
+            // implied by W3C SCXML §3 entry semantics (the design-time
+            // BFS over `initial`, parallel cascade, history default
+            // targets, and transition `target` edges), but no spec
+            // section names "unreachable state" as a rejection. Treat
+            // as SCE-internal hygiene; spec_anchor stays None.
+            | ScxmlUnreachableState
+            | ScxmlDeadTransition => None,
             // Axis-2 Phase Z carries the spec anchor that lived in the
             // diagnostic.rs:1170 placeholder comment.
             ReassemblyPerPeerQuotaBuildInvariantViolated => {
@@ -3406,6 +3430,8 @@ impl DiagnosticCode {
             }
             AlgorithmCallArgCountMismatch => "algorithm/call-arg-count-mismatch",
             ScxmlTopLevelScriptUnloaded => "scxml/top-level-script-unloaded",
+            ScxmlUnreachableState => "scxml/unreachable-state",
+            ScxmlDeadTransition => "scxml/dead-transition",
             ScxmlOnSampleInvalidParent => "scxml/on-sample-invalid-parent",
             ScxmlOnSampleLinkDuplicateInState => "scxml/on-sample-link-duplicate-in-state",
             ScxmlOnSampleEventNameConflict => "scxml/on-sample-event-name-conflict",
@@ -6999,6 +7025,40 @@ fn scxml_semantic_fields(e: &crate::scxml_semantic::ScxmlSemanticError) -> Diagn
                 k
             },
         },
+        ScxmlSemanticError::UnreachableState { state_id } => DiagnosticPayload {
+            // NEW — NL→IR Mapping Roadmap Item 3 Phase A. Reachability
+            // is a Statechart-graph rule with no forge analog (Forge
+            // kinds carry no control-flow surface), so the wire code
+            // sits in the `scxml/*` namespace.
+            code: DiagnosticCode::ScxmlUnreachableState,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(state_id.clone()),
+            // NeutralOrDeterministic — author repair is "delete the
+            // orphan or wire a transition into it"; no closed
+            // candidate set would be honest (see `non_overlap_class`
+            // commentary on this code).
+            fix: None,
+            key_fragments: vec!["scxml-unreachable-state".to_string(), state_id.clone()],
+        },
+        ScxmlSemanticError::DeadTransition { state, target } => DiagnosticPayload {
+            // NEW — paired with `UnreachableState` above; emitted in
+            // preference whenever the orphan state carries at least
+            // one `<transition>` so the diagnostic surfaces a concrete
+            // (source, target) edge to repair.
+            code: DiagnosticCode::ScxmlDeadTransition,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(target.clone()),
+            fix: None,
+            // (state, target) keep two orphan edges in the same
+            // document distinguishable in the content-hash id.
+            key_fragments: vec![
+                format!("scxml-state:{state}"),
+                "dead-transition-target".to_string(),
+                target.clone(),
+            ],
+        },
     }
 }
 
@@ -7617,6 +7677,30 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:60cc8f4eef6d11ca","code":"scxml/top-level-script-unloaded","stage":"validation","spec":"W3C SCXML §5.8","message":"Top-level <script> rejected per W3C SCXML 5.8","actual":"init.js"}"#,
+            ),
+            (
+                // NL→IR Mapping Roadmap Item 3 Phase A — Statechart
+                // reachability. State-level form fires only when an
+                // orphan state has no `<transition>` children (the
+                // per-transition variant outranks it otherwise).
+                "forge/scxml-unreachable-state",
+                crate::scxml_semantic::ScxmlSemanticError::UnreachableState {
+                    state_id: "ghost_branch".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:c62a2a67930417c8","code":"scxml/unreachable-state","stage":"validation","message":"State 'ghost_branch' is unreachable from the document initial configuration","actual":"ghost_branch"}"#,
+            ),
+            (
+                // NL→IR Mapping Roadmap Item 3 Phase A — per-transition
+                // form. Source is the unreachable state, target is the
+                // transition's `target` attribute verbatim.
+                "forge/scxml-dead-transition",
+                crate::scxml_semantic::ScxmlSemanticError::DeadTransition {
+                    state: "ghost_branch".into(),
+                    target: "armed".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:c6afb255ec2689b7","code":"scxml/dead-transition","stage":"validation","message":"Transition in unreachable state 'ghost_branch' targets 'armed' — source state is never entered","actual":"armed"}"#,
             ),
             (
                 // watching-zenoh RFC §5.E B7-η' Q-OnSample-2 (a)
@@ -11612,7 +11696,19 @@ mod tests {
             // which edge is author-domain). Neither carries a closed
             // candidate set on the diagnostic wire.
             | ValidationCrossKindTypeMismatch
-            | ValidationCrossKindCircularDependency => NeutralOrDeterministic,
+            | ValidationCrossKindCircularDependency
+            // NL→IR Mapping Roadmap Item 3 Phase A — reachability codes
+            // ship without a closed candidate set. Repair for an
+            // unreachable state is author-domain (delete the orphan or
+            // re-connect via a new transition); listing every reachable
+            // state as a `ReplaceOneOf` candidate would mis-signal that
+            // a rename is the expected fix, when the author almost
+            // always meant to wire a transition rather than match an
+            // existing state name. Same reasoning for dead-transition:
+            // the source state's id is correct, the graph topology is
+            // not.
+            | ScxmlUnreachableState
+            | ScxmlDeadTransition => NeutralOrDeterministic,
         }
     }
 
@@ -11858,6 +11954,8 @@ mod tests {
                 | AlgorithmForeachSourceBcWithBytesItemType
                 | AlgorithmCallArgCountMismatch
                 | ScxmlTopLevelScriptUnloaded
+                | ScxmlUnreachableState
+                | ScxmlDeadTransition
                 | ScxmlOnSampleInvalidParent
                 | ScxmlOnSampleLinkDuplicateInState
                 | ScxmlOnSampleEventNameConflict
@@ -12097,7 +12195,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            305,
+            307,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries —\
              expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
@@ -12809,7 +12907,19 @@ mod tests {
              Forge→Forge path inside `compile_forge_from_parsed` after \
              the existing `validate_and_enrich_imports` pass; a future \
              Statechart→Forge binding would add the second wire site \
-             without changing the diagnostic shape. 302 → 305.",
+             without changing the diagnostic shape. 302 → 305. \
+             Then NL→IR Mapping Roadmap Item 3 Phase A adds two codes — \
+             `scxml/unreachable-state` (state declared in the document \
+             graph but the design-time BFS over the document `initial`, \
+             compound-initial cascade, parallel-all-children entry, \
+             history default targets, and transition `target` edges \
+             cannot reach it) and `scxml/dead-transition` (transition \
+             whose source state is itself unreachable — the per- \
+             transition variant emitted in preference when an \
+             unreachable state carries one or more `<transition>` \
+             children, so the diagnostic surfaces the concrete element \
+             the author can delete or re-wire). Both \
+             NeutralOrDeterministic. 305 → 307.",
         );
     }
 

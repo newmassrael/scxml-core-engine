@@ -84,11 +84,23 @@ fn typed_entry_surfaces_xinclude_fragment_dep() {
     // build.rs facade does not distinguish the two stages and emits
     // one `rerun-if-changed=` per dep regardless of origin.
     let tmp = tempdir().expect("tempdir");
+    // XInclude expansion splices the *children* of the included
+    // document's root element into the host (the root wrapper is
+    // discarded — see `xinclude::render_root_children`). The fragment
+    // therefore wraps its real payload in a `<fragment>` shell whose
+    // sole purpose is to be stripped at splice time, leaving just the
+    // `<transition>` child to land directly inside `<state id="phase1">`.
+    // Without the wrapper the include would be a no-op and phase1 would
+    // gain no transitions, which `scxml_reachability::validate`
+    // (NL→IR Mapping Roadmap Item 3 Phase A) now catches as the
+    // orphan `<final id="pass">`.
     let fragment = write_file(
         tmp.path(),
         "frag.xml",
         r#"<?xml version="1.0" encoding="UTF-8"?>
-<transition event="tick" target="pass" xmlns="http://www.w3.org/2005/07/scxml"/>
+<fragment>
+  <transition event="tick" target="pass" xmlns="http://www.w3.org/2005/07/scxml"/>
+</fragment>
 "#,
     );
     let host = write_file(
