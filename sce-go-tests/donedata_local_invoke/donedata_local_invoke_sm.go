@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 3219b243a994becf954410866ee1c48a58ec9848d2b43c126f5d9a664b6d22a5
-// template-hash: 2c3095605ca1411e92bb3a04437083405f1d09026638bd16a6cfb98046f3ffb2
-// generated-at: 1779072428
+// template-hash: f5e6315f2ec211d36d839290b90cbd833e902936cc9328b605b51a480ada76bd
+// generated-at: 1779408240
 
 
 // SPDX-License-Identifier: MIT
@@ -257,7 +257,15 @@ func (p *DonedataLocalInvokePolicy) setCurrentEvent(name string) {
 	origin := p.pendingEventOrigin
 	originType := p.pendingEventOrigintype
 	invokeID := p.pendingEventInvokeid
-	_ = engine.SetCurrentEvent(p.SessionID, sce.SetCurrentEventArgs{Name: name, Data: data, Type: eventType, SendID: sendID, Origin: origin, OriginType: originType, InvokeID: invokeID})
+	_ = engine.SetCurrentEvent(p.SessionID, sce.SetCurrentEventArgs{
+		Name:       name,
+		Data:       data,
+		Type:       eventType,
+		SendID:     sendID,
+		Origin:     origin,
+		OriginType: originType,
+		InvokeID:   invokeID,
+	})
 }
 
 // assignVariable assigns a value to a datamodel variable via script engine.
