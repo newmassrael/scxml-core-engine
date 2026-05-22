@@ -12,14 +12,18 @@ name: Drift Verify (B9 §6.2.6)
 # integration suites run, not the full workspace test sweep
 # (covered by w3c-tests.yml).
 #
-# Two tracked committed trees feed the real-tree invariants
-# (verify_passes_on_real_committed_{rust,kotlin}_w3c_tree, added in
-# efdd2591) — paths for both backends are listed below. Per Q-§6.2.6-3
-# the template-hash is computed over the whole template tree plus
-# Cargo.lock, so an edit to any backend's templates can invalidate
-# every other backend's stored hash even if its emit is byte-identical
-# (which is exactly the chain pattern c2dfe502/1a5efb07/dc228ab4/64f93cf4
-# left stale and 3b8941c3/7a4ee07f swept).
+# Real-tree invariants exercised by this gate:
+#   - verify_passes_on_real_committed_{rust,kotlin}_w3c_tree (efdd2591)
+#   - verify_passes_on_real_committed_{rust,kotlin,go}_donedata_tree (1a8c7b3f)
+#
+# Per Q-§6.2.6-3 the template-hash is computed over the whole template
+# tree plus Cargo.lock, so an edit to any backend's templates can
+# invalidate every other backend's stored hash even if its emit is
+# byte-identical (the chain pattern c2dfe502/1a5efb07/dc228ab4/64f93cf4
+# left stale and 3b8941c3/7a4ee07f/d6b2cb03/47fb7767 swept). The
+# donedata trees have a distinct drift context — their source-hash is
+# computed against each backend's `fixtures/` dir, not `resources/` —
+# so the fixture paths are also listed below.
 
 on:
   push:
@@ -28,9 +32,13 @@ on:
       - 'sce-build/**'
       - 'tools/codegen/templates/**'
       - 'sce-rust-tests/src/generated/**'
+      - 'sce-rust-tests/src/integration/donedata_local_invoke/**'
       - 'sce-rust-tests/fixtures/**'
       - 'sce-kotlin-tests/src/main/kotlin/com/sce/generated/**'
       - 'sce-kotlin-tests/src/test/kotlin/com/sce/w3c/**'
+      - 'sce-kotlin-tests/src/test/resources/fixtures/**'
+      - 'sce-go-tests/donedata_local_invoke/**'
+      - 'sce-go-tests/fixtures/**'
       - 'resources/**'
       - 'Cargo.lock'
       - 'Cargo.toml'
@@ -41,9 +49,13 @@ on:
       - 'sce-build/**'
       - 'tools/codegen/templates/**'
       - 'sce-rust-tests/src/generated/**'
+      - 'sce-rust-tests/src/integration/donedata_local_invoke/**'
       - 'sce-rust-tests/fixtures/**'
       - 'sce-kotlin-tests/src/main/kotlin/com/sce/generated/**'
       - 'sce-kotlin-tests/src/test/kotlin/com/sce/w3c/**'
+      - 'sce-kotlin-tests/src/test/resources/fixtures/**'
+      - 'sce-go-tests/donedata_local_invoke/**'
+      - 'sce-go-tests/fixtures/**'
       - 'resources/**'
       - 'Cargo.lock'
       - 'Cargo.toml'
@@ -80,12 +92,15 @@ jobs:
     # B9 integration suite — synthetic input/template fixtures cover the
     # verify subcommand's clean-pass / drifted-source / drifted-template /
     # cwd-independence / empty-input invariants. The same target also
-    # runs verify_passes_on_real_committed_{rust,kotlin}_w3c_tree
-    # (efdd2591) — the real-tree invariants that catch the cross-backend
-    # template-hash invalidation pattern committed-tree fresh-regen on
-    # CI otherwise hides. A regression in apply_drift_headers_to_output,
-    # compute_source_hash, or the per-backend codegen path fails this
-    # step before any unit-level masking can hide it.
+    # runs the real-tree invariants:
+    #   - verify_passes_on_real_committed_{rust,kotlin}_w3c_tree (efdd2591)
+    #   - verify_passes_on_real_committed_{rust,kotlin,go}_donedata_tree
+    #     (1a8c7b3f)
+    # which catch the cross-backend template-hash invalidation pattern
+    # committed-tree fresh-regen on CI otherwise hides. A regression in
+    # apply_drift_headers_to_output, compute_source_hash, or the
+    # per-backend codegen path fails this step before any unit-level
+    # masking can hide it.
     - name: Verify B9 drift detection integration suite
       run: cargo test -p sce-build --features cli --test b9_drift_detection -- --test-threads=1
 
