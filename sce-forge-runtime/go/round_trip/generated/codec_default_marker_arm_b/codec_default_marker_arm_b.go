@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9dba19024112d81b0a74dd568083d98ea9f9b26f403a3af95dfa629b72fd2464
-// template-hash: 424c6f33953fe7f160097f9838fbc995a6528c2c939f5d44e179aa010bc5eec7
-// generated-at: 1779070329
+// source-hash: 019ee701932f4e50e81f356c5c74585953ced5476623d2250d7269193f4d3a88
+// template-hash: f5e6315f2ec211d36d839290b90cbd833e902936cc9328b605b51a480ada76bd
+// generated-at: 1779414767
 // SCE-MAP: codec_default_marker_arm_b.scxml:14
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
@@ -43,9 +43,11 @@ func DecodeCodecDefaultMarkerArmB(cursor *codec.SceCursor) (*CodecDefaultMarkerA
 	if err != nil {
 		return nil, err
 	}
+	Header := raw[0]
+	Payload := uint16(raw[1])<<8 | uint16(raw[2])
 	value := &CodecDefaultMarkerArmB{
-		Header: raw[0],
-		Payload: uint16(raw[1])<<8 | uint16(raw[2]),
+		Header: Header,
+		Payload: Payload,
 	}
 	if err := cursor.Advance(3); err != nil {
 		return nil, err
@@ -69,11 +71,29 @@ func (s *CodecDefaultMarkerArmB) SetKind(v uint8) {
 	s.Header = (s.Header &^ _shiftedMask) | _val
 }
 
-// Encode serializes the CodecDefaultMarkerArmB into raw bytes.
-func (s *CodecDefaultMarkerArmB) Encode() []byte {
-	return []byte{
-		byte(s.Header),
-		byte(s.Payload >> 8 & 0xFF),
-		byte(s.Payload & 0xFF),
+// Encode writes the CodecDefaultMarkerArmB into the caller-owned sink.
+// Returns nil on success; codec.ErrBufferOverflow from a bounded sink
+// when the destination has insufficient remaining capacity; growable
+// sinks (e.g. BytesSink) are effectively infallible.
+func (s *CodecDefaultMarkerArmB) Encode(w codec.SceSink) error {
+	if err := w.WriteBytes([]byte{ byte(s.Header) }); err != nil {
+		return err
 	}
+	if err := w.WriteBytes([]byte{ byte(s.Payload >> 8 & 0xFF) }); err != nil {
+		return err
+	}
+	if err := w.WriteBytes([]byte{ byte(s.Payload & 0xFF) }); err != nil {
+		return err
+	}
+	return nil
+}
+
+// EncodeToBytes is the heap-backed convenience facade. Runs Encode
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecDefaultMarkerArmB) EncodeToBytes() []byte {
+	_dst := make([]byte, 0, 3)
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }

@@ -29,7 +29,7 @@ func TestDefaultRoundTripLandsInDeclaredDefaultArm(t *testing.T) {
 	// (which would leave every Variant arm pointer nil and produce an
 	// empty encode).
 	original := codec_variant_default_marker.NewCodecVariantDefaultMarker()
-	wire := original.Encode()
+	wire := original.EncodeToBytes()
 
 	if len(wire) != 3 {
 		t.Fatalf(
@@ -79,7 +79,7 @@ func TestDefaultRoundTripLandsInDeclaredDefaultArm(t *testing.T) {
 		}
 	}
 
-	reEncoded := decoded.Encode()
+	reEncoded := decoded.EncodeToBytes()
 	if !bytes.Equal(wire, reEncoded) {
 		t.Fatalf(
 			"decode → encode must produce byte-equal output; original=%v re-encoded=%v",
