@@ -681,7 +681,59 @@ Repair guidance, in author preference order:
 
 ---
 
-## Appendix — `DiagnosticCode` index (308 codes)
+### Statechart guard analysis (NL→IR Mapping Roadmap Item 3 Phase C)
+
+`<transition cond="...">` guards can be statically false (the
+transition never fires) or be shadowed by an earlier unconditional
+sibling (per W3C SCXML §5.10 transition selection, the first
+matching transition in document order wins). Both patterns are
+authoring mistakes that survive parse + reachability today.
+
+The validator stops short of full SMT to keep the false-positive
+surface at zero — it recognises only the structurally trivial
+cases:
+
+`scxml/always-false-guard` fires when the `cond` attribute matches
+one of:
+
+- The literal `false` (lowercase per W3C SCXML §B ECMAScript
+  convention).
+- The numeric literal `0`.
+- A binary equality `N == M` where both sides parse as decimal
+  numeric literals with differing values (`1==2`, `0==1`,
+  `42==99`). Whitespace around `==` is tolerated.
+- A binary inequality `N != M` where both sides parse as decimal
+  numeric literals with equal values (`1!=1`, `0!=0`).
+
+Language-prefixed `cond` values (`cpp:expr`, `kotlin:expr`,
+`rust:expr`) remain opaque — the validator never inspects them.
+Their semantics depend on the host language's expression
+evaluator, which the parser cannot reason about statically without
+risking false positives.
+
+`scxml/shadowed-transition` fires when a state's `<transition>`
+list contains an unconditional transition (empty `cond`, literal
+`cond="true"`, or literal `cond="1"`) followed by a same-event
+sibling. The shadowing transition matches every event the shadowed
+one matches, so per W3C SCXML §5.10 it always wins and the later
+one is dead. The validator requires literal equality of the
+`event` attribute between the two transitions — token-prefix
+superset cases (`event="foo"` shadowing `event="foo.bar"`) depend
+on ancestor-priority rules the parser-stage walker cannot
+disambiguate without running the full selection algorithm, so they
+are deliberately not flagged.
+
+Repair guidance:
+
+1. Remove the dead transition.
+2. Rewrite the guard to a satisfiable expression.
+3. For shadowed transitions, reorder so the more specific transition
+   precedes the unconditional one, or add a guard to the previously
+   unconditional transition.
+
+---
+
+## Appendix — `DiagnosticCode` index (310 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -841,6 +893,8 @@ Codes that the author can avoid by writing a better SCXML /
 | `scxml/unreachable-state` | Validation |
 | `scxml/dead-transition` | Validation |
 | `scxml/non-exhaustive-event-handling` | Validation |
+| `scxml/always-false-guard` | Validation |
+| `scxml/shadowed-transition` | Validation |
 | `scxml/on-sample-invalid-parent` | Validation |
 | `scxml/on-sample-link-duplicate-in-state` | Validation |
 | `scxml/on-sample-event-name-conflict` | Validation |
