@@ -462,7 +462,7 @@ mod tests {
             sce_type: SceType::Uint8,
             direction: Direction::In,
             expr: None,
-            unit: None,
+            quantity: None,
             max_size: None,
         };
         let cases: Vec<ForgeDocument> = vec![

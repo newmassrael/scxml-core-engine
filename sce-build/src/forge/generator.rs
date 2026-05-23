@@ -1035,11 +1035,30 @@ fn render_transform(
     let type_ctx = crate::forge::type_ctx::transform(m, imports);
     let params = l.param_str(&m.inputs);
 
+    // NL→IR Mapping Roadmap Item 4 — collect per-input quantity
+    // annotations once so every `compute_<out>` doc-comment block
+    // describes the same input set. Output's own quantity (if present)
+    // also surfaces in the doc.
+    let param_quantities: Vec<serde_json::Value> = m
+        .inputs
+        .iter()
+        .filter_map(|inp| {
+            inp.quantity.map(|q| {
+                serde_json::json!({
+                    "id": inp.id.clone(),
+                    "unit": q.unit.as_str(),
+                    "scale_repr": q.scale.to_string(),
+                    "offset_repr": q.offset.to_string(),
+                })
+            })
+        })
+        .collect();
+
     let functions: Vec<serde_json::Value> = m
         .outputs
         .iter()
         .map(|out| {
-            let expected = crate::forge::types::InferredType::from_sce_type(&out.sce_type);
+            let expected = crate::forge::type_ctx::forge_field_type(out);
             let expr_val = expr::transpile_typed(
                 out.expr.as_deref().unwrap_or("0"),
                 l.expr_target(),
@@ -1077,6 +1096,31 @@ fn render_transform(
             obj.insert("expr".into(), expr_val.into());
             if matches!(lang, Language::Go) {
                 obj.insert("orig_name".into(), out.id.clone().into());
+            }
+            // NL→IR Mapping Roadmap Item 4 — surface quantity info into
+            // the per-function template scope. `param_quantities` lists
+            // every input whose `<sce:param>` declared a quantity, and
+            // `output_quantity` surfaces the output's own annotation
+            // (when present) so templates can render a doc-comment
+            // block tying the function signature to its physical
+            // interpretation. Behaviourally the existing emit path is
+            // unchanged when no quantity is declared — Transform stays
+            // byte-identical to the pre-Item-4 baseline in that case.
+            if !param_quantities.is_empty() {
+                obj.insert(
+                    "param_quantities".into(),
+                    serde_json::Value::Array(param_quantities.clone()),
+                );
+            }
+            if let Some(q) = out.quantity {
+                obj.insert(
+                    "output_quantity".into(),
+                    serde_json::json!({
+                        "unit": q.unit.as_str(),
+                        "scale_repr": q.scale.to_string(),
+                        "offset_repr": q.offset.to_string(),
+                    }),
+                );
             }
 
             Ok(serde_json::Value::Object(obj))
@@ -2294,6 +2338,25 @@ fn render_codec(
                     }
                 }
             }
+            // NL→IR Mapping Roadmap Item 4 — physical-quantity accessor
+            // pair. Only scalar fields (plain `<sce:field>` shape, not
+            // Repeat/TLV/Embed) carrying `sce:quantity=…` populate the
+            // payload; the template renders the accessor block guarded
+            // on `{% if field.quantity_accessor %}`. Absent annotation
+            // preserves the legacy byte-identical codec emission.
+            if let Some(q) = f.quantity {
+                let id_target = l.codec_field_id(&f.id);
+                let raw_ref = l.codec_field_ref(&id_target);
+                let payload = crate::forge::quantity_codegen::build_accessor_payload(
+                    q,
+                    &f.sce_type,
+                    &raw_ref,
+                    &raw_ref,
+                    &f.id,
+                    lang,
+                );
+                obj.insert("quantity_accessor".into(), payload);
+            }
             Ok(serde_json::Value::Object(obj))
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -2350,6 +2413,12 @@ fn render_codec(
         .iter()
         .any(|f| f.flags.iter().any(|fl| fl.value.is_some()));
     ctx.insert("has_flag_default".into(), has_flag_default.into());
+    // NL→IR Mapping Roadmap Item 4 — codec-level rollup so the template
+    // can short-circuit the raw↔physical accessor block when no field
+    // carries `sce:quantity=…`. Pairs with the per-field
+    // `quantity_accessor` payload populated in the field-render loop.
+    let has_quantity = m.fields.iter().any(|f| f.quantity.is_some());
+    ctx.insert("has_quantity".into(), has_quantity.into());
     // RFC §5.B B5-α: zero-field codecs (Zenoh KeepAlive et al.) skip
     // every cursor / encode-buffer touch; templates branch on
     // `has_no_fields` to emit a trivial encode/decode that round-trips

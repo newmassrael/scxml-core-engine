@@ -1738,6 +1738,16 @@ pub fn compile_forge_from_parsed(
     // scope comment for why Statechart→Forge stays out of v1.
     forge::cross_kind_check::check(parsed, base_dir, label.diagnostic_label)?;
 
+    // NL→IR Mapping Roadmap Item 4 — physical-quantity unit-mismatch
+    // arithmetic verification. Walks expression sites whose typed
+    // operands could collide on `sce:quantity=…` annotations and
+    // surfaces `validation/cross-kind-type-mismatch` (typed via
+    // `ValidationError::QuantityUnitMismatch`, sharing the existing
+    // DiagnosticCode slot per the user-confirmed reuse decision) on
+    // the first mismatch. Runs after cross-kind check so the unit
+    // walker can trust that imported alias references resolve.
+    forge::quantity_check::check(parsed, label.diagnostic_label)?;
+
     // RFC §5.C B6-α' link-side cross-resolution. Runs after enrichment
     // populates `ImportContext::codec_max_bytes` (framer side) and
     // `ImportContext::buffer_pool_slot_size` (pool side); both axes

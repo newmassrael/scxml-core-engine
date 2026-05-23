@@ -4369,6 +4369,35 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             // `cycle` vectors and thus different IDs.
             key_fragments: cycle.clone(),
         },
+        ValidationError::QuantityUnitMismatch {
+            kind,
+            name,
+            op,
+            left_unit,
+            right_unit,
+            expr,
+        } => DiagnosticPayload {
+            // NL→IR Mapping Roadmap Item 4 — reuse the same
+            // DiagnosticCode as cross-kind type-mismatch (concept
+            // identity: "two values whose types are incompatible meet
+            // in an expression"). The typed `ValidationError` variant
+            // diverges so the payload renders the right *kind* of
+            // mismatch without burning a new slot in the
+            // DiagnosticCode enum.
+            code: DiagnosticCode::ValidationCrossKindTypeMismatch,
+            stage: Stage::Validation,
+            expected: Some(vec![left_unit.clone()]),
+            actual: Some(right_unit.clone()),
+            fix: None,
+            key_fragments: vec![
+                kind.to_string(),
+                name.clone(),
+                op.clone(),
+                left_unit.clone(),
+                right_unit.clone(),
+                expr.clone(),
+            ],
+        },
         ValidationError::DuplicateContextObject { id } => DiagnosticPayload {
             code: DiagnosticCode::ValidationDuplicateContextObject,
             stage: Stage::Validation,

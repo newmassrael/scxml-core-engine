@@ -521,6 +521,29 @@ static inline sce_forge_codec_status_t {{ c_encode_to_buf_func }}(const {{ c_str
     return _st;
 }
 
+{% if has_quantity %}
+/* NL→IR Mapping Roadmap Item 4 — physical-quantity raw↔physical
+ * accessor pair. Each `sce:quantity=…`-annotated field emits a
+ * `<struct_snake>_<id>_phys()` getter returning `double` and a
+ * `<struct_snake>_set_<id>_phys()` setter truncating the inverse
+ * into the raw stdint slot. The raw struct member is unchanged. */
+{% for field in fields %}
+{% if field.quantity_accessor %}
+/* Physical reading in `{{ field.quantity_accessor.unit }}` —
+ * raw * {{ field.quantity_accessor.scale_repr }} + {{ field.quantity_accessor.offset_repr }}. */
+static inline {{ field.quantity_accessor.phys_type }} {{ c_struct_snake }}_{{ field.quantity_accessor.getter_name }}(const {{ c_struct_typedef }} *self) {
+    return {{ field.quantity_accessor.raw_to_phys_expr }};
+}
+
+/* Set the physical reading in `{{ field.quantity_accessor.unit }}`; the
+ * inverse is rounded toward zero into the raw `{{ field.c_type }}` slot. */
+static inline void {{ c_struct_snake }}_{{ field.quantity_accessor.setter_name }}({{ c_struct_typedef }} *self, {{ field.quantity_accessor.phys_type }} value) {
+    {{ field.quantity_accessor.raw_assign_lhs }} = {{ field.quantity_accessor.phys_to_raw_expr }};
+}
+
+{% endif %}
+{% endfor %}
+{% endif %}
 {% if has_flags %}
 /* RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
  * the carrier field. Single-bit (width=1) reads as bool; multi-bit

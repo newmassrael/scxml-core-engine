@@ -124,7 +124,7 @@ mod tests {
                 sce_type: SceType::Bytes,
                 direction: Direction::Internal,
                 expr: None,
-                unit: None,
+                quantity: None,
                 max_size: seed_cap,
             }],
             helpers: vec![ProcedureHelper {

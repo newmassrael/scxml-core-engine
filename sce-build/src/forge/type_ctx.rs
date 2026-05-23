@@ -16,6 +16,7 @@
 
 use crate::forge::generator::ImportContext;
 use crate::forge::model::*;
+use crate::forge::quantity::NumericBaseType;
 use crate::forge::types::{FuncSig, InferredType, TypeCtx};
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -23,10 +24,44 @@ use crate::forge::types::{FuncSig, InferredType, TypeCtx};
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /// Populate `ctx.vars` with every field from the slice, keyed by the
-/// field's `id` and typed via [`InferredType::from_sce_type`].
+/// field's `id` and typed via [`InferredType::from_sce_type`]. NL→IR
+/// Mapping Roadmap Item 4: fields carrying a `quantity` annotation
+/// surface in the context as `InferredType::Quantity { base, scale,
+/// offset, unit }` so unit propagates through arithmetic inference and
+/// unit mismatches collapse to `Unknown` for the post-pass diagnostic.
 fn insert_fields<'a>(ctx: &mut TypeCtx<'a>, fields: &'a [ForgeField]) {
     for f in fields {
-        ctx.insert_var(f.id.as_str(), InferredType::from_sce_type(&f.sce_type));
+        ctx.insert_var(f.id.as_str(), forge_field_type(f));
+    }
+}
+
+/// Map a `ForgeField` to its `InferredType`, wrapping in `Quantity`
+/// when the field carries an `sce:quantity=…` annotation. Non-numeric
+/// fields ignore the annotation here — the validation stage rejects
+/// quantity-on-non-numeric earlier so this helper's job is purely
+/// numeric-base lookup.
+pub(crate) fn forge_field_type(f: &ForgeField) -> InferredType {
+    let base_ty = InferredType::from_sce_type(&f.sce_type);
+    let Some(q) = f.quantity else {
+        return base_ty;
+    };
+    match base_ty {
+        InferredType::Int { signed, bits } => InferredType::Quantity {
+            base: NumericBaseType::Int { signed, bits },
+            scale: q.scale,
+            offset: q.offset,
+            unit: q.unit,
+        },
+        InferredType::Float { bits } => InferredType::Quantity {
+            base: NumericBaseType::Float { bits },
+            scale: q.scale,
+            offset: q.offset,
+            unit: q.unit,
+        },
+        // Non-numeric base: quantity annotation has no meaning. The
+        // validator stage flags this; here we just keep the raw type
+        // so downstream inference still operates.
+        other => other,
     }
 }
 
@@ -204,15 +239,44 @@ pub fn procedure<'a>(m: &'a ProcedureModel, imports: &'a [ImportContext]) -> Typ
 
 /// TypeCtx for a **Codec** kind. Codec expressions are encode/decode bit
 /// manipulations that reference byte-level fields. Each field of the codec
-/// is exposed by its `id`.
+/// is exposed by its `id`. NL→IR Mapping Roadmap Item 4: codec fields
+/// carrying `sce:quantity=…` surface as `InferredType::Quantity` so
+/// downstream expressions (e.g., codec predicate guards referencing a
+/// physically-tagged raw field) get the same unit-aware inference as
+/// Transform / Condition.
 pub fn codec<'a>(m: &'a CodecModel, imports: &'a [ImportContext]) -> TypeCtx<'a> {
     let mut ctx = TypeCtx::new();
     for f in &m.fields {
-        ctx.insert_var(f.id.as_str(), InferredType::from_sce_type(&f.sce_type));
+        ctx.insert_var(f.id.as_str(), codec_field_type(f));
     }
     insert_stateless_imports(&mut ctx, imports);
     insert_stateful_imports(&mut ctx, imports);
     ctx
+}
+
+/// Map a `CodecField` to its `InferredType`, wrapping in `Quantity`
+/// when the field carries an `sce:quantity=…` annotation. Mirrors
+/// [`forge_field_type`] for [`ForgeField`].
+pub(crate) fn codec_field_type(f: &CodecField) -> InferredType {
+    let base_ty = InferredType::from_sce_type(&f.sce_type);
+    let Some(q) = f.quantity else {
+        return base_ty;
+    };
+    match base_ty {
+        InferredType::Int { signed, bits } => InferredType::Quantity {
+            base: NumericBaseType::Int { signed, bits },
+            scale: q.scale,
+            offset: q.offset,
+            unit: q.unit,
+        },
+        InferredType::Float { bits } => InferredType::Quantity {
+            base: NumericBaseType::Float { bits },
+            scale: q.scale,
+            offset: q.offset,
+            unit: q.unit,
+        },
+        other => other,
+    }
 }
 
 /// Empty context — no variables, no functions. Used for expressions that

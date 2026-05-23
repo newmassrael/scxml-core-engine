@@ -574,7 +574,13 @@ surface. Three rejection codes:
   declared type is incompatible with the surrounding use-site
   contract (signature return type, `<sce:param type=...>`, …).
   Silent when the use site does not constrain the expected type
-  (`Unknown` context).
+  (`Unknown` context). NL→IR Mapping Roadmap Item 4 also routes
+  physical-quantity unit mismatches in arithmetic to this same code
+  (typed payload `ValidationError::QuantityUnitMismatch`) — adding
+  `<sce:param sce:quantity="celsius"/>` + `<sce:param sce:quantity="kelvin"/>`
+  inputs to a Transform whose body combines them arithmetically
+  triggers the code with the operator and both unit names in the
+  diagnostic message.
 - `validation/cross-kind-circular-dependency` — the `<sce:import>`
   graph contains a cycle. Defensive check; without it, the enrichment
   pass recurses into infinite open-file work or surfaces as an opaque
@@ -730,6 +736,69 @@ Repair guidance:
 3. For shadowed transitions, reorder so the more specific transition
    precedes the unconditional one, or add a guard to the previously
    unconditional transition.
+
+---
+
+### Physical-quantity annotation (NL→IR Mapping Roadmap Item 4)
+
+`<sce:field>` and `<data>` elements may carry an
+`sce:quantity="<unit>"` attribute, optionally paired with
+`sce:scale="<rational>"` and `sce:offset="<rational>"`. The triple
+declares a linear `physical = raw * scale + offset` conversion in
+the named opaque unit (SI base units `s` / `m` / `kg` / `A` / `K` /
+`mol` / `cd` are recommended but not enforced — the unit string is
+treated as an opaque equality key across operands).
+
+The conversion is **codegen-effective** (not documentation-only):
+
+* Codec fields carrying a quantity annotation emit a raw↔physical
+  accessor pair (`<id>_phys()` / `set_<id>_phys()` per backend; or
+  the language-idiomatic case-converted equivalent — `<id>Phys()`
+  for Kotlin, `<Id>Phys()` for Go). The raw struct member retains
+  its wire-level integer/float type; the accessor performs the
+  conversion in IEEE-754 double precision.
+* Transform `<data direction="in">` parameters and outputs may also
+  declare a quantity. The generated `compute_*` function signature
+  is unchanged (the function consumes raw, returns the body
+  expression's typed result); a doc-comment block on the function
+  surfaces the unit annotation for downstream readers.
+
+`sce:scale` accepts decimal integers (`42`, `-17`), decimal
+fractions (`0.5`, `-40.25`), and explicit `<num>/<denom>` ratios
+(`1/100`). Scientific notation, hexadecimal, leading `+`, and zero
+denominator are rejected at parse time with
+`validation/invalid-attribute`. `sce:scale="0"` is also rejected —
+a zero scale means the raw value never influences the physical
+reading, which makes the annotation observably equivalent to
+deleting both the scale and the unit.
+
+`sce:scale` or `sce:offset` without `sce:quantity` is rejected
+(the conversion factor needs a unit to anchor against). An empty
+`sce:quantity=""` is rejected as a missing unit name.
+
+The type system threads the quantity through expression inference:
+binary arithmetic between two `Quantity`-typed operands carrying
+**different** unit tags surfaces as
+`validation/cross-kind-type-mismatch` via the typed
+`ValidationError::QuantityUnitMismatch` payload (no new
+`DiagnosticCode` slot — the validator reuses the cross-kind code
+under the "type incompatibility" concept umbrella). Quantity
+combined with concrete bare numeric strips the unit
+(explicit-typed authorship opts out of unit checking at that
+site); quantity combined with an untyped literal keeps the
+annotation sticky.
+
+ARXML COMPU-METHOD blocks map onto this layer directly: the
+INTERNAL value is the raw, the PHYS value is the physical, and the
+COMPU-NUMERATOR / COMPU-DENOMINATOR pair becomes
+`sce:scale="<num>/<denom>"`. The widely-deployed automotive
+temperature encoding `physical = raw * 0.5 - 40` Celsius for an
+`int8` raw byte authors as:
+
+```xml
+<data id="raw_temp" sce:type="int8" sce:direction="in"
+      sce:quantity="celsius" sce:scale="0.5" sce:offset="-40"/>
+```
 
 ---
 
