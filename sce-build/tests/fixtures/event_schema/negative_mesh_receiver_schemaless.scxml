@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  NL→IR Item C1 Atomic B negative mesh fixture (DL-7, SenderOnly) —
+  receiver side. Machine `beta` receives `job.completed` from `alpha`
+  but declares no event-schema import for it. The receiver observes
+  a dynamically-shaped payload where the sender promised a typed
+  contract; mesh validator rejects with reason=SenderOnly.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="negative_mesh_receiver_schemaless"
+       version="1.0"
+       initial="waiting"
+       datamodel="ecmascript">
+  <state id="waiting">
+    <transition event="job.completed" target="done"/>
+  </state>
+  <state id="done"/>
+</scxml>
