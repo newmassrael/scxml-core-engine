@@ -623,6 +623,22 @@ pub struct ScxmlInvokeInfo {
     #[serde(skip)]
     #[cfg_attr(test, schemars(skip))]
     pub inline_child: Option<Box<SCXMLModel>>,
+    /// Raw SCXML text the parser wrapped for [`Self::inline_child`]
+    /// (`<?xml version="1.0"?>` prologue + `<scxml>…</scxml>` body
+    /// with the W3C namespace stamped on the root). Co-populated with
+    /// `inline_child` (both `Some` or both `None`) so codegen can
+    /// re-materialise the synth SCXML next to the parent's `_sm.*`
+    /// in `-o` when a downstream consumer needs it on disk:
+    /// `--deploy` topology iteration (`inject_partition_context_for`
+    /// parses every declared machine by name), CMake's stage-3 synth
+    /// codegen (`tests/CMakeLists.txt:2442-2456`), and W3C
+    /// `process_children_<N>.cmake` (`--as-child` per child SCXML).
+    /// Re-emit lands in the caller-controlled `-o`, never in the
+    /// parent's source directory — the bug-report pollution case stays
+    /// closed.
+    #[serde(skip)]
+    #[cfg_attr(test, schemars(skip))]
+    pub inline_child_xml: Option<String>,
     /// SCE_MESH.md §9.6 remote `<invoke type="scxml">`. When `src` is of the
     /// form `#<name>` and `<name>` matches a distinct mesh machine declared
     /// in `deploy.yaml`, this carries that machine name (without the leading
