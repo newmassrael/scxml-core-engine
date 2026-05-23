@@ -1848,95 +1848,113 @@ fn cmd_generate(
     let mut output_paths: Vec<PathBuf> = Vec::new();
 
     if !transport_only {
-        let output = match lang {
-            Language::Rust => {
-                // C3 Atomic B-γ1 lands `<sce:capacity>` parsing +
-                // deploy.yaml `default_event_queue_capacity` populator +
-                // `pub const EVENT_QUEUE_CAPACITY` template emission. The
-                // `--no-std` CLI flag stays a B-β-level validation gate
-                // (script/HTTP rejection — consumed earlier in
-                // `validate_no_std_compatibility`); the template-level
-                // `#![no_std]` + `use core::time::Duration` switch lands in
-                // B-γ2 alongside the runtime port + sub-template `std::*`
-                // → `core::*` swaps (send.rs.jinja2 / process_transition
-                // .rs.jinja2 / invoke_methods.rs.jinja2). Wiring those in
-                // B-γ1 would emit code that compiles cleanly under std but
-                // fails on the first sub-template `std::time::Duration` /
-                // `std::collections::HashSet` / `std::sync::atomic` site
-                // under `--features=no_std` — `feedback_silently_broken_
-                // hooks.md` anti-pattern unless co-landed with B-γ2.
-                let code = sce_build::generator::generate(&model, &template_dir, no_std)
-                    .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
-                GeneratedOutput {
-                    files: vec![(format!("{input_stem}_sm.rs"), code)],
-                    // CLI threads `Parser::preprocessor_deps()` directly to
-                    // the depfile sink (see `--write-deps` handling below);
-                    // populating `GeneratedOutput.deps` here would
-                    // duplicate the channel without a consumer.
-                    ..Default::default()
-                }
-            }
-            Language::Cpp => sce_build::generator::generate_cpp(&model, &template_dir, input_stem)
-                .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e))),
-            Language::Kotlin => {
-                let mut code = sce_build::generator::generate_kotlin(
-                    &model,
-                    &template_dir,
-                    kotlin_package_prefix,
-                )
-                .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
-                // Mirror `generate-w3c`'s KotlinBackend::process_child: the
-                // child's self-derived package (`<prefix>.{child}`) is
-                // rewritten to the parent's package so the parent's
-                // unqualified reference to the child `StateMachine` class
-                // resolves within one compilation unit. The `<prefix>` mirrors
-                // whatever `--kotlin-package-prefix` selected (defaults to
-                // `com.sce.generated` for W3C, `com.sce.integration` for the
-                // integration tree).
-                if as_child {
-                    if let Some(parent) = parent_stem {
-                        let prefix = kotlin_package_prefix.unwrap_or("com.sce.generated");
-                        let child_pkg = sce_build::filters::to_snake_case(input_stem.to_string());
-                        code = code.replace(
-                            &format!("package {prefix}.{child_pkg}"),
-                            &format!("package {prefix}.{parent}"),
-                        );
+        // Closure-extracted per-language emit. Used for the parent model
+        // first, then once per inline `<invoke><content>` child so the
+        // synth-invoke `_sm.*` artefacts land next to the parent in
+        // `output_dir`. Before this loop existed the standalone generate
+        // skipped inline children entirely — downstream consumers had to
+        // re-invoke `sce-codegen generate --as-child` per child after the
+        // parser dropped a sibling `.scxml` next to the source. With the
+        // parser purified (no disk side-effect), codegen emit is the
+        // single materialization point for synth children.
+        //
+        // C3 Atomic B-γ1 lands `<sce:capacity>` parsing +
+        // deploy.yaml `default_event_queue_capacity` populator +
+        // `pub const EVENT_QUEUE_CAPACITY` template emission. The
+        // `--no-std` CLI flag stays a B-β-level validation gate
+        // (script/HTTP rejection — consumed earlier in
+        // `validate_no_std_compatibility`); the template-level
+        // `#![no_std]` + `use core::time::Duration` switch lands in
+        // B-γ2 alongside the runtime port + sub-template `std::*`
+        // → `core::*` swaps (send.rs.jinja2 / process_transition
+        // .rs.jinja2 / invoke_methods.rs.jinja2). Wiring those in
+        // B-γ1 would emit code that compiles cleanly under std but
+        // fails on the first sub-template `std::time::Duration` /
+        // `std::collections::HashSet` / `std::sync::atomic` site
+        // under `--features=no_std` — `feedback_silently_broken_
+        // hooks.md` anti-pattern unless co-landed with B-γ2.
+        let emit_for_model = |m: &SCXMLModel,
+                              stem: &str,
+                              m_as_child: bool,
+                              m_parent_stem: Option<&str>|
+         -> GeneratedOutput {
+            match lang {
+                Language::Rust => {
+                    let code = sce_build::generator::generate(m, &template_dir, no_std)
+                        .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
+                    GeneratedOutput {
+                        files: vec![(format!("{stem}_sm.rs"), code)],
+                        // CLI threads `Parser::preprocessor_deps()` directly to
+                        // the depfile sink (see `--write-deps` handling below);
+                        // populating `GeneratedOutput.deps` here would
+                        // duplicate the channel without a consumer.
+                        ..Default::default()
                     }
                 }
-                GeneratedOutput {
-                    files: vec![(format!("{input_stem}Sm.kt"), code)],
-                    ..Default::default()
-                }
-            }
-            Language::Go => {
-                let mut code = sce_build::generator::generate_go(&model, &template_dir)
+                Language::Cpp => sce_build::generator::generate_cpp(m, &template_dir, stem)
+                    .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e))),
+                Language::Kotlin => {
+                    let mut code = sce_build::generator::generate_kotlin(
+                        m,
+                        &template_dir,
+                        kotlin_package_prefix,
+                    )
                     .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
-                // Same rewrite as Kotlin, for the Go `package <child>` header.
-                if as_child {
-                    if let Some(parent) = parent_stem {
-                        let child_pkg = sce_build::filters::to_snake_case(input_stem.to_string());
-                        code = code.replace(
-                            &format!("package {child_pkg}"),
-                            &format!("package {parent}"),
-                        );
+                    // Mirror `generate-w3c`'s KotlinBackend::process_child: the
+                    // child's self-derived package (`<prefix>.{child}`) is
+                    // rewritten to the parent's package so the parent's
+                    // unqualified reference to the child `StateMachine` class
+                    // resolves within one compilation unit. The `<prefix>` mirrors
+                    // whatever `--kotlin-package-prefix` selected (defaults to
+                    // `com.sce.generated` for W3C, `com.sce.integration` for the
+                    // integration tree).
+                    if m_as_child {
+                        if let Some(parent) = m_parent_stem {
+                            let prefix = kotlin_package_prefix.unwrap_or("com.sce.generated");
+                            let child_pkg = sce_build::filters::to_snake_case(stem.to_string());
+                            code = code.replace(
+                                &format!("package {prefix}.{child_pkg}"),
+                                &format!("package {prefix}.{parent}"),
+                            );
+                        }
+                    }
+                    GeneratedOutput {
+                        files: vec![(format!("{stem}Sm.kt"), code)],
+                        ..Default::default()
                     }
                 }
-                GeneratedOutput {
-                    files: vec![(format!("{input_stem}_sm.go"), code)],
-                    ..Default::default()
+                Language::Go => {
+                    let mut code = sce_build::generator::generate_go(m, &template_dir)
+                        .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
+                    // Same rewrite as Kotlin, for the Go `package <child>` header.
+                    if m_as_child {
+                        if let Some(parent) = m_parent_stem {
+                            let child_pkg = sce_build::filters::to_snake_case(stem.to_string());
+                            code = code.replace(
+                                &format!("package {child_pkg}"),
+                                &format!("package {parent}"),
+                            );
+                        }
+                    }
+                    GeneratedOutput {
+                        files: vec![(format!("{stem}_sm.go"), code)],
+                        ..Default::default()
+                    }
                 }
-            }
-            Language::Python => {
-                let code = sce_build::generator::generate_python(&model, &template_dir)
-                    .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
-                GeneratedOutput {
-                    files: vec![(format!("{input_stem}_sm.py"), code)],
-                    ..Default::default()
+                Language::Python => {
+                    let code = sce_build::generator::generate_python(m, &template_dir)
+                        .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
+                    GeneratedOutput {
+                        files: vec![(format!("{stem}_sm.py"), code)],
+                        ..Default::default()
+                    }
                 }
+                Language::C11 => sce_build::generator::generate_c11(m, &template_dir, stem)
+                    .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e))),
             }
-            Language::C11 => sce_build::generator::generate_c11(&model, &template_dir, input_stem)
-                .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e))),
         };
+
+        let output = emit_for_model(&model, input_stem, as_child, parent_stem);
 
         let files = maybe_format_files(output.files, &cpp_formatter);
         for (filename, code) in &files {
@@ -1952,6 +1970,52 @@ fn cmd_generate(
         // is preserved because the symbol table + hashes are language-
         // agnostic (Q-§5.O-8).
         emit_sourcemap_for_machine(&model, out_path, &drift_ctx);
+
+        // SCE_MESH.md §9.6.6: emit synth-invoke children alongside the
+        // parent. Mirrors `generate_child_sms` (the W3C unified path) for
+        // the standalone `generate` CLI so a consumer no longer drives a
+        // separate `--as-child` pass per inline `<content>` child. C11
+        // skips the `has_parent_communication=true` override that the
+        // other backends use under `--as-child` because C11 child
+        // templates auto-detect parent-communication from the model and
+        // the override would break that detection.
+        for invoke in model.iter_scxml_invokes() {
+            let Some(child_box) = invoke.inline_child.as_deref() else {
+                continue;
+            };
+            let child_stem = invoke.child_name.as_str();
+            if child_stem.is_empty() {
+                continue;
+            }
+            let mut child_model = child_box.clone();
+            if lang != Language::C11 {
+                child_model.has_parent_communication = true;
+            }
+            let synthetic_path = Path::new(scxml_path)
+                .parent()
+                .unwrap_or(Path::new("."))
+                .join(format!("{child_stem}.scxml"));
+            analyzer::analyze(&mut child_model, &synthetic_path.to_string_lossy());
+            if analyzer::can_generate_static(&child_model).is_err() {
+                continue;
+            }
+            // `resolve_source_path` canonicalizes the path, which fails
+            // on the synthetic (the file does not exist on disk —
+            // inline children live in-memory). Set `scxml_source_path`
+            // directly so the `// From:` license header + Forge AST
+            // envelope match the byte-stable goldens from the prior
+            // `--as-child` flow that staged the synth child on disk.
+            child_model.scxml_source_path = synthetic_path.to_string_lossy().into_owned();
+            let child_output = emit_for_model(&child_model, child_stem, true, Some(input_stem));
+            let child_files = maybe_format_files(child_output.files, &cpp_formatter);
+            for (filename, code) in &child_files {
+                let file_path = out_path.join(filename);
+                write_drift_aware(error_format, &file_path, code, &drift_ctx);
+                report.artifacts.push(file_path.clone());
+                output_paths.push(file_path);
+            }
+            emit_sourcemap_for_machine(&child_model, out_path, &drift_ctx);
+        }
 
         report.needs_script_engine = Some(model.needs_script_engine);
 
@@ -2087,18 +2151,25 @@ fn collect_invoke_child_names(model: &SCXMLModel) -> Vec<String> {
     children
 }
 
-/// W3C SCXML 6.4: Copy static invoke children from source to output directory.
+/// W3C SCXML 6.4: Copy external `src="…"` static invoke children from
+/// source to output directory.
 ///
-/// `process_static_invokes` in parser.rs extracts inline `<scxml>` content to
-/// the source resource directory (e.g. `resources/338/test338_machineName.scxml`).
-/// CMake's post-processing script expects them in the output directory. This
-/// function bridges the gap by copying any static invoke child SCXML that exists
-/// in the source directory but not yet in the output directory.
+/// CMake post-processing for the W3C test corpus expects static child
+/// `.scxml` files alongside their parent in the output tree. External
+/// (`<invoke src="file.scxml"/>`) children live on disk in the parent's
+/// source directory and are copied unchanged into `output_dir`.
+///
+/// Inline (`<invoke><content><scxml>…</scxml></content></invoke>`) children
+/// are kept in-memory on [`ScxmlInvokeInfo::inline_child`] and never
+/// materialise as parent-adjacent files (Mesh §9.6.6 naming is enforced by
+/// codegen emit, not by a parser write). They are skipped here — there is
+/// no source-side file to copy and downstream codegen reads them from the
+/// parent model directly.
 fn copy_static_invoke_children(model: &SCXMLModel, scxml_path: &Path, output_dir: &Path) {
     let source_dir = scxml_path.parent().unwrap_or(Path::new("."));
 
     for invoke in model.iter_scxml_invokes() {
-        if invoke.child_name.is_empty() {
+        if invoke.child_name.is_empty() || invoke.inline_child.is_some() {
             continue;
         }
         let child_scxml = format!("{}.scxml", invoke.child_name);
@@ -2624,69 +2695,96 @@ fn generate_child_sms(
     let resource_dir = scxml_path.parent().unwrap_or(Path::new("."));
     let mut seen = BTreeSet::new();
 
-    let scxml_children: Vec<(&str, &Path)> = model
+    // ChildSource captures where the child SCXMLModel comes from: an
+    // inline `<content>` parser kept the model in-memory on the parent
+    // invoke (no disk read needed), an external `src="…"` child must be
+    // re-parsed from `resource_dir`, or a hybrid stub from `test_mod_dir`.
+    // Replaces the prior unconditional disk read which was a leftover
+    // from the parser-writes-synth-child era.
+    enum ChildSource<'a> {
+        Inline(&'a SCXMLModel),
+        Disk(&'a Path),
+    }
+
+    let scxml_children: Vec<(&str, ChildSource<'_>)> = model
         .iter_scxml_invokes()
-        .map(|inv| (inv.child_name.as_str(), resource_dir))
+        .map(|inv| {
+            let source = match inv.inline_child.as_deref() {
+                Some(m) => ChildSource::Inline(m),
+                None => ChildSource::Disk(resource_dir),
+            };
+            (inv.child_name.as_str(), source)
+        })
         .collect();
-    let hybrid_children: Vec<(&str, &Path)> = if backend.emits_hybrid_child_stub() {
+    let hybrid_children: Vec<(&str, ChildSource<'_>)> = if backend.emits_hybrid_child_stub() {
         model
             .iter_hybrid_invokes()
-            .map(|inv| (inv.child_name.as_str(), test_mod_dir))
+            .map(|inv| (inv.child_name.as_str(), ChildSource::Disk(test_mod_dir)))
             .collect()
     } else {
         Vec::new()
     };
 
-    for (child_name, source_dir) in scxml_children.iter().chain(hybrid_children.iter()).copied() {
+    for (child_name, child_source) in scxml_children.into_iter().chain(hybrid_children) {
         if child_name.is_empty() || !seen.insert(child_name.to_string()) {
             continue;
         }
 
-        let child_path = source_dir.join(format!("{child_name}.scxml"));
-        if !child_path.exists() {
+        // Resolve the child model + the diagnostic label used by the
+        // analyzer / source-path resolver. Inline children synthesize an
+        // "as if on disk" path inside `resource_dir` so
+        // `analyzer::compute_scxml_base_path` derives the same base_path
+        // the on-disk-synth era did (the file itself does not exist;
+        // `resolve_source_path` is skipped below — it would fail on
+        // canonicalize). Disk children use the absolute path.
+        let (mut child_model, label, child_path_for_resolver) = match child_source {
+            ChildSource::Inline(m) => {
+                let synthetic = resource_dir.join(format!("{child_name}.scxml"));
+                (m.clone(), synthetic.to_string_lossy().into_owned(), None)
+            }
+            ChildSource::Disk(source_dir) => {
+                let child_path = source_dir.join(format!("{child_name}.scxml"));
+                if !child_path.exists() {
+                    backend.process_child_failure(test_id, child_name, test_mod_dir, drift_ctx);
+                    continue;
+                }
+                let child_str = child_path.to_string_lossy().into_owned();
+                match SCXMLParser::new().parse_file(&child_str) {
+                    Ok(parsed) => (parsed, child_str, Some(child_path)),
+                    Err(_) => {
+                        backend.process_child_failure(test_id, child_name, test_mod_dir, drift_ctx);
+                        continue;
+                    }
+                }
+            }
+        };
+
+        analyzer::analyze(&mut child_model, &label);
+
+        if analyzer::can_generate_static(&child_model).is_err() {
             backend.process_child_failure(test_id, child_name, test_mod_dir, drift_ctx);
             continue;
         }
 
-        let mut parser = SCXMLParser::new();
-        let child_str = child_path.to_str().unwrap_or("");
-        match parser.parse_file(child_str) {
-            Ok(mut child_model) => {
-                analyzer::analyze(&mut child_model, child_str);
+        if let Some(child_path) = child_path_for_resolver.as_deref() {
+            resolve_source_path(&mut child_model, child_path);
+        }
 
-                if analyzer::can_generate_static(&child_model).is_err() {
-                    backend.process_child_failure(test_id, child_name, test_mod_dir, drift_ctx);
-                    continue;
-                }
+        // Templates derive generated PascalCase symbols from
+        // `model.name`; `generate_hybrid_child_scxmls` writes the
+        // synthesized `<scxml name="test{NUM}_hybrid{idx}">` so the
+        // parser already produces the matching name. The guard
+        // below is a defensive no-op for hybrid stubs and still
+        // covers static children whose source SCXML carries a
+        // different `<scxml name=...>` than the invoke `src=` stem.
+        if child_model.name != child_name {
+            child_model.name = child_name.to_string();
+        }
 
-                resolve_source_path(&mut child_model, &child_path);
-
-                // Templates derive generated PascalCase symbols from
-                // `model.name`; `generate_hybrid_child_scxmls` writes the
-                // synthesized `<scxml name="test{NUM}_hybrid{idx}">` so the
-                // parser already produces the matching name. The guard
-                // below is a defensive no-op for hybrid stubs and still
-                // covers static children whose source SCXML carries a
-                // different `<scxml name=...>` than the invoke `src=` stem.
-                if child_model.name != child_name {
-                    child_model.name = child_name.to_string();
-                }
-
-                match backend.generate_sm(&child_model, child_name) {
-                    Ok(files) => {
-                        if let Some((_, code)) = files.into_iter().next() {
-                            backend.process_child(
-                                test_id,
-                                child_name,
-                                code,
-                                test_mod_dir,
-                                drift_ctx,
-                            );
-                        }
-                    }
-                    Err(_) => {
-                        backend.process_child_failure(test_id, child_name, test_mod_dir, drift_ctx);
-                    }
+        match backend.generate_sm(&child_model, child_name) {
+            Ok(files) => {
+                if let Some((_, code)) = files.into_iter().next() {
+                    backend.process_child(test_id, child_name, code, test_mod_dir, drift_ctx);
                 }
             }
             Err(_) => {

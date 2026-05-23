@@ -125,6 +125,21 @@ impl<'a> DocumentLabel<'a> {
             diagnostic_label: label,
         }
     }
+
+    /// Distinct identifier vs diagnostic-label roles. Used by the
+    /// synth-invoke inline-`<content>` parser path: `identifier` is
+    /// the extension-free synth name (flows into [`SCXMLModel::name`]
+    /// → template PascalCase symbols), `diagnostic_label` is the
+    /// "as if on disk" filename including `.scxml` (becomes
+    /// [`source_location.file`] → SCE-MAP markers + NDJSON
+    /// `location.file`) so generated artefacts stay byte-stable
+    /// against the pre-refactor disk-write era.
+    pub fn asymmetric(identifier: &'a str, diagnostic_label: &'a str) -> Self {
+        Self {
+            identifier,
+            diagnostic_label,
+        }
+    }
 }
 
 /// Result of the parse-phase: the analyzed SCXML model plus the
@@ -7327,9 +7342,11 @@ topology:
     /// synthesised child on a different partition than the parent;
     /// deploy validation admits the override-style topology entry and
     /// the classifier flags the synth as remote so C++ codegen emits
-    /// the §10.7.1 Session F scaffold. The sibling synth SCXML on
-    /// disk is what lets `parse_child_metadata` populate the
-    /// child-side fields without reparse failure.
+    /// the §10.7.1 Session F scaffold. Inline `<content>` is captured
+    /// on the invoke as [`ScxmlInvokeInfo::inline_child`] so the
+    /// child-side metadata (`child_needs_script_engine` etc.) is
+    /// populated from the in-memory submodel rather than a sibling
+    /// `.scxml` file on disk.
     #[test]
     fn synth_invoke_override_flagged_remote() {
         use std::fs;
@@ -7381,9 +7398,10 @@ partitions:
         fs::write(tmp.join("deploy.yaml"), deploy).unwrap();
         fs::write(tmp.join("parent.scxml"), parent_scxml).unwrap();
 
-        // parse_file writes the synth sibling SCXML alongside the parent
-        // as a side-effect, so `inject_partition_context_for` can reparse
-        // it through parse_child_metadata without filesystem errors.
+        // parse_file captures the inline `<content>` submodel on the
+        // invoke (no disk side-effect); `inject_partition_context_for`
+        // and the classifier consume the in-memory child without
+        // needing a sibling file.
         let mut model = parser::SCXMLParser::new()
             .parse_file(tmp.join("parent.scxml").to_str().unwrap())
             .expect("parse parent with inline content");
@@ -7477,8 +7495,9 @@ partitions:
         let _ = fs::remove_dir_all(&tmp);
     }
 
-    /// §9.6.6 rule 3 override — peer-collection layer. The parser
-    /// rewrites inline `<content>` in-memory only, so the on-disk
+    /// §9.6.6 rule 3 override — peer-collection layer. The parser keeps
+    /// inline `<content>` in-memory on [`ScxmlInvokeInfo::inline_child`]
+    /// and rewrites `src` to `#<synth>` for classification — the on-disk
     /// parent.scxml still carries inline content with no `src=`
     /// attribute. The synth-side inbound scan therefore needs the
     /// `__sce_synth_invoke__` infix inversion to recover its parent
@@ -7537,10 +7556,29 @@ partitions:
         fs::write(&deploy_path, deploy).unwrap();
         fs::write(tmp.join("parent.scxml"), parent_scxml).unwrap();
 
-        // Parse parent — side-effect writes the synth SCXML sibling.
+        // Parse parent — inline `<content>` is captured as an in-memory
+        // submodel on the invoke (no disk side-effect).
         let mut parent_model = parser::SCXMLParser::new()
             .parse_file(tmp.join("parent.scxml").to_str().unwrap())
             .expect("parse parent with inline content");
+
+        // §9.6.6 contract: inline child is pre-parsed and lives on the
+        // invoke, not on disk. Snapshot it now (cloned) for the synth-side
+        // peer-collection pass below; mutating `parent_model` afterwards
+        // does not touch the cloned submodel.
+        let mut synth_model = parent_model
+            .states
+            .get("s1")
+            .and_then(|s| s.invokes.first())
+            .and_then(|inv| match inv {
+                model::Invoke::Scxml(i) => i.inline_child.as_deref().cloned(),
+                _ => None,
+            })
+            .expect("parser must have captured the inline child in-memory");
+        assert!(
+            !tmp.join("parent__sce_synth_invoke__inv0.scxml").exists(),
+            "parser must not write the synth sibling to disk",
+        );
 
         let cfg = mesh::deploy::parse_deploy_str(deploy).expect("deploy must admit override");
 
@@ -7560,20 +7598,11 @@ partitions:
             parent_model.scxml_remote_inbound_peers,
         );
 
-        // Now the synth side. Parse the parser-emitted synth SCXML
-        // directly; it contains only `<final>` so the model has no
-        // invokes of its own. The inbound scan across siblings would
-        // miss the parent (parent.scxml still has inline content, no
-        // `src=` attribute), so the §9.6.6 rule-3 infix inversion is
-        // what produces the correct inbound peer set.
-        let synth_src = tmp.join("parent__sce_synth_invoke__inv0.scxml");
-        assert!(
-            synth_src.exists(),
-            "parser must have written the synth sibling"
-        );
-        let mut synth_model = parser::SCXMLParser::new()
-            .parse_file(synth_src.to_str().unwrap())
-            .expect("parse synth");
+        // Now the synth side. The in-memory submodel contains only
+        // `<final>` so it has no invokes of its own. The inbound scan
+        // across siblings would miss the parent (parent.scxml still has
+        // inline content, no `src=` attribute), so the §9.6.6 rule-3
+        // infix inversion is what produces the correct inbound peer set.
 
         classify_remote_scxml_invokes(&mut synth_model, &cfg, "parent__sce_synth_invoke__inv0");
         collect_scxml_remote_peers(
@@ -7653,14 +7682,26 @@ partitions:
         fs::write(&deploy_path, deploy).unwrap();
         fs::write(tmp.join("parent.scxml"), parent_scxml).unwrap();
 
-        parser::SCXMLParser::new()
+        let parent_model = parser::SCXMLParser::new()
             .parse_file(tmp.join("parent.scxml").to_str().unwrap())
             .expect("parse parent with inline content");
 
-        let synth_src = tmp.join("parent__sce_synth_invoke__inv0.scxml");
-        let mut synth_model = parser::SCXMLParser::new()
-            .parse_file(synth_src.to_str().unwrap())
-            .expect("parse synth");
+        // §9.6.6: inline `<content>` is captured in-memory on the invoke;
+        // the synth submodel is read off the parent model, not re-parsed
+        // from disk.
+        let mut synth_model = parent_model
+            .states
+            .get("s1")
+            .and_then(|s| s.invokes.first())
+            .and_then(|inv| match inv {
+                model::Invoke::Scxml(i) => i.inline_child.as_deref().cloned(),
+                _ => None,
+            })
+            .expect("parser must have captured the inline child in-memory");
+        assert!(
+            !tmp.join("parent__sce_synth_invoke__inv0.scxml").exists(),
+            "parser must not write the synth sibling to disk",
+        );
 
         let cfg = mesh::deploy::parse_deploy_str(deploy).expect("deploy must parse");
 
