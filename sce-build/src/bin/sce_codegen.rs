@@ -1788,6 +1788,71 @@ fn cmd_generate(
     // line/col is honest — fabricating `(1, 1)` would misroute agent
     // repair loops to the top of the source (see
     // `feedback_correctness_before_features`).
+    // out_path is needed early so synth-invoke SCXMLs can be
+    // materialised to `-o` (and to `deploy_dir` when distinct) BEFORE
+    // `inject_partition_context_for` runs. The mesh injector iterates
+    // every machine declared in `deploy.yaml` (including synth-invoke
+    // children) and opens each by name from `deploy_dir`; without a
+    // file on disk the open fails with `Partition context injection
+    // error: SCXML file not found`. The dir is also created here so
+    // the synth write below has somewhere to land.
+    let out_path = Path::new(output_dir);
+    fs::create_dir_all(out_path).unwrap_or_else(|e| {
+        error_format.emit_and_exit(
+            &CliError::CreateOutputDir {
+                path: out_path.display().to_string(),
+                source: e,
+            },
+            "",
+        )
+    });
+
+    // SCE_MESH.md §9.6.6: re-materialise every inline-`<content>`
+    // synth child to `-o` (and `deploy_dir` when distinct) so
+    // downstream consumers find a file on disk:
+    // - `inject_partition_context_for` opens every declared machine
+    //   SCXML when `--deploy` is set (reads from `deploy_dir`)
+    // - CMake's stage-3 synth codegen reads from the parent's `-o`
+    //   (`tests/CMakeLists.txt:2442-2456`)
+    // - W3C `process_children_<N>.cmake` reads `${child}.scxml` from
+    //   the parent's `-o` for the per-child `--as-child` pass
+    // Pollution of the parent's *source* directory stays closed: the
+    // write targets are caller-controlled (`-o`, `--deploy <path>`),
+    // never `scxml_path`'s parent.
+    let synth_scxml_writes: Vec<(String, String)> = model
+        .iter_scxml_invokes()
+        .filter_map(|inv| {
+            inv.inline_child_xml.as_deref().and_then(|xml| {
+                if inv.child_name.is_empty() {
+                    None
+                } else {
+                    Some((inv.child_name.clone(), xml.to_string()))
+                }
+            })
+        })
+        .collect();
+    for (stem, xml) in &synth_scxml_writes {
+        let dst = out_path.join(format!("{stem}.scxml"));
+        if let Err(e) = fs::write(&dst, xml) {
+            eprintln!(
+                "Warning: Cannot write synth SCXML to -o: {}: {e}",
+                dst.display()
+            );
+        }
+        if let Some(deploy_file) = deploy_path {
+            let deploy_dir = Path::new(deploy_file).parent().unwrap_or(Path::new("."));
+            if deploy_dir != out_path {
+                let mirror = deploy_dir.join(format!("{stem}.scxml"));
+                if let Err(e) = fs::write(&mirror, xml) {
+                    eprintln!(
+                        "Warning: Cannot write synth SCXML to deploy_dir: {}: {e}",
+                        mirror.display()
+                    );
+                }
+            }
+        }
+    }
+
     // SCE Mesh: inject server-response synthetic sends BEFORE SM
     // generation. The SM generator must see the injected <send> actions
     // to emit raiseExternal calls that trigger the mesh send callback
@@ -1834,17 +1899,9 @@ fn cmd_generate(
     // (sourcemap, children manifest, static-invoke copy, hybrid stubs).
     // The transport-only branch still threads `out_path` and the report
     // through to the mesh emit block below so depfile + sourcemap-marker
-    // validation operate on the transport header alone.
-    let out_path = Path::new(output_dir);
-    fs::create_dir_all(out_path).unwrap_or_else(|e| {
-        error_format.emit_and_exit(
-            &CliError::CreateOutputDir {
-                path: out_path.display().to_string(),
-                source: e,
-            },
-            "",
-        )
-    });
+    // validation operate on the transport header alone. `out_path` +
+    // `fs::create_dir_all` ran above (before the synth-SCXML emit + the
+    // mesh injection chain) — the dir already exists at this point.
     let mut output_paths: Vec<PathBuf> = Vec::new();
 
     if !transport_only {
@@ -1987,6 +2044,12 @@ fn cmd_generate(
             if child_stem.is_empty() {
                 continue;
             }
+
+            // Synth SCXML was already written to `out_path` (and
+            // `deploy_dir` when distinct) earlier in this function,
+            // before the mesh-injection chain that depends on the
+            // file. No second emit here.
+
             let mut child_model = child_box.clone();
             if lang != Language::C11 {
                 child_model.has_parent_communication = true;
