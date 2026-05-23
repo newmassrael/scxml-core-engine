@@ -1,0 +1,12 @@
+# NL→IR Item C1 Atomic B positive mesh fixture (DL-7) — deploy.yaml
+# Two machines `alpha` (sender) + `beta` (receiver) on the same
+# device. Both reference SCXMLs that import the same minimal
+# `job.completed` schema; mesh validator accepts.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      alpha:
+        source: mesh_sender_matched.scxml
+      beta:
+        source: mesh_receiver_matched.scxml

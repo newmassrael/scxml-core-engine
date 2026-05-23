@@ -266,3 +266,200 @@ fn schemaless_statechart_passes_unchanged() {
     run(&[scxml_path.as_path()], &[])
         .expect("schemaless statechart should pass — DL-9 fallback no-ops the validator");
 }
+
+// ─── Atomic B (DL-4) send-side payload typecheck ─────────────────
+
+/// Positive — `<raise event="X"><param name="F" expr="...">` whose
+/// `F` is declared on the schema and whose `expr` is a primitive
+/// literal compatible with the field's declared `sce_type` passes
+/// the send-side validator.
+#[test]
+fn positive_send_typed_compiles() {
+    let dir = tempdir().expect("tempdir");
+    let staged = stage_fixtures(
+        dir.path(),
+        &[
+            "schema_job_completed_minimal.scxml",
+            "statechart_send_typed.scxml",
+        ],
+    );
+    run(&[staged[1].as_path()], &[staged[0].as_path()])
+        .expect("orchestrator should accept typed send payload matching the schema");
+}
+
+/// Negative — `<param name="F">` whose `F` is NOT declared on the
+/// schema surfaces `validation/event-payload-field-unknown` with the
+/// schema's declared field surface as the closed `Fix::ReplaceOneOf`
+/// candidate set.
+#[test]
+fn negative_send_extra_param_rejects_with_did_you_mean() {
+    let dir = tempdir().expect("tempdir");
+    let staged = stage_fixtures(
+        dir.path(),
+        &[
+            "schema_job_completed_minimal.scxml",
+            "negative_statechart_send_extra_param.scxml",
+        ],
+    );
+    let err = run(&[staged[1].as_path()], &[staged[0].as_path()])
+        .err()
+        .expect("orchestrator should reject statechart with unknown <param name>");
+    match err.error {
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::EventPayloadFieldUnknown {
+                event_name,
+                field,
+                candidates,
+                ..
+            } => {
+                assert_eq!(event_name, "job.completed");
+                assert_eq!(field, "missing_field");
+                assert!(
+                    candidates.iter().any(|c| c == "elapsed_ms"),
+                    "expected did-you-mean candidate `elapsed_ms`, got {candidates:?}"
+                );
+            }
+            other => panic!("expected EventPayloadFieldUnknown, got {other:?}"),
+        },
+        other => panic!("expected Validation error, got {other:?}"),
+    }
+}
+
+/// Negative — `<param name="F" expr="literal">` whose literal type
+/// does not unify with the field's declared `sce_type` surfaces
+/// `validation/cross-kind-type-mismatch` (reused per Item 4
+/// precedent — same code, distinct typed message context).
+#[test]
+fn negative_send_type_mismatch_rejects_with_typed_diagnostic() {
+    let dir = tempdir().expect("tempdir");
+    let staged = stage_fixtures(
+        dir.path(),
+        &[
+            "schema_job_completed_minimal.scxml",
+            "negative_statechart_send_type_mismatch.scxml",
+        ],
+    );
+    let err = run(&[staged[1].as_path()], &[staged[0].as_path()])
+        .err()
+        .expect("orchestrator should reject statechart with string-vs-uint32 param");
+    match err.error {
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::CrossKindTypeMismatch {
+                field,
+                actual,
+                expected,
+                alias,
+                ..
+            } => {
+                assert_eq!(field, "elapsed_ms");
+                assert_eq!(actual, "string");
+                assert_eq!(expected, "uint32");
+                // Send-side alias names the offending action shape so
+                // the diagnostic message distinguishes it from the
+                // receive-side `_event.data` alias.
+                assert!(
+                    alias.contains("send") && alias.contains("job.completed"),
+                    "expected alias to name the <send event=\"job.completed\"> site, got {alias:?}"
+                );
+            }
+            other => panic!("expected CrossKindTypeMismatch, got {other:?}"),
+        },
+        other => panic!("expected Validation error, got {other:?}"),
+    }
+}
+
+// ─── Atomic B (DL-7) mesh cross-machine schema validation ────────
+
+fn run_with_deploy(
+    scxml_paths: &[&Path],
+    forge_paths: &[&Path],
+    deploy: &sce_build::mesh::deploy::DeployConfig,
+) -> Result<Vec<(String, sce_build::generator::GeneratedOutput)>, Located<ForgeError>> {
+    compile_scxml_with_imports(
+        scxml_paths,
+        forge_paths,
+        &template_dir(),
+        Language::Rust,
+        &default_options(),
+        Some(deploy),
+    )
+}
+
+fn stage_deploy(dst: &Path, name: &str) -> sce_build::mesh::deploy::DeployConfig {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let src = manifest_dir.join(FIXTURES_DIR).join(name);
+    let dst_path = dst.join(name);
+    fs::copy(&src, &dst_path).unwrap_or_else(|e| panic!("copy {name}: {e}"));
+    sce_build::mesh::deploy::parse_deploy(&dst_path).expect("parse deploy yaml")
+}
+
+/// Positive — two machines on a mesh both import the same schema
+/// document; mesh validator computes matching canonical hashes and
+/// accepts.
+#[test]
+fn positive_mesh_matched_compiles() {
+    let dir = tempdir().expect("tempdir");
+    let staged = stage_fixtures(
+        dir.path(),
+        &[
+            "schema_job_completed_minimal.scxml",
+            "mesh_sender_matched.scxml",
+            "mesh_receiver_matched.scxml",
+        ],
+    );
+    let deploy = stage_deploy(dir.path(), "mesh_matched_deploy.yaml");
+    run_with_deploy(
+        &[staged[1].as_path(), staged[2].as_path()],
+        &[staged[0].as_path()],
+        &deploy,
+    )
+    .expect("mesh validator should accept matching schemas across machines");
+}
+
+/// Negative — sender imports a schema for `job.completed`; receiver
+/// declares no schema for it. Mesh validator rejects with
+/// `mesh/event-schema-mismatch` reason=SenderOnly.
+#[test]
+fn negative_mesh_sender_only_rejects() {
+    use sce_build::mesh::error::{DeployError, EventSchemaMismatchReason, MeshError};
+    let dir = tempdir().expect("tempdir");
+    let staged = stage_fixtures(
+        dir.path(),
+        &[
+            "schema_job_completed_minimal.scxml",
+            "negative_mesh_sender_only.scxml",
+            "negative_mesh_receiver_schemaless.scxml",
+        ],
+    );
+    let deploy = stage_deploy(dir.path(), "negative_mesh_mismatch_deploy.yaml");
+    let err = run_with_deploy(
+        &[staged[1].as_path(), staged[2].as_path()],
+        &[staged[0].as_path()],
+        &deploy,
+    )
+    .err()
+    .expect("mesh validator should reject partial-coverage schema across machines");
+    match err.error {
+        ForgeError::Mesh(boxed_mesh) => match boxed_mesh.as_ref() {
+            MeshError::Deploy(boxed_deploy) => match boxed_deploy.as_ref() {
+                DeployError::EventSchemaMismatch {
+                    event_name,
+                    sender_machine,
+                    receiver_machine,
+                    reason,
+                } => {
+                    assert_eq!(event_name, "job.completed");
+                    assert_eq!(sender_machine, "alpha");
+                    assert_eq!(receiver_machine, "beta");
+                    assert!(
+                        matches!(reason, EventSchemaMismatchReason::SenderOnly),
+                        "expected SenderOnly, got {reason:?}"
+                    );
+                }
+                other => panic!("expected EventSchemaMismatch, got {other:?}"),
+            },
+            other => panic!("expected MeshError::Deploy, got {other:?}"),
+        },
+        other => panic!("expected Mesh error, got {other:?}"),
+    }
+}
