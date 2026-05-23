@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- NL→IR Mapping Roadmap Item 4 — Transform with sce:quantity on input.
+     ARXML-style temperature encoding: int8 raw byte converted via the
+     COMPU-METHOD `physical = raw * 0.5 + -40` linear formula. The output
+     is plain f64 (the computed physical reading); the input carries the
+     quantity annotation so codegen surfaces the unit in the function's
+     doc comment and the type checker accepts the body's mixed-numeric
+     arithmetic without unit-mismatch rejection. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="transform" name="quantity_celsius">
+  <datamodel>
+    <data id="raw_temp" sce:type="int8" sce:direction="in"
+          sce:quantity="celsius" sce:scale="0.5" sce:offset="-40"/>
+    <data id="temperature" sce:type="float64" sce:direction="out"
+          expr="raw_temp * 0.5 + -40"/>
+  </datamodel>
+</scxml>

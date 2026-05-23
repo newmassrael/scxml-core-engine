@@ -20,6 +20,18 @@
 {% endif %}
 {% for func in functions %}
 
+{% if func.param_quantities or func.output_quantity %}
+/* NL→IR Mapping Roadmap Item 4 — physical-quantity annotations. */
+{% if func.param_quantities %}
+/* Inputs: */
+{% for pq in func.param_quantities %}
+/*   * `{{ pq.id }}` carries unit `{{ pq.unit }}` (physical = raw * {{ pq.scale_repr }} + {{ pq.offset_repr }}). */
+{% endfor %}
+{% endif %}
+{% if func.output_quantity %}
+/* Output unit: `{{ func.output_quantity.unit }}` (physical = raw * {{ func.output_quantity.scale_repr }} + {{ func.output_quantity.offset_repr }}). */
+{% endif %}
+{% endif %}
 static inline {{ func.ret_type }} {{ func.name }}({{ func.params }}) {
     return {{ func.expr }};
 }

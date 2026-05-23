@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- NL→IR Mapping Roadmap Item 4 — Codec with sce:quantity on a scalar
+     field. Single-byte temperature payload where the wire carries an
+     `int8` and the physical reading is `raw * 0.5 - 40` Celsius. Codegen
+     emits a raw `raw_temp` struct member plus `<field>_phys` /
+     `set_<field>_phys` accessor methods that perform the linear
+     conversion in IEEE-754 double precision. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" name="quantity_temperature_codec">
+  <datamodel>
+    <sce:field id="raw_temp" sce:type="int8" sce:byte="0" sce:bit-size="8"
+               sce:quantity="celsius" sce:scale="0.5" sce:offset="-40"/>
+  </datamodel>
+</scxml>

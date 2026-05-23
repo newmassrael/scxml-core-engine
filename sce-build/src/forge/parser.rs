@@ -2475,6 +2475,13 @@ pub fn parse_codec_field_from_node(
         ));
     }
 
+    // NL→IR Mapping Roadmap Item 4 — quantity annotation on the plain
+    // codec field. The dedicated `<sce:repeat>` / `<sce:tlv-chain>` /
+    // `<sce:embed>` shapes don't carry quantity (their wire-level
+    // representation is byte-stream or list, not a scalar physical
+    // value), so only this primary `<sce:field>` parser wires it.
+    let quantity = parse_quantity_attrs(node, doc_name, &format!("codec field '{id}'"))?;
+
     Ok(CodecField {
         id,
         sce_type,
@@ -2497,6 +2504,7 @@ pub fn parse_codec_field_from_node(
         length_arith,
         embed_body_alias: None,
         embed_length_from: None,
+        quantity,
     })
 }
 
@@ -3070,6 +3078,9 @@ fn parse_codec_repeat_from_node(
         length_arith: None,
         embed_body_alias: None,
         embed_length_from: None,
+        // Repeat fields carry a list of imported-codec entries — no
+        // scalar wire value to attach a physical conversion to.
+        quantity: None,
     })
 }
 
@@ -3294,6 +3305,9 @@ fn parse_codec_tlv_chain_from_node(
         length_arith: None,
         embed_body_alias: None,
         embed_length_from: None,
+        // TLV chain carries a chain of entries — no scalar wire value
+        // to attach a physical conversion to.
+        quantity: None,
     })
 }
 
@@ -3423,6 +3437,10 @@ fn parse_codec_embed_from_node(
         length_arith: None,
         embed_body_alias: Some(body_alias),
         embed_length_from,
+        // Embedded inline codec — its inner fields carry their own
+        // wire interpretation; the embed envelope itself has no
+        // scalar physical reading.
+        quantity: None,
     })
 }
 
@@ -7916,7 +7934,7 @@ fn parse_forge_field(
     })?;
 
     let expr = data.attribute("expr").map(|s| s.to_string());
-    let unit = sce_attr(data, "unit");
+    let quantity = parse_quantity_attrs(data, doc_name, &format!("field '{id}'"))?;
     // RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B1: optional cap
     // on bytes-typed slots. Parsed for every field; the validator pass
     // (RFC §7) decides whether to flag it on a non-bytes field.
@@ -7927,9 +7945,129 @@ fn parse_forge_field(
         sce_type,
         direction,
         expr,
-        unit,
+        quantity,
         max_size,
     })
+}
+
+/// NL→IR Mapping Roadmap Item 4 — parse the `sce:quantity` /
+/// `sce:scale` / `sce:offset` attribute trio.
+///
+/// Returns `Ok(None)` when no attribute is present; returns `Ok(Some(q))`
+/// when at least `sce:quantity` is set. Rejects the four malformed
+/// combinations:
+///
+/// 1. `sce:scale` or `sce:offset` without `sce:quantity`  — orphan
+///    conversion factor (no unit to anchor against).
+/// 2. Empty `sce:quantity` string — a unit name is required.
+/// 3. Malformed `sce:scale` / `sce:offset` rational text.
+/// 4. `sce:scale` parses to zero (raw value never influences the
+///    physical reading, so the annotation has no observable effect).
+fn parse_quantity_attrs(
+    node: &roxmltree::Node,
+    doc_name: &str,
+    owner_label: &str,
+) -> Result<Option<crate::forge::quantity::Quantity>, Located<ForgeError>> {
+    use crate::forge::quantity::{Quantity, Rational, UnitTag};
+
+    let unit_attr = sce_attr(node, "quantity");
+    let scale_attr = sce_attr(node, "scale");
+    let offset_attr = sce_attr(node, "offset");
+
+    if unit_attr.is_none() && scale_attr.is_none() && offset_attr.is_none() {
+        return Ok(None);
+    }
+
+    let unit_str = match unit_attr {
+        Some(s) => s,
+        None => {
+            // Decide which orphan attribute is the proximate culprit;
+            // prefer scale's diagnostic when both are present (alphabetical
+            // — deterministic so the diagnostic text is stable).
+            let orphan = if scale_attr.is_some() {
+                "sce:scale"
+            } else {
+                "sce:offset"
+            };
+            return Err(located(
+                node,
+                doc_name,
+                ValidationError::InvalidAttribute {
+                    element: owner_label.to_string(),
+                    attr: orphan.into(),
+                    value: scale_attr.or(offset_attr).unwrap_or_default(),
+                    expected: "physical-quantity conversion factor requires `sce:quantity=\"<unit>\"` on the same element"
+                        .into(),
+                },
+            ));
+        }
+    };
+    if unit_str.trim().is_empty() {
+        return Err(located(
+            node,
+            doc_name,
+            ValidationError::InvalidAttribute {
+                element: owner_label.to_string(),
+                attr: "sce:quantity".into(),
+                value: unit_str,
+                expected: "non-empty unit name (e.g. `celsius`, `s`, `m/s^2`)".into(),
+            },
+        ));
+    }
+
+    let scale = match scale_attr {
+        Some(s) => {
+            let r = Rational::parse(&s).ok_or_else(|| {
+                located(
+                    node,
+                    doc_name,
+                    ValidationError::InvalidAttribute {
+                        element: owner_label.to_string(),
+                        attr: "sce:scale".into(),
+                        value: s.clone(),
+                        expected: "rational literal: integer, decimal, or `num/denom`".into(),
+                    },
+                )
+            })?;
+            if r.is_zero() {
+                return Err(located(
+                    node,
+                    doc_name,
+                    ValidationError::InvalidAttribute {
+                        element: owner_label.to_string(),
+                        attr: "sce:scale".into(),
+                        value: s,
+                        expected: "non-zero rational — raw value would never influence the physical reading"
+                            .into(),
+                    },
+                ));
+            }
+            r
+        }
+        None => Rational::one(),
+    };
+
+    let offset = match offset_attr {
+        Some(s) => Rational::parse(&s).ok_or_else(|| {
+            located(
+                node,
+                doc_name,
+                ValidationError::InvalidAttribute {
+                    element: owner_label.to_string(),
+                    attr: "sce:offset".into(),
+                    value: s.clone(),
+                    expected: "rational literal: integer, decimal, or `num/denom`".into(),
+                },
+            )
+        })?,
+        None => Rational::zero(),
+    };
+
+    Ok(Some(Quantity {
+        scale,
+        offset,
+        unit: UnitTag::intern(unit_str.trim()),
+    }))
 }
 
 /// Find a direct child element by local name.

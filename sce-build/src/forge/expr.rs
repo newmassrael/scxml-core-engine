@@ -1363,7 +1363,7 @@ fn rename_identifiers(ast: &mut TypedExpr, renames: &HashMap<&str, &str>) {
 /// but the syntax of a coercion (e.g., `x as f64` vs `float64(x)` vs
 /// `x.toDouble()`) is language-specific. Emitters keep their knowledge
 /// localized by consulting the tree's natural types.
-fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
+pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
     expr.ty = match &mut expr.kind {
         ExprKind::NumberLit(n) => {
             if is_float_literal_text(n) {

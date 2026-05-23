@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- NL→IR Mapping Roadmap Item 4 — negative fixture. Two inputs declare
+     different units (`celsius` and `kelvin`); the body expression
+     adds them, which must be rejected with `validation/cross-kind-
+     type-mismatch` via the typed `ValidationError::QuantityUnitMismatch`
+     variant. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="transform" name="quantity_unit_mismatch">
+  <datamodel>
+    <data id="temp_c" sce:type="int8" sce:direction="in"
+          sce:quantity="celsius" sce:scale="0.5" sce:offset="-40"/>
+    <data id="temp_k" sce:type="int8" sce:direction="in"
+          sce:quantity="kelvin" sce:scale="0.5" sce:offset="0"/>
+    <data id="bogus" sce:type="float64" sce:direction="out"
+          expr="temp_c + temp_k"/>
+  </datamodel>
+</scxml>

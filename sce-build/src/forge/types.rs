@@ -28,6 +28,7 @@
 //   strict type checking and prevents silent precision loss.
 
 use crate::forge::model::SceType;
+use crate::forge::quantity::{NumericBaseType, Quantity, Rational, UnitTag};
 use std::collections::HashMap;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -84,23 +85,95 @@ pub enum InferredType {
     /// Produced by unresolved identifiers, unresolved member accesses,
     /// and calls to functions absent from the context's `funcs` table.
     Unknown,
+
+    /// Physical-quantity-annotated numeric (NL→IR Item 4).
+    ///
+    /// Layers a `physical = raw * scale + offset` linear conversion over
+    /// the inner `NumericBaseType`. Two `Quantity` values combine
+    /// arithmetically iff their unit tags compare equal; mixing
+    /// different units yields `Unknown` so a post-pass can surface
+    /// the incompatibility as `validation/cross-kind-type-mismatch`.
+    ///
+    /// `Quantity` stays `Copy` because every component is `Copy`:
+    /// `NumericBaseType` is plain-old-data, `Rational` is two `i64`s,
+    /// and `UnitTag` is a process-wide interned `u16`.
+    Quantity {
+        base: NumericBaseType,
+        scale: Rational,
+        offset: Rational,
+        unit: UnitTag,
+    },
 }
 
 impl InferredType {
-    /// Is this type a concrete or untyped integer?
+    /// Is this type a concrete or untyped integer? Looks through a
+    /// `Quantity` annotation so `Quantity { base: Int{..}, .. }` still
+    /// reports as integer-like.
     pub fn is_integer_like(&self) -> bool {
-        matches!(self, Self::UntypedInt | Self::Int { .. })
+        match self {
+            Self::UntypedInt | Self::Int { .. } => true,
+            Self::Quantity {
+                base: NumericBaseType::Int { .. },
+                ..
+            } => true,
+            _ => false,
+        }
     }
 
-    /// Is this type a concrete or untyped float?
+    /// Is this type a concrete or untyped float? Looks through a
+    /// `Quantity` annotation so `Quantity { base: Float{..}, .. }` still
+    /// reports as float-like.
     pub fn is_float_like(&self) -> bool {
-        matches!(self, Self::UntypedFloat | Self::Float { .. })
+        match self {
+            Self::UntypedFloat | Self::Float { .. } => true,
+            Self::Quantity {
+                base: NumericBaseType::Float { .. },
+                ..
+            } => true,
+            _ => false,
+        }
     }
 
     /// Does any arithmetic operand of this type require floating-point
     /// arithmetic? True for any float-family type.
     pub fn is_arith_float(&self) -> bool {
         self.is_float_like()
+    }
+
+    /// Strip any `Quantity` wrapper to the raw numeric `InferredType`.
+    /// `Quantity { base: Int{s,b}, .. }` → `Int{s,b}`; everything else
+    /// passes through unchanged. Used by codegen sites that need the
+    /// raw wire-level type without the unit annotation.
+    pub fn strip_quantity(self) -> Self {
+        match self {
+            Self::Quantity { base, .. } => match base {
+                NumericBaseType::Int { signed, bits } => Self::Int { signed, bits },
+                NumericBaseType::Float { bits } => Self::Float { bits },
+            },
+            other => other,
+        }
+    }
+
+    /// If this is a `Quantity`, return the conversion descriptor.
+    pub fn quantity(self) -> Option<Quantity> {
+        match self {
+            Self::Quantity {
+                base: _,
+                scale,
+                offset,
+                unit,
+            } => Some(Quantity {
+                scale,
+                offset,
+                unit,
+            }),
+            _ => None,
+        }
+    }
+
+    /// `true` when this is a `Quantity` variant.
+    pub fn is_quantity(&self) -> bool {
+        matches!(self, Self::Quantity { .. })
     }
 
     /// Map an `SceType` from the model layer to an inferred concrete type.
@@ -174,6 +247,26 @@ impl InferredType {
 /// * Everything else (Bool, Str, Bytes, Null) mixed with a numeric → `Unknown`
 pub fn join_arith(left: InferredType, right: InferredType) -> InferredType {
     use InferredType::*;
+    // Quantity handling sits at the top so unit-mismatch detection
+    // doesn't fall through to the unit-stripped numeric joins below.
+    // The lattice rules for Quantity:
+    //
+    // * `Quantity ⊔ Quantity`   — unit-equal: keep one quantity, joined
+    //   base. unit-mismatch:    yields `Unknown` so a post-pass can
+    //   surface `validation/cross-kind-type-mismatch`.
+    // * `Quantity ⊔ Untyped`    — literal adopts the quantity (acts as
+    //   a dimensionless multiplier in `raw * literal`-style expressions);
+    //   unit annotation stays sticky.
+    // * `Quantity ⊔ Concrete`   — explicit raw numeric drops the unit
+    //   annotation. The author authored a typed bare numeric, so the
+    //   result is the joined raw base. (Use cases like ARXML COMPU-METHOD
+    //   evaluation pass raw bytes into `phys = raw * scale + offset` —
+    //   that emission goes through the codegen accessor, not direct
+    //   arithmetic in author expressions.)
+    if matches!(left, Quantity { .. }) || matches!(right, Quantity { .. }) {
+        return join_arith_quantity(left, right);
+    }
+
     match (left, right) {
         (Unknown, _) | (_, Unknown) => Unknown,
 
@@ -216,10 +309,174 @@ pub fn join_arith(left: InferredType, right: InferredType) -> InferredType {
     }
 }
 
+/// Quantity-aware arithmetic join. Called from [`join_arith`] when at
+/// least one operand is `InferredType::Quantity`. Mismatched units
+/// collapse to `Unknown`; the dedicated post-typing checker
+/// (`forge::quantity_check`) re-walks the AST and produces the typed
+/// `validation/cross-kind-type-mismatch` diagnostic.
+fn join_arith_quantity(left: InferredType, right: InferredType) -> InferredType {
+    use InferredType::*;
+    match (left, right) {
+        (Unknown, _) | (_, Unknown) => Unknown,
+
+        // Both quantities — unit equality is the gate.
+        (
+            Quantity {
+                base: b1,
+                scale: s1,
+                offset: o1,
+                unit: u1,
+            },
+            Quantity {
+                base: b2,
+                scale: _s2,
+                offset: _o2,
+                unit: u2,
+            },
+        ) => {
+            if u1 != u2 {
+                Unknown
+            } else {
+                // Keep the left operand's conversion factors. Two
+                // operand-level Quantity declarations on the same unit
+                // are expected to match (the parser canonicalises both),
+                // but if they drift the left one is the natural anchor
+                // — the right is normally an interior subexpression.
+                Quantity {
+                    base: join_numeric_base(b1, b2),
+                    scale: s1,
+                    offset: o1,
+                    unit: u1,
+                }
+            }
+        }
+
+        // Quantity ⊔ untyped literal — literal adopts the quantity.
+        (Quantity { .. }, UntypedInt) | (UntypedInt, Quantity { .. }) => {
+            let q = if matches!(left, Quantity { .. }) {
+                left
+            } else {
+                right
+            };
+            q
+        }
+        (Quantity { .. }, UntypedFloat) | (UntypedFloat, Quantity { .. }) => {
+            // Untyped float against an integer-backed quantity widens
+            // to a float-backed quantity in the same unit; against a
+            // float-backed quantity, retain the float backing.
+            let q = if matches!(left, Quantity { .. }) {
+                left
+            } else {
+                right
+            };
+            if let Quantity {
+                base,
+                scale,
+                offset,
+                unit,
+            } = q
+            {
+                let base = match base {
+                    NumericBaseType::Int { bits, .. } => {
+                        NumericBaseType::Float { bits: bits.max(32) }
+                    }
+                    NumericBaseType::Float { bits } => NumericBaseType::Float { bits },
+                };
+                Quantity {
+                    base,
+                    scale,
+                    offset,
+                    unit,
+                }
+            } else {
+                Unknown
+            }
+        }
+
+        // Quantity ⊔ concrete numeric — strip the unit; explicit
+        // typed-bare-numeric authorship means the user opted out of
+        // unit checking at this site.
+        (Quantity { base: bq, .. }, Int { signed, bits })
+        | (Int { signed, bits }, Quantity { base: bq, .. }) => {
+            let raw_q = match bq {
+                NumericBaseType::Int {
+                    signed: sq,
+                    bits: bsq,
+                } => Int {
+                    signed: sq,
+                    bits: bsq,
+                },
+                NumericBaseType::Float { bits } => Float { bits },
+            };
+            join_arith(raw_q, Int { signed, bits })
+        }
+        (Quantity { base: bq, .. }, Float { bits })
+        | (Float { bits }, Quantity { base: bq, .. }) => {
+            let raw_q = match bq {
+                NumericBaseType::Int {
+                    signed: sq,
+                    bits: bsq,
+                } => Int {
+                    signed: sq,
+                    bits: bsq,
+                },
+                NumericBaseType::Float { bits: bq_bits } => Float { bits: bq_bits },
+            };
+            join_arith(raw_q, Float { bits })
+        }
+
+        // Any non-numeric combinations involving a Quantity are opaque.
+        _ => Unknown,
+    }
+}
+
+fn join_numeric_base(a: NumericBaseType, b: NumericBaseType) -> NumericBaseType {
+    match (a, b) {
+        (
+            NumericBaseType::Int {
+                signed: s1,
+                bits: b1,
+            },
+            NumericBaseType::Int {
+                signed: s2,
+                bits: b2,
+            },
+        ) => NumericBaseType::Int {
+            signed: s1 || s2,
+            bits: b1.max(b2),
+        },
+        (NumericBaseType::Float { bits: f1 }, NumericBaseType::Float { bits: f2 }) => {
+            NumericBaseType::Float { bits: f1.max(f2) }
+        }
+        (NumericBaseType::Int { bits: _bi, .. }, NumericBaseType::Float { bits: bf })
+        | (NumericBaseType::Float { bits: bf }, NumericBaseType::Int { bits: _bi, .. }) => {
+            NumericBaseType::Float { bits: bf.max(32) }
+        }
+    }
+}
+
 /// Integer-only join, used for bitwise ops and shifts. Non-integer operands
 /// poison the result to `Unknown` (bitwise on floats/bools/strings is nonsense).
+///
+/// `Quantity` operands strip their unit annotation here: bit-twiddling on
+/// a unit-annotated raw value carries no physical interpretation, so the
+/// caller is implicitly working at the raw layer (typical for codec
+/// flag-bit extraction). Two `Quantity` operands with **different** units
+/// still collapse to `Unknown` so the post-pass can flag the mismatch.
 pub fn join_int(left: InferredType, right: InferredType) -> InferredType {
     use InferredType::*;
+    // Unit mismatch in bitwise context surfaces the same way as in
+    // arith — `Unknown`, with the post-pass producing the diagnostic.
+    if let (Quantity { unit: u1, .. }, Quantity { unit: u2, .. }) = (left, right) {
+        if u1 != u2 {
+            return Unknown;
+        }
+    }
+    // Strip Quantity wrappers so the underlying int joins reach the
+    // ordinary `Int` paths below. Bitwise ops carry no unit semantics.
+    let left = left.strip_quantity();
+    let right = right.strip_quantity();
+
     match (left, right) {
         (Unknown, _) | (_, Unknown) => Unknown,
 
@@ -504,6 +761,144 @@ mod tests {
         let mut ctx = TypeCtx::new();
         ctx.insert_var("celsius", float(64));
         assert_eq!(ctx.lookup_var("celsius"), float(64));
+    }
+
+    // ── Quantity (NL→IR Item 4) ─────────────────────────────────
+
+    fn celsius_q_i8() -> InferredType {
+        InferredType::Quantity {
+            base: NumericBaseType::Int {
+                signed: true,
+                bits: 8,
+            },
+            scale: Rational::parse("0.5").unwrap(),
+            offset: Rational::from_int(-40),
+            unit: UnitTag::intern("celsius-types-test"),
+        }
+    }
+
+    fn kelvin_q_i8() -> InferredType {
+        InferredType::Quantity {
+            base: NumericBaseType::Int {
+                signed: true,
+                bits: 8,
+            },
+            scale: Rational::parse("0.5").unwrap(),
+            offset: Rational::zero(),
+            unit: UnitTag::intern("kelvin-types-test"),
+        }
+    }
+
+    #[test]
+    fn quantity_is_integer_or_float_like_per_base() {
+        let q_i = celsius_q_i8();
+        assert!(q_i.is_integer_like());
+        assert!(!q_i.is_float_like());
+
+        let q_f = InferredType::Quantity {
+            base: NumericBaseType::Float { bits: 32 },
+            scale: Rational::one(),
+            offset: Rational::zero(),
+            unit: UnitTag::intern("hz-types-test"),
+        };
+        assert!(!q_i_or_f_swap_check(q_i, q_f));
+        assert!(q_f.is_float_like());
+        assert!(!q_f.is_integer_like());
+    }
+
+    fn q_i_or_f_swap_check(q_i: InferredType, q_f: InferredType) -> bool {
+        q_i.is_float_like() && q_f.is_integer_like()
+    }
+
+    #[test]
+    fn quantity_strip_returns_underlying_numeric_type() {
+        let q = celsius_q_i8();
+        assert_eq!(q.strip_quantity(), int(true, 8));
+
+        let q_f = InferredType::Quantity {
+            base: NumericBaseType::Float { bits: 64 },
+            scale: Rational::one(),
+            offset: Rational::zero(),
+            unit: UnitTag::intern("strip-types-test"),
+        };
+        assert_eq!(q_f.strip_quantity(), float(64));
+
+        // Non-quantity passes through.
+        assert_eq!(int(false, 16).strip_quantity(), int(false, 16));
+    }
+
+    #[test]
+    fn arith_quantity_same_unit_keeps_quantity() {
+        let a = celsius_q_i8();
+        let b = celsius_q_i8();
+        match join_arith(a, b) {
+            InferredType::Quantity { unit, .. } => {
+                assert_eq!(unit.as_str(), "celsius-types-test");
+            }
+            other => panic!("expected Quantity, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn arith_quantity_different_units_collapses_to_unknown() {
+        let a = celsius_q_i8();
+        let b = kelvin_q_i8();
+        assert_eq!(join_arith(a, b), InferredType::Unknown);
+        assert_eq!(join_arith(b, a), InferredType::Unknown);
+    }
+
+    #[test]
+    fn arith_quantity_with_untyped_int_keeps_quantity() {
+        let q = celsius_q_i8();
+        // celsius * 9 — literal adopts the quantity.
+        let r = join_arith(q, InferredType::UntypedInt);
+        assert!(matches!(r, InferredType::Quantity { .. }));
+        let r = join_arith(InferredType::UntypedInt, q);
+        assert!(matches!(r, InferredType::Quantity { .. }));
+    }
+
+    #[test]
+    fn arith_quantity_with_untyped_float_promotes_base() {
+        let q = celsius_q_i8();
+        // celsius * 0.5 — int-backed quantity widens to float-backed.
+        let r = join_arith(q, InferredType::UntypedFloat);
+        match r {
+            InferredType::Quantity { base, .. } => {
+                assert_eq!(base, NumericBaseType::Float { bits: 32 });
+            }
+            other => panic!("expected float-backed Quantity, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn arith_quantity_with_concrete_int_strips_unit() {
+        let q = celsius_q_i8();
+        // celsius * (i32) — explicit raw int authorship drops the unit.
+        let r = join_arith(q, int(true, 32));
+        assert_eq!(r, int(true, 32));
+    }
+
+    #[test]
+    fn arith_quantity_with_concrete_float_strips_unit() {
+        let q = celsius_q_i8();
+        let r = join_arith(q, float(64));
+        assert_eq!(r, float(64));
+    }
+
+    #[test]
+    fn int_join_quantity_unit_mismatch_is_unknown() {
+        let a = celsius_q_i8();
+        let b = kelvin_q_i8();
+        assert_eq!(join_int(a, b), InferredType::Unknown);
+    }
+
+    #[test]
+    fn int_join_quantity_same_unit_strips_to_int() {
+        let a = celsius_q_i8();
+        let b = celsius_q_i8();
+        // Bitwise on unit-annotated raws strips the annotation; the
+        // result is the underlying int join.
+        assert_eq!(join_int(a, b), int(true, 8));
     }
 
     #[test]

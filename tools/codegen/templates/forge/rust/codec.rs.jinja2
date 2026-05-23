@@ -371,6 +371,31 @@ impl {{ struct_name }} {
 {% endif %}
     }
 
+{% if has_quantity %}
+    // NL→IR Mapping Roadmap Item 4 — physical-quantity raw↔physical
+    // accessor pair. Each field carrying `sce:quantity=…` emits a
+    // `<id>_phys` getter and a `set_<id>_phys` setter. The raw struct
+    // member retains its wire-level integer/float type; the accessors
+    // perform the linear `physical = raw * scale + offset` conversion
+    // (and its inverse, truncated to the base type) so call sites can
+    // address either layer without manual casting.
+{% for field in fields %}
+{% if field.quantity_accessor %}
+    /// Physical reading in `{{ field.quantity_accessor.unit }}` —
+    /// computed as `raw * {{ field.quantity_accessor.scale_repr }} + {{ field.quantity_accessor.offset_repr }}`.
+    pub fn {{ field.quantity_accessor.getter_name }}(&self) -> {{ field.quantity_accessor.phys_type }} {
+        {{ field.quantity_accessor.raw_to_phys_expr }}
+    }
+
+    /// Set the physical reading in `{{ field.quantity_accessor.unit }}`;
+    /// the value is rounded toward zero into the raw `{{ field.rs_type }}` slot.
+    pub fn {{ field.quantity_accessor.setter_name }}(&mut self, value: {{ field.quantity_accessor.phys_type }}) {
+        {{ field.quantity_accessor.raw_assign_lhs }} = {{ field.quantity_accessor.phys_to_raw_expr }};
+    }
+
+{% endif %}
+{% endfor %}
+{% endif %}
 {% if has_flags %}
     // RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as bool; multi-bit

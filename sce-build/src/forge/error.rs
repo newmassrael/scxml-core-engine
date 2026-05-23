@@ -3071,6 +3071,36 @@ pub enum ValidationError {
         expected: String,
     },
 
+    /// Two operands carrying `sce:quantity=…` annotations on
+    /// **different** units meet in an arithmetic or bitwise operator.
+    /// Closes NL→IR Mapping Roadmap Item 4's "단위 다른 사이 산술
+    /// reject" axis without introducing a new `DiagnosticCode` variant
+    /// — semantically a "type incompatibility" (per the user-confirmed
+    /// reuse decision), it surfaces under `validation/cross-kind-type-
+    /// mismatch` with a typed payload that names both units and the
+    /// operator they collide under.
+    #[error(
+        "{kind} '{name}': operator '{op}' combines incompatible quantity units '{left_unit}' and '{right_unit}' (expression: `{expr}`)"
+    )]
+    QuantityUnitMismatch {
+        /// Kind of the enclosing document (Transform, Condition, …) so
+        /// the diagnostic key is stable across kinds.
+        kind: ForgeKind,
+        /// Document name (the kind's `name` attribute).
+        name: String,
+        /// The operator token (`+`, `-`, `*`, `/`, `%`, `&`, `|`, `^`,
+        /// `<<`, `>>`, …) that meets the two units.
+        op: String,
+        /// Left operand's unit, rendered via `UnitTag::as_str`.
+        left_unit: String,
+        /// Right operand's unit, rendered via `UnitTag::as_str`.
+        right_unit: String,
+        /// Original expression source as authored, for the
+        /// diagnostic's `actual` slot. Helps the author find the
+        /// specific site without a separate location pointer.
+        expr: String,
+    },
+
     /// The `<sce:import>` graph contains a cycle:
     /// `A.scxml` imports `B.scxml`, `B.scxml` imports `A.scxml`. This
     /// is a defensive check; the import enrichment pass would otherwise
