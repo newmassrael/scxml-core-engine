@@ -178,6 +178,19 @@ MODULE.bazel.lock
 /third_party/BUILD.bazel
 /third_party/*/BUILD.bazel
 
+# SCE Mesh §9.6.6: synth-invoke child SCXMLs are derived artefacts —
+# `sce-codegen generate` re-materialises them into the caller-supplied
+# `-o` (and `--deploy <path>` parent when distinct) on every run, so a
+# leak into a tracked dir is pollution, not signal. Exception:
+# `resources/<num>/test<num>__sce_synth_invoke__*.scxml` files stay
+# tracked because `cmake/SCEStaticW3CTest.cmake:373` glob-discovers
+# them at *configure time* (before the build-time parent codegen has
+# a chance to re-materialise them under OUTPUT_DIR); a CMake refactor
+# that pre-computes the child list from the parent SCXML at configure
+# time would let the corpus join the rest of this rule.
+**/*__sce_synth_invoke__*.scxml
+!resources/*/*__sce_synth_invoke__*.scxml
+
 # SCE embed output (regenerate via: ./scripts/package_embed.sh)
 # embed/MANIFEST.json records the public-header API surface and is
 # checked in so consumers vendoring embed/ can diff old-vs-new across
