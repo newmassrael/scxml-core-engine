@@ -15,6 +15,9 @@
 # Run once per clone:
 #     bash tools/git-hooks/install.sh
 #
+# To opt out of a single commit (emergencies only):
+#     SKIP_PRECOMMIT=1 git commit ...
+#
 # To opt out of a single push (emergencies only):
 #     SKIP_PREPUSH=1 git push ...
 
