@@ -78,14 +78,7 @@ pub const fn kind_class(kind: ForgeKind) -> KindClass {
         // backends with language-builtin primitives (no MCU-specific
         // hardware constraint like DMA section/cache for BufferPool, no
         // cross-core atomics constraint like Worker). Generic class.
-        | ForgeKind::BoundedCollection
-        // NL→IR Item C1: EventSchema lowers to a language-native typed
-        // enum (Atomic C scope) on every backend — `enum class :
-        // uint8_t` (C++) / `#[repr(u8)] pub enum` (Rust) / `enum class
-        // (val raw)` (Kotlin) / typed const family (Go) / `IntEnum`
-        // (Python) / C11 width-enum. No MCU-specific hardware
-        // constraint, no cross-core atomics — Generic class.
-        | ForgeKind::EventSchema => KindClass::Generic,
+        | ForgeKind::BoundedCollection => KindClass::Generic,
         // RFC §5.C / §5.J.4: Link is the first MCU-class kind.
         // Authoring it on cpp/kotlin/go/python raises
         // `codegen/mcu-class-kind-on-non-mcu-language` (existing A6
@@ -197,14 +190,6 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         // lines 2573-2575). All 6 backends emit; the γ chain entirely
         // closes the §5.L matrix.
         ForgeKind::BoundedCollection => true,
-        // NL→IR Item C1 (Atomic A): EventSchema is parse-time metadata
-        // only — no per-backend codegen template ships yet. Atomic C
-        // (DL-6) lands the 6-backend enum lowering templates and flips
-        // every arm here to `true`. Until then, an attempt to emit an
-        // EventSchema document surfaces as
-        // `codegen/generic-kind-backend-emit-missing` via `check()` —
-        // the truthful answer ("no template ships").
-        ForgeKind::EventSchema => false,
     }
 }
 

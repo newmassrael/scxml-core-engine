@@ -3033,50 +3033,6 @@
             "ordering"
           ],
           "type": "object"
-        },
-        {
-          "description": "NL→IR Item C1: typed `_event.data` payload contract. Pure metadata at Atomic A scope — no codegen emission (Atomic C adds per-backend enum lowering). See [`EventSchemaModel`].",
-          "properties": {
-            "event_name": {
-              "description": "SCXML event name this schema constrains (e.g. `\"job.completed\"`, `\"task.failed\"`). Treated case-sensitively per W3C SCXML 1.0 §5.10 event-matching rules. Built-in event names (`error.*`, `done.invoke.*`, `done.state.*`) are rejected at parse time by the schema-on-builtin guard.",
-              "type": "string"
-            },
-            "fields": {
-              "description": "Typed fields exposed via `_event.data.<field>`. Each field's `direction` is `Direction::In` (payload is the receiver's read-only view); the parser enforces this so authors cannot declare an `out`-direction field that would have no meaning on the receive side. `sce_type` may be a primitive (Uint8/Int32/Float64/Bool/String/Bytes) or [`SceType::Enum`] referring to an imported `sce:kind=\"lookup\"` document.",
-              "items": {
-                "$ref": "#/definitions/ForgeField"
-              },
-              "type": "array"
-            },
-            "kind": {
-              "enum": [
-                "event-schema"
-              ],
-              "type": "string"
-            },
-            "name": {
-              "description": "Symbol name for the schema document — drives symbol mangling and import-table lookup. For the top-level surface form this is the document's basename (e.g. `job_completed_schema`); for the inline form, the parser synthesizes a deterministic name from the enclosing statechart name + event name so anonymous lowered schemas remain referenceable in diagnostics.",
-              "type": "string"
-            },
-            "source_location": {
-              "anyOf": [
-                {
-                  "$ref": "#/definitions/SourceLocation"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source position of the `<scxml sce:kind=\"event-schema\">` root element (or the synthesized location of the lowered inline form). Drives the per-kind body function's SCE-MAP marker for downstream tooling. Same convention as `LookupModel.source_location`."
-            }
-          },
-          "required": [
-            "event_name",
-            "fields",
-            "kind",
-            "name"
-          ],
-          "type": "object"
         }
       ]
     },
@@ -3284,13 +3240,6 @@
           "description": "Typed container with build-time-declared capacity but runtime-varying occupancy — watching-zenoh RFC §5.L lines 2540-2655. zenoh-pico parity (runtime subscription declare/undeclare + queryable + reassembly tables) requires this on MCU where heap is forbidden. Six-language emitter table per §5.J.5 (Rust `heapless::Vec<T, N>` / C11 slot+bitmap struct / Cpp `std::array<T, N>` + `std::bitset<N>` / Kotlin `Array<T?>` + `BooleanArray` / Go fixed-array + mask / Python list + bytearray mask). C6-α ships the schema + parse-time validators for the two structure-only codes (`collection/ordering-sorted-requires- index-by` + `collection/overflow-policy-oldest-wins-requires-ordering- insertion`); cross-doc element-type resolution + index-by-field verification + atomics-import check land in C6-β; deploy-time capacity resolution + 6-backend codegen land in C6-γ.",
           "enum": [
             "bounded_collection"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "Typed contract for `_event.data` of a named SCXML event — NL→IR Mapping Roadmap Item C1. Maps an event name (`job.completed`, `task.failed`, …) to a list of `<sce:field>` declarations so the receive-side typecheck can validate `_event.data.<field>` expressions in transition `cond` attributes at parse time, and send-side payload validation (Atomic B) + mesh cross-machine validation (DL-7) can ride the same shape. Schemaless fallback (DL-9): events without an imported EventSchema retain dynamic `_event.data` behavior. W3C built-in events (`error.*`, `done.invoke.*`, `done.state.*`) are explicitly excluded — declaring a schema for these raises `validation/event-schema-on-builtin-event`. Per-backend enum codegen lowering of `SceType::Enum` defers to Atomic C; Atomic A is parse-time only.",
-          "enum": [
-            "event_schema"
           ],
           "type": "string"
         }
@@ -3949,19 +3898,6 @@
       ],
       "type": "object"
     },
-    "LookupRef": {
-      "description": "Reference to an imported `sce:kind=\"lookup\"` document, carried as the payload of [`SceType::Enum`]. NL→IR Item C1 (DL-2): EventSchema fields may declare `sce:type=\"enum:<alias>\"`, which parses into `SceType::Enum(LookupRef { alias: \"<alias>\".into() })`. The alias is resolved against the surrounding statechart's `<sce:import>` table by the cross-kind binding pass (`cross_kind_check::EventSchema` arm) so the underlying integer key type can be looked up at validation / codegen time.\n\n`LookupRef` is a named struct rather than a bare `String` so future extensions (cached resolved key type, source-line tracking for the `enum:` token, etc.) can be added without churning every callsite that pattern-matches `SceType::Enum`.",
-      "properties": {
-        "alias": {
-          "description": "Import alias declared on the surrounding statechart's `<sce:import alias=\"…\">` element. Cross-kind binding pass resolves this against the imports table to find the underlying `LookupModel` and validate the key-type relationship.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "alias"
-      ],
-      "type": "object"
-    },
     "MissPolicy": {
       "description": "Miss-handling policy for `sce:kind=\"lookup\"`. Captured from the `sce:on-miss` attribute on the mapping `<data>` element, with `sce:default` implied as `Default`. These are two orthogonal codegen strategies, not two different kinds — see SCE_FORGE.md Section 4.9.\n\n`Default(fallback)`: total function — every input produces an output, and the fallback string is the value returned when no entry key matches. Used by symbolic dispatch (gear positions, engine status, etc.).\n\n`Error`: partial function — the generated `lookup(x)` returns `Option<V>` / `std::optional<V>` / `(V, bool)` / `V?` depending on the target language. Callers must handle the miss case explicitly. Used by numeric data tables where an unknown key is a bug, not a fallback case.",
       "oneOf": [
@@ -4488,39 +4424,22 @@
     },
     "SceType": {
       "description": "Canonical SCE type — used in `sce:type` attributes. Language-specific mappings are in the generator module (SRP).",
-      "oneOf": [
-        {
-          "enum": [
-            "uint8",
-            "uint16",
-            "uint32",
-            "uint64",
-            "int8",
-            "int16",
-            "int32",
-            "int64",
-            "float32",
-            "float64",
-            "bool",
-            "string",
-            "bytes"
-          ],
-          "type": "string"
-        },
-        {
-          "additionalProperties": false,
-          "description": "Enum-typed value drawn from an imported `sce:kind=\"lookup\"` vocabulary — NL→IR Item C1 (DL-2). Surface form `sce:type=\"enum:<alias>\"`. The lattice rule is: `Enum(L) ⊑ <L's key_type>` (e.g. `Enum(L) ⊑ Uint8` when L's key is `uint8`), and cross-type comparison `Enum(L) == 0x11` lowers to the underlying integer comparison after cross-kind resolution. Per-backend codegen (Atomic C) emits language- native typed enums (`enum class : uint8_t`, `#[repr(u8)] enum`, `IntEnum`, …). Atomic A scope: parse + cross-kind binding only — `is_unsigned()` / `int_bit_width()` / etc. return `false` / `None` and callers that need the underlying type must resolve via the cross-kind binding pass first.",
-          "properties": {
-            "enum": {
-              "$ref": "#/definitions/LookupRef"
-            }
-          },
-          "required": [
-            "enum"
-          ],
-          "type": "object"
-        }
-      ]
+      "enum": [
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "float32",
+        "float64",
+        "bool",
+        "string",
+        "bytes"
+      ],
+      "type": "string"
     },
     "ScxmlRemotePeerBinding": {
       "description": "SCE_MESH.md §9.6.2 wire-14/20 peer entry — a machine name paired with the author-selected deploy.yaml transport for the scxml-remote invoke channel. `transport` is `None` for same-device cross-partition peers that take the implicit shm fallback (today's only wired codegen path); `Some(<name>)` carries a cross-device declaration resolved from `machines.<parent>.bindings[\"#<peer>\"].transport`. Session 1 of the cross-device roll-out records the field on the model; Session 2 adds `connect_endpoint` so custom_tcp codegen has the peer's listen address available for the per-peer `CustomTcp::Client` ctor args.\n\n`connect_endpoint` mirrors `transport`: it is `Some` only when the peer actually needs an endpoint (currently custom_tcp only) AND the peer's device has `transports.custom_tcp.listen` declared in deploy.yaml; all other paths (shm, local, missing device config) keep it `None`. Stored unquoted — the template emits the quoted C++ string literal.",

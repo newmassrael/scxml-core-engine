@@ -55,32 +55,7 @@
       <xs:enumeration value="worker"/>
       <!-- watching-zenoh RFC §5.L (Phase C6, Generic-class) -->
       <xs:enumeration value="bounded-collection"/>
-      <!-- NL→IR Mapping Roadmap Item C1 — EventSchema kind. Typed
-           contract for the `_event.data` payload of a named SCXML
-           event. Carries the event name on the root via
-           `sce:event-name`; declares typed `<sce:field>` children
-           that are read by transition `cond` expressions as
-           `_event.data.<field>`. Atomic A scope: parse + receive-
-           side typecheck (`event_schema_check`). Per-backend enum
-           codegen lowering defers to Atomic C. -->
-      <xs:enumeration value="event-schema"/>
     </xs:restriction>
-  </xs:simpleType>
-
-  <!-- NL→IR Mapping Roadmap Item C1 — EventSchema `sce:type` accepts
-       primitive `sceType` values plus the `enum:<lookup-alias>`
-       pattern referring to an imported `sce:kind="lookup"` document.
-       The pattern is the lexically authored token; cross-doc
-       resolution against the schema's `<sce:import>` table happens
-       in the cross-kind binding pass, not at XSD validation time. -->
-  <xs:simpleType name="sceTypeOrEnumRef">
-    <xs:union memberTypes="sce:sceType">
-      <xs:simpleType>
-        <xs:restriction base="xs:string">
-          <xs:pattern value="enum:[A-Za-z_][A-Za-z0-9_]*"/>
-        </xs:restriction>
-      </xs:simpleType>
-    </xs:union>
   </xs:simpleType>
 
   <!-- SCE Forge Section 3.3: Cross-language type system -->
@@ -194,23 +169,8 @@
   <!-- Section 3.2: Kind selector — on <scxml> root or <data> elements -->
   <xs:attribute name="kind" type="sce:kindType"/>
 
-  <!-- NL→IR Mapping Roadmap Item C1 — EventSchema event-name selector.
-       Required on the `<scxml>` root when `sce:kind="event-schema"`.
-       Names the SCXML event whose `_event.data` payload the schema
-       constrains. Reserved W3C namespaces (`error.*`, `done.invoke.*`,
-       `done.state.*`) are rejected by `parse_event_schema` (raises
-       `validation/event-schema-on-builtin-event`). Free-form string at
-       the XSD layer; semantic validation lives in sce-build. -->
-  <xs:attribute name="event-name" type="xs:string"/>
-
-  <!-- Section 3.3: Common data attributes — on <data> elements.
-       Accepts primitive `sceType` values plus the NL→IR Item C1
-       `enum:<lookup-alias>` pattern (EventSchema kind). Codec /
-       lookup / validator / etc. parsers reject the enum form at
-       parse time when the surrounding kind does not support it; the
-       wider XSD union keeps EventSchema fields validatable through
-       the same global attribute declaration. -->
-  <xs:attribute name="type" type="sce:sceTypeOrEnumRef"/>
+  <!-- Section 3.3: Common data attributes — on <data> elements -->
+  <xs:attribute name="type" type="sce:sceType"/>
   <xs:attribute name="direction" type="sce:directionType"/>
   <xs:attribute name="unit" type="xs:string"/>
   <xs:attribute name="default" type="xs:string"/>

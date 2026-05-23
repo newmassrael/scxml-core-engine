@@ -194,17 +194,6 @@ fn collect_member_fields(doc: &ForgeDocument) -> Option<Vec<(String, SceType)>> 
         // typed access is covered by the per-statement Foreach branch
         // in `walk_algorithm_stmt`.
         ForgeDocument::BoundedCollection(_) => return Some(Vec::new()),
-        // NL→IR Item C1: EventSchema is imported via `<sce:import>`
-        // for cross-doc binding (the receive-side typecheck pass
-        // resolves `_event.data.<field>` against the schema's
-        // declared fields by *event name*, not by alias access). The
-        // import alias itself is never used in expression positions
-        // like `alias.field` — the link is implicit through SCXML
-        // event-name matching. Empty member surface keeps the
-        // alias-access path from suggesting EventSchema fields as
-        // candidates for an `alias.field` typo on a different kind.
-        // Functional resolution lives in `event_schema_check.rs`.
-        ForgeDocument::EventSchema(_) => return Some(Vec::new()),
         // Stateless kinds — function-call aliases, no member surface.
         ForgeDocument::Statechart(_)
         | ForgeDocument::Transform(_)
@@ -221,35 +210,24 @@ fn collect_member_fields(doc: &ForgeDocument) -> Option<Vec<(String, SceType)>> 
 }
 
 /// Render an [`SceType`] to its canonical schema attribute spelling
-/// (`uint8`, `bool`, `enum:<alias>`, …). `SceType` has no `Display`
-/// impl; rendering it inline keeps the diagnostic format stable across
-/// future Serialize representations.
-///
-/// Returns `String` rather than `&'static str` so the
-/// [`SceType::Enum`] variant can format its alias-carrying canonical
-/// form (`enum:Result`) without a heap-side intermediate.
-fn sce_type_canonical(t: &SceType) -> String {
+/// (`uint8`, `bool`, …). `SceType` has no `Display` impl; rendering it
+/// inline keeps the diagnostic format stable across future Serialize
+/// representations.
+fn sce_type_canonical(t: &SceType) -> &'static str {
     match t {
-        SceType::Uint8 => "uint8".to_string(),
-        SceType::Uint16 => "uint16".to_string(),
-        SceType::Uint32 => "uint32".to_string(),
-        SceType::Uint64 => "uint64".to_string(),
-        SceType::Int8 => "int8".to_string(),
-        SceType::Int16 => "int16".to_string(),
-        SceType::Int32 => "int32".to_string(),
-        SceType::Int64 => "int64".to_string(),
-        SceType::Float32 => "float32".to_string(),
-        SceType::Float64 => "float64".to_string(),
-        SceType::Bool => "bool".to_string(),
-        SceType::String => "string".to_string(),
-        SceType::Bytes => "bytes".to_string(),
-        // NL→IR Item C1: enum types round-trip through `enum:<alias>`
-        // so the diagnostic surface matches the authored `sce:type`
-        // attribute byte-for-byte. Atomic A diagnostics like
-        // `validation/cross-kind-type-mismatch` carrying an Enum
-        // operand format as `enum:Result` so the user sees the same
-        // token they wrote.
-        SceType::Enum(lookup_ref) => format!("enum:{}", lookup_ref.alias),
+        SceType::Uint8 => "uint8",
+        SceType::Uint16 => "uint16",
+        SceType::Uint32 => "uint32",
+        SceType::Uint64 => "uint64",
+        SceType::Int8 => "int8",
+        SceType::Int16 => "int16",
+        SceType::Int32 => "int32",
+        SceType::Int64 => "int64",
+        SceType::Float32 => "float32",
+        SceType::Float64 => "float64",
+        SceType::Bool => "bool",
+        SceType::String => "string",
+        SceType::Bytes => "bytes",
     }
 }
 
@@ -543,8 +521,8 @@ fn check_algorithm_return_type(
                     importing_name: algo.name.clone(),
                     alias: obj.to_string(),
                     field: property.to_string(),
-                    actual: sce_type_canonical(actual_ty),
-                    expected: sce_type_canonical(expected_ret),
+                    actual: sce_type_canonical(actual_ty).to_string(),
+                    expected: sce_type_canonical(expected_ret).to_string(),
                 }
                 .into(),
                 location,
