@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  NL→IR Item C1 Atomic B negative fixture (DL-4): statechart imports
+  the minimal schema (single field `elapsed_ms: uint32`) but the
+  `<raise event="job.completed">` carries a `<param name="missing_field">`
+  not declared on the schema. Send-side validator must reject with
+  `validation/event-payload-field-unknown` and carry the schema's
+  declared field surface as `Fix::ReplaceOneOf` candidates.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="negative_statechart_send_extra_param"
+       version="1.0"
+       initial="working"
+       datamodel="ecmascript">
+  <sce:import src="schema_job_completed_minimal.scxml" kind="event-schema" as="JobCompletedSchema"/>
+  <state id="working">
+    <onentry>
+      <send event="job.completed">
+        <param name="missing_field" expr="0"/>
+      </send>
+    </onentry>
+    <transition event="job.completed" target="done"/>
+  </state>
+  <state id="done"/>
+</scxml>
