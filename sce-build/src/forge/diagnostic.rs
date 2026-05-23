@@ -495,28 +495,19 @@ pub enum DiagnosticCode {
     ValidationCrossKindCircularDependency,
 
     // ── EventSchema kind (NL→IR Mapping Roadmap Item C1, design RFC
-    //    §3 DL-4 / DL-7 / DL-9). Three new codes land across the C1
-    //    atomic family: Atomic A's `validation/event-schema-on-
-    //    builtin-event` (rejects schema declarations against the W3C
-    //    SCXML reserved event namespaces `error.*`,
-    //    `done.invoke.*`, `done.state.*`), Atomic B's
-    //    `validation/event-payload-field-unknown` (rejects
-    //    `<send>/<param name="F">` whose `F` is not declared on the
-    //    imported EventSchema), and Atomic B's
-    //    `mesh/event-schema-mismatch` (rejects cross-machine
-    //    `<send target="#...">` whose sender and receiver disagree
-    //    on the event's typed payload contract). Field-not-found +
-    //    type-mismatch on the receive-side reuse the existing
-    //    `validation/cross-kind-field-not-found` +
+    //    §3 DL-9). Atomic A lands one new code:
+    //    `validation/event-schema-on-builtin-event` rejects schema
+    //    declarations against the W3C SCXML reserved event
+    //    namespaces (`error.*`, `done.invoke.*`, `done.state.*`).
+    //    Receive-side field-not-found + type-mismatch reuse the
+    //    existing `validation/cross-kind-field-not-found` +
     //    `validation/cross-kind-type-mismatch` codes per Item 4
-    //    reuse precedent — the type-mismatch code is also reused on
-    //    the send-side per the same precedent. ────────────────────
+    //    reuse precedent. Atomic B will add
+    //    `validation/event-payload-field-unknown` (send-side payload
+    //    check) and `mesh/event-schema-mismatch` (cross-machine
+    //    schema match); both are deferred. ─────────────────────────
     #[serde(rename = "validation/event-schema-on-builtin-event")]
     ValidationEventSchemaOnBuiltinEvent,
-    #[serde(rename = "validation/event-payload-field-unknown")]
-    ValidationEventPayloadFieldUnknown,
-    #[serde(rename = "mesh/event-schema-mismatch")]
-    MeshEventSchemaMismatch,
 
     // ── Algorithm kind (watching-zenoh RFC §5.A, Phase A3).
     //    Parser-stage sema for the new pure-function kind. Three
@@ -2494,8 +2485,6 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationCrossKindCircularDependency,
         // NL→IR Mapping Roadmap Item C1: EventSchema kind
         ValidationEventSchemaOnBuiltinEvent,
-        ValidationEventPayloadFieldUnknown,
-        MeshEventSchemaMismatch,
         // Algorithm (watching-zenoh RFC §5.A, Phase A3)
         AlgorithmLocalShadowsParam,
         AlgorithmLvalueUnsupported,
@@ -3412,16 +3401,11 @@ impl DiagnosticCode {
             | ValidationCrossKindTypeMismatch
             | ValidationCrossKindCircularDependency
             // NL→IR Mapping Roadmap Item C1 — EventSchema kind. The
-            // three rejections (built-in-event schema, send-side
-            // payload field-unknown, mesh cross-machine schema
-            // mismatch) are SCE-internal hygiene with no external
-            // spec section naming them — the W3C-defined platform
-            // contract on `error.*` etc. drives DL-9 but does not
-            // name the rejection; DL-4 and DL-7 are SCE typed-binding
-            // and mesh contracts respectively. Spec_anchor stays None.
+            // built-in-event rejection is SCE-internal hygiene
+            // (declaring a schema for `error.*` etc. would contradict
+            // the W3C-defined platform contract on those events).
+            // Spec_anchor stays None.
             | ValidationEventSchemaOnBuiltinEvent
-            | ValidationEventPayloadFieldUnknown
-            | MeshEventSchemaMismatch
             // NL→IR Mapping Roadmap Item 3 Phase A — reachability is
             // implied by W3C SCXML §3 entry semantics (the design-time
             // BFS over `initial`, parallel cascade, history default
@@ -3505,8 +3489,6 @@ impl DiagnosticCode {
             ValidationCrossKindTypeMismatch => "validation/cross-kind-type-mismatch",
             ValidationCrossKindCircularDependency => "validation/cross-kind-circular-dependency",
             ValidationEventSchemaOnBuiltinEvent => "validation/event-schema-on-builtin-event",
-            ValidationEventPayloadFieldUnknown => "validation/event-payload-field-unknown",
-            MeshEventSchemaMismatch => "mesh/event-schema-mismatch",
             AlgorithmLocalShadowsParam => "algorithm/local-shadows-param",
             AlgorithmLvalueUnsupported => "algorithm/lvalue-unsupported",
             AlgorithmReturnMissing => "algorithm/return-missing",
@@ -4428,50 +4410,6 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             // two distinct authored schemas pointing at the same
             // built-in event collapse to the same diagnostic ID.
             key_fragments: vec![event_name.clone()],
-        },
-        ValidationError::EventPayloadFieldUnknown {
-            importing_kind,
-            importing_name,
-            event_name,
-            field,
-            imported_kind: _,
-            imported_name: _,
-            candidates,
-        } => DiagnosticPayload {
-            // NL→IR Mapping Roadmap Item C1 (DL-4 send-side): the
-            // `<param name="F">` on a `<send event="X">` /
-            // `<raise event="X">` references an undeclared field on
-            // the imported EventSchema for `X`. Mirrors
-            // `CrossKindFieldNotFound`'s closed candidate set so
-            // consumers see `did_you_mean`-style typo repair.
-            code: DiagnosticCode::ValidationEventPayloadFieldUnknown,
-            stage: Stage::Validation,
-            // `expected` carries the declared-field surface so
-            // `Fix::ReplaceOneOf` consumers (and the
-            // FixCarriesCandidates non-overlap-class guard) see the
-            // closed candidate set verbatim.
-            expected: if candidates.is_empty() {
-                None
-            } else {
-                Some(candidates.clone())
-            },
-            actual: Some(field.clone()),
-            fix: if candidates.is_empty() {
-                None
-            } else {
-                Some(Fix::ReplaceOneOf {
-                    candidates: candidates.clone(),
-                })
-            },
-            // Statechart + event + offending field name form the
-            // canonical identity — two unrelated bad params in the
-            // same statechart on different events stay distinct.
-            key_fragments: vec![
-                importing_kind.to_string(),
-                importing_name.clone(),
-                event_name.clone(),
-                field.clone(),
-            ],
         },
         ValidationError::QuantityUnitMismatch {
             kind,
@@ -7787,20 +7725,6 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:fdece2ea5d583d9c","code":"validation/event-schema-on-builtin-event","stage":"validation","message":"EventSchema cannot declare a schema for W3C built-in event 'error.execution' (reserved namespace: error., done.invoke., done.state.)","actual":"error.execution"}"#,
             ),
             (
-                "forge/event-payload-field-unknown",
-                ValidationError::EventPayloadFieldUnknown {
-                    importing_kind: ForgeKind::Statechart,
-                    importing_name: "demo".into(),
-                    event_name: "job.completed".into(),
-                    field: "stauts".into(),
-                    imported_kind: ForgeKind::EventSchema,
-                    imported_name: "job_completed_schema".into(),
-                    candidates: vec!["count".into(), "status".into()],
-                }
-                .into(),
-                r#"{"v":1,"id":"fnv1a:fa3df31661845cdb","code":"validation/event-payload-field-unknown","stage":"validation","message":"statechart 'demo': <send event=\"job.completed\"> declares <param name=\"stauts\"> not in the EventSchema for 'job.completed' (imported event-schema 'job_completed_schema') (declared fields: count, status)","expected":["count","status"],"actual":"stauts","fix":{"kind":"replace_one_of","candidates":["count","status"]}}"#,
-            ),
-            (
                 "forge/reserved-context-id",
                 ValidationError::ReservedContextId {
                     id: "policy".into(),
@@ -11035,20 +10959,6 @@ mod tests {
                 },
                 r#"{"v":1,"id":"fnv1a:8d27e49c9b609f34","code":"mesh/io","stage":"io","message":"I/O error on /tmp/mesh.log: entity not found"}"#,
             ),
-            (
-                "mesh/event-schema-mismatch",
-                DeployError::EventSchemaMismatch {
-                    event_name: "job.completed".into(),
-                    sender_machine: "alpha".into(),
-                    receiver_machine: "beta".into(),
-                    reason: crate::mesh::error::EventSchemaMismatchReason::StructuralHashMismatch {
-                        sender_hash: "a1b2".into(),
-                        receiver_hash: "c3d4".into(),
-                    },
-                }
-                .into(),
-                r#"{"v":1,"id":"fnv1a:7cc311d0bc85d710","code":"mesh/event-schema-mismatch","stage":"mesh-deploy","message":"cross-machine schema mismatch on event 'job.completed' between sender machine 'alpha' and receiver machine 'beta': structural-hash mismatch (sender=a1b2, receiver=c3d4)","expected":["c3d4"],"actual":"a1b2"}"#,
-            ),
         ]
     }
 
@@ -11511,15 +11421,7 @@ mod tests {
             // circular-dependency siblings ride NeutralOrDeterministic
             // (deterministic repair = author edits a single declared
             // type / removes a cyclic import; no closed candidate set).
-            | ValidationCrossKindFieldNotFound
-            // NL→IR Mapping Roadmap Item C1 (DL-4 send-side) — the
-            // send-side payload field-unknown mirror of cross-kind
-            // field-not-found. Carries the EventSchema's declared
-            // field set as the same closed-form `Fix::ReplaceOneOf`
-            // candidate list so `did_you_mean`-style typo repair
-            // surfaces identically on `<send>/<param>` and on
-            // `_event.data.<field>` use sites.
-            | ValidationEventPayloadFieldUnknown => FixCarriesCandidates,
+            | ValidationCrossKindFieldNotFound => FixCarriesCandidates,
 
             // ── `expected` carries non-repair metadata ────────
             ExpressionParseMismatch | MeshExternalAmbiguousEventGroup => ExpectedIsMetadata,
@@ -12048,13 +11950,6 @@ mod tests {
             // author-defined non-reserved name), so no
             // `ReplaceOneOf` set fits — neutral repair surface.
             | ValidationEventSchemaOnBuiltinEvent
-            // NL→IR Mapping Roadmap Item C1 (DL-7) — mesh cross-
-            // machine schema mismatch. Repair is two-axis (realign
-            // sender ↔ receiver schemas by editing one side's field
-            // declarations, or declare a schema on the side that is
-            // missing it). Neither axis names a closed candidate set
-            // the validator can predict — author-domain choice.
-            | MeshEventSchemaMismatch
             // NL→IR Mapping Roadmap Item 3 Phase A — reachability codes
             // ship without a closed candidate set. Repair for an
             // unreachable state is author-domain (delete the orphan or
@@ -12318,8 +12213,6 @@ mod tests {
                 | ValidationCrossKindTypeMismatch
                 | ValidationCrossKindCircularDependency
                 | ValidationEventSchemaOnBuiltinEvent
-                | ValidationEventPayloadFieldUnknown
-                | MeshEventSchemaMismatch
                 | AlgorithmLocalShadowsParam
                 | AlgorithmLvalueUnsupported
                 | AlgorithmReturnMissing
@@ -12574,7 +12467,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            313,
+            311,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries —\
              expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
@@ -13328,21 +13221,7 @@ mod tests {
              + `validation/cross-kind-type-mismatch` codes per Item 4 \
              reuse precedent. NeutralOrDeterministic — repair is \
              author-domain (rename to a non-reserved event name). \
-             310 → 311. Then NL→IR Mapping Roadmap Item C1 Atomic B \
-             lands two more codes: \
-             `validation/event-payload-field-unknown` (DL-4 send-side; \
-             rejects `<send>/<param name=\"F\">` where `F` is not on \
-             the imported EventSchema — FixCarriesCandidates over the \
-             schema's declared field surface, mirroring \
-             `validation/cross-kind-field-not-found`) and \
-             `mesh/event-schema-mismatch` (DL-7 cross-machine; rejects \
-             `<send target=\"#machine_id\">` when the sender's and \
-             receiver's EventSchemas disagree on field shape — \
-             structural-hash mismatch, sender-only partial coverage, \
-             or receiver-only partial coverage — NeutralOrDeterministic, \
-             two-axis author repair). Send-side type-mismatch reuses \
-             `validation/cross-kind-type-mismatch` per Item 4 reuse \
-             precedent. 311 → 313.",
+             310 → 311.",
         );
     }
 

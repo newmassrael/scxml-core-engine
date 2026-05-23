@@ -936,23 +936,6 @@ pub struct SCXMLModel {
     /// Empty if the SCXML element has no name attribute.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub scxml_name: String,
-    /// NL→IR Mapping Roadmap Item C1 (DL-7 prerequisite) —
-    /// `<sce:import>` declarations on the statechart's `<scxml>` root.
-    /// Each entry names a cross-doc dependency by `kind`, `src`, and
-    /// `alias` so per-doc validators can compute per-statechart import
-    /// visibility (rather than the legacy single global registry that
-    /// merged every kind document in the build into one shared map).
-    /// Today's primary consumer: per-machine EventSchema visibility
-    /// for mesh DL-7 cross-machine validation and receive/send-side
-    /// schema selection on the per-statechart check passes. Empty for
-    /// statecharts that declare no `<sce:import>` children — the
-    /// schemaless-fallback path stays a no-op walk.
-    ///
-    /// Serialized into the manifest so downstream tooling (mesh
-    /// codegen, AST export) can read the import graph without
-    /// re-parsing the SCXML.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub forge_imports: Vec<crate::forge::model::ForgeImport>,
     pub initial: String,
     pub initial_leaf: String,
     pub binding: String,
