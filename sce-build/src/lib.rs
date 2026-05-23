@@ -2347,25 +2347,6 @@ pub fn compile_scxml_with_imports(
             .map_err(mesh::error::MeshError::from)
             .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
 
-        // ── NL→IR Mapping Roadmap Item C1 (DL-7) cross-machine
-        //    EventSchema validation ─────────────────────────────────
-        //
-        // Per-machine schema visibility (derived from each statechart's
-        // `<sce:import kind="event-schema">` declarations) is compared
-        // across every cross-machine `<send target="#X">` so divergent
-        // schemas surface as `mesh/event-schema-mismatch` instead of
-        // silently producing two incompatible wire contracts. Runs in
-        // the deploy-aware path because the rejection depends on the
-        // mesh topology — single-statechart compilations (no deploy)
-        // cannot exhibit a cross-machine mismatch by construction.
-        mesh::deploy::validate_event_schemas_cross_machine(
-            deploy_cfg,
-            &scxml_models,
-            &event_schemas_by_doc_name,
-        )
-        .map_err(mesh::error::MeshError::from)
-        .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
-
         // ── C10-β link/inbound-event-queue-unsized ──
         //
         // Watching-zenoh RFC §5.N line 3062 verbatim — for every link
