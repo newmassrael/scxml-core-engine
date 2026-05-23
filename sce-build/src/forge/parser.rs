@@ -476,7 +476,9 @@ fn parse_forge_from_node(
         ForgeKind::BoundedCollection => {
             parse_bounded_collection(root, label).map(ForgeDocument::BoundedCollection)
         }
-        ForgeKind::EventSchema => parse_event_schema(root, label).map(ForgeDocument::EventSchema),
+        ForgeKind::EventSchema => {
+            parse_event_schema(root, label).map(ForgeDocument::EventSchema)
+        }
         ForgeKind::Statechart => Err(located(
             root,
             label.diagnostic_label,
@@ -7645,9 +7647,9 @@ fn parse_event_schema(
             let value = match field.direction {
                 Direction::Out => "out".to_string(),
                 Direction::Internal => "internal".to_string(),
-                Direction::In => {
-                    unreachable!("guarded by the `field.direction != Direction::In` check above")
-                }
+                Direction::In => unreachable!(
+                    "guarded by the `field.direction != Direction::In` check above"
+                ),
             };
             return Err(located(
                 &data,

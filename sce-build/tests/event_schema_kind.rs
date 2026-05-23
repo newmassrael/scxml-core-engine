@@ -67,7 +67,10 @@ fn stage_fixtures(dst: &Path, names: &[&str]) -> Vec<PathBuf> {
 fn run(
     scxml_paths: &[&Path],
     forge_paths: &[&Path],
-) -> Result<Vec<(String, sce_build::generator::GeneratedOutput)>, Located<ForgeError>> {
+) -> Result<
+    Vec<(String, sce_build::generator::GeneratedOutput)>,
+    Located<ForgeError>,
+> {
     compile_scxml_with_imports(
         scxml_paths,
         forge_paths,

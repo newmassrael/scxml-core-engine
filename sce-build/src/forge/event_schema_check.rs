@@ -141,10 +141,22 @@ fn walk_for_event_data_refs(
             walk_for_event_data_refs(right, schema, transition, statechart_name, diag_label)?;
             if is_comparison(*op) {
                 if let Some(field) = extract_event_data_field(left, schema) {
-                    check_comparison_type(field, right, transition, statechart_name, diag_label)?;
+                    check_comparison_type(
+                        field,
+                        right,
+                        transition,
+                        statechart_name,
+                        diag_label,
+                    )?;
                 }
                 if let Some(field) = extract_event_data_field(right, schema) {
-                    check_comparison_type(field, left, transition, statechart_name, diag_label)?;
+                    check_comparison_type(
+                        field,
+                        left,
+                        transition,
+                        statechart_name,
+                        diag_label,
+                    )?;
                 }
             }
         }
