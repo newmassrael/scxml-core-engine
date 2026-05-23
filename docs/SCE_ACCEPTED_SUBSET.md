@@ -646,42 +646,6 @@ namespaces are explicitly excluded:
   the schema's `sce:event-name` to a non-reserved value or delete
   the schema document.
 
-**Send-side payload typecheck** (DL-4): a `<send event="X">` or
-`<raise event="X">` (in transition `actions`, `<onentry>`, or
-`<onexit>` content, including nested `<if>` / `<foreach>` bodies)
-whose event name `X` resolves to an imported EventSchema has its
-`<param name="F" expr="..."/>` children validated against the
-schema's declared field surface. Two rejections:
-
-- `validation/event-payload-field-unknown` — `<param name="F">`
-  carries a name `F` that is not declared on the schema. The
-  schema's full field surface ships as a closed `Fix::ReplaceOneOf`
-  candidate set, mirroring the receive-side
-  `validation/cross-kind-field-not-found` shape so `did_you_mean`-
-  style typo repair surfaces identically on both sides.
-- `validation/cross-kind-type-mismatch` (reused per Item 4
-  precedent) — `<param expr="...">` is a primitive literal whose
-  syntactic type does not unify with the schema field's declared
-  `sce_type`. Non-literal expressions (variable references, nested
-  computations, function calls) defer to the existing typed-
-  expression pipeline at codegen time.
-
-**Mesh cross-machine validation** (DL-7): when `<send target="#X">`
-appears on a statechart deployed to machine A and addresses
-machine B (the `#X` resolves to B's machine id via the deploy.yaml
-topology), the sender and receiver EventSchemas for the send's
-event name must agree on field shape. One rejection:
-
-- `mesh/event-schema-mismatch` — either (a) both sides declare an
-  EventSchema but their canonical structural hashes diverge (fields
-  sorted by id, normalized JSON via schemars), (b) sender declares
-  a schema while receiver does not, or (c) receiver declares a
-  schema while sender does not. The `Display` form names the
-  specific divergence reason so consumers do not have to
-  substring-grep the prose. Repair is two-axis (realign the two
-  schemas, or declare a schema on the side that is missing it) —
-  author-domain choice, no closed candidate set.
-
 **Per-backend codegen** (DL-6) is deferred to the next atomic in the
 C1 family; the enum-typed lowering surface (`enum class : uint8_t`
 on C++, `#[repr(u8)] pub enum` on Rust, `enum class (val raw: …)`
@@ -966,8 +930,6 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/cross-kind-type-mismatch` | Validation |
 | `validation/cross-kind-circular-dependency` | Validation |
 | `validation/event-schema-on-builtin-event` | Validation |
-| `validation/event-payload-field-unknown` | Validation |
-| `mesh/event-schema-mismatch` | Validation |
 | `algorithm/local-shadows-param` | Validation |
 | `algorithm/lvalue-unsupported` | Validation |
 | `algorithm/return-missing` | Validation |
