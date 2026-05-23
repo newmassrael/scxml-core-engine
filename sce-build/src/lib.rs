@@ -7727,6 +7727,71 @@ partitions:
         let _ = fs::remove_dir_all(&tmp);
     }
 
+    /// WASM-style parse path (`parse_string`, no `base_dir`) captures
+    /// inline `<invoke><content><scxml>` as a structured in-memory
+    /// submodel — the historical disk-side-effect skip on `base_dir ==
+    /// None` is gone (no asymmetry between filesystem and WASM hosts).
+    /// Guards against regression of the WASM enablement that fell out
+    /// of the synth-invoke parser purification refactor.
+    #[test]
+    fn wasm_parse_string_captures_inline_invoke_in_memory() {
+        let parent_xml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s1" name="parent">
+  <state id="s1">
+    <invoke type="scxml" id="inv0">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="done">
+          <final id="done"/>
+        </scxml>
+      </content>
+    </invoke>
+  </state>
+</scxml>"##;
+
+        // `parse_string` is the WASM / in-memory entry point; no
+        // `base_dir`, no filesystem access. The pre-refactor parser
+        // skipped inline extraction entirely in this mode, leaving
+        // `child_name` empty.
+        let model = parser::SCXMLParser::new()
+            .parse_string(parent_xml, "parent")
+            .expect("WASM parse must accept inline-invoke parent");
+
+        let invoke = model
+            .states
+            .get("s1")
+            .and_then(|s| s.invokes.first())
+            .and_then(|inv| match inv {
+                model::Invoke::Scxml(i) => Some(i),
+                _ => None,
+            })
+            .expect("s1 must carry a static Scxml invoke");
+
+        assert_eq!(
+            invoke.common.child_name, "parent__sce_synth_invoke__inv0",
+            "SCE Mesh §9.6.6 rule 1 synth name must be set without filesystem access",
+        );
+        assert_eq!(
+            invoke.src, "#parent__sce_synth_invoke__inv0",
+            "§9.6.6 rule 2: src rewritten to canonical `#<synth>` mesh peer reference",
+        );
+        let inline = invoke
+            .inline_child
+            .as_deref()
+            .expect("inline child must be parsed in-memory under WASM-style parse_string");
+        assert_eq!(
+            inline.name, "parent__sce_synth_invoke__inv0",
+            "inline child's SCXMLModel.name carries the synth identifier",
+        );
+        assert!(
+            inline.states.contains_key("done"),
+            "inline child must preserve its declared states",
+        );
+        assert!(
+            invoke.inline_child_xml.is_some(),
+            "raw XML must ride alongside the parsed model so codegen can re-emit to -o",
+        );
+    }
+
     // ── SCE_MESH.md §9.6 L1393 cross-device transport validator ──
     //
     // Shared scaffold for the three rejection modes: two machines on
