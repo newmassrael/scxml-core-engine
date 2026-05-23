@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+#
+# SCE pre-commit hook: run cheap mechanical checks that should fail at
+# commit time rather than at push time, so the offending content never
+# lands in the local history. Today the single gate is rustfmt — moved
+# down from the pre-push hook Stage 0 (2026-05-23) so a developer who
+# commits before running `cargo fmt --all` learns immediately, not at
+# `git push` time after every other check has already run.
+#
+# Gates:
+#   0. cargo fmt --all --check               — mirrors CI rustfmt gate
+#                                              (reproduces the 2026-05-20
+#                                              fmt-drift CI fail-mode)
+#
+# Bypass (for genuine emergencies): `SKIP_PRECOMMIT=1 git commit ...`.
+# Do not skip hooks by habit — the rustfmt gate runs in <1s and prevents
+# fmt-only follow-up commits.
+
+set -euo pipefail
+
+if [[ "${SKIP_PRECOMMIT:-0}" == "1" ]]; then
+    echo "pre-commit: SKIP_PRECOMMIT=1 — bypassing local fmt gate" >&2
+    exit 0
+fi
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+log_step() { printf '\n==> pre-commit: %s\n' "$1" >&2; }
+fail_step() { printf '\nERROR pre-commit: %s FAILED — commit aborted.\n  Run `cargo fmt --all` locally, re-stage the touched files, and retry.\n  Bypass with SKIP_PRECOMMIT=1 for emergencies.\n' "$1" >&2; exit 1; }
+
+# ── Stage 0: cargo fmt --all --check ──────────────────────────────
+# Mirror CI's `.github/workflows/rust-ci.yml` cargo fmt gate at
+# commit time instead of push time. Reproduces the 2026-05-20 CI
+# fail-mode where 488 files of accumulated rustfmt drift survived
+# past the hook because no previous stage exercised rustfmt; running
+# at commit time means fmt-only fix-up commits never land in local
+# history.
+log_step "Stage 0/0 — cargo fmt --all -- --check (mirrors CI fmt gate)"
+cargo fmt --all -- --check \
+    || fail_step "Stage 0 (cargo fmt --all --check)"
+
+printf '\npre-commit: fmt gate passed — commit allowed.\n' >&2
