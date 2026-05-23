@@ -23,9 +23,9 @@ use crate::forge::error::SourceLocation;
 ///
 /// SCXML serialisation accepts two forms:
 ///
-/// - compact URI: `sce:provenance="ES95486-02@23#4.4.2"`
+/// - compact URI: `sce:provenance="OEM-SPEC-01@23#4.4.2"`
 ///   (`doc_id @ rev # section`; trailing `:page` optional after the
-///   section to carry a page number, e.g. `ES95486-02#4.4.2:118`)
+///   section to carry a page number, e.g. `OEM-SPEC-01#4.4.2:118`)
 /// - child element: `<sce:provenance doc="..." rev="..." section="..." page="..."/>`
 ///   (one or more allowed; element form lets one node anchor at
 ///   multiple documents)
@@ -157,15 +157,15 @@ mod tests {
 
     #[test]
     fn compact_doc_only() {
-        let p = SpecProvenance::parse_compact("ES95486-02").unwrap();
-        assert_eq!(p.doc_id, "ES95486-02");
+        let p = SpecProvenance::parse_compact("OEM-SPEC-01").unwrap();
+        assert_eq!(p.doc_id, "OEM-SPEC-01");
         assert!(p.rev.is_none() && p.section.is_none() && p.page.is_none());
     }
 
     #[test]
     fn compact_doc_rev_section() {
-        let p = SpecProvenance::parse_compact("ES95486-02@23#4.4.2").unwrap();
-        assert_eq!(p.doc_id, "ES95486-02");
+        let p = SpecProvenance::parse_compact("OEM-SPEC-01@23#4.4.2").unwrap();
+        assert_eq!(p.doc_id, "OEM-SPEC-01");
         assert_eq!(p.rev.as_deref(), Some("23"));
         assert_eq!(p.section.as_deref(), Some("4.4.2"));
         assert!(p.page.is_none());
@@ -173,7 +173,7 @@ mod tests {
 
     #[test]
     fn compact_with_page() {
-        let p = SpecProvenance::parse_compact("ES95486-02@23#4.4.2:118").unwrap();
+        let p = SpecProvenance::parse_compact("OEM-SPEC-01@23#4.4.2:118").unwrap();
         assert_eq!(p.page, Some(118));
         assert_eq!(p.section.as_deref(), Some("4.4.2"));
     }
@@ -186,8 +186,8 @@ mod tests {
 
     #[test]
     fn requirement_id_validation() {
-        assert!(RequirementId::validate("UPD_TAR_02011").is_ok());
-        assert!(RequirementId::validate("RS-CLT-00001").is_ok());
+        assert!(RequirementId::validate("REQ_AB_12345").is_ok());
+        assert!(RequirementId::validate("REQ-CD-67890").is_ok());
         assert!(RequirementId::validate("ns:req.1").is_ok());
         assert!(RequirementId::validate("_underscore_start").is_ok());
         assert!(RequirementId::validate("").is_err());
@@ -208,10 +208,10 @@ mod tests {
     #[test]
     fn json_skips_absent_optionals() {
         let p = SpecProvenance {
-            doc_id: "ES95486-02".to_string(),
+            doc_id: "OEM-SPEC-01".to_string(),
             ..Default::default()
         };
         let json = serde_json::to_string(&p).unwrap();
-        assert_eq!(json, r#"{"doc_id":"ES95486-02"}"#);
+        assert_eq!(json, r#"{"doc_id":"OEM-SPEC-01"}"#);
     }
 }

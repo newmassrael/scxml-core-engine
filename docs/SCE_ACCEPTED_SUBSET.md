@@ -500,8 +500,8 @@ unchanged.
 **`sce:req`** — whitespace-separated requirement IDs.
 
 ```xml
-<state id="armed" sce:req="UPD_TAR_02011 RS_CLT_00001">
-  <transition event="go" target="firing" sce:req="UPD_TAR_02012"/>
+<state id="armed" sce:req="REQ_AB_12345 REQ_CD_67890">
+  <transition event="go" target="firing" sce:req="REQ_AB_12346"/>
 </state>
 ```
 
@@ -518,10 +518,10 @@ annotated node for downstream req-coverage tooling.
 Two equivalent forms:
 
 ```xml
-<state id="armed" sce:provenance="ES95486-02@23#4.4.2"/>
+<state id="armed" sce:provenance="OEM-SPEC-01@23#4.4.2"/>
 
 <state id="armed">
-  <sce:provenance doc="ES95486-02" rev="23" section="4.4.2"/>
+  <sce:provenance doc="OEM-SPEC-01" rev="23" section="4.4.2"/>
   <sce:provenance doc="ISO-14229-1" section="11.2.1"/>
 </state>
 ```
@@ -646,7 +646,7 @@ emits a coherent handler set for some siblings and forgets the
 others.
 
 The validator uses a narrow heuristic to keep false positives at
-zero across the W3C IRP, conformance, and hda4-diag corpora:
+zero across the W3C IRP, conformance, and downstream-consumer corpora:
 
 - The compound parent must be a non-`<parallel>`, non-`<final>`
   `<state>` (parallel regions are orthogonal by design and do not

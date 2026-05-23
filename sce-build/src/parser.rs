@@ -7242,9 +7242,9 @@ mod tests {
         let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
                               xmlns:sce="http://sce.dev/ext"
                               version="1.0" initial="armed" datamodel="null">
-            <state id="armed" sce:req="UPD_TAR_02011 RS_CLT_00001">
-                <transition event="go" target="firing" sce:req="UPD_TAR_02012"/>
-                <invoke type="scxml" src="child.scxml" sce:req="UPD_TAR_02013"/>
+            <state id="armed" sce:req="REQ_AB_12345 REQ_CD_67890">
+                <transition event="go" target="firing" sce:req="REQ_AB_12346"/>
+                <invoke type="scxml" src="child.scxml" sce:req="REQ_AB_12347"/>
             </state>
             <state id="firing"/>
         </scxml>"#;
@@ -7253,17 +7253,17 @@ mod tests {
             .expect("parse");
         let armed = &model.states["armed"];
         let req_strings: Vec<&str> = armed.req.iter().map(|r| r.0.as_str()).collect();
-        assert_eq!(req_strings, vec!["UPD_TAR_02011", "RS_CLT_00001"]);
+        assert_eq!(req_strings, vec!["REQ_AB_12345", "REQ_CD_67890"]);
         let transition = &armed.transitions[0];
         let trans_req: Vec<&str> = transition.req.iter().map(|r| r.0.as_str()).collect();
-        assert_eq!(trans_req, vec!["UPD_TAR_02012"]);
+        assert_eq!(trans_req, vec!["REQ_AB_12346"]);
         let invoke = &armed.invokes[0];
         let base = match invoke {
             crate::model::Invoke::Scxml(info) => &info.common.base,
             _ => panic!("expected Scxml invoke variant"),
         };
         let invoke_req: Vec<&str> = base.req.iter().map(|r| r.0.as_str()).collect();
-        assert_eq!(invoke_req, vec!["UPD_TAR_02013"]);
+        assert_eq!(invoke_req, vec!["REQ_AB_12347"]);
     }
 
     #[test]
@@ -7272,7 +7272,7 @@ mod tests {
                               xmlns:sce="http://sce.dev/ext"
                               version="1.0" initial="armed" datamodel="null">
             <state id="armed">
-                <onentry sce:req="UPD_TAR_02020">
+                <onentry sce:req="REQ_AB_12350">
                     <raise event="ev1"/>
                     <raise event="ev2"/>
                 </onentry>
@@ -7286,7 +7286,7 @@ mod tests {
         assert_eq!(block.len(), 2);
         for action in block {
             let action_req: Vec<&str> = action.req.iter().map(|r| r.0.as_str()).collect();
-            assert_eq!(action_req, vec!["UPD_TAR_02020"]);
+            assert_eq!(action_req, vec!["REQ_AB_12350"]);
         }
     }
 
