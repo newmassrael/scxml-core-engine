@@ -596,10 +596,15 @@ impl ScxmlRemotePeerBinding {
 /// [`InvokeSessionCommon`] and is accessible via `Deref` so
 /// `scxml_info.invoke_id` still reads naturally.
 ///
-/// Inline `<content><scxml>` is resolved to a concrete child SCXML file
-/// during parse (see `SCXMLParser::parse_invoke`); by the time this struct
-/// exists, `src` already points at the final path and `child_name` is set.
-/// There is no "awaiting extraction" transient state.
+/// Inline `<content><scxml>` is resolved during parse (see
+/// `SCXMLParser::parse_invoke`); the parser pre-parses the inline child
+/// into [`Self::inline_child`] and rewrites `src` to the canonical
+/// `#<synth_name>` Mesh peer reference (SCE_MESH.md §9.6.6 rules 1-2).
+/// No disk side-effect: synth-invoke children no longer materialise as
+/// sibling `.scxml` files in the parent's source directory; the §9.6.6
+/// naming convention is enforced by codegen emit when applicable, not by
+/// a parser write. External `src="file.scxml"` invokes keep
+/// `inline_child = None` and resolve through disk at codegen time.
 #[derive(Debug, Clone, Serialize, Default)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ScxmlInvokeInfo {
@@ -608,6 +613,16 @@ pub struct ScxmlInvokeInfo {
     pub finalize_content: String,
     pub src: String,
     pub namelist: String,
+    /// Pre-parsed inline-`<content>` child model. `Some(model)` when the
+    /// invoke carried `<content><scxml>…</scxml></content>` and the
+    /// parser captured the child as a structured submodel; `None` for
+    /// external `src="…"` invokes (codegen reads those from disk via
+    /// [`InvokeSessionCommon::child_name`]). `#[serde(skip)]` keeps this
+    /// field out of the Forge AST wire format and the JSON schema — it
+    /// is parser↔codegen internal state, not part of the published IR.
+    #[serde(skip)]
+    #[cfg_attr(test, schemars(skip))]
+    pub inline_child: Option<Box<SCXMLModel>>,
     /// SCE_MESH.md §9.6 remote `<invoke type="scxml">`. When `src` is of the
     /// form `#<name>` and `<name>` matches a distinct mesh machine declared
     /// in `deploy.yaml`, this carries that machine name (without the leading

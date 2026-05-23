@@ -553,6 +553,21 @@ impl SCXMLParser {
         self.parse_impl(content, DocumentLabel::symmetric(name), None)
     }
 
+    /// Parse SCXML from a string with distinct identifier vs diagnostic-
+    /// label. Used by the inline-`<content>` synth-invoke path so the
+    /// child's model identifier (synth name, extension-free, drives
+    /// template symbols) and diagnostic file label (synth name + `.scxml`,
+    /// matches the pre-refactor on-disk-synth byte goldens) are both
+    /// authoritative without crossing the [`DocumentLabel::symmetric`]
+    /// contract.
+    pub fn parse_string_with_label(
+        &mut self,
+        content: &str,
+        label: DocumentLabel<'_>,
+    ) -> Result<SCXMLModel, crate::forge::error::Located<crate::forge::error::ForgeError>> {
+        self.parse_impl(content, label, None)
+    }
+
     /// Two-role label contract — see [`DocumentLabel`]. `label.identifier`
     /// is the pure identifier stored in [`SCXMLModel::name`] (flows into
     /// template symbols, must be extension-free). `label.diagnostic_label`
@@ -2170,72 +2185,90 @@ impl SCXMLParser {
             // derived post-parse by [`crate::script_engine_analyzer`].
 
             // W3C SCXML 6.4: Inline `<content><scxml>` and external `src="..."`
-            // resolve to a concrete child SCXML path eagerly, at parse time.
-            // This way `ScxmlInvokeInfo` never holds "raw, awaiting
-            // extraction" state; by the time it is pushed onto the state the
-            // type already matches the invariant the codegen expects.
+            // resolve to a concrete child reference eagerly, at parse time.
             //
-            // `base_dir == None` means WASM-style parse with no filesystem
-            // access; inline extraction is skipped and the invoke surfaces
-            // with empty child_name, which downstream codegen rejects with a
-            // clear diagnostic. Behaviourally identical to the pre-R9 path.
-            let (resolved_src, resolved_child_name) =
-                if has_inline_scxml && !inline_scxml_text.is_empty() {
-                    if let Some(scxml_dir) = base_dir {
-                        // SCE Mesh §9.6.6 rule 1: synthesised machine name is
-                        // `<parent_machine_id>__sce_synth_invoke__<invoke_id>`.
-                        // `field_suffix` is the invoke_id with its leading
-                        // underscore trimmed (line ~1438), so author ids map
-                        // verbatim and the auto-generated `_invoke_N` ids
-                        // (W3C §6.4.1 §3.14 — SCE emits one when `id` is
-                        // absent) produce `invoke_N` rather than the triple
-                        // underscore block `__sce_synth_invoke___invoke_N`.
-                        let synth_name = format!(
-                            "{}{}{}",
-                            &model.name,
-                            crate::mesh::deploy::SYNTH_INVOKE_INFIX,
-                            &field_suffix,
-                        );
-                        let child_scxml_path = scxml_dir.join(format!("{synth_name}.scxml"));
-                        let inline_with_ns = if !inline_scxml_text.contains("xmlns=") {
-                            inline_scxml_text.replacen(
-                                "<scxml",
-                                "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\"",
-                                1,
-                            )
-                        } else {
-                            inline_scxml_text.clone()
-                        };
-                        let xml_content = format!("<?xml version=\"1.0\"?>\n\n{inline_with_ns}");
-                        if let Err(e) = std::fs::write(&child_scxml_path, &xml_content) {
-                            eprintln!(
-                                "Warning: Cannot write inline SCXML {}: {e}",
-                                child_scxml_path.display()
-                            );
-                        }
-                        // SCE Mesh §9.6.6 rule 2: the rewritten `<invoke>`
-                        // carries the canonical `#<machine>` mesh peer
-                        // reference so `classify_remote_scxml_invokes`
-                        // treats the synth peer through the same axis as
-                        // author-declared peers. The concrete disk path
-                        // is retained on `child_name` for local child
-                        // session codegen (`invoke_methods.jinja2` etc.)
-                        // and `parse_child_metadata` below.
-                        (format!("#{synth_name}"), synth_name)
-                    } else {
-                        (src.clone(), String::new())
-                    }
-                } else if !src.is_empty() {
-                    let stripped = src.replace("file:", "");
-                    let child_name = Path::new(&stripped)
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .map(|s| s.to_string())
-                        .unwrap_or_default();
-                    (src.clone(), child_name)
+            // Inline `<content>`: the parser pre-parses the inner SCXML into
+            // a structured submodel and stashes it on
+            // [`ScxmlInvokeInfo::inline_child`]. The Mesh §9.6.6 naming
+            // convention still applies — `common.child_name` is set to the
+            // synth name and `src` rewritten to `#<synth>` so peer-classifier
+            // (`classify_remote_scxml_invokes`) and codegen continue to
+            // treat it as a canonical mesh peer reference — but the synth
+            // child no longer materialises as a sibling `.scxml` file in
+            // the parent's source directory. Disk emission is a codegen
+            // concern, not a parser side-effect.
+            //
+            // WASM (`base_dir == None`) takes the same in-memory path; the
+            // historical empty-`child_name` skip is gone because inline
+            // parsing has no filesystem dependency.
+            let (resolved_src, resolved_child_name, inline_child_model) = if has_inline_scxml
+                && !inline_scxml_text.is_empty()
+            {
+                // SCE Mesh §9.6.6 rule 1: synthesised machine name is
+                // `<parent_machine_id>__sce_synth_invoke__<invoke_id>`.
+                // `field_suffix` is the invoke_id with its leading
+                // underscore trimmed (line ~1438), so author ids map
+                // verbatim and the auto-generated `_invoke_N` ids
+                // (W3C §6.4.1 §3.14 — SCE emits one when `id` is
+                // absent) produce `invoke_N` rather than the triple
+                // underscore block `__sce_synth_invoke___invoke_N`.
+                let synth_name = format!(
+                    "{}{}{}",
+                    &model.name,
+                    crate::mesh::deploy::SYNTH_INVOKE_INFIX,
+                    &field_suffix,
+                );
+                let inline_with_ns = if !inline_scxml_text.contains("xmlns=") {
+                    inline_scxml_text.replacen(
+                        "<scxml",
+                        "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\"",
+                        1,
+                    )
                 } else {
-                    (src.clone(), String::new())
+                    inline_scxml_text.clone()
                 };
+                let xml_content = format!("<?xml version=\"1.0\"?>\n\n{inline_with_ns}");
+                // Recursive parse uses a fresh parser instance — sharing
+                // `self` would cross-contaminate document_order_counter /
+                // invoke_counter between parent and child. Asymmetric
+                // [`DocumentLabel`]: identifier = synth name (extension-
+                // free, drives template symbols), diagnostic label =
+                // `<synth>.scxml` (matches the historical on-disk file
+                // path so SCE-MAP markers + NDJSON `location.file` stay
+                // byte-stable against the pre-refactor goldens).
+                let synth_diag_label = format!("{synth_name}.scxml");
+                let inline_child = match SCXMLParser::new().parse_string_with_label(
+                    &xml_content,
+                    DocumentLabel::asymmetric(&synth_name, &synth_diag_label),
+                ) {
+                    Ok(m) => Some(Box::new(m)),
+                    Err(e) => {
+                        eprintln!(
+                                "Warning: Failed to parse inline <content> for invoke {invoke_id} (synth={synth_name}): {e:?}"
+                            );
+                        None
+                    }
+                };
+                // SCE Mesh §9.6.6 rule 2: the rewritten `<invoke>`
+                // carries the canonical `#<machine>` mesh peer
+                // reference so `classify_remote_scxml_invokes`
+                // treats the synth peer through the same axis as
+                // author-declared peers. `child_name` carries the
+                // synth identifier for local child session codegen
+                // (`invoke_methods.jinja2` etc.) and for
+                // `parse_child_metadata` below.
+                (format!("#{synth_name}"), synth_name, inline_child)
+            } else if !src.is_empty() {
+                let stripped = src.replace("file:", "");
+                let child_name = Path::new(&stripped)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default();
+                (src.clone(), child_name, None)
+            } else {
+                (src.clone(), String::new(), None)
+            };
 
             let invoke_req =
                 collect_sce_req(elem, || format!("<invoke id=\"{invoke_id}\">"), source_name)?;
@@ -2259,13 +2292,18 @@ impl SCXMLParser {
                 finalize_content,
                 src: resolved_src,
                 namelist,
+                inline_child: inline_child_model,
                 remote_mesh_target: None,
                 remote_mesh_transport: None,
             };
 
             // Populate child-side metadata (script-engine flag, datamodel
-            // variable list) when the resolved child SCXML file exists.
-            if let Some(scxml_dir) = base_dir {
+            // variable list). For inline children the model is already
+            // parsed in-memory; external (`src=`) children still resolve
+            // through `base_dir` on disk.
+            if let Some(inline_model) = scxml_info.inline_child.as_deref() {
+                populate_child_metadata_from_model(inline_model, &mut scxml_info.common);
+            } else if let Some(scxml_dir) = base_dir {
                 if !scxml_info.common.child_name.is_empty() {
                     let child_scxml_path =
                         scxml_dir.join(format!("{}.scxml", scxml_info.common.child_name));
@@ -2826,19 +2864,25 @@ impl SCXMLParser {
     /// Also stamps `InvokeSessionCommon::child_has_send_to_parent` per invoke so
     /// codegen can gate the parent_sm / parent_dispatch wiring at child spawn time
     /// (W3C SCXML 6.4 — required for test226/240/241/243/244/245/276).
+    ///
+    /// Inline `<content>` children are walked in-memory from
+    /// [`ScxmlInvokeInfo::inline_child`]; external `src="…"` children are
+    /// re-parsed from disk under `base_dir`. WASM (`base_dir == None`) still
+    /// resolves inline children fully — only external `src=` invokes are
+    /// silently skipped there.
     fn collect_child_to_parent_events(&self, model: &mut SCXMLModel, base_dir: Option<&Path>) {
         if !model.has_scxml_invoke() {
             return;
         }
-        let scxml_dir = match base_dir {
-            Some(dir) => dir.to_path_buf(),
-            None => return, // No filesystem access (WASM)
-        };
         let mut parsed_children: std::collections::HashSet<String> =
             std::collections::HashSet::new();
         let mut child_send_to_parent: std::collections::HashMap<String, bool> =
             std::collections::HashMap::new();
 
+        // Snapshot ScxmlInvokeInfo (clone) so the parent model can be
+        // mutated below (events insertion + per-invoke flag stamping)
+        // without borrow conflicts. The cloned `inline_child` Box is the
+        // structurally identical child model — no re-parse required.
         let invokes: Vec<ScxmlInvokeInfo> = model
             .states
             .values()
@@ -2850,20 +2894,31 @@ impl SCXMLParser {
             }
             parsed_children.insert(si.child_name.clone());
 
-            let child_scxml_path = scxml_dir.join(format!("{}.scxml", si.child_name));
-            if !child_scxml_path.exists() {
-                continue;
-            }
-
-            let child_model =
+            // Inline children carry their parsed model on the invoke; external
+            // children load from `base_dir` on demand. `owned_external` keeps
+            // the disk-parsed model alive long enough for the `&SCXMLModel`
+            // borrow used by the walker below.
+            let owned_external;
+            let child_model_ref: &SCXMLModel = if let Some(inline) = si.inline_child.as_deref() {
+                inline
+            } else {
+                let Some(scxml_dir) = base_dir else { continue };
+                let child_scxml_path = scxml_dir.join(format!("{}.scxml", si.child_name));
+                if !child_scxml_path.exists() {
+                    continue;
+                }
                 match SCXMLParser::new().parse_file(&child_scxml_path.to_string_lossy()) {
-                    Ok(m) => m,
+                    Ok(m) => {
+                        owned_external = m;
+                        &owned_external
+                    }
                     Err(_) => continue,
-                };
+                }
+            };
 
             // Scan child for <send target="#_parent" event="xxx"> actions
             let mut child_parent_events = std::collections::BTreeSet::new();
-            for child_state in child_model.states.values() {
+            for child_state in child_model_ref.states.values() {
                 // Check entry/exit actions
                 for block in child_state
                     .on_entry_blocks
@@ -4220,6 +4275,26 @@ fn child_has_delayed_send(child_model: &SCXMLModel) -> bool {
 /// The fields written (`child_needs_script_engine`, `child_datamodel_vars`)
 /// are session-only — they live on [`InvokeSessionCommon`]. Both
 /// `ScxmlInvokeInfo` and `HybridInvokeInfo` expose this via `&mut si.common`.
+/// Populate child-side invoke metadata from an already-parsed
+/// [`SCXMLModel`]. Shared by the in-memory inline-child path
+/// (`parse_invoke` → `ScxmlInvokeInfo::inline_child`) and the on-disk
+/// external path ([`parse_child_metadata`]), so both invoke flavours
+/// derive the same `child_needs_script_engine` / `child_datamodel_vars`
+/// / `child_needs_event_scheduler` from the same walker.
+fn populate_child_metadata_from_model(child_model: &SCXMLModel, common: &mut InvokeSessionCommon) {
+    common.child_needs_script_engine = child_model.needs_script_engine;
+    common.child_datamodel_vars =
+        Some(child_model.variables.iter().map(|v| v.id.clone()).collect());
+    // W3C SCXML 6.2 (test187/207): mirror the child's own scheduler
+    // requirement. The child's codegen emits `_tick` only when
+    // its scheduler queue is non-empty; the parent's invoke driver
+    // must know whether that entry point exists at template time.
+    // The model's `needs_event_scheduler` field is set by the
+    // analyzer (post-parse), so we re-derive here by walking the
+    // child's <send> actions for any `delay` / `delayexpr`.
+    common.child_needs_event_scheduler = child_has_delayed_send(child_model);
+}
+
 fn parse_child_metadata(child_path: &Path, common: &mut InvokeSessionCommon) {
     if !child_path.exists() {
         common.child_needs_script_engine = true;
@@ -4227,19 +4302,7 @@ fn parse_child_metadata(child_path: &Path, common: &mut InvokeSessionCommon) {
         return;
     }
     match SCXMLParser::new().parse_file(&child_path.to_string_lossy()) {
-        Ok(child_model) => {
-            common.child_needs_script_engine = child_model.needs_script_engine;
-            common.child_datamodel_vars =
-                Some(child_model.variables.iter().map(|v| v.id.clone()).collect());
-            // W3C SCXML 6.2 (test187/207): mirror the child's own scheduler
-            // requirement. The child's codegen emits `_tick` only when
-            // its scheduler queue is non-empty; the parent's invoke driver
-            // must know whether that entry point exists at template time.
-            // The model's `needs_event_scheduler` field is set by the
-            // analyzer (post-parse), so we re-derive here by walking the
-            // child's <send> actions for any `delay` / `delayexpr`.
-            common.child_needs_event_scheduler = child_has_delayed_send(&child_model);
-        }
+        Ok(child_model) => populate_child_metadata_from_model(&child_model, common),
         Err(_) => {
             common.child_needs_script_engine = true;
             common.child_datamodel_vars = Some(Vec::new());
