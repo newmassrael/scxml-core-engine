@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  NL→IR Item C1 negative fixture: statechart compares a uint32
+  field against a string literal in a transition cond. Receive-
+  side typecheck rejects with
+  `validation/cross-kind-type-mismatch`, expected = `uint32`,
+  actual = `string`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="statechart_type_mismatch"
+       version="1.0"
+       initial="waiting"
+       datamodel="ecmascript">
+  <sce:import src="schema_job_completed_minimal.scxml" kind="event-schema" as="JobCompletedSchema"/>
+  <state id="waiting">
+    <transition event="job.completed" cond="_event.data.elapsed_ms === 'forty-two'" target="done"/>
+  </state>
+  <state id="done"/>
+</scxml>

@@ -594,6 +594,65 @@ The diagnostic codes themselves are kind-agnostic: a future
 Statechart→Forge binding would wire through the same validator
 without renaming codes or extending payload shape.
 
+NL→IR Item C1 (EventSchema receive-side typecheck) is the first
+Statechart→Forge cross-kind binding consumer of this validator
+family: `_event.data.<field>` references in transition `cond`
+attributes resolve against the imported EventSchema for the
+transition's event, with field-not-found surfacing through
+`validation/cross-kind-field-not-found` and comparison
+type-mismatch through `validation/cross-kind-type-mismatch`.
+
+---
+
+### EventSchema kind (NL→IR Mapping Roadmap Item C1)
+
+A typed contract for the `_event.data` payload of a named SCXML event
+— each schema names exactly one event and declares the typed fields
+authors may read via `_event.data.<field>` in transition `cond`
+attributes.
+
+**Surface forms** (DL-8: both produce identical IR shapes):
+
+- Top-level form (primary):
+  `<scxml sce:kind="event-schema" sce:event-name="job.completed">…</scxml>`
+- Inline form (sugar, deferred to a follow-up land within the
+  EventSchema atomic family; the top-level form is the source of
+  truth at Atomic A):
+  `<sce:event-schema event-name="job.completed">…</sce:event-schema>`
+  as a child of `<scxml>`.
+
+**Field declaration** uses `<sce:field id="..." sce:type="..."
+sce:direction="in"/>` direct children of the `<scxml>` root.
+`sce:type` may be any of the primitive `SceType` values (`uint8` /
+`uint16` / `uint32` / `uint64` / `int8` / `int16` / `int32` /
+`int64` / `float32` / `float64` / `bool` / `string` / `bytes`) or
+`enum:<lookup-alias>` for an enum drawn from an imported
+`sce:kind="lookup"` vocabulary.
+
+**Direction invariant** (DL-5): `sce:direction` must be `in` — the
+payload is the receiver's read-only view. `out` / `internal`
+directions raise `validation/invalid-attribute` at parse time.
+
+**Schemaless fallback** (DL-9): events without an imported
+EventSchema retain the dynamic `_event.data` baseline — no
+diagnostic, identical W3C IRP behavior. W3C built-in event
+namespaces are explicitly excluded:
+
+- `validation/event-schema-on-builtin-event` — an EventSchema document
+  declares `sce:event-name` against a W3C SCXML reserved event
+  prefix (`error.*`, `done.invoke.*`, `done.state.*`). The platform
+  raises these events with implementation-defined payload shape; an
+  authored schema cannot meaningfully constrain them. Repair: rename
+  the schema's `sce:event-name` to a non-reserved value or delete
+  the schema document.
+
+**Per-backend codegen** (DL-6) is deferred to the next atomic in the
+C1 family; the enum-typed lowering surface (`enum class : uint8_t`
+on C++, `#[repr(u8)] pub enum` on Rust, `enum class (val raw: …)`
+on Kotlin, typed const family on Go, `IntEnum` on Python, C11
+width-enum) lands as one coordinated commit so the cross-backend
+parity gate (§6.2.6) closes in lockstep.
+
 ---
 
 ### Statechart graph reachability (NL→IR Mapping Roadmap Item 3 Phase A)
@@ -802,7 +861,7 @@ temperature encoding `physical = raw * 0.5 - 40` Celsius for an
 
 ---
 
-## Appendix — `DiagnosticCode` index (310 codes)
+## Appendix — `DiagnosticCode` index (311 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -870,6 +929,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/cross-kind-field-not-found` | Validation |
 | `validation/cross-kind-type-mismatch` | Validation |
 | `validation/cross-kind-circular-dependency` | Validation |
+| `validation/event-schema-on-builtin-event` | Validation |
 | `algorithm/local-shadows-param` | Validation |
 | `algorithm/lvalue-unsupported` | Validation |
 | `algorithm/return-missing` | Validation |

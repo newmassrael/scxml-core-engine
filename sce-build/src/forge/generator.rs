@@ -621,6 +621,15 @@ pub(crate) fn cpp_type(ty: &SceType) -> &'static str {
         SceType::Bool => "bool",
         SceType::String => "std::string",
         SceType::Bytes => "std::vector<uint8_t>",
+        // NL→IR Item C1 (Atomic A): `SceType::Enum` is gated to
+        // EventSchema fields and EventSchema documents do not reach
+        // codegen at Atomic A scope (parse-time metadata only).
+        // Atomic C (DL-6) replaces this placeholder with the resolved
+        // enum class name (`enum class <Name> : <UnderlyingInt>` per
+        // RFC §3 DL-6 table). The placeholder closes the exhaustive
+        // match without adding a panic site — mirrors the C11
+        // String/Bytes placeholder convention above.
+        SceType::Enum(_) => "uint8_t",
     }
 }
 
@@ -662,6 +671,10 @@ pub(crate) fn c_type(ty: &SceType) -> &'static str {
         // numeric.
         SceType::String => "const char *",
         SceType::Bytes => "const uint8_t *",
+        // NL→IR Item C1: see `cpp_type`. Atomic A codegen never sees
+        // enum types (EventSchema documents don't reach codegen);
+        // Atomic C replaces with C11 width-enum emission.
+        SceType::Enum(_) => "uint8_t",
     }
 }
 
@@ -701,6 +714,10 @@ pub(crate) fn kotlin_type(ty: &SceType) -> &'static str {
         SceType::Bool => "Boolean",
         SceType::String => "String",
         SceType::Bytes => "ByteArray",
+        // NL→IR Item C1: see `cpp_type`. Atomic A codegen never sees
+        // enum types; Atomic C replaces with `enum class <Name>(val
+        // raw: <UnderlyingInt>)`.
+        SceType::Enum(_) => "Int",
     }
 }
 
@@ -732,6 +749,10 @@ pub(crate) fn rust_type(ty: &SceType) -> &'static str {
         SceType::Bool => "bool",
         SceType::String => "String",
         SceType::Bytes => "Vec<u8>",
+        // NL→IR Item C1: see `cpp_type`. Atomic A codegen never sees
+        // enum types; Atomic C replaces with `#[repr(<UnderlyingInt>)]
+        // pub enum <Name>`.
+        SceType::Enum(_) => "u8",
     }
 }
 
@@ -974,6 +995,19 @@ pub fn generate_cpp_with_imports_and_externs(
         ForgeDocument::BoundedCollection(m) => {
             render_bounded_collection_cpp(&env, m, imports, options)?
         }
+        // NL→IR Item C1: EventSchema is parse-time metadata at
+        // Atomic A scope — no codegen emission. The
+        // `codegen_matrix::check` gate returns
+        // `CodegenGenericKindBackendEmitMissing` for `(EventSchema,
+        // Cpp)` so this dispatch arm is structurally unreachable.
+        // Atomic C (DL-6) lands the per-backend enum template and
+        // replaces this arm with a real `render_event_schema_cpp`
+        // call. Mirrors the `Statechart` unreachable above (forge
+        // codegen never sees that kind either).
+        ForgeDocument::EventSchema(_) => unreachable!(
+            "ForgeDocument::EventSchema rejected by codegen_matrix::check on cpp \
+             at Atomic A scope (Atomic C lands enum lowering)"
+        ),
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -11125,6 +11159,12 @@ pub fn generate_kotlin_with_imports(
         ForgeDocument::BoundedCollection(m) => {
             render_bounded_collection_kotlin(&env, m, imports, options)?
         }
+        // NL→IR Item C1: parse-time-only at Atomic A — see Cpp
+        // backend arm for the documented unreachable rationale.
+        ForgeDocument::EventSchema(_) => unreachable!(
+            "ForgeDocument::EventSchema rejected by codegen_matrix::check on kotlin \
+             at Atomic A scope (Atomic C lands enum lowering)"
+        ),
     };
 
     let filename = format!("{}.kt", filters::to_pascal_case(doc.name().to_string()));
@@ -11287,6 +11327,12 @@ pub fn generate_rust_with_imports_and_externs(
         ForgeDocument::BoundedCollection(m) => {
             render_bounded_collection_rust(&env, m, imports, options)?
         }
+        // NL→IR Item C1: parse-time-only at Atomic A — see Cpp
+        // backend arm for the documented unreachable rationale.
+        ForgeDocument::EventSchema(_) => unreachable!(
+            "ForgeDocument::EventSchema rejected by codegen_matrix::check on rust \
+             at Atomic A scope (Atomic C lands enum lowering)"
+        ),
     };
 
     let filename = format!("{}.rs", filters::to_snake_case(doc.name().to_string()));
@@ -12661,6 +12707,10 @@ pub(crate) fn go_type(ty: &SceType) -> &'static str {
         SceType::Bool => "bool",
         SceType::String => "string",
         SceType::Bytes => "[]byte",
+        // NL→IR Item C1: see `cpp_type`. Atomic A codegen never sees
+        // enum types; Atomic C replaces with Go named-int family
+        // (`type <Name> uint8` + `const X <Name> = 0`).
+        SceType::Enum(_) => "uint8",
     }
 }
 
@@ -12757,6 +12807,12 @@ pub fn generate_go_with_imports(
         ForgeDocument::BoundedCollection(m) => {
             render_bounded_collection_go(&env, m, imports, options)?
         }
+        // NL→IR Item C1: parse-time-only at Atomic A — see Cpp
+        // backend arm for the documented unreachable rationale.
+        ForgeDocument::EventSchema(_) => unreachable!(
+            "ForgeDocument::EventSchema rejected by codegen_matrix::check on go \
+             at Atomic A scope (Atomic C lands enum lowering)"
+        ),
     };
 
     let filename = format!("{}.go", filters::to_snake_case(doc.name().to_string()));
@@ -12813,6 +12869,9 @@ pub(crate) fn python_type(ty: &SceType) -> &'static str {
         SceType::Bool => "bool",
         SceType::String => "str",
         SceType::Bytes => "bytes",
+        // NL→IR Item C1: see `cpp_type`. Atomic A codegen never sees
+        // enum types; Atomic C replaces with `class <Name>(IntEnum)`.
+        SceType::Enum(_) => "int",
     }
 }
 
@@ -12903,6 +12962,12 @@ pub fn generate_python_with_imports(
         ForgeDocument::BoundedCollection(m) => {
             render_bounded_collection_python(&env, m, imports, options)?
         }
+        // NL→IR Item C1: parse-time-only at Atomic A — see Cpp
+        // backend arm for the documented unreachable rationale.
+        ForgeDocument::EventSchema(_) => unreachable!(
+            "ForgeDocument::EventSchema rejected by codegen_matrix::check on python \
+             at Atomic A scope (Atomic C lands enum lowering)"
+        ),
     };
 
     let filename = format!("{}.py", filters::to_snake_case(doc.name().to_string()));
@@ -13056,6 +13121,12 @@ pub fn generate_c11_with_imports_and_externs(
         ForgeDocument::BoundedCollection(m) => {
             render_bounded_collection_c(&env, m, imports, options)?
         }
+        // NL→IR Item C1: parse-time-only at Atomic A — see Cpp
+        // backend arm for the documented unreachable rationale.
+        ForgeDocument::EventSchema(_) => unreachable!(
+            "ForgeDocument::EventSchema rejected by codegen_matrix::check on c11 \
+             at Atomic A scope (Atomic C lands enum lowering)"
+        ),
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -14858,6 +14929,13 @@ fn kotlin_default(ty: &SceType) -> &'static str {
         SceType::Bool => "false",
         SceType::String => "\"\"",
         SceType::Bytes => "byteArrayOf()",
+        // NL→IR Item C1: see `cpp_type`. EventSchema fields never
+        // surface as procedure/lookup defaults at Atomic A scope —
+        // they exist only in EventSchema documents which do not reach
+        // procedure or default-value codegen. Placeholder "0" maps to
+        // the eventual enum's first variant (`Result.ok` style) after
+        // Atomic C lands typed-enum lowering.
+        SceType::Enum(_) => "0",
     }
 }
 
@@ -14870,6 +14948,8 @@ fn rust_default(ty: &SceType) -> &'static str {
         SceType::Bool => "false",
         SceType::String => "String::new()",
         SceType::Bytes => "Vec::new()",
+        // NL→IR Item C1: see `kotlin_default`.
+        SceType::Enum(_) => "0",
     }
 }
 
@@ -14882,6 +14962,8 @@ fn python_default(ty: &SceType) -> &'static str {
         SceType::Bool => "False",
         SceType::String => "\"\"",
         SceType::Bytes => "b\"\"",
+        // NL→IR Item C1: see `kotlin_default`.
+        SceType::Enum(_) => "0",
     }
 }
 
@@ -19370,7 +19452,12 @@ fn kotlin_array_type(elem: &SceType) -> &'static str {
         SceType::Float32 => "FloatArray",
         SceType::Float64 => "DoubleArray",
         SceType::Bool => "BooleanArray",
-        SceType::String | SceType::Bytes => "Array<Any>",
+        // NL→IR Item C1: enum element types in `<sce:const>` arrays
+        // are not authored at Atomic A scope (Algorithm-kind parser
+        // rejects `enum:` element types). Listed alongside the
+        // generic-Array fallback for exhaustiveness; Atomic C lands
+        // proper enum-array support if a consumer requires it.
+        SceType::String | SceType::Bytes | SceType::Enum(_) => "Array<Any>",
     }
 }
 
@@ -19392,7 +19479,9 @@ fn kotlin_array_factory(elem: &SceType) -> &'static str {
         SceType::Float32 => "floatArrayOf",
         SceType::Float64 => "doubleArrayOf",
         SceType::Bool => "booleanArrayOf",
-        SceType::String | SceType::Bytes => "arrayOf",
+        // NL→IR Item C1: see `kotlin_array_type` for the enum-element
+        // exhaustiveness rationale.
+        SceType::String | SceType::Bytes | SceType::Enum(_) => "arrayOf",
     }
 }
 
