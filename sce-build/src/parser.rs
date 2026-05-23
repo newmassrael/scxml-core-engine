@@ -710,6 +710,36 @@ impl SCXMLParser {
             col: Some(root_pos.col),
         });
 
+        // NL→IR Mapping Roadmap Item C1 (DL-7 prerequisite) —
+        // capture `<sce:import>` declarations on the statechart root.
+        // The same parser pass used by Forge documents (codec / lookup
+        // / event-schema / …) so the wire shape and rejection
+        // semantics (missing `src`, missing `kind`, unknown kind,
+        // duplicate alias) stay byte-identical with the Forge side.
+        //
+        // Per-statechart visibility lets validators decide which
+        // schemas are in-scope for THIS document, replacing the
+        // legacy single-global-registry approach where every kind
+        // declaration anywhere in the build became visible to every
+        // statechart. The downstream consumers today:
+        //
+        //   * receive-side EventSchema typecheck
+        //     (`forge::event_schema_check::check`) — filters to
+        //     event-schema imports declared on this statechart so a
+        //     schemaless statechart keeps the dynamic `_event.data`
+        //     baseline even when other statecharts in the same build
+        //     declare schemas.
+        //   * send-side EventSchema typecheck
+        //     (`forge::event_schema_check::check_send_side`) — same
+        //     filter, applied at `<send>` / `<raise>` payload sites.
+        //   * mesh DL-7 cross-machine validator
+        //     (`mesh::deploy::validate_event_schemas_cross_machine`)
+        //     — compares per-machine import visibility so cross-
+        //     machine sends whose sender and receiver declare
+        //     different schemas (or only one side declares one)
+        //     surface as `mesh/event-schema-mismatch`.
+        let forge_imports = crate::forge::parser::parse_imports(&root, diag_label)?;
+
         let mut model = SCXMLModel {
             name: name.to_string(),
             scxml_name: root.attribute("name").unwrap_or("").to_string(),
@@ -721,6 +751,7 @@ impl SCXMLParser {
                 .to_string(),
             event_queue_capacity,
             source_location: root_source_location,
+            forge_imports,
             ..Default::default()
         };
 
