@@ -138,6 +138,21 @@ pub enum ForgeKind {
     /// verification + atomics-import check land in C6-β; deploy-time
     /// capacity resolution + 6-backend codegen land in C6-γ.
     BoundedCollection,
+    /// Typed contract for `_event.data` of a named SCXML event — NL→IR
+    /// Mapping Roadmap Item C1. Maps an event name (`job.completed`,
+    /// `task.failed`, …) to a list of `<sce:field>` declarations so the
+    /// receive-side typecheck can validate `_event.data.<field>`
+    /// expressions in transition `cond` attributes at parse time, and
+    /// send-side payload validation (Atomic B) + mesh cross-machine
+    /// validation (DL-7) can ride the same shape. Schemaless fallback
+    /// (DL-9): events without an imported EventSchema retain dynamic
+    /// `_event.data` behavior. W3C built-in events (`error.*`,
+    /// `done.invoke.*`, `done.state.*`) are explicitly excluded —
+    /// declaring a schema for these raises
+    /// `validation/event-schema-on-builtin-event`. Per-backend enum
+    /// codegen lowering of `SceType::Enum` defers to Atomic C; Atomic
+    /// A is parse-time only.
+    EventSchema,
 }
 
 impl ForgeKind {
@@ -162,6 +177,7 @@ impl ForgeKind {
         "buffer-pool",
         "worker",
         "bounded-collection",
+        "event-schema",
     ];
 
     /// Parse from `sce:kind` attribute value. Returns `None` for unknown kinds.
@@ -183,6 +199,7 @@ impl ForgeKind {
             "buffer-pool" => Some(Self::BufferPool),
             "worker" => Some(Self::Worker),
             "bounded-collection" => Some(Self::BoundedCollection),
+            "event-schema" => Some(Self::EventSchema),
             _ => None,
         }
     }
@@ -238,6 +255,12 @@ impl ForgeKind {
             // The slot table, occupancy mask, and generation counters
             // are instance state of the generated struct.
             Self::BoundedCollection => true,
+            // NL→IR Item C1: EventSchema is pure parse-time metadata —
+            // a type contract for `_event.data` of a named event.
+            // No runtime instance. Per-backend enum codegen (Atomic C)
+            // emits `enum class` / `#[repr] enum` / `IntEnum` / etc.
+            // but those are type-level emissions, not instances.
+            Self::EventSchema => false,
         }
     }
 
@@ -288,6 +311,14 @@ impl ForgeKind {
             // (§6.2.6) is codegen-time, not a runtime helper. Tier
             // `None` matches BufferPool's stance.
             Self::BoundedCollection => RuntimeDep::None,
+            // NL→IR Item C1: EventSchema is pure parse-time metadata.
+            // Atomic A emits no code at all (parse-time gate only);
+            // Atomic C's per-backend enum lowering emits language-
+            // native typed enums (`enum class` / `#[repr] enum` /
+            // `IntEnum` / etc.) with no runtime helper crate
+            // dependency. Tier `None` matches BoundedCollection's
+            // stance of self-contained per-backend lowering.
+            Self::EventSchema => RuntimeDep::None,
         }
     }
 
@@ -311,6 +342,7 @@ impl ForgeKind {
                 | Self::BufferPool
                 | Self::Worker
                 | Self::BoundedCollection
+                | Self::EventSchema
         )
     }
 }
@@ -334,11 +366,35 @@ impl std::fmt::Display for ForgeKind {
             Self::BufferPool => write!(f, "buffer-pool"),
             Self::Worker => write!(f, "worker"),
             Self::BoundedCollection => write!(f, "bounded-collection"),
+            Self::EventSchema => write!(f, "event-schema"),
         }
     }
 }
 
 // ── Cross-language type system ─────────────────────────────────
+
+/// Reference to an imported `sce:kind="lookup"` document, carried as the
+/// payload of [`SceType::Enum`]. NL→IR Item C1 (DL-2): EventSchema fields
+/// may declare `sce:type="enum:<alias>"`, which parses into
+/// `SceType::Enum(LookupRef { alias: "<alias>".into() })`. The alias is
+/// resolved against the surrounding statechart's `<sce:import>` table by
+/// the cross-kind binding pass (`cross_kind_check::EventSchema` arm) so
+/// the underlying integer key type can be looked up at validation /
+/// codegen time.
+///
+/// `LookupRef` is a named struct rather than a bare `String` so future
+/// extensions (cached resolved key type, source-line tracking for the
+/// `enum:` token, etc.) can be added without churning every callsite
+/// that pattern-matches `SceType::Enum`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct LookupRef {
+    /// Import alias declared on the surrounding statechart's
+    /// `<sce:import alias="…">` element. Cross-kind binding pass
+    /// resolves this against the imports table to find the underlying
+    /// `LookupModel` and validate the key-type relationship.
+    pub alias: String,
+}
 
 /// Canonical SCE type — used in `sce:type` attributes.
 /// Language-specific mappings are in the generator module (SRP).
@@ -359,10 +415,39 @@ pub enum SceType {
     Bool,
     String,
     Bytes,
+    /// Enum-typed value drawn from an imported `sce:kind="lookup"`
+    /// vocabulary — NL→IR Item C1 (DL-2). Surface form
+    /// `sce:type="enum:<alias>"`. The lattice rule is:
+    /// `Enum(L) ⊑ <L's key_type>` (e.g. `Enum(L) ⊑ Uint8` when L's
+    /// key is `uint8`), and cross-type comparison `Enum(L) == 0x11`
+    /// lowers to the underlying integer comparison after cross-kind
+    /// resolution. Per-backend codegen (Atomic C) emits language-
+    /// native typed enums (`enum class : uint8_t`, `#[repr(u8)] enum`,
+    /// `IntEnum`, …). Atomic A scope: parse + cross-kind binding
+    /// only — `is_unsigned()` / `int_bit_width()` / etc. return
+    /// `false` / `None` and callers that need the underlying type
+    /// must resolve via the cross-kind binding pass first.
+    #[serde(rename = "enum")]
+    Enum(LookupRef),
 }
 
 impl SceType {
     pub fn from_attr(s: &str) -> Option<Self> {
+        // NL→IR Item C1 (DL-2): `sce:type="enum:<alias>"` parses to
+        // `SceType::Enum(LookupRef { alias })`. The alias must be
+        // non-empty; whitespace-only or empty payloads are rejected
+        // here so the diagnostic surfaces as "unknown sce:type" rather
+        // than as a downstream import-resolution failure with no
+        // alias to dereference.
+        if let Some(alias) = s.strip_prefix("enum:") {
+            let alias = alias.trim();
+            if alias.is_empty() {
+                return None;
+            }
+            return Some(Self::Enum(LookupRef {
+                alias: alias.to_string(),
+            }));
+        }
         match s {
             "uint8" => Some(Self::Uint8),
             "uint16" => Some(Self::Uint16),
@@ -3234,6 +3319,109 @@ pub struct WorkerModel {
     pub source_location: Option<SourceLocation>,
 }
 
+// ── Event-schema kind (NL→IR Item C1) ──────────────────────────
+
+/// Typed contract for the `_event.data` payload of a named SCXML event
+/// — NL→IR Mapping Roadmap Item C1, design RFC §3 (DL-1 / DL-8). Each
+/// schema names exactly one event (`job.completed`, `task.failed`, …)
+/// and declares the typed fields that authors may read via
+/// `_event.data.<field>` in transition `cond` attributes and write via
+/// `<send>/<param>` payloads.
+///
+/// Two surface forms produce identical models (DL-8 inline lowering):
+///   * Top-level form (primary):
+///     `<scxml sce:kind="event-schema" sce:event-name="job.completed">`
+///     parsed via the regular `sce:kind` dispatch.
+///   * Inline form (sugar):
+///     `<sce:event-schema event-name="job.completed">` as a child of
+///     `<scxml>` — parsed and lowered to an anonymous top-level
+///     `EventSchemaModel` at parse time so downstream IR consumers see
+///     a single shape.
+///
+/// Schemaless fallback (DL-9): events without an imported EventSchema
+/// retain the dynamic `_event.data` behavior (no diagnostic). W3C
+/// built-in events (`error.*`, `done.invoke.*`, `done.state.*`) are
+/// explicitly excluded — declaring a schema for these raises
+/// `validation/event-schema-on-builtin-event`.
+///
+/// Each field uses [`ForgeField`] with `Direction::In` (payload is the
+/// receiver's read-only view). `sce_type` may be a primitive
+/// (Uint8/etc.) or [`SceType::Enum`] referring to an imported
+/// `sce:kind="lookup"` document.
+///
+/// Atomic A landing scope: the model + parser + cross-kind binding +
+/// receive-side typecheck. Send-side typecheck (Atomic B) + mesh
+/// cross-machine validation (DL-7, Atomic B) + per-backend enum
+/// codegen (DL-6, Atomic C) are deferred.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct EventSchemaModel {
+    /// Symbol name for the schema document — drives symbol mangling
+    /// and import-table lookup. For the top-level surface form this is
+    /// the document's basename (e.g. `job_completed_schema`); for the
+    /// inline form, the parser synthesizes a deterministic name from
+    /// the enclosing statechart name + event name so anonymous lowered
+    /// schemas remain referenceable in diagnostics.
+    pub name: String,
+    /// SCXML event name this schema constrains (e.g. `"job.completed"`,
+    /// `"task.failed"`). Treated case-sensitively per W3C SCXML 1.0
+    /// §5.10 event-matching rules. Built-in event names (`error.*`,
+    /// `done.invoke.*`, `done.state.*`) are rejected at parse time by
+    /// the schema-on-builtin guard.
+    pub event_name: String,
+    /// Typed fields exposed via `_event.data.<field>`. Each field's
+    /// `direction` is `Direction::In` (payload is the receiver's
+    /// read-only view); the parser enforces this so authors cannot
+    /// declare an `out`-direction field that would have no meaning on
+    /// the receive side. `sce_type` may be a primitive
+    /// (Uint8/Int32/Float64/Bool/String/Bytes) or
+    /// [`SceType::Enum`] referring to an imported
+    /// `sce:kind="lookup"` document.
+    pub fields: Vec<ForgeField>,
+    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// position of the `<scxml sce:kind="event-schema">` root element
+    /// (or the synthesized location of the lowered inline form).
+    /// Drives the per-kind body function's SCE-MAP marker for
+    /// downstream tooling. Same convention as `LookupModel.source_location`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
+}
+
+impl EventSchemaModel {
+    /// W3C SCXML built-in event-name prefixes that an EventSchema may
+    /// not declare against. Centralised here so the parse-time guard
+    /// and the cross-kind binding pass agree on the closed set without
+    /// drift. Order is documentation only — callers test membership.
+    pub const BUILTIN_EVENT_PREFIXES: &'static [&'static str] = &[
+        // W3C SCXML 1.0 §5.10: error.* is the error event namespace.
+        // The `error.execution`, `error.communication`, `error.platform`
+        // sub-events are the most-named members but the prefix matches
+        // any author-extended `error.*` event the platform may raise.
+        "error.",
+        // W3C SCXML 1.0 §6.4: completion of an `<invoke>` raises
+        // `done.invoke.<invokeid>`.
+        "done.invoke.",
+        // W3C SCXML 1.0 §3.7: a `<final>` state in a compound state
+        // raises `done.state.<id>`; in the document root, it raises
+        // `done.state.<id>` on the root.
+        "done.state.",
+    ];
+
+    /// Returns true when `event_name` is reserved for the W3C SCXML
+    /// platform (matches one of [`Self::BUILTIN_EVENT_PREFIXES`]).
+    /// Used by the parse-time guard that emits
+    /// `validation/event-schema-on-builtin-event` (DL-9). Exact match
+    /// against a prefix-stripped tail is unnecessary — any event whose
+    /// name *begins* with a built-in prefix lives in that namespace,
+    /// even if the platform has not yet raised the specific
+    /// `error.<author-defined>` variant.
+    pub fn is_builtin_event_name(name: &str) -> bool {
+        Self::BUILTIN_EVENT_PREFIXES
+            .iter()
+            .any(|prefix| name.starts_with(prefix))
+    }
+}
+
 // ── Forge document ─────────────────────────────────────────────
 
 /// Top-level forge document — dispatched by `sce:kind` on `<scxml>` root.
@@ -3283,6 +3471,11 @@ pub enum ForgeDocument {
     Worker(WorkerModel),
     #[serde(rename = "bounded-collection")]
     BoundedCollection(BoundedCollectionModel),
+    /// NL→IR Item C1: typed `_event.data` payload contract. Pure
+    /// metadata at Atomic A scope — no codegen emission (Atomic C
+    /// adds per-backend enum lowering). See [`EventSchemaModel`].
+    #[serde(rename = "event-schema")]
+    EventSchema(EventSchemaModel),
 }
 
 impl ForgeDocument {
@@ -3304,6 +3497,7 @@ impl ForgeDocument {
             Self::BufferPool(m) => &m.name,
             Self::Worker(m) => &m.name,
             Self::BoundedCollection(m) => &m.name,
+            Self::EventSchema(m) => &m.name,
         }
     }
 
@@ -3325,6 +3519,7 @@ impl ForgeDocument {
             Self::BufferPool(_) => ForgeKind::BufferPool,
             Self::Worker(_) => ForgeKind::Worker,
             Self::BoundedCollection(_) => ForgeKind::BoundedCollection,
+            Self::EventSchema(_) => ForgeKind::EventSchema,
         }
     }
 
@@ -3381,6 +3576,11 @@ impl ForgeDocument {
             // No SCE-side runtime helper crate. Cross-backend parity is
             // codegen-time (§6.2.6).
             Self::BoundedCollection(_) => RuntimeDep::None,
+            // NL→IR Item C1: EventSchema is parse-time metadata only at
+            // Atomic A. Atomic C's per-backend enum lowering emits
+            // language-native typed enums with no runtime helper crate
+            // dependency — matches BoundedCollection's stance.
+            Self::EventSchema(_) => RuntimeDep::None,
         }
     }
 }

@@ -245,7 +245,13 @@ fn rust_base_cast(t: &SceType) -> &'static str {
         SceType::Int64 => "i64",
         SceType::Float32 => "f32",
         SceType::Float64 => "f64",
-        SceType::Bool | SceType::String | SceType::Bytes => "f64", /* unreachable for quantity */
+        // NL→IR Item C1: `SceType::Enum` is gated to EventSchema
+        // fields and cannot carry `sce:quantity` (quantity annotations
+        // apply to numeric primitives only). Listed alongside the
+        // other non-quantity-eligible types so the match stays
+        // exhaustive against future SceType variants without silent
+        // fall-through.
+        SceType::Bool | SceType::String | SceType::Bytes | SceType::Enum(_) => "f64", /* unreachable for quantity */
     }
 }
 
@@ -261,7 +267,10 @@ fn c_base_cast(t: &SceType) -> &'static str {
         SceType::Int64 => "int64_t",
         SceType::Float32 => "float",
         SceType::Float64 => "double",
-        SceType::Bool | SceType::String | SceType::Bytes => "double",
+        // NL→IR Item C1: `SceType::Enum` unreachable here for the same
+        // reason as `rust_base_cast` — enum-typed fields are not
+        // quantity-eligible.
+        SceType::Bool | SceType::String | SceType::Bytes | SceType::Enum(_) => "double",
     }
 }
 
@@ -277,7 +286,8 @@ fn kotlin_base_cast(t: &SceType) -> &'static str {
         SceType::Int64 => "toLong()",
         SceType::Float32 => "toFloat()",
         SceType::Float64 => "toDouble()",
-        SceType::Bool | SceType::String | SceType::Bytes => "toDouble()",
+        // NL→IR Item C1: see `rust_base_cast`.
+        SceType::Bool | SceType::String | SceType::Bytes | SceType::Enum(_) => "toDouble()",
     }
 }
 
@@ -293,7 +303,8 @@ fn go_base_cast(t: &SceType) -> &'static str {
         SceType::Int64 => "int64",
         SceType::Float32 => "float32",
         SceType::Float64 => "float64",
-        SceType::Bool | SceType::String | SceType::Bytes => "float64",
+        // NL→IR Item C1: see `rust_base_cast`.
+        SceType::Bool | SceType::String | SceType::Bytes | SceType::Enum(_) => "float64",
     }
 }
 

@@ -70,6 +70,7 @@
         "validation/cross-kind-field-not-found",
         "validation/cross-kind-type-mismatch",
         "validation/cross-kind-circular-dependency",
+        "validation/event-schema-on-builtin-event",
         "algorithm/local-shadows-param",
         "algorithm/lvalue-unsupported",
         "algorithm/return-missing",
