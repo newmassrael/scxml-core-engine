@@ -220,6 +220,18 @@ impl InferredType {
             SceType::Bool => Self::Bool,
             SceType::String => Self::Str,
             SceType::Bytes => Self::Bytes,
+            // NL→IR Item C1 Path A: an enum-typed value's concrete
+            // integer width is determined by the imported enum
+            // document's `sce:underlying-type` — cross-doc
+            // information not visible at the model layer. Map to
+            // `Unknown` so the inference layer takes the conservative
+            // "opaque" path; the cross-kind binding pass and Atomic 5
+            // literal-width narrowing resolve the imported enum and
+            // perform explicit typecheck against the declared
+            // underlying type, independent of this inference path.
+            // `Unknown` here means "this layer declines to claim the
+            // type", not "type mismatch".
+            SceType::Enum(_) => Self::Unknown,
         }
     }
 }

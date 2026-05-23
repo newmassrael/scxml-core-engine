@@ -3897,7 +3897,12 @@ fn discover_stateful_member_fields(
         | ForgeDocument::Condition(_)
         | ForgeDocument::Lookup(_)
         | ForgeDocument::Interpolation(_)
-        | ForgeDocument::Algorithm(_) => {}
+        | ForgeDocument::Algorithm(_)
+        // NL→IR Item C1 Path A: Enum declares typed variants — no
+        // SCXML-expression-visible member fields. Authors reference
+        // variants as `<EnumName>.<variant>` (resolved through the
+        // cross-kind binding pass), not as alias.field.
+        | ForgeDocument::Enum(_) => {}
     }
     out
 }
@@ -3966,7 +3971,11 @@ fn discover_stateful_member_methods(
         | ForgeDocument::Condition(_)
         | ForgeDocument::Lookup(_)
         | ForgeDocument::Interpolation(_)
-        | ForgeDocument::Algorithm(_) => Vec::new(),
+        | ForgeDocument::Algorithm(_)
+        // NL→IR Item C1 Path A: Enum exposes no instance methods —
+        // typed enum declaration emits a type, not a callable. Same
+        // empty stance as stateless kinds.
+        | ForgeDocument::Enum(_) => Vec::new(),
     }
 }
 
@@ -4097,7 +4106,12 @@ fn discover_primary_function(
         // RFC §5.L: stateful — uses member access via insert/remove
         // etc. (spec lines 2609-2619). No callsite-visible primary
         // free function name.
-        | forge::model::ForgeDocument::BoundedCollection(_) => None,
+        | forge::model::ForgeDocument::BoundedCollection(_)
+        // NL→IR Item C1 Path A: Enum emits a type declaration, not
+        // a callable. Authors reference variants as `<EnumName>.<v>`,
+        // resolved through the cross-kind binding pass; no primary
+        // function name belongs at this site.
+        | forge::model::ForgeDocument::Enum(_) => None,
         // RFC §5.A Algorithm: free function whose name is the
         // SCXML-author-declared `name=` attribute, lowered to each
         // language's idiomatic identifier per RFC §5.J.5. The

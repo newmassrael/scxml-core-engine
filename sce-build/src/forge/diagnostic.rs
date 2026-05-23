@@ -2386,6 +2386,31 @@ pub enum DiagnosticCode {
     McuDriverHeaderNotFound,
     #[serde(rename = "mcu/section-attribute-on-non-mcu-target")]
     McuSectionAttributeOnNonMcuTarget,
+
+    // ── NL→IR Item C1 Path A: Enum kind invariants (Atomic 1) ───
+    /// Enum document declares no `<sce:variant>` children — see
+    /// [`ValidationError::EnumNoVariants`].
+    #[serde(rename = "validation/enum-no-variants")]
+    ValidationEnumNoVariants,
+    /// Two variants share an identifier — see
+    /// [`ValidationError::EnumVariantDuplicateName`].
+    #[serde(rename = "validation/enum-variant-duplicate-name")]
+    ValidationEnumVariantDuplicateName,
+    /// Two variants share an underlying integer value (Path A's
+    /// bijectivity invariant) — see
+    /// [`ValidationError::EnumVariantDuplicateValue`].
+    #[serde(rename = "validation/enum-variant-duplicate-value")]
+    ValidationEnumVariantDuplicateValue,
+    /// A variant's `value` overflows the declared
+    /// `sce:underlying-type` — see
+    /// [`ValidationError::EnumVariantValueOverflowsUnderlying`].
+    #[serde(rename = "validation/enum-variant-value-overflows-underlying")]
+    ValidationEnumVariantValueOverflowsUnderlying,
+    /// `sce:underlying-type` is not one of the supported unsigned
+    /// integer carriers — see
+    /// [`ValidationError::EnumUnsupportedUnderlyingType`].
+    #[serde(rename = "validation/enum-unsupported-underlying-type")]
+    ValidationEnumUnsupportedUnderlyingType,
 }
 
 /// Canonical enumeration of every `DiagnosticCode` variant.
@@ -2814,6 +2839,12 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // non-MCU backend reject of `platform.c11_section_attribute`.
         McuDriverHeaderNotFound,
         McuSectionAttributeOnNonMcuTarget,
+        // ── NL→IR Item C1 Path A Atomic 1: Enum kind invariants ──
+        ValidationEnumNoVariants,
+        ValidationEnumVariantDuplicateName,
+        ValidationEnumVariantDuplicateValue,
+        ValidationEnumVariantValueOverflowsUnderlying,
+        ValidationEnumUnsupportedUnderlyingType,
     ]
 };
 
@@ -3409,6 +3440,15 @@ impl DiagnosticCode {
             ReassemblyPerPeerQuotaBuildInvariantViolated => {
                 Some("watching-zenoh RFC §5.M")
             }
+            // NL→IR Item C1 Path A: Enum kind invariants live in the
+            // design RFC and prescoping-reopen RFC, not in an
+            // external spec. Internal hygiene — same stance as
+            // SCE-internal SCXML hygiene codes above.
+            ValidationEnumNoVariants
+            | ValidationEnumVariantDuplicateName
+            | ValidationEnumVariantDuplicateValue
+            | ValidationEnumVariantValueOverflowsUnderlying
+            | ValidationEnumUnsupportedUnderlyingType => None,
         }
     }
 
@@ -3845,6 +3885,16 @@ impl DiagnosticCode {
             }
             McuDriverHeaderNotFound => "mcu/driver-header-not-found",
             McuSectionAttributeOnNonMcuTarget => "mcu/section-attribute-on-non-mcu-target",
+            // ── NL→IR Item C1 Path A: Enum kind invariants ──
+            ValidationEnumNoVariants => "validation/enum-no-variants",
+            ValidationEnumVariantDuplicateName => "validation/enum-variant-duplicate-name",
+            ValidationEnumVariantDuplicateValue => "validation/enum-variant-duplicate-value",
+            ValidationEnumVariantValueOverflowsUnderlying => {
+                "validation/enum-variant-value-overflows-underlying"
+            }
+            ValidationEnumUnsupportedUnderlyingType => {
+                "validation/enum-unsupported-underlying-type"
+            }
         }
     }
 }
@@ -6614,6 +6664,67 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![href.clone(), resolved_dir.clone()],
         },
+        // ── NL→IR Item C1 Path A: Enum kind invariants (Atomic 1) ──
+        ValidationError::EnumNoVariants { name } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationEnumNoVariants,
+            stage: Stage::Validation,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![name.clone()],
+        },
+        ValidationError::EnumVariantDuplicateName { enum_name, name } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationEnumVariantDuplicateName,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(name.clone()),
+            fix: None,
+            key_fragments: vec![enum_name.clone(), name.clone()],
+        },
+        ValidationError::EnumVariantDuplicateValue {
+            enum_name,
+            value,
+            first_name,
+            second_name,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationEnumVariantDuplicateValue,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(value.to_string()),
+            fix: None,
+            key_fragments: vec![
+                enum_name.clone(),
+                value.to_string(),
+                first_name.clone(),
+                second_name.clone(),
+            ],
+        },
+        ValidationError::EnumVariantValueOverflowsUnderlying {
+            enum_name,
+            variant_name,
+            value,
+            underlying,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationEnumVariantValueOverflowsUnderlying,
+            stage: Stage::Validation,
+            expected: Some(vec![underlying.clone()]),
+            actual: Some(value.to_string()),
+            fix: None,
+            key_fragments: vec![
+                enum_name.clone(),
+                variant_name.clone(),
+                value.to_string(),
+                underlying.clone(),
+            ],
+        },
+        ValidationError::EnumUnsupportedUnderlyingType { name, declared } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationEnumUnsupportedUnderlyingType,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(declared.clone()),
+            fix: None,
+            key_fragments: vec![name.clone(), declared.clone()],
+        },
     }
 }
 
@@ -7603,7 +7714,7 @@ mod tests {
             (
                 "forge/unsupported-kind",
                 ValidationError::UnsupportedKind("bogus".into()).into(),
-                r#"{"v":1,"id":"fnv1a:812898e1a23fda4d","code":"validation/unsupported-kind","stage":"validation","spec":"SCE Forge §3.2","message":"unsupported sce:kind value: 'bogus'","actual":"bogus","fix":{"kind":"replace_one_of","candidates":["statechart","transform","lookup","condition","codec","procedure","validator","filter","interpolation","timer","observer","algorithm","link","buffer-pool","worker","bounded-collection"]}}"#,
+                r#"{"v":1,"id":"fnv1a:812898e1a23fda4d","code":"validation/unsupported-kind","stage":"validation","spec":"SCE Forge §3.2","message":"unsupported sce:kind value: 'bogus'","actual":"bogus","fix":{"kind":"replace_one_of","candidates":["statechart","transform","lookup","condition","codec","procedure","validator","filter","interpolation","timer","observer","algorithm","link","buffer-pool","worker","bounded-collection","enum"]}}"#,
             ),
             (
                 "forge/duplicate-id",
@@ -9660,6 +9771,57 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:d9ee1c8383fc6b8f","code":"mcu/section-attribute-on-non-mcu-target","stage":"generate","spec":"watching-zenoh RFC §5.2","message":"platform.c11_section_attribute is set in deploy.yaml but the target backend is 'rust', not 'c11'. The section attribute injects `__attribute__((section(...)))` which only the C11 backend emits. Repair: remove the section attribute, switch the backend to 'c11', or split deploy configurations per target.","actual":"rust"}"#,
+            ),
+            // ── NL→IR Item C1 Path A Atomic 1: Enum kind invariants ──
+            //   `id` hashes are placeholders; the goldens test prints
+            //   the actual FNV1a on first run, copy them back here.
+            (
+                "validation/enum-no-variants",
+                ValidationError::EnumNoVariants {
+                    name: "result".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:88dbabe6c2556d66","code":"validation/enum-no-variants","stage":"validation","message":"enum 'result': declares no <sce:variant> — at least one variant required"}"#,
+            ),
+            (
+                "validation/enum-variant-duplicate-name",
+                ValidationError::EnumVariantDuplicateName {
+                    enum_name: "result".into(),
+                    name: "ok".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:cfcc7b94a1e9a594","code":"validation/enum-variant-duplicate-name","stage":"validation","message":"enum 'result': duplicate variant name 'ok'","actual":"ok"}"#,
+            ),
+            (
+                "validation/enum-variant-duplicate-value",
+                ValidationError::EnumVariantDuplicateValue {
+                    enum_name: "result".into(),
+                    value: 1,
+                    first_name: "error".into(),
+                    second_name: "timeout".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:ff9a05d509eaf5c8","code":"validation/enum-variant-duplicate-value","stage":"validation","message":"enum 'result': variants 'error' and 'timeout' both have value 1","actual":"1"}"#,
+            ),
+            (
+                "validation/enum-variant-value-overflows-underlying",
+                ValidationError::EnumVariantValueOverflowsUnderlying {
+                    enum_name: "result".into(),
+                    variant_name: "big".into(),
+                    value: 256,
+                    underlying: "uint8".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:30ab011184dea5cf","code":"validation/enum-variant-value-overflows-underlying","stage":"validation","message":"enum 'result' variant 'big': value 256 overflows underlying type 'uint8'","expected":["uint8"],"actual":"256"}"#,
+            ),
+            (
+                "validation/enum-unsupported-underlying-type",
+                ValidationError::EnumUnsupportedUnderlyingType {
+                    name: "result".into(),
+                    declared: "float32".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:1438d7bd57263c36","code":"validation/enum-unsupported-underlying-type","stage":"validation","message":"enum 'result': sce:underlying-type='float32' is not supported (Path A α: uint8 | uint16 | uint32 | uint64)","actual":"float32"}"#,
             ),
         ]
     }
@@ -11917,7 +12079,20 @@ mod tests {
             // guard, or reorder) with no closed candidate set the
             // validator can predict.
             | ScxmlAlwaysFalseGuard
-            | ScxmlShadowedTransition => NeutralOrDeterministic,
+            | ScxmlShadowedTransition
+            // NL→IR Item C1 Path A: Enum kind invariants. The five
+            // codes don't carry author-actionable closed candidate
+            // lists (variant names/values are author-defined; the
+            // overflow / duplicate diagnostics name the conflicting
+            // pair without proposing a replacement). The unsupported-
+            // underlying code could ride `Fix::ReplaceOneOf` with
+            // the four legal carriers; deferring that refinement to
+            // post-Atomic-1 keeps the initial 11-site sync minimal.
+            | ValidationEnumNoVariants
+            | ValidationEnumVariantDuplicateName
+            | ValidationEnumVariantDuplicateValue
+            | ValidationEnumVariantValueOverflowsUnderlying
+            | ValidationEnumUnsupportedUnderlyingType => NeutralOrDeterministic,
         }
     }
 
@@ -12395,7 +12570,13 @@ mod tests {
                 | CodecFlagBindWidthMismatch
                 | CodecFlagInputUnbound
                 | CodecFlagBindDuplicateInput
-                | CodecFlagBindCarrierAfterEmbed => true,
+                | CodecFlagBindCarrierAfterEmbed
+                // NL→IR Item C1 Path A: Enum kind invariants
+                | ValidationEnumNoVariants
+                | ValidationEnumVariantDuplicateName
+                | ValidationEnumVariantDuplicateValue
+                | ValidationEnumVariantValueOverflowsUnderlying
+                | ValidationEnumUnsupportedUnderlyingType => true,
             }
         }
         for &code in ALL_DIAGNOSTIC_CODES {
@@ -12407,7 +12588,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            310,
+            315,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries —\
              expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \

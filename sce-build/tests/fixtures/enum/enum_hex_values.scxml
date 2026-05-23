@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="enum"
+       name="opcode"
+       sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="read" value="0x10"/>
+      <sce:variant name="write" value="0x22"/>
+      <sce:variant name="reset" value="0xff"/>
+    </data>
+  </datamodel>
+</scxml>

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="enum"
+       name="status_code"
+       sce:underlying-type="uint16">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="ok" value="200"/>
+      <sce:variant name="created" value="201"/>
+      <sce:variant name="not_modified" value="304"/>
+      <sce:variant name="not_found" value="404"/>
+      <sce:variant name="server_error" value="500"/>
+      <sce:variant name="custom_high" value="40000"/>
+    </data>
+  </datamodel>
+</scxml>

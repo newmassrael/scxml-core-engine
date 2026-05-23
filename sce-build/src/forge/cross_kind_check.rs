@@ -204,30 +204,39 @@ fn collect_member_fields(doc: &ForgeDocument) -> Option<Vec<(String, SceType)>> 
         | ForgeDocument::Timer(_)
         | ForgeDocument::Link(_)
         | ForgeDocument::BufferPool(_)
-        | ForgeDocument::Worker(_) => return None,
+        | ForgeDocument::Worker(_)
+        // NL→IR Item C1 Path A: Enum is a typed vocabulary declaration
+        // — variants are not member fields accessed via `alias.field`.
+        // Authors reference variants as `<EnumName>.<variant>` which
+        // resolves through the cross-kind binding pass to the imported
+        // enum's variant list, not the member-field check below.
+        | ForgeDocument::Enum(_) => return None,
     }
     Some(out)
 }
 
 /// Render an [`SceType`] to its canonical schema attribute spelling
-/// (`uint8`, `bool`, …). `SceType` has no `Display` impl; rendering it
-/// inline keeps the diagnostic format stable across future Serialize
-/// representations.
-fn sce_type_canonical(t: &SceType) -> &'static str {
+/// (`uint8`, `bool`, `enum:<alias>`, …). `SceType` has no `Display`
+/// impl; rendering it inline keeps the diagnostic format stable across
+/// future Serialize representations. Returns `String` (not `&'static
+/// str`) so the parameterized `Enum(EnumRef)` arm can interpolate the
+/// import alias into the canonical form.
+fn sce_type_canonical(t: &SceType) -> String {
     match t {
-        SceType::Uint8 => "uint8",
-        SceType::Uint16 => "uint16",
-        SceType::Uint32 => "uint32",
-        SceType::Uint64 => "uint64",
-        SceType::Int8 => "int8",
-        SceType::Int16 => "int16",
-        SceType::Int32 => "int32",
-        SceType::Int64 => "int64",
-        SceType::Float32 => "float32",
-        SceType::Float64 => "float64",
-        SceType::Bool => "bool",
-        SceType::String => "string",
-        SceType::Bytes => "bytes",
+        SceType::Uint8 => "uint8".to_string(),
+        SceType::Uint16 => "uint16".to_string(),
+        SceType::Uint32 => "uint32".to_string(),
+        SceType::Uint64 => "uint64".to_string(),
+        SceType::Int8 => "int8".to_string(),
+        SceType::Int16 => "int16".to_string(),
+        SceType::Int32 => "int32".to_string(),
+        SceType::Int64 => "int64".to_string(),
+        SceType::Float32 => "float32".to_string(),
+        SceType::Float64 => "float64".to_string(),
+        SceType::Bool => "bool".to_string(),
+        SceType::String => "string".to_string(),
+        SceType::Bytes => "bytes".to_string(),
+        SceType::Enum(r) => format!("enum:{}", r.alias),
     }
 }
 
@@ -521,8 +530,8 @@ fn check_algorithm_return_type(
                     importing_name: algo.name.clone(),
                     alias: obj.to_string(),
                     field: property.to_string(),
-                    actual: sce_type_canonical(actual_ty).to_string(),
-                    expected: sce_type_canonical(expected_ret).to_string(),
+                    actual: sce_type_canonical(actual_ty),
+                    expected: sce_type_canonical(expected_ret),
                 }
                 .into(),
                 location,

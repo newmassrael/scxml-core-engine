@@ -1498,6 +1498,38 @@
       ],
       "type": "string"
     },
+    "EnumRef": {
+      "description": "Reference to an imported `sce:kind=\"enum\"` document, carried as the payload of [`SceType::Enum`]. NL→IR Mapping Roadmap Item C1 Path A: fields may declare `sce:type=\"enum:<alias>\"`, which parses into `SceType::Enum(EnumRef { alias: \"<alias>\".into() })`. The alias is resolved against the surrounding document's `<sce:import>` table by the cross-kind binding pass so the underlying integer type can be looked up at validation / codegen time.\n\n`EnumRef` is a named struct rather than a bare `String` so future extensions (cached resolved underlying type, source-line tracking for the `enum:` token, etc.) can be added without churning every callsite that pattern-matches `SceType::Enum`.",
+      "properties": {
+        "alias": {
+          "description": "Import alias declared on the surrounding document's `<sce:import alias=\"…\">` element. Cross-kind binding pass resolves this against the imports table to find the underlying [`EnumModel`] and consult its `underlying_type`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "alias"
+      ],
+      "type": "object"
+    },
+    "EnumVariant": {
+      "description": "A single named variant in an `sce:kind=\"enum\"` document. Each variant pairs a `name` (the source-level identifier authors reference as `<EnumName>.<variant>`) with a `value` (the wire byte authors author as the `value` attribute, parsed as an unsigned integer per the declaring document's `sce:underlying-type`). Validation invariants land at parse time: * variant `name` must be unique within the document * variant `value` must be unique within the document (bijectivity) * variant `value` must fit within the declared `underlying_type`",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "description": "Parsed numeric value of the variant. Stored as `u64` so any declared `underlying_type` (uint8 → uint64) fits without per-variant tagging; the document-level `underlying_type` is the size-of-record.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "value"
+      ],
+      "type": "object"
+    },
     "ExternDeclaration": {
       "description": "One `<sce:extern>` declaration after parse-time validation has matched it against the §5.I baseline registry. Carried through `ParsedForge` so future codegen atomics can emit per-language `extern \"C\" { fn ... }` blocks without re-walking the XML.",
       "properties": {
@@ -3033,6 +3065,53 @@
             "ordering"
           ],
           "type": "object"
+        },
+        {
+          "description": "Enum: a closed set of named variants with 1:1 wire-key mapping — NL→IR Mapping Roadmap Item C1 Path A. Distinct from [`LookupModel`] (many-to-one dispatch table) by the bijectivity invariant on `variants[i].value`. Surface form:\n\n```xml <scxml sce:kind=\"enum\" name=\"result\" sce:underlying-type=\"uint8\"> <datamodel> <data id=\"variants\"> <sce:variant name=\"ok\"      value=\"0\"/> <sce:variant name=\"error\"   value=\"1\"/> <sce:variant name=\"timeout\" value=\"2\"/> </data> </datamodel> </scxml> ```\n\nPer-backend codegen (Atomic 2, deferred) lowers to `enum class : <int>`, `#[repr(<int>)] enum`, `IntEnum`, etc. — single source of truth on the Enum document; importers reference the emitted type by qualified name rather than re-emitting variants. Atomic 1 scope: parse-time IR only.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "enum"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source position of the `<scxml sce:kind=\"enum\">` root element. Drives the per-kind body function's SCE-MAP marker."
+            },
+            "underlying_type": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/SceType"
+                }
+              ],
+              "description": "Underlying integer carrier — one of `uint8`/`uint16`/`uint32`/ `uint64`. α ships unsigned only per design RFC §8 F-ι (signed defers until a consumer needs negative wire values). The parser rejects non-unsigned-integer `sce:underlying-type` values with `validation/enum-unsupported-underlying-type`."
+            },
+            "variants": {
+              "description": "All variants in declaration order. Empty `variants` is rejected at parse time with `validation/enum-no-variants`.",
+              "items": {
+                "$ref": "#/definitions/EnumVariant"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "kind",
+            "name",
+            "underlying_type",
+            "variants"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -3240,6 +3319,13 @@
           "description": "Typed container with build-time-declared capacity but runtime-varying occupancy — watching-zenoh RFC §5.L lines 2540-2655. zenoh-pico parity (runtime subscription declare/undeclare + queryable + reassembly tables) requires this on MCU where heap is forbidden. Six-language emitter table per §5.J.5 (Rust `heapless::Vec<T, N>` / C11 slot+bitmap struct / Cpp `std::array<T, N>` + `std::bitset<N>` / Kotlin `Array<T?>` + `BooleanArray` / Go fixed-array + mask / Python list + bytearray mask). C6-α ships the schema + parse-time validators for the two structure-only codes (`collection/ordering-sorted-requires- index-by` + `collection/overflow-policy-oldest-wins-requires-ordering- insertion`); cross-doc element-type resolution + index-by-field verification + atomics-import check land in C6-β; deploy-time capacity resolution + 6-backend codegen land in C6-γ.",
           "enum": [
             "bounded_collection"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Closed set of named variants with 1:1 wire-key values — NL→IR Mapping Roadmap Item C1 Path A. Distinct from [`Self::Lookup`] (many-to-one dispatch) by the bijectivity invariant: each variant's `value` is unique within the document, and the generated typed enum carries that wire byte verbatim. Surface form is a top-level `<scxml sce:kind=\"enum\" sce:underlying-type=\"<int>\">` document with one `<sce:variant name=\"…\" value=\"…\"/>` child per variant. Per-backend codegen lowers to `enum class : uint8_t` / `#[repr(u8)] enum` / `IntEnum` / etc. (Atomic 2, deferred — Atomic 1 is parse + IR only). Inline form (`<sce:enum>` as child of `<scxml>`) defers per design RFC §8 F-ζ.",
+          "enum": [
+            "enum"
           ],
           "type": "string"
         }
@@ -4424,22 +4510,39 @@
     },
     "SceType": {
       "description": "Canonical SCE type — used in `sce:type` attributes. Language-specific mappings are in the generator module (SRP).",
-      "enum": [
-        "uint8",
-        "uint16",
-        "uint32",
-        "uint64",
-        "int8",
-        "int16",
-        "int32",
-        "int64",
-        "float32",
-        "float64",
-        "bool",
-        "string",
-        "bytes"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "enum": [
+            "uint8",
+            "uint16",
+            "uint32",
+            "uint64",
+            "int8",
+            "int16",
+            "int32",
+            "int64",
+            "float32",
+            "float64",
+            "bool",
+            "string",
+            "bytes"
+          ],
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Enum-typed value drawn from an imported `sce:kind=\"enum\"` document — NL→IR Mapping Roadmap Item C1 Path A. Surface form `sce:type=\"enum:<alias>\"`. The lattice rule is: `Enum(E) ⊑ E.underlying_type` (e.g. `Enum(E) ⊑ Uint8` when E's `sce:underlying-type=\"uint8\"`), and cross-type comparison `Enum(E) == 0x11` lowers to the underlying integer comparison after cross-kind resolution. Per-backend codegen (Atomic 2) emits language-native typed enums (`enum class : uint8_t`, `#[repr(u8)] enum`, `IntEnum`, …). Atomic 1 scope: parse + IR only — `is_unsigned()` / `int_bit_width()` / etc. return `false` / `None` and callers that need the underlying type must resolve via the cross-kind binding pass first.",
+          "properties": {
+            "enum": {
+              "$ref": "#/definitions/EnumRef"
+            }
+          },
+          "required": [
+            "enum"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "ScxmlRemotePeerBinding": {
       "description": "SCE_MESH.md §9.6.2 wire-14/20 peer entry — a machine name paired with the author-selected deploy.yaml transport for the scxml-remote invoke channel. `transport` is `None` for same-device cross-partition peers that take the implicit shm fallback (today's only wired codegen path); `Some(<name>)` carries a cross-device declaration resolved from `machines.<parent>.bindings[\"#<peer>\"].transport`. Session 1 of the cross-device roll-out records the field on the model; Session 2 adds `connect_endpoint` so custom_tcp codegen has the peer's listen address available for the per-peer `CustomTcp::Client` ctor args.\n\n`connect_endpoint` mirrors `transport`: it is `Some` only when the peer actually needs an endpoint (currently custom_tcp only) AND the peer's device has `transports.custom_tcp.listen` declared in deploy.yaml; all other paths (shm, local, missing device config) keep it `None`. Stored unquoted — the template emits the quoted C++ string literal.",

@@ -802,7 +802,7 @@ temperature encoding `physical = raw * 0.5 - 40` Celsius for an
 
 ---
 
-## Appendix — `DiagnosticCode` index (310 codes)
+## Appendix — `DiagnosticCode` index (315 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -870,6 +870,11 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/cross-kind-field-not-found` | Validation |
 | `validation/cross-kind-type-mismatch` | Validation |
 | `validation/cross-kind-circular-dependency` | Validation |
+| `validation/enum-no-variants` | Validation |
+| `validation/enum-variant-duplicate-name` | Validation |
+| `validation/enum-variant-duplicate-value` | Validation |
+| `validation/enum-variant-value-overflows-underlying` | Validation |
+| `validation/enum-unsupported-underlying-type` | Validation |
 | `algorithm/local-shadows-param` | Validation |
 | `algorithm/lvalue-unsupported` | Validation |
 | `algorithm/return-missing` | Validation |

@@ -78,7 +78,12 @@ pub const fn kind_class(kind: ForgeKind) -> KindClass {
         // backends with language-builtin primitives (no MCU-specific
         // hardware constraint like DMA section/cache for BufferPool, no
         // cross-core atomics constraint like Worker). Generic class.
-        | ForgeKind::BoundedCollection => KindClass::Generic,
+        | ForgeKind::BoundedCollection
+        // NL→IR Item C1 Path A: Enum lowers to a backend-native typed
+        // enum on every language (`enum class : <int>` / `#[repr(<int>)]
+        // enum` / `IntEnum` / etc.) — no MCU-specific constraint.
+        // Generic class.
+        | ForgeKind::Enum => KindClass::Generic,
         // RFC §5.C / §5.J.4: Link is the first MCU-class kind.
         // Authoring it on cpp/kotlin/go/python raises
         // `codegen/mcu-class-kind-on-non-mcu-language` (existing A6
@@ -190,6 +195,13 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         // lines 2573-2575). All 6 backends emit; the γ chain entirely
         // closes the §5.L matrix.
         ForgeKind::BoundedCollection => true,
+        // NL→IR Item C1 Path A Atomic 1: Enum lives at IR-only level —
+        // no codegen template ships on any backend yet. Atomic 2 lands
+        // the 6-backend templates and flips this arm to `true` for all
+        // languages. Until then, `generator.rs` Enum dispatch arms
+        // route through the existing `TemplateMissing` outcome (per
+        // `lookup()` below).
+        ForgeKind::Enum => false,
     }
 }
 
