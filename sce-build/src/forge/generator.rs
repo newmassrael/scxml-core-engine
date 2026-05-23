@@ -621,6 +621,15 @@ pub(crate) fn cpp_type(ty: &SceType) -> &'static str {
         SceType::Bool => "bool",
         SceType::String => "std::string",
         SceType::Bytes => "std::vector<uint8_t>",
+        // NL→IR Item C1 Path A Atomic 1: `SceType::Enum` is gated to
+        // IR-only — Atomic 1 fixtures do not declare `enum:<alias>`
+        // outside the Enum document itself, so this arm is
+        // unreachable for the Atomic-1 codegen surface. Atomic 2
+        // resolves the imported enum's `underlying_type` via the
+        // import context and emits the qualified typed enum name.
+        // The `uint8_t` placeholder documents "an integer
+        // underneath" — never returned in practice on Atomic 1.
+        SceType::Enum(_) => "uint8_t",
     }
 }
 
@@ -662,6 +671,10 @@ pub(crate) fn c_type(ty: &SceType) -> &'static str {
         // numeric.
         SceType::String => "const char *",
         SceType::Bytes => "const uint8_t *",
+        // NL→IR Item C1 Path A: see `cpp_type`. Atomic 1 codegen never
+        // sees Enum on a non-Enum-doc field; Atomic 2 lands the
+        // underlying-type-resolved emission.
+        SceType::Enum(_) => "uint8_t",
     }
 }
 
@@ -701,6 +714,10 @@ pub(crate) fn kotlin_type(ty: &SceType) -> &'static str {
         SceType::Bool => "Boolean",
         SceType::String => "String",
         SceType::Bytes => "ByteArray",
+        // NL→IR Item C1 Path A: see `cpp_type`. Atomic 1 codegen never
+        // sees Enum on a non-Enum-doc field; Atomic 2 emits the
+        // qualified Kotlin enum class name.
+        SceType::Enum(_) => "Int",
     }
 }
 
@@ -732,6 +749,10 @@ pub(crate) fn rust_type(ty: &SceType) -> &'static str {
         SceType::Bool => "bool",
         SceType::String => "String",
         SceType::Bytes => "Vec<u8>",
+        // NL→IR Item C1 Path A: see `cpp_type`. Atomic 1 codegen never
+        // sees Enum on a non-Enum-doc field; Atomic 2 emits the
+        // qualified Rust enum path.
+        SceType::Enum(_) => "u8",
     }
 }
 
@@ -974,6 +995,16 @@ pub fn generate_cpp_with_imports_and_externs(
         ForgeDocument::BoundedCollection(m) => {
             render_bounded_collection_cpp(&env, m, imports, options)?
         }
+        // NL→IR Item C1 Path A Atomic 1: Enum is IR-only —
+        // `codegen_matrix::template_ships(Enum, *) = false` so
+        // `check()` at the entry of this `generate_cpp` short-
+        // circuits with `CodegenGenericKindBackendEmitMissing`
+        // before reaching this dispatch. Atomic 2 lands the C++
+        // template and flips the matrix arm to `true`.
+        ForgeDocument::Enum(_) => unreachable!(
+            "ForgeDocument::Enum never reaches forge codegen on Atomic 1 — \
+             codegen_matrix::check rejects with TemplateMissing"
+        ),
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -11125,6 +11156,11 @@ pub fn generate_kotlin_with_imports(
         ForgeDocument::BoundedCollection(m) => {
             render_bounded_collection_kotlin(&env, m, imports, options)?
         }
+        // NL→IR Item C1 Path A Atomic 1: see cpp dispatch.
+        ForgeDocument::Enum(_) => unreachable!(
+            "ForgeDocument::Enum never reaches forge codegen on Atomic 1 — \
+             codegen_matrix::check rejects with TemplateMissing"
+        ),
     };
 
     let filename = format!("{}.kt", filters::to_pascal_case(doc.name().to_string()));
@@ -11287,6 +11323,11 @@ pub fn generate_rust_with_imports_and_externs(
         ForgeDocument::BoundedCollection(m) => {
             render_bounded_collection_rust(&env, m, imports, options)?
         }
+        // NL→IR Item C1 Path A Atomic 1: see cpp dispatch.
+        ForgeDocument::Enum(_) => unreachable!(
+            "ForgeDocument::Enum never reaches forge codegen on Atomic 1 — \
+             codegen_matrix::check rejects with TemplateMissing"
+        ),
     };
 
     let filename = format!("{}.rs", filters::to_snake_case(doc.name().to_string()));
@@ -12661,6 +12702,10 @@ pub(crate) fn go_type(ty: &SceType) -> &'static str {
         SceType::Bool => "bool",
         SceType::String => "string",
         SceType::Bytes => "[]byte",
+        // NL→IR Item C1 Path A: see `cpp_type`. Atomic 1 codegen never
+        // sees Enum on a non-Enum-doc field; Atomic 2 emits the
+        // qualified Go enum type name.
+        SceType::Enum(_) => "uint8",
     }
 }
 
@@ -12757,6 +12802,11 @@ pub fn generate_go_with_imports(
         ForgeDocument::BoundedCollection(m) => {
             render_bounded_collection_go(&env, m, imports, options)?
         }
+        // NL→IR Item C1 Path A Atomic 1: see cpp dispatch.
+        ForgeDocument::Enum(_) => unreachable!(
+            "ForgeDocument::Enum never reaches forge codegen on Atomic 1 — \
+             codegen_matrix::check rejects with TemplateMissing"
+        ),
     };
 
     let filename = format!("{}.go", filters::to_snake_case(doc.name().to_string()));
@@ -12813,6 +12863,10 @@ pub(crate) fn python_type(ty: &SceType) -> &'static str {
         SceType::Bool => "bool",
         SceType::String => "str",
         SceType::Bytes => "bytes",
+        // NL→IR Item C1 Path A: see `cpp_type`. Atomic 1 codegen never
+        // sees Enum on a non-Enum-doc field; Atomic 2 emits the
+        // qualified Python IntEnum name.
+        SceType::Enum(_) => "int",
     }
 }
 
@@ -12903,6 +12957,11 @@ pub fn generate_python_with_imports(
         ForgeDocument::BoundedCollection(m) => {
             render_bounded_collection_python(&env, m, imports, options)?
         }
+        // NL→IR Item C1 Path A Atomic 1: see cpp dispatch.
+        ForgeDocument::Enum(_) => unreachable!(
+            "ForgeDocument::Enum never reaches forge codegen on Atomic 1 — \
+             codegen_matrix::check rejects with TemplateMissing"
+        ),
     };
 
     let filename = format!("{}.py", filters::to_snake_case(doc.name().to_string()));
@@ -13056,6 +13115,11 @@ pub fn generate_c11_with_imports_and_externs(
         ForgeDocument::BoundedCollection(m) => {
             render_bounded_collection_c(&env, m, imports, options)?
         }
+        // NL→IR Item C1 Path A Atomic 1: see cpp dispatch.
+        ForgeDocument::Enum(_) => unreachable!(
+            "ForgeDocument::Enum never reaches forge codegen on Atomic 1 — \
+             codegen_matrix::check rejects with TemplateMissing"
+        ),
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -14858,6 +14922,11 @@ fn kotlin_default(ty: &SceType) -> &'static str {
         SceType::Bool => "false",
         SceType::String => "\"\"",
         SceType::Bytes => "byteArrayOf()",
+        // NL→IR Item C1 Path A: Atomic 1 codegen never sees Enum
+        // (gated by codegen_matrix); the `"0"` placeholder documents
+        // the integer-underneath nature without claiming a typed
+        // emission.
+        SceType::Enum(_) => "0",
     }
 }
 
@@ -14870,6 +14939,8 @@ fn rust_default(ty: &SceType) -> &'static str {
         SceType::Bool => "false",
         SceType::String => "String::new()",
         SceType::Bytes => "Vec::new()",
+        // NL→IR Item C1 Path A: see `kotlin_default`.
+        SceType::Enum(_) => "0",
     }
 }
 
@@ -14882,6 +14953,8 @@ fn python_default(ty: &SceType) -> &'static str {
         SceType::Bool => "False",
         SceType::String => "\"\"",
         SceType::Bytes => "b\"\"",
+        // NL→IR Item C1 Path A: see `kotlin_default`.
+        SceType::Enum(_) => "0",
     }
 }
 
@@ -19371,6 +19444,9 @@ fn kotlin_array_type(elem: &SceType) -> &'static str {
         SceType::Float64 => "DoubleArray",
         SceType::Bool => "BooleanArray",
         SceType::String | SceType::Bytes => "Array<Any>",
+        // NL→IR Item C1 Path A: enum array elements would emit
+        // `Array<EnumName>` (Atomic 2); Atomic 1 placeholder.
+        SceType::Enum(_) => "Array<Any>",
     }
 }
 
@@ -19393,6 +19469,8 @@ fn kotlin_array_factory(elem: &SceType) -> &'static str {
         SceType::Float64 => "doubleArrayOf",
         SceType::Bool => "booleanArrayOf",
         SceType::String | SceType::Bytes => "arrayOf",
+        // NL→IR Item C1 Path A: see `kotlin_array_type`.
+        SceType::Enum(_) => "arrayOf",
     }
 }
 

@@ -476,6 +476,7 @@ fn parse_forge_from_node(
         ForgeKind::BoundedCollection => {
             parse_bounded_collection(root, label).map(ForgeDocument::BoundedCollection)
         }
+        ForgeKind::Enum => parse_enum(root, label).map(ForgeDocument::Enum),
         ForgeKind::Statechart => Err(located(
             root,
             label.diagnostic_label,
@@ -742,6 +743,257 @@ fn parse_lookup(
         output,
         entries,
         miss_policy,
+        source_location: forge_source_location_of(root, label.diagnostic_label),
+    })
+}
+
+// ── Enum parsing (NL→IR Item C1 Path A) ──────────────────────
+
+/// Parse an `sce:kind="enum"` document into an [`EnumModel`].
+///
+/// Shape (design RFC §2.1):
+/// ```xml
+/// <scxml sce:kind="enum" name="result" sce:underlying-type="uint8">
+///   <datamodel>
+///     <data id="variants">
+///       <sce:variant name="ok"      value="0"/>
+///       <sce:variant name="error"   value="1"/>
+///       <sce:variant name="timeout" value="2"/>
+///     </data>
+///   </datamodel>
+/// </scxml>
+/// ```
+///
+/// Parse-time invariants (each maps to a `DiagnosticCode`):
+///   * `sce:underlying-type` present and one of `uint8`/`uint16`/`uint32`/
+///     `uint64` — `validation/enum-unsupported-underlying-type` otherwise
+///   * At least one `<sce:variant>` declared — `validation/enum-no-variants`
+///     when empty
+///   * Variant `name`s unique within the document —
+///     `validation/enum-variant-duplicate-name`
+///   * Variant `value`s unique within the document (the bijectivity
+///     invariant that distinguishes Enum from Lookup) —
+///     `validation/enum-variant-duplicate-value`
+///   * Each variant value fits in the declared underlying type —
+///     `validation/enum-variant-value-overflows-underlying`
+fn parse_enum(
+    root: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+) -> Result<EnumModel, Located<ForgeError>> {
+    // 1. sce:underlying-type attribute — required, must be one of the
+    //    four supported unsigned-integer carriers.
+    let declared = root
+        .attribute((SCE_NAMESPACE, "underlying-type"))
+        .ok_or_else(|| {
+            located(
+                root,
+                label.diagnostic_label,
+                ValidationError::MissingAttribute {
+                    element: "<scxml sce:kind=\"enum\">".into(),
+                    attr: "sce:underlying-type".into(),
+                },
+            )
+        })?
+        .trim()
+        .to_string();
+    let underlying_type = match SceType::from_attr(&declared) {
+        Some(t)
+            if matches!(
+                t,
+                SceType::Uint8 | SceType::Uint16 | SceType::Uint32 | SceType::Uint64
+            ) =>
+        {
+            t
+        }
+        _ => {
+            return Err(located(
+                root,
+                label.diagnostic_label,
+                ValidationError::EnumUnsupportedUnderlyingType {
+                    name: label.identifier.to_string(),
+                    declared,
+                },
+            ));
+        }
+    };
+
+    // Bit-width-aware ceiling for the overflow check below. Each
+    // unsigned carrier has a deterministic maximum; non-unsigned
+    // types are already rejected above.
+    let max_value: u64 = match underlying_type {
+        SceType::Uint8 => u8::MAX as u64,
+        SceType::Uint16 => u16::MAX as u64,
+        SceType::Uint32 => u32::MAX as u64,
+        SceType::Uint64 => u64::MAX,
+        _ => unreachable!("Unsupported underlying type passed through gate"),
+    };
+
+    // 2. <datamodel> is the host for the <data id="variants"> wrapper
+    //    that holds the <sce:variant> elements. Mirrors the same
+    //    structural shape Lookup uses for <sce:entry>.
+    let datamodel = find_child(root, "datamodel").ok_or_else(|| {
+        located(
+            root,
+            label.diagnostic_label,
+            ValidationError::MissingElement {
+                kind: ForgeKind::Enum,
+                element: "datamodel".into(),
+            },
+        )
+    })?;
+
+    // 3. Walk every <data> child and collect any <sce:variant> children
+    //    underneath. Authors may organise variants under any <data>
+    //    wrapper (the conventional `id="variants"` is documentation,
+    //    not load-bearing on the IR).
+    let mut variants: Vec<EnumVariant> = Vec::new();
+    let mut seen_names: std::collections::BTreeMap<String, ()> = std::collections::BTreeMap::new();
+    // first_value_seen carries (value -> first variant name) so the
+    // duplicate-value diagnostic names both colliding variants.
+    let mut first_value_seen: std::collections::BTreeMap<u64, String> =
+        std::collections::BTreeMap::new();
+
+    for data in data_children(&datamodel) {
+        for child in data.children().filter(|n| n.is_element()) {
+            if child.tag_name().name() != "variant"
+                || child.tag_name().namespace() != Some(SCE_NAMESPACE)
+            {
+                continue;
+            }
+            let name = child
+                .attribute("name")
+                .ok_or_else(|| {
+                    located(
+                        &child,
+                        label.diagnostic_label,
+                        ValidationError::MissingAttribute {
+                            element: "<sce:variant>".into(),
+                            attr: "name".into(),
+                        },
+                    )
+                })?
+                .trim()
+                .to_string();
+            if name.is_empty() {
+                return Err(located(
+                    &child,
+                    label.diagnostic_label,
+                    ValidationError::EmptyValue {
+                        element: "<sce:variant>".into(),
+                        attr: "name".into(),
+                    },
+                ));
+            }
+            let value_str = child
+                .attribute("value")
+                .ok_or_else(|| {
+                    located(
+                        &child,
+                        label.diagnostic_label,
+                        ValidationError::MissingAttribute {
+                            element: "<sce:variant>".into(),
+                            attr: "value".into(),
+                        },
+                    )
+                })?
+                .trim()
+                .to_string();
+            // Accept decimal + hex (`0x` prefix) per the same loose
+            // grammar Lookup keys allow. u64 parse with manual hex
+            // branch so the diagnostic anchors at NumericParse on
+            // either form.
+            let value: u64 = if let Some(hex) = value_str
+                .strip_prefix("0x")
+                .or_else(|| value_str.strip_prefix("0X"))
+            {
+                u64::from_str_radix(hex, 16).map_err(|_| {
+                    located(
+                        &child,
+                        label.diagnostic_label,
+                        ValidationError::NumericParse {
+                            element: "<sce:variant>".into(),
+                            attr: "value".into(),
+                            value: value_str.clone(),
+                            detail: "expected unsigned integer (decimal or 0x-prefixed hex)".into(),
+                        },
+                    )
+                })?
+            } else {
+                value_str.parse::<u64>().map_err(|_| {
+                    located(
+                        &child,
+                        label.diagnostic_label,
+                        ValidationError::NumericParse {
+                            element: "<sce:variant>".into(),
+                            attr: "value".into(),
+                            value: value_str.clone(),
+                            detail: "expected unsigned integer (decimal or 0x-prefixed hex)".into(),
+                        },
+                    )
+                })?
+            };
+
+            if seen_names.insert(name.clone(), ()).is_some() {
+                return Err(located(
+                    &child,
+                    label.diagnostic_label,
+                    ValidationError::EnumVariantDuplicateName {
+                        enum_name: label.identifier.to_string(),
+                        name,
+                    },
+                ));
+            }
+
+            if value > max_value {
+                return Err(located(
+                    &child,
+                    label.diagnostic_label,
+                    ValidationError::EnumVariantValueOverflowsUnderlying {
+                        enum_name: label.identifier.to_string(),
+                        variant_name: name,
+                        value,
+                        underlying: declared.clone(),
+                    },
+                ));
+            }
+
+            if let Some(first_name) = first_value_seen.get(&value) {
+                return Err(located(
+                    &child,
+                    label.diagnostic_label,
+                    ValidationError::EnumVariantDuplicateValue {
+                        enum_name: label.identifier.to_string(),
+                        value,
+                        first_name: first_name.clone(),
+                        second_name: name,
+                    },
+                ));
+            }
+
+            let source_line = Some(child.document().text_pos_at(child.range().start).row);
+            first_value_seen.insert(value, name.clone());
+            variants.push(EnumVariant {
+                name,
+                value,
+                source_line,
+            });
+        }
+    }
+
+    if variants.is_empty() {
+        return Err(located(
+            &datamodel,
+            label.diagnostic_label,
+            ValidationError::EnumNoVariants {
+                name: label.identifier.to_string(),
+            },
+        ));
+    }
+
+    Ok(EnumModel {
+        name: label.identifier.to_string(),
+        underlying_type,
+        variants,
         source_location: forge_source_location_of(root, label.diagnostic_label),
     })
 }

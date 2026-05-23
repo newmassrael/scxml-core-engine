@@ -3117,6 +3117,94 @@ pub enum ValidationError {
         /// same document name. Length >= 2 by construction.
         cycle: Vec<String>,
     },
+
+    // ── NL→IR Item C1 Path A: Enum kind invariants ─────────────
+    /// Enum document declares no `<sce:variant>` children. Per
+    /// design RFC §2 (DL-3'), an enum must enumerate at least one
+    /// named variant — empty vocabularies have no codegen lowering.
+    ///
+    /// Wire code: `validation/enum-no-variants`.
+    #[error("enum '{name}': declares no <sce:variant> — at least one variant required")]
+    EnumNoVariants {
+        /// Document name (the kind's `name` attribute).
+        name: String,
+    },
+
+    /// Two variants in the same enum document share an identifier.
+    /// Variant names must be unique because authors reference
+    /// variants as `<EnumName>.<variant_name>` — a collision would
+    /// produce an ambiguous reference at the import site.
+    ///
+    /// Wire code: `validation/enum-variant-duplicate-name`.
+    #[error("enum '{enum_name}': duplicate variant name '{name}'")]
+    EnumVariantDuplicateName {
+        /// Owning enum document name.
+        enum_name: String,
+        /// The duplicate variant name (appears twice).
+        name: String,
+    },
+
+    /// Two variants in the same enum document share an underlying
+    /// integer value. Enum's bijectivity invariant: the inverse
+    /// function `variant → wire_byte` must be defined and total.
+    /// Path A's defining departure from Lookup is exactly this
+    /// invariant — see prescoping-reopen RFC §1.1.
+    ///
+    /// Wire code: `validation/enum-variant-duplicate-value`.
+    #[error(
+        "enum '{enum_name}': variants '{first_name}' and '{second_name}' both have value {value}"
+    )]
+    EnumVariantDuplicateValue {
+        /// Owning enum document name.
+        enum_name: String,
+        /// The shared underlying integer value.
+        value: u64,
+        /// Name of the first variant declared with this value.
+        first_name: String,
+        /// Name of the second variant attempting to reuse the value.
+        second_name: String,
+    },
+
+    /// A variant's declared `value` does not fit in the document's
+    /// `sce:underlying-type`. The per-variant overflow check
+    /// runs at parse time so authors see the diagnostic anchored at
+    /// the specific `<sce:variant>` element, not at downstream
+    /// import sites.
+    ///
+    /// Wire code: `validation/enum-variant-value-overflows-underlying`.
+    #[error(
+        "enum '{enum_name}' variant '{variant_name}': value {value} overflows underlying type '{underlying}'"
+    )]
+    EnumVariantValueOverflowsUnderlying {
+        /// Owning enum document name.
+        enum_name: String,
+        /// Variant carrying the overflowing value.
+        variant_name: String,
+        /// The numeric value as authored (parsed as u64).
+        value: u64,
+        /// The underlying-type spelling (e.g. `uint8`).
+        underlying: String,
+    },
+
+    /// `sce:underlying-type` declares a type that is not one of the
+    /// supported unsigned integer carriers (`uint8`/`uint16`/`uint32`/
+    /// `uint64`). α ships unsigned only per design RFC §8 F-ι;
+    /// signed-integer underlying types defer until a consumer needs
+    /// negative wire bytes. Non-integer types (string/bool/float) are
+    /// rejected unconditionally — enum variants need a fixed-width
+    /// integer carrier for wire round-tripping.
+    ///
+    /// Wire code: `validation/enum-unsupported-underlying-type`.
+    #[error(
+        "enum '{name}': sce:underlying-type='{declared}' is not supported \
+         (Path A α: uint8 | uint16 | uint32 | uint64)"
+    )]
+    EnumUnsupportedUnderlyingType {
+        /// Document name (the kind's `name` attribute).
+        name: String,
+        /// The author's literal attribute value.
+        declared: String,
+    },
 }
 
 /// watching-zenoh RFC §5.E B7-η' Atomic A2 callback-path failure
