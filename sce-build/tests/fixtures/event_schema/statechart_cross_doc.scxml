@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  NL→IR Item C1 positive fixture: statechart that imports the
+  cross-doc enum-bearing schema. The cond compares the enum-typed
+  `status` field against an integer literal — at Atomic A scope the
+  lattice rule `Enum(L) ⊑ <integer>` accepts this (cross-doc Lookup
+  key-width resolution defers to Atomic C; the Atomic A typecheck
+  passes any integer literal against an enum field).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="statechart_cross_doc"
+       version="1.0"
+       initial="waiting"
+       datamodel="ecmascript">
+  <sce:import src="schema_job_completed_with_enum.scxml" kind="event-schema" as="JobCompletedSchema"/>
+  <state id="waiting">
+    <transition event="job.completed" cond="_event.data.status === 0" target="ok"/>
+    <transition event="job.completed" cond="_event.data.status === 1" target="error_path"/>
+    <transition event="job.completed" cond="_event.data.elapsed_ms === 0" target="instant_done"/>
+  </state>
+  <state id="ok"/>
+  <state id="error_path"/>
+  <state id="instant_done"/>
+</scxml>

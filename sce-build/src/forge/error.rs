@@ -3117,6 +3117,27 @@ pub enum ValidationError {
         /// same document name. Length >= 2 by construction.
         cycle: Vec<String>,
     },
+
+    /// NL→IR Mapping Roadmap Item C1 (DL-9): an EventSchema document
+    /// declares `sce:event-name="<X>"` against an event name that is
+    /// reserved for the W3C SCXML platform (`error.*`,
+    /// `done.invoke.*`, `done.state.*`). The platform raises these
+    /// events with implementation-defined payload shape; an authored
+    /// schema cannot constrain them without contradicting the
+    /// platform contract. Wire code:
+    /// `validation/event-schema-on-builtin-event`. See
+    /// [`crate::forge::model::EventSchemaModel::BUILTIN_EVENT_PREFIXES`]
+    /// for the closed prefix set.
+    #[error(
+        "EventSchema cannot declare a schema for W3C built-in event '{event_name}' \
+         (reserved namespace: {})",
+        crate::forge::model::EventSchemaModel::BUILTIN_EVENT_PREFIXES.join(", ")
+    )]
+    EventSchemaOnBuiltinEvent {
+        /// Authored `sce:event-name` value that collides with a
+        /// reserved W3C namespace prefix.
+        event_name: String,
+    },
 }
 
 /// watching-zenoh RFC §5.E B7-η' Atomic A2 callback-path failure

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  NL→IR Item C1 positive fixture: statechart that imports the
+  minimal schema and reads `_event.data.elapsed_ms` in a transition
+  cond. The receive-side typecheck must accept the known field +
+  integer comparison.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="statechart_minimal"
+       version="1.0"
+       initial="waiting"
+       datamodel="ecmascript">
+  <sce:import src="schema_job_completed_minimal.scxml" kind="event-schema" as="JobCompletedSchema"/>
+  <state id="waiting">
+    <transition event="job.completed" cond="_event.data.elapsed_ms === 0" target="done"/>
+  </state>
+  <state id="done"/>
+</scxml>
