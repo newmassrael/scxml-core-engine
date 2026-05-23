@@ -556,7 +556,7 @@ pub enum DiagnosticCode {
     //    children that disagree on whether a given event is handled,
     //    with no parent-level fallthrough. Narrow heuristic (requires
     //    a shared event-vocabulary `common ground` across siblings)
-    //    keeps W3C IRP / conformance / hda4-diag at zero false
+    //    keeps W3C IRP / conformance / downstream-consumer at zero false
     //    positives; `sce:exhaustive="false"` on the parent escapes
     //    genuine intent-gap cases. NeutralOrDeterministic: repair is
     //    author-domain (add the transition, add a fallthrough, or
@@ -575,7 +575,7 @@ pub enum DiagnosticCode {
     //    rewrite, or reorder the transition). Language-prefixed
     //    conditions (`cpp:`, `kotlin:`, `rust:`) stay opaque to
     //    keep the false-positive surface at zero across the W3C
-    //    IRP / conformance / hda4-diag corpora. ───────────────────
+    //    IRP / conformance / downstream-consumer corpora. ──────────
     #[serde(rename = "scxml/always-false-guard")]
     ScxmlAlwaysFalseGuard,
     #[serde(rename = "scxml/shadowed-transition")]

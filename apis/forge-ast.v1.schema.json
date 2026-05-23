@@ -4509,7 +4509,7 @@
       "type": "object"
     },
     "SpecProvenance": {
-      "description": "Pointer to the source-of-truth specification document anchoring an IR node, requirement ID, or diagnostic.\n\nSCE never *infers* this — IR generators (hand-authored DSL, NL→IR pipeline, ARXML transcoder) populate it; SCE merely propagates it through model nodes and onto diagnostics. Absent `doc_id` means the producer did not record provenance.\n\nSCXML serialisation accepts two forms:\n\n- compact URI: `sce:provenance=\"ES95486-02@23#4.4.2\"` (`doc_id @ rev # section`; trailing `:page` optional after the section to carry a page number, e.g. `ES95486-02#4.4.2:118`) - child element: `<sce:provenance doc=\"...\" rev=\"...\" section=\"...\" page=\"...\"/>` (one or more allowed; element form lets one node anchor at multiple documents)",
+      "description": "Pointer to the source-of-truth specification document anchoring an IR node, requirement ID, or diagnostic.\n\nSCE never *infers* this — IR generators (hand-authored DSL, NL→IR pipeline, ARXML transcoder) populate it; SCE merely propagates it through model nodes and onto diagnostics. Absent `doc_id` means the producer did not record provenance.\n\nSCXML serialisation accepts two forms:\n\n- compact URI: `sce:provenance=\"OEM-SPEC-01@23#4.4.2\"` (`doc_id @ rev # section`; trailing `:page` optional after the section to carry a page number, e.g. `OEM-SPEC-01#4.4.2:118`) - child element: `<sce:provenance doc=\"...\" rev=\"...\" section=\"...\" page=\"...\"/>` (one or more allowed; element form lets one node anchor at multiple documents)",
       "properties": {
         "doc_id": {
           "type": "string"

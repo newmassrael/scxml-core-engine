@@ -190,8 +190,8 @@ pub enum ScxmlSemanticError {
     /// whether the gap is the author's intent or a typo.
     ///
     /// The validator is intentionally narrow to keep false positives
-    /// at zero across the W3C IRP, conformance, and hda4-diag
-    /// corpora: it fires only when the sibling children form a
+    /// at zero across the W3C IRP, conformance, and downstream
+    /// consumer corpora: it fires only when the sibling children form a
     /// shared event vocabulary (there exists at least one event
     /// matched by every transition-carrying sibling — the "common
     /// ground" precondition) AND a specific event is matched by some
