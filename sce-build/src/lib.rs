@@ -1945,32 +1945,16 @@ pub fn compile_scxml_with_imports(
     // precedent (no deploy ⇒ no cross-doc deploy-vs-forge to check).
     let mut link_models_for_xref: Vec<(String, forge::model::LinkModel)> = Vec::new();
     let mut pool_models_for_xref: Vec<(String, forge::model::BufferPoolModel)> = Vec::new();
-    // NL→IR Item C1 — EventSchemas keyed by file stem (doc name).
-    // Populated in pass-1 alongside the other forge-doc captures;
-    // consumed in pass-2 by `event_schema_check::resolve_imported_
-    // event_schemas` which projects per-statechart event-name views
-    // out of the build-wide registry based on each statechart's own
-    // `<sce:import kind="event-schema">` declarations.
-    //
-    // Atomic A originally keyed this map by event_name and rejected
-    // two schemas sharing one event_name as `validation/incompatible-
-    // attributes`. Atomic B (DL-7) relaxes that rule: under per-
-    // statechart import visibility, two machines on a mesh may
-    // legitimately declare different schemas for the same event name
-    // (e.g., during a rolling deploy with version skew) — and the
-    // cross-machine validator (`mesh::deploy::validate_event_schemas_
-    // cross_machine`) is the load-bearing rejection signal for any
-    // *actual* divergence. The per-statechart duplicate-event-name
-    // case (one statechart imports two schemas claiming the same
-    // event) is rejected separately in pass-2 against the imports'
-    // alias surface.
-    //
-    // Doc-name uniqueness across the build is already enforced by
-    // `cross_doc.record_document` above; the map's `insert` is safe
-    // (collisions unreachable). Doc-name keying lets the per-
-    // statechart resolver follow each import's `src` file stem to
-    // the exact schema document the author named.
-    let mut event_schemas_by_doc_name: std::collections::BTreeMap<
+    // NL→IR Item C1: EventSchemas keyed by SCXML event name. Populated
+    // in pass-1 alongside the other forge-doc captures; consumed by
+    // `event_schema_check::check` after pass-2 statechart parsing so the
+    // receive-side typecheck can resolve `_event.data.<field>` against
+    // the schema declared for the transition's `event` attribute.
+    // Duplicate event-name reuses the existing
+    // `validation/incompatible-attributes` shape (one event ⇒ one
+    // schema; two schemas for the same event create receive-side
+    // ambiguity).
+    let mut event_schemas_for_check: std::collections::BTreeMap<
         String,
         forge::model::EventSchemaModel,
     > = std::collections::BTreeMap::new();
@@ -2087,20 +2071,33 @@ pub fn compile_scxml_with_imports(
                 element_type_candidates.insert(key, doc);
             }
             forge::model::ForgeDocument::EventSchema(schema) => {
-                // NL→IR Item C1 (DL-7) — capture EventSchemas by their
-                // doc name (file stem) so the per-statechart resolver
-                // can follow each `<sce:import src="X.scxml">` to the
-                // exact schema document the author named. Doc-name
-                // uniqueness was already enforced by
-                // `cross_doc.record_document` above, so insertion is
-                // safe (collisions structurally unreachable). The
-                // legacy event-name dedup rejection is retired: two
-                // machines on a mesh may legitimately declare
-                // different schemas for the same event name, and the
-                // cross-machine validator surfaces the divergence as
-                // `mesh/event-schema-mismatch` only when an actual
-                // cross-machine send is affected.
-                event_schemas_by_doc_name.insert(schema.name.clone(), schema);
+                // NL→IR Item C1: capture schemas by SCXML event name for
+                // the receive-side typecheck pass. Two schemas declaring
+                // the same `sce:event-name` would create receive-side
+                // ambiguity (the validator could not decide which field
+                // set to enforce on `_event.data` for that event name),
+                // so reject the collision before pass-2 wires statechart
+                // models against the map.
+                if let Some(prev) = event_schemas_for_check.get(&schema.event_name) {
+                    let prev_name = prev.name.clone();
+                    let new_name = schema.name.clone();
+                    let event_name = schema.event_name.clone();
+                    return Err(Located::new(
+                        forge::error::ValidationError::IncompatibleAttributes {
+                            element: format!("EventSchema '{new_name}'"),
+                            detail: format!(
+                                "sce:event-name='{event_name}' already declared by EventSchema '{prev_name}' — \
+                                 one schema per event name is required so the receive-side \
+                                 typecheck has a single source of truth for `_event.data`"
+                            ),
+                        }
+                        .into(),
+                        basename,
+                        None,
+                        None,
+                    ));
+                }
+                event_schemas_for_check.insert(schema.event_name.clone(), schema);
             }
             _ => {}
         }
@@ -2153,39 +2150,21 @@ pub fn compile_scxml_with_imports(
         parser::validate_on_sample_link_references(model, &cross_doc, &pool_reg, basename)?;
     }
 
-    // ── NL→IR Item C1 EventSchema receive-side + send-side typecheck ──
+    // ── NL→IR Item C1 EventSchema receive-side typecheck ──
     //
-    // Receive-side (Atomic A): walks every parsed statechart's
-    // transition `cond` expressions for `_event.data.<field>`
-    // member-access patterns and verifies the field against the
-    // schema declared for that transition's event.
-    //
-    // Send-side (Atomic B, DL-4): walks every `<send event="X">` /
-    // `<raise event="X">` (inside transition `actions`, `<onentry>`,
-    // `<onexit>`, initial-transition + history-default sequences,
-    // and nested `<if>` / `<foreach>` bodies) and verifies each
-    // `<param name="F" expr="...">` against the schema's declared
-    // field surface.
-    //
-    // Both passes run after pass-1 capture
-    // (`event_schemas_by_doc_name` populated) and after pass-2 SCXML
-    // parsing (`scxml_models` populated). Atomic B replaces the
-    // legacy single-global-event-name-keyed map with a per-statechart
-    // resolver that walks each SCXML's `<sce:import>` declarations to
-    // determine which schemas are in-scope for THIS document — so a
-    // statechart that does not declare any event-schema imports keeps
-    // the dynamic `_event.data` baseline even when other statecharts
-    // in the same build declare schemas. Failure short-circuits
+    // Walks every parsed statechart's transition `cond` expressions
+    // for `_event.data.<field>` member-access patterns and verifies
+    // the field against the schema declared for that transition's
+    // event. Runs after pass-1 capture (`event_schemas_for_check`
+    // populated) and after pass-2 SCXML parsing (`scxml_models`
+    // populated). Schemaless events keep the existing dynamic-payload
+    // baseline silently per DL-9 fallback (the validator no-ops when
+    // the transition's event has no schema). Failure short-circuits
     // codegen pass-3, matching the worker outbox + BC cross-doc
     // pattern.
     for (path, model) in &scxml_models {
         let basename = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-        let per_doc_schemas = forge::event_schema_check::resolve_imported_event_schemas(
-            model,
-            &event_schemas_by_doc_name,
-        );
-        forge::event_schema_check::check(model, &per_doc_schemas, basename)?;
-        forge::event_schema_check::check_send_side(model, &per_doc_schemas, basename)?;
+        forge::event_schema_check::check(model, &event_schemas_for_check, basename)?;
     }
 
     // ── C2 follow-up Atomic B outbox cross-resolution ──
