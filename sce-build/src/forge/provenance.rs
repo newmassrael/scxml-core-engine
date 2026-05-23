@@ -322,6 +322,7 @@ fn forge_doc_provenance(doc: &ForgeDocument) -> (&'static str, &str, &Option<Sou
             &m.name,
             &m.source_location,
         ),
+        ForgeDocument::Enum(m) => ("<scxml sce:kind=\"enum\">", &m.name, &m.source_location),
     }
 }
 

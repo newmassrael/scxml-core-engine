@@ -55,7 +55,27 @@
       <xs:enumeration value="worker"/>
       <!-- watching-zenoh RFC §5.L (Phase C6, Generic-class) -->
       <xs:enumeration value="bounded-collection"/>
+      <!-- NL→IR Item C1 Path A — Closed set of named variants with
+           1:1 wire-key values. Distinct from `lookup` by the
+           bijectivity invariant on variant values. -->
+      <xs:enumeration value="enum"/>
     </xs:restriction>
+  </xs:simpleType>
+
+  <!-- NL→IR Mapping Roadmap Item C1 Path A — `sce:type` accepts
+       primitive `sceType` values plus the `enum:<alias>` pattern
+       referring to an imported `sce:kind="enum"` document. The
+       pattern is the lexically authored token; cross-doc resolution
+       against the document's `<sce:import>` table happens in the
+       cross-kind binding pass, not at XSD validation time. -->
+  <xs:simpleType name="sceTypeOrEnumRef">
+    <xs:union memberTypes="sce:sceType">
+      <xs:simpleType>
+        <xs:restriction base="xs:string">
+          <xs:pattern value="enum:[A-Za-z_][A-Za-z0-9_]*"/>
+        </xs:restriction>
+      </xs:simpleType>
+    </xs:union>
   </xs:simpleType>
 
   <!-- SCE Forge Section 3.3: Cross-language type system -->
@@ -169,9 +189,22 @@
   <!-- Section 3.2: Kind selector — on <scxml> root or <data> elements -->
   <xs:attribute name="kind" type="sce:kindType"/>
 
-  <!-- Section 3.3: Common data attributes — on <data> elements -->
-  <xs:attribute name="type" type="sce:sceType"/>
+  <!-- Section 3.3: Common data attributes — on <data> elements.
+       NL→IR Item C1 Path A: accepts primitive `sceType` values plus
+       the `enum:<alias>` pattern. Codec / lookup / etc. parsers
+       reject the enum form at parse time when the surrounding kind
+       does not support it; the wider XSD union keeps the global
+       attribute declaration valid for the kinds that do. -->
+  <xs:attribute name="type" type="sce:sceTypeOrEnumRef"/>
   <xs:attribute name="direction" type="sce:directionType"/>
+
+  <!-- NL→IR Item C1 Path A — `sce:underlying-type` on a
+       `sce:kind="enum"` `<scxml>` root names the integer carrier
+       (uint8/uint16/uint32/uint64) for the document's variant
+       values. Free-form `sceType` at the XSD layer; α restricts to
+       unsigned ints at parse time (see
+       `validation/enum-unsupported-underlying-type`). -->
+  <xs:attribute name="underlying-type" type="sce:sceType"/>
   <xs:attribute name="unit" type="xs:string"/>
   <xs:attribute name="default" type="xs:string"/>
   <xs:attribute name="input" type="xs:string"/>
@@ -436,6 +469,7 @@
     </xs:complexType>
   </xs:element>
 
+
   <!-- Section 4.6: Codec field definition with byte layout -->
   <xs:element name="field">
     <xs:complexType>
@@ -493,7 +527,7 @@
     </xs:complexType>
   </xs:element>
 
-  <!-- `<sce:variant>` serves two distinct purposes by host kind:
+  <!-- `<sce:variant>` serves three distinct purposes by host kind:
 
        1. **Codec discriminated-union suffix (RFC §5.B B1-β / Y3-2b-ii)**
           Inside `<datamodel>` of `<scxml sce:kind="codec">` — carries
@@ -505,14 +539,19 @@
           plain text content `reassembly` (or `default`). Parser
           `parse_buffer_pool` enforces the closed enum + the three
           reassembly-only sibling elements.
+       3. **Enum variant declaration (NL→IR Item C1 Path A Atomic 1)**
+          Child of `<data>` inside `<scxml sce:kind="enum">` — carries
+          `name` + `value` attributes. Parser `parse_enum` enforces
+          the bijectivity invariant on `value` and uniqueness on `name`.
 
-       The two contexts have disjoint surrounding scopes so there is no
-       parse-time ambiguity. The XSD relaxes the global element type
-       to permit BOTH shapes — `mixed="true"` for text content, `tag`
+       The three contexts have disjoint surrounding scopes so there is
+       no parse-time ambiguity. The XSD relaxes the global element type
+       to permit ALL shapes — `mixed="true"` for text content, every
        attribute optional. The XSD remains a structural-only gate;
        semantic enforcement (codec's required `tag` + arms, buffer-
-       pool's closed enum value + required siblings) is the parser's
-       responsibility per `[[feedback-spec-mirror-parity]]`. -->
+       pool's closed enum value + required siblings, enum's required
+       `name` + `value` pair) is the parser's responsibility per
+       `[[feedback-spec-mirror-parity]]`. -->
   <xs:element name="variant">
     <xs:complexType mixed="true">
       <xs:sequence>
@@ -555,6 +594,13 @@
            no `tag`) passes; `parse_buffer_pool` enforces the closed
            enum value. -->
       <xs:attribute name="tag" type="xs:string" use="optional"/>
+      <!-- NL→IR Item C1 Path A — Enum variant attributes. `name` is
+           the source-level identifier authors reference as
+           `<EnumName>.<variant>`; `value` is the wire byte (decimal
+           or 0x-prefixed hex). Both optional at the XSD layer; the
+           enum-kind parser requires both. -->
+      <xs:attribute name="name" type="xs:string" use="optional"/>
+      <xs:attribute name="value" type="xs:string" use="optional"/>
     </xs:complexType>
   </xs:element>
 

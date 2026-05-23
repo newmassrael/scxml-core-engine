@@ -897,6 +897,15 @@ fn coerce_to_const(value: EvalValue, ty: &SceType) -> Result<ConstValue, ConstFo
             expected: ty.clone(),
             actual: "scalar fold yield".to_string(),
         }),
+        // NL→IR Item C1 Path A: enum-typed array elements would
+        // require resolving the imported enum's variants — out of
+        // scope for the scalar const-fold path. Authors using enum
+        // element types reach this only via misconfiguration; the
+        // explicit error keeps the match exhaustive.
+        (_, Enum(_)) => Err(ConstFoldKind::YieldTypeMismatch {
+            expected: ty.clone(),
+            actual: "scalar fold yield".to_string(),
+        }),
     }
 }
 

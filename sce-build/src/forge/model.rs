@@ -138,6 +138,18 @@ pub enum ForgeKind {
     /// verification + atomics-import check land in C6-β; deploy-time
     /// capacity resolution + 6-backend codegen land in C6-γ.
     BoundedCollection,
+    /// Closed set of named variants with 1:1 wire-key values — NL→IR
+    /// Mapping Roadmap Item C1 Path A. Distinct from [`Self::Lookup`]
+    /// (many-to-one dispatch) by the bijectivity invariant: each
+    /// variant's `value` is unique within the document, and the
+    /// generated typed enum carries that wire byte verbatim. Surface
+    /// form is a top-level `<scxml sce:kind="enum" sce:underlying-type="<int>">`
+    /// document with one `<sce:variant name="…" value="…"/>` child per
+    /// variant. Per-backend codegen lowers to `enum class : uint8_t`
+    /// / `#[repr(u8)] enum` / `IntEnum` / etc. (Atomic 2, deferred —
+    /// Atomic 1 is parse + IR only). Inline form (`<sce:enum>` as
+    /// child of `<scxml>`) defers per design RFC §8 F-ζ.
+    Enum,
 }
 
 impl ForgeKind {
@@ -162,6 +174,7 @@ impl ForgeKind {
         "buffer-pool",
         "worker",
         "bounded-collection",
+        "enum",
     ];
 
     /// Parse from `sce:kind` attribute value. Returns `None` for unknown kinds.
@@ -183,6 +196,7 @@ impl ForgeKind {
             "buffer-pool" => Some(Self::BufferPool),
             "worker" => Some(Self::Worker),
             "bounded-collection" => Some(Self::BoundedCollection),
+            "enum" => Some(Self::Enum),
             _ => None,
         }
     }
@@ -238,6 +252,11 @@ impl ForgeKind {
             // The slot table, occupancy mask, and generation counters
             // are instance state of the generated struct.
             Self::BoundedCollection => true,
+            // NL→IR Item C1 Path A: Enum is a typed vocabulary
+            // declaration — codegen emits a type definition
+            // (`enum class` / `#[repr] enum` / `IntEnum` / etc.) not
+            // a struct instance. No runtime state.
+            Self::Enum => false,
         }
     }
 
@@ -288,6 +307,9 @@ impl ForgeKind {
             // (§6.2.6) is codegen-time, not a runtime helper. Tier
             // `None` matches BufferPool's stance.
             Self::BoundedCollection => RuntimeDep::None,
+            // NL→IR Item C1 Path A: Enum lowers to a pure type
+            // declaration per backend — no helper crate dependency.
+            Self::Enum => RuntimeDep::None,
         }
     }
 
@@ -311,6 +333,7 @@ impl ForgeKind {
                 | Self::BufferPool
                 | Self::Worker
                 | Self::BoundedCollection
+                | Self::Enum
         )
     }
 }
@@ -334,11 +357,34 @@ impl std::fmt::Display for ForgeKind {
             Self::BufferPool => write!(f, "buffer-pool"),
             Self::Worker => write!(f, "worker"),
             Self::BoundedCollection => write!(f, "bounded-collection"),
+            Self::Enum => write!(f, "enum"),
         }
     }
 }
 
 // ── Cross-language type system ─────────────────────────────────
+
+/// Reference to an imported `sce:kind="enum"` document, carried as the
+/// payload of [`SceType::Enum`]. NL→IR Mapping Roadmap Item C1 Path A:
+/// fields may declare `sce:type="enum:<alias>"`, which parses into
+/// `SceType::Enum(EnumRef { alias: "<alias>".into() })`. The alias is
+/// resolved against the surrounding document's `<sce:import>` table by
+/// the cross-kind binding pass so the underlying integer type can be
+/// looked up at validation / codegen time.
+///
+/// `EnumRef` is a named struct rather than a bare `String` so future
+/// extensions (cached resolved underlying type, source-line tracking
+/// for the `enum:` token, etc.) can be added without churning every
+/// callsite that pattern-matches `SceType::Enum`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct EnumRef {
+    /// Import alias declared on the surrounding document's
+    /// `<sce:import alias="…">` element. Cross-kind binding pass
+    /// resolves this against the imports table to find the underlying
+    /// [`EnumModel`] and consult its `underlying_type`.
+    pub alias: String,
+}
 
 /// Canonical SCE type — used in `sce:type` attributes.
 /// Language-specific mappings are in the generator module (SRP).
@@ -359,10 +405,39 @@ pub enum SceType {
     Bool,
     String,
     Bytes,
+    /// Enum-typed value drawn from an imported `sce:kind="enum"`
+    /// document — NL→IR Mapping Roadmap Item C1 Path A. Surface form
+    /// `sce:type="enum:<alias>"`. The lattice rule is:
+    /// `Enum(E) ⊑ E.underlying_type` (e.g. `Enum(E) ⊑ Uint8` when E's
+    /// `sce:underlying-type="uint8"`), and cross-type comparison
+    /// `Enum(E) == 0x11` lowers to the underlying integer comparison
+    /// after cross-kind resolution. Per-backend codegen (Atomic 2)
+    /// emits language-native typed enums (`enum class : uint8_t`,
+    /// `#[repr(u8)] enum`, `IntEnum`, …). Atomic 1 scope: parse +
+    /// IR only — `is_unsigned()` / `int_bit_width()` / etc. return
+    /// `false` / `None` and callers that need the underlying type
+    /// must resolve via the cross-kind binding pass first.
+    #[serde(rename = "enum")]
+    Enum(EnumRef),
 }
 
 impl SceType {
     pub fn from_attr(s: &str) -> Option<Self> {
+        // NL→IR Item C1 Path A: `sce:type="enum:<alias>"` parses to
+        // `SceType::Enum(EnumRef { alias })`. The alias must be
+        // non-empty; whitespace-only or empty payloads return None
+        // here so the diagnostic surfaces as "unknown sce:type" rather
+        // than as a downstream import-resolution failure with no
+        // alias to dereference.
+        if let Some(alias) = s.strip_prefix("enum:") {
+            let alias = alias.trim();
+            if alias.is_empty() {
+                return None;
+            }
+            return Some(Self::Enum(EnumRef {
+                alias: alias.to_string(),
+            }));
+        }
         match s {
             "uint8" => Some(Self::Uint8),
             "uint16" => Some(Self::Uint16),
@@ -600,6 +675,76 @@ impl LookupModel {
         }
         map.into_iter().collect()
     }
+}
+
+// ── Enum kind (NL→IR Item C1 Path A) ──────────────────────────
+
+/// A single named variant in an `sce:kind="enum"` document. Each variant
+/// pairs a `name` (the source-level identifier authors reference as
+/// `<EnumName>.<variant>`) with a `value` (the wire byte authors author
+/// as the `value` attribute, parsed as an unsigned integer per the
+/// declaring document's `sce:underlying-type`). Validation invariants
+/// land at parse time:
+///   * variant `name` must be unique within the document
+///   * variant `value` must be unique within the document (bijectivity)
+///   * variant `value` must fit within the declared `underlying_type`
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct EnumVariant {
+    pub name: String,
+    /// Parsed numeric value of the variant. Stored as `u64` so any
+    /// declared `underlying_type` (uint8 → uint64) fits without
+    /// per-variant tagging; the document-level `underlying_type` is
+    /// the size-of-record.
+    pub value: u64,
+    /// Source line of the `<sce:variant>` element, captured for
+    /// duplicate-value / duplicate-name / overflow diagnostics that
+    /// anchor on the specific variant. `#[serde(skip)]` keeps the
+    /// AST-export wire format stable.
+    #[serde(skip, default)]
+    pub source_line: Option<u32>,
+}
+
+/// Enum: a closed set of named variants with 1:1 wire-key mapping —
+/// NL→IR Mapping Roadmap Item C1 Path A. Distinct from
+/// [`LookupModel`] (many-to-one dispatch table) by the bijectivity
+/// invariant on `variants[i].value`. Surface form:
+///
+/// ```xml
+/// <scxml sce:kind="enum" name="result" sce:underlying-type="uint8">
+///   <datamodel>
+///     <data id="variants">
+///       <sce:variant name="ok"      value="0"/>
+///       <sce:variant name="error"   value="1"/>
+///       <sce:variant name="timeout" value="2"/>
+///     </data>
+///   </datamodel>
+/// </scxml>
+/// ```
+///
+/// Per-backend codegen (Atomic 2, deferred) lowers to `enum class :
+/// <int>`, `#[repr(<int>)] enum`, `IntEnum`, etc. — single source of
+/// truth on the Enum document; importers reference the emitted type
+/// by qualified name rather than re-emitting variants. Atomic 1
+/// scope: parse-time IR only.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct EnumModel {
+    pub name: String,
+    /// Underlying integer carrier — one of `uint8`/`uint16`/`uint32`/
+    /// `uint64`. α ships unsigned only per design RFC §8 F-ι (signed
+    /// defers until a consumer needs negative wire values). The
+    /// parser rejects non-unsigned-integer `sce:underlying-type`
+    /// values with `validation/enum-unsupported-underlying-type`.
+    pub underlying_type: SceType,
+    /// All variants in declaration order. Empty `variants` is
+    /// rejected at parse time with `validation/enum-no-variants`.
+    pub variants: Vec<EnumVariant>,
+    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// position of the `<scxml sce:kind="enum">` root element.
+    /// Drives the per-kind body function's SCE-MAP marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
 }
 
 // ── Condition kind ─────────────────────────────────────────────
@@ -3283,6 +3428,8 @@ pub enum ForgeDocument {
     Worker(WorkerModel),
     #[serde(rename = "bounded-collection")]
     BoundedCollection(BoundedCollectionModel),
+    #[serde(rename = "enum")]
+    Enum(EnumModel),
 }
 
 impl ForgeDocument {
@@ -3304,6 +3451,7 @@ impl ForgeDocument {
             Self::BufferPool(m) => &m.name,
             Self::Worker(m) => &m.name,
             Self::BoundedCollection(m) => &m.name,
+            Self::Enum(m) => &m.name,
         }
     }
 
@@ -3325,6 +3473,7 @@ impl ForgeDocument {
             Self::BufferPool(_) => ForgeKind::BufferPool,
             Self::Worker(_) => ForgeKind::Worker,
             Self::BoundedCollection(_) => ForgeKind::BoundedCollection,
+            Self::Enum(_) => ForgeKind::Enum,
         }
     }
 
@@ -3381,6 +3530,10 @@ impl ForgeDocument {
             // No SCE-side runtime helper crate. Cross-backend parity is
             // codegen-time (§6.2.6).
             Self::BoundedCollection(_) => RuntimeDep::None,
+            // NL→IR Item C1 Path A: Enum is a pure type declaration —
+            // codegen lowers to a backend-native typed enum without
+            // any SCE-side runtime helper.
+            Self::Enum(_) => RuntimeDep::None,
         }
     }
 }

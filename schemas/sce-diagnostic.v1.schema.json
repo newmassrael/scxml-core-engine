@@ -331,7 +331,12 @@
         "traceability/sce-map-attribute-stripped",
         "traceability/meta-generated-source-line-marker-missing",
         "mcu/driver-header-not-found",
-        "mcu/section-attribute-on-non-mcu-target"
+        "mcu/section-attribute-on-non-mcu-target",
+        "validation/enum-no-variants",
+        "validation/enum-variant-duplicate-name",
+        "validation/enum-variant-duplicate-value",
+        "validation/enum-variant-value-overflows-underlying",
+        "validation/enum-unsupported-underlying-type"
       ]
     },
     "stage": {

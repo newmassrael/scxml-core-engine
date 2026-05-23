@@ -311,6 +311,7 @@ fn forge_doc_name(doc: &ForgeDocument) -> &str {
         ForgeDocument::BufferPool(m) => &m.name,
         ForgeDocument::Worker(m) => &m.name,
         ForgeDocument::BoundedCollection(m) => &m.name,
+        ForgeDocument::Enum(m) => &m.name,
     }
 }
 
