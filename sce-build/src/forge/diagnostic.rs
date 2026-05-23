@@ -494,21 +494,6 @@ pub enum DiagnosticCode {
     #[serde(rename = "validation/cross-kind-circular-dependency")]
     ValidationCrossKindCircularDependency,
 
-    // ── EventSchema kind (NL→IR Mapping Roadmap Item C1, design RFC
-    //    §3 DL-9). Atomic A lands one new code:
-    //    `validation/event-schema-on-builtin-event` rejects schema
-    //    declarations against the W3C SCXML reserved event
-    //    namespaces (`error.*`, `done.invoke.*`, `done.state.*`).
-    //    Receive-side field-not-found + type-mismatch reuse the
-    //    existing `validation/cross-kind-field-not-found` +
-    //    `validation/cross-kind-type-mismatch` codes per Item 4
-    //    reuse precedent. Atomic B will add
-    //    `validation/event-payload-field-unknown` (send-side payload
-    //    check) and `mesh/event-schema-mismatch` (cross-machine
-    //    schema match); both are deferred. ─────────────────────────
-    #[serde(rename = "validation/event-schema-on-builtin-event")]
-    ValidationEventSchemaOnBuiltinEvent,
-
     // ── Algorithm kind (watching-zenoh RFC §5.A, Phase A3).
     //    Parser-stage sema for the new pure-function kind. Three
     //    of the six RFC §5.A diagnostics land in A3-δ; the rest
@@ -2483,8 +2468,6 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationCrossKindFieldNotFound,
         ValidationCrossKindTypeMismatch,
         ValidationCrossKindCircularDependency,
-        // NL→IR Mapping Roadmap Item C1: EventSchema kind
-        ValidationEventSchemaOnBuiltinEvent,
         // Algorithm (watching-zenoh RFC §5.A, Phase A3)
         AlgorithmLocalShadowsParam,
         AlgorithmLvalueUnsupported,
@@ -3400,12 +3383,6 @@ impl DiagnosticCode {
             | ValidationCrossKindFieldNotFound
             | ValidationCrossKindTypeMismatch
             | ValidationCrossKindCircularDependency
-            // NL→IR Mapping Roadmap Item C1 — EventSchema kind. The
-            // built-in-event rejection is SCE-internal hygiene
-            // (declaring a schema for `error.*` etc. would contradict
-            // the W3C-defined platform contract on those events).
-            // Spec_anchor stays None.
-            | ValidationEventSchemaOnBuiltinEvent
             // NL→IR Mapping Roadmap Item 3 Phase A — reachability is
             // implied by W3C SCXML §3 entry semantics (the design-time
             // BFS over `initial`, parallel cascade, history default
@@ -3488,7 +3465,6 @@ impl DiagnosticCode {
             ValidationCrossKindFieldNotFound => "validation/cross-kind-field-not-found",
             ValidationCrossKindTypeMismatch => "validation/cross-kind-type-mismatch",
             ValidationCrossKindCircularDependency => "validation/cross-kind-circular-dependency",
-            ValidationEventSchemaOnBuiltinEvent => "validation/event-schema-on-builtin-event",
             AlgorithmLocalShadowsParam => "algorithm/local-shadows-param",
             AlgorithmLvalueUnsupported => "algorithm/lvalue-unsupported",
             AlgorithmReturnMissing => "algorithm/return-missing",
@@ -4392,24 +4368,6 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             // distinct cycles in the same build will have different
             // `cycle` vectors and thus different IDs.
             key_fragments: cycle.clone(),
-        },
-        ValidationError::EventSchemaOnBuiltinEvent { event_name } => DiagnosticPayload {
-            // NL→IR Mapping Roadmap Item C1 (DL-9): EventSchema
-            // declared against a W3C built-in event namespace
-            // (`error.*`, `done.invoke.*`, `done.state.*`). No
-            // `fix` candidate set — the legal repair is to rename the
-            // schema's `sce:event-name` to a non-reserved value or
-            // delete the schema document; neither is enumerable from
-            // the offending input.
-            code: DiagnosticCode::ValidationEventSchemaOnBuiltinEvent,
-            stage: Stage::Validation,
-            expected: None,
-            actual: Some(event_name.clone()),
-            fix: None,
-            // The reserved-event name is the canonical identity —
-            // two distinct authored schemas pointing at the same
-            // built-in event collapse to the same diagnostic ID.
-            key_fragments: vec![event_name.clone()],
         },
         ValidationError::QuantityUnitMismatch {
             kind,
@@ -7645,7 +7603,7 @@ mod tests {
             (
                 "forge/unsupported-kind",
                 ValidationError::UnsupportedKind("bogus".into()).into(),
-                r#"{"v":1,"id":"fnv1a:812898e1a23fda4d","code":"validation/unsupported-kind","stage":"validation","spec":"SCE Forge §3.2","message":"unsupported sce:kind value: 'bogus'","actual":"bogus","fix":{"kind":"replace_one_of","candidates":["statechart","transform","lookup","condition","codec","procedure","validator","filter","interpolation","timer","observer","algorithm","link","buffer-pool","worker","bounded-collection","event-schema"]}}"#,
+                r#"{"v":1,"id":"fnv1a:812898e1a23fda4d","code":"validation/unsupported-kind","stage":"validation","spec":"SCE Forge §3.2","message":"unsupported sce:kind value: 'bogus'","actual":"bogus","fix":{"kind":"replace_one_of","candidates":["statechart","transform","lookup","condition","codec","procedure","validator","filter","interpolation","timer","observer","algorithm","link","buffer-pool","worker","bounded-collection"]}}"#,
             ),
             (
                 "forge/duplicate-id",
@@ -7715,14 +7673,6 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:9316da7f260e4553","code":"validation/cross-kind-circular-dependency","stage":"validation","message":"circular <sce:import> dependency: a.scxml → b.scxml → a.scxml","actual":"a.scxml → b.scxml → a.scxml"}"#,
-            ),
-            (
-                "forge/event-schema-on-builtin-event",
-                ValidationError::EventSchemaOnBuiltinEvent {
-                    event_name: "error.execution".into(),
-                }
-                .into(),
-                r#"{"v":1,"id":"fnv1a:fdece2ea5d583d9c","code":"validation/event-schema-on-builtin-event","stage":"validation","message":"EventSchema cannot declare a schema for W3C built-in event 'error.execution' (reserved namespace: error., done.invoke., done.state.)","actual":"error.execution"}"#,
             ),
             (
                 "forge/reserved-context-id",
@@ -11941,15 +11891,6 @@ mod tests {
             // candidate set on the diagnostic wire.
             | ValidationCrossKindTypeMismatch
             | ValidationCrossKindCircularDependency
-            // NL→IR Mapping Roadmap Item C1 — built-in-event schema
-            // rejection. Repair is author-domain: rename the
-            // schema's `sce:event-name` to a non-reserved value or
-            // delete the schema document. The reserved-prefix list
-            // (`error.`, `done.invoke.`, `done.state.`) is closed
-            // but the *legal replacement event name* is open (any
-            // author-defined non-reserved name), so no
-            // `ReplaceOneOf` set fits — neutral repair surface.
-            | ValidationEventSchemaOnBuiltinEvent
             // NL→IR Mapping Roadmap Item 3 Phase A — reachability codes
             // ship without a closed candidate set. Repair for an
             // unreachable state is author-domain (delete the orphan or
@@ -12212,7 +12153,6 @@ mod tests {
                 | ValidationCrossKindFieldNotFound
                 | ValidationCrossKindTypeMismatch
                 | ValidationCrossKindCircularDependency
-                | ValidationEventSchemaOnBuiltinEvent
                 | AlgorithmLocalShadowsParam
                 | AlgorithmLvalueUnsupported
                 | AlgorithmReturnMissing
@@ -12467,7 +12407,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            311,
+            310,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries —\
              expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
@@ -13210,18 +13150,7 @@ mod tests {
              SCXML §5.10 selection order, making the later one \
              dead). Both NeutralOrDeterministic. Language-prefixed \
              `cond` values (`cpp:`, `kotlin:`, `rust:`) stay opaque \
-             to keep the false-positive surface at zero. 308 → 310. \
-             Then NL→IR Mapping Roadmap Item C1 — EventSchema kind \
-             Atomic A lands one new code: \
-             `validation/event-schema-on-builtin-event` rejects \
-             schema declarations against W3C SCXML reserved event \
-             namespaces (`error.*` / `done.invoke.*` / `done.state.*`). \
-             Receive-side field-not-found + comparison type-mismatch \
-             reuse the existing `validation/cross-kind-field-not-found` \
-             + `validation/cross-kind-type-mismatch` codes per Item 4 \
-             reuse precedent. NeutralOrDeterministic — repair is \
-             author-domain (rename to a non-reserved event name). \
-             310 → 311.",
+             to keep the false-positive surface at zero. 308 → 310.",
         );
     }
 
