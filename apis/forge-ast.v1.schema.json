@@ -931,6 +931,17 @@
           ],
           "description": "RFC §5.B B1-δ present-if primitive. `Some(predicate)` when the field carries a `sce:present-if=\"<carrier>.<flag>\"` attribute; the field's host-language type is wrapped as a per-language optional (`Option<T>` / `std::optional<T>` / `T?` / `*T` / `Optional[T]` / `bool has_<id>; T <id>` paired in C11) and the streaming decode/encode skips the field's bytes when the predicate is false."
         },
+        "quantity": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Quantity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "NL→IR Mapping Roadmap Item 4 — physical-quantity annotation on codec fields. ARXML COMPU-METHOD blocks map onto this layer: the raw wire-level integer carries a linear `physical = raw * scale + offset` conversion in a named unit. Codegen emits a physical accessor (`<field>_phys()` / `set_<field>_phys()`) alongside the existing raw field. Absent annotation preserves the legacy byte-identical codec emission."
+        },
         "repeat_body_alias": {
           "description": "RFC §5.B B2 repeat primitive — imported codec alias whose decode/encode handles each element. `Some(alias)` only when `bit_size = BitSize::Repeat`. Resolved against `<sce:import>` aliases at codegen time (mirrors variant arm body_alias resolution).",
           "type": [
@@ -3050,15 +3061,19 @@
             "null"
           ]
         },
+        "quantity": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Quantity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "NL→IR Mapping Roadmap Item 4 — physical-quantity annotation. `Some({ scale, offset, unit })` when the field carries a `sce:quantity=\"…\"` attribute. Drives type checking (units that disagree across an arithmetic operator are rejected) and codegen (raw + physical accessor pair emitted on numeric fields). Absent quantity declarations preserve the dimensionless baseline."
+        },
         "sce_type": {
           "$ref": "#/definitions/SceType"
-        },
-        "unit": {
-          "description": "Documentation-only unit (no codegen effect).",
-          "type": [
-            "string",
-            "null"
-          ]
         }
       },
       "required": [
@@ -4337,6 +4352,26 @@
       ],
       "type": "object"
     },
+    "Quantity": {
+      "description": "Triple `(scale, offset, unit)` declared on a numeric field. The physical interpretation of a raw value `x` is `x * scale + offset`, carrying unit `unit`. The base numeric type stays in the field's `SceType`; this struct only carries the conversion metadata.",
+      "properties": {
+        "offset": {
+          "$ref": "#/definitions/Rational"
+        },
+        "scale": {
+          "$ref": "#/definitions/Rational"
+        },
+        "unit": {
+          "$ref": "#/definitions/UnitTag"
+        }
+      },
+      "required": [
+        "offset",
+        "scale",
+        "unit"
+      ],
+      "type": "object"
+    },
     "RangeRule": {
       "description": "Range check: field value must be within [min, max].",
       "properties": {
@@ -4382,6 +4417,10 @@
         "sample_interval_ms"
       ],
       "type": "object"
+    },
+    "Rational": {
+      "pattern": "^-?\\d+(/\\d+)?$",
+      "type": "string"
     },
     "SceType": {
       "description": "Canonical SCE type — used in `sce:type` attributes. Language-specific mappings are in the generator module (SRP).",
@@ -4992,6 +5031,10 @@
         "type"
       ],
       "type": "object"
+    },
+    "UnitTag": {
+      "description": "Opaque unit string. SI base units (`s`, `m`, `kg`, `A`, `K`, `mol`, `cd`) are recommended but not enforced.",
+      "type": "string"
     },
     "UnresolvedMarker": {
       "description": "`<sce:unresolved>` marker — an explicit \"this value is a guess, revisit later\" placeholder that the parser can detect, the codegen propagates as a comment, and `--strict` builds reject.\n\nSCE stores the marker; any consumer (linter, IDE, NL→IR pipeline) interprets it. SCE never resolves it.",

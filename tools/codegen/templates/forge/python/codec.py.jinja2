@@ -296,6 +296,29 @@ class {{ struct_name }}:
         return value
 {% endif %}
 
+{% if has_quantity %}
+    # NL→IR Mapping Roadmap Item 4 — physical-quantity raw↔physical
+    # accessor pair. Each `sce:quantity=…`-annotated field emits a
+    # ``<id>_phys()`` getter returning ``float`` and a
+    # ``set_<id>_phys()`` setter truncating the inverse via ``int(...)``
+    # back into the raw integer slot. The raw attribute is unchanged.
+{% for field in fields %}
+{% if field.quantity_accessor %}
+    def {{ field.quantity_accessor.getter_name }}(self) -> {{ field.quantity_accessor.phys_type }}:
+        """Physical reading in ``{{ field.quantity_accessor.unit }}`` —
+        raw * {{ field.quantity_accessor.scale_repr }} + {{ field.quantity_accessor.offset_repr }}."""
+        return {{ field.quantity_accessor.raw_to_phys_expr }}
+
+    def {{ field.quantity_accessor.setter_name }}(self, value: {{ field.quantity_accessor.phys_type }}) -> None:
+        """Set the physical reading in ``{{ field.quantity_accessor.unit }}``.
+
+        The inverse is truncated via ``int(...)`` into the raw slot.
+        """
+        {{ field.quantity_accessor.raw_assign_lhs }} = {{ field.quantity_accessor.phys_to_raw_expr }}
+
+{% endif %}
+{% endfor %}
+{% endif %}
 {% if has_flags %}
     # RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
     # the carrier field. Single-bit (width=1) reads as bool; multi-bit

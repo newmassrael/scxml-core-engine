@@ -177,6 +177,18 @@
   <xs:attribute name="input" type="xs:string"/>
   <xs:attribute name="input-type" type="sce:sceType"/>
 
+  <!-- NL→IR Mapping Roadmap Item 4: physical-quantity annotation. The
+       triple `sce:quantity` / `sce:scale` / `sce:offset` declares a
+       linear `physical = raw * scale + offset` conversion in the named
+       unit. `sce:scale` and `sce:offset` must accompany `sce:quantity`
+       (orphan declarations rejected at parse time); the rational
+       grammar accepts integers, decimal fractions, and `<num>/<denom>`
+       ratios. Strings are kept opaque at the XSD layer; semantic
+       validation lives in sce-build (`parse_quantity_attrs`). -->
+  <xs:attribute name="quantity" type="xs:string"/>
+  <xs:attribute name="scale" type="xs:string"/>
+  <xs:attribute name="offset" type="xs:string"/>
+
   <!-- Section 4.6: Codec — document-level default endianness -->
   <xs:attribute name="default-endian" type="sce:endianType"/>
 
@@ -438,6 +450,10 @@
       <xs:attribute ref="sce:present-if"/>
       <xs:attribute ref="sce:dma-burst-align"/>
       <xs:attribute ref="sce:length-arith"/>
+      <!-- NL→IR Mapping Roadmap Item 4: physical-quantity annotation. -->
+      <xs:attribute ref="sce:quantity"/>
+      <xs:attribute ref="sce:scale"/>
+      <xs:attribute ref="sce:offset"/>
     </xs:complexType>
   </xs:element>
 

@@ -470,9 +470,14 @@ pub struct ForgeField {
     /// ECMAScript expression (for computed/output fields).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expr: Option<String>,
-    /// Documentation-only unit (no codegen effect).
+    /// NL→IR Mapping Roadmap Item 4 — physical-quantity annotation.
+    /// `Some({ scale, offset, unit })` when the field carries a
+    /// `sce:quantity="…"` attribute. Drives type checking (units that
+    /// disagree across an arithmetic operator are rejected) and codegen
+    /// (raw + physical accessor pair emitted on numeric fields).
+    /// Absent quantity declarations preserve the dimensionless baseline.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub unit: Option<String>,
+    pub quantity: Option<crate::forge::quantity::Quantity>,
     /// Per-slot capacity for `bytes`-typed fields, declared via
     /// `sce:max-size="N"`. `None` ⇒ fall back to
     /// [`crate::forge::limits::BYTES_DEFAULT_MAX`]. Ignored for non-bytes
@@ -1323,6 +1328,15 @@ pub struct CodecField {
     /// trust contract from B1-β).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub length_arith: Option<i32>,
+    /// NL→IR Mapping Roadmap Item 4 — physical-quantity annotation on
+    /// codec fields. ARXML COMPU-METHOD blocks map onto this layer:
+    /// the raw wire-level integer carries a linear `physical = raw *
+    /// scale + offset` conversion in a named unit. Codegen emits a
+    /// physical accessor (`<field>_phys()` / `set_<field>_phys()`)
+    /// alongside the existing raw field. Absent annotation preserves
+    /// the legacy byte-identical codec emission.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quantity: Option<crate::forge::quantity::Quantity>,
 }
 
 impl CodecField {
