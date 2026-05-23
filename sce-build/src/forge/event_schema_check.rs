@@ -33,11 +33,78 @@
 //     lookup's key_type is the matching unsigned width.
 
 use std::collections::BTreeMap;
+use std::path::Path;
 
-use crate::forge::error::{ForgeError, Located, ValidationError};
+use crate::forge::error::{ForgeError, Located, SourceLocation, ValidationError};
 use crate::forge::expr::{parse_to_ast, BinOp, ExprKind, TypedExpr};
 use crate::forge::model::{EventSchemaModel, ForgeField, ForgeKind, SceType};
-use crate::model::{SCXMLModel, Transition};
+use crate::model::{Action, Param, SCXMLModel, Transition};
+
+/// NL→IR Mapping Roadmap Item C1 (DL-7 prerequisite) — resolve a
+/// statechart's `<sce:import>` declarations into the per-statechart
+/// `event_name → EventSchemaModel` map consumed by the receive-side
+/// and send-side validators.
+///
+/// `event_schemas_by_doc_name` is the orchestrator's build-wide
+/// EventSchema registry keyed by file stem (the unique doc name).
+/// `scxml.forge_imports` is filtered to entries whose `kind` is
+/// `ForgeKind::EventSchema`; each surviving import's `src` is resolved
+/// to its file stem and matched against the registry, then keyed
+/// in the returned map by the schema's declared `sce:event-name` so
+/// the validators can look up by `<transition event="X">` or
+/// `<send event="X">` directly.
+///
+/// Two pre-build-time rejections happen here:
+///
+///   * An `<sce:import kind="event-schema" src="X.scxml">` whose
+///     `X.scxml` does not appear in the build-wide registry —
+///     surfaces as the existing `validation/cross-kind-circular-
+///     dependency`-style import resolution failure earlier in the
+///     pipeline (`validate_and_enrich_imports`); the resolver here
+///     treats unresolvable srcs as silent skips since the pipeline
+///     has already rejected.
+///   * Two distinct EventSchema imports on the *same* statechart
+///     that declare the *same* event name — receive-side validator
+///     could not decide which field set to enforce on `_event.data`
+///     for that event name. The orchestrator surfaces this via
+///     `validation/incompatible-attributes` at the statechart
+///     boundary; the resolver here records the first occurrence
+///     and silently skips the second (the pipeline-level rejection
+///     is the load-bearing diagnostic).
+///
+/// Returns the per-statechart `event_name → EventSchemaModel` view.
+/// Empty when the statechart declares no event-schema imports (the
+/// schemaless-fallback path keeps cost at zero).
+pub fn resolve_imported_event_schemas(
+    scxml: &SCXMLModel,
+    event_schemas_by_doc_name: &BTreeMap<String, EventSchemaModel>,
+) -> BTreeMap<String, EventSchemaModel> {
+    let mut resolved: BTreeMap<String, EventSchemaModel> = BTreeMap::new();
+    for import in &scxml.forge_imports {
+        if !matches!(import.kind, ForgeKind::EventSchema) {
+            continue;
+        }
+        let Some(stem) = Path::new(&import.src).file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let Some(schema) = event_schemas_by_doc_name.get(stem) else {
+            continue;
+        };
+        // First occurrence wins; the per-statechart duplicate-event-
+        // name case is rejected upstream as `validation/incompatible-
+        // attributes` so the resolver's silent skip here is the
+        // conservative-defensive path (no diagnostic double-emit).
+        // Owned clones (rather than references) keep the resolver's
+        // output shape compatible with the existing `check` /
+        // `check_send_side` signatures — schemas are author-bounded
+        // small structs and the per-statechart resolution runs once
+        // per statechart per build.
+        resolved
+            .entry(schema.event_name.clone())
+            .or_insert_with(|| schema.clone());
+    }
+    resolved
+}
 
 /// Per-statechart receive-side typecheck.
 ///
@@ -421,6 +488,256 @@ fn located_on_transition(
 ) -> Located<ForgeError> {
     let (line, col) = match transition.source_location.as_ref() {
         Some(loc) => (loc.line, loc.col),
+        None => (None, None),
+    };
+    Located::new(ForgeError::Validation(Box::new(err)), diag_label, line, col)
+}
+
+/// Per-statechart send-side typecheck (DL-4).
+///
+/// Walks every `<send event="X">` / `<raise event="X">` executable-
+/// content action reachable from the SCXML's state graph and verifies
+/// each `<param name="F" expr="..."/>` against the imported
+/// [`EventSchemaModel`] for `X`:
+///
+/// * `<param name="F">` whose `F` is not a declared field on the
+///   schema → [`ValidationError::EventPayloadFieldUnknown`] with the
+///   schema's field surface as a closed `Fix::ReplaceOneOf` candidate
+///   set. Mirrors the receive-side
+///   [`ValidationError::CrossKindFieldNotFound`] shape.
+/// * `<param expr="…">` whose expression is a primitive literal whose
+///   type does not unify with the field's declared `sce_type` →
+///   [`ValidationError::CrossKindTypeMismatch`] (reused per Item 4
+///   precedent — see [`check_comparison_type`] for the receive-side
+///   mirror).
+///
+/// Non-literal `<param expr="…">` expressions (variable references,
+/// nested computations, function calls) are deferred to the existing
+/// typed-expression pipeline at codegen time, matching the receive-
+/// side opportunistic-typecheck contract: the validator declines
+/// operands whose category is not syntactically determinable.
+///
+/// Schemaless events (no imported schema for the send's event name)
+/// are skipped per the [DL-9] fallback. Dynamic event names
+/// (`<send eventexpr="…">` with no `event=` attribute) are also
+/// skipped — the validator cannot resolve a schema without a stable
+/// event name.
+///
+/// Returns `Ok(())` when every `<send>` / `<raise>` payload validates,
+/// or the first failing diagnostic.
+pub fn check_send_side(
+    scxml: &SCXMLModel,
+    imported_schemas: &BTreeMap<String, EventSchemaModel>,
+    diag_label: &str,
+) -> Result<(), Located<ForgeError>> {
+    if imported_schemas.is_empty() {
+        // DL-9 fallback — no imported schemas means every event keeps
+        // the dynamic-payload baseline. Skip the walk entirely so
+        // statecharts that opt not to declare schemas pay no
+        // validator cost.
+        return Ok(());
+    }
+    for state in scxml.states.values() {
+        // Transition actions — `<send>` / `<raise>` inside transition
+        // bodies are the primary site authors target.
+        for transition in &state.transitions {
+            walk_actions(
+                &transition.actions,
+                imported_schemas,
+                &scxml.name,
+                diag_label,
+            )?;
+        }
+        // Onentry / onexit handler bodies — each block is a
+        // document-ordered sequence of executable-content actions
+        // (W3C SCXML §3.8, §3.9).
+        for block in &state.on_entry_blocks {
+            walk_actions(block, imported_schemas, &scxml.name, diag_label)?;
+        }
+        for block in &state.on_exit_blocks {
+            walk_actions(block, imported_schemas, &scxml.name, diag_label)?;
+        }
+        // Initial-transition + history-default action sequences (W3C
+        // SCXML §3.11) carry the same executable-content shape as the
+        // transition bodies above.
+        walk_actions(
+            &state.initial_transition_actions,
+            imported_schemas,
+            &scxml.name,
+            diag_label,
+        )?;
+        walk_actions(
+            &state.initial_history_default_actions,
+            imported_schemas,
+            &scxml.name,
+            diag_label,
+        )?;
+    }
+    Ok(())
+}
+
+/// Recursive descent over a sequence of executable-content actions.
+/// Drives into the `<if>` / `<elseif>` / `<else>` / `<foreach>`
+/// composite shapes so a `<send>` nested two-or-more levels deep
+/// still surfaces for typecheck.
+fn walk_actions(
+    actions: &[Action],
+    imported_schemas: &BTreeMap<String, EventSchemaModel>,
+    statechart_name: &str,
+    diag_label: &str,
+) -> Result<(), Located<ForgeError>> {
+    for action in actions {
+        check_send_action(action, imported_schemas, statechart_name, diag_label)?;
+        // Composite-action bodies. The shapes are mutually exclusive
+        // by action_type (`<if>` populates then/elseif/else, `<foreach>`
+        // populates the `actions` field) but the model serialises them
+        // as parallel `Vec<Action>` fields, so we walk each
+        // unconditionally — empty vecs cost nothing.
+        walk_actions(
+            &action.then_actions,
+            imported_schemas,
+            statechart_name,
+            diag_label,
+        )?;
+        for branch in &action.elseif_branches {
+            walk_actions(
+                &branch.actions,
+                imported_schemas,
+                statechart_name,
+                diag_label,
+            )?;
+        }
+        walk_actions(
+            &action.else_actions,
+            imported_schemas,
+            statechart_name,
+            diag_label,
+        )?;
+        walk_actions(
+            &action.actions,
+            imported_schemas,
+            statechart_name,
+            diag_label,
+        )?;
+    }
+    Ok(())
+}
+
+/// Per-`<send>` / `<raise>` validator. Returns `Ok(())` for any
+/// action that is not a send/raise, has no statically-resolvable
+/// event name, or whose event name does not resolve to an imported
+/// schema (DL-9 schemaless fallback).
+fn check_send_action(
+    action: &Action,
+    imported_schemas: &BTreeMap<String, EventSchemaModel>,
+    statechart_name: &str,
+    diag_label: &str,
+) -> Result<(), Located<ForgeError>> {
+    if action.action_type != "send" && action.action_type != "raise" {
+        return Ok(());
+    }
+    // Dynamic event name (`<send eventexpr="…">`) — the event the
+    // payload will carry is not statically resolvable. Validator
+    // cannot pick a schema; skip per DL-9 fallback shape.
+    if action.event.is_empty() {
+        return Ok(());
+    }
+    let Some(schema) = imported_schemas.get(&action.event) else {
+        return Ok(());
+    };
+    for param in &action.params {
+        check_send_param(param, action, schema, statechart_name, diag_label)?;
+    }
+    Ok(())
+}
+
+/// Per-`<param>` validator. Two failure modes per DL-4:
+///
+/// * `<param name="F">` with `F` not on the schema —
+///   [`ValidationError::EventPayloadFieldUnknown`] with the schema's
+///   sorted, deduplicated field surface as the closed candidate set.
+/// * `<param expr="…">` whose expression is a primitive literal
+///   incompatible with the field's declared type —
+///   [`ValidationError::CrossKindTypeMismatch`] (reused per Item 4
+///   precedent).
+///
+/// W3C SCXML 6.2.4 mandates exactly one of `expr` / `location` on
+/// every `<param>`; the location form (`<param name="X" location="Y"/>`,
+/// data-model variable assignment) is not statically typeable
+/// without the typed datamodel pipeline and is left for the existing
+/// typed-expression machinery at codegen time.
+fn check_send_param(
+    param: &Param,
+    action: &Action,
+    schema: &EventSchemaModel,
+    statechart_name: &str,
+    diag_label: &str,
+) -> Result<(), Located<ForgeError>> {
+    let Some(field) = schema.fields.iter().find(|f| f.id == param.name) else {
+        let mut candidates: Vec<String> = schema.fields.iter().map(|f| f.id.clone()).collect();
+        candidates.sort();
+        candidates.dedup();
+        return Err(located_on_action(
+            action,
+            diag_label,
+            ValidationError::EventPayloadFieldUnknown {
+                importing_kind: ForgeKind::Statechart,
+                importing_name: statechart_name.to_string(),
+                event_name: action.event.clone(),
+                field: param.name.clone(),
+                imported_kind: ForgeKind::EventSchema,
+                imported_name: schema.name.clone(),
+                candidates,
+            },
+        ));
+    };
+    // Literal-shape typecheck: only `<param expr="…">` whose `expr`
+    // is a primitive literal participates here. `<param location="…">`
+    // and non-literal expressions defer to the typed-expression
+    // pipeline.
+    let expr_text = param.expr.trim();
+    if expr_text.is_empty() {
+        return Ok(());
+    }
+    let Ok(expr_ast) = parse_to_ast(expr_text) else {
+        return Ok(());
+    };
+    let Some(literal_kind) = operand_literal_kind(&expr_ast) else {
+        return Ok(());
+    };
+    if literal_is_compatible_with(&field.sce_type, literal_kind) {
+        return Ok(());
+    }
+    Err(located_on_action(
+        action,
+        diag_label,
+        ValidationError::CrossKindTypeMismatch {
+            importing_kind: ForgeKind::Statechart,
+            importing_name: statechart_name.to_string(),
+            alias: format!("<send event=\"{}\">", action.event),
+            field: field.id.clone(),
+            actual: literal_kind_canonical(literal_kind),
+            expected: sce_type_canonical(&field.sce_type),
+        },
+    ))
+}
+
+/// Anchor a [`ValidationError`] on an action's recorded source
+/// location, falling back to the statechart's `diag_label` when the
+/// action has no captured location (legacy parse paths that predate
+/// the per-executable-content source-position capture).
+fn located_on_action(
+    action: &Action,
+    diag_label: &str,
+    err: ValidationError,
+) -> Located<ForgeError> {
+    let (line, col) = match action.source_location.as_ref() {
+        Some(SourceLocation {
+            line: Some(l),
+            col: Some(c),
+            ..
+        }) => (Some(*l), Some(*c)),
+        Some(SourceLocation { line, col, .. }) => (*line, *col),
         None => (None, None),
     };
     Located::new(ForgeError::Validation(Box::new(err)), diag_label, line, col)

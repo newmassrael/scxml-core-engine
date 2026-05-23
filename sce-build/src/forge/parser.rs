@@ -7733,7 +7733,7 @@ fn find_sce_child<'a>(node: &'a roxmltree::Node, local: &str) -> Option<roxmltre
 /// - `src` (required): relative path to the imported SCXML file.
 /// - `kind` (required): the forge kind of the imported document.
 /// - `as` (required): alias used in expressions.
-fn parse_imports(
+pub(crate) fn parse_imports(
     root: &roxmltree::Node,
     doc_name: &str,
 ) -> Result<Vec<ForgeImport>, Located<ForgeError>> {

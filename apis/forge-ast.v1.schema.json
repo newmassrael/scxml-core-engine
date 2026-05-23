@@ -1774,6 +1774,13 @@
               "description": "True iff the generated `executeEntryActions` body uses `this`.\n\nDrives the static/non-static decision in `tools/codegen/templates/entry_exit_actions.jinja2`. Each feature that emits a `this`-referencing expression into the body contributes to this predicate — adding a new feature means updating only this one spot rather than extending the template's conditional. Kept separate from `needs_nonstatic_method` (which gates lambda captures in parallel-region blocks) because the two sets of features overlap but are not identical — notably, mesh-rpc invokes synthesize a `reinterpret_cast<uintptr_t>(&engine)`-bearing block directly inside `executeEntryActions` but add no lambda captures, and scheduler state reached via `engine.scheduleEvent(...)` likewise touches `engine` (not `this`) but still leaks through the switch body.",
               "type": "boolean"
             },
+            "forge_imports": {
+              "description": "NL→IR Mapping Roadmap Item C1 (DL-7 prerequisite) — `<sce:import>` declarations on the statechart's `<scxml>` root. Each entry names a cross-doc dependency by `kind`, `src`, and `alias` so per-doc validators can compute per-statechart import visibility (rather than the legacy single global registry that merged every kind document in the build into one shared map). Today's primary consumer: per-machine EventSchema visibility for mesh DL-7 cross-machine validation and receive/send-side schema selection on the per-statechart check passes. Empty for statecharts that declare no `<sce:import>` children — the schemaless-fallback path stays a no-op walk.\n\nSerialized into the manifest so downstream tooling (mesh codegen, AST export) can read the import graph without re-parsing the SCXML.",
+              "items": {
+                "$ref": "#/definitions/ForgeImport"
+              },
+              "type": "array"
+            },
             "global_scripts": {
               "items": {
                 "$ref": "#/definitions/Action"
