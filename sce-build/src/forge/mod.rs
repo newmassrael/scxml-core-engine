@@ -16,7 +16,6 @@ pub mod cross_kind_check;
 pub mod diagnostic;
 pub mod drift;
 pub mod error;
-pub mod event_schema_check;
 pub mod expr;
 pub mod extern_emit;
 pub mod extern_validator;

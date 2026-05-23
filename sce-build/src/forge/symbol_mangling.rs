@@ -311,13 +311,6 @@ fn forge_doc_name(doc: &ForgeDocument) -> &str {
         ForgeDocument::BufferPool(m) => &m.name,
         ForgeDocument::Worker(m) => &m.name,
         ForgeDocument::BoundedCollection(m) => &m.name,
-        // NL→IR Item C1: EventSchema follows the same name-from-model
-        // convention as every other forge kind. Atomic A scope: the
-        // schema document's symbol name drives import-table lookup
-        // and per-machine binding diagnostics; Atomic C's enum
-        // codegen reads it as the Pascal-cased enum class identifier
-        // root.
-        ForgeDocument::EventSchema(m) => &m.name,
     }
 }
 

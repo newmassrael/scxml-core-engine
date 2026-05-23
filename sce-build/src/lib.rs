@@ -1945,19 +1945,6 @@ pub fn compile_scxml_with_imports(
     // precedent (no deploy ⇒ no cross-doc deploy-vs-forge to check).
     let mut link_models_for_xref: Vec<(String, forge::model::LinkModel)> = Vec::new();
     let mut pool_models_for_xref: Vec<(String, forge::model::BufferPoolModel)> = Vec::new();
-    // NL→IR Item C1: EventSchemas keyed by SCXML event name. Populated
-    // in pass-1 alongside the other forge-doc captures; consumed by
-    // `event_schema_check::check` after pass-2 statechart parsing so the
-    // receive-side typecheck can resolve `_event.data.<field>` against
-    // the schema declared for the transition's `event` attribute.
-    // Duplicate event-name reuses the existing
-    // `validation/incompatible-attributes` shape (one event ⇒ one
-    // schema; two schemas for the same event create receive-side
-    // ambiguity).
-    let mut event_schemas_for_check: std::collections::BTreeMap<
-        String,
-        forge::model::EventSchemaModel,
-    > = std::collections::BTreeMap::new();
 
     for forge_path in forge_files {
         let path_str = forge_path.to_str().unwrap_or("");
@@ -2070,35 +2057,6 @@ pub fn compile_scxml_with_imports(
                 let key = doc.name().to_string();
                 element_type_candidates.insert(key, doc);
             }
-            forge::model::ForgeDocument::EventSchema(schema) => {
-                // NL→IR Item C1: capture schemas by SCXML event name for
-                // the receive-side typecheck pass. Two schemas declaring
-                // the same `sce:event-name` would create receive-side
-                // ambiguity (the validator could not decide which field
-                // set to enforce on `_event.data` for that event name),
-                // so reject the collision before pass-2 wires statechart
-                // models against the map.
-                if let Some(prev) = event_schemas_for_check.get(&schema.event_name) {
-                    let prev_name = prev.name.clone();
-                    let new_name = schema.name.clone();
-                    let event_name = schema.event_name.clone();
-                    return Err(Located::new(
-                        forge::error::ValidationError::IncompatibleAttributes {
-                            element: format!("EventSchema '{new_name}'"),
-                            detail: format!(
-                                "sce:event-name='{event_name}' already declared by EventSchema '{prev_name}' — \
-                                 one schema per event name is required so the receive-side \
-                                 typecheck has a single source of truth for `_event.data`"
-                            ),
-                        }
-                        .into(),
-                        basename,
-                        None,
-                        None,
-                    ));
-                }
-                event_schemas_for_check.insert(schema.event_name.clone(), schema);
-            }
             _ => {}
         }
     }
@@ -2148,23 +2106,6 @@ pub fn compile_scxml_with_imports(
     for (path, model) in &scxml_models {
         let basename = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
         parser::validate_on_sample_link_references(model, &cross_doc, &pool_reg, basename)?;
-    }
-
-    // ── NL→IR Item C1 EventSchema receive-side typecheck ──
-    //
-    // Walks every parsed statechart's transition `cond` expressions
-    // for `_event.data.<field>` member-access patterns and verifies
-    // the field against the schema declared for that transition's
-    // event. Runs after pass-1 capture (`event_schemas_for_check`
-    // populated) and after pass-2 SCXML parsing (`scxml_models`
-    // populated). Schemaless events keep the existing dynamic-payload
-    // baseline silently per DL-9 fallback (the validator no-ops when
-    // the transition's event has no schema). Failure short-circuits
-    // codegen pass-3, matching the worker outbox + BC cross-doc
-    // pattern.
-    for (path, model) in &scxml_models {
-        let basename = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-        forge::event_schema_check::check(model, &event_schemas_for_check, basename)?;
     }
 
     // ── C2 follow-up Atomic B outbox cross-resolution ──
@@ -2492,20 +2433,6 @@ pub fn compile_scxml_with_imports(
             .file_name()
             .and_then(|s| s.to_str())
             .unwrap_or(path_str);
-        // NL→IR Item C1 (Atomic A): EventSchema documents are
-        // parse-time metadata only — they participated in pass-1
-        // capture + receive-side typecheck (`event_schema_check`)
-        // but emit no per-backend code at Atomic A scope. Atomic C
-        // (DL-6) lands the per-backend enum lowering templates and
-        // removes this skip. Detecting the kind via the cheap
-        // `detect_kind` helper avoids a second full parse — same
-        // pattern used by other kind-aware orchestrator branches.
-        if matches!(
-            forge::parser::detect_kind(&content),
-            Ok(Some(forge::model::ForgeKind::EventSchema))
-        ) {
-            continue;
-        }
         let label = DocumentLabel {
             identifier: stem,
             diagnostic_label: basename,
@@ -3971,14 +3898,6 @@ fn discover_stateful_member_fields(
         | ForgeDocument::Lookup(_)
         | ForgeDocument::Interpolation(_)
         | ForgeDocument::Algorithm(_) => {}
-        // NL→IR Item C1: EventSchema is parse-time metadata. The
-        // payload contract lives in `_event.data.<field>` resolution
-        // (handled by `event_schema_check.rs`, keyed by SCXML event
-        // name) not as `alias.field` access on the schema's import
-        // alias. No member surface visible through the `alias.field`
-        // path, matching Link / BufferPool / Worker / BoundedCollection
-        // (method-/payload-only kinds with empty alias-member view).
-        ForgeDocument::EventSchema(_) => {}
     }
     out
 }
@@ -4048,11 +3967,6 @@ fn discover_stateful_member_methods(
         | ForgeDocument::Lookup(_)
         | ForgeDocument::Interpolation(_)
         | ForgeDocument::Algorithm(_) => Vec::new(),
-        // NL→IR Item C1: EventSchema exposes no instance methods —
-        // the schema is type-only metadata, addressed via SCXML event
-        // names, not method calls on an alias. Empty Vec matches the
-        // member-fields counterpart in `discover_stateful_member_fields`.
-        ForgeDocument::EventSchema(_) => Vec::new(),
     }
 }
 
@@ -4211,13 +4125,6 @@ fn discover_primary_function(
                 generator::Language::Go => filters::to_pascal_case(m.name.clone()),
             })
         }
-        // NL→IR Item C1: EventSchema is parse-time metadata with no
-        // primary function callsite — the schema document does not
-        // emit a callable surface (Atomic C will emit an enum type,
-        // not a free function, and the SCXML event handler is dispatched
-        // implicitly by event-name match, not by alias function call).
-        // Returning None matches the stateful-kind catch-all above.
-        forge::model::ForgeDocument::EventSchema(_) => None,
     }
 }
 

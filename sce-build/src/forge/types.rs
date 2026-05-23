@@ -220,17 +220,6 @@ impl InferredType {
             SceType::Bool => Self::Bool,
             SceType::String => Self::Str,
             SceType::Bytes => Self::Bytes,
-            // NL→IR Item C1: an enum-typed value's concrete integer
-            // width is determined by the imported lookup's `key_type`
-            // — cross-doc information not visible at the model layer.
-            // Map to `Unknown` so the inference layer takes the
-            // conservative "opaque" path; the EventSchema-specific
-            // receive-side validator (`event_schema_check.rs`) resolves
-            // the imported lookup and performs an explicit typecheck
-            // against the declared underlying type, independent of
-            // this inference path. `Unknown` here means "this layer
-            // declines to claim the type", not "type mismatch".
-            SceType::Enum(_) => Self::Unknown,
         }
     }
 }

@@ -893,14 +893,7 @@ fn coerce_to_const(value: EvalValue, ty: &SceType) -> Result<ConstValue, ConstFo
         // already rejects them on `array<elem>` so this arm is
         // unreachable for fixtures, but keeping the explicit error
         // closes the typed-coercion match exhaustively.
-        //
-        // NL→IR Item C1 (Atomic A): `SceType::Enum` is gated to
-        // EventSchema-field `sce:type="enum:<alias>"`. Algorithm-kind
-        // parsers reject the `enum:` prefix in `<sce:const>` /
-        // `<data>` so this arm is unreachable from the §5.F const-fold
-        // entry path, but listed explicitly to keep the typed-coercion
-        // match exhaustive against future SceType variants.
-        (_, String | Bytes | Enum(_)) => Err(ConstFoldKind::YieldTypeMismatch {
+        (_, String | Bytes) => Err(ConstFoldKind::YieldTypeMismatch {
             expected: ty.clone(),
             actual: "scalar fold yield".to_string(),
         }),
