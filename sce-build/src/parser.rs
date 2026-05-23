@@ -2201,74 +2201,82 @@ impl SCXMLParser {
             // WASM (`base_dir == None`) takes the same in-memory path; the
             // historical empty-`child_name` skip is gone because inline
             // parsing has no filesystem dependency.
-            let (resolved_src, resolved_child_name, inline_child_model) = if has_inline_scxml
-                && !inline_scxml_text.is_empty()
-            {
-                // SCE Mesh §9.6.6 rule 1: synthesised machine name is
-                // `<parent_machine_id>__sce_synth_invoke__<invoke_id>`.
-                // `field_suffix` is the invoke_id with its leading
-                // underscore trimmed (line ~1438), so author ids map
-                // verbatim and the auto-generated `_invoke_N` ids
-                // (W3C §6.4.1 §3.14 — SCE emits one when `id` is
-                // absent) produce `invoke_N` rather than the triple
-                // underscore block `__sce_synth_invoke___invoke_N`.
-                let synth_name = format!(
-                    "{}{}{}",
-                    &model.name,
-                    crate::mesh::deploy::SYNTH_INVOKE_INFIX,
-                    &field_suffix,
-                );
-                let inline_with_ns = if !inline_scxml_text.contains("xmlns=") {
-                    inline_scxml_text.replacen(
-                        "<scxml",
-                        "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\"",
-                        1,
-                    )
-                } else {
-                    inline_scxml_text.clone()
-                };
-                let xml_content = format!("<?xml version=\"1.0\"?>\n\n{inline_with_ns}");
-                // Recursive parse uses a fresh parser instance — sharing
-                // `self` would cross-contaminate document_order_counter /
-                // invoke_counter between parent and child. Asymmetric
-                // [`DocumentLabel`]: identifier = synth name (extension-
-                // free, drives template symbols), diagnostic label =
-                // `<synth>.scxml` (matches the historical on-disk file
-                // path so SCE-MAP markers + NDJSON `location.file` stay
-                // byte-stable against the pre-refactor goldens).
-                let synth_diag_label = format!("{synth_name}.scxml");
-                let inline_child = match SCXMLParser::new().parse_string_with_label(
-                    &xml_content,
-                    DocumentLabel::asymmetric(&synth_name, &synth_diag_label),
-                ) {
-                    Ok(m) => Some(Box::new(m)),
-                    Err(e) => {
-                        eprintln!(
+            let (resolved_src, resolved_child_name, inline_child_model, inline_child_source_xml) =
+                if has_inline_scxml && !inline_scxml_text.is_empty() {
+                    // SCE Mesh §9.6.6 rule 1: synthesised machine name is
+                    // `<parent_machine_id>__sce_synth_invoke__<invoke_id>`.
+                    // `field_suffix` is the invoke_id with its leading
+                    // underscore trimmed (line ~1438), so author ids map
+                    // verbatim and the auto-generated `_invoke_N` ids
+                    // (W3C §6.4.1 §3.14 — SCE emits one when `id` is
+                    // absent) produce `invoke_N` rather than the triple
+                    // underscore block `__sce_synth_invoke___invoke_N`.
+                    let synth_name = format!(
+                        "{}{}{}",
+                        &model.name,
+                        crate::mesh::deploy::SYNTH_INVOKE_INFIX,
+                        &field_suffix,
+                    );
+                    let inline_with_ns = if !inline_scxml_text.contains("xmlns=") {
+                        inline_scxml_text.replacen(
+                            "<scxml",
+                            "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\"",
+                            1,
+                        )
+                    } else {
+                        inline_scxml_text.clone()
+                    };
+                    let xml_content = format!("<?xml version=\"1.0\"?>\n\n{inline_with_ns}");
+                    // Recursive parse uses a fresh parser instance — sharing
+                    // `self` would cross-contaminate document_order_counter /
+                    // invoke_counter between parent and child. Asymmetric
+                    // [`DocumentLabel`]: identifier = synth name (extension-
+                    // free, drives template symbols), diagnostic label =
+                    // `<synth>.scxml` (matches the historical on-disk file
+                    // path so SCE-MAP markers + NDJSON `location.file` stay
+                    // byte-stable against the pre-refactor goldens).
+                    let synth_diag_label = format!("{synth_name}.scxml");
+                    let inline_child = match SCXMLParser::new().parse_string_with_label(
+                        &xml_content,
+                        DocumentLabel::asymmetric(&synth_name, &synth_diag_label),
+                    ) {
+                        Ok(m) => Some(Box::new(m)),
+                        Err(e) => {
+                            eprintln!(
                                 "Warning: Failed to parse inline <content> for invoke {invoke_id} (synth={synth_name}): {e:?}"
                             );
-                        None
-                    }
+                            None
+                        }
+                    };
+                    // SCE Mesh §9.6.6 rule 2: the rewritten `<invoke>`
+                    // carries the canonical `#<machine>` mesh peer
+                    // reference so `classify_remote_scxml_invokes`
+                    // treats the synth peer through the same axis as
+                    // author-declared peers. `child_name` carries the
+                    // synth identifier for local child session codegen
+                    // (`invoke_methods.jinja2` etc.) and for
+                    // `parse_child_metadata` below. `xml_content` rides
+                    // on the invoke so codegen can re-emit it to `-o`
+                    // for downstream consumers (`inject_partition_context_
+                    // for` + CMake stage-3 synth codegen + W3C
+                    // `process_children_<N>.cmake`).
+                    (
+                        format!("#{synth_name}"),
+                        synth_name,
+                        inline_child,
+                        Some(xml_content),
+                    )
+                } else if !src.is_empty() {
+                    let stripped = src.replace("file:", "");
+                    let child_name = Path::new(&stripped)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .map(|s| s.to_string())
+                        .unwrap_or_default();
+                    (src.clone(), child_name, None, None)
+                } else {
+                    (src.clone(), String::new(), None, None)
                 };
-                // SCE Mesh §9.6.6 rule 2: the rewritten `<invoke>`
-                // carries the canonical `#<machine>` mesh peer
-                // reference so `classify_remote_scxml_invokes`
-                // treats the synth peer through the same axis as
-                // author-declared peers. `child_name` carries the
-                // synth identifier for local child session codegen
-                // (`invoke_methods.jinja2` etc.) and for
-                // `parse_child_metadata` below.
-                (format!("#{synth_name}"), synth_name, inline_child)
-            } else if !src.is_empty() {
-                let stripped = src.replace("file:", "");
-                let child_name = Path::new(&stripped)
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .map(|s| s.to_string())
-                    .unwrap_or_default();
-                (src.clone(), child_name, None)
-            } else {
-                (src.clone(), String::new(), None)
-            };
 
             let invoke_req =
                 collect_sce_req(elem, || format!("<invoke id=\"{invoke_id}\">"), source_name)?;
@@ -2293,6 +2301,7 @@ impl SCXMLParser {
                 src: resolved_src,
                 namelist,
                 inline_child: inline_child_model,
+                inline_child_xml: inline_child_source_xml,
                 remote_mesh_target: None,
                 remote_mesh_transport: None,
             };
