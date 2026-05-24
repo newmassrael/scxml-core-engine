@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  NL→IR Item C1 Path A follow-up F-κ positive fixture: a statechart
+  imports an EventSchema (`schema_uds_response_open.scxml`) whose
+  `code` field references the open-set `uds_nrc_open` enum
+  (`sce:strict-variants="false"`). The cond
+  `_event.data.code === 0x21` and the send param `expr="0x80"` both
+  carry values *outside* the declared variant set (`16`, `17`) but
+  *inside* the uint8 underlying carrier — design lock #4 keeps width
+  narrowing active so 0x21 / 0x80 (both ≤ 255) pass while the
+  membership check silent-skips per the enum's opt-out.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="positive_enum_strict_opt_out"
+       version="1.0"
+       initial="ready"
+       datamodel="ecmascript">
+  <sce:import src="schema_uds_response_open.scxml" kind="event-schema" as="UdsResponseSchema"/>
+  <sce:import src="uds_nrc_open.scxml" kind="enum" as="UdsNrc"/>
+  <state id="ready">
+    <transition event="uds.response" cond="_event.data.code === 0x21" target="done"/>
+    <transition event="user.go" target="done">
+      <send event="uds.response">
+        <param name="code" expr="0x80"/>
+      </send>
+    </transition>
+  </state>
+  <state id="done"/>
+</scxml>

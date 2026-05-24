@@ -991,10 +991,37 @@ fn parse_enum(
         ));
     }
 
+    // NL→IR Item C1 Path A follow-up F-κ — `sce:strict-variants`
+    // opt-out attribute on the enum's `<scxml>` root. Defaults to
+    // `true` (strict) when absent. Reject any string other than the
+    // canonical `"true"` / `"false"` so authors get a typed
+    // diagnostic rather than a silent accept on typos like
+    // `sce:strict-variants="no"`.
+    let strict_variants = match root
+        .attribute((SCE_NAMESPACE, "strict-variants"))
+        .map(str::trim)
+    {
+        None | Some("true") => true,
+        Some("false") => false,
+        Some(other) => {
+            return Err(located(
+                root,
+                label.diagnostic_label,
+                ValidationError::InvalidAttribute {
+                    element: "<scxml sce:kind=\"enum\">".into(),
+                    attr: "sce:strict-variants".into(),
+                    value: other.to_string(),
+                    expected: "\"true\" or \"false\"".into(),
+                },
+            ));
+        }
+    };
+
     Ok(EnumModel {
         name: label.identifier.to_string(),
         underlying_type,
         variants,
+        strict_variants,
         source_location: forge_source_location_of(root, label.diagnostic_label),
     })
 }

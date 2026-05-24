@@ -38,9 +38,17 @@
 //     `validation/cross-kind-type-mismatch` (reused per Item 4
 //     precedent — no new wire code).
 //
-// Out of scope:
-//   * Per-backend payload struct codegen (Atomic 4 — already landed).
-//   * Strict variant membership (F-κ deferral) — α ships width-only.
+// F-κ scope (design RFC §8 follow-up — strict variant membership):
+//   * After width narrowing accepts a literal, the membership layer
+//     verifies the value is one of the enum's declared
+//     `<sce:variant value="…"/>` set. Closed-set vocabularies (the
+//     default) reject `_event.data.status === 7` against an enum
+//     declaring `{ok=0, error=1, timeout=2}`; open-set vocabularies
+//     (`sce:strict-variants="false"` on the enum's `<scxml>` root —
+//     e.g. UDS NRC, OEM-extensible response codes) silent-skip the
+//     membership check while still enforcing width narrowing.
+//   * Same `validation/cross-kind-type-mismatch` reuse (design lock
+//     #2 — 318 DiagnosticCodes unchanged across F-κ).
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -539,6 +547,28 @@ fn check_comparison_type(
             },
         ));
     }
+    // F-κ strict variant membership — ordering invariant (design lock
+    // #3): runs only after the width narrowing layer above returned
+    // `None`. A literal that overflows the underlying carrier is the
+    // more fundamental violation and must surface first; once the
+    // value is known to fit, the membership check asks the orthogonal
+    // question of whether the value was actually declared.
+    if let Some(not_declared) =
+        enum_variant_not_declared(&field.sce_type, other_operand, imported_enums)
+    {
+        return Err(located_on_transition(
+            transition,
+            diag_label,
+            ValidationError::CrossKindTypeMismatch {
+                importing_kind: ForgeKind::Statechart,
+                importing_name: statechart_name.to_string(),
+                alias: "_event.data".to_string(),
+                field: field.id.clone(),
+                actual: not_declared.actual,
+                expected: not_declared.expected,
+            },
+        ));
+    }
     Ok(())
 }
 
@@ -700,6 +730,77 @@ fn integer_literal_value(operand: &TypedExpr) -> Option<u64> {
         return None;
     };
     parse_int_literal_text(text)
+}
+
+/// F-κ diagnostic payload returned by [`enum_variant_not_declared`].
+/// Shape mirrors [`EnumUnderlyingOverflow`] so the membership check
+/// can flow through the same `CrossKindTypeMismatch` reuse precedent
+/// without a new wire code (design lock #2 — 318 DiagnosticCodes
+/// unchanged across F-κ).
+struct EnumVariantNotDeclared {
+    actual: String,
+    expected: String,
+}
+
+/// NL→IR Item C1 Path A follow-up F-κ — strict variant membership
+/// check layered atop [`enum_underlying_overflow`]. Returns `Some`
+/// when:
+///
+///   * `field_type` is `SceType::Enum(EnumRef { alias })`,
+///   * the statechart declared an `<sce:import kind="enum" as="alias">`
+///     resolvable via `imported_enums` (silent-skip otherwise — same
+///     conservative-accept default as the width narrowing layer),
+///   * the imported enum's `strict_variants` flag is `true` (design
+///     lock #1 — opt-out is owned by the declaring vocabulary),
+///   * `operand` is an integer literal whose parsed `u64` value is
+///     not one of the values declared on the enum's `variants`.
+///
+/// Ordering invariant (design lock #3): callers MUST invoke this
+/// helper *after* [`enum_underlying_overflow`] returns `None` —
+/// width overflow is the more fundamental violation (the literal is
+/// not even representable in the carrier) and its diagnostic must
+/// win when both conditions hold. The membership check assumes the
+/// value already fits the underlying type.
+///
+/// The opt-out (`sce:strict-variants="false"` on the enum's `<scxml>`
+/// root) is the escape hatch for open-set status vocabularies — UDS
+/// negative-response codes, OEM-extensible status enums — where wire-
+/// side values outside the declared set are legal. Width narrowing
+/// (design lock #4) still runs on opt-out enums; only this membership
+/// layer silent-skips.
+fn enum_variant_not_declared(
+    field_type: &SceType,
+    operand: &TypedExpr,
+    imported_enums: &BTreeMap<String, EnumModel>,
+) -> Option<EnumVariantNotDeclared> {
+    let SceType::Enum(enum_ref) = field_type else {
+        return None;
+    };
+    let enum_model = imported_enums.get(&enum_ref.alias)?;
+    if !enum_model.strict_variants {
+        return None;
+    }
+    let value = integer_literal_value(operand)?;
+    if enum_model.variants.iter().any(|v| v.value == value) {
+        return None;
+    }
+    // Render the declared variants in declaration order — the IR
+    // preserves `<sce:variant>` ordering and authors typically scan
+    // for the value they meant by recalling the document's natural
+    // order, not by sorting alphabetically.
+    let declared = enum_model
+        .variants
+        .iter()
+        .map(|v| format!("{name}={value}", name = v.name, value = v.value))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Some(EnumVariantNotDeclared {
+        actual: format!(
+            "integer literal {value} is not a declared variant of enum '{alias}' (declared: {declared})",
+            alias = enum_ref.alias,
+        ),
+        expected: format!("enum:{alias}", alias = enum_ref.alias),
+    })
 }
 
 /// Parse a numeric literal's verbatim text. Supports the lexer's hex
@@ -1069,6 +1170,27 @@ fn check_send_param(
             },
         ));
     }
+    // F-κ strict variant membership (send-side mirror of the receive-
+    // side check in `check_comparison_type`). Same ordering invariant:
+    // runs after width narrowing so a value that overflows the
+    // underlying carrier surfaces the overflow diagnostic rather than
+    // a membership one.
+    if let Some(not_declared) =
+        enum_variant_not_declared(&field.sce_type, &expr_ast, imported_enums)
+    {
+        return Err(located_on_action(
+            action,
+            diag_label,
+            ValidationError::CrossKindTypeMismatch {
+                importing_kind: ForgeKind::Statechart,
+                importing_name: statechart_name.to_string(),
+                alias: format!("<send event=\"{}\">", action.event),
+                field: field.id.clone(),
+                actual: not_declared.actual,
+                expected: not_declared.expected,
+            },
+        ));
+    }
     Ok(())
 }
 
@@ -1118,6 +1240,14 @@ mod tests {
         }
     }
 
+    /// Atomic 5 width-narrowing test helper — produces a single-variant
+    /// enum with `strict_variants = false` so the membership layer
+    /// (F-κ) silent-skips. This isolates the width axis exercised by
+    /// the Atomic 5 tests below from the orthogonal membership axis
+    /// exercised by the F-κ tests further down, matching the
+    /// "orthogonal axes" fixture discipline. The F-κ tests build
+    /// their own enum models via `enum_model_strict` /
+    /// `enum_model_open` with the full variant set they care about.
     fn enum_model(name: &str, underlying: SceType) -> EnumModel {
         EnumModel {
             name: name.to_string(),
@@ -1127,6 +1257,7 @@ mod tests {
                 value: 0,
                 source_line: None,
             }],
+            strict_variants: false,
             source_location: None,
         }
     }
@@ -1358,5 +1489,174 @@ mod tests {
         // (conservative-accept), but category check still requires Int.
         let enums = BTreeMap::new();
         assert!(run_with_enums(s, "_event.data.status === 999999", enums).is_ok());
+    }
+
+    // ─── F-κ: strict variant membership ─────────────────────────────
+
+    fn enum_model_strict(name: &str, underlying: SceType, variants: &[(&str, u64)]) -> EnumModel {
+        EnumModel {
+            name: name.to_string(),
+            underlying_type: underlying,
+            variants: variants
+                .iter()
+                .map(|(n, v)| EnumVariant {
+                    name: (*n).to_string(),
+                    value: *v,
+                    source_line: None,
+                })
+                .collect(),
+            strict_variants: true,
+            source_location: None,
+        }
+    }
+
+    fn enum_model_open(name: &str, underlying: SceType, variants: &[(&str, u64)]) -> EnumModel {
+        let mut m = enum_model_strict(name, underlying, variants);
+        m.strict_variants = false;
+        m
+    }
+
+    #[test]
+    fn enum_declared_variant_value_passes_membership() {
+        let s = schema(
+            "job.completed",
+            vec![field(
+                "status",
+                SceType::Enum(EnumRef {
+                    alias: "Result".to_string(),
+                }),
+            )],
+        );
+        let mut enums = BTreeMap::new();
+        enums.insert(
+            "Result".to_string(),
+            enum_model_strict(
+                "Result",
+                SceType::Uint8,
+                &[("ok", 0), ("error", 1), ("timeout", 2)],
+            ),
+        );
+        assert!(run_with_enums(s, "_event.data.status === 1", enums).is_ok());
+    }
+
+    #[test]
+    fn enum_undeclared_value_within_width_rejects() {
+        let s = schema(
+            "job.completed",
+            vec![field(
+                "status",
+                SceType::Enum(EnumRef {
+                    alias: "Result".to_string(),
+                }),
+            )],
+        );
+        let mut enums = BTreeMap::new();
+        enums.insert(
+            "Result".to_string(),
+            enum_model_strict(
+                "Result",
+                SceType::Uint8,
+                &[("ok", 0), ("error", 1), ("timeout", 2)],
+            ),
+        );
+        // 7 fits uint8 width (passes Atomic 5) but is not declared.
+        let err = run_with_enums(s, "_event.data.status === 7", enums)
+            .expect_err("7 must be rejected by F-κ membership check");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("not a declared variant") && msg.contains("Result"),
+            "{msg}"
+        );
+        // Diagnostic must enumerate the declared set in declaration order.
+        assert!(msg.contains("ok=0"), "{msg}");
+        assert!(msg.contains("error=1"), "{msg}");
+        assert!(msg.contains("timeout=2"), "{msg}");
+    }
+
+    #[test]
+    fn enum_overflow_diagnostic_wins_over_membership() {
+        // Design lock #3 ordering: 256 both overflows uint8 AND is
+        // not a declared variant — the width diagnostic must surface,
+        // not the membership one.
+        let s = schema(
+            "job.completed",
+            vec![field(
+                "status",
+                SceType::Enum(EnumRef {
+                    alias: "Result".to_string(),
+                }),
+            )],
+        );
+        let mut enums = BTreeMap::new();
+        enums.insert(
+            "Result".to_string(),
+            enum_model_strict(
+                "Result",
+                SceType::Uint8,
+                &[("ok", 0), ("error", 1), ("timeout", 2)],
+            ),
+        );
+        let err = run_with_enums(s, "_event.data.status === 256", enums)
+            .expect_err("256 must overflow uint8 (width diagnostic wins)");
+        let msg = format!("{err}");
+        assert!(msg.contains("overflows"), "{msg}");
+        assert!(!msg.contains("not a declared variant"), "{msg}");
+    }
+
+    #[test]
+    fn enum_opt_out_silent_skips_membership_but_keeps_width() {
+        // Design lock #4: opt-out skips membership but width still runs.
+        let s = schema(
+            "uds.response",
+            vec![field(
+                "code",
+                SceType::Enum(EnumRef {
+                    alias: "UdsNrc".to_string(),
+                }),
+            )],
+        );
+        let mut enums = BTreeMap::new();
+        enums.insert(
+            "UdsNrc".to_string(),
+            enum_model_open(
+                "UdsNrc",
+                SceType::Uint8,
+                &[("generalReject", 0x10), ("serviceNotSupported", 0x11)],
+            ),
+        );
+        // 0x21 (33) is undeclared but fits uint8 → opt-out accepts.
+        assert!(run_with_enums(s.clone(), "_event.data.code === 0x21", enums.clone()).is_ok());
+        // 0x1FF (511) overflows uint8 → width still rejects.
+        let err = run_with_enums(s, "_event.data.code === 0x1FF", enums)
+            .expect_err("width narrowing must still reject overflow on opt-out enum");
+        let msg = format!("{err}");
+        assert!(msg.contains("overflows"), "{msg}");
+    }
+
+    #[test]
+    fn enum_hex_literal_membership_check_uses_decimal_value() {
+        // Authors may write `0x10` for value 16; the diagnostic
+        // canonicalizes to the decimal numeric value so the rendered
+        // candidate list lines up with the source variants' declared
+        // numbers.
+        let s = schema(
+            "job.completed",
+            vec![field(
+                "status",
+                SceType::Enum(EnumRef {
+                    alias: "Result".to_string(),
+                }),
+            )],
+        );
+        let mut enums = BTreeMap::new();
+        enums.insert(
+            "Result".to_string(),
+            enum_model_strict("Result", SceType::Uint8, &[("ok", 0), ("error", 1)]),
+        );
+        // 0x05 = 5, undeclared and fits uint8.
+        let err = run_with_enums(s, "_event.data.status === 0x05", enums)
+            .expect_err("0x05 must be rejected by membership check");
+        let msg = format!("{err}");
+        assert!(msg.contains("integer literal 5"), "{msg}");
     }
 }

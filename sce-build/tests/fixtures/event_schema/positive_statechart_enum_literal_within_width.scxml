@@ -6,6 +6,13 @@
   hex (0xFF) — both must pass the narrowing layer without diagnostic.
   Pairs with `negative_statechart_enum_literal_overflow.scxml` to lock
   the off-by-one boundary.
+
+  Imports the open-set `result_open` enum (post-F-κ axis-isolation
+  pair: `result_open.scxml` + `schema_job_completed_with_open_enum.scxml`)
+  so the F-κ membership layer silent-skips and this fixture exercises
+  the width narrowing axis in isolation. The strict-set
+  `result.scxml` lives next to this fixture for the membership-axis
+  fixtures.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -13,8 +20,8 @@
        version="1.0"
        initial="waiting"
        datamodel="ecmascript">
-  <sce:import src="schema_job_completed_with_enum.scxml" kind="event-schema" as="JobCompletedSchema"/>
-  <sce:import src="result.scxml" kind="enum" as="Result"/>
+  <sce:import src="schema_job_completed_with_open_enum.scxml" kind="event-schema" as="JobCompletedSchema"/>
+  <sce:import src="result_open.scxml" kind="enum" as="ResultOpen"/>
   <state id="waiting">
     <transition event="job.completed" cond="_event.data.status === 255" target="ok"/>
     <transition event="job.completed" cond="_event.data.status === 0xFF" target="ok"/>
