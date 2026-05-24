@@ -237,6 +237,29 @@ pub struct ImportContext {
     /// [`FlagInput`]: crate::forge::model::FlagInput
     #[serde(skip)]
     pub flag_binds: Vec<crate::forge::model::FlagBind>,
+
+    /// NL→IR Item C1 Path A Atomic 2: per-language qualified type name
+    /// of an imported `sce:kind="enum"` document. Empty for non-Enum
+    /// imports (and for Enum imports before
+    /// `validate_and_enrich_imports` enrichment fires). When non-empty,
+    /// downstream renderers reference the imported enum by this name:
+    ///   * C++   `SCE::Generated::<Pascal>::<Pascal>` — fully-qualified
+    ///   * Rust  `<snake>::<Pascal>` — module-qualified
+    ///   * Kotlin `<Pascal>` — wildcard import brings the type into scope
+    ///   * Go    `<snake>.<Pascal>` — package-qualified
+    ///   * Python `<snake>.<Pascal>` — module-qualified
+    ///   * C11   `<Pascal>_t` — flat scope, typedef-suffix discriminator
+    ///
+    /// Resolved by [`LangCtx::qualified_enum_type`] and consumed by
+    /// [`LangCtx::resolved_type`]; together they let any render function
+    /// that walks `field.sce_type` map `SceType::Enum(EnumRef { alias })`
+    /// to the correct backend syntax without re-implementing the
+    /// separator-per-backend matrix.
+    ///
+    /// [`LangCtx::qualified_enum_type`]: super::generator::LangCtx::qualified_enum_type
+    /// [`LangCtx::resolved_type`]: super::generator::LangCtx::resolved_type
+    #[serde(skip)]
+    pub enum_qualified_type: String,
 }
 
 /// Resolve a list of `ForgeImport` into template-ready `ImportContext`.
@@ -373,6 +396,7 @@ fn resolve_single_import(
                 codec_variant_is_caller_tag: false,
                 codec_flag_inputs: Vec::new(),
                 flag_binds: imp.flag_binds.clone(),
+                enum_qualified_type: String::new(),
             }
         }
         crate::generator::Language::Kotlin => {
@@ -411,6 +435,7 @@ fn resolve_single_import(
                 codec_variant_is_caller_tag: false,
                 codec_flag_inputs: Vec::new(),
                 flag_binds: imp.flag_binds.clone(),
+                enum_qualified_type: String::new(),
             }
         }
         crate::generator::Language::Rust => {
@@ -451,6 +476,7 @@ fn resolve_single_import(
                 codec_variant_is_caller_tag: false,
                 codec_flag_inputs: Vec::new(),
                 flag_binds: imp.flag_binds.clone(),
+                enum_qualified_type: String::new(),
             }
         }
         crate::generator::Language::Go => {
@@ -517,6 +543,7 @@ fn resolve_single_import(
                 codec_variant_is_caller_tag: false,
                 codec_flag_inputs: Vec::new(),
                 flag_binds: imp.flag_binds.clone(),
+                enum_qualified_type: String::new(),
             }
         }
         crate::generator::Language::Python => {
@@ -557,6 +584,7 @@ fn resolve_single_import(
                 codec_variant_is_caller_tag: false,
                 codec_flag_inputs: Vec::new(),
                 flag_binds: imp.flag_binds.clone(),
+                enum_qualified_type: String::new(),
             }
         }
         crate::generator::Language::C11 => {
@@ -598,6 +626,7 @@ fn resolve_single_import(
                 codec_variant_is_caller_tag: false,
                 codec_flag_inputs: Vec::new(),
                 flag_binds: imp.flag_binds.clone(),
+                enum_qualified_type: String::new(),
             }
         }
     }
@@ -621,15 +650,19 @@ pub(crate) fn cpp_type(ty: &SceType) -> &'static str {
         SceType::Bool => "bool",
         SceType::String => "std::string",
         SceType::Bytes => "std::vector<uint8_t>",
-        // NL→IR Item C1 Path A Atomic 1: `SceType::Enum` is gated to
-        // IR-only — Atomic 1 fixtures do not declare `enum:<alias>`
-        // outside the Enum document itself, so this arm is
-        // unreachable for the Atomic-1 codegen surface. Atomic 2
-        // resolves the imported enum's `underlying_type` via the
-        // import context and emits the qualified typed enum name.
-        // The `uint8_t` placeholder documents "an integer
-        // underneath" — never returned in practice on Atomic 1.
-        SceType::Enum(_) => "uint8_t",
+        // NL→IR Item C1 Path A Atomic 2: `SceType::Enum(EnumRef)`
+        // cannot be resolved without the surrounding `ImportContext`
+        // (the qualified type name depends on the importing document's
+        // `<sce:import>` alias). Callers that may encounter
+        // Enum-typed fields MUST use `LangCtx::resolved_type` instead
+        // of bare `cpp_type`. The panic surfaces routing bugs at
+        // codegen time per `feedback_silently_broken_hooks` —
+        // emitting a placeholder integer would silently produce wrong
+        // generated code.
+        SceType::Enum(_) => unreachable!(
+            "cpp_type called on SceType::Enum — use LangCtx::resolved_type \
+             which threads the ImportContext alias table"
+        ),
     }
 }
 
@@ -671,10 +704,12 @@ pub(crate) fn c_type(ty: &SceType) -> &'static str {
         // numeric.
         SceType::String => "const char *",
         SceType::Bytes => "const uint8_t *",
-        // NL→IR Item C1 Path A: see `cpp_type`. Atomic 1 codegen never
-        // sees Enum on a non-Enum-doc field; Atomic 2 lands the
-        // underlying-type-resolved emission.
-        SceType::Enum(_) => "uint8_t",
+        // NL→IR Item C1 Path A Atomic 2: see `cpp_type` — use
+        // `LangCtx::resolved_type` for Enum-aware lookups.
+        SceType::Enum(_) => unreachable!(
+            "c_type called on SceType::Enum — use LangCtx::resolved_type \
+             which threads the ImportContext alias table"
+        ),
     }
 }
 
@@ -714,10 +749,12 @@ pub(crate) fn kotlin_type(ty: &SceType) -> &'static str {
         SceType::Bool => "Boolean",
         SceType::String => "String",
         SceType::Bytes => "ByteArray",
-        // NL→IR Item C1 Path A: see `cpp_type`. Atomic 1 codegen never
-        // sees Enum on a non-Enum-doc field; Atomic 2 emits the
-        // qualified Kotlin enum class name.
-        SceType::Enum(_) => "Int",
+        // NL→IR Item C1 Path A Atomic 2: see `cpp_type` — use
+        // `LangCtx::resolved_type` for Enum-aware lookups.
+        SceType::Enum(_) => unreachable!(
+            "kotlin_type called on SceType::Enum — use LangCtx::resolved_type \
+             which threads the ImportContext alias table"
+        ),
     }
 }
 
@@ -749,10 +786,12 @@ pub(crate) fn rust_type(ty: &SceType) -> &'static str {
         SceType::Bool => "bool",
         SceType::String => "String",
         SceType::Bytes => "Vec<u8>",
-        // NL→IR Item C1 Path A: see `cpp_type`. Atomic 1 codegen never
-        // sees Enum on a non-Enum-doc field; Atomic 2 emits the
-        // qualified Rust enum path.
-        SceType::Enum(_) => "u8",
+        // NL→IR Item C1 Path A Atomic 2: see `cpp_type` — use
+        // `LangCtx::resolved_type` for Enum-aware lookups.
+        SceType::Enum(_) => unreachable!(
+            "rust_type called on SceType::Enum — use LangCtx::resolved_type \
+             which threads the ImportContext alias table"
+        ),
     }
 }
 
@@ -995,16 +1034,11 @@ pub fn generate_cpp_with_imports_and_externs(
         ForgeDocument::BoundedCollection(m) => {
             render_bounded_collection_cpp(&env, m, imports, options)?
         }
-        // NL→IR Item C1 Path A Atomic 1: Enum is IR-only —
-        // `codegen_matrix::template_ships(Enum, *) = false` so
-        // `check()` at the entry of this `generate_cpp` short-
-        // circuits with `CodegenGenericKindBackendEmitMissing`
-        // before reaching this dispatch. Atomic 2 lands the C++
-        // template and flips the matrix arm to `true`.
-        ForgeDocument::Enum(_) => unreachable!(
-            "ForgeDocument::Enum never reaches forge codegen on Atomic 1 — \
-             codegen_matrix::check rejects with TemplateMissing"
-        ),
+        // NL→IR Item C1 Path A Atomic 2: Enum lowers to `enum class
+        // <Pascal> : <underlying_int>` via the unified `render_enum`
+        // helper. `codegen_matrix::template_ships(Enum, Cpp) = true`
+        // so `check()` lets dispatch through to here.
+        ForgeDocument::Enum(m) => render_enum(&env, m, imports, crate::generator::Language::Cpp)?,
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -1333,6 +1367,103 @@ fn render_lookup(
 
     l.insert_imports(&mut ctx, imports);
     l.render(env, "lookup", ctx)
+}
+
+// ── Enum rendering (unified) ──────────────────────────────────
+//
+// NL→IR Item C1 Path A Atomic 2: emit a backend-native typed enum from
+// `EnumModel`. Each backend lowers the variant list to its idiomatic
+// shape per design RFC §3 DL-6':
+//   * C++  : `enum class <Pascal> : <underlying_int> { <Pascal> = N, … };`
+//   * Rust : `#[repr(<underlying_int>)] pub enum <Pascal> { <Pascal> = N, … }`
+//   * Kotlin: `enum class <Pascal>(val raw: <UnderlyingInt>) { <UPPER_SNAKE>(N), … }`
+//   * Go   : `type <Pascal> <underlying_int>` + `const ( <Pascal><PascalVariant> <Pascal> = N )`
+//   * Python: `class <Pascal>(IntEnum): <UPPER_SNAKE> = N`
+//   * C11  : `typedef enum { <UPPER_TYPE>_<UPPER_VARIANT> = N, … } <Pascal>_t;`
+//
+// `m.underlying_type` is always a primitive (`Uint8/16/32/64`); the
+// parser rejects any other shape via
+// `validation/enum-unsupported-underlying-type`, so the
+// `<lang>_type(&m.underlying_type)` lookups here never reach the
+// `SceType::Enum(_)` arm.
+fn render_enum(
+    env: &minijinja::Environment,
+    m: &EnumModel,
+    imports: &[ImportContext],
+    lang: crate::generator::Language,
+) -> Result<String, ForgeError> {
+    use crate::generator::Language;
+    let l = LangCtx::new(lang);
+
+    let enum_name = filters::to_pascal_case(m.name.clone());
+    let upper_snake_type = to_upper_snake(&m.name);
+
+    let underlying_type: String = match lang {
+        Language::Cpp => cpp_type(&m.underlying_type).to_string(),
+        Language::C11 => c_type(&m.underlying_type).to_string(),
+        Language::Rust => rust_type(&m.underlying_type).to_string(),
+        Language::Go => go_type(&m.underlying_type).to_string(),
+        Language::Kotlin => kotlin_type(&m.underlying_type).to_string(),
+        // Python `IntEnum` requires plain `int` as the parent class.
+        // The underlying integer width is documented as a comment in
+        // the emitted file (design RFC §3 DL-6' Python row).
+        Language::Python => "int".to_string(),
+    };
+
+    let variants: Vec<serde_json::Value> = m
+        .variants
+        .iter()
+        .map(|v| {
+            let name = match lang {
+                Language::Cpp | Language::Rust => filters::to_pascal_case(v.name.clone()),
+                Language::Kotlin | Language::Python => to_upper_snake(&v.name),
+                Language::Go => format!(
+                    "{}{}",
+                    enum_name,
+                    filters::to_pascal_case(v.name.clone())
+                ),
+                Language::C11 => format!("{}_{}", upper_snake_type, to_upper_snake(&v.name)),
+            };
+            let value_text = v.value.to_string();
+            let value = match lang {
+                // Kotlin's `UByte`/`UShort` have no literal suffix —
+                // `kotlin_literal` wraps with `0u.toUByte()` etc.
+                Language::Kotlin => kotlin_literal(&value_text, &m.underlying_type),
+                _ => value_text,
+            };
+            serde_json::json!({"name": name, "value": value})
+        })
+        .collect();
+
+    // SCE-canonical name of the underlying carrier — used by the
+    // Python template's documentation comment so the original
+    // `sce:underlying-type="uint8"` declaration is preserved in the
+    // generated header (Python's `IntEnum` lowers to plain `int` so
+    // the width information would otherwise be lost). Other backends
+    // already surface the carrier in their syntax (`enum class : <T>`
+    // / `#[repr(<T>)]` / `val raw: <T>` / `type <Name> <T>` / typedef
+    // comment) so they ignore this key.
+    let sce_underlying_name = match m.underlying_type {
+        SceType::Uint8 => "uint8",
+        SceType::Uint16 => "uint16",
+        SceType::Uint32 => "uint32",
+        SceType::Uint64 => "uint64",
+        // Parser rejects every other underlying type via
+        // `validation/enum-unsupported-underlying-type`; reaching any
+        // other arm here is a parse-side regression.
+        _ => unreachable!(
+            "render_enum invoked with non-unsigned underlying_type — \
+             parser must reject via validation/enum-unsupported-underlying-type"
+        ),
+    };
+
+    let mut ctx = l.base_context(&m.name);
+    ctx.insert("enum_name".into(), enum_name.into());
+    ctx.insert("underlying_type".into(), underlying_type.into());
+    ctx.insert("sce_underlying_name".into(), sce_underlying_name.into());
+    ctx.insert("variants".into(), serde_json::json!(variants));
+    l.insert_imports(&mut ctx, imports);
+    l.render(env, "enum", ctx)
 }
 
 // ── Condition rendering (unified) ─────────────────────────────
@@ -11156,11 +11287,8 @@ pub fn generate_kotlin_with_imports(
         ForgeDocument::BoundedCollection(m) => {
             render_bounded_collection_kotlin(&env, m, imports, options)?
         }
-        // NL→IR Item C1 Path A Atomic 1: see cpp dispatch.
-        ForgeDocument::Enum(_) => unreachable!(
-            "ForgeDocument::Enum never reaches forge codegen on Atomic 1 — \
-             codegen_matrix::check rejects with TemplateMissing"
-        ),
+        // NL→IR Item C1 Path A Atomic 2: see cpp dispatch.
+        ForgeDocument::Enum(m) => render_enum(&env, m, imports, crate::generator::Language::Kotlin)?,
     };
 
     let filename = format!("{}.kt", filters::to_pascal_case(doc.name().to_string()));
@@ -11323,11 +11451,8 @@ pub fn generate_rust_with_imports_and_externs(
         ForgeDocument::BoundedCollection(m) => {
             render_bounded_collection_rust(&env, m, imports, options)?
         }
-        // NL→IR Item C1 Path A Atomic 1: see cpp dispatch.
-        ForgeDocument::Enum(_) => unreachable!(
-            "ForgeDocument::Enum never reaches forge codegen on Atomic 1 — \
-             codegen_matrix::check rejects with TemplateMissing"
-        ),
+        // NL→IR Item C1 Path A Atomic 2: see cpp dispatch.
+        ForgeDocument::Enum(m) => render_enum(&env, m, imports, crate::generator::Language::Rust)?,
     };
 
     let filename = format!("{}.rs", filters::to_snake_case(doc.name().to_string()));
@@ -12702,10 +12827,12 @@ pub(crate) fn go_type(ty: &SceType) -> &'static str {
         SceType::Bool => "bool",
         SceType::String => "string",
         SceType::Bytes => "[]byte",
-        // NL→IR Item C1 Path A: see `cpp_type`. Atomic 1 codegen never
-        // sees Enum on a non-Enum-doc field; Atomic 2 emits the
-        // qualified Go enum type name.
-        SceType::Enum(_) => "uint8",
+        // NL→IR Item C1 Path A Atomic 2: see `cpp_type` — use
+        // `LangCtx::resolved_type` for Enum-aware lookups.
+        SceType::Enum(_) => unreachable!(
+            "go_type called on SceType::Enum — use LangCtx::resolved_type \
+             which threads the ImportContext alias table"
+        ),
     }
 }
 
@@ -12802,11 +12929,8 @@ pub fn generate_go_with_imports(
         ForgeDocument::BoundedCollection(m) => {
             render_bounded_collection_go(&env, m, imports, options)?
         }
-        // NL→IR Item C1 Path A Atomic 1: see cpp dispatch.
-        ForgeDocument::Enum(_) => unreachable!(
-            "ForgeDocument::Enum never reaches forge codegen on Atomic 1 — \
-             codegen_matrix::check rejects with TemplateMissing"
-        ),
+        // NL→IR Item C1 Path A Atomic 2: see cpp dispatch.
+        ForgeDocument::Enum(m) => render_enum(&env, m, imports, crate::generator::Language::Go)?,
     };
 
     let filename = format!("{}.go", filters::to_snake_case(doc.name().to_string()));
@@ -12863,10 +12987,12 @@ pub(crate) fn python_type(ty: &SceType) -> &'static str {
         SceType::Bool => "bool",
         SceType::String => "str",
         SceType::Bytes => "bytes",
-        // NL→IR Item C1 Path A: see `cpp_type`. Atomic 1 codegen never
-        // sees Enum on a non-Enum-doc field; Atomic 2 emits the
-        // qualified Python IntEnum name.
-        SceType::Enum(_) => "int",
+        // NL→IR Item C1 Path A Atomic 2: see `cpp_type` — use
+        // `LangCtx::resolved_type` for Enum-aware lookups.
+        SceType::Enum(_) => unreachable!(
+            "python_type called on SceType::Enum — use LangCtx::resolved_type \
+             which threads the ImportContext alias table"
+        ),
     }
 }
 
@@ -12957,11 +13083,8 @@ pub fn generate_python_with_imports(
         ForgeDocument::BoundedCollection(m) => {
             render_bounded_collection_python(&env, m, imports, options)?
         }
-        // NL→IR Item C1 Path A Atomic 1: see cpp dispatch.
-        ForgeDocument::Enum(_) => unreachable!(
-            "ForgeDocument::Enum never reaches forge codegen on Atomic 1 — \
-             codegen_matrix::check rejects with TemplateMissing"
-        ),
+        // NL→IR Item C1 Path A Atomic 2: see cpp dispatch.
+        ForgeDocument::Enum(m) => render_enum(&env, m, imports, crate::generator::Language::Python)?,
     };
 
     let filename = format!("{}.py", filters::to_snake_case(doc.name().to_string()));
@@ -13115,11 +13238,8 @@ pub fn generate_c11_with_imports_and_externs(
         ForgeDocument::BoundedCollection(m) => {
             render_bounded_collection_c(&env, m, imports, options)?
         }
-        // NL→IR Item C1 Path A Atomic 1: see cpp dispatch.
-        ForgeDocument::Enum(_) => unreachable!(
-            "ForgeDocument::Enum never reaches forge codegen on Atomic 1 — \
-             codegen_matrix::check rejects with TemplateMissing"
-        ),
+        // NL→IR Item C1 Path A Atomic 2: see cpp dispatch.
+        ForgeDocument::Enum(m) => render_enum(&env, m, imports, crate::generator::Language::C11)?,
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -16921,6 +17041,77 @@ impl LangCtx {
         Ok(tmpl.render(value).map_err(generator::render_error)?)
     }
 
+    /// NL→IR Item C1 Path A Atomic 2: compose the per-language
+    /// qualified type name of an imported `sce:kind="enum"` document.
+    /// Reads directly from [`ImportContext::enum_qualified_type`],
+    /// which `validate_and_enrich_imports` populated at enrichment
+    /// time. Returning an empty string here is a programmer error —
+    /// either the enrichment pass was bypassed or a non-Enum import
+    /// got threaded through; both cases should panic loudly per
+    /// `feedback_silently_broken_hooks`.
+    ///
+    /// `#[allow(dead_code)]` until Atomic 4 (EventSchema payload
+    /// struct codegen) wires the production consumer — the helper +
+    /// its ImportContext slot are the load-bearing infrastructure
+    /// Atomic 4 needs to emit enum-typed payload fields without
+    /// re-implementing the separator-per-backend matrix at the
+    /// EventSchema rendering site. Unit tests cover both helpers so
+    /// the contract is verified independently of the consumer site.
+    #[allow(dead_code)]
+    fn qualified_enum_type(&self, import: &ImportContext) -> String {
+        debug_assert!(
+            !import.enum_qualified_type.is_empty(),
+            "LangCtx::qualified_enum_type called on import alias='{}' kind='{}' \
+             with empty enum_qualified_type — validate_and_enrich_imports must \
+             populate this field for `sce:kind=\"enum\"` imports before any \
+             render function consumes it",
+            import.alias,
+            import.kind,
+        );
+        import.enum_qualified_type.clone()
+    }
+
+    /// NL→IR Item C1 Path A Atomic 2: resolve a [`SceType`] to its
+    /// language-native type string, honoring imported-Enum alias
+    /// resolution. Delegates to [`Self::type_name`] for every primitive
+    /// type; for `SceType::Enum(EnumRef { alias })` it walks `imports`
+    /// to find the matching import context and returns its
+    /// `enum_qualified_type`.
+    ///
+    /// Any render function that may encounter Enum-typed fields MUST
+    /// call this helper instead of the bare `cpp_type` / `rust_type` /
+    /// etc. lookup functions — those panic on `SceType::Enum(_)` to
+    /// surface routing bugs at codegen time rather than silently
+    /// emitting an integer placeholder.
+    ///
+    /// `#[allow(dead_code)]`: same deferral as
+    /// [`Self::qualified_enum_type`] — see that doc-comment for the
+    /// Atomic 4 wiring plan.
+    #[allow(dead_code)]
+    fn resolved_type(&self, ty: &SceType, imports: &[ImportContext]) -> String {
+        match ty {
+            SceType::Enum(r) => {
+                for imp in imports {
+                    if imp.alias == r.alias {
+                        return self.qualified_enum_type(imp);
+                    }
+                }
+                // Pre-codegen passes (`cross_kind_check::check`,
+                // `validate_and_enrich_imports`) reject any `enum:<alias>`
+                // reference whose alias does not appear in the document's
+                // `<sce:import>` table — reaching this branch means the
+                // gate fired wrong. Panic with the alias for diagnosis.
+                panic!(
+                    "SceType::Enum(alias='{}') not found in import context — \
+                     cross_kind_check or validate_and_enrich_imports must \
+                     reject unresolved enum aliases before codegen",
+                    r.alias
+                );
+            }
+            _ => self.type_name(ty).to_string(),
+        }
+    }
+
     /// Insert standard import fields into a context map.
     fn insert_imports(
         &self,
@@ -19640,6 +19831,169 @@ mod tests {
         assert_eq!(python_type(&SceType::Bytes), "bytes");
     }
 
+    // ── NL→IR Item C1 Path A Atomic 2: Enum panic + resolver ───
+    //
+    // The six type-mapping functions panic on `SceType::Enum(_)` so
+    // codegen routing bugs surface loudly. `LangCtx::resolved_type`
+    // is the sanctioned entry point — it delegates to `type_name` for
+    // primitives and walks the `ImportContext` table for Enum aliases.
+
+    fn enum_ref(alias: &str) -> SceType {
+        SceType::Enum(EnumRef {
+            alias: alias.to_string(),
+        })
+    }
+
+    fn import_with_enum_qualified(alias: &str, qualified: &str) -> ImportContext {
+        ImportContext {
+            alias: alias.to_string(),
+            kind: "enum".to_string(),
+            include_stmt: String::new(),
+            type_name: String::new(),
+            is_stateful: false,
+            member_name: String::new(),
+            member_type: String::new(),
+            namespace: String::new(),
+            qualified_call: String::new(),
+            param_types: Vec::new(),
+            ret_type: None,
+            member_field_types: Vec::new(),
+            member_method_sigs: Vec::new(),
+            go_init_expr: String::new(),
+            codec_max_bytes: None,
+            codec_first_flags: None,
+            codec_emits_default_ctor: false,
+            buffer_pool_slot_size: None,
+            bc_element_snake: None,
+            embed_dispatch: None,
+            codec_variant_arms_for_inversion: None,
+            codec_variant_has_default_arm: None,
+            codec_variant_is_caller_tag: false,
+            codec_flag_inputs: Vec::new(),
+            flag_binds: Vec::new(),
+            enum_qualified_type: qualified.to_string(),
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "cpp_type called on SceType::Enum")]
+    fn cpp_type_panics_on_enum() {
+        let _ = cpp_type(&enum_ref("Result"));
+    }
+
+    #[test]
+    #[should_panic(expected = "c_type called on SceType::Enum")]
+    fn c_type_panics_on_enum() {
+        let _ = c_type(&enum_ref("Result"));
+    }
+
+    #[test]
+    #[should_panic(expected = "kotlin_type called on SceType::Enum")]
+    fn kotlin_type_panics_on_enum() {
+        let _ = kotlin_type(&enum_ref("Result"));
+    }
+
+    #[test]
+    #[should_panic(expected = "rust_type called on SceType::Enum")]
+    fn rust_type_panics_on_enum() {
+        let _ = rust_type(&enum_ref("Result"));
+    }
+
+    #[test]
+    #[should_panic(expected = "go_type called on SceType::Enum")]
+    fn go_type_panics_on_enum() {
+        let _ = go_type(&enum_ref("Result"));
+    }
+
+    #[test]
+    #[should_panic(expected = "python_type called on SceType::Enum")]
+    fn python_type_panics_on_enum() {
+        let _ = python_type(&enum_ref("Result"));
+    }
+
+    #[test]
+    fn resolved_type_passthrough_for_primitives() {
+        // For non-Enum SceTypes, resolved_type returns the same string as
+        // type_name. Verified across all six backends so a future refactor
+        // can't silently break the delegation.
+        let imports: Vec<ImportContext> = Vec::new();
+        let cases = &[
+            SceType::Uint8,
+            SceType::Int32,
+            SceType::Float64,
+            SceType::Bool,
+            SceType::String,
+            SceType::Bytes,
+        ];
+        for lang in [
+            crate::generator::Language::Cpp,
+            crate::generator::Language::C11,
+            crate::generator::Language::Kotlin,
+            crate::generator::Language::Rust,
+            crate::generator::Language::Go,
+            crate::generator::Language::Python,
+        ] {
+            let l = LangCtx::new(lang);
+            for ty in cases {
+                assert_eq!(
+                    l.resolved_type(ty, &imports),
+                    l.type_name(ty),
+                    "resolved_type drift from type_name for {:?}/{:?}",
+                    lang,
+                    ty,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn resolved_type_returns_qualified_for_enum_alias() {
+        // Each backend returns the qualified type name the import was
+        // enriched with — the per-backend separator matrix lives in
+        // `validate_and_enrich_imports`'s Enum arm, not in this helper.
+        let cases = &[
+            (
+                crate::generator::Language::Cpp,
+                "SCE::Generated::Result::Result",
+            ),
+            (crate::generator::Language::C11, "Result_t"),
+            (crate::generator::Language::Kotlin, "Result"),
+            (crate::generator::Language::Rust, "result::Result"),
+            (crate::generator::Language::Go, "result.Result"),
+            (crate::generator::Language::Python, "result.Result"),
+        ];
+        for (lang, qualified) in cases {
+            let l = LangCtx::new(*lang);
+            let imports = vec![import_with_enum_qualified("Result", qualified)];
+            assert_eq!(
+                l.resolved_type(&enum_ref("Result"), &imports),
+                *qualified,
+                "resolved_type({:?}, enum:Result) drift",
+                lang,
+            );
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "SceType::Enum(alias='Missing') not found in import context")]
+    fn resolved_type_panics_on_unresolved_enum_alias() {
+        // Cross-kind binding (`cross_kind_check::check`) and
+        // `validate_and_enrich_imports` reject unresolved enum aliases
+        // before codegen runs, so this branch should be unreachable in
+        // production. The panic surfaces the gate failure at the
+        // codegen site rather than emitting wrong code.
+        let l = LangCtx::new(crate::generator::Language::Cpp);
+        let imports: Vec<ImportContext> = Vec::new();
+        let _ = l.resolved_type(&enum_ref("Missing"), &imports);
+    }
+
+    #[test]
+    fn qualified_enum_type_returns_import_slot() {
+        let l = LangCtx::new(crate::generator::Language::Rust);
+        let imp = import_with_enum_qualified("Result", "result::Result");
+        assert_eq!(l.qualified_enum_type(&imp), "result::Result");
+    }
+
     // ── go_escape_builtin ────────────────────────────────────
 
     #[test]
@@ -20123,6 +20477,7 @@ mod tests {
                 codec_variant_is_caller_tag: false,
                 codec_flag_inputs: Vec::new(),
                 flag_binds: Vec::new(),
+                enum_qualified_type: String::new(),
             },
             ImportContext {
                 alias: "c".to_string(),
@@ -20150,6 +20505,7 @@ mod tests {
                 codec_variant_is_caller_tag: false,
                 codec_flag_inputs: Vec::new(),
                 flag_binds: Vec::new(),
+                enum_qualified_type: String::new(),
             },
         ];
         let (has, _all, _stateful) = build_template_imports(&imports);

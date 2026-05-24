@@ -331,6 +331,11 @@ const FIXTURE_PER_KIND: &[(&str, &str)] = &[
     ("buffer-pool", "buffer_pool_ast_export_min.scxml"),
     ("worker", "worker_ast_export_min.scxml"),
     ("bounded-collection", "local_sub_table.scxml"),
+    // NL→IR Item C1 Path A Atomic 2: Enum kind round-trip coverage.
+    // Minimal-shape fixture (2 variants, uint8 underlying) chosen to
+    // mirror `*_ast_export_min` siblings — the round-trip envelope is
+    // what's under test, not enum-feature richness.
+    ("enum", "enum_ast_export_min.scxml"),
 ];
 
 #[test]

@@ -60,12 +60,17 @@ fn forge_kind_enum_count_is_seventeen() {
     assert_eq!(ForgeKind::ALL_ATTR_NAMES.len(), 17);
 }
 
-// ── codegen_matrix gate (Atomic 1: no codegen) ───────────────────
+// ── codegen_matrix gate (Atomic 2: 6-backend lockstep) ──────────
 
 #[test]
-fn enum_template_does_not_ship_on_any_backend_in_atomic_1() {
+fn enum_template_ships_on_all_six_backends() {
     use sce_build::forge::codegen_matrix::template_ships;
     use sce_build::generator::Language;
+    // NL→IR Item C1 Path A Atomic 2 acceptance gate per design RFC §5.2:
+    // Enum lowers to a backend-native typed enum on every Generic-class
+    // backend. Atomic 1 shipped with `false` on every arm (kind in IR
+    // only); Atomic 2 flips the matrix in lockstep with the 6 new
+    // templates under `tools/codegen/templates/forge/<lang>/enum.<ext>.jinja2`.
     for lang in [
         Language::Cpp,
         Language::Rust,
@@ -75,9 +80,9 @@ fn enum_template_does_not_ship_on_any_backend_in_atomic_1() {
         Language::C11,
     ] {
         assert!(
-            !template_ships(ForgeKind::Enum, lang),
-            "Atomic 1 expects template_ships(Enum, {lang:?}) = false; \
-             Atomic 2 flips this on per-backend lockstep"
+            template_ships(ForgeKind::Enum, lang),
+            "Atomic 2 expects template_ships(Enum, {lang:?}) = true; \
+             per-backend Jinja2 template must ship in lockstep with this flag"
         );
     }
 }

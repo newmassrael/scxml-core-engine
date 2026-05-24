@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- NL→IR Item C1 Path A Atomic 2 — minimal Enum fixture for the
+     forge_ast_export round-trip drift guard. Mirrors the
+     `*_ast_export_min` naming convention used by buffer_pool / link /
+     worker fixtures: the smallest legal shape that exercises the kind's
+     wire envelope without dragging in cross-doc imports. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="enum"
+       name="enum_ast_export_min"
+       sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="a" value="0"/>
+      <sce:variant name="b" value="1"/>
+    </data>
+  </datamodel>
+</scxml>
