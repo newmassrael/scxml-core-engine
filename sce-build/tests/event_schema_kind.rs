@@ -473,3 +473,198 @@ fn negative_mesh_sender_only_rejects() {
         other => panic!("expected Mesh error, got {other:?}"),
     }
 }
+
+// ─── Atomic 5 (DL-5') cross-doc Enum literal width narrowing ─────
+
+/// Negative — `_event.data.<enum_field> === 256` against the schema's
+/// `enum:Result` field whose underlying is `uint8`. The narrowing
+/// layer in `enum_underlying_overflow` rejects with the reused
+/// `validation/cross-kind-type-mismatch` wire code (Item 4 precedent —
+/// no new code). The diagnostic message names the offending literal,
+/// the underlying width, and the enum alias so authors can pinpoint
+/// the overflow without re-deriving the cross-doc context.
+#[test]
+fn negative_enum_literal_overflow_receive_side_rejects() {
+    let dir = tempdir().expect("tempdir");
+    let staged = stage_fixtures(
+        dir.path(),
+        &[
+            "result.scxml",
+            "schema_job_completed_with_enum.scxml",
+            "negative_statechart_enum_literal_overflow.scxml",
+        ],
+    );
+    let enum_path = &staged[0];
+    let schema_path = &staged[1];
+    let scxml_path = &staged[2];
+    let err = run(
+        &[scxml_path.as_path()],
+        &[enum_path.as_path(), schema_path.as_path()],
+    )
+    .err()
+    .expect("orchestrator should reject 256 against uint8-underlying enum");
+    match err.error {
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::CrossKindTypeMismatch {
+                field,
+                actual,
+                expected,
+                alias,
+                ..
+            } => {
+                assert_eq!(field, "status");
+                assert_eq!(expected, "uint8");
+                assert!(
+                    actual.contains("256") && actual.contains("uint8") && actual.contains("Result"),
+                    "expected message to name literal 256, underlying uint8, alias Result; got {actual:?}"
+                );
+                assert_eq!(alias, "_event.data");
+            }
+            other => panic!("expected CrossKindTypeMismatch, got {other:?}"),
+        },
+        other => panic!("expected Validation error, got {other:?}"),
+    }
+}
+
+/// Negative — `<send><param name="status" expr="0x1FFFF"/>` against
+/// the same `enum:Result` (uint8) field. Mirrors the receive-side
+/// narrowing diagnostic on the send-side branch of the validator.
+#[test]
+fn negative_enum_literal_overflow_send_side_rejects() {
+    let dir = tempdir().expect("tempdir");
+    let staged = stage_fixtures(
+        dir.path(),
+        &[
+            "result.scxml",
+            "schema_job_completed_with_enum.scxml",
+            "negative_statechart_send_enum_literal_overflow.scxml",
+        ],
+    );
+    let enum_path = &staged[0];
+    let schema_path = &staged[1];
+    let scxml_path = &staged[2];
+    let err = run(
+        &[scxml_path.as_path()],
+        &[enum_path.as_path(), schema_path.as_path()],
+    )
+    .err()
+    .expect("orchestrator should reject 0x1FFFF send param against uint8-underlying enum");
+    match err.error {
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::CrossKindTypeMismatch {
+                field,
+                actual,
+                expected,
+                alias,
+                ..
+            } => {
+                assert_eq!(field, "status");
+                assert_eq!(expected, "uint8");
+                // 0x1FFFF = 131071 (decimal form in the diagnostic).
+                assert!(
+                    actual.contains("131071")
+                        && actual.contains("uint8")
+                        && actual.contains("Result"),
+                    "expected message to name 131071, uint8, Result; got {actual:?}"
+                );
+                assert!(
+                    alias.contains("send") && alias.contains("job.completed"),
+                    "expected alias to name the <send event=\"job.completed\"> site, got {alias:?}"
+                );
+            }
+            other => panic!("expected CrossKindTypeMismatch, got {other:?}"),
+        },
+        other => panic!("expected Validation error, got {other:?}"),
+    }
+}
+
+/// Negative — decimal-literal form of the send-side overflow. Locks
+/// the decimal arm of `parse_int_literal_text` against future drift
+/// toward "hex-only" narrowing.
+#[test]
+fn negative_enum_literal_overflow_send_side_decimal_rejects() {
+    let dir = tempdir().expect("tempdir");
+    let staged = stage_fixtures(
+        dir.path(),
+        &[
+            "result.scxml",
+            "schema_job_completed_with_enum.scxml",
+            "negative_statechart_send_enum_literal_overflow_decimal.scxml",
+        ],
+    );
+    let enum_path = &staged[0];
+    let schema_path = &staged[1];
+    let scxml_path = &staged[2];
+    let err = run(
+        &[scxml_path.as_path()],
+        &[enum_path.as_path(), schema_path.as_path()],
+    )
+    .err()
+    .expect("orchestrator should reject decimal 256 send param against uint8-underlying enum");
+    match err.error {
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::CrossKindTypeMismatch {
+                field,
+                actual,
+                expected,
+                ..
+            } => {
+                assert_eq!(field, "status");
+                assert_eq!(expected, "uint8");
+                assert!(
+                    actual.contains("256") && actual.contains("uint8"),
+                    "expected message to name 256 + uint8; got {actual:?}"
+                );
+            }
+            other => panic!("expected CrossKindTypeMismatch, got {other:?}"),
+        },
+        other => panic!("expected Validation error, got {other:?}"),
+    }
+}
+
+/// Positive — `_event.data.status === 255` and `=== 0xFF` and `=== 0`
+/// all fit the uint8 carrier exactly. Locks the receive-side branch
+/// of the narrowing layer against off-by-one drift at the boundary.
+#[test]
+fn positive_enum_literal_at_receive_side_boundary_accepts() {
+    let dir = tempdir().expect("tempdir");
+    let staged = stage_fixtures(
+        dir.path(),
+        &[
+            "result.scxml",
+            "schema_job_completed_with_enum.scxml",
+            "positive_statechart_enum_literal_within_width.scxml",
+        ],
+    );
+    let enum_path = &staged[0];
+    let schema_path = &staged[1];
+    let scxml_path = &staged[2];
+    run(
+        &[scxml_path.as_path()],
+        &[enum_path.as_path(), schema_path.as_path()],
+    )
+    .expect("255 / 0xFF / 0 must all fit uint8 underlying");
+}
+
+/// Positive — send-side mirror of the boundary fixture. Exercises
+/// `<param expr="0xFF"/>` against the uint8 enum carrier.
+#[test]
+fn positive_enum_literal_at_send_side_boundary_accepts() {
+    let dir = tempdir().expect("tempdir");
+    let staged = stage_fixtures(
+        dir.path(),
+        &[
+            "result.scxml",
+            "schema_job_completed_with_enum.scxml",
+            "positive_statechart_send_enum_literal_within_width.scxml",
+        ],
+    );
+    let enum_path = &staged[0];
+    let schema_path = &staged[1];
+    let scxml_path = &staged[2];
+    run(
+        &[scxml_path.as_path()],
+        &[enum_path.as_path(), schema_path.as_path()],
+    )
+    .expect("0xFF send param must fit uint8 underlying");
+}
