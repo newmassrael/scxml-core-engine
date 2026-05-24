@@ -1395,6 +1395,14 @@ fn render_lookup(
 // `validation/enum-unsupported-underlying-type`, so the
 // `<lang>_type(&m.underlying_type)` lookups here never reach the
 // `SceType::Enum(_)` arm.
+//
+// F-κ note: `m.strict_variants` is deliberately not consumed here.
+// The opt-out flag is a parse-time validator concern (it gates the
+// membership check in `event_schema_check::enum_variant_not_declared`)
+// and emits identical typed enum syntax in every backend regardless
+// of the flag. A grep for `strict_variants` in this file must remain
+// zero — any future reader believing the flag should influence code
+// generation should re-read design RFC §8 F-κ first.
 fn render_enum(
     env: &minijinja::Environment,
     m: &EnumModel,
